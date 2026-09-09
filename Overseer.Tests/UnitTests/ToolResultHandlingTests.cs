@@ -133,7 +133,7 @@ public class ToolResultHandlingTests
     private class NullClientBridge : IClientToolBridge
     {
         public bool IsClientConnected => true;
-        public Task<ToolResult> SendToolRequestAsync(long sessionId, string toolName, JsonElement parameters, CancellationToken cancellationToken)
+        public Task<ToolResult> SendToolRequestAsync(Overseer.Services.Privacy.SessionRef sessionRef, string toolName, JsonElement parameters, CancellationToken cancellationToken)
         {
             return Task.FromResult(new ToolResult { Success = true, Content = "Client result" });
         }
@@ -168,7 +168,7 @@ public class ToolResultHandlingTests
 
         var context = new ToolExecutionContext
         {
-            SessionId = 1001,
+            SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1001),
             MaxResultLength = 10000,
             MaxCallsPerSession = 50
         };
@@ -198,7 +198,7 @@ public class ToolResultHandlingTests
 
         var context = new ToolExecutionContext
         {
-            SessionId = 1002,
+            SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1002),
             MaxResultLength = 100000,
             MaxCallsPerSession = 50
         };
@@ -228,7 +228,7 @@ public class ToolResultHandlingTests
 
         var context = new ToolExecutionContext
         {
-            SessionId = 1003,
+            SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1003),
             MaxResultLength = 10000,
             MaxCallsPerSession = 50
         };

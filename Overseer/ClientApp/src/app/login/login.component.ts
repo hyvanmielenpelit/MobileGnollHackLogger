@@ -25,6 +25,12 @@ export class LoginComponent implements OnInit, OnDestroy {
   loading = false;
   error = '';
 
+  /* The password step succeeded and a second factor is outstanding. The server holds that
+     state in the two-factor cookie; this flag only decides which step the form shows. */
+  requiresTwoFactor = false;
+  twoFactorCode = '';
+  rememberMachine = false;
+
   private boundSyncAriaBlur: any;
   private boundSyncAriaInput: any;
 
@@ -48,7 +54,7 @@ export class LoginComponent implements OnInit, OnDestroy {
     this.boundSyncAriaInput = (e: any) => {
       if (e.target && e.target.hasAttribute && e.target.hasAttribute('aria-invalid')) syncAria(e.target);
     };
-    
+
     document.addEventListener('blur', this.boundSyncAriaBlur, true);
     document.addEventListener('input', this.boundSyncAriaInput);
   }
@@ -59,6 +65,11 @@ export class LoginComponent implements OnInit, OnDestroy {
   }
 
   onSubmit() {
+    if (this.requiresTwoFactor) {
+      this.onSubmitTwoFactor();
+      return;
+    }
+
     if (!this.username || !this.password) {
       return; // Prevent empty submission
     }
@@ -66,14 +77,52 @@ export class LoginComponent implements OnInit, OnDestroy {
     this.loading = true;
     this.error = '';
     this.authService.login(this.username, this.password).subscribe({
-      next: () => {
-        const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/chat';
-        this.router.navigateByUrl(returnUrl);
+      next: (res) => {
+        if (res?.requiresTwoFactor) {
+          this.requiresTwoFactor = true;
+          this.password = ''; // Not needed again, and no reason to keep it in memory
+          this.loading = false;
+          this.error = '';
+          return;
+        }
+        this.navigateAfterLogin();
       },
-      error: () => {
-        this.error = 'Invalid credentials';
+      error: (err) => {
+        /* The server deliberately returns the same body for an unknown user and a wrong
+           password, so there is nothing here to distinguish them by. A lockout or a
+           not-allowed account says so explicitly, because the password was correct. */
+        this.error = err?.error?.message || 'Invalid credentials';
         this.loading = false;
       }
     });
+  }
+
+  onSubmitTwoFactor() {
+    if (!this.twoFactorCode) {
+      return;
+    }
+
+    this.loading = true;
+    this.error = '';
+    this.authService.loginTwoFactor(this.twoFactorCode, this.rememberMachine).subscribe({
+      next: () => this.navigateAfterLogin(),
+      error: (err) => {
+        this.error = err?.error?.message || 'Invalid verification code';
+        this.twoFactorCode = '';
+        this.loading = false;
+      }
+    });
+  }
+
+  cancelTwoFactor() {
+    this.requiresTwoFactor = false;
+    this.twoFactorCode = '';
+    this.rememberMachine = false;
+    this.error = '';
+  }
+
+  private navigateAfterLogin() {
+    const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/chat';
+    this.router.navigateByUrl(returnUrl);
   }
 }

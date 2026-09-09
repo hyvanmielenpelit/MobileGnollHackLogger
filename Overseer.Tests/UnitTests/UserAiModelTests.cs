@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -138,7 +138,15 @@ public class UserAiModelTests
         db.UserAiModels.Add(initial);
         await db.SaveChangesAsync(ct);
 
-        var controller = new SettingsController(service, null!, null!, null!, null!, null!, Array.Empty<Overseer.Services.Providers.IAiProvider>());
+        var endpointPolicy = new Overseer.Services.Privacy.EndpointPolicy(
+            new ConfigurationBuilder().Build());
+        var policyResolver = new Overseer.Services.Privacy.ConfidentialPolicyResolver(
+            new ConfigurationBuilder().Build());
+        var controller = new SettingsController(
+            service, null!, null!, null!, null!, null!, endpointPolicy, policyResolver,
+            new Overseer.Services.Privacy.Dlp.DlpScannerService(new ConfigurationBuilder().Build()),
+            new Overseer.Services.Privacy.AttachmentValidator(new ConfigurationBuilder().Build()),
+            Array.Empty<Overseer.Services.Providers.IAiProvider>());
         var user = new ClaimsPrincipal(new ClaimsIdentity(new[]
         {
             new Claim(ClaimTypes.NameIdentifier, userId)

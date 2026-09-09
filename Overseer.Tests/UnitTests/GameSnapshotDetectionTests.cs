@@ -45,6 +45,21 @@ public class GameSnapshotDetectionTests
         services.AddScoped<IAiProvider, OpenAiResponsesProvider>();
         services.AddScoped<Overseer.Services.Agents.AgentLoopRunner>();
         services.AddSingleton<Overseer.Services.ParallelExecutionResolver>();
+        services.AddSingleton<Overseer.Services.Privacy.AttachmentValidator>();
+        services.AddSingleton<Overseer.Services.Privacy.IAntiMalwareScanner,
+            Overseer.Services.Privacy.NullAntiMalwareScanner>();
+        services.AddSingleton<Overseer.Services.Privacy.EndpointPolicy>();
+        services.AddSingleton<Overseer.Services.Privacy.IContentKeyRing,
+            Overseer.Services.Privacy.ConfigurationContentKeyRing>();
+        services.AddSingleton<Overseer.Services.Privacy.ContentProtectionService>();
+        services.AddSingleton<Overseer.Services.Privacy.Dlp.DlpScannerService>();
+        services.AddSingleton<Overseer.Services.Documents.DocumentParserService>();
+        services.AddSingleton<Overseer.Services.Rag.DocumentChunker>();
+        services.AddSingleton<Overseer.Services.Rag.IEmbeddingService,
+            Overseer.Services.Rag.LocalOnnxEmbeddingService>();
+        services.AddSingleton<Overseer.Services.Rag.DocumentRagService>();
+        services.AddScoped<Overseer.Services.Rag.RagSidecarStore>();
+        services.AddSingleton(sp => new Overseer.Services.Privacy.EphemeralSessionStore(sp.GetRequiredService<IConfiguration>(), startSweeper: false));
         services.AddScoped<ChatService>();
 
         var provider = services.BuildServiceProvider();
@@ -180,7 +195,7 @@ public class GameSnapshotDetectionTests
     private class DummyClientToolBridge : IClientToolBridge
     {
         public bool IsClientConnected => true;
-        public Task<ToolResult> SendToolRequestAsync(long sessionId, string toolName, System.Text.Json.JsonElement parameters, System.Threading.CancellationToken cancellationToken)
+        public Task<ToolResult> SendToolRequestAsync(Overseer.Services.Privacy.SessionRef sessionRef, string toolName, System.Text.Json.JsonElement parameters, System.Threading.CancellationToken cancellationToken)
         {
             return Task.FromResult(new ToolResult { Success = true, Content = "Dummy" });
         }

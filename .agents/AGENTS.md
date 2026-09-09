@@ -151,8 +151,8 @@ Skills in this repository use the **`server_`** prefix. Canonical bodies live in
 `.agents/skills/<underscore_name>/SKILL.md`; the `.claude/skills/<kebab-name>/` stubs are
 **generated** by `SharedAgentSkills\tools\sync_stubs.ps1` and must never be hand-edited.
 Notable project skills include `server_implementation_planning`, `server_benchmark_to_chat_transfer`,
-and the tool-layer trio `server_tool_data_sources`, `server_tool_parameter_reference` and
-`server_benchmark_tool_diagnostics`.
+`server_data_privacy_framework`, and the tool-layer trio `server_tool_data_sources`,
+`server_tool_parameter_reference` and `server_benchmark_tool_diagnostics`.
 
 > [!IMPORTANT]
 > **Never use the `client_` prefix here.** It is reserved for **GnollHack**, which is the

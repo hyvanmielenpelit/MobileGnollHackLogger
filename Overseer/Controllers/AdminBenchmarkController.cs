@@ -1314,7 +1314,8 @@ public class AdminBenchmarkController : ControllerBase
         linkedCts.CancelAfter(TimeSpan.FromSeconds(45));
 
         var emptyParams = JsonDocument.Parse("{}").RootElement;
-        var toolResult = await _clientToolBridge.SendToolRequestAsync(session.Id, "refresh_snapshot", emptyParams, linkedCts.Token);
+        var toolResult = await _clientToolBridge.SendToolRequestAsync(
+            Overseer.Services.Privacy.SessionRef.Persistent(session.Id), "refresh_snapshot", emptyParams, linkedCts.Token);
         if (!toolResult.Success)
         {
             string msg = toolResult.ErrorMessage ?? toolResult.Content ?? "Client tool request failed.";
@@ -1369,11 +1370,22 @@ public class AdminBenchmarkController : ControllerBase
             return Forbid();
         }
 
-        string p0 = ChatService.GameSnapshotLikePatterns[0];
-        string p1 = ChatService.GameSnapshotLikePatterns[1];
+        /* Importing copies the session's content into a benchmark board, which is shared
+           material an administrator and every later benchmark run can read. A confidential
+           session's content does not go there, and this is the route that would take it --
+           BenchmarkGameSnapshot.SourceChatSessionId is the link it would leave behind. */
+        if (session.IsConfidential)
+        {
+            return Conflict(new
+            {
+                error = "A confidential chat cannot be imported as a benchmark board: the board's content "
+                    + "becomes shared benchmark material. Attach the snapshot to a normal chat, or use "
+                    + "Capture Live Board."
+            });
+        }
+
         var snapshotMessage = await _dbContext.ChatMessage
-            .Where(m => m.ChatSessionId == session.Id && m.Role == "system" &&
-                (EF.Functions.Like(m.Content, p0) || EF.Functions.Like(m.Content, p1)))
+            .Where(m => m.ChatSessionId == session.Id && m.Role == "system" && m.IsGameSnapshot)
             .OrderByDescending(m => m.TimestampUtc)
             .FirstOrDefaultAsync(ct);
 

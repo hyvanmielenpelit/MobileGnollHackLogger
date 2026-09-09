@@ -68,7 +68,7 @@ namespace Overseer.Tests
             var (_, provider, apiKey, model) = Setup();
 
             using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(90) };
-            var url = provider.GetTitleUrl(model, apiKey);
+            var url = provider.GetTitleUrl(model, apiKey, AiEndpointDescriptor.Official);
             var reqBody = provider.BuildTitleRequestBody(model, "You are a test assistant.", "Say hello.", 100, serviceTier: "priority");
             var jsonContent = JsonSerializer.Serialize(reqBody);
 
@@ -76,7 +76,7 @@ namespace Overseer.Tests
             {
                 Content = new StringContent(jsonContent, Encoding.UTF8, "application/json")
             };
-            provider.ConfigureRequest(httpRequest, apiKey);
+            provider.ConfigureRequest(httpRequest, apiKey, AiEndpointDescriptor.Official);
 
             var ct = TestContext.Current.CancellationToken;
             HttpResponseMessage response;
@@ -136,7 +136,7 @@ namespace Overseer.Tests
             var (_, provider, apiKey, model) = Setup();
 
             using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(90) };
-            var url = provider.GetChatStreamUrl(model, apiKey);
+            var url = provider.GetChatStreamUrl(model, apiKey, AiEndpointDescriptor.Official);
             var history = new List<object>
             {
                 provider.FormatMessage("user", "Say hello in one word.", null)
@@ -148,7 +148,7 @@ namespace Overseer.Tests
             {
                 Content = new StringContent(jsonContent, Encoding.UTF8, "application/json")
             };
-            provider.ConfigureRequest(httpRequest, apiKey);
+            provider.ConfigureRequest(httpRequest, apiKey, AiEndpointDescriptor.Official);
 
             var ct = TestContext.Current.CancellationToken;
             HttpResponseMessage response;
@@ -212,7 +212,7 @@ namespace Overseer.Tests
             var (_, provider, apiKey, model) = Setup();
 
             using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(90) };
-            var url = provider.GetChatStreamUrl(model, apiKey);
+            var url = provider.GetChatStreamUrl(model, apiKey, AiEndpointDescriptor.Official);
             var history = new List<object>
             {
                 provider.FormatMessage("user", "Say OK.", null)
@@ -224,7 +224,7 @@ namespace Overseer.Tests
             {
                 Content = new StringContent(jsonContent, Encoding.UTF8, "application/json")
             };
-            provider.ConfigureRequest(httpRequest, apiKey);
+            provider.ConfigureRequest(httpRequest, apiKey, AiEndpointDescriptor.Official);
 
             var ct = TestContext.Current.CancellationToken;
             HttpResponseMessage response;

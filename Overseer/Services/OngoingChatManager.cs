@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Configuration;
+using Overseer.Services.Privacy;
 
 namespace Overseer.Services;
 
@@ -17,7 +18,7 @@ public class OngoingGenerationState
 
 public class OngoingChatManager
 {
-    private readonly ConcurrentDictionary<long, OngoingGenerationState> _active = new();
+    private readonly ConcurrentDictionary<SessionRef, OngoingGenerationState> _active = new();
     private readonly int _maxAccumulatedEvents;
 
     public OngoingChatManager(IConfiguration? configuration = null)
@@ -25,7 +26,7 @@ public class OngoingChatManager
         _maxAccumulatedEvents = configuration?.GetValue<int>("SubAgentSettings:MaxAccumulatedEvents", 5000) ?? 5000;
     }
 
-    public bool TryStart(long sessionId, CancellationTokenSource cts, out OngoingGenerationState state)
+    public bool TryStart(SessionRef sessionRef, CancellationTokenSource cts, out OngoingGenerationState state)
     {
         // Lazy cleanup of stale completed entries (>30 seconds old)
         var cutoff = DateTime.UtcNow.AddSeconds(-30);
@@ -38,18 +39,18 @@ public class OngoingChatManager
         }
 
         // If existing session is already completed, allow replacing it
-        if (_active.TryGetValue(sessionId, out var existing) && existing.IsCompleted)
+        if (_active.TryGetValue(sessionRef, out var existing) && existing.IsCompleted)
         {
-            _active.TryRemove(sessionId, out _);
+            _active.TryRemove(sessionRef, out _);
         }
 
         state = new OngoingGenerationState { Cts = cts, StartedAtUtc = DateTime.UtcNow };
-        return _active.TryAdd(sessionId, state);
+        return _active.TryAdd(sessionRef, state);
     }
 
-    public void ProcessEvent(long sessionId, ChatEvent evt)
+    public void ProcessEvent(SessionRef sessionRef, ChatEvent evt)
     {
-        if (_active.TryGetValue(sessionId, out var state))
+        if (_active.TryGetValue(sessionRef, out var state))
         {
             evt.SeqNo = Interlocked.Increment(ref state.EventSequence);
 
@@ -68,26 +69,26 @@ public class OngoingChatManager
         }
     }
 
-    public bool TryRegisterSubAgent(long sessionId, string toolCallId, CancellationTokenSource cts)
+    public bool TryRegisterSubAgent(SessionRef sessionRef, string toolCallId, CancellationTokenSource cts)
     {
-        if (_active.TryGetValue(sessionId, out var state) && !state.IsCompleted)
+        if (_active.TryGetValue(sessionRef, out var state) && !state.IsCompleted)
         {
             return state.ActiveSubAgents.TryAdd(toolCallId, cts);
         }
         return false;
     }
 
-    public void UnregisterSubAgent(long sessionId, string toolCallId)
+    public void UnregisterSubAgent(SessionRef sessionRef, string toolCallId)
     {
-        if (_active.TryGetValue(sessionId, out var state))
+        if (_active.TryGetValue(sessionRef, out var state))
         {
             state.ActiveSubAgents.TryRemove(toolCallId, out _);
         }
     }
 
-    public bool TryCancelSubAgent(long sessionId, string toolCallId)
+    public bool TryCancelSubAgent(SessionRef sessionRef, string toolCallId)
     {
-        if (_active.TryGetValue(sessionId, out var state)
+        if (_active.TryGetValue(sessionRef, out var state)
             && state.ActiveSubAgents.TryRemove(toolCallId, out var cts))
         {
             try
@@ -100,36 +101,36 @@ public class OngoingChatManager
         return false;
     }
 
-    public void Complete(long sessionId)
+    public void Complete(SessionRef sessionRef)
     {
-        if (_active.TryGetValue(sessionId, out var state))
+        if (_active.TryGetValue(sessionRef, out var state))
         {
             state.IsCompleted = true;
             state.CompletedAtUtc = DateTime.UtcNow;
         }
     }
 
-    public void Fail(long sessionId, string error)
+    public void Fail(SessionRef sessionRef, string error)
     {
-        if (_active.TryGetValue(sessionId, out var state))
+        if (_active.TryGetValue(sessionRef, out var state))
         {
             state.AccumulatedEvents.Enqueue(new ChatEvent { Type = "error", Data = error });
         }
-        Complete(sessionId);
+        Complete(sessionRef);
     }
 
-    public OngoingGenerationState? TryGet(long sessionId)
+    public OngoingGenerationState? TryGet(SessionRef sessionRef)
     {
-        if (_active.TryGetValue(sessionId, out var state))
+        if (_active.TryGetValue(sessionRef, out var state))
         {
             return state;
         }
         return null;
     }
 
-    public bool TryCancelAndRemove(long sessionId)
+    public bool TryCancelAndRemove(SessionRef sessionRef)
     {
-        if (_active.TryRemove(sessionId, out var state))
+        if (_active.TryRemove(sessionRef, out var state))
         {
             try
             {

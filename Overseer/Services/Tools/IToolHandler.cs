@@ -44,7 +44,12 @@ namespace Overseer.Services.Tools
 
     public class ToolExecutionContext
     {
-        public long SessionId { get; set; }
+        /// <summary>
+        /// The session this turn belongs to -- persisted or ephemeral. A
+        /// <see cref="Privacy.SessionRef"/> rather than a <c>long</c> so a handler that queries
+        /// <c>ChatSession</c> by it has to say which case it means.
+        /// </summary>
+        public Privacy.SessionRef SessionId { get; set; }
         public string? ToolBudgetScopeId { get; set; }
         public string UserId { get; set; } = string.Empty;
         public bool SpoilerFreeMode { get; set; }
@@ -66,6 +71,17 @@ namespace Overseer.Services.Tools
         public long? ActiveUserModelId { get; set; }
         public long? ActiveSystemModelId { get; set; }
         public MobileGnollHackLogger.Data.ParallelExecutionMode ParallelExecutionMode { get; set; } = MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled;
+
+        /// <summary>
+        /// Whether this turn runs in a confidential session with tool egress blocked.
+        /// </summary>
+        /// <remarks>
+        /// Carried through <see cref="CloneFor"/> and into every sub-agent context. A sub-agent
+        /// inheriting a permissive tool set would reopen the channel the mode exists to close,
+        /// which is why the flag travels with the context rather than being consulted once at
+        /// the top of the turn.
+        /// </remarks>
+        public bool BlockExternalEgress { get; set; } = false;
 
         public ToolExecutionContext CloneFor(string toolCallId)
         {
@@ -92,7 +108,8 @@ namespace Overseer.Services.Tools
                 EnableSubAgents = this.EnableSubAgents,
                 ActiveUserModelId = this.ActiveUserModelId,
                 ActiveSystemModelId = this.ActiveSystemModelId,
-                ParallelExecutionMode = this.ParallelExecutionMode
+                ParallelExecutionMode = this.ParallelExecutionMode,
+                BlockExternalEgress = this.BlockExternalEgress
             };
         }
     }

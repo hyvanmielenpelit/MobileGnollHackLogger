@@ -96,7 +96,12 @@ public class AgentLoopRunner
         int maxParallelTools = request.MaxParallelTools;
         int maxParallelClientTools = request.MaxParallelClientTools;
         bool enableToolUse = request.EnableToolUse;
-        bool enableWebSearch = request.EnableWebSearch;
+        /* Forced off in a confidential session with egress blocked, using the same flag-flip
+           the budget and iteration limits already use below. The registry would withhold the
+           provider web-search tool anyway; flipping the flag here means the rest of the loop
+           reasons about a session that simply has no web search, rather than one whose request
+           says it does. */
+        bool enableWebSearch = request.EnableWebSearch && request.ToolExecutionContext?.BlockExternalEgress != true;
         bool enableClientTools = request.EnableClientTools;
         bool enableGameActions = request.EnableGameActions;
 
@@ -204,8 +209,9 @@ public class AgentLoopRunner
             await foreach (var evt in ExecuteApiWithRetriesAsync(
                 async ct =>
                 {
-                    var httpRequest = new HttpRequestMessage(HttpMethod.Post, aiProvider.GetChatStreamUrl(request.ModelId, request.ApiKey ?? ""));
-                    aiProvider.ConfigureRequest(httpRequest, request.ApiKey ?? "");
+                    var httpRequest = new HttpRequestMessage(
+                        HttpMethod.Post, aiProvider.GetChatStreamUrl(request.ModelId, request.ApiKey ?? "", request.Endpoint));
+                    aiProvider.ConfigureRequest(httpRequest, request.ApiKey ?? "", request.Endpoint);
                     httpRequest.Content = new StringContent(jsonRequest, Encoding.UTF8, "application/json");
                     return await httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, ct);
                 },
@@ -546,11 +552,21 @@ public class AgentLoopRunner
                         priorSnapshotToolCallId = outcome.ToolCallId;
                     }
 
+                    /* Masked on the way OUT and nowhere else. providerResults is what re-enters
+                       messageHistory and therefore what the next request carries, so a
+                       credential a tool returned -- from a file it read, a corpus it searched or
+                       a sub-agent it ran -- would otherwise reach the provider by the longer
+                       route even though the user's own message was masked.
+
+                       streamTc below keeps outcome.Content unmasked, deliberately: that row is
+                       what the user sees and what the database stores, and in a confidential
+                       session it is encrypted at the choke point in ChatService. Masking is an
+                       egress control, not a storage one. */
                     providerResults.Add(new ProviderToolResult
                     {
                         ToolCallId = outcome.ToolCallId,
                         ToolName = outcome.ToolName,
-                        Content = finalContent,
+                        Content = request.DlpVault?.Mask(finalContent) ?? finalContent,
                         Success = outcome.Success,
                         ProviderToolCallId = currentIterationToolCalls[i].TryGetProperty("provider_id", out var pid) ? pid.GetString() : null
                     });

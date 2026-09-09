@@ -47,7 +47,15 @@ public class ChatAttachSnapshotTests
     {
         var config = CreateTestConfiguration();
         var retentionService = new ChatRetentionService(db, config, NullLogger<ChatRetentionService>.Instance);
-        var controller = new ChatController(db, null!, config, null!, null!, null!, null!, null!, null!, retentionService, null!)
+        var attachmentValidator = new Overseer.Services.Privacy.AttachmentValidator(config);
+        // GetSession consults it for in-flight generations; a real one is cheap and returns none.
+        var ongoingChatManager = new OngoingChatManager(config);
+        var postureService = new Overseer.Services.Privacy.ConfidentialityPostureService(config);
+        var policyResolver = new Overseer.Services.Privacy.ConfidentialPolicyResolver(config);
+        var contentProtection = new Overseer.Services.Privacy.ContentProtectionService(
+            new Overseer.Services.Privacy.ConfigurationContentKeyRing(config));
+        var controller = new ChatController(db, null!, config, null!, null!, null!, ongoingChatManager, null!, null!, retentionService, null!, attachmentValidator, postureService, policyResolver, contentProtection,
+            new Overseer.Services.Privacy.EphemeralSessionStore(config, startSweeper: false))
         {
             ControllerContext = new ControllerContext
             {
@@ -98,6 +106,8 @@ public class ChatAttachSnapshotTests
         Assert.Equal("system", sysMsg.Role);
         Assert.StartsWith(ChatService.GameSnapshotPrefix + "\n", sysMsg.Content);
         Assert.Contains("Dungeon Level 1", sysMsg.Content);
+        // AttachSnapshot is the Overseer-UI writer, and the flag is what detection reads now.
+        Assert.True(sysMsg.IsGameSnapshot);
     }
 
     [Fact]
@@ -124,6 +134,7 @@ public class ChatAttachSnapshotTests
             ChatSessionId = 10,
             Role = "system",
             Content = ChatService.GameSnapshotPrefix + "\nOld Snapshot Data",
+            IsGameSnapshot = true,
             TimestampUtc = DateTime.UtcNow.AddMinutes(-5)
         };
         db.ChatMessage.Add(oldSnapshot);
@@ -153,9 +164,42 @@ public class ChatAttachSnapshotTests
 
         Assert.Equal("[Game state snapshot superseded by the updated snapshot below]", messages[0].Content);
         Assert.False(ChatService.IsGameSnapshotMessage(messages[0].Content));
+        /* The flag must be cleared with the content. Left set, hasGameSnapshot fires on the
+           marker, the next attach re-selects this row, and StripGameSnapshotPrefix is handed
+           marker text -- the regression that content-based detection could not have. */
+        Assert.False(messages[0].IsGameSnapshot);
 
         Assert.StartsWith(ChatService.GameSnapshotPrefix + "\n", messages[1].Content);
         Assert.True(ChatService.IsGameSnapshotMessage(messages[1].Content));
+        Assert.True(messages[1].IsGameSnapshot);
+    }
+
+    [Fact]
+    public async Task AttachSnapshot_Twice_LeavesExactlyOneFlaggedSnapshot()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var controller = CreateController(db, "user-1");
+
+        var first = await controller.AttachSnapshot(new AttachGameSnapshotRequest { SnapshotText = "First board" });
+        dynamic firstVal = Assert.IsType<OkObjectResult>(first).Value!;
+        long sessionId = (long)firstVal.sessionId;
+
+        await controller.AttachSnapshot(new AttachGameSnapshotRequest { SessionId = sessionId, SnapshotText = "Second board" });
+
+        var messages = await db.ChatMessage
+            .Where(m => m.ChatSessionId == sessionId)
+            .OrderBy(m => m.TimestampUtc)
+            .ToListAsync(ct);
+
+        Assert.Equal(2, messages.Count);
+        Assert.Single(messages, m => m.IsGameSnapshot);
+        Assert.Contains("Second board", messages.Single(m => m.IsGameSnapshot).Content);
+
+        // And the session reads as carrying a snapshot, from the live row only.
+        var loaded = Assert.IsType<OkObjectResult>(await controller.GetSession(sessionId.ToString()));
+        dynamic loadedVal = loaded.Value!;
+        Assert.True((bool)loadedVal.hasGameSnapshot);
     }
 
     [Fact]

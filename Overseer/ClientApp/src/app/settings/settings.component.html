@@ -296,6 +296,220 @@
       </fieldset>
 
       <fieldset class="permissions-fieldset mt-20">
+        <legend>Confidentiality Mode</legend>
+
+        <p class="form-hint confidential-intro mt-5">
+          Confidentiality Mode is chosen per chat. A normal chat can be upgraded to confidential, but a
+          confidential chat can never be turned back: history kept under the stronger promise stays under it,
+          and anything already sent to a provider cannot be recalled. These settings apply to every chat you
+          mark confidential from here on.
+        </p>
+
+        @if (!confidentialNoticeAcknowledged) {
+          <div class="alert alert-info confidential-notice">
+            <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            <div class="alert-content">
+              <p class="alert-heading">What Confidentiality Mode covers</p>
+              <div class="alert-body">
+                Confidentiality Mode is built for your own personal data. Documents identifying other people are
+                protected in exactly the same technical way but are not covered &mdash; Overseer cannot identify
+                someone who has no account, so it cannot honour an access or erasure request from them &mdash;
+                and regulated data such as health, financial or other special-category records is not supported
+                at all, because Overseer holds no BAA or equivalent agreement with any AI provider.
+              </div>
+              @if (confidentialNoticeError) {
+                <p class="form-hint form-error mt-5" role="alert">{{ confidentialNoticeError }}</p>
+              }
+              <div class="alert-actions">
+                <button type="button" class="alert-action-btn" (click)="acknowledgeConfidentialNotice()" [disabled]="isAcknowledgingConfidentialNotice">
+                  @if (isAcknowledgingConfidentialNotice) {
+                    <span class="gh-spinner-small" aria-hidden="true"></span>
+                  }
+                  Understood
+                </button>
+              </div>
+            </div>
+          </div>
+        }
+
+        <div class="margin-y-20 mt-15 form-group-stacked">
+          <label for="confidentialPersistence" class="block fw-bold">Storage</label>
+          <span id="confidentialPersistenceHint" class="form-hint mt-5 d-block mb-10">How a chat you mark confidential is kept. {{ selectedPersistenceHint }}</span>
+          <select id="confidentialPersistence" class="form-input form-select" [(ngModel)]="confidentialPersistence" (ngModelChange)="onSettingChange()" name="confidentialPersistence" [disabled]="persistenceFixedByAdmin" [attr.aria-describedby]="persistenceFixedByAdmin ? 'confidentialPersistenceHint confidentialPersistenceFloor' : 'confidentialPersistenceHint'">
+            @for (o of persistenceOptions; track o.value) {
+              <option [ngValue]="o.value">{{ o.label }}</option>
+            }
+          </select>
+          @if (persistenceFixedByAdmin) {
+            <span id="confidentialPersistenceFloor" class="confidential-floor-note mt-5 d-block">An administrator has fixed this setting.</span>
+          }
+        </div>
+
+        <div class="margin-y-20">
+          <label class="checkbox-label align-start">
+            <input type="checkbox" [(ngModel)]="confidentialDisableToolEgress" (ngModelChange)="onSettingChange()" name="confidentialDisableToolEgress" class="w-auto m-0" [disabled]="toolEgressFixedByAdmin" [attr.aria-describedby]="toolEgressFixedByAdmin ? 'confidentialEgressHint confidentialEgressFloor' : 'confidentialEgressHint'" />
+            <span class="d-block">
+              <span>Block tools that reach the internet</span>
+              <span id="confidentialEgressHint" class="form-hint mt-5 d-block">Blocks every tool that reaches a third-party network, and the provider's own web search, for the whole confidential chat.</span>
+              @if (toolEgressFixedByAdmin) {
+                <span id="confidentialEgressFloor" class="confidential-floor-note mt-5 d-block">An administrator has fixed this setting.</span>
+              }
+            </span>
+          </label>
+        </div>
+
+        @if (confidentialPromiseWeakened) {
+          <div class="alert alert-warning confidential-consequence" role="status">
+            <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <div class="alert-content">
+              <p class="alert-heading">With these choices, Confidentiality Mode reports itself as not keeping its promise</p>
+              <div class="alert-body">
+                @if (effectiveConfidentialPersistence === 'Plaintext') {
+                  <span class="d-block">Storage is readable, so a confidential chat sits in the database exactly as a normal one does.</span>
+                }
+                @if (!effectiveConfidentialDisableToolEgress) {
+                  <span class="d-block">Tools that reach a third-party network stay available, so chat content can leave Overseer mid-conversation.</span>
+                }
+                <span class="d-block mt-5">Chats you mark confidential carry a red badge for as long as this is the case.</span>
+              </div>
+            </div>
+          </div>
+        }
+
+        <div class="margin-y-20 mt-15 form-group-stacked">
+          <label for="confidentialRetentionDays" class="block fw-bold">Delete After</label>
+          <span id="confidentialRetentionHint" class="form-hint mt-5 d-block mb-10">Days of inactivity before a confidential chat is deleted. Normal chats default to 90 days.</span>
+
+          <div class="custom-input-wrapper confidential-input-wrapper">
+            <input type="number" id="confidentialRetentionDays" [(ngModel)]="confidentialRetentionDays" (ngModelChange)="onNumberInputChange()" (blur)="onNumberInputBlur()" name="confidentialRetentionDays" class="form-input w-100" [min]="retentionMinDays" [max]="maxConfidentialRetentionDays" [disabled]="retentionFixedByAdmin" [attr.aria-describedby]="retentionFixedByAdmin ? 'confidentialRetentionHint confidentialRetentionRange confidentialRetentionFloor' : 'confidentialRetentionHint confidentialRetentionRange'" />
+            <span id="confidentialRetentionRange" class="form-hint mt-5 d-block">Allowed range: {{ retentionMinDays }} - {{ maxConfidentialRetentionDays }} days</span>
+            @if (retentionFixedByAdmin) {
+              <span id="confidentialRetentionFloor" class="confidential-floor-note mt-5 d-block">An administrator has fixed this setting.</span>
+            }
+            @if (validationErrors['confidentialRetentionDays']) {
+              <span class="form-hint form-error d-block mt-5">{{ validationErrors['confidentialRetentionDays'] }}</span>
+            }
+          </div>
+        </div>
+
+        <div class="margin-y-20">
+          <label class="checkbox-label align-start">
+            <input type="checkbox" [(ngModel)]="confidentialDisableTitleGeneration" (ngModelChange)="onSettingChange()" name="confidentialDisableTitleGeneration" class="w-auto m-0" [disabled]="titleGenerationFixedByAdmin" [attr.aria-describedby]="titleGenerationFixedByAdmin ? 'confidentialTitleHint confidentialTitleFloor' : 'confidentialTitleHint'" />
+            <span class="d-block">
+              <span>Skip the AI-generated chat title</span>
+              <span id="confidentialTitleHint" class="form-hint mt-5 d-block">Titling a chat sends its first message to a separately configured model, often at a different provider. Skipping it leaves the chat with a plain title.</span>
+              @if (titleGenerationFixedByAdmin) {
+                <span id="confidentialTitleFloor" class="confidential-floor-note mt-5 d-block">An administrator has fixed this setting.</span>
+              }
+            </span>
+          </label>
+        </div>
+
+        <div class="margin-y-20">
+          <label class="checkbox-label align-start">
+            <input type="checkbox" [(ngModel)]="confidentialDisablePromptCache" (ngModelChange)="onSettingChange()" name="confidentialDisablePromptCache" class="w-auto m-0" [disabled]="promptCacheFixedByAdmin" [attr.aria-describedby]="promptCacheFixedByAdmin ? 'confidentialCacheHint confidentialCacheFloor' : 'confidentialCacheHint'" />
+            <span class="d-block">
+              <span>Turn off provider prompt caching</span>
+              <span id="confidentialCacheHint" class="form-hint mt-5 d-block">Stops the provider retaining prompt prefixes between turns. Later turns then cost more and start more slowly.</span>
+              @if (promptCacheFixedByAdmin) {
+                <span id="confidentialCacheFloor" class="confidential-floor-note mt-5 d-block">An administrator has fixed this setting.</span>
+              }
+            </span>
+          </label>
+        </div>
+
+        <div class="margin-y-20">
+          <label class="checkbox-label align-start">
+            <input type="checkbox" [(ngModel)]="confidentialImmediatePurge" (ngModelChange)="onSettingChange()" name="confidentialImmediatePurge" class="w-auto m-0" [disabled]="immediatePurgeFixedByAdmin" [attr.aria-describedby]="immediatePurgeFixedByAdmin ? 'confidentialPurgeHint confidentialPurgeFloor' : 'confidentialPurgeHint'" />
+            <span class="d-block">
+              <span>Purge immediately on delete</span>
+              <span id="confidentialPurgeHint" class="form-hint mt-5 d-block">Deleting a confidential chat destroys it at once instead of holding it in Trash for 30 days, so it cannot be restored.</span>
+              @if (immediatePurgeFixedByAdmin) {
+                <span id="confidentialPurgeFloor" class="confidential-floor-note mt-5 d-block">An administrator has fixed this setting.</span>
+              }
+            </span>
+          </label>
+        </div>
+
+        <div class="margin-y-20 mt-15 mb-5 form-group-stacked">
+          <label for="confidentialModelGate" class="block fw-bold">Model Trust Requirement</label>
+          <span id="confidentialModelGateHint" class="form-hint mt-5 d-block mb-10">How firmly the retention terms of the key funding a confidential turn must be established before that turn runs. {{ selectedModelGateHint }}</span>
+          <select id="confidentialModelGate" class="form-input form-select" [(ngModel)]="confidentialModelGate" (ngModelChange)="onSettingChange()" name="confidentialModelGate" [disabled]="modelGateFixedByAdmin" [attr.aria-describedby]="modelGateFixedByAdmin ? 'confidentialModelGateHint confidentialModelGateFloor' : 'confidentialModelGateHint'">
+            @for (o of modelGateOptions; track o.value) {
+              <option [ngValue]="o.value">{{ o.label }}</option>
+            }
+          </select>
+          @if (modelGateFixedByAdmin) {
+            <span id="confidentialModelGateFloor" class="confidential-floor-note mt-5 d-block">An administrator has fixed this setting.</span>
+          }
+        </div>
+      </fieldset>
+
+      <fieldset class="permissions-fieldset mt-20">
+        <legend>Outbound Masking</legend>
+
+        <p class="form-hint dlp-intro mt-5">
+          Masking is not part of Confidentiality Mode and is not chosen per chat. A class you switch on here is
+          masked in every outbound turn, in every chat, confidential or not, from now on.
+        </p>
+
+        <p class="form-hint dlp-intro">
+          What it does: when Overseer recognises a value of a class you have switched on, it replaces that value
+          with a placeholder before the prompt leaves the server, and puts your own value back in the reply. You
+          keep seeing your value; the provider receives the placeholder.
+        </p>
+
+        <p class="dlp-limit">
+          What it does not do: masking reduces accidental credential leakage, it does not guarantee it. A secret
+          with no recognisable shape passes straight through, unmasked.
+        </p>
+
+        @for (c of dlpSecretClasses; track c.key) {
+          <div class="margin-y-20">
+            <label class="checkbox-label align-start">
+              <input type="checkbox" [(ngModel)]="dlp[c.key]" (ngModelChange)="onDlpChange()" [attr.name]="c.key" class="w-auto m-0" [disabled]="isDlpFixedByAdmin(c.key)" [attr.aria-describedby]="isDlpFixedByAdmin(c.key) ? c.key + 'Hint ' + c.key + 'Floor' : c.key + 'Hint'" />
+              <span class="d-block">
+                <span>{{ c.label }}</span>
+                <span [id]="c.key + 'Hint'" class="form-hint mt-5 d-block">{{ c.hint }}</span>
+                @if (isDlpFixedByAdmin(c.key)) {
+                  <span [id]="c.key + 'Floor'" class="dlp-floor-note mt-5 d-block">An administrator requires this class to be masked.</span>
+                }
+              </span>
+            </label>
+          </div>
+        }
+
+        <p class="form-hint dlp-default-note">
+          E-mail addresses and phone numbers start switched off: masking them measurably degrades answers, and
+          they are usually data you meant to send. Switch either on if you would rather it never reached a
+          provider.
+        </p>
+
+        @for (c of dlpContactClasses; track c.key) {
+          <div class="margin-y-20">
+            <label class="checkbox-label align-start">
+              <input type="checkbox" [(ngModel)]="dlp[c.key]" (ngModelChange)="onDlpChange()" [attr.name]="c.key" class="w-auto m-0" [disabled]="isDlpFixedByAdmin(c.key)" [attr.aria-describedby]="isDlpFixedByAdmin(c.key) ? c.key + 'Hint ' + c.key + 'Floor' : c.key + 'Hint'" />
+              <span class="d-block">
+                <span>{{ c.label }}</span>
+                <span [id]="c.key + 'Hint'" class="form-hint mt-5 d-block">{{ c.hint }}</span>
+                @if (isDlpFixedByAdmin(c.key)) {
+                  <span [id]="c.key + 'Floor'" class="dlp-floor-note mt-5 d-block">An administrator requires this class to be masked.</span>
+                }
+              </span>
+            </label>
+          </div>
+        }
+      </fieldset>
+
+      <fieldset class="permissions-fieldset mt-20">
         <legend>Chat Data Management</legend>
 
         <div class="margin-y-20 mt-5">

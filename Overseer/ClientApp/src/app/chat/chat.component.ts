@@ -4,12 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { ChatService, ChatSession, ChatMessage, ChatMessageToolCall, ChatContextUsage } from '../services/chat.service';
 import { AuthService } from '../services/auth.service';
 import { DebugService } from '../services/debug.service';
-import { Router, ActivatedRoute, RouterModule, NavigationEnd } from '@angular/router';
+import { Router, ActivatedRoute, RouterModule, NavigationEnd, NavigationStart } from '@angular/router';
 import { MarkdownPipe } from './markdown.pipe';
 import { RelativeTimePipe } from './relative-time.pipe';
 import { SettingsService } from '../services/settings.service';
 import { ChangelogService } from '../services/changelog.service';
 import { ClientBridgeService } from '../services/client-bridge.service';
+import { setSentryConfidentialSession } from '../utils/sentry-filter.util';
 import { AdminAlertsComponent } from './admin-alerts.component';
 import { TrashModalComponent } from '../shared/trash-modal/trash-modal.component';
 import { AdminBenchmarkService } from '../services/admin-benchmark.service';
@@ -29,6 +30,24 @@ export interface ToolResponse {
     success: boolean;
     content: string;
     errorMessage: string | null;
+}
+
+/**
+ * What actually reached the model from one attachment that was too large to send whole: the
+ * count of retrieved parts, the coverage that implies, how they were selected, and anything
+ * the extractor removed from the file.
+ */
+export interface AttachmentExcerptNotice {
+    fileName: string;
+    usedChunks: number;
+    totalChunks: number;
+    coveragePercent: number;
+    /** Retrieval method as the server names it: 'embedding', 'bm25' or 'head'. */
+    method: string;
+    /** Active content stripped during extraction, described in words, e.g. "a VBA macro project". */
+    removedActiveContent: string[];
+    /** True when text extraction stopped at a size cap rather than at the end of the file. */
+    wasTruncated: boolean;
 }
 
 @Component({
@@ -190,6 +209,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   @ViewChild('promptInput') promptInput!: ElementRef<HTMLTextAreaElement>;
   @ViewChild('renameInput') renameInput!: ElementRef<HTMLInputElement>;
   @ViewChild('logoutDialog') logoutDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('ephemeralCloseDialog') ephemeralCloseDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('trashModal') trashModal!: TrashModalComponent;
   autoScrollEnabled = true;
   readonly STREAMING_SCROLL_OFFSET = 50;
@@ -243,7 +263,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   loadingMoreSessions = false;
   loadingSessions = true;
   private sessionLoadSub: Subscription | null = null;
-  currentSessionId: number | null = null;
+  /* A session reference, not a database id: either a decimal id for a persisted chat
+     ("1234") or "eph_<guid>" for an ephemeral one, which has no database row at all. */
+  currentSessionId: string | null = null;
   sessionToDelete: number | null = null;
   messages: ChatMessage[] = [];
   
@@ -273,7 +295,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   private hasEnteredWorkingPhase = false;
   private thinkingAnimStartTime: number = 0;
   private yawningCheckTimeout: any = null;
-  private sessionStateMap = new Map<number, {
+  private sessionStateMap = new Map<string, {
     requestStartTime: number;
     thinkingAnimStartTime: number;
     hasEnteredWorkingPhase: boolean;
@@ -333,6 +355,92 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   private handoffTimeoutHandle: any = null;
 
   maxAttachmentSize = 15728640; // default 15MB
+
+  /**
+   * The formats the file picker offers, served by /api/settings from the same allowlist the
+   * upload endpoint enforces. The default is the set every server build has accepted: a
+   * settings request that fails, or a server too old to send the field, then still leaves a
+   * usable dialog rather than one that accepts nothing at all. The server's list replaces it
+   * wholesale, because the server is the only authority on what an upload survives.
+   */
+  attachmentAcceptExtensions: string[] =
+    ['.html', '.htm', '.txt', '.md', '.png', '.jpg', '.jpeg', '.webp'];
+
+  /** The picker's `accept` attribute value. */
+  get attachmentAcceptAttr(): string {
+    return this.attachmentAcceptExtensions.join(',');
+  }
+
+  /**
+   * The accepted formats named for the user, derived from the same list as `accept`. It omits
+   * the verb because the control's accessible name already carries it, and interestfor wires
+   * this text up as the button's description: repeating "add attachments" would announce it
+   * twice.
+   */
+  get attachmentFormatsHint(): string {
+    const names = this.attachmentAcceptExtensions
+      .map(e => e.replace(/^\./, '').toUpperCase())
+      .filter(n => n.length > 0);
+    return names.length > 0
+      ? `Accepted formats: ${names.join(', ')}`
+      : 'No attachment formats are accepted';
+  }
+
+  /** Lower-cased extensions without the leading dot, for checking a chosen or pasted file. */
+  private get acceptedExtensions(): Set<string> {
+    return new Set(this.attachmentAcceptExtensions
+      .map(e => e.replace(/^\./, '').toLowerCase())
+      .filter(e => e.length > 0));
+  }
+
+  /**
+   * One entry per attachment of the current turn that the model saw only excerpts of. Per-turn
+   * state, but deliberately not cleared on 'done': the notice has to still be there when the
+   * reply turns out to be partial, which is long after a toast would have gone.
+   */
+  attachmentExcerpts: AttachmentExcerptNotice[] = [];
+
+  /** Wording for `wasTruncated`, which is about the extraction and not about retrieval. */
+  readonly excerptTruncationText =
+    'Text extraction of this file stopped at a size limit, so even the parts counted above do not reach the end of it.';
+
+  /**
+   * What the model read of one attachment. It says "parts", never "summary": nothing was
+   * summarised, whole sections simply never arrived.
+   */
+  excerptSummaryLine(n: AttachmentExcerptNotice): string {
+    const name = n.fileName || 'this file';
+    const counts = n.totalChunks > 0
+      ? `${n.usedChunks} of the ${n.totalChunks} parts it was split into`
+      : `${n.usedChunks} parts of it`;
+    const coverage = n.coveragePercent >= 1
+      ? `about ${Math.round(n.coveragePercent)}% of the document`
+      : 'under 1% of the document';
+    return `The assistant read parts of "${name}" — ${counts}, ${coverage}. It did not read the rest.`;
+  }
+
+  /**
+   * Who chose the parts, in the user's terms rather than the retrieval method's own name. The
+   * choice was made by a search before the assistant saw any of the file, so the sentence must
+   * not read as the assistant having picked what to look at.
+   */
+  excerptSelectionLine(n: AttachmentExcerptNotice): string {
+    const method = (n.method || '').toLowerCase();
+    if (method === 'head') {
+      return 'The parts were taken from the beginning of the document, before the assistant saw any of it.';
+    }
+    const search = method === 'embedding'
+      ? 'a semantic search'
+      : (method === 'bm25' ? 'a keyword search' : 'a search');
+    return `The parts were chosen by ${search} over the document against your question, before the assistant saw any of it.`;
+  }
+
+  /** What the extractor stripped out of the file. Never omitted: the removal is security-relevant. */
+  excerptRemovedLine(n: AttachmentExcerptNotice): string {
+    const items = n.removedActiveContent.join(', ');
+    return `Removed from the file before it was read: ${items}. None of it reached the assistant.`;
+  }
+
   errorTitle = 'Error';
   errorMessage = '';
   isPinnedQuotaAlerting = false;
@@ -595,8 +703,16 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     });
   }
 
+  /* currentSessionId is a session *reference* -- a decimal id for a saved chat, `eph_<guid>`
+     for an incognito one -- while a sidebar row carries a numeric id. Comparing them directly
+     is always false, and silently: the template would simply stop highlighting the open chat. */
+  isCurrentSession(id: number | string): boolean {
+    return this.currentSessionId !== null && String(id) === this.currentSessionId;
+  }
+
   get currentTitle(): string {
-    const session = this.sessions.find(s => s.id === this.currentSessionId);
+    if (this.isEphemeralSession) return 'Incognito chat';
+    const session = this.sessions.find(s => String(s.id) === this.currentSessionId);
     return session ? session.title : 'New Chat';
   }
 
@@ -645,12 +761,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.isRenamingTitle = false;
     this.renameError = null;
     
-    if (!this.currentSessionId) return;
-    
-    const session = this.sessions.find(s => s.id === this.currentSessionId);
+    const sessionRef = this.currentSessionId;
+    if (!sessionRef || this.isEphemeralSession) return;
+
+    const session = this.sessions.find(s => String(s.id) === sessionRef);
     if (session && session.title !== newTitle) {
       session.title = newTitle;
-      this.chatService.renameSession(this.currentSessionId, newTitle).subscribe({
+      this.chatService.renameSession(sessionRef, newTitle).subscribe({
         error: (err) => console.error('Failed to rename session', err)
       });
     }
@@ -666,7 +783,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       const key = (model.isSystem ? 's_' : 'u_') + model.id;
       this.selectedModelKey = key;
       localStorage.setItem('overseer_chat_model_global', key);
-      if (this.currentSessionId !== null) {
+      /* An ephemeral chat leaves no per-session key behind: it would name a chat that no
+         longer exists and never be cleaned up. */
+      if (this.currentSessionId !== null && !this.isEphemeralSession) {
         localStorage.setItem(`overseer_chat_model_session_${this.currentSessionId}`, key);
       }
     }
@@ -756,6 +875,50 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   showDebugLog = localStorage.getItem('showDebugLog') === 'true';
 
   hasGameSnapshot = false;
+
+  /* The privacy badge for the loaded session, or null when Confidentiality Mode is off — which
+     is every session until Stage E of the privacy framework adds the mode. `state` is one of
+     green, yellow, orange, red; the tooltip enumerates the active controls and the provider's
+     retention posture. */
+  privateBadge: { state: string; label: string; tooltip: string } | null = null;
+
+  /** Whether the open chat is in Confidentiality Mode. Drives the upgrade action's availability. */
+  isConfidentialSession = false;
+
+  /** Whether the open chat is ephemeral: held in RAM, with no database row and no file on disk. */
+  isEphemeralSession = false;
+
+  /* The two privacy choices for the *next* chat. Both are only meaningful while no chat is
+     open, because a persisted chat's rows are already written and an ephemeral chat cannot
+     be created retroactively. */
+  newChatConfidential = false;
+  newChatEphemeral = false;
+
+  /** Whether the privacy panel above the composer is expanded. */
+  isPrivacyPanelOpen = false;
+
+  /** Whether the "what incognito does and does not do" detail is expanded in the banner. */
+  isEphemeralDetailOpen = false;
+
+  isClosingEphemeral = false;
+  ephemeralCloseError: string | null = null;
+
+  /** Announced politely when an ephemeral chat is destroyed or is about to be left behind. */
+  ephemeralNotice = '';
+
+  /* Where to go once the open ephemeral chat has been closed. Set by the navigation guard so
+     the click that triggered the confirmation still lands after the chat is destroyed. */
+  private pendingEphemeralNavigation: { kind: 'new' } | { kind: 'session'; id: number } | null = null;
+  private ephemeralNoticeTimeout: any = null;
+  private navigationStartSub: Subscription | null = null;
+
+  /* The browser's own leave prompt, which is all a tab close allows. Browsers show it only
+     after the user has interacted with the page, and its wording is not ours to set. */
+  private beforeUnloadHandler = (event: BeforeUnloadEvent) => {
+    if (!this.hasEphemeralContent) return;
+    event.preventDefault();
+    event.returnValue = '';
+  };
   captureBoardMode: 'live' | 'attached' = 'live';
   showCaptureBoardModal = false;
   captureBoardName = '';
@@ -807,7 +970,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   submitCaptureBoard() {
-    if (!this.currentSessionId || !this.captureBoardName.trim()) {
+    /* An ephemeral chat has nothing to capture from: a board snapshot is a stored row, which
+       is exactly what this mode does not produce. */
+    const sessionRef = this.currentSessionId;
+    if (!sessionRef || this.isEphemeralSession || !this.captureBoardName.trim()) {
       return;
     }
     this.isCapturingBoard = true;
@@ -817,7 +983,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     const requestedName = this.captureBoardName.trim();
     const req = {
-      sessionId: this.currentSessionId.toString(),
+      sessionId: sessionRef,
       name: requestedName,
       notes: this.captureBoardNotes.trim() || undefined,
       sourceGnollHackVersion: this.captureBoardVersion.trim() || undefined
@@ -880,9 +1046,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         next: (res) => {
           this.isAttachingSnapshot = false;
           this.hasGameSnapshot = true;
-          const newSessionId = res.sessionId;
+          const newSessionId = String(res.sessionId);
           if (this.currentSessionId !== newSessionId) {
             this.currentSessionId = newSessionId;
+            this.isEphemeralSession = ChatComponent.isEphemeralRef(newSessionId);
             this.clientBridge.notifySessionChanged(newSessionId);
 
             if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
@@ -890,12 +1057,14 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             }
             this.loadSessions(true);
 
-            const urlTree = this.router.createUrlTree([], {
-              relativeTo: this.route,
-              queryParams: { sessionId: this.currentSessionId },
-              queryParamsHandling: 'merge'
-            });
-            this.router.navigateByUrl(urlTree, { replaceUrl: true });
+            if (!this.isEphemeralSession) {
+              const urlTree = this.router.createUrlTree([], {
+                relativeTo: this.route,
+                queryParams: { sessionId: this.currentSessionId },
+                queryParamsHandling: 'merge'
+              });
+              this.router.navigateByUrl(urlTree, { replaceUrl: true });
+            }
           }
           this.cdr.detectChanges();
         },
@@ -959,7 +1128,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   ngOnDestroy() {
     window.removeEventListener('online', this.onlineHandler);
     window.removeEventListener('offline', this.offlineHandler);
+    window.removeEventListener('beforeunload', this.beforeUnloadHandler);
     window.removeEventListener('changelog_badge_reset', this.changelogBadgeResetHandler);
+    this.navigationStartSub?.unsubscribe();
+    if (this.ephemeralNoticeTimeout) {
+      clearTimeout(this.ephemeralNoticeTimeout);
+      this.ephemeralNoticeTimeout = null;
+    }
     if (this.hubConnection) {
       this.hubConnection.stop();
     }
@@ -1101,6 +1276,16 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           if (settings.maxAttachmentSize) {
             this.maxAttachmentSize = settings.maxAttachmentSize;
           }
+          /* An empty list is treated as no answer and keeps the default: an accept attribute
+             offering nothing would leave the user unable to pick any file at all. */
+          if (Array.isArray(settings.attachmentAcceptExtensions)) {
+            const served = settings.attachmentAcceptExtensions
+              .filter(e => typeof e === 'string' && e.trim().length > 0)
+              .map(e => e.trim().toLowerCase());
+            if (served.length > 0) {
+              this.attachmentAcceptExtensions = served;
+            }
+          }
           this.showDebugLog = settings.showDebugLog ?? false;
           localStorage.setItem('showDebugLog', this.showDebugLog.toString());
           this.debugService.setEnabled(this.showDebugLog);
@@ -1140,55 +1325,50 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           // Handle route AFTER settings are loaded to avoid
           // showThoughtsAndTools race condition (defaulting to 0 before settings arrive)
           this.debugService.log(`[Overseer] Settings loaded, now subscribing to route. showThoughtsAndTools=${this.showThoughtsAndTools}`);
-          this.route.queryParams.subscribe(params => {
-            const idParam = params['sessionId'];
-            if (idParam) {
-              const id = Number(idParam);
-              if (isNaN(id)) {
-                this.navigateToNewSession();
-              } else if (this.currentSessionId !== id) {
-                if (this.isStreaming) {
-                  this.debugService.log(`[Frontend] Navigating away from session ${this.currentSessionId} while streaming. Generation continues in background.`);
-                }
-                this.loadSession(id);
-              }
-            } else {
-              if (this.currentSessionId !== null || this.messages.length > 0) {
-                if (this.isStreaming) {
-                  this.debugService.log('[Frontend] Navigating to new session, clearing local streaming state. Generation continues in background.');
-                }
-                this.newSession();
-              } else {
-                this.loadDraft();
-              }
-            }
-          });
+          this.route.queryParams.subscribe(params => this.applyRouteSessionParam(params['sessionId'], true));
         }
       },
       error: (err) => {
         const settingsDuration = performance.now() - t0;
         this.perfLog('Settings', `getSettings FAILED in ${settingsDuration.toFixed(1)}ms: ${err.message || err}`);
         if (isInit) {
-          this.route.queryParams.subscribe(params => {
-            const idParam = params['sessionId'];
-            if (idParam) {
-              const id = Number(idParam);
-              if (isNaN(id)) {
-                this.navigateToNewSession();
-              } else if (this.currentSessionId !== id) {
-                this.loadSession(id);
-              }
-            } else {
-              if (this.currentSessionId !== null || this.messages.length > 0) {
-                this.newSession();
-              } else {
-                this.loadDraft();
-              }
-            }
-          });
+          this.route.queryParams.subscribe(params => this.applyRouteSessionParam(params['sessionId'], false));
         }
       }
     });
+  }
+
+  /**
+   * Resolves the `sessionId` query parameter to a loaded chat. An ephemeral reference never
+   * reaches the URL, so a route change while an ephemeral chat holds content would discard it
+   * unrecoverably — that case asks first and carries the requested destination through the
+   * confirmation instead.
+   */
+  private applyRouteSessionParam(idParam: any, verbose: boolean): void {
+    if (idParam) {
+      const id = Number(idParam);
+      if (isNaN(id)) {
+        this.navigateToNewSession();
+        return;
+      }
+      if (this.currentSessionId === String(id)) return;
+      if (this.guardEphemeralNavigation({ kind: 'session', id })) return;
+      if (verbose && this.isStreaming) {
+        this.debugService.log(`[Frontend] Navigating away from session ${this.currentSessionId} while streaming. Generation continues in background.`);
+      }
+      this.loadSession(id);
+      return;
+    }
+
+    if (this.currentSessionId !== null || this.messages.length > 0) {
+      if (this.guardEphemeralNavigation({ kind: 'new' })) return;
+      if (verbose && this.isStreaming) {
+        this.debugService.log('[Frontend] Navigating to new session, clearing local streaming state. Generation continues in background.');
+      }
+      this.newSession();
+    } else {
+      this.loadDraft();
+    }
   }
 
   ngOnInit() {
@@ -1232,8 +1412,18 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       previousUrl = currentUrl || '';
     });
 
+    this.navigationStartSub = this.router.events.pipe(
+      filter(event => event instanceof NavigationStart)
+    ).subscribe((event: any) => {
+      const url: string = event.url || '';
+      if (!url.startsWith('/chat')) {
+        this.warnEphemeralLeave();
+      }
+    });
+
     window.addEventListener('online', this.onlineHandler);
     window.addEventListener('offline', this.offlineHandler);
+    window.addEventListener('beforeunload', this.beforeUnloadHandler);
 
     if (!("popover" in HTMLElement.prototype)) {
       import("@oddbird/popover-polyfill").catch(err => console.warn('Failed to load popover polyfill', err));
@@ -1358,7 +1548,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   processChatEvent(evt: any) {
-    if (typeof evt.sessionId === 'number' && evt.sessionId !== this.currentSessionId) {
+    /* The hub carries a session reference, which is a decimal id for a persisted chat and
+       "eph_<guid>" for an ephemeral one. Both arrive as strings once compared. */
+    const evtRef = (typeof evt.sessionId === 'number' || typeof evt.sessionId === 'string')
+      ? String(evt.sessionId)
+      : null;
+    if (evtRef !== null && evtRef !== this.currentSessionId) {
       // Accept user_message_created if we are waiting for a new session ID
       if (evt.type === 'user_message_created' && this.currentSessionId == null && this.isStreaming) {
          // Proceed normally
@@ -1426,6 +1621,38 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.cdr.detectChanges();
       } catch (e) {
         console.error('Failed to process user_message_created event', e);
+      }
+    } else if (evt.type === 'attachment_error') {
+      // One rejected file, not a failed turn: the reply continues without it.
+      this.debugService.log(`[Backend] attachment rejected: ${evt.data}`);
+      this.showErrorToast(evt.data, 'Attachment not accepted');
+    } else if (evt.type === 'attachment_excerpt') {
+      /* One attachment per event, arriving before the reply streams. Rendered as a notice on
+         the turn rather than a toast, because it qualifies an answer the user reads later. */
+      try {
+        const d = JSON.parse(evt.data);
+        const notice: AttachmentExcerptNotice = {
+          fileName: typeof d.fileName === 'string' ? d.fileName : '',
+          usedChunks: Number(d.usedChunks) || 0,
+          totalChunks: Number(d.totalChunks) || 0,
+          coveragePercent: Number(d.coveragePercent) || 0,
+          method: typeof d.method === 'string' ? d.method : '',
+          removedActiveContent: Array.isArray(d.removedActiveContent)
+            ? d.removedActiveContent.filter((x: any) => typeof x === 'string' && x.trim().length > 0)
+            : [],
+          wasTruncated: d.wasTruncated === true
+        };
+        this.debugService.log(`[Backend] attachment read as excerpts: ${evt.data}`);
+        /* Keyed by file name, so a replayed generation buffer cannot list one file twice. */
+        const existing = this.attachmentExcerpts.findIndex(x => x.fileName === notice.fileName);
+        if (existing >= 0) {
+          this.attachmentExcerpts[existing] = notice;
+        } else {
+          this.attachmentExcerpts = [...this.attachmentExcerpts, notice];
+        }
+        this.cdr.detectChanges();
+      } catch (e) {
+        this.debugService.log('[Frontend] Failed to parse attachment_excerpt event.');
       }
     } else if (evt.type === 'status') {
       this.currentStatusText = evt.data;
@@ -1602,7 +1829,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     } else if (evt.type === 'title_update') {
       try {
         const data = JSON.parse(evt.data);
-        const s = this.sessions.find(x => x.id === data.sessionId);
+        const s = this.sessions.find(x => String(x.id) === String(data.sessionId));
         if (s) {
           s.title = data.title;
           this.cdr.detectChanges();
@@ -1611,7 +1838,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     } else if (evt.type === 'title_status') {
       try {
         const data = JSON.parse(evt.data);
-        if (data.sessionId !== this.currentSessionId) return;
+        if (String(data.sessionId) !== this.currentSessionId) return;
     
         if (data.status === 'canceled' || data.status === '') {
           this.isGeneratingTitle = false;
@@ -1895,17 +2122,22 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     });
   }
 
+  /* An incognito composer keeps its text in memory only, so there is nothing on disk to
+     restore and nothing to overwrite the live text with. */
   loadDraft() {
+    if (this.suppressDraftPersistence) return;
     const key = this.currentSessionId ? `chat_draft_${this.currentSessionId}` : 'chat_draft_new';
     this.currentInput = localStorage.getItem(key) || '';
   }
 
   saveDraft() {
+    if (this.suppressDraftPersistence) return;
     const key = this.currentSessionId ? `chat_draft_${this.currentSessionId}` : 'chat_draft_new';
     localStorage.setItem(key, this.currentInput);
   }
 
   clearDraft() {
+    if (this.suppressDraftPersistence) return;
     const key = this.currentSessionId ? `chat_draft_${this.currentSessionId}` : 'chat_draft_new';
     localStorage.removeItem(key);
   }
@@ -2011,6 +2243,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     if (window.innerWidth <= 768) {
       this.closeSidebar();
     }
+    if (this.guardEphemeralNavigation({ kind: 'new' })) return;
+    this.performNavigateToNewSession();
+  }
+
+  /* The plain navigation, past the ephemeral confirmation. An ephemeral chat is not in the
+     URL, so this is also the only way to leave one once its content is gone. */
+  private performNavigateToNewSession() {
     this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { sessionId: null },
@@ -2022,7 +2261,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     if (window.innerWidth <= 768) {
       this.closeSidebar();
     }
-    if (this.currentSessionId === id) return;
+    if (this.currentSessionId === String(id)) return;
+    if (this.guardEphemeralNavigation({ kind: 'session', id })) return;
     this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { sessionId: id },
@@ -2034,6 +2274,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.sessionLoadSub?.unsubscribe();
     this.currentSessionId = null;
     this.hasGameSnapshot = false;
+    this.privateBadge = null;
+    this.isConfidentialSession = false;
+    this.isEphemeralSession = false;
+    this.isEphemeralDetailOpen = false;
+    setSentryConfidentialSession(false);
     this.sessionTotalCost = null;
     this.clientBridge.notifySessionChanged(null);
     this.lastSeenSeqNo = -1;
@@ -2063,6 +2308,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }
     this.hasRealContent = false;
     this.streamingToolCalls = [];
+    this.attachmentExcerpts = [];
     this.showSpinner = false;
     this.currentStatusText = '';
     this.isGeneratingTitle = false;
@@ -2107,7 +2353,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     });
   }
 
-  async loadSession(id: number) {
+  async loadSession(sessionRef: string | number) {
+    /* Callers hold either a sidebar row's numeric id or a session reference already in string
+       form; everything below compares and transmits the string. */
+    const id = String(sessionRef);
     if (this.currentSessionId === id && this.messages.length > 0 && !this.isLoadingSession) {
       this.debugService.log(`[Frontend] loadSession(${id}) skipped because session is already active.`);
       return;
@@ -2117,6 +2366,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.messages = [];
     this.hasGameSnapshot = false;
+    this.privateBadge = null;
+    this.isConfidentialSession = false;
+    this.isEphemeralSession = false;
+    this.isEphemeralDetailOpen = false;
+    setSentryConfidentialSession(false);
     this.sessionTotalCost = null;
     this.autoScrollEnabled = true;
     this.lastSeenSeqNo = -1;
@@ -2190,6 +2444,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
         this.messages = s.messages || [];
         this.hasGameSnapshot = !!s.hasGameSnapshot;
+        this.privateBadge = s.privateBadge ?? null;
+        this.isConfidentialSession = !!s.isConfidential;
+        this.isEphemeralSession = s.isEphemeral === true || ChatComponent.isEphemeralRef(id);
+        // Suppresses client telemetry while a confidential chat is on screen.
+        setSentryConfidentialSession(this.isConfidentialSession);
         this.sessionTotalCost = s.totalEstimatedCost ?? null;
         this.hasOngoingGeneration = s.hasOngoingGeneration === true;
         this.formatMessageToolCalls(this.messages);
@@ -2264,7 +2523,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           }, 60000);
         }
 
-        if (!this.sessions.find(x => x.id === id)) {
+        if (!this.sessions.find(x => String(x.id) === id)) {
            this.loadSessions(true);
         }
         this.applySavedModelPreference();
@@ -2285,7 +2544,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     });
   }
 
-  async syncSessionSilently(id: number) {
+  async syncSessionSilently(sessionRef: string | number) {
+    const id = String(sessionRef);
     if (this.currentSessionId !== id) return;
     this.debugService.log(`[Frontend] Silently syncing session ${id}...`);
 
@@ -2362,7 +2622,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     
     this.chatService.deleteSession(id).subscribe({
       next: () => {
-        if (this.currentSessionId === id) this.navigateToNewSession();
+        if (this.currentSessionId === String(id)) this.navigateToNewSession();
         this.loadSessions(true);
         if (this.deleteConfirmDialog) {
           this.deleteConfirmDialog.nativeElement.close();
@@ -2452,7 +2712,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.closeBulkDeleteDialog();
 
         if (this.currentSessionId) {
-          const currentSession = this.sessions.find(s => s.id === this.currentSessionId);
+          const currentSession = this.sessions.find(s => String(s.id) === this.currentSessionId);
           if (currentSession && (!currentSession.isPinned || includePinned)) {
             this.navigateToNewSession();
           }
@@ -2552,6 +2812,195 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.cdr.detectChanges();
       }
     });
+  }
+
+  /** True for a session reference that names an ephemeral, RAM-only chat. */
+  static isEphemeralRef(ref: string | null | undefined): boolean {
+    return typeof ref === 'string' && ref.startsWith('eph_');
+  }
+
+  /** True while no chat is open, which is the only point at which the privacy mode is chosen. */
+  get isNewChat(): boolean {
+    return this.currentSessionId === null;
+  }
+
+  /** True while an ephemeral chat holds something that closing, expiry or a reload would destroy. */
+  get hasEphemeralContent(): boolean {
+    return this.isEphemeralSession
+      && (this.messages.length > 0 || this.isStreaming || this.currentInput.trim().length > 0);
+  }
+
+  /** The mode named on the privacy panel's trigger, so the choice is visible while collapsed. */
+  get privacyModeLabel(): string {
+    if (this.newChatEphemeral) return 'Incognito';
+    if (this.newChatConfidential) return 'Confidential';
+    return 'Standard';
+  }
+
+  /* True while the composer's text must stay out of localStorage: for an open ephemeral chat,
+     and for a new chat already marked incognito, whose first message would otherwise be
+     written to disk as a draft before it is ever sent. */
+  private get suppressDraftPersistence(): boolean {
+    return this.isEphemeralSession || (this.isNewChat && this.newChatEphemeral);
+  }
+
+  /**
+   * The privacy flags for an outgoing turn. A chat that already exists reports what it is —
+   * the mode cannot be changed after creation, and sending `isEphemeral` without
+   * `isConfidential` is rejected by the server.
+   */
+  private get outgoingPrivacyFlags(): { isConfidential: boolean; isEphemeral: boolean } {
+    if (this.isNewChat) {
+      return {
+        isConfidential: this.newChatConfidential || this.newChatEphemeral,
+        isEphemeral: this.newChatEphemeral
+      };
+    }
+    return {
+      isConfidential: this.isConfidentialSession || this.isEphemeralSession,
+      isEphemeral: this.isEphemeralSession
+    };
+  }
+
+  togglePrivacyPanel() {
+    this.isPrivacyPanelOpen = !this.isPrivacyPanelOpen;
+  }
+
+  toggleEphemeralDetail() {
+    this.isEphemeralDetailOpen = !this.isEphemeralDetailOpen;
+  }
+
+  onNewChatConfidentialChange(enabled: boolean) {
+    this.newChatConfidential = enabled;
+    // Incognito is a stricter form of Confidentiality Mode, so it cannot outlive it.
+    if (!enabled) this.newChatEphemeral = false;
+  }
+
+  onNewChatEphemeralChange(enabled: boolean) {
+    this.newChatEphemeral = enabled;
+    if (enabled) {
+      this.newChatConfidential = true;
+      /* Anything already typed has been saved as a draft under the new-chat key. It stays in
+         the textarea, but it stops being on disk from here on. */
+      try {
+        localStorage.removeItem('chat_draft_new');
+      } catch { /* storage unavailable — nothing was written either */ }
+    }
+  }
+
+  /**
+   * Asks before a navigation abandons an ephemeral chat. Returns true when the caller must
+   * stop: the requested destination is carried by the confirmation and applied once the chat
+   * has actually been closed.
+   */
+  private guardEphemeralNavigation(target: { kind: 'new' } | { kind: 'session'; id: number }): boolean {
+    if (!this.hasEphemeralContent) return false;
+    this.pendingEphemeralNavigation = target;
+    this.requestCloseEphemeralSession();
+    return true;
+  }
+
+  requestCloseEphemeralSession() {
+    if (!this.isEphemeralSession) return;
+    this.ephemeralCloseError = null;
+    this.isClosingEphemeral = false;
+    this.ephemeralCloseDialog?.nativeElement?.showModal();
+  }
+
+  /** Dismisses the confirmation, and with it any navigation that raised it. */
+  closeEphemeralCloseDialog() {
+    this.ephemeralCloseDialog?.nativeElement?.close();
+    this.pendingEphemeralNavigation = null;
+    this.isClosingEphemeral = false;
+    this.ephemeralCloseError = null;
+    this.cdr.detectChanges();
+  }
+
+  confirmCloseEphemeralSession() {
+    const ref = this.currentSessionId;
+    if (!ref || !this.isEphemeralSession) {
+      this.closeEphemeralCloseDialog();
+      return;
+    }
+    this.isClosingEphemeral = true;
+    this.ephemeralCloseError = null;
+    this.cdr.detectChanges();
+
+    this.chatService.closeEphemeralSession(ref).subscribe({
+      next: () => this.finishEphemeralClose(ref),
+      error: (err) => {
+        /* 404 means the server no longer holds the chat — it expired or was already closed.
+           The content is gone either way, so the client must stop displaying it. */
+        if (err?.status === 404) {
+          this.finishEphemeralClose(ref);
+          return;
+        }
+        this.isClosingEphemeral = false;
+        this.ephemeralCloseError = err?.error?.message
+          || 'Could not close the incognito chat. Its content stays in server memory until it expires.';
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  private finishEphemeralClose(ref: string) {
+    this.isClosingEphemeral = false;
+    if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
+      this.hubConnection.invoke('LeaveSession', ref).catch(console.error);
+    }
+    this.sessionStateMap.delete(ref);
+    this.ephemeralCloseDialog?.nativeElement?.close();
+
+    const target = this.pendingEphemeralNavigation;
+    this.pendingEphemeralNavigation = null;
+
+    // Both toggles return to off: a privacy mode is chosen per chat, never inherited.
+    this.newChatEphemeral = false;
+    this.newChatConfidential = false;
+    this.currentInput = '';
+    this.newSession();
+    this.setEphemeralNotice('Incognito chat closed. Its content was destroyed and cannot be recovered.');
+    this.cdr.detectChanges();
+
+    if (target && target.kind === 'session') {
+      this.navigateToSession(target.id);
+    } else {
+      this.performNavigateToNewSession();
+    }
+  }
+
+  /**
+   * Warns that an open ephemeral chat is being left behind, without stopping the navigation.
+   * Wired to Angular's own guard as well, so a route-level `canDeactivate` behaves the same.
+   */
+  canDeactivate(): boolean {
+    this.warnEphemeralLeave();
+    return true;
+  }
+
+  private warnEphemeralLeave() {
+    if (!this.hasEphemeralContent) return;
+    this.setEphemeralNotice('The incognito chat stays in memory while you are away. It is destroyed when you close it, when it expires, or when this tab closes.');
+  }
+
+  private setEphemeralNotice(text: string) {
+    this.ephemeralNotice = text;
+    if (this.ephemeralNoticeTimeout) {
+      clearTimeout(this.ephemeralNoticeTimeout);
+    }
+    this.ephemeralNoticeTimeout = setTimeout(() => {
+      this.ephemeralNoticeTimeout = null;
+      this.ephemeralNotice = '';
+      this.cdr.detectChanges();
+    }, 12000);
+  }
+
+  dismissEphemeralNotice() {
+    if (this.ephemeralNoticeTimeout) {
+      clearTimeout(this.ephemeralNoticeTimeout);
+      this.ephemeralNoticeTimeout = null;
+    }
+    this.ephemeralNotice = '';
   }
 
   stopRequest() {
@@ -2655,6 +3104,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     }
     this.hasRealContent = false;
     this.streamingToolCalls = [];
+    this.attachmentExcerpts = [];
     this.timeToFirstTokenMs = null;
     this.liveCost = null;
     this.liveIsOperatorCost = false;
@@ -2713,25 +3163,40 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       }
 
       const currentHasGreeted = this.chatService.hasGreeted;
-      const res = await firstValueFrom(this.chatService.sendMessage(this.currentSessionId, message, attachmentsPayload, uId, sId, currentHasGreeted));
+      const privacy = this.outgoingPrivacyFlags;
+      const res = await firstValueFrom(this.chatService.sendMessage(
+        this.currentSessionId, message, attachmentsPayload, uId, sId, currentHasGreeted,
+        privacy.isConfidential, privacy.isEphemeral));
       this.chatService.hasGreeted = true;
-      const newSessionId = res.sessionId;
-      
+      const newSessionId = String(res.sessionId);
+
       if (this.currentSessionId !== newSessionId) {
         this.currentSessionId = newSessionId;
+        this.isEphemeralSession = ChatComponent.isEphemeralRef(newSessionId);
+        if (this.isEphemeralSession) {
+          this.isConfidentialSession = true;
+          setSentryConfidentialSession(true);
+          this.isPrivacyPanelOpen = false;
+          this.ephemeralNotice = 'Incognito chat started. Nothing in it is being saved.';
+        }
         this.clientBridge.notifySessionChanged(newSessionId);
-        
+
         if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
           this.hubConnection.invoke("JoinSession", this.currentSessionId).catch(console.error);
         }
         this.loadSessions(true);
-        
-        const urlTree = this.router.createUrlTree([], {
-          relativeTo: this.route,
-          queryParams: { sessionId: this.currentSessionId },
-          queryParamsHandling: 'merge'
-        });
-        this.router.navigateByUrl(urlTree, { replaceUrl: true });
+
+        /* An ephemeral reference is deliberately kept out of the URL: it would outlive the
+           chat in browser history and survive as a dead link, and the chat itself cannot be
+           reopened from it. */
+        if (!this.isEphemeralSession) {
+          const urlTree = this.router.createUrlTree([], {
+            relativeTo: this.route,
+            queryParams: { sessionId: this.currentSessionId },
+            queryParamsHandling: 'merge'
+          });
+          this.router.navigateByUrl(urlTree, { replaceUrl: true });
+        }
       }
     } catch (e: any) {
       console.error(e);
@@ -2820,10 +3285,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
               JSON.parse(filesJson);
           for (const f of files) {
               if (this.pendingAttachments.length >= 5) break;
-              /* Validate extension against the allowed list */
+              /* Validate the extension against the server's allowlist, the same one the
+                 picker's accept attribute is built from. */
               const ext = f.name.split('.').pop()?.toLowerCase();
-              if (!['html', 'htm', 'txt', 'md', 'png', 'jpg', 'jpeg', 'webp']
-                  .includes(ext || '')) continue;
+              if (!this.acceptedExtensions.has(ext || '')) continue;
               this.pendingAttachments.push({
                   file: null,
                   base64: f.dataUrl,  /* already a data:... URL */
@@ -2850,12 +3315,15 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   addFiles(files: FileList | File[]) {
+    /* Read once per call: the picker's accept attribute filters the dialog, and this filters
+       everything else that reaches the composer, drag-and-drop and paste included. */
+    const accepted = this.acceptedExtensions;
     for (let i = 0; i < files.length; i++) {
       if (this.pendingAttachments.length >= 5) break;
       const file = files[i];
       const ext = file.name.split('.').pop()?.toLowerCase();
-      if (!['html', 'htm', 'txt', 'md', 'png', 'jpg', 'jpeg', 'webp'].includes(ext || '')) continue;
-      
+      if (!accepted.has(ext || '')) continue;
+
       if (file.size > this.maxAttachmentSize) {
         const sizeMb = (this.maxAttachmentSize / 1024 / 1024).toFixed(1);
         this.showErrorToast(`The file "${file.name}" exceeds the maximum allowed size of ${sizeMb} MB.`, 'File Too Large');
@@ -2982,10 +3450,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   cancelSubAgent(toolCallId: string | undefined, event?: Event) {
     if (event) event.stopPropagation();
-    if (!toolCallId || !this.currentSessionId) return;
+    const sessionRef = this.currentSessionId;
+    if (!toolCallId || !sessionRef) return;
 
     this.cancelingSubAgentId = toolCallId;
-    this.chatService.cancelSubAgent(this.currentSessionId, toolCallId).subscribe({
+    this.chatService.cancelSubAgent(sessionRef, toolCallId).subscribe({
       next: (res) => {
         this.cancelingSubAgentId = null;
         this.debugService.log(`[Frontend] Cancelled subagent ${toolCallId}: ${res.message}`);
@@ -3093,9 +3562,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
             return;
         }
         
-        await this.hubConnection.invoke('SubmitToolResult', 
-            requestId, 
-            this.currentSessionId || 0,
+        await this.hubConnection.invoke('SubmitToolResult',
+            requestId,
+            this.currentSessionId ?? '',
             success, 
             success ? content : (errorMessage || 'Tool execution failed')
         );

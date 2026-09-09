@@ -131,6 +131,22 @@ namespace Overseer.Services.Tools
                     return new ToolResult { Success = false, ErrorMessage = $"Tool '{toolName}' is not registered or not available.", RemainingBudget = remainingBudget };
                 }
 
+                /* Second, execution-time guard. The registry already withholds these tools from
+                   the declaration set, so reaching here means the model asked for a tool it was
+                   never offered -- a stale tool id replayed from history, a hallucinated name
+                   that happens to match, or a filter that failed. Refusing here is what makes
+                   the guarantee independent of the declaration filter being correct. */
+                if (context.BlockExternalEgress && handler.Category == ToolCategory.ExternalLookup)
+                {
+                    return new ToolResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"'{toolName}' reaches a third-party service and is not available in a confidential chat. "
+                            + "Local sources - the GnollHack and NetHack wikis, the source code, the knowledge base and dumplogs - are unaffected.",
+                        RemainingBudget = remainingBudget
+                    };
+                }
+
                 // 3. Throttling and Execution
                 SemaphoreSlim? categoryThrottler = null;
                 bool requiresProcessThrottler = true;

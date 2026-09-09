@@ -5,6 +5,7 @@ import { SettingsComponent } from './settings/settings.component';
 import { DebugLogComponent } from './debug-log/debug-log.component';
 import { ApiKeysComponent } from './api-keys/api-keys.component';
 import { ModelsComponent } from './models/models.component';
+import { PrivacyComponent } from './privacy/privacy.component';
 import { inject } from '@angular/core';
 import { AuthService } from './services/auth.service';
 import { Router } from '@angular/router';
@@ -106,6 +107,9 @@ export const routes: Routes = [
       );
     }]
   },
+
+  // No auth guard: a privacy notice has to be readable by someone who has not signed in.
+  { path: 'privacy', component: PrivacyComponent },
 
   { path: '', redirectTo: '/chat', pathMatch: 'full' }
 ];

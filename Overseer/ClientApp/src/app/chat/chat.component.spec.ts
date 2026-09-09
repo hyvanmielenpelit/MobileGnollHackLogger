@@ -221,7 +221,7 @@ describe('ChatComponent session loading and exclusivity', () => {
   });
 
   it('should not set isLoadingSession to true or wipe existing messages during syncSessionSilently', async () => {
-    component.currentSessionId = 42;
+    component.currentSessionId = '42';
     component.isStreaming = true;
     component.streamingMessage = 'Partial response...';
     component.messages = [
@@ -251,7 +251,7 @@ describe('ChatComponent session loading and exclusivity', () => {
   });
 
   it('should replay missed events with seqNo > lastSeenSeqNo in syncSessionSilently', async () => {
-    component.currentSessionId = 42;
+    component.currentSessionId = '42';
     component.isStreaming = true;
     component.lastSeenSeqNo = 2;
     component.messages = [
@@ -284,7 +284,7 @@ describe('ChatComponent session loading and exclusivity', () => {
   });
 
   it('should adopt messages and clear streaming when hasOngoingGeneration is false with assistant message', async () => {
-    component.currentSessionId = 42;
+    component.currentSessionId = '42';
     component.isStreaming = true;
     component.streamingMessage = 'Incomplete';
     component.messages = [
@@ -310,7 +310,7 @@ describe('ChatComponent session loading and exclusivity', () => {
   });
 
   it('should no-op when loadSession is called on already active session with messages', async () => {
-    component.currentSessionId = 42;
+    component.currentSessionId = '42';
     component.isLoadingSession = false;
     component.messages = [
       { id: 1, role: 'user', content: 'Existing msg', timestampUtc: '2026-08-20T20:00:00Z' }
@@ -893,7 +893,7 @@ describe('ChatComponent session loading and exclusivity', () => {
 
       await component.loadSession(77);
 
-      expect(sessionSpy).toHaveBeenCalledWith(77);
+      expect(sessionSpy).toHaveBeenCalledWith('77');
     });
 
     it('should notify ClientBridgeService on newSession', () => {
@@ -979,7 +979,7 @@ describe('ChatComponent session loading and exclusivity', () => {
       spyOn(chatService, 'bulkDeleteSessions').and.returnValue(of({ count: 5 }));
       const loadSessionsSpy = spyOn(component, 'loadSessions');
       component.includePinnedInBulkDelete = true;
-      component.currentSessionId = 10;
+      component.currentSessionId = '10';
       component.sessions = [{ id: 10, title: 'Chat 10', isPinned: true, lastMessageUtc: new Date().toISOString() }];
       const navSpy = spyOn(component, 'navigateToNewSession');
 
@@ -1258,7 +1258,7 @@ describe('ChatComponent context window indicator', () => {
         hasApiKey: true,
         isAdmin: true
       });
-      component.currentSessionId = 42;
+      component.currentSessionId = '42';
       component.hasGameSnapshot = true;
       component.showDebugLog = false;
       fixture.detectChanges();
@@ -1279,7 +1279,7 @@ describe('ChatComponent context window indicator', () => {
         hasApiKey: true,
         isAdmin: true
       });
-      component.currentSessionId = 42;
+      component.currentSessionId = '42';
       component.hasGameSnapshot = false;
       component.showDebugLog = false;
       fixture.detectChanges();
@@ -1300,7 +1300,7 @@ describe('ChatComponent context window indicator', () => {
         hasApiKey: true,
         isAdmin: true
       });
-      component.currentSessionId = 42;
+      component.currentSessionId = '42';
       component.hasGameSnapshot = true;
       component.showDebugLog = false;
       fixture.detectChanges();
@@ -1321,7 +1321,7 @@ describe('ChatComponent context window indicator', () => {
         hasApiKey: true,
         isAdmin: true
       });
-      component.currentSessionId = 42;
+      component.currentSessionId = '42';
       component.hasGameSnapshot = true;
       fixture.detectChanges();
 
@@ -1338,7 +1338,7 @@ describe('ChatComponent context window indicator', () => {
         hasApiKey: true,
         isAdmin: false
       });
-      component.currentSessionId = 42;
+      component.currentSessionId = '42';
       component.hasGameSnapshot = true;
       fixture.detectChanges();
 
@@ -1429,6 +1429,743 @@ describe('ChatComponent context window indicator', () => {
       expect(rejectedError.message).toBe('Game not running');
       expect(component.localToolRequests.has(reqId)).toBeFalse();
       expect(sendToolResultSpy).not.toHaveBeenCalled();
+    });
+  });
+});
+
+
+describe('ChatComponent incognito (ephemeral) chats', () => {
+  let component: ChatComponent;
+  let fixture: ComponentFixture<ChatComponent>;
+  let chatService: ChatService;
+  let settingsService: SettingsService;
+
+  /** The confirmation dialog is driven through its native API, so the spec stubs the element. */
+  function stubCloseDialog(): { showModal: jasmine.Spy; close: jasmine.Spy } {
+    const showModal = jasmine.createSpy('showModal');
+    const close = jasmine.createSpy('close');
+    component.ephemeralCloseDialog = { nativeElement: { showModal, close } } as any;
+    return { showModal, close };
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ChatComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting()
+      ]
+    }).compileComponents();
+
+    stubSignalRConnection();
+    fixture = TestBed.createComponent(ChatComponent);
+    component = fixture.componentInstance;
+    chatService = TestBed.inject(ChatService);
+    settingsService = TestBed.inject(SettingsService);
+    (component as any).hubConnection = null;
+    (component as any).hubStartPromise = null;
+  });
+
+  describe('session references', () => {
+    it('should recognise an ephemeral reference and reject a persisted id', () => {
+      expect(ChatComponent.isEphemeralRef('eph_1f0c9f2e-0d1a-4c1e-9a3c-2f6d8b5a7c11')).toBeTrue();
+      expect(ChatComponent.isEphemeralRef('1234')).toBeFalse();
+      expect(ChatComponent.isEphemeralRef(null)).toBeFalse();
+      expect(ChatComponent.isEphemeralRef(undefined)).toBeFalse();
+    });
+
+    it('should treat a numeric session reference and its string form as the same chat', async () => {
+      component.currentSessionId = '42';
+      component.isLoadingSession = false;
+      component.messages = [{ id: 1, role: 'user', content: 'Existing', timestampUtc: '2026-09-09T10:00:00Z' }];
+      const getSessionSpy = spyOn(chatService, 'getSession');
+
+      await component.loadSession(42);
+
+      expect(getSessionSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the privacy choice for a new chat', () => {
+    it('should turn Confidentiality Mode on with incognito, because incognito is the stricter form of it', () => {
+      component.onNewChatEphemeralChange(true);
+
+      expect(component.newChatEphemeral).toBeTrue();
+      expect(component.newChatConfidential).toBeTrue();
+      expect(component.privacyModeLabel).toBe('Incognito');
+    });
+
+    it('should clear incognito when Confidentiality Mode is switched off', () => {
+      component.onNewChatEphemeralChange(true);
+      component.onNewChatConfidentialChange(false);
+
+      expect(component.newChatConfidential).toBeFalse();
+      expect(component.newChatEphemeral).toBeFalse();
+      expect(component.privacyModeLabel).toBe('Standard');
+    });
+
+    it('should report the requested flags for a new chat and the actual mode for an existing one', () => {
+      component.onNewChatEphemeralChange(true);
+      expect((component as any).outgoingPrivacyFlags).toEqual({ isConfidential: true, isEphemeral: true });
+
+      component.currentSessionId = '42';
+      component.isConfidentialSession = true;
+      component.isEphemeralSession = false;
+      expect((component as any).outgoingPrivacyFlags).toEqual({ isConfidential: true, isEphemeral: false });
+    });
+
+    it('should render the panel only while no chat is open', () => {
+      fixture.detectChanges();
+      let compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('.privacy-panel')).toBeTruthy();
+
+      component.currentSessionId = '42';
+      fixture.detectChanges();
+      compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('.privacy-panel')).toBeFalsy();
+    });
+
+    it('should state both limits of incognito in the panel where the mode is chosen', () => {
+      component.isPrivacyPanelOpen = true;
+      fixture.detectChanges();
+
+      const body = (fixture.nativeElement as HTMLElement).querySelector('.privacy-panel-body');
+      expect(body).toBeTruthy();
+      const text = body!.textContent || '';
+      expect(text).toContain('still sent to the AI provider');
+      expect(text).toContain('paged to disk');
+      expect(text).toContain('not a legal or forensic guarantee');
+      expect(text).toContain('cannot be turned incognito afterwards');
+    });
+  });
+
+  describe('creating an ephemeral chat', () => {
+    beforeEach(() => {
+      spyOn(settingsService, 'getSettings').and.returnValue(of({} as UserAiSettings));
+      spyOn(component, 'loadSessions');
+    });
+
+    it('should send both privacy flags and keep the ephemeral reference out of the URL', async () => {
+      const sendSpy = spyOn(chatService, 'sendMessage').and.returnValue(of({ sessionId: 'eph_abc' } as any));
+      const navSpy = spyOn(component.router, 'navigateByUrl');
+      component.onNewChatEphemeralChange(true);
+      component.currentInput = 'Nothing on the record, please.';
+
+      await component.sendMessage();
+
+      expect(sendSpy).toHaveBeenCalled();
+      const args = sendSpy.calls.mostRecent().args as any[];
+      expect(args[6]).toBeTrue();
+      expect(args[7]).toBeTrue();
+      expect(component.currentSessionId).toBe('eph_abc');
+      expect(component.isEphemeralSession).toBeTrue();
+      expect(component.isConfidentialSession).toBeTrue();
+      expect(navSpy).not.toHaveBeenCalled();
+    });
+
+    it('should navigate to the session reference of an ordinary chat', async () => {
+      spyOn(chatService, 'sendMessage').and.returnValue(of({ sessionId: '77' } as any));
+      const navSpy = spyOn(component.router, 'navigateByUrl');
+      component.currentInput = 'On the record is fine.';
+
+      await component.sendMessage();
+
+      expect(component.currentSessionId).toBe('77');
+      expect(component.isEphemeralSession).toBeFalse();
+      expect(navSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('draft persistence', () => {
+    it('should keep an incognito composer out of localStorage and drop the draft already written', () => {
+      localStorage.setItem('chat_draft_new', 'typed before switching');
+
+      component.onNewChatEphemeralChange(true);
+      expect(localStorage.getItem('chat_draft_new')).toBeNull();
+
+      component.currentInput = 'off the record';
+      component.saveDraft();
+      expect(localStorage.getItem('chat_draft_new')).toBeNull();
+    });
+
+    it('should not overwrite the live text of an ephemeral chat from storage', () => {
+      component.currentSessionId = 'eph_abc';
+      component.isEphemeralSession = true;
+      component.currentInput = 'half-typed question';
+
+      component.loadDraft();
+
+      expect(component.currentInput).toBe('half-typed question');
+    });
+
+    it('should still persist the draft of an ordinary chat', () => {
+      component.currentSessionId = '55';
+      component.currentInput = 'ordinary draft';
+
+      component.saveDraft();
+      expect(localStorage.getItem('chat_draft_55')).toBe('ordinary draft');
+
+      component.clearDraft();
+      expect(localStorage.getItem('chat_draft_55')).toBeNull();
+    });
+  });
+
+  describe('the persistent banner', () => {
+    it('should show the not-saved state and the close action while an ephemeral chat is open', () => {
+      component.currentSessionId = 'eph_abc';
+      component.isEphemeralSession = true;
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const banner = compiled.querySelector('.ephemeral-banner');
+      expect(banner).toBeTruthy();
+      expect(banner!.textContent).toContain('not being saved');
+      expect(compiled.querySelector('.ephemeral-close-btn')).toBeTruthy();
+      expect(compiled.querySelector('.badge-ephemeral')).toBeTruthy();
+    });
+
+    it('should not show the banner for an ordinary chat', () => {
+      component.currentSessionId = '42';
+      component.isEphemeralSession = false;
+      fixture.detectChanges();
+
+      expect((fixture.nativeElement as HTMLElement).querySelector('.ephemeral-banner')).toBeFalsy();
+    });
+
+    it('should expand to the two limits of the mode', () => {
+      component.currentSessionId = 'eph_abc';
+      component.isEphemeralSession = true;
+      component.isEphemeralDetailOpen = true;
+      fixture.detectChanges();
+
+      const detail = (fixture.nativeElement as HTMLElement).querySelector('#ephemeral-detail');
+      expect(detail).toBeTruthy();
+      const text = detail!.textContent || '';
+      expect(text).toContain('still sent to the AI provider');
+      expect(text).toContain('crash dump');
+      expect(text).toContain('no trash and no recovery');
+    });
+
+    it('should hide the rename control, which would have nothing to rename', () => {
+      component.currentSessionId = 'eph_abc';
+      component.isEphemeralSession = true;
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('.rename-btn')).toBeFalsy();
+      expect(compiled.querySelector('.chat-title')!.textContent).toContain('Incognito chat');
+    });
+  });
+
+  describe('closing an ephemeral chat', () => {
+    beforeEach(() => {
+      component.currentSessionId = 'eph_abc';
+      component.isEphemeralSession = true;
+      component.messages = [{ role: 'user', content: 'Off the record', timestampUtc: '2026-09-09T10:00:00Z' }];
+      // Resolves the dialog view query first, so a stub survives later change detection.
+      fixture.detectChanges();
+    });
+
+    it('should confirm before destroying anything', () => {
+      const dialog = stubCloseDialog();
+
+      component.requestCloseEphemeralSession();
+
+      expect(dialog.showModal).toHaveBeenCalled();
+      expect(component.isEphemeralSession).toBeTrue();
+      expect(component.messages.length).toBe(1);
+    });
+
+    it('should say in the confirmation that the content cannot be recovered', () => {
+      fixture.detectChanges();
+
+      const dialogEl = (fixture.nativeElement as HTMLElement).querySelector('.ephemeral-close-dialog');
+      expect(dialogEl).toBeTruthy();
+      const text = dialogEl!.textContent || '';
+      expect(text).toContain('irrecoverably');
+      expect(text).toContain('no trash');
+    });
+
+    it('should call the close endpoint and clear local state on success', () => {
+      const dialog = stubCloseDialog();
+      const closeSpy = spyOn(chatService as any, 'closeEphemeralSession').and.returnValue(of({}));
+      const navSpy = spyOn(component, 'navigateToSession');
+      spyOn(component as any, 'performNavigateToNewSession');
+
+      component.confirmCloseEphemeralSession();
+
+      expect(closeSpy).toHaveBeenCalledWith('eph_abc');
+      expect(component.isEphemeralSession).toBeFalse();
+      expect(component.currentSessionId).toBeNull();
+      expect(component.messages.length).toBe(0);
+      expect(component.newChatEphemeral).toBeFalse();
+      expect(component.ephemeralNotice).toContain('cannot be recovered');
+      expect(dialog.close).toHaveBeenCalled();
+      expect(navSpy).not.toHaveBeenCalled();
+      expect((component as any).performNavigateToNewSession).toHaveBeenCalled();
+    });
+
+    it('should also clear local state on 404, because the chat is gone either way', () => {
+      stubCloseDialog();
+      spyOn(chatService as any, 'closeEphemeralSession').and.returnValue(throwError(() => ({ status: 404 })));
+      spyOn(component as any, 'performNavigateToNewSession');
+
+      component.confirmCloseEphemeralSession();
+
+      expect(component.isEphemeralSession).toBeFalse();
+      expect(component.messages.length).toBe(0);
+    });
+
+    it('should keep the chat and report the failure on any other error', () => {
+      stubCloseDialog();
+      spyOn(chatService as any, 'closeEphemeralSession')
+        .and.returnValue(throwError(() => ({ status: 500, error: { message: 'Server said no' } })));
+
+      component.confirmCloseEphemeralSession();
+
+      expect(component.ephemeralCloseError).toBe('Server said no');
+      expect(component.isEphemeralSession).toBeTrue();
+      expect(component.messages.length).toBe(1);
+      expect(component.isClosingEphemeral).toBeFalse();
+    });
+
+    it('should abandon a pending navigation when the confirmation is dismissed', () => {
+      const dialog = stubCloseDialog();
+
+      component.navigateToSession(7);
+      expect(dialog.showModal).toHaveBeenCalled();
+
+      component.closeEphemeralCloseDialog();
+      expect((component as any).pendingEphemeralNavigation).toBeNull();
+      expect(component.isEphemeralSession).toBeTrue();
+    });
+
+    it('should carry the requested destination through the confirmation', () => {
+      stubCloseDialog();
+      spyOn(chatService as any, 'closeEphemeralSession').and.returnValue(of({}));
+      const navSpy = spyOn(component, 'navigateToSession').and.callThrough();
+      const routerSpy = spyOn(component.router, 'navigate');
+
+      component.navigateToSession(7);
+      expect(navSpy).toHaveBeenCalledTimes(1);
+      expect(routerSpy).not.toHaveBeenCalled();
+
+      component.confirmCloseEphemeralSession();
+
+      expect(navSpy).toHaveBeenCalledTimes(2);
+      expect(routerSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('leaving an ephemeral chat behind', () => {
+    beforeEach(() => {
+      component.currentSessionId = 'eph_abc';
+      component.isEphemeralSession = true;
+      component.messages = [{ role: 'user', content: 'Off the record', timestampUtc: '2026-09-09T10:00:00Z' }];
+      fixture.detectChanges();
+    });
+
+    it('should ask before a new chat discards the content', () => {
+      const dialog = stubCloseDialog();
+      const routerSpy = spyOn(component.router, 'navigate');
+
+      component.navigateToNewSession();
+
+      expect(dialog.showModal).toHaveBeenCalled();
+      expect(routerSpy).not.toHaveBeenCalled();
+    });
+
+    it('should navigate straight through once the chat holds nothing', () => {
+      component.messages = [];
+      component.currentInput = '';
+      const dialog = stubCloseDialog();
+      const routerSpy = spyOn(component.router, 'navigate');
+
+      component.navigateToNewSession();
+
+      expect(dialog.showModal).not.toHaveBeenCalled();
+      expect(routerSpy).toHaveBeenCalled();
+    });
+
+    it('should prompt the browser before the tab closes, and only while there is content', () => {
+      const event = { preventDefault: jasmine.createSpy('preventDefault'), returnValue: undefined } as any;
+      (component as any).beforeUnloadHandler(event);
+      expect(event.preventDefault).toHaveBeenCalled();
+
+      component.messages = [];
+      component.currentInput = '';
+      const quiet = { preventDefault: jasmine.createSpy('preventDefault'), returnValue: undefined } as any;
+      (component as any).beforeUnloadHandler(quiet);
+      expect(quiet.preventDefault).not.toHaveBeenCalled();
+    });
+
+    it('should warn without blocking when the route is left', () => {
+      expect(component.canDeactivate()).toBeTrue();
+      expect(component.ephemeralNotice).toContain('stays in memory');
+      expect(component.isEphemeralSession).toBeTrue();
+    });
+
+    it('should announce the notice politely and let it be dismissed', () => {
+      component.canDeactivate();
+      fixture.detectChanges();
+
+      const notice = (fixture.nativeElement as HTMLElement).querySelector('.ephemeral-notice');
+      expect(notice).toBeTruthy();
+      expect(notice!.getAttribute('role')).toBe('status');
+      expect(notice!.getAttribute('aria-live')).toBe('polite');
+
+      component.dismissEphemeralNotice();
+      fixture.detectChanges();
+      expect((fixture.nativeElement as HTMLElement).querySelector('.ephemeral-notice')).toBeFalsy();
+    });
+  });
+});
+
+describe('ChatComponent attachment accept list', () => {
+  let component: ChatComponent;
+  let fixture: ComponentFixture<ChatComponent>;
+  let settingsService: SettingsService;
+
+  /** The historical literal that used to live in the template's accept attribute. */
+  const DEFAULT_ACCEPT = ['.html', '.htm', '.txt', '.md', '.png', '.jpg', '.jpeg', '.webp'];
+
+  /** FileReader resolves on its own task, so the composer fills in after a tick or two. */
+  async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+    const start = Date.now();
+    while (!predicate()) {
+      if (Date.now() - start > timeoutMs) {
+        throw new Error('Condition was never met.');
+      }
+      await new Promise(r => setTimeout(r, 10));
+    }
+  }
+
+  function serveSettings(extensions?: string[]): void {
+    const settings: UserAiSettings = {
+      hasApiKey: true,
+      hasModel: true,
+      spoilerFreeMode: false,
+      attachmentAcceptExtensions: extensions
+    };
+    spyOn(settingsService, 'getSettingsResponse').and.returnValue(of(new HttpResponse({ body: settings })));
+    spyOn(settingsService, 'getUserModels').and.returnValue(of([] as UserAiModel[]));
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ChatComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting()
+      ]
+    }).compileComponents();
+
+    stubSignalRConnection();
+    fixture = TestBed.createComponent(ChatComponent);
+    component = fixture.componentInstance;
+    settingsService = TestBed.inject(SettingsService);
+  });
+
+  it('should default to the formats every server build accepts, so a failed settings call still leaves a usable picker', () => {
+    expect(component.attachmentAcceptExtensions).toEqual(DEFAULT_ACCEPT);
+    expect(component.attachmentAcceptAttr).toBe(DEFAULT_ACCEPT.join(','));
+  });
+
+  it('should bind the picker to the served list rather than a template literal', () => {
+    serveSettings(['.csv', '.docx', '.pdf', '.txt']);
+
+    component.loadSettings(false);
+    fixture.detectChanges();
+
+    const input = (fixture.nativeElement as HTMLElement).querySelector('#fileInput');
+    expect(input).toBeTruthy();
+    expect(input!.getAttribute('accept')).toBe('.csv,.docx,.pdf,.txt');
+  });
+
+  it('should keep the default when the server sends no list, an empty list, or nothing at all', () => {
+    serveSettings(undefined);
+    component.loadSettings(false);
+    expect(component.attachmentAcceptExtensions).toEqual(DEFAULT_ACCEPT);
+
+    component.attachmentAcceptExtensions = DEFAULT_ACCEPT.slice();
+    (settingsService.getSettingsResponse as jasmine.Spy).and.returnValue(
+      of(new HttpResponse({ body: { hasApiKey: true, spoilerFreeMode: false, attachmentAcceptExtensions: [] } as UserAiSettings }))
+    );
+    component.loadSettings(false);
+    expect(component.attachmentAcceptExtensions).toEqual(DEFAULT_ACCEPT);
+  });
+
+  it('should lower-case and trim what the server sends', () => {
+    serveSettings([' .PDF ', '.Docx']);
+
+    component.loadSettings(false);
+
+    expect(component.attachmentAcceptExtensions).toEqual(['.pdf', '.docx']);
+  });
+
+  it('should name the accepted formats to the user from the same list', () => {
+    component.attachmentAcceptExtensions = ['.csv', '.pdf'];
+    fixture.detectChanges();
+
+    expect(component.attachmentFormatsHint).toBe('Accepted formats: CSV, PDF');
+    const tip = (fixture.nativeElement as HTMLElement).querySelector('#tip-add-media');
+    expect(tip?.textContent?.trim()).toBe('Accepted formats: CSV, PDF');
+  });
+
+  it('should carry an accessible name on the attach control and no title attribute', () => {
+    fixture.detectChanges();
+
+    const btn = (fixture.nativeElement as HTMLElement).querySelector('.add-media-icon');
+    expect(btn).toBeTruthy();
+    expect(btn!.getAttribute('aria-label')).toBe('Add attachments');
+    expect(btn!.hasAttribute('title')).toBeFalse();
+    expect(btn!.getAttribute('interestfor')).toBe('tip-add-media');
+  });
+
+  it('should accept a file the widened server list allows', async () => {
+    component.attachmentAcceptExtensions = ['.pdf', '.txt'];
+
+    component.addFiles([new File(['%PDF-1.7'], 'annual-report.pdf', { type: 'application/pdf' })]);
+
+    await waitFor(() => component.pendingAttachments.length === 1);
+    expect(component.pendingAttachments[0].name).toBe('annual-report.pdf');
+  });
+
+  it('should drop a file whose extension is not on the served list', async () => {
+    component.attachmentAcceptExtensions = ['.txt'];
+
+    component.addFiles([new File(['MZ'], 'payload.exe', { type: 'application/octet-stream' })]);
+
+    await new Promise(r => setTimeout(r, 50));
+    expect(component.pendingAttachments.length).toBe(0);
+  });
+});
+
+describe('ChatComponent attachment excerpt notices', () => {
+  let component: ChatComponent;
+  let fixture: ComponentFixture<ChatComponent>;
+
+  function excerptEvent(overrides: Record<string, any> = {}): any {
+    return {
+      type: 'attachment_excerpt',
+      data: JSON.stringify({
+        fileName: 'annual-report.pdf',
+        usedChunks: 6,
+        totalChunks: 41,
+        coveragePercent: 14,
+        method: 'bm25',
+        wasTruncated: false,
+        ...overrides
+      })
+    };
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ChatComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting()
+      ]
+    }).compileComponents();
+
+    stubSignalRConnection();
+    fixture = TestBed.createComponent(ChatComponent);
+    component = fixture.componentInstance;
+  });
+
+  it('should record one notice per attachment from the streamed event', () => {
+    component.processChatEvent(excerptEvent());
+    component.processChatEvent(excerptEvent({ fileName: 'ledger.xlsx', usedChunks: 2, totalChunks: 9, coveragePercent: 22, method: 'embedding' }));
+
+    expect(component.attachmentExcerpts.length).toBe(2);
+    expect(component.attachmentExcerpts[0].fileName).toBe('annual-report.pdf');
+    expect(component.attachmentExcerpts[0].usedChunks).toBe(6);
+    expect(component.attachmentExcerpts[0].totalChunks).toBe(41);
+    expect(component.attachmentExcerpts[1].method).toBe('embedding');
+  });
+
+  it('should not show the same file twice when a generation buffer is replayed', () => {
+    component.processChatEvent(excerptEvent());
+    component.processChatEvent(excerptEvent());
+
+    expect(component.attachmentExcerpts.length).toBe(1);
+  });
+
+  it('should survive a malformed event without throwing', () => {
+    expect(() => component.processChatEvent({ type: 'attachment_excerpt', data: 'not json' } as any)).not.toThrow();
+    expect(component.attachmentExcerpts.length).toBe(0);
+  });
+
+  it('should default a missing removedActiveContent to nothing removed', () => {
+    component.processChatEvent(excerptEvent());
+    expect(component.attachmentExcerpts[0].removedActiveContent).toEqual([]);
+
+    component.attachmentExcerpts = [];
+    component.processChatEvent(excerptEvent({ removedActiveContent: ['a VBA macro project', '  '] }));
+    expect(component.attachmentExcerpts[0].removedActiveContent).toEqual(['a VBA macro project']);
+  });
+
+  describe('the wording', () => {
+    it('should say the assistant read parts, how many of how many, and roughly what fraction', () => {
+      const line = component.excerptSummaryLine({
+        fileName: 'annual-report.pdf', usedChunks: 6, totalChunks: 41,
+        coveragePercent: 14, method: 'bm25', removedActiveContent: [], wasTruncated: false
+      });
+
+      expect(line).toContain('annual-report.pdf');
+      expect(line).toContain('6 of the 41 parts');
+      expect(line).toContain('about 14% of the document');
+      expect(line).toContain('did not read the rest');
+      // No summary was made, so the notice must never claim one.
+      expect(line.toLowerCase()).not.toContain('summar');
+    });
+
+    it('should report a coverage below one percent as such rather than as zero', () => {
+      const line = component.excerptSummaryLine({
+        fileName: 'huge.pdf', usedChunks: 1, totalChunks: 900,
+        coveragePercent: 0, method: 'bm25', removedActiveContent: [], wasTruncated: false
+      });
+
+      expect(line).toContain('under 1% of the document');
+      expect(line).not.toContain('0%');
+    });
+
+    it('should name the retrieval method in the user\'s terms and never print the raw token', () => {
+      const base = {
+        fileName: 'f.pdf', usedChunks: 1, totalChunks: 2, coveragePercent: 50,
+        removedActiveContent: [], wasTruncated: false
+      };
+
+      const bm25 = component.excerptSelectionLine({ ...base, method: 'bm25' });
+      const embedding = component.excerptSelectionLine({ ...base, method: 'embedding' });
+      const head = component.excerptSelectionLine({ ...base, method: 'head' });
+      const unknown = component.excerptSelectionLine({ ...base, method: 'something-new' });
+
+      expect(bm25).toContain('a keyword search');
+      expect(bm25).not.toContain('bm25');
+      expect(embedding).toContain('a semantic search');
+      expect(embedding).not.toContain('embedding');
+      expect(head).toContain('beginning of the document');
+      expect(unknown).toContain('a search');
+      expect(unknown).not.toContain('something-new');
+    });
+
+    it('should say the search chose the parts before the assistant saw anything', () => {
+      const line = component.excerptSelectionLine({
+        fileName: 'f.pdf', usedChunks: 1, totalChunks: 2, coveragePercent: 50,
+        method: 'bm25', removedActiveContent: [], wasTruncated: false
+      });
+
+      expect(line).toContain('before the assistant saw any of it');
+    });
+
+    it('should name what was removed from the file and say none of it reached the assistant', () => {
+      const line = component.excerptRemovedLine({
+        fileName: 'macro.xlsm', usedChunks: 1, totalChunks: 3, coveragePercent: 33,
+        method: 'bm25', removedActiveContent: ['a VBA macro project', 'an embedded object'],
+        wasTruncated: false
+      });
+
+      expect(line).toContain('a VBA macro project');
+      expect(line).toContain('an embedded object');
+      expect(line).toContain('None of it reached the assistant');
+    });
+
+    it('should attribute truncation to a size limit rather than to retrieval', () => {
+      expect(component.excerptTruncationText).toContain('size limit');
+    });
+  });
+
+  describe('the notice in the message list', () => {
+    it('should render the counts, the method and the badge', () => {
+      component.processChatEvent(excerptEvent());
+      fixture.detectChanges();
+
+      const notice = (fixture.nativeElement as HTMLElement).querySelector('.excerpt-notice');
+      expect(notice).toBeTruthy();
+      expect(notice!.querySelector('.badge-excerpt')).toBeTruthy();
+      const text = notice!.textContent || '';
+      expect(text).toContain('6 of the 41 parts');
+      expect(text).toContain('a keyword search');
+      expect(text).not.toContain('bm25');
+    });
+
+    it('should announce itself politely', () => {
+      component.processChatEvent(excerptEvent());
+      fixture.detectChanges();
+
+      const group = (fixture.nativeElement as HTMLElement).querySelector('.excerpt-notices');
+      expect(group!.getAttribute('role')).toBe('status');
+      expect(group!.getAttribute('aria-live')).toBe('polite');
+    });
+
+    it('should show the removal line only when something was removed', () => {
+      component.processChatEvent(excerptEvent());
+      fixture.detectChanges();
+      expect((fixture.nativeElement as HTMLElement).querySelector('.excerpt-notice-removed')).toBeFalsy();
+
+      component.attachmentExcerpts = [];
+      component.processChatEvent(excerptEvent({ removedActiveContent: ['a VBA macro project'] }));
+      fixture.detectChanges();
+
+      const removed = (fixture.nativeElement as HTMLElement).querySelector('.excerpt-notice-removed');
+      expect(removed).toBeTruthy();
+      expect(removed!.textContent).toContain('a VBA macro project');
+    });
+
+    it('should add the truncation line only when extraction hit the cap', () => {
+      component.processChatEvent(excerptEvent({ wasTruncated: true }));
+      fixture.detectChanges();
+
+      const notice = (fixture.nativeElement as HTMLElement).querySelector('.excerpt-notice');
+      expect(notice!.textContent).toContain('size limit');
+    });
+
+    it('should stay on screen once the reply is committed and nothing is streaming', () => {
+      component.processChatEvent(excerptEvent());
+      component.messages = [
+        { role: 'user', content: 'What does the report say?', timestampUtc: '2026-09-09T10:00:00Z' },
+        { role: 'assistant', content: 'It says...', timestampUtc: '2026-09-09T10:00:05Z' }
+      ];
+      component.isStreaming = false;
+      component.streamingMessage = '';
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('.excerpt-notice')).toBeTruthy();
+    });
+
+    it('should not coexist with the conversation loader', () => {
+      component.processChatEvent(excerptEvent());
+      component.isLoadingSession = true;
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('.conversation-loader')).toBeTruthy();
+      expect(compiled.querySelector('.excerpt-notice')).toBeFalsy();
+    });
+  });
+
+  describe('clearing', () => {
+    it('should be cleared with the rest of the per-turn state on a session change', () => {
+      component.processChatEvent(excerptEvent());
+      expect(component.attachmentExcerpts.length).toBe(1);
+
+      (component as any).clearStreamingState();
+
+      expect(component.attachmentExcerpts.length).toBe(0);
+    });
+
+    it('should be cleared when a new chat is started', () => {
+      component.processChatEvent(excerptEvent());
+
+      component.newSession();
+
+      expect(component.attachmentExcerpts.length).toBe(0);
     });
   });
 });

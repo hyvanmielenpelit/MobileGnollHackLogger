@@ -140,9 +140,25 @@ export interface ChatSessionsResponse {
 
 export interface ChatSessionDetailResponse {
   id: number;
+  /* The session reference in wire form: a decimal id for a saved chat, `eph_<guid>` for an
+     incognito one. `id` is 0 for an incognito chat, which has no row and therefore no key. */
+  sessionRef?: string;
   title: string;
   isGnollHackSession?: boolean;
   hasGameSnapshot?: boolean;
+  /* The privacy badge, or null/absent when Confidentiality Mode is off — which is every
+     session until Tier 2 lands. `state` is green, yellow, orange or red. */
+  privateBadge?: { state: string; label: string; tooltip: string } | null;
+  /** Whether the session is in Confidentiality Mode. One-way: it can be set, never cleared. */
+  isConfidential?: boolean;
+  /* Whether the session lives only in the server's memory: no session, message, tool-call or
+     attachment row, and no file. Implies `isConfidential`, and is decided when the chat is
+     created -- there is no upgrade to it, because an existing chat's rows are already
+     written. */
+  isEphemeral?: boolean;
+  /* When an incognito chat expires if nothing touches it. Slides forward on every access, so
+     it is the current deadline rather than a fixed one. Absent for a saved chat. */
+  ephemeralExpiresUtc?: string;
   totalEstimatedCost?: number | null;
   messages: ChatMessage[];
   hasOngoingGeneration?: boolean;
@@ -176,7 +192,11 @@ export class ChatService {
     });
   }
 
-  getSession(id: number) {
+  /* Every session-scoped call below takes `number | string`: a saved chat's reference is
+     still its decimal id, so a number is passed through unchanged, and an incognito chat's is
+     `eph_<guid>`. Widened rather than overloaded so a caller holding a reference of unknown
+     kind -- which the chat component now does -- needs no branch. */
+  getSession(id: number | string) {
     return this.http.get<ChatSessionDetailResponse>(`/api/chat/sessions/${id}`, {
       observe: 'response',
       headers: {
@@ -227,22 +247,39 @@ export class ChatService {
     return this.http.post('/api/chat/report', { messageId });
   }
 
-  renameSession(sessionId: number, newTitle: string) {
+  renameSession(sessionId: number | string, newTitle: string) {
     return this.http.put(`/api/chat/sessions/${sessionId}/title`, { title: newTitle });
   }
 
-  sendMessage(sessionId: number | null, message: string, attachments?: ChatMessageAttachment[], userModelId?: number, systemModelId?: number, hasGreeted?: boolean) {
-    return this.http.post<{sessionId: number}>('/api/chat/send', {
-      sessionId,
+  /* isConfidential and isEphemeral are read by the server only when sessionId is null: both
+     are properties of a chat's creation. isEphemeral without isConfidential is a 400, because
+     incognito is a stricter form of Confidentiality Mode rather than an alternative to it. */
+  sendMessage(sessionId: number | string | null, message: string, attachments?: ChatMessageAttachment[], userModelId?: number, systemModelId?: number, hasGreeted?: boolean, isConfidential?: boolean, isEphemeral?: boolean) {
+    return this.http.post<{sessionId: string}>('/api/chat/send', {
+      sessionId: sessionId === null ? null : String(sessionId),
       message,
       attachments: attachments || [],
       userModelId,
       systemModelId,
-      hasGreeted
+      hasGreeted,
+      isConfidential: isConfidential ?? false,
+      isEphemeral: isEphemeral ?? false
     });
   }
 
-  attachGameSnapshot(sessionId: number | null, snapshotText: string, sourceGnollHackVersion?: string | null) {
+  /* Discards an incognito chat and overwrites what the server held. There is no trash and no
+     recovery: a 404 means it was already gone, which a caller should treat as success. */
+  closeEphemeralSession(sessionRef: string) {
+    return this.http.post(`/api/chat/sessions/${sessionRef}/ephemeral/close`, {});
+  }
+
+  /* An incognito attachment is served from memory under its session's reference, because its
+     id is an index within that session rather than a ChatMessageAttachment key. */
+  ephemeralAttachmentUrl(sessionRef: string, attachmentId: number, inline: boolean = false) {
+    return `/api/chat/sessions/${sessionRef}/attachments/${attachmentId}${inline ? '?inline=true' : ''}`;
+  }
+
+  attachGameSnapshot(sessionId: number | string | null, snapshotText: string, sourceGnollHackVersion?: string | null) {
     return this.http.post<{sessionId: number, hasGameSnapshot: boolean}>('/api/chat/sessions/attach-snapshot', {
       sessionId,
       snapshotText,
@@ -254,11 +291,11 @@ export class ChatService {
     return this.http.get<SubAgentInfo[]>('/api/chat/subagents');
   }
 
-  cancelSubAgent(sessionId: number, toolCallId: string) {
+  cancelSubAgent(sessionId: number | string, toolCallId: string) {
     return this.http.post<{success: boolean, message: string}>(`/api/chat/sessions/${sessionId}/subagents/${toolCallId}/cancel`, {});
   }
 
-  cancelGeneration(sessionId: number) {
+  cancelGeneration(sessionId: number | string) {
     return this.http.post<{success: boolean}>(`/api/chat/sessions/${sessionId}/cancel`, {});
   }
   

@@ -83,12 +83,31 @@ namespace Overseer.Tests
             services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.GoogleProvider>();
             services.AddScoped<Overseer.Services.Agents.AgentLoopRunner>();
             services.AddSingleton<Overseer.Services.ParallelExecutionResolver>();
+            /* Every Privacy service ChatService now resolves. This test is excluded from the
+               default run by its UsesExternalApi trait, so a missing registration here fails
+               only when someone deliberately runs the live-API suite. */
+            services.AddSingleton<Overseer.Services.Privacy.AttachmentValidator>();
+            services.AddSingleton<Overseer.Services.Privacy.IAntiMalwareScanner,
+                Overseer.Services.Privacy.NullAntiMalwareScanner>();
+            services.AddSingleton<Overseer.Services.Privacy.EndpointPolicy>();
+            services.AddSingleton<Overseer.Services.Privacy.IContentKeyRing,
+                Overseer.Services.Privacy.ConfigurationContentKeyRing>();
+            services.AddSingleton<Overseer.Services.Privacy.ContentProtectionService>();
+            services.AddSingleton(sp => new Overseer.Services.Privacy.EphemeralSessionStore(
+                sp.GetRequiredService<IConfiguration>(), logger: null, startSweeper: false));
+            services.AddSingleton<Overseer.Services.Privacy.Dlp.DlpScannerService>();
+            services.AddSingleton<Overseer.Services.Documents.DocumentParserService>();
+            services.AddSingleton<Overseer.Services.Rag.DocumentChunker>();
+            services.AddSingleton<Overseer.Services.Rag.IEmbeddingService,
+                Overseer.Services.Rag.LocalOnnxEmbeddingService>();
+            services.AddSingleton<Overseer.Services.Rag.DocumentRagService>();
+            services.AddScoped<Overseer.Services.Rag.RagSidecarStore>();
             services.AddScoped<ChatService>();
 
             var serviceProvider = services.BuildServiceProvider();
 
             var userId = Guid.NewGuid().ToString();
-            long testSessionId = 0;
+            Overseer.Services.Privacy.SessionRef testSessionId = default;
             long testUserModelId = 0;
             using (var scope = serviceProvider.CreateScope())
             {
@@ -138,7 +157,7 @@ namespace Overseer.Tests
                 dbContext.ChatSession.Add(session);
                 await dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-                testSessionId = session.Id;
+                testSessionId = Overseer.Services.Privacy.SessionRef.Persistent(session.Id);
                 testUserModelId = aiModel.Id;
             }
 
@@ -284,7 +303,7 @@ namespace Overseer.Tests
     {
         public bool IsClientConnected { get; set; } = true;
         
-        public Task<Overseer.Services.Tools.ToolResult> SendToolRequestAsync(long sessionId, string toolName, System.Text.Json.JsonElement parameters, CancellationToken cancellationToken)
+        public Task<Overseer.Services.Tools.ToolResult> SendToolRequestAsync(Overseer.Services.Privacy.SessionRef sessionRef, string toolName, System.Text.Json.JsonElement parameters, CancellationToken cancellationToken)
         {
             return Task.FromResult(new Overseer.Services.Tools.ToolResult { Success = true, Content = "Dummy result" });
         }

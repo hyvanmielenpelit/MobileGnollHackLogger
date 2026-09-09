@@ -35,6 +35,7 @@
               }
             ],
             "styles": [
+              "src/fonts.scss",
               "src/styles.scss",
               "node_modules/katex/dist/katex.min.css"
             ],
@@ -46,6 +47,14 @@
           },
           "configurations": {
             "production": {
+              "optimization": {
+                "scripts": true,
+                "fonts": true,
+                "styles": {
+                  "minify": true,
+                  "inlineCritical": false
+                }
+              },
               "sourceMap": {
                 "scripts": true,
                 "styles": false,
@@ -107,6 +116,7 @@
               }
             ],
             "styles": [
+              "src/fonts.scss",
               "src/styles.scss",
               "node_modules/katex/dist/katex.min.css"
             ],

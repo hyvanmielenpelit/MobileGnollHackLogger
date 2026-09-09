@@ -69,6 +69,85 @@
                 Controls whether Overseer may run tool calls and subagents at the same time on this key. Choose 'Sequential only' for free or low-tier keys that hit rate limits. 'On request' is a request to the model, not a hard limit.
               </p>
             </div>
+            @if (keyStatuses[provider]) {
+              <section class="posture-section" [attr.aria-labelledby]="'posture-heading-' + provider">
+                <div class="posture-heading-row">
+                  <h4 class="posture-heading" [id]="'posture-heading-' + provider">Provider trust</h4>
+                  <span class="posture-badge posture-badge-declared">Self-declared: {{ savedPostureLabel(provider) }}</span>
+                </div>
+                <p class="posture-hint">
+                  Record here what you have agreed with your own {{ provider }} account. Only you can see that
+                  agreement, so Overseer cannot verify what you enter: a self-declared posture is shown as
+                  unverified everywhere it appears and never produces a green privacy badge in chat.
+                </p>
+
+                <div class="posture-row">
+                  <label [for]="'posture-' + provider" class="posture-label">Confidentiality posture</label>
+                  <select [id]="'posture-' + provider" class="gh-input posture-select"
+                          [(ngModel)]="keyPostures[provider]"
+                          [disabled]="savingPostureProvider === provider">
+                    @for (p of postures; track p.value) {
+                      <option [value]="p.value">{{ p.label }}</option>
+                    }
+                  </select>
+                </div>
+
+                <div class="posture-row">
+                  <label [for]="'posture-note-' + provider" class="posture-label">Note (optional)</label>
+                  <input type="text" [id]="'posture-note-' + provider" class="gh-input posture-note" maxlength="1024"
+                         [(ngModel)]="keyPostureNotes[provider]"
+                         [disabled]="savingPostureProvider === provider"
+                         placeholder="e.g. Team plan, no training per DPA">
+                </div>
+
+                <div class="posture-actions">
+                  <button type="button" class="btn-gh"
+                          (click)="savePosture(provider)"
+                          [disabled]="!isPostureDirty(provider) || savingPostureProvider === provider">
+                    @if (savingPostureProvider === provider) {
+                      <span class="sidebar-spinner small-spinner"></span>
+                    }
+                    Save Posture
+                  </button>
+                  @if (formatStamp(keyPostureDeclaredUtc[provider])) {
+                    <span class="posture-stamp">Declared {{ formatStamp(keyPostureDeclaredUtc[provider]) }}</span>
+                  }
+                </div>
+                @if (postureErrors[provider]) {
+                  <p class="posture-error" role="alert">{{ postureErrors[provider] }}</p>
+                }
+
+                <div class="posture-row posture-row-divided">
+                  <label [for]="'trust-' + provider" class="posture-label">Use this key for confidential chats</label>
+                  <select [id]="'trust-' + provider" class="gh-input posture-select"
+                          [ngModel]="keyTrusts[provider] ?? 'undecided'"
+                          (ngModelChange)="onTrustChange(provider, $event)"
+                          [disabled]="savingTrustProvider === provider">
+                    <option value="yes">Yes &mdash; allow this key</option>
+                    <option value="no">No &mdash; refuse this key</option>
+                    <option value="undecided">Not decided yet</option>
+                  </select>
+                </div>
+                <p class="posture-hint">
+                  <strong>No</strong> is a decision: Overseer keeps this key out of chats you mark confidential.
+                  <strong>Not decided yet</strong> is not a refusal &mdash; it only records that the question is
+                  still unanswered.
+                </p>
+                @if (savingTrustProvider === provider || (keyTrusts[provider] !== 'undecided' && formatStamp(keyTrustDecidedUtc[provider]))) {
+                  <div class="posture-actions">
+                    @if (savingTrustProvider === provider) {
+                      <span class="sidebar-spinner small-spinner"></span>
+                    }
+                    @if (keyTrusts[provider] !== 'undecided' && formatStamp(keyTrustDecidedUtc[provider])) {
+                      <span class="posture-stamp">Decided {{ formatStamp(keyTrustDecidedUtc[provider]) }}</span>
+                    }
+                  </div>
+                }
+                @if (trustErrors[provider]) {
+                  <p class="posture-error" role="alert">{{ trustErrors[provider] }}</p>
+                }
+              </section>
+            }
           </div>
           <!-- API Key Info Dialog -->
           <dialog #apiKeyInfoDialog class="gh-dialog">

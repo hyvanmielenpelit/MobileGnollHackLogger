@@ -14,21 +14,77 @@ namespace Overseer.Services
     {
         private readonly IHttpContextAccessor _httpContextAccessor;
 
-        private static readonly string[] ExternalServiceHosts = GoogleProvider.ProviderHosts
+        /* The three providers' public hosts plus the external tool hosts, and now the custom
+           endpoint hosts an operator allowlisted.
+
+           Instance-resolved rather than static because configuration is not available at type
+           initialisation. That change is not cosmetic: a self-hosted endpoint absent from this
+           set stops having its transient failures suppressed, so a model server restarting
+           reports a stream of Sentry events -- each one carrying the endpoint's URL. */
+        private readonly string[] _externalServiceHosts;
+
+        private static readonly string[] OfficialProviderHosts = GoogleProvider.ProviderHosts
             .Concat(AnthropicProvider.ProviderHosts)
             .Concat(OpenAiResponsesProvider.ProviderHosts)
             .Concat(ExternalToolHosts.AllHosts)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        public AuthSentryEventProcessor(IHttpContextAccessor httpContextAccessor)
+        /* Header names and query parameter names whose values are removed before an event
+           leaves the process. Matched case-insensitively and, for query parameters, by exact
+           name rather than substring -- "code" must not also blank "postcode". */
+        private static readonly string[] ScrubbedHeaders =
+        {
+            "Authorization", "Cookie", "Set-Cookie", "Proxy-Authorization",
+            "X-XSRF-TOKEN", "X-Api-Key", "X-Sentry-Auth"
+        };
+
+        private static readonly string[] ScrubbedQueryKeys =
+        {
+            "token", "key", "apiKey", "api_key", "password", "code", "secret", "access_token"
+        };
+
+        private const string Scrubbed = "[scrubbed]";
+
+        /// <summary>
+        /// Tag and <c>HttpContext.Items</c> key marking an event as raised inside a
+        /// confidential session. The second and third of the three drop signals; the first is
+        /// <see cref="Privacy.ConfidentialExecutionScope"/>.
+        /// </summary>
+        public const string ConfidentialTagName = "overseer.confidential";
+
+        public AuthSentryEventProcessor(
+            IHttpContextAccessor httpContextAccessor,
+            Overseer.Services.Privacy.EndpointPolicy? endpointPolicy = null)
         {
             _httpContextAccessor = httpContextAccessor;
+
+            /* Only literally allowlisted hosts join the set. A wildcard pattern has no host to
+               name, and matching event URLs against a wildcard here would suppress more than
+               the operator allowlisted. */
+            _externalServiceHosts = endpointPolicy == null
+                ? OfficialProviderHosts
+                : OfficialProviderHosts
+                    .Concat(endpointPolicy.AllowedLiteralHosts)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
         }
 
         public SentryEvent? Process(SentryEvent @event)
         {
             var httpContext = _httpContextAccessor.HttpContext;
+
+            /* Confidential sessions send nothing to Sentry. Checked first, and on three
+               independent signals, because each alone has a hole: the AsyncLocal is the
+               reliable one and survives a streaming turn that outlives its request; the scope
+               tag depends on an SDK ordering contract; and the HttpContext item only exists
+               while a request does. Any of the three drops the event. */
+            if (Privacy.ConfidentialExecutionScope.IsConfidential
+                || @event.Tags.ContainsKey(ConfidentialTagName)
+                || httpContext?.Items.ContainsKey(ConfidentialTagName) == true)
+            {
+                return null;
+            }
 
             if (httpContext != null && httpContext.User?.Identity?.IsAuthenticated != true)
             {
@@ -50,7 +106,88 @@ namespace Overseer.Services
                 return null;
             }
 
+            /* Scrubbing runs last, on the events that are actually being sent. The SDK's own
+               SendDefaultPii = false already suppresses much of this; doing it here as well
+               means an SDK default change, or an option set somewhere else, cannot widen the
+               surface without this method agreeing. */
+            Scrub(@event);
+
             return @event;
+        }
+
+        /// <summary>
+        /// Removes credentials and identity from an outgoing event: named request headers,
+        /// named query values, and the whole user record.
+        /// </summary>
+        private static void Scrub(SentryEvent @event)
+        {
+            var request = @event.Request;
+            if (request != null)
+            {
+                foreach (var name in ScrubbedHeaders)
+                {
+                    if (request.Headers.ContainsKey(name))
+                        request.Headers[name] = Scrubbed;
+                }
+
+                /* Cookies live in their own property as well as in the Cookie header. */
+                if (!string.IsNullOrEmpty(request.Cookies))
+                    request.Cookies = Scrubbed;
+
+                request.QueryString = ScrubQueryString(request.QueryString);
+                request.Url = ScrubUrl(request.Url);
+            }
+
+            /* The user is identified by the authenticated session Overseer already knows
+               about; a Sentry event does not need the address, the name or the IP to be
+               actionable, and those are the fields that make a crash report personal data. */
+            @event.User.Email = null;
+            @event.User.Username = null;
+            @event.User.IpAddress = null;
+            @event.User.Other?.Clear();
+
+            foreach (var tag in ScrubbedQueryKeys)
+            {
+                if (@event.Tags.ContainsKey(tag))
+                    @event.SetTag(tag, Scrubbed);
+            }
+        }
+
+        /// <summary>Blanks the value of every sensitive parameter, keeping the shape of the query.</summary>
+        internal static string? ScrubQueryString(string? queryString)
+        {
+            if (string.IsNullOrEmpty(queryString))
+                return queryString;
+
+            bool leadingQuestionMark = queryString[0] == '?';
+            string body = leadingQuestionMark ? queryString[1..] : queryString;
+
+            var parts = body.Split('&');
+            for (int i = 0; i < parts.Length; i++)
+            {
+                int eq = parts[i].IndexOf('=');
+                if (eq <= 0)
+                    continue;
+
+                string name = parts[i][..eq];
+                if (ScrubbedQueryKeys.Contains(name, StringComparer.OrdinalIgnoreCase))
+                    parts[i] = name + "=" + Scrubbed;
+            }
+
+            return (leadingQuestionMark ? "?" : string.Empty) + string.Join("&", parts);
+        }
+
+        /// <summary>Applies the same scrubbing to the query part of a full URL.</summary>
+        internal static string? ScrubUrl(string? url)
+        {
+            if (string.IsNullOrEmpty(url))
+                return url;
+
+            int q = url.IndexOf('?');
+            if (q < 0)
+                return url;
+
+            return url[..q] + ScrubQueryString(url[q..]);
         }
 
         private bool IsExternalServiceTarget(SentryEvent @event)
@@ -65,7 +202,7 @@ namespace Overseer.Services
                 url = tagUri;
             }
 
-            if (!string.IsNullOrEmpty(url) && ExternalServiceHosts.Any(host => url.Contains(host, StringComparison.OrdinalIgnoreCase)))
+            if (!string.IsNullOrEmpty(url) && _externalServiceHosts.Any(host => url.Contains(host, StringComparison.OrdinalIgnoreCase)))
             {
                 return true;
             }
@@ -82,7 +219,7 @@ namespace Overseer.Services
 
             if (exception is HttpRequestException httpEx && !string.IsNullOrEmpty(httpEx.Message))
             {
-                if (ExternalServiceHosts.Any(host => httpEx.Message.Contains(host, StringComparison.OrdinalIgnoreCase)))
+                if (_externalServiceHosts.Any(host => httpEx.Message.Contains(host, StringComparison.OrdinalIgnoreCase)))
                 {
                     return true;
                 }

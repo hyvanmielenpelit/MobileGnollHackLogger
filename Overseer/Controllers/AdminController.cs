@@ -6,6 +6,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Extensions;
 using Overseer.Models;
 using Overseer.Services;
+using Overseer.Services.Privacy;
 
 namespace Overseer.Controllers;
 
@@ -21,12 +22,15 @@ public class AdminController : ControllerBase
     private readonly Overseer.Services.Providers.AiRequestGovernor _governor;
     private readonly ModelPricingService? _modelPricingService;
 
+    private readonly Overseer.Services.Privacy.EndpointPolicy _endpointPolicy;
+
     public AdminController(
         ApplicationDbContext dbContext,
         IConfiguration configuration,
         UserManager<ApplicationUser> userManager,
         CryptoService cryptoService,
         Overseer.Services.Providers.AiRequestGovernor governor,
+        Overseer.Services.Privacy.EndpointPolicy endpointPolicy,
         ModelPricingService? modelPricingService = null)
     {
         _dbContext = dbContext;
@@ -34,6 +38,7 @@ public class AdminController : ControllerBase
         _userManager = userManager;
         _cryptoService = cryptoService;
         _governor = governor;
+        _endpointPolicy = endpointPolicy;
         _modelPricingService = modelPricingService;
     }
 
@@ -200,6 +205,14 @@ public class AdminController : ControllerBase
                 DisplayNameMode = c.DisplayNameMode,
                 Provider = c.Provider,
                 ModelId = c.ModelId,
+                ConfidentialityPosture = c.ConfidentialityPosture,
+                ConfidentialityNote = c.ConfidentialityNote,
+                PostureAgreementRef = c.PostureAgreementRef,
+                PostureVerifiedUtc = c.PostureVerifiedUtc,
+                DataRegion = c.DataRegion,
+                BaseUrl = c.BaseUrl,
+                CustomHeadersJson = c.CustomHeadersJson,
+                ApiVersion = c.ApiVersion,
                 ThinkingLevel = c.ThinkingLevel,
                 ReasoningMode = c.ReasoningMode,
                 ReasoningSummary = c.ReasoningSummary,
@@ -313,6 +326,18 @@ public class AdminController : ControllerBase
             }
         }
 
+        if (!TryNormalizePosture(request.ConfidentialityPosture, out var newPosture, out var postureError))
+            return BadRequest(postureError);
+
+        /* Full validation, DNS included, because this is an administrator saving a
+           configuration rather than a per-turn resolve. An endpoint that fails here is
+           refused; one that is stored and later stops validating falls back to the public
+           endpoint and is reported by ConfigHealthService. */
+        var endpointCheck = _endpointPolicy.Validate(
+            request.BaseUrl, request.CustomHeadersJson, request.ApiVersion);
+        if (!endpointCheck.IsValid)
+            return BadRequest(endpointCheck.Error);
+
         var orderIndex = await _dbContext.SystemAiApiConfigurations.AnyAsync() 
             ? await _dbContext.SystemAiApiConfigurations.MaxAsync(c => c.OrderIndex) + 1 
             : 0;
@@ -323,6 +348,14 @@ public class AdminController : ControllerBase
             DisplayNameMode = DisplayNameModes.Normalize(request.DisplayNameMode),
             Provider = request.Provider,
             ModelId = request.ModelId,
+            ConfidentialityPosture = newPosture,
+            ConfidentialityNote = request.ConfidentialityNote,
+            PostureAgreementRef = request.PostureAgreementRef,
+            PostureVerifiedUtc = request.PostureVerifiedUtc,
+            DataRegion = request.DataRegion,
+            BaseUrl = string.IsNullOrWhiteSpace(request.BaseUrl) ? null : request.BaseUrl.Trim(),
+            CustomHeadersJson = string.IsNullOrWhiteSpace(request.CustomHeadersJson) ? null : request.CustomHeadersJson,
+            ApiVersion = string.IsNullOrWhiteSpace(request.ApiVersion) ? null : request.ApiVersion.Trim(),
             ThinkingLevel = request.ThinkingLevel,
             ReasoningMode = request.ReasoningMode,
             ReasoningSummary = request.ReasoningSummary,
@@ -388,6 +421,14 @@ public class AdminController : ControllerBase
             }
         }
 
+        if (!TryNormalizePosture(request.ConfidentialityPosture, out var updatedPosture, out var postureError))
+            return BadRequest(postureError);
+
+        var endpointCheck = _endpointPolicy.Validate(
+            request.BaseUrl, request.CustomHeadersJson, request.ApiVersion);
+        if (!endpointCheck.IsValid)
+            return BadRequest(endpointCheck.Error);
+
         var config = await _dbContext.SystemAiApiConfigurations.FindAsync(id);
         if (config == null) return NotFound();
 
@@ -395,6 +436,17 @@ public class AdminController : ControllerBase
         config.DisplayNameMode = DisplayNameModes.Normalize(request.DisplayNameMode);
         config.Provider = request.Provider;
         config.ModelId = request.ModelId;
+        config.ConfidentialityPosture = updatedPosture;
+        config.ConfidentialityNote = request.ConfidentialityNote;
+        config.PostureAgreementRef = request.PostureAgreementRef;
+        /* Assigned unconditionally, clearing included: withdrawing verification is a thing an
+           operator must be able to do, and a null that silently kept the old date would leave
+           a green badge standing on an agreement that has lapsed. */
+        config.PostureVerifiedUtc = request.PostureVerifiedUtc;
+        config.DataRegion = request.DataRegion;
+        config.BaseUrl = string.IsNullOrWhiteSpace(request.BaseUrl) ? null : request.BaseUrl.Trim();
+        config.CustomHeadersJson = string.IsNullOrWhiteSpace(request.CustomHeadersJson) ? null : request.CustomHeadersJson;
+        config.ApiVersion = string.IsNullOrWhiteSpace(request.ApiVersion) ? null : request.ApiVersion.Trim();
         config.ThinkingLevel = request.ThinkingLevel;
         config.ReasoningMode = request.ReasoningMode;
         config.ReasoningSummary = request.ReasoningSummary;
@@ -1246,5 +1298,34 @@ public class AdminController : ControllerBase
     public IActionResult TestSentryError()
     {
         throw new Exception("Sentry Backend Crash Test triggered by Admin");
+    }
+
+    /// <summary>
+    /// Normalises a posture name from a request to its canonical casing, or refuses it.
+    /// </summary>
+    /// <remarks>
+    /// An unrecognised name is a 400 rather than a silent fall back to "Unknown". The parser
+    /// used when *reading* degrades unrecognised values downward, which is the safe direction
+    /// for a value already in the database; on the way in, storing something other than what
+    /// the operator asked for is how a posture stops meaning anything.
+    /// </remarks>
+    private static bool TryNormalizePosture(string? requested, out string? normalized, out string error)
+    {
+        normalized = null;
+        error = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(requested))
+            return true;
+
+        if (!Enum.TryParse<Overseer.Services.Privacy.ProviderConfidentialityPosture>(
+                requested.Trim(), ignoreCase: true, out var parsed))
+        {
+            error = $"Unrecognised confidentiality posture '{requested}'. Valid values are: "
+                + string.Join(", ", Enum.GetNames<Overseer.Services.Privacy.ProviderConfidentialityPosture>()) + ".";
+            return false;
+        }
+
+        normalized = parsed.ToStoredValue();
+        return true;
     }
 }

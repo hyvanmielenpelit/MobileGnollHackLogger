@@ -44,6 +44,19 @@
               <div class="mb-4 d-flex align-items-center" style="flex-wrap: wrap; gap: 8px;">
                 <span>{{ model.modelId }}</span>
                 <span class="provider-badge">{{ model.provider }}</span>
+                <span class="posture-badge"
+                      [class.posture-strong]="postureLevel(model) === 'strong'"
+                      [class.posture-moderate]="postureLevel(model) === 'moderate'"
+                      [class.posture-weak]="postureLevel(model) === 'weak'"
+                      [attr.interestfor]="postureTipId(model)"
+                      [attr.style]="'anchor-name: --' + postureTipId(model)"
+                      tabindex="0">{{ postureBadgeText(model) }}</span>
+                <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="postureTipId(model)"
+                     [attr.style]="'position-anchor: --' + postureTipId(model)">
+                  @for (line of postureTooltipLines(model); track $index) {
+                    <div class="gh-tooltip-line">{{ line }}</div>
+                  }
+                </div>
               </div>
               @if (model.thinkingLevel) {
                 <div>
@@ -120,6 +133,19 @@
                 <div class="mb-4 d-flex align-items-center" style="flex-wrap: wrap; gap: 8px;">
                   <span>{{ model.modelId }}</span>
                   <span class="provider-badge">{{ model.provider }}</span>
+                  <span class="posture-badge"
+                        [class.posture-strong]="postureLevel(model) === 'strong'"
+                        [class.posture-moderate]="postureLevel(model) === 'moderate'"
+                        [class.posture-weak]="postureLevel(model) === 'weak'"
+                        [attr.interestfor]="postureTipId(model)"
+                        [attr.style]="'anchor-name: --' + postureTipId(model)"
+                        tabindex="0">{{ postureBadgeText(model) }}</span>
+                  <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="postureTipId(model)"
+                       [attr.style]="'position-anchor: --' + postureTipId(model)">
+                    @for (line of postureTooltipLines(model); track $index) {
+                      <div class="gh-tooltip-line">{{ line }}</div>
+                    }
+                  </div>
                 </div>
                 @if (model.thinkingLevel) {
                   <div>

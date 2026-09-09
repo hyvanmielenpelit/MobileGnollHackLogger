@@ -67,6 +67,7 @@ In Angular/RxJS, any observable subscription (`observable.subscribe(...)`) that 
 
 1. **Authentication Check**:
    - If `HttpContext` exists and the user is not authenticated (`IsAuthenticated != true`), the event is immediately discarded to eliminate external scanner and bot noise.
+   - The exact shape matters, because other work depends on it: the guard is `httpContext != null && …IsAuthenticated != true`, so an event raised with **no** `HttpContext` — a crash in a background task, or in a streaming turn that outlived its request — is **kept**, not dropped.
 2. **External Service & Tool Host Registry**:
    - Each supported provider class (`GoogleProvider`, `AnthropicProvider`, `OpenAiResponsesProvider`) declares a public static collection `ProviderHosts`.
    - External lookup tools (`ExternalToolHosts`) declare external hosts used by tools (`GitHubHosts` for `api.github.com` & `github.com`).
@@ -74,8 +75,20 @@ In Angular/RxJS, any observable subscription (`observable.subscribe(...)`) that 
 3. **External Upstream 5xx, 429, and Transient Network Filtering**:
    - Synthetic HTTP events from Sentry's `SentryHttpFailedRequestHandler` and raw `HttpRequestException` instances targeting external service hosts are inspected.
    - Any status code in the **500–599** range (including 500, 501, 502, 503, 504, 529), status code **429**, and network connection drop exceptions are dropped (`return null`).
-4. **Preservation of Internal Errors**:
+4. **Scrubbing (`Scrub`)**:
+   - Runs last, after the drop rules, on every event that is actually sent.
+   - **Headers** `Authorization`, `Cookie`, `Set-Cookie`, `Proxy-Authorization`, `X-XSRF-TOKEN`, `X-Api-Key`, `X-Sentry-Auth` become `[scrubbed]`; the separate `Request.Cookies` property is blanked too.
+   - **Query values** named `token`, `key`, `apiKey`, `api_key`, `password`, `code`, `secret`, `access_token` are blanked in `Request.QueryString` and in the query part of `Request.Url`. Names match **exactly**, case-insensitively — never as substrings, so `code` does not also blank `postcode`. Only values change; the shape of the query is preserved because the shape is usually what makes a report actionable.
+   - **User record**: `User.Email`, `User.Username`, `User.IpAddress` and `User.Other` are cleared. These are the fields that make a crash report personal data, and none is needed to triage one.
+   - Tags carrying any of those parameter names are scrubbed as well.
+5. **Preservation of Internal Errors**:
    - If an internal endpoint or internal service fails with an unexpected exception or 500 error, `AuthSentryEventProcessor` preserves the event so developers are alerted in Sentry.
+
+### Pinned SDK options
+
+`UseSentry` in `Program.cs` sets `SendDefaultPii = false` (no IP, name or address on any event) and `MaxRequestBodySize = RequestSize.None` (no request payloads — and for `/api/chat/send` the payload *is* the user's message and their attachments).
+
+Both are already the defaults of the `Sentry.AspNetCore` version pinned in `Overseer/Overseer.csproj`. **Read the version from that file, never from this skill**: a version number written into a document drifts silently. They are pinned so an SDK upgrade cannot widen the surface without `Program.cs` changing; the substantive protection is the scrubbing above.
 
 ---
 

@@ -29,6 +29,14 @@ export class AuthService {
 
   login(userName: string, password: string) {
     return this.http.post<any>('/api/auth/login', { userName, password }).pipe(
+      /* A 200 carrying requiresTwoFactor is not a signed-in user: publishing it would let the
+         router treat the half-finished sign-in as complete. */
+      tap(res => { if (!res?.requiresTwoFactor) this.userSubject.next(res); })
+    );
+  }
+
+  loginTwoFactor(code: string, rememberMachine: boolean) {
+    return this.http.post<any>('/api/auth/login/2fa', { code, rememberMachine }).pipe(
       tap(res => this.userSubject.next(res))
     );
   }

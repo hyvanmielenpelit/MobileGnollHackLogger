@@ -25,7 +25,10 @@ namespace Overseer.Tests.Helpers
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     { "Admins", "TestAdmin" },
-                    { "AesEncryptionKey", System.Convert.ToBase64String(new byte[32]) }
+                    { "AesEncryptionKey", System.Convert.ToBase64String(new byte[32]) },
+                    // Shared secret SessionController.Create requires of the game client.
+                    { "AntiForgeryToken", "test-antiforgery-secret" },
+                    { "ConversationsDataLocation", System.IO.Path.Combine(System.IO.Path.GetTempPath(), "OverseerFactoryConversations") }
                 });
             });
 

@@ -425,7 +425,7 @@ public class BenchmarkRubricGapAuthorService
             Budget = new AgentRunBudget { MaxTotalModelCalls = 10 },
             ToolExecutionContext = new Tools.ToolExecutionContext
             {
-                SessionId = job.SuiteId,
+                SessionId = Overseer.Services.Privacy.SessionRef.Persistent(job.SuiteId),
                 ToolBudgetScopeId = $"rubricgapauthor_{job.Id}_{clusterKey.Replace(':', '_')}",
                 UserId = job.StartedByUserId ?? string.Empty,
                 MaxResultLength = maxResultLength,

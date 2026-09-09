@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -32,14 +33,75 @@ public class GoogleProvider : IAiProvider
 
     public IReadOnlyList<string> SupportedServiceTiers => new[] { "priority", "flex", "standard" };
 
-    public void ConfigureRequest(HttpRequestMessage request, string apiKey)
+    private const string OfficialBaseUrl = "https://generativelanguage.googleapis.com";
+
+    public void ConfigureRequest(HttpRequestMessage request, string apiKey, AiEndpointDescriptor endpoint)
     {
-        // Google uses API key in URL query parameter, no header configuration needed
+        /* The public API takes the key in the query string, so there is nothing to configure
+           here for it. A custom endpoint is the opposite case: a Vertex or gateway endpoint
+           rejects ?key= and wants the credential in a header, which is why the descriptor
+           carries an auth style rather than only a URL. */
+        switch (endpoint.AuthStyle)
+        {
+            case AiEndpointAuthStyle.BearerToken:
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                break;
+
+            case AiEndpointAuthStyle.AzureApiKey:
+                request.Headers.TryAddWithoutValidation("api-key", apiKey);
+                break;
+        }
+
+        ApplyCustomHeaders(request, endpoint);
     }
 
-    public string GetChatStreamUrl(string modelId, string apiKey)
+    public string GetChatStreamUrl(string modelId, string apiKey, AiEndpointDescriptor endpoint)
+        => ComposeGenerateUrl(endpoint, modelId, apiKey, "streamGenerateContent", "alt=sse");
+
+    public string GetTitleUrl(string modelId, string apiKey, AiEndpointDescriptor endpoint)
+        => ComposeGenerateUrl(endpoint, modelId, apiKey, "generateContent", null);
+
+    /// <summary>
+    /// Builds a <c>:generateContent</c> or <c>:streamGenerateContent</c> URL, including the
+    /// <c>key=</c> parameter **only** for the public endpoint's own auth style.
+    /// </summary>
+    /// <remarks>
+    /// A custom endpoint never receives the key in the query string. Beyond being rejected, a
+    /// credential in a URL ends up in proxy and gateway access logs, which is the one place a
+    /// key is hardest to get back out of.
+    ///
+    /// What this does not do is compose a full Vertex AI path
+    /// (<c>/v1/projects/…/locations/…/publishers/google/models/…</c>), which is a different
+    /// shape rather than a different base. A gateway that speaks the Gemini API works; raw
+    /// Vertex needs its own provider.
+    /// </remarks>
+    private static string ComposeGenerateUrl(
+        AiEndpointDescriptor endpoint, string modelId, string apiKey, string method, string? extraQuery)
     {
-        return $"https://generativelanguage.googleapis.com/v1beta/models/{modelId}:streamGenerateContent?alt=sse&key={apiKey}";
+        string baseUrl = endpoint.IsCustom ? endpoint.BaseUrl!.TrimEnd('/') : OfficialBaseUrl;
+        var query = new List<string>();
+
+        if (!string.IsNullOrEmpty(extraQuery))
+            query.Add(extraQuery);
+
+        if (!endpoint.IsCustom || endpoint.AuthStyle == AiEndpointAuthStyle.ProviderDefault)
+            query.Add("key=" + Uri.EscapeDataString(apiKey));
+
+        if (endpoint.AuthStyle == AiEndpointAuthStyle.AzureApiKey && !string.IsNullOrWhiteSpace(endpoint.ApiVersion))
+            query.Add("api-version=" + Uri.EscapeDataString(endpoint.ApiVersion));
+
+        string url = $"{baseUrl}/v1beta/models/{modelId}:{method}";
+        return query.Count > 0 ? url + "?" + string.Join("&", query) : url;
+    }
+
+    private static void ApplyCustomHeaders(HttpRequestMessage request, AiEndpointDescriptor endpoint)
+    {
+        if (endpoint.CustomHeaders == null)
+            return;
+
+        // Already allowlisted by EndpointPolicy; nothing here can be a credential or Host header.
+        foreach (var (name, value) in endpoint.CustomHeaders)
+            request.Headers.TryAddWithoutValidation(name, value);
     }
 
     public Dictionary<string, object> BuildChatRequestBody(
@@ -653,10 +715,6 @@ public class GoogleProvider : IAiProvider
         return req;
     }
 
-    public string GetTitleUrl(string modelId, string apiKey)
-    {
-        return $"https://generativelanguage.googleapis.com/v1beta/models/{modelId}:generateContent?key={apiKey}";
-    }
 
     public string? ParseTitleResponse(JsonElement root)
     {

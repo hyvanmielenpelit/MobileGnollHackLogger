@@ -14,7 +14,7 @@ namespace Overseer.Tests.UnitTests
         {
             var manager = new OngoingChatManager();
             var cts = new CancellationTokenSource();
-            long sessionId = 1001;
+            var sessionId = Overseer.Services.Privacy.SessionRef.Persistent(1001);
 
             var result = manager.TryStart(sessionId, cts, out var state);
 
@@ -35,7 +35,7 @@ namespace Overseer.Tests.UnitTests
             var manager = new OngoingChatManager();
             var cts1 = new CancellationTokenSource();
             var cts2 = new CancellationTokenSource();
-            long sessionId = 1002;
+            var sessionId = Overseer.Services.Privacy.SessionRef.Persistent(1002);
 
             var result1 = manager.TryStart(sessionId, cts1, out var state1);
             var result2 = manager.TryStart(sessionId, cts2, out var state2);
@@ -50,7 +50,7 @@ namespace Overseer.Tests.UnitTests
         {
             var manager = new OngoingChatManager();
             var cts = new CancellationTokenSource();
-            long sessionId = 1003;
+            var sessionId = Overseer.Services.Privacy.SessionRef.Persistent(1003);
 
             manager.TryStart(sessionId, cts, out var state);
 
@@ -74,7 +74,7 @@ namespace Overseer.Tests.UnitTests
         {
             var manager = new OngoingChatManager();
             var cts = new CancellationTokenSource();
-            long sessionId = 1004;
+            var sessionId = Overseer.Services.Privacy.SessionRef.Persistent(1004);
 
             manager.TryStart(sessionId, cts, out _);
             manager.ProcessEvent(sessionId, new ChatEvent { Type = "chunk", Data = "Test" });
@@ -95,7 +95,7 @@ namespace Overseer.Tests.UnitTests
         {
             var manager = new OngoingChatManager();
             var cts1 = new CancellationTokenSource();
-            long sessionId = 1005;
+            var sessionId = Overseer.Services.Privacy.SessionRef.Persistent(1005);
 
             manager.TryStart(sessionId, cts1, out var state1);
             manager.ProcessEvent(sessionId, new ChatEvent { Type = "done", Data = "" });
@@ -117,7 +117,7 @@ namespace Overseer.Tests.UnitTests
         {
             var manager = new OngoingChatManager();
             var ctsStale = new CancellationTokenSource();
-            long staleSessionId = 1006;
+            var staleSessionId = Overseer.Services.Privacy.SessionRef.Persistent(1006);
 
             manager.TryStart(staleSessionId, ctsStale, out var staleState);
             manager.Complete(staleSessionId);
@@ -125,13 +125,13 @@ namespace Overseer.Tests.UnitTests
             staleState.CompletedAtUtc = DateTime.UtcNow.AddSeconds(-35);
 
             var ctsFresh = new CancellationTokenSource();
-            long freshSessionId = 1007;
+            var freshSessionId = Overseer.Services.Privacy.SessionRef.Persistent(1007);
             manager.TryStart(freshSessionId, ctsFresh, out var freshState);
             manager.Complete(freshSessionId);
 
             // Now trigger TryStart on a new session, which performs lazy pruning
             var ctsNew = new CancellationTokenSource();
-            long newSessionId = 1008;
+            var newSessionId = Overseer.Services.Privacy.SessionRef.Persistent(1008);
             var result = manager.TryStart(newSessionId, ctsNew, out _);
 
             Assert.True(result);
@@ -146,7 +146,7 @@ namespace Overseer.Tests.UnitTests
         {
             var manager = new OngoingChatManager();
             var cts = new CancellationTokenSource();
-            long sessionId = 1009;
+            var sessionId = Overseer.Services.Privacy.SessionRef.Persistent(1009);
 
             manager.TryStart(sessionId, cts, out _);
             Assert.False(cts.IsCancellationRequested);
@@ -163,7 +163,7 @@ namespace Overseer.Tests.UnitTests
         {
             var manager = new OngoingChatManager();
             var cts = new CancellationTokenSource();
-            long sessionId = 1010;
+            var sessionId = Overseer.Services.Privacy.SessionRef.Persistent(1010);
 
             manager.TryStart(sessionId, cts, out _);
             manager.Fail(sessionId, "Connection timed out");
@@ -184,7 +184,7 @@ namespace Overseer.Tests.UnitTests
         {
             var manager = new OngoingChatManager();
             var cts = new CancellationTokenSource();
-            long sessionId = 1011;
+            var sessionId = Overseer.Services.Privacy.SessionRef.Persistent(1011);
 
             manager.TryStart(sessionId, cts, out var state);
             state.SavedMessageId = 4294967296L; // 64-bit ID
@@ -199,7 +199,7 @@ namespace Overseer.Tests.UnitTests
         {
             var manager = new OngoingChatManager();
             var cts = new CancellationTokenSource();
-            long sessionId = 1012;
+            var sessionId = Overseer.Services.Privacy.SessionRef.Persistent(1012);
 
             manager.TryStart(sessionId, cts, out _);
 
@@ -235,7 +235,7 @@ namespace Overseer.Tests.UnitTests
 
             var manager = new OngoingChatManager(config);
             var cts = new CancellationTokenSource();
-            long sessionId = 1013;
+            var sessionId = Overseer.Services.Privacy.SessionRef.Persistent(1013);
 
             manager.TryStart(sessionId, cts, out var state);
 

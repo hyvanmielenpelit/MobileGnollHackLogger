@@ -81,6 +81,23 @@ public class SystemAiApiConfigurationDto
     public decimal? OutputPricePerMillion { get; set; }
     public decimal? CachedInputPricePerMillion { get; set; }
 
+    /// <summary>A ProviderConfidentialityPosture name, or null for a row where nothing is established.</summary>
+    public string? ConfidentialityPosture { get; set; }
+    public string? ConfidentialityNote { get; set; }
+    public string? PostureAgreementRef { get; set; }
+
+    /// <summary>
+    /// Non-null is what makes the posture operator-verified, and only a verified posture can
+    /// produce a green privacy badge.
+    /// </summary>
+    public DateTime? PostureVerifiedUtc { get; set; }
+    public string? DataRegion { get; set; }
+
+    /// <summary>Custom endpoint. Null or empty means the provider's official public endpoint.</summary>
+    public string? BaseUrl { get; set; }
+    public string? CustomHeadersJson { get; set; }
+    public string? ApiVersion { get; set; }
+
     public decimal? EffectiveInputPricePerMillion { get; set; }
     public decimal? EffectiveOutputPricePerMillion { get; set; }
     public decimal? EffectiveCachedInputPricePerMillion { get; set; }
@@ -143,6 +160,24 @@ public class CreateSystemAiApiConfigurationRequest
     public decimal? InputPricePerMillion { get; set; }
     public decimal? OutputPricePerMillion { get; set; }
     public decimal? CachedInputPricePerMillion { get; set; }
+
+    /// <summary>A ProviderConfidentialityPosture name, or null. An unrecognised name is refused.</summary>
+    public string? ConfidentialityPosture { get; set; }
+    public string? ConfidentialityNote { get; set; }
+    public string? PostureAgreementRef { get; set; }
+
+    /// <summary>Setting this is what marks the posture operator-verified. Clearing it withdraws that.</summary>
+    public DateTime? PostureVerifiedUtc { get; set; }
+    public string? DataRegion { get; set; }
+
+    /// <summary>
+    /// Custom endpoint. Validated by <c>EndpointPolicy</c> before it is stored — an
+    /// unallowlisted host, a non-https scheme or a denied header is a 400, never a stored value
+    /// that is quietly ignored.
+    /// </summary>
+    public string? BaseUrl { get; set; }
+    public string? CustomHeadersJson { get; set; }
+    public string? ApiVersion { get; set; }
 }
 
 public class UpdateSystemAiApiConfigurationRequest : CreateSystemAiApiConfigurationRequest

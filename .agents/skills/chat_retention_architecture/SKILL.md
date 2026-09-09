@@ -77,6 +77,59 @@ The retention strategy operates according to strict business logic rules configu
 
 ---
 
+## 3a. Confidential Sessions: Immediate Purge and Per-Session TTL
+
+A session with `ChatSession.IsConfidential` can opt out of the trash and carry its own retention
+period. Two **materialised scalar** columns carry the decision, written from
+`ConfidentialPolicyJson` at creation or upgrade:
+
+| Column | Meaning |
+|---|---|
+| `EffectiveRetentionDays` (`int?`) | Inactivity days before expiry. **Null = use the global `InactivityTtlDays`** |
+| `ImmediatePurgeOnDelete` (`bool`) | Purge outright on any deletion instead of trashing |
+
+They are columns rather than reads out of the JSON because `SoftDeleteInactiveSessionsAsync` is
+a set-based `ExecuteUpdateAsync` over every user's sessions against one scalar. A per-user value
+cannot reach that query, and a JSON column cannot be filtered there portably.
+
+### All four deletion paths honour them
+
+`PartitionAndDeleteAsync` decides the split once, and every path routes through it:
+
+| Path | Reached from | User gesture? |
+|---|---|---|
+| `SoftDeleteSessionAsync` | `DELETE /api/chat/sessions/{id}` | Yes |
+| `BulkSoftDeleteSessionsAsync` | `POST /api/chat/sessions/bulk-delete` | Yes |
+| `EnforceUserSessionQuotaAsync` | **Session creation, every snapshot attach, the session list** | **No** |
+| `SoftDeleteInactiveSessionsAsync` | Nightly maintenance | **No** |
+
+> [!IMPORTANT]
+> **The two gestureless paths are the point.** Quota eviction soft-deletes a user's oldest
+> sessions the moment they exceed `MaxActiveSessionsPerUser`, with no notice — so a confidential
+> chat could otherwise enter a 30-day trash nobody asked to put it in. If you add a fifth
+> deletion path, it routes through `PartitionAndDeleteAsync` or the guarantee is gone.
+
+### Expiry purges, because the grace period would otherwise double the TTL
+
+`SoftDeleteGracePeriodDays` is 30. A confidential session with a 30-day TTL that soft-deleted on
+expiry would be retained for 60 — under a 30-day promise. `SoftDeleteInactiveSessionsAsync`
+therefore runs two passes: the original single-statement sweep filtered to
+`EffectiveRetentionDays == null`, then one pass per distinct materialised value which partitions
+and purges. The distinct set is the number of retention values users have chosen, not the number
+of users.
+
+A confidential session with `ImmediatePurgeOnDelete` **off** — user-adjustable — expires into the
+trash like any other, and the chat's privacy badge reports the mode as not keeping its full
+promise.
+
+### Testing these paths
+
+`PermanentlyPurgeSessionsAsync` is `virtual` so a test can record which sessions a path routed to
+it without running the bulk-SQL statements the in-memory provider rejects. The partitioning
+decision is what each path must get right; the SQL beneath it is provider-specific and unchanged.
+Note also that the global-TTL pass ends in `ExecuteUpdateAsync`, so a test of that pass asserts
+its *selection* via `isDryRun: true` rather than its effect.
+
 ## 4. Quota Enforcement & Transition Details
 
 ### 1. Active Session Quota (`EnforceUserSessionQuotaAsync`)

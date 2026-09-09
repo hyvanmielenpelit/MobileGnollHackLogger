@@ -24,6 +24,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<UserAiApiKey> UserAiApiKeys { get; set; } = null!;
         public DbSet<UserAiModel> UserAiModels { get; set; } = null!;
         public DbSet<ChatMessageToolCall> ChatMessageToolCall { get; set; } = null!;
+        public DbSet<ChatAccessAuditLog> ChatAccessAuditLogs { get; set; } = null!;
 
         public DbSet<Group> Groups { get; set; } = null!;
         public DbSet<UserGroup> UserGroups { get; set; } = null!;
@@ -98,6 +99,13 @@ namespace MobileGnollHackLogger.Data
             modelBuilder.Entity<ChatSession>()
                 .HasIndex(s => new { s.IsDeleted, s.DeletedUtc });
 
+            /* Serves the two queries Confidentiality Mode adds to hot paths: the search
+               exclusion, which filters on IsConfidential, and the retention sweep's second
+               pass, which groups by EffectiveRetentionDays and then filters on LastMessageUtc
+               within each value. */
+            modelBuilder.Entity<ChatSession>()
+                .HasIndex(s => new { s.IsDeleted, s.IsConfidential, s.EffectiveRetentionDays, s.LastMessageUtc });
+
             modelBuilder.Entity<ChatMessage>()
                 .HasIndex(m => new { m.ChatSessionId, m.TimestampUtc })
                 .IncludeProperties(m => new
@@ -110,6 +118,23 @@ namespace MobileGnollHackLogger.Data
 
             modelBuilder.Entity<ChatMessageToolCall>()
                 .HasIndex(tc => new { tc.ChatMessageId, tc.SortOrder });
+
+            /* The two questions an investigation actually asks: everything one account did, and
+               everything that touched one conversation. Both are time-ordered, because "what
+               happened around then" is the third question.
+
+               No relationship is configured to ChatSession or ChatMessageAttachment on purpose:
+               a cascade would delete the audit row along with the thing it records, which is
+               exactly backwards -- the record of a deletion has to outlive what was deleted. */
+            modelBuilder.Entity<ChatAccessAuditLog>()
+                .HasIndex(a => new { a.ActorUserId, a.OccurredUtc });
+
+            modelBuilder.Entity<ChatAccessAuditLog>()
+                .HasIndex(a => new { a.ChatSessionId, a.OccurredUtc });
+
+            // Retention sweeps by age alone.
+            modelBuilder.Entity<ChatAccessAuditLog>()
+                .HasIndex(a => a.OccurredUtc);
 
             modelBuilder.Entity<BenchmarkGameSnapshot>()
                 .HasIndex(s => s.Name)

@@ -138,7 +138,14 @@ namespace Overseer.Services.Tools
         {
             var result = new ToolsForRequest();
 
-            if (enableWebSearch)
+            /* A confidential session with egress blocked is offered neither the provider's own
+               web search nor any ExternalLookup handler. ToolCategory.ExternalLookup already
+               tags exactly the tools that leave the machine, so nothing needs reclassifying --
+               and the local corpora (wiki, source, knowledge base, dumplogs) stay fully
+               available, because they execute in-process. */
+            bool blockExternalEgress = context.BlockExternalEgress;
+
+            if (enableWebSearch && !blockExternalEgress)
             {
                 var webSearchTool = provider.BuildWebSearchTool();
                 if (webSearchTool != null)
@@ -164,6 +171,8 @@ namespace Overseer.Services.Tools
                 {
                     continue;
                 }
+
+                if (blockExternalEgress && handler.Category == ToolCategory.ExternalLookup) continue;
 
                 // Filter by execution location and settings
                 if (handler.ExecutionLocation == ToolExecutionLocation.Server && !enableToolUse) continue;

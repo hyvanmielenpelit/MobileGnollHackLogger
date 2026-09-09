@@ -26,9 +26,18 @@ public interface IAiProvider
         SegmentedPrompt? segmentedPrompt = null,
         string? promptCacheKey = null);
 
-    string GetChatStreamUrl(string modelId, string apiKey);
+    /// <param name="endpoint">
+    /// Where the request goes and how it authenticates. Pass
+    /// <see cref="AiEndpointDescriptor.Official"/> for the provider's public API.
+    /// </param>
+    /// <remarks>
+    /// The descriptor has no default value on purpose. A caller that forgot to pass one would
+    /// silently send a configured deployment's traffic to the public endpoint instead — with a
+    /// real credential attached — and nothing would report it.
+    /// </remarks>
+    string GetChatStreamUrl(string modelId, string apiKey, AiEndpointDescriptor endpoint);
 
-    void ConfigureRequest(HttpRequestMessage request, string apiKey);
+    void ConfigureRequest(HttpRequestMessage request, string apiKey, AiEndpointDescriptor endpoint);
 
     // Stream parsing
     IAsyncEnumerable<ChatEvent> ParseStreamAsync(
@@ -61,7 +70,7 @@ public interface IAiProvider
     Dictionary<string, object> BuildTitleRequestBody(
         string modelId, string systemPrompt, string userMessage, int maxTokens, string? serviceTier = null);
 
-    string GetTitleUrl(string modelId, string apiKey);
+    string GetTitleUrl(string modelId, string apiKey, AiEndpointDescriptor endpoint);
 
     string? ParseTitleResponse(JsonElement root);
 

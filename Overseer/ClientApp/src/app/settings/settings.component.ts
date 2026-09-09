@@ -1,6 +1,25 @@
 import { Component, OnInit, OnDestroy, inject, ViewChild, ElementRef, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { SettingsService, UserAiSettings, ApiModelDto } from '../services/settings.service';
+import {
+  SettingsService,
+  UserAiSettings,
+  ApiModelDto,
+  ConfidentialFloor,
+  ConfidentialModelGate,
+  ConfidentialPersistence,
+  ConfidentialUserSettings,
+  DlpFloor,
+  DlpSettings,
+  CONFIDENTIAL_MODEL_GATE_OPTIONS,
+  CONFIDENTIAL_PERSISTENCE_OPTIONS,
+  CONFIDENTIAL_RETENTION_DEFAULT_DAYS,
+  CONFIDENTIAL_RETENTION_MAX_DAYS,
+  CONFIDENTIAL_RETENTION_MIN_DAYS,
+  confidentialModelGateRank,
+  confidentialPersistenceRank,
+  stricterConfidentialModelGate,
+  stricterConfidentialPersistence
+} from '../services/settings.service';
 import { SystemService } from '../services/system.service';
 import { ChangelogService } from '../services/changelog.service';
 import { ChatService } from '../services/chat.service';
@@ -10,6 +29,27 @@ import { TrashModalComponent } from '../shared/trash-modal/trash-modal.component
 import { Subject, BehaviorSubject, Subscription, of, timer, firstValueFrom, EMPTY } from 'rxjs';
 import { debounce, tap, switchMap, catchError, filter, timeout } from 'rxjs/operators';
 import { ensureOverlayPolyfills } from '../utils/polyfills.util';
+
+/** The data classes outbound masking can recognise, named as `POST /api/settings/dlp` accepts them. */
+export type DlpMaskClass = keyof DlpSettings;
+
+/** One masking switch: the field it saves to, its label, and the line under it. */
+export interface DlpClassOption {
+  key: DlpMaskClass;
+  label: string;
+  hint: string;
+}
+
+/** The administrator's floor drops the `dlpMask` prefix, so each switch carries its floor's name. */
+const DLP_FLOOR_KEYS: Record<DlpMaskClass, keyof DlpFloor> = {
+  dlpMaskApiKeys: 'apiKeys',
+  dlpMaskPrivateKeys: 'privateKeys',
+  dlpMaskTokens: 'tokens',
+  dlpMaskCreditCards: 'creditCards',
+  dlpMaskSsns: 'ssns',
+  dlpMaskEmails: 'emails',
+  dlpMaskPhoneNumbers: 'phoneNumbers'
+};
 
 @Component({
     selector: 'app-settings',
@@ -75,6 +115,86 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   requestTimeout: number | null = null;
 
+  // Confidentiality Mode. These are the user's own choices; what applies to a confidential chat is
+  // always the stricter of each one and the administrator's floor.
+  confidentialPersistence: ConfidentialPersistence = 'Encrypted';
+  confidentialRetentionDays: number | null = CONFIDENTIAL_RETENTION_DEFAULT_DAYS;
+  confidentialDisableToolEgress = true;
+  confidentialDisableTitleGeneration = true;
+  confidentialDisablePromptCache = true;
+  confidentialImmediatePurge = true;
+  confidentialModelGate: ConfidentialModelGate = 'UserDecides';
+
+  confidentialFloor: ConfidentialFloor | null = null;
+
+  // Starts acknowledged so the first-use notice cannot flash before the server's answer arrives.
+  confidentialNoticeAcknowledged = true;
+  isAcknowledgingConfidentialNotice = false;
+  confidentialNoticeError = '';
+
+  // Outbound masking. Unlike Confidentiality Mode, these apply to every outbound turn of every chat.
+  readonly dlpSecretClasses: readonly DlpClassOption[] = [
+    {
+      key: 'dlpMaskApiKeys',
+      label: 'Provider and cloud API keys',
+      hint: 'Keys in the shapes issued by AI providers and the major cloud platforms.'
+    },
+    {
+      key: 'dlpMaskPrivateKeys',
+      label: 'Private-key blocks (PEM, PGP)',
+      hint: 'A whole PEM or PGP private-key block, from its opening line to its closing one.'
+    },
+    {
+      key: 'dlpMaskTokens',
+      label: 'Bearer tokens and JWTs',
+      hint: 'Authorization header values, bearer tokens and JSON Web Tokens.'
+    },
+    {
+      key: 'dlpMaskCreditCards',
+      label: 'Credit-card numbers',
+      hint: 'Digit runs in payment-card shapes, including those written with spaces or hyphens.'
+    },
+    {
+      key: 'dlpMaskSsns',
+      label: 'US Social Security numbers',
+      hint: 'Nine-digit numbers written in US Social Security format.'
+    }
+  ];
+
+  readonly dlpContactClasses: readonly DlpClassOption[] = [
+    {
+      key: 'dlpMaskEmails',
+      label: 'E-mail addresses',
+      hint: 'Every e-mail address in the message, your own included.'
+    },
+    {
+      key: 'dlpMaskPhoneNumbers',
+      label: 'Phone numbers',
+      hint: 'Numbers in international and national telephone formats.'
+    }
+  ];
+
+  readonly dlpClasses: readonly DlpClassOption[] = [...this.dlpSecretClasses, ...this.dlpContactClasses];
+
+  // E-mail addresses and phone numbers are off by default: masking them measurably degrades answers,
+  // for data users usually meant to send.
+  dlp: DlpSettings = {
+    dlpMaskApiKeys: true,
+    dlpMaskPrivateKeys: true,
+    dlpMaskTokens: true,
+    dlpMaskCreditCards: true,
+    dlpMaskSsns: true,
+    dlpMaskEmails: false,
+    dlpMaskPhoneNumbers: false
+  };
+
+  /** The classes the operator forces on. Read-only: such a class is masked whatever the user chooses. */
+  dlpFloor: DlpFloor | null = null;
+
+  readonly retentionMinDays = CONFIDENTIAL_RETENTION_MIN_DAYS;
+  readonly retentionMaxDays = CONFIDENTIAL_RETENTION_MAX_DAYS;
+  readonly retentionDefaultDays = CONFIDENTIAL_RETENTION_DEFAULT_DAYS;
+
   performanceLimits: any = null;
 
   saved = false;
@@ -86,6 +206,12 @@ export class SettingsComponent implements OnInit, OnDestroy {
   private hasPendingChanges = false;
   private isInitialized = false;
 
+  // Masking saves to its own endpoint, so it has its own pipeline and its own pending flag while
+  // sharing the header's save indicator.
+  private dlpSaveSubject = new Subject<void>();
+  private dlpSaveSubscription!: Subscription;
+  private hasPendingDlpChanges = false;
+
   validationErrors: { [field: string]: string } = {};
 
   lastSavedMaxResultLength: number | null = null;
@@ -93,6 +219,138 @@ export class SettingsComponent implements OnInit, OnDestroy {
   lastSavedMaxToolIterations: number | null = null;
   lastSavedMaxParallelToolCalls: number | null = null;
   lastSavedRequestTimeout: number | null = null;
+  lastSavedConfidentialRetentionDays: number | null = null;
+
+  /** Storage modes the floor still allows. A weaker one is not offered, because it could have no effect. */
+  get persistenceOptions() {
+    const floorRank = confidentialPersistenceRank(this.confidentialFloor?.persistence);
+    return CONFIDENTIAL_PERSISTENCE_OPTIONS.filter(o => confidentialPersistenceRank(o.value) >= floorRank);
+  }
+
+  /** Model gates the floor still allows. */
+  get modelGateOptions() {
+    const floorRank = confidentialModelGateRank(this.confidentialFloor?.modelGate);
+    return CONFIDENTIAL_MODEL_GATE_OPTIONS.filter(o => confidentialModelGateRank(o.value) >= floorRank);
+  }
+
+  get effectiveConfidentialPersistence(): ConfidentialPersistence {
+    return stricterConfidentialPersistence(this.confidentialPersistence, this.confidentialFloor?.persistence);
+  }
+
+  get effectiveConfidentialModelGate(): ConfidentialModelGate {
+    return stricterConfidentialModelGate(this.confidentialModelGate, this.confidentialFloor?.modelGate);
+  }
+
+  /** The longest retention window the floor permits, and therefore the control's own maximum. */
+  get maxConfidentialRetentionDays(): number {
+    const floor = this.confidentialFloor?.retentionDays;
+    return floor && floor > 0 ? Math.min(floor, this.retentionMaxDays) : this.retentionMaxDays;
+  }
+
+  /** An emptied field means the default window, never the widest one the floor happens to allow. */
+  get effectiveConfidentialRetentionDays(): number {
+    const own = this.confidentialRetentionDays ?? this.retentionDefaultDays;
+    return Math.min(Math.max(own, this.retentionMinDays), this.maxConfidentialRetentionDays);
+  }
+
+  get effectiveConfidentialDisableToolEgress(): boolean {
+    return this.confidentialDisableToolEgress || !!this.confidentialFloor?.disableToolEgress;
+  }
+
+  get effectiveConfidentialDisableTitleGeneration(): boolean {
+    return this.confidentialDisableTitleGeneration || !!this.confidentialFloor?.disableTitleGeneration;
+  }
+
+  get effectiveConfidentialDisablePromptCache(): boolean {
+    return this.confidentialDisablePromptCache || !!this.confidentialFloor?.disablePromptCache;
+  }
+
+  get effectiveConfidentialImmediatePurge(): boolean {
+    return this.confidentialImmediatePurge || !!this.confidentialFloor?.immediatePurge;
+  }
+
+  // A floor already at its strictest leaves the user's control nothing to decide, so it is shown
+  // disabled with a note rather than accepting a choice that would silently have no effect.
+  get persistenceFixedByAdmin(): boolean {
+    return this.confidentialFloor?.persistence === 'Ephemeral';
+  }
+
+  get modelGateFixedByAdmin(): boolean {
+    return this.confidentialFloor?.modelGate === 'VerifiedPostureOnly';
+  }
+
+  get retentionFixedByAdmin(): boolean {
+    return this.maxConfidentialRetentionDays <= this.retentionMinDays;
+  }
+
+  get toolEgressFixedByAdmin(): boolean {
+    return !!this.confidentialFloor?.disableToolEgress;
+  }
+
+  get titleGenerationFixedByAdmin(): boolean {
+    return !!this.confidentialFloor?.disableTitleGeneration;
+  }
+
+  get promptCacheFixedByAdmin(): boolean {
+    return !!this.confidentialFloor?.disablePromptCache;
+  }
+
+  get immediatePurgeFixedByAdmin(): boolean {
+    return !!this.confidentialFloor?.immediatePurge;
+  }
+
+  /** The helper line for whichever storage mode currently applies. */
+  get selectedPersistenceHint(): string {
+    const match = CONFIDENTIAL_PERSISTENCE_OPTIONS.find(o => o.value === this.effectiveConfidentialPersistence);
+    return match ? match.hint : '';
+  }
+
+  /** The helper line for whichever model gate currently applies. */
+  get selectedModelGateHint(): string {
+    const match = CONFIDENTIAL_MODEL_GATE_OPTIONS.find(o => o.value === this.effectiveConfidentialModelGate);
+    return match ? match.hint : '';
+  }
+
+  /** Readable storage or permitted tool egress leaves the mode unable to keep its promise. */
+  get confidentialPromiseWeakened(): boolean {
+    return this.effectiveConfidentialPersistence === 'Plaintext' || !this.effectiveConfidentialDisableToolEgress;
+  }
+
+  /** The seven confidentiality fields in the shape `PUT /api/settings` accepts. */
+  get confidentialPayload(): ConfidentialUserSettings {
+    return {
+      confidentialPersistence: this.effectiveConfidentialPersistence,
+      confidentialRetentionDays: this.effectiveConfidentialRetentionDays,
+      confidentialDisableToolEgress: this.effectiveConfidentialDisableToolEgress,
+      confidentialDisableTitleGeneration: this.effectiveConfidentialDisableTitleGeneration,
+      confidentialDisablePromptCache: this.effectiveConfidentialDisablePromptCache,
+      confidentialImmediatePurge: this.effectiveConfidentialImmediatePurge,
+      confidentialModelGate: this.effectiveConfidentialModelGate
+    };
+  }
+
+  /** A class the operator forces on leaves the switch nothing to decide, so it is shown on and disabled. */
+  isDlpFixedByAdmin(key: DlpMaskClass): boolean {
+    return !!this.dlpFloor?.[DLP_FLOOR_KEYS[key]];
+  }
+
+  /** The masking that applies to a class: the user's own choice, or on where the operator requires it. */
+  effectiveDlp(key: DlpMaskClass): boolean {
+    return this.dlp[key] || this.isDlpFixedByAdmin(key);
+  }
+
+  /** The seven masking classes in the shape `POST /api/settings/dlp` accepts. */
+  get dlpPayload(): DlpSettings {
+    return {
+      dlpMaskApiKeys: this.effectiveDlp('dlpMaskApiKeys'),
+      dlpMaskPrivateKeys: this.effectiveDlp('dlpMaskPrivateKeys'),
+      dlpMaskTokens: this.effectiveDlp('dlpMaskTokens'),
+      dlpMaskCreditCards: this.effectiveDlp('dlpMaskCreditCards'),
+      dlpMaskSsns: this.effectiveDlp('dlpMaskSsns'),
+      dlpMaskEmails: this.effectiveDlp('dlpMaskEmails'),
+      dlpMaskPhoneNumbers: this.effectiveDlp('dlpMaskPhoneNumbers')
+    };
+  }
 
   get resultLengthOptions() {
     if (!this.performanceLimits?.maxResultLength) return [];
@@ -151,9 +409,14 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   async canDeactivate(): Promise<boolean> {
-    if (!this.hasPendingChanges) return true;
-    this.revertInvalidFieldsToLastSaved();
-    this.saveSubject.next({ immediate: true });
+    if (!this.hasPendingChanges && !this.hasPendingDlpChanges) return true;
+    if (this.hasPendingDlpChanges) {
+      this.dlpSaveSubject.next();
+    }
+    if (this.hasPendingChanges) {
+      this.revertInvalidFieldsToLastSaved();
+      this.saveSubject.next({ immediate: true });
+    }
     if (this.saveStateSubject.value === 'saving') {
       try {
         await firstValueFrom(
@@ -208,7 +471,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
           this.requestTimeout,
           this.showParallelBadge,
           this.showContextWindowUsage,
-          this.showChatCost
+          this.showChatCost,
+          this.confidentialPayload
         ).pipe(
           tap(() => {
             this.hasPendingChanges = false;
@@ -216,6 +480,30 @@ export class SettingsComponent implements OnInit, OnDestroy {
             this.saveStateSubject.next('saved');
             this.settingsService.showThoughtsAndToolsUpdated.next(Number(this.showThoughtsAndTools));
             this.updateLastSavedFields();
+            this.cdr.detectChanges();
+          }),
+          catchError(() => {
+            this.saveState = 'error';
+            this.saveStateSubject.next('error');
+            this.cdr.detectChanges();
+            return EMPTY;
+          })
+        );
+      })
+    ).subscribe();
+
+    this.dlpSaveSubscription = this.dlpSaveSubject.pipe(
+      tap(() => {
+        this.saveState = 'saving';
+        this.saveStateSubject.next('saving');
+        this.cdr.detectChanges();
+      }),
+      switchMap(() => {
+        return this.settingsService.saveDlpSettings(this.dlpPayload).pipe(
+          tap(() => {
+            this.hasPendingDlpChanges = false;
+            this.saveState = 'saved';
+            this.saveStateSubject.next('saved');
             this.cdr.detectChanges();
           }),
           catchError(() => {
@@ -285,6 +573,44 @@ export class SettingsComponent implements OnInit, OnDestroy {
           if (s.performanceLimits) {
             this.performanceLimits = s.performanceLimits;
           }
+          if (s.confidentialFloor !== undefined) {
+            this.confidentialFloor = s.confidentialFloor ?? null;
+          }
+          if (s.confidentialPersistence !== undefined) {
+            this.confidentialPersistence = s.confidentialPersistence;
+          }
+          if (s.confidentialRetentionDays !== undefined) {
+            this.confidentialRetentionDays = s.confidentialRetentionDays;
+          }
+          if (s.confidentialDisableToolEgress !== undefined) {
+            this.confidentialDisableToolEgress = s.confidentialDisableToolEgress;
+          }
+          if (s.confidentialDisableTitleGeneration !== undefined) {
+            this.confidentialDisableTitleGeneration = s.confidentialDisableTitleGeneration;
+          }
+          if (s.confidentialDisablePromptCache !== undefined) {
+            this.confidentialDisablePromptCache = s.confidentialDisablePromptCache;
+          }
+          if (s.confidentialImmediatePurge !== undefined) {
+            this.confidentialImmediatePurge = s.confidentialImmediatePurge;
+          }
+          if (s.confidentialModelGate !== undefined) {
+            this.confidentialModelGate = s.confidentialModelGate;
+          }
+          if (s.confidentialFirstUseNoticeAcknowledged !== undefined) {
+            this.confidentialNoticeAcknowledged = s.confidentialFirstUseNoticeAcknowledged;
+          }
+          if (s.dlpFloor !== undefined) {
+            this.dlpFloor = s.dlpFloor ?? null;
+          }
+          for (const c of this.dlpClasses) {
+            const value = s[c.key];
+            if (value !== undefined) {
+              this.dlp[c.key] = value;
+            }
+          }
+          this.clampConfidentialSettingsToFloor();
+          this.clampDlpSettingsToFloor();
           this.updateLastSavedFields();
           this.initializeSelects();
           this.isInitialized = true;
@@ -300,6 +626,25 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.lastSavedMaxToolIterations = this.maxToolIterations;
     this.lastSavedMaxParallelToolCalls = this.maxParallelToolCalls;
     this.lastSavedRequestTimeout = this.requestTimeout;
+    this.lastSavedConfidentialRetentionDays = this.confidentialRetentionDays;
+  }
+
+  /** Raises each confidentiality control to the floor, so the displayed value is the one that applies. */
+  clampConfidentialSettingsToFloor() {
+    this.confidentialPersistence = this.effectiveConfidentialPersistence;
+    this.confidentialModelGate = this.effectiveConfidentialModelGate;
+    this.confidentialRetentionDays = this.effectiveConfidentialRetentionDays;
+    this.confidentialDisableToolEgress = this.effectiveConfidentialDisableToolEgress;
+    this.confidentialDisableTitleGeneration = this.effectiveConfidentialDisableTitleGeneration;
+    this.confidentialDisablePromptCache = this.effectiveConfidentialDisablePromptCache;
+    this.confidentialImmediatePurge = this.effectiveConfidentialImmediatePurge;
+  }
+
+  /** Raises each masking switch to the operator's floor, so the displayed value is the one that applies. */
+  clampDlpSettingsToFloor() {
+    for (const c of this.dlpClasses) {
+      this.dlp[c.key] = this.effectiveDlp(c.key);
+    }
   }
 
   validateField(field: string, value: number | null): boolean {
@@ -318,13 +663,30 @@ export class SettingsComponent implements OnInit, OnDestroy {
     return true;
   }
 
+  /** Retention has no entry in performanceLimits: its ceiling is the administrator's floor. */
+  validateConfidentialRetention(): boolean {
+    const value = this.confidentialRetentionDays;
+    if (value === null || value === undefined) {
+      delete this.validationErrors['confidentialRetentionDays'];
+      return true;
+    }
+    const max = this.maxConfidentialRetentionDays;
+    if (!Number.isInteger(value) || value < this.retentionMinDays || value > max) {
+      this.validationErrors['confidentialRetentionDays'] = `Allowed range: ${this.retentionMinDays} \u2013 ${max} days`;
+      return false;
+    }
+    delete this.validationErrors['confidentialRetentionDays'];
+    return true;
+  }
+
   validateSettings(): boolean {
     const v1 = this.validateField('maxResultLength', this.maxResultLength);
     const v2 = this.validateField('maxCallsPerSession', this.maxCallsPerSession);
     const v3 = this.validateField('maxToolIterations', this.maxToolIterations);
     const v4 = this.validateField('maxParallelToolCalls', this.maxParallelToolCalls);
     const v5 = this.validateField('requestTimeout', this.requestTimeout);
-    return v1 && v2 && v3 && v4 && v5;
+    const v6 = this.validateConfidentialRetention();
+    return v1 && v2 && v3 && v4 && v5 && v6;
   }
 
   revertInvalidFieldsToLastSaved() {
@@ -349,6 +711,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
       this.requestTimeout = this.lastSavedRequestTimeout;
       delete this.validationErrors['requestTimeout'];
     }
+    if (this.validationErrors['confidentialRetentionDays']) {
+      this.confidentialRetentionDays = this.lastSavedConfidentialRetentionDays;
+      delete this.validationErrors['confidentialRetentionDays'];
+    }
     this.initializeSelects();
   }
 
@@ -358,12 +724,40 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.saveSubject.next({ immediate: true });
   }
 
+  /** Saves the masking classes as soon as one is switched, matching the rest of the page. */
+  onDlpChange() {
+    if (!this.isInitialized) return;
+    this.clampDlpSettingsToFloor();
+    this.hasPendingDlpChanges = true;
+    this.dlpSaveSubject.next();
+  }
+
   onClientToolsChange() {
     if (!this.isInitialized) return;
     if (!this.enableClientTools) {
       this.enableGameActions = false;
     }
     this.onSettingChange();
+  }
+
+  /** Records that the first-use notice has been read, so the group stops showing it. */
+  acknowledgeConfidentialNotice() {
+    if (this.isAcknowledgingConfidentialNotice) return;
+    this.isAcknowledgingConfidentialNotice = true;
+    this.confidentialNoticeError = '';
+    this.cdr.detectChanges();
+    this.settingsService.acknowledgeConfidentialNotice().subscribe({
+      next: () => {
+        this.isAcknowledgingConfidentialNotice = false;
+        this.confidentialNoticeAcknowledged = true;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.isAcknowledgingConfidentialNotice = false;
+        this.confidentialNoticeError = 'The acknowledgement could not be recorded. Please try again.';
+        this.cdr.detectChanges();
+      }
+    });
   }
 
   onNumberInputChange() {
@@ -388,6 +782,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   retrySave() {
+    if (this.hasPendingDlpChanges) {
+      this.dlpSaveSubject.next();
+      if (!this.hasPendingChanges) return;
+    }
     this.hasPendingChanges = true;
     this.saveSubject.next({ immediate: true });
   }
@@ -625,6 +1023,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
     window.removeEventListener('changelog_badge_reset', this.changelogBadgeResetHandler);
     if (this.saveSubscription) {
       this.saveSubscription.unsubscribe();
+    }
+    if (this.dlpSaveSubscription) {
+      this.dlpSaveSubscription.unsubscribe();
     }
   }
 }

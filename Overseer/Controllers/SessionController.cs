@@ -79,6 +79,7 @@ public class SessionController : ControllerBase
                 ChatSessionId = session.Id,
                 Role = "system",
                 Content = Overseer.Services.ChatService.GameSnapshotPrefix + "\n" + sanitized,
+                IsGameSnapshot = true,
                 TimestampUtc = DateTime.UtcNow
             };
             _dbContext.ChatMessage.Add(systemMsg);
@@ -111,6 +112,7 @@ public class SessionController : ControllerBase
                     Role = "system",
                     Content = Overseer.Services.ChatService.MessageHistoryPrefix
                         + " (last messages shown):\n" + preview,
+                    IsMessageHistory = true,
                     TimestampUtc = DateTime.UtcNow
                 };
                 _dbContext.ChatMessage.Add(msg);
@@ -165,13 +167,13 @@ public class SessionController : ControllerBase
         if (!string.IsNullOrWhiteSpace(request.InitialPrompt))
         {
             var userId = user.Id;
-            var sessionId = session.Id;
+            var sessionRef = Overseer.Services.Privacy.SessionRef.Persistent(session.Id);
             var initialPrompt = request.InitialPrompt;
 
             var settings = await _dbContext.UserAiSettings.FindAsync(userId);
             int timeoutSeconds = settings?.RequestTimeout ?? _configuration.GetValue<int>("AiPerformanceSettings:ChatRequestTimeout:Default", 300);
             var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
-            _ongoingChatManager.TryStart(sessionId, cts, out _);
+            _ongoingChatManager.TryStart(sessionRef, cts, out _);
 
             _ = Task.Run(async () =>
             {
@@ -179,11 +181,11 @@ public class SessionController : ControllerBase
                 {
                     using var scope = _scopeFactory.CreateScope();
                     var chatService = scope.ServiceProvider.GetRequiredService<ChatService>();
-                    await chatService.GenerateAndBroadcastMessageAsync(sessionId, initialPrompt, null, userId, true, cts.Token);
+                    await chatService.GenerateAndBroadcastMessageAsync(sessionRef, initialPrompt, null, userId, true, cts.Token);
                 }
                 finally
                 {
-                    _ongoingChatManager.Complete(sessionId);
+                    _ongoingChatManager.Complete(sessionRef);
                 }
             });
         }

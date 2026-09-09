@@ -21,6 +21,21 @@ public class ChatMessage
     
     public bool IsHidden { get; set; } = false;
 
+    /// <summary>
+    /// True while this system message currently carries a game state snapshot. Replaces the
+    /// content pattern matching that ChatService.GameSnapshotLikePatterns
+    /// performed, so snapshot detection survives content encryption.
+    /// Reflects the row's <b>current</b> state: a snapshot superseded by a newer one is
+    /// rewritten to a marker and the flag is cleared with it.
+    /// </summary>
+    public bool IsGameSnapshot { get; set; } = false;
+
+    /// <summary>
+    /// True while this system message currently carries the in-game message history preview.
+    /// Replaces the ChatService.MessageHistoryPrefix string test.
+    /// </summary>
+    public bool IsMessageHistory { get; set; } = false;
+
     [MaxLength(64)]
     public string? ProviderUsed { get; set; }
 

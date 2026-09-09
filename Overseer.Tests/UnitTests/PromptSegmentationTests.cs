@@ -63,6 +63,21 @@ public class PromptSegmentationTests
         services.AddScoped<IAiProvider, GoogleProvider>();
         services.AddScoped<Overseer.Services.Agents.AgentLoopRunner>();
         services.AddSingleton<Overseer.Services.ParallelExecutionResolver>();
+        services.AddSingleton<Overseer.Services.Privacy.AttachmentValidator>();
+        services.AddSingleton<Overseer.Services.Privacy.IAntiMalwareScanner,
+            Overseer.Services.Privacy.NullAntiMalwareScanner>();
+        services.AddSingleton<Overseer.Services.Privacy.EndpointPolicy>();
+        services.AddSingleton<Overseer.Services.Privacy.IContentKeyRing,
+            Overseer.Services.Privacy.ConfigurationContentKeyRing>();
+        services.AddSingleton<Overseer.Services.Privacy.ContentProtectionService>();
+        services.AddSingleton<Overseer.Services.Privacy.Dlp.DlpScannerService>();
+        services.AddSingleton<Overseer.Services.Documents.DocumentParserService>();
+        services.AddSingleton<Overseer.Services.Rag.DocumentChunker>();
+        services.AddSingleton<Overseer.Services.Rag.IEmbeddingService,
+            Overseer.Services.Rag.LocalOnnxEmbeddingService>();
+        services.AddSingleton<Overseer.Services.Rag.DocumentRagService>();
+        services.AddScoped<Overseer.Services.Rag.RagSidecarStore>();
+        services.AddSingleton(sp => new Overseer.Services.Privacy.EphemeralSessionStore(sp.GetRequiredService<IConfiguration>(), startSweeper: false));
         services.AddScoped<ChatService>();
 
         var provider = services.BuildServiceProvider();

@@ -1968,3 +1968,73 @@ label.checkbox-label,
   tr:nth-child(even) { background: rgba(255, 255, 255, 0.03); }
 }
 
+
+/* Stands in for an image the markdown pipe refused to load from another origin
+   (markdown.pipe.ts). Global rather than scoped to the chat component, because the pipe also
+   renders administrator-authored markdown through CollapsibleMarkdownComponent and the badge
+   has to look deliberate there too.
+
+   Styled as a notice, not an error: a blocked image is usually a model quirk and only
+   occasionally an exfiltration attempt, but it is never something the reader did wrong. */
+.blocked-external-image {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px dashed var(--color-warning);
+  border-radius: 4px;
+  background: rgba(255, 193, 7, 0.08);
+  color: var(--color-warning);
+  font-size: 0.9em;
+  font-family: "Lato", sans-serif;
+  cursor: help;
+}
+
+/* Provider confidentiality posture indicators, shared by api-keys and models — and therefore
+   here rather than copied into both component stylesheets (frontend_ui_controls § 7).
+
+   Three levels, matching the privacy badge's own vocabulary in chat.component.scss:
+   strong = an operator-verified ZeroRetention or better, moderate = NoTraining or a
+   self-declared strength, weak = nothing established. A self-declared posture can never be
+   strong, whatever it claims; that rule lives in the resolver and in
+   settings.service.ts's posturePrivacyLevel, not in the colours. */
+.posture-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* The models list makes the indicator a focus stop, because the tooltip carries the
+   verification date the badge text has no room for. */
+.posture-badge[tabindex] {
+  cursor: help;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 3px;
+  }
+}
+
+.posture-strong {
+  background: rgba(40, 167, 69, 0.15);
+  border: 1px solid var(--color-success);
+  color: var(--color-success);
+}
+
+.posture-moderate,
+.posture-badge-declared {
+  background: rgba(255, 193, 7, 0.15);
+  border: 1px solid var(--color-warning);
+  color: var(--color-warning);
+}
+
+.posture-weak {
+  background: rgba(255, 167, 38, 0.15);
+  border: 1px solid rgba(255, 167, 38, 0.6);
+  color: #ffb374;
+}

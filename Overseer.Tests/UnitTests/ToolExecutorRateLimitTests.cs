@@ -34,7 +34,7 @@ public class ToolExecutorRateLimitTests
     private class NullClientBridge : IClientToolBridge
     {
         public bool IsClientConnected => true;
-        public Task<ToolResult> SendToolRequestAsync(long sessionId, string toolName, JsonElement parameters, CancellationToken cancellationToken)
+        public Task<ToolResult> SendToolRequestAsync(Overseer.Services.Privacy.SessionRef sessionRef, string toolName, JsonElement parameters, CancellationToken cancellationToken)
         {
             return Task.FromResult(new ToolResult { Success = true, Content = "Client result" });
         }
@@ -66,7 +66,7 @@ public class ToolExecutorRateLimitTests
         const int maxCalls = 10;
         var context = new ToolExecutionContext
         {
-            SessionId = 42,
+            SessionId = Overseer.Services.Privacy.SessionRef.Persistent(42),
             MaxCallsPerSession = maxCalls
         };
 
@@ -98,8 +98,8 @@ public class ToolExecutorRateLimitTests
             CreateConfiguration());
 
         const int maxCalls = 5;
-        var context1 = new ToolExecutionContext { SessionId = 101, MaxCallsPerSession = maxCalls };
-        var context2 = new ToolExecutionContext { SessionId = 202, MaxCallsPerSession = maxCalls };
+        var context1 = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(101), MaxCallsPerSession = maxCalls };
+        var context2 = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(202), MaxCallsPerSession = maxCalls };
 
         var tasks1 = Enumerable.Range(0, 15).Select(_ =>
             executor.ExecuteAsync("test_tool", JsonDocument.Parse("{}").RootElement, context1, CancellationToken.None)
@@ -131,7 +131,7 @@ public class ToolExecutorRateLimitTests
 
         var tasks = Enumerable.Range(1, 10).Select(i =>
         {
-            var ctx = new ToolExecutionContext { SessionId = i, MaxCallsPerSession = 50 };
+            var ctx = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(i), MaxCallsPerSession = 50 };
             return executor.ExecuteAsync("test_tool", JsonDocument.Parse("{}").RootElement, ctx, CancellationToken.None);
         }).ToList();
 
@@ -155,7 +155,7 @@ public class ToolExecutorRateLimitTests
 
         var tasks = Enumerable.Range(1, 6).Select(i =>
         {
-            var ctx = new ToolExecutionContext { SessionId = i, MaxCallsPerSession = 50 };
+            var ctx = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(i), MaxCallsPerSession = 50 };
             return executor.ExecuteAsync("test_tool", JsonDocument.Parse("{}").RootElement, ctx, CancellationToken.None);
         }).ToList();
 
@@ -179,14 +179,14 @@ public class ToolExecutorRateLimitTests
         const int maxCalls = 5;
         var coordinatorContext = new ToolExecutionContext
         {
-            SessionId = 999,
+            SessionId = Overseer.Services.Privacy.SessionRef.Persistent(999),
             MaxCallsPerSession = maxCalls,
             AgentDepth = 0
         };
 
         var subAgentContext = new ToolExecutionContext
         {
-            SessionId = 999,
+            SessionId = Overseer.Services.Privacy.SessionRef.Persistent(999),
             MaxCallsPerSession = maxCalls,
             AgentDepth = 1
         };
@@ -228,13 +228,13 @@ public class ToolExecutorRateLimitTests
         const int maxCalls = 3;
         var contextQ1 = new ToolExecutionContext
         {
-            SessionId = 500,
+            SessionId = Overseer.Services.Privacy.SessionRef.Persistent(500),
             ToolBudgetScopeId = "bench_run_1_q1",
             MaxCallsPerSession = maxCalls
         };
         var contextQ2 = new ToolExecutionContext
         {
-            SessionId = 500,
+            SessionId = Overseer.Services.Privacy.SessionRef.Persistent(500),
             ToolBudgetScopeId = "bench_run_1_q2",
             MaxCallsPerSession = maxCalls
         };

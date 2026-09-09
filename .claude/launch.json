@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "overseer",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": [ "run", "--project", "Overseer/Overseer.csproj", "--launch-profile", "https" ],
+      "port": 7214,
+      "url": "https://localhost:7214"
+    }
+  ]
+}

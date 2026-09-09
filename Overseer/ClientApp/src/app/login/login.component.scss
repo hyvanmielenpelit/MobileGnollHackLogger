@@ -175,6 +175,39 @@
   margin-top: 5px;
 }
 
+.two-factor-prompt {
+  text-align: center;
+  margin: 0 0 20px;
+  font-size: 0.95em;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.remember-machine {
+  margin-top: 10px;
+  font-size: 0.9em;
+  color: #ccc;
+}
+
+.remember-machine label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+/* Renders like the sign-up link beside it, but is a button because it performs an action
+   rather than navigating. */
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: #e0ba6d;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .error { color: var(--color-error); text-align: center; margin-top: 15px; }
 
 .error-msg {

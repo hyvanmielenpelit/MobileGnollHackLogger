@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Providers;
+using Overseer.Services.Privacy;
 using Overseer.Extensions;
 using System.Security.Claims;
 using System.Text.Json;
@@ -24,6 +25,10 @@ public class SettingsController : ControllerBase
     private readonly ModelMetadataService _modelMetadataService;
     private readonly RecommendedModelService _recommendedModelService;
     private readonly IAuthorizationService _authorizationService;
+    private readonly Overseer.Services.Privacy.EndpointPolicy _endpointPolicy;
+    private readonly Overseer.Services.Privacy.ConfidentialPolicyResolver _confidentialPolicyResolver;
+    private readonly Overseer.Services.Privacy.Dlp.DlpScannerService _dlpScanner;
+    private readonly Overseer.Services.Privacy.AttachmentValidator _attachmentValidator;
     private readonly IEnumerable<IAiProvider> _aiProviders;
     private readonly ModelPricingService? _modelPricingService;
 
@@ -34,6 +39,10 @@ public class SettingsController : ControllerBase
         ModelMetadataService modelMetadataService,
         RecommendedModelService recommendedModelService,
         IAuthorizationService authorizationService,
+        Overseer.Services.Privacy.EndpointPolicy endpointPolicy,
+        Overseer.Services.Privacy.ConfidentialPolicyResolver confidentialPolicyResolver,
+        Overseer.Services.Privacy.Dlp.DlpScannerService dlpScanner,
+        Overseer.Services.Privacy.AttachmentValidator attachmentValidator,
         IEnumerable<IAiProvider> aiProviders,
         ModelPricingService? modelPricingService = null)
     {
@@ -43,6 +52,10 @@ public class SettingsController : ControllerBase
         _modelMetadataService = modelMetadataService;
         _recommendedModelService = recommendedModelService;
         _authorizationService = authorizationService;
+        _endpointPolicy = endpointPolicy;
+        _confidentialPolicyResolver = confidentialPolicyResolver;
+        _dlpScanner = dlpScanner;
+        _attachmentValidator = attachmentValidator;
         _aiProviders = aiProviders;
         _modelPricingService = modelPricingService;
     }
@@ -57,6 +70,7 @@ public class SettingsController : ControllerBase
 
         var swQuery = Stopwatch.StartNew();
         var settings = await _settingsService.GetSettingsAsync(userId);
+        var dlpPolicy = _dlpScanner.Resolve(settings);
         swQuery.Stop();
         var settingsMs = swQuery.ElapsedMilliseconds;
         
@@ -93,6 +107,11 @@ public class SettingsController : ControllerBase
             hasModel = hasModel,
             configuredProviders = apiKeysStatus.Where(s => (bool)((dynamic)s).HasKey).Select(s => (string)((dynamic)s).Provider).ToList(),
             maxAttachmentSize = _configuration.GetValue<long>("MaxAttachmentSize", 15728640),
+            /* The file picker's accept list, served from the same allowlist the validator
+               enforces. It used to be a literal in the template kept "in step" by a comment,
+               which is a promise rather than a mechanism: the two drifting apart gives a user a
+               file dialog offering exactly what the server then refuses. */
+            attachmentAcceptExtensions = _attachmentValidator.AllowedExtensions,
             spoilerFreeMode = settings?.SpoilerFreeMode ?? true,
             showSourceCodeReferences = settings?.ShowSourceCodeReferences ?? false,
             maxResultLength = settings?.MaxResultLength,
@@ -143,8 +162,92 @@ public class SettingsController : ControllerBase
             },
             titleGenerationModelId = settings?.TitleGenerationModelId,
             titleGenerationSystemModelId = settings?.TitleGenerationSystemModelId,
-            titleGenerationDisabled = settings?.TitleGenerationDisabled ?? false
+            titleGenerationDisabled = settings?.TitleGenerationDisabled ?? false,
+
+            /* The user's own confidential preferences, and the administrator's floor as a
+               separate object. The client needs both: the effective value is the stricter of
+               the two, so a control the floor already fixes has to be shown as fixed rather
+               than accepting a setting that silently has no effect. */
+            confidentialPersistence = settings?.ConfidentialPersistence
+                ?? Overseer.Services.Privacy.ConfidentialPersistence.Encrypted.ToString(),
+            confidentialRetentionDays = settings?.ConfidentialRetentionDays ?? 30,
+            confidentialDisableToolEgress = settings?.ConfidentialDisableToolEgress ?? true,
+            confidentialDisableTitleGeneration = settings?.ConfidentialDisableTitleGeneration ?? true,
+            confidentialDisablePromptCache = settings?.ConfidentialDisablePromptCache ?? true,
+            confidentialImmediatePurge = settings?.ConfidentialImmediatePurge ?? true,
+            confidentialModelGate = settings?.ConfidentialModelGate
+                ?? Overseer.Services.Privacy.ConfidentialityGateMode.UserDecides.ToString(),
+            confidentialFirstUseNoticeAcknowledged = settings?.ConfidentialFirstUseNoticeAcknowledged ?? false,
+            confidentialFloor = new
+            {
+                persistence = _confidentialPolicyResolver.Floor.Persistence.ToString(),
+                retentionDays = _confidentialPolicyResolver.Floor.RetentionDays,
+                disableToolEgress = _confidentialPolicyResolver.Floor.DisableToolEgress,
+                disableTitleGeneration = _confidentialPolicyResolver.Floor.DisableTitleGeneration,
+                disablePromptCache = _confidentialPolicyResolver.Floor.DisablePromptCache,
+                immediatePurge = _confidentialPolicyResolver.Floor.ImmediatePurge,
+                modelGate = _confidentialPolicyResolver.Floor.ModelGate.ToString()
+            },
+
+            /* The RESOLVED masking policy, not the raw preferences -- unlike the confidential
+               block above, whose controls the client clamps itself. A class the administrator
+               forces on reads back as on, so the switch shows what actually happens rather
+               than what the user last asked for, and dlpFloor says which ones they cannot
+               change. */
+            dlpMaskApiKeys = dlpPolicy.ApiKeys,
+            dlpMaskPrivateKeys = dlpPolicy.PrivateKeys,
+            dlpMaskTokens = dlpPolicy.Tokens,
+            dlpMaskCreditCards = dlpPolicy.CreditCards,
+            dlpMaskSsns = dlpPolicy.Ssns,
+            dlpMaskEmails = dlpPolicy.Emails,
+            dlpMaskPhoneNumbers = dlpPolicy.PhoneNumbers,
+            dlpFloor = new
+            {
+                apiKeys = _dlpScanner.Floor.ApiKeys,
+                privateKeys = _dlpScanner.Floor.PrivateKeys,
+                tokens = _dlpScanner.Floor.Tokens,
+                creditCards = _dlpScanner.Floor.CreditCards,
+                ssns = _dlpScanner.Floor.Ssns,
+                emails = _dlpScanner.Floor.Emails,
+                phoneNumbers = _dlpScanner.Floor.PhoneNumbers
+            }
         });
+    }
+
+    /// <summary>Saves the user's outbound-masking switches.</summary>
+    /// <remarks>
+    /// Its own endpoint rather than more fields on <c>PUT /api/settings</c>, because these are
+    /// the one group of settings that changes what leaves the server: keeping the route
+    /// separate keeps that visible in a log and in a permission review.
+    /// </remarks>
+    [HttpPost("dlp")]
+    public async Task<IActionResult> UpdateDlpSettings([FromBody] UpdateDlpSettingsRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        await _settingsService.SaveDlpSettingsAsync(
+            userId,
+            request.DlpMaskApiKeys,
+            request.DlpMaskPrivateKeys,
+            request.DlpMaskTokens,
+            request.DlpMaskCreditCards,
+            request.DlpMaskSsns,
+            request.DlpMaskEmails,
+            request.DlpMaskPhoneNumbers);
+
+        return Ok();
+    }
+
+    /// <summary>Marks the confidentiality first-use notice as seen, so it is not shown again.</summary>
+    [HttpPost("confidential-notice-acknowledged")]
+    public async Task<IActionResult> AcknowledgeConfidentialNotice()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        await _settingsService.AcknowledgeConfidentialNoticeAsync(userId);
+        return Ok();
     }
 
     [HttpPut]
@@ -201,6 +304,16 @@ public class SettingsController : ControllerBase
         }
 
         await _settingsService.SaveSettingsAsync(userId, request.SpoilerFreeMode, request.EnableWebSearch, request.EnableToolUse, request.EnableClientTools, request.EnableGameActions, request.ShowSourceCodeReferences, request.MaxResultLength, request.MaxCallsPerSession, request.MaxToolIterations, request.MaxParallelToolCalls, request.ShowThoughtsAndTools, request.RequestTimeout, request.EnableSubAgents, request.ShowParallelBadge, request.ShowContextWindowUsage, request.ShowChatCost);
+
+        await _settingsService.SaveConfidentialSettingsAsync(
+            userId,
+            request.ConfidentialPersistence,
+            request.ConfidentialRetentionDays,
+            request.ConfidentialDisableToolEgress,
+            request.ConfidentialDisableTitleGeneration,
+            request.ConfidentialDisablePromptCache,
+            request.ConfidentialImmediatePurge,
+            request.ConfidentialModelGate);
         
         return Ok();
     }
@@ -273,6 +386,129 @@ public class SettingsController : ControllerBase
         return Ok();
     }
 
+    /// <summary>
+    /// Records the posture the user declares for their own provider account.
+    /// </summary>
+    /// <remarks>
+    /// What is stored is a claim, not a fact: Overseer cannot see the user's agreement with
+    /// their provider and never treats this as equivalent to an operator-verified posture on a
+    /// system configuration. The badge resolver enforces that, and the UI says so.
+    /// </remarks>
+    [HttpPut("apikeys/{provider}/posture")]
+    public async Task<IActionResult> SetApiKeyPosture(string provider, [FromBody] SetApiKeyPostureRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        if (!TryMatchProvider(provider, out var matchedProvider, out var providerError))
+            return BadRequest(providerError);
+
+        /* An unrecognised name is refused rather than parsed down to Unknown. The parser
+           degrades safely for a value already in the database, which is the right behaviour
+           when reading; on the way in, silently storing something other than what the caller
+           asked for is how a posture ends up meaning nothing. */
+        string? posture = null;
+        if (!string.IsNullOrWhiteSpace(request.Posture))
+        {
+            if (!Enum.TryParse<Overseer.Services.Privacy.ProviderConfidentialityPosture>(
+                    request.Posture.Trim(), ignoreCase: true, out var parsed))
+            {
+                return BadRequest(
+                    $"Unrecognised confidentiality posture '{request.Posture}'. Valid values are: "
+                    + string.Join(", ", Enum.GetNames<Overseer.Services.Privacy.ProviderConfidentialityPosture>()) + ".");
+            }
+
+            posture = parsed.ToStoredValue();
+        }
+
+        if (request.Note != null && request.Note.Length > 1024)
+            return BadRequest("The note cannot exceed 1024 characters.");
+
+        await _settingsService.SaveApiKeyPostureAsync(userId, matchedProvider, posture, request.Note);
+        return Ok();
+    }
+
+    /// <summary>
+    /// Records whether the user considers this key suitable for confidential sessions.
+    /// </summary>
+    /// <remarks>
+    /// Null returns the key to undecided, which is what the AskWhenUnclear gate prompts about.
+    /// False is a decision and refuses the key; it is not the same as never having answered.
+    /// </remarks>
+    [HttpPut("apikeys/{provider}/confidential-trust")]
+    public async Task<IActionResult> SetApiKeyConfidentialTrust(
+        string provider, [FromBody] SetApiKeyConfidentialTrustRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        if (!TryMatchProvider(provider, out var matchedProvider, out var providerError))
+            return BadRequest(providerError);
+
+        await _settingsService.SaveApiKeyConfidentialTrustAsync(userId, matchedProvider, request.Trusted);
+        return Ok();
+    }
+
+    /// <summary>
+    /// Would set a custom endpoint on the user's own key. Refused with <c>400</c> while
+    /// <c>PrivacySettings:CustomEndpoints:AllowUserSuppliedBaseUrl</c> is false, which is its
+    /// value for this framework version.
+    /// </summary>
+    /// <remarks>
+    /// The endpoint exists precisely so the refusal is explicit. Accepting the value and then
+    /// ignoring it — which is what silently dropping it amounts to — would leave a user
+    /// believing their traffic goes somewhere it does not, and a base URL is the one setting
+    /// where that belief is a security question rather than a preference.
+    ///
+    /// A user may declare what their provider's terms are; they may not decide where the
+    /// server sends its outbound requests. That is an administrator's decision because the
+    /// server's network is the administrator's, not the user's.
+    /// </remarks>
+    [HttpPut("apikeys/{provider}/endpoint")]
+    public async Task<IActionResult> SetApiKeyEndpoint(string provider, [FromBody] SetApiKeyEndpointRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        if (!TryMatchProvider(provider, out var matchedProvider, out var providerError))
+            return BadRequest(providerError);
+
+        if (!_endpointPolicy.AllowUserSuppliedBaseUrl)
+        {
+            return BadRequest(new
+            {
+                message = "Custom AI endpoints are configured by an administrator, not per user. "
+                    + "Your key's requests go to the provider's official endpoint."
+            });
+        }
+
+        var check = _endpointPolicy.Validate(request.BaseUrl, request.CustomHeadersJson, request.ApiVersion);
+        if (!check.IsValid)
+            return BadRequest(new { message = check.Error });
+
+        await _settingsService.SaveApiKeyEndpointAsync(
+            userId, matchedProvider, request.BaseUrl, request.CustomHeadersJson, request.ApiVersion);
+        return Ok();
+    }
+
+    /* Case-insensitive match against the supported list, returning the canonical casing --
+       the provider is part of the key row's identity, so "openai" and "OpenAI" must not become
+       two rows. */
+    private static bool TryMatchProvider(string provider, out string matched, out string error)
+    {
+        if (!SettingsService.SupportedProviders.Contains(provider, StringComparer.OrdinalIgnoreCase))
+        {
+            matched = string.Empty;
+            error = $"Unsupported provider '{provider}'. Supported providers are: "
+                + string.Join(", ", SettingsService.SupportedProviders) + ".";
+            return false;
+        }
+
+        matched = SettingsService.SupportedProviders.First(p => p.Equals(provider, StringComparison.OrdinalIgnoreCase));
+        error = string.Empty;
+        return true;
+    }
+
     [HttpGet("usermodels")]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<IActionResult> GetUserModels()
@@ -284,6 +520,15 @@ public class SettingsController : ControllerBase
         var keyModeMap = apiKeysStatus.ToDictionary(
             s => (string)((dynamic)s).Provider,
             s => (int)((dynamic)s).ParallelExecutionMode,
+            StringComparer.OrdinalIgnoreCase);
+
+        /* A user's own model has no posture of its own: it runs on that user's key, so the
+           posture is whatever they declared for that provider. Self-declared throughout, which
+           is why the DTO reports it with no verification date -- a user key can never carry
+           one. */
+        var keyPostureMap = apiKeysStatus.ToDictionary(
+            s => (string)((dynamic)s).Provider,
+            s => (string?)((dynamic)s).ConfidentialityPosture,
             StringComparer.OrdinalIgnoreCase);
 
         var models = await _settingsService.GetUserModelsAsync(userId);
@@ -305,6 +550,9 @@ public class SettingsController : ControllerBase
                 IsSystem = false,
                 ModelRole = 3,
                 ParallelExecutionMode = keyModeMap.TryGetValue(m.Provider, out var mode) ? mode : 2,
+                ConfidentialityPosture = keyPostureMap.TryGetValue(m.Provider, out var keyPosture) ? keyPosture : null,
+                PostureVerifiedUtc = (DateTime?)null,
+                DataRegion = (string?)null,
                 PricingMode = m.PricingMode,
                 InputPricePerMillion = m.InputPricePerMillion,
                 OutputPricePerMillion = m.OutputPricePerMillion,
@@ -347,6 +595,9 @@ public class SettingsController : ControllerBase
                 IsSystem = true,
                 ModelRole = x.ResolvedRole,
                 ParallelExecutionMode = (int)x.Config.ParallelExecutionMode,
+                ConfidentialityPosture = x.Config.ConfidentialityPosture,
+                PostureVerifiedUtc = x.Config.PostureVerifiedUtc,
+                DataRegion = x.Config.DataRegion,
                 PricingMode = x.Config.PricingMode,
                 InputPricePerMillion = x.Config.InputPricePerMillion,
                 OutputPricePerMillion = x.Config.OutputPricePerMillion,
@@ -504,6 +755,115 @@ public class SettingsController : ControllerBase
         return Ok();
     }
 
+    /// <summary>
+    /// The model-listing URL for a provider at a given endpoint, and the auth to apply.
+    /// </summary>
+    /// <remarks>
+    /// This is the third URL layer, outside the providers entirely. Left hardcoded to the
+    /// official hosts, a deployment with a custom endpoint would validate its key against a
+    /// host it never uses — and the bad outcome is not the failure, it is the *success*: a key
+    /// that works against `api.openai.com` reports the Azure deployment healthy without ever
+    /// having contacted it.
+    /// </remarks>
+    private static string ComposeModelsUrl(string provider, AiEndpointDescriptor endpoint, string apiKey)
+    {
+        if (!endpoint.IsCustom)
+        {
+            return provider switch
+            {
+                "Anthropic" => "https://api.anthropic.com/v1/models",
+                "Google" => $"https://generativelanguage.googleapis.com/v1beta/models?key={Uri.EscapeDataString(apiKey)}",
+                _ => "https://api.openai.com/v1/models"
+            };
+        }
+
+        string baseUrl = endpoint.BaseUrl!.TrimEnd('/');
+
+        if (provider == "Google")
+        {
+            /* No ?key= on a custom endpoint: it is rejected there, and a credential in a URL
+               ends up in gateway access logs. The header carries it instead. */
+            string googleUrl = $"{baseUrl}/v1beta/models";
+            return endpoint.AuthStyle == AiEndpointAuthStyle.AzureApiKey && !string.IsNullOrWhiteSpace(endpoint.ApiVersion)
+                ? googleUrl + "?api-version=" + Uri.EscapeDataString(endpoint.ApiVersion)
+                : googleUrl;
+        }
+
+        if (provider == "Anthropic")
+            return baseUrl + "/v1/models";
+
+        // OpenAI, and every OpenAI-compatible gateway.
+        if (endpoint.AuthStyle == AiEndpointAuthStyle.AzureApiKey)
+        {
+            return $"{baseUrl}/openai/v1/models?api-version="
+                + Uri.EscapeDataString(endpoint.ApiVersion ?? string.Empty);
+        }
+
+        return baseUrl + "/v1/models";
+    }
+
+    /// <summary>Applies the endpoint's credential and allowlisted headers to a listing request.</summary>
+    private static void ApplyModelsAuth(HttpClient client, string provider, AiEndpointDescriptor endpoint, string apiKey)
+    {
+        switch (endpoint.AuthStyle)
+        {
+            case AiEndpointAuthStyle.AzureApiKey:
+                client.DefaultRequestHeaders.TryAddWithoutValidation("api-key", apiKey);
+                break;
+
+            case AiEndpointAuthStyle.BearerToken:
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                break;
+
+            case AiEndpointAuthStyle.None:
+                break;
+
+            default:
+                // The official public API of each provider, which all three do differently.
+                if (provider == "Anthropic")
+                    client.DefaultRequestHeaders.TryAddWithoutValidation("x-api-key", apiKey);
+                else if (provider != "Google")
+                    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                break;
+        }
+
+        if (provider == "Anthropic")
+            client.DefaultRequestHeaders.TryAddWithoutValidation("anthropic-version", "2023-06-01");
+
+        if (endpoint.CustomHeaders != null)
+        {
+            foreach (var (name, value) in endpoint.CustomHeaders)
+                client.DefaultRequestHeaders.TryAddWithoutValidation(name, value);
+        }
+    }
+
+    /// <summary>
+    /// The message for a failed model listing, distinguishing a custom endpoint that has no
+    /// listing route from a credential that does not work.
+    /// </summary>
+    /// <remarks>
+    /// The distinction is the point. An endpoint exposing no listing route is **not
+    /// verifiable**, which is a different statement from "your key is wrong" — and neither may
+    /// ever be reported as verified by having tested somewhere else.
+    /// </remarks>
+    private static string DescribeListingFailure(
+        string provider, AiEndpointDescriptor endpoint, System.Net.HttpStatusCode statusCode, string body)
+    {
+        if (endpoint.IsCustom
+            && (statusCode == System.Net.HttpStatusCode.NotFound
+                || statusCode == System.Net.HttpStatusCode.MethodNotAllowed
+                || statusCode == System.Net.HttpStatusCode.NotImplemented))
+        {
+            return $"The configured endpoint returned {(int)statusCode} for its model list, so the models "
+                + "available there cannot be verified. This is not necessarily a problem: many gateways and "
+                + "self-hosted servers expose no listing route. Enter the model id by hand. The key itself "
+                + "has NOT been validated — Overseer will not test it against the public API instead.";
+        }
+
+        string where = endpoint.IsCustom ? "The configured endpoint" : $"{provider} API";
+        return $"{where} returned {statusCode}: {body}";
+    }
+
     [HttpPost("models")]
     public async Task<IActionResult> GetModels([FromBody] GetModelsRequest request)
     {
@@ -513,13 +873,11 @@ public class SettingsController : ControllerBase
         var provider = request.Provider ?? "OpenAI";
         var apiKey = request.ApiKey;
 
-        if (string.IsNullOrEmpty(apiKey) && request.SystemConfigId.HasValue)
+        bool isAdmin = (await _authorizationService.AuthorizeAsync(User, "AdminOnly")).Succeeded;
+
+        if (string.IsNullOrEmpty(apiKey) && request.SystemConfigId.HasValue && isAdmin)
         {
-            var authResult = await _authorizationService.AuthorizeAsync(User, "AdminOnly");
-            if (authResult.Succeeded)
-            {
-                apiKey = await _settingsService.GetDecryptedSystemApiKeyAsync(request.SystemConfigId.Value);
-            }
+            apiKey = await _settingsService.GetDecryptedSystemApiKeyAsync(request.SystemConfigId.Value);
         }
 
         if (string.IsNullOrEmpty(apiKey))
@@ -532,20 +890,49 @@ public class SettingsController : ControllerBase
             return BadRequest(new { message = "API Key is required to fetch models." });
         }
 
+        /* The endpoint the listing must interrogate. Order matters: a saved system
+           configuration's own endpoint wins, then one typed into the admin form (so an
+           administrator can validate a key before saving), then the user's key -- which
+           resolves to the official endpoint while user-supplied base URLs are off. */
+        AiEndpointDescriptor endpoint = AiEndpointDescriptor.Official;
+        if (request.SystemConfigId.HasValue && isAdmin)
+        {
+            var config = await _settingsService.GetSystemConfigurationAsync(request.SystemConfigId.Value);
+            endpoint = _endpointPolicy.Resolve(config);
+        }
+        else if (!string.IsNullOrWhiteSpace(request.BaseUrl))
+        {
+            if (!isAdmin)
+                return Forbid();
+
+            var endpointCheck = _endpointPolicy.ValidateWithoutDns(
+                request.BaseUrl, request.CustomHeadersJson, request.ApiVersion);
+            if (!endpointCheck.IsValid)
+                return BadRequest(new { message = endpointCheck.Error });
+
+            endpoint = _endpointPolicy.Resolve(request.BaseUrl, request.CustomHeadersJson, request.ApiVersion);
+        }
+        else
+        {
+            var providerKey = await _settingsService.GetApiKeyRowAsync(userId, provider);
+            endpoint = _endpointPolicy.Resolve(providerKey);
+        }
+
         try
         {
             var client = _httpClientFactory.CreateClient();
             var models = new List<ApiModelDto>();
+            string modelsUrl = ComposeModelsUrl(provider, endpoint, apiKey);
+            ApplyModelsAuth(client, provider, endpoint, apiKey);
 
 
 
             if (provider == "OpenAI")
             {
-                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-                var response = await client.GetAsync("https://api.openai.com/v1/models");
+                var response = await client.GetAsync(modelsUrl);
                 if (!response.IsSuccessStatusCode)
                 {
-                    return BadRequest(new { message = $"OpenAI API returned {response.StatusCode}: {await response.Content.ReadAsStringAsync()}" });
+                    return BadRequest(new { message = DescribeListingFailure(provider, endpoint, response.StatusCode, await response.Content.ReadAsStringAsync()) });
                 }
                 var json = await response.Content.ReadAsStringAsync();
                 var root = JsonDocument.Parse(json).RootElement;
@@ -577,12 +964,10 @@ public class SettingsController : ControllerBase
             }
             else if (provider == "Anthropic")
             {
-                client.DefaultRequestHeaders.Add("x-api-key", apiKey);
-                client.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
-                var response = await client.GetAsync("https://api.anthropic.com/v1/models");
+                var response = await client.GetAsync(modelsUrl);
                 if (!response.IsSuccessStatusCode)
                 {
-                    return BadRequest(new { message = $"Anthropic API returned {response.StatusCode}: {await response.Content.ReadAsStringAsync()}" });
+                    return BadRequest(new { message = DescribeListingFailure(provider, endpoint, response.StatusCode, await response.Content.ReadAsStringAsync()) });
                 }
                 var json = await response.Content.ReadAsStringAsync();
                 var root = JsonDocument.Parse(json).RootElement;
@@ -629,10 +1014,10 @@ public class SettingsController : ControllerBase
             }
             else if (provider == "Google")
             {
-                var response = await client.GetAsync($"https://generativelanguage.googleapis.com/v1beta/models?key={apiKey}");
+                var response = await client.GetAsync(modelsUrl);
                 if (!response.IsSuccessStatusCode)
                 {
-                    return BadRequest(new { message = $"Google API returned {response.StatusCode}: {await response.Content.ReadAsStringAsync()}" });
+                    return BadRequest(new { message = DescribeListingFailure(provider, endpoint, response.StatusCode, await response.Content.ReadAsStringAsync()) });
                 }
                 var json = await response.Content.ReadAsStringAsync();
                 var root = JsonDocument.Parse(json).RootElement;
@@ -724,6 +1109,21 @@ public class ApiModelDto
     public ModelCatalogPricing? DefaultPricing { get; set; }
 }
 
+/// <summary>
+/// A partial update of the outbound-masking switches. Every field is nullable and null means
+/// "leave alone".
+/// </summary>
+public class UpdateDlpSettingsRequest
+{
+    public bool? DlpMaskApiKeys { get; set; }
+    public bool? DlpMaskPrivateKeys { get; set; }
+    public bool? DlpMaskTokens { get; set; }
+    public bool? DlpMaskCreditCards { get; set; }
+    public bool? DlpMaskSsns { get; set; }
+    public bool? DlpMaskEmails { get; set; }
+    public bool? DlpMaskPhoneNumbers { get; set; }
+}
+
 public class UpdateSettingsRequest
 {
     public bool? SpoilerFreeMode { get; set; }
@@ -742,6 +1142,21 @@ public class UpdateSettingsRequest
     public bool? ShowContextWindowUsage { get; set; }
     public bool? ShowChatCost { get; set; }
     public int? RequestTimeout { get; set; }
+
+    /* A value weaker than the administrator's floor is not an error: the resolver clamps it at
+       every read, so what applies is always the stricter of the two whatever is stored.
+
+       Note what the client actually sends, though: it clamps to the floor before saving, so a
+       preference weaker than the floor is not preserved and relaxing the floor later does not
+       restore it. Storing the raw preference and clamping only on read would be the better
+       behaviour and needs a client change, not a server one. */
+    public string? ConfidentialPersistence { get; set; }
+    public int? ConfidentialRetentionDays { get; set; }
+    public bool? ConfidentialDisableToolEgress { get; set; }
+    public bool? ConfidentialDisableTitleGeneration { get; set; }
+    public bool? ConfidentialDisablePromptCache { get; set; }
+    public bool? ConfidentialImmediatePurge { get; set; }
+    public string? ConfidentialModelGate { get; set; }
 }
 
 public class SetApiKeyParallelModeRequest
@@ -753,6 +1168,28 @@ public class SaveApiKeyRequest
 {
     public string Provider { get; set; } = string.Empty;
     public string ApiKey { get; set; } = string.Empty;
+}
+
+public class SetApiKeyEndpointRequest
+{
+    public string? BaseUrl { get; set; }
+    public string? CustomHeadersJson { get; set; }
+    public string? ApiVersion { get; set; }
+}
+
+public class SetApiKeyPostureRequest
+{
+    /// <summary>A ProviderConfidentialityPosture name, or null to clear the declaration.</summary>
+    public string? Posture { get; set; }
+
+    /// <summary>The user's own note about their provider account's terms. Max 1024 characters.</summary>
+    public string? Note { get; set; }
+}
+
+public class SetApiKeyConfidentialTrustRequest
+{
+    /// <summary>True or false is a remembered decision; null returns the key to undecided.</summary>
+    public bool? Trusted { get; set; }
 }
 
 public class AddUserModelRequest
@@ -801,6 +1238,13 @@ public class GetModelsRequest
     public string? Provider { get; set; }
     public string? ApiKey { get; set; }
     public long? SystemConfigId { get; set; }
+
+    /* Administrator only, and validated before use: these let the admin model form check a
+       key against the endpoint it will actually be used with, before the configuration is
+       saved. A non-administrator supplying them is refused rather than ignored. */
+    public string? BaseUrl { get; set; }
+    public string? CustomHeadersJson { get; set; }
+    public string? ApiVersion { get; set; }
 }
 
 public class UpdateTitleModelRequest

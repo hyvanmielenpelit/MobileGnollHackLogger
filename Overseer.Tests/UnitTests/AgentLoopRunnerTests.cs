@@ -50,8 +50,12 @@ public class AgentLoopRunnerTests
 
         public object? BuildWebSearchTool() => null;
 
-        public void ConfigureRequest(HttpRequestMessage request, string apiKey)
+        /// <summary>The endpoint the runner passed through, so a test can assert on it.</summary>
+        public AiEndpointDescriptor? LastEndpoint { get; private set; }
+
+        public void ConfigureRequest(HttpRequestMessage request, string apiKey, AiEndpointDescriptor endpoint)
         {
+            LastEndpoint = endpoint;
             request.Headers.Add("X-Mock-ApiKey", apiKey);
         }
 
@@ -60,9 +64,9 @@ public class AgentLoopRunnerTests
             return new { role, content = text };
         }
 
-        public string GetChatStreamUrl(string modelId, string apiKey)
+        public string GetChatStreamUrl(string modelId, string apiKey, AiEndpointDescriptor endpoint)
         {
-            return "https://mock.ai.test/stream";
+            return endpoint.ComposeUrl("https://mock.ai.test/stream", "/stream");
         }
 
         public virtual async IAsyncEnumerable<ChatEvent> ParseStreamAsync(HttpResponseMessage response, bool showDebugLog, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
@@ -81,7 +85,7 @@ public class AgentLoopRunnerTests
             return new Dictionary<string, object>();
         }
 
-        public string GetTitleUrl(string modelId, string apiKey) => "https://mock.ai.test/title";
+        public string GetTitleUrl(string modelId, string apiKey, AiEndpointDescriptor endpoint) => "https://mock.ai.test/title";
 
         public string? ParseTitleResponse(JsonElement root) => "Mock Title";
     }
@@ -89,7 +93,7 @@ public class AgentLoopRunnerTests
     private class NullClientBridge : IClientToolBridge
     {
         public bool IsClientConnected => true;
-        public Task<ToolResult> SendToolRequestAsync(long sessionId, string toolName, JsonElement parameters, CancellationToken cancellationToken)
+        public Task<ToolResult> SendToolRequestAsync(Overseer.Services.Privacy.SessionRef sessionRef, string toolName, JsonElement parameters, CancellationToken cancellationToken)
         {
             return Task.FromResult(new ToolResult { Success = true, Content = "Client result" });
         }

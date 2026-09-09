@@ -19,15 +19,24 @@ public class AuthController : ControllerBase
         _userManager = userManager;
     }
 
+    /* Every failure below answers with exactly this object. An unknown user and a wrong
+       password must be indistinguishable, so nothing about the account -- not its existence,
+       not its lockout state, not whether it has two-factor enabled -- may vary with the
+       response. In particular SignInResult is never serialised: it carries IsLockedOut and
+       RequiresTwoFactor, and returning it to a caller who has not proved the password turns
+       the endpoint into a user-enumeration oracle. */
+    private IActionResult InvalidCredentials()
+        => Unauthorized(new { message = "Invalid credentials." });
+
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.UserName) || string.IsNullOrWhiteSpace(request.Password))
-            return BadRequest("Invalid credentials.");
+            return InvalidCredentials();
 
         var user = await _userManager.FindByNameAsync(request.UserName);
         if (user == null)
-            return Unauthorized("Invalid credentials.");
+            return InvalidCredentials();
 
         var result = await _signInManager.PasswordSignInAsync(user.UserName!, request.Password, isPersistent: true, lockoutOnFailure: true);
 
@@ -36,7 +45,77 @@ public class AuthController : ControllerBase
             return Ok(new { userName = user.UserName, email = user.Email });
         }
 
-        return Unauthorized(new { message = "Invalid credentials.", result = result });
+        /* Each of these means the password was correct, so the caller has proved enough to be
+           told what is actually blocking the sign-in. PasswordSignInAsync has already stored
+           the two-factor user id in the TwoFactorUserIdScheme cookie, which is what
+           /login/2fa then completes. Without this branch, enabling TOTP locked a user out of
+           Overseer entirely: the strongest control available acted as a penalty. */
+        if (result.RequiresTwoFactor)
+        {
+            var providers = await _userManager.GetValidTwoFactorProvidersAsync(user);
+            return Ok(new
+            {
+                requiresTwoFactor = true,
+                hasAuthenticator = providers.Contains(TokenOptions.DefaultAuthenticatorProvider)
+            });
+        }
+
+        if (result.IsLockedOut)
+        {
+            return Unauthorized(new
+            {
+                message = "This account is temporarily locked after too many failed sign-in attempts. Try again later.",
+                isLockedOut = true
+            });
+        }
+
+        if (result.IsNotAllowed)
+        {
+            return Unauthorized(new
+            {
+                message = "This account is not permitted to sign in. Confirm your e-mail address and try again.",
+                isNotAllowed = true
+            });
+        }
+
+        return InvalidCredentials();
+    }
+
+    /// <summary>
+    /// Second step of a two-factor sign-in: completes the login begun by
+    /// <see cref="Login"/> using a TOTP code from the user's authenticator app.
+    /// </summary>
+    [HttpPost("login/2fa")]
+    public async Task<IActionResult> LoginTwoFactor([FromBody] TwoFactorLoginRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Code))
+            return InvalidCredentials();
+
+        /* Resolves the user from the TwoFactorUserIdScheme cookie PasswordSignInAsync set, so
+           this endpoint cannot be used without having first passed the password step. */
+        var user = await _signInManager.GetTwoFactorAuthenticationUserAsync();
+        if (user == null)
+            return InvalidCredentials();
+
+        // Authenticator apps show the code in groups; accept it however the user typed it.
+        string code = request.Code.Replace(" ", string.Empty).Replace("-", string.Empty);
+
+        var result = await _signInManager.TwoFactorAuthenticatorSignInAsync(
+            code, isPersistent: true, rememberClient: request.RememberMachine);
+
+        if (result.Succeeded)
+            return Ok(new { userName = user.UserName, email = user.Email });
+
+        if (result.IsLockedOut)
+        {
+            return Unauthorized(new
+            {
+                message = "This account is temporarily locked after too many failed sign-in attempts. Try again later.",
+                isLockedOut = true
+            });
+        }
+
+        return Unauthorized(new { message = "Invalid verification code." });
     }
 
     [HttpPost("logout")]
@@ -158,11 +237,11 @@ public class AuthController : ControllerBase
         <div class=""initial-spinner""></div>
         <div class=""initial-loading-text"">Initializing...</div>
     </div>
-    <script>
-        setTimeout(function() {{
-            window.location.replace('/chat?sessionId={sessionId}');
-        }}, 50);
-    </script>
+    <!-- The redirect itself is the <meta http-equiv=""refresh""> above; this script is only a
+         50 ms fast path. It lives in a static file because the CSP's script-src is 'self',
+         which blocks an inline script. Target read from a data attribute rather than
+         interpolated into the script, so the file stays static. -->
+    <script src=""/js/handoff-redirect.js"" data-session-id=""{sessionId}""></script>
 </body>
 </html>";
                 return Content(html, "text/html");
@@ -177,6 +256,15 @@ public class LoginRequest
 {
     public string UserName { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
+}
+
+public class TwoFactorLoginRequest
+{
+    /// <summary>The TOTP code, with spaces and dashes tolerated.</summary>
+    public string Code { get; set; } = string.Empty;
+
+    /// <summary>Whether to skip the second factor on this browser next time.</summary>
+    public bool RememberMachine { get; set; }
 }
 
 public class HandoffData

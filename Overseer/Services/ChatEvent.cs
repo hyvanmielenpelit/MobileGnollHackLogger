@@ -6,7 +6,12 @@ public class ChatEvent
 {
     public string Type { get; set; } = "chunk";
     public string Data { get; set; } = "";
-    public long? SessionId { get; set; }
+    /* The session this event belongs to, in SessionRef wire form: a decimal id for a
+       persisted session, "eph_<guid>" for an ephemeral one. A string rather than a long
+       because an ephemeral session has no numeric id -- and because the client uses this to
+       discard events from a session it has already navigated away from, a comparison that has
+       to work for both kinds. */
+    public string? SessionId { get; set; }
     public int? SeqNo { get; set; }
     public TokenUsageReport? UsageReport { get; set; }
 }

@@ -1,0 +1,317 @@
+/* Layout for the privacy notice. Buttons, tables and the container shell come from
+   styles.scss; nothing global is redefined here. */
+
+.privacy-container {
+  max-width: 980px;
+  margin: 20px auto;
+  max-height: calc(100dvh - 40px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* .header-row styles an h2; this page leads with an h1, so it carries its own type. */
+.header-row h1 {
+  margin: 0;
+  font-family: "Cinzel", serif;
+  font-size: 1.6rem;
+  color: var(--title-color);
+}
+
+.privacy-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 30px 40px;
+  /* Anchor navigation lands the heading below the sticky container edge. */
+  scroll-padding-top: 12px;
+}
+
+.privacy-lead {
+  color: #ddd;
+  margin: 0 0 24px;
+  max-width: 70ch;
+  line-height: 1.6;
+}
+
+.privacy-section {
+  margin-bottom: 40px;
+  scroll-margin-top: 12px;
+
+  h2 {
+    font-family: "Cinzel", serif;
+    font-size: 1.25rem;
+    color: var(--title-color);
+    margin: 0 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-glass);
+  }
+
+  p,
+  li {
+    line-height: 1.6;
+  }
+
+  p {
+    max-width: 78ch;
+    color: #ddd;
+  }
+
+  > ul {
+    max-width: 78ch;
+    color: #ddd;
+  }
+}
+
+/* ---- Table of contents ---- */
+
+.privacy-toc {
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(17, 17, 17, 0.6);
+  padding: 16px 20px;
+  margin-bottom: 32px;
+
+  h2 {
+    font-family: "Cinzel", serif;
+    font-size: 1rem;
+    color: var(--title-color);
+    margin: 0 0 10px;
+  }
+
+  ol {
+    margin: 0;
+    padding-left: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  a {
+    color: var(--link-color);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+
+    &:hover {
+      color: #fce6a8;
+      border-bottom-color: var(--border-glass);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 3px;
+      border-radius: 2px;
+    }
+  }
+}
+
+/* ---- The sensitivity ladder ---- */
+
+.ladder {
+  list-style: none;
+  margin: 0 0 20px;
+  padding: 0;
+  display: flex;
+  /* Rungs run in DOM order, least sensitive first, so the visual and reading orders agree. */
+  flex-direction: column;
+  gap: 8px;
+  max-width: 78ch;
+}
+
+.ladder-rung {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1fr) minmax(0, 2fr) minmax(0, 1.4fr);
+  gap: 4px 16px;
+  align-items: baseline;
+  padding: 12px 16px;
+  border: 1px solid var(--border-glass);
+  border-left: 4px solid var(--border-glass);
+  border-radius: 6px;
+  background: rgba(17, 17, 17, 0.5);
+
+  &.is-ceiling {
+    border-left-color: var(--primary-color);
+    background: rgba(212, 160, 23, 0.08);
+    box-shadow: 0 0 10px var(--gold-glow);
+  }
+}
+
+.ladder-tier {
+  font-family: "Cinzel", serif;
+  font-weight: 600;
+  color: var(--title-color);
+}
+
+.ladder-meaning {
+  color: #ddd;
+}
+
+.ladder-verdict {
+  color: #ccc;
+  font-weight: 600;
+}
+
+.is-ceiling .ladder-verdict {
+  color: var(--primary-color);
+}
+
+@media (max-width: 700px) {
+  .ladder-rung {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Callouts ---- */
+
+.privacy-callout {
+  border: 1px solid var(--border-glass);
+  border-left: 4px solid var(--primary-color);
+  border-radius: 6px;
+  background: rgba(17, 17, 17, 0.6);
+  padding: 14px 18px;
+  margin: 0 0 20px;
+
+  strong {
+    color: var(--primary-color);
+  }
+}
+
+/* ---- Tables ---- */
+
+/* Wide content scrolls inside its own container so the page never scrolls sideways. */
+.privacy-table-scroll {
+  overflow-x: auto;
+  margin-bottom: 8px;
+  border-radius: 8px;
+}
+
+.privacy-table {
+  min-width: 640px;
+
+  th[scope="row"] {
+    color: var(--title-color);
+    font-weight: 600;
+    background: #181818;
+    vertical-align: top;
+    width: 22%;
+    min-width: 12rem;
+  }
+
+  td {
+    vertical-align: top;
+    color: #ddd;
+    line-height: 1.55;
+  }
+}
+
+.limitations-table {
+  th[scope="row"] {
+    width: 34%;
+  }
+}
+
+.limitation-text {
+  color: #eee;
+}
+
+/* ---- What stays readable ---- */
+
+.readable-list {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 82ch;
+}
+
+.readable-entry {
+  padding: 12px 16px;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  background: rgba(17, 17, 17, 0.5);
+
+  &.is-primary {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 10px var(--gold-glow);
+  }
+
+  dt {
+    font-family: "Cinzel", serif;
+    font-weight: 600;
+    color: var(--title-color);
+    margin-bottom: 4px;
+  }
+
+  dd {
+    margin: 0;
+    color: #ddd;
+    line-height: 1.6;
+  }
+}
+
+/* ---- Operator placeholders ---- */
+
+.operator-gap-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 82ch;
+}
+
+/* Deliberately unfinished: the dashed edge and the flag say this is a blank, not a statement. */
+.operator-gap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px 18px;
+  border: 1px dashed var(--color-warning);
+  border-radius: 6px;
+  background: rgba(255, 193, 7, 0.06);
+}
+
+.operator-gap-flag {
+  font-family: "Cinzel", serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning);
+  border-radius: 3px;
+  padding: 2px 8px;
+}
+
+.operator-gap-title {
+  font-weight: 600;
+  color: var(--font-color);
+}
+
+.operator-gap-detail {
+  color: #ccc;
+  line-height: 1.55;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .privacy-scroll-area {
+    scroll-behavior: smooth;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .privacy-toc a {
+    transition: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .privacy-scroll-area {
+    padding: 15px 15px 30px;
+  }
+
+  .header-row h1 {
+    font-size: 1.35rem;
+  }
+}

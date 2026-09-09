@@ -830,9 +830,13 @@ public class BenchmarkService
             AllowedTools = allowedTools,
             SystemModelId = testedConfig.Id,
             Budget = new AgentRunBudget { MaxTotalModelCalls = maxTotalModelCalls },
+            /* A benchmark run is not a chat session, and SessionId is borrowed here for the
+               tool-audit log tag and -- where no ToolBudgetScopeId is given -- the rate-limit
+               scope key. Wrapping the run id keeps both strings exactly what they were; the
+               conflation predates the typed reference and is now at least visible. */
             ToolExecutionContext = new Tools.ToolExecutionContext
             {
-                SessionId = run.Id,
+                SessionId = Overseer.Services.Privacy.SessionRef.Persistent(run.Id),
                 ToolBudgetScopeId = $"bench_{run.Id}_q{question.OrderIndex}",
                 UserId = run.StartedByUserId ?? string.Empty,
                 MaxResultLength = maxResultLength,
@@ -1040,7 +1044,7 @@ public class BenchmarkService
             Budget = new AgentRunBudget { MaxTotalModelCalls = maxTotalModelCalls },
             ToolExecutionContext = new Tools.ToolExecutionContext
             {
-                SessionId = run.Id,
+                SessionId = Overseer.Services.Privacy.SessionRef.Persistent(run.Id),
                 ToolBudgetScopeId = $"bench_{run.Id}_q{answer.OrderIndex}",
                 UserId = run.StartedByUserId ?? string.Empty,
                 MaxResultLength = maxResultLength,
@@ -1283,7 +1287,7 @@ public class BenchmarkService
             Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
             ToolExecutionContext = new Tools.ToolExecutionContext
             {
-                SessionId = run.Id,
+                SessionId = Overseer.Services.Privacy.SessionRef.Persistent(run.Id),
                 UserId = run.StartedByUserId ?? string.Empty,
                 ShowDebugLog = false
             },
@@ -2330,7 +2334,7 @@ public class BenchmarkService
             Budget = new AgentRunBudget { MaxTotalModelCalls = totalModelCalls },
             ToolExecutionContext = new Tools.ToolExecutionContext
             {
-                SessionId = runId,
+                SessionId = Overseer.Services.Privacy.SessionRef.Persistent(runId),
                 ToolBudgetScopeId = $"bench_{runId}_verify_q{orderIndex}",
                 UserId = startedByUserId ?? string.Empty,
                 MaxResultLength = maxResultLength,
@@ -2626,7 +2630,7 @@ public class BenchmarkService
             Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
             ToolExecutionContext = new Tools.ToolExecutionContext
             {
-                SessionId = run.Id,
+                SessionId = Overseer.Services.Privacy.SessionRef.Persistent(run.Id),
                 UserId = run.StartedByUserId ?? string.Empty,
                 ShowDebugLog = false
             },
@@ -2745,7 +2749,7 @@ public class BenchmarkService
             Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
             ToolExecutionContext = new Tools.ToolExecutionContext
             {
-                SessionId = suite.Id,
+                SessionId = Overseer.Services.Privacy.SessionRef.Persistent(suite.Id),
                 UserId = string.Empty,
                 ShowDebugLog = false
             },
@@ -3063,7 +3067,7 @@ public class BenchmarkService
             Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
             ToolExecutionContext = new Tools.ToolExecutionContext
             {
-                SessionId = run.Id,
+                SessionId = Overseer.Services.Privacy.SessionRef.Persistent(run.Id),
                 UserId = run.StartedByUserId ?? string.Empty,
                 ShowDebugLog = false
             },
@@ -3290,7 +3294,7 @@ public class BenchmarkService
             Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
             ToolExecutionContext = new Tools.ToolExecutionContext
             {
-                SessionId = run.Id,
+                SessionId = Overseer.Services.Privacy.SessionRef.Persistent(run.Id),
                 UserId = run.StartedByUserId ?? string.Empty,
                 ShowDebugLog = false
             },

@@ -98,6 +98,25 @@ export interface SystemAiConfigDto {
   pricingScheduledChangeOutputPricePerMillion?: number | null;
   pricingScheduledChangeNote?: string | null;
   pricingScheduleElapsed?: boolean;
+  /**
+   * What has actually been agreed with this configuration's provider account, and where inference
+   * runs. Nothing here is inferred from the model name. `postureVerifiedUtc` is the field that
+   * grants verified status: an operator checked the posture against the agreement and dated it.
+   */
+  confidentialityPosture?: string | null;
+  confidentialityNote?: string | null;
+  postureAgreementRef?: string | null;
+  postureVerifiedUtc?: string | null;
+  dataRegion?: string | null;
+
+  /**
+   * Custom endpoint. Empty means the provider's official public endpoint. Validated
+   * server-side: an unallowlisted host, a non-https scheme or a denied header name is a 400,
+   * never a stored value that is silently ignored.
+   */
+  baseUrl?: string | null;
+  customHeadersJson?: string | null;
+  apiVersion?: string | null;
 }
 
 export interface UserSystemAiConfigDto {

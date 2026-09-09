@@ -92,6 +92,67 @@ If the panel still reports the old limit, the provenance line names the reason:
 
 ---
 
+## 3a. Confidential Sessions and Immediate Purge
+
+A session in **Confidentiality Mode** (`ChatSession.IsConfidential`) can opt out of the trash
+entirely, and can carry its own retention period rather than the global one. Two scalar columns
+carry that decision:
+
+| Column | Meaning |
+|---|---|
+| `EffectiveRetentionDays` (`int?`) | Days of inactivity before this session expires. **Null means use the global `InactivityTtlDays`** |
+| `ImmediatePurgeOnDelete` (`bool`) | On any deletion, purge outright rather than moving to the trash |
+
+Both are **materialised** from the session's `ConfidentialPolicyJson` snapshot at creation or
+upgrade. They are real columns rather than reads out of the JSON because
+`SoftDeleteInactiveSessionsAsync` is a set-based `ExecuteUpdateAsync` across every user's
+sessions against a single scalar — a per-user value cannot reach that query, and a JSON column
+cannot be filtered there portably.
+
+### Every deletion path honours them, and there are four
+
+`PartitionAndDeleteAsync` is the one place the split is decided: sessions with
+`ImmediatePurgeOnDelete` go to `PermanentlyPurgeSessionsAsync`, the rest to the trash exactly as
+before. All four paths route through it.
+
+| Path | Reached from | Gesture? |
+|---|---|---|
+| `SoftDeleteSessionAsync` | `DELETE /api/chat/sessions/{id}` | Yes — the user deleted one chat |
+| `BulkSoftDeleteSessionsAsync` | `POST /api/chat/sessions/bulk-delete` | Yes — the user emptied their list |
+| `EnforceUserSessionQuotaAsync` | **Ordinary session creation, every snapshot attach, and the session list** | **No** |
+| `SoftDeleteInactiveSessionsAsync` | Nightly maintenance | **No** |
+
+**The two gestureless paths are the ones that matter.** Quota eviction silently soft-deletes a
+user's oldest sessions the moment they pass `MaxActiveSessionsPerUser`, so without this a
+confidential chat could enter a 30-day trash without anyone asking for a deletion. A guarantee
+that holds for one gesture and not the other three is not a guarantee.
+
+### Expiry purges rather than soft-deletes, or the TTL means nothing
+
+`SoftDeleteGracePeriodDays` is 30. A confidential session with a 30-day TTL that *soft*-deleted
+on expiry would sit in the trash for another 30 — **60 days of retention under a 30-day
+promise**. So inactivity expiry of an immediate-purge session purges it.
+
+`SoftDeleteInactiveSessionsAsync` therefore runs in two passes:
+
+1. Sessions with `EffectiveRetentionDays == null`, against the global TTL. The original
+   single-statement `ExecuteUpdateAsync`, unchanged apart from that added filter.
+2. One pass per **distinct** `EffectiveRetentionDays` value, loading and partitioning each set.
+   The distinct set is the number of different retention values users have chosen, not the
+   number of users, so this is a handful of queries rather than one per session.
+
+A confidential session with `ImmediatePurgeOnDelete` off — which is user-adjustable — expires
+into the trash like any other. That is also what makes the chat's privacy badge report the mode
+as not keeping its full promise.
+
+### Confidential sessions are excluded from search
+
+Both search predicates (`GetSessions` and `GetTrashSessions`) skip `IsConfidential` sessions,
+and `GetSessions` returns `confidentialExcludedCount` so the client can say the omission
+happened. A search that silently drops results is worse than one that finds nothing. The
+predicates match on `Title` as well as message `Content`, so excluding the session covers
+both — and it has to, because in an encrypted session neither is searchable text.
+
 ## 4. Maintenance Execution Logic
 
 ### 1. Daily Background Service (`DatabaseMaintenanceBackgroundService`)

@@ -162,6 +162,20 @@ public class DeletePersonalDataModel : PageModel
             }
         }
 
+        /* 3a. Crypto-shred before removing anything.
+
+               RemoveRange does cascade-delete the row that carries the wrapped content key, so
+               shredding happens incidentally on the happy path -- but only on the happy path.
+               Doing it explicitly first means a failure between here and the RemoveRange below
+               leaves unreadable rows instead of readable ones, and it gives future retention
+               work one code path to find rather than two behaviours to reconcile.
+
+               The API-key material needs its own call: a different master key protects it
+               (AesEncryptionKey, which does not rotate), so nulling session content keys does
+               not reach it. */
+        await GnollHackServer.Data.Privacy.CryptoShred.NullAllSessionKeysForUserAsync(_dbContext, userId);
+        await GnollHackServer.Data.Privacy.CryptoShred.NullUserApiKeyMaterialAsync(_dbContext, userId);
+
         // 4. Delete all chat sessions (cascades to messages, attachments, tool calls)
         _dbContext.ChatSession.RemoveRange(
             _dbContext.ChatSession.Where(s => s.AspNetUserId == userId));

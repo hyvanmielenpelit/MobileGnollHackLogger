@@ -1530,6 +1530,266 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   color: #9fa8da;
 }
 
+/* The four privacy badge states. Graded rather than binary because the promise is graded:
+   green means the full promise holds on a verified agreement, yellow that something is
+   protected but caveated, orange that Overseer's own controls hold while the provider's
+   retention is simply not established — and red that the mode is on and is not keeping its
+   promise, which the user-adjustable storage settings make reachable by configuration.
+   Orange is accurate, not a warning; red is the only one that reports a problem. */
+.badge-private-green {
+  background: rgba(40, 167, 69, 0.15);
+  border: 1px solid rgba(40, 167, 69, 0.45);
+  color: #7ddb95;
+}
+
+.badge-private-yellow {
+  background: rgba(255, 193, 7, 0.15);
+  border: 1px solid rgba(255, 193, 7, 0.45);
+  color: #ffd75e;
+}
+
+.badge-private-orange {
+  background: rgba(255, 138, 38, 0.15);
+  border: 1px solid rgba(255, 138, 38, 0.45);
+  color: #ffb374;
+}
+
+.badge-private-red {
+  background: rgba(220, 53, 69, 0.18);
+  border: 1px solid rgba(220, 53, 69, 0.5);
+  color: #f28b95;
+}
+
+/* Amber rather than red: an answer built from excerpts is qualified, not faulty. */
+.badge-excerpt {
+  background: rgba(255, 167, 38, 0.15);
+  border: 1px solid rgba(255, 167, 38, 0.45);
+  color: #ffcc80;
+}
+
+/* Incognito is not a point on the green-to-red privacy scale: it is a different kind of
+   chat, so it is drawn as an unlit chip rather than as a stronger green. */
+.badge-ephemeral {
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid var(--primary-color, #d4af37);
+  color: var(--primary-color, #d4af37);
+  font-weight: 600;
+}
+
+/* Text disclosure trigger, shared by the privacy panel and the banner's detail list. Not a
+   .btn-gh: both sit inside a dense strip where the decorative plate would dominate the copy
+   it is there to reveal. */
+.disclosure-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
+  border-radius: 4px;
+  padding: 4px 10px;
+  color: #e8e8e8;
+  font-size: 0.78rem;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--primary-color, #d4af37);
+    color: var(--primary-color, #d4af37);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color, #d4af37);
+    outline-offset: 2px;
+  }
+}
+
+.disclosure-chevron {
+  transition: transform 0.15s ease;
+
+  &.is-open {
+    transform: rotate(180deg);
+  }
+}
+
+/* Privacy choice for the chat about to be created */
+.privacy-panel {
+  margin-bottom: 6px;
+
+  &.is-set .privacy-trigger {
+    border-color: var(--primary-color, #d4af37);
+    color: var(--primary-color, #d4af37);
+  }
+}
+
+.privacy-panel-body {
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.privacy-option-title {
+  display: block;
+  font-weight: 600;
+  color: #f0f0f0;
+}
+
+.privacy-option-note {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #c5c5c5;
+}
+
+.privacy-honesty-title {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #f0f0f0;
+}
+
+.privacy-honesty-list {
+  margin: 0;
+  padding-inline-start: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #d8d8d8;
+}
+
+.privacy-decided-note {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: #a8a8a8;
+}
+
+/* Persistent state of an open incognito chat */
+.ephemeral-banner {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--primary-color, #d4af37);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.ephemeral-banner-main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ephemeral-banner-text {
+  flex: 1 1 240px;
+  min-width: 200px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: #ececec;
+}
+
+.ephemeral-close-btn {
+  flex-shrink: 0;
+  margin-inline-start: auto;
+}
+
+.ephemeral-detail {
+  margin: 10px 0 0;
+  padding-inline-start: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #d0d0d0;
+}
+
+.ephemeral-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.ephemeral-notice-text {
+  flex: 1 1 auto;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: #e0e0e0;
+}
+
+.ephemeral-dialog-note {
+  font-size: 0.85rem;
+  color: #b8b8b8;
+}
+
+/* Sits in the message list beside the reply it qualifies, so it aligns and wraps like an
+   assistant bubble rather than like a full-width strip. */
+.excerpt-notices {
+  align-self: flex-start;
+  max-inline-size: 80%;
+  min-inline-size: 0;
+  margin-block-end: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.excerpt-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 167, 38, 0.45);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.5);
+
+  .setting-badge {
+    flex-shrink: 0;
+    margin-block-start: 1px;
+  }
+}
+
+.excerpt-notice-body {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+.excerpt-notice-line {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #e0e0e0;
+  overflow-wrap: anywhere;
+
+  + .excerpt-notice-line {
+    margin-block-start: 4px;
+  }
+}
+
+.excerpt-notice-removed {
+  color: #f5c4a0;
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .disclosure-chevron {
+    transition: none;
+  }
+}
+
 /* Custom Model Selector */
 .custom-model-selector {
   position: relative;

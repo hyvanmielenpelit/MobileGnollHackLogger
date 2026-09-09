@@ -4,6 +4,9 @@ using Microsoft.EntityFrameworkCore;
 using Overseer.Services;
 using GnollHackServer.Data;
 using Microsoft.AspNetCore.Identity.UI.Services;
+using Overseer.Middleware;
+using Overseer.Security;
+using Microsoft.AspNetCore.DataProtection;
 
 var builder = WebApplication.CreateBuilder(args);
 string? connectionString = builder.Configuration["ConnectionStrings:SqlDatabaseConnection"];
@@ -22,8 +25,21 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
 {
     options.SignIn.RequireConfirmedAccount = true;
     options.User.RequireUniqueEmail = true;
+
+    /* Length carries far more entropy per unit of user annoyance than composition rules do,
+       so the minimum rises and the default character classes are kept as they were rather
+       than tightened. Existing passwords are unaffected: this is checked on set, not on
+       sign-in. */
+    options.Password.RequiredLength = 12;
 })
 .AddEntityFrameworkStores<ApplicationDbContext>()
+/* Required for the TOTP sign-in step. AddIdentityCore registers no token providers, so
+   without this UserManager.VerifyTwoFactorTokenAsync throws NotSupportedException for the
+   "Authenticator" provider and GetValidTwoFactorProvidersAsync returns nothing -- which means
+   PasswordSignInAsync never reports RequiresTwoFactor in the first place. The Razor app gets
+   these from AddDefaultIdentity, which is why TOTP could be enabled there and then not
+   honoured here. */
+.AddDefaultTokenProviders()
 .AddSignInManager<SignInManager<ApplicationUser>>();
 
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
@@ -33,6 +49,14 @@ builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
         options.ExpireTimeSpan = TimeSpan.FromDays(14);
         options.SlidingExpiration = true; // Refresh the cookie if accessed past halfway point
         options.Cookie.MaxAge = options.ExpireTimeSpan; // CRITICAL: Fix for iOS WKWebView dropping cookies when backgrounded
+
+        /* Pinned rather than left to the framework default: the auth cookie must never travel
+           over plain HTTP, and Lax is the strictest SameSite that still survives the
+           game-client handoff, which arrives as a top-level GET navigation from
+           account.gnollhack.com. Strict would drop the cookie on that navigation. */
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.HttpOnly = true;
 
         options.Events.OnValidatePrincipal = SecurityStampValidator.ValidatePrincipalAsync; // CRITICAL: Prevent stale cookies
         // Override default cookie behavior for SPA — return 401/403 instead of HTML redirects
@@ -54,6 +78,22 @@ builder.Services.AddAntiforgery(options =>
 {
     options.HeaderName = "X-XSRF-TOKEN"; // Expected by Angular
 });
+
+/* Data Protection keys sign the auth and antiforgery cookies. Left at the default they live
+   in the profile of whatever account the process runs as and are regenerated when that
+   profile is not loaded, which silently signs every user out on a restart.
+
+   The path is deliberately configuration-only, with no fallback: where the keys belong is a
+   deployment and custody decision, not something to guess at. Absent the setting the
+   framework default stands, exactly as before this line existed. */
+string? dataProtectionKeyPath = builder.Configuration["PrivacySettings:DataProtectionKeysPath"];
+if (!string.IsNullOrWhiteSpace(dataProtectionKeyPath))
+{
+    Directory.CreateDirectory(dataProtectionKeyPath);
+    builder.Services.AddDataProtection()
+        .SetApplicationName("GnollHackOverseer")
+        .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeyPath));
+}
 
 builder.Services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationHandler, Overseer.Security.AdminHandler>();
 builder.Services.AddAuthorization(options =>
@@ -105,6 +145,114 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<NetHackSourceCodeS
 
 
 builder.Services.AddSingleton<CryptoService>();
+
+// Privacy: attachment validation and malware scanning (Tier 1 baseline protections).
+builder.Services.AddSingleton<Overseer.Services.Privacy.AttachmentValidator>();
+builder.Services.AddSingleton<Overseer.Services.Privacy.ConfidentialityPostureService>();
+builder.Services.AddSingleton<Overseer.Services.Privacy.EndpointPolicy>();
+builder.Services.AddSingleton<Overseer.Services.Privacy.ConfidentialPolicyResolver>();
+builder.Services.AddSingleton<Overseer.Services.Privacy.ConfigurationContentKeyRing>();
+builder.Services.AddSingleton<Overseer.Services.Privacy.IContentKeyRing>(
+    sp => sp.GetRequiredService<Overseer.Services.Privacy.ConfigurationContentKeyRing>());
+/* Scoped, not singleton: it caches unwrapped DEKs, and that plaintext key material should live
+   for one request or one turn rather than for the process. */
+builder.Services.AddScoped<Overseer.Services.Privacy.ContentProtectionService>();
+/* Singleton, and it has to be: an incognito conversation outlives any request scope and has no
+   row to be reloaded from, so a scoped store would lose the chat between the send and the
+   stream. Its own sweeper evicts what the sliding timeout has expired. */
+builder.Services.AddSingleton<Overseer.Services.Privacy.EphemeralSessionStore>();
+/* Stateless once constructed -- pre-compiled patterns and the administrator's floor -- so a
+   singleton. The per-turn state lives in DlpTokenVault, which ChatService creates and discards
+   with the turn. */
+builder.Services.AddSingleton<Overseer.Services.Privacy.Dlp.DlpScannerService>();
+builder.Services.AddSingleton<Overseer.Services.Privacy.IAntiMalwareScanner>(sp =>
+{
+    var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+
+    /* The named engines to try, in order. "Amsi" alone stays the default; "Amsi,ClamAv" runs
+       both through the composite, and "ClamAv" alone suits a container where AMSI does not
+       exist. An unrecognised name is ignored with a warning rather than failing startup -- but
+       it is never treated as "None", because a typo must not silently disable scanning. */
+    string configured = builder.Configuration["PrivacySettings:Attachments:MalwareScanner"] ?? "Amsi";
+    var requested = configured
+        .Split(new[] { ',', ';', '+' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    var startupLogger = loggerFactory.CreateLogger("Overseer.Startup.MalwareScanning");
+
+    if (requested.Length == 1 && requested[0].Equals("None", StringComparison.OrdinalIgnoreCase))
+    {
+        return new Overseer.Services.Privacy.NullAntiMalwareScanner(
+            loggerFactory.CreateLogger<Overseer.Services.Privacy.NullAntiMalwareScanner>());
+    }
+
+    var engines = new List<Overseer.Services.Privacy.IAntiMalwareScanner>();
+    foreach (string name in requested)
+    {
+        if (name.Equals("Amsi", StringComparison.OrdinalIgnoreCase))
+        {
+            /* In-process and needs no extra infrastructure, so it is the default wherever it is
+               actually reachable. A build that is not on Windows simply has no AMSI to try. */
+            if (!OperatingSystem.IsWindows()) continue;
+
+            var amsi = new Overseer.Services.Privacy.WindowsAmsiScanner(
+                loggerFactory.CreateLogger<Overseer.Services.Privacy.WindowsAmsiScanner>());
+            if (amsi.IsAvailable) engines.Add(amsi);
+            else amsi.Dispose();
+        }
+        else if (name.Equals("ClamAv", StringComparison.OrdinalIgnoreCase))
+        {
+            var clam = new Overseer.Services.Privacy.ClamAvAntiMalwareScanner(
+                builder.Configuration,
+                loggerFactory.CreateLogger<Overseer.Services.Privacy.ClamAvAntiMalwareScanner>());
+            if (clam.IsAvailable) engines.Add(clam);
+        }
+        else if (!name.Equals("None", StringComparison.OrdinalIgnoreCase))
+        {
+            startupLogger.LogWarning(
+                "PrivacySettings:Attachments:MalwareScanner names an unknown engine \"{Engine}\"; it was ignored.",
+                name);
+        }
+    }
+
+    /* One engine is returned directly: wrapping it would only add a layer to every log line.
+       Two or more go through the composite, where any detection refuses the upload and a
+       failure is reported only when none of them managed to scan. */
+    if (engines.Count == 1)
+    {
+        startupLogger.LogInformation("Attachment malware scanning: {Engine}.", engines[0].Name);
+        return engines[0];
+    }
+
+    if (engines.Count > 1)
+    {
+        var composite = new Overseer.Services.Privacy.CompositeAntiMalwareScanner(
+            engines, loggerFactory.CreateLogger<Overseer.Services.Privacy.CompositeAntiMalwareScanner>());
+        startupLogger.LogInformation("Attachment malware scanning: {Engine}.", composite.Name);
+        return composite;
+    }
+
+    /* Nothing configured was reachable. The null scanner accepts every buffer and logs once, so
+       a deployment running without scanning says so rather than appearing to scan -- and
+       whether that ACCEPTS the upload is still the caller's RejectOnScanFailure policy, which is
+       why an unavailable engine is not the same thing as a failed scan. */
+    startupLogger.LogWarning(
+        "None of the configured malware scanners ({Configured}) is available; uploads will not be scanned.",
+        configured);
+    return new Overseer.Services.Privacy.NullAntiMalwareScanner(
+        loggerFactory.CreateLogger<Overseer.Services.Privacy.NullAntiMalwareScanner>());
+});
+
+/* Document ingestion and local retrieval. All four are stateless after construction: the parser
+   holds only its bounds, the chunker its sizes, the embedding service its loaded model, and the
+   retrieval service its dials. */
+builder.Services.AddSingleton<Overseer.Services.Documents.DocumentParserService>();
+builder.Services.AddSingleton<Overseer.Services.Rag.DocumentChunker>();
+builder.Services.AddSingleton<Overseer.Services.Rag.IEmbeddingService,
+    Overseer.Services.Rag.LocalOnnxEmbeddingService>();
+builder.Services.AddSingleton<Overseer.Services.Rag.DocumentRagService>();
+/* Scoped, because it holds ContentProtectionService, which caches unwrapped DEKs and is scoped
+   for exactly that reason. */
+builder.Services.AddScoped<Overseer.Services.Rag.RagSidecarStore>();
 builder.Services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.OpenAiResponsesProvider>();
 builder.Services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.AnthropicProvider>();
 builder.Services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.GoogleProvider>();
@@ -203,12 +351,23 @@ builder.WebHost.UseSentry(options =>
 {
     // explicitly map our custom configuration key, or disable Sentry if missing
     options.Dsn = builder.Configuration["SentryDSN"] ?? "";
+
+    /* Both of these are already the defaults of the SDK version pinned in Overseer.csproj.
+       They are set explicitly so that a later SDK upgrade cannot widen the reported surface
+       without this file changing: SendDefaultPii would start attaching the user's address and
+       IP, and a request body size other than None would start attaching request payloads,
+       which for /api/chat/send is the user's message and their attachments.
+
+       The substantive telemetry work is in AuthSentryEventProcessor, which scrubs headers,
+       cookies, named query values and the user record on every event that is actually sent. */
+    options.SendDefaultPii = false;
+    options.MaxRequestBodySize = Sentry.Extensibility.RequestSize.None;
 });
 
-// Rate Limiter for Sentry Tunnel
+// Rate limiters. Every policy partitions per user, so one heavy user cannot throttle another.
 builder.Services.AddRateLimiter(options =>
 {
-    options.AddPolicy("TunnelRateLimit", context =>
+    options.AddPolicy(RateLimitPolicies.SentryTunnel, context =>
     {
         var username = context.User.Identity?.Name ?? "anonymous";
         return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(username, partition => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
@@ -219,10 +378,57 @@ builder.Services.AddRateLimiter(options =>
             Window = TimeSpan.FromMinutes(1)
         });
     });
+
+    /* A chat turn is expensive but legitimate use is bursty -- re-asking, editing and retrying
+       inside a minute is normal. Starts permissive; tighten with evidence rather than on
+       principle. Tool calls run inside one request and are therefore unaffected. */
+    options.AddPolicy(RateLimitPolicies.Chat, context =>
+    {
+        var username = context.User.Identity?.Name ?? "anonymous";
+        return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(username, partition => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+        {
+            AutoReplenishment = true,
+            PermitLimit = builder.Configuration.GetValue("PrivacySettings:RateLimits:ChatPermitsPerMinute", 30),
+            QueueLimit = 0,
+            Window = TimeSpan.FromMinutes(1)
+        });
+    });
+
+    /* Distinctly tighter, because this is the enumeration path: attachment ids are sequential
+       and sweeping them is the only reason to fetch many in a minute. Opening one chat with
+       five attachments costs five. */
+    options.AddPolicy(RateLimitPolicies.Attachment, context =>
+    {
+        var username = context.User.Identity?.Name ?? "anonymous";
+        return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(username, partition => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+        {
+            AutoReplenishment = true,
+            PermitLimit = builder.Configuration.GetValue("PrivacySettings:RateLimits:AttachmentPermitsPerMinute", 60),
+            QueueLimit = 0,
+            Window = TimeSpan.FromMinutes(1)
+        });
+    });
+
+    /* OnRejected is global, so it dispatches on the policy that actually rejected. It used to
+       answer every rejection with the tunnel's "Too many log events", which was written when
+       the tunnel was the only limited route and is actively misleading on a throttled chat
+       turn. UseRateLimiter sits after UseRouting, so the endpoint's own policy name is
+       available here. */
     options.OnRejected = async (context, token) =>
     {
         context.HttpContext.Response.StatusCode = 429;
-        await context.HttpContext.Response.WriteAsync("Too many log events. Please try again later.", token);
+
+        var window = context.Lease.TryGetMetadata(
+            System.Threading.RateLimiting.MetadataName.RetryAfter, out var retryAfter)
+            ? retryAfter
+            : TimeSpan.FromMinutes(1);
+        context.HttpContext.Response.Headers.RetryAfter =
+            ((int)Math.Ceiling(window.TotalSeconds)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        string? policy = context.HttpContext.GetEndpoint()?.Metadata
+            .GetMetadata<Microsoft.AspNetCore.RateLimiting.EnableRateLimitingAttribute>()?.PolicyName;
+
+        await context.HttpContext.Response.WriteAsync(RateLimitPolicies.RejectionMessage(policy), token);
     };
 });
 
@@ -240,11 +446,18 @@ app.Lifetime.ApplicationStarted.Register(() =>
 });
 
 if (app.Environment.IsDevelopment())
+{
     app.UseDeveloperExceptionPage();
+}
 else
+{
     app.UseExceptionHandler("/error"); // Global exception handler
+    app.UseHsts(); // Matches MobileGnollHackLogger; the default max-age is 30 days
+}
 
 app.UseHttpsRedirection();
+// Before UseStaticFiles so the headers cover static assets and the SPA fallback too.
+app.UseSecurityHeaders();
 app.UseStaticFiles();
 app.UseRouting();
 app.UseAuthentication();

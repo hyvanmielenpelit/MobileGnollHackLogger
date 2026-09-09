@@ -21,6 +21,139 @@ public class SettingsService
         return await _dbContext.UserAiSettings.FindAsync(userId);
     }
 
+    /// <summary>
+    /// Stores the user's own confidential preferences. A value weaker than the administrator's
+    /// floor is stored as given and clamped at every read, so what applies is always the
+    /// stricter of the two.
+    /// </summary>
+    /// <remarks>
+    /// Every parameter is nullable and null means "leave alone", matching how the settings form
+    /// posts partial updates. The client sends floor-clamped values today, so a weaker
+    /// preference does not survive a floor being raised and later lowered.
+    /// </remarks>
+    public async Task SaveConfidentialSettingsAsync(
+        string userId,
+        string? persistence,
+        int? retentionDays,
+        bool? disableToolEgress,
+        bool? disableTitleGeneration,
+        bool? disablePromptCache,
+        bool? immediatePurge,
+        string? modelGate)
+    {
+        if (persistence == null && retentionDays == null && disableToolEgress == null
+            && disableTitleGeneration == null && disablePromptCache == null
+            && immediatePurge == null && modelGate == null)
+        {
+            return;
+        }
+
+        var settings = await _dbContext.UserAiSettings.FindAsync(userId);
+        if (settings == null)
+        {
+            settings = new UserAiSettings { AspNetUserId = userId };
+            _dbContext.UserAiSettings.Add(settings);
+        }
+
+        /* Unrecognised names are ignored rather than stored: the resolver would read them back
+           as the default, so storing one would show the user a value that is not what applies. */
+        if (persistence != null
+            && Overseer.Services.Privacy.ConfidentialPolicyResolver.ParsePersistence(persistence) is { } parsedPersistence)
+        {
+            settings.ConfidentialPersistence = parsedPersistence.ToString();
+        }
+
+        /* Bounded rather than merely positive, and the bounds are the client's too: one day is
+           the shortest meaningful retention, and a year is past the point where a confidential
+           chat is being kept for any reason the mode serves. A value outside the range is
+           clamped rather than refused -- the resolver would clamp it against the floor anyway,
+           so refusing would fail a save over a number the user cannot see the effect of. */
+        if (retentionDays.HasValue)
+        {
+            settings.ConfidentialRetentionDays = Math.Clamp(
+                retentionDays.Value, MinConfidentialRetentionDays, MaxConfidentialRetentionDays);
+        }
+
+        if (disableToolEgress.HasValue) settings.ConfidentialDisableToolEgress = disableToolEgress.Value;
+        if (disableTitleGeneration.HasValue) settings.ConfidentialDisableTitleGeneration = disableTitleGeneration.Value;
+        if (disablePromptCache.HasValue) settings.ConfidentialDisablePromptCache = disablePromptCache.Value;
+        if (immediatePurge.HasValue) settings.ConfidentialImmediatePurge = immediatePurge.Value;
+
+        if (modelGate != null
+            && Enum.TryParse<Overseer.Services.Privacy.ConfidentialityGateMode>(modelGate, ignoreCase: true, out var parsedGate))
+        {
+            settings.ConfidentialModelGate = parsedGate.ToString();
+        }
+
+        await _dbContext.SaveChangesAsync();
+    }
+
+    /// <summary>Shortest confidential retention a user may set, in days.</summary>
+    public const int MinConfidentialRetentionDays = 1;
+
+    /// <summary>Longest confidential retention a user may set, in days.</summary>
+    public const int MaxConfidentialRetentionDays = 365;
+
+    /// <summary>Records that the user has seen the notice naming the supported data ceiling.</summary>
+    public async Task AcknowledgeConfidentialNoticeAsync(string userId)
+    {
+        var settings = await _dbContext.UserAiSettings.FindAsync(userId);
+        if (settings == null)
+        {
+            settings = new UserAiSettings { AspNetUserId = userId };
+            _dbContext.UserAiSettings.Add(settings);
+        }
+
+        settings.ConfidentialFirstUseNoticeAcknowledged = true;
+        await _dbContext.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Saves the user's outbound-masking switches. Null means "leave alone", matching how the
+    /// settings form posts partial updates.
+    /// </summary>
+    /// <remarks>
+    /// A stored value is a preference, not the effective setting: the administrator's floor in
+    /// <c>PrivacySettings:DlpFloor</c> can force a class on regardless, and
+    /// <c>DlpScannerService.Resolve</c> is what combines the two. Storing the user's own answer
+    /// rather than the resolved one means lowering a floor later restores what they had asked
+    /// for, instead of silently keeping the floor's value as though they had chosen it.
+    /// </remarks>
+    public async Task SaveDlpSettingsAsync(
+        string userId,
+        bool? maskApiKeys,
+        bool? maskPrivateKeys,
+        bool? maskTokens,
+        bool? maskCreditCards,
+        bool? maskSsns,
+        bool? maskEmails,
+        bool? maskPhoneNumbers)
+    {
+        if (maskApiKeys == null && maskPrivateKeys == null && maskTokens == null
+            && maskCreditCards == null && maskSsns == null && maskEmails == null
+            && maskPhoneNumbers == null)
+        {
+            return;
+        }
+
+        var settings = await _dbContext.UserAiSettings.FindAsync(userId);
+        if (settings == null)
+        {
+            settings = new UserAiSettings { AspNetUserId = userId };
+            _dbContext.UserAiSettings.Add(settings);
+        }
+
+        if (maskApiKeys.HasValue) settings.DlpMaskApiKeys = maskApiKeys.Value;
+        if (maskPrivateKeys.HasValue) settings.DlpMaskPrivateKeys = maskPrivateKeys.Value;
+        if (maskTokens.HasValue) settings.DlpMaskTokens = maskTokens.Value;
+        if (maskCreditCards.HasValue) settings.DlpMaskCreditCards = maskCreditCards.Value;
+        if (maskSsns.HasValue) settings.DlpMaskSsns = maskSsns.Value;
+        if (maskEmails.HasValue) settings.DlpMaskEmails = maskEmails.Value;
+        if (maskPhoneNumbers.HasValue) settings.DlpMaskPhoneNumbers = maskPhoneNumbers.Value;
+
+        await _dbContext.SaveChangesAsync();
+    }
+
     public static readonly string[] SupportedProviders = new[] { "OpenAI", "Anthropic", "Google" };
 
     public async Task SaveSettingsAsync(string userId, bool? spoilerFreeMode = null, bool? enableWebSearch = null, bool? enableToolUse = null, bool? enableClientTools = null, bool? enableGameActions = null, bool? showSourceCodeReferences = null, int? maxResultLength = null, int? maxCallsPerSession = null, int? maxToolIterations = null, int? maxParallelToolCalls = null, int? showThoughtsAndTools = null, int? requestTimeout = null, bool? enableSubAgents = null, bool? showParallelBadge = null, bool? showContextWindowUsage = null, bool? showChatCost = null)
@@ -112,7 +245,16 @@ public class SettingsService
             statuses.Add(new { 
                 Provider = p, 
                 HasKey = key != null && !string.IsNullOrEmpty(key.EncryptedApiKey),
-                ParallelExecutionMode = (int)(key?.ParallelExecutionMode ?? ParallelExecutionMode.Enabled)
+                ParallelExecutionMode = (int)(key?.ParallelExecutionMode ?? ParallelExecutionMode.Enabled),
+                /* The posture here is the user's own declaration about their own provider
+                   account. Overseer cannot verify it, so the client labels it as
+                   self-declared; it is sent as the stored string, with null meaning nothing
+                   has been declared. */
+                ConfidentialityPosture = key?.ConfidentialityPosture,
+                ConfidentialityNote = key?.ConfidentialityNote,
+                PostureDeclaredUtc = key?.PostureDeclaredUtc,
+                UserTrustsForConfidential = key?.UserTrustsForConfidential,
+                ConfidentialTrustDecidedUtc = key?.ConfidentialTrustDecidedUtc
             });
         }
         
@@ -159,6 +301,88 @@ public class SettingsService
             entry.ApiKeyTag = null;
             await _dbContext.SaveChangesAsync();
         }
+    }
+
+    /// <summary>
+    /// Records the posture the user declares for their own provider account, and the note
+    /// explaining it.
+    /// </summary>
+    /// <param name="posture">
+    /// A ProviderConfidentialityPosture name, or null to return the key to "nothing declared".
+    /// Validated by the caller.
+    /// </param>
+    /// <remarks>
+    /// Deliberately does not touch <see cref="UserAiApiKey.UserTrustsForConfidential"/>: what
+    /// the provider's terms say and whether the user wants to use the key for confidential work
+    /// are two different questions, and answering one must not silently answer the other.
+    /// </remarks>
+    public async Task SaveApiKeyPostureAsync(string userId, string provider, string? posture, string? note)
+    {
+        var entry = await GetOrCreateKeyRowAsync(userId, provider);
+
+        entry.ConfidentialityPosture = posture;
+        entry.ConfidentialityNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+        entry.PostureDeclaredUtc = posture == null ? null : DateTime.UtcNow;
+
+        await _dbContext.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Records the user's judgement on whether this key may fund confidential sessions.
+    /// </summary>
+    /// <param name="trusted">
+    /// True or false is a decision and is remembered, so the AskWhenUnclear gate asks once per
+    /// key rather than once per turn. Null returns the key to undecided.
+    /// </param>
+    public async Task SaveApiKeyConfidentialTrustAsync(string userId, string provider, bool? trusted)
+    {
+        var entry = await GetOrCreateKeyRowAsync(userId, provider);
+
+        entry.UserTrustsForConfidential = trusted;
+        entry.ConfidentialTrustDecidedUtc = trusted.HasValue ? DateTime.UtcNow : null;
+
+        await _dbContext.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Stores a custom endpoint on a user's own key. Only reachable once
+    /// <c>AllowUserSuppliedBaseUrl</c> is enabled; the controller refuses before this is called.
+    /// </summary>
+    public async Task SaveApiKeyEndpointAsync(
+        string userId, string provider, string? baseUrl, string? customHeadersJson, string? apiVersion)
+    {
+        var entry = await GetOrCreateKeyRowAsync(userId, provider);
+
+        entry.BaseUrl = string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl.Trim();
+        entry.CustomHeadersJson = string.IsNullOrWhiteSpace(customHeadersJson) ? null : customHeadersJson;
+        entry.ApiVersion = string.IsNullOrWhiteSpace(apiVersion) ? null : apiVersion.Trim();
+
+        await _dbContext.SaveChangesAsync();
+    }
+
+    /// <summary>The user's key row for a provider, or null. Read-only; never creates one.</summary>
+    public Task<UserAiApiKey?> GetApiKeyRowAsync(string userId, string provider)
+        => _dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == provider);
+
+    /// <summary>One system AI configuration by id, for resolving its endpoint. Administrator paths only.</summary>
+    public async Task<SystemAiApiConfiguration?> GetSystemConfigurationAsync(long id)
+        => await _dbContext.SystemAiApiConfigurations.FindAsync(id);
+
+    /* A row can legitimately exist with no key material -- it carries the parallel-execution
+       mode, and now a posture and a trust decision, all of which a user may set before pasting
+       a key. */
+    private async Task<UserAiApiKey> GetOrCreateKeyRowAsync(string userId, string provider)
+    {
+        var entry = await _dbContext.UserAiApiKeys
+            .FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == provider);
+
+        if (entry == null)
+        {
+            entry = new UserAiApiKey { AspNetUserId = userId, Provider = provider };
+            _dbContext.UserAiApiKeys.Add(entry);
+        }
+
+        return entry;
     }
 
     public async Task<string?> GetDecryptedApiKeyForProviderAsync(string userId, string provider)

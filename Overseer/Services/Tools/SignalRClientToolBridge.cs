@@ -22,7 +22,7 @@ namespace Overseer.Services.Tools
         // We assume true for v2. The timeout will catch disconnected clients.
         public bool IsClientConnected => true;
 
-        public async Task<ToolResult> SendToolRequestAsync(long sessionId, string toolName, JsonElement parameters, CancellationToken ct)
+        public async Task<ToolResult> SendToolRequestAsync(Privacy.SessionRef sessionRef, string toolName, JsonElement parameters, CancellationToken ct)
         {
             var requestId = Guid.NewGuid().ToString();
             var tcs = new TaskCompletionSource<ToolResult>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -43,10 +43,10 @@ namespace Overseer.Services.Tools
                 {
                     Type = "tool_client_request",
                     Data = JsonSerializer.Serialize(payload),
-                    SessionId = sessionId
+                    SessionId = sessionRef.ToWireString()
                 };
 
-                await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", chatEvent, ct);
+                await _hubContext.Clients.Group(sessionRef.GroupName).SendAsync("ReceiveChatEvent", chatEvent, ct);
 
                 // Use the caller's cancellation token to handle timeout
                 using (ct.Register(() => tcs.TrySetCanceled(ct)))

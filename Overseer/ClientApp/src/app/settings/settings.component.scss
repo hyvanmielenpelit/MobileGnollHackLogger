@@ -496,6 +496,66 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
   }
 }
 
+/* Confidentiality Mode */
+.confidential-intro {
+  line-height: 1.5;
+  margin: 0 0 10px 0;
+}
+
+.confidential-notice,
+.confidential-consequence {
+  margin-top: 10px;
+}
+
+/* Explains why a control is disabled, so it is set apart from .form-hint, which describes
+   what the setting does. Gold rather than grey because it comes from the administrator. */
+.confidential-floor-note {
+  font-size: 0.85em;
+  font-weight: normal;
+  font-style: italic;
+  color: var(--primary-color, #d4af37);
+}
+
+.confidential-input-wrapper {
+  animation: none;
+
+  .form-hint {
+    margin-left: 0;
+  }
+}
+
+/* Outbound Masking */
+.dlp-intro {
+  line-height: 1.5;
+  margin: 0 0 10px 0;
+}
+
+/* The limit of what masking achieves. Set at full text contrast inside a bordered block so it does
+   not read as one more grey hint the eye skips. */
+.dlp-limit {
+  line-height: 1.5;
+  margin: 0 0 5px 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--primary-color, #d4af37);
+  border-radius: 4px;
+  background: rgba(212, 175, 55, 0.08);
+  color: var(--text-color, #e0e0e0);
+}
+
+.dlp-default-note {
+  line-height: 1.5;
+  margin: 15px 0 5px 0;
+}
+
+/* Explains why a switch is disabled. Gold rather than grey because it comes from the administrator,
+   matching the confidentiality controls. */
+.dlp-floor-note {
+  font-size: 0.85em;
+  font-weight: normal;
+  font-style: italic;
+  color: var(--primary-color, #d4af37);
+}
+
 .chat-management-actions {
   display: flex;
   gap: 12px;

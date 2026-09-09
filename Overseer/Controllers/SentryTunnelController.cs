@@ -17,7 +17,7 @@ namespace Overseer.Controllers
     [Route("api/sentry/log")]
     [IgnoreAntiforgeryToken] // Allowed: Endpoint is protected by [Authorize] and Rate Limiter
     [Authorize]
-    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("TunnelRateLimit")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Overseer.Security.RateLimitPolicies.SentryTunnel)]
     public class SentryTunnelController : ControllerBase
     {
         private readonly IHttpClientFactory _httpClientFactory;

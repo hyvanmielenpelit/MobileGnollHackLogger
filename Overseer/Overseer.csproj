@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -19,6 +19,19 @@
     <PackageReference Include="Lucene.Net.Analysis.Common" Version="4.8.0-beta00016" />
     <PackageReference Include="Lucene.Net.QueryParser" Version="4.8.0-beta00016" />
     <PackageReference Include="Sentry.AspNetCore" Version="6.10.0" />
+  </ItemGroup>
+
+  <!-- Document ingestion and local retrieval. Pinned deliberately rather than floated: a
+       parser reads attacker-supplied files, so an upgrade is a change worth reviewing.
+       PdfPig and DocumentFormat.OpenXml are managed-only readers that never execute document
+       content. Microsoft.ML.OnnxRuntime carries native binaries and is the largest item here;
+       it exists so embeddings are computed in-process with zero network egress, and the
+       retrieval path degrades to BM25 whenever the model file is absent. -->
+  <ItemGroup>
+    <PackageReference Include="PdfPig" Version="0.1.16" />
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.5.1" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.29.0" />
+    <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
   </ItemGroup>
 
   <ItemGroup>

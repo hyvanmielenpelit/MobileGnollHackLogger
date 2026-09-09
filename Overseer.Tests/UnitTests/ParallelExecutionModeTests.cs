@@ -132,7 +132,7 @@ public class ParallelExecutionModeTests
         var budget = new AgentRunBudget { MaxParallelSubAgents = 1 };
         var original = new ToolExecutionContext
         {
-            SessionId = 42,
+            SessionId = Overseer.Services.Privacy.SessionRef.Persistent(42),
             UserId = "user-1",
             ParallelExecutionMode = ParallelExecutionMode.Disabled,
             Budget = budget,

@@ -17,7 +17,7 @@ namespace GnollHackServer.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.11")
+                .HasAnnotation("ProductVersion", "10.0.12")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -1892,6 +1892,69 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("BonesTransactions");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.ChatAccessAuditLog", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ActorUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ActorUserName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("ActorWasAdmin")
+                        .HasColumnType("bit");
+
+                    b.Property<long?>("ChatMessageAttachmentId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("ChatSessionId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("OccurredUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SessionRef")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("SubjectUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<bool>("WasConfidential")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OccurredUtc");
+
+                    b.HasIndex("ActorUserId", "OccurredUtc");
+
+                    b.HasIndex("ChatSessionId", "OccurredUtc");
+
+                    b.ToTable("ChatAccessAuditLogs");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.ChatMessage", b =>
                 {
                     b.Property<long>("Id")
@@ -1935,7 +1998,13 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<int?>("InputTokens")
                         .HasColumnType("int");
 
+                    b.Property<bool>("IsGameSnapshot")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsHidden")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsMessageHistory")
                         .HasColumnType("bit");
 
                     b.Property<string>("ModelDisplayNameUsed")
@@ -2013,8 +2082,8 @@ namespace GnollHackServer.Data.Migrations
                         .HasColumnType("nvarchar(128)");
 
                     b.Property<string>("FileName")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
 
                     b.Property<string>("RelativePath")
                         .HasMaxLength(1024)
@@ -2108,6 +2177,25 @@ namespace GnollHackServer.Data.Migrations
                         .HasMaxLength(4096)
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("ConfidentialPolicyJson")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<DateTime?>("ConfidentialUpgradedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ContentKeyNonce")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ContentKeyTag")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ContentKeyVersion")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
                     b.Property<DateTime>("CreatedUtc")
                         .HasColumnType("datetime2");
 
@@ -2117,6 +2205,19 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<string>("DeletionReason")
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
+
+                    b.Property<int?>("EffectiveRetentionDays")
+                        .HasColumnType("int");
+
+                    b.Property<string>("EncryptedContentKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("ImmediatePurgeOnDelete")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsConfidential")
+                        .HasColumnType("bit");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
@@ -2131,8 +2232,8 @@ namespace GnollHackServer.Data.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("Title")
-                        .HasMaxLength(256)
-                        .HasColumnType("nvarchar(256)");
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
 
                     b.Property<decimal?>("TotalEstimatedCost")
                         .HasPrecision(18, 8)
@@ -2150,6 +2251,8 @@ namespace GnollHackServer.Data.Migrations
                         .IsDescending(false, false, true);
 
                     SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("AspNetUserId", "IsDeleted", "LastMessageUtc"), new[] { "Title", "IsGnollHackSession", "IsPinned" });
+
+                    b.HasIndex("IsDeleted", "IsConfidential", "EffectiveRetentionDays", "LastMessageUtc");
 
                     b.ToTable("ChatSession");
                 });
@@ -2611,12 +2714,32 @@ namespace GnollHackServer.Data.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
+                    b.Property<string>("ApiVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("BaseUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
                     b.Property<decimal?>("CachedInputPricePerMillion")
                         .HasPrecision(12, 6)
                         .HasColumnType("decimal(12,6)");
 
+                    b.Property<string>("ConfidentialityNote")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<string>("ConfidentialityPosture")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("CustomHeadersJson")
+                        .HasMaxLength(4096)
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("DailyChatRequestsCount")
                         .HasColumnType("int");
@@ -2629,6 +2752,10 @@ namespace GnollHackServer.Data.Migrations
 
                     b.Property<long>("DailyTitleTokensCount")
                         .HasColumnType("bigint");
+
+                    b.Property<string>("DataRegion")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("DisplayName")
                         .IsRequired()
@@ -2740,6 +2867,13 @@ namespace GnollHackServer.Data.Migrations
 
                     b.Property<int>("ParallelExecutionMode")
                         .HasColumnType("int");
+
+                    b.Property<string>("PostureAgreementRef")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTime?>("PostureVerifiedUtc")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("PricingMode")
                         .HasMaxLength(32)
@@ -2897,10 +3031,33 @@ namespace GnollHackServer.Data.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
+                    b.Property<string>("ApiVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("AspNetUserId")
                         .IsRequired()
                         .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("BaseUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<DateTime?>("ConfidentialTrustDecidedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ConfidentialityNote")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<string>("ConfidentialityPosture")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("CustomHeadersJson")
+                        .HasMaxLength(4096)
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("EncryptedApiKey")
                         .HasMaxLength(2048)
@@ -2909,10 +3066,16 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<int>("ParallelExecutionMode")
                         .HasColumnType("int");
 
+                    b.Property<DateTime?>("PostureDeclaredUtc")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("Provider")
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
+
+                    b.Property<bool?>("UserTrustsForConfidential")
+                        .HasColumnType("bit");
 
                     b.HasKey("Id");
 
@@ -3005,6 +3168,53 @@ namespace GnollHackServer.Data.Migrations
                 {
                     b.Property<string>("AspNetUserId")
                         .HasColumnType("nvarchar(450)");
+
+                    b.Property<bool?>("ConfidentialDisablePromptCache")
+                        .HasColumnType("bit");
+
+                    b.Property<bool?>("ConfidentialDisableTitleGeneration")
+                        .HasColumnType("bit");
+
+                    b.Property<bool?>("ConfidentialDisableToolEgress")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("ConfidentialFirstUseNoticeAcknowledged")
+                        .HasColumnType("bit");
+
+                    b.Property<bool?>("ConfidentialImmediatePurge")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("ConfidentialModelGate")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ConfidentialPersistence")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int?>("ConfidentialRetentionDays")
+                        .HasColumnType("int");
+
+                    b.Property<bool?>("DlpMaskApiKeys")
+                        .HasColumnType("bit");
+
+                    b.Property<bool?>("DlpMaskCreditCards")
+                        .HasColumnType("bit");
+
+                    b.Property<bool?>("DlpMaskEmails")
+                        .HasColumnType("bit");
+
+                    b.Property<bool?>("DlpMaskPhoneNumbers")
+                        .HasColumnType("bit");
+
+                    b.Property<bool?>("DlpMaskPrivateKeys")
+                        .HasColumnType("bit");
+
+                    b.Property<bool?>("DlpMaskSsns")
+                        .HasColumnType("bit");
+
+                    b.Property<bool?>("DlpMaskTokens")
+                        .HasColumnType("bit");
 
                     b.Property<bool>("EnableClientTools")
                         .HasColumnType("bit");

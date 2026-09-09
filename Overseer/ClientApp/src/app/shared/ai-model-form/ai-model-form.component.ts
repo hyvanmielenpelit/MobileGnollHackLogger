@@ -1,7 +1,12 @@
 import { Component, EventEmitter, Input, OnInit, Output, inject, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { SettingsService, ApiModelDto } from '../../services/settings.service';
+import {
+  SettingsService,
+  ApiModelDto,
+  CONFIDENTIALITY_POSTURES,
+  confidentialityPostureLabel
+} from '../../services/settings.service';
 
 export type DisplayNameMode = 'model_name' | 'model_id' | 'custom';
 
@@ -26,6 +31,16 @@ export interface AiModelFormResult {
   inputPricePerMillion?: number | null;
   outputPricePerMillion?: number | null;
   cachedInputPricePerMillion?: number | null;
+  /** Admin only. `postureVerifiedUtc` is what makes the posture operator-verified. */
+  confidentialityPosture?: string | null;
+  confidentialityNote?: string | null;
+  postureAgreementRef?: string | null;
+  postureVerifiedUtc?: string | null;
+  dataRegion?: string | null;
+  /** Admin only. Empty base URL means the provider's official public endpoint. */
+  baseUrl?: string | null;
+  customHeadersJson?: string | null;
+  apiVersion?: string | null;
 }
 
 @Component({
@@ -81,6 +96,37 @@ export class AiModelFormComponent implements OnInit {
   roleBenchmark = false;
   parallelExecutionMode: number = 2;
   note: string | null = null;
+
+  // Admin provider-trust fields. Nothing here is derived from the model; each records something
+  // agreed with the provider account behind this configuration's key.
+  readonly postures = CONFIDENTIALITY_POSTURES;
+  confidentialityPosture = '';
+  confidentialityNote: string | null = null;
+  postureAgreementRef: string | null = null;
+  /** A calendar date as the `<input type="date">` carries it. Non-empty is what grants verified status. */
+  postureVerifiedUtc: string | null = null;
+  dataRegion: string | null = null;
+
+  /* Where this model's requests go. Empty is the provider's official endpoint. The server
+     validates all three before storing them, so a rejected value comes back as a 400 rather
+     than being saved and ignored. */
+  baseUrl: string | null = null;
+  customHeadersJson: string | null = null;
+  /** Azure OpenAI only. Its presence also selects Azure's api-key header over a bearer token. */
+  apiVersion: string | null = null;
+
+  get postureLabel(): string {
+    return confidentialityPostureLabel(this.confidentialityPosture);
+  }
+
+  get isPostureVerified(): boolean {
+    return !!this.postureVerifiedUtc;
+  }
+
+  /** A verification date on an unestablished posture confirms nothing, so the form says so. */
+  get hasEmptyVerifiedPosture(): boolean {
+    return this.isPostureVerified && (!this.confidentialityPosture || this.confidentialityPosture === 'Unknown');
+  }
 
   get modelRole(): number {
     return (this.roleChat ? 1 : 0) | (this.roleTitle ? 2 : 0) | (this.roleBenchmark ? 4 : 0);
@@ -255,6 +301,14 @@ export class AiModelFormComponent implements OnInit {
         this.modelRole = this.initialData.modelRole ?? 3;
         this.parallelExecutionMode = this.initialData.parallelExecutionMode ?? 2;
         this.note = this.initialData.note || null;
+        this.confidentialityPosture = this.initialData.confidentialityPosture || '';
+        this.confidentialityNote = this.initialData.confidentialityNote || null;
+        this.postureAgreementRef = this.initialData.postureAgreementRef || null;
+        this.postureVerifiedUtc = this.toDateInputValue(this.initialData.postureVerifiedUtc);
+        this.dataRegion = this.initialData.dataRegion || null;
+        this.baseUrl = this.initialData.baseUrl || null;
+        this.customHeadersJson = this.initialData.customHeadersJson || null;
+        this.apiVersion = this.initialData.apiVersion || null;
       }
 
       this.pickerModelSelect = this.modelId;
@@ -718,6 +772,14 @@ export class AiModelFormComponent implements OnInit {
       result.modelRole = this.modelRole;
       result.parallelExecutionMode = this.parallelExecutionMode;
       result.note = this.note;
+      result.confidentialityPosture = this.confidentialityPosture || null;
+      result.confidentialityNote = (this.confidentialityNote || '').trim() || null;
+      result.postureAgreementRef = (this.postureAgreementRef || '').trim() || null;
+      result.postureVerifiedUtc = this.postureVerifiedUtc || null;
+      result.dataRegion = (this.dataRegion || '').trim() || null;
+      result.baseUrl = (this.baseUrl || '').trim() || null;
+      result.customHeadersJson = (this.customHeadersJson || '').trim() || null;
+      result.apiVersion = (this.apiVersion || '').trim() || null;
     }
 
     this.save.emit(result);
@@ -736,6 +798,13 @@ export class AiModelFormComponent implements OnInit {
       this.outputPricePerMillion = this.selectedModelObj.defaultPricing.outputPerMillion ?? null;
       this.cachedInputPricePerMillion = this.selectedModelObj.defaultPricing.cachedInputPerMillion ?? null;
     }
+  }
+
+  /** Narrows a stored ISO timestamp to the `yyyy-MM-dd` an `<input type="date">` accepts. */
+  private toDateInputValue(value: string | null | undefined): string | null {
+    if (!value) return null;
+    const match = /^(\d{4}-\d{2}-\d{2})/.exec(value);
+    return match ? match[1] : null;
   }
 
   formatRate(val: number | null | undefined): string {

@@ -53,11 +53,41 @@ export function isHttpOrNetworkError(err: any): boolean {
   return false;
 }
 
+/* Whether the chat currently on screen is confidential. Module-level rather than injected,
+   because beforeSend is a plain callback registered at bootstrap and has no access to the
+   injector -- and because an error thrown during Angular's own teardown must still find this
+   value.
+
+   The browser SDK posts through the server's own tunnel at /api/sentry/log, so the server
+   drops confidential events too. This is the near end: it stops the event being assembled and
+   sent at all, which also keeps the breadcrumb trail out of the request. */
+let confidentialSessionActive = false;
+
+/**
+ * Marks the client as viewing a confidential chat, so no telemetry is sent while it is open.
+ * Called when a session loads and cleared when one closes.
+ */
+export function setSentryConfidentialSession(isConfidential: boolean): void {
+  confidentialSessionActive = isConfidential;
+}
+
+/** Whether telemetry is currently suppressed for a confidential chat. */
+export function isSentryConfidentialSessionActive(): boolean {
+  return confidentialSessionActive;
+}
+
 /**
  * Sentry beforeSend filter callback for Overseer.
  * Drops all transient network dropouts and client-side HTTP error responses.
  */
 export function sentryBeforeSend(event: Sentry.ErrorEvent, hint: Sentry.EventHint): Sentry.ErrorEvent | null {
+  /* Checked first, and unconditionally: a crash while a confidential chat is open can carry
+     that chat's content in a message, a stack frame or a breadcrumb, and there is no way to
+     tell from here which of those it is. */
+  if (confidentialSessionActive) {
+    return null;
+  }
+
   const error = hint?.originalException;
   if (isHttpOrNetworkError(error)) {
     return null;

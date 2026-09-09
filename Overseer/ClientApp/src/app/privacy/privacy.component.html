@@ -1,0 +1,225 @@
+<div class="privacy-container gh-main-container">
+  <div class="header-row">
+    <h1>Privacy Notice</h1>
+    <a routerLink="/chat" queryParamsHandling="preserve" class="nav-back-link">&larr; Back</a>
+  </div>
+
+  <div class="privacy-scroll-area">
+    <p class="privacy-lead">
+      This page says what Overseer does with what you put into it, and where its protections stop. It is
+      written for someone deciding whether to paste something into a chat box, so it describes what has
+      actually been built rather than what would be reassuring. Where a protection reduces a risk without
+      removing it, this page says &ldquo;reduces&rdquo;.
+    </p>
+
+    <nav class="privacy-toc" aria-labelledby="privacy-toc-heading">
+      <h2 id="privacy-toc-heading">On this page</h2>
+      <ol>
+        @for (section of sections; track section.id) {
+          <li><a [href]="'#' + section.id">{{ section.title }}</a></li>
+        }
+      </ol>
+    </nav>
+
+    <section id="data-sensitivity-ladder" class="privacy-section">
+      <h2>1. The data sensitivity ladder</h2>
+      <p>
+        This is the classification that decides what Overseer <em>claims</em> to support. Find your own
+        data on it before you decide what to send.
+      </p>
+
+      <!-- role="list" keeps the list semantics that `list-style: none` removes in WebKit. -->
+      <ol class="ladder" role="list">
+        @for (rung of ladder; track rung.tier) {
+          <li class="ladder-rung" [class.is-ceiling]="rung.isCeiling">
+            <span class="ladder-tier">{{ rung.tier }}</span>
+            <span class="ladder-meaning">{{ rung.meaning }}</span>
+            <span class="ladder-verdict">{{ rung.verdict }}</span>
+          </li>
+        }
+      </ol>
+
+      <p class="privacy-callout">
+        <strong>The declared ceiling is your own personal data.</strong> Overseer is built to hold the notes,
+        logs and documents you keep about yourself, and it claims nothing above that line.
+      </p>
+
+      <p>
+        The technical controls are category-agnostic. Encryption does not care whose personal data it
+        protects, and every control described on this page protects another person&rsquo;s data exactly as well
+        as your own. What differs above the ceiling is legal and procedural rather than technical:
+      </p>
+      <ul>
+        <li>
+          For documents identifying <strong>other people</strong>, Overseer becomes responsible for someone who
+          has no account here and cannot be identified &mdash; so an access or erasure request from that person
+          cannot be honoured.
+        </li>
+        <li>
+          For <strong>regulated data</strong>, there is no business associate agreement or equivalent with any
+          AI provider, and no certification.
+        </li>
+      </ul>
+
+      <p>
+        The ladder is therefore a disclosure mechanism, not a second set of controls. Uploading a document
+        that mentions someone else is treated as the expected case rather than an edge case: the answer is
+        identical protection plus honesty about the ceiling, which is what this section is. Overseer does
+        <strong>not</strong> scan your uploads to detect personal data, and that is a decision rather than an
+        omission &mdash; detecting it would mean reading the very content the detection was meant to protect.
+      </p>
+    </section>
+
+    <section id="conversation-data-map" class="privacy-section">
+      <h2>2. What Overseer does with a conversation</h2>
+      <p>
+        What is collected, where it is kept, for how long, and who else receives it. Every retention figure
+        below is a default an operator can change.
+      </p>
+
+      <div class="privacy-table-scroll">
+        <table class="gh-table privacy-table">
+          <caption class="visually-hidden">What Overseer collects from a conversation, where it is stored, for how long, and who else receives it</caption>
+          <thead>
+            <tr>
+              <th scope="col">What</th>
+              <th scope="col">Where it is stored</th>
+              <th scope="col">How long</th>
+              <th scope="col">Who else receives it</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of dataMap; track row.what) {
+              <tr>
+                <th scope="row">{{ row.what }}</th>
+                <td>{{ row.storedWhere }}</td>
+                <td>{{ row.howLong }}</td>
+                <td>{{ row.sharedWith }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="limitations" class="privacy-section">
+      <h2>3. What these protections do not reach</h2>
+      <p>
+        This is the most important section on this page. Each row names a protection Overseer really has,
+        and then the edge it stops at. Read the right-hand column as the operative half.
+      </p>
+
+      <div class="privacy-table-scroll">
+        <table class="gh-table privacy-table limitations-table">
+          <caption class="visually-hidden">Each protection Overseer provides, paired with what that protection does not reach</caption>
+          <thead>
+            <tr>
+              <th scope="col">The protection</th>
+              <th scope="col">What it does not reach</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of limitations; track row.limit) {
+              <tr>
+                <th scope="row">{{ row.protection }}</th>
+                <td class="limitation-text">{{ row.limit }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="readable-metadata" class="privacy-section">
+      <h2>4. What stays readable even in a confidential chat</h2>
+
+      <p class="privacy-callout">
+        <strong>The rule: only a named set of things is encrypted, and everything outside that set stays
+        plain text.</strong> The encrypted set is a message&rsquo;s content, a tool call&rsquo;s arguments, result and
+        error text, the chat&rsquo;s title, the name you gave an attachment, and an attachment&rsquo;s bytes on disk.
+        Everything else about the chat is readable to anyone with database or file access. In a normal chat
+        nothing is encrypted at all, content included.
+      </p>
+
+      <p>
+        That rule is stated instead of a list of database columns on purpose. A hand-written list of forty
+        fields goes stale on the next schema change, and a stale list is worse than a rule because it reads
+        as complete. What the rule leaves exposed is easier to judge by what someone could learn from it,
+        so here it is grouped that way. <strong>The most consequential entry is the first one.</strong>
+      </p>
+
+      <dl class="readable-list">
+        @for (category of readableCategories; track category.label) {
+          <div class="readable-entry" [class.is-primary]="category.isPrimary">
+            <dt>{{ category.label }}</dt>
+            <dd>{{ category.exposes }}</dd>
+          </div>
+        }
+      </dl>
+    </section>
+
+    <section id="subprocessors" class="privacy-section">
+      <h2>5. Subprocessors</h2>
+      <p>
+        The third parties that can receive data, what each receives, and why. Each row also says under what
+        condition it receives anything at all &mdash; several of them never do on an ordinary turn.
+      </p>
+
+      <div class="privacy-table-scroll">
+        <table class="gh-table privacy-table">
+          <caption class="visually-hidden">Third parties that can receive data, what each receives, why, and when</caption>
+          <thead>
+            <tr>
+              <th scope="col">Who</th>
+              <th scope="col">What it receives</th>
+              <th scope="col">Why</th>
+              <th scope="col">When</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (processor of subprocessors; track processor.name) {
+              <tr>
+                <th scope="row">{{ processor.name }}</th>
+                <td>{{ processor.receives }}</td>
+                <td>{{ processor.why }}</td>
+                <td>{{ processor.when }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <p class="privacy-callout fonts-note">
+        <strong>Google Fonts is not a subprocessor.</strong> Cinzel and Lato are served from Overseer&rsquo;s own
+        origin, so loading a font sends nothing to Google. Google Fonts transmits every visitor&rsquo;s IP address
+        to a third party on every page load, before any consent, which is why the font files are hosted here
+        instead.
+      </p>
+
+      <p>
+        The provider&rsquo;s own web-search tool is not a separate recipient: the query goes to the provider that
+        is already answering the turn, and it searches on its own account. It is withheld entirely in a
+        confidential chat.
+      </p>
+    </section>
+
+    <section id="operator-gaps" class="privacy-section">
+      <h2>6. Still to be supplied by the operator</h2>
+      <p>
+        The items below cannot be answered by the software. They are statements only the operator of this
+        deployment can make, and they have not been made yet &mdash; so this notice is incomplete rather than
+        finished. Nothing has been invented to fill the space.
+      </p>
+
+      <ul class="operator-gap-list" role="list">
+        @for (gap of operatorGaps; track gap.title) {
+          <li class="operator-gap">
+            <span class="operator-gap-flag">Not supplied by the operator</span>
+            <span class="operator-gap-title">{{ gap.title }}</span>
+            <span class="operator-gap-detail">{{ gap.detail }}</span>
+          </li>
+        }
+      </ul>
+    </section>
+  </div>
+</div>

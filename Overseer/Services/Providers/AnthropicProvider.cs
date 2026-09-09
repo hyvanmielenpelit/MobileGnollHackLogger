@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -31,15 +32,48 @@ public class AnthropicProvider : IAiProvider
 
     public IReadOnlyList<string> SupportedServiceTiers => new[] { "auto", "standard_only" };
 
-    public void ConfigureRequest(HttpRequestMessage request, string apiKey)
+    private const string MessagesPath = "/v1/messages";
+
+    private const string OfficialMessagesUrl = "https://api.anthropic.com" + MessagesPath;
+
+    public void ConfigureRequest(HttpRequestMessage request, string apiKey, AiEndpointDescriptor endpoint)
     {
-        request.Headers.TryAddWithoutValidation("x-api-key", apiKey);
+        switch (endpoint.AuthStyle)
+        {
+            case AiEndpointAuthStyle.BearerToken:
+            case AiEndpointAuthStyle.AzureApiKey:
+                /* A gateway in front of Anthropic authenticates the caller itself, and expects
+                   a bearer token rather than the x-api-key the public API uses. */
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                break;
+
+            case AiEndpointAuthStyle.None:
+                break;
+
+            default:
+                request.Headers.TryAddWithoutValidation("x-api-key", apiKey);
+                break;
+        }
+
+        /* Sent whatever the endpoint: it selects the wire format of the request body, not the
+           credential, so a proxy speaking the Messages API needs it as much as the public API
+           does. */
         request.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
+
+        ApplyCustomHeaders(request, endpoint);
     }
 
-    public string GetChatStreamUrl(string modelId, string apiKey)
+    public string GetChatStreamUrl(string modelId, string apiKey, AiEndpointDescriptor endpoint)
+        => endpoint.ComposeUrl(OfficialMessagesUrl, MessagesPath);
+
+    private static void ApplyCustomHeaders(HttpRequestMessage request, AiEndpointDescriptor endpoint)
     {
-        return "https://api.anthropic.com/v1/messages";
+        if (endpoint.CustomHeaders == null)
+            return;
+
+        // Already allowlisted by EndpointPolicy; nothing here can be a credential or Host header.
+        foreach (var (name, value) in endpoint.CustomHeaders)
+            request.Headers.TryAddWithoutValidation(name, value);
     }
 
     public Dictionary<string, object> BuildChatRequestBody(
@@ -657,10 +691,8 @@ public class AnthropicProvider : IAiProvider
         return req;
     }
 
-    public string GetTitleUrl(string modelId, string apiKey)
-    {
-        return "https://api.anthropic.com/v1/messages";
-    }
+    public string GetTitleUrl(string modelId, string apiKey, AiEndpointDescriptor endpoint)
+        => endpoint.ComposeUrl(OfficialMessagesUrl, MessagesPath);
 
     public string? ParseTitleResponse(JsonElement root)
     {

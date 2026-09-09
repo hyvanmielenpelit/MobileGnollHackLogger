@@ -1,8 +1,16 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import * as Sentry from '@sentry/angular';
-import { isHttpOrNetworkError, sentryBeforeSend } from './sentry-filter.util';
+import { isHttpOrNetworkError, sentryBeforeSend, setSentryConfidentialSession } from './sentry-filter.util';
 
 describe('sentry-filter.util', () => {
+  /* The confidential-session flag is module-level, so it outlives a spec and a spec file. Any
+     suite that opens a confidential or incognito chat leaves it set, and under Jasmine's
+     randomised order that suite can run first -- at which point every assertion here that an
+     event is KEPT fails, because sentryBeforeSend drops everything while the flag is on.
+     Establishing the state it depends on is this suite's job. */
+  beforeEach(() => {
+    setSentryConfidentialSession(false);
+  });
   describe('isHttpOrNetworkError', () => {
     describe('Normal operational & runtime errors (MUST NOT be filtered)', () => {
       it('should return false for null and undefined', () => {

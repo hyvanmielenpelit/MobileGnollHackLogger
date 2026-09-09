@@ -37,7 +37,7 @@
           </li>
         }
         @for (s of sessions; track s.id) {
-          <li [class.active]="s.id === currentSessionId" [class.is-pinned]="s.isPinned" (click)="navigateToSession(s.id)">
+          <li [class.active]="isCurrentSession(s.id)" [class.is-pinned]="s.isPinned" (click)="navigateToSession(s.id)">
             <div class="session-info">
               <div class="session-title" title="{{ s.title }}">
                 {{ s.title }}
@@ -132,7 +132,9 @@
           <div class="chat-title-container">
             @if (!isRenamingTitle) {
               <span class="chat-title" title="{{ currentTitle }}">{{ currentTitle }}</span>
-              <button class="rename-btn" (click)="startRename()" title="Rename Chat">✏️ </button>
+              @if (!isEphemeralSession) {
+                <button class="rename-btn" (click)="startRename()" title="Rename Chat">✏️ </button>
+              }
             }
             @if (isRenamingTitle) {
               <div class="rename-container">
@@ -159,7 +161,7 @@
           </div>
         }
         @if (authService.user$ | async; as user) {
-          @if (user.isAdmin && currentSessionId && hasGameSnapshot) {
+          @if (user.isAdmin && currentSessionId && hasGameSnapshot && !isEphemeralSession) {
             <div class="chat-header-actions">
               <!-- Save Attached Game Snapshot: server-side read, no client bridge needed -->
               <button type="button" class="action-btn" (click)="openCaptureBoardModal(undefined, 'attached')" aria-label="Save attached game snapshot of this chat for benchmarking" [attr.style]="'anchor-name: --tip-save-attached-snapshot'" interestfor="tip-save-attached-snapshot">
@@ -509,9 +511,128 @@
               </button>
             </div>
           }
+          <!-- What the assistant actually read of an attachment too large to send whole -->
+          @if (attachmentExcerpts.length > 0) {
+            <div class="excerpt-notices" role="status" aria-live="polite">
+              @for (ex of attachmentExcerpts; track ex.fileName) {
+                <div class="excerpt-notice">
+                  <span class="setting-badge badge-excerpt">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                    Excerpts
+                  </span>
+                  <div class="excerpt-notice-body">
+                    <p class="excerpt-notice-line">{{ excerptSummaryLine(ex) }}</p>
+                    <p class="excerpt-notice-line">{{ excerptSelectionLine(ex) }}</p>
+                    @if (ex.removedActiveContent.length > 0) {
+                      <p class="excerpt-notice-line excerpt-notice-removed">{{ excerptRemovedLine(ex) }}</p>
+                    }
+                    @if (ex.wasTruncated) {
+                      <p class="excerpt-notice-line">{{ excerptTruncationText }}</p>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          }
         }
       </div>
       <div class="input-area-container">
+        <!-- Persistent state of an open incognito chat, with its close action -->
+        @if (isEphemeralSession) {
+          <div class="ephemeral-banner">
+            <div class="ephemeral-banner-main">
+              <span class="setting-badge badge-ephemeral">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                Incognito
+              </span>
+              <span class="ephemeral-banner-text">
+                This chat is not being saved. Nothing in it is written to Overseer's database or file store, and closing it or letting it expire destroys the content for good.
+              </span>
+              <button type="button" class="disclosure-trigger"
+                      [attr.aria-expanded]="isEphemeralDetailOpen"
+                      aria-controls="ephemeral-detail"
+                      (click)="toggleEphemeralDetail()">
+                What this means
+                <svg class="disclosure-chevron" [class.is-open]="isEphemeralDetailOpen" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </button>
+              <button type="button" class="btn-gh btn-gh-delete btn-gh-small ephemeral-close-btn"
+                      (click)="requestCloseEphemeralSession()">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  <line x1="10" y1="11" x2="10" y2="17"></line>
+                  <line x1="14" y1="11" x2="14" y2="17"></line>
+                </svg>
+                Close and destroy
+              </button>
+            </div>
+            @if (isEphemeralDetailOpen) {
+              <ul id="ephemeral-detail" class="ephemeral-detail">
+                <li>The conversation is still sent to the AI provider to be answered. Incognito changes what Overseer keeps, not what is sent away for inference.</li>
+                <li>&ldquo;Not saved&rdquo; means not written to Overseer's database or its file store. Server memory can still be paged to disk by the operating system, captured in a crash dump, or read by anything with sufficient access to the server. This is not a legal or forensic guarantee.</li>
+                <li>The chat also ends on its own after a stretch of inactivity. When it ends, there is no trash and no recovery.</li>
+              </ul>
+            }
+          </div>
+        }
+        @if (ephemeralNotice) {
+          <div class="ephemeral-notice" role="status" aria-live="polite">
+            <span class="ephemeral-notice-text">{{ ephemeralNotice }}</span>
+            <button type="button" class="action-btn"
+                    (click)="dismissEphemeralNotice()"
+                    aria-label="Dismiss incognito chat notice"
+                    interestfor="tip-dismiss-ephemeral-notice"
+                    [attr.style]="'anchor-name: --tip-dismiss-ephemeral-notice'">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+            <div popover="hint" id="tip-dismiss-ephemeral-notice" class="gh-tooltip"
+                 [attr.style]="'position-anchor: --tip-dismiss-ephemeral-notice'">Dismiss notice</div>
+          </div>
+        }
+        <!-- Privacy mode for the chat about to be created. Not offered later: see the panel copy. -->
+        @if (isNewChat) {
+          <div class="privacy-panel" [class.is-set]="newChatConfidential || newChatEphemeral">
+            <button type="button" class="disclosure-trigger privacy-trigger"
+                    [attr.aria-expanded]="isPrivacyPanelOpen"
+                    aria-controls="privacy-panel-body"
+                    (click)="togglePrivacyPanel()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+              Privacy: {{ privacyModeLabel }}
+              <svg class="disclosure-chevron" [class.is-open]="isPrivacyPanelOpen" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            @if (isPrivacyPanelOpen) {
+              <div class="privacy-panel-body" id="privacy-panel-body">
+                <label class="checkbox-label align-start">
+                  <input type="checkbox" name="newChatConfidential" class="w-auto m-0"
+                         [ngModel]="newChatConfidential"
+                         (ngModelChange)="onNewChatConfidentialChange($event)" />
+                  <span class="d-block">
+                    <span class="privacy-option-title">Confidentiality Mode</span>
+                    <span class="privacy-option-note">Encrypts this chat where it is stored, keeps it out of search, blocks tools that reach the internet, skips the generated title, and purges it immediately when you delete it.</span>
+                  </span>
+                </label>
+                <label class="checkbox-label align-start">
+                  <input type="checkbox" name="newChatEphemeral" class="w-auto m-0"
+                         [ngModel]="newChatEphemeral"
+                         (ngModelChange)="onNewChatEphemeralChange($event)" />
+                  <span class="d-block">
+                    <span class="privacy-option-title">Incognito &mdash; stricter: nothing is saved at all</span>
+                    <span class="privacy-option-note">Turning this on turns Confidentiality Mode on with it. The chat is held in server memory only: no chat, message, tool call or attachment row is written, and no file reaches disk. It ends after a stretch of inactivity, or when you close it &mdash; and then the content is gone. There is no trash and no recovery.</span>
+                  </span>
+                </label>
+                <p class="privacy-honesty-title">Two things incognito does not do:</p>
+                <ul class="privacy-honesty-list">
+                  <li>The conversation is still sent to the AI provider to be answered. Incognito changes what Overseer keeps, not what is sent away for inference.</li>
+                  <li>&ldquo;Not saved&rdquo; means not written to Overseer's database or its file store. Server memory can still be paged to disk by the operating system, captured in a crash dump, or read by anything with sufficient access to the server. This is not a legal or forensic guarantee.</li>
+                </ul>
+                <p class="privacy-decided-note">Both are decided now, for this chat. An existing chat's messages are already written, so it cannot be turned incognito afterwards.</p>
+              </div>
+            }
+          </div>
+        }
         <!-- Context window consumption and total chat cost -->
         @if ((showChatCost && totalChatCost != null) || (contextUsage && showContextWindowUsage)) {
           <div class="chat-telemetry-bar">
@@ -735,6 +856,17 @@
                     </span>
                   }
                 }
+                @if (privateBadge) {
+                  <span class="setting-badge ms-10"
+                        [class.badge-private-green]="privateBadge.state === 'green'"
+                        [class.badge-private-yellow]="privateBadge.state === 'yellow'"
+                        [class.badge-private-orange]="privateBadge.state === 'orange'"
+                        [class.badge-private-red]="privateBadge.state === 'red'"
+                        [title]="privateBadge.tooltip">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                    {{ privateBadge.label }}
+                  </span>
+                }
               </div>
             }
           </div>
@@ -762,10 +894,17 @@
                 Attach Game Snapshot to Chat
               </div>
             }
-            <button class="icon-btn add-media-icon" (click)="triggerFileInput()" [disabled]="pendingAttachments.length >= 5" title="Add attachments">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <button type="button" class="icon-btn add-media-icon" (click)="triggerFileInput()"
+                    [disabled]="pendingAttachments.length >= 5"
+                    aria-label="Add attachments"
+                    interestfor="tip-add-media"
+                    [attr.style]="'anchor-name: --tip-add-media'">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
-            <input type="file" id="fileInput" hidden multiple accept=".html,.htm,.txt,.md,.png,.jpg,.jpeg,.webp" (change)="onFileSelected($event)">
+            <div popover="hint" id="tip-add-media" class="gh-tooltip" [attr.style]="'position-anchor: --tip-add-media'">
+              {{ attachmentFormatsHint }}
+            </div>
+            <input type="file" id="fileInput" hidden multiple [attr.accept]="attachmentAcceptAttr" (change)="onFileSelected($event)">
             <div class="auto-resize-wrapper" [attr.data-replicated-value]="currentInput">
               <textarea #promptInput [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keydown.enter)="onEnter($event)" (paste)="onPaste($event)" placeholder="Ask the Overseer" autofocus class="transparent-textarea"></textarea>
             </div>
@@ -895,6 +1034,34 @@
   @if (reportError) {
     <div class="report-error-msg">
       {{ reportError }}
+    </div>
+  }
+</dialog>
+
+<dialog #ephemeralCloseDialog class="gh-dialog ephemeral-close-dialog" (cancel)="closeEphemeralCloseDialog()">
+  <h3>Close Incognito Chat</h3>
+  <p>This chat was never saved. Closing it destroys everything in it &mdash; every message, every tool result, every attachment &mdash; immediately and irrecoverably. There is no trash and nothing to restore from.</p>
+  <p class="ephemeral-dialog-note">What was already sent to the AI provider to be answered is outside Overseer and is not affected by this.</p>
+  <div class="dialog-actions">
+    <button type="button" class="btn-gh btn-gh-cancel" (click)="closeEphemeralCloseDialog()" [disabled]="isClosingEphemeral">Keep Chatting</button>
+    <button type="button" class="btn-gh btn-gh-delete" (click)="confirmCloseEphemeralSession()" [disabled]="isClosingEphemeral">
+      @if (isClosingEphemeral) {
+        <span class="gh-spinner-small"></span>
+        <span class="ms-10">Closing...</span>
+      } @else {
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="3 6 5 6 21 6"></polyline>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          <line x1="10" y1="11" x2="10" y2="17"></line>
+          <line x1="14" y1="11" x2="14" y2="17"></line>
+        </svg>
+        <span>Close and Destroy</span>
+      }
+    </button>
+  </div>
+  @if (ephemeralCloseError) {
+    <div class="report-error-msg">
+      {{ ephemeralCloseError }}
     </div>
   }
 </dialog>

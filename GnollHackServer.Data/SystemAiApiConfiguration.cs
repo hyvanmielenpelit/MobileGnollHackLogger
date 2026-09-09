@@ -69,6 +69,64 @@ public class SystemAiApiConfiguration : IRateLimitedEntity
     [MaxLength(2048)]
     public string? Note { get; set; }
 
+    /// <summary>
+    /// What has actually been agreed with the provider account behind this key, as a
+    /// ProviderConfidentialityPosture name. Null = legacy row, treated as "Unknown", following
+    /// the same convention as <see cref="PricingMode"/> and <see cref="DisplayNameMode"/>.
+    /// Never inferred from the model name.
+    /// </summary>
+    [MaxLength(32)]
+    public string? ConfidentialityPosture { get; set; }
+
+    /// <summary>Free text for the operator: what the agreement covers, and what it does not.</summary>
+    [MaxLength(1024)]
+    public string? ConfidentialityNote { get; set; }
+
+    /// <summary>
+    /// Reference to the agreement establishing the posture — a DPA number, contract id or ticket.
+    /// </summary>
+    [MaxLength(256)]
+    public string? PostureAgreementRef { get; set; }
+
+    /// <summary>
+    /// When an operator verified the posture against that agreement. **Non-null is what makes a
+    /// posture operator-verified**, and only a verified posture can produce a green privacy
+    /// badge; a self-declared one never does, however strong it claims to be.
+    /// </summary>
+    public DateTime? PostureVerifiedUtc { get; set; }
+
+    /// <summary>Where inference physically runs, when it is known. Display and disclosure only.</summary>
+    [MaxLength(64)]
+    public string? DataRegion { get; set; }
+
+    /// <summary>
+    /// Scheme and authority of a custom endpoint — Azure OpenAI, a gateway, or a self-hosted
+    /// model server. Null or empty means the provider's official public endpoint, so every
+    /// existing configuration keeps working untouched.
+    /// </summary>
+    /// <remarks>
+    /// Never used directly. It decides where the server sends an authenticated outbound
+    /// request, so it is only ever read through <c>EndpointPolicy</c>, which validates the
+    /// scheme, the host against the operator's allowlist, and the resolved addresses.
+    /// </remarks>
+    [MaxLength(2048)]
+    public string? BaseUrl { get; set; }
+
+    /// <summary>
+    /// Extra request headers as a flat JSON object. Checked against
+    /// <c>PrivacySettings:CustomEndpoints:AllowedHeaderNames</c>, and can never set a
+    /// credential header, <c>Host</c>, or a hop-by-hop header.
+    /// </summary>
+    [MaxLength(4096)]
+    public string? CustomHeadersJson { get; set; }
+
+    /// <summary>
+    /// The <c>api-version</c> Azure OpenAI requires. Its presence is also what identifies an
+    /// endpoint as Azure, which uses an <c>api-key</c> header rather than a bearer token.
+    /// </summary>
+    [MaxLength(64)]
+    public string? ApiVersion { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     // Rate limits

@@ -255,6 +255,39 @@ public class DelegateToSubAgentTool : IToolHandler
             seedHistory.Insert(0, new { role = "system", content = instructions });
             seedHistory = aiProvider.PrepareMessageHistory(seedHistory);
 
+            /* The endpoint of whichever key holder funds this sub-agent run. Derived here, once,
+               from the identifiers the resolution already returned rather than threaded through
+               its eight construction sites -- a missed site would send the sub-agent to the
+               provider's public endpoint carrying the operator's key, silently. */
+            var endpointPolicy = scope.ServiceProvider.GetRequiredService<Overseer.Services.Privacy.EndpointPolicy>();
+            var endpointDb = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var subAgentEndpoint = Overseer.Services.Providers.AiEndpointDescriptor.Official;
+            if (resolved.SystemModelId.HasValue)
+            {
+                var fundingConfig = await endpointDb.SystemAiApiConfigurations
+                    .FirstOrDefaultAsync(c => c.Id == resolved.SystemModelId.Value, cancellationToken);
+                subAgentEndpoint = endpointPolicy.Resolve(fundingConfig);
+            }
+            else
+            {
+                /* The session row is consulted for one thing, its owner, and an ephemeral
+                   session has no row to name one -- so the owner is read from the execution
+                   context, where the turn recorded it in either case. */
+                string? fundingUserId = context.SessionId.IsPersistent
+                    ? await endpointDb.ChatSession
+                        .Where(s => s.Id == context.SessionId.PersistentId)
+                        .Select(s => s.AspNetUserId)
+                        .FirstOrDefaultAsync(cancellationToken)
+                    : context.UserId;
+                if (!string.IsNullOrEmpty(fundingUserId))
+                {
+                    var fundingKey = await endpointDb.UserAiApiKeys.FirstOrDefaultAsync(
+                        k => k.AspNetUserId == fundingUserId && k.Provider == resolved.Provider,
+                        cancellationToken);
+                    subAgentEndpoint = endpointPolicy.Resolve(fundingKey);
+                }
+            }
+
             var subAgentExecContext = context.CloneFor(toolCallId);
             subAgentExecContext.AgentName = subAgentDef.Name;
             subAgentExecContext.AgentDepth = context.AgentDepth + 1;
@@ -295,6 +328,7 @@ public class DelegateToSubAgentTool : IToolHandler
                 ProviderName = resolved.Provider,
                 ModelId = resolved.ModelId,
                 ApiKey = resolved.ApiKey,
+                Endpoint = subAgentEndpoint,
                 ModelDisplayName = subAgentDef.DisplayName,
                 SystemPrompt = instructions,
                 SeedHistory = seedHistory,
@@ -466,8 +500,14 @@ public class DelegateToSubAgentTool : IToolHandler
                 .Any(p => string.Equals(p.ProviderName, provider, StringComparison.OrdinalIgnoreCase))
             && _metadataService.GetMetadata(provider, modelId).SupportsSubAgentExecution;
 
-        var session = await dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == context.SessionId, cancellationToken);
-        string? userId = session?.AspNetUserId;
+        // Same as the funding lookup above: only the owner is wanted, and an ephemeral session
+        // carries it on the context rather than in a row.
+        string? userId = context.SessionId.IsPersistent
+            ? await dbContext.ChatSession
+                .Where(s => s.Id == context.SessionId.PersistentId)
+                .Select(s => s.AspNetUserId)
+                .FirstOrDefaultAsync(cancellationToken)
+            : context.UserId;
 
         // Step 1: Check if definition specifies a preferred model
         if (definition.ModelPreference != null &&

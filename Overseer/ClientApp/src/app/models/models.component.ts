@@ -2,8 +2,17 @@ import { Component, OnInit, inject, ViewChild, ElementRef, HostListener, ChangeD
 
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
-import { SettingsService, UserAiModel, ApiModelDto } from '../services/settings.service';
+import {
+  SettingsService,
+  UserAiModel,
+  ApiModelDto,
+  PosturePrivacyLevel,
+  confidentialityPostureLabel,
+  confidentialityPostureRank,
+  posturePrivacyLevel
+} from '../services/settings.service';
 import { AiModelFormComponent, AiModelFormResult } from '../shared/ai-model-form/ai-model-form.component';
+import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
 
 @Component({
     selector: 'app-models',
@@ -42,6 +51,7 @@ export class ModelsComponent implements OnInit {
   modelToDeleteId: number | undefined = undefined;
 
   ngOnInit() {
+    ensureOverlayPolyfills();
     this.settingsService.getSettings().subscribe({
       next: (settings) => {
         this.titleGenerationEnabled = !settings.titleGenerationDisabled;
@@ -75,6 +85,9 @@ export class ModelsComponent implements OnInit {
         this.titleUserModels = models.filter(m => !m.isSystem && (m.modelRole === undefined || (m.modelRole & 2) === 2));
         this.titleSystemModels = models.filter(m => m.isSystem && (m.modelRole === undefined || (m.modelRole & 2) === 2));
         this.loading = false;
+        // The anchor-positioning polyfill does not observe DOM mutations, and the trust
+        // indicators' tooltips were behind the loading @if until this render.
+        setTimeout(() => refreshAnchorPositioning(), 0);
       },
       error: (err) => {
         console.error("Failed to load models", err);
@@ -589,5 +602,57 @@ export class ModelsComponent implements OnInit {
 
   getPricingBadge(model: UserAiModel): 'Custom' | 'Catalog' {
     return (model.pricingSource === 'custom' || model.pricingMode === 'custom') ? 'Custom' : 'Catalog';
+  }
+
+  /** False for a legacy row and for anything still on the Unknown rung. */
+  hasEstablishedPosture(model: UserAiModel): boolean {
+    return confidentialityPostureRank(model.confidentialityPosture) > 0;
+  }
+
+  postureLevel(model: UserAiModel): PosturePrivacyLevel {
+    return posturePrivacyLevel(model.confidentialityPosture, model.postureVerifiedUtc);
+  }
+
+  /**
+   * The indicator's own text. It carries the verification status in words as well as in colour,
+   * and a posture nobody dated never reads as verified — a user's own key is self-declared, an
+   * undated system configuration is merely unverified.
+   */
+  postureBadgeText(model: UserAiModel): string {
+    if (!this.hasEstablishedPosture(model)) {
+      return 'Trust: not established';
+    }
+    const label = confidentialityPostureLabel(model.confidentialityPosture);
+    if (model.postureVerifiedUtc) {
+      return `${label} · Verified`;
+    }
+    return `${label} · ${model.isSystem ? 'Unverified' : 'Self-declared'}`;
+  }
+
+  postureTooltipLines(model: UserAiModel): string[] {
+    const lines = [confidentialityPostureLabel(model.confidentialityPosture)];
+    if (model.postureVerifiedUtc) {
+      const date = this.formatPostureDate(model.postureVerifiedUtc);
+      lines.push(date ? `Operator-verified on ${date}.` : 'Operator-verified.');
+    } else if (model.isSystem) {
+      lines.push('No operator has verified this against the provider agreement.');
+    } else {
+      lines.push('Declared by you for your own API key. Overseer cannot verify it.');
+    }
+    if (model.dataRegion) {
+      lines.push(`Inference runs in ${model.dataRegion}.`);
+    }
+    return lines;
+  }
+
+  /** Unique per row across both lists: user model ids and system config ids can collide. */
+  postureTipId(model: UserAiModel): string {
+    return `tip-posture-${model.isSystem ? 's' : 'u'}-${model.id}`;
+  }
+
+  private formatPostureDate(iso: string | null | undefined): string {
+    if (!iso) return '';
+    const parsed = new Date(iso);
+    return isNaN(parsed.getTime()) ? '' : parsed.toLocaleDateString();
   }
 }

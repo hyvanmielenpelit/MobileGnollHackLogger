@@ -42,7 +42,8 @@ public class AdminSystemAiConfigTests
         var governor = new AiRequestGovernor(config, NullLogger<AiRequestGovernor>.Instance);
         var metadataService = new ModelMetadataService();
         var pricingService = new ModelPricingService(metadataService, db);
-        var controller = new AdminController(db, config, null!, cryptoService, governor, pricingService);
+        var endpointPolicy = new Overseer.Services.Privacy.EndpointPolicy(config);
+        var controller = new AdminController(db, config, null!, cryptoService, governor, endpointPolicy, pricingService);
 
         return (controller, db, cryptoService);
     }

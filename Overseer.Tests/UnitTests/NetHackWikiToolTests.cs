@@ -143,7 +143,7 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
         var searchTool = new NetHackWikiSearchTool(service, config);
 
         var jsonParams = JsonDocument.Parse("{\"query\": \"cockatrice\"}").RootElement;
-        var context = new ToolExecutionContext { SessionId = 1, SpoilerFreeMode = false };
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1), SpoilerFreeMode = false };
 
         var result = await searchTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
         Assert.True(result.Success);
@@ -166,7 +166,7 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
         var searchTool = new NetHackWikiSearchTool(service, config);
 
         var jsonParams = JsonDocument.Parse("{\"query\": \"cockatrice\"}").RootElement;
-        var context = new ToolExecutionContext { SessionId = 1, SpoilerFreeMode = true };
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1), SpoilerFreeMode = true };
 
         var result = await searchTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
         Assert.True(result.Success);
@@ -189,7 +189,7 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
         var viewTool = new NetHackWikiViewTool(service);
 
         var jsonParams = JsonDocument.Parse("{\"article\": \"Elbereth\"}").RootElement;
-        var context = new ToolExecutionContext { SessionId = 1, SpoilerFreeMode = false };
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1), SpoilerFreeMode = false };
 
         var result = await viewTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
         Assert.True(result.Success);
@@ -304,7 +304,7 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
 
         var searchTool = new NetHackWikiSearchTool(service, config);
         var jsonParams = JsonDocument.Parse("{\"query\": \"nonexistent_term_12345\"}").RootElement;
-        var context = new ToolExecutionContext { SessionId = 1, SpoilerFreeMode = false };
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1), SpoilerFreeMode = false };
 
         var result = await searchTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
         Assert.True(result.Success);
@@ -326,7 +326,7 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
 
         var viewTool = new NetHackWikiViewTool(service);
         var jsonParams = JsonDocument.Parse("{\"article\": \"NonExistentArticleXYZ\"}").RootElement;
-        var context = new ToolExecutionContext { SessionId = 1, SpoilerFreeMode = false };
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1), SpoilerFreeMode = false };
 
         var result = await viewTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
         Assert.True(result.Success);
@@ -351,7 +351,7 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
         {
             var searchTool = new NetHackWikiSearchTool(service, config);
             var jsonParams = JsonDocument.Parse("{\"query\": \"cockatrice\"}").RootElement;
-            var context = new ToolExecutionContext { SessionId = 1, SpoilerFreeMode = false };
+            var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1), SpoilerFreeMode = false };
 
             var result = await searchTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
             Assert.False(result.Success);
@@ -378,7 +378,7 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
         {
             var viewTool = new NetHackWikiViewTool(service);
             var jsonParams = JsonDocument.Parse("{\"article\": \"Cockatrice\"}").RootElement;
-            var context = new ToolExecutionContext { SessionId = 1, SpoilerFreeMode = false };
+            var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1), SpoilerFreeMode = false };
 
             var result = await viewTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
             Assert.False(result.Success);

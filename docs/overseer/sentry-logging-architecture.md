@@ -32,6 +32,7 @@ A core rule of Overseer's logging architecture is the strict separation between 
 
 1. **Authentication Gate**:
    - If an `HttpContext` is present and the request is unauthenticated (`IsAuthenticated != true`), the Sentry event is dropped immediately. This eliminates scanner, crawler, and bot noise from polluting crash reports.
+   - Note the exact shape of the guard, because other code depends on it: the condition is `httpContext != null && …IsAuthenticated != true`, so an event raised with **no** `HttpContext` at all — a crash inside a background task or a streaming turn that outlived its request — is **kept**, not dropped.
 2. **External Service & Tool Host Registry**:
    - Each supported provider class (`GoogleProvider`, `AnthropicProvider`, `OpenAiResponsesProvider`) declares a public collection `ProviderHosts`.
    - External lookup tools (`ExternalToolHosts`) declare external hosts used by tools (`GitHubHosts` for `api.github.com` & `github.com`).
@@ -39,10 +40,25 @@ A core rule of Overseer's logging architecture is the strict separation between 
 3. **External Upstream 5xx, 429, and Transient Network Filtering**:
    - Synthetic HTTP events from Sentry's `SentryHttpFailedRequestHandler` and raw `HttpRequestException` instances targeting external service hosts are inspected.
    - Any status code in the **500–599** range, status code **429**, and network connection drop exceptions are dropped (`return null`).
-4. **Preservation of Internal Errors**:
+4. **Scrubbing of every event that is actually sent**:
+   - Runs last, after the drop rules, on the events that survive them. `Scrub` removes:
+     - **Request headers** named `Authorization`, `Cookie`, `Set-Cookie`, `Proxy-Authorization`, `X-XSRF-TOKEN`, `X-Api-Key` and `X-Sentry-Auth`, each replaced with `[scrubbed]`; the separate `Request.Cookies` property is blanked as well.
+     - **Query parameter values** named `token`, `key`, `apiKey`, `api_key`, `password`, `code`, `secret` and `access_token`, in both `Request.QueryString` and the query part of `Request.Url`. Names are matched **exactly** and case-insensitively, never as substrings, so `code` does not also blank `postcode`. The shape of the query is preserved — only values are replaced — because the shape is often what makes a report actionable.
+     - **The user record**: `User.Email`, `User.Username`, `User.IpAddress` and `User.Other`. These are the fields that make a crash report personal data, and none of them is needed to triage one: the authenticated session is already known to Overseer.
+   - Tags carrying any of the sensitive parameter names are scrubbed too, since a tag is a common route for a URL fragment to reach Sentry sideways.
+5. **Preservation of Internal Errors**:
    - Internal endpoint errors and unexpected controller exceptions are preserved and reported to Sentry with full stack traces and breadcrumbs.
 
----
+### 2.1 Pinned SDK Options
+
+`UseSentry` in `Program.cs` sets two options explicitly:
+
+| Option | Value | Why it is pinned |
+|---|---|---|
+| `SendDefaultPii` | `false` | Prevents the SDK attaching the user's IP address, name and address to every event. |
+| `MaxRequestBodySize` | `RequestSize.None` | Prevents request payloads being attached. For `/api/chat/send` the payload **is** the user's message and their attachments. |
+
+Both are already the defaults of the `Sentry.AspNetCore` version pinned in `Overseer/Overseer.csproj` — read the version from that file, never from a document, because a number written down here drifts silently. They are set anyway so that an SDK upgrade, or an option set from configuration elsewhere, cannot widen the reported surface without this file changing. The pinning is bookkeeping; the substantive protection is the scrubbing in §2 item 4.
 
 ## 3. Zero DSN Exposure & Secure Tunneling
 

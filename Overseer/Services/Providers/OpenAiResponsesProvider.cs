@@ -32,14 +32,63 @@ public class OpenAiResponsesProvider : IAiProvider
 
     public IReadOnlyList<string> SupportedServiceTiers => new[] { "auto", "default", "flex", "priority", "fast" };
 
-    public void ConfigureRequest(HttpRequestMessage request, string apiKey)
+    /// <summary>The path the Responses API lives at, on the public endpoint and on a gateway alike.</summary>
+    private const string ResponsesPath = "/v1/responses";
+
+    private const string OfficialResponsesUrl = "https://api.openai.com" + ResponsesPath;
+
+    public void ConfigureRequest(HttpRequestMessage request, string apiKey, AiEndpointDescriptor endpoint)
     {
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        switch (endpoint.AuthStyle)
+        {
+            case AiEndpointAuthStyle.AzureApiKey:
+                /* Azure OpenAI authenticates with an api-key header, not a bearer token. Sending
+                   a bearer token there fails with a 401 that names neither cause. */
+                request.Headers.TryAddWithoutValidation("api-key", apiKey);
+                break;
+
+            case AiEndpointAuthStyle.None:
+                break;
+
+            default:
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                break;
+        }
+
+        ApplyCustomHeaders(request, endpoint);
     }
 
-    public string GetChatStreamUrl(string modelId, string apiKey)
+    public string GetChatStreamUrl(string modelId, string apiKey, AiEndpointDescriptor endpoint)
+        => ComposeResponsesUrl(endpoint);
+
+    /* Azure exposes the Responses API under /openai/v1/ and requires api-version as a query
+       parameter; an OpenAI-compatible gateway serves the same /v1/responses path the public API
+       does. Note the consequence for a local server: Overseer speaks the Responses API, so an
+       OpenAI-compatible endpoint that only implements /v1/chat/completions will not work. */
+    private static string ComposeResponsesUrl(AiEndpointDescriptor endpoint)
     {
-        return "https://api.openai.com/v1/responses";
+        if (!endpoint.IsCustom)
+            return OfficialResponsesUrl;
+
+        string baseUrl = endpoint.BaseUrl!.TrimEnd('/');
+
+        if (endpoint.AuthStyle == AiEndpointAuthStyle.AzureApiKey)
+        {
+            string version = Uri.EscapeDataString(endpoint.ApiVersion ?? string.Empty);
+            return $"{baseUrl}/openai/v1/responses?api-version={version}";
+        }
+
+        return baseUrl + ResponsesPath;
+    }
+
+    private static void ApplyCustomHeaders(HttpRequestMessage request, AiEndpointDescriptor endpoint)
+    {
+        if (endpoint.CustomHeaders == null)
+            return;
+
+        // Already allowlisted by EndpointPolicy; nothing here can be a credential or Host header.
+        foreach (var (name, value) in endpoint.CustomHeaders)
+            request.Headers.TryAddWithoutValidation(name, value);
     }
 
     public Dictionary<string, object> BuildChatRequestBody(
@@ -603,10 +652,8 @@ public class OpenAiResponsesProvider : IAiProvider
         return req;
     }
 
-    public string GetTitleUrl(string modelId, string apiKey)
-    {
-        return "https://api.openai.com/v1/responses";
-    }
+    public string GetTitleUrl(string modelId, string apiKey, AiEndpointDescriptor endpoint)
+        => ComposeResponsesUrl(endpoint);
 
     public string? ParseTitleResponse(JsonElement root)
     {
