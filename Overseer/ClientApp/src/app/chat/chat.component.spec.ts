@@ -119,6 +119,13 @@ import { SettingsService, UserAiSettings, UserAiModel } from '../services/settin
 import { AuthService } from '../services/auth.service';
 import { ClientBridgeService } from '../services/client-bridge.service';
 
+// ChatComponent.ngOnInit opens a real SignalR connection to /chathub, which under Karma
+// is live network I/O the test web server answers with 404 and which outlives the spec
+// that started it. Every fixture stubs it out.
+function stubSignalRConnection(): void {
+  spyOn(ChatComponent.prototype, 'setupSignalR');
+}
+
 describe('ChatComponent session loading and exclusivity', () => {
   let component: ChatComponent;
   let fixture: ComponentFixture<ChatComponent>;
@@ -134,6 +141,7 @@ describe('ChatComponent session loading and exclusivity', () => {
       ]
     }).compileComponents();
 
+    stubSignalRConnection();
     fixture = TestBed.createComponent(ChatComponent);
     component = fixture.componentInstance;
     chatService = TestBed.inject(ChatService);
@@ -1031,6 +1039,7 @@ describe('ChatComponent context window indicator', () => {
       ]
     }).compileComponents();
 
+    stubSignalRConnection();
     fixture = TestBed.createComponent(ChatComponent);
     component = fixture.componentInstance;
   });

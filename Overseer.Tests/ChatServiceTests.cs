@@ -75,6 +75,7 @@ namespace Overseer.Tests
             services.AddScoped<CryptoService>();
             services.AddScoped<WikiService>();
             services.AddScoped<ModelMetadataService>();
+            services.AddScoped<ModelPricingService>(); // ChatService resolves it from the scope to cost the turn
             services.AddScoped<KnowledgeBaseService>();
             services.AddScoped<OngoingChatManager>();
             services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.OpenAiResponsesProvider>();
