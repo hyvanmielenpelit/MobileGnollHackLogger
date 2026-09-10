@@ -1375,6 +1375,116 @@ the new lines as `—`, not as a missing section, until Run Analysis is pressed 
 value renders as an em dash rather than as a zero deliberately: a stale analysis reporting "0
 model calls" would be a false statement about a run that made calls nobody has counted yet.
 
+### Harness Version 19 Updates
+
+*2026-09-10.*
+
+Prompted by a count nobody had audited: of the five critical errors ever published on the Claude 5
+Sonnet series, **three were the grader's mistake rather than the model's** — run 28 Q3 (the rubric
+quoted `objects.c` macro *arguments* as player-visible values), run 31 Q18 (erosion on attack, which
+is the game's own code, proven against `src/engrave.c`), and run 35 Q1 (*"Immune to lycanthropy"*,
+which is `src/attrib.c:117` and `Races/Gnoll.md:25`). A critical error caps quality at 25 regardless
+of the four levels, so it is the single most consequential judgement in the assessment prompt, and
+on run 35 the *blind* second opinion agreed with the false verdict — meaning the existing
+second-reader safeguard does not catch this class at all. The harness already owns a model whose
+whole job is checking a claim against the game's source and wiki, and it was never pointed at the
+one claim that costs the most to get wrong.
+
+`ScoringMethodVersion` stays at **10** — nothing here changes a score, a cap, an index or a run
+status — but `BenchmarkAssessmentPrompt.HarnessVersion` moves to **19**, because the assessment
+prompt's own text changes, a run records a new count, and two tool contracts move
+`ToolGuidesSha256`. A run stamped 19 therefore differs from a run stamped 18 on **two** instrument
+keys (`HarnessVersion`, `ToolGuidesSha256`) and not on `CandidateSystemPromptSha256`: `_policy.md`
+is untouched and per-tool guides are not inlined into the candidate prompt.
+
+- **Critical-error quotes are adjudicated on the claim-verifier pipeline.** The per-answer
+  verification dispatch, and the post-run pass that backfills it, now also fire when an answer
+  carries `CriticalError` with a non-empty `CriticalErrorQuote` — not only when it has unverified
+  or disputed claims. The quote is inserted at the head of the claim list, the verifier prompt
+  gains a `CRITICAL ERROR ADJUDICATION:` preamble telling it that the first claim was marked a
+  confidently asserted material falsehood and that *a claim absent from the rubric is not thereby
+  false*, and the assessor's own accuracy evidence is handed over as the counter-claim (previously
+  emitted only for a disputed verdict). The quote is deliberately **not** written to
+  `UnverifiedClaimsJson` or `UnverifiedClaimCount`: that column means "claims the assessor could
+  not adjudicate", and the quote is the opposite. It is carried in the prompt only and matched back
+  by the verifier's verbatim echo, exactly as an unverified claim is. Cost is roughly one verifier
+  call per critical error — measured well under $0.10 per run at the current roster.
+- **`BenchmarkAnswerFlags.ContestedCriticalError` (2048) and `BenchmarkRun.ContestedCriticalErrorAnswerCount`.**
+  Set when the quote's own verdict comes back `Supported` — the parser having already demoted a
+  citation-less Supported to Indeterminate, so a supported verdict always carries a citation. A
+  `Refuted` or `Indeterminate` verdict sets nothing. The flag joins `BenchmarkRunFinalizer`'s
+  `AdvisoryFlags`, so it counts under `AdvisoryFlagAnswerCount` and **never** moves the clean count,
+  the run status, the cap or any index. `ClaimVerificationJson` already stores every verification
+  including this one, so no new column records the verdict itself. The count reads as *not recorded*
+  rather than zero on any run before 19.
+- **The flag says *contested*, never *overturned*, and every surface that prints it says so.**
+  Report § Run Integrity carries a `Contested Critical Errors:` line naming the questions, the
+  Advisory Flags breakdown gains `contested critical errors: N`, § 5 Issues reads
+  *"Contested critical error (advisory, changed no score)"*, and the synthesis footer counts them
+  beside refuted claims and disputed verdicts. The run detail's Run Integrity Notice and the
+  diagnostics `--- INTEGRITY ---` line agree with all of it, and the per-answer badge carries the
+  same wording. The reason for the insistence is symmetrical to the standing verifier caution,
+  which by run 35 stood at seven recorded instances of the verifier being wrong — in both
+  directions, a confident refutation of a true claim and a confident support of a false one — so
+  **both verdicts are advisory evidence, and a human reads the cited code path before anything
+  rests on either.** The synthesis prompt is additionally told, for each such answer, *"do not
+  describe this answer as fabricating it"* — the one place the flag changes what a model is told,
+  because the synthesis had previously narrated a spurious critical error as a fabrication.
+- **Assessment prompt § 5 CRITICAL ERROR gains one sentence.** *"A claim the rubric does not mention
+  is not thereby invented. Mark criticalError only for a claim the rubric's ground truth or your own
+  verified knowledge contradicts; a claim the rubric merely omits belongs in `unverifiedClaims`
+  (section 7), where the harness checks it against the source."* This is the failure mode all three
+  spurious errors shared, and § 7 is the route that already existed for it.
+- **Two source-tool contract fixes.** `source_code_view` **defaults `start_line` to 1** when neither
+  it nor `search_term` is given, instead of failing the call: its schema had always listed only
+  `file` as required and described `start_line` as optional, while the handler returned
+  *"Missing start_line or search_term parameter"* and the tool guide documented `start_line` as
+  **required** — three statements, two of them wrong, and a model that followed the schema paid a
+  failed tool call for it (run 35's only failed call). Schema and guide now agree with the code.
+  `get_function_definition`'s **miss payload** stops being information-free: it still opens with the
+  service's own `No definition found for '<name>' of kind '<kind>'.` — which is what a reader and
+  the diagnostics skill match on — and then names, from one bounded `filenames_only` probe (max 3
+  files, 1,000 characters, non-regex, case-insensitive, exceptions and `Error:`-prefixed content
+  swallowed into "no hit"), where the identifier occurs with match counts, or states that it does
+  not occur in the indexed repository; then always the guidance that a struct member, function
+  pointer or macro alias has no extractable body under that name and is read with
+  `source_code_search` (with `context_lines`) or `search_definitions` instead. The whole payload is
+  capped at **600 characters** — every tool result is re-sent to the model on each subsequent round
+  of the same question, so a verbose miss is paid once per remaining round — and the builder sits
+  inside a `catch` returning the bare sentence, which is therefore the resolver-defect payload
+  rather than the ordinary-miss one. Both changes move `ToolGuidesSha256` and nothing else a run
+  records.
+- **Two instrument lines the run record already supported and no surface printed.** Each
+  per-question tool-budget line gains `, tool rounds: R (X.X calls/round)`, counted as the distinct
+  `IterationIndex` values across the answer's per-call rows, with a matching run-level **Tool
+  Rounds** line in the Tool Usage Profile; and the run detail's Tool Usage Profile gains the
+  three-way **outcome split** (`N succeeded, N failed, N refused by budget`) summed over the
+  answers. Both obey the same null rule as every harness-17 column: **omitted, never zero**, when
+  the answer has no per-call rows — and the outcome split is withheld entirely unless *every* answer
+  that made a tool call has recorded outcomes, since a partial sum would read as a run-wide figure
+  while silently omitting the answers it could not see. Rounds are what separate "many calls" from
+  "many serial round-trips" as the cause of a question's latency, which is the measurement the
+  standing serial-rounds observation has been waiting on.
+- **The answer-framing opener detector widened again**, after under-counting against a hand count on
+  seven consecutive runs: `fully` joins the source-as-subject sufficiency alternation,
+  and the *"here's the …"* tail gains a second form — a sufficiency word inside the first sentence,
+  then a sentence boundary, then the tail — which catches run 35's Q2 (*"covers it fully. Here's the
+  breakdown"*). The tail branch still **requires** a sufficiency clause, because `_policy.md:11`
+  forbids opening with the act of finding rather than with a lead-in to substance; a negative test
+  guards the distinction. Detection only, as since harness 18: the text is not removed, because it
+  is exactly what production chat sends.
+- **Grader roster of record**, unchanged by this round and to be held still through the confirming
+  run: assessor **Gemini 3.7 Flash @ `high`**, second opinion **GPT-5.6 Luna @ `high`**, claim
+  verifier **GPT-5.6 Luna @ `high`**. Run 35 closed the Claude 5 Sonnet candidate series, so the
+  confirming run opens a **new candidate series** and is a baseline rather than a comparison — the
+  instrument criteria above are properties of the harness and the tools and verify whatever the
+  candidate is, while every quality, latency and cost reading is the new model's first figure. Which
+  is precisely why the graders must not move with it.
+
+`ContestedCriticalErrorAnswerCount` is one added `int` column with a default of 0
+(`AddContestedCriticalErrorAnswerCount`); nothing else needed a migration, and no figure is
+backfilled.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.

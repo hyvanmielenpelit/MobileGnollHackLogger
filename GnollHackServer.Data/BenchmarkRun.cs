@@ -113,7 +113,19 @@ public enum BenchmarkAnswerFlags
     // Advisory, and detected only: unlike the narration flags above, the text is NOT removed. The
     // opener reaches production chat unmodified, so removing it here would grade an answer no user
     // ever sees and would move the scoring method. See BenchmarkArtifactScrubber.AnswerFramingRegex.
-    AnswerFramingOpener = 1024
+    AnswerFramingOpener = 1024,
+
+    // The claim verifier checked the assessor's own criticalErrorQuote against the source code and
+    // wiki and returned Supported with a citation: the quoted claim is true, so the critical error
+    // rests on a grader judgement the game's own code contradicts.
+    //
+    // Advisory, and grouped here for the same reason as every flag above: the quality cap the
+    // critical error imposed stands, no index moves, and the verifier is a model whose verdict the
+    // rubric never sanctioned as a grader. What the flag says is that the finding is *contested*,
+    // never that it is overturned — a refutation and a support are both advisory evidence, and a
+    // human reads the cited code path before anything rests on either. A second-opinion trigger is
+    // already implied by CriticalError itself, so this adds no trigger of its own.
+    ContestedCriticalError = 2048
 }
 
 /// <summary>
@@ -434,6 +446,12 @@ public class BenchmarkRun
 
     /// <summary>Answers carrying <see cref="BenchmarkAnswerFlags.RefutedClaim"/>. Advisory.</summary>
     public int RefutedClaimAnswerCount { get; set; }
+
+    /// <summary>
+    /// Answers carrying <see cref="BenchmarkAnswerFlags.ContestedCriticalError"/>. Advisory.
+    /// Zero on every run recorded before harness 19, which never adjudicated a critical-error quote.
+    /// </summary>
+    public int ContestedCriticalErrorAnswerCount { get; set; }
 
     /// <summary>Answers carrying <see cref="BenchmarkAnswerFlags.OmissionAsAccuracy"/>. Advisory.</summary>
     public int OmissionAsAccuracyAnswerCount { get; set; }

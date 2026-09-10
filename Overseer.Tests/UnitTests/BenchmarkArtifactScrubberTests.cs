@@ -925,4 +925,27 @@ public class BenchmarkArtifactScrubberTests
 
         Assert.Equal(answer, result.AnswerText);
     }
+
+    // The sufficiency-word-led "here's the ..." tail: a claim of sufficiency inside the first
+    // sentence, a sentence boundary, then the announcement that the substance follows.
+    [Fact]
+    public void HasAnswerFramingOpener_DetectsSufficiencyLedHeresTail()
+    {
+        const string answer =
+            "This wiki article covers it fully. Here's the breakdown for weapons specifically:";
+
+        Assert.True(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
+    }
+
+    // A substantive first sentence carrying no sufficiency claim, followed by an ordinary
+    // lead-in to the substance, must not be read as an opener: _policy.md forbids opening with
+    // the act of finding, not with a lead-in to substance that follows real content.
+    [Fact]
+    public void HasAnswerFramingOpener_DoesNotFireOnSubstantiveSentenceBeforeHeresTail()
+    {
+        const string answer =
+            "Silver dragon scale mail is armor made from dragon hide. Here's the breakdown of its stats:";
+
+        Assert.False(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
+    }
 }

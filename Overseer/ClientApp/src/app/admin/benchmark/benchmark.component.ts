@@ -295,7 +295,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     'RefutedClaim',
     'OmissionAsAccuracy',
     'OutOfRubricAccuracyDeduction',
-    'AnswerFramingOpener'
+    'AnswerFramingOpener',
+    'ContestedCriticalError'
   ];
 
   // Suites
@@ -3503,7 +3504,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
           - (run.recoveredAnswerCount ?? 0)
           - (run.toolStarvedAnswerCount ?? 0);
         lines.push(`clean: ${clean}, transport defects: ${run.transportDefectAnswerCount ?? 0}, recovered: ${run.recoveredAnswerCount ?? 0}, harness limits: ${run.toolStarvedAnswerCount ?? 0} (sums to ${run.totalQuestionCount})`);
-        lines.push(`advisory flags: ${run.advisoryFlagAnswerCount ?? 0}, scrubbed: ${run.scrubbedArtifactAnswerCount ?? 0}, contested verdicts: ${run.contestedVerdictAnswerCount ?? 0}, unevidenced deductions: ${run.unevidencedDeductionAnswerCount ?? 0}, refuted claims: ${run.refutedClaimAnswerCount ?? 0}, re-assessed: ${run.reassessedAnswerCount ?? 0}`);
+        lines.push(`advisory flags: ${run.advisoryFlagAnswerCount ?? 0}, scrubbed: ${run.scrubbedArtifactAnswerCount ?? 0}, contested verdicts: ${run.contestedVerdictAnswerCount ?? 0}, unevidenced deductions: ${run.unevidencedDeductionAnswerCount ?? 0}, refuted claims: ${run.refutedClaimAnswerCount ?? 0}, contested critical errors: ${run.contestedCriticalErrorAnswerCount ?? 0}, re-assessed: ${run.reassessedAnswerCount ?? 0}`);
         // Computed from `run`, not from the run-detail getters: this capture describes the
         // *active* run, and those getters read whichever run the detail dialog has open.
         const criticalHere = run.answers.filter(a => a.criticalError).map(a => a.orderIndex);
@@ -4767,6 +4768,50 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return answers.length === 0 ? 0 : this.totalToolCalls() / answers.length;
   }
 
+  /**
+   * `"N succeeded, N failed, N refused by budget"` summed over the run's answers — the run-level
+   * counterpart of the per-answer `toolCallCountsLabel`. Null unless *every* answer that made a
+   * tool call has recorded outcomes: a partial sum would read as a run-wide figure while silently
+   * omitting the answers whose outcomes predate the per-call record, and the difference between
+   * that and zero failures is the whole point of the line.
+   */
+  toolCallOutcomeSummary(): string | null {
+    const answers = (this.selectedRunDetail?.answers ?? []).filter(a => (a.toolCallCount ?? 0) > 0);
+    if (answers.length === 0 || !answers.every(a => this.hasRecordedToolCallCounts(a))) {
+      return null;
+    }
+    const sum = (pick: (a: BenchmarkRunAnswerDto) => number | null | undefined): number =>
+      answers.reduce((total, a) => total + (pick(a) ?? 0), 0);
+    return `${sum(a => a.toolCallsSucceeded)} succeeded, ${sum(a => a.toolCallsFailed)} failed, `
+      + `${sum(a => a.toolCallsRefused)} refused by budget`;
+  }
+
+  /**
+   * Mean tool rounds per answer with tool calls, and mean calls per round, over the per-call rows
+   * this dialog has actually loaded. The rows arrive per answer as the operator expands each
+   * disclosure, so this reads whatever is loaded and names how many answers it covers; null while
+   * none are.
+   */
+  toolRoundsSummary(): string | null {
+    const loaded = (this.selectedRunDetail?.answers ?? [])
+      .map(a => this.toolCallsByAnswer.get(a.orderIndex))
+      .filter((rows): rows is BenchmarkToolCallDto[] => !!rows && rows.length > 0);
+    if (loaded.length === 0) {
+      return null;
+    }
+    const rounds = loaded.map(rows => new Set(
+      rows.filter(r => r.iterationIndex != null).map(r => r.iterationIndex)).size);
+    const totalRounds = rounds.reduce((sum, r) => sum + r, 0);
+    if (totalRounds === 0) {
+      return null;
+    }
+    const totalCalls = loaded.reduce((sum, rows) => sum + rows.length, 0);
+    const meanRounds = totalRounds / loaded.length;
+    return `${meanRounds.toFixed(1)} tool round(s) per answer on average, `
+      + `${(totalCalls / totalRounds).toFixed(1)} call(s) per round, `
+      + `over ${loaded.length} answer(s) loaded`;
+  }
+
   /** Answers that reached their tool call budget, for the tool usage panel. */
   budgetExhaustedAnswers(): BenchmarkRunAnswerDto[] {
     return (this.selectedRunDetail?.answers ?? []).filter(a => !!a.toolBudgetExhausted);
@@ -5639,6 +5684,17 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   get refutedClaimQuestionNumbers(): string {
     return (this.selectedRunDetail?.answers ?? [])
       .filter(a => (a.answerFlagNames ?? []).includes('RefutedClaim'))
+      .map(a => a.orderIndex)
+      .join(', ');
+  }
+
+  get contestedCriticalErrorAnswerCount(): number {
+    return this.selectedRunDetail?.contestedCriticalErrorAnswerCount ?? 0;
+  }
+
+  get contestedCriticalErrorQuestionNumbers(): string {
+    return (this.selectedRunDetail?.answers ?? [])
+      .filter(a => (a.answerFlagNames ?? []).includes('ContestedCriticalError'))
       .map(a => a.orderIndex)
       .join(', ');
   }

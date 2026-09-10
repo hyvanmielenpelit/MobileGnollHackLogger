@@ -740,7 +740,10 @@
   font-weight: 500;
 }
 
-.badge-flag.badge-flag-refutedclaim {
+// Both are claim-verifier findings against the game's own source, so they carry the dashed red of
+// an advisory that names a factual conflict rather than the grey of one that names a grading habit.
+.badge-flag.badge-flag-refutedclaim,
+.badge-flag.badge-flag-contestedcriticalerror {
   background: rgba(239, 68, 68, 0.12);
   color: #f87171;
   border: 1px dashed rgba(239, 68, 68, 0.5);

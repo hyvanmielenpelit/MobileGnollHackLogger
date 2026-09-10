@@ -14,6 +14,6 @@ WARNING: Reading item appearance strings in `src/objects.c` shows pre-shuffle co
 
 ## Parameters
 - `file` (string, required): File path relative to the repository root (e.g., 'src/potion.c')
-- `start_line` (integer, required): The starting line number to view.
+- `start_line` (integer, optional): The starting line number to view. Defaults to 1 when neither this nor `search_term` is given.
 - `line_count` (integer, optional): The number of lines to view. Defaults to 50. Max is 1000.
 - `repository` (string, optional): Which codebase to view: 'gnollhack' (default) or 'nethack'.

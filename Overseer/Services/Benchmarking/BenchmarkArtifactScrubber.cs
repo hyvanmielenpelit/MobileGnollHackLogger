@@ -160,6 +160,19 @@ public sealed class BenchmarkArtifactScrubber
     // breakdown/short version/quick version/answer" — within the first 80 characters, led by a
     // dash, colon or comma; "Here's how it works:" as a first line stays outside it, since
     // nothing precedes "here's" for that leading punctuation to claim.
+    //
+    // The source-as-subject alternative's sufficiency-word list also admits "fully" ("This wiki
+    // article covers it fully"), alongside the existing "well", "comprehensive(ly)", "documented",
+    // "covered", "clear", "detailed", "everything" and "enough".
+    //
+    // A second "here's the ..." tail form claims the same announcement when it is led by a
+    // sufficiency word inside the first sentence rather than by dash, colon or comma punctuation:
+    // "This wiki article covers it fully. Here's the breakdown for weapons specifically:". The
+    // sufficiency word ("fully", "well", "everything", "enough", "all the detail(s)", "clear")
+    // must fall within the first 80 characters and be followed, within 40 more characters, by a
+    // sentence-ending period or exclamation mark before "here's" — so a substantive first sentence
+    // with no sufficiency claim in it, such as "Silver dragon scale mail is armor made from dragon
+    // hide. Here's the breakdown of its stats:", stays outside it.
     private static readonly Regex AnswerFramingRegex = new(
         @"\A\s*(?:Now\s+|OK[,.]?\s+|Alright[,.]?\s+)?I\s+(?:now|finally|also|just)\s+" +
         @"(?:have|need|found|located|confirmed)\s+(?:the|a|all|enough|everything|what|both|every)\b" +
@@ -175,7 +188,7 @@ public sealed class BenchmarkArtifactScrubber
         @"|\A\s*(?:This|That|The)\s+" +
         @"(?:wiki(?:\s+article)?|article|source(?:\s+code)?|documentation|knowledge\s+base|page)\s+" +
         @"(?:is|has|gives|covers|documents|provides|answers)\b[^.\n]{0,80}?" +
-        @"\b(?:well|comprehensive(?:ly)?|documented|covered|clear|detailed|everything|enough)\b" +
+        @"\b(?:well|comprehensive(?:ly)?|documented|covered|clear|detailed|everything|enough|fully)\b" +
         // Source as object, after the sufficiency word.
         @"|\A\s*(?:This|That|It)\s+(?:is|has\s+been|gives|provides|offers)\s+[^.\n]{0,40}?" +
         @"\b(?:well|comprehensive(?:ly)?|thoroughly|fully|clearly)\b[^.\n]{0,20}?" +
@@ -187,6 +200,11 @@ public sealed class BenchmarkArtifactScrubber
         @"everything\s+(?:you|we)\s+need|all\s+the\s+detail(?:s)?)\b" +
         // The "here's the ..." tail announcing that the substance follows.
         @"|\A[^.\n]{0,80}?[—–\-:,]\s*here(?:’|')s\s+(?:the\s+|a\s+|my\s+)?" +
+        @"(?:rundown|summary|breakdown|short\s+version|quick\s+version|answer)\b" +
+        // The same tail, led by a sufficiency word inside the first sentence instead of by
+        // punctuation.
+        @"|\A[^.\n]{0,80}?\b(?:fully|well|everything|enough|all\s+the\s+detail(?:s)?|clear)\b" +
+        @"[^.\n]{0,40}?[.!]\s*here(?:’|')s\s+(?:the\s+|a\s+)?" +
         @"(?:rundown|summary|breakdown|short\s+version|quick\s+version|answer)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 

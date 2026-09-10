@@ -31,7 +31,7 @@ namespace Overseer.Services.Tools
                 ""type"": ""object"",
                 ""properties"": {
                     ""file"": { ""type"": ""string"", ""description"": ""File path relative to the repository root (e.g., 'src/potion.c')"" },
-                    ""start_line"": { ""type"": ""integer"", ""description"": ""Optional. The starting line number to view"" },
+                    ""start_line"": { ""type"": ""integer"", ""description"": ""Optional. The starting line number to view; defaults to 1 when neither start_line nor search_term is given"" },
                     ""line_count"": { ""type"": ""integer"", ""description"": ""Optional. Number of lines to view (default 50, max 1000)"" },
                     ""search_term"": { ""type"": ""string"", ""description"": ""Optional. Find this term and show context around it (alternative to start_line)"" },
                     ""repository"": {
@@ -123,9 +123,10 @@ namespace Overseer.Services.Tools
                 searchTerm = searchTermElem.GetString();
             }
 
+            // A call naming only a file, with neither start_line nor search_term, reads from line 1.
             if (startLine == null && string.IsNullOrWhiteSpace(searchTerm))
             {
-                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing start_line or search_term parameter" });
+                startLine = 1;
             }
 
             int lineCount = _defaultLineCount;

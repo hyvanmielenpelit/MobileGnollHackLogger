@@ -9,6 +9,13 @@ absolute file line (inside the header's L-range). Call again with start_line set
 to either one — a value outside both ranges returns an explicit error, not a
 guess.
 
+A miss says where the name occurs in the indexed source — naming up to three
+files and how many lines mention it — or states that it does not occur there at
+all. A struct member, a function pointer field, or a macro alias has no
+extractable body under that name: read those with source_code_search (with
+context_lines) on the file the miss names, or with search_definitions for the
+symbol the alias resolves to.
+
 Use this tool when you need to understand the full logic of a function.
 Use search_definitions when you only need to see the signature or a quick look.
 Use source_code_view when you need to read arbitrary file regions.

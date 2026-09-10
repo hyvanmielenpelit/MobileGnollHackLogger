@@ -60,6 +60,7 @@ public static class BenchmarkRunFinalizer
         | BenchmarkAnswerFlags.ContestedVerdict
         | BenchmarkAnswerFlags.UnevidencedDeduction
         | BenchmarkAnswerFlags.RefutedClaim
+        | BenchmarkAnswerFlags.ContestedCriticalError
         | BenchmarkAnswerFlags.OmissionAsAccuracy
         | BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction
         | BenchmarkAnswerFlags.AnswerFramingOpener;
@@ -390,6 +391,8 @@ public static class BenchmarkRunFinalizer
             a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.AnswerFramingOpener) != 0);
         run.RefutedClaimAnswerCount = answers.Count(
             a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.RefutedClaim) != 0);
+        run.ContestedCriticalErrorAnswerCount = answers.Count(
+            a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedCriticalError) != 0);
         run.ClaimVerifiedAnswerCount = answers.Count(
             a => (a.ClaimsSupportedCount ?? 0) + (a.ClaimsRefutedCount ?? 0) + (a.ClaimsIndeterminateCount ?? 0) > 0);
         run.ClaimsSupportedCount = answers.Sum(a => a.ClaimsSupportedCount ?? 0);

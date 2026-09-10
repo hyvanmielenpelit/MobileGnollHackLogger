@@ -2298,6 +2298,7 @@ public class AdminBenchmarkController : ControllerBase
             UnevidencedDeductionAnswerCount = run.UnevidencedDeductionAnswerCount,
             OmissionAsAccuracyAnswerCount = run.OmissionAsAccuracyAnswerCount,
             RefutedClaimAnswerCount = run.RefutedClaimAnswerCount,
+            ContestedCriticalErrorAnswerCount = run.ContestedCriticalErrorAnswerCount,
             OutOfRubricAccuracyAnswerCount = run.OutOfRubricAccuracyAnswerCount,
             AnswerFramingOpenerAnswerCount = run.AnswerFramingOpenerAnswerCount,
             CompletenessOutOfScopeCount = run.Answers.Count(a => a.CompletenessOutOfScope),

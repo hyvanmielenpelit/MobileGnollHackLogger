@@ -3580,7 +3580,7 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(text).toContain('--- INTEGRITY ---');
       expect(text).toContain('clean: 1, transport defects: 0, recovered: 0, harness limits: 1 (sums to 2)');
-      expect(text).toContain('contested verdicts: 1, unevidenced deductions: 0, refuted claims: 0, re-assessed: 1');
+      expect(text).toContain('contested verdicts: 1, unevidenced deductions: 0, refuted claims: 0, contested critical errors: 0, re-assessed: 1');
       expect(text).toContain('unverified claims: 2');
       expect(text).toContain('4.3 mean abs delta');
       expect(text).toContain('over 2 of 2 answered, disagreements: 1');
@@ -3773,6 +3773,91 @@ describe('AdminBenchmarkComponent', () => {
       expect(text).toContain('1 answer(s) had claim verification fail');
       expect(text).toContain('(question(s) 3)');
       expect(text).toContain('unverified claims were never checked');
+    });
+
+    it('should display contested critical error clause in Run Integrity Notice when the count is above zero', () => {
+      component.selectedRunDetail = {
+        id: 1,
+        suiteName: 'Suite',
+        status: 'Completed',
+        contestedCriticalErrorAnswerCount: 1,
+        answers: [
+          { orderIndex: 1, status: 'Ok', criticalError: true, answerFlagNames: ['ContestedCriticalError'] } as any
+        ]
+      } as any;
+
+      expect(component.contestedCriticalErrorAnswerCount).toBe(1);
+      expect(component.contestedCriticalErrorQuestionNumbers).toBe('1');
+
+      fixture.detectChanges();
+
+      const el: HTMLElement = fixture.nativeElement;
+      const text = el.textContent || '';
+      expect(text).toContain('Run Integrity Notice');
+      expect(text).toContain('1 answer(s) carry a contested critical error');
+      expect(text).toContain('(question(s) 1)');
+      expect(text).toContain('the cap stands and no score changed');
+    });
+
+    it('should render the tool call outcome split only when every answer with tool calls has recorded outcomes', () => {
+      component.selectedRunDetail = {
+        id: 1,
+        suiteName: 'Suite',
+        status: 'Completed',
+        answers: [
+          { orderIndex: 1, status: 'Ok', toolCallCount: 5, toolCallsSucceeded: 4, toolCallsFailed: 1, toolCallsRefused: 0 } as any,
+          { orderIndex: 2, status: 'Ok', toolCallCount: 3, toolCallsSucceeded: 3, toolCallsFailed: 0, toolCallsRefused: 0 } as any
+        ]
+      } as any;
+
+      expect(component.toolCallOutcomeSummary()).toBe('7 succeeded, 1 failed, 0 refused by budget');
+
+      fixture.detectChanges();
+      expect((fixture.nativeElement as HTMLElement).textContent || '')
+        .toContain('7 succeeded, 1 failed, 0 refused by budget');
+
+      // One answer whose outcomes predate the per-call record makes the run-level sum a figure
+      // that omits it silently, so the line is withheld entirely rather than under-reported.
+      component.selectedRunDetail = {
+        id: 1,
+        suiteName: 'Suite',
+        status: 'Completed',
+        answers: [
+          { orderIndex: 1, status: 'Ok', toolCallCount: 5, toolCallsSucceeded: 4, toolCallsFailed: 1, toolCallsRefused: 0 } as any,
+          { orderIndex: 2, status: 'Ok', toolCallCount: 3 } as any
+        ]
+      } as any;
+
+      expect(component.toolCallOutcomeSummary()).toBeNull();
+    });
+
+    it('should render the tool rounds line from the per-call rows the dialog has loaded', () => {
+      component.selectedRunDetail = {
+        id: 1,
+        suiteName: 'Suite',
+        status: 'Completed',
+        answers: [
+          { orderIndex: 1, status: 'Ok', toolCallCount: 4 } as any
+        ]
+      } as any;
+
+      expect(component.toolRoundsSummary()).toBeNull();
+
+      component.toolCallsByAnswer.set(1, [
+        { id: 1, iterationIndex: 0, name: 'wiki_search' } as any,
+        { id: 2, iterationIndex: 0, name: 'wiki_view' } as any,
+        { id: 3, iterationIndex: 1, name: 'source_code_search' } as any,
+        { id: 4, iterationIndex: 1, name: 'source_code_view' } as any
+      ]);
+
+      const summary = component.toolRoundsSummary();
+      expect(summary).toContain('2.0 tool round(s) per answer on average');
+      expect(summary).toContain('2.0 call(s) per round');
+      expect(summary).toContain('over 1 answer(s) loaded');
+
+      fixture.detectChanges();
+      expect((fixture.nativeElement as HTMLElement).textContent || '')
+        .toContain('2.0 tool round(s) per answer on average');
     });
 
     it('should display second-opinion failure clause and suppress no-trigger clause when secondOpinionFailedAnswerCount > 0', () => {

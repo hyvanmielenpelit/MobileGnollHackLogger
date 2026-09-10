@@ -243,6 +243,30 @@ enum nethack_types {
     }
 
     [Fact]
+    public async Task SourceCodeViewTool_FileOnly_DefaultsToLineOne()
+    {
+        var (gnollService, netService, config) = CreateServices();
+        using (gnollService)
+        using (netService)
+        {
+            var tool = new SourceCodeViewTool(gnollService, netService, config);
+            var context = new ToolExecutionContext();
+
+            // GnollHack repo (default), only file given: no start_line, no search_term
+            var gnollArgs = JsonDocument.Parse(@"{""file"": ""src/potion.c""}").RootElement;
+            var gnollResult = await tool.ExecuteAsync(gnollArgs, context, CancellationToken.None);
+            Assert.True(gnollResult.Success);
+            Assert.StartsWith("--- src/potion.c:L1-L", gnollResult.Content);
+
+            // NetHack repo, only file given: no start_line, no search_term
+            var netArgs = JsonDocument.Parse(@"{""file"": ""src/potion.c"", ""repository"": ""nethack""}").RootElement;
+            var netResult = await tool.ExecuteAsync(netArgs, context, CancellationToken.None);
+            Assert.True(netResult.Success);
+            Assert.StartsWith("--- src/potion.c:L1-L", netResult.Content);
+        }
+    }
+
+    [Fact]
     public async Task ListIndexedFilesTool_Routing()
     {
         var (gnollService, netService, _) = CreateServices();

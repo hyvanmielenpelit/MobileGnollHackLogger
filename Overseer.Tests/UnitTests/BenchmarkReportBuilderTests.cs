@@ -1493,12 +1493,12 @@ public class BenchmarkReportBuilderTests
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
         // Every member of AdvisoryFlags is enumerated, so the parenthetical accounts for the
-        // total rather than listing a subset of it. The two harness-18 members are included for
-        // that reason and read 0 here.
+        // total rather than listing a subset of it. The two harness-18 members and the harness-19
+        // one are included for that reason and read 0 here.
         Assert.Contains(
             "**Advisory Flags:** 2 (reasoning bleed: 1, repeated fragments: 0, contested verdicts: 1, " +
             "unevidenced deductions: 0, omissions as accuracy: 0, refuted claims: 0, " +
-            "out-of-rubric accuracy deductions: 0, answer-framing openers: 0)",
+            "contested critical errors: 0, out-of-rubric accuracy deductions: 0, answer-framing openers: 0)",
             report);
     }
 
@@ -2672,6 +2672,94 @@ public class BenchmarkReportBuilderTests
 
         Assert.Contains("### Disputed Assessments", report);
         Assert.Contains("  - Second reader: The critical error quote is not actually false.", report);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Contested critical errors: the quote the cap rested on, checked against the source and
+    // supported. Advisory throughout — the line reports it, nothing recomputes an index.
+    // -------------------------------------------------------------------------------------
+
+    [Fact]
+    public void RunIntegrity_NamesContestedCriticalErrors_AndKeepsThemAdvisory()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Advanced, 78, 25);
+        q1.CriticalError = true;
+        q1.CriticalErrorQuote = "Gnolls are immune to lycanthropy.";
+        q1.AnswerFlags = (int)BenchmarkAnswerFlags.ContestedCriticalError;
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Contested Critical Errors:** 1 (question(s) Q1)", report);
+        Assert.Contains("checked against the source code/wiki by the claim verifier and **supported**", report);
+        Assert.Contains("the cap stands and no index moved", report);
+
+        // Counted in the advisory breakdown, and named in section 5 as changing no score.
+        Assert.Contains("contested critical errors: 1", report);
+        Assert.Contains("Contested critical error (advisory, changed no score)", report);
+
+        // And carried into the synthesis caveat's third clause.
+        Assert.Contains("and 1 contested critical error(s)", report);
+    }
+
+    [Fact]
+    public void RunIntegrity_OmitsTheContestedCriticalErrorLine_WhenNoAnswerCarriesTheFlag()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.DoesNotContain("**Contested Critical Errors:**", report);
+        Assert.Contains("contested critical errors: 0", report);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Tool rounds, per question and run-wide. Both are derived from the per-call rows harness
+    // 17 introduced, so both are absent — never zero — on a run that carries none.
+    // -------------------------------------------------------------------------------------
+
+    [Fact]
+    public void ToolRounds_ReportedPerQuestionAndRunWide_WhenCallRowsExist()
+    {
+        var answer = ScoredAnswer(1, BenchmarkDifficulty.Intermediate, 50, 80);
+        answer.ToolCallCount = 4;
+        answer.ToolCallBudgetUsed = 25;
+        answer.ToolCalls = new List<BenchmarkRunAnswerToolCall>
+        {
+            new BenchmarkRunAnswerToolCall { SortOrder = 0, IterationIndex = 0, Name = "wiki_search", Status = "completed" },
+            new BenchmarkRunAnswerToolCall { SortOrder = 1, IterationIndex = 0, Name = "wiki_search", Status = "completed" },
+            new BenchmarkRunAnswerToolCall { SortOrder = 2, IterationIndex = 1, Name = "source_code_search", Status = "completed" },
+            new BenchmarkRunAnswerToolCall { SortOrder = 3, IterationIndex = 1, Name = "source_code_search", Status = "completed" }
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(answer));
+
+        // Four attempted calls across two distinct rounds.
+        Assert.Contains("tool rounds: 2 (2.0 calls/round)", report);
+        Assert.Contains("- **Tool Rounds:** mean 2.0 per answered question with tool calls; mean calls per round 2.0; max 2 on Q1.", report);
+    }
+
+    [Fact]
+    public void ToolRounds_AreAbsent_OnARunCarryingNoCallRows()
+    {
+        var answer = ScoredAnswer(1, BenchmarkDifficulty.Intermediate, 50, 80);
+        answer.ToolCallCount = 4;
+        answer.ToolCallBudgetUsed = 25;
+        answer.ToolCallSummary = "wiki_search×4";
+        // ToolCalls stays empty: the shape of every run recorded before harness 17, where an
+        // omitted figure is the only honest one.
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(answer));
+
+        Assert.DoesNotContain("tool rounds:", report);
+        Assert.DoesNotContain("**Tool Rounds:**", report);
+
+        // The rest of the budget line is unaffected.
+        Assert.Contains("**Tool Budget:** 4 executed, budget 25", report);
     }
 
     [Fact]

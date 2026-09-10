@@ -212,9 +212,27 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsEighteen()
+    public void HarnessVersion_IsNineteen()
     {
-        Assert.Equal("18", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("19", BenchmarkAssessmentPrompt.HarnessVersion);
+    }
+
+    [Fact]
+    public void PerQuestionPrompt_SaysAnUnmentionedClaimIsNotTherebyInvented()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            "Suite",
+            1,
+            "Question?",
+            BenchmarkDifficulty.Advanced,
+            "Rubric point one.",
+            "Answer text.",
+            BenchmarkAnswerStatus.Ok);
+
+        // A rubric is an incomplete ground-truth list, so "absent from the rubric" is not evidence
+        // of falsehood and cannot carry the critical-error cap on its own.
+        Assert.Contains("A claim the rubric does not mention is not thereby invented", prompt);
+        Assert.Contains("a claim the rubric merely omits belongs in `unverifiedClaims`", prompt);
     }
 
     [Fact]
@@ -436,17 +454,17 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs18_ScoringMethodIs10()
+    public void Versions_HarnessIs19_ScoringMethodIs10()
     {
-        Assert.Equal("18", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("19", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 18 reclassifies a terminal provider failure, unifies the gradeable-answer
-        // denominator, adds two advisory flags and gives a failed-question re-run its own
-        // fingerprint and wall clock. None of it changes an index, a dimensional score or a run
-        // status, so the scoring method does not move with it — but the round also edits two tool
-        // guides and the wiki miss payloads, which moves ToolGuidesSha256 and
-        // CandidateSystemPromptSha256, so an 18-stamped run differs from a 17-stamped one on
-        // three instrument keys and is below Tier B against it.
+        // Harness 19 routes a critical-error quote through the claim verifier and records the
+        // advisory ContestedCriticalError flag and its run count, adds the § 5 rule that an
+        // unmentioned claim is not thereby invented, and reports per-question tool rounds. The cap,
+        // the levels and every index are untouched, so the scoring method does not move with it —
+        // but the round also changes two source-tool contracts and their guides, which moves
+        // ToolGuidesSha256, so a 19-stamped run differs from an 18-stamped one on two instrument
+        // keys and is below Tier B against it.
         Assert.Equal(10, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

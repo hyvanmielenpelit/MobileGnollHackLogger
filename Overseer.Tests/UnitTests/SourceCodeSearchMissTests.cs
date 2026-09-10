@@ -13,7 +13,8 @@ using Overseer.Services.Tools;
 using Xunit;
 
 /// <summary>
-/// The miss path of source_code_search. A miss that says only "not found" gives a model nothing to
+/// The miss paths of source_code_search and get_function_definition. A miss that says only "not
+/// found" gives a model nothing to
 /// correct with, so its cheapest recovery is another guess — which is how one benchmark question
 /// spent twenty tool rounds guessing identifiers against a corpus that never held them. These
 /// assert that a miss names a next action, and that it stays small: every tool result is re-sent on
@@ -56,6 +57,11 @@ makemon_group(int count)
         File.WriteAllText(Path.Combine(_sourceDir, "include", "hack.h"), @"/* hack.h */
 #define MAX_ENCOUNTERS 64
 ");
+        /* A struct member reached through a macro alias: the shape that has no body under its own name. */
+        File.WriteAllText(Path.Combine(_sourceDir, "include", "winprocs.h"), @"/* winprocs.h */
+struct windowprocs { void (*win_print_glyph)(int, int, int); };
+#define print_glyph (*windowprocs.win_print_glyph)
+");
     }
 
     public void Dispose()
@@ -70,12 +76,12 @@ makemon_group(int count)
         }
     }
 
-    private (SourceCodeService Service, IConfiguration Config) CreateService()
+    private (SourceCodeService Service, IConfiguration Config) CreateService(string? sourceCodePath = null)
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new[]
             {
-                new KeyValuePair<string, string?>("SourceCodePath", _sourceDir),
+                new KeyValuePair<string, string?>("SourceCodePath", sourceCodePath ?? _sourceDir),
                 new KeyValuePair<string, string?>("MaxSourceFileSizeKB", "800"),
                 new KeyValuePair<string, string?>("Tools:source_code_search:MaxResults", "10"),
                 new KeyValuePair<string, string?>("Tools:source_code_search:ContextLines", "5")
@@ -97,6 +103,24 @@ makemon_group(int count)
             {
                 netService.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
                 var tool = new SourceCodeSearchTool(service, netService, config);
+                return await tool.ExecuteAsync(
+                    JsonDocument.Parse(argsJson).RootElement,
+                    new ToolExecutionContext(),
+                    TestContext.Current.CancellationToken);
+            }
+        }
+    }
+
+    private async Task<ToolResult> GetDefinitionAsync(string argsJson, string? sourceCodePath = null)
+    {
+        var (service, config) = CreateService(sourceCodePath);
+        using (service)
+        {
+            var netService = new NetHackSourceCodeService(config, NullLogger<NetHackSourceCodeService>.Instance);
+            using (netService)
+            {
+                netService.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+                var tool = new GetFunctionDefinitionTool(service, netService);
                 return await tool.ExecuteAsync(
                     JsonDocument.Parse(argsJson).RootElement,
                     new ToolExecutionContext(),
@@ -237,5 +261,64 @@ makemon_group(int count)
         Assert.True(result.Success);
         Assert.Contains("src/encounter.c", result.Content);
         Assert.DoesNotContain("No relevant source code found", result.Content);
+    }
+
+    /// <summary>
+    /// A struct member reached through a macro alias has no body declared under its own name, so
+    /// every extraction of it misses. The payload names the file that does mention it, which is the
+    /// one place a model can read it from, and keeps the service's own opening sentence as its prefix
+    /// because other tooling matches on that literal.
+    /// </summary>
+    [Fact]
+    public async Task DefinitionMiss_OnAStructMember_NamesTheFileItOccursIn()
+    {
+        var result = await GetDefinitionAsync(@"{""name"": ""win_print_glyph""}");
+
+        Assert.True(result.Success, "A miss is not a tool failure.");
+        Assert.StartsWith("No definition found for 'win_print_glyph' of kind 'any'.", result.Content);
+        Assert.Contains("'win_print_glyph' occurs in", result.Content);
+        Assert.Contains("include/winprocs.h", result.Content);
+        Assert.Contains("source_code_search", result.Content);
+        Assert.Contains("context_lines", result.Content);
+        Assert.Contains("search_definitions", result.Content);
+        Assert.True(result.Content.Length < 600,
+            $"Miss payload was {result.Content.Length} characters: {result.Content}");
+    }
+
+    [Fact]
+    public async Task DefinitionMiss_OnAnIdentifierThatOccursNowhere_SaysSo()
+    {
+        var result = await GetDefinitionAsync(@"{""name"": ""zzzqqqxxx""}");
+
+        Assert.True(result.Success);
+        Assert.StartsWith("No definition found for 'zzzqqqxxx' of kind 'any'.", result.Content);
+        Assert.Contains("'zzzqqqxxx' does not occur in the indexed gnollhack source.", result.Content);
+        Assert.Contains("search_definitions", result.Content);
+        Assert.True(result.Content.Length < 600,
+            $"Miss payload was {result.Content.Length} characters: {result.Content}");
+    }
+
+    /// <summary>
+    /// The probe cannot report anything about a corpus that is not on disk. Indexing still completes
+    /// over the empty index, so the tool answers rather than guarding, and the payload invents no
+    /// file. This is as close as the miss path's own fallback can be reached from outside: an empty
+    /// index makes SearchFiles return an empty string rather than throw, so the "no hit" branch —
+    /// not the outer catch — is what answers here.
+    /// </summary>
+    [Fact]
+    public async Task DefinitionMiss_WithNoCorpusOnDisk_NamesNoFile()
+    {
+        string missing = Path.Combine(_sourceDir, "does_not_exist");
+        Assert.False(Directory.Exists(missing));
+
+        var result = await GetDefinitionAsync(@"{""name"": ""win_print_glyph""}", missing);
+
+        Assert.True(result.Success);
+        Assert.StartsWith("No definition found for 'win_print_glyph' of kind 'any'.", result.Content);
+        Assert.Contains("does not occur in the indexed gnollhack source.", result.Content);
+        Assert.DoesNotContain("occurs in ", result.Content);
+        Assert.DoesNotContain("winprocs.h", result.Content);
+        Assert.True(result.Content.Length < 600,
+            $"Miss payload was {result.Content.Length} characters: {result.Content}");
     }
 }

@@ -30,6 +30,13 @@ public class BenchmarkPerQuestionVerdictSummary
     public int? ClaimsRefutedCount { get; set; }
     public int? ClaimsIndeterminateCount { get; set; }
     public IReadOnlyList<(string Claim, string? Citation, string? Basis)> RefutedClaims { get; set; } = Array.Empty<(string, string?, string?)>();
+
+    /// <summary>
+    /// Critical-error quotes the claim verifier checked against the source or wiki and supported.
+    /// Printed into the synthesis prompt so the narrative does not describe a true statement as a
+    /// fabrication on the strength of the first assessor's flag alone.
+    /// </summary>
+    public IReadOnlyList<string> ContestedCriticalErrorQuotes { get; set; } = Array.Empty<string>();
     public int? SecondOpinionQualityScore { get; set; }
     public bool? SecondOpinionCriticalError { get; set; }
     public int? AssessedDifficulty { get; set; }
@@ -223,8 +230,23 @@ public static class BenchmarkAssessmentPrompt
     ///     run stamped 17 on three instrument keys, which is below Tier B: compare the two on counts
     ///     and per-question thresholds, not as a reproduction pair. The six new columns are additive
     ///     and read as "not recorded" on any earlier run, never as zero.
+    /// v19: the critical-error finding becomes checkable. An answer whose assessor set criticalError
+    ///     and supplied a verbatim quote is dispatched to the claim verifier on that ground alone,
+    ///     with the quote carried as the first claim in the prompt — never written into
+    ///     UnverifiedClaimsJson, which means the opposite — and a verifier verdict of Supported on
+    ///     that claim raises the advisory ContestedCriticalError flag, counted per run in
+    ///     ContestedCriticalErrorAnswerCount and named in the report and the synthesis prompt. The
+    ///     cap, the levels and every index are untouched: a contested critical error is a statement
+    ///     about the grading, not a regrade. The § 5 prompt rule that a claim the rubric merely omits
+    ///     is not thereby invented lands with it, and the report states per-question tool rounds and
+    ///     calls per round from the harness 17 call rows. Nothing the candidate model sees changed by
+    ///     those, so ScoringMethodVersion does not move — but this version also changes two
+    ///     source-tool contracts and their guides, which moves ToolGuidesSha256. A run stamped 19
+    ///     therefore differs from a run stamped 18 on two instrument keys, which is below Tier B:
+    ///     compare the two on counts and per-question thresholds, not as a reproduction pair.
+    ///     ContestedCriticalErrorAnswerCount reads as "not recorded" on any earlier run, never as zero.
     /// </summary>
-    public const string HarnessVersion = "18";
+    public const string HarnessVersion = "19";
 
     public static string BuildPerQuestionPrompt(
         string suiteName,
@@ -333,6 +355,10 @@ public static class BenchmarkAssessmentPrompt
         // which the negative example already excluded, so the rule is now stated as a
         // requirement the harness verifies rather than as guidance.
         sb.AppendLine("- **An omission is NEVER a critical error**, however material. Missing information is graded through COMPLETENESS. Only a claim the answer actually makes can be a critical error.");
+        // The cap needs the claim to be false, not merely unlisted. A rubric is an incomplete
+        // ground-truth list, so "absent from the rubric" and "contradicted by the rubric" are
+        // different findings and only the second one can carry a critical error.
+        sb.AppendLine("- **A claim the rubric does not mention is not thereby invented.** Mark criticalError only for a claim the rubric's ground truth or your own verified knowledge **contradicts**; a claim the rubric merely omits belongs in `unverifiedClaims` (section 7), where the harness checks it against the source.");
         sb.AppendLine("- When criticalError is true you MUST return `criticalErrorQuote`: the offending sentence copied verbatim from the candidate answer. The harness checks that this text appears in the answer and **ignores an unverifiable critical error**, so a missing or paraphrased quote costs the finding.");
         sb.AppendLine();
         sb.AppendLine("### 6. EVIDENCE FOR DEDUCTIONS");
@@ -634,6 +660,13 @@ public static class BenchmarkAssessmentPrompt
                         string cit = !string.IsNullOrWhiteSpace(rc.Citation) ? $"against {rc.Citation}" : "against source/wiki";
                         string bas = !string.IsNullOrWhiteSpace(rc.Basis) ? $" Basis: {rc.Basis}" : string.Empty;
                         sb.AppendLine($"Refuted claim: \"{rc.Claim}\" — refuted {cit}.{bas}");
+                    }
+                }
+                if (v.ContestedCriticalErrorQuotes != null && v.ContestedCriticalErrorQuotes.Count > 0)
+                {
+                    foreach (var quote in v.ContestedCriticalErrorQuotes)
+                    {
+                        sb.AppendLine($"Critical error on Q{v.OrderIndex} whose quoted claim the verifier supported: \"{quote}\" — do not describe this answer as fabricating it.");
                     }
                 }
                 if (v.SecondOpinionQualityScore.HasValue)

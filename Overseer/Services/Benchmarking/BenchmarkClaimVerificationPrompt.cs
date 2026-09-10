@@ -15,20 +15,28 @@ public static class BenchmarkClaimVerificationPrompt
         IReadOnlyList<string> allowedTools,
         int toolCallBudget,
         bool isDisputedVerdict = false,
+        bool isCriticalErrorAdjudication = false,
         string? assessorEvidence = null)
     {
         var sb = new StringBuilder();
+        // Both adjudication preambles can apply to one answer: a disputed verdict and a
+        // critical-error quote are independent conditions. The disputed one comes first because
+        // it frames the whole task, while the critical-error one is about a single claim.
+        sb.AppendLine(isDisputedVerdict
+            ? "You verify factual claims and counter-claims about GnollHack against the game's own source code and wiki. You are not grading an answer. Do not score, do not rate, do not comment on the answer as a whole."
+            : "You verify individual factual claims about GnollHack against the game's own source code and wiki. You are not grading an answer. Do not score, do not rate, do not comment on the answer as a whole.");
         if (isDisputedVerdict)
         {
-            sb.AppendLine("You verify factual claims and counter-claims about GnollHack against the game's own source code and wiki. You are not grading an answer. Do not score, do not rate, do not comment on the answer as a whole.");
             sb.AppendLine();
             sb.AppendLine("DISPUTED VERDICT ADJUDICATION:");
             sb.AppendLine("Two independent readers reviewed this answer and reached conflicting verdicts regarding accuracy or critical error classification (e.g. one flagged a fabrication while the other did not).");
             sb.AppendLine("You are provided with candidate claims and assessor counter-claims. Check BOTH against GnollHack source code and wiki facts to determine the ground truth.");
         }
-        else
+        if (isCriticalErrorAdjudication)
         {
-            sb.AppendLine("You verify individual factual claims about GnollHack against the game's own source code and wiki. You are not grading an answer. Do not score, do not rate, do not comment on the answer as a whole.");
+            sb.AppendLine();
+            sb.AppendLine("CRITICAL ERROR ADJUDICATION:");
+            sb.AppendLine("The first assessor marked the first claim below as a critical error — a confidently asserted, material falsehood. Its stated evidence follows the rubric. Check that claim against the source code and wiki exactly as you check the others; if it is true, the verdict is Supported with a citation. A claim absent from the rubric is not thereby false.");
         }
         sb.AppendLine($"Suite: {suiteName}");
         sb.AppendLine($"Question #{orderIndex}");
@@ -55,7 +63,9 @@ public static class BenchmarkClaimVerificationPrompt
             sb.AppendLine(expectedPoints);
             sb.AppendLine("--- END RUBRIC ---");
         }
-        if (isDisputedVerdict && !string.IsNullOrWhiteSpace(assessorEvidence))
+        // Carried under either adjudication: a critical-error quote is argued from the assessor's
+        // own stated evidence exactly as a disputed verdict is.
+        if ((isDisputedVerdict || isCriticalErrorAdjudication) && !string.IsNullOrWhiteSpace(assessorEvidence))
         {
             sb.AppendLine();
             sb.AppendLine("Assessor Evidence / Counter-Claims:");

@@ -142,6 +142,17 @@ truncation notice's 1-based output line or an absolute file line inside the defi
 value returns an explicit `start_line N is outside this definition …` message, so a header-only
 continuation in a later run is a regression of that contract (`server_tool_parameter_reference` § 4).
 
+**A `get_function_definition` miss of the bare `No definition found for '<name>' of kind '<kind>'.`
+shape is a pre-run-35-round marker.** Until the round a miss carried only that sentence — 56
+characters plus the two names — so a stored result of exactly that shape dates the run. From the
+round the payload **still opens with** the same sentence, which is what a reader matches on, exactly
+as with `source_code_search`'s opening (§ 4 above), and then carries a bounded `filenames_only`
+occurrence probe naming up to three files with match counts, or a statement that the identifier does
+not occur in the indexed repository, plus fixed guidance that a struct member, function pointer or
+macro alias has no extractable body under that name. The whole payload is capped at 600 characters
+and the builder can never itself fail — it falls back to the service's original sentence
+(`server_tool_parameter_reference` § 4 states the contract).
+
 ---
 
 **The wiki family's miss payloads changed under harness 18, and both forms must stay diagnosable.**
@@ -304,7 +315,7 @@ A tool-diagnostics pass **must** produce this table, one row per tool per run (o
 
 **Limits of this pass** — state this, or its equivalent, in every tool-diagnostics output:
 
-> This pass reads stored run columns only. **For any run before harness 17, arguments and results were never stored** for any benchmark tool call (`ShowDebugLog` is `false` at every benchmark call site, and a run creates no `ChatMessage` rows), so every statement about such a call's parameters or its returned content is a reconstruction or a replay, labelled as such. **From harness 17, a run's `BenchmarkRunAnswerToolCall` rows carry the real arguments, result, error, status, emission order and timings for every attempted call** — read them through the tool-calls endpoint (§ 7, rung 0) rather than reconstructing, unless the payload columns were later pruned by the retention sweep (`ChatRetentionSettings.PruneBenchmarkToolCallResultsDays`, default 90 days), in which case `ArgsText`/`Result` are null but `Name`, `Status`, `Error` and `ResultLengthChars` still are not. **Two corpora reachable from this run carry no fingerprint** — the NetHack source (`NetHackSourceCodePath`) and the NetHack wiki (`NetHackWikiPath`) — so any NetHack finding rests on `StartedAtUtc` against the corpus as it stands now. **Any run before harness 16 has no GnollHack wiki or GnollHack source provenance at all**: `WikiHeadSha` and `SourceCodeHeadSha` were added in harness 16, no historical row is backfilled and none can be, and null in either column means *not recorded*. `BenchmarkAssessmentPrompt.HarnessVersion` is now `"18"`.
+> This pass reads stored run columns only. **For any run before harness 17, arguments and results were never stored** for any benchmark tool call (`ShowDebugLog` is `false` at every benchmark call site, and a run creates no `ChatMessage` rows), so every statement about such a call's parameters or its returned content is a reconstruction or a replay, labelled as such. **From harness 17, a run's `BenchmarkRunAnswerToolCall` rows carry the real arguments, result, error, status, emission order and timings for every attempted call** — read them through the tool-calls endpoint (§ 7, rung 0) rather than reconstructing, unless the payload columns were later pruned by the retention sweep (`ChatRetentionSettings.PruneBenchmarkToolCallResultsDays`, default 90 days), in which case `ArgsText`/`Result` are null but `Name`, `Status`, `Error` and `ResultLengthChars` still are not. **Two corpora reachable from this run carry no fingerprint** — the NetHack source (`NetHackSourceCodePath`) and the NetHack wiki (`NetHackWikiPath`) — so any NetHack finding rests on `StartedAtUtc` against the corpus as it stands now. **Any run before harness 16 has no GnollHack wiki or GnollHack source provenance at all**: `WikiHeadSha` and `SourceCodeHeadSha` were added in harness 16, no historical row is backfilled and none can be, and null in either column means *not recorded*. `BenchmarkAssessmentPrompt.HarnessVersion` is now `"19"`.
 
 ---
 

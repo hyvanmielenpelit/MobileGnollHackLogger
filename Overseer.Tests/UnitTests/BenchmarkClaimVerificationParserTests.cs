@@ -156,4 +156,52 @@ public class BenchmarkClaimVerificationParserTests
             Assert.Contains("absent from verifier response", result.Verifications[i].Basis);
         }
     }
+
+    [Fact]
+    public void Parse_CriticalErrorQuoteAtIndexZero_EchoedVerbatim_CountsAsSupported()
+    {
+        // The critical-error quote is submitted as claim 0 and is matched back by the same verbatim
+        // echo every other claim uses; nothing about it is special to the parser.
+        const string quote = "Praying on an unaligned altar at 1 HP is always safe.";
+        var claims = new List<string>
+        {
+            quote,
+            "Master Kaen has AC -2"
+        };
+
+        string json = @"```json
+{
+  ""verifications"": [
+    {
+      ""claimIndex"": 0,
+      ""claim"": ""Praying on an unaligned altar at 1 HP is always safe."",
+      ""verdict"": ""Supported"",
+      ""citation"": ""src/pray.c:812"",
+      ""basis"": ""The prayer path treats an unaligned altar as the player's own here.""
+    },
+    {
+      ""claimIndex"": 1,
+      ""claim"": ""Master Kaen has AC -2"",
+      ""verdict"": ""Indeterminate"",
+      ""citation"": null,
+      ""basis"": ""Not located within the tool budget.""
+    }
+  ]
+}
+```";
+
+        var result = BenchmarkClaimVerificationParser.Parse(json, claims);
+
+        Assert.True(result.Success);
+        Assert.Equal(2, result.Verifications.Count);
+        Assert.Equal(1, result.ClaimsSupportedCount);
+        Assert.Equal(0, result.MismatchesDropped);
+
+        // Index, text and verdict all survive, which is what lets the harness pick this one
+        // verification out of the set as the quote's own.
+        Assert.Equal(0, result.Verifications[0].ClaimIndex);
+        Assert.Equal(quote, result.Verifications[0].Claim);
+        Assert.Equal(BenchmarkClaimVerdict.Supported, result.Verifications[0].Verdict);
+        Assert.Equal("src/pray.c:812", result.Verifications[0].Citation);
+    }
 }

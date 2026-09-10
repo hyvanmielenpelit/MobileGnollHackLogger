@@ -302,9 +302,33 @@ public static class BenchmarkReportBuilder
             ? $", model calls: {answer.ModelCallCount.Value.ToString(CultureInfo.InvariantCulture)}"
             : string.Empty;
 
+        // How many tool rounds the turn spent, and how many calls it packed into each: a turn that
+        // batched its retrieval reads differently from one that took the same calls one round at a
+        // time. Derived from the per-call rows, which exist from harness 17 onward only, so an
+        // answer without them prints nothing — omission is "not recorded", never zero, exactly as
+        // the model-call clause treats its own absence.
+        string toolRounds = string.Empty;
+        int roundCount = ToolRoundCount(answer);
+        if (roundCount > 0)
+        {
+            double callsPerRound = answer.ToolCalls.Count / (double)roundCount;
+            toolRounds = $", tool rounds: {Inv(roundCount)} ({Inv(callsPerRound, "F1")} calls/round)";
+        }
+
         return blocked > 0
-            ? $"{executed} executed, {blocked} blocked, budget {budget}{modelCalls}"
-            : $"{executed} executed, budget {budget}{modelCalls}";
+            ? $"{executed} executed, {blocked} blocked, budget {budget}{modelCalls}{toolRounds}"
+            : $"{executed} executed, budget {budget}{modelCalls}{toolRounds}";
+    }
+
+    /// <summary>
+    /// Distinct tool rounds in an answer's per-call rows, and 0 when it carries none. A row whose
+    /// round was not recorded counts as its own round rather than being dropped, so the figure never
+    /// understates how spread out the calls were.
+    /// </summary>
+    private static int ToolRoundCount(BenchmarkRunAnswer answer)
+    {
+        if (answer.ToolCalls.Count == 0) return 0;
+        return answer.ToolCalls.Select(c => c.IterationIndex).Distinct().Count();
     }
 
     private static readonly Regex WhitespaceRunRegex = new(@"\s+", RegexOptions.Compiled);
@@ -1355,6 +1379,7 @@ public static class BenchmarkReportBuilder
         int unevidencedCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.UnevidencedDeduction));
         int omissionCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.OmissionAsAccuracy));
         int refutedCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.RefutedClaim));
+        int contestedCriticalErrorCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedCriticalError));
         int outOfRubricAccuracyCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction));
         int answerFramingOpenerCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.AnswerFramingOpener));
         int providerErrorCount = answers.Count(a => a.Status == BenchmarkAnswerStatus.ProviderError);
@@ -1440,7 +1465,7 @@ public static class BenchmarkReportBuilder
         {
             advisoryNote += $" *Removal was not recorded for {bleedUnrecorded} of these — the run predates harness version {BenchmarkAssessmentPrompt.HarnessVersion}, which added the counter; that figure is inferred, not measured.*";
         }
-        sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {contestedCount}, unevidenced deductions: {unevidencedCount}, omissions as accuracy: {omissionCount}, refuted claims: {refutedCount}, out-of-rubric accuracy deductions: {outOfRubricAccuracyCount}, answer-framing openers: {answerFramingOpenerCount}) {advisoryNote}");
+        sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {contestedCount}, unevidenced deductions: {unevidencedCount}, omissions as accuracy: {omissionCount}, refuted claims: {refutedCount}, contested critical errors: {contestedCriticalErrorCount}, out-of-rubric accuracy deductions: {outOfRubricAccuracyCount}, answer-framing openers: {answerFramingOpenerCount}) {advisoryNote}");
         if (answerFramingOpenerCount > 0)
         {
             var answerFramingOpenerAnswers = answers
@@ -1452,6 +1477,14 @@ public static class BenchmarkReportBuilder
             // the opening text here is left in the graded answer unmodified because it is exactly what
             // production chat would have sent — the defect is in the live prompt, not in this harness.
             sb.AppendLine($"- **Answer-Framing Openers:** {run.AnswerFramingOpenerAnswerCount} ({string.Join(", ", answerFramingOpenerAnswers.Select(a => $"Q{a.OrderIndex}"))}) — *the opening text was **not** removed. It violates the answer-opening rule in `Overseer/ToolGuides/_policy.md` and reaches production chat unmodified.*");
+        }
+        if (contestedCriticalErrorCount > 0)
+        {
+            var contestedCriticalErrorAnswers = answers
+                .Where(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedCriticalError))
+                .OrderBy(a => a.OrderIndex)
+                .ToList();
+            sb.AppendLine($"- **Contested Critical Errors:** {contestedCriticalErrorCount} (question(s) {string.Join(", ", contestedCriticalErrorAnswers.Select(a => $"Q{a.OrderIndex}"))}) — the critical-error quote was checked against the source code/wiki by the claim verifier and **supported**. Advisory: the cap stands and no index moved; re-assess from the run detail.");
         }
         sb.AppendLine($"- **Answers Scrubbed:** {scrubbedAnyCount} of {totalQuestions} (transport payloads: {scrubbedTransportCount}, reasoning narration: {bleedRemoved})");
         sb.AppendLine();
@@ -2000,6 +2033,26 @@ public static class BenchmarkReportBuilder
                 BenchmarkToolCallRecorder.Outcomes(answers.SelectMany(a => a.ToolCalls));
             sb.AppendLine($"- **Tool Call Outcomes:** {succeededCalls} succeeded, {failedCalls} failed, {refusedCalls} refused by budget. " +
                 "*A failed call is one that ran and did not complete — most commonly a JSON result over the result cap, which `ToolExecutor` converts into an error telling the model to narrow its query. It appears in no tool-name count in the table below, which is why the outcome split is stated separately from the profile: a model that repeatedly over-fetched leaves the profile looking sparse rather than looking wasteful. A refused call ran no tool code at all — its budget was already spent when it was emitted.*");
+
+            // Over the answers that actually called tools, not over every question: a question that
+            // called none has no rounds, and averaging its absence in would report the run as more
+            // batched than it was.
+            var withRounds = answers
+                .Where(a => ToolRoundCount(a) > 0)
+                .OrderByDescending(ToolRoundCount)
+                .ThenBy(a => a.OrderIndex)
+                .ToList();
+            if (withRounds.Count > 0)
+            {
+                double meanRounds = withRounds.Average(a => (double)ToolRoundCount(a));
+                int roundTotal = withRounds.Sum(ToolRoundCount);
+                int callTotal = withRounds.Sum(a => a.ToolCalls.Count);
+                double meanCallsPerRound = roundTotal > 0 ? callTotal / (double)roundTotal : 0.0;
+                var maxByRounds = withRounds[0];
+                sb.AppendLine($"- **Tool Rounds:** mean {Inv(meanRounds, "F1")} per answered question with tool calls; " +
+                    $"mean calls per round {Inv(meanCallsPerRound, "F1")}; " +
+                    $"max {Inv(ToolRoundCount(maxByRounds))} on Q{maxByRounds.OrderIndex}.");
+            }
         }
 
         // Budget pressure. A question that stopped one call short of its budget is not
@@ -2573,6 +2626,7 @@ public static class BenchmarkReportBuilder
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.ContestedVerdict)) flagDescriptions.Add("Contested verdict (advisory, changed no score)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.UnevidencedDeduction)) flagDescriptions.Add("Unevidenced deduction (advisory, changed no score)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.RefutedClaim)) flagDescriptions.Add("Refuted claim (advisory, changed no score)");
+                if (iaFlags.HasFlag(BenchmarkAnswerFlags.ContestedCriticalError)) flagDescriptions.Add("Contested critical error (advisory, changed no score)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.OmissionAsAccuracy)) flagDescriptions.Add("Omission docked as accuracy (advisory, changed no score)");
                 if (ia.ToolBudgetExhausted)
                 {
@@ -2761,9 +2815,16 @@ public static class BenchmarkReportBuilder
 
         int totalRefutedClaims = run.ClaimsRefutedCount > 0 ? run.ClaimsRefutedCount : answers.Sum(a => a.ClaimsRefutedCount ?? 0);
         int disputedVerdicts = answers.Count(a => a.SecondOpinionDisagreed && a.SecondOpinionQualityScore.HasValue);
-        if (totalRefutedClaims > 0 || disputedVerdicts > 0)
+        if (totalRefutedClaims > 0 || disputedVerdicts > 0 || contestedCriticalErrorCount > 0)
         {
-            sb.AppendLine($"*The synthesis above is the primary assessor's own narrative. This run recorded {totalRefutedClaims} refuted claim(s) and {disputedVerdicts} disputed verdict(s) — see Run Integrity and Disputed Assessments.*");
+            // The first two figures are always stated, zero or not: the sentence exists to put the
+            // record beside the narrative, and "0 refuted claim(s)" is itself the record. The third
+            // is stated only when it is non-zero, because a zero there is indistinguishable from a
+            // run whose verifier never checked a critical-error quote at all.
+            string counts = contestedCriticalErrorCount > 0
+                ? $"{totalRefutedClaims} refuted claim(s), {disputedVerdicts} disputed verdict(s) and {contestedCriticalErrorCount} contested critical error(s)"
+                : $"{totalRefutedClaims} refuted claim(s) and {disputedVerdicts} disputed verdict(s)";
+            sb.AppendLine($"*The synthesis above is the primary assessor's own narrative. This run recorded {counts} — see Run Integrity and Disputed Assessments.*");
             sb.AppendLine();
         }
 

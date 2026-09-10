@@ -723,6 +723,41 @@ public class BenchmarkRunFinalizerTests
     }
 
     [Fact]
+    public void Finalizer_CountsContestedCriticalErrors_AsAdvisoryOnly()
+    {
+        // The verifier supported the quote the critical error rested on. That is a statement about
+        // the grading, not a regrade: the cap stays where it was, the answer stays Clean and the run
+        // stays Completed.
+        var a1 = MakeAnswer(1, BenchmarkAnswerFlags.ContestedCriticalError);
+        a1.CriticalError = true;
+        a1.CriticalErrorQuote = "Gnolls are immune to lycanthropy.";
+        var a2 = MakeAnswer(2);
+        var a3 = MakeAnswer(3);
+        var answers = new[] { a1, a2, a3 };
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 3 };
+        BenchmarkRunFinalizer.Apply(run, answers);
+
+        Assert.Equal(1, run.ContestedCriticalErrorAnswerCount);
+        Assert.Equal(1, run.AdvisoryFlagAnswerCount);
+        Assert.True(BenchmarkRunFinalizer.HasAdvisoryFlag(a1));
+        Assert.False(BenchmarkRunFinalizer.HasTransportDefect(a1));
+        Assert.Equal(BenchmarkAnswerIntegrity.Clean, BenchmarkRunFinalizer.Classify(a1));
+        Assert.All(answers, a => Assert.Equal(BenchmarkAnswerIntegrity.Clean, BenchmarkRunFinalizer.Classify(a)));
+        Assert.Equal(BenchmarkRunStatus.Completed, BenchmarkRunFinalizer.ComputeStatus(answers));
+        Assert.Equal(BenchmarkRunStatus.Completed, run.Status);
+    }
+
+    [Fact]
+    public void Finalizer_LeavesContestedCriticalErrorCountAtZero_WhenNoAnswerCarriesTheFlag()
+    {
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 1 };
+        BenchmarkRunFinalizer.Apply(run, new[] { MakeAnswer(1) });
+
+        Assert.Equal(0, run.ContestedCriticalErrorAnswerCount);
+    }
+
+    [Fact]
     public void Finalizer_AggregatesOmissionAsAccuracy_AndBudgetSaturated_AndStandardError()
     {
         var a1 = MakeAnswer(1, BenchmarkAnswerFlags.OmissionAsAccuracy);

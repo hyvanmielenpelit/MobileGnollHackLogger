@@ -151,7 +151,7 @@ call reads `NetHackSourceCodeService`, a corpus `BenchmarkRun` does not fingerpr
 | Tool | Required | Optional | Defaults / clamps | Config key |
 |---|---|---|---|---|
 | `source_code_search` | `query` | `file_filter`, `max_results`, `is_regex`, `whole_word`, `case_sensitive`, `filenames_only`, `context_lines`, `repository` | `max_results` default 10, **clamped 1–100 in `SearchFiles` regardless of what's passed**; `context_lines` default 5, clamped 0–25 | `Tools:source_code_search:MaxResults`, `Tools:source_code_search:ContextLines` |
-| `source_code_view` | `file`, and either `start_line` or `search_term` | `line_count`, `repository` | `line_count` default 50, clamped 1–1000 | `Tools:source_code_view:LineCount` |
+| `source_code_view` | `file` | `start_line`, `search_term`, `line_count`, `repository` | `start_line` defaults to 1 when neither it nor `search_term` is given; `line_count` default 50, clamped 1–1000 | `Tools:source_code_view:LineCount` |
 | `search_definitions` | `symbol` | `kind` (`function`\|`struct`\|`macro`\|`enum`\|`type`\|`any`), `repository` | `kind` default `any`; result capped at **10 matches, hardcoded**, not configurable | none |
 | `get_function_definition` | `name` | `type` (`function`\|`macro`\|`struct`\|`any`), `start_line` (where to resume: the 1-based output line the truncation notice names, **or** an absolute file line inside the header's L-range; anything else returns an explicit out-of-range message, never a clamp), `repository` | chunk size 150 lines | `Tools:get_function_definition:MaxLinesPerChunk` |
 | `get_constants` | `name` **or** `prefix_filter` (handler requires at least one; schema only requires `name`) | `prefix_filter`, `repository` | result capped at **100 constants, hardcoded** | none |
@@ -289,6 +289,21 @@ lines overlap 1–Y, is read as output-relative. Before the run-34 round (2026-0
 0-based output index clamped to the last line, so an absolute file line returned the header alone
 (`server_benchmark_tool_diagnostics` § 4).
 
+> 🛑 **A `get_function_definition` miss returns `Success = true` and, from the run-35 round, carries
+> a bounded occurrence probe.** The payload **opens with** `No definition found for '` — which is
+> what a reader matches on, never a length; before the round this opening sentence was the whole
+> payload, the bare `No definition found for '<name>' of kind '<kind>'.`. From the round it then
+> names, from one bounded `filenames_only` probe (max 3 files, 1000 characters, non-regex,
+> case-insensitive, exceptions and `Error:`-prefixed content swallowed into "no hit"), where the
+> identifier occurs with match counts, or states that it does not occur in the indexed repository;
+> then always the guidance that this tool extracts only a body declared under that exact name, so a
+> struct member, function pointer or macro alias must be read with `source_code_search` (with
+> `context_lines`) on the named file, or `search_definitions` for the symbol it is assigned from.
+> The whole payload is capped at **600 characters**, and the builder sits inside a `catch` returning
+> the service's bare sentence — which is therefore the **resolver-defect** payload rather than the
+> ordinary-miss one, exactly as with `source_code_search`. A stored result that is the bare sentence
+> alone is a run recorded **before** the run-35 round, or a call in which the builder threw.
+
 **`search_definitions` / `get_function_definition` matching is line-pattern, not a C parser.**
 Function/macro/struct/type matches are anchored regexes against a single line
 (`^{symbol}\s*\(`, `^\s*#define\s+{symbol}[\s(]`, etc.); an enum-member match additionally
@@ -297,8 +312,10 @@ inside an enum body" — this can both false-negative (member more than 50 lines
 keyword) and false-positive (an unrelated `enum ` string within the lookback window).
 
 **Failure modes across the family**: missing required parameter → `Success = false` with a
-`"Missing … parameter"` message; `source_code_view`'s `file` containing `..` or resolving outside
-the configured repository root → `Success = false`; a disallowed extension (only `.c .h .des
+`"Missing … parameter"` message (this no longer applies to `source_code_view`'s `start_line` /
+`search_term` — `file` is now its only required parameter, and `start_line` defaults to 1 when
+neither is given, per the table above); `source_code_view`'s `file` containing `..` or resolving
+outside the configured repository root → `Success = false`; a disallowed extension (only `.c .h .des
 .txt` normally; `.cs .xaml` only when `context.OverseerMode == 2` **and** `repository` is
 `gnollhack`) → `Success = false`; `get_constants` / `get_function_definition` / `search_definitions`
 finding nothing → `Success = true` with an explanatory "No … found" `Content`, **not** a failure.

@@ -779,6 +779,11 @@ export interface BenchmarkRunDetailDto {
   unevidencedDeductionAnswerCount?: number;
   omissionAsAccuracyAnswerCount?: number;
   refutedClaimAnswerCount?: number;
+  /**
+   * Answers whose critical-error quote the claim verifier supported against the source code/wiki.
+   * Advisory: the quality cap stands and no index moved. Absent on a run before harness 19.
+   */
+  contestedCriticalErrorAnswerCount?: number | null;
   /** Answers whose assessor marked an Accuracy deduction 'Not in rubric:'. Advisory. */
   outOfRubricAccuracyAnswerCount?: number;
   /** Answers opening with a claim of sufficiency. Advisory, and the text was not removed. */

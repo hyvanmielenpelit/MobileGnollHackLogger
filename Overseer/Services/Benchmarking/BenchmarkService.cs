@@ -1711,7 +1711,10 @@ public class BenchmarkService
             _logger.LogWarning(ex, "Failed to record usage for per-question assessor call.");
         }
 
-        if (run.ClaimVerifierModelConfigurationId.HasValue && (answer.UnverifiedClaimCount ?? 0) > 0)
+        // A critical-error quote is checked here too, not only an unadjudicable claim: the quote is
+        // the one assertion in the answer whose truth the cap already turns on, and the assessor
+        // grades without tools while the verifier has them.
+        if (run.ClaimVerifierModelConfigurationId.HasValue && NeedsClaimVerification(answer))
         {
             try
             {
@@ -2179,7 +2182,7 @@ public class BenchmarkService
             .ToListAsync(cancellationToken);
 
         candidateAnswers = candidateAnswers
-            .Where(a => (a.UnverifiedClaimCount ?? 0) > 0 ||
+            .Where(a => NeedsClaimVerification(a) ||
                         (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedVerdict) != 0 ||
                         (a.SecondOpinionCriticalError.HasValue && a.SecondOpinionCriticalError.Value != a.CriticalError))
             .ToList();
@@ -2354,6 +2357,14 @@ public class BenchmarkService
             }
         }
 
+        // After the disputed branch has persisted whatever it collected, so the quote is carried in
+        // the prompt only and never lands in the unadjudicable-claims columns.
+        bool isCriticalErrorAdjudication = IsCriticalErrorAdjudication(answer);
+        if (isCriticalErrorAdjudication)
+        {
+            claims = WithCriticalErrorQuoteFirst(claims, answer.CriticalErrorQuote);
+        }
+
         if (claims == null || claims.Count == 0) return;
 
         if (expectedPoints == null)
@@ -2381,6 +2392,7 @@ public class BenchmarkService
             allowedTools,
             toolCallBudget,
             isDisputedVerdict: isDisputed,
+            isCriticalErrorAdjudication: isCriticalErrorAdjudication,
             assessorEvidence: accuracyEvidence);
 
         var runRequest = BuildClaimVerificationRequest(
@@ -2554,6 +2566,20 @@ public class BenchmarkService
                 else
                 {
                     answer.AnswerFlags &= ~(int)BenchmarkAnswerFlags.RefutedClaim;
+                }
+
+                // The quote the critical error rests on was checked against the source and stood.
+                // Advisory: the cap stays, the index does not move, and the flag says the finding
+                // is contested so a reader argues it from the record rather than from the verdict.
+                // Cleared in the negative case so a re-verification cannot leave a stale flag.
+                if (isCriticalErrorAdjudication &&
+                    CriticalErrorQuoteWasSupported(parseResult.Verifications, answer.CriticalErrorQuote))
+                {
+                    answer.AnswerFlags |= (int)BenchmarkAnswerFlags.ContestedCriticalError;
+                }
+                else
+                {
+                    answer.AnswerFlags &= ~(int)BenchmarkAnswerFlags.ContestedCriticalError;
                 }
             }
         }
@@ -3632,6 +3658,11 @@ public class BenchmarkService
                 ClaimsRefutedCount = a.ClaimsRefutedCount,
                 ClaimsIndeterminateCount = a.ClaimsIndeterminateCount,
                 RefutedClaims = refutedList,
+                ContestedCriticalErrorQuotes =
+                    (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedCriticalError) != 0
+                     && !string.IsNullOrWhiteSpace(a.CriticalErrorQuote)
+                        ? new[] { a.CriticalErrorQuote!.Trim() }
+                        : Array.Empty<string>(),
                 SecondOpinionQualityScore = a.SecondOpinionQualityScore,
                 SecondOpinionCriticalError = a.SecondOpinionCriticalError,
                 ReviewComment = a.ReviewComment,
@@ -4978,6 +5009,72 @@ public class BenchmarkService
             probe.KnowledgeBaseHeadSha,
             probe.WikiHeadSha,
             probe.SourceCodeHeadSha);
+    }
+
+    /// <summary>
+    /// The answer carries a critical error the verifier can actually check: the flag is set and the
+    /// assessor supplied the offending sentence verbatim. Without a quote there is nothing to look
+    /// up, so such an answer is not dispatched on this ground.
+    /// </summary>
+    internal static bool IsCriticalErrorAdjudication(BenchmarkRunAnswer answer)
+        => answer.CriticalError && !string.IsNullOrWhiteSpace(answer.CriticalErrorQuote);
+
+    /// <summary>
+    /// Whether the claim verifier has something to check on this answer: a claim the assessor could
+    /// not adjudicate, or a critical-error quote. The two are independent and an answer may carry
+    /// both.
+    /// </summary>
+    internal static bool NeedsClaimVerification(BenchmarkRunAnswer answer)
+        => (answer.UnverifiedClaimCount ?? 0) > 0 || IsCriticalErrorAdjudication(answer);
+
+    /// <summary>
+    /// The claim list the verifier is given for a critical-error adjudication: the trimmed quote at
+    /// index 0, ahead of whatever else was already there, and not repeated when an entry already
+    /// matches it verbatim.
+    ///
+    /// The quote is carried in the prompt only. It is deliberately never written back to
+    /// <see cref="BenchmarkRunAnswer.UnverifiedClaimsJson"/> or
+    /// <see cref="BenchmarkRunAnswer.UnverifiedClaimCount"/>: that column means "claims the assessor
+    /// could not adjudicate", and a claim the assessor called outright false is the opposite of one.
+    /// </summary>
+    internal static List<string> WithCriticalErrorQuoteFirst(IReadOnlyList<string>? claims, string? criticalErrorQuote)
+    {
+        var result = claims != null ? new List<string>(claims) : new List<string>();
+        if (string.IsNullOrWhiteSpace(criticalErrorQuote))
+        {
+            return result;
+        }
+
+        string quote = criticalErrorQuote.Trim();
+        if (!result.Any(c => string.Equals(c, quote, StringComparison.Ordinal)))
+        {
+            result.Insert(0, quote);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Whether the verifier supported the critical-error quote itself. Matched by the index the
+    /// quote was submitted at — <see cref="BenchmarkClaimVerificationParser"/> emits one
+    /// verification per submitted claim, in submission order, with the submitted text echoed back —
+    /// and by verbatim text as a fallback, so a reordered response is still read correctly.
+    /// </summary>
+    internal static bool CriticalErrorQuoteWasSupported(
+        IReadOnlyList<BenchmarkClaimVerification>? verifications,
+        string? criticalErrorQuote)
+    {
+        if (verifications == null || verifications.Count == 0) return false;
+        if (string.IsNullOrWhiteSpace(criticalErrorQuote)) return false;
+
+        string quote = criticalErrorQuote.Trim();
+
+        var match = verifications.FirstOrDefault(
+            v => v.ClaimIndex == 0 && string.Equals(v.Claim?.Trim(), quote, StringComparison.Ordinal));
+        match ??= verifications.FirstOrDefault(
+            v => string.Equals(v.Claim?.Trim(), quote, StringComparison.Ordinal));
+
+        return match != null && match.Verdict == BenchmarkClaimVerdict.Supported;
     }
 
     internal static List<string> ExtractDisputedClaims(BenchmarkRunAnswer answer, string? accuracyEvidence)

@@ -172,7 +172,7 @@ A benchmark run executes the **production tool registry**, so a tool defect seen
 - **Whether arguments and results were stored is a version boundary — check the run's harness version before anything else.** For a run **before harness 17** they were not stored: `BenchmarkRunAnswer.ToolCallSummary` is a `name×count` string over *successful* calls only, `AgentRunRequest.ShowDebugLog` is hardcoded `false` at every benchmark call site, and a run creates no `ChatMessage` rows, so nothing equivalent to `ChatMessageToolCall.ArgsText` / `.Result` exists. For such a run, *"compare the parameters and results"* is **reconstruction and replay**, never transcript reading. **From harness 17** a run's `BenchmarkRunAnswer.ToolCalls` rows carry the real `ArgsText`, `Result`, `Error`, `Status`, emission order (`SortOrder`), tool round (`IterationIndex`), timings and the result size as `ToolExecutor` handed it over (`ResultLengthChars`) for **every attempted call**, read through `GET /api/admin/benchmark/runs/{id}/answers/{answerId}/tool-calls` (admin-authenticated). Reading those rows is **rung zero** — attempted before any reconstruction or replay (`server_benchmark_tool_diagnostics` § 2, § 7). A row whose payload the retention sweep pruned shows `ArgsText`/`Result` null beside a non-zero `ResultLengthChars`; that is the sweep, not an absent record.
 - **The count of failed tool calls is derived for a run before harness 17.** `ToolCallCount − Σ(ToolCallSummary counts) − ToolCallsBlocked` is the number of calls that errored technically. No report section surfaces it, and a non-zero value is direct evidence of a tool problem. Compute it first. A null `ToolCallsBlocked` means *not recorded*, never zero. **From harness 17 the figure is reported** as the answer's three-way outcome split, so read it rather than deriving what the record already states.
 - **From harness 16 a run fingerprints three of the five corpora** — knowledge base, GnollHack wiki, GnollHack source. The NetHack wiki and NetHack source are **not** fingerprinted and are both reachable from a run. These fingerprints are **provenance, not comparability keys**: a difference is a fact to investigate, not an automatic tier drop.
-- **Version currency.** The bullets above were last checked against harness **18**, during the run-34 analysis (2026-09-10). `BenchmarkAssessmentPrompt.HarnessVersion` is the source of truth for the current value; if it now reads higher, treat this section as possibly aged and verify every claim against `server_benchmark_tool_diagnostics` § 2 before relying on it. This section silently aged out at harness 17 once already, and cost a run-28 analysis its tool-layer evidence — that is why this line exists.
+- **Version currency.** The bullets above were last checked against harness **19**, during the run-35 round (2026-09-10). `BenchmarkAssessmentPrompt.HarnessVersion` is the source of truth for the current value; if it now reads higher, treat this section as possibly aged and verify every claim against `server_benchmark_tool_diagnostics` § 2 before relying on it. This section silently aged out at harness 17 once already, and cost a run-28 analysis its tool-layer evidence — that is why this line exists.
 
 > 🛑 **Stop here.** Read the three tool-layer skills **now**, before dispatching any research about a tool, a corpus, or a tool count, and before writing the first finding. All three are read at this point; none is reached through the others.
 >
@@ -405,9 +405,9 @@ Any implementation plan derived from a benchmark run must replicate this section
 
 **Pruning.** Once this section exceeds roughly ten entries, collapse everything older than the last three into a single summary table (run, date, model, Intelligence Index, transfer action) and keep full entries only for the most recent three. An unbounded registry pushes the method sections above it out of an agent's effective reading window, which defeats the purpose of the skill.
 
-### Runs 11–30 — 2026-09-04 to 2026-09-10 (pruned per the rule above)
+### Runs 11–32 — 2026-09-04 to 2026-09-10 (pruned per the rule above)
 
-Full entries were collapsed on 2026-09-08 when this registry passed the pruning threshold, again on 2026-09-10 when runs 28 and 29 became the most recent pair, and once more on 2026-09-10 in the run-34 round, which folded runs 28–30 into this table and kept runs 31–34 in full. What each run established is preserved below; the reports themselves remain the primary source.
+Full entries were collapsed on 2026-09-08 when this registry passed the pruning threshold, again on 2026-09-10 when runs 28 and 29 became the most recent pair, once more on 2026-09-10 in the run-34 round, which folded runs 28–30 into this table and kept runs 31–34 in full, and again on 2026-09-10 in the run-35 round, which folded runs 31–32 in and kept runs 33–35 in full. What each run established is preserved below; the reports themselves remain the primary source.
 
 | Run(s) | Date | Candidate | Intelligence Index | Transfer action, and what it settled |
 |---|---|---|---|---|
@@ -423,15 +423,21 @@ Full entries were collapsed on 2026-09-08 when this registry passed the pruning 
 | 28 | 2026-09-09 | Claude 5 Sonnet (`high`) | 84 ± 11 | The first Anthropic candidate; harness 17 with **no comparable predecessor** (three method resets separate it from every earlier completed run), so every finding was motivating only. A rung-3 round: `get_item_stats` Level 1 with its unit notes, the monster `ac`/`mc`/`mr` scales in `get_monster_stats.md`, the `source_code_search` matcher contract and near-miss payload, `_policy.md` answer-opening and miss-recovery text, and `ToolExecutor`'s truncation suffix `... [Truncated: showing …]` — a stored **10033** is the pre-round marker length, ≈ 10117 after it, so match the `[Truncated:` prefix, never a length. **No version bump by design: compare across this round by the instrument fingerprints, not by the harness version** (post-round `ToolGuidesSha256 ed93e73d…`, `CandidateSystemPromptSha256 851af940…`). Two suite defects proven here and still open: **Q3's critical error is spurious** — its rubric states `objects.c` macro *arguments* (base AC 1, spellcasting penalty 5), not player-visible values, and the repair is a units rule across every numeric rubric point — and **all 18 FORM sections are labelled `(readability)`**. Repairing the live rubrics is a **Fundamental** comparability break and must be recorded in this registry when it lands. |
 | 29 | 2026-09-10 | Claude 5 Sonnet (`high`) | 92 ± 3 (17 items) | Confirming run for 28's round: **passed on every countable criterion except the answer-opening rule** (bare `source_code_search` misses 12 → 0, tool calls 114 → 85, critical errors 2 → 0). Rung 3: wiki-family near-miss payloads; rung 4: `wiki_search`'s 13,000 result-cap floor and `nethack_wiki_search`'s per-article cap. The **harness-18 round** followed it and moved two instrument keys (`HarnessVersion`, `ToolGuidesSha256`) but **not** `CandidateSystemPromptSha256` — per-tool guides are not inlined into the prompt. **T4 correction**: the Gnoll "content gap", raised six times, was never an access problem — `Races/Gnoll.md` was present and indexed on every run, and two of the six "missing" facts were in it. Its two method lessons bind: **check a content gap on disk before filing it** (§ 2 category 4, `server_tool_data_sources` § 5), and **diff an assessor's "missing" list against the page**. **Band drift diagnosed**: `BenchmarkDifficultyPrompt` is at fault, not the authored bands, so the deferred repair fixes the prompt and leaves the bands alone. `Overseer/appsettings.json` tool limits carry no fingerprint. |
 | 30 | 2026-09-10 | Claude 5 Sonnet (`high`) | 90 ± 4 | The first harness-18 run; below Tier B against 29 (three keys, including a claim-verifier change made on the wrong side of the pair). It measured that **a per-tool guide edit moves `ToolGuidesSha256` only** (`CandidateSystemPromptSha256` = run 29). Rung 3: `wiki_view` title-collision disambiguation; `FindDefinition` given a literal pre-filter (it had cost 8.8 s of the run's 10.5 s of tool time); the wiki indexer skips dot-directories. The newly shipped tool-call log found at rung 0 the **`.md`-suffix trap** — 6 of 20 `wiki_view` calls passed the filename, single-word ones missed and multi-word ones returned the wrong article — folded into the same round. Method lesson: **read the run's own arguments before inferring anything from result lengths**. Two skill errors corrected (no code emits a `wiki_view` section-miss payload opening `Article matching '`). Verifier caution, fourth instance (Q11 trident range, `src/apply.c:5233`). |
+| 31 | 2026-09-10 | Claude 5 Sonnet (`high`) | 86 ± 12 | The confirming run for run 30's round: **verified** the `.md`-suffix fix (8 of 12 `wiki_view` calls carried `.md`, all resolved, against run 30's 2 misses and 2 wrong articles), `FindDefinition`'s literal pre-filter at 79 ms, H1 per-question grading pipelined, and H2 the segmented candidate prompt. Of its two published critical errors (Q5, Q18), only Q5 was genuine — Q18 was a rubric defect proven against `src/engrave.c`. Second opinion ran serial and inline and evicted the Anthropic prompt cache. |
+| 32 | 2026-09-10 | Claude 5 Sonnet (`high`) | 91 ± 7 | The confirming run for run 31's round: **verified** the segmented candidate prompt (cache read 83.3 → 91.5 %, candidate cost $1.35 → $1.03 at identical input volume, TTFT 4,120 → 3,185 ms), `wiki_view` section normalisation and heading list, and second-opinion parse robustness; applied the `Praying.md` rung-2 wiki edit. **The first single-key confirming run since 28→29 (Tier C).** Its second opinion at `max` cost 26m 33s and was the critical path, which is what moved the grader roster to a lower thinking level. |
 
 The full entries for runs 28–30 — the run-28 Q3 units proof with its source lines, the run-29 T4
 correction in full, the run-30 N1–N3 detail and the harness-18 comparability reasoning — are in
 `benchmark_run_28_analysis/` (2026-09-09) and `benchmark_run_29_analysis/`, `benchmark_run_30_analysis/`
 (2026-09-10) under `hyvanmielenpelit/MobileGnollHackLogger/` in the plans repository, and verbatim in
 this file's Git history before the run-34 round. The harness-18 changes themselves are documented in
-`docs/overseer/ai-benchmark.md` § *Harness Version 18 Updates*.
+`docs/overseer/ai-benchmark.md` § *Harness Version 18 Updates*. The full entries for runs 31–32 —
+the run-31 `.md`-suffix and `FindDefinition` verification detail and the run-32 segmented-prompt and
+grader-roster detail — are likewise in `benchmark_run_31_analysis/` and `benchmark_run_32_analysis/`
+(2026-09-10) under `hyvanmielenpelit/MobileGnollHackLogger/` in the plans repository, and verbatim in
+this file's Git history before the run-35 round.
 
-Four standing cautions from these entries, kept because they still bind:
+Five standing cautions from these entries, kept because they still bind:
 
 - **The scoring-profile comparability key was widened, then narrowed (H9, resolved 2026-09-07).** It now hashes `BenchmarkScoringProfileService.CanonicalSignature` — the profile's scoring semantics only — recomputed from each run's stored snapshot, so nothing that matched before stopped matching. Every stored **group analysis** should still be re-analysed so its recorded `ComparabilityKeyHash` reflects the narrowed definition.
 - **Runs 11–14 and runs 16–21 sit on opposite sides of the v7 → v8 reset**, and everything before run 22 sits on the far side of v8 → v9 (Readability) and v9 → v10 (unanswered questions). Three resets now separate run 11 from the present.
@@ -440,6 +446,7 @@ Four standing cautions from these entries, kept because they still bind:
   - It refuted the claimed Yeenaghu peace and wish, citing `M2_HOSTILE` on `src/monst.c:5669`. **That verdict was recorded here as standing until 2026-09-10, and it is false.** `peace_minded()` (`src/makemon.c:4451`) returns `TRUE` for Yeenaghu **and** for `PM_HYENA` against a gnoll player *unconditionally*, ahead of `always_peaceful()` and ahead of every alignment test — `M2_HOSTILE` is the default flag that check overrides. And `src/minion.c:799-830` grants a real wish through `mongrantswish()`, gated on chaotic with an alignment record ≥ 14, or a luck roll for a chaotic or neutral gnoll, or carrying the Howling Flail, with `context.yeenaghu_wishes` making repeats progressively rarer.
   - **The shared failure mode is worth more than either instance:** the verifier cites a *default flag or the wrong array element* and misses the special-case code that overrides it. Both errors are on one answer, about one race, and both survived into a published report. **No code fix applies** — the verifier is a model, its output is advisory and folded into no index, and that containment is what limited the damage — but a refutation about GnollHack-specific racial behaviour should be treated as **unverified until a human reads the overriding code path**, not as evidence.
 - **Two controlled runs remain deferred, and both must run under v10 rather than across the boundary**: (a) one model, one suite, `verboseMode` false vs. true, to settle whether verbosity buys Completeness — cheap now that `e9b3e9a752…`/`bb19dc24…` is a known isolated pair; and (b) a tool-policy variant run, to test whether the source-family-share-versus-latency correlation is causal.
+- **A critical error is a grader judgement, not a fact.** Three of the five critical errors ever published on the Claude 5 Sonnet series were spurious — run 28 Q3 (rubric units), run 31 Q18 (`src/engrave.c`), run 35 Q1 (`src/attrib.c:117`, `Races/Gnoll.md:25`) — and on run 35 the blind second opinion agreed with the false verdict. A critical error caps quality at 25, so it is the single most consequential judgement in the assessment prompt and the one most worth re-reading on disk. From harness 19 the harness itself sends the assessor's `criticalErrorQuote` to the claim verifier and flags a supported quote as `ContestedCriticalError`; that flag is **advisory and says *contested*, never *overturned*** — read it, and the cited code path, before the count.
 
 **Correction, 2026-09-10 (run-33 H1): every Gemini-role token and cost figure in this registry —
 the table above and every entry below — is inflated.** Until the run-33 round `GoogleProvider`
@@ -449,126 +456,6 @@ synthesis on every run, and the candidate on run 22 — its tokens, its cost and
 cache-read share. Anthropic and OpenAI figures are unaffected. Every "grading share" below overstates
 the assessor, and a cost comparison across the fix is not like-for-like. The stored figures are not
 rewritten; see `docs/overseer/ai-benchmark.md` § *Harness Version 18 Updates*.
-
-### Run 31 — 2026-09-10: Claude 5 Sonnet (the confirming run for run 30's round)
-- **Candidate**: Claude 5 Sonnet (`claude-sonnet-5`), thinking `high`, parallel tool calls on, max
-  output 128000. Suite 6, 18 questions, sequential.
-- **Prompt options**: `overseerMode` 0; `verboseMode` false; `spoilerFreeMode` false;
-  `enableToolUse` true; `enableWebSearch` false; `enableSubAgents` false;
-  `allowSourceCodeReferences` true; `isGameOn`, `hasGameSnapshot`, `hasMessageHistory`,
-  `hasWikiContext` all false; `parallelMode` Enabled.
-- **Grading regime**: harness 18, scoring method 10, profile *Standard Intelligence Index* (1),
-  budget 45 flat. Assessor Gemini 3.7 Flash @ `high`; **second opinion GPT-5.6 Luna @ `max`**
-  (changed from run 30's GPT-5.6 Sol @ `high` — an Instrument key, moved on the wrong side of a
-  verification pair for the second time in three runs), blind, FlaggedPlusSample; claim verifier
-  GPT-5.6 Luna @ `max` (= run 30).
-- **Instrument SHAs**: `CandidateSystemPromptSha256 = 851af9406949b176e72442f26ed6f7f77aa27dcd85eeb52162be0405c1942a00`
-  (= runs 29–30); `ToolGuidesSha256 = 847937baa94da2e990d68f63d05d4438fbb5b463cc51273e49375d50c8a16704`
-  (moved: run-30 round, `wiki_view.md`); `KnowledgeBaseHeadSha = 576ca5741d1bd79ef1cb2f7db575709cf0bb0db8`
-  (= runs 16–30); `WikiHeadSha = a31dfc2f9461a33e0607ebe5bf49c336d40e942d` (moved: run-30 T6);
-  `SourceCodeHeadSha = 3861281ec5bd39a6de5e75c1f91c5ddc4db19a42` (= runs 28–30).
-- **Quality**: Intelligence Index **86 ± 12** (18 items; the interval is widened by two capped answers);
-  raw 89; unweighted 87; holistic 82. Accuracy 90.6 / L 5.4; Completeness 85.2 / L 4.9; Conciseness
-  90.5 / L 5.3; Readability 92.8 / L 5.4. **2 critical errors as published (Q5, Q18) — of which only Q5
-  is genuine**; Q18 is a rubric defect proven against `src/engrave.c` (erosion-on-attack is GnollHack's
-  code, unchanged from NetHack), and the synthesis's "NetHack contamination" narrative is wrong for it.
-  Q5's error is an *omission* of the 200/100/0 trouble thresholds (`src/pray.c:3675`), which are also
-  NetHack's; the assessor's "NetHack 1000-turn figure" is GnollHack's own `Guide to Praying` article.
-  0 refuted claims of 15 verified; verifier 15 / 0 / 0. Agreement −6.0 signed over 4 of 18, 1
-  disagreement (Q3, the third raising of its rubric defect). Out-of-scope 1; FORM 13; band drift +28.9.
-- **Speed**: median model time **16,085 ms**; P90 45,014; max 59,996 (Q16). TTFT median 4,120. Speed
-  Index 97, saturated 14 of 18, advisory twice over.
-- **Cost**: $2.33 — candidate $1.35 (58 %; **cache write $0.79 = 59 % of it**), grading $0.98 (42 %).
-  68 tool calls (3.8/q, **0 failed, 0 refused**) — Wiki 51.5 %, Source 38.2 %, Structured 7.4 %, KB
-  2.9 %. 68 model calls; 1,897,497 in / 24,605 out; cache read 83.3 %; uncached $0.00. Wall 27m 06s;
-  candidate answering 6m 36s (24 %); **second opinion 15m 23s (57 %) for 4 opinions**, serial and
-  inline — Q5's ran between Q5 and Q6 and evicted the Anthropic prompt cache (Q6 cache creation
-  23,034 vs ~11,000 typical).
-- **Comparability**: two Instrument keys differ from run 30 (`ToolGuidesSha256`, second-opinion
-  configuration) → **NotComparable, below Tier B**; verifies countable criteria only.
-- **Verification Outcome — run 30's round**: **T1 (disambiguation)**: criteria (1) and (3) **not
-  exercised** — no colliding title was requested on any of 12 `wiki_view` rows; (2) **met** (Q1 header
-  `Races/Gnoll.md`, Completeness 5/6); (4) **breached as written** on "confirmed critical errors 0" (2
-  published, 1 genuine) — **kept, not reverted**: neither critical error's question exercised the
-  changed branch, so the criterion's side-effect clause was too broad, and the *unplanned* criterion —
-  the `.md`-suffix trap — is **verified**: 8 of 12 `wiki_view` calls carried `.md` and every one
-  resolved (run 30: 2 misses, 2 wrong articles). **T2 (`FindDefinition`)**: 79 ms ≤ 200 — verified.
-  **T3 (dot-directory exclusion)**: consistent. **T6 (*Melee Weapons* note)**: corrected text reached
-  the model in Q11's snippet. **Run-29 T1 (openers)**: reported 1, by hand **4** (Q2, Q4, Q12, Q18) —
-  **≥ 3 on two consecutive runs; the rung-7 candidate is triggered** and deferred with reasons (no
-  measurable quality cost; the rule is already in `_policy.md`; the detector is widened instead).
-- **Transfer Action**: **T1** — `wiki_view` section matching normalised (leading non-letter symbols
-  and whitespace ignored), heading list appended to the section-miss line, at **rung 3, tool
-  contract**; criterion and rollback in the run-31 analysis § 4. **T2** — `monster_lookup.md` and
-  `wiki_search.md` state that a monster page's `Level N` header is its difficulty and `Hit dice` its
-  level, at **rung 3**. **C1** — `winprocs.h` allow-listed in `SourceCodeService` (moves no fingerprint).
-  **H1** — per-question grading pipelined concurrently with the next candidate turn; sample top-up
-  opinions run concurrently. **H2** — the benchmark candidate request now carries the segmented
-  prompt, so the frozen and session segments are cached across questions; `CandidateSystemPromptSha256`
-  is asserted unchanged. **H3** — `AnswerFramingRegex` widened for source-as-subject openers. No
-  `HarnessVersion` or `ScoringMethodVersion` bump: the round moves `ToolGuidesSha256` and nothing
-  else a run records. **S1, S2** join the deferred single suite-6 rubric repair.
-- **Verification Outcome (for this round)**: the next run at run 31's roster settles § 4's T1, T2 and
-  the H1/H2 counts. **Do not change the grader roster before it.**
-
-### Run 32 — 2026-09-10: Claude 5 Sonnet (the confirming run for run 31's round)
-- **Candidate**: Claude 5 Sonnet (`claude-sonnet-5`), thinking `high`, parallel tool calls on, max
-  output 128000. Suite 6, 18 questions, sequential.
-- **Prompt options**: `overseerMode` 0; `verboseMode` false; `spoilerFreeMode` false;
-  `enableToolUse` true; `enableWebSearch` false; `enableSubAgents` false;
-  `allowSourceCodeReferences` true; `isGameOn`, `hasGameSnapshot`, `hasMessageHistory`,
-  `hasWikiContext` all false; `parallelMode` Enabled.
-- **Grading regime**: harness 18, scoring method 10, profile *Standard Intelligence Index* (1),
-  budget 45 flat. Assessor Gemini 3.7 Flash @ `high`; second opinion GPT-5.6 Luna @ `max`, blind,
-  FlaggedPlusSample; claim verifier GPT-5.6 Luna @ `max`. **Identical roster to run 31.**
-- **Instrument SHAs**: `CandidateSystemPromptSha256 = 851af9406949b176e72442f26ed6f7f77aa27dcd85eeb52162be0405c1942a00`
-  (= runs 29–31); `ToolGuidesSha256 = 485ea404ad558c7dc62b0463b037d51d231f44ebe5a2c8b41f6d6ecdb5ad99f3`
-  (moved: run-31 round); `KnowledgeBaseHeadSha = 576ca5741d1bd79ef1cb2f7db575709cf0bb0db8` (= runs
-  16–31); `WikiHeadSha = a31dfc2f9461a33e0607ebe5bf49c336d40e942d` (= run 31);
-  `SourceCodeHeadSha = 3861281ec5bd39a6de5e75c1f91c5ddc4db19a42` (= runs 28–31).
-- **Quality**: Intelligence Index **91 ± 7**; raw 92; unweighted 91; holistic 90. Accuracy 94.2 /
-  L 5.6; Completeness 87.4 / L 5.1; Conciseness 91.3 / L 5.3; Readability 91.3 / L 5.3. **1 critical
-  error (Q5, genuine, repeat of run 31 — an omission the wiki itself carries in the adjacent
-  section)**; 1 refuted claim (Q3, verifier correct: `DRGN_ARMR` passes `mgc = 1`); 1 disputed (Q9).
-  Agreement −11.5 signed over **2 of 18** — 3 of 5 second opinions failed to parse, so the figure is
-  near-meaningless for this run. Out-of-scope 2; FORM 16; band drift +28.9 (suite constant).
-- **Speed**: median model time **16,369 ms**; P90 75,782; max 79,124 (Q18). TTFT median **3,185**.
-  Speed Index 96, saturated 14 of 18, advisory twice over.
-- **Cost**: $2.12 — candidate $1.03 (48 %; cache write $0.40), grading $1.09 (52 %; second opinion
-  $0.25 for 2 usable verdicts). 72 tool calls (4.0/q, **0 failed, 0 refused**) — Wiki 48.6 %, Source
-  40.3 %, Structured 6.9 %, KB 4.2 %. 69 model calls; 1,895,902 in / 27,847 out; cache read
-  **91.5 %**. Wall 22m 36s; answering 7m 19s; **second opinion 26m 33s** (≈ 41k output tokens and
-  ≈ 5.3 min per call at `max`), the critical path.
-- **Comparability**: **one Instrument key differs from run 31 (`ToolGuidesSha256`) → Tier C.** The
-  first single-key confirming run since 28→29.
-- **Verification Outcome — run 31's round**: T1 (`wiki_view` section normalisation + heading list)
-  **verified** (Q4 `Gilthoniel` 853 chars, `Morgoth` 650; Q7 section miss returned the heading list);
-  T2 (`Level N` = difficulty guide text) **partially met** — Q13 right, Q14 wrong in its opener; C1
-  (`winprocs.h`) **verified**; H1 (pipelining) **verified** — stage sum exceeds wall by 961 s; H2
-  (segmented candidate prompt) **verified** — cache read 83.3 → 91.5 %, candidate cost $1.35 → $1.03
-  at identical input volume, TTFT 4,120 → 3,185 ms; H3 (opener detector) **under-counts** — 1
-  flagged, 3 by hand (Q2, Q7, Q12); third consecutive run ≥ 3.
-- **Transfer Action**: **T1** `Praying.md` § *95 % Chance Safe Thresholds* cross-references the
-  trouble thresholds, at **rung 2**, AI-authored from `src/pray.c:3675`, in the wiki repository's
-  own session. **T2** the opener wording change is **deferred one round** so that the prompt hash
-  and tool guides stay still while the grader roster moves (see below). **T3** upstream monster-page
-  header recorded. **T5** no chat change; segmentation exhausted as a cost lever. Harness: **H1**
-  second-opinion parse robustness (balanced-value extraction, JSON-only re-ask, raw head preserved,
-  timeout), **H2** negative-overlap report line, **H3** detector widened, **H4** source indexer skips
-  dot-directory segments (moves no fingerprint), **H5** run-dialog question list scrolls with the
-  dialog. No `HarnessVersion` or `ScoringMethodVersion` bump: the code in this round changes nothing
-  a run records. **By operator decision the grader roster moves before run 33**: both
-  `SecondOpinionConfiguration` and `ClaimVerifierConfiguration` (GPT-5.6 Luna) go from `max` to one
-  chosen thinking level (`high` recommended; the run-33 analysis records the exact levels). That is
-  **two Instrument keys from run 32 → below Tier B**, so run 33 verifies this round's countable
-  criteria only and is not a Tier-C reproduction of run 32; the first agreement and verifier figures
-  at the new level are a baseline, not a comparison. `_policy.md` is untouched.
-- **Verification Outcome (for this round)**: run 33 settles the plan's § Verification criteria —
-  second-opinion parse failures 0, stage time under 10 minutes, no second opinion reaching the
-  timeout, overlap line well-formed, detector count = hand count, `.vs` absent from
-  `list_indexed_files`, Q5 Completeness ≥ 4 with no critical error once the wiki commit has been
-  polled in. **Do not edit `_policy.md`, and change no grader beyond the two recorded thinking-level
-  moves, before it.**
 
 ### Run 33 — 2026-09-10: Claude 5 Sonnet (the confirming run for run 32's round)
 - **Candidate**: Claude 5 Sonnet (`claude-sonnet-5`), thinking `high`, parallel tool calls on. Suite
@@ -729,6 +616,78 @@ rewritten; see `docs/overseer/ai-benchmark.md` § *Harness Version 18 Updates*.
   `get_monster_stats` result exceeds the cap — revert T3 on any "Result too large"**; the Run
   Integrity Notice reads "measured over N" whenever coverage > 0; `$/claim` prints three decimals; no
   second opinion reaches 600 s. **Do not change the assessor or the claim verifier before run 35.**
+
+### Run 35 — 2026-09-10: Claude 5 Sonnet (the confirming run for run 34's round)
+- **Candidate**: Claude 5 Sonnet (`claude-sonnet-5`), thinking `high`, parallel tool calls on, max
+  output 128000. Suite 6, 18 questions, sequential.
+- **Prompt options**: identical to runs 29–34 (`overseerMode` 0; `verboseMode` false; tools on;
+  web search, subagents, spoiler-free, game, snapshot, history, wiki context all off/false;
+  `parallelMode` Enabled).
+- **Grading regime**: harness 18, scoring method 10, profile *Standard Intelligence Index* (1),
+  budget 45 flat. Assessor Gemini 3.7 Flash @ `high`; second opinion GPT-5.6 Luna @ **`high`**
+  (moved from `xhigh` as decided), blind, FlaggedPlusSample; claim verifier GPT-5.6 Luna @ **`high`**
+  (moved from `xhigh` — **not** as decided; recorded). `Benchmark:SecondOpinion:TimeoutSeconds` 600.
+- **Instrument SHAs**: `CandidateSystemPromptSha256 = 715c0dcb86820a316057bf584dbef5b16a3f74aa1de2f3f202d8442d9c276b3a`
+  (moved: run-34 T1 revert + H6); `ToolGuidesSha256 = 2c0a8acae3887dca86a54d326c01f89df010e5cedea6ec4fbd6caeb3445c2559`
+  (= the value predicted in the run-34 entry); `KnowledgeBaseHeadSha = 576ca5741d1bd79ef1cb2f7db575709cf0bb0db8`
+  (= runs 16–34); `WikiHeadSha = 1ecb24d99d836402b04f9cde09d64e9723a36ae6` (= run 34);
+  `SourceCodeHeadSha = 3861281ec5bd39a6de5e75c1f91c5ddc4db19a42` (= runs 28–34). All three
+  re-read from disk on 2026-09-10 and matching.
+- **Quality**: Intelligence Index **90 ± 7** (interval inflated by one capped answer); raw 91;
+  unweighted 89; holistic 87. Accuracy 93.7 / L 5.6; Completeness 87.7 / L 5.1; Conciseness
+  90.6 / L 5.3; Readability 91.3 / L 5.3. **1 critical error published (Q1) — spurious**: the
+  quote *"Immune to lycanthropy"* is `src/attrib.c:117` (`gnl_abil[]`, level 1) and `Races/Gnoll.md:25`;
+  the assessor's *"fabricated"* Yeenaghu wish and Howling Flail are `src/minion.c:807-827` and
+  `Races/Gnoll.md:38-46`. Blind second opinion agreed with the false verdict. **Counterfactual index
+  ≈ 92.6, 0 critical errors** — flat with runs 33–34. **Three of the five critical errors published
+  on this series (28 Q3, 31 Q18, 35 Q1) were spurious.** 1 refuted claim of 12 (Q16) — the
+  refutation's group-size half cites `#if 0` code (`src/makemon.c:88-158`); **verifier caution,
+  sixth instance**; the seventh is Q7's *"d20-style save"* marked **Supported** against a wiki whose
+  formula is $-30\% + 5\% \times \text{Wis}$. Agreement −11.8 signed over 4 of 18 (**baseline at
+  `high`**); 1 disagreement (Q16, the second reader more wrong). Out-of-scope 2; FORM 12; band
+  drift +28.9. Tool layer clean: 86 calls, 85 succeeded, **1 failed** (Q15 `source_code_view`
+  without `start_line`/`search_term`), 0 refused, 0 corpus defects.
+- **Speed**: median model time **15,665 ms** (flat with runs 31–34); P90 76,961; max 102,972 (Q16,
+  15 model calls, 14 tool rounds). TTFT median 3,348. Speed Index 95, saturated 14 of 18.
+- **Cost**: **$1.34** — candidate $1.19 (89 %; cache write $0.43 = 36 %), grading **$0.15 (11 %)**,
+  the lowest share recorded. Second opinion $0.04 / **5m 0s** for 4 at `high` (run 34: $0.21 /
+  21m 40s at `xhigh`). **Wall 9m 48s, the fastest completed run.** 78 model calls; 2,448,830 in /
+  30,590 out; cache read **93.0 %**. Source 54.1 %, Wiki 36.5 %, Structured 5.9 %, KB 3.5 %.
+- **Comparability**: four Instrument keys differ from run 34 → **below Tier B**; verifies run 34's
+  countable criteria only.
+- **Verification Outcome — run 34's round**: opener hand count 2 strict (Q2, Q9) / 4 inclusive
+  (+Q7, Q18 source-attribution preambles), Accuracy −2.6 and Completeness −1.6 inside ± 5 — **met**;
+  detector 1 vs hand 2 — **missed**, seventh consecutive under-count (Q2 *"covers it fully. Here's
+  the breakdown"*); T2 continuation **not exercised** (no `start_line` call); T3 `dice` **verified on
+  Q13** (`"dice": "6d6"`), Q14 not reached; H1 "measured over N" **not exercised** (0 failed second
+  opinions); `$/claim` three decimals **met**; no second opinion at 600 s **met**.
+- **Transfer Action**: **T1** — link the saving-throw article from the spell pages, **rung 2**,
+  second observation (run-34 T4), wiki repository's own session. **H6** — `source_code_view` defaults
+  `start_line` to 1 when neither it nor `search_term` is given; guide and schema aligned; **rung 3,
+  tool contract**. **H7** — `get_function_definition` miss payload names where the identifier occurs
+  and the struct-member / function-pointer / macro-alias case; **rung 3, tool contract**. Harness:
+  **H2** critical-error adjudication on the claim-verifier pipeline with advisory flag
+  `ContestedCriticalError`, report / UI / diagnostics / synthesis lines (no score change); **H4**
+  detector widened; **H5** UI outcome split; **H10** tool rounds and calls per round per question;
+  assessment prompt § 5 gains one sentence (a claim the rubric omits is unverified, never invented)
+  — **`HarnessVersion` 18 → 19**. `_policy.md` untouched; `CandidateSystemPromptSha256` asserted
+  unchanged. **S1 confirmed on disk, S6 second observation, S7 new (Q1 rubric), S8 grounding** join
+  the deferred suite-6 repair. T2–T5 recorded, no change.
+- **Verification Outcome (for this round)**: run 35 **closes the Claude 5 Sonnet series**; run 36 is a
+  **new candidate model** and therefore a **baseline, not a comparison** — it is not a reproduction
+  half of anything on the Sonnet series regardless of what this round moved. It verifies this round's
+  **instrument criteria** — the two tool contracts, the adjudication flag's plumbing, the detector,
+  and the report/UI lines — from the tool-call log and the report, since those are properties of the
+  harness and the tools rather than of the model; and **every candidate-dependent reading is the new
+  model's baseline** (Accuracy, Completeness, median model time, TTFT, cache-read share, tool-family
+  shares, opener hand count). **The grader roster stays unchanged**: assessor Gemini 3.7 Flash @
+  `high`, second opinion GPT-5.6 Luna @ `high`, claim verifier GPT-5.6 Luna @ `high` — so that the
+  grading instrument stands still while the candidate moves, or the new model's first figures are
+  confounded by a grader change too. **The deferred controlled pairs must be re-motivated on the new
+  model before being run**: the `verboseMode` false-vs-true pair, the tool-policy variant and the
+  thinking-`medium` series were all motivated on Sonnet-series measurements, and the known isolated
+  `verboseMode` prompt pair (`e9b3e9a752…` / `bb19dc24…`) is no longer current text anyway, so a
+  controlled verbose pair on the new model needs its own two hashes.
 
 ---
 
