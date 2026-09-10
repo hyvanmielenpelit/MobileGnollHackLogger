@@ -112,10 +112,8 @@ public class OngoingChatManager
 
     public void Fail(SessionRef sessionRef, string error)
     {
-        if (_active.TryGetValue(sessionRef, out var state))
-        {
-            state.AccumulatedEvents.Enqueue(new ChatEvent { Type = "error", Data = error });
-        }
+        /* Through ProcessEvent, so the event is sequenced and bounded like any other. */
+        ProcessEvent(sessionRef, new ChatEvent { Type = "error", Data = error });
         Complete(sessionRef);
     }
 

@@ -267,58 +267,67 @@ public class ChatService
 
         try
         {
-            await foreach (var evt in StreamMessageAsync(sessionRef, message, attachments, userId, isHidden, cancellationToken, userModelId, systemModelId, hasGreeted))
+            try
             {
-                evt.SessionId = wireRef;
-                _ongoingChatManager.ProcessEvent(sessionRef, evt);
-                
-                if (evt.Type == "user_message_created")
+                await foreach (var evt in StreamMessageAsync(sessionRef, message, attachments, userId, isHidden, cancellationToken, userModelId, systemModelId, hasGreeted))
                 {
-                    await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
+                    evt.SessionId = wireRef;
+                    _ongoingChatManager.ProcessEvent(sessionRef, evt);
+                    
+                    if (evt.Type == "user_message_created")
+                    {
+                        await _hubContext.Clients.User(userId).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
+                    }
+                    else
+                    {
+                        await _hubContext.Clients.Group(groupName).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
+                    }
                 }
-                else
+            }
+            catch (Exception ex)
+            {
+                var errEvt = new ChatEvent { Type = "error", Data = ex.Message, SessionId = wireRef };
+                _ongoingChatManager.ProcessEvent(sessionRef, errEvt);
+                await _hubContext.Clients.Group(groupName).SendAsync("ReceiveChatEvent", errEvt, CancellationToken.None);
+            }
+            finally
+            {
+                var finalState = _ongoingChatManager.TryGet(sessionRef);
+                if (finalState != null)
                 {
-                    await _hubContext.Clients.Group(groupName).SendAsync("ReceiveChatEvent", evt, CancellationToken.None);
+                    var totalEvents = finalState.AccumulatedEvents.Count;
+                    var lastSeq = finalState.EventSequence;
+                    var statsEvt = new ChatEvent { Type = "debug", Data = $"[Backend] Generation complete. Total events={totalEvents}, lastSeqNo={lastSeq}", SessionId = wireRef };
+                    _ongoingChatManager.ProcessEvent(sessionRef, statsEvt);
+                    await _hubContext.Clients.Group(groupName).SendAsync("ReceiveChatEvent", statsEvt, CancellationToken.None);
                 }
+
+                bool isUserCancel = _ongoingChatManager.TryGet(sessionRef) == null;
+                if (isUserCancel || cancellationToken.IsCancellationRequested)
+                {
+                    /* Serialized rather than concatenated: a session reference is a string now, so
+                       hand-built JSON would emit it unquoted and the client would fail to parse the
+                       object at all rather than merely mis-compare it. */
+                    var canceledEvt = new ChatEvent
+                    {
+                        Type = "title_status",
+                        Data = JsonSerializer.Serialize(new { status = "canceled", sessionId = wireRef }),
+                        SessionId = wireRef
+                    };
+                    _ongoingChatManager.ProcessEvent(sessionRef, canceledEvt);
+                    await _hubContext.Clients.Group(groupName).SendAsync("ReceiveChatEvent", canceledEvt, CancellationToken.None);
+                }
+
+                var doneEvt = new ChatEvent { Type = "done", Data = "", SessionId = wireRef };
+                _ongoingChatManager.ProcessEvent(sessionRef, doneEvt);
+                await _hubContext.Clients.Group(groupName).SendAsync("ReceiveChatEvent", doneEvt, CancellationToken.None);
             }
         }
         catch (Exception ex)
         {
-            var errEvt = new ChatEvent { Type = "error", Data = ex.Message, SessionId = wireRef };
-            _ongoingChatManager.ProcessEvent(sessionRef, errEvt);
-            await _hubContext.Clients.Group(groupName).SendAsync("ReceiveChatEvent", errEvt, CancellationToken.None);
-        }
-        finally
-        {
-            var finalState = _ongoingChatManager.TryGet(sessionRef);
-            if (finalState != null)
-            {
-                var totalEvents = finalState.AccumulatedEvents.Count;
-                var lastSeq = finalState.EventSequence;
-                var statsEvt = new ChatEvent { Type = "debug", Data = $"[Backend] Generation complete. Total events={totalEvents}, lastSeqNo={lastSeq}", SessionId = wireRef };
-                _ongoingChatManager.ProcessEvent(sessionRef, statsEvt);
-                await _hubContext.Clients.Group(groupName).SendAsync("ReceiveChatEvent", statsEvt, CancellationToken.None);
-            }
-
-            bool isUserCancel = _ongoingChatManager.TryGet(sessionRef) == null;
-            if (isUserCancel || cancellationToken.IsCancellationRequested)
-            {
-                /* Serialized rather than concatenated: a session reference is a string now, so
-                   hand-built JSON would emit it unquoted and the client would fail to parse the
-                   object at all rather than merely mis-compare it. */
-                var canceledEvt = new ChatEvent
-                {
-                    Type = "title_status",
-                    Data = JsonSerializer.Serialize(new { status = "canceled", sessionId = wireRef }),
-                    SessionId = wireRef
-                };
-                _ongoingChatManager.ProcessEvent(sessionRef, canceledEvt);
-                await _hubContext.Clients.Group(groupName).SendAsync("ReceiveChatEvent", canceledEvt, CancellationToken.None);
-            }
-
-            var doneEvt = new ChatEvent { Type = "done", Data = "", SessionId = wireRef };
-            _ongoingChatManager.ProcessEvent(sessionRef, doneEvt);
-            await _hubContext.Clients.Group(groupName).SendAsync("ReceiveChatEvent", doneEvt, CancellationToken.None);
+            /* Reported from inside the suppression scope: an escape observed after this method
+               returns is raised on the finalizer thread, where the scope no longer applies. */
+            _logger?.LogError(ex, "Generation for session {SessionId} failed while reporting its own completion.", wireRef);
         }
     }
 

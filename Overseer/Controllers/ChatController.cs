@@ -1302,6 +1302,18 @@ public class ChatController : ControllerBase
                 var chatService = scope.ServiceProvider.GetRequiredService<ChatService>();
                 await chatService.GenerateAndBroadcastMessageAsync(sessionRef, message, attachments, userId, false, cts.Token, userModelId, systemModelId, request.HasGreeted);
             }
+            catch (Exception ex)
+            {
+                /* Fails closed on telemetry: this runs detached from the request, so the session's
+                   confidentiality is no longer resolvable here, and an unobserved fault would
+                   reach Sentry from the finalizer thread with the scope already gone. */
+                using (Overseer.Services.Privacy.ConfidentialExecutionScope.Enter(true))
+                {
+                    _logger?.LogError(ex, "Detached generation for session {SessionId} faulted.", sessionRef.ToWireString());
+                }
+
+                _ongoingChatManager.Fail(sessionRef, "The generation failed unexpectedly.");
+            }
             finally
             {
                 _ongoingChatManager.Complete(sessionRef);
