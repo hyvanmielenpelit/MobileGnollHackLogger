@@ -28,7 +28,9 @@ namespace Overseer.Tests.Helpers
                     { "AesEncryptionKey", System.Convert.ToBase64String(new byte[32]) },
                     // Shared secret SessionController.Create requires of the game client.
                     { "AntiForgeryToken", "test-antiforgery-secret" },
-                    { "ConversationsDataLocation", System.IO.Path.Combine(System.IO.Path.GetTempPath(), "OverseerFactoryConversations") }
+                    { "ConversationsDataLocation", System.IO.Path.Combine(System.IO.Path.GetTempPath(), "OverseerFactoryConversations") },
+                    // The test host never reports to Sentry; an empty DSN disables the SDK.
+                    { "SentryDSN", "" }
                 });
             });
 
