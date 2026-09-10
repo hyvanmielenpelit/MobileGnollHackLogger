@@ -172,7 +172,7 @@ A benchmark run executes the **production tool registry**, so a tool defect seen
 - **Whether arguments and results were stored is a version boundary — check the run's harness version before anything else.** For a run **before harness 17** they were not stored: `BenchmarkRunAnswer.ToolCallSummary` is a `name×count` string over *successful* calls only, `AgentRunRequest.ShowDebugLog` is hardcoded `false` at every benchmark call site, and a run creates no `ChatMessage` rows, so nothing equivalent to `ChatMessageToolCall.ArgsText` / `.Result` exists. For such a run, *"compare the parameters and results"* is **reconstruction and replay**, never transcript reading. **From harness 17** a run's `BenchmarkRunAnswer.ToolCalls` rows carry the real `ArgsText`, `Result`, `Error`, `Status`, emission order (`SortOrder`), tool round (`IterationIndex`), timings and the result size as `ToolExecutor` handed it over (`ResultLengthChars`) for **every attempted call**, read through `GET /api/admin/benchmark/runs/{id}/answers/{answerId}/tool-calls` (admin-authenticated). Reading those rows is **rung zero** — attempted before any reconstruction or replay (`server_benchmark_tool_diagnostics` § 2, § 7). A row whose payload the retention sweep pruned shows `ArgsText`/`Result` null beside a non-zero `ResultLengthChars`; that is the sweep, not an absent record.
 - **The count of failed tool calls is derived for a run before harness 17.** `ToolCallCount − Σ(ToolCallSummary counts) − ToolCallsBlocked` is the number of calls that errored technically. No report section surfaces it, and a non-zero value is direct evidence of a tool problem. Compute it first. A null `ToolCallsBlocked` means *not recorded*, never zero. **From harness 17 the figure is reported** as the answer's three-way outcome split, so read it rather than deriving what the record already states.
 - **From harness 16 a run fingerprints three of the five corpora** — knowledge base, GnollHack wiki, GnollHack source. The NetHack wiki and NetHack source are **not** fingerprinted and are both reachable from a run. These fingerprints are **provenance, not comparability keys**: a difference is a fact to investigate, not an automatic tier drop.
-- **Version currency.** The bullets above were last checked against harness **18**, during the run-30 analysis (2026-09-10). `BenchmarkAssessmentPrompt.HarnessVersion` is the source of truth for the current value; if it now reads higher, treat this section as possibly aged and verify every claim against `server_benchmark_tool_diagnostics` § 2 before relying on it. This section silently aged out at harness 17 once already, and cost a run-28 analysis its tool-layer evidence — that is why this line exists.
+- **Version currency.** The bullets above were last checked against harness **18**, during the run-32 analysis (2026-09-10). `BenchmarkAssessmentPrompt.HarnessVersion` is the source of truth for the current value; if it now reads higher, treat this section as possibly aged and verify every claim against `server_benchmark_tool_diagnostics` § 2 before relying on it. This section silently aged out at harness 17 once already, and cost a run-28 analysis its tool-layer evidence — that is why this line exists.
 
 > 🛑 **Stop here.** Read the three tool-layer skills **now**, before dispatching any research about a tool, a corpus, or a tool count, and before writing the first finding. All three are read at this point; none is reached through the others.
 >
@@ -272,7 +272,9 @@ Two runs count as reproduction **only** when they match on all of:
 > extra cost that time — two already dropped the pair to `NotComparable` — but the general case is a
 > verification that measures nothing: move the roster on the wrong side of a pair and the pair stops
 > verifying anything. The change itself was sound ($0.06 for 19 claims), and the new roster (Luna)
-> is kept **unchanged for the confirming run**, so that only `ToolGuidesSha256` moves next.
+> is kept **unchanged for the confirming run**, so that only `ToolGuidesSha256` moves next. A
+> change to a grader's **thinking level** is the same kind of key move as a change of model: the
+> configuration is the key, not only the model it names.
 
 Below this threshold, findings are logged in the **Model Behaviour Notes** (§ 11) and the prompt remains untouched.
 
@@ -879,6 +881,65 @@ discovered later by someone comparing the two.
   else a run records. **S1, S2** join the deferred single suite-6 rubric repair.
 - **Verification Outcome (for this round)**: the next run at run 31's roster settles § 4's T1, T2 and
   the H1/H2 counts. **Do not change the grader roster before it.**
+
+### Run 32 — 2026-09-10: Claude 5 Sonnet (the confirming run for run 31's round)
+- **Candidate**: Claude 5 Sonnet (`claude-sonnet-5`), thinking `high`, parallel tool calls on, max
+  output 128000. Suite 6, 18 questions, sequential.
+- **Prompt options**: `overseerMode` 0; `verboseMode` false; `spoilerFreeMode` false;
+  `enableToolUse` true; `enableWebSearch` false; `enableSubAgents` false;
+  `allowSourceCodeReferences` true; `isGameOn`, `hasGameSnapshot`, `hasMessageHistory`,
+  `hasWikiContext` all false; `parallelMode` Enabled.
+- **Grading regime**: harness 18, scoring method 10, profile *Standard Intelligence Index* (1),
+  budget 45 flat. Assessor Gemini 3.7 Flash @ `high`; second opinion GPT-5.6 Luna @ `max`, blind,
+  FlaggedPlusSample; claim verifier GPT-5.6 Luna @ `max`. **Identical roster to run 31.**
+- **Instrument SHAs**: `CandidateSystemPromptSha256 = 851af9406949b176e72442f26ed6f7f77aa27dcd85eeb52162be0405c1942a00`
+  (= runs 29–31); `ToolGuidesSha256 = 485ea404ad558c7dc62b0463b037d51d231f44ebe5a2c8b41f6d6ecdb5ad99f3`
+  (moved: run-31 round); `KnowledgeBaseHeadSha = 576ca5741d1bd79ef1cb2f7db575709cf0bb0db8` (= runs
+  16–31); `WikiHeadSha = a31dfc2f9461a33e0607ebe5bf49c336d40e942d` (= run 31);
+  `SourceCodeHeadSha = 3861281ec5bd39a6de5e75c1f91c5ddc4db19a42` (= runs 28–31).
+- **Quality**: Intelligence Index **91 ± 7**; raw 92; unweighted 91; holistic 90. Accuracy 94.2 /
+  L 5.6; Completeness 87.4 / L 5.1; Conciseness 91.3 / L 5.3; Readability 91.3 / L 5.3. **1 critical
+  error (Q5, genuine, repeat of run 31 — an omission the wiki itself carries in the adjacent
+  section)**; 1 refuted claim (Q3, verifier correct: `DRGN_ARMR` passes `mgc = 1`); 1 disputed (Q9).
+  Agreement −11.5 signed over **2 of 18** — 3 of 5 second opinions failed to parse, so the figure is
+  near-meaningless for this run. Out-of-scope 2; FORM 16; band drift +28.9 (suite constant).
+- **Speed**: median model time **16,369 ms**; P90 75,782; max 79,124 (Q18). TTFT median **3,185**.
+  Speed Index 96, saturated 14 of 18, advisory twice over.
+- **Cost**: $2.12 — candidate $1.03 (48 %; cache write $0.40), grading $1.09 (52 %; second opinion
+  $0.25 for 2 usable verdicts). 72 tool calls (4.0/q, **0 failed, 0 refused**) — Wiki 48.6 %, Source
+  40.3 %, Structured 6.9 %, KB 4.2 %. 69 model calls; 1,895,902 in / 27,847 out; cache read
+  **91.5 %**. Wall 22m 36s; answering 7m 19s; **second opinion 26m 33s** (≈ 41k output tokens and
+  ≈ 5.3 min per call at `max`), the critical path.
+- **Comparability**: **one Instrument key differs from run 31 (`ToolGuidesSha256`) → Tier C.** The
+  first single-key confirming run since 28→29.
+- **Verification Outcome — run 31's round**: T1 (`wiki_view` section normalisation + heading list)
+  **verified** (Q4 `Gilthoniel` 853 chars, `Morgoth` 650; Q7 section miss returned the heading list);
+  T2 (`Level N` = difficulty guide text) **partially met** — Q13 right, Q14 wrong in its opener; C1
+  (`winprocs.h`) **verified**; H1 (pipelining) **verified** — stage sum exceeds wall by 961 s; H2
+  (segmented candidate prompt) **verified** — cache read 83.3 → 91.5 %, candidate cost $1.35 → $1.03
+  at identical input volume, TTFT 4,120 → 3,185 ms; H3 (opener detector) **under-counts** — 1
+  flagged, 3 by hand (Q2, Q7, Q12); third consecutive run ≥ 3.
+- **Transfer Action**: **T1** `Praying.md` § *95 % Chance Safe Thresholds* cross-references the
+  trouble thresholds, at **rung 2**, AI-authored from `src/pray.c:3675`, in the wiki repository's
+  own session. **T2** the opener wording change is **deferred one round** so that the prompt hash
+  and tool guides stay still while the grader roster moves (see below). **T3** upstream monster-page
+  header recorded. **T5** no chat change; segmentation exhausted as a cost lever. Harness: **H1**
+  second-opinion parse robustness (balanced-value extraction, JSON-only re-ask, raw head preserved,
+  timeout), **H2** negative-overlap report line, **H3** detector widened, **H4** source indexer skips
+  dot-directory segments (moves no fingerprint), **H5** run-dialog question list scrolls with the
+  dialog. No `HarnessVersion` or `ScoringMethodVersion` bump: the code in this round changes nothing
+  a run records. **By operator decision the grader roster moves before run 33**: both
+  `SecondOpinionConfiguration` and `ClaimVerifierConfiguration` (GPT-5.6 Luna) go from `max` to one
+  chosen thinking level (`high` recommended; the run-33 analysis records the exact levels). That is
+  **two Instrument keys from run 32 → below Tier B**, so run 33 verifies this round's countable
+  criteria only and is not a Tier-C reproduction of run 32; the first agreement and verifier figures
+  at the new level are a baseline, not a comparison. `_policy.md` is untouched.
+- **Verification Outcome (for this round)**: run 33 settles the plan's § Verification criteria —
+  second-opinion parse failures 0, stage time under 10 minutes, no second opinion reaching the
+  timeout, overlap line well-formed, detector count = hand count, `.vs` absent from
+  `list_indexed_files`, Q5 Completeness ≥ 4 with no critical error once the wiki commit has been
+  polled in. **Do not edit `_policy.md`, and change no grader beyond the two recorded thinking-level
+  moves, before it.**
 
 ---
 

@@ -776,6 +776,27 @@ public class BenchmarkArtifactScrubberTests
         Assert.True(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
     }
 
+    // Verbatim from the run-32 Claude benchmark (Q2, Q7): the "clear answer" claim with a verb
+    // other than has/is, and a claim of a clear picture behind an interjection.
+    [Theory]
+    [InlineData("This gives a clear answer already. Here's the summary:")]
+    [InlineData("Good — I now have a clear picture of how this works. Here's the breakdown:")]
+    public void HasAnswerFramingOpener_DetectsRun32Openers(string answer)
+    {
+        Assert.True(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
+    }
+
+    [Theory]
+    // The same opening words with no claim of sufficiency behind them.
+    [InlineData("This gives the player a clear advantage.")]
+    [InlineData("Good — the sword is cursed.")]
+    [InlineData("Perfect — I now have a question about the rules?")]
+    [InlineData("Great question: I have a clear preference for the long sword.")]
+    public void HasAnswerFramingOpener_DoesNotFireOnRun32Controls(string answer)
+    {
+        Assert.False(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
+    }
+
     [Theory]
     // A source noun in the opening is not itself a claim about the source, and a sufficiency word
     // with no source noun after it is not a claim about the source either.

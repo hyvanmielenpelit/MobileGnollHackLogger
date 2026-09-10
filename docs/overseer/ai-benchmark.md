@@ -1144,6 +1144,83 @@ edit. The detector is widened so the count stays honest, and the trigger is reco
 **S1 (Q18) and S2 (Q3) join the deferred single suite-6 rubric repair**, which must not land in the
 same round as a verification run.
 
+### Run 32 Round (2026-09-10) — No Version Bump
+
+The round implementing run 32's analysis. `BenchmarkAssessmentPrompt.HarnessVersion` stays at
+`"18"` and `ScoringMethodVersion` stays at **10**: nothing a run records changes shape, and no
+candidate-side input moves — `CandidateSystemPromptSha256` and `ToolGuidesSha256` both stand still.
+The one expected effect on a run's figures is that fewer second opinions are lost, so agreement
+coverage may rise; that is the grading stage succeeding more often, not a change in what it measures.
+
+#### Second-opinion parse recovery (H1)
+
+Run 32 lost 3 of 5 GPT-5.6 Luna second opinions at `max` to JSON parsing, and the stage ran
+26 m 33 s for two usable verdicts while the run looked stuck. Three changes bound that:
+
+- **Balanced extraction.** `BenchmarkJsonExtractor.Extract` still prefers a fenced JSON block, but
+  outside a fence it now returns the first *complete* JSON object or array in document order, found
+  by running a `Utf8JsonReader` (trailing commas allowed, comments skipped) from each `{` or `[`. A
+  bracketed word in prose before the object (`[Rubric 2]`) no longer wins, and text after the object
+  no longer rides along. The old first-to-last bracket span is the last resort, so a malformed object
+  still reaches the parser and its error is the one recorded.
+- **Timeout and one re-ask.** `RunSecondOpinionCoreAsync` mirrors the claim-verification path: a
+  linked cancellation after **`Benchmark:SecondOpinion:TimeoutSeconds`** (default **900**), and on a
+  parse failure one JSON-only re-ask (**`Benchmark:SecondOpinion:ParseRetryEnabled`**, default
+  `true`) inside the request's existing two-model-call budget. The re-ask's tokens and duration are
+  added to the answer's `SecondOpinion*` figures and to usage. A timeout is recorded in
+  `SecondOpinionError` exactly like a parse failure (`Second opinion timeout exceeded (N s).`); a
+  cancel of the run itself still cancels. 900 s rather than the verifier's 300 s because run 32's
+  healthy `max` calls took about 5 minutes each; the ceiling is there to stop a hung call, not a slow
+  one.
+- **The raw head is kept.** An unusable verdict's `SecondOpinionError` carries the failure message,
+  then ` | raw: ` and the first 600 characters of the model's last response, newlines collapsed,
+  under the column's 2048-character cap — so the next parse failure can be read from the record. No
+  new column.
+
+#### The measured-overlap line (H2)
+
+With grading pipelined behind the candidate (run-31 round, H1), the summed stage durations can
+exceed the wall clock, and `FormatDuration` rendered the negative residual field by field as
+`-1.-1s`. It is now sign-aware, and a negative residual gets its own sentence: *"the summed stage
+durations … exceed the wall clock by 16m 1s (961,135 ms) — grading stages ran concurrently with
+candidate answering."* A non-negative residual keeps the original wording.
+
+#### The detector widening (H3)
+
+`AnswerFramingRegex` reported 1 answer-framing opener on run 32 where a hand count found 3. Its
+"clear answer" alternative now admits *gives / provides / offers* beside *has / is* (*"This gives a
+clear answer already."*), and a new interjection-led alternative claims *"Good — I now have a clear
+picture of …"*. Both carry non-matching controls in the tests (*"This gives the player a clear
+advantage."*, *"Good — the sword is cursed."*). Still **detect-and-count only**.
+
+#### Dot-directories leave the source index (H4)
+
+`SourceCodeService.IndexRepository` now skips any file whose path relative to the repository root
+has a segment beginning with `.`, the same test `WikiService` applies to the wiki, and logs the
+skipped count once per pass. Run 32's Q16 surfaced a Visual Studio cache file
+(`win/win32/xpl/…/.vs/…/HierarchyCache.v1.txt`) in a `filenames_only` search; it was the only such
+file on disk. The indexer is shared, so the NetHack source skips dot-directories too. This moves
+**no fingerprint**: `SourceCodeHeadSha` is the repository's Git HEAD, not a description of what the
+indexer kept.
+
+#### The run-progress dialog question list (H5)
+
+The dialog's question list (`.run-question-list`) no longer has its own height cap and scroller; the
+dialog body is the only scroller. `.job-item-list` keeps its `20rem` scroller everywhere else.
+
+#### What was deliberately not done
+
+No `ChatService` prose was edited and no tool guide was touched. **The `_policy.md` opener wording
+(run-32 T2) is deferred one round**, so the prompt hash and tool guides stay still while the grader
+roster moves; the detector is widened now so the next count is honest. The `Praying.md` precision
+paragraph (T1) is made in the GnollHack wiki repository's own session.
+
+**The grader roster does move before run 33, by operator decision**: the second-opinion and
+claim-verifier configurations (both GPT-5.6 Luna) go from `max` to one chosen thinking level (`high`
+recommended). Those are **two** Instrument keys, so run 33 is below Tier B against run 32 and verifies
+this round's countable criteria only; the first agreement and verifier figures at the new level are
+a baseline, not a comparison.
+
 ### Multi-Run Replicate Sets (Harness Version 14)
 
 Four consecutive runs reproduced the same Completeness gap, and the harness still could not say whether any single figure would survive a re-run. A one-run result mixes the thing being measured with the noise of measuring it once, and no amount of care in the report separates them. Replicate sets do.

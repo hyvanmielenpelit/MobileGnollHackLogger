@@ -2396,6 +2396,28 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
+    public void HarnessCost_MeasuredOverlap_StagesExceedingWallClockAreReportedAsAPositiveExcess()
+    {
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        run.HarnessVersion = "15";
+        run.MaxParallelQuestionsUsed = 1;
+        run.TotalInputTokens = 10_000;
+        run.TotalOutputTokens = 1_000;
+        run.TotalAnswerDurationMs = 5_000;
+        run.TotalAssessmentInputTokens = 2_000;
+        run.TotalAssessmentOutputTokens = 200;
+        run.TotalAssessmentDurationMs = 3_000;
+        run.TotalDurationMs = 6_500;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        // (5,000 candidate + 3,000 assessment) exceeds the 6,500 wall clock by 1,500 ms.
+        Assert.Contains("exceed the wall clock by 1.5s (1,500 ms)", report);
+        Assert.DoesNotContain("unaccounted for by sequential stage time", report);
+        Assert.DoesNotContain("-1.", report);
+    }
+
+    [Fact]
     public void HarnessCost_LegacyPerRoleCostNoteAppearsOnlyBelowHarness15()
     {
         var old = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));

@@ -60,6 +60,8 @@ All nine fields below exist on `BenchmarkRunAnswer` (`GnollHackServer.Data/Bench
 >
 > **From harness 17, this is no longer a hard limit.** `BenchmarkRunAnswer.ToolCalls` (`BenchmarkRunAnswerToolCall` rows) carry the real `ArgsText`, `Result` and `Error` for every attempted call, capped per `BenchmarkToolCallRecordLimits.Resolve` and prunable by the run's age (see the table row above). An analyst reads them through `GET /api/admin/benchmark/runs/{id}/answers/{answerId}/tool-calls` (admin-authenticated), which returns every row in `SortOrder` order with its full arguments and result — this is reading the record, not reconstruction or replay, and should be tried first (§ 7, rung 0). Full detail is in [`docs/overseer/ai-benchmark.md`](../../../docs/overseer/ai-benchmark.md) § **Harness Version 17 Updates**.
 
+**A failed second opinion keeps the head of its raw text.** From the run-32 round, an unusable second-opinion verdict's `BenchmarkRunAnswer.SecondOpinionError` carries the parser's (or the timeout's) message, then ` | raw: ` and the first 600 characters of the model's last response with newlines collapsed, under the column's 2048-character cap. A parse failure — prose before the object, text after it, malformed JSON inside it — can therefore be diagnosed from the record without a replay. Before that round only the parser's message was kept. The stage is also bounded by `Benchmark:SecondOpinion:TimeoutSeconds` (default 900) and re-asks once for JSON-only output (`Benchmark:SecondOpinion:ParseRetryEnabled`); a timeout reads `Second opinion timeout exceeded (N s).`
+
 ---
 
 ## 3. The Derived Failure Count

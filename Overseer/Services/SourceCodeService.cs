@@ -326,7 +326,8 @@ namespace Overseer.Services
                 var newConstants = new ConcurrentDictionary<string, ConstantInfo>(StringComparer.OrdinalIgnoreCase);
                 
                 var targetDirs = TargetDirectories;
-                
+                int skippedDotFiles = 0;
+
                 foreach (var dir in targetDirs)
                 {
                     string fullDirPath = Path.Combine(_sourceCodePath, dir);
@@ -336,6 +337,13 @@ namespace Overseer.Services
                     
                     foreach (var file in files)
                     {
+                        string relPath = Path.GetRelativePath(_sourceCodePath, file).Replace('\\', '/');
+                        if (IsUnderDotDirectory(relPath))
+                        {
+                            skippedDotFiles++;
+                            continue;
+                        }
+
                         var fileInfo = new FileInfo(file);
                         string ext = fileInfo.Extension.ToLowerInvariant();
                         string fileName = fileInfo.Name;
@@ -362,7 +370,6 @@ namespace Overseer.Services
                         
                         if (fileInfo.Length <= _maxFileSizeKB * 1024)
                         {
-                            string relPath = Path.GetRelativePath(_sourceCodePath, file).Replace('\\', '/');
                             var contentLines = File.ReadAllLines(file);
                             
                             newDocuments[relPath] = new SourceDocument
@@ -427,11 +434,25 @@ namespace Overseer.Services
                 ParseGameData();
                 
                 _logger.LogInformation("Indexed {Count} source files.", _documents.Count);
+                if (skippedDotFiles > 0)
+                {
+                    _logger.LogInformation("Skipped {SkippedCount} source file(s) under dot-directories.", skippedDotFiles);
+                }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error indexing source repository.");
             }
+        }
+
+        /// <summary>
+        /// True when any segment of a repository-relative path begins with a dot.
+        /// </summary>
+        private static bool IsUnderDotDirectory(string relativePath)
+        {
+            return relativePath
+                .Split('/')
+                .Any(segment => segment.StartsWith(".", StringComparison.Ordinal));
         }
 
         protected virtual void ParseGameData()

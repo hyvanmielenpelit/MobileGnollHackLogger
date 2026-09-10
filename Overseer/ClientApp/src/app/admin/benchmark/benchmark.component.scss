@@ -2313,7 +2313,8 @@
 }
 
 .run-question-list {
-  max-height: 22rem;
+  max-height: none;
+  overflow-y: visible;
 }
 
 @keyframes pulse-assessing {

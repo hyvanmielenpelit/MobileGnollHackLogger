@@ -1297,9 +1297,19 @@ public static class BenchmarkReportBuilder
                 long summedStageDurations = run.TotalAnswerDurationMs + run.TotalAssessmentDurationMs +
                     run.TotalSecondOpinionDurationMs + run.TotalClaimVerificationDurationMs + run.TotalSynthesisDurationMs;
                 long measuredOverlapMs = run.TotalDurationMs - summedStageDurations;
-                sb.AppendLine(
-                    $"*Measured overlap: wall clock minus the summed stage durations (candidate, assessment, second opinion, claim verification, synthesis) leaves " +
-                    $"{FormatDuration(measuredOverlapMs)} ({Inv(measuredOverlapMs, "N0")} ms) unaccounted for by sequential stage time.*");
+                if (measuredOverlapMs < 0)
+                {
+                    long excessMs = -measuredOverlapMs;
+                    sb.AppendLine(
+                        $"*Measured overlap: the summed stage durations (candidate, assessment, second opinion, claim verification, synthesis) exceed the wall clock by " +
+                        $"{FormatDuration(excessMs)} ({Inv(excessMs, "N0")} ms) — grading stages ran concurrently with candidate answering.*");
+                }
+                else
+                {
+                    sb.AppendLine(
+                        $"*Measured overlap: wall clock minus the summed stage durations (candidate, assessment, second opinion, claim verification, synthesis) leaves " +
+                        $"{FormatDuration(measuredOverlapMs)} ({Inv(measuredOverlapMs, "N0")} ms) unaccounted for by sequential stage time.*");
+                }
             }
             sb.AppendLine();
         }
@@ -2790,6 +2800,11 @@ public static class BenchmarkReportBuilder
 
     private static string FormatDuration(long ms)
     {
+        if (ms < 0)
+        {
+            return "-" + FormatDuration(-ms);
+        }
+
         var ts = TimeSpan.FromMilliseconds(ms);
         if (ts.TotalHours >= 1)
         {

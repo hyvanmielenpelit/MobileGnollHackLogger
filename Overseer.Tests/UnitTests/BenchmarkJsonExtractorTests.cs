@@ -81,6 +81,42 @@ public class BenchmarkJsonExtractorTests
     }
 
     [Fact]
+    public void Extract_SkipsABracketedWordInProse_AndReturnsTheObjectAfterIt()
+    {
+        string input = "See [Rubric 2] first.\n{\"accuracyLevel\": 5}";
+
+        string extracted = BenchmarkJsonExtractor.Extract(input);
+        Assert.Equal("{\"accuracyLevel\": 5}", extracted);
+    }
+
+    [Fact]
+    public void Extract_DropsTrailingTextAfterTheObject()
+    {
+        string input = "{\"accuracyLevel\": 5}\n` That is the verdict; the {braces} above are the schema.";
+
+        string extracted = BenchmarkJsonExtractor.Extract(input);
+        Assert.Equal("{\"accuracyLevel\": 5}", extracted);
+    }
+
+    [Fact]
+    public void Extract_KeepsTheWholeObject_WhenStringValuesContainClosingBrackets()
+    {
+        string input = "Verdict follows.\n{\"comment\": \"ends with ] and } inside\", \"accuracyLevel\": 4}\nDone.";
+
+        string extracted = BenchmarkJsonExtractor.Extract(input);
+        Assert.Equal("{\"comment\": \"ends with ] and } inside\", \"accuracyLevel\": 4}", extracted);
+    }
+
+    [Fact]
+    public void Extract_ReturnsTheSpan_WhenNoCandidateIsACompleteValue()
+    {
+        string input = "{ \"a\": 1, .comment }";
+
+        string extracted = BenchmarkJsonExtractor.Extract(input);
+        Assert.Equal("{ \"a\": 1, .comment }", extracted);
+    }
+
+    [Fact]
     public void Extract_HandlesEmptyOrWhitespace()
     {
         Assert.Equal(string.Empty, BenchmarkJsonExtractor.Extract(string.Empty));

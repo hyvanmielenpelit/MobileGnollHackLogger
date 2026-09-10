@@ -293,4 +293,24 @@ public class SourceCodeServiceDefinitionTests : IDisposable
 
         Assert.Equal(expected, result);
     }
+
+    /// <summary>
+    /// A file under a directory whose name begins with a dot — a Visual Studio <c>.vs</c> cache —
+    /// is not indexed, even inside a target directory and with an indexed extension; its sibling is.
+    /// </summary>
+    [Fact]
+    public void ListFiles_FileUnderDotDirectory_IsNotIndexed()
+    {
+        Directory.CreateDirectory(Path.Combine(_sourceDir, "src", ".vs", "x"));
+        File.WriteAllText(Path.Combine(_sourceDir, "src", "a.c"), "/* a.c */\r\nint a;\r\n");
+        File.WriteAllText(Path.Combine(_sourceDir, "src", ".vs", "x", "cache.txt"), "encounter cache\r\n");
+
+        using var service = CreateService();
+
+        string result = service.ListFiles(null, includeNetCode: false);
+
+        Assert.Contains("src/a.c (2 lines)", result);
+        Assert.DoesNotContain(".vs", result);
+        Assert.Equal(string.Empty, service.ListFiles("cache.txt", includeNetCode: false));
+    }
 }

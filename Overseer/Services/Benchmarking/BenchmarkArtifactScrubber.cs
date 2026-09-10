@@ -136,6 +136,14 @@ public sealed class BenchmarkArtifactScrubber
     // precisely so it does not claim ordinary prose: "This is a well-documented GnollHack
     // mechanic" names no source and stays outside it, as does "This spell is well suited to a
     // low-level character", whose subject is not a source at all.
+    //
+    // The "clear answer" alternative admits "gives", "provides" and "offers" beside "has" and
+    // "is" — "This gives a clear answer already" — but still requires the words "clear answer"
+    // themselves, so "This gives the player a clear advantage" stays outside it. The
+    // interjection-led alternative claims "Good — I now have a clear picture of..." only when the
+    // interjection is followed by the model's own claim to a clear or complete picture; "Good —
+    // the sword is cursed." opens with the same word and is not claimed. It does not admit
+    // "I've got": NarrationSignatureRegex above already claims that anywhere in the text.
     private static readonly Regex AnswerFramingRegex = new(
         @"\A\s*(?:Now\s+|OK[,.]?\s+|Alright[,.]?\s+)?I\s+(?:now|finally|also|just)\s+" +
         @"(?:have|need|found|located|confirmed)\s+(?:the|a|all|enough|everything|what|both|every)\b" +
@@ -143,7 +151,10 @@ public sealed class BenchmarkArtifactScrubber
         @"(?:have|need|found|located|confirmed)\s+(?:a|all|enough|everything|what|both|every)\b" +
         @"|\A\s*(?:Now\s+)?I(?:’|')ve\s+(?:got|confirmed|gathered)\b" +
         @"|\A\s*Let\s+me\s+(?:just\s+|now\s+)?(?:give|answer|lay\s+out|summari[sz]e|provide|state|write|put)\b" +
-        @"|\A\s*(?:This|That)\s+(?:has|is)\s+(?:a\s+)?clear\s+answer\b" +
+        @"|\A\s*(?:This|That)\s+(?:has|is|gives|provides|offers)\s+(?:a\s+|the\s+)?clear\s+answer\b" +
+        // Interjection-led.
+        @"|\A\s*(?:Good|Great|Perfect|Excellent|Right|Okay)\s*[—–\-,.:!]*\s*I\s+(?:now\s+)?have\s+(?:a\s+)?" +
+        @"(?:clear|complete|full|good|solid)\s+(?:picture|understanding|view|handle)\b" +
         // Source as subject.
         @"|\A\s*(?:This|That|The)\s+" +
         @"(?:wiki(?:\s+article)?|article|source(?:\s+code)?|documentation|knowledge\s+base|page)\s+" +

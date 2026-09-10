@@ -3383,39 +3383,85 @@ public class BenchmarkService
             }
         };
 
+        int timeoutSeconds = _configuration.GetValue<int>("Benchmark:SecondOpinion:TimeoutSeconds", 900);
+        bool retryEnabled = _configuration.GetValue<bool>("Benchmark:SecondOpinion:ParseRetryEnabled", true);
+
+        using var opinionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        opinionCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+
+        async Task<string?> RunOpinionTurnAsync(AgentRunResult result)
+        {
+            string? error = null;
+            try
+            {
+                await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, result, opinionCts.Token))
+                {
+                    if (evt.Type == "error") error = evt.Data?.ToString();
+                }
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && opinionCts.IsCancellationRequested)
+            {
+                error = $"Second opinion timeout exceeded ({timeoutSeconds} s).";
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) { error = ex.Message; }
+            return error;
+        }
+
         var runResult = new AgentRunResult();
         var sw = Stopwatch.StartNew();
-        string? terminalError = null;
-        try
-        {
-            await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, cancellationToken))
-            {
-                if (evt.Type == "error") terminalError = evt.Data?.ToString();
-            }
-        }
-        catch (OperationCanceledException) { throw; }
-        catch (Exception ex) { terminalError = ex.Message; }
-        sw.Stop();
+        string? terminalError = await RunOpinionTurnAsync(runResult);
 
-        // Second-opinion-side cost either way, so it is recorded even when the verdict is unusable.
-        answer.SecondOpinionInputTokens = (answer.SecondOpinionInputTokens ?? 0) +
-            (runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens);
-        answer.SecondOpinionOutputTokens = (answer.SecondOpinionOutputTokens ?? 0) +
-            (runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens);
-        answer.SecondOpinionCacheReadTokens = (answer.SecondOpinionCacheReadTokens ?? 0) + runResult.CacheReadTokens;
-        answer.SecondOpinionCacheCreationTokens = (answer.SecondOpinionCacheCreationTokens ?? 0) + runResult.CacheCreationTokens;
-        answer.SecondOpinionDurationMs = (answer.SecondOpinionDurationMs ?? 0) + sw.ElapsedMilliseconds;
+        int opinionInputTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens;
+        int opinionOutputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
+        int opinionCacheReadTokens = runResult.CacheReadTokens;
+        int opinionCacheCreationTokens = runResult.CacheCreationTokens;
+        string? lastFinalText = runResult.FinalText;
 
         var parseResult = string.IsNullOrWhiteSpace(terminalError)
             ? BenchmarkAssessmentParser.ParsePerQuestion(runResult.FinalText, answer.AnswerText)
             : new PerQuestionAssessmentParseResult { Success = false, ErrorMessage = terminalError };
 
+        if ((!parseResult.Success || parseResult.Result == null) && string.IsNullOrWhiteSpace(terminalError) && retryEnabled)
+        {
+            _logger.LogWarning(
+                "Benchmark run {RunId} answer {OrderIndex}: second opinion output failed JSON parsing. Retrying once...",
+                run.Id, answer.OrderIndex);
+            runRequest.SeedHistory.Add(new { role = "assistant", content = runResult.FinalText ?? string.Empty });
+            runRequest.SeedHistory.Add(new { role = "user", content = $"Your previous response was not valid JSON or could not be parsed: {parseResult.ErrorMessage}. Please output ONLY the raw JSON object according to the schema without any markdown wrapping, code fences, or extra text." });
+
+            var retryResult = new AgentRunResult();
+            terminalError = await RunOpinionTurnAsync(retryResult);
+
+            opinionInputTokens += retryResult.TotalPromptTokens > 0 ? retryResult.TotalPromptTokens : retryResult.EstimatedInputTokens;
+            opinionOutputTokens += retryResult.OutputTokens > 0 ? retryResult.OutputTokens : retryResult.EstimatedOutputTokens;
+            opinionCacheReadTokens += retryResult.CacheReadTokens;
+            opinionCacheCreationTokens += retryResult.CacheCreationTokens;
+            if (!string.IsNullOrWhiteSpace(retryResult.FinalText))
+            {
+                lastFinalText = retryResult.FinalText;
+            }
+
+            parseResult = string.IsNullOrWhiteSpace(terminalError)
+                ? BenchmarkAssessmentParser.ParsePerQuestion(retryResult.FinalText, answer.AnswerText)
+                : new PerQuestionAssessmentParseResult { Success = false, ErrorMessage = terminalError };
+        }
+        sw.Stop();
+
+        // Second-opinion-side cost either way, so it is recorded even when the verdict is unusable.
+        answer.SecondOpinionInputTokens = (answer.SecondOpinionInputTokens ?? 0) + opinionInputTokens;
+        answer.SecondOpinionOutputTokens = (answer.SecondOpinionOutputTokens ?? 0) + opinionOutputTokens;
+        answer.SecondOpinionCacheReadTokens = (answer.SecondOpinionCacheReadTokens ?? 0) + opinionCacheReadTokens;
+        answer.SecondOpinionCacheCreationTokens = (answer.SecondOpinionCacheCreationTokens ?? 0) + opinionCacheCreationTokens;
+        answer.SecondOpinionDurationMs = (answer.SecondOpinionDurationMs ?? 0) + sw.ElapsedMilliseconds;
+
         if (!parseResult.Success || parseResult.Result == null)
         {
-            answer.SecondOpinionError = BenchmarkAssessmentFailure.Truncate(parseResult.ErrorMessage ?? terminalError);
+            string? failure = parseResult.ErrorMessage ?? terminalError;
+            answer.SecondOpinionError = BenchmarkAssessmentFailure.Truncate(AppendSecondOpinionRawHead(failure, lastFinalText));
             _logger.LogWarning(
                 "Benchmark run {RunId} answer {OrderIndex}: second opinion unavailable ({Error}). The first verdict stands.",
-                run.Id, answer.OrderIndex, parseResult.ErrorMessage ?? terminalError);
+                run.Id, answer.OrderIndex, failure);
             await db.SaveChangesAsync(CancellationToken.None);
             return;
         }
@@ -3468,17 +3514,49 @@ public class BenchmarkService
             await configService.RecordUsageAsync(
                 secondConfig.Id,
                 run.StartedByUserId,
-                runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens,
-                runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens,
+                opinionInputTokens,
+                opinionOutputTokens,
                 roleContext: 4,
-                cacheReadTokens: runResult.CacheReadTokens,
-                cacheCreationTokens: runResult.CacheCreationTokens,
+                cacheReadTokens: opinionCacheReadTokens,
+                cacheCreationTokens: opinionCacheCreationTokens,
                 totalDurationMs: (int)sw.ElapsedMilliseconds);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to record usage for second-opinion assessor call.");
         }
+    }
+
+    /// <summary>
+    /// Characters of the model's raw text kept in <c>SecondOpinionError</c> after an unusable verdict.
+    /// </summary>
+    internal const int SecondOpinionRawHeadChars = 600;
+
+    /// <summary>
+    /// Appends the head of the model's raw text, newlines collapsed, to a second-opinion failure
+    /// message. The message is shortened first when needed, so the head survives the column's
+    /// <see cref="BenchmarkAssessmentFailure.MaxErrorLength"/> cap.
+    /// </summary>
+    internal static string? AppendSecondOpinionRawHead(string? error, string? rawText)
+    {
+        if (string.IsNullOrWhiteSpace(rawText))
+        {
+            return error;
+        }
+
+        string collapsed = string.Join(" ", rawText.Split(
+            new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        string head = collapsed.Length > SecondOpinionRawHeadChars ? collapsed.Substring(0, SecondOpinionRawHeadChars) : collapsed;
+        string suffix = " | raw: " + head;
+
+        string prefix = error ?? string.Empty;
+        int room = BenchmarkAssessmentFailure.MaxErrorLength - suffix.Length;
+        if (prefix.Length > room)
+        {
+            prefix = prefix.Substring(0, Math.Max(0, room));
+        }
+
+        return prefix + suffix;
     }
 
     /// <summary>
