@@ -3352,32 +3352,26 @@
         </dl>
       }
 
-      <!-- Stage rail: four stages. Answering and assessing are one, because the executor
-           assesses each answer immediately after producing it inside the same loop; claim
-           verification, the second-opinion passes and the synthesis are strictly serial, and
-           the middle two occupy whole minutes in which no answer row changes. -->
+      <!-- Stage rail: three stages. Stage 1 is everything the answering loop does — answer,
+           assess, then check that answer's claims and take a second opinion on it. Stage 2 is
+           the serial tail of run-level passes that follows every answer being graded, and both
+           of the server's middle stages map to it because the server marks Verifying again
+           after the second-opinion pass; an item each would step the rail backwards. Which pass
+           is running is in the status line and the diagnostics. -->
       <ol class="run-stage-rail" aria-label="Run stages">
-        <li class="run-stage" [class.is-current]="runStage === 'answering'"
-            [class.is-done]="runStage === 'verifying' || runStage === 'secondopinion' || runStage === 'finalizing'"
-            [attr.aria-current]="runStage === 'answering' ? 'step' : null">
+        <li class="run-stage" [class.is-current]="runRailStage === 1" [class.is-done]="runRailStage > 1"
+            [attr.aria-current]="runRailStage === 1 ? 'step' : null">
           <span class="run-stage-index" aria-hidden="true">1</span>
-          <span class="run-stage-name">Collecting and assessing answers</span>
+          <span class="run-stage-name">Answering and grading</span>
         </li>
-        <li class="run-stage" [class.is-current]="runStage === 'verifying'"
-            [class.is-done]="runStage === 'secondopinion' || runStage === 'finalizing'"
-            [attr.aria-current]="runStage === 'verifying' ? 'step' : null">
+        <li class="run-stage" [class.is-current]="runRailStage === 2" [class.is-done]="runRailStage > 2"
+            [attr.aria-current]="runRailStage === 2 ? 'step' : null">
           <span class="run-stage-index" aria-hidden="true">2</span>
-          <span class="run-stage-name">Verifying claims</span>
+          <span class="run-stage-name">Follow-up grading passes</span>
         </li>
-        <li class="run-stage" [class.is-current]="runStage === 'secondopinion'"
-            [class.is-done]="runStage === 'finalizing'"
-            [attr.aria-current]="runStage === 'secondopinion' ? 'step' : null">
+        <li class="run-stage" [class.is-current]="runRailStage === 3"
+            [attr.aria-current]="runRailStage === 3 ? 'step' : null">
           <span class="run-stage-index" aria-hidden="true">3</span>
-          <span class="run-stage-name">Second opinion</span>
-        </li>
-        <li class="run-stage" [class.is-current]="runStage === 'finalizing'"
-            [attr.aria-current]="runStage === 'finalizing' ? 'step' : null">
-          <span class="run-stage-index" aria-hidden="true">4</span>
           <span class="run-stage-name">Synthesis and scoring</span>
         </li>
       </ol>
@@ -3407,26 +3401,6 @@
                     [value]="runScoredCount" [max]="runTotalQuestionCount"></progress>
         } @else {
           <progress id="runAssessmentsProgressBar" class="job-progress"></progress>
-        }
-      </div>
-
-      <div class="job-progress-block">
-        <label class="progress-label" for="runVerifiedProgressBar">Claims verified</label>
-        @if (runAnsweredCount > 0) {
-          <progress id="runVerifiedProgressBar" class="job-progress"
-                    [value]="runVerifiedCount" [max]="runAnsweredCount"></progress>
-        } @else {
-          <progress id="runVerifiedProgressBar" class="job-progress"></progress>
-        }
-      </div>
-
-      <div class="job-progress-block">
-        <label class="progress-label" for="runSecondOpinionProgressBar">Second opinions</label>
-        @if (runAnsweredCount > 0) {
-          <progress id="runSecondOpinionProgressBar" class="job-progress"
-                    [value]="runSecondOpinionCount" [max]="runAnsweredCount"></progress>
-        } @else {
-          <progress id="runSecondOpinionProgressBar" class="job-progress"></progress>
         }
         <!-- The dialog's only polling live region: one announcement per stage change. A second
              one would announce continuously for the length of the run. -->
@@ -3458,6 +3432,20 @@
           <dt>Cache creation</dt>
           <dd>{{ (activeRunDetail?.totalCacheCreationTokens ?? 0) | number }}</dd>
         </div>
+        <!-- Counts, not bars: only answers with unverified claims or a fired trigger are
+             candidates, so neither number has an honest maximum to fill against. -->
+        @if (runShowsClaimVerifierCounter) {
+          <div class="run-stat">
+            <dt>Claims verified</dt>
+            <dd>{{ runVerifiedCount | number }}@if (runVerifyingCount > 0) {<span class="run-stat-inflight"> · {{ runVerifyingCount }} in progress</span>}</dd>
+          </div>
+        }
+        @if (runShowsSecondOpinionCounter) {
+          <div class="run-stat">
+            <dt>Second opinions</dt>
+            <dd>{{ runSecondOpinionCount | number }}@if (runSecondOpinionInFlightCount > 0) {<span class="run-stat-inflight"> · {{ runSecondOpinionInFlightCount }} in progress</span>}</dd>
+          </div>
+        }
       </dl>
 
       <!--

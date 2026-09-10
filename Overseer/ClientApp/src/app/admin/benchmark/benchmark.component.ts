@@ -3064,18 +3064,22 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   // --- Run Progress Dialog ---
 
   /**
-   * Which of the run's four sequential stages is executing. `BenchmarkService` assesses each
-   * answer immediately after producing it, inside the same loop, in both the sequential and
-   * the parallel branch — so answering and assessing are one stage in wall-clock terms. The
-   * three that follow it are not: claim verification, the two second-opinion passes and the
-   * holistic synthesis run strictly one after another, and on a suite-6 run the middle two
-   * occupy roughly nine minutes in which the answer rows do not change at all.
+   * Which pass of the run is executing, named as the server names it. `BenchmarkService` answers
+   * a question, assesses it, then checks its claims and takes a second opinion on it, all inside
+   * the answering loop — so 'answering' covers far more than producing text. What follows every
+   * answer being graded is a serial tail of run-level passes: remaining claim checks, then the
+   * outlier sweep or the sample top-up, then remaining claim checks again, then the synthesis.
    *
-   * The server's own `stage` is preferred because that is the only thing that can tell the
-   * middle stages apart — nothing in the answer rows moves while they run. The derivation
-   * below is the fallback for a run this process is not executing, or a run detail fetched
-   * from a server predating the field, and it can only ever reach 'verifying' as a catch-all
-   * for the whole post-answering span.
+   * The rail built on this shows three stages, not five, because 'verifying' and 'secondopinion'
+   * are both part of that one tail and the server marks `Verifying` a second time after the
+   * second-opinion pass — a rail with an item each would step backwards. The pass name survives
+   * in `runStageLabel` and in the diagnostics, where a backwards step is information, not a bug.
+   *
+   * The server's own `stage` is preferred because that is the only thing that can tell the tail's
+   * passes apart — nothing in the answer rows moves while they run. The derivation below is the
+   * fallback for a run this process is not executing, or a run detail fetched from a server
+   * predating the field, and it can only ever reach 'finalizing' as a catch-all for the whole
+   * post-answering span.
    */
   get runStage(): 'answering' | 'verifying' | 'secondopinion' | 'finalizing' | 'terminal' {
     const run = this.activeRunDetail;
@@ -3093,6 +3097,20 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (run.answers.length < run.totalQuestionCount) return 'answering';
     if (run.answers.some(a => this.isAssessmentIncomplete(a))) return 'answering';
     return 'finalizing';
+  }
+
+  /**
+   * The rail item the run is on, or 0 for a terminal run, which highlights nothing. Both follow-up
+   * passes map to item 2 so the rail cannot move backwards when the server revisits `Verifying`.
+   */
+  get runRailStage(): 0 | 1 | 2 | 3 {
+    switch (this.runStage) {
+      case 'answering': return 1;
+      case 'verifying':
+      case 'secondopinion': return 2;
+      case 'finalizing': return 3;
+      default: return 0;
+    }
   }
 
   /** Answers the claim verifier is reading right now. */
@@ -3117,21 +3135,38 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       a => a.secondOpinionQualityScore != null || a.secondOpinionError != null).length;
   }
 
+  /**
+   * Whether the stat strip carries a "Claims verified" cell. The condition is the model strip's,
+   * so a run that names a claim verifier counts its work, and a run without one shows no cell
+   * rather than a zero that reads as a failure.
+   */
+  get runShowsClaimVerifierCounter(): boolean {
+    const run = this.activeRunDetail;
+    return !!(run?.claimVerifierDisplayNameUsed || run?.claimVerifierModelIdUsed);
+  }
+
+  /** Whether the stat strip carries a "Second opinions" cell; the model strip's condition. */
+  get runShowsSecondOpinionCounter(): boolean {
+    const run = this.activeRunDetail;
+    return !!(run?.secondOpinionAssessorModelDisplayNameUsed || run?.secondOpinionAssessorModelIdUsed)
+      && run?.secondOpinionModeUsed !== 0;
+  }
+
   get runStageLabel(): string {
     const run = this.activeRunDetail;
     if (!run) return '';
     const total = this.runTotalQuestionCount;
     switch (this.runStage) {
       case 'answering':
-        return `Stage 1 of 4 — Collecting and assessing answers. Answered ${this.runAnsweredCount} of ${total}, scored ${this.runScoredCount} of ${total}.`;
+        return `Stage 1 of 3 — Answering and grading. Answered ${this.runAnsweredCount} of ${total}, scored ${this.runScoredCount} of ${total}.`;
       case 'verifying':
-        // Carries a count so the label moves during the minutes the answer rows are static.
-        return `Stage 2 of 4 — Verifying claims. ${this.runVerifiedCount} of ${this.runAnsweredCount} answers checked.`;
+        // The label names the pass the rail's stage 2 cannot, and carries a count so it moves
+        // during the minutes the answer rows are static.
+        return `Stage 2 of 3 — Follow-up grading passes: verifying remaining claims. ${this.runVerifiedCount} claims verified so far.`;
       case 'secondopinion':
-        return `Stage 3 of 4 — Second opinion. ${this.runSecondOpinionCount} of ${this.runAnsweredCount} answers re-graded.`;
+        return `Stage 2 of 3 — Follow-up grading passes: second-opinion sweep. ${this.runSecondOpinionCount} second opinions so far.`;
       case 'finalizing':
-        // Verification is its own stage now, so this one is always the holistic pass.
-        return `Stage 4 of 4 — Synthesis and scoring. All ${total} answers assessed.`;
+        return `Stage 3 of 3 — Synthesis and scoring. All ${total} answers assessed.`;
       default: {
         const status = this.formatStatus(run.status);
         const label = status === 'CompletedWithErrors'
@@ -3343,11 +3378,12 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     } else {
       // --- RUN ---
       lines.push('--- RUN ---');
-      // The stage number, plus whether the server reported it or the client derived it — the
-      // derivation cannot see the two middle stages, so which of the two produced the figure
-      // changes how much it is worth.
+      // The rail's stage number, plus the pass the rail collapses away, plus whether the server
+      // reported it or the client derived it — the derivation cannot see the follow-up passes at
+      // all, so which of the two produced the figure changes how much it is worth.
       const stageNumbers: Record<string, string> = {
-        answering: '1 of 4', verifying: '2 of 4', secondopinion: '3 of 4', finalizing: '4 of 4'
+        answering: '1 of 3', verifying: '2 of 3 (verifying)',
+        secondopinion: '2 of 3 (second opinion)', finalizing: '3 of 3'
       };
       const stageStr = this.runStage === 'terminal'
         ? 'terminal'

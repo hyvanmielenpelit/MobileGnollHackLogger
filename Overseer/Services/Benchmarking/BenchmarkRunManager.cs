@@ -7,10 +7,14 @@ using System.Linq;
 using System.Threading;
 
 /// <summary>
-/// The run-level stage a run is executing. Answering and per-question assessment are one stage
-/// because they are pipelined — a question is assessed while the next one is answered — so no
-/// instant of the run belongs to only one of them. The three that follow are strictly serial and
-/// each occupies whole minutes of a run in which nothing else happens.
+/// The run-level stage a run is executing. <see cref="Answering"/> covers answering, per-question
+/// assessment, and the claim verification and second opinion that follow each assessment, because
+/// they are pipelined — a question is assessed, verified and second-guessed while the next one is
+/// answered — so no instant of the run belongs to only one of them. <see cref="Verifying"/> and
+/// <see cref="SecondOpinion"/> are the run-level follow-up passes that start only once every
+/// answer is graded; they catch what the per-answer path left, mainly contested verdicts and
+/// critical-error splits. <see cref="Verifying"/> is marked twice, before and after the
+/// second-opinion pass, so these values are not a monotonic sequence.
 /// </summary>
 public enum BenchmarkRunStage
 {

@@ -1341,6 +1341,12 @@ describe('AdminBenchmarkComponent', () => {
       expect(liveRegions.length).toBe(1);
       expect(liveRegions[0].classList.contains('progress-status')).toBeTrue();
       expect(liveRegions[0].getAttribute('aria-live')).toBe('polite');
+
+      // It moved into the Assessments block when the claims and second-opinion bars were
+      // replaced by counters; the dialog must not have gained a second one on the way.
+      const block = liveRegions[0].closest('.job-progress-block') as HTMLElement;
+      expect(block).toBeTruthy();
+      expect(block.querySelector('#runAssessmentsProgressBar')).toBeTruthy();
     });
 
     it('should hide the active run banner while the dialog is open', () => {
@@ -2279,9 +2285,9 @@ describe('AdminBenchmarkComponent', () => {
       expect(cancel!.querySelector('svg')).toBeNull();
     });
 
-    it('should present the run as four stages', () => {
-      // BenchmarkService assesses each answer immediately after producing it, inside the same
-      // loop, so "collecting" and "assessing" were never separate phases in wall-clock terms.
+    it('should present the run as three stages', () => {
+      // BenchmarkService assesses, verifies and second-guesses each answer immediately after
+      // producing it, inside the same loop, so stage 1 is all of that, not "collecting".
       component.activeRunDetail = buildCompletedRun({
         status: 'Running',
         totalQuestionCount: 2,
@@ -2289,7 +2295,7 @@ describe('AdminBenchmarkComponent', () => {
       });
 
       expect(component.runStage).toBe('finalizing');
-      expect(component.runStageLabel).toContain('Stage 4 of 4 — Synthesis and scoring');
+      expect(component.runStageLabel).toContain('Stage 3 of 3 — Synthesis and scoring');
 
       component.activeRunDetail = buildCompletedRun({
         status: 'Running',
@@ -2299,7 +2305,7 @@ describe('AdminBenchmarkComponent', () => {
 
       // An answer still awaiting assessment keeps the run in stage 1: the stage covers both.
       expect(component.runStage).toBe('answering');
-      expect(component.runStageLabel).toContain('Stage 1 of 4 — Collecting and assessing answers');
+      expect(component.runStageLabel).toContain('Stage 1 of 3 — Answering and grading');
     });
 
     it('should mark a dispatched question Answering and an undispatched one Pending', () => {
@@ -2342,7 +2348,7 @@ describe('AdminBenchmarkComponent', () => {
 
       const diagnostics = component.runDiagnosticsText;
 
-      expect(diagnostics).toContain('Stage: 1 of 4 (derived)');
+      expect(diagnostics).toContain('Stage: 1 of 3 (derived)');
       expect(diagnostics).toContain('In flight: Q2');
       expect(diagnostics).toContain('[Q2] status=Answering');
     });
@@ -2356,13 +2362,15 @@ describe('AdminBenchmarkComponent', () => {
         status: 'Running', totalQuestionCount: 2, stage: 'Verifying', answers
       });
       expect(component.runStage).toBe('verifying');
-      expect(component.runStageLabel).toContain('Stage 2 of 4 — Verifying claims');
+      expect(component.runStageLabel)
+        .toContain('Stage 2 of 3 — Follow-up grading passes: verifying remaining claims');
 
       component.activeRunDetail = buildCompletedRun({
         status: 'Running', totalQuestionCount: 2, stage: 'SecondOpinion', answers
       });
       expect(component.runStage).toBe('secondopinion');
-      expect(component.runStageLabel).toContain('Stage 3 of 4 — Second opinion');
+      expect(component.runStageLabel)
+        .toContain('Stage 2 of 3 — Follow-up grading passes: second-opinion sweep');
 
       component.activeRunDetail = buildCompletedRun({
         status: 'Running', totalQuestionCount: 2, stage: 'Answering', answers
@@ -2374,13 +2382,113 @@ describe('AdminBenchmarkComponent', () => {
         status: 'Running', totalQuestionCount: 2, answers
       });
       expect(component.runStage).toBe('finalizing');
-      expect(component.runDiagnosticsText).toContain('Stage: 4 of 4 (derived)');
+      expect(component.runDiagnosticsText).toContain('Stage: 3 of 3 (derived)');
 
       // A terminal run is terminal regardless of a stale stage.
       component.activeRunDetail = buildCompletedRun({
         status: 'Completed', totalQuestionCount: 2, stage: 'Verifying', answers
       });
       expect(component.runStage).toBe('terminal');
+    });
+
+    /**
+     * The rail, rendered once per state. Each case builds its own fixture render because this
+     * fixture only reflects a state change on its first detectChanges — the existing dialog tests
+     * rely on the component refreshing its own view for the same reason.
+     */
+    function railItems(stage: string): HTMLElement[] {
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running',
+        totalQuestionCount: 2,
+        stage,
+        answers: [buildScoredAnswer(1), buildScoredAnswer(2)]
+      });
+      fixture.detectChanges();
+      return Array.from(
+        fixture.nativeElement.querySelectorAll('.benchmark-run-progress-dialog .run-stage-rail .run-stage'));
+    }
+
+    it('should render three rail items and make stage 2 current while claims are verified', () => {
+      const items = railItems('Verifying');
+
+      expect(items.length).toBe(3);
+      expect(items[0].classList).toContain('is-done');
+      expect(items[1].classList).toContain('is-current');
+      expect(items[1].getAttribute('aria-current')).toBe('step');
+      expect(items[2].classList).not.toContain('is-current');
+      expect(items[2].getAttribute('aria-current')).toBeNull();
+    });
+
+    it('should keep the same rail item current during the second-opinion pass', () => {
+      // The server marks Verifying again after this pass, so the two sharing one item is what
+      // stops the rail stepping backwards late in a run.
+      const items = railItems('SecondOpinion');
+
+      expect(items.length).toBe(3);
+      expect(items[0].classList).toContain('is-done');
+      expect(items[1].classList).toContain('is-current');
+      expect(items[1].getAttribute('aria-current')).toBe('step');
+      expect(items[2].classList).not.toContain('is-current');
+    });
+
+    it('should mark both earlier rail items done during synthesis', () => {
+      const items = railItems('Synthesizing');
+
+      expect(items[0].classList).toContain('is-done');
+      expect(items[1].classList).toContain('is-done');
+      expect(items[1].classList).not.toContain('is-current');
+      expect(items[2].classList).toContain('is-current');
+      expect(items[2].getAttribute('aria-current')).toBe('step');
+    });
+
+    /** The text of the stat-strip cell with this term, or null when the run does not show one. */
+    function runStatText(label: string): string | null {
+      const cells: HTMLElement[] = Array.from(
+        fixture.nativeElement.querySelectorAll('.benchmark-run-progress-dialog .run-stat-strip .run-stat'));
+      const cell = cells.find(c => (c.querySelector('dt')?.textContent || '').trim() === label);
+      return cell ? (cell.querySelector('dd')?.textContent || '').trim() : null;
+    }
+
+    it('should show plain counters instead of bars for claims verified and second opinions', () => {
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running',
+        totalQuestionCount: 2,
+        stage: 'Answering',
+        claimVerifierDisplayNameUsed: 'Test Verifier',
+        secondOpinionAssessorModelDisplayNameUsed: 'Test Second Opinion',
+        secondOpinionModeUsed: 1,
+        inFlightVerificationOrderIndexes: [2],
+        answers: [
+          buildScoredAnswer(1, { claimVerificationJson: '{}' }),
+          buildScoredAnswer(2, { secondOpinionQualityScore: 70 })
+        ]
+      });
+      fixture.detectChanges();
+
+      // Only answers with unverified claims or a fired trigger are candidates, so a bar against
+      // the answered count has no honest maximum. The counts replace both bars outright.
+      const dialog = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog') as HTMLElement;
+      expect(dialog.querySelector('#runVerifiedProgressBar')).toBeNull();
+      expect(dialog.querySelector('#runSecondOpinionProgressBar')).toBeNull();
+      expect(dialog.querySelector('#runAnswersProgressBar')).toBeTruthy();
+      expect(dialog.querySelector('#runAssessmentsProgressBar')).toBeTruthy();
+
+      expect(runStatText('Claims verified')).toBe('1 · 1 in progress');
+      expect(runStatText('Second opinions')).toBe('1');
+    });
+
+    it('should show neither counter for a run graded by neither role', () => {
+      // Not two zeroes: a run that configured no verifier did not fail to verify anything.
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running',
+        totalQuestionCount: 2,
+        stage: 'Answering',
+        answers: [buildScoredAnswer(1), buildScoredAnswer(2)]
+      });
+      fixture.detectChanges();
+
+      expect(runStatText('Claims verified')).toBeNull();
+      expect(runStatText('Second opinions')).toBeNull();
     });
 
     it('should chip a re-graded row as Verifying or Second opinion rather than Scored', () => {

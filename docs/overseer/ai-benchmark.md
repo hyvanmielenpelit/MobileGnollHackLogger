@@ -26,18 +26,29 @@ Starting a run opens a modal progress dialog, reachable again at any time from t
 
 The dialog header carries the run number, the suite and the scoring profile. The two models are **not** in the header: they appear directly below it in a badge strip, badged exactly as the model selectors in the AI Benchmark tab badge them — thinking level, reasoning mode, provider, requested service tier, and parallel tool calls — so the configuration under test is legible without opening the report.
 
-It presents the run as the **two** sequential stages the executor actually performs:
+It presents the run as **three** stages, which is how `BenchmarkService.ExecuteRunAsync` (and `RunFailedQuestionsAsync` for a re-run) actually sequences the work:
 
-1. **Collecting and assessing answers** — every question is answered, in parallel up to `MaxParallelQuestionsUsed`, and each answer is assessed immediately after it is produced.
-2. **Synthesis and scoring** — the holistic report and final indices are produced.
+1. **Answering and grading** — every question is answered, in parallel up to `MaxParallelQuestionsUsed`, and each answer is then assessed, its unverified claims checked, and a second opinion taken on it, all before the loop moves on. Most claim checks and most second opinions of a run happen here, not later.
+2. **Follow-up grading passes** — once every answer is graded, a serial tail runs: the remaining claim checks (mainly contested verdicts and critical-error splits), then the outlier sweep or the sample top-up in the modes that have one, then the remaining claim checks again for any split the sweep created.
+3. **Synthesis and scoring** — the holistic report and final indices are produced.
 
-This is one stage, not two, because `BenchmarkService.RunAsync` pipelines the per-question assessment behind each answer inside the same loop, in both the sequential and the parallel branch. (The one exception is a credential collision between the candidate and assessor configurations, which serialises the assessments behind all the answering; that still falls inside stage 1.) The stage is derived client-side from `BenchmarkRunDetailDto`: stage 1 holds while any answer is missing **or** any `AssessmentStatus` is not terminal. Two determinate progress bars — Answers and Assessments — stay visible in both stages, so a full Answers bar during assessment does not read as a hang.
+Stage 1 is one stage and not three because the executor pipelines assessment, verification and the second opinion behind each answer inside the same loop, in both the sequential and the parallel branch, so no instant of it belongs to only one of them. (The one exception is a credential collision between the candidate and assessor configurations, which serialises the assessments behind all the answering; that still falls inside stage 1.) Stage 2 is one rail item and not two because the server marks `Verifying` **twice** — before and after the second-opinion pass — so an item per pass would step the rail backwards near the end of a run. In `Flagged` mode with no contested verdicts the tail makes no model call at all and stage 2 may be visible for a single poll or none; that is truthful, and stage 1's counters already carried the work.
 
-The per-question list merges the suite's questions (fetched once when the dialog opens) with the run's answers, and distinguishes three pre-answer states:
+The stage comes from the server's `BenchmarkRunDetailDto.Stage` whenever there is one, because nothing in the answer rows moves during the tail and no client-side derivation can see it. The derivation is the fallback for a run this process is not executing, or a detail from a server predating the field, and it can only reach stage 1 or stage 3. **Diagnostics** name the pass the rail collapses away: `Stage: 2 of 3 (verifying)` or `2 of 3 (second opinion)`, and `(server)` or `(derived)` for its source. Two determinate progress bars — Answers and Assessments — stay visible throughout, so a full Answers bar during grading does not read as a hang.
+
+The per-question list merges the suite's questions (fetched once when the dialog opens) with the run's answers, and distinguishes five states:
 
 - **Pending** — the question has not been dispatched.
 - **Answering** — the request has been sent to the provider and no reply has arrived yet.
 - **Answered / Scored** — an answer row exists.
+- **Verifying** — the claim verifier is re-reading a row that already carries a score.
+- **Second opinion** — the second-opinion assessor is re-grading such a row.
+
+The last two appear **inside stage 1** as well as during the follow-up passes, because that is where most of that work happens. Both come from in-flight sets that the wrapper methods `VerifyAnswerClaimsAsync` and `RunSecondOpinionAsync` set and clear in a `finally`, so every caller marks the row and a throw or a cancel cannot leave it pulsing.
+
+**Claims verified** and **Second opinions** are plain counts in the statistics strip, not progress bars, and each appears only when the run configured that role. Neither has an honest maximum: only an answer whose assessor listed unverified claims is a verification candidate, and only an answer whose trigger fired is a second-opinion candidate, so a bar drawn against the answered count either sits full or never fills. A `· N in progress` suffix shows the in-flight count while the role is reading a row.
+
+The dialog has exactly **one** polling live region — the status line under the Assessments bar, which announces the stage. A second one would announce continuously for the length of the run.
 
 `BenchmarkService` creates a `BenchmarkRunAnswer` only after the model replies, so in-flight state is not derivable from the answers alone: it comes from `BenchmarkRunManager`, which records the order indexes currently in flight (`MarkQuestionInFlight` before the provider request, cleared in a `finally`) and exposes them as `BenchmarkRunDetailDto.InFlightOrderIndexes`. The list is empty for any run that is not the current, still-running one, so a completed run or a restarted server reports nothing rather than stale state.
 
@@ -842,7 +853,8 @@ re-run all change what a report — or a comparison across the boundary — mean
   the second-opinion pass runs, which on one measured run held for nine of the run's nineteen
   minutes. The state is in-process only — `BenchmarkRunManager` keeps no server-side log of it — so
   a run whose process restarts mid-flight reports no stage, the same as every other in-flight
-  signal this dialog already falls back on.
+  signal this dialog already falls back on. The **dialog** later stopped rendering these five
+  values as four rail items — see the 2026-09-10 round below — while the enum itself is unchanged.
 - **Tool result-budget parity.** `WikiSearchTool.MaxResultLengthOverride` is now `13000`, because
   the tool's own budget — `Tools:wiki_search:MaxResults` × `PerResultChars`, 5 × 2,500 = 12,500 —
   exceeded the generic 10,000-character cap (`Benchmark:MaxResultLength`), so a full-yield search
@@ -871,6 +883,41 @@ re-run all change what a report — or a comparison across the boundary — mean
   below Tier B** (`instrument > 1` in the resolver). The first run stamped 18 therefore differs from
   a run stamped 17 on three instrument keys at once and is **not** a Tier-B reproduction of it:
   compare the two on counts and per-question thresholds, not on the index.
+
+### Run Progress Dialog Round (2026-09-10) — No Version Bump
+
+The four-stage rail introduced with harness 18 described a pipeline the executor does not run.
+`BenchmarkAssessmentPrompt.HarnessVersion` stays at `"18"` and `ScoringMethodVersion` stays at
+**10**: nothing a run records, sends or scores changed here. What changed is when one transient
+in-process mark is set, and what the dialog draws.
+
+Three defects, all from the same mismatch:
+
+- **A scored row went on reading as finished while the verifier re-read it.** `RunSecondOpinionAsync`
+  had always set its in-flight mark for every caller, but the verification mark was set only inside
+  the run-level loop in `RunClaimVerificationAsync`; the per-answer call in
+  `ExecutePerQuestionAssessmentAsync` reached `VerifyAnswerClaimsAsync` directly and marked nothing.
+  With `MaxParallelQuestions = 1` the next question is not dispatched until the current one's
+  assessment, verification and second opinion have all returned, so the visible result was a scored
+  row, a **Pending** row, and no explanation for the gap between them.
+  `VerifyAnswerClaimsAsync` is now a wrapper that sets and clears the mark in a `finally` around
+  `VerifyAnswerClaimsCoreAsync`, exactly as the second-opinion path does, and the run-level loop no
+  longer marks anything of its own.
+- **The rail moved backwards.** It mapped `BenchmarkRunStage` one-to-one, and the server marks
+  `Verifying` → `SecondOpinion` → `Verifying` → `Synthesizing`, so stage 3 lost its done state late
+  in every run. The two middle values now share one rail item, "Follow-up grading passes", and the
+  status line and diagnostics name which pass is running. The enum is untouched — it still names the
+  pass precisely, which is what the status line and the diagnostics need.
+- **Two progress bars had no honest maximum.** "Claims verified" and "Second opinions" both drew
+  against the answered count, though only a candidate answer is ever verified or re-graded, so they
+  sat full or empty rather than measuring anything. They are counts in the statistics strip now,
+  each shown only when its role is configured.
+
+The dialog's single live region moved into the Assessments block along with the bars it used to
+follow. Not changed, and deliberately: the stage stays in-process only, the executor's ordering is
+untouched (sequential mode still waits for the full grade of question *n* before dispatching *n*+1 —
+this round makes that wait legible, it does not remove it), and the multi-run progress dialog's rail
+describes series stages rather than run stages and keeps its own.
 
 ### Multi-Run Replicate Sets (Harness Version 14)
 

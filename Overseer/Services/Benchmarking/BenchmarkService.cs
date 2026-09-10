@@ -2098,19 +2098,8 @@ public class BenchmarkService
 
             suiteQuestions.TryGetValue(answer.OrderIndex, out var expectedPoints);
 
-            // The row already carries a score, so without this mark the dialog shows it as finished
-            // for the whole time the verifier is re-reading it. Cleared in the finally so a throw or
-            // a cancel cannot leave it pulsing forever.
-            _runManager.MarkVerificationInFlight(run.Id, answer.OrderIndex);
-            try
-            {
-                await VerifyAnswerClaimsAsync(
-                    db, configService, run, answer, verifierConfig, verifierApiKey, expectedPoints, cancellationToken);
-            }
-            finally
-            {
-                _runManager.ClearVerificationInFlight(run.Id, answer.OrderIndex);
-            }
+            await VerifyAnswerClaimsAsync(
+                db, configService, run, answer, verifierConfig, verifierApiKey, expectedPoints, cancellationToken);
 
             if (tokenBudget > 0)
             {
@@ -2149,7 +2138,37 @@ public class BenchmarkService
     /// </summary>
     internal const string ClaimVerificationNotCheckedPrefix = "NotChecked:";
 
+    /// <summary>
+    /// Checks one answer's unverified claims with the run's claim verifier and records the verdict.
+    ///
+    /// The in-flight mark is set here rather than in the core below so every caller — the per-answer
+    /// path that follows each assessment and the run-level follow-up pass — reports the row as being
+    /// re-read rather than finished, and the <c>finally</c> is what keeps a throw or a cancel from
+    /// leaving it that way.
+    /// </summary>
     internal async Task VerifyAnswerClaimsAsync(
+        ApplicationDbContext db,
+        SystemAiConfigService configService,
+        BenchmarkRun run,
+        BenchmarkRunAnswer answer,
+        SystemAiApiConfiguration verifierConfig,
+        string verifierApiKey,
+        string? expectedPoints,
+        CancellationToken cancellationToken)
+    {
+        _runManager.MarkVerificationInFlight(run.Id, answer.OrderIndex);
+        try
+        {
+            await VerifyAnswerClaimsCoreAsync(
+                db, configService, run, answer, verifierConfig, verifierApiKey, expectedPoints, cancellationToken);
+        }
+        finally
+        {
+            _runManager.ClearVerificationInFlight(run.Id, answer.OrderIndex);
+        }
+    }
+
+    private async Task VerifyAnswerClaimsCoreAsync(
         ApplicationDbContext db,
         SystemAiConfigService configService,
         BenchmarkRun run,

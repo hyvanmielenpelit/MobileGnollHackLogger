@@ -2211,8 +2211,9 @@
   white-space: nowrap;
 }
 
-/* The run's two sequential stages. A single answered/total bar would fill to 100% and then
-   sit motionless through the synthesis, which reads as a hang, so both bars stay visible. */
+/* The run's three stages. The server's Verifying and SecondOpinion share the middle item
+   because they are two passes of one serial tail and the server marks Verifying again after
+   the second-opinion pass — one item each would step the rail backwards. */
 .run-stage-rail {
   list-style: none;
   display: flex;
@@ -2300,6 +2301,13 @@
       color: #ddd;
       overflow: hidden;
       text-overflow: ellipsis;
+
+      /* Secondary to the count it follows, so the number stays the thing being read. */
+      .run-stat-inflight {
+        font-family: inherit;
+        font-size: 11px;
+        color: #aaa;
+      }
     }
   }
 }
