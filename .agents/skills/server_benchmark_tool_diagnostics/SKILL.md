@@ -130,6 +130,48 @@ A sixth pattern, and it is a *population* signal rather than a per-call verdict:
 
 ---
 
+**The wiki family's miss payloads changed under harness 18, and both forms must stay diagnosable.**
+Up to harness 17 they were bare, exactly as `source_code_search`'s was before the run-28 round, and a
+run recorded then must still be readable:
+
+| Tool | Payload up to harness 17 | Length |
+|---|---|---|
+| `wiki_search` | `No relevant information found in the GnollHack wiki.` (`WikiSearchTool.cs:75`) | **52** |
+| `wiki_view` | `Wiki article matching '{article}' not found.` (`WikiViewTool.cs:61`) | **35 + the article name** |
+| `nethack_wiki_search` | `No relevant information found in the NetHack wiki.` | **50** |
+| `monster_lookup` | `No information found for monster: {name}` | **34 + the name** |
+| `item_lookup` | `No information found for item: {name}` | **31 + the name** |
+
+**From harness 18 each is a near-miss report of a few hundred characters**, built the way
+`SourceCodeSearchTool.BuildMissContent` builds its own, and matched on its opening rather than on any
+length:
+
+| Tool | Opening to match | What the payload adds |
+|---|---|---|
+| `wiki_search` | `No GnollHack wiki article matched '` | whether a `category` was set and — the high-value hint — whether the same query matches **without** it, because `category` compiles to a wildcard against the indexed file's filesystem **path** and not a taxonomy field; otherwise which individual terms of the query do have articles; then a next action naming `wiki_view` or `nethack_wiki_search` |
+| `wiki_view` | `No wiki article matched '` for an article miss, or `Article matching '` for a **section** miss | the two are deliberately different payloads. A section that no heading matches previously returned the bare `--- filename ---` header with nothing after it, which the tool reported as a success; it is now a miss that says the article resolved and the heading did not, and to re-call without the section |
+| `monster_lookup`, `item_lookup` | `No GnollHack wiki article matched the monster '` / `… the item '` | that **both** the category path filter and the unfiltered fallback missed — both tools try the filter first and retry without it — plus which words matched, then a next action naming `get_monster_stats` / `get_item_stats` |
+
+Every probe swallows its own exceptions and any `Error:`-prefixed content into "no hit", so a miss can
+never itself fail, and each payload is deliberately kept to a few hundred characters: **every tool
+result is re-sent to the model on each subsequent round of the same question**, so a verbose miss is
+paid once per remaining round.
+
+**A provider transport failure now lands in the transport-defect bucket, from harness 18.** Under 17
+and earlier a `Failed` or `ProviderError` answer fell through `BenchmarkRunFinalizer.Classify` into
+**Clean**, so a run that lost a question to a TCP connect timeout reported itself *"Clean 18 of 18"* —
+which is what run 29 did on Q8. From 18, `HasTerminalFailure` puts it in **TransportDefect** and the
+provider-error count agrees with the bucket. Two consequences for reading a run:
+
+- **A 17-stamped run's clean count is not comparable with an 18-stamped one's.** Run 29's own
+  *"Clean 18 of 18"* is *"Clean 17 of 18, Transport Defects 1"* under 18. Read the harness version
+  before reading a clean count as a quality signal.
+- **The classification is now made from the exception type, not from its message.** Run 29's Q8 was
+  missed because `BenchmarkProviderErrorClassifier` matched substrings against a Windows English
+  operating-system string; `SocketException.SocketErrorCode` and the exception chain do not vary with
+  the machine's display language. A run recorded before 18 on a non-English host may therefore carry
+  a `Failed` answer that was in truth a provider error, and nothing repairs those rows.
+
 ## 5. Telling "No Access" from "No Data"
 
 The cold-start case is handled and visible: while a service is still indexing, each guarded tool returns `Success = false` with a `ToolGuardMessages.*` string, and `ToolBatchRunner` feeds that message back to the model as the tool result — so the model can and does paraphrase it into the answer. The tool→service→guard map and the cold/warm state matrix are **owned by [`background_indexing_architecture`](../background_indexing_architecture/SKILL.md) § 3**; read them there.

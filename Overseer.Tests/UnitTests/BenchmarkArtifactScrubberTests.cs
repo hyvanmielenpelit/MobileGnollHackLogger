@@ -743,4 +743,79 @@ public class BenchmarkArtifactScrubberTests
 
         Assert.StartsWith("### Prayer timeout", result.AnswerText);
     }
+
+    // ---------------------------------------------------------------------------------------
+    // HasAnswerFramingOpener — a claim-of-sufficiency detector. Detection only: nothing here is
+    // in Strip's removal set, since removing it would replace the very text the assessor grades.
+    // Positives verbatim from the run-29 GPT benchmark.
+    // ---------------------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("I now have all the pieces I need to give a complete answer.")]
+    [InlineData("This has clear answer already. Let me give it directly.")]
+    [InlineData("Now I have a clear picture of the full pipeline.")]
+    [InlineData("I now have the pieces I need to answer this.")]
+    public void HasAnswerFramingOpener_DetectsRun29Openers(string answer)
+    {
+        Assert.True(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
+    }
+
+    [Theory]
+    [InlineData("I will explain how prayer timeout works.")]
+    [InlineData("Let me explain the two checks in src/zap.c.")]
+    [InlineData("This is a clear-cut case of the monster resisting.")]
+    public void HasAnswerFramingOpener_DoesNotFireOnOrdinaryProse(string answer)
+    {
+        Assert.False(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("   ")]
+    public void HasAnswerFramingOpener_NullOrWhitespace_IsFalse(string? answer)
+    {
+        Assert.False(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
+    }
+
+    [Fact]
+    public void HasAnswerFramingOpener_DoesNotDoubleCountWhatNarrationSignatureAlreadyClaims()
+    {
+        // The prayer-timeout Luna answer (see Q5_UnrecognisedNarrationOpener... above) is already
+        // matched by NarrationSignatureRegex. The two regexes partition the verb-then-article
+        // space rather than both claiming part of it: NarrationSignatureRegex claims "I found/
+        // have/need/located/confirmed the" with the verb immediately after the pronoun, and
+        // AnswerFramingRegex's no-adverb branch deliberately excludes "the" from its article list
+        // so it never re-claims the same text.
+        const string opener =
+            "I found the relevant implementation; the remaining detail is the randomized duration.";
+
+        Assert.False(BenchmarkArtifactScrubber.HasAnswerFramingOpener(opener));
+
+        // The narration path does claim it: fed as a standalone leading paragraph, it is stripped
+        // out and flagged as reasoning bleed — proof that NarrationSignatureRegex, not
+        // AnswerFramingRegex, is what recognises this text.
+        string raw = opener + "\n\n" +
+            "GnollHack uses a turn-based prayer countdown, not a fixed real-time cooldown.";
+
+        var result = Scrubber.Scrub(raw);
+
+        Assert.DoesNotContain("I found the relevant implementation", result.AnswerText);
+        Assert.True(result.Flags.HasFlag(BenchmarkAnswerFlags.ReasoningBleed));
+        Assert.Equal(1, result.NarrationBlockCount);
+    }
+
+    [Theory]
+    [InlineData("I now have all the pieces I need to give a complete answer.")]
+    [InlineData("This has clear answer already. Let me give it directly.")]
+    [InlineData("Now I have a clear picture of the full pipeline.")]
+    public void Scrub_LeavesAnAnswerFramingOpenerUntouched(string answer)
+    {
+        // Detection only: Strip's removal set was deliberately not touched, so Scrub must hand
+        // this text back byte-for-byte. A later change wiring the detector into removal would
+        // replace the very text the assessor grades — a scoring-method change this test exists to
+        // catch.
+        var result = Scrubber.Scrub(answer);
+
+        Assert.Equal(answer, result.AnswerText);
+    }
 }

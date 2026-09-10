@@ -199,8 +199,32 @@ public static class BenchmarkAssessmentPrompt
     ///     are directly comparable and ScoringMethodVersion does not move. Rows exist from this
     ///     version onward only and no backfill is possible, so on a run stamped 16 or earlier an
     ///     answer with no rows means "not recorded", never "this answer called no tools".
+    /// v18: harness integrity and observability. A provider transport failure is classified from the
+    ///     exception type rather than from an operating-system message in the machine's display
+    ///     language, and a Failed or ProviderError answer lands in the transport-defect bucket rather
+    ///     than in Clean — so a run that lost a question no longer reports itself 100 % clean. No
+    ///     advisory grading role is spent on an answer the quality index excludes, and the
+    ///     grader-agreement aggregates are over that same population, so a dead question can no
+    ///     longer consume a second opinion and then contaminate the agreement figure. One
+    ///     gradeable-answer denominator is used everywhere a report or a diagnostics capture says
+    ///     "answered question(s)". Two advisory flags are added and counted:
+    ///     OutOfRubricAccuracyDeduction, from the prompted "Not in rubric:" marker that nothing
+    ///     previously consumed, which also becomes a second-opinion trigger; and AnswerFramingOpener,
+    ///     which is detected and counted only — the text is deliberately not removed, because
+    ///     scrubbing it would change what the assessor grades. A non-gradeable answer no longer
+    ///     publishes a speed score. A failed-question re-run records its own instrument fingerprints
+    ///     and its own wall clock in four new columns instead of overwriting the run's, fails safe to
+    ///     Canceled or Failed instead of leaving the row Running forever, and executes the same
+    ///     run-level stage sequence as the run it repairs. Nothing the candidate model sees changed by
+    ///     these, so ScoringMethodVersion does not move — but this version also raises
+    ///     wiki_search's own result cap, gives nethack_wiki_search the per-result cap it lacked, and
+    ///     rewrites the wiki family's miss payloads and two tool guides, which moves
+    ///     ToolGuidesSha256 and CandidateSystemPromptSha256. A run stamped 18 therefore differs from a
+    ///     run stamped 17 on three instrument keys, which is below Tier B: compare the two on counts
+    ///     and per-question thresholds, not as a reproduction pair. The six new columns are additive
+    ///     and read as "not recorded" on any earlier run, never as zero.
     /// </summary>
-    public const string HarnessVersion = "17";
+    public const string HarnessVersion = "18";
 
     public static string BuildPerQuestionPrompt(
         string suiteName,

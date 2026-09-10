@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -54,12 +57,14 @@ namespace Overseer.Services.Tools
                 return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing article parameter" });
             }
 
-            string? content = _wikiService.GetArticle(article, section);
+            string? fetched = _wikiService.GetArticle(article, section);
 
-            if (string.IsNullOrWhiteSpace(content))
+            if (IsEmptyArticle(fetched))
             {
-                return Task.FromResult(new ToolResult { Success = true, Content = $"Wiki article matching '{article}' not found." });
+                return Task.FromResult(new ToolResult { Success = true, Content = BuildMissContent(article, section) });
             }
+
+            string content = fetched!;
 
             if (context.SpoilerFreeMode)
             {
@@ -67,6 +72,82 @@ namespace Overseer.Services.Tools
             }
 
             return Task.FromResult(new ToolResult { Success = true, Content = content });
+        }
+
+        private const int ProbeMaxResults = 3;
+        private const int ProbeMaxChars = 200;
+
+        /// <summary>
+        /// A result carrying nothing but the <c>--- filename ---</c> header, which is an article
+        /// whose body is empty. A section no heading matches does <b>not</b> reach here:
+        /// <see cref="WikiService.GetArticle"/> answers that case itself with an explanatory
+        /// <c>[Section '…' not found in article. Returning full text.]</c> line followed by the whole
+        /// article, which tells the model what happened and still gives it the content.
+        /// </summary>
+        private static bool IsEmptyArticle(string? content)
+        {
+            if (string.IsNullOrWhiteSpace(content)) return true;
+
+            int newline = content.IndexOf('\n');
+            return newline >= 0 && string.IsNullOrWhiteSpace(content.Substring(newline + 1));
+        }
+
+        /// <summary>
+        /// Builds a miss message that points at a next action instead of a bare "not found":
+        /// which nearby articles the index does hold, and which tool to reach for next. Never
+        /// throws — falls back to a plain miss message. Kept to a few hundred characters: every
+        /// tool result is re-sent to the model on each subsequent round of the same question.
+        /// </summary>
+        internal string BuildMissContent(string article, string? section)
+        {
+            try
+            {
+                var sb = new System.Text.StringBuilder();
+                sb.Append("No wiki article matched '").Append(article).Append('\'');
+
+                if (!string.IsNullOrWhiteSpace(section))
+                {
+                    // It was the article that missed, not the heading: a heading that matches
+                    // nothing returns the whole article instead, so re-spelling the section is
+                    // not the recovery here.
+                    sb.Append(" (the article itself, so section='").Append(section).Append("' was never reached)");
+                }
+
+                var near = SafeProbe(article);
+                sb.Append(near.Count > 0
+                    ? $". The index does hold {string.Join(", ", near)}"
+                    : ". No article with a similar title is indexed either");
+
+                sb.Append(". wiki_view matches on title and filename only — use wiki_search to find an article by its content, or nethack_wiki_view for a NetHack article.");
+                return sb.ToString();
+            }
+            catch
+            {
+                return $"Wiki article matching '{article}' not found.";
+            }
+        }
+
+        /// <summary>
+        /// Runs one bounded near-title probe through the same index and returns the article
+        /// filenames it hit. Swallows its own failures into "no hit", so a miss can never itself
+        /// fail.
+        /// </summary>
+        private List<string> SafeProbe(string probeQuery)
+        {
+            try
+            {
+                return _wikiService
+                    .GetRelevantSnippets(probeQuery, null, ProbeMaxResults, ProbeMaxChars)
+                    .Select(snippet => Regex.Match(snippet, @"^---\s*(.+?)\s*---"))
+                    .Where(m => m.Success)
+                    .Select(m => m.Groups[1].Value)
+                    .Take(ProbeMaxResults)
+                    .ToList();
+            }
+            catch
+            {
+                return new List<string>();
+            }
         }
     }
 }

@@ -2298,6 +2298,8 @@ public class AdminBenchmarkController : ControllerBase
             UnevidencedDeductionAnswerCount = run.UnevidencedDeductionAnswerCount,
             OmissionAsAccuracyAnswerCount = run.OmissionAsAccuracyAnswerCount,
             RefutedClaimAnswerCount = run.RefutedClaimAnswerCount,
+            OutOfRubricAccuracyAnswerCount = run.OutOfRubricAccuracyAnswerCount,
+            AnswerFramingOpenerAnswerCount = run.AnswerFramingOpenerAnswerCount,
             CompletenessOutOfScopeCount = run.Answers.Count(a => a.CompletenessOutOfScope),
             ReadabilityFormOnlyCount = run.Answers.Count(a => a.ReadabilityFormOnly),
             ClaimVerifiedAnswerCount = run.ClaimVerifiedAnswerCount,
@@ -2388,6 +2390,14 @@ public class AdminBenchmarkController : ControllerBase
 
             // Empty unless this is the run currently executing in this process.
             InFlightOrderIndexes = _runManager.GetInFlightQuestions(run.Id).ToList(),
+            InFlightVerificationOrderIndexes = _runManager.GetInFlightVerification(run.Id).ToList(),
+            InFlightSecondOpinionOrderIndexes = _runManager.GetInFlightSecondOpinion(run.Id).ToList(),
+            Stage = _runManager.GetStage(run.Id)?.ToString(),
+
+            RerunCandidateSystemPromptSha256 = run.RerunCandidateSystemPromptSha256,
+            RerunToolGuidesSha256 = run.RerunToolGuidesSha256,
+            RerunStartedAtUtc = run.RerunStartedAtUtc,
+            RerunCompletedAtUtc = run.RerunCompletedAtUtc,
 
             Answers = run.Answers.OrderBy(a => a.OrderIndex).Select(a =>
             {
@@ -3229,6 +3239,11 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(BenchmarkService.AbortedRunRefusal);
         }
 
+        // A row still reading Running past the CurrentRunId check above is orphaned — the same
+        // condition CancelRun detects from TryCancel returning false — and it is accepted here
+        // deliberately, because a re-run is the one action that repairs such a row rather than
+        // ending it. Cancelling it first sets Canceled, which the refusal above then makes
+        // permanent.
         bool hasFailures = run.Answers.Any(a => a.Status == BenchmarkAnswerStatus.ProviderError || a.Status == BenchmarkAnswerStatus.Failed);
         if (!hasFailures)
         {

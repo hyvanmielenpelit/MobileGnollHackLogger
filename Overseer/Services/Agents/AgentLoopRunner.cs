@@ -486,7 +486,8 @@ public class AgentLoopRunner
                     .GetElapsedTime(batchStartTimestamp).TotalMilliseconds;
 
                 int budgetChars = _configuration.GetValue<int>("ToolExecutionLimits:MaxBatchResultLength", 40000);
-                var batchBudget = new ToolBatchResultBudget(Math.Max(budgetChars, execContext.MaxResultLength));
+                int batchBudgetChars = Math.Max(budgetChars, execContext.MaxResultLength);
+                var batchBudget = new ToolBatchResultBudget(batchBudgetChars);
 
                 var providerResults = new List<ProviderToolResult>(outcomes.Count);
                 bool budgetNoticeEmittedThisIteration = false;
@@ -499,9 +500,14 @@ public class AgentLoopRunner
                         result.ToolCallsBlocked++;
                     }
 
+                    // The exemption exists so a handler override larger than the batch budget is not
+                    // defeated by it — refresh_snapshot's 60200 against a 40000 budget. Compared
+                    // against the batch budget rather than the per-tool cap, so an override that
+                    // fits inside the batch budget stays accountable to it: measured against
+                    // MaxResultLength alone, every override exempted its tool outright.
                     bool exemptFromBatchBudget =
                         _toolExecutor.GetEffectiveMaxResultLength(outcome.ToolName, execContext.MaxResultLength)
-                            > execContext.MaxResultLength;
+                            > batchBudgetChars;
 
                     string finalContent = exemptFromBatchBudget ? outcome.Content : batchBudget.Apply(outcome.Content);
 

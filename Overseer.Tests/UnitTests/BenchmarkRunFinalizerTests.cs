@@ -754,4 +754,196 @@ public class BenchmarkRunFinalizerTests
         Assert.NotNull(run.QualityIndexStandardError);
         Assert.True(run.QualityIndexStandardError > 0);
     }
+
+    // --- Terminal failures as transport defects (run-29) ---
+
+    [Theory]
+    [InlineData(BenchmarkAnswerStatus.Failed)]
+    [InlineData(BenchmarkAnswerStatus.ProviderError)]
+    public void FailedOrProviderError_ClassifyAsTransportDefect_ThroughHasTerminalFailure(BenchmarkAnswerStatus status)
+    {
+        // Before HasTerminalFailure existed, neither status matched any bucket check and both
+        // fell through to Clean, which let a run with a dead question report itself 100% clean.
+        var answer = MakeAnswer(1, status: status);
+
+        Assert.True(BenchmarkRunFinalizer.HasTerminalFailure(answer));
+        Assert.True(BenchmarkRunFinalizer.HasTransportDefect(answer));
+        Assert.Equal(BenchmarkAnswerIntegrity.TransportDefect, BenchmarkRunFinalizer.Classify(answer));
+    }
+
+    [Fact]
+    public void IntegrityBuckets_WithTerminalFailures_StillSumToTheAnswerCount()
+    {
+        var failed = MakeAnswer(1, status: BenchmarkAnswerStatus.Failed);
+        var providerError = MakeAnswer(2, status: BenchmarkAnswerStatus.ProviderError);
+        var unanswered = MakeUnansweredAnswer(3);
+        unanswered.ProviderFinishReason = "end_turn";
+        var recovered = MakeAnswer(4, BenchmarkAnswerFlags.HarnessArtifacts);
+        var budgetExhausted = MakeAnswer(5, budgetExhausted: true);
+        var clean = MakeAnswer(6);
+
+        var answers = new List<BenchmarkRunAnswer>
+        {
+            failed, providerError, unanswered, recovered, budgetExhausted, clean
+        };
+
+        Assert.Equal(BenchmarkAnswerIntegrity.TransportDefect, BenchmarkRunFinalizer.Classify(failed));
+        Assert.Equal(BenchmarkAnswerIntegrity.TransportDefect, BenchmarkRunFinalizer.Classify(providerError));
+        Assert.Equal(BenchmarkAnswerIntegrity.Unanswered, BenchmarkRunFinalizer.Classify(unanswered));
+        Assert.Equal(BenchmarkAnswerIntegrity.Recovered, BenchmarkRunFinalizer.Classify(recovered));
+        Assert.Equal(BenchmarkAnswerIntegrity.HarnessLimit, BenchmarkRunFinalizer.Classify(budgetExhausted));
+        Assert.Equal(BenchmarkAnswerIntegrity.Clean, BenchmarkRunFinalizer.Classify(clean));
+
+        int clean_ = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Clean);
+        int defects = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.TransportDefect);
+        int recovered_ = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Recovered);
+        int limits = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.HarnessLimit);
+        int unanswered_ = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Unanswered);
+
+        Assert.Equal(answers.Count, clean_ + defects + recovered_ + limits + unanswered_);
+        Assert.Equal(1, clean_);
+        Assert.Equal(2, defects);      // failed + providerError
+        Assert.Equal(1, recovered_);
+        Assert.Equal(1, limits);
+        Assert.Equal(1, unanswered_);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkAnswerStatus.Failed)]
+    [InlineData(BenchmarkAnswerStatus.ProviderError)]
+    public void ComputeStatus_FailedOrProviderErrorAnswer_StaysCompletedWithErrors(BenchmarkAnswerStatus status)
+    {
+        // Pinned because the bucket change above must not move the run status: it was already
+        // CompletedWithErrors through HasUnresolvedWork, and still is.
+        var answers = new List<BenchmarkRunAnswer> { MakeAnswer(1, status: status), MakeAnswer(2) };
+
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, BenchmarkRunFinalizer.ComputeStatus(answers));
+    }
+
+    [Fact]
+    public void ApplyTotals_SecondOpinionAggregates_ExcludeAnswersOutsideTheQualityIndex()
+    {
+        // Run 29: a dead question (ProviderError) still carried a second-opinion verdict from
+        // before the transport failure consumed it, and must not enter the agreement figure.
+        var a1 = MakeAnswer(1);
+        a1.QualityScore = 90;
+        a1.SecondOpinionQualityScore = 80;
+        a1.SecondOpinionTrigger = "All";
+
+        var a2 = MakeAnswer(2);
+        a2.QualityScore = 60;
+        a2.SecondOpinionQualityScore = 78;
+        a2.SecondOpinionTrigger = "All";
+
+        var a3 = MakeAnswer(3);
+        a3.QualityScore = 95;
+        a3.SecondOpinionQualityScore = 85;
+        a3.SecondOpinionTrigger = "All";
+
+        var deadQuestion = MakeAnswer(4, status: BenchmarkAnswerStatus.ProviderError);
+        deadQuestion.QualityScore = 50;
+        deadQuestion.SecondOpinionQualityScore = 10;
+        deadQuestion.SecondOpinionTrigger = "All";
+
+        // Still excluded on its own terms: a Manual trial verdict, even on an otherwise
+        // gradeable answer, must not enter the figure either.
+        var manualTrial = MakeAnswer(5);
+        manualTrial.QualityScore = 95;
+        manualTrial.SecondOpinionQualityScore = 20;
+        manualTrial.SecondOpinionTrigger = "Manual";
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 5 };
+        BenchmarkRunFinalizer.ApplyTotals(run, new[] { a1, a2, a3, deadQuestion, manualTrial });
+
+        Assert.Equal(3, run.SecondOpinionGradedAnswerCount);
+        // Deltas (SecondOpinion - Quality) over a1..a3 alone: -10, 18, -10.
+        Assert.NotNull(run.SecondOpinionMeanAbsDelta);
+        Assert.NotNull(run.SecondOpinionMeanSignedDelta);
+        Assert.InRange(run.SecondOpinionMeanAbsDelta.Value, 12.66, 12.67);
+        Assert.InRange(run.SecondOpinionMeanSignedDelta.Value, -0.67, -0.66);
+    }
+
+    [Fact]
+    public void Apply_NullsSpeedScoreOnNonGradeableAnswer_ButLeavesSpeedIndexUnchanged()
+    {
+        var gradeable = MakeAnswer(1);
+        gradeable.QualityScore = 80;
+        gradeable.SpeedScore = 70;
+        gradeable.AssessedDifficulty = 50;
+
+        var nonGradeable = MakeAnswer(2, status: BenchmarkAnswerStatus.ProviderError);
+        nonGradeable.SpeedScore = 999;
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 2 };
+        BenchmarkRunFinalizer.Apply(run, new[] { gradeable, nonGradeable });
+
+        Assert.Equal(70, gradeable.SpeedScore);
+        Assert.Null(nonGradeable.SpeedScore);
+        // SpeedIndex's own filter already excluded a non-Ok answer, so nulling the stored score
+        // here moves no published index. That is why the change carries no scoring-version bump.
+        Assert.Equal(70, run.SpeedIndex);
+    }
+
+    [Fact]
+    public void Apply_PreserveCompletedAtTrue_KeepsAnAlreadySetCompletedAtUtc()
+    {
+        var originalCompletedAt = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc);
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 1, CompletedAtUtc = originalCompletedAt };
+
+        BenchmarkRunFinalizer.Apply(run, new[] { MakeAnswer(1) }, preserveCompletedAt: true);
+
+        Assert.Equal(originalCompletedAt, run.CompletedAtUtc);
+    }
+
+    [Fact]
+    public void Apply_PreserveCompletedAtTrue_SetsItWhenPreviouslyNull()
+    {
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 1, CompletedAtUtc = null };
+
+        BenchmarkRunFinalizer.Apply(run, new[] { MakeAnswer(1) }, preserveCompletedAt: true);
+
+        Assert.NotNull(run.CompletedAtUtc);
+    }
+
+    [Fact]
+    public void Apply_DefaultOverload_AlwaysOverwritesCompletedAtUtc()
+    {
+        // The optional parameter exists for the failed-question re-run path; the main run path
+        // calls the default overload and must stay unconditional.
+        var originalCompletedAt = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc);
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 1, CompletedAtUtc = originalCompletedAt };
+
+        BenchmarkRunFinalizer.Apply(run, new[] { MakeAnswer(1) });
+
+        Assert.NotEqual(originalCompletedAt, run.CompletedAtUtc);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction)]
+    [InlineData(BenchmarkAnswerFlags.AnswerFramingOpener)]
+    public void HasAdvisoryFlag_TrueForTheTwoNewFlags_AndDoesNotAffectStatusOrCleanCount(BenchmarkAnswerFlags flag)
+    {
+        var answer = MakeAnswer(1, flag);
+        var answers = new[] { answer, MakeAnswer(2) };
+
+        Assert.True(BenchmarkRunFinalizer.HasAdvisoryFlag(answer));
+        Assert.Equal(BenchmarkAnswerIntegrity.Clean, BenchmarkRunFinalizer.Classify(answer));
+        // The assertion that matters: a previous round's regression was exactly an advisory flag
+        // flipping healthy runs to CompletedWithErrors.
+        Assert.Equal(BenchmarkRunStatus.Completed, BenchmarkRunFinalizer.ComputeStatus(answers));
+    }
+
+    [Fact]
+    public void ApplyTotals_CountsOutOfRubricAccuracyAndAnswerFramingOpenerFlags()
+    {
+        var a1 = MakeAnswer(1, BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction);
+        var a2 = MakeAnswer(2, BenchmarkAnswerFlags.AnswerFramingOpener);
+        var a3 = MakeAnswer(3);
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 3 };
+        BenchmarkRunFinalizer.ApplyTotals(run, new[] { a1, a2, a3 });
+
+        Assert.Equal(1, run.OutOfRubricAccuracyAnswerCount);
+        Assert.Equal(1, run.AnswerFramingOpenerAnswerCount);
+    }
 }

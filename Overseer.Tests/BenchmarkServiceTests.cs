@@ -1555,7 +1555,16 @@ public class BenchmarkServiceTests
 
         var logger = new RecordingLogger<BenchmarkService>();
         var benchmarkService = new BenchmarkService(
-            null!, null!, null!, null!, null!, null!, null!,
+            null!,
+            null!,
+            null!,
+            null!,
+            // Real, not null: the second-opinion path marks each answer in flight so the progress
+            // dialog can show a re-graded row as re-grading. The instance is inert for a run it
+            // does not own, which is every run here.
+            new BenchmarkRunManager(),
+            null!,
+            null!,
             new ConfigurationBuilder().Build(),
             logger);
 

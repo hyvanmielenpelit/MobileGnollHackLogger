@@ -112,6 +112,18 @@ public class BenchmarkPerQuestionAssessmentResult
     public bool CompletenessOutOfScope { get; set; }
 
     /// <summary>
+    /// The assessor recorded an accuracy deduction resting on a basis the rubric neither states
+    /// nor implies, under the <c>Not in rubric:</c> marker the prompt asks it to prefix such a
+    /// deduction with.
+    ///
+    /// Advisory, like <see cref="CompletenessOutOfScope"/>: never changes a score. Not from the
+    /// model as a field — it is derived from <see cref="AccuracyEvidence"/>, which is where the
+    /// assessor writes it.
+    /// </summary>
+    [JsonIgnore]
+    public bool AccuracyOutOfRubric { get; set; }
+
+    /// <summary>
     /// The assessor recorded a rubric format suggestion the answer did not follow, under the
     /// <c>FORM:</c> marker scoring method v9 requires of it, and did not deduct for it.
     ///
@@ -320,6 +332,11 @@ public static class BenchmarkAssessmentParser
             // a marker the assessor mangled costs the measurement and nothing else.
             bool completenessOutOfScope = HasOutOfScopeMarker(completenessEvidence);
 
+            // The out-of-rubric marker, read from Accuracy rather than Completeness, on the same
+            // terms: absent in the normal case, and worth a measurement rather than a verdict when
+            // the assessor mangles it.
+            bool accuracyOutOfRubric = HasOutOfRubricMarker(accuracyEvidence);
+
             // Scoring method v9's format marker, on the same terms: absent in the normal case,
             // and worth a measurement rather than a verdict when the assessor mangles it.
             bool readabilityFormOnly = HasFormOnlyMarker(readabilityEvidence);
@@ -343,6 +360,7 @@ public static class BenchmarkAssessmentParser
                 UnevidencedDeduction = unevidencedDeduction,
                 OmissionAsAccuracy = omissionAsAccuracy,
                 CompletenessOutOfScope = completenessOutOfScope,
+                AccuracyOutOfRubric = accuracyOutOfRubric,
                 ReadabilityFormOnly = readabilityFormOnly
             };
 
@@ -524,6 +542,36 @@ public static class BenchmarkAssessmentParser
     {
         return !string.IsNullOrWhiteSpace(readabilityEvidence)
             && FormOnlyMarkerRegex.IsMatch(readabilityEvidence);
+    }
+
+    /// <summary>
+    /// The prefix the prompt asks the assessor to put in front of an accuracy deduction that does
+    /// not come from the rubric. Public because the prompt, the parser and the tests must all mean
+    /// the same string by it.
+    /// </summary>
+    public const string OutOfRubricAccuracyMarker = "Not in rubric:";
+
+    /// <summary>
+    /// The marker as models actually write it: "rubric" optionally preceded by "the", any casing,
+    /// and the colon possibly spaced away from it. The colon is the one part that is required —
+    /// without it the pattern would be the ordinary English phrase, which appears in evidence
+    /// strings that are describing something else. Matched anywhere in the string, for the same
+    /// reason as <see cref="OutOfScopeMarkerRegex"/>: an assessor that records a rubric deduction
+    /// and an out-of-rubric one in one evidence string puts the marker in front of the second half.
+    /// </summary>
+    private static readonly Regex OutOfRubricMarkerRegex = new(
+        @"\bnot\s+in\s+(?:the\s+)?rubric\s*:",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// True when accuracy evidence carries the out-of-rubric marker. Total on its input: a null,
+    /// an empty string or a marker the assessor mangled all return false rather than failing the
+    /// parse — absence is the normal case, and one lost measurement must never cost a verdict.
+    /// </summary>
+    private static bool HasOutOfRubricMarker(string? accuracyEvidence)
+    {
+        return !string.IsNullOrWhiteSpace(accuracyEvidence)
+            && OutOfRubricMarkerRegex.IsMatch(accuracyEvidence);
     }
 
     private static int GetIntProperty(JsonElement element, params string[] propertyNames)

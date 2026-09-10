@@ -212,9 +212,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsSeventeen()
+    public void HarnessVersion_IsEighteen()
     {
-        Assert.Equal("17", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("18", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -436,13 +436,17 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs17_ScoringMethodIs10()
+    public void Versions_HarnessIs18_ScoringMethodIs10()
     {
-        Assert.Equal("17", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("18", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 17 persists the per-call tool record and reports a succeeded/failed/refused
-        // split, none of which the candidate model sees, so 16 and 17 scores stay comparable and
-        // the scoring method does not move with it.
+        // Harness 18 reclassifies a terminal provider failure, unifies the gradeable-answer
+        // denominator, adds two advisory flags and gives a failed-question re-run its own
+        // fingerprint and wall clock. None of it changes an index, a dimensional score or a run
+        // status, so the scoring method does not move with it — but the round also edits two tool
+        // guides and the wiki miss payloads, which moves ToolGuidesSha256 and
+        // CandidateSystemPromptSha256, so an 18-stamped run differs from a 17-stamped one on
+        // three instrument keys and is below Tier B against it.
         Assert.Equal(10, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

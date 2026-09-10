@@ -90,7 +90,8 @@ export interface BenchmarkRunProgressRow {
   questionText: string;
   /**
    * Formatted answer status, or 'Answering' while the provider request is in flight, or
-   * 'Pending' when the run has not dispatched this question yet.
+   * 'Pending' when the run has not dispatched this question yet, or 'Verifying' /
+   * 'SecondOpinion' while an already-scored answer is being re-read by a grading role.
    */
   status: string;
   /** Formatted assessment status, or '' when there is no answer yet. */
@@ -3063,18 +3064,57 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   // --- Run Progress Dialog ---
 
   /**
-   * Which of the run's two sequential stages is executing. `BenchmarkService` assesses each
+   * Which of the run's four sequential stages is executing. `BenchmarkService` assesses each
    * answer immediately after producing it, inside the same loop, in both the sequential and
-   * the parallel branch — so answering and assessing are one stage in wall-clock terms, and
-   * only the holistic synthesis is separate.
+   * the parallel branch — so answering and assessing are one stage in wall-clock terms. The
+   * three that follow it are not: claim verification, the two second-opinion passes and the
+   * holistic synthesis run strictly one after another, and on a suite-6 run the middle two
+   * occupy roughly nine minutes in which the answer rows do not change at all.
+   *
+   * The server's own `stage` is preferred because that is the only thing that can tell the
+   * middle stages apart — nothing in the answer rows moves while they run. The derivation
+   * below is the fallback for a run this process is not executing, or a run detail fetched
+   * from a server predating the field, and it can only ever reach 'verifying' as a catch-all
+   * for the whole post-answering span.
    */
-  get runStage(): 'answering' | 'finalizing' | 'terminal' {
+  get runStage(): 'answering' | 'verifying' | 'secondopinion' | 'finalizing' | 'terminal' {
     const run = this.activeRunDetail;
     if (!run) return 'answering';
     if (this.formatStatus(run.status) !== 'Running') return 'terminal';
+
+    switch (run.stage) {
+      case 'Answering': return 'answering';
+      case 'Verifying': return 'verifying';
+      case 'SecondOpinion': return 'secondopinion';
+      case 'Synthesizing': return 'finalizing';
+      case 'Terminal': return 'terminal';
+    }
+
     if (run.answers.length < run.totalQuestionCount) return 'answering';
     if (run.answers.some(a => this.isAssessmentIncomplete(a))) return 'answering';
     return 'finalizing';
+  }
+
+  /** Answers the claim verifier is reading right now. */
+  get runVerifyingCount(): number {
+    return (this.activeRunDetail?.inFlightVerificationOrderIndexes ?? []).length;
+  }
+
+  /** Answers the second-opinion assessor is reading right now. */
+  get runSecondOpinionInFlightCount(): number {
+    return (this.activeRunDetail?.inFlightSecondOpinionOrderIndexes ?? []).length;
+  }
+
+  /** Answers the claim verifier has produced a verdict or an error for. */
+  get runVerifiedCount(): number {
+    return (this.activeRunDetail?.answers ?? []).filter(
+      a => a.claimVerificationJson != null || a.claimVerificationError != null).length;
+  }
+
+  /** Answers carrying a second verdict. */
+  get runSecondOpinionCount(): number {
+    return (this.activeRunDetail?.answers ?? []).filter(
+      a => a.secondOpinionQualityScore != null || a.secondOpinionError != null).length;
   }
 
   get runStageLabel(): string {
@@ -3083,13 +3123,15 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     const total = this.runTotalQuestionCount;
     switch (this.runStage) {
       case 'answering':
-        return `Stage 1 of 2 — Collecting and assessing answers. Answered ${this.runAnsweredCount} of ${total}, scored ${this.runScoredCount} of ${total}.`;
-      case 'finalizing': {
-        const stageName = run.claimVerifierModelConfigurationId != null
-          ? 'Verification and synthesis'
-          : 'Synthesis and scoring';
-        return `Stage 2 of 2 — ${stageName}. All ${total} answers assessed.`;
-      }
+        return `Stage 1 of 4 — Collecting and assessing answers. Answered ${this.runAnsweredCount} of ${total}, scored ${this.runScoredCount} of ${total}.`;
+      case 'verifying':
+        // Carries a count so the label moves during the minutes the answer rows are static.
+        return `Stage 2 of 4 — Verifying claims. ${this.runVerifiedCount} of ${this.runAnsweredCount} answers checked.`;
+      case 'secondopinion':
+        return `Stage 3 of 4 — Second opinion. ${this.runSecondOpinionCount} of ${this.runAnsweredCount} answers re-graded.`;
+      case 'finalizing':
+        // Verification is its own stage now, so this one is always the holistic pass.
+        return `Stage 4 of 4 — Synthesis and scoring. All ${total} answers assessed.`;
       default: {
         const status = this.formatStatus(run.status);
         const label = status === 'CompletedWithErrors'
@@ -3161,6 +3203,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       : run.answers.map(a => ({ id: a.benchmarkQuestionId ?? null, orderIndex: a.orderIndex, questionText: a.questionText }));
 
     const inFlight = new Set<number>(run.inFlightOrderIndexes ?? []);
+    const verifying = new Set<number>(run.inFlightVerificationOrderIndexes ?? []);
+    const secondOpinion = new Set<number>(run.inFlightSecondOpinionOrderIndexes ?? []);
 
     return [...source]
       .sort((a, b) => a.orderIndex - b.orderIndex)
@@ -3175,6 +3219,19 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
             errorMessage: null
           };
         }
+
+        // Ahead of the answer's own status, because a row under active re-grading already
+        // carries a score and would otherwise read as finished for the whole pass.
+        if (verifying.has(q.orderIndex) || secondOpinion.has(q.orderIndex)) {
+          return {
+            orderIndex: q.orderIndex,
+            questionText: q.questionText,
+            status: verifying.has(q.orderIndex) ? 'Verifying' : 'SecondOpinion',
+            assessmentStatus: this.formatAssessmentStatus(ans.assessmentStatus),
+            errorMessage: ans.errorMessage ?? null
+          };
+        }
+
         return {
           orderIndex: q.orderIndex,
           questionText: q.questionText,
@@ -3186,12 +3243,29 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   /**
+   * Order indexes a failed-question re-run is repairing, captured when the re-run is launched.
+   * The row list itself is unchanged: every question of the suite stays listed, and a question
+   * outside the re-run keeps the status it already has. Empty when no re-run is in progress.
+   */
+  rerunScopeOrderIndexes: number[] = [];
+
+  get runHasRerunScope(): boolean {
+    return this.rerunScopeOrderIndexes.length > 0;
+  }
+
+  isRerunScope(row: BenchmarkRunProgressRow): boolean {
+    return this.rerunScopeOrderIndexes.includes(row.orderIndex);
+  }
+
+  /**
    * The chip's word, never a hue alone. 'Answered' rather than 'Assessing' while the
    * assessment is merely queued — claiming work that has not started would be a guess.
    */
   runRowChipLabel(row: BenchmarkRunProgressRow): string {
     if (row.status === 'Pending') return 'Pending';
     if (row.status === 'Answering') return 'Answering';
+    if (row.status === 'Verifying') return 'Verifying';
+    if (row.status === 'SecondOpinion') return 'Second opinion';
     if (row.status === 'ProviderError') return 'Provider Error';
     if (row.status !== 'Ok') return row.status;
     if (row.assessmentStatus === 'Scored') return 'Scored';
@@ -3203,6 +3277,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   runRowChipClass(row: BenchmarkRunProgressRow): string {
     if (row.status === 'Pending') return 'status-pending';
     if (row.status === 'Answering') return 'status-answering';
+    if (row.status === 'Verifying') return 'status-verifying';
+    if (row.status === 'SecondOpinion') return 'status-secondopinion';
     if (row.status === 'ProviderError') return 'status-providererror';
     if (row.status === 'Failed') return 'status-failed';
     if (row.status === 'Skipped') return 'status-skipped';
@@ -3267,7 +3343,15 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     } else {
       // --- RUN ---
       lines.push('--- RUN ---');
-      const stageStr = this.runStage === 'terminal' ? 'terminal' : (this.runStage === 'answering' ? '1' : '2');
+      // The stage number, plus whether the server reported it or the client derived it — the
+      // derivation cannot see the two middle stages, so which of the two produced the figure
+      // changes how much it is worth.
+      const stageNumbers: Record<string, string> = {
+        answering: '1 of 4', verifying: '2 of 4', secondopinion: '3 of 4', finalizing: '4 of 4'
+      };
+      const stageStr = this.runStage === 'terminal'
+        ? 'terminal'
+        : `${stageNumbers[this.runStage]} (${run.stage ? 'server' : 'derived'})`;
       lines.push(`Run ID: ${run.id}, Suite: ${run.suiteName} (${run.benchmarkSuiteId ?? 'n/a'}), Status: ${this.formatStatus(run.status)}, Stage: ${stageStr}, Started by: ${run.startedByUserName || 'unknown'}`);
       lines.push(`Started (raw):    ${run.startedAtUtc}`);
       const startedParsed = run.startedAtUtc ? parseServerUtcDate(run.startedAtUtc).toISOString() : 'n/a';
@@ -3312,8 +3396,19 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       // --- PROGRESS ---
       lines.push('--- PROGRESS ---');
       lines.push(`Answered ${this.runAnsweredCount} of ${this.runTotalQuestionCount}, scored ${this.runScoredCount} of ${this.runTotalQuestionCount}, failed ${this.runFailedAnswerCount}`);
+      // The same population the report's own per-answer denominators use — an answer the
+      // quality index excludes. Printed alongside the raw answer count so the capture and the
+      // report cannot disagree the way run 29's 15-of-17 and 15-of-18 did.
+      lines.push(`Gradeable answers (index population): ${this.runGradeableAnswerCount} of ${this.runTotalQuestionCount}`);
       const inFlight = run.inFlightOrderIndexes ?? [];
       lines.push(`In flight: ${inFlight.length > 0 ? inFlight.map(i => `Q${i}`).join(', ') : 'none'}`);
+      const verifyingNow = run.inFlightVerificationOrderIndexes ?? [];
+      const secondOpinionNow = run.inFlightSecondOpinionOrderIndexes ?? [];
+      lines.push(`Verifying now: ${verifyingNow.length > 0 ? verifyingNow.map(i => `Q${i}`).join(', ') : 'none'}; second opinion now: ${secondOpinionNow.length > 0 ? secondOpinionNow.map(i => `Q${i}`).join(', ') : 'none'}`);
+      lines.push(`Verified ${this.runVerifiedCount}, second-graded ${this.runSecondOpinionCount}`);
+      if (this.runHasRerunScope) {
+        lines.push(`Failed-question re-run in progress over: ${this.rerunScopeOrderIndexes.map(i => `Q${i}`).join(', ')}`);
+      }
       if (this.runProgressQuestions.length > 0 && this.runProgressQuestionsSuiteId != null) {
         lines.push(`Suite questions loaded: ${this.runProgressQuestions.length} for suite ${this.runProgressQuestionsSuiteId}`);
       } else {
@@ -3487,7 +3582,10 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         // analysis, and it reads as a knowledge-base under-use finding that the transfer skill has already
         // withdrawn twice (run 11, T4): the prompt scopes the knowledge base away from game mechanics, so a
         // game-mechanics suite making no knowledge-base calls is compliance, not under-use.
-        lines.push(`answers with 0 knowledge base calls: ${zeroKbAnswers} of ${run.answers.length}`);
+        // Over the gradeable-answer population, which is what the report's own knowledge-base
+        // routing lines use. Against run.answers.length the two artifacts printed different
+        // denominators for one run.
+        lines.push(`answers with 0 knowledge base calls: ${zeroKbAnswers} of ${this.runGradeableAnswerCount} gradeable (${run.answers.length} answer row(s))`);
         lines.push('  (prompt-compliant on game-mechanics topics — ChatService.cs "Information Routing" scopes the');
         lines.push('   knowledge base to app navigation, settings, controls, replay, vault and troubleshooting)');
         lines.push('');
@@ -3748,7 +3846,57 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   rerunFailedFromProgress(): void {
     const runId = this.activeRunDetail?.id ?? this.activeRunId;
     if (runId == null) return;
+    this.launchFailedQuestionRerun(runId, this.runFailedAnswers.map(a => a.orderIndex));
+  }
+
+  /**
+   * Re-runs the failed questions from the run detail view, and opens the progress dialog to
+   * watch it — the retry is the same execution either way, so it belongs in the one place that
+   * shows a run's progress rather than behind a strip whose only other action was Cancel.
+   */
+  rerunFailedFromRunDetail(runId: number): void {
+    const failed = (this.selectedRunDetail?.answers ?? [])
+      .filter(a => this.isAnswerFailed(a))
+      .map(a => a.orderIndex);
+    this.closeRunDetail();
+    this.activeSubTab = 'run';
+    this.launchFailedQuestionRerun(runId, failed);
+  }
+
+  /**
+   * Hands the operator from the run-detail view to the progress dialog for the same run,
+   * without starting anything. The strip that offers this appears exactly when the run is busy,
+   * which is when the dialog is the only place its progress is legible.
+   */
+  openRunProgressForSelectedRun(): void {
+    const runId = this.selectedRunDetail?.id;
+    if (runId == null) return;
+    this.closeRunDetail();
+    this.activeSubTab = 'run';
+    this.activeRunId = runId;
+    this.startPolling(runId);
+    if (!this.isRunProgressDialogOpen) {
+      this.openRunProgressDialog();
+    }
+    this.cdr.detectChanges();
+  }
+
+  /**
+   * The one re-run launch path. Both entry points clear the stale dialog state before the
+   * request, because a re-run of a run that ended in an error would otherwise open showing the
+   * previous attempt's error and the previous attempt's stage.
+   */
+  private launchFailedQuestionRerun(runId: number, failedOrderIndexes: number[]): void {
+    this.rerunScopeOrderIndexes = failedOrderIndexes;
     this.runErrorMessage = null;
+    this.runQuestionsLoadError = null;
+    this.activeRunDetail = null;
+    this.activeRunId = runId;
+
+    if (!this.isRunProgressDialogOpen) {
+      this.openRunProgressDialog();
+    }
+
     this.benchmarkService.rerunFailedQuestions(runId).subscribe({
       next: () => {
         this.activeRunId = runId;
@@ -3757,7 +3905,12 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         this.cdr.detectChanges();
       },
       error: (err) => {
-        this.runErrorMessage = err?.error || 'Failed to re-run failed questions.';
+        // Surfaced in the dialog rather than only in the run-detail view: the dialog is now
+        // where the operator is watching from, and a refusal there was previously invisible.
+        this.rerunScopeOrderIndexes = [];
+        this.runErrorMessage = typeof err?.error === 'string'
+          ? err.error
+          : (err?.error?.message || err?.message || 'Failed to re-run failed questions.');
         this.cdr.detectChanges();
       }
     });
@@ -4239,19 +4392,6 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     });
   }
 
-  rerunFailed(runId: number) {
-    this.benchmarkService.rerunFailedQuestions(runId).subscribe({
-      next: () => {
-        this.activeRunId = runId;
-        this.startPolling(runId);
-        this.activeSubTab = 'run';
-        this.closeRunDetail();
-        this.loadHistory();
-      },
-      error: (err) => console.error('Failed to re-run failed questions', err)
-    });
-  }
-
   downloadReport(runId: number) {
     window.open(this.benchmarkService.getRunReportUrl(runId), '_blank');
   }
@@ -4395,6 +4535,31 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   isAnswerFailed(ans: BenchmarkRunAnswerDto): boolean {
     const s = this.formatAnswerStatus(ans.status);
     return s === 'ProviderError' || s === 'Failed' || s === 'Skipped' || s === 'EmptyAnswer';
+  }
+
+  /**
+   * Provider finish reasons that mean "the model chose to stop here". Mirrors
+   * `BenchmarkRunFinalizer.NormalStopReasons`; keep the two in step.
+   */
+  private static readonly NORMAL_STOP_REASONS = ['stop', 'end_turn', 'completed', 'complete', 'stop_sequence'];
+
+  /**
+   * Whether this answer contributes to the quality indices — `BenchmarkRunFinalizer
+   * .CountsTowardQualityIndex`, mirrored so a diagnostics capture and the run report cannot
+   * print different denominators for one run. An Ok answer counts; so does one the model
+   * finished normally and left empty, which scoring method 10 scores 0 rather than excusing.
+   * An unrecognised or absent finish reason is not evidence of a normal stop.
+   */
+  countsTowardQualityIndex(ans: BenchmarkRunAnswerDto): boolean {
+    const s = this.formatAnswerStatus(ans.status);
+    if (s === 'Ok') return true;
+    if (s !== 'EmptyAnswer') return false;
+    const reason = (ans.providerFinishReason ?? '').trim().toLowerCase();
+    return reason.length > 0 && AdminBenchmarkComponent.NORMAL_STOP_REASONS.includes(reason);
+  }
+
+  get runGradeableAnswerCount(): number {
+    return (this.activeRunDetail?.answers ?? []).filter(a => this.countsTowardQualityIndex(a)).length;
   }
 
   /**

@@ -11,6 +11,7 @@ namespace Overseer.Services.Tools
     {
         private readonly NetHackWikiService _netHackWikiService;
         private readonly int _configuredMaxResults;
+        private readonly int _perResultChars;
 
         public string ToolName => "nethack_wiki_search";
         public string Description { get; set; } = "Search the local NetHack wiki database for mechanics, monsters, items, and features.";
@@ -23,6 +24,7 @@ namespace Overseer.Services.Tools
         {
             _netHackWikiService = netHackWikiService;
             _configuredMaxResults = configuration.GetValue<int>("Tools:nethack_wiki_search:MaxResults", 5);
+            _perResultChars = configuration.GetValue<int>("Tools:nethack_wiki_search:PerResultChars", 3000);
             ParameterSchema = JsonDocument.Parse(@"
             {
                 ""type"": ""object"",
@@ -76,7 +78,8 @@ namespace Overseer.Services.Tools
                 namespaceFilter = nsElem.GetString();
             }
 
-            var results = _netHackWikiService.GetRelevantContext(query, namespaceFilter, maxResults);
+            var results = _netHackWikiService.GetRelevantContext(query, namespaceFilter, maxResults)
+                .Select(CapArticle);
             var content = string.Join("\n\n", results);
 
             if (string.IsNullOrWhiteSpace(content))
@@ -90,6 +93,23 @@ namespace Overseer.Services.Tools
             }
 
             return Task.FromResult(new ToolResult { Success = true, Content = content });
+        }
+
+        /* GetRelevantContext returns whole article bodies. Without a per-article cap the result was
+           bounded only by the generic per-tool truncation, which cuts the *last* article
+           mid-sentence and drops the ones after it entirely - so which articles the model saw
+           depended on the alphabetical accident of Lucene's ordering. Capping each article instead
+           keeps every hit present and marks the ones that were shortened. The sibling GnollHack
+           tool has taken Tools:wiki_search:PerResultChars all along. */
+        private string CapArticle(string article)
+        {
+            if (string.IsNullOrEmpty(article) || _perResultChars <= 0 || article.Length <= _perResultChars)
+            {
+                return article;
+            }
+
+            return article.Substring(0, _perResultChars) +
+                   $"... [Article truncated: showing {_perResultChars} of {article.Length} characters. Use nethack_wiki_view for the full article.]";
         }
     }
 }

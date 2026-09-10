@@ -6,6 +6,21 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 
+/// <summary>
+/// The run-level stage a run is executing. Answering and per-question assessment are one stage
+/// because they are pipelined — a question is assessed while the next one is answered — so no
+/// instant of the run belongs to only one of them. The three that follow are strictly serial and
+/// each occupies whole minutes of a run in which nothing else happens.
+/// </summary>
+public enum BenchmarkRunStage
+{
+    Answering = 0,
+    Verifying = 1,
+    SecondOpinion = 2,
+    Synthesizing = 3,
+    Terminal = 4
+}
+
 public class BenchmarkRunState
 {
     public long RunId { get; set; }
@@ -15,12 +30,28 @@ public class BenchmarkRunState
     public DateTime? CompletedAtUtc { get; set; }
 
     /// <summary>
+    /// Which run-level stage is executing. In-process only, like everything else here: a run whose
+    /// process restarts reports none, and the client falls back to deriving it from the answer rows.
+    /// </summary>
+    public BenchmarkRunStage Stage { get; set; } = BenchmarkRunStage.Answering;
+
+    /// <summary>
     /// Order indexes of the questions whose request is currently in flight to the provider.
     /// The executor writes a <see cref="MobileGnollHackLogger.Data.BenchmarkRunAnswer"/> only
     /// after the model replies, so this is the only place an in-flight question is visible.
     /// The progress dialog reads it to tell "not dispatched yet" from "answering".
     /// </summary>
     public ConcurrentDictionary<int, byte> InFlightQuestions { get; } = new();
+
+    /// <summary>
+    /// Order indexes currently with the claim verifier. Same contract as
+    /// <see cref="InFlightQuestions"/>: an already-scored row is re-graded in place, so without this
+    /// the dialog shows it as finished throughout the minutes it is being re-read.
+    /// </summary>
+    public ConcurrentDictionary<int, byte> InFlightVerification { get; } = new();
+
+    /// <summary>Order indexes currently with the second-opinion assessor.</summary>
+    public ConcurrentDictionary<int, byte> InFlightSecondOpinion { get; } = new();
 }
 
 public class BenchmarkRunManager
@@ -73,7 +104,10 @@ public class BenchmarkRunManager
             {
                 _currentRun.IsCompleted = true;
                 _currentRun.CompletedAtUtc = DateTime.UtcNow;
+                _currentRun.Stage = BenchmarkRunStage.Terminal;
                 _currentRun.InFlightQuestions.Clear();
+                _currentRun.InFlightVerification.Clear();
+                _currentRun.InFlightSecondOpinion.Clear();
             }
         }
     }
@@ -99,6 +133,23 @@ public class BenchmarkRunManager
     }
 
     /// <summary>
+    /// Records which run-level stage is executing. Ignored when the run is not the current,
+    /// still-running one, so a stale caller cannot move a finished run off
+    /// <see cref="BenchmarkRunStage.Terminal"/>.
+    /// </summary>
+    public void MarkStage(long runId, BenchmarkRunStage stage)
+    {
+        var state = TryGetRunning(runId);
+        if (state != null)
+        {
+            state.Stage = stage;
+        }
+    }
+
+    /// <summary>The current run's stage, or null when this run is not the current one.</summary>
+    public BenchmarkRunStage? GetStage(long runId) => TryGetRunning(runId)?.Stage;
+
+    /// <summary>
     /// Records that the question's request has been sent to the provider. Ignored when the run
     /// is not the current one, so a stale caller can never resurrect finished state.
     /// </summary>
@@ -106,6 +157,47 @@ public class BenchmarkRunManager
     {
         var state = TryGetRunning(runId);
         state?.InFlightQuestions.TryAdd(orderIndex, 0);
+    }
+
+    /// <summary>Records that the answer is with the claim verifier.</summary>
+    public void MarkVerificationInFlight(long runId, int orderIndex)
+    {
+        var state = TryGetRunning(runId);
+        state?.InFlightVerification.TryAdd(orderIndex, 0);
+    }
+
+    /// <summary>
+    /// Clears the verification mark. Called from a <c>finally</c>, on the same discipline as
+    /// <see cref="ClearQuestionInFlight"/>.
+    /// </summary>
+    public void ClearVerificationInFlight(long runId, int orderIndex)
+    {
+        lock (_lock)
+        {
+            if (_currentRun != null && _currentRun.RunId == runId)
+            {
+                _currentRun.InFlightVerification.TryRemove(orderIndex, out _);
+            }
+        }
+    }
+
+    /// <summary>Records that the answer is with the second-opinion assessor.</summary>
+    public void MarkSecondOpinionInFlight(long runId, int orderIndex)
+    {
+        var state = TryGetRunning(runId);
+        state?.InFlightSecondOpinion.TryAdd(orderIndex, 0);
+    }
+
+    /// <summary>Clears the second-opinion mark. Called from a <c>finally</c>.</summary>
+    public void ClearSecondOpinionInFlight(long runId, int orderIndex)
+    {
+        lock (_lock)
+        {
+            if (_currentRun != null && _currentRun.RunId == runId)
+            {
+                _currentRun.InFlightSecondOpinion.TryRemove(orderIndex, out _);
+            }
+        }
     }
 
     /// <summary>
@@ -136,6 +228,25 @@ public class BenchmarkRunManager
             return Array.Empty<int>();
         }
         return state.InFlightQuestions.Keys.OrderBy(i => i).ToList();
+    }
+
+    /// <summary>The answers currently with the claim verifier, ascending. Same contract as
+    /// <see cref="GetInFlightQuestions"/>.</summary>
+    public IReadOnlyList<int> GetInFlightVerification(long runId)
+    {
+        var state = TryGetRunning(runId);
+        return state == null
+            ? Array.Empty<int>()
+            : state.InFlightVerification.Keys.OrderBy(i => i).ToList();
+    }
+
+    /// <summary>The answers currently with the second-opinion assessor, ascending.</summary>
+    public IReadOnlyList<int> GetInFlightSecondOpinion(long runId)
+    {
+        var state = TryGetRunning(runId);
+        return state == null
+            ? Array.Empty<int>()
+            : state.InFlightSecondOpinion.Keys.OrderBy(i => i).ToList();
     }
 
     private BenchmarkRunState? TryGetRunning(long runId)

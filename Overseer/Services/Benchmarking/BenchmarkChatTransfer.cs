@@ -151,7 +151,12 @@ public static class BenchmarkChatTransfer
     public static BenchmarkToolRoutingAnalysis AnalyzeToolRouting(
         IReadOnlyList<BenchmarkRunAnswer> answers)
     {
-        var answered = answers.Where(a => a.Status == BenchmarkAnswerStatus.Ok).ToList();
+        // The gradeable-answer population, not Status == Ok: every figure this report shows is
+        // over the set the quality index is computed on, and one line running a narrower
+        // population than the rest is a report that disagrees with itself about how many
+        // questions the run answered. A model-produced-empty answer is gradeable — scoring
+        // method 10 scores it 0 — and made whatever tool calls it made.
+        var answered = answers.Where(BenchmarkRunFinalizer.CountsTowardQualityIndex).ToList();
         var toolCounts = AggregateToolCounts(answered);
         int totalCalls = toolCounts.Values.Sum();
 

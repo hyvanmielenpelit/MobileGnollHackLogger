@@ -60,7 +60,9 @@ public static class BenchmarkRunFinalizer
         | BenchmarkAnswerFlags.ContestedVerdict
         | BenchmarkAnswerFlags.UnevidencedDeduction
         | BenchmarkAnswerFlags.RefutedClaim
-        | BenchmarkAnswerFlags.OmissionAsAccuracy;
+        | BenchmarkAnswerFlags.OmissionAsAccuracy
+        | BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction
+        | BenchmarkAnswerFlags.AnswerFramingOpener;
 
     /// <summary>
     /// Provider finish reasons that mean "the model chose to stop here". `tool_use` is deliberately
@@ -95,6 +97,15 @@ public static class BenchmarkRunFinalizer
         return answer.Status == BenchmarkAnswerStatus.Ok || IsModelProducedEmptyAnswer(answer);
     }
 
+    /// <summary>
+    /// The answer never completed: the provider failed the request, or the harness caught a throw.
+    /// Neither leaves text to grade, so both belong outside the clean count. There is no
+    /// <c>Ok</c>-status path into this predicate, which is why it is safe ahead of every other
+    /// bucket check.
+    /// </summary>
+    public static bool HasTerminalFailure(BenchmarkRunAnswer answer)
+        => answer.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed;
+
     /// <summary>A transport or provider defect corrupted this answer beyond recovery.</summary>
     public static bool HasTransportDefect(BenchmarkRunAnswer answer)
     {
@@ -103,7 +114,8 @@ public static class BenchmarkRunFinalizer
         // The run still reports CompletedWithErrors: see HasUnresolvedWork.
         if (IsModelProducedEmptyAnswer(answer)) return false;
 
-        return answer.Status == BenchmarkAnswerStatus.EmptyAnswer
+        return HasTerminalFailure(answer)
+            || answer.Status == BenchmarkAnswerStatus.EmptyAnswer
             || (((BenchmarkAnswerFlags)answer.AnswerFlags) & TransportDefectFlags) != 0;
     }
 
@@ -148,6 +160,13 @@ public static class BenchmarkRunFinalizer
     /// is the precedence: the most severe applicable class wins, which is what keeps
     /// clean + transport defects + recovered + harness limits + unanswered equal to the question
     /// count.
+    ///
+    /// A <see cref="HasTerminalFailure"/> answer — <c>ProviderError</c> or <c>Failed</c> — takes the
+    /// transport-defect bucket ahead of every other class, through
+    /// <see cref="HasTransportDefect"/>. No index, no dimensional score and no run status depends on
+    /// the bucket, so this precedence carries no <c>ScoringMethodVersion</c> movement; what it
+    /// changes is the clean count and the provider-error count, which is a
+    /// <c>HarnessVersion</c> concern.
     /// </summary>
     public static BenchmarkAnswerIntegrity Classify(BenchmarkRunAnswer answer)
     {
@@ -358,6 +377,10 @@ public static class BenchmarkRunFinalizer
             a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.UnevidencedDeduction) != 0);
         run.OmissionAsAccuracyAnswerCount = answers.Count(
             a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.OmissionAsAccuracy) != 0);
+        run.OutOfRubricAccuracyAnswerCount = answers.Count(
+            a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction) != 0);
+        run.AnswerFramingOpenerAnswerCount = answers.Count(
+            a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.AnswerFramingOpener) != 0);
         run.RefutedClaimAnswerCount = answers.Count(
             a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.RefutedClaim) != 0);
         run.ClaimVerifiedAnswerCount = answers.Count(
@@ -380,7 +403,12 @@ public static class BenchmarkRunFinalizer
         // separable. A mean delta over trigger-selected answers is conditioned on the first
         // assessor's own uncertainty and says nothing about the instrument; the same number over
         // every answer is an inter-rater agreement rate. Only the count distinguishes them.
+        //
+        // CountsTowardQualityIndex is the same population scorableItems uses in Apply below. An
+        // answer the index excludes has no gradeable text, so a delta against it measures two
+        // graders reading a transport failure, not their agreement about a candidate.
         var secondOpinions = answers
+            .Where(CountsTowardQualityIndex)
             .Where(a => a.SecondOpinionQualityScore.HasValue
                         && a.QualityScore.HasValue
                         && !string.Equals(a.SecondOpinionTrigger, "Manual", StringComparison.Ordinal))
@@ -400,9 +428,25 @@ public static class BenchmarkRunFinalizer
             : null;
     }
 
-    public static void Apply(BenchmarkRun run, IReadOnlyCollection<BenchmarkRunAnswer> answers)
+    /// <summary>
+    /// <paramref name="preserveCompletedAt"/> keeps an already-recorded <c>CompletedAtUtc</c>: a
+    /// failed-question re-run finishes long after the run it repairs, and the run's elapsed wall time
+    /// belongs to the original execution. The default is the first-run behaviour.
+    /// </summary>
+    public static void Apply(
+        BenchmarkRun run,
+        IReadOnlyCollection<BenchmarkRunAnswer> answers,
+        bool preserveCompletedAt = false)
     {
         ApplyTotals(run, answers);
+
+        // A non-gradeable answer has no measured latency to score. The SpeedIndex filter already
+        // excluded it, so nulling the stored figure moves no published index — it stops persisting a
+        // number that describes nothing, which the report then had to be trusted not to print.
+        foreach (var answer in answers.Where(a => !CountsTowardQualityIndex(a)))
+        {
+            answer.SpeedScore = null;
+        }
 
         var scorableItems = answers
             .Where(CountsTowardQualityIndex)
@@ -423,7 +467,11 @@ public static class BenchmarkRunFinalizer
         run.SpeedIndex = BenchmarkScoring.SpeedIndex(
             answers.Where(a => a.Status == BenchmarkAnswerStatus.Ok).Select(a => a.SpeedScore));
 
-        run.CompletedAtUtc = DateTime.UtcNow;
+        if (!preserveCompletedAt || run.CompletedAtUtc == null)
+        {
+            run.CompletedAtUtc = DateTime.UtcNow;
+        }
+
         run.Status = ComputeStatus(answers);
     }
 }

@@ -423,12 +423,14 @@ public class BenchmarkService
             // path verifies before its own second opinion, so a flagged answer's second reader was
             // handed the refutation while an outlier-selected or sample-selected one was not. That
             // made the pooled agreement figure a mixture of two different measurements.
+            _runManager.MarkStage(runId, BenchmarkRunStage.Verifying);
             await RunClaimVerificationAsync(db, configService, run, cancellationToken);
 
             // Stage 3, in FlaggedAndOutliers mode only: answers far below this run's own median.
             // It has to wait for every answer because it needs that median, which is the whole
             // reason it is a separate stage rather than another per-answer trigger. Placed before
             // synthesis so the synthesis sees the run in its final graded state.
+            _runManager.MarkStage(runId, BenchmarkRunStage.SecondOpinion);
             await RunOutlierSweepAsync(db, configService, run, scoringConstants, cancellationToken);
 
             // FlaggedPlusSample only: top up second-opinion coverage to the profile's configured
@@ -441,9 +443,11 @@ public class BenchmarkService
             // verification candidate and only a second opinion can produce one. The pass filters on
             // ClaimVerificationJson and ClaimVerificationError both being null, so it re-checks
             // nothing and returns before any model call when the two stages above found no split.
+            _runManager.MarkStage(runId, BenchmarkRunStage.Verifying);
             await RunClaimVerificationAsync(db, configService, run, cancellationToken);
 
             // Final Synthesis Pass
+            _runManager.MarkStage(runId, BenchmarkRunStage.Synthesizing);
             await ExecuteFinalSynthesisAsync(db, configService, run, assessorConfig, assessorApiKey, scoringConstants, cancellationToken);
 
             // Finalize Run totals & status
@@ -490,8 +494,19 @@ public class BenchmarkService
         }
     }
 
+    /// <summary>
+    /// Re-executes the answers a run failed on, in place, and re-runs every run-level grading stage
+    /// over the whole run.
+    ///
+    /// It carries the same two terminal handlers as <see cref="ExecuteRunAsync"/> and for the same
+    /// reason: without them a throw escaped the method with the row still reading <c>Running</c> and
+    /// no owner in <see cref="BenchmarkRunManager"/>, which is a state nothing in the UI can leave.
+    /// Both open their own scope, because the one above may be gone by the time they run.
+    /// </summary>
     public async Task RunFailedQuestionsAsync(long runId, CancellationToken cancellationToken)
     {
+        var rerunStopwatch = Stopwatch.StartNew();
+
         try
         {
             using var scope = _scopeFactory.CreateScope();
@@ -551,6 +566,7 @@ public class BenchmarkService
             }
 
             run.Status = BenchmarkRunStatus.Running;
+            run.RerunStartedAtUtc = DateTime.UtcNow;
             await db.SaveChangesAsync(cancellationToken);
 
             var profile = run.ScoringProfileId.HasValue
@@ -567,22 +583,21 @@ public class BenchmarkService
                 ? BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson)
                 : new BenchmarkCandidatePromptOptions { HasGameSnapshot = suiteHasBoard };
             string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
-            PopulateInstrumentFingerprint(run, systemPrompt);
+
+            // The re-run's own instrument, recorded in its own columns. The five original
+            // fingerprints describe the instrument the run's other answers were produced under, and
+            // they are the only record that the prompt did not move between two runs; overwriting
+            // them falsifies the provenance of every answer this pass does not touch.
+            PopulateRerunInstrumentFingerprint(run, systemPrompt);
 
             var suiteQuestions = (run.BenchmarkSuite?.Questions ?? new List<BenchmarkQuestion>())
                 .ToDictionary(q => q.OrderIndex, q => q.ExpectedPoints);
 
+            _runManager.MarkStage(runId, BenchmarkRunStage.Answering);
+
             foreach (var answer in failedAnswers)
             {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    run.Status = BenchmarkRunStatus.Canceled;
-                    await ApplyAbortedTotalsAsync(db, run, null);
-                    run.CompletedAtUtc ??= DateTime.UtcNow;
-                    await db.SaveChangesAsync(CancellationToken.None);
-                    _runManager.Complete(runId);
-                    return;
-                }
+                cancellationToken.ThrowIfCancellationRequested();
 
                 await ReExecuteSingleAnswerAsync(
                     db, configService, run, answer, testedConfig, testedApiKey,
@@ -595,15 +610,66 @@ public class BenchmarkService
                     assessorConfig, assessorApiKey, scoringConstants, cancellationToken);
             }
 
-            // Claim Verification Stage: checks unverified claims against source and wiki
+            // The same run-level sequence, in the same order, as ExecuteRunAsync. The ordering is
+            // load-bearing there — see the comment on its claim-verification stage — and a re-run
+            // that skips the middle two stages reintroduces the mixed-measurement problem that
+            // ordering fix removed, for a run whose figures are then compared with a clean one's.
+            _runManager.MarkStage(runId, BenchmarkRunStage.Verifying);
             await RunClaimVerificationAsync(db, configService, run, cancellationToken);
 
-            // Re-run synthesis over all answers
+            _runManager.MarkStage(runId, BenchmarkRunStage.SecondOpinion);
+            await RunOutlierSweepAsync(db, configService, run, scoringConstants, cancellationToken);
+            await RunSecondOpinionSampleTopUpAsync(db, configService, run, profile, scoringConstants, cancellationToken);
+
+            _runManager.MarkStage(runId, BenchmarkRunStage.Verifying);
+            await RunClaimVerificationAsync(db, configService, run, cancellationToken);
+
+            _runManager.MarkStage(runId, BenchmarkRunStage.Synthesizing);
             await ExecuteFinalSynthesisAsync(db, configService, run, assessorConfig, assessorApiKey, scoringConstants, cancellationToken);
 
+            rerunStopwatch.Stop();
+            run.RerunCompletedAtUtc = DateTime.UtcNow;
+
             var allAnswers = await db.BenchmarkRunAnswers.Where(a => a.BenchmarkRunId == run.Id).ToListAsync(CancellationToken.None);
-            BenchmarkRunFinalizer.Apply(run, allAnswers);
+
+            // preserveCompletedAt: the run's elapsed wall time is the original execution's, and a
+            // re-run launched hours later would otherwise absorb the interval into it. Its own span
+            // is in the two Rerun columns.
+            BenchmarkRunFinalizer.Apply(run, allAnswers, preserveCompletedAt: true);
             await db.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var run = await db.BenchmarkRuns.FindAsync(runId);
+            if (run != null)
+            {
+                run.Status = BenchmarkRunStatus.Canceled;
+                run.ErrorMessage = "Failed-question re-run canceled.";
+                rerunStopwatch.Stop();
+                run.RerunCompletedAtUtc = DateTime.UtcNow;
+                run.CompletedAtUtc ??= DateTime.UtcNow;
+                await ApplyAbortedTotalsAsync(db, run, null);
+                await db.SaveChangesAsync(CancellationToken.None);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Benchmark run {RunId} failed-question re-run failed with exception.", runId);
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var run = await db.BenchmarkRuns.FindAsync(runId);
+            if (run != null)
+            {
+                run.Status = BenchmarkRunStatus.Failed;
+                run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(ex.Message);
+                rerunStopwatch.Stop();
+                run.RerunCompletedAtUtc = DateTime.UtcNow;
+                run.CompletedAtUtc ??= DateTime.UtcNow;
+                await ApplyAbortedTotalsAsync(db, run, null);
+                await db.SaveChangesAsync(CancellationToken.None);
+            }
         }
         finally
         {
@@ -855,6 +921,11 @@ public class BenchmarkService
 
         string? terminalError = null;
 
+        // Retained for the typed classifier: a transport failure's message is an operating-system
+        // string in the machine's display language, so the exception type is the only locale-stable
+        // evidence of one. Null on the streamed "error" event path, which carries a string only.
+        Exception? terminalException = null;
+
         // The request is about to reach the provider, which is the moment the progress dialog
         // calls this question "Answering". The mark is cleared in the finally below, so a
         // throw, a timeout or a cancellation cannot leave the row stuck in that state.
@@ -869,13 +940,15 @@ public class BenchmarkService
                 }
             }
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && questionCts.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested && questionCts.IsCancellationRequested)
         {
             terminalError = $"Per-question timeout exceeded ({perQuestionTimeoutSec} s).";
+            terminalException = ex;
         }
         catch (Exception ex)
         {
             terminalError = ex.Message;
+            terminalException = ex;
         }
         finally
         {
@@ -883,7 +956,8 @@ public class BenchmarkService
         }
         sw.Stop();
 
-        var classification = BenchmarkProviderErrorClassifier.Classify(terminalError);
+        var classification = BenchmarkProviderErrorClassifier.Classify(
+            terminalException, terminalError, cancellationToken.IsCancellationRequested);
         var sanitized = BenchmarkAnswerSanitizer.Sanitize(runResult.FinalText);
 
         // Bucketed per model call, never from the answer's summed tokens: an agentic answer's sum crosses
@@ -1063,6 +1137,9 @@ public class BenchmarkService
 
         string? terminalError = null;
 
+        // See ExecuteSingleQuestionAsync for why the exception itself is retained.
+        Exception? terminalException = null;
+
         // Re-runs show the same Answering state as a first run; see ExecuteSingleQuestionAsync.
         _runManager.MarkQuestionInFlight(run.Id, answer.OrderIndex);
         try
@@ -1075,13 +1152,15 @@ public class BenchmarkService
                 }
             }
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && questionCts.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested && questionCts.IsCancellationRequested)
         {
             terminalError = $"Per-question timeout exceeded ({perQuestionTimeoutSec} s).";
+            terminalException = ex;
         }
         catch (Exception ex)
         {
             terminalError = ex.Message;
+            terminalException = ex;
         }
         finally
         {
@@ -1089,7 +1168,8 @@ public class BenchmarkService
         }
         sw.Stop();
 
-        var classification = BenchmarkProviderErrorClassifier.Classify(terminalError);
+        var classification = BenchmarkProviderErrorClassifier.Classify(
+            terminalException, terminalError, cancellationToken.IsCancellationRequested);
         var sanitized = BenchmarkAnswerSanitizer.Sanitize(runResult.FinalText);
 
         // Bucketed per model call, never from the answer's summed tokens: an agentic answer's sum crosses
@@ -1421,6 +1501,23 @@ public class BenchmarkService
             {
                 flags &= ~BenchmarkAnswerFlags.OmissionAsAccuracy;
             }
+
+            if (res.AccuracyOutOfRubric)
+            {
+                flags |= BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction;
+            }
+            else
+            {
+                flags &= ~BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction;
+            }
+
+            // Read off the graded answer text and not cleared on re-assessment: the opener is the
+            // candidate's own output, so a second grading pass over the same text cannot change it.
+            if (BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer.AnswerText))
+            {
+                flags |= BenchmarkAnswerFlags.AnswerFramingOpener;
+            }
+
             answer.AnswerFlags = (int)flags;
 
             if (res.CriticalErrorDemoted)
@@ -1456,6 +1553,13 @@ public class BenchmarkService
                 _logger.LogInformation(
                     "Benchmark run {RunId} answer {OrderIndex}: assessor docked accuracy citing an omission; recorded as omission as accuracy.",
                     run.Id, answer.OrderIndex);
+            }
+
+            if (res.AccuracyOutOfRubric)
+            {
+                _logger.LogInformation(
+                    "Benchmark run {RunId} answer {OrderIndex}: assessor marked an accuracy deduction \"{Marker}\"; recorded as an out-of-rubric deduction.",
+                    run.Id, answer.OrderIndex, BenchmarkAssessmentParser.OutOfRubricAccuracyMarker);
             }
 
             answer.AccuracyScore = BenchmarkScoring.Score(res.AccuracyLevel, constants.LevelScores);
@@ -1642,6 +1746,12 @@ public class BenchmarkService
         BenchmarkScoringConstants constants)
     {
         if (mode == BenchmarkSecondOpinionMode.Off) return null;
+
+        // Ahead of the All short-circuit deliberately: an answer the quality index excludes has no
+        // gradeable text, so a second verdict on it grades a transport failure and then contaminates
+        // the run's grader-agreement aggregates. All must not select one either.
+        if (!BenchmarkRunFinalizer.CountsTowardQualityIndex(answer)) return null;
+
         if (mode == BenchmarkSecondOpinionMode.All) return SecondOpinionTriggers.All;
 
         if (answer.CriticalError) return SecondOpinionTriggers.CriticalError;
@@ -1659,6 +1769,17 @@ public class BenchmarkService
         if ((((BenchmarkAnswerFlags)answer.AnswerFlags) & BenchmarkAnswerFlags.ContestedVerdict) != 0)
         {
             return SecondOpinionTriggers.ContestedVerdict;
+        }
+
+        // The assessor prefixed an accuracy deduction with "Not in rubric:", declaring the basis for
+        // it outside the instrument. Weaker evidence than a refutation or a self-described
+        // fabrication, and stronger than an unevidenced deduction, because the grader has stated
+        // where the basis came from. Gated on the level so a level-6 answer whose evidence merely
+        // mentions an out-of-rubric observation does not spend a verdict.
+        if ((((BenchmarkAnswerFlags)answer.AnswerFlags) & BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction) != 0
+            && (answer.AccuracyLevel ?? 6) <= BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel)
+        {
+            return SecondOpinionTriggers.OutOfRubricAccuracy;
         }
 
         // The Q1 shape from run 8: Accuracy 4/6 with accuracyEvidence "Matches rubric." — a deduction on
@@ -1977,8 +2098,19 @@ public class BenchmarkService
 
             suiteQuestions.TryGetValue(answer.OrderIndex, out var expectedPoints);
 
-            await VerifyAnswerClaimsAsync(
-                db, configService, run, answer, verifierConfig, verifierApiKey, expectedPoints, cancellationToken);
+            // The row already carries a score, so without this mark the dialog shows it as finished
+            // for the whole time the verifier is re-reading it. Cleared in the finally so a throw or
+            // a cancel cannot leave it pulsing forever.
+            _runManager.MarkVerificationInFlight(run.Id, answer.OrderIndex);
+            try
+            {
+                await VerifyAnswerClaimsAsync(
+                    db, configService, run, answer, verifierConfig, verifierApiKey, expectedPoints, cancellationToken);
+            }
+            finally
+            {
+                _runManager.ClearVerificationInFlight(run.Id, answer.OrderIndex);
+            }
 
             if (tokenBudget > 0)
             {
@@ -2957,6 +3089,7 @@ public class BenchmarkService
         public const string CriticalError = "CriticalError";
         public const string RefutedClaim = "RefutedClaim";
         public const string ContestedVerdict = "ContestedVerdict";
+        public const string OutOfRubricAccuracy = "OutOfRubricAccuracy";
         public const string UnevidencedDeduction = "UnevidencedDeduction";
         public const string OmissionAsAccuracy = "OmissionAsAccuracy";
         public const string UnverifiedClaims = "UnverifiedClaims";
@@ -2971,8 +3104,34 @@ public class BenchmarkService
     /// Grades one answer with the run's second-opinion assessor and records the verdict. Split
     /// from the trigger logic so the post-scoring outlier sweep can reuse it without
     /// re-evaluating triggers it has already decided.
+    ///
+    /// The in-flight mark is set here rather than in the core below so every caller — the
+    /// per-answer trigger, the outlier sweep and the sample top-up — reports the answer as being
+    /// re-graded, and the <c>finally</c> is what keeps a throw from leaving it that way.
     /// </summary>
     private async Task RunSecondOpinionAsync(
+        ApplicationDbContext db,
+        SystemAiConfigService configService,
+        BenchmarkRun run,
+        BenchmarkRunAnswer answer,
+        string? expectedPoints,
+        BenchmarkScoringConstants constants,
+        string trigger,
+        CancellationToken cancellationToken)
+    {
+        _runManager.MarkSecondOpinionInFlight(run.Id, answer.OrderIndex);
+        try
+        {
+            await RunSecondOpinionCoreAsync(
+                db, configService, run, answer, expectedPoints, constants, trigger, cancellationToken);
+        }
+        finally
+        {
+            _runManager.ClearSecondOpinionInFlight(run.Id, answer.OrderIndex);
+        }
+    }
+
+    private async Task RunSecondOpinionCoreAsync(
         ApplicationDbContext db,
         SystemAiConfigService configService,
         BenchmarkRun run,
@@ -4464,6 +4623,20 @@ public class BenchmarkService
         {
             run.SourceCodeHeadSha = GitHelper.GetGitHeadSha(sourceCodePath);
         }
+    }
+
+    /// <summary>
+    /// The instrument a failed-question re-run executed under, written to the two <c>Rerun*</c>
+    /// columns. Only the two fingerprints that a code or guide change can move are recorded: the
+    /// three corpus heads belong to the corpora, which a re-run reads exactly as the original run
+    /// did, and duplicating them would invite a reader to compare a run against itself.
+    /// </summary>
+    internal void PopulateRerunInstrumentFingerprint(BenchmarkRun run, string systemPrompt)
+    {
+        using var sha256 = SHA256.Create();
+        byte[] promptHash = sha256.ComputeHash(Encoding.UTF8.GetBytes(systemPrompt));
+        run.RerunCandidateSystemPromptSha256 = Convert.ToHexString(promptHash).ToLowerInvariant();
+        run.RerunToolGuidesSha256 = ComputeToolGuidesSha256();
     }
 
     internal static string? ComputeToolGuidesSha256()

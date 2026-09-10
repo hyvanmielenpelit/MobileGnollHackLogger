@@ -311,7 +311,7 @@ empty result rather than surfaced as an error.
 |---|---|---|---|---|
 | `wiki_search` | `query` | `category`, `max_results` | `max_results` default 5, **no clamp/cap** — `maxResults > 0 ? maxResults : 5` is passed straight to Lucene's hit count | `Tools:wiki_search:MaxResults`, `Tools:wiki_search:PerResultChars` (2500) |
 | `wiki_view` | `article` | `section` | none | none |
-| `nethack_wiki_search` | `query` | `namespace_filter` (`article`\|`source`\|`category`\|`forum`\|`help`\|`nethackwiki`), `max_results` | `max_results` default **3** (tool-level, distinct from the config ceiling below), clamped `1..max(1, configured)` | `Tools:nethack_wiki_search:MaxResults` (5) |
+| `nethack_wiki_search` | `query` | `namespace_filter` (`article`\|`source`\|`category`\|`forum`\|`help`\|`nethackwiki`), `max_results` | `max_results` default **3** (tool-level, distinct from the config ceiling below), clamped `1..max(1, configured)` | `Tools:nethack_wiki_search:MaxResults` (5), `Tools:nethack_wiki_search:PerResultChars` (3000, **from harness 18**) |
 | `nethack_wiki_view` | `article` | `section` | none | none |
 
 > 🛑 **`wiki_search`'s `category` filter is not a stored taxonomy field.** It compiles to
@@ -334,11 +334,38 @@ the named section isn't found, the **full article** is returned with a
 `[Section 'X' not found in article. Returning full text.]` prefix — not an error.
 
 **Result shape**: `wiki_search` returns per-hit snippets via `WikiSnippetExtractor.BuildSnippet`
-(bounded to `PerResultChars`, query-term-aware); `nethack_wiki_search` returns **full article
-bodies** with no per-result character cap of its own (bounded only by the generic per-tool
-`MaxResultLength` truncation in `ToolExecutor`). An empty result from any of the four is
-`Success = true` with a "No relevant information found" / "article … not found" `Content` —
-never a failure once indexing is complete.
+(bounded to `PerResultChars`, query-term-aware). **`nethack_wiki_search` returned full article
+bodies with no per-result cap of its own up to harness 17**, bounded only by the generic per-tool
+`MaxResultLength` truncation in `ToolExecutor` — which cuts the *last* article mid-sentence and
+drops the ones after it, so which articles the model saw depended on Lucene's ordering. **From
+harness 18 it caps each article** at `Tools:nethack_wiki_search:PerResultChars` (3000) and marks a
+shortened one with `... [Article truncated: showing N of M characters. Use nethack_wiki_view for the
+full article.]`, so every hit stays present.
+
+An empty result from any of the four is `Success = true` — never a failure once indexing is
+complete — but **the payload changed under harness 18** and both forms must stay matchable when
+reading an older run:
+
+| Tool | Miss payload up to harness 17 | Length | Opening to match from harness 18 |
+|---|---|---|---|
+| `wiki_search` | `No relevant information found in the GnollHack wiki.` | **52** | `No GnollHack wiki article matched '` |
+| `wiki_view` | `Wiki article matching '{article}' not found.` | **35 + the article name** | `No wiki article matched '` |
+| `nethack_wiki_search` | `No relevant information found in the NetHack wiki.` | **50** | unchanged |
+| `nethack_wiki_view` | `article … not found` | — | unchanged |
+
+The harness-18 payloads are near-miss reports of a few hundred characters, built the way
+`SourceCodeSearchTool.BuildMissContent` builds its own (§ 4): they name the query, probe the same
+index once or twice for a near neighbour and name what it hit, say when a `category` may be
+excluding the match — the high-value hint, since `category` is a path substring and not a taxonomy
+field — and end with a next action naming a specific alternative tool. Every probe swallows its own
+exceptions and any `Error:`-prefixed content into "no hit", so a miss can never itself fail.
+**Match the opening, never a length**, and reserve the bare strings above for a run recorded before
+harness 18 or a call in which the builder threw.
+
+`wiki_view`'s miss payload also states, when a `section` was requested, that it was the **article**
+that missed so the section was never reached. A section that matches no heading is **not** a miss at
+all and does not reach the builder: `WikiService.GetArticle` answers that case itself with the
+`[Section 'X' not found in article. Returning full text.]` line above, followed by the whole article.
 
 ---
 
@@ -516,13 +543,34 @@ the config keys relevant to reading a tool's *output*, and where each is read.
 |---|---|---|---|
 | `MaxSourceResultLength` (root-level) | 100000 at `Overseer/appsettings.json:17`; `SourceCodeSearchTool.cs` falls back to the same figure in code | `SourceCodeSearchTool` constructor | Only `source_code_search`'s own pre-truncation of its concatenated multi-file result, before the generic per-tool cap below ever runs |
 | `AiPerformanceSettings:MaxResultLength:Default` | 10000 (Min 1000 / Max 100000, user-adjustable) | `ChatService.cs` when building `ToolExecutionContext` | Generic per-tool-call cap, enforced in `ToolExecutor.ExecuteAsync` step 4: a JSON-shaped result (starts with `{`/`[`) over the cap becomes a `Success = false` "Result too large" error instead of being substring-truncated (to avoid emitting invalid JSON); a plain-text result is hard-truncated with `ToolExecutor.BuildTruncationSuffix`'s `... [Truncated: showing {shown} of {total} characters. Narrow the query, or ask for a specific section, to see the rest.]` — 107 characters of fixed template plus the digits of both figures, so ≈117 for the common 10,000-of-N case, and **not a fixed length**. A run recorded before this suffix existed carries the 33-character `... [Result truncated for length]` instead |
-| `ToolExecutionLimits:MaxBatchResultLength` | 40000 | `AgentLoopRunner.cs` (`:482`) | One `ToolBatchResultBudget` per tool-call **batch** (one iteration's parallel tool calls), scaled to `Math.Max(this, ToolExecutionContext.MaxResultLength)`; a tool whose `MaxResultLengthOverride` already exceeds the context max (only `refresh_snapshot`, 60200) is exempted from this budget entirely |
+| `ToolExecutionLimits:MaxBatchResultLength` | 40000 | `AgentLoopRunner.cs` (`:482`) | One `ToolBatchResultBudget` per tool-call **batch** (one iteration's parallel tool calls), scaled to `Math.Max(this, ToolExecutionContext.MaxResultLength)`. A tool whose effective cap exceeds **that scaled batch budget** is exempt from it — which is `refresh_snapshot` (60200) and nothing else. **Up to harness 17 the comparison was against `ToolExecutionContext.MaxResultLength` instead**, so *any* tool with an override was exempted outright; from harness 18 an override that fits inside the batch budget stays accountable to it. `MaxTurnResultLength` applies unconditionally either way |
 | `ToolExecutionLimits:MaxTurnResultLength` | 120000 | `AgentLoopRunner.cs` (`:123`) | A cumulative ceiling across **all** tool-call batches within one model turn (multiple iterations of the tool loop), distinct from and layered above the per-batch budget |
 
-Per-handler `MaxResultLengthOverride` (`IToolHandler`) is `null` for every tool except
-`refresh_snapshot`, which floors its effective cap at 60200 chars specifically so the client
-snapshot's tail sections (Discoveries, dungeon overview) aren't silently lost to an arbitrary cut
-— see the comment in `ClientToolHandlers.cs`.
+Per-handler `MaxResultLengthOverride` (`IToolHandler`) is a **floor**, never a ceiling:
+`ToolExecutor` takes `Math.Max(baseMaxLen, handlerMax)`, so an override raises the cap for its own
+tool and cannot lower one, and it touches no other tool and not the shared
+`AiPerformanceSettings:MaxResultLength:Default` that doubles as the live chat setting. Two tools
+declare one:
+
+| Tool | Override | Why |
+|---|---|---|
+| `refresh_snapshot` | **60200** | Floors the cap so the client snapshot's tail sections (Discoveries, dungeon overview) are not silently lost to an arbitrary cut — plus headroom for the client's own `[SNAPSHOT TRUNCATED …]` marker. See the comment in `ClientToolHandlers.cs` |
+| `wiki_search` | **13000**, from harness 18 | The tool's own budget is `Tools:wiki_search:MaxResults` × `PerResultChars` = 5 × 2500 = **12500**, which exceeded the generic 10000 cap, so a full-yield search was **always** truncated mid-article on its last hit. 13000 is that 12500 plus headroom for the per-hit separators |
+
+**Neither was fixed by raising the generic cap, deliberately.** `MaxResultLength` is the cap for
+all 30 tools *and* the live chat default (user-adjustable 1000–100000) *and* `Benchmark:MaxResultLength`,
+so raising it enlarges every truncated result on every live turn; it would not fix a tool with no
+per-result cap of its own; and every tool result is re-sent to the model on each subsequent round of
+the same question (§ 4), so the extra characters are paid once per remaining round. Lowering
+`Tools:wiki_search:PerResultChars` was rejected on the same arithmetic in reverse — on run 29 the
+cap bound on only **2 of 24** `wiki_search` calls, so lowering it would have shrunk 22 healthy
+results to repair 2.
+
+> ⚠️ **These are `Overseer/appsettings.json` values, and no run record fingerprints them.**
+> `ToolGuidesSha256` hashes the guide *files*, not the configuration, so a change to any
+> `Tools:*:MaxResults`, `Tools:*:PerResultChars` or `MaxResultLength` is invisible in every run
+> record — including a change that moves what a tool returns. Read the configuration alongside the
+> run when a result size is part of a finding.
 
 ---
 

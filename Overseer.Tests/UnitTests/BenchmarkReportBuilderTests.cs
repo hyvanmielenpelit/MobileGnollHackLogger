@@ -319,9 +319,14 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("Simple (1–35)", report);
         Assert.Contains("Intermediate (36–70)", report);
         Assert.Contains("Advanced (71–100)", report);
-        // The counts are over the answers this run stored, not over the suite as authored.
-        Assert.Contains("Answered Band Distribution (of ", report);
-        Assert.DoesNotContain("Authored Band Distribution", report);
+        // The label names the difficulty the line buckets by, and the parenthetical names the
+        // count basis: the answers this run stored, not the suite as authored. Both halves are
+        // load-bearing, because the line sits inside the Band Agreement section, where an
+        // unqualified distribution reads as an assessed-band figure.
+        Assert.Contains("Authored Band Distribution (of ", report);
+        Assert.Contains("by authored difficulty", report);
+        // The Difficulty Breakdown above it buckets by assessed difficulty, and now says so.
+        Assert.Contains("Buckets by **assessed** difficulty", report);
     }
 
     // --- Heading demotion ---------------------------------------------------------------
@@ -1487,7 +1492,14 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.Contains("**Advisory Flags:** 2 (reasoning bleed: 1, repeated fragments: 0, contested verdicts: 1, unevidenced deductions: 0, omissions as accuracy: 0, refuted claims: 0)", report);
+        // Every member of AdvisoryFlags is enumerated, so the parenthetical accounts for the
+        // total rather than listing a subset of it. The two harness-18 members are included for
+        // that reason and read 0 here.
+        Assert.Contains(
+            "**Advisory Flags:** 2 (reasoning bleed: 1, repeated fragments: 0, contested verdicts: 1, " +
+            "unevidenced deductions: 0, omissions as accuracy: 0, refuted claims: 0, " +
+            "out-of-rubric accuracy deductions: 0, answer-framing openers: 0)",
+            report);
     }
 
     [Fact]

@@ -117,7 +117,40 @@ public sealed class BenchmarkArtifactScrubber
         @"(?:check|verify|locat|trac|confirm|look|read|search|inspect|examin)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    // Claim-of-sufficiency openers: the answer announcing that enough information has been
+    // gathered, rather than opening with the substance itself — the class _policy.md's own
+    // opening lines forbid. Detector only, anchored at the start of the answer text: nothing
+    // here is added to Strip's removal set, since stripping it would replace the very text the
+    // assessor grades, which is a scoring-method change rather than artifact removal.
+    //
+    // The two "I <verb>" alternatives are split on the adverb, and only the adverb-bearing one
+    // admits "the": NarrationSignatureRegex above claims "I have/need/found/located/confirmed the"
+    // with the verb immediately after the pronoun, and an intervening adverb defeats it. Splitting
+    // here partitions the verb-then-article space rather than both regexes claiming part of it,
+    // and still reaches "I now have the pieces I need", which neither would otherwise see.
+    private static readonly Regex AnswerFramingRegex = new(
+        @"\A\s*(?:Now\s+|OK[,.]?\s+|Alright[,.]?\s+)?I\s+(?:now|finally|also|just)\s+" +
+        @"(?:have|need|found|located|confirmed)\s+(?:the|a|all|enough|everything|what)\b" +
+        @"|\A\s*(?:Now\s+|OK[,.]?\s+|Alright[,.]?\s+)?I\s+" +
+        @"(?:have|need|found|located|confirmed)\s+(?:a|all|enough|everything|what)\b" +
+        @"|\A\s*(?:Now\s+)?I(?:’|')ve\s+(?:got|confirmed|gathered)\b" +
+        @"|\A\s*Let\s+me\s+(?:just\s+|now\s+)?(?:give|answer|lay\s+out|summari[sz]e|provide|state|write|put)\b" +
+        @"|\A\s*(?:This|That)\s+(?:has|is)\s+(?:a\s+)?clear\s+answer\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     public static BenchmarkArtifactScrubber Default { get; } = new();
+
+    /// <summary>
+    /// Whether the answer opens with a claim-of-sufficiency sentence — "I now have all the
+    /// pieces...", "Let me give you the answer" — rather than the substance itself. Detection
+    /// only: the caller sets a flag and a count from this; the text itself is left untouched.
+    /// </summary>
+    public static bool HasAnswerFramingOpener(string? answerText)
+    {
+        if (string.IsNullOrWhiteSpace(answerText)) return false;
+
+        return AnswerFramingRegex.IsMatch(answerText);
+    }
 
     /// <summary>
     /// Whether the text still carries transport artifacts. Used by

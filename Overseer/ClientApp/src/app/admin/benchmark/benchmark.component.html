@@ -1370,9 +1370,15 @@
           </div>
         }
 
+        <!-- Cancel used to be the only action here, and cancelling is the one thing a stuck
+             run cannot recover from: an aborted run refuses a re-run outright. The dialog is
+             where a run's progress is actually visible, so it is offered first. -->
         @if (isRunBusy()) {
           <div class="retry-progress-strip mb-20" role="status">
             <span>Retry in progress on this run…</span>
+            <button type="button" class="btn-gh" (click)="openRunProgressForSelectedRun()">
+              Open run dialog
+            </button>
             <button type="button" class="btn-gh btn-gh-delete" (click)="cancelRunById(selectedRunDetail.id)">
               Cancel
             </button>
@@ -1707,7 +1713,7 @@
             </button>
           }
           @if (formatStatus(selectedRunDetail.status) === 'CompletedWithErrors' || formatStatus(selectedRunDetail.status) === 'Failed') {
-            <button type="button" class="btn-gh" (click)="rerunFailed(selectedRunDetail.id)" [disabled]="isRunBusy() || isAbortedRun(selectedRunDetail)">
+            <button type="button" class="btn-gh" (click)="rerunFailedFromRunDetail(selectedRunDetail.id)" [disabled]="isRunBusy() || isAbortedRun(selectedRunDetail)">
               <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
               Re-run Failed Questions
             </button>
@@ -3346,21 +3352,43 @@
         </dl>
       }
 
-      <!-- Stage rail: two stages, because the executor assesses each answer immediately
-           after producing it, inside the same loop. Only the synthesis is separate. -->
+      <!-- Stage rail: four stages. Answering and assessing are one, because the executor
+           assesses each answer immediately after producing it inside the same loop; claim
+           verification, the second-opinion passes and the synthesis are strictly serial, and
+           the middle two occupy whole minutes in which no answer row changes. -->
       <ol class="run-stage-rail" aria-label="Run stages">
         <li class="run-stage" [class.is-current]="runStage === 'answering'"
-            [class.is-done]="runStage === 'finalizing'"
+            [class.is-done]="runStage === 'verifying' || runStage === 'secondopinion' || runStage === 'finalizing'"
             [attr.aria-current]="runStage === 'answering' ? 'step' : null">
           <span class="run-stage-index" aria-hidden="true">1</span>
           <span class="run-stage-name">Collecting and assessing answers</span>
         </li>
+        <li class="run-stage" [class.is-current]="runStage === 'verifying'"
+            [class.is-done]="runStage === 'secondopinion' || runStage === 'finalizing'"
+            [attr.aria-current]="runStage === 'verifying' ? 'step' : null">
+          <span class="run-stage-index" aria-hidden="true">2</span>
+          <span class="run-stage-name">Verifying claims</span>
+        </li>
+        <li class="run-stage" [class.is-current]="runStage === 'secondopinion'"
+            [class.is-done]="runStage === 'finalizing'"
+            [attr.aria-current]="runStage === 'secondopinion' ? 'step' : null">
+          <span class="run-stage-index" aria-hidden="true">3</span>
+          <span class="run-stage-name">Second opinion</span>
+        </li>
         <li class="run-stage" [class.is-current]="runStage === 'finalizing'"
             [attr.aria-current]="runStage === 'finalizing' ? 'step' : null">
-          <span class="run-stage-index" aria-hidden="true">2</span>
+          <span class="run-stage-index" aria-hidden="true">4</span>
           <span class="run-stage-name">Synthesis and scoring</span>
         </li>
       </ol>
+
+      @if (runHasRerunScope) {
+        <p class="rerun-scope-badge">
+          Re-running {{ rerunScopeOrderIndexes.length }} failed
+          {{ rerunScopeOrderIndexes.length === 1 ? 'question' : 'questions' }}. Every question of
+          the suite is listed below; the ones being re-run are marked.
+        </p>
+      }
 
       <div class="job-progress-block">
         <label class="progress-label" for="runAnswersProgressBar">Answers</label>
@@ -3380,7 +3408,28 @@
         } @else {
           <progress id="runAssessmentsProgressBar" class="job-progress"></progress>
         }
-        <!-- The dialog's only polling live region: one announcement per stage change. -->
+      </div>
+
+      <div class="job-progress-block">
+        <label class="progress-label" for="runVerifiedProgressBar">Claims verified</label>
+        @if (runAnsweredCount > 0) {
+          <progress id="runVerifiedProgressBar" class="job-progress"
+                    [value]="runVerifiedCount" [max]="runAnsweredCount"></progress>
+        } @else {
+          <progress id="runVerifiedProgressBar" class="job-progress"></progress>
+        }
+      </div>
+
+      <div class="job-progress-block">
+        <label class="progress-label" for="runSecondOpinionProgressBar">Second opinions</label>
+        @if (runAnsweredCount > 0) {
+          <progress id="runSecondOpinionProgressBar" class="job-progress"
+                    [value]="runSecondOpinionCount" [max]="runAnsweredCount"></progress>
+        } @else {
+          <progress id="runSecondOpinionProgressBar" class="job-progress"></progress>
+        }
+        <!-- The dialog's only polling live region: one announcement per stage change. A second
+             one would announce continuously for the length of the run. -->
         <p class="progress-status" role="status" aria-live="polite">{{ runStageLabel }}</p>
       </div>
 
@@ -3430,9 +3479,12 @@
 
       <ul class="job-item-list run-question-list">
         @for (row of runProgressRows; track row.orderIndex) {
-          <li class="job-item-row">
+          <li class="job-item-row" [class.is-rerun-scope]="isRerunScope(row)">
             <span class="job-item-index">Q{{ row.orderIndex }}</span>
             <span class="job-item-excerpt">{{ row.questionText }}</span>
+            @if (isRerunScope(row)) {
+              <span class="job-item-rerun-marker" title="Being re-run">re-run</span>
+            }
             <span class="job-status-chip" [class]="runRowChipClass(row)">{{ runRowChipLabel(row) }}</span>
           </li>
         }

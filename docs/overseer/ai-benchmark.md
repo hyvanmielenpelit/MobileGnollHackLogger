@@ -736,6 +736,142 @@ assessed-difficulty snapshot, and `SuiteItemRevisions` is a **Fundamental** comp
 every run of that suite after the edit is non-comparable with every run before it, and the suite
 cannot be run at all until difficulty is re-assessed for all eighteen questions.
 
+### Harness Version 18 Updates
+
+Prompted by an audit of what a run's own integrity counts actually meant: a transport failure was
+classified from an exception's message, which on a real host is an operating-system string in the
+machine's display language, so the classifier only held on an English-locale box; and a `Failed`
+or `ProviderError` answer sat in the same **Clean** bucket as an answer that actually produced
+graded text, so a run that outright lost a question could still report itself 100% clean.
+`ScoringMethodVersion` stays at **10** — no scoring formula changed — but
+`BenchmarkAssessmentPrompt.HarnessVersion` moves to **18**, because the integrity bucketing, the
+gradeable population every report figure is drawn from, and the fingerprints a run keeps around a
+re-run all change what a report — or a comparison across the boundary — means.
+
+- **Provider-error classification reads the exception, not its text.** `BenchmarkProviderErrorClassifier`
+  gains `Classify(Exception? exception, string? errorMessage, bool callerCanceled)`, which walks the
+  exception chain (unwrapping an `AggregateException`'s branches) and classifies from
+  `SocketException.SocketErrorCode`, `OperationCanceledException`, `TimeoutException`,
+  `IOException`/`AuthenticationException`, and `HttpRequestException` — types and enum values, none
+  of which a locale can rewrite. `callerCanceled` tells a user-initiated cancel apart from a
+  cancellation the transport itself raised, since only the caller knows which happened; the new
+  overload falls back to the existing message-only `Classify(string?)` when nothing in the chain
+  matches. That message-only overload — the only path open to the streamed `"error"` event, which
+  carries a bare string — gained its own locale-independent substrings (`"connection attempt
+  failed"`, `"forcibly closed"`, `"No such host is known"`, `"Name or service not known"`,
+  `"actively refused"`, `"SSL connection could not be established"`), so a transport failure
+  reaching it that way is not misclassified either.
+- **The bucket that error lands in changed.** `BenchmarkRunFinalizer.HasTerminalFailure` is new —
+  status `ProviderError` or `Failed`, nothing else — and `HasTransportDefect` now returns true for
+  it ahead of every other check, so `Classify` puts such an answer in **TransportDefect**, not
+  **Clean**. Say this plainly: it moves the clean count and the provider-error count of every run
+  reported from harness 18 on, and a reader comparing a run stamped 17 against one stamped 18 must
+  read the difference as a bucketing change, not a regression. No index, no dimensional score and
+  no run status moves — `ComputeStatus` and the scoring path are untouched — which is exactly why
+  `ScoringMethodVersion` does not move with it.
+- **One gradeable-answer denominator, used everywhere "answered question(s)" is printed.**
+  `BenchmarkRunFinalizer.CountsTowardQualityIndex` — an `Ok` status, or a model-produced empty
+  answer scored 0 under method 10 — is now the population behind every such figure in
+  `BenchmarkReportBuilder`, behind `BenchmarkChatTransfer.AnalyzeToolRouting`, and behind the
+  client's diagnostics capture. The second-opinion trigger cascade and the grader-agreement
+  aggregates are drawn from the same population, so a transport-defect answer can no longer consume
+  a second-opinion slot and then contaminate the agreement figure. This **changes a published
+  advisory figure** — the agreement mean — which stays advisory, folds into no index, and is always
+  printed with its coverage caveat.
+- **Two advisory flags.** `BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction` (512) is set from the
+  prompted `Not in rubric:` marker (`BenchmarkAssessmentParser.OutOfRubricAccuracyMarker`) that
+  nothing previously consumed; it also becomes a second-opinion trigger, with
+  `ResolveSecondOpinionTrigger` positioning it after `ContestedVerdict` and before
+  `UnevidencedDeduction`, gated on `(answer.AccuracyLevel ?? 6) <=
+  BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel`. `BenchmarkAnswerFlags.AnswerFramingOpener`
+  (1024) is set from `BenchmarkArtifactScrubber.HasAnswerFramingOpener`, which matches a
+  claim-of-sufficiency opener — "I now have everything I need", "Let me give you the answer" —
+  anchored at the start of the answer text. **The opener is detected and counted only; the text is
+  not removed.** Scrubbing it would replace the very text the assessor grades, which is a
+  scoring-method change rather than artifact removal — the same reasoning that keeps
+  `ContestedVerdict` and the rest of the advisory set out of `TransportDefectFlags`. The report
+  states explicitly that the opener reaches production chat unmodified and violates the
+  answer-opening rule in `Overseer/ToolGuides/_policy.md`. Both flags get a run-level count —
+  `OutOfRubricAccuracyAnswerCount` and `AnswerFramingOpenerAnswerCount` — recomputed from the
+  persisted `AnswerFlags` every time `ApplyTotals` runs. Both columns are non-nullable and default
+  to 0, which is the *correct* value for every run before 18: the flags did not exist for those
+  answers to carry, so a genuine zero is what recomputing them produces. That is a different
+  convention from the fingerprint and timestamp columns below, where a 0-shaped value would be
+  wrong and null is the only honest reading.
+- **A non-gradeable answer no longer publishes a speed score.** `BenchmarkRunFinalizer.Apply` nulls
+  `SpeedScore` on every answer `CountsTowardQualityIndex` excludes, and the report suppresses the
+  line for it. `SpeedIndex` itself does not move: it was already computed only over `Status == Ok`
+  answers, so the filter had already excluded them.
+- **The re-run's own fingerprint and timestamp columns.** Migration `BenchmarkHarness18Integrity`
+  adds four nullable `BenchmarkRun` columns for a failed-question re-run's own instrument:
+  `RerunCandidateSystemPromptSha256`, `RerunToolGuidesSha256`, `RerunStartedAtUtc`,
+  `RerunCompletedAtUtc`. The re-run records its own fingerprints instead of overwriting the run's
+  original five, because those five are the only record that the instrument did not move between
+  two runs; overwriting them on a re-run would falsify the provenance of every answer the re-run
+  did not touch. The same reasoning covers the wall clock: `CompletedAtUtc` and `TotalDurationMs`
+  stay the original execution's, and `BenchmarkRunFinalizer.Apply` gained an optional
+  `preserveCompletedAt` parameter (default `false`, the previous behaviour) that
+  `BenchmarkService.RunFailedQuestionsAsync` passes as `true` — a re-run launched hours later must
+  not absorb that interval into the run's own elapsed time. **All four columns read as "not
+  recorded" on a run that was never re-run, never as zero.** The same migration also adds
+  `OutOfRubricAccuracyAnswerCount` and `AnswerFramingOpenerAnswerCount` from the advisory flags
+  above — six new `BenchmarkRun` columns in total — but those two are ordinary non-nullable counts
+  and do not follow this "not recorded" convention; see the advisory-flags item for why 0 is
+  correct for them.
+- **The failed-question re-run fails safe.** `RunFailedQuestionsAsync` gained the same two terminal
+  handlers `ExecuteRunAsync` already had: `OperationCanceledException` sets `Canceled`, and a
+  general `Exception` sets `Failed` with `ErrorMessage` and `CompletedAtUtc`. Before this, a throw
+  partway through a re-run could leave the row reading `Running` with no owner — an unrecoverable
+  state, because cancelling it sets `Canceled`, and a re-run then refuses an aborted run outright.
+  `AdminBenchmarkController.RerunFailedQuestions` now accepts an orphaned `Running` row
+  deliberately — it is the one action that repairs such a row rather than ending it — while still
+  refusing `Canceled` and `Failed`.
+- **The re-run executes the full run-level stage sequence.** Where it previously ran one
+  verification pass, `RunFailedQuestionsAsync` now runs the same sequence `ExecuteRunAsync` does —
+  verification, outlier sweep, sample top-up, verification again, synthesis — because that ordering
+  (verification ahead of second-opinion selection, and again after it) is what keeps the pooled
+  agreement figure measuring the same thing regardless of which trigger selected an answer; a
+  re-run that skipped the middle stages would reintroduce the mixed-measurement problem that
+  ordering fix removed, for a run whose figures are then compared against a clean one's.
+- **A four-stage progress model.** `BenchmarkRunManager` gains `BenchmarkRunStage` (`Answering`,
+  `Verifying`, `SecondOpinion`, `Synthesizing`, `Terminal`) plus `InFlightVerification` and
+  `InFlightSecondOpinion` — per-answer in-flight sets alongside the existing `InFlightQuestions` —
+  all exposed on the run-detail DTO. The client prefers the server's `stage` and falls back to
+  deriving one from the answer rows only when it is absent. The server's figure is needed because
+  nothing else can tell the two middle stages apart: no answer row changes while verification or
+  the second-opinion pass runs, which on one measured run held for nine of the run's nineteen
+  minutes. The state is in-process only — `BenchmarkRunManager` keeps no server-side log of it — so
+  a run whose process restarts mid-flight reports no stage, the same as every other in-flight
+  signal this dialog already falls back on.
+- **Tool result-budget parity.** `WikiSearchTool.MaxResultLengthOverride` is now `13000`, because
+  the tool's own budget — `Tools:wiki_search:MaxResults` × `PerResultChars`, 5 × 2,500 = 12,500 —
+  exceeded the generic 10,000-character cap (`Benchmark:MaxResultLength`), so a full-yield search
+  was always truncated mid-article on its last hit. `ToolExecutor.ExecuteAsync` and
+  `GetEffectiveMaxResultLength` both take `Math.Max(baseMaxLen, handlerMax)`, so an override is a
+  **floor** and can never lower a cap; the shared `MaxResultLength` — every other tool's cap, and
+  the live chat default — is deliberately **not** raised alongside it. `AgentLoopRunner`'s
+  batch-budget exemption now compares a tool's effective cap against the *batch* budget
+  (`Math.Max(ToolExecutionLimits:MaxBatchResultLength, MaxResultLength)`, 40,000 by default) rather
+  than against the per-tool cap alone, so an override that fits inside the batch budget stays
+  accountable to it: `wiki_search`'s 13,000 does, `refresh_snapshot`'s 60,200 does not and stays
+  exempt — which is what the exemption was written for. `nethack_wiki_search` gained the per-result
+  cap it never had — `NetHackWikiSearchTool.CapArticle`, configured at
+  `Tools:nethack_wiki_search:PerResultChars` (default 3,000) — capping each returned article
+  individually rather than leaving the whole result bounded only by the generic cut, which used to
+  drop every article after whichever one Lucene's ordering happened to place last. These are
+  `Overseer/appsettings.json` values, and **`ToolGuidesSha256` hashes the guide files, not the
+  configuration**, so a tool-limit change like this one is invisible in every run record on its
+  own; only the accompanying guide edits move that hash.
+- **The comparability consequence.** `HarnessVersion` **is** an `Instrument`-kind key in
+  `BenchmarkComparabilityKey`, and this round also moves `ToolGuidesSha256` and
+  `CandidateSystemPromptSha256` — the wiki-tool guide and result-cap changes above touch both, since
+  the candidate system prompt is built with the tool guide text inline. Per
+  `BenchmarkComparabilityKey`'s tier resolver, exactly one differing `Instrument` key is Tier C —
+  the deliberate single-variable experiment — and **two or more drops the set to `NotComparable`,
+  below Tier B** (`instrument > 1` in the resolver). The first run stamped 18 therefore differs from
+  a run stamped 17 on three instrument keys at once and is **not** a Tier-B reproduction of it:
+  compare the two on counts and per-question thresholds, not on the index.
+
 ### Multi-Run Replicate Sets (Harness Version 14)
 
 Four consecutive runs reproduced the same Completeness gap, and the harness still could not say whether any single figure would survive a re-run. A one-run result mixes the thing being measured with the noise of measuring it once, and no amount of care in the report separates them. Replicate sets do.

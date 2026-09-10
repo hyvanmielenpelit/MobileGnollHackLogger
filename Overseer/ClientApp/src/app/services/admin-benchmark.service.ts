@@ -779,6 +779,10 @@ export interface BenchmarkRunDetailDto {
   unevidencedDeductionAnswerCount?: number;
   omissionAsAccuracyAnswerCount?: number;
   refutedClaimAnswerCount?: number;
+  /** Answers whose assessor marked an Accuracy deduction 'Not in rubric:'. Advisory. */
+  outOfRubricAccuracyAnswerCount?: number;
+  /** Answers opening with a claim of sufficiency. Advisory, and the text was not removed. */
+  answerFramingOpenerAnswerCount?: number;
   claimVerifiedAnswerCount?: number;
   claimsSupportedCount?: number;
   claimsRefutedCount?: number;
@@ -900,6 +904,31 @@ export interface BenchmarkRunDetailDto {
    * one not yet dispatched. Empty for any run that is not currently executing.
    */
   inFlightOrderIndexes?: number[];
+
+  /**
+   * Which run-level stage is executing — 'Answering', 'Verifying', 'SecondOpinion',
+   * 'Synthesizing' or 'Terminal'. Absent for any run this process is not executing, including
+   * a run whose process restarted mid-run; the client then derives a stage from the answer rows.
+   */
+  stage?: string | null;
+
+  /**
+   * Order indexes currently with the claim verifier and the second-opinion assessor. Same
+   * contract as inFlightOrderIndexes; without these a row being re-graded reads as finished,
+   * because it already carries a score.
+   */
+  inFlightVerificationOrderIndexes?: number[];
+  inFlightSecondOpinionOrderIndexes?: number[];
+
+  /**
+   * The instrument the most recent failed-question re-run executed under. Non-null only on a run
+   * that was re-run; when either differs from the run's own fingerprint, the run's answers were
+   * not all produced under one instrument.
+   */
+  rerunCandidateSystemPromptSha256?: string | null;
+  rerunToolGuidesSha256?: string | null;
+  rerunStartedAtUtc?: string | null;
+  rerunCompletedAtUtc?: string | null;
 
   estimatedCost?: number | null;
   estimatedCandidateCost?: number | null;

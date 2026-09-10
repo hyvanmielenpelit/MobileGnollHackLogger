@@ -386,4 +386,144 @@ public class BenchmarkAssessmentParserTests
         Assert.Null(result.Result!.ReadabilityEvidence);
         Assert.False(result.Result!.ReadabilityFormOnly);
     }
+
+    /// <summary>
+    /// A verdict whose accuracy evidence is whatever the test needs it to be. Unlike its
+    /// completeness and readability siblings, this accepts a null evidence string as well, so the
+    /// same helper covers the "field absent/blank" fixtures below.
+    /// </summary>
+    private static string VerdictWithAccuracyEvidence(string? accuracyEvidence)
+    {
+        string evidenceJson = accuracyEvidence == null ? "null" : $"\"{accuracyEvidence}\"";
+        return $$"""
+        {
+          "accuracyLevel": 5,
+          "completenessLevel": 5,
+          "concisenessLevel": 5,
+          "readabilityLevel": 5,
+          "criticalError": false,
+          "criticalErrorQuote": null,
+          "unverifiedClaims": [],
+          "accuracyEvidence": {{evidenceJson}},
+          "completenessEvidence": "Matches rubric.",
+          "comment": "A reasonable answer."
+        }
+        """;
+    }
+
+    [Fact]
+    public void AccuracyOutOfRubric_IsSetWhenTheMarkerIsPresent()
+    {
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            VerdictWithAccuracyEvidence("Not in rubric: the answer omits the Yeenaghu wish condition."),
+            Answer);
+
+        Assert.True(result.Success);
+        Assert.True(result.Result!.AccuracyOutOfRubric);
+    }
+
+    [Fact]
+    public void AccuracyOutOfRubric_IsSetWhenTheMarkerFollowsARealDeduction()
+    {
+        // One evidence string can carry both a rubric deduction and an out-of-rubric note, so the
+        // marker is matched anywhere in the string rather than only at its start — mirroring the
+        // out-of-scope marker's own reasoning.
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            VerdictWithAccuracyEvidence("Rubric point 2 unmet. Not in rubric: the AC figure is stated as a bonus."),
+            Answer);
+
+        Assert.True(result.Result!.AccuracyOutOfRubric);
+    }
+
+    [Theory]
+    // Casing and spacing tolerance, plus the optional "the" the prompt allows: models write the
+    // marker the way they feel like writing it.
+    [InlineData("NOT IN RUBRIC: fabricated racial trait.")]
+    [InlineData("not  in   rubric : fabricated racial trait.")]
+    [InlineData("Not in the rubric: fabricated racial trait.")]
+    public void AccuracyOutOfRubric_ToleratesTheFormsAssessorsActuallyWrite(string evidence)
+    {
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            VerdictWithAccuracyEvidence(evidence),
+            Answer);
+
+        Assert.True(result.Result!.AccuracyOutOfRubric);
+    }
+
+    [Theory]
+    // A mangled marker, or the ordinary English phrase without the colon, costs the measurement
+    // and nothing else — never the verdict, and never an exception. The colon is the required
+    // part: without it, this is prose describing something else.
+    [InlineData("Matches rubric.")]
+    [InlineData("The rubric does not mention this, but it is wrong.")]
+    [InlineData("Not in rubric")]
+    public void AccuracyOutOfRubric_MalformedOrAbsentMarker_DoesNotSetTheFlag(string evidence)
+    {
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            VerdictWithAccuracyEvidence(evidence),
+            Answer);
+
+        Assert.True(result.Success);
+        Assert.False(result.Result!.AccuracyOutOfRubric);
+    }
+
+    [Fact]
+    public void AccuracyOutOfRubric_IsNotSetWhenAccuracyEvidenceIsNull()
+    {
+        // Total on its input, like HasOutOfScopeMarker: a null evidence string must not fail the
+        // parse.
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            VerdictWithAccuracyEvidence(null),
+            Answer);
+
+        Assert.True(result.Success);
+        Assert.False(result.Result!.AccuracyOutOfRubric);
+    }
+
+    [Fact]
+    public void AccuracyOutOfRubric_IsNotSetWhenAccuracyEvidenceIsEmpty()
+    {
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            VerdictWithAccuracyEvidence(""),
+            Answer);
+
+        Assert.True(result.Success);
+        Assert.False(result.Result!.AccuracyOutOfRubric);
+    }
+
+    [Fact]
+    public void AccuracyOutOfRubric_IsNotSetWhenTheMarkerIsInCompletenessEvidenceOnly()
+    {
+        // Pins which dimension the property reads: the pre-existing out-of-scope marker reads
+        // Completeness evidence, this one reads Accuracy evidence, and a marker sitting in the
+        // wrong field must not cross over.
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            """
+            {
+              "accuracyLevel": 5, "completenessLevel": 5, "concisenessLevel": 5, "readabilityLevel": 5,
+              "criticalError": false,
+              "accuracyEvidence": "Matches rubric.",
+              "completenessEvidence": "Not in rubric: this belongs to the wrong dimension.",
+              "comment": "A reasonable answer."
+            }
+            """,
+            Answer);
+
+        Assert.True(result.Success);
+        Assert.False(result.Result!.AccuracyOutOfRubric);
+    }
+
+    [Fact]
+    public void AccuracyOutOfRubric_DoesNotDisturbThePreExistingCompletenessOutOfScopeMarker()
+    {
+        // Regression: the two markers are read from different fields by different helpers, and
+        // adding the accuracy one must not have changed what the completeness one does.
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            VerdictWithCompletenessEvidence(
+                "OUT-OF-SCOPE: the rubric lists Celestial/Primordial/Infernal modifiers; the question asked only for Exceptional and Elite."),
+            Answer);
+
+        Assert.True(result.Success);
+        Assert.True(result.Result!.CompletenessOutOfScope);
+    }
 }

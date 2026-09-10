@@ -94,7 +94,26 @@ public enum BenchmarkAnswerFlags
     // and the verdict may well be right. What it is not is attributable to the dimension it was
     // charged on. Nothing here changes a score.
     // See BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction.
-    OmissionAsAccuracy = 256
+    OmissionAsAccuracy = 256,
+
+    // The assessor prefixed an ACCURACY deduction with the prompted marker "Not in rubric:",
+    // declaring that the basis for it came from its own knowledge rather than from the rubric.
+    // Scoring method v9 grades against the rubric, so a deduction the grader itself places outside
+    // it is a deduction the instrument did not sanction.
+    //
+    // Advisory, and grouped here for the same reason as UnevidencedDeduction: the answer is intact
+    // and the observation may well be correct. What it is not is a rubric finding. Nothing here
+    // changes a score; it routes the verdict to a second reader.
+    // See BenchmarkAssessmentParser.OutOfRubricAccuracyMarker.
+    OutOfRubricAccuracyDeduction = 512,
+
+    // The answer's first sentence claims sufficiency ("I now have all the pieces I need…") rather
+    // than stating the finding, which Overseer/ToolGuides/_policy.md forbids outright.
+    //
+    // Advisory, and detected only: unlike the narration flags above, the text is NOT removed. The
+    // opener reaches production chat unmodified, so removing it here would grade an answer no user
+    // ever sees and would move the scoring method. See BenchmarkArtifactScrubber.AnswerFramingRegex.
+    AnswerFramingOpener = 1024
 }
 
 /// <summary>
@@ -420,6 +439,18 @@ public class BenchmarkRun
     public int OmissionAsAccuracyAnswerCount { get; set; }
 
     /// <summary>
+    /// Answers carrying <see cref="BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction"/>. Advisory.
+    /// Zero on every run recorded before harness 18, which never looked for the marker.
+    /// </summary>
+    public int OutOfRubricAccuracyAnswerCount { get; set; }
+
+    /// <summary>
+    /// Answers carrying <see cref="BenchmarkAnswerFlags.AnswerFramingOpener"/>. Advisory, and the
+    /// text is not removed. Zero on every run recorded before harness 18.
+    /// </summary>
+    public int AnswerFramingOpenerAnswerCount { get; set; }
+
+    /// <summary>
     /// Answers that consumed 100% of their tool call budget without any tool calls being blocked.
     /// Distinct from budget-exhausted answers where calls were refused.
     /// </summary>
@@ -552,6 +583,33 @@ public class BenchmarkRun
     /// </summary>
     [MaxLength(40)]
     public string? SourceCodeHeadSha { get; set; }
+
+    /// <summary>
+    /// The instrument a failed-question re-run executed under, recorded separately so the five
+    /// fingerprints above keep describing the instrument the run's other answers were produced
+    /// under. Those five are the only record that the prompt did not move between two runs, so a
+    /// re-run must not overwrite them: it would falsify the provenance of every answer it did not
+    /// touch. Null on every run that was never re-run.
+    /// </summary>
+    [MaxLength(64)]
+    public string? RerunCandidateSystemPromptSha256 { get; set; }
+
+    /// <summary>
+    /// The tool-guide fingerprint the re-run executed under, on the same reading as
+    /// <see cref="RerunCandidateSystemPromptSha256"/>.
+    /// </summary>
+    [MaxLength(64)]
+    public string? RerunToolGuidesSha256 { get; set; }
+
+    /// <summary>
+    /// When the most recent failed-question re-run began. <see cref="CompletedAtUtc"/> and
+    /// <see cref="TotalDurationMs"/> stay the original execution's, which is the run's elapsed wall
+    /// time; a re-run started hours later would otherwise absorb the interval into it.
+    /// </summary>
+    public DateTime? RerunStartedAtUtc { get; set; }
+
+    /// <summary>When the most recent failed-question re-run finished.</summary>
+    public DateTime? RerunCompletedAtUtc { get; set; }
 
     // Total wall-clock time spent executing tool batches across the run. Subtracting this
     // from TotalAnswerDurationMs gives the model-attributable time that speed is scored on.

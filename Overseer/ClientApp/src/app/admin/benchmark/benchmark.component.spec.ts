@@ -2279,7 +2279,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(cancel!.querySelector('svg')).toBeNull();
     });
 
-    it('should present the run as two stages, not three', () => {
+    it('should present the run as four stages', () => {
       // BenchmarkService assesses each answer immediately after producing it, inside the same
       // loop, so "collecting" and "assessing" were never separate phases in wall-clock terms.
       component.activeRunDetail = buildCompletedRun({
@@ -2289,7 +2289,7 @@ describe('AdminBenchmarkComponent', () => {
       });
 
       expect(component.runStage).toBe('finalizing');
-      expect(component.runStageLabel).toContain('Stage 2 of 2 — Synthesis and scoring');
+      expect(component.runStageLabel).toContain('Stage 4 of 4 — Synthesis and scoring');
 
       component.activeRunDetail = buildCompletedRun({
         status: 'Running',
@@ -2299,7 +2299,7 @@ describe('AdminBenchmarkComponent', () => {
 
       // An answer still awaiting assessment keeps the run in stage 1: the stage covers both.
       expect(component.runStage).toBe('answering');
-      expect(component.runStageLabel).toContain('Stage 1 of 2 — Collecting and assessing answers');
+      expect(component.runStageLabel).toContain('Stage 1 of 4 — Collecting and assessing answers');
     });
 
     it('should mark a dispatched question Answering and an undispatched one Pending', () => {
@@ -2328,7 +2328,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.runRowChipLabel(rows[2])).toBe('Pending');
     });
 
-    it('should record in-flight questions and the two-stage number in the diagnostics text', () => {
+    it('should record in-flight questions and the stage number in the diagnostics text', () => {
       component.activeRunDetail = buildCompletedRun({
         status: 'Running',
         totalQuestionCount: 2,
@@ -2342,9 +2342,113 @@ describe('AdminBenchmarkComponent', () => {
 
       const diagnostics = component.runDiagnosticsText;
 
-      expect(diagnostics).toContain('Stage: 1');
+      expect(diagnostics).toContain('Stage: 1 of 4 (derived)');
       expect(diagnostics).toContain('In flight: Q2');
       expect(diagnostics).toContain('[Q2] status=Answering');
+    });
+
+    it('should prefer the server stage over the derivation, and fall back when the server reports none', () => {
+      // Nothing in the answer rows moves during verification or the second-opinion passes, so
+      // the derivation cannot see either stage. Only the server can.
+      const answers = [buildScoredAnswer(1), buildScoredAnswer(2)];
+
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running', totalQuestionCount: 2, stage: 'Verifying', answers
+      });
+      expect(component.runStage).toBe('verifying');
+      expect(component.runStageLabel).toContain('Stage 2 of 4 — Verifying claims');
+
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running', totalQuestionCount: 2, stage: 'SecondOpinion', answers
+      });
+      expect(component.runStage).toBe('secondopinion');
+      expect(component.runStageLabel).toContain('Stage 3 of 4 — Second opinion');
+
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running', totalQuestionCount: 2, stage: 'Answering', answers
+      });
+      expect(component.runStage).toBe('answering');
+
+      // A run detail from a server predating the field: the derivation still renders a stage.
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running', totalQuestionCount: 2, answers
+      });
+      expect(component.runStage).toBe('finalizing');
+      expect(component.runDiagnosticsText).toContain('Stage: 4 of 4 (derived)');
+
+      // A terminal run is terminal regardless of a stale stage.
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Completed', totalQuestionCount: 2, stage: 'Verifying', answers
+      });
+      expect(component.runStage).toBe('terminal');
+    });
+
+    it('should chip a re-graded row as Verifying or Second opinion rather than Scored', () => {
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running',
+        totalQuestionCount: 3,
+        stage: 'Verifying',
+        inFlightVerificationOrderIndexes: [1],
+        inFlightSecondOpinionOrderIndexes: [2],
+        answers: [buildScoredAnswer(1), buildScoredAnswer(2), buildScoredAnswer(3)]
+      });
+
+      const rows = component.runProgressRows;
+
+      // Both rows already carry a score; without the in-flight sets they read as finished for
+      // the whole pass.
+      expect(rows[0].status).toBe('Verifying');
+      expect(component.runRowChipLabel(rows[0])).toBe('Verifying');
+      expect(component.runRowChipClass(rows[0])).toBe('status-verifying');
+
+      expect(rows[1].status).toBe('SecondOpinion');
+      expect(component.runRowChipLabel(rows[1])).toBe('Second opinion');
+      expect(component.runRowChipClass(rows[1])).toBe('status-secondopinion');
+
+      expect(component.runRowChipLabel(rows[2])).toBe('Scored');
+    });
+
+    it('should list every question during a re-run and mark only the re-run set', () => {
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running',
+        totalQuestionCount: 3,
+        answers: [
+          buildScoredAnswer(1),
+          buildScoredAnswer(2, { status: 'ProviderError', assessmentStatus: 'Pending' }),
+          buildScoredAnswer(3)
+        ]
+      });
+      component.rerunScopeOrderIndexes = [2];
+
+      const rows = component.runProgressRows;
+
+      // The row list is unchanged: the whole suite stays listed and the rows outside the
+      // re-run keep the status they already have.
+      expect(rows.length).toBe(3);
+      expect(component.runHasRerunScope).toBeTrue();
+      expect(component.isRerunScope(rows[0])).toBeFalse();
+      expect(component.isRerunScope(rows[1])).toBeTrue();
+      expect(component.isRerunScope(rows[2])).toBeFalse();
+      expect(component.runRowChipLabel(rows[0])).toBe('Scored');
+      expect(component.runRowChipLabel(rows[2])).toBe('Scored');
+    });
+
+    it('should count only gradeable answers as the index population', () => {
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Completed',
+        totalQuestionCount: 4,
+        answers: [
+          buildScoredAnswer(1),
+          buildScoredAnswer(2, { status: 'ProviderError' }),
+          // Finished normally and produced nothing: scored 0 rather than excused, so it counts.
+          buildScoredAnswer(3, { status: 'EmptyAnswer', providerFinishReason: 'end_turn' }),
+          // No recorded finish reason is not evidence of a normal stop.
+          buildScoredAnswer(4, { status: 'EmptyAnswer', providerFinishReason: null })
+        ]
+      });
+
+      expect(component.runGradeableAnswerCount).toBe(2);
+      expect(component.runDiagnosticsText).toContain('Gradeable answers (index population): 2 of 4');
     });
 
     it('should reject a speed difficulty scaling outside 0.0 to 5.0 before calling the server', () => {

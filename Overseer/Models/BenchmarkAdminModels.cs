@@ -853,6 +853,44 @@ public class BenchmarkRunDetailDto
     /// </summary>
     public List<int> InFlightOrderIndexes { get; set; } = new();
 
+    /// <summary>
+    /// Which run-level stage is executing, as the name of a <c>BenchmarkRunStage</c> value. Null for
+    /// any run that is not the current, still-running one — including a run whose process restarted
+    /// mid-run — in which case the client derives a stage from the answer rows instead.
+    /// </summary>
+    public string? Stage { get; set; }
+
+    /// <summary>
+    /// Order indexes currently with the claim verifier. Same contract as
+    /// <see cref="InFlightOrderIndexes"/>; without it a row being re-read reads as finished, because
+    /// it already carries a score.
+    /// </summary>
+    public List<int> InFlightVerificationOrderIndexes { get; set; } = new();
+
+    /// <summary>Order indexes currently with the second-opinion assessor.</summary>
+    public List<int> InFlightSecondOpinionOrderIndexes { get; set; } = new();
+
+    /// <summary>Answers carrying an out-of-rubric Accuracy deduction. Advisory.</summary>
+    public int OutOfRubricAccuracyAnswerCount { get; set; }
+
+    /// <summary>
+    /// Answers opening with a claim of sufficiency. Advisory, and the text was not removed.
+    /// </summary>
+    public int AnswerFramingOpenerAnswerCount { get; set; }
+
+    /// <summary>
+    /// The instrument the most recent failed-question re-run executed under. Non-null only on a run
+    /// that was re-run; when either differs from the run's own fingerprint, the run's answers were
+    /// not all produced under one instrument.
+    /// </summary>
+    public string? RerunCandidateSystemPromptSha256 { get; set; }
+
+    public string? RerunToolGuidesSha256 { get; set; }
+
+    public DateTime? RerunStartedAtUtc { get; set; }
+
+    public DateTime? RerunCompletedAtUtc { get; set; }
+
     public List<BenchmarkRunAnswerDto> Answers { get; set; } = new();
 }
 

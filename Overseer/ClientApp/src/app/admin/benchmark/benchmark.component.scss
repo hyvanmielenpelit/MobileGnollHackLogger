@@ -1203,11 +1203,31 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
   padding: 10px 16px;
   background: rgba(212, 160, 23, 0.12);
   border: 1px solid rgba(212, 160, 23, 0.35);
   border-radius: 6px;
   font-weight: 500;
+  color: #e0e0e0;
+
+  /* The text takes the slack so the two buttons stay together at the right rather than
+     splitting to either end, which space-between alone would do with three children. */
+  > span {
+    flex: 1 1 auto;
+  }
+}
+
+/* States what the re-run covers before the row list repeats it: the list shows every question
+   of the suite, so without this the marked rows read as an arbitrary highlight. */
+.rerun-scope-badge {
+  margin: 0 0 12px 0;
+  padding: 8px 14px;
+  background: rgba(212, 160, 23, 0.1);
+  border: 1px solid rgba(212, 160, 23, 0.3);
+  border-radius: 6px;
+  font-size: 13px;
   color: #e0e0e0;
 }
 
@@ -1997,6 +2017,26 @@
       border-bottom: none;
     }
 
+    /* A question a failed-question re-run is repairing. The whole suite stays listed and the
+       rows outside the re-run keep the status they already have, so the accent is the only
+       thing that says which rows will move. */
+    &.is-rerun-scope {
+      background: rgba(212, 160, 23, 0.07);
+      box-shadow: inset 3px 0 0 var(--primary-color, #d4a017);
+    }
+
+    .job-item-rerun-marker {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 1px 6px;
+      border-radius: 10px;
+      color: var(--primary-color, #d4a017);
+      border: 1px solid rgba(212, 160, 23, 0.4);
+      flex-shrink: 0;
+    }
+
     .job-item-index {
       font-family: monospace;
       font-size: 13px;
@@ -2047,6 +2087,26 @@
     background: rgba(0, 200, 255, 0.15);
     color: #00d4ff;
     border: 1px solid rgba(0, 200, 255, 0.3);
+    animation: pulse-assessing 1.5s infinite ease-in-out;
+  }
+
+  /* The claim verifier and the second-opinion assessor re-reading an answer that already
+     carries a score. Two more hues distinct from amber (status-answering) and cyan
+     (status-assessing): with four in-progress states the requirement that none of them reads
+     as another is what keeps the word on the chip from being the only difference. Both are
+     listed in the prefers-reduced-motion block below, which enumerates chip classes
+     explicitly. */
+  &.status-verifying {
+    background: rgba(163, 113, 247, 0.15);
+    color: #b98cff;
+    border: 1px solid rgba(163, 113, 247, 0.35);
+    animation: pulse-assessing 1.5s infinite ease-in-out;
+  }
+
+  &.status-secondopinion {
+    background: rgba(255, 123, 179, 0.15);
+    color: #ff8dbd;
+    border: 1px solid rgba(255, 123, 179, 0.35);
     animation: pulse-assessing 1.5s infinite ease-in-out;
   }
 
@@ -2339,6 +2399,8 @@
      specificity. The bare form is kept for any future use outside the banner. */
   .job-status-chip.status-assessing,
   .job-status-chip.status-answering,
+  .job-status-chip.status-verifying,
+  .job-status-chip.status-secondopinion,
   .active-run-banner .pulse-indicator,
   .pulse-indicator {
     animation: none;

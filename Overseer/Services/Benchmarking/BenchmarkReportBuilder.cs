@@ -520,6 +520,23 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **GnollHack Wiki HEAD SHA:** {run.WikiHeadSha ?? "not recorded"}");
         sb.AppendLine($"- **GnollHack Source HEAD SHA:** {run.SourceCodeHeadSha ?? "not recorded"}");
         sb.AppendLine("  - *Two runs are a reproduction only when `CandidateSystemPromptSha256` matches.*");
+
+        // A re-run that repairs answers under a system prompt or ToolGuides build different from
+        // the run's own leaves the run graded on two instruments rather than one, and this is the
+        // only place that fact survives: per-answer, only which answers the re-run touched is known,
+        // not which instrument produced them, so the caution is stated at run level.
+        bool rerunPromptDiffers = !string.IsNullOrWhiteSpace(run.RerunCandidateSystemPromptSha256) &&
+            !string.Equals(run.RerunCandidateSystemPromptSha256, run.CandidateSystemPromptSha256, StringComparison.Ordinal);
+        bool rerunToolGuidesDiffers = !string.IsNullOrWhiteSpace(run.RerunToolGuidesSha256) &&
+            !string.Equals(run.RerunToolGuidesSha256, run.ToolGuidesSha256, StringComparison.Ordinal);
+        if (rerunPromptDiffers || rerunToolGuidesDiffers)
+        {
+            string rerunSpan = (run.RerunStartedAtUtc.HasValue || run.RerunCompletedAtUtc.HasValue)
+                ? $"{(run.RerunStartedAtUtc.HasValue ? Stamp(run.RerunStartedAtUtc.Value) : "unrecorded start")} to {(run.RerunCompletedAtUtc.HasValue ? Stamp(run.RerunCompletedAtUtc.Value) : "unrecorded end")} UTC"
+                : "not recorded";
+            sb.AppendLine();
+            sb.AppendLine($"> **Re-run under a different instrument.** This run was repaired by a re-run recorded under Candidate System Prompt SHA-256 `{run.RerunCandidateSystemPromptSha256 ?? run.CandidateSystemPromptSha256 ?? "not recorded"}` and ToolGuides SHA-256 `{run.RerunToolGuidesSha256 ?? run.ToolGuidesSha256 ?? "not recorded"}`, against this run's own `{run.CandidateSystemPromptSha256 ?? "not recorded"}` and `{run.ToolGuidesSha256 ?? "not recorded"}`. **This is not a clean reproduction half:** the answers the re-run repaired were produced under the re-run instrument, and the rest under the run's own. The re-run's own span was {rerunSpan} — distinct from the run's {FormatDuration(run.TotalDurationMs)} total elapsed wall time above.");
+        }
         sb.AppendLine();
 
         sb.AppendLine("### Model Under Test");
@@ -590,7 +607,7 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Mode:** {configuredMode}{ModeGloss(configuredMode)} Advisory throughout: the first verdict is what scored.");
             if (configuredMode is BenchmarkSecondOpinionMode.Flagged or BenchmarkSecondOpinionMode.FlaggedAndOutliers)
             {
-                sb.AppendLine($"- **Triggers:** a critical error; a refuted claim; a contested verdict; an unevidenced deduction (a level docked to {BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel} or below whose stated evidence names no defect, or rests only on unverifiability); an omission docked as an accuracy defect; unverifiable claims alongside an accuracy level of {BenchmarkService.UnverifiedClaimsAccuracyMaxLevel} or below; a quality score below the profile's threshold of {scoringConstants.SecondOpinionQualityThreshold}" +
+                sb.AppendLine($"- **Triggers:** a critical error; a refuted claim; a contested verdict; an out-of-rubric Accuracy deduction (an accuracy level of {BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel} or below whose deduction rests on the assessor's own knowledge rather than the rubric); an unevidenced deduction (a level docked to {BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel} or below whose stated evidence names no defect, or rests only on unverifiability); an omission docked as an accuracy defect; unverifiable claims alongside an accuracy level of {BenchmarkService.UnverifiedClaimsAccuracyMaxLevel} or below; a quality score below the profile's threshold of {scoringConstants.SecondOpinionQualityThreshold}" +
                     (configuredMode == BenchmarkSecondOpinionMode.FlaggedAndOutliers
                         ? $"; and, after scoring, any answer more than {scoringConstants.SecondOpinionOutlierDeltaPoints} points below the run's median."
                         : "."));
@@ -914,7 +931,7 @@ public static class BenchmarkReportBuilder
         // the same total and demand opposite responses. Input tokens per model call is the figure that
         // separates them, and run 13 could not answer it.
         var modelCallCounts = answers
-            .Where(a => a.ModelCallCount.HasValue && a.ModelCallCount.Value > 0)
+            .Where(a => a.ModelCallCount.HasValue && a.ModelCallCount.Value > 0 && BenchmarkRunFinalizer.CountsTowardQualityIndex(a))
             .ToList();
         if (modelCallCounts.Count > 0)
         {
@@ -1245,6 +1262,8 @@ public static class BenchmarkReportBuilder
         int unevidencedCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.UnevidencedDeduction));
         int omissionCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.OmissionAsAccuracy));
         int refutedCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.RefutedClaim));
+        int outOfRubricAccuracyCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction));
+        int answerFramingOpenerCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.AnswerFramingOpener));
         int providerErrorCount = answers.Count(a => a.Status == BenchmarkAnswerStatus.ProviderError);
 
         int transportDefectCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.TransportDefect);
@@ -1328,7 +1347,19 @@ public static class BenchmarkReportBuilder
         {
             advisoryNote += $" *Removal was not recorded for {bleedUnrecorded} of these — the run predates harness version {BenchmarkAssessmentPrompt.HarnessVersion}, which added the counter; that figure is inferred, not measured.*";
         }
-        sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {contestedCount}, unevidenced deductions: {unevidencedCount}, omissions as accuracy: {omissionCount}, refuted claims: {refutedCount}) {advisoryNote}");
+        sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {contestedCount}, unevidenced deductions: {unevidencedCount}, omissions as accuracy: {omissionCount}, refuted claims: {refutedCount}, out-of-rubric accuracy deductions: {outOfRubricAccuracyCount}, answer-framing openers: {answerFramingOpenerCount}) {advisoryNote}");
+        if (answerFramingOpenerCount > 0)
+        {
+            var answerFramingOpenerAnswers = answers
+                .Where(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.AnswerFramingOpener))
+                .OrderBy(a => a.OrderIndex)
+                .ToList();
+            // Not a benchmark artifact: unlike the mid-answer lookup narration this report treats as
+            // prompt-compliant (see the "Reasoning narration is a benchmark-only removal" note below),
+            // the opening text here is left in the graded answer unmodified because it is exactly what
+            // production chat would have sent — the defect is in the live prompt, not in this harness.
+            sb.AppendLine($"- **Answer-Framing Openers:** {run.AnswerFramingOpenerAnswerCount} ({string.Join(", ", answerFramingOpenerAnswers.Select(a => $"Q{a.OrderIndex}"))}) — *the opening text was **not** removed. It violates the answer-opening rule in `Overseer/ToolGuides/_policy.md` and reaches production chat unmodified.*");
+        }
         sb.AppendLine($"- **Answers Scrubbed:** {scrubbedAnyCount} of {totalQuestions} (transport payloads: {scrubbedTransportCount}, reasoning narration: {bleedRemoved})");
         sb.AppendLine();
 
@@ -1458,11 +1489,12 @@ public static class BenchmarkReportBuilder
             var agreementMode = ModeOf(run);
             var graded = answers
                 .Where(a => a.SecondOpinionQualityScore.HasValue && a.QualityScore.HasValue
-                            && !string.Equals(a.SecondOpinionTrigger, "Manual", StringComparison.Ordinal))
+                            && !string.Equals(a.SecondOpinionTrigger, "Manual", StringComparison.Ordinal)
+                            && BenchmarkRunFinalizer.CountsTowardQualityIndex(a))
                 .OrderBy(a => a.OrderIndex)
                 .ToList();
             var disagreedAnswers = graded.Where(a => a.SecondOpinionDisagreed).ToList();
-            int answeredForAgreement = answers.Count(a => a.Status == BenchmarkAnswerStatus.Ok);
+            int answeredForAgreement = answers.Count(BenchmarkRunFinalizer.CountsTowardQualityIndex);
             double? meanAbsDelta = run.SecondOpinionMeanAbsDelta
                 ?? (graded.Count > 0
                     ? graded.Average(a => Math.Abs(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value))
@@ -1576,7 +1608,7 @@ public static class BenchmarkReportBuilder
         else if (run.SecondOpinionAssessorModelConfigurationId.HasValue)
         {
             var agreementMode = ModeOf(run);
-            int answeredForAgreement = answers.Count(a => a.Status == BenchmarkAnswerStatus.Ok);
+            int answeredForAgreement = answers.Count(BenchmarkRunFinalizer.CountsTowardQualityIndex);
             string assessorName = run.SecondOpinionAssessorModelDisplayNameUsed ?? "configured assessor";
 
             sb.AppendLine("### Assessor Agreement");
@@ -1674,6 +1706,22 @@ public static class BenchmarkReportBuilder
                 sb.AppendLine($"  - These are rubric FORM criteria naming a presentation the answer did not adopt, recorded under the `FORM:` marker and **not** deducted for. Readability is graded on its level anchors alone, so this is the rubric's share of the Readability shortfall rather than the answer's.");
             }
 
+            // The Accuracy counterpart to both markers above, but deducted rather than set aside:
+            // the assessor docked Accuracy from its own general knowledge rather than from the
+            // rubric or the supplied corpus. That is exactly the failure mode a second, independent
+            // reader exists to catch, so these route to one instead of standing on the first
+            // assessor's word alone.
+            var outOfRubricAccuracyAnswers = scoredAnswers
+                .Where(a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction) != 0)
+                .OrderBy(a => a.OrderIndex)
+                .ToList();
+            if (outOfRubricAccuracyAnswers.Count > 0)
+            {
+                string questionList = string.Join(", ", outOfRubricAccuracyAnswers.Select(a => $"Q{a.OrderIndex}"));
+                sb.AppendLine($"- **Out-of-rubric Accuracy deductions:** {run.OutOfRubricAccuracyAnswerCount} ({questionList})");
+                sb.AppendLine($"  - These are Accuracy deductions recorded under the `{BenchmarkAssessmentParser.OutOfRubricAccuracyMarker}` marker: the assessor's stated basis is its own knowledge rather than the rubric or the corpus it was given. Routed to a second reader rather than trusted outright.");
+            }
+
             sb.AppendLine();
             if (BenchmarkChatTransfer.HasResponseStyleConflict(run, scoredAnswers, out double gap))
             {
@@ -1709,6 +1757,7 @@ public static class BenchmarkReportBuilder
         }
 
         sb.AppendLine("### Difficulty Breakdown");
+        sb.AppendLine("Buckets by **assessed** difficulty; the Authored Band Distribution below buckets the same answers by their **authored** difficulty instead, which is why the two counts can differ.");
         sb.AppendLine(BandLine("Simple", BenchmarkDifficulty.Simple, simpleAssessed));
         sb.AppendLine(BandLine("Intermediate", BenchmarkDifficulty.Intermediate, intermediateAssessed));
         sb.AppendLine(BandLine("Advanced", BenchmarkDifficulty.Advanced, advancedAssessed));
@@ -1719,7 +1768,7 @@ public static class BenchmarkReportBuilder
         int authoredAdvanced = answers.Count(a => a.Difficulty == BenchmarkDifficulty.Advanced);
         // The counts are over the answers this run stored, not over the suite as authored: a run that
         // stopped early has fewer of them, and the old label read as the suite's authored mix.
-        sb.AppendLine($"- **Answered Band Distribution (of {answers.Count} answers):** {authoredSimple} Simple, {authoredIntermediate} Intermediate, {authoredAdvanced} Advanced");
+        sb.AppendLine($"- **Authored Band Distribution (of {answers.Count} answers, by authored difficulty):** {authoredSimple} Simple, {authoredIntermediate} Intermediate, {authoredAdvanced} Advanced");
         sb.AppendLine();
 
         // Band Agreement. Without this, a reader sees an authored distribution of 6/6/6 next to
@@ -1985,22 +2034,27 @@ public static class BenchmarkReportBuilder
                 };
                 sb.AppendLine($"| {famName} | {fs.CallCount} | {Inv(fs.SharePercentage, "F1")}% |");
             }
+
+            // BenchmarkChatTransfer.AnalyzeToolRouting computes these over the same gradeable
+            // population every other run-wide figure here uses, so they are read from it rather
+            // than recomputed.
+            int routingAnsweredCount = routing.AnsweredQuestionCount;
+            int routingZeroKbCount = routing.ZeroKnowledgeBaseAnswerCount;
             if (HasKnowledgeBaseRoutingQuestion(answers))
             {
-                sb.AppendLine($"- **Knowledge base under-use:** {routing.ZeroKnowledgeBaseAnswerCount} of {routing.AnsweredQuestionCount} answered question(s) made zero `get_knowledge_article` calls.");
+                sb.AppendLine($"- **Knowledge base under-use:** {routingZeroKbCount} of {routingAnsweredCount} answered question(s) made zero `get_knowledge_article` calls.");
             }
             else
             {
-                sb.AppendLine($"- *Prompt observation:* {routing.ZeroKnowledgeBaseAnswerCount} of {routing.AnsweredQuestionCount} answered question(s) made zero `get_knowledge_article` calls. Per `Overseer/Services/ChatService.cs` § \"Information Routing\" and `Overseer/ToolGuides/get_knowledge_article.md`, the knowledge base is scoped to app navigation, settings, troubleshooting and platform documentation; for game mechanics, monsters, items, spells, or other topics not listed there, the prompt instructs the model to skip the knowledge base entirely.");
+                sb.AppendLine($"- *Prompt observation:* {routingZeroKbCount} of {routingAnsweredCount} answered question(s) made zero `get_knowledge_article` calls. Per `Overseer/Services/ChatService.cs` § \"Information Routing\" and `Overseer/ToolGuides/get_knowledge_article.md`, the knowledge base is scoped to app navigation, settings, troubleshooting and platform documentation; for game mechanics, monsters, items, spells, or other topics not listed there, the prompt instructs the model to skip the knowledge base entirely.");
             }
+
             if (routing.CorrelationSampleSize >= 2)
             {
                 string rTimeStr = routing.SourceShareModelTimeCorrelation.HasValue
-                    ? Inv(routing.SourceShareModelTimeCorrelation.Value, "F2")
-                    : "N/A";
+                    ? Inv(routing.SourceShareModelTimeCorrelation.Value, "F2") : "N/A";
                 string rQualStr = routing.SourceShareQualityScoreCorrelation.HasValue
-                    ? Inv(routing.SourceShareQualityScoreCorrelation.Value, "F2")
-                    : "N/A";
+                    ? Inv(routing.SourceShareQualityScoreCorrelation.Value, "F2") : "N/A";
                 sb.AppendLine($"- **Source-family correlations (n = {routing.CorrelationSampleSize}):** r = {rTimeStr} with model time; r = {rQualStr} with quality score.");
             }
             if (routing.SourceFamilySharePercentage > 50.0)
@@ -2199,14 +2253,17 @@ public static class BenchmarkReportBuilder
                 // two numbers the score is actually computed from, so printing DurationMs here
                 // left a reader unable to check the arithmetic — and misleading by exactly the
                 // tool time on a tool-heavy question.
-                if (a.SpeedScore.HasValue)
+                // BenchmarkRunFinalizer.Apply nulls SpeedScore on every answer that fails
+                // CountsTowardQualityIndex, so a failed or provider-error answer prints no Speed
+                // Score line at all here rather than a misleading N/A beside a terminal failure.
+                if (BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && a.SpeedScore.HasValue)
                 {
                     double speedTarget = BenchmarkScoring.EffectiveSpeedTargetMs(
                         a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty),
                         scoringConstants);
                     sb.AppendLine($"> - **Speed Score:** {a.SpeedScore.Value} / 100 (model {a.ModelTimeMs} ms vs target {Inv(Math.Round(speedTarget), "N0")} ms)");
                 }
-                else
+                else if (BenchmarkRunFinalizer.CountsTowardQualityIndex(a))
                 {
                     sb.AppendLine("> - **Speed Score:** N/A");
                 }
