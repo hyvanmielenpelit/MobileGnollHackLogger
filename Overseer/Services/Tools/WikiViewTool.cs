@@ -26,7 +26,7 @@ namespace Overseer.Services.Tools
             {
                 ""type"": ""object"",
                 ""properties"": {
-                    ""article"": { ""type"": ""string"", ""description"": ""Article filename or title (fuzzy matched, e.g., 'potion', 'gnoll', 'valkyrie')"" },
+                    ""article"": { ""type"": ""string"", ""description"": ""Article title, filename with or without its extension, or repository-relative path (e.g., 'gnoll', 'Gnoll.md', 'Races/Gnoll'). Titles are fuzzy matched; a path is exact"" },
                     ""section"": { ""type"": ""string"", ""description"": ""Optional. Specific section heading to extract (e.g., 'Strategy', 'Stats')"" }
                 },
                 ""required"": [""article""]
@@ -57,7 +57,14 @@ namespace Overseer.Services.Tools
                 return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing article parameter" });
             }
 
-            string? fetched = _wikiService.GetArticle(article, section);
+            string? fetched = _wikiService.GetArticle(article, section, out bool isDisambiguation);
+
+            if (isDisambiguation)
+            {
+                // A list of candidate paths carrying a next action, not an article: the
+                // spoiler-free suffix has nothing to qualify here.
+                return Task.FromResult(new ToolResult { Success = true, Content = fetched! });
+            }
 
             if (IsEmptyArticle(fetched))
             {
@@ -78,11 +85,14 @@ namespace Overseer.Services.Tools
         private const int ProbeMaxChars = 200;
 
         /// <summary>
-        /// A result carrying nothing but the <c>--- filename ---</c> header, which is an article
-        /// whose body is empty. A section no heading matches does <b>not</b> reach here:
-        /// <see cref="WikiService.GetArticle"/> answers that case itself with an explanatory
-        /// <c>[Section '…' not found in article. Returning full text.]</c> line followed by the whole
-        /// article, which tells the model what happened and still gives it the content.
+        /// A result carrying nothing but the <c>--- Races/Gnoll.md ---</c> header, which is an
+        /// article whose body is empty. A section no heading matches does <b>not</b> reach here:
+        /// <see cref="WikiService.GetArticle(string, string?)"/> answers that case itself with an
+        /// explanatory <c>[Section '…' not found in article. Returning full text.]</c> line followed
+        /// by the whole article, which tells the model what happened and still gives it the content.
+        /// A disambiguation payload does not reach here either — the caller returns it before this
+        /// check — and it would not be seen as empty in any case, being a single line with no
+        /// newline to have a body after.
         /// </summary>
         private static bool IsEmptyArticle(string? content)
         {
@@ -113,12 +123,15 @@ namespace Overseer.Services.Tools
                     sb.Append(" (the article itself, so section='").Append(section).Append("' was never reached)");
                 }
 
-                var near = SafeProbe(article);
+                // The probe runs on the same normalized form that resolution matched against, so
+                // a request carrying an extension is never told that nothing similar is indexed
+                // while the article itself sits in the index.
+                var near = SafeProbe(WikiService.NormalizeArticleName(article));
                 sb.Append(near.Count > 0
                     ? $". The index does hold {string.Join(", ", near)}"
                     : ". No article with a similar title is indexed either");
 
-                sb.Append(". wiki_view matches on title and filename only — use wiki_search to find an article by its content, or nethack_wiki_view for a NetHack article.");
+                sb.Append(". wiki_view matches on title, filename and repository-relative path — use wiki_search to find an article by its content, or nethack_wiki_view for a NetHack article.");
                 return sb.ToString();
             }
             catch
@@ -128,9 +141,9 @@ namespace Overseer.Services.Tools
         }
 
         /// <summary>
-        /// Runs one bounded near-title probe through the same index and returns the article
-        /// filenames it hit. Swallows its own failures into "no hit", so a miss can never itself
-        /// fail.
+        /// Runs one bounded near-title probe through the same index and returns the
+        /// repository-relative paths of the articles it hit. Swallows its own failures into
+        /// "no hit", so a miss can never itself fail.
         /// </summary>
         private List<string> SafeProbe(string probeQuery)
         {

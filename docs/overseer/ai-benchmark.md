@@ -875,13 +875,17 @@ re-run all change what a report — or a comparison across the boundary — mean
   configuration**, so a tool-limit change like this one is invisible in every run record on its
   own; only the accompanying guide edits move that hash.
 - **The comparability consequence.** `HarnessVersion` **is** an `Instrument`-kind key in
-  `BenchmarkComparabilityKey`, and this round also moves `ToolGuidesSha256` and
-  `CandidateSystemPromptSha256` — the wiki-tool guide and result-cap changes above touch both, since
-  the candidate system prompt is built with the tool guide text inline. Per
-  `BenchmarkComparabilityKey`'s tier resolver, exactly one differing `Instrument` key is Tier C —
-  the deliberate single-variable experiment — and **two or more drops the set to `NotComparable`,
-  below Tier B** (`instrument > 1` in the resolver). The first run stamped 18 therefore differs from
-  a run stamped 17 on three instrument keys at once and is **not** a Tier-B reproduction of it:
+  `BenchmarkComparabilityKey`, and this round also moves `ToolGuidesSha256` — the wiki-tool guide
+  and result-cap changes above touch the guide tree. It does **not** move
+  `CandidateSystemPromptSha256`: the candidate system prompt inlines `_policy.md` and the policy
+  overrides, not every per-tool guide, so editing a per-tool guide changes the hashed `ToolGuides`
+  tree without changing the built prompt text. Run 30 measured this directly, recording a
+  `CandidateSystemPromptSha256` byte-identical to run 29's despite the wiki-tool guide edits between
+  them (`server_benchmark_to_chat_transfer` § 11). Per `BenchmarkComparabilityKey`'s tier resolver,
+  exactly one differing `Instrument` key is Tier C — the deliberate single-variable experiment —
+  and **two or more drops the set to `NotComparable`, below Tier B** (`instrument > 1` in the
+  resolver). The first run stamped 18 therefore differs from a run stamped 17 on **two** instrument
+  keys at once (`HarnessVersion`, `ToolGuidesSha256`) and is **not** a Tier-B reproduction of it:
   compare the two on counts and per-question thresholds, not on the index.
 
 ### Run Progress Dialog Round (2026-09-10) — No Version Bump
@@ -918,6 +922,97 @@ follow. Not changed, and deliberately: the stage stays in-process only, the exec
 untouched (sequential mode still waits for the full grade of question *n* before dispatching *n*+1 —
 this round makes that wait legible, it does not remove it), and the multi-run progress dialog's rail
 describes series stages rather than run stages and keeps its own.
+
+### Run 30 Round (2026-09-10) — No Version Bump
+
+The round implementing run 30's analysis. `BenchmarkAssessmentPrompt.HarnessVersion` stays at
+`"18"` and `ScoringMethodVersion` stays at **10**: what changed is report and UI rendering, a
+read-only export, an advisory detector widened, one tool payload added, and two tool
+implementations changed — none of it touches an index, a dimensional score, an integrity bucket or
+a run status.
+
+The round moves **`ToolGuidesSha256` only**, through `wiki_view.md`. Per-tool guide edits do not
+move `CandidateSystemPromptSha256`, because the candidate system prompt inlines `_policy.md` and
+the policy overrides rather than every per-tool guide — see the corrected bullet above, which run
+30 is the measurement behind. With the claim verifier held at GPT-5.6 Luna for the confirming run
+(§ 6 of `server_benchmark_to_chat_transfer`), the confirming run is **Tier C** against run 30: one
+differing instrument key, not two or more.
+
+#### Report and UI fixes (H1–H4, H7)
+
+- **The report's three P50 lines — model time, turn duration, TTFT — now use the statistical
+  median**, the mean of the two middle values for an even count, matching what the Angular score
+  card already computed; P90 and maximum stay nearest-rank. **This changes a published figure for
+  every run re-rendered from now on**: run 30 itself re-reads median model time as 22,283 ms where
+  the report previously rendered 19,406 ms for the same stored data. It is report-only and folds
+  into no index and no comparability key.
+- **The per-question tool table gained an `Args` column**, a bounded 80-character single-line
+  preview of the call's arguments, with `(pruned)` where the retention sweep had already nulled the
+  payload.
+- **Disputed Assessments now renders the second reader's stored `comment`**, previously captured
+  but not displayed.
+- **Band Agreement now opens by stating what the section actually describes**: assessed difficulty
+  is a suite-item snapshot, so the section is describing the suite, not the run being read.
+- **The admin advisory-flag mask gained `OutOfRubricAccuracyDeduction` (512) and
+  `AnswerFramingOpener` (1024)**, which `BenchmarkRunFinalizer.AdvisoryFlags` already carried on the
+  stored answer — the mask that renders the Run Integrity Notice had not been widened to match, so
+  the notice had been counting three flagged answers while naming only two questions.
+
+#### The tool-call log export
+
+A new admin-only `GET runs/{id}/tool-call-log`, returning `text/markdown` and downloadable from the
+run detail page as **Tool-call log**, covers every answer of the run: the per-call table, plus per
+call the full arguments, the error, and the first 600 characters of the result, with
+`(pruned by retention)` markers wherever the sweep nulled a payload. Payloads render inside fenced
+code blocks rather than table cells, so no escaping can corrupt them. It loads the run's answers
+with their tool calls included, which the run-detail endpoint deliberately does not.
+
+**Why it exists**: the run-30 analysis had to leave several questions undetermined for want of the
+stored arguments and results. The export settled every one of them within minutes of shipping —
+including a `wiki_view` resolution defect that no amount of report-reading across six prior runs
+had found.
+
+#### The detector widening (H3)
+
+`BenchmarkArtifactScrubber.AnswerFramingRegex` now admits `both` and `every` as objects. It remains
+**detect-and-count only** — the matched text is never removed, because scrubbing would replace the
+very text the assessor grades and would move `ScoringMethodVersion`.
+
+#### The tool changes
+
+- **`SourceCodeService.FindDefinition` builds its patterns once per call** and gates each line on a
+  literal `Ordinal` `Contains` before any pattern runs against it; the output is byte-identical for
+  every `kind`, and a rendered-output test pins that. On run 30 this method cost 1,338–2,265 ms per
+  call — **8,806 ms of the run's 10,544 ms of tool time from 6 % of its calls** — and a live chat
+  turn pays the identical cost.
+- **`WikiService.GetArticle` gained the ordered resolution branches**: request normalization
+  (including the `.md`/`.txt`/`.html` extension tolerance), an exact path-form match against a
+  stored `relpath`, then title-equality collection with a disambiguation payload for two or more
+  hits, the resolved article for exactly one, and the prior top-scoring-hit behaviour — now scoped
+  to that last branch only — for none. The result header and `wiki_search`'s snippet headers now
+  show the article's repository-relative path. The wiki indexer now skips any file whose path
+  relative to the wiki root has a segment beginning with `.`.
+
+The tool-limit and index-scope halves of this move **no fingerprint at all**, exactly as the
+harness-18 section above already says of `Overseer/appsettings.json` tool limits.
+
+#### What was deliberately not done
+
+No `ChatService.BuildSystemPrompt` prose was edited, and no rung 5, 6 or 7 action was taken.
+
+**H6 — the strictly serial advisory grading stages (9m 19s of run 30's 22m 25s) — is deferred, with
+its reason.** Both the verification loop and the second-opinion loop share one
+`ApplicationDbContext`, which is not thread-safe, and the verifier's token budget is accounted
+sequentially; parallelising either is a scoped refactor and gets its own round.
+
+**The suite-6 rubric repair and the band-drift repair stay deferred to one single deliberate
+comparability break**, which must not land in the same round as a verification run: the `#if 0`
+group-size divisor in Q16's rubric, the out-of-scope Completeness points, the FORM `(readability)`
+labels on all 18 rubrics, and the `BenchmarkDifficultyPrompt` band-drift repair. **N3** — a `section`
+that matches no heading returning the whole truncated article instead of its heading list — is
+deferred for the reason given above: it changes a contract `wiki_view.md` and
+`server_tool_parameter_reference` § 5 both document, so it needs its own pre-declared criterion and
+rollback.
 
 ### Multi-Run Replicate Sets (Harness Version 14)
 

@@ -384,3 +384,225 @@ Daggers can be enchanted at an altar like most other weapons.
         Assert.DoesNotContain("Error:", result.Content);
     }
 }
+
+/// <summary>
+/// Covers how wiki_view resolves an article request: a title two articles share, the
+/// repository-relative path form that separates them, a filename carrying its extension, and the
+/// dot-directories the indexer keeps out of the corpus. Its corpus is deliberately its own —
+/// WikiToolMissContentTests depends on a bare title resolving straight to an article, which two
+/// same-titled articles would turn into a disambiguation.
+/// </summary>
+public class WikiArticleResolutionTests : IDisposable
+{
+    private readonly string _tempDir;
+
+    // The same bound the miss payloads are held to: a disambiguation list is re-sent to the model
+    // on each subsequent round of the same question, so it has to stay a single short line.
+    private const int PayloadMaxChars = 600;
+
+    public WikiArticleResolutionTests()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), "WikiArticleResolutionTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_tempDir);
+
+        Write("Monsters/Gnoll.md",
+@"A gnoll is a hyena-headed humanoid and one of the most common early monsters.
+
+## Behaviour
+Gnolls travel in packs, which is the monsterpackbehaviour that makes them dangerous early.
+");
+
+        Write("Races/Gnoll.md",
+@"Gnolls are a playable race in GnollHack, starting with an unusually strong smell sense.
+
+## Racial abilities
+A gnoll character gains racialinfravision and keeps it for the whole game.
+");
+
+        Write("Runewords.md",
+@"Runewords are combinations of runes that grant a property when engraved together.
+
+## Engraving
+A runewordengraving is consumed once the word takes effect.
+");
+
+        Write("Guides/Sokoban.md",
+@"Sokoban is a branch whose levels are solved by pushing boulders onto holes.
+
+## Solving
+Every sokobanboulderpuzzle has exactly one solution that does not waste a boulder.
+");
+
+        // Agent and planning files, which the wiki repository also holds and the indexer skips.
+        Write(".agents/skills/x/SKILL.md", "This file carries zzexcludedagenttoken and is not a wiki article.\n");
+        Write(".plans/a/b.md", "This file carries zzexcludedplantoken and is not a wiki article.\n");
+    }
+
+    private void Write(string relativePath, string content)
+    {
+        string fullPath = Path.Combine(_tempDir, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        File.WriteAllText(fullPath, content);
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_tempDir))
+        {
+            try
+            {
+                Directory.Delete(_tempDir, true);
+            }
+            catch { }
+        }
+    }
+
+    private IConfiguration BuildConfig()
+    {
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(new List<KeyValuePair<string, string?>> { new("WikiPath", _tempDir) })
+            .Build();
+    }
+
+    private static ToolExecutionContext Context() => new()
+    {
+        SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1),
+        SpoilerFreeMode = false
+    };
+
+    private async Task<string?> ViewAsync(string article)
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new WikiViewTool(service);
+
+        var jsonParams = JsonDocument.Parse(JsonSerializer.Serialize(new { article })).RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Null(result.ErrorMessage);
+        return result.Content;
+    }
+
+    private async Task<string?> SearchAsync(string query)
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new WikiSearchTool(service, BuildConfig());
+
+        var jsonParams = JsonDocument.Parse(JsonSerializer.Serialize(new { query })).RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Null(result.ErrorMessage);
+        return result.Content;
+    }
+
+    [Fact]
+    public async Task WikiViewTool_CollidingTitle_ReturnsBothPathsAsOneShortLine()
+    {
+        string? content = await ViewAsync("Gnoll");
+
+        Assert.NotNull(content);
+        Assert.Contains("Several wiki articles are titled 'Gnoll'", content);
+        Assert.Contains("Monsters/Gnoll", content);
+        Assert.Contains("Races/Gnoll", content);
+        Assert.Contains("Call wiki_view with the path form", content);
+
+        // Neither article's body: a collision hands back a choice, not a guess.
+        Assert.DoesNotContain("monsterpackbehaviour", content);
+        Assert.DoesNotContain("racialinfravision", content);
+
+        Assert.DoesNotContain("\n", content);
+        Assert.DoesNotContain("\r", content);
+        Assert.True(content!.Length < PayloadMaxChars, $"Disambiguation payload was {content.Length} characters.");
+    }
+
+    [Fact]
+    public async Task WikiViewTool_PathForm_ReturnsThatArticleUnderItsRelativePathHeader()
+    {
+        string? content = await ViewAsync("Races/Gnoll");
+
+        Assert.Contains("--- Races/Gnoll.md ---", content);
+        Assert.Contains("racialinfravision", content);
+        Assert.DoesNotContain("monsterpackbehaviour", content);
+    }
+
+    [Fact]
+    public async Task WikiViewTool_PathFormWithExtension_ResolvesToTheSameArticle()
+    {
+        string? content = await ViewAsync("Races/Gnoll.md");
+
+        Assert.Contains("--- Races/Gnoll.md ---", content);
+        Assert.Contains("racialinfravision", content);
+        Assert.DoesNotContain("monsterpackbehaviour", content);
+    }
+
+    [Fact]
+    public async Task WikiViewTool_UniqueTitle_ResolvesDirectlyWithARelativePathHeader()
+    {
+        string? content = await ViewAsync("Sokoban");
+
+        Assert.Contains("--- Guides/Sokoban.md ---", content);
+        Assert.Contains("sokobanboulderpuzzle", content);
+        Assert.DoesNotContain("Several wiki articles are titled", content);
+    }
+
+    /// <summary>
+    /// Benchmark run 30 called wiki_view with the filename it had read out of a wiki_search
+    /// header, `Runewords.md`, and got a miss while the bare title returned the article. Both
+    /// spellings now reach the same article.
+    /// </summary>
+    [Theory]
+    [InlineData("Runewords")]
+    [InlineData("Runewords.md")]
+    public async Task WikiViewTool_RootArticle_ResolvesWithAndWithoutItsExtension(string article)
+    {
+        string? content = await ViewAsync(article);
+
+        Assert.Contains("--- Runewords.md ---", content);
+        Assert.Contains("runewordengraving", content);
+        Assert.DoesNotContain("No wiki article matched", content);
+    }
+
+    [Fact]
+    public async Task WikiViewTool_NothingResembles_StillReturnsAMissPayloadWithANextAction()
+    {
+        string? content = await ViewAsync("Zzqqxx Nonexistent Article 4711");
+
+        Assert.Contains("No wiki article matched '", content);
+        Assert.Contains("wiki_search", content);
+        Assert.Contains("nethack_wiki_view", content);
+        Assert.True(content!.Length < PayloadMaxChars, $"Miss payload was {content.Length} characters.");
+    }
+
+    [Fact]
+    public async Task WikiSearch_DotDirectoryFiles_AreNotIndexed()
+    {
+        Assert.Contains("No GnollHack wiki article matched", await SearchAsync("zzexcludedagenttoken"));
+        Assert.Contains("No GnollHack wiki article matched", await SearchAsync("zzexcludedplantoken"));
+    }
+
+    [Fact]
+    public async Task WikiView_DotDirectoryFiles_AreNotReachableByNameOrPath()
+    {
+        string? byName = await ViewAsync("SKILL");
+        Assert.DoesNotContain("zzexcludedagenttoken", byName);
+        Assert.DoesNotContain("SKILL.md", byName);
+
+        string? byPath = await ViewAsync(".agents/skills/x/SKILL.md");
+        Assert.DoesNotContain("zzexcludedagenttoken", byPath);
+
+        string? planByPath = await ViewAsync(".plans/a/b.md");
+        Assert.DoesNotContain("zzexcludedplantoken", planByPath);
+    }
+
+    [Fact]
+    public async Task WikiSearch_SnippetHeader_CarriesTheRepositoryRelativePath()
+    {
+        string? content = await SearchAsync("gnoll");
+
+        Assert.Contains("--- Monsters/Gnoll.md ---", content);
+        Assert.Contains("--- Races/Gnoll.md ---", content);
+    }
+}

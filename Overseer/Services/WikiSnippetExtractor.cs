@@ -163,21 +163,27 @@ public static class WikiSnippetExtractor
         return score;
     }
 
-    public static string BuildSnippet(string filename, string markdown, string query, int perResultChars)
+    /// <summary>
+    /// <paramref name="articlePath"/> is the label the snippet is headed with — the article's
+    /// repository-relative path, which the caller can pass back to wiki_view as its
+    /// <c>article</c> parameter.
+    /// </summary>
+    public static string BuildSnippet(string articlePath, string markdown, string query, int perResultChars)
     {
         var terms = ExtractQueryTerms(query);
-        return BuildSnippet(filename, markdown, terms, perResultChars);
+        return BuildSnippet(articlePath, markdown, terms, perResultChars);
     }
 
-    public static string BuildSnippet(string filename, string markdown, IReadOnlyCollection<string> queryTerms, int perResultChars)
+    /// <inheritdoc cref="BuildSnippet(string, string, string, int)"/>
+    public static string BuildSnippet(string articlePath, string markdown, IReadOnlyCollection<string> queryTerms, int perResultChars)
     {
         if (perResultChars <= 0) perResultChars = 2500;
-        string header = $"--- {filename} ---";
+        string header = $"--- {articlePath} ---";
 
         var sections = SplitSections(markdown);
         if (sections.Count == 0)
         {
-            return $"{header}\n[article: {filename} — complete]";
+            return $"{header}\n[article: {articlePath} — complete]";
         }
 
         var scored = sections.Select(s => new { Section = s, Score = Score(s, queryTerms) }).ToList();
@@ -241,8 +247,8 @@ public static class WikiSnippetExtractor
         }
 
         string footer = omittedCount > 0
-            ? $"[article: {filename} — {omittedCount} further section(s) omitted; use wiki_view for the full text]"
-            : $"[article: {filename} — complete]";
+            ? $"[article: {articlePath} — {omittedCount} further section(s) omitted; use wiki_view for the full text]"
+            : $"[article: {articlePath} — complete]";
 
         int maxAllowedForBody = perResultChars - footer.Length - 4;
         if (maxAllowedForBody < header.Length)
@@ -255,7 +261,7 @@ public static class WikiSnippetExtractor
             sb.Length = maxAllowedForBody;
             sb.AppendLine("...");
             if (omittedCount == 0) omittedCount = 1;
-            footer = $"[article: {filename} — {omittedCount} further section(s) omitted; use wiki_view for the full text]";
+            footer = $"[article: {articlePath} — {omittedCount} further section(s) omitted; use wiki_view for the full text]";
         }
 
         sb.AppendLine();

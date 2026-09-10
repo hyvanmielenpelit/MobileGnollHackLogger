@@ -324,11 +324,37 @@ empty result rather than surfaced as an error.
 > (default `"article"` when a file has no frontmatter or no `namespace:` key) — the two "category"
 > concepts are not the same mechanism despite the similar name.
 
-**`wiki_view` / `nethack_wiki_view` article resolution is a single Lucene hit, not real fuzzy
-matching.** Both run a `MultiFieldQueryParser` over `title`/`filename`, take `hits.ScoreDocs[0]`
-unconditionally when `TotalHits > 0`, and return that document — there is no relevance floor, so
-a garbled or ambiguous `article` string can silently return the wrong article rather than a "not
-found" result. `section` extraction is markdown-heading text match (`^(#+)\s+(.*)`, case-
+**`nethack_wiki_view` article resolution is still a single Lucene hit, not real fuzzy matching.**
+It runs a `MultiFieldQueryParser` over `title`/`filename`, takes `hits.ScoreDocs[0]` unconditionally
+when `TotalHits > 0`, and returns that document — there is no relevance floor, so a garbled or
+ambiguous `article` string can silently return the wrong article rather than a "not found" result.
+
+**`wiki_view` no longer works that way, from the run-30 round.** `WikiService.GetArticle`
+normalizes the request first — trims it, converts `\` to `/`, and strips one trailing `.md`,
+`.txt` or `.html` extension — then resolves it through three ordered branches:
+
+1. **A name containing `/` is matched exactly, case-insensitively, against a stored `relpath`
+   field** (the article's repository-relative path, without extension) — the path form, e.g.
+   `Races/Gnoll`. It either hits exactly or falls through to branch 2; it is never a fuzzy match.
+2. Otherwise the title/filename query runs as before and takes its top 8 hits, and the handler
+   collects those whose `title` equals the normalized request case-insensitively. **Two or more**
+   such hits return a disambiguation payload (the miss-payload table below) naming the candidate
+   paths — `Success = true`, an ordinary result carrying a next action, not a miss. **Exactly one**
+   returns that article.
+3. **None** falls through to the old behaviour, unchanged: the top-scoring Lucene hit,
+   unconditionally, with **no relevance floor**. This last branch, and only this branch, is where a
+   garbled or invented `article` string still silently returns the best-scoring article rather than
+   a "not found" result — the caveat that used to cover all of `wiki_view` now covers only this
+   branch of it.
+
+So `article` accepts a title, a filename with or without its extension, or a repository-relative
+path — the normalization step exists specifically so a name copied from a prior result's header or
+a `wiki_search` snippet resolves. Both `wiki_view`'s own result header and `wiki_search`'s snippet
+headers now print `--- <repository-relative path with extension> ---` (e.g. `--- Races/Gnoll.md
+---`) instead of the bare filename, so that exact path can be copied straight back into `article`
+for branch 1.
+
+`section` extraction (unchanged, both tools) is markdown-heading text match (`^(#+)\s+(.*)`, case-
 insensitive full-title equality), capturing lines until a heading of equal or shallower depth; if
 the named section isn't found, the **full article** is returned with a
 `[Section 'X' not found in article. Returning full text.]` prefix — not an error.
@@ -366,6 +392,27 @@ harness 18 or a call in which the builder threw.
 that missed so the section was never reached. A section that matches no heading is **not** a miss at
 all and does not reach the builder: `WikiService.GetArticle` answers that case itself with the
 `[Section 'X' not found in article. Returning full text.]` line above, followed by the whole article.
+
+**`wiki_view` also has a fourth outcome, from the run-30 round, and it is not a miss.** `Several
+wiki articles are titled '` opens a disambiguation payload — `Success = true`, capped at a few
+hundred characters, listing extensionless candidate relative paths in index order (capped at 6 with
+`…`) and naming the path form to call back with. It fires from branch 2 of the resolution order
+above, when two or more indexed articles share an exact case-insensitive title. A miss count read
+off the table above must not include it.
+
+**A dated measured fact: the `.md`-suffix trap.** On run 30 (2026-09-10), 6 of its 20 `wiki_view`
+calls passed a filename carrying its own extension — the parameter schema calls `article` an
+*"Article filename or title"* and `wiki_search` prints that filename in its own snippet header, so
+the model copies it straight back in. A single-word title plus `.md` tokenized to one term matching
+nothing and **missed outright** (`Praying.md`, `Runewords.md` — both resolve fine on the bare
+title); a multi-word one survived on its remaining terms and, with no relevance floor in the
+fallback branch, landed on the **wrong article** (`Guide to Praying.md` → `Guide.md`; `Sacrifice
+Offering.md` → `Sacrifice Gifts.md`). Only `Red dragon.md` and `Sacrifice Gifts.md` resolved
+correctly despite carrying the extension. The repair is the normalization step in the resolution
+order above — trim, `\`→`/`, strip one trailing `.md`/`.txt`/`.html` — not a change to the fallback
+branch's missing relevance floor, which this round deliberately left in place, scoped to that last
+branch only. Re-measure rather than citing this figure once a later round changes the resolver
+again.
 
 ---
 

@@ -71,11 +71,17 @@ public class WikiService : IDisposable
 
         _lastGitSha = GitHelper.GetGitHeadSha(_wikiPath);
 
-        var files = System.IO.Directory.GetFiles(_wikiPath, "*.*", SearchOption.AllDirectories)
+        var candidates = System.IO.Directory.GetFiles(_wikiPath, "*.*", SearchOption.AllDirectories)
             .Where(f => f.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
                      || f.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)
                      || f.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
             .ToList();
+
+        // The wiki root is a working repository whose dot-directories hold agent, planning and
+        // editor files. Those are not articles, so they stay out of the index.
+        var files = candidates.Where(f => !IsUnderDotDirectory(f)).ToList();
+        int skippedDotFiles = candidates.Count - files.Count;
+        int indexedCount = 0;
 
         _analyzer = new StandardAnalyzer(LuceneVersion.LUCENE_48);
         
@@ -93,12 +99,28 @@ public class WikiService : IDisposable
                 var fileInfo = new FileInfo(file);
                 if (fileInfo.Length <= _maxFileSizeKB * 1024)
                 {
+                    string relativeFile = GetWikiRelativePath(file);
+                    string relativePath = StripFileExtension(relativeFile, Path.GetExtension(file));
+
                     var doc = new Document();
                     doc.Add(new TextField("title", Path.GetFileNameWithoutExtension(file), Field.Store.YES));
                     doc.Add(new TextField("content", File.ReadAllText(file), Field.Store.YES));
                     doc.Add(new StringField("path", file, Field.Store.YES));
                     doc.Add(new StringField("filename", Path.GetFileName(file), Field.Store.YES));
+
+                    // The human-facing path form, e.g. "Races/Gnoll": what the article parameter
+                    // and the disambiguation payload name, and the only field an exact path
+                    // lookup can match. relpathlower carries the same value case-folded, because
+                    // a StringField is one exact, case-sensitive term.
+                    doc.Add(new StringField("relpath", relativePath, Field.Store.YES));
+                    doc.Add(new StringField("relpathlower", relativePath.ToLowerInvariant(), Field.Store.NO));
+
+                    // With its extension, e.g. "Races/Gnoll.md": the label every result header
+                    // shows. Displayed only, so it is stored without being indexed.
+                    doc.Add(new StoredField("relfile", relativeFile));
+
                     writer.AddDocument(doc);
+                    indexedCount++;
                 }
             }
             writer.Commit();
@@ -125,8 +147,35 @@ public class WikiService : IDisposable
         // Dispose old resources OUTSIDE the lock to avoid blocking queries
         oldReader?.Dispose();
         oldDirectory?.Dispose();
+
+        _logger?.LogInformation("Indexed {Count} GnollHack wiki articles, skipped {SkippedCount} file(s) under dot-directories.", indexedCount, skippedDotFiles);
     }
-    
+
+    /// <summary>
+    /// The file's path relative to the wiki root, with <c>\</c> normalized to <c>/</c>.
+    /// </summary>
+    private string GetWikiRelativePath(string file)
+    {
+        return Path.GetRelativePath(_wikiPath, file).Replace('\\', '/');
+    }
+
+    /// <summary>
+    /// True when any segment of the file's path relative to the wiki root begins with a dot.
+    /// </summary>
+    private bool IsUnderDotDirectory(string file)
+    {
+        return GetWikiRelativePath(file)
+            .Split('/')
+            .Any(segment => segment.StartsWith(".", StringComparison.Ordinal));
+    }
+
+    private static string StripFileExtension(string relativeFile, string extension)
+    {
+        return extension.Length > 0 && relativeFile.Length > extension.Length
+            ? relativeFile.Substring(0, relativeFile.Length - extension.Length)
+            : relativeFile;
+    }
+
     public IEnumerable<string> GetRelevantContext(string query, string? categoryFilter = null, int? maxResults = null)
     {
         IndexSearcher? searcher;
@@ -222,16 +271,69 @@ public class WikiService : IDisposable
         foreach (var hit in hits.ScoreDocs)
         {
             var doc = searcher.Doc(hit.Doc);
-            string filename = doc.Get("filename");
+
+            // The path form, so a hit on Races/Gnoll is distinguishable from one on
+            // Monsters/Gnoll and the header can be passed straight back to wiki_view.
+            string articlePath = doc.Get("relfile") ?? doc.Get("filename");
             string content = doc.Get("content");
-            results.Add(WikiSnippetExtractor.BuildSnippet(filename, content, queryTerms, perResultChars));
+            results.Add(WikiSnippetExtractor.BuildSnippet(articlePath, content, queryTerms, perResultChars));
         }
         
         return results;
     }
 
+    /// <summary>The indexed extensions an article request may carry.</summary>
+    private static readonly string[] IndexedExtensions = { ".md", ".txt", ".html" };
+
+    /// <summary>How many hits the title query inspects for a title collision.</summary>
+    private const int TitleQueryMaxHits = 8;
+
+    /// <summary>How many colliding paths a disambiguation payload names before it elides.</summary>
+    private const int DisambiguationMaxCandidates = 6;
+
+    /// <summary>
+    /// The form of an article request that resolution matches against: trimmed, with <c>\</c>
+    /// normalized to <c>/</c> and one trailing indexed extension (<c>.md</c>, <c>.txt</c> or
+    /// <c>.html</c>, compared case-insensitively) removed, so a filename copied out of a
+    /// <c>wiki_search</c> snippet header resolves. Casing is otherwise preserved. A request that
+    /// is nothing but an extension keeps it, so <c>".md"</c> stays a term rather than becoming an
+    /// empty request.
+    /// </summary>
+    public static string NormalizeArticleName(string articleName)
+    {
+        if (string.IsNullOrWhiteSpace(articleName)) return string.Empty;
+
+        string normalized = articleName.Trim().Replace('\\', '/');
+
+        foreach (var extension in IndexedExtensions)
+        {
+            if (normalized.Length > extension.Length &&
+                normalized.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+            {
+                return normalized.Substring(0, normalized.Length - extension.Length);
+            }
+        }
+
+        return normalized;
+    }
+
     public string? GetArticle(string articleName, string? section = null)
     {
+        return GetArticle(articleName, section, out _);
+    }
+
+    /// <summary>
+    /// Resolves an article request in three steps: an exact lookup of the path form, then a
+    /// title/filename query whose hits are checked for a title collision, and finally the
+    /// top-scoring hit with no relevance floor when no indexed title equals the request.
+    /// <paramref name="isDisambiguation"/> reports the collision case, where the returned text is
+    /// a one-line list of candidate paths rather than an article and <paramref name="section"/> is
+    /// not applied.
+    /// </summary>
+    public string? GetArticle(string articleName, string? section, out bool isDisambiguation)
+    {
+        isDisambiguation = false;
+
         IndexSearcher? searcher;
         StandardAnalyzer? analyzer;
         lock (_swapLock)
@@ -240,8 +342,21 @@ public class WikiService : IDisposable
             analyzer = _analyzer;
         }
         if (searcher == null || analyzer == null || string.IsNullOrWhiteSpace(articleName)) return null;
-        
-        // Try exact match on title or filename
+
+        string normalized = NormalizeArticleName(articleName);
+        if (string.IsNullOrWhiteSpace(normalized)) return null;
+
+        // A request that contains a slash may be a path, but is not necessarily one, so a miss
+        // here falls through to the title query rather than ending in a miss.
+        if (normalized.Contains('/'))
+        {
+            var pathHits = searcher.Search(new TermQuery(new Term("relpathlower", normalized.ToLowerInvariant())), 1);
+            if (pathHits.TotalHits > 0)
+            {
+                return RenderArticle(searcher.Doc(pathHits.ScoreDocs[0].Doc), section);
+            }
+        }
+
         var parser = new MultiFieldQueryParser(
             LuceneVersion.LUCENE_48,
             new[] { "title", "filename" },
@@ -250,26 +365,86 @@ public class WikiService : IDisposable
         Query luceneQuery;
         try
         {
-            luceneQuery = parser.Parse(QueryParserBase.Escape(articleName));
+            luceneQuery = parser.Parse(QueryParserBase.Escape(normalized));
         }
         catch (Lucene.Net.QueryParsers.Classic.ParseException)
         {
             return null;
         }
-        
-        var hits = searcher.Search(luceneQuery, 1);
+
+        var hits = searcher.Search(luceneQuery, TitleQueryMaxHits);
         if (hits.TotalHits == 0) return null;
-        
-        var doc = searcher.Doc(hits.ScoreDocs[0].Doc);
-        string filename = doc.Get("filename");
+
+        // Titles collide across categories — every playable race and role has a monster twin,
+        // every weapon that is also a skill has a skill twin — so a request that equals an
+        // indexed title may name several articles, and the caller has to choose.
+        var titleMatches = new List<Document>();
+        foreach (var scoreDoc in hits.ScoreDocs.OrderBy(s => s.Doc))
+        {
+            var candidate = searcher.Doc(scoreDoc.Doc);
+            if (string.Equals(candidate.Get("title"), normalized, StringComparison.OrdinalIgnoreCase))
+            {
+                titleMatches.Add(candidate);
+            }
+        }
+
+        if (titleMatches.Count > 1)
+        {
+            var paths = titleMatches
+                .Select(d => d.Get("relpath"))
+                .Where(p => !string.IsNullOrEmpty(p))
+                .ToList();
+
+            if (paths.Count > 1)
+            {
+                isDisambiguation = true;
+                return BuildDisambiguation(normalized, paths);
+            }
+        }
+
+        if (titleMatches.Count > 0)
+        {
+            return RenderArticle(titleMatches[0], section);
+        }
+
+        // No indexed title equals the request: the best-scoring article stands, with no relevance
+        // floor, so a garbled or invented name still yields something rather than a miss.
+        return RenderArticle(searcher.Doc(hits.ScoreDocs[0].Doc), section);
+    }
+
+    /// <summary>
+    /// One line naming the articles that share a title, as path forms the caller can pass
+    /// straight back in. Kept to a few hundred characters: every tool result is re-sent to the
+    /// model on each subsequent round of the same question.
+    /// </summary>
+    private static string BuildDisambiguation(string articleName, List<string> paths)
+    {
+        var shown = paths.Take(DisambiguationMaxCandidates).ToList();
+        string list = string.Join(", ", shown);
+        if (paths.Count > shown.Count)
+        {
+            list += ", …";
+        }
+
+        return $"Several wiki articles are titled '{articleName}': {list}. " +
+               $"Call wiki_view with the path form, for example article: \"{shown[0]}\".";
+    }
+
+    /// <summary>
+    /// The article's text under a <c>--- Races/Gnoll.md ---</c> header, so the caller can see
+    /// which of several same-titled articles it received.
+    /// </summary>
+    private string RenderArticle(Document doc, string? section)
+    {
+        string label = doc.Get("relfile") ?? doc.Get("filename");
         string content = doc.Get("content");
-        
+
         if (!string.IsNullOrWhiteSpace(section))
         {
             content = ExtractMarkdownSection(content, section);
         }
-        
-        return $"--- {filename} ---\n{content}";
+
+        return $"--- {label} ---\n{content}";
     }
 
     private string ExtractMarkdownSection(string content, string section)
