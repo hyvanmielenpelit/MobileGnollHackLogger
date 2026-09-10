@@ -2194,8 +2194,10 @@ public class BenchmarkServiceTests
 
         string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.0");
 
-        Assert.Contains("### **Median Model Time: 24,000 ms**", report);
-        Assert.Contains("### Median Model Time: 24,000 ms", report);
+        // Model times sorted are 20,000 / 24,000 / 30,000 / 40,000, so the true statistical median
+        // is the mean of the two middle values, 27,000 ms.
+        Assert.Contains("### **Median Model Time: 27,000 ms**", report);
+        Assert.Contains("### Median Model Time: 27,000 ms", report);
         Assert.Contains("Speed Index 80 / 100 — advisory", report);
         Assert.Contains("Saturated — 2 of 4 answers", report);
         Assert.DoesNotContain("### **Speed Index: 80 / 100**", report);

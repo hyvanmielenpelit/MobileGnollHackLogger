@@ -236,6 +236,40 @@ public static class BenchmarkReportBuilder
         }
     }
 
+    /// <summary>
+    /// The second reader's free-text <c>comment</c> from a disputed answer's stored
+    /// <see cref="BenchmarkRunAnswer.SecondOpinionJson"/> blob, collapsed to one line. Null for a
+    /// null, blank or malformed blob, or one with no comment — in the same spirit as
+    /// <c>AdminBenchmarkComponent.answerEvidence</c> on the client, this never throws.
+    /// </summary>
+    private static string? ReadSecondOpinionComment(string? secondOpinionJson)
+    {
+        if (string.IsNullOrWhiteSpace(secondOpinionJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(secondOpinionJson);
+            if (doc.RootElement.TryGetProperty("comment", out var comment) && comment.ValueKind == JsonValueKind.String)
+            {
+                string? text = comment.GetString();
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    return null;
+                }
+                string oneLine = text.Replace("\r\n", " ").Replace("\r", " ").Replace("\n", " ");
+                return WhitespaceRunRegex.Replace(oneLine, " ").Trim();
+            }
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>"25 executed, 2 blocked, budget 25" — three numbers that mean three things.</summary>
     private static string FormatToolBudgetLine(BenchmarkRunAnswer answer)
     {
@@ -254,6 +288,30 @@ public static class BenchmarkReportBuilder
         return blocked > 0
             ? $"{executed} executed, {blocked} blocked, budget {budget}{modelCalls}"
             : $"{executed} executed, budget {budget}{modelCalls}";
+    }
+
+    private static readonly Regex WhitespaceRunRegex = new(@"\s+", RegexOptions.Compiled);
+
+    /// <summary>
+    /// A bounded, single-line preview of a tool call's arguments for the per-question table:
+    /// line breaks collapsed to spaces, runs of whitespace collapsed to one, every <c>|</c>
+    /// escaped so the cell cannot break the table row, then truncated to 80 characters with an
+    /// ellipsis appended when it was longer. <c>(pruned)</c> marks a null or blank
+    /// <paramref name="argsText"/> beside a non-zero <paramref name="resultLengthChars"/> — the
+    /// retention sweep having nulled the payload, not an absent record — and <c>—</c> covers
+    /// every other empty case.
+    /// </summary>
+    private static string FormatArgsPreview(string? argsText, int resultLengthChars)
+    {
+        if (string.IsNullOrWhiteSpace(argsText))
+        {
+            return resultLengthChars != 0 ? "(pruned)" : "—";
+        }
+
+        string oneLine = argsText.Replace("\r\n", " ").Replace("\r", " ").Replace("\n", " ");
+        string collapsed = WhitespaceRunRegex.Replace(oneLine, " ").Trim();
+        string escaped = collapsed.Replace("|", "\\|");
+        return escaped.Length > 80 ? escaped[..80] + "…" : escaped;
     }
 
     /// <summary>
@@ -390,6 +448,14 @@ public static class BenchmarkReportBuilder
             ? sorted[mid]
             : (sorted[mid - 1] + sorted[mid]) / 2.0;
     }
+
+    /// <summary>
+    /// A P50 figure computed as the true statistical median (mean of the two middle values for an
+    /// even count) rather than <see cref="Percentile"/>'s nearest-rank pick, so the report's P50
+    /// lines agree with the Angular UI card, which is computed the same way.
+    /// </summary>
+    private static long MedianMs(IReadOnlyList<long> sorted)
+        => sorted.Count == 0 ? 0 : (long)Math.Round(Median(sorted.Select(v => (double)v)), MidpointRounding.AwayFromZero);
 
     public static string BuildMarkdownReport(BenchmarkRun run, string? overseerVersion = null, BenchmarkRunPricing? runPricing = null)
     {
@@ -786,7 +852,7 @@ public static class BenchmarkReportBuilder
         // run predates the ToolTimeMs column, so this is available on the whole archive.
         var okAnswers = answers.Where(a => a.Status == BenchmarkAnswerStatus.Ok).ToList();
         var modelTimesSorted = okAnswers.Select(a => a.ModelTimeMs).OrderBy(d => d).ToList();
-        long? medianModelTimeMs = modelTimesSorted.Count > 0 ? Percentile(modelTimesSorted, 0.50) : (long?)null;
+        long? medianModelTimeMs = modelTimesSorted.Count > 0 ? MedianMs(modelTimesSorted) : (long?)null;
 
         // A run whose Speed Index sits at the ceiling on most of its answers carries no
         // discriminating information: every answer at 100 looks identical to the index whether
@@ -877,7 +943,7 @@ public static class BenchmarkReportBuilder
         var durations = okAnswers.Select(a => a.DurationMs).OrderBy(d => d).ToList();
         if (durations.Count > 0)
         {
-            long p50 = Percentile(durations, 0.50);
+            long p50 = MedianMs(durations);
             long p90 = Percentile(durations, 0.90);
             long maxD = durations[^1];
             sb.AppendLine($"- **Turn Duration Percentiles:** Median (P50) = {Inv(p50, "N0")} ms, P90 = {Inv(p90, "N0")} ms, Max = {Inv(maxD, "N0")} ms");
@@ -909,7 +975,7 @@ public static class BenchmarkReportBuilder
             .ToList();
         if (ttfts.Count > 0)
         {
-            sb.AppendLine($"- **Time to First Token:** Median (P50) = {Inv(Percentile(ttfts, 0.50), "N0")} ms, P90 = {Inv(Percentile(ttfts, 0.90), "N0")} ms, Max = {Inv(ttfts[^1], "N0")} ms");
+            sb.AppendLine($"- **Time to First Token:** Median (P50) = {Inv(MedianMs(ttfts), "N0")} ms, P90 = {Inv(Percentile(ttfts, 0.90), "N0")} ms, Max = {Inv(ttfts[^1], "N0")} ms");
         }
 
         sb.AppendLine($"- **Total Input Tokens:** {Inv(run.TotalInputTokens, "N0")}");
@@ -1780,6 +1846,8 @@ public static class BenchmarkReportBuilder
             .ToList();
 
         sb.AppendLine("### Band Agreement");
+        sb.AppendLine("Assessed difficulty is a property of the suite item, not of this run — it is stamped once per question and stays byte-identical across every run of this suite, so this section describes the suite, not this run.");
+        sb.AppendLine();
         if (bandDisagreements.Count == 0)
         {
             sb.AppendLine("All questions were assessed within their authored difficulty band.");
@@ -2165,28 +2233,29 @@ public static class BenchmarkReportBuilder
             // where no such record exists — nothing is printed, because a blank table would read
             // as a turn that called no tools.
             //
-            // Arguments and results are deliberately NOT inlined, and must not be added later. A
-            // report is written to be pasted whole into a chat or an issue, and a single tool
-            // result can be tens of thousands of characters of game source; payloads belong behind
-            // the on-demand admin endpoint that serves one call at a time. The result column
-            // carries ResultLengthChars — the true size the tool produced, before any cap — so an
-            // over-large or truncated payload is visible as a number without a character of it
-            // being quoted here.
+            // The Args column carries a bounded, single-line, 80-character preview of each call's
+            // arguments so a reader can tell one call from another at a glance. Full payloads stay
+            // out of this table — a single tool result can be tens of thousands of characters of
+            // game source — and live behind the per-answer admin endpoint and the tool-call log
+            // export instead. The result column carries ResultLengthChars — the true size the tool
+            // produced, before any cap — so an over-large or truncated payload is visible as a
+            // number without a character of it being quoted here.
             if (a.ToolCalls.Count > 0)
             {
                 sb.AppendLine();
-                sb.AppendLine("| Round | Tool | Status | Exec (ms) | Result Size |");
-                sb.AppendLine("|------:|------|--------|----------:|------------:|");
+                sb.AppendLine("| Round | Tool | Args | Status | Exec (ms) | Result Size |");
+                sb.AppendLine("|------:|------|------|--------|----------:|------------:|");
                 foreach (var call in a.ToolCalls.OrderBy(c => c.SortOrder))
                 {
                     string round = call.IterationIndex.HasValue ? Inv(call.IterationIndex.Value) : "N/A";
                     string toolName = string.IsNullOrWhiteSpace(call.Name) ? "*(unnamed)*" : $"`{call.Name}`";
+                    string args = FormatArgsPreview(call.ArgsText, call.ResultLengthChars);
                     string status = string.IsNullOrWhiteSpace(call.Status) ? "*(none recorded)*" : call.Status;
                     string execMs = call.ExecutionMs.HasValue ? Inv(call.ExecutionMs.Value, "N0") : "N/A";
                     string resultSize = call.ResultLengthChars > 0
                         ? $"{Inv(call.ResultLengthChars, "N0")} chars"
                         : "—";
-                    sb.AppendLine($"| {round} | {toolName} | {status} | {execMs} | {resultSize} |");
+                    sb.AppendLine($"| {round} | {toolName} | {args} | {status} | {execMs} | {resultSize} |");
                 }
             }
 
@@ -2633,6 +2702,11 @@ public static class BenchmarkReportBuilder
                     claimNote = $" [Claims: {d.ClaimsSupportedCount ?? 0} supported, {d.ClaimsRefutedCount ?? 0} refuted, {d.ClaimsIndeterminateCount ?? 0} indeterminate]";
                 }
                 sb.AppendLine($"- **Question {d.OrderIndex}:** first {d.QualityScore ?? 0} / 100 (critical error {(d.CriticalError ? "yes" : "no")}, {d.AssessedByModelDisplayNameUsed}) vs second {d.SecondOpinionQualityScore!.Value} / 100 (critical error {(d.SecondOpinionCriticalError == true ? "yes" : "no")}, {d.SecondOpinionByModelDisplayNameUsed}){claimNote}");
+                string? secondReaderComment = ReadSecondOpinionComment(d.SecondOpinionJson);
+                if (secondReaderComment != null)
+                {
+                    sb.AppendLine($"  - Second reader: {secondReaderComment}");
+                }
             }
             sb.AppendLine();
         }

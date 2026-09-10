@@ -3288,6 +3288,29 @@ public class AdminBenchmarkController : ControllerBase
         return File(Encoding.UTF8.GetBytes(markdown), "text/markdown; charset=utf-8", filename);
     }
 
+    /// <summary>
+    /// The whole run's tool-call record — every argument, result and error each call carried —
+    /// as a Markdown export for reading offline. On-demand rather than part of the run detail:
+    /// the run-detail endpoint deliberately does not include tool calls (see the comment above
+    /// the tool call outcome aggregate near the top of <see cref="GetRun"/>), and a run's payloads
+    /// can run to several megabytes once every call's full arguments and results are included.
+    /// </summary>
+    [HttpGet("runs/{id}/tool-call-log")]
+    public async Task<IActionResult> GetRunToolCallLog(long id)
+    {
+        var run = await _dbContext.BenchmarkRuns
+            .Include(r => r.Answers)
+                .ThenInclude(a => a.ToolCalls)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (run == null) return NotFound();
+
+        string markdown = BenchmarkToolCallLogBuilder.Build(run, run.Answers);
+        string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelDisplayNameUsed)}_run{run.Id}_tool_calls.md";
+
+        return File(Encoding.UTF8.GetBytes(markdown), "text/markdown; charset=utf-8", filename);
+    }
+
     [HttpGet("suites/{id}/runs/footprint")]
     public async Task<IActionResult> GetSuiteRunsFootprint(long id)
     {

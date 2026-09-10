@@ -130,9 +130,9 @@ public sealed class BenchmarkArtifactScrubber
     // and still reaches "I now have the pieces I need", which neither would otherwise see.
     private static readonly Regex AnswerFramingRegex = new(
         @"\A\s*(?:Now\s+|OK[,.]?\s+|Alright[,.]?\s+)?I\s+(?:now|finally|also|just)\s+" +
-        @"(?:have|need|found|located|confirmed)\s+(?:the|a|all|enough|everything|what)\b" +
+        @"(?:have|need|found|located|confirmed)\s+(?:the|a|all|enough|everything|what|both|every)\b" +
         @"|\A\s*(?:Now\s+|OK[,.]?\s+|Alright[,.]?\s+)?I\s+" +
-        @"(?:have|need|found|located|confirmed)\s+(?:a|all|enough|everything|what)\b" +
+        @"(?:have|need|found|located|confirmed)\s+(?:a|all|enough|everything|what|both|every)\b" +
         @"|\A\s*(?:Now\s+)?I(?:’|')ve\s+(?:got|confirmed|gathered)\b" +
         @"|\A\s*Let\s+me\s+(?:just\s+|now\s+)?(?:give|answer|lay\s+out|summari[sz]e|provide|state|write|put)\b" +
         @"|\A\s*(?:This|That)\s+(?:has|is)\s+(?:a\s+)?clear\s+answer\b",

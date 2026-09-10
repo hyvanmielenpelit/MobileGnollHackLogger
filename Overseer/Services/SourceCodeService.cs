@@ -616,58 +616,70 @@ namespace Overseer.Services
             int maxResults = 10;
             int resultCount = 0;
 
+            // Compiled once per call: the per-line loop below only ever calls IsMatch on these.
+            var functionRegex = new Regex($@"^{escapedSymbol}\s*\(");
+            var macroRegex = new Regex($@"^\s*#define\s+{escapedSymbol}[\s(]");
+            var structRegex = new Regex($@"^\s*struct\s+{escapedSymbol}\s*{{");
+            var typeRegex = new Regex($@"^\s*typedef\s+.*\s+{escapedSymbol}\s*;");
+            var enumRegex = new Regex($@"^\s*enum\s+{escapedSymbol}\s*{{");
+            var enumValueRegex = new Regex($@"^\s*{escapedSymbol}\s*=\s*\d+");
+            var enumCommaRegex = new Regex($@"^\s*{escapedSymbol}\s*,");
+
             foreach (var doc in docsToSearch)
             {
                 bool isCFile = doc.FilePath.EndsWith(".c", StringComparison.OrdinalIgnoreCase);
-                
+
                 for (int i = 0; i < doc.ContentLines.Length; i++)
                 {
                     string line = doc.ContentLines[i];
+                    // Literal gate ahead of the patterns below: each embeds the escaped symbol and none
+                    // is case-insensitive, so a line missing the symbol's exact characters cannot match.
+                    if (!line.Contains(symbol, StringComparison.Ordinal)) continue;
                     bool match = false;
                     int contextLines = 5;
-                    
+
                     if ((kind == "any" || kind == "function") && isCFile)
                     {
                         // Function definition: match symbol at start of line followed by (
-                        if (Regex.IsMatch(line, $@"^{escapedSymbol}\s*\("))
+                        if (functionRegex.IsMatch(line))
                         {
                             match = true;
                             // For C functions, include the preceding line for the return type
                             contextLines = 8;
                         }
                     }
-                    
+
                     if ((kind == "any" || kind == "macro") && !match)
                     {
-                        if (Regex.IsMatch(line, $@"^\s*#define\s+{escapedSymbol}[\s(]"))
+                        if (macroRegex.IsMatch(line))
                         {
                             match = true;
                         }
                     }
-                    
+
                     if ((kind == "any" || kind == "struct") && !match)
                     {
-                        if (Regex.IsMatch(line, $@"^\s*struct\s+{escapedSymbol}\s*{{"))
+                        if (structRegex.IsMatch(line))
                         {
                             match = true;
                         }
                     }
-                    
+
                     if ((kind == "any" || kind == "type") && !match)
                     {
-                        if (Regex.IsMatch(line, $@"^\s*typedef\s+.*\s+{escapedSymbol}\s*;"))
+                        if (typeRegex.IsMatch(line))
                         {
                             match = true;
                         }
                     }
-                    
+
                     if ((kind == "any" || kind == "enum") && !match)
                     {
-                        if (Regex.IsMatch(line, $@"^\s*enum\s+{escapedSymbol}\s*{{"))
+                        if (enumRegex.IsMatch(line))
                         {
                             match = true;
                         }
-                        else if (Regex.IsMatch(line, $@"^\s*{escapedSymbol}\s*=\s*\d+") || Regex.IsMatch(line, $@"^\s*{escapedSymbol}\s*,"))
+                        else if (enumValueRegex.IsMatch(line) || enumCommaRegex.IsMatch(line))
                         {
                             if (doc.ContentLines.Take(i).Reverse().Take(50).Any(l => l.Contains("enum ")))
                             {

@@ -80,6 +80,7 @@ describe('AdminBenchmarkComponent', () => {
       'updateRunGroup',
       'previewRunGroupTier',
       'getRunReportUrl',
+      'getToolCallLogUrl',
       'compareModels',
       'getComparabilityIndex'
     ]);
@@ -1823,6 +1824,18 @@ describe('AdminBenchmarkComponent', () => {
     });
   });
 
+  describe('downloadToolCallLog', () => {
+    it('should open the tool-call log through window.open using the service URL', () => {
+      benchmarkServiceMock.getToolCallLogUrl.and.returnValue('/api/admin/benchmark/runs/42/tool-call-log');
+      const openSpy = spyOn(window, 'open');
+
+      component.downloadToolCallLog(42);
+
+      expect(benchmarkServiceMock.getToolCallLogUrl).toHaveBeenCalledWith(42);
+      expect(openSpy).toHaveBeenCalledWith('/api/admin/benchmark/runs/42/tool-call-log', '_blank');
+    });
+  });
+
   describe('run integrity accounting', () => {
     /**
      * A finished run detail with no integrity problems. Each test raises exactly the counters
@@ -2034,12 +2047,27 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.hasTransportDefect(clean)).toBeFalse();
     });
 
+    it('should flag an AnswerFramingOpener-only answer as advisory and list its question number', () => {
+      const framed = buildScoredAnswer(7, { answerFlags: 1024, answerFlagNames: ['AnswerFramingOpener'] });
+
+      expect(component.hasAdvisoryFlag(framed)).toBeTrue();
+      expect(component.hasTransportDefect(framed)).toBeFalse();
+      expect(component.hasHarnessLimit(framed)).toBeFalse();
+
+      component.selectedRunDetail = buildCompletedRun({ answers: [framed] });
+      fixture.detectChanges();
+
+      expect(component.advisoryFlagQuestionNumbers).toBe('7');
+    });
+
     it('should name only the advisory flags as advisory', () => {
       expect(component.isAdvisoryFlagName('ReasoningBleed')).toBeTrue();
       expect(component.isAdvisoryFlagName('RepeatedFragments')).toBeTrue();
       expect(component.isAdvisoryFlagName('ContestedVerdict')).toBeTrue();
       expect(component.isAdvisoryFlagName('UnevidencedDeduction')).toBeTrue();
       expect(component.isAdvisoryFlagName('RefutedClaim')).toBeTrue();
+      expect(component.isAdvisoryFlagName('OutOfRubricAccuracyDeduction')).toBeTrue();
+      expect(component.isAdvisoryFlagName('AnswerFramingOpener')).toBeTrue();
       expect(component.isAdvisoryFlagName('HarnessArtifacts')).toBeFalse();
       expect(component.isAdvisoryFlagName('Truncated')).toBeFalse();
       expect(component.isAdvisoryFlagName('Empty')).toBeFalse();

@@ -280,10 +280,11 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   /**
    * BenchmarkAnswerFlags bits that are advisory only and must never be presented as a
    * failure: ReasoningBleed = 8, RepeatedFragments = 16, ContestedVerdict = 32,
-   * UnevidencedDeduction = 64, RefutedClaim = 128, OmissionAsAccuracy = 256. Must track
+   * UnevidencedDeduction = 64, RefutedClaim = 128, OmissionAsAccuracy = 256,
+   * OutOfRubricAccuracyDeduction = 512, AnswerFramingOpener = 1024. Must track
    * BenchmarkRunFinalizer.AdvisoryFlags on the server as the source of truth.
    */
-  private static readonly ADVISORY_FLAGS = 8 | 16 | 32 | 64 | 128 | 256;
+  private static readonly ADVISORY_FLAGS = 8 | 16 | 32 | 64 | 128 | 256 | 512 | 1024;
 
   /** The same advisory members by name, as they arrive in answerFlagNames. */
   private static readonly ADVISORY_FLAG_NAMES: readonly string[] = [
@@ -292,7 +293,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     'ContestedVerdict',
     'UnevidencedDeduction',
     'RefutedClaim',
-    'OmissionAsAccuracy'
+    'OmissionAsAccuracy',
+    'OutOfRubricAccuracyDeduction',
+    'AnswerFramingOpener'
   ];
 
   // Suites
@@ -4430,6 +4433,10 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   downloadReport(runId: number) {
     window.open(this.benchmarkService.getRunReportUrl(runId), '_blank');
+  }
+
+  downloadToolCallLog(runId: number) {
+    window.open(this.benchmarkService.getToolCallLogUrl(runId), '_blank');
   }
 
   deleteRun(runId: number) {

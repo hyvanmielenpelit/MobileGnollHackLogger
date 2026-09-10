@@ -755,6 +755,8 @@ public class BenchmarkArtifactScrubberTests
     [InlineData("This has clear answer already. Let me give it directly.")]
     [InlineData("Now I have a clear picture of the full pipeline.")]
     [InlineData("I now have the pieces I need to answer this.")]
+    [InlineData("Now I have both sides fully. Here's the comparison:")]
+    [InlineData("I have every piece I need.")]
     public void HasAnswerFramingOpener_DetectsRun29Openers(string answer)
     {
         Assert.True(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
@@ -764,6 +766,8 @@ public class BenchmarkArtifactScrubberTests
     [InlineData("I will explain how prayer timeout works.")]
     [InlineData("Let me explain the two checks in src/zap.c.")]
     [InlineData("This is a clear-cut case of the monster resisting.")]
+    [InlineData("I have to say the two games differ here.")]
+    [InlineData("Both games handle this the same way.")]
     public void HasAnswerFramingOpener_DoesNotFireOnOrdinaryProse(string answer)
     {
         Assert.False(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));

@@ -2083,9 +2083,11 @@ public class BenchmarkReportBuilderTests
         var report = BenchmarkReportBuilder.BuildMarkdownReport(
             HarnessV7Run(BenchmarkSecondOpinionMode.Off, a1, a2, a3, a4));
 
-        // Median model time over the four (sorted 5000, 7000, 20000, 25000) is 7,000 ms.
+        // The true statistical median over the four (sorted 5000, 7000, 20000, 25000) is the
+        // mean of the two middle values, 13,500 ms — not 7,000 ms, which is Percentile's
+        // nearest-rank pick.
         Assert.Contains(
-            "*Saturated — 2 of 4 answers finished inside their difficulty-scaled target, so this index cannot discriminate at this speed. Compare median model time (7,000 ms) instead.*",
+            "*Saturated — 2 of 4 answers finished inside their difficulty-scaled target, so this index cannot discriminate at this speed. Compare median model time (13,500 ms) instead.*",
             report);
     }
 
@@ -2465,7 +2467,7 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
-    public void BuildMarkdownReport_PerQuestionCallTable_NeverIncludesArgsOrResultPayloadText()
+    public void BuildMarkdownReport_PerQuestionCallTable_RendersArgsPreviewButNeverResultPayloadText()
     {
         const string argsSentinel = "SENTINEL_ARGS_PAYLOAD_9f3c";
         const string resultSentinel = "SENTINEL_RESULT_PAYLOAD_2b7e";
@@ -2486,10 +2488,11 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(answer));
 
-        // The table reports ResultLengthChars as a bare number, never the payload itself — a
-        // later "improvement" that inlines args or results would leak game source or wiki text
-        // into a document meant to be pasted whole into a chat or an issue.
-        Assert.DoesNotContain(argsSentinel, report);
+        // The Args column carries a bounded preview of the call's arguments; the result column
+        // still reports only ResultLengthChars as a bare number, never the payload itself — a
+        // single tool result can be tens of thousands of characters of game source, and full
+        // payloads belong behind the admin endpoint and the tool-call log export instead.
+        Assert.Contains(argsSentinel, report);
         Assert.DoesNotContain(resultSentinel, report);
         Assert.Contains($"{resultSentinel.Length}", report);
     }
@@ -2507,7 +2510,7 @@ public class BenchmarkReportBuilderTests
         // A legacy run printing "0 failed" would assert something false — no rows exist to
         // count, so the line must be absent rather than printed with zeroes.
         Assert.DoesNotContain("**Tool Call Outcomes:**", report);
-        Assert.DoesNotContain("| Round | Tool | Status | Exec (ms) | Result Size |", report);
+        Assert.DoesNotContain("| Round | Tool | Args | Status | Exec (ms) | Result Size |", report);
 
         Assert.Contains("### Tool Usage Profile", report);
         Assert.Contains("`wiki_search`", report);
@@ -2536,5 +2539,136 @@ public class BenchmarkReportBuilderTests
 
         Assert.Contains("ordering is not recorded", legacyReport);
         Assert.DoesNotContain("ordering **is** derivable here", legacyReport);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // P50 as the true statistical median, not Percentile's nearest-rank pick. Both read the
+    // "Model Time Percentiles" line, which requires at least one answer to carry a (possibly
+    // zero) ToolTimeMs so the block renders at all.
+    // -------------------------------------------------------------------------------------
+
+    [Fact]
+    public void MedianModelTime_EvenCount_IsTheMeanOfTheTwoMiddleValues()
+    {
+        var a1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        a1.DurationMs = 19406;
+        a1.ToolTimeMs = 0;
+        var a2 = ScoredAnswer(2, BenchmarkDifficulty.Simple, 25, 80);
+        a2.DurationMs = 25159;
+        a2.ToolTimeMs = 0;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, a1, a2));
+
+        // (19406 + 25159) / 2 = 22282.5, rounded away from zero to 22,283 — not 19,406, which is
+        // what Percentile's nearest-rank pick would have selected for this pair.
+        Assert.Contains("Median (P50) = 22,283 ms", report);
+    }
+
+    [Fact]
+    public void MedianModelTime_OddCount_IsStillTheMiddleValue()
+    {
+        var a1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        a1.DurationMs = 1000;
+        a1.ToolTimeMs = 0;
+        var a2 = ScoredAnswer(2, BenchmarkDifficulty.Simple, 25, 80);
+        a2.DurationMs = 2000;
+        a2.ToolTimeMs = 0;
+        var a3 = ScoredAnswer(3, BenchmarkDifficulty.Simple, 25, 80);
+        a3.DurationMs = 3000;
+        a3.ToolTimeMs = 0;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, a1, a2, a3));
+
+        Assert.Contains("Median (P50) = 2,000 ms", report);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // The Args column on the per-question ordered tool-call table.
+    // -------------------------------------------------------------------------------------
+
+    [Fact]
+    public void PerQuestionCallTable_ArgsColumn_CollapsesToOneLineAndEscapesPipes()
+    {
+        var answer = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        answer.ToolCalls = new List<BenchmarkRunAnswerToolCall>
+        {
+            new BenchmarkRunAnswerToolCall
+            {
+                SortOrder = 0,
+                Name = "wiki_search",
+                Status = "completed",
+                ArgsText = "line1|middle\nline2"
+            }
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(answer));
+
+        // The newline is collapsed away and the pipe is escaped, so the whole preview survives
+        // as one contiguous, table-safe run of text.
+        Assert.Contains("line1\\|middle line2", report);
+    }
+
+    [Fact]
+    public void PerQuestionCallTable_ArgsColumn_RendersPrunedMarker_WhenArgsTextIsNullButResultWasNot()
+    {
+        var answer = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        answer.ToolCalls = new List<BenchmarkRunAnswerToolCall>
+        {
+            new BenchmarkRunAnswerToolCall
+            {
+                SortOrder = 0,
+                Name = "wiki_search",
+                Status = "completed",
+                ArgsText = null,
+                ResultLengthChars = 42
+            }
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(answer));
+
+        Assert.Contains("(pruned)", report);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // The second reader's comment bullet under Disputed Assessments.
+    // -------------------------------------------------------------------------------------
+
+    [Fact]
+    public void DisputedAssessments_RendersSecondReaderComment_WhenStored()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 54);
+        q1.SecondOpinionQualityScore = 25;
+        q1.SecondOpinionCriticalError = true;
+        q1.SecondOpinionDisagreed = true;
+        q1.SecondOpinionTrigger = "LowQualityScore";
+        q1.SecondOpinionJson = "{\"comment\":\"The critical error quote is not actually false.\"}";
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Flagged, q1);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("### Disputed Assessments", report);
+        Assert.Contains("  - Second reader: The critical error quote is not actually false.", report);
+    }
+
+    [Fact]
+    public void DisputedAssessments_OmitsSecondReaderComment_WhenSecondOpinionJsonIsMalformed()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 54);
+        q1.SecondOpinionQualityScore = 25;
+        q1.SecondOpinionCriticalError = true;
+        q1.SecondOpinionDisagreed = true;
+        q1.SecondOpinionTrigger = "LowQualityScore";
+        q1.SecondOpinionJson = "not json";
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Flagged, q1);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        // Must not throw despite the malformed blob.
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("### Disputed Assessments", report);
+        Assert.DoesNotContain("Second reader:", report);
     }
 }

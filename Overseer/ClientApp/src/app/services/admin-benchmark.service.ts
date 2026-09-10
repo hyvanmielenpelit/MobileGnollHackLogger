@@ -1620,6 +1620,11 @@ export class AdminBenchmarkService {
     return `/api/admin/benchmark/runs/${id}/report`;
   }
 
+  /** Beside getRunReportUrl, and used the same way: window.open, not an XHR. */
+  getToolCallLogUrl(id: number): string {
+    return `/api/admin/benchmark/runs/${id}/tool-call-log`;
+  }
+
   deleteRun(id: number): Observable<void> {
     return this.http.delete<void>(`/api/admin/benchmark/runs/${id}`);
   }
