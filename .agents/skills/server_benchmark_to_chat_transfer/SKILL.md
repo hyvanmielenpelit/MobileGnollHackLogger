@@ -819,6 +819,67 @@ discovered later by someone comparing the two.
   pages; `src/apply.c:5233` applies tridents at spear range. A refutation about weapon *behaviour*
   needs the `apply.c` / `uhitm.c` path read, not the item page.
 
+### Run 31 — 2026-09-10: Claude 5 Sonnet (the confirming run for run 30's round)
+- **Candidate**: Claude 5 Sonnet (`claude-sonnet-5`), thinking `high`, parallel tool calls on, max
+  output 128000. Suite 6, 18 questions, sequential.
+- **Prompt options**: `overseerMode` 0; `verboseMode` false; `spoilerFreeMode` false;
+  `enableToolUse` true; `enableWebSearch` false; `enableSubAgents` false;
+  `allowSourceCodeReferences` true; `isGameOn`, `hasGameSnapshot`, `hasMessageHistory`,
+  `hasWikiContext` all false; `parallelMode` Enabled.
+- **Grading regime**: harness 18, scoring method 10, profile *Standard Intelligence Index* (1),
+  budget 45 flat. Assessor Gemini 3.7 Flash @ `high`; **second opinion GPT-5.6 Luna @ `max`**
+  (changed from run 30's GPT-5.6 Sol @ `high` — an Instrument key, moved on the wrong side of a
+  verification pair for the second time in three runs), blind, FlaggedPlusSample; claim verifier
+  GPT-5.6 Luna @ `max` (= run 30).
+- **Instrument SHAs**: `CandidateSystemPromptSha256 = 851af9406949b176e72442f26ed6f7f77aa27dcd85eeb52162be0405c1942a00`
+  (= runs 29–30); `ToolGuidesSha256 = 847937baa94da2e990d68f63d05d4438fbb5b463cc51273e49375d50c8a16704`
+  (moved: run-30 round, `wiki_view.md`); `KnowledgeBaseHeadSha = 576ca5741d1bd79ef1cb2f7db575709cf0bb0db8`
+  (= runs 16–30); `WikiHeadSha = a31dfc2f9461a33e0607ebe5bf49c336d40e942d` (moved: run-30 T6);
+  `SourceCodeHeadSha = 3861281ec5bd39a6de5e75c1f91c5ddc4db19a42` (= runs 28–30).
+- **Quality**: Intelligence Index **86 ± 12** (18 items; the interval is widened by two capped answers);
+  raw 89; unweighted 87; holistic 82. Accuracy 90.6 / L 5.4; Completeness 85.2 / L 4.9; Conciseness
+  90.5 / L 5.3; Readability 92.8 / L 5.4. **2 critical errors as published (Q5, Q18) — of which only Q5
+  is genuine**; Q18 is a rubric defect proven against `src/engrave.c` (erosion-on-attack is GnollHack's
+  code, unchanged from NetHack), and the synthesis's "NetHack contamination" narrative is wrong for it.
+  Q5's error is an *omission* of the 200/100/0 trouble thresholds (`src/pray.c:3675`), which are also
+  NetHack's; the assessor's "NetHack 1000-turn figure" is GnollHack's own `Guide to Praying` article.
+  0 refuted claims of 15 verified; verifier 15 / 0 / 0. Agreement −6.0 signed over 4 of 18, 1
+  disagreement (Q3, the third raising of its rubric defect). Out-of-scope 1; FORM 13; band drift +28.9.
+- **Speed**: median model time **16,085 ms**; P90 45,014; max 59,996 (Q16). TTFT median 4,120. Speed
+  Index 97, saturated 14 of 18, advisory twice over.
+- **Cost**: $2.33 — candidate $1.35 (58 %; **cache write $0.79 = 59 % of it**), grading $0.98 (42 %).
+  68 tool calls (3.8/q, **0 failed, 0 refused**) — Wiki 51.5 %, Source 38.2 %, Structured 7.4 %, KB
+  2.9 %. 68 model calls; 1,897,497 in / 24,605 out; cache read 83.3 %; uncached $0.00. Wall 27m 06s;
+  candidate answering 6m 36s (24 %); **second opinion 15m 23s (57 %) for 4 opinions**, serial and
+  inline — Q5's ran between Q5 and Q6 and evicted the Anthropic prompt cache (Q6 cache creation
+  23,034 vs ~11,000 typical).
+- **Comparability**: two Instrument keys differ from run 30 (`ToolGuidesSha256`, second-opinion
+  configuration) → **NotComparable, below Tier B**; verifies countable criteria only.
+- **Verification Outcome — run 30's round**: **T1 (disambiguation)**: criteria (1) and (3) **not
+  exercised** — no colliding title was requested on any of 12 `wiki_view` rows; (2) **met** (Q1 header
+  `Races/Gnoll.md`, Completeness 5/6); (4) **breached as written** on "confirmed critical errors 0" (2
+  published, 1 genuine) — **kept, not reverted**: neither critical error's question exercised the
+  changed branch, so the criterion's side-effect clause was too broad, and the *unplanned* criterion —
+  the `.md`-suffix trap — is **verified**: 8 of 12 `wiki_view` calls carried `.md` and every one
+  resolved (run 30: 2 misses, 2 wrong articles). **T2 (`FindDefinition`)**: 79 ms ≤ 200 — verified.
+  **T3 (dot-directory exclusion)**: consistent. **T6 (*Melee Weapons* note)**: corrected text reached
+  the model in Q11's snippet. **Run-29 T1 (openers)**: reported 1, by hand **4** (Q2, Q4, Q12, Q18) —
+  **≥ 3 on two consecutive runs; the rung-7 candidate is triggered** and deferred with reasons (no
+  measurable quality cost; the rule is already in `_policy.md`; the detector is widened instead).
+- **Transfer Action**: **T1** — `wiki_view` section matching normalised (leading non-letter symbols
+  and whitespace ignored), heading list appended to the section-miss line, at **rung 3, tool
+  contract**; criterion and rollback in the run-31 analysis § 4. **T2** — `monster_lookup.md` and
+  `wiki_search.md` state that a monster page's `Level N` header is its difficulty and `Hit dice` its
+  level, at **rung 3**. **C1** — `winprocs.h` allow-listed in `SourceCodeService` (moves no fingerprint).
+  **H1** — per-question grading pipelined concurrently with the next candidate turn; sample top-up
+  opinions run concurrently. **H2** — the benchmark candidate request now carries the segmented
+  prompt, so the frozen and session segments are cached across questions; `CandidateSystemPromptSha256`
+  is asserted unchanged. **H3** — `AnswerFramingRegex` widened for source-as-subject openers. No
+  `HarnessVersion` or `ScoringMethodVersion` bump: the round moves `ToolGuidesSha256` and nothing
+  else a run records. **S1, S2** join the deferred single suite-6 rubric repair.
+- **Verification Outcome (for this round)**: the next run at run 31's roster settles § 4's T1, T2 and
+  the H1/H2 counts. **Do not change the grader roster before it.**
+
 ---
 
 ## 12. Cross-References

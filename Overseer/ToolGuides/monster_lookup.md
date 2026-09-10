@@ -6,11 +6,11 @@ incomplete or not available for all monsters. If you need exact stats
 (HP, AC, attacks, MR, flags), verify against src/monst.c using
 source_code_search, or call get_monster_stats.
 
-A wiki monster page's difficulty number is not the monster's level and not its
-hit dice. Difficulty is a derived encounter rating; level/hit dice come from the
-LVL() entry in src/monst.c. Never report one as the other, and never present a
-difficulty value as a level. If a page gives difficulty but you need level or hit
-dice, call get_monster_stats.
+Monster pages open with a header line of the form `## Level N <description>` and then list
+`Hit dice: M`. **`Level N` in that header is the monster's difficulty rating, not its level.** Its
+level (the `mlevel` field of `src/monst.c`) is the `Hit dice` line. Report `Hit dice` as the level,
+never the header number; if you need the level or hit dice and only the header is present, call
+`get_monster_stats`.
 
 For the hero's own pets, the snapshot's `Pets` section reports that individual's actual
 condition; the wiki describes the species.

@@ -1014,6 +1014,136 @@ deferred for the reason given above: it changes a contract `wiki_view.md` and
 `server_tool_parameter_reference` § 5 both document, so it needs its own pre-declared criterion and
 rollback.
 
+### Run 31 Round (2026-09-10) — No Version Bump
+
+The round implementing run 31's analysis. `BenchmarkAssessmentPrompt.HarnessVersion` stays at
+`"18"` and `ScoringMethodVersion` stays at **10**: what changed is one tool's section matcher, three
+tool guides, one source-indexer allow-list, and two harness scheduling changes. The round moves
+**`ToolGuidesSha256` only** — through `wiki_view.md`, `monster_lookup.md` and `wiki_search.md` —
+and `CandidateSystemPromptSha256` **must not** move, which a test in `BenchmarkServiceTests`
+pins. With the grader roster held at run 31's for the confirming run, that pair is **Tier C**: one
+differing instrument key, not two or more.
+
+#### Grading is pipelined with the candidate (H1)
+
+Per-question grading — assessment, claim verification and any per-answer second opinion — used to be
+awaited between two candidate turns in the sequential branch. One critical-error second opinion at
+`max` idled run 31 for **5 m 13 s between Q5 and Q6** and evicted the Anthropic prompt cache while it
+ran (Q6 cache creation 23,034 tokens against ~11,000 typical); second opinion took 57 % of the run's
+wall time for four opinions.
+
+Grading now starts as a task and is **not** awaited before the next candidate turn. Each grading task
+owns the DI scope its candidate ran in, so no `DbContext` is touched from two tasks at once, and the
+pipeline is bounded by **`Benchmark:MaxConcurrentGrading`** (default **2**) so the assessor provider
+is not hammered. The candidate never waits on that semaphore. The pipeline drains with a single
+`Task.WhenAll` before the run-level stages, every one of which needs the full set of scores. The
+`FlaggedPlusSample` sample top-up likewise runs its selected opinions concurrently under the same
+bound, each in its own scope with its answer re-loaded by id; "lowest quality score first" remains
+the *selection* rule and never governed execution order. The credential-collision path is unchanged
+— it already deferred all assessment to after the loop.
+
+**The candidate is still strictly sequential**, and `DurationMs`, `TtftMs` and `ToolTimeMs` are still
+measured inside the candidate's own turn, so speed comparability across runs is untouched.
+
+**What a run's timings now mean.** *Assessment Time* and *Second Opinion Time* remain **sums of
+stage durations**, and those stages now overlap each other and the candidate, so each sum will
+exceed its own wall-clock span and the report's *measured overlap* line will report a large
+**negative** overlap. That is the arithmetic reporting a pipelined run honestly, not a defect. No
+score, index, integrity bucket, run status or comparability key reads either figure. A run's
+`TotalDurationMs` still measures the wall clock, which is the figure that should fall.
+
+#### The candidate request carries the segmented prompt (H2)
+
+`ChatService` has built the system prompt in three cache segments — frozen prefix, session prefix,
+volatile suffix — since the prompt-cache work, but the benchmark passed only the flat string, so the
+25,682-character prompt was written to the Anthropic cache on **every question**: $0.79 of run 31's
+$1.35 candidate cost was cache write. The candidate `AgentRunRequest` now carries `FrozenPrefix`,
+`SessionPrefix`, `VolatileSuffix` and `SegmentedPrompt`, built through
+`BenchmarkCandidatePromptOptions.BuildSegmentedSystemPrompt` under the same
+`PromptCacheSettings:EnableSegmentedPrompt` gate `ChatService.BuildSystemPrompt` uses.
+
+`SystemPrompt` stays the flat string and `CandidateSystemPromptSha256` still hashes it, so **the
+instrument does not move**: the segments concatenate to that string byte for byte, and a test asserts
+that concatenation for the default options and for `verboseMode: true`. Only the Anthropic provider
+reads the segments today; Google's stable-prefix caching and OpenAI's automatic caching key on the
+byte prefix, which this does not change. In a benchmark the volatile suffix is empty — there is no
+wiki context — and the provider already skips an empty block.
+
+**This was a benchmark-side defect only.** Live chat has always sent the segmented prompt, so a
+run's cost and cache-read share were never representative of chat on this axis; a comparison between
+a pre-round and a post-round run's candidate cost is not a model result.
+
+#### `wiki_view` section matching (T1)
+
+`WikiService.ExtractMarkdownSection` matched a `section` by case-insensitive equality on the whole
+heading text, and 12.7 % of the GnollHack wiki's headings (1,192 of 9,367) carry an emoji prefix — so
+`section: "Elbereth"` could not reach `## 🔮 Elbereth` and the tool returned the whole article
+truncated at 10,000 characters instead. Seven occurrences across runs 30–31; Q4 of run 31 alone cost
+277K input tokens and 8 model calls to it.
+
+Matching is now two passes: exact case-insensitive equality first, then — only if no heading matched
+exactly — equality after normalising both sides, stripping every *leading* character that is not a
+Unicode letter or digit and collapsing internal whitespace runs. Stripping is leading-only and the
+exact pass runs first, so an article with both `## Notes` and `## 📝 Notes` still answers `Notes`
+with the exact one.
+
+The section-miss line now carries the article's headings, in document order and as written so one
+can be copied straight back, `; `-separated and capped at 600 characters:
+
+```
+[Section 'X' not found in article. Headings: ℹ️ Overview; 📝 Engraving Mechanics; 🔮 Elbereth; …. Returning full text.]
+```
+
+The whole article still follows it, so the documented contract — a section that matches no heading is
+not a miss — is kept; the line only adds information. This is run 30's deferred **N3** in its
+non-breaking form. `nethack_wiki_view` is **not** changed and still matches exact titles only.
+
+#### The monster-page template in the guides (T2)
+
+`monster_lookup.md` warned about "the difficulty number" without naming the label the model actually
+sees on the page, and on run 31 Q14 reported Master Kaen as level 40 — his difficulty rating — where
+he is level 25. Measured on 539 of 624 wiki monster pages, the template is a `## Level N …` header
+followed by a `Hit dice: M` line. Both `monster_lookup.md` and `wiki_search.md` now say so: the
+header number is the difficulty rating, `Hit dice` is the level, and `get_monster_stats` is the
+fallback when the level is needed and only the header is present. Guide text only — no code change,
+and `ToolGuidesSha256` moves.
+
+#### `winprocs.h` reaches the source index (C1)
+
+`SourceCodeService`'s platform-header heuristic excludes any `win*.h`, sparing only `wintype.h`. That
+also excluded `include/winprocs.h`, so `search_definitions("window_procs")` returned nothing for a
+struct that exists. The heuristic now spares `winprocs.h` as well, with both comparisons
+case-insensitive. This moves **no fingerprint** — `SourceCodeHeadSha` is the repository's Git HEAD,
+not a description of what the indexer kept — so a run before and after this change reports the same
+`SourceCodeHeadSha` over different index contents.
+
+#### The detector widening (H3)
+
+`BenchmarkArtifactScrubber.AnswerFramingRegex` reported 1 answer-framing opener on run 31 where a
+hand count found 4. The three it missed all made the claim **about the sources** rather than about
+the model, so the pattern gained two alternatives: one with a source noun as the sentence's subject
+(*"The wiki has this well documented."*), one with it as the object after the sufficiency word
+(*"This is well covered by the wiki."*), the second insisting on that noun precisely so it does not
+claim ordinary prose. It remains **detect-and-count only** — the matched text is never removed,
+because scrubbing would replace the very text the assessor grades and would move
+`ScoringMethodVersion`.
+
+#### What was deliberately not done
+
+No `ChatService` prose was edited and no rung 5, 6 or 7 action was taken. **T4 — the answer-framing
+prompt half — is a triggered rung-7 candidate that is deliberately deferred**: the rule's threshold
+(3 or more openers on two consecutive runs) is met, but the undetected openers scored 100 on
+Conciseness, `_policy.md` already forbids the form, and no measurable quality cost motivates the
+edit. The detector is widened so the count stays honest, and the trigger is recorded in
+`server_benchmark_to_chat_transfer` § 11.
+
+**The grader roster is frozen at run 31's for the confirming run** — assessor Gemini 3.7 Flash @
+`high`, second opinion GPT-5.6 Luna @ `max` blind on `FlaggedPlusSample`, verifier GPT-5.6 Luna @
+`max` — so that only `ToolGuidesSha256` moves across the pair.
+
+**S1 (Q18) and S2 (Q3) join the deferred single suite-6 rubric repair**, which must not land in the
+same round as a verification run.
+
 ### Multi-Run Replicate Sets (Harness Version 14)
 
 Four consecutive runs reproduced the same Completeness gap, and the harness still could not say whether any single figure would survive a re-run. A one-run result mixes the thing being measured with the noise of measuring it once, and no amount of care in the report separates them. Replicate sets do.

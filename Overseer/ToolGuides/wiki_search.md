@@ -11,3 +11,6 @@ file's path inside the wiki repository, so a plausible value that appears in no 
 `class` — silently excludes every hit rather than narrowing them. Omit it unless you know the
 articles you want live under a directory of that name; a miss with a category set is more often
 the filter than the query.
+
+Monster articles returned by this tool use the same `## Level N …` header as `monster_lookup`;
+that number is the difficulty rating, and the `Hit dice` line is the level.

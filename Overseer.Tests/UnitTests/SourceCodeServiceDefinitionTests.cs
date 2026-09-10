@@ -49,6 +49,26 @@ public class SourceCodeServiceDefinitionTests : IDisposable
             "    int count;\r\n" +
             "};\r\n" +
             "typedef struct encounter_list encounter_list_t;\r\n");
+
+        // The three headers the win*.h platform heuristic decides between: winprocs.h and
+        // wintype.h are real GnollHack headers it spares, wintty.h is a platform header it skips.
+        File.WriteAllText(Path.Combine(_sourceDir, "include", "winprocs.h"),
+            "/* winprocs.h */\r\n" +
+            "struct window_procs {\r\n" +
+            "    const char *name;\r\n" +
+            "    int wincap;\r\n" +
+            "};\r\n");
+
+        File.WriteAllText(Path.Combine(_sourceDir, "include", "wintype.h"),
+            "/* wintype.h */\r\n" +
+            "typedef int winid;\r\n" +
+            "#define WIN_ERR (-1)\r\n");
+
+        File.WriteAllText(Path.Combine(_sourceDir, "include", "wintty.h"),
+            "/* wintty.h */\r\n" +
+            "struct tty_only_marker {\r\n" +
+            "    int unused;\r\n" +
+            "};\r\n");
     }
 
     public void Dispose()
@@ -212,5 +232,65 @@ public class SourceCodeServiceDefinitionTests : IDisposable
         string result = service.FindDefinition("nosuchsymbol", "any");
 
         Assert.Equal("No definition found for 'nosuchsymbol' of kind 'any'.", result);
+    }
+
+    /// <summary>
+    /// <c>include/winprocs.h</c> is a GnollHack header, not a platform header, so the indexer's
+    /// <c>win*.h</c> heuristic must leave it in the corpus.
+    /// </summary>
+    [Fact]
+    public void FindDefinition_Struct_ReachesWinprocsHeader()
+    {
+        using var service = CreateService();
+
+        string result = service.FindDefinition("window_procs", "struct");
+
+        string expected = string.Join(Environment.NewLine, new[]
+        {
+            "--- include/winprocs.h:L2 ---",
+            "    1: /* winprocs.h */",
+            ">>> 2: struct window_procs {",
+            "    3:     const char *name;",
+            "    4:     int wincap;",
+            "    5: };"
+        });
+
+        Assert.Equal(expected, result);
+    }
+
+    /// <summary>
+    /// <c>include/wintty.h</c> is a platform header, so the <c>win*.h</c> heuristic keeps it out of
+    /// the corpus and nothing it declares is reachable.
+    /// </summary>
+    [Fact]
+    public void FindDefinition_Struct_DoesNotReachAPlatformHeader()
+    {
+        using var service = CreateService();
+
+        string result = service.FindDefinition("tty_only_marker", "struct");
+
+        Assert.Equal("No definition found for 'tty_only_marker' of kind 'struct'.", result);
+    }
+
+    /// <summary>
+    /// The two spared headers are both indexed and the platform header is not, as
+    /// <see cref="SourceCodeService.ListFiles"/> reports the corpus itself.
+    /// </summary>
+    [Fact]
+    public void ListFiles_WinFilter_ListsTheSparedHeadersOnly()
+    {
+        using var service = CreateService();
+
+        string result = service.ListFiles("win", includeNetCode: false);
+
+        string expected = string.Join(Environment.NewLine, new[]
+        {
+            "include/winprocs.h (5 lines)",
+            "include/wintype.h (3 lines)",
+            "Total: 2 files indexed",
+            string.Empty
+        });
+
+        Assert.Equal(expected, result);
     }
 }

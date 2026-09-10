@@ -118,6 +118,31 @@ public sealed record BenchmarkCandidatePromptOptions
     }
 
     /// <summary>
+    /// The same prompt as <see cref="BuildSystemPrompt"/>, in the three cache segments the
+    /// providers key their prompt caches on. The three concatenate to that flat string, which is
+    /// what the run snapshot still hashes.
+    /// </summary>
+    public (string frozenPrefix, string sessionPrefix, string volatileSuffix) BuildSegmentedSystemPrompt(
+        ChatService chatService, ParallelExecutionMode parallelMode)
+    {
+        return chatService.BuildSegmentedSystemPrompt(
+            wikiContext: Array.Empty<string>(),
+            spoilerFreeMode: SpoilerFreeMode,
+            verboseMode: VerboseMode,
+            isGameOn: IsGameOn,
+            developerMode: DeveloperMode,
+            overseerMode: OverseerMode,
+            hasGameSnapshot: HasGameSnapshot,
+            hasMessageHistory: HasMessageHistory,
+            clientSettings: null,
+            enableToolUse: EnableToolUse,
+            enableWebSearch: EnableWebSearch,
+            allowSourceCodeReferences: AllowSourceCodeReferences,
+            enableSubAgents: EnableSubAgents,
+            parallelMode: parallelMode);
+    }
+
+    /// <summary>
     /// Returns a one-line human-readable summary of this configuration.
     /// </summary>
     public string Describe()

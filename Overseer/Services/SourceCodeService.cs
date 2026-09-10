@@ -343,7 +343,10 @@ namespace Overseer.Services
                         // Check exclusions
                         if (_excludedFiles.Contains(fileName)) continue;
                         if (fileName.EndsWith("conf.h", StringComparison.OrdinalIgnoreCase) ||
-                            fileName.StartsWith("win", StringComparison.OrdinalIgnoreCase) && ext == ".h" && fileName != "wintype.h" || // Rough approximation of platform headers, avoiding false positives if possible
+                            // Rough approximation of platform headers, avoiding false positives if possible
+                            fileName.StartsWith("win", StringComparison.OrdinalIgnoreCase) && ext == ".h"
+                                && !string.Equals(fileName, "wintype.h", StringComparison.OrdinalIgnoreCase)
+                                && !string.Equals(fileName, "winprocs.h", StringComparison.OrdinalIgnoreCase) ||
                             fileName.StartsWith("mac", StringComparison.OrdinalIgnoreCase) && ext == ".h" ||
                             fileName.StartsWith("qt", StringComparison.OrdinalIgnoreCase) && ext == ".h")
                         {

@@ -354,10 +354,32 @@ headers now print `--- <repository-relative path with extension> ---` (e.g. `---
 ---`) instead of the bare filename, so that exact path can be copied straight back into `article`
 for branch 1.
 
-`section` extraction (unchanged, both tools) is markdown-heading text match (`^(#+)\s+(.*)`, case-
-insensitive full-title equality), capturing lines until a heading of equal or shallower depth; if
-the named section isn't found, the **full article** is returned with a
-`[Section 'X' not found in article. Returning full text.]` prefix — not an error.
+`section` extraction is a markdown-heading text match (`^(#+)\s+(.*)`), capturing lines until a
+heading of equal or shallower depth. **The two tools no longer match a heading the same way.**
+
+- **`wiki_view` matches in two passes, from the run-31 round.** Case-insensitive equality on the
+  trimmed heading text first; only if no heading matched exactly, equality after normalising both
+  sides, where normalising strips every *leading* character that is not a Unicode letter or digit
+  and collapses internal whitespace runs to one space. So `section: "Elbereth"` reaches
+  `## 🔮 Elbereth`, and so does `section: "🔮 Elbereth"`. 12.7 % of the GnollHack wiki's headings
+  carry such a prefix, which is why the pass exists. Stripping is leading-only and the exact pass
+  runs first, so an article carrying both `## Notes` and `## 📝 Notes` still answers `Notes` with the
+  exact one, and normalisation can never capture a heading a plain request already matched.
+  First-wins on a tie, as before.
+- **`nethack_wiki_view` is unchanged**: case-insensitive full-title equality only, so a heading with
+  an emoji or symbol prefix is unreachable by its plain text there.
+
+A `section` that matches no heading still returns the **full article** and is not an error, behind a
+marker line. `nethack_wiki_view` emits the original
+`[Section 'X' not found in article. Returning full text.]`. **`wiki_view` additionally lists the
+article's headings** — every heading in document order, as written so one can be copied straight
+back, `; `-separated and capped at 600 characters with a trailing `…`:
+
+```
+[Section 'X' not found in article. Headings: ℹ️ Overview; 📝 Engraving Mechanics; 🔮 Elbereth; …. Returning full text.]
+```
+
+An article with no headings at all keeps the original line.
 
 **Result shape**: `wiki_search` returns per-hit snippets via `WikiSnippetExtractor.BuildSnippet`
 (bounded to `PerResultChars`, query-term-aware). **`nethack_wiki_search` returned full article
@@ -391,7 +413,8 @@ harness 18 or a call in which the builder threw.
 `wiki_view`'s miss payload also states, when a `section` was requested, that it was the **article**
 that missed so the section was never reached. A section that matches no heading is **not** a miss at
 all and does not reach the builder: `WikiService.GetArticle` answers that case itself with the
-`[Section 'X' not found in article. Returning full text.]` line above, followed by the whole article.
+section-miss marker line above — which for `wiki_view` carries the article's heading list — followed
+by the whole article.
 
 **`wiki_view` also has a fourth outcome, from the run-30 round, and it is not a miss.** `Several
 wiki articles are titled '` opens a disambiguation payload — `Success = true`, capped at a few

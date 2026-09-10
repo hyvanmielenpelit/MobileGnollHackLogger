@@ -825,6 +825,90 @@ public class BenchmarkServiceTests
     /// scoring profiles. The provider-facing collaborators stay null: nothing here makes a model
     /// call.
     /// </summary>
+    // --- 12a. Segmented Candidate Prompt ---
+
+    /// <summary>
+    /// The candidate request carries the prompt in the three cache segments the providers key their
+    /// prompt caches on, while the run snapshot keeps hashing the flat string. Those two are only
+    /// the same instrument while the segments concatenate to it byte for byte, which is what this
+    /// pins: <c>ChatService.BuildSystemPrompt</c> is that concatenation today, so the test guards a
+    /// future divergence rather than a present one.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SegmentedCandidatePrompt_ConcatenatesToTheFlatCandidatePrompt(bool verboseMode)
+    {
+        var chatService = CreateChatService();
+        var promptOptions = new BenchmarkCandidatePromptOptions { VerboseMode = verboseMode };
+
+        string flat = promptOptions.BuildSystemPrompt(chatService, MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled);
+        var (frozen, session, volatileSuffix) =
+            promptOptions.BuildSegmentedSystemPrompt(chatService, MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled);
+
+        Assert.Equal(flat, frozen + session + volatileSuffix);
+
+        // A benchmark passes no wiki context, so the volatile suffix is empty and the providers
+        // skip that block. A non-empty one here would mean the candidate had been handed context
+        // the flat prompt did not describe.
+        Assert.Equal(string.Empty, volatileSuffix);
+        Assert.NotEmpty(frozen);
+    }
+
+    /// <summary>
+    /// A ChatService over an in-memory database, built the way the other prompt tests in this
+    /// suite build one. Only the prompt builders are exercised through it, so nothing here reaches
+    /// a provider.
+    /// </summary>
+    private static ChatService CreateChatService()
+    {
+        var services = new ServiceCollection();
+        var inMemorySettings = new Dictionary<string, string?>
+        {
+            { "AesEncryptionKey", Convert.ToBase64String(new byte[32]) },
+            { "PromptCacheSettings:EnableSegmentedPrompt", "true" }
+        };
+        var config = new ConfigurationBuilder().AddInMemoryCollection(inMemorySettings).Build();
+
+        services.AddDbContext<ApplicationDbContext>(options =>
+            options.UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()));
+
+        services.AddSingleton<IConfiguration>(config);
+        services.AddHttpClient();
+        services.AddSignalR();
+        services.AddMemoryCache();
+        services.AddSingleton<Overseer.Services.Tools.IClientToolBridge, DummyClientToolBridge>();
+        services.AddScoped<Overseer.Services.Tools.ToolRegistry>();
+        services.AddScoped<Overseer.Services.Tools.ToolExecutor>();
+        services.AddScoped<CryptoService>();
+        services.AddScoped<WikiService>();
+        services.AddScoped<ModelMetadataService>();
+        services.AddScoped<KnowledgeBaseService>();
+        services.AddScoped<OngoingChatManager>();
+        services.AddScoped<Overseer.Services.Providers.IAiProvider, Overseer.Services.Providers.OpenAiResponsesProvider>();
+        services.AddScoped<Overseer.Services.Agents.AgentLoopRunner>();
+        services.AddSingleton<ParallelExecutionResolver>();
+        services.AddSingleton<Overseer.Services.Privacy.AttachmentValidator>();
+        services.AddSingleton<Overseer.Services.Privacy.IAntiMalwareScanner,
+            Overseer.Services.Privacy.NullAntiMalwareScanner>();
+        services.AddSingleton<Overseer.Services.Privacy.EndpointPolicy>();
+        services.AddSingleton<Overseer.Services.Privacy.IContentKeyRing,
+            Overseer.Services.Privacy.ConfigurationContentKeyRing>();
+        services.AddSingleton<Overseer.Services.Privacy.ContentProtectionService>();
+        services.AddSingleton<Overseer.Services.Privacy.Dlp.DlpScannerService>();
+        services.AddSingleton<Overseer.Services.Documents.DocumentParserService>();
+        services.AddSingleton<Overseer.Services.Rag.DocumentChunker>();
+        services.AddSingleton<Overseer.Services.Rag.IEmbeddingService,
+            Overseer.Services.Rag.LocalOnnxEmbeddingService>();
+        services.AddSingleton<Overseer.Services.Rag.DocumentRagService>();
+        services.AddScoped<Overseer.Services.Rag.RagSidecarStore>();
+        services.AddSingleton(sp => new Overseer.Services.Privacy.EphemeralSessionStore(
+            sp.GetRequiredService<IConfiguration>(), startSweeper: false));
+        services.AddScoped<ChatService>();
+
+        return services.BuildServiceProvider().GetRequiredService<ChatService>();
+    }
+
     private static BenchmarkService CreateBenchmarkServiceOver(DbContextOptions<ApplicationDbContext> dbOptions)
     {
         var services = new ServiceCollection();
@@ -1435,14 +1519,15 @@ public class BenchmarkServiceTests
     [Fact]
     public async Task SecondOpinionSampleTopUp_SelectsTheLowestScoringAnswers_TiesByOrderIndex()
     {
-        // Scores 40, 40, 55 are the three lowest; the pair at 40 must resolve Q2 before Q4, which
-        // is the tie-break that makes the selection reproducible rather than merely small.
+        // Scores 40, 40, 55 are the three lowest; the pair at 40 resolves to Q2 and Q4 by ascending
+        // order index, which is the tie-break that makes the selection reproducible rather than
+        // merely small. The three run concurrently, so the set is what is asserted, not its order.
         var (run, attempted) = await RunSampleTopUpAsync(
             BenchmarkSecondOpinionMode.FlaggedPlusSample,
             minimumSample: 3,
             answers: new[] { (1, 90), (2, 40), (3, 70), (4, 40), (5, 55) });
 
-        Assert.Equal(new[] { 2, 4, 5 }, attempted);
+        Assert.Equal(new[] { 2, 4, 5 }, attempted.OrderBy(i => i).ToArray());
         Assert.Equal(3, run.SecondOpinionSampleCountUsed);
     }
 
@@ -1450,14 +1535,14 @@ public class BenchmarkServiceTests
     public async Task SecondOpinionSampleTopUp_IsStableUnderReorderingOfTheInput()
     {
         // Same answers, inserted in a different order, so the underlying query returns them in a
-        // different order too. Selection must not move: a re-run that reshuffled the sample could
-        // be used to fish for a different agreement figure.
+        // different order too. The selected *set* must not move: a re-run that reshuffled the
+        // sample could be used to fish for a different agreement figure.
         var (run, attempted) = await RunSampleTopUpAsync(
             BenchmarkSecondOpinionMode.FlaggedPlusSample,
             minimumSample: 3,
             answers: new[] { (5, 55), (3, 70), (1, 90), (4, 40), (2, 40) });
 
-        Assert.Equal(new[] { 2, 4, 5 }, attempted);
+        Assert.Equal(new[] { 2, 4, 5 }, attempted.OrderBy(i => i).ToArray());
         Assert.Equal(3, run.SecondOpinionSampleCountUsed);
     }
 
@@ -1491,8 +1576,10 @@ public class BenchmarkServiceTests
     }
 
     /// <summary>
-    /// Drives <c>RunSecondOpinionSampleTopUpAsync</c> and reports, in selection order, the order
-    /// indexes it actually attempted to re-grade.
+    /// Drives <c>RunSecondOpinionSampleTopUpAsync</c> and reports the order indexes it actually
+    /// attempted to re-grade, in the order the attempts logged. The stage runs the selected
+    /// opinions concurrently, so that is completion order and not selection order: a caller
+    /// asserting which answers were selected sorts this list first.
     ///
     /// The stage is private and has no seam of its own, so it is reached by reflection rather than
     /// by changing production code for a test's convenience. The run's second-opinion assessor
@@ -1554,8 +1641,19 @@ public class BenchmarkServiceTests
         }
 
         var logger = new RecordingLogger<BenchmarkService>();
+
+        // Real, not null: the stage runs each selected opinion in its own DI scope, so it needs a
+        // scope factory that hands out a context over the same in-memory database the answers were
+        // seeded into.
+        var scopeServices = new ServiceCollection();
+        scopeServices.AddScoped(_ => new ApplicationDbContext(dbOptions));
+        scopeServices.AddScoped(sp => new SystemAiConfigService(
+            sp.GetRequiredService<ApplicationDbContext>(),
+            NullLogger<SystemAiConfigService>.Instance));
+        var scopeFactory = scopeServices.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+
         var benchmarkService = new BenchmarkService(
-            null!,
+            scopeFactory,
             null!,
             null!,
             null!,
@@ -1609,7 +1707,14 @@ public class BenchmarkServiceTests
     /// </summary>
     private sealed class RecordingLogger<T> : ILogger<T>
     {
-        public List<string> Messages { get; } = new List<string>();
+        private readonly List<string> _messages = new List<string>();
+
+        // The stages under test log from concurrent tasks, so both ends are locked and a reader
+        // gets a snapshot rather than a list another task may be appending to.
+        public List<string> Messages
+        {
+            get { lock (_messages) { return new List<string>(_messages); } }
+        }
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
@@ -1624,7 +1729,10 @@ public class BenchmarkServiceTests
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            Messages.Add(formatter(state, exception));
+            lock (_messages)
+            {
+                _messages.Add(formatter(state, exception));
+            }
         }
     }
 

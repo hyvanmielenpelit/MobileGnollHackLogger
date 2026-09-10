@@ -128,6 +128,14 @@ public sealed class BenchmarkArtifactScrubber
     // with the verb immediately after the pronoun, and an intervening adverb defeats it. Splitting
     // here partitions the verb-then-article space rather than both regexes claiming part of it,
     // and still reaches "I now have the pieces I need", which neither would otherwise see.
+    //
+    // Two of the alternatives claim a sufficiency claim made about the *sources* rather than about
+    // the model — "The wiki has this well documented", "This is well covered by the wiki". One
+    // takes the source as the grammatical subject; the other takes it as the object, where a
+    // source noun must follow the sufficiency word. The object form insists on that noun
+    // precisely so it does not claim ordinary prose: "This is a well-documented GnollHack
+    // mechanic" names no source and stays outside it, as does "This spell is well suited to a
+    // low-level character", whose subject is not a source at all.
     private static readonly Regex AnswerFramingRegex = new(
         @"\A\s*(?:Now\s+|OK[,.]?\s+|Alright[,.]?\s+)?I\s+(?:now|finally|also|just)\s+" +
         @"(?:have|need|found|located|confirmed)\s+(?:the|a|all|enough|everything|what|both|every)\b" +
@@ -135,15 +143,26 @@ public sealed class BenchmarkArtifactScrubber
         @"(?:have|need|found|located|confirmed)\s+(?:a|all|enough|everything|what|both|every)\b" +
         @"|\A\s*(?:Now\s+)?I(?:’|')ve\s+(?:got|confirmed|gathered)\b" +
         @"|\A\s*Let\s+me\s+(?:just\s+|now\s+)?(?:give|answer|lay\s+out|summari[sz]e|provide|state|write|put)\b" +
-        @"|\A\s*(?:This|That)\s+(?:has|is)\s+(?:a\s+)?clear\s+answer\b",
+        @"|\A\s*(?:This|That)\s+(?:has|is)\s+(?:a\s+)?clear\s+answer\b" +
+        // Source as subject.
+        @"|\A\s*(?:This|That|The)\s+" +
+        @"(?:wiki(?:\s+article)?|article|source(?:\s+code)?|documentation|knowledge\s+base|page)\s+" +
+        @"(?:is|has|gives|covers|documents|provides|answers)\b[^.\n]{0,80}?" +
+        @"\b(?:well|comprehensive(?:ly)?|documented|covered|clear|detailed|everything|enough)\b" +
+        // Source as object, after the sufficiency word.
+        @"|\A\s*(?:This|That|It)\s+(?:is|has\s+been)\s+[^.\n]{0,40}?" +
+        @"\b(?:well|comprehensive(?:ly)?|thoroughly|fully|clearly)\b[^.\n]{0,20}?" +
+        @"\b(?:covered|documented|described|explained|answered)\b[^.\n]{0,40}?" +
+        @"\b(?:wiki|article|source(?:\s+code)?|documentation|knowledge\s+base|page)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public static BenchmarkArtifactScrubber Default { get; } = new();
 
     /// <summary>
     /// Whether the answer opens with a claim-of-sufficiency sentence — "I now have all the
-    /// pieces...", "Let me give you the answer" — rather than the substance itself. Detection
-    /// only: the caller sets a flag and a count from this; the text itself is left untouched.
+    /// pieces...", "Let me give you the answer", "The wiki has this well documented" — rather
+    /// than the substance itself. Detection only: the caller sets a flag and a count from this;
+    /// the text itself is left untouched.
     /// </summary>
     public static bool HasAnswerFramingOpener(string? answerText)
     {

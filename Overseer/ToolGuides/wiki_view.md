@@ -18,6 +18,9 @@ whatever article scored highest rather than a miss. Check the header of the retu
 against what you asked for before quoting it, and use `wiki_search` when you are not certain of
 the title.
 
-A `section` that matches no heading in the article is **not** an error and does not cost you the
-result: the tool returns `[Section '...' not found in article. Returning full text.]` followed by the
-whole article. Read the headings from that text rather than guessing another spelling.
+Leading emoji and other symbols in a heading are ignored when a `section` is matched, so
+`section: "Elbereth"` finds `## 🔮 Elbereth`; an exact heading match is preferred over a
+normalised one. A `section` that still matches no heading is **not** an error and does not cost you
+the result: the marker line `[Section '...' not found in article. Headings: ...]` lists the
+article's headings as written, so one can be copied straight back in, and the whole article follows
+it.

@@ -314,6 +314,7 @@ public class BenchmarkService
             run.CandidatePromptSourceUsed = "ChatService.BuildSystemPrompt";
 
             string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
+            var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode);
             PopulateInstrumentFingerprint(run, systemPrompt);
 
             // Check credential collision between candidate and assessor
@@ -327,6 +328,17 @@ public class BenchmarkService
             }
 
             var createdAnswers = new ConcurrentBag<BenchmarkRunAnswer>();
+
+            // Grading — assessment, claim verification and any per-answer second opinion — runs
+            // alongside the next candidate turn rather than in front of it. The candidate itself is
+            // still awaited one question at a time and its DurationMs, TtftMs and ToolTimeMs are
+            // measured inside its own turn, so speed comparability across runs is unchanged; what
+            // changes is that a slow assessor no longer idles the run between two questions. Each
+            // grading task owns the DI scope its candidate ran in, so no DbContext is touched from
+            // two tasks at once, and the bound keeps the assessor provider from being hammered.
+            int maxConcurrentGrading = Math.Max(1, _configuration.GetValue<int>("Benchmark:MaxConcurrentGrading", 2));
+            using var gradingGate = new SemaphoreSlim(maxConcurrentGrading, maxConcurrentGrading);
+            var gradingTasks = new List<Task>();
 
             if (maxParallel <= 1)
             {
@@ -344,21 +356,41 @@ public class BenchmarkService
                         return;
                     }
 
-                    var ans = await ExecuteSingleQuestionAsync(
-                        db, configService, run, question, testedConfig, testedApiKey,
-                        systemPrompt, allowedTools,
-                        maxResultLength, maxToolCallsPerQuestion, cancellationToken);
-
-                    createdAnswers.Add(ans);
-
-                    if (!credentialCollision)
+                    var qScope = _scopeFactory.CreateScope();
+                    bool scopeHandedOver = false;
+                    try
                     {
-                        // Pipelined immediate assessment
-                        await ExecutePerQuestionAssessmentAsync(
-                            db, configService, run, ans, question.ExpectedPoints,
-                            assessorConfig, assessorApiKey, scoringConstants, cancellationToken);
+                        var qDb = qScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                        var qConfigService = qScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+
+                        var ans = await ExecuteSingleQuestionAsync(
+                            qDb, qConfigService, run, question, testedConfig, testedApiKey,
+                            systemPrompt, segmentedPrompt, allowedTools,
+                            maxResultLength, maxToolCallsPerQuestion, cancellationToken);
+
+                        createdAnswers.Add(ans);
+
+                        if (!credentialCollision)
+                        {
+                            gradingTasks.Add(GradeAnswerAsync(
+                                qScope, run, ans, question.ExpectedPoints,
+                                assessorConfig, assessorApiKey, scoringConstants,
+                                gradingGate, cancellationToken));
+                            scopeHandedOver = true;
+                        }
+                    }
+                    finally
+                    {
+                        // The grading task disposes the scope it was handed; on the collision path,
+                        // where assessment is deferred to after the loop, nothing else needs it.
+                        if (!scopeHandedOver) qScope.Dispose();
                     }
                 }
+
+                // Every run-level stage below needs the full set of scores, so the pipeline drains
+                // here. A grading task that failed has already logged and left its answer as it
+                // found it.
+                await Task.WhenAll(gradingTasks);
             }
             else
             {
@@ -375,7 +407,7 @@ public class BenchmarkService
 
                         var ans = await ExecuteSingleQuestionAsync(
                             qDb, qConfigService, run, question, testedConfig, testedApiKey,
-                            systemPrompt, allowedTools,
+                            systemPrompt, segmentedPrompt, allowedTools,
                             maxResultLength, maxToolCallsPerQuestion, cancellationToken);
 
                         createdAnswers.Add(ans);
@@ -583,6 +615,7 @@ public class BenchmarkService
                 ? BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson)
                 : new BenchmarkCandidatePromptOptions { HasGameSnapshot = suiteHasBoard };
             string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
+            var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode);
 
             // The re-run's own instrument, recorded in its own columns. The five original
             // fingerprints describe the instrument the run's other answers were produced under, and
@@ -601,7 +634,7 @@ public class BenchmarkService
 
                 await ReExecuteSingleAnswerAsync(
                     db, configService, run, answer, testedConfig, testedApiKey,
-                    systemPrompt, allowedTools,
+                    systemPrompt, segmentedPrompt, allowedTools,
                     maxResultLength, maxCallsPerSession, cancellationToken);
 
                 suiteQuestions.TryGetValue(answer.OrderIndex, out var ep);
@@ -858,6 +891,7 @@ public class BenchmarkService
         SystemAiApiConfiguration testedConfig,
         string testedApiKey,
         string systemPrompt,
+        SegmentedPrompt? segmentedPrompt,
         List<string> allowedTools,
         int maxResultLength,
         int maxCallsPerSession,
@@ -884,6 +918,10 @@ public class BenchmarkService
             ApiKey = testedApiKey,
             ModelDisplayName = testedConfig.DisplayName,
             SystemPrompt = systemPrompt,
+            FrozenPrefix = segmentedPrompt?.FrozenPrefix,
+            SessionPrefix = segmentedPrompt?.SessionPrefix,
+            VolatileSuffix = segmentedPrompt?.VolatileSuffix,
+            SegmentedPrompt = segmentedPrompt,
             ThinkingLevel = testedConfig.ThinkingLevel,
             ReasoningMode = testedConfig.ReasoningMode,
             ReasoningSummary = testedConfig.ReasoningSummary,
@@ -1084,6 +1122,7 @@ public class BenchmarkService
         SystemAiApiConfiguration testedConfig,
         string testedApiKey,
         string systemPrompt,
+        SegmentedPrompt? segmentedPrompt,
         List<string> allowedTools,
         int maxResultLength,
         int maxCallsPerSession,
@@ -1104,6 +1143,10 @@ public class BenchmarkService
             ApiKey = testedApiKey,
             ModelDisplayName = testedConfig.DisplayName,
             SystemPrompt = systemPrompt,
+            FrozenPrefix = segmentedPrompt?.FrozenPrefix,
+            SessionPrefix = segmentedPrompt?.SessionPrefix,
+            VolatileSuffix = segmentedPrompt?.VolatileSuffix,
+            SegmentedPrompt = segmentedPrompt,
             ThinkingLevel = testedConfig.ThinkingLevel,
             ReasoningMode = testedConfig.ReasoningMode,
             ReasoningSummary = testedConfig.ReasoningSummary,
@@ -1280,6 +1323,59 @@ public class BenchmarkService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to record usage for re-executed answer.");
+        }
+    }
+
+    /// <summary>
+    /// One question's grading, run inside the DI scope its candidate turn used and bounded by
+    /// <paramref name="gate"/>. The scope is disposed here, so a caller that hands one over must
+    /// not dispose it itself.
+    ///
+    /// A failure is logged and dropped rather than propagated: the answer keeps whatever verdict it
+    /// has and the finalizer treats it as it treats any other unscored answer. Cancellation still
+    /// propagates, so a canceled run is still canceled.
+    /// </summary>
+    private async Task GradeAnswerAsync(
+        IServiceScope scope,
+        BenchmarkRun run,
+        BenchmarkRunAnswer answer,
+        string? expectedPoints,
+        SystemAiApiConfiguration assessorConfig,
+        string assessorApiKey,
+        BenchmarkScoringConstants scoringConstants,
+        SemaphoreSlim gate,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await gate.WaitAsync(cancellationToken);
+            try
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var configService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+
+                await ExecutePerQuestionAssessmentAsync(
+                    db, configService, run, answer, expectedPoints,
+                    assessorConfig, assessorApiKey, scoringConstants, cancellationToken);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Benchmark run {RunId} answer {OrderIndex}: per-question grading failed. The answer keeps its current verdict.",
+                run.Id, answer.OrderIndex);
+        }
+        finally
+        {
+            scope.Dispose();
         }
     }
 
@@ -1968,29 +2064,61 @@ public class BenchmarkService
             .Where(q => q.BenchmarkSuiteId == run.BenchmarkSuiteId)
             .ToDictionaryAsync(q => q.OrderIndex, q => q.ExpectedPoints, cancellationToken);
 
+        // "Lowest quality score first" is the selection rule and was never an execution order, so
+        // the selected opinions run concurrently under the same bound the per-question grading
+        // pipeline uses. Each owns a DI scope and re-loads its answer by Id there, so no DbContext
+        // is touched from two tasks at once.
+        int maxConcurrentGrading = Math.Max(1, _configuration.GetValue<int>("Benchmark:MaxConcurrentGrading", 2));
         int gradedThisPass = 0;
+
+        using (var gate = new SemaphoreSlim(maxConcurrentGrading, maxConcurrentGrading))
+        {
+            var opinionTasks = candidates.Select(async selected =>
+            {
+                await gate.WaitAsync(cancellationToken);
+                try
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    suiteQuestions.TryGetValue(selected.OrderIndex, out var expectedPoints);
+
+                    using var scope = _scopeFactory.CreateScope();
+                    var sDb = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                    var sConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+
+                    var answer = await sDb.BenchmarkRunAnswers
+                        .FirstOrDefaultAsync(a => a.Id == selected.Id, cancellationToken);
+                    if (answer == null) return;
+
+                    await RunSecondOpinionAsync(
+                        sDb, sConfigService, run, answer, expectedPoints, constants,
+                        SecondOpinionTriggers.Sample, cancellationToken);
+                    Interlocked.Increment(ref gradedThisPass);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Benchmark run {RunId} answer {OrderIndex}: sample top-up second opinion failed. The first verdict stands.",
+                        run.Id, selected.OrderIndex);
+                }
+                finally
+                {
+                    gate.Release();
+                }
+            });
+
+            await Task.WhenAll(opinionTasks);
+        }
+
+        // Those verdicts were written through other contexts, so this one's tracked copies of the
+        // same rows are stale, and the stages that follow — the second claim-verification pass,
+        // the synthesis and the finalizer -- all read this context.
         foreach (var answer in candidates)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            suiteQuestions.TryGetValue(answer.OrderIndex, out var expectedPoints);
-
-            try
-            {
-                await RunSecondOpinionAsync(
-                    db, configService, run, answer, expectedPoints, constants,
-                    SecondOpinionTriggers.Sample, cancellationToken);
-                gradedThisPass++;
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "Benchmark run {RunId} answer {OrderIndex}: sample top-up second opinion failed. The first verdict stands.",
-                    run.Id, answer.OrderIndex);
-            }
+            await db.Entry(answer).ReloadAsync(CancellationToken.None);
         }
 
         run.SecondOpinionSampleCountUsed = alreadyGraded + gradedThisPass;
@@ -4210,13 +4338,14 @@ public class BenchmarkService
                 ? BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson)
                 : new BenchmarkCandidatePromptOptions { HasGameSnapshot = suiteHasBoard };
             string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
+            var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode);
             PopulateInstrumentFingerprint(run, systemPrompt);
 
             string? expectedPoints = MatchSuiteQuestion(run, answer)?.ExpectedPoints;
 
             await ReExecuteSingleAnswerAsync(
                 db, configService, run, answer, testedConfig, testedApiKey,
-                systemPrompt, allowedTools,
+                systemPrompt, segmentedPrompt, allowedTools,
                 maxResultLength, maxToolCallsPerQuestion, cancellationToken);
 
             await ExecutePerQuestionAssessmentAsync(
@@ -4608,6 +4737,25 @@ public class BenchmarkService
         {
             _runManager.Complete(run.Id);
         }
+    }
+
+    /// <summary>
+    /// The candidate's system prompt in the three cache segments the providers key their prompt
+    /// caches on, or null when <c>PromptCacheSettings:EnableSegmentedPrompt</c> is off. The three
+    /// concatenate to the flat string <see cref="PopulateInstrumentFingerprint"/> hashes, so
+    /// carrying them changes what the request looks like on the wire and not what the run records.
+    /// </summary>
+    private SegmentedPrompt? BuildCandidateSegmentedPrompt(
+        BenchmarkCandidatePromptOptions promptOptions, MobileGnollHackLogger.Data.ParallelExecutionMode parallelMode)
+    {
+        if (!_configuration.GetValue<bool>("PromptCacheSettings:EnableSegmentedPrompt", true))
+        {
+            return null;
+        }
+
+        var (frozen, session, volatileSuffix) =
+            promptOptions.BuildSegmentedSystemPrompt(_chatService, parallelMode);
+        return new SegmentedPrompt(frozen, session, volatileSuffix);
     }
 
     internal void PopulateInstrumentFingerprint(BenchmarkRun run, string systemPrompt)

@@ -762,6 +762,32 @@ public class BenchmarkArtifactScrubberTests
         Assert.True(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
     }
 
+    // The source-claim form: the sufficiency claim is made about the corpus rather than about the
+    // model. Counted, not removed — like every other opener this detector recognises. The first
+    // three are verbatim from the run-31 GPT benchmark; the fourth is the same claim with the
+    // source named after the sufficiency word.
+    [Theory]
+    [InlineData("This is well covered by the wiki. Here's the breakdown for weapons:")]
+    [InlineData("The wiki has this well documented.")]
+    [InlineData("This wiki article gives a comprehensive, implementation-level breakdown.")]
+    [InlineData("This is well documented on the GnollHack wiki.")]
+    public void HasAnswerFramingOpener_DetectsRun31SourceClaimOpeners(string answer)
+    {
+        Assert.True(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
+    }
+
+    [Theory]
+    // A source noun in the opening is not itself a claim about the source, and a sufficiency word
+    // with no source noun after it is not a claim about the source either.
+    [InlineData("The wiki article on Elbereth says the engraving must be intact.")]
+    [InlineData("This spell is well suited to a low-level character.")]
+    [InlineData("This is a well-documented GnollHack mechanic.")]
+    [InlineData("This is a great example of a mechanic that changed in GnollHack.")]
+    public void HasAnswerFramingOpener_DoesNotFireOnSourceMentionsThatClaimNoSufficiency(string answer)
+    {
+        Assert.False(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
+    }
+
     [Theory]
     [InlineData("I will explain how prayer timeout works.")]
     [InlineData("Let me explain the two checks in src/zap.c.")]
@@ -818,6 +844,20 @@ public class BenchmarkArtifactScrubberTests
         // this text back byte-for-byte. A later change wiring the detector into removal would
         // replace the very text the assessor grades — a scoring-method change this test exists to
         // catch.
+        var result = Scrubber.Scrub(answer);
+
+        Assert.Equal(answer, result.AnswerText);
+    }
+
+    [Theory]
+    [InlineData("This is well covered by the wiki. Here's the breakdown for weapons:")]
+    [InlineData("The wiki has this well documented.")]
+    [InlineData("This wiki article gives a comprehensive, implementation-level breakdown.")]
+    [InlineData("This is well documented on the GnollHack wiki.")]
+    public void Scrub_LeavesASourceClaimFramingOpenerUntouched(string answer)
+    {
+        // The source-claim openers are detected on the same terms as every other framing opener:
+        // counted, never removed. Scrub must hand this text back byte-for-byte.
         var result = Scrubber.Scrub(answer);
 
         Assert.Equal(answer, result.AnswerText);
