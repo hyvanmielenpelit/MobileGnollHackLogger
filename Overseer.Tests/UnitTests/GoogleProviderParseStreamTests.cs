@@ -182,6 +182,67 @@ public class GoogleProviderParseStreamTests
         Assert.All(tierEvents, t => Assert.Equal("priority", t.Data));
     }
 
+    /// <summary>
+    /// Gemini attaches cumulative usageMetadata to every chunk. One model call yields exactly one
+    /// usage event, carrying the last chunk's figures.
+    /// </summary>
+    [Fact]
+    public async Task ParseStreamAsync_WithUsageMetadataOnEveryChunk_EmitsOneUsageEventWithTheLastFigures()
+    {
+        var provider = CreateProvider();
+        var sse = new StringBuilder()
+            .AppendLine("data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"One \"}]}}], \"usageMetadata\": {\"promptTokenCount\": 3500, \"candidatesTokenCount\": 40, \"thoughtsTokenCount\": 0, \"cachedContentTokenCount\": 1000}}")
+            .AppendLine()
+            .AppendLine("data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"two \"}]}}], \"usageMetadata\": {\"promptTokenCount\": 3500, \"candidatesTokenCount\": 120, \"thoughtsTokenCount\": 300, \"cachedContentTokenCount\": 1000}}")
+            .AppendLine()
+            .AppendLine("data: {\"candidates\": [{\"finishReason\": \"STOP\", \"content\": {\"parts\": [{\"text\": \"three\"}]}}], \"usageMetadata\": {\"promptTokenCount\": 3500, \"candidatesTokenCount\": 210, \"thoughtsTokenCount\": 900, \"cachedContentTokenCount\": 1000}}")
+            .AppendLine()
+            .ToString();
+        using var response = CreateSseResponse(sse);
+
+        var events = new List<ChatEvent>();
+        await foreach (var evt in provider.ParseStreamAsync(response, showDebugLog: false, CancellationToken.None))
+        {
+            events.Add(evt);
+        }
+
+        var usage = Assert.Single(events, e => e.Type == "usage");
+        Assert.NotNull(usage.UsageReport);
+        Assert.Equal(3500, usage.UsageReport!.TotalPromptTokens);
+        Assert.Equal(1000, usage.UsageReport.CacheReadTokens);
+        Assert.Equal(2500, usage.UsageReport.UncachedInputTokens);
+        Assert.Equal(210, usage.UsageReport.OutputTokens);
+        Assert.Equal(900, usage.UsageReport.ReasoningTokens);
+    }
+
+    [Fact]
+    public async Task ParseStreamAsync_WithUsageMetadataOnLastChunkOnly_EmitsOneUsageEvent()
+    {
+        var provider = CreateProvider();
+        var sse = new StringBuilder()
+            .AppendLine("data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"One \"}]}}]}")
+            .AppendLine()
+            .AppendLine("data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"two \"}]}}]}")
+            .AppendLine()
+            .AppendLine("data: {\"candidates\": [{\"finishReason\": \"STOP\", \"content\": {\"parts\": [{\"text\": \"three\"}]}}], \"usageMetadata\": {\"promptTokenCount\": 3500, \"candidatesTokenCount\": 210, \"thoughtsTokenCount\": 900, \"cachedContentTokenCount\": 1000}}")
+            .AppendLine()
+            .ToString();
+        using var response = CreateSseResponse(sse);
+
+        var events = new List<ChatEvent>();
+        await foreach (var evt in provider.ParseStreamAsync(response, showDebugLog: false, CancellationToken.None))
+        {
+            events.Add(evt);
+        }
+
+        var usage = Assert.Single(events, e => e.Type == "usage");
+        Assert.NotNull(usage.UsageReport);
+        Assert.Equal(3500, usage.UsageReport!.TotalPromptTokens);
+        Assert.Equal(1000, usage.UsageReport.CacheReadTokens);
+        Assert.Equal(210, usage.UsageReport.OutputTokens);
+        Assert.Equal(900, usage.UsageReport.ReasoningTokens);
+    }
+
     [Fact]
     public async Task ParseStreamAsync_WithoutServiceTier_EmitsNoServiceTierEvent()
     {

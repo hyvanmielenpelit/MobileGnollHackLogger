@@ -248,57 +248,12 @@ public class NetHackWikiService : IDisposable
         
         if (!string.IsNullOrWhiteSpace(section))
         {
-            content = ExtractMarkdownSection(content, section);
+            content = MarkdownSectionExtractor.Extract(content, section);
         }
-        
+
         return $"--- {title} ---\n{content}";
     }
 
-    private string ExtractMarkdownSection(string content, string section)
-    {
-        var lines = content.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-        var sb = new System.Text.StringBuilder();
-        bool inSection = false;
-        int sectionLevel = -1;
-        
-        foreach (var line in lines)
-        {
-            if (line.TrimStart().StartsWith("#"))
-            {
-                var match = Regex.Match(line, @"^(#+)\s+(.*)");
-                if (match.Success)
-                {
-                    int level = match.Groups[1].Value.Length;
-                    string title = match.Groups[2].Value.Trim();
-                    
-                    if (title.Equals(section, StringComparison.OrdinalIgnoreCase))
-                    {
-                        inSection = true;
-                        sectionLevel = level;
-                        sb.AppendLine(line);
-                        continue;
-                    }
-                    else if (inSection && level <= sectionLevel)
-                    {
-                        break;
-                    }
-                }
-            }
-            
-            if (inSection)
-            {
-                sb.AppendLine(line);
-            }
-        }
-        
-        if (!inSection)
-        {
-            return $"[Section '{section}' not found in article. Returning full text.]\n\n{content}";
-        }
-        
-        return sb.ToString();
-    }
-    
     public void Dispose()
     {
         _reader?.Dispose();

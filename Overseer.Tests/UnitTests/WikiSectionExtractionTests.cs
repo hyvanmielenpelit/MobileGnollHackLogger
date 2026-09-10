@@ -13,12 +13,13 @@ using Xunit;
 namespace Overseer.Tests.UnitTests;
 
 /// <summary>
-/// Pins how wiki_view resolves a <c>section</c> against an article's headings: the two-pass match
-/// that lets a plain request find an emoji-prefixed heading while an exact heading still wins, the
-/// bound of the extracted section at the next same-or-higher-level heading, and the heading list
-/// the marker line carries when nothing matches. A synthetic corpus of three articles supplies the
-/// emoji headings, the plain-and-decorated duplicate pair, and enough headings to exercise the
-/// list's character cap.
+/// Pins how wiki_view resolves a <c>section</c> against an article's headings: the exact and
+/// normalised passes that let a plain request find an emoji-prefixed heading while an exact heading
+/// still wins, the unique-substring pass after them, the bound of the extracted section at the next
+/// same-or-higher-level heading, and the heading list the marker line carries when nothing matches
+/// — and that nethack_wiki_view resolves the same request to the same text. A synthetic corpus
+/// supplies the emoji headings, the plain-and-decorated duplicate pair, enough headings to exercise
+/// the list's character cap, and the substring cases.
 /// </summary>
 public class WikiSectionExtractionTests : IDisposable
 {
@@ -64,6 +65,44 @@ The plainnotesbody collects the caveats that actually matter.
             compendium.AppendLine();
         }
         File.WriteAllText(Path.Combine(_tempDir, "Compendium.md"), compendium.ToString());
+
+        // The NetHack wiki's Spellcasting headings: "Spell failure" is contained in exactly one of
+        // them, and "spell" in several.
+        File.WriteAllText(Path.Combine(_tempDir, "Spellcasting.md"),
+@"Spellcasting casts a known spell at the cost of energy.
+
+## Basics
+The basicsbody says what a spell is.
+
+## Spellcasting costs
+The costsbody lists the energy each level needs.
+
+## Forgotten spells
+The forgottenbody covers spells past their retention.
+
+## Calculating spell success rate
+The successbody walks through the formula.
+
+## Minimum spell failure rates
+The minfailbody tabulates the floor per role.
+
+## Spell effects
+The effectsbody points at the per-spell articles.
+");
+
+        // A heading that equals the request beside longer headings that contain it.
+        File.WriteAllText(Path.Combine(_tempDir, "Armor.md"),
+@"Armor protects the wearer.
+
+## Strategy
+The plainstrategybody is the general advice.
+
+## Role and attribute strategy
+The rolestrategybody is advice per role.
+
+## Armor strategy
+The armorstrategybody is advice per slot.
+");
     }
 
     public void Dispose()
@@ -175,4 +214,81 @@ The plainnotesbody collects the caveats that actually matter.
         // The article itself is long enough for the cap to have bitten.
         Assert.Contains("compendiumbody30", content);
     }
+
+    /// <summary>
+    /// A request contained in exactly one heading selects that heading.
+    /// </summary>
+    [Fact]
+    public async Task WikiView_SectionIsASubstringOfExactlyOneHeading_ReturnsThatSection()
+    {
+        string? content = await ViewSectionAsync("Spellcasting", "Spell failure");
+
+        Assert.Contains("## Minimum spell failure rates", content);
+        Assert.Contains("minfailbody", content);
+        Assert.DoesNotContain("successbody", content);
+        Assert.DoesNotContain("effectsbody", content);
+        Assert.DoesNotContain("not found in article", content);
+    }
+
+    /// <summary>
+    /// The exact and normalised passes run before the substring pass, so a heading equal to the
+    /// request wins over longer headings that contain it.
+    /// </summary>
+    [Fact]
+    public async Task WikiView_SectionEqualsOneHeadingAndIsContainedInOthers_PrefersTheExactHeading()
+    {
+        string? content = await ViewSectionAsync("Armor", "strategy");
+
+        Assert.Contains("plainstrategybody", content);
+        Assert.DoesNotContain("rolestrategybody", content);
+        Assert.DoesNotContain("armorstrategybody", content);
+    }
+
+    /// <summary>
+    /// A request contained in several headings is ambiguous: the miss line lists the candidates.
+    /// </summary>
+    [Fact]
+    public async Task WikiView_SectionIsASubstringOfSeveralHeadings_MarkerLineListsTheHeadings()
+    {
+        string? content = await ViewSectionAsync("Spellcasting", "spell");
+
+        Assert.Contains(
+            "[Section 'spell' not found in article. Headings: Basics; Spellcasting costs; Forgotten spells; " +
+            "Calculating spell success rate; Minimum spell failure rates; Spell effects. Returning full text.]",
+            content);
+        Assert.Contains("basicsbody", content);
+        Assert.Contains("effectsbody", content);
+    }
+
+    /// <summary>
+    /// nethack_wiki_view and wiki_view share one section extractor: for the same article content
+    /// and the same request, the text under the header line is identical.
+    /// </summary>
+    [Theory]
+    [InlineData("Spellcasting", "Spell failure")]
+    [InlineData("Spellcasting", "spell")]
+    [InlineData("Armor", "strategy")]
+    [InlineData("Runewords", "Elbereth")]
+    [InlineData("Runewords", "Nope")]
+    [InlineData("Engraving", "Notes")]
+    public async Task NetHackWikiView_ReturnsTheSameSectionTextAsWikiView(string article, string section)
+    {
+        string? gnollHack = await ViewSectionAsync(article, section);
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new List<KeyValuePair<string, string?>> { new("NetHackWikiPath", _tempDir) })
+            .Build();
+        using var netHackService = new NetHackWikiService(config);
+        await netHackService.InitializationTask;
+        string? netHack = netHackService.GetArticle(article, section);
+
+        Assert.NotNull(gnollHack);
+        Assert.NotNull(netHack);
+        Assert.StartsWith($"--- {article} ---\n", netHack);
+        Assert.Equal(BodyAfterHeader(gnollHack!), BodyAfterHeader(netHack!));
+    }
+
+    // The two services label an article differently (path form vs. title); the text below the
+    // header line is what the extractor produced.
+    private static string BodyAfterHeader(string result) => result.Substring(result.IndexOf('\n') + 1);
 }

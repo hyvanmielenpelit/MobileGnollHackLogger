@@ -887,6 +887,24 @@ re-run all change what a report — or a comparison across the boundary — mean
   resolver). The first run stamped 18 therefore differs from a run stamped 17 on **two** instrument
   keys at once (`HarnessVersion`, `ToolGuidesSha256`) and is **not** a Tier-B reproduction of it:
   compare the two on counts and per-question thresholds, not on the index.
+- **Gemini usage accounting, 2026-09-10.** `GoogleProvider.ParseStreamAsync` emits exactly **one**
+  `usage` event per model call, after the stream ends, carrying the last `usageMetadata` the stream
+  delivered. Gemini attaches `usageMetadata` to every streamed chunk — `promptTokenCount` constant,
+  the output and thought counts cumulative — and `AgentLoopRunner` sums every `usage` event it
+  receives into the run result's token totals, into `ModelCallUsages` (the per-call cost basis) and
+  into `AgentRunBudget.AddActualTokens`. Until this date the provider emitted one event per chunk,
+  so every Gemini model call was counted roughly **once per chunk**. **Every run recorded before the
+  fix therefore carries inflated Gemini-role token and cost figures**: the primary assessor and the
+  synthesis on every run, and the candidate on run 22 (Gemini 3.5 Flash-Lite) — its cache-read share
+  possibly included. Run 33 shows the scale: the assessor reported ≈ 39,600 input tokens per
+  assessment against ≈ 3,500 per call for the second opinion's prompt of the same shape, and its
+  reported $1.97 total corresponds to roughly $1.2. Anthropic and OpenAI roles were never affected;
+  each of those providers emits a single usage report per response. Live Gemini chat sessions were
+  inflated the same way — per-message token and cost figures, and the budget's actual-token tally.
+  Token totals and costs are **not** comparability keys and no record shape changed, so
+  `HarnessVersion` stays at `"18"`; but a cost or token comparison **across this date** that involves
+  any Gemini role compares an inflated figure with a corrected one, and the stored pre-fix figures
+  are not rewritten.
 
 ### Run Progress Dialog Round (2026-09-10) — No Version Bump
 

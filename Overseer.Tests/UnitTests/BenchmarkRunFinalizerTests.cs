@@ -856,11 +856,34 @@ public class BenchmarkRunFinalizerTests
         BenchmarkRunFinalizer.ApplyTotals(run, new[] { a1, a2, a3, deadQuestion, manualTrial });
 
         Assert.Equal(3, run.SecondOpinionGradedAnswerCount);
-        // Deltas (SecondOpinion - Quality) over a1..a3 alone: -10, 18, -10.
-        Assert.NotNull(run.SecondOpinionMeanAbsDelta);
-        Assert.NotNull(run.SecondOpinionMeanSignedDelta);
-        Assert.InRange(run.SecondOpinionMeanAbsDelta.Value, 12.66, 12.67);
-        Assert.InRange(run.SecondOpinionMeanSignedDelta.Value, -0.67, -0.66);
+        // Deltas (SecondOpinion - Quality) over a1..a3 alone: -10, 18, -10 → 12.67 and -0.67,
+        // stored at one decimal.
+        Assert.Equal(12.7, run.SecondOpinionMeanAbsDelta);
+        Assert.Equal(-0.7, run.SecondOpinionMeanSignedDelta);
+    }
+
+    [Fact]
+    public void Apply_StoresAgreementDeltasAtOneDecimal_MidpointAwayFromZero()
+    {
+        // Run 33: deltas -30, +1, +12, +16. The signed mean is exactly -0.25, which toFixed(1)
+        // and F1 would otherwise print differently; stored once, rounded away from zero.
+        var answers = new[] { (1, 88, 58), (2, 83, 84), (3, 87, 99), (4, 60, 76) }
+            .Select(t =>
+            {
+                var a = MakeAnswer(t.Item1);
+                a.QualityScore = t.Item2;
+                a.SecondOpinionQualityScore = t.Item3;
+                a.SecondOpinionTrigger = "FlaggedPlusSample";
+                return a;
+            })
+            .ToArray();
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 4 };
+        BenchmarkRunFinalizer.Apply(run, answers);
+
+        Assert.Equal(4, run.SecondOpinionGradedAnswerCount);
+        Assert.Equal(-0.3, run.SecondOpinionMeanSignedDelta);
+        Assert.Equal(14.8, run.SecondOpinionMeanAbsDelta);
     }
 
     [Fact]

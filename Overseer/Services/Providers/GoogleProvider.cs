@@ -239,6 +239,10 @@ public class GoogleProvider : IAiProvider
         var visibleSanitizer = new ReasoningTextSanitizer();
         bool replayUnavailable = false;
 
+        // Gemini reports cumulative usage on every chunk; one report per call is emitted after the
+        // stream ends, so the last chunk's figures are the call's totals.
+        TokenUsageReport? lastUsage = null;
+
         while (!cancellationToken.IsCancellationRequested)
         {
             var line = await reader.ReadLineAsync(cancellationToken);
@@ -252,7 +256,6 @@ public class GoogleProvider : IAiProvider
                 var toolCallEvts = new List<ChatEvent>();
                 var debugEvts = new List<ChatEvent>();
                 var providerItemEvts = new List<ChatEvent>();
-                var usageEvts = new List<ChatEvent>();
                 ChatEvent? tierEvt = null;
                 ChatEvent? errorEvt = null;
                 ChatEvent? finishReasonEvt = null;
@@ -365,7 +368,7 @@ public class GoogleProvider : IAiProvider
                         int thoughtTokens = usageProp.TryGetProperty("thoughtsTokenCount", out var tht) ? tht.GetInt32() : 0;
                         int uncached = Math.Max(0, promptTokens - cachedTokens);
 
-                        var report = new TokenUsageReport
+                        lastUsage = new TokenUsageReport
                         {
                             TotalPromptTokens = promptTokens,
                             CacheReadTokens = cachedTokens,
@@ -374,12 +377,6 @@ public class GoogleProvider : IAiProvider
                             OutputTokens = outputTokens,
                             ReasoningTokens = thoughtTokens
                         };
-                        usageEvts.Add(new ChatEvent
-                        {
-                            Type = "usage",
-                            Data = JsonSerializer.Serialize(report),
-                            UsageReport = report
-                        });
 
                         if (showDebugLog)
                         {
@@ -397,7 +394,6 @@ public class GoogleProvider : IAiProvider
                 if (errorEvt != null) yield return errorEvt;
                 foreach (var pEvt in providerItemEvts) yield return pEvt;
                 if (tierEvt != null) yield return tierEvt;
-                foreach (var uEvt in usageEvts) yield return uEvt;
                 if (!string.IsNullOrEmpty(thinkingChunkStr)) yield return new ChatEvent { Type = "thinking_chunk", Data = thinkingChunkStr };
                 if (!string.IsNullOrEmpty(chunkStr)) yield return new ChatEvent { Type = "chunk", Data = chunkStr };
                 foreach (var evt in toolCallEvts) yield return evt;
@@ -409,6 +405,16 @@ public class GoogleProvider : IAiProvider
 
         var vTail = visibleSanitizer.Flush();
         if (!string.IsNullOrEmpty(vTail)) yield return new ChatEvent { Type = "chunk", Data = vTail };
+
+        if (lastUsage != null)
+        {
+            yield return new ChatEvent
+            {
+                Type = "usage",
+                Data = JsonSerializer.Serialize(lastUsage),
+                UsageReport = lastUsage
+            };
+        }
 
         if (replayUnavailable)
         {

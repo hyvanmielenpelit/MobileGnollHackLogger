@@ -786,6 +786,26 @@ public class BenchmarkArtifactScrubberTests
         Assert.True(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
     }
 
+    // Verbatim from the run-33 Claude benchmark (Q2, Q7, Q17). Q7 separates "clear" from "answer"
+    // with an adjective and names the source after "gives".
+    [Theory]
+    [InlineData("The wiki has this well documented:")]
+    [InlineData("This gives a clear, well-documented answer straight from the wiki — no need for source code digging.")]
+    [InlineData("This is well documented on the wiki.")]
+    public void HasAnswerFramingOpener_DetectsRun33Openers(string answer)
+    {
+        Assert.True(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
+    }
+
+    // Run-33 openers that begin with a fact.
+    [Theory]
+    [InlineData("There are exactly three runewords in GnollHack, each engraved as a separate word.")]
+    [InlineData("Gnolls are a versatile, highly perceptive race with a few notable quirks.")]
+    public void HasAnswerFramingOpener_DoesNotFireOnRun33FactOpeners(string answer)
+    {
+        Assert.False(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
+    }
+
     [Theory]
     // The same opening words with no claim of sufficiency behind them.
     [InlineData("This gives the player a clear advantage.")]

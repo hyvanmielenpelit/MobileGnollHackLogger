@@ -355,31 +355,40 @@ headers now print `--- <repository-relative path with extension> ---` (e.g. `---
 for branch 1.
 
 `section` extraction is a markdown-heading text match (`^(#+)\s+(.*)`), capturing lines until a
-heading of equal or shallower depth. **The two tools no longer match a heading the same way.**
+heading of equal or shallower depth. **Both tools resolve a `section` through one shared
+extractor, `MarkdownSectionExtractor.Extract`** (from the run-33 round; before it,
+`nethack_wiki_view` matched full-title equality only and its miss line carried no heading list), in
+three passes over the article's headings:
 
-- **`wiki_view` matches in two passes, from the run-31 round.** Case-insensitive equality on the
-  trimmed heading text first; only if no heading matched exactly, equality after normalising both
-  sides, where normalising strips every *leading* character that is not a Unicode letter or digit
-  and collapses internal whitespace runs to one space. So `section: "Elbereth"` reaches
-  `## 🔮 Elbereth`, and so does `section: "🔮 Elbereth"`. 12.7 % of the GnollHack wiki's headings
-  carry such a prefix, which is why the pass exists. Stripping is leading-only and the exact pass
-  runs first, so an article carrying both `## Notes` and `## 📝 Notes` still answers `Notes` with the
-  exact one, and normalisation can never capture a heading a plain request already matched.
-  First-wins on a tie, as before.
-- **`nethack_wiki_view` is unchanged**: case-insensitive full-title equality only, so a heading with
-  an emoji or symbol prefix is unreachable by its plain text there.
+1. **Exact** — case-insensitive equality on the trimmed heading text.
+2. **Normalised** (from the run-31 round on `wiki_view`) — equality after normalising both sides,
+   where normalising strips every *leading* character that is not a Unicode letter or digit and
+   collapses internal whitespace runs to one space. So `section: "Elbereth"` reaches
+   `## 🔮 Elbereth`, and so does `section: "🔮 Elbereth"`. 12.7 % of the GnollHack wiki's headings
+   carry such a prefix, which is why the pass exists. Stripping is leading-only and the exact pass
+   runs first, so an article carrying both `## Notes` and `## 📝 Notes` still answers `Notes` with
+   the exact one.
+3. **Unique substring** (from the run-33 round) — the normalised request contained,
+   case-insensitively, in the normalised heading, and selected **only when exactly one heading
+   contains it**. So `section: "Spell failure"` reaches `## Minimum spell failure rates` in the
+   NetHack wiki's *Spellcasting*; `section: "spell"`, contained in five of its headings, falls
+   through to the miss line.
 
-A `section` that matches no heading still returns the **full article** and is not an error, behind a
-marker line. `nethack_wiki_view` emits the original
-`[Section 'X' not found in article. Returning full text.]`. **`wiki_view` additionally lists the
-article's headings** — every heading in document order, as written so one can be copied straight
-back, `; `-separated and capped at 600 characters with a trailing `…`:
+An earlier pass always beats a later one, so a heading that matches literally is never displaced by
+a longer one containing it (`strategy` answers `## Strategy`, not `## Armor strategy`). The first two
+passes are first-wins on a tie.
+
+A `section` no pass resolves still returns the **full article** and is not an error, behind a marker
+line that **lists the article's headings** — every heading in document order, as written so one can
+be copied straight back, `; `-separated and capped at 600 characters with a trailing `…`:
 
 ```
 [Section 'X' not found in article. Headings: ℹ️ Overview; 📝 Engraving Mechanics; 🔮 Elbereth; …. Returning full text.]
 ```
 
-An article with no headings at all keeps the original line.
+An article with no headings at all keeps the original
+`[Section 'X' not found in article. Returning full text.]`. A run recorded before the run-33 round
+carries that original line on every `nethack_wiki_view` section miss, whatever the article.
 
 **Result shape**: `wiki_search` returns per-hit snippets via `WikiSnippetExtractor.BuildSnippet`
 (bounded to `PerResultChars`, query-term-aware). **`nethack_wiki_search` returned full article
@@ -413,8 +422,8 @@ harness 18 or a call in which the builder threw.
 `wiki_view`'s miss payload also states, when a `section` was requested, that it was the **article**
 that missed so the section was never reached. A section that matches no heading is **not** a miss at
 all and does not reach the builder: `WikiService.GetArticle` answers that case itself with the
-section-miss marker line above — which for `wiki_view` carries the article's heading list — followed
-by the whole article.
+section-miss marker line above — which carries the article's heading list — followed by the whole
+article.
 
 **`wiki_view` also has a fourth outcome, from the run-30 round, and it is not a miss.** `Several
 wiki articles are titled '` opens a disambiguation payload — `Success = true`, capped at a few

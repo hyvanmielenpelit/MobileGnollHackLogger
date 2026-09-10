@@ -98,6 +98,13 @@ public static class BenchmarkRunFinalizer
     }
 
     /// <summary>
+    /// The one rounding every assessor-agreement delta receives: one decimal, midpoints away from
+    /// zero, so -0.25 is -0.3 on every surface.
+    /// </summary>
+    public static double RoundAgreementDelta(double value)
+        => Math.Round(value, 1, MidpointRounding.AwayFromZero);
+
+    /// <summary>
     /// The answer never completed: the provider failed the request, or the harness caught a throw.
     /// Neither leaves text to grade, so both belong outside the clean count. There is no
     /// <c>Ok</c>-status path into this predicate, which is why it is safe ahead of every other
@@ -414,12 +421,14 @@ public static class BenchmarkRunFinalizer
                         && !string.Equals(a.SecondOpinionTrigger, "Manual", StringComparison.Ordinal))
             .ToList();
 
+        // Stored at one decimal, midpoints away from zero, so every surface that formats the
+        // figure (UI toFixed(1), report F1, diagnostics) prints the same value.
         run.SecondOpinionGradedAnswerCount = secondOpinions.Count;
         run.SecondOpinionMeanAbsDelta = secondOpinions.Count > 0
-            ? secondOpinions.Average(a => Math.Abs(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value))
+            ? RoundAgreementDelta(secondOpinions.Average(a => Math.Abs(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value)))
             : null;
         run.SecondOpinionMeanSignedDelta = secondOpinions.Count > 0
-            ? secondOpinions.Average(a => (double)(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value))
+            ? RoundAgreementDelta(secondOpinions.Average(a => (double)(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value)))
             : null;
         run.SecondOpinionCriticalErrorSplitCount = secondOpinions.Count(
             a => a.SecondOpinionCriticalError.HasValue && a.SecondOpinionCriticalError.Value != a.CriticalError);

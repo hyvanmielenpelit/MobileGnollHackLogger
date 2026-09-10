@@ -138,8 +138,11 @@ public sealed class BenchmarkArtifactScrubber
     // low-level character", whose subject is not a source at all.
     //
     // The "clear answer" alternative admits "gives", "provides" and "offers" beside "has" and
-    // "is" — "This gives a clear answer already" — but still requires the words "clear answer"
-    // themselves, so "This gives the player a clear advantage" stays outside it. The
+    // "is" — "This gives a clear answer already" — and up to 40 characters within the sentence
+    // between "clear" and "answer" ("a clear, well-documented answer"), but still requires both
+    // words, so "This gives the player a clear advantage" stays outside it. The source-as-object
+    // alternative admits the same three verbs ("This gives a clear, well-documented answer
+    // straight from the wiki"). The
     // interjection-led alternative claims "Good — I now have a clear picture of..." only when the
     // interjection is followed by the model's own claim to a clear or complete picture; "Good —
     // the sword is cursed." opens with the same word and is not claimed. It does not admit
@@ -151,7 +154,7 @@ public sealed class BenchmarkArtifactScrubber
         @"(?:have|need|found|located|confirmed)\s+(?:a|all|enough|everything|what|both|every)\b" +
         @"|\A\s*(?:Now\s+)?I(?:’|')ve\s+(?:got|confirmed|gathered)\b" +
         @"|\A\s*Let\s+me\s+(?:just\s+|now\s+)?(?:give|answer|lay\s+out|summari[sz]e|provide|state|write|put)\b" +
-        @"|\A\s*(?:This|That)\s+(?:has|is|gives|provides|offers)\s+(?:a\s+|the\s+)?clear\s+answer\b" +
+        @"|\A\s*(?:This|That)\s+(?:has|is|gives|provides|offers)\s+(?:a\s+|the\s+)?clear\b[^.\n]{0,40}?\banswer\b" +
         // Interjection-led.
         @"|\A\s*(?:Good|Great|Perfect|Excellent|Right|Okay)\s*[—–\-,.:!]*\s*I\s+(?:now\s+)?have\s+(?:a\s+)?" +
         @"(?:clear|complete|full|good|solid)\s+(?:picture|understanding|view|handle)\b" +
@@ -161,7 +164,7 @@ public sealed class BenchmarkArtifactScrubber
         @"(?:is|has|gives|covers|documents|provides|answers)\b[^.\n]{0,80}?" +
         @"\b(?:well|comprehensive(?:ly)?|documented|covered|clear|detailed|everything|enough)\b" +
         // Source as object, after the sufficiency word.
-        @"|\A\s*(?:This|That|It)\s+(?:is|has\s+been)\s+[^.\n]{0,40}?" +
+        @"|\A\s*(?:This|That|It)\s+(?:is|has\s+been|gives|provides|offers)\s+[^.\n]{0,40}?" +
         @"\b(?:well|comprehensive(?:ly)?|thoroughly|fully|clearly)\b[^.\n]{0,20}?" +
         @"\b(?:covered|documented|described|explained|answered)\b[^.\n]{0,40}?" +
         @"\b(?:wiki|article|source(?:\s+code)?|documentation|knowledge\s+base|page)\b",

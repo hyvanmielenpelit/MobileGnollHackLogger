@@ -1571,13 +1571,15 @@ public static class BenchmarkReportBuilder
                 .ToList();
             var disagreedAnswers = graded.Where(a => a.SecondOpinionDisagreed).ToList();
             int answeredForAgreement = answers.Count(BenchmarkRunFinalizer.CountsTowardQualityIndex);
-            double? meanAbsDelta = run.SecondOpinionMeanAbsDelta
-                ?? (graded.Count > 0
-                    ? graded.Average(a => Math.Abs(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value))
+            double? meanAbsDelta = run.SecondOpinionMeanAbsDelta.HasValue
+                ? BenchmarkRunFinalizer.RoundAgreementDelta(run.SecondOpinionMeanAbsDelta.Value)
+                : (graded.Count > 0
+                    ? BenchmarkRunFinalizer.RoundAgreementDelta(graded.Average(a => Math.Abs(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value)))
                     : null);
-            double? meanSignedDelta = run.SecondOpinionMeanSignedDelta
-                ?? (graded.Count > 0
-                    ? graded.Average(a => (double)(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value))
+            double? meanSignedDelta = run.SecondOpinionMeanSignedDelta.HasValue
+                ? BenchmarkRunFinalizer.RoundAgreementDelta(run.SecondOpinionMeanSignedDelta.Value)
+                : (graded.Count > 0
+                    ? BenchmarkRunFinalizer.RoundAgreementDelta(graded.Average(a => (double)(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value)))
                     : null);
             var criticalErrorSplits = graded
                 .Where(a => a.SecondOpinionCriticalError.HasValue && a.SecondOpinionCriticalError.Value != a.CriticalError)
