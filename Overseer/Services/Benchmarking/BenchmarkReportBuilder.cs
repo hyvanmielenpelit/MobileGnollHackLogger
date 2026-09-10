@@ -17,6 +17,23 @@ public static class BenchmarkReportBuilder
     }
 
     /// <summary>
+    /// A per-claim (or other small per-unit) dollar figure, with enough precision to stay
+    /// visible: two decimals at or above a cent, three decimals below it, and "&lt;$0.001" rather
+    /// than a misleading "$0.000" for a non-zero figure that still rounds to nothing at three
+    /// decimals. A genuinely zero figure prints "$0.00".
+    /// </summary>
+    private static string PerUnitCost(decimal amount)
+    {
+        if (amount <= 0m || amount >= 0.01m)
+        {
+            return $"${Inv(amount, "F2")}";
+        }
+
+        string threeDecimals = Inv(amount, "F3");
+        return threeDecimals == "0.000" ? "<$0.001" : $"${threeDecimals}";
+    }
+
+    /// <summary>
     /// A Harness Cost role's token line: the always-present in/out pair, with cache read and cache
     /// creation appended only when non-zero, so a role that carries no cache activity reads exactly
     /// as an in/out-only line.
@@ -1202,7 +1219,7 @@ public static class BenchmarkReportBuilder
                             $"- **Claim Verification Yield:** {Inv(claimsChecked, "N0")} claim(s) checked — " +
                             $"{Inv(run.ClaimsSupportedCount, "N0")} supported, {Inv(run.ClaimsRefutedCount, "N0")} refuted, " +
                             $"{Inv(run.ClaimsIndeterminateCount, "N0")} indeterminate. " +
-                            $"${Inv(verifierTotalCost, "F2")} (${Inv(costPerClaim, "F2")}/claim), {Inv(verifierCostShare, "F0")}% of run cost.");
+                            $"${Inv(verifierTotalCost, "F2")} ({PerUnitCost(costPerClaim)}/claim), {Inv(verifierCostShare, "F0")}% of run cost.");
                     }
                 }
 

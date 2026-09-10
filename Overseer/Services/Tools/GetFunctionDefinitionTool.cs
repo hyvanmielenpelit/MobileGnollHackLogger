@@ -34,9 +34,9 @@ namespace Overseer.Services.Tools
                     "enum": ["function", "macro", "struct", "any"], 
                     "description": "Optional (default 'any')" 
                 },
-                "start_line": { 
-                    "type": "integer", 
-                    "description": "Optional. Start from this line within the function body (for continuing after truncation)" 
+                "start_line": {
+                    "type": "integer",
+                    "description": "Optional. Where to resume after a truncated result: the output line number printed in the truncation notice (1-based within the previous output), or an absolute file line inside the definition's L-range shown in its header. Not a line count."
                 },
                 "repository": {
                     "type": "string",

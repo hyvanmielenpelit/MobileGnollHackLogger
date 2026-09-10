@@ -1612,7 +1612,7 @@
                 }
                 @if (secondOpinionFailedAnswerCount > 0) {
                   <div>
-                    <strong>{{ secondOpinionFailedAnswerCount }} answer(s) met a trigger but the second-opinion call failed</strong>@if (secondOpinionFailedQuestionNumbers) { <span> (question(s) {{ secondOpinionFailedQuestionNumbers }})</span> }, so grader agreement is not measured for this run. Advisory; the first verdict stands and no score changed.
+                    <strong>{{ secondOpinionFailedAnswerCount }} answer(s) met a trigger but the second-opinion call failed</strong>@if (secondOpinionFailedQuestionNumbers) { <span> (question(s) {{ secondOpinionFailedQuestionNumbers }})</span> }, so grader agreement @if (secondOpinionCompletedAnswerCount > 0) {is measured over the {{ secondOpinionCompletedAnswerCount }} answer(s) whose second opinion completed} @else {is not measured for this run}. Advisory; the first verdict stands and no score changed.
                   </div>
                 }
                 @if (reassessedAnswerCount > 0) {

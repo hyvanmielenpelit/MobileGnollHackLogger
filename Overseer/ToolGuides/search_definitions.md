@@ -7,6 +7,6 @@ Use the `kind` parameter to disambiguate (e.g., function, struct, macro, enum, t
 If you don't know the kind, leave it as 'any'.
 
 ## Parameters
-- `symbol` (string, required): The name of the symbol to find.
+- `symbol` (string, required): The name of the symbol to find. Bare name — `encounterdef`, not `struct encounterdef`; use `kind` to narrow.
 - `kind` (string, optional): The kind of symbol ('function', 'struct', 'macro', 'enum', 'type', 'any'). Default 'any'.
 - `repository` (string, optional): Which codebase to search: 'gnollhack' (default) or 'nethack'.

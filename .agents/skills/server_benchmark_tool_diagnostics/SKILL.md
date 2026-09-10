@@ -60,7 +60,7 @@ All nine fields below exist on `BenchmarkRunAnswer` (`GnollHackServer.Data/Bench
 >
 > **From harness 17, this is no longer a hard limit.** `BenchmarkRunAnswer.ToolCalls` (`BenchmarkRunAnswerToolCall` rows) carry the real `ArgsText`, `Result` and `Error` for every attempted call, capped per `BenchmarkToolCallRecordLimits.Resolve` and prunable by the run's age (see the table row above). An analyst reads them through `GET /api/admin/benchmark/runs/{id}/answers/{answerId}/tool-calls` (admin-authenticated), which returns every row in `SortOrder` order with its full arguments and result — this is reading the record, not reconstruction or replay, and should be tried first (§ 7, rung 0). Full detail is in [`docs/overseer/ai-benchmark.md`](../../../docs/overseer/ai-benchmark.md) § **Harness Version 17 Updates**.
 
-**A failed second opinion keeps the head of its raw text.** From the run-32 round, an unusable second-opinion verdict's `BenchmarkRunAnswer.SecondOpinionError` carries the parser's (or the timeout's) message, then ` | raw: ` and the first 600 characters of the model's last response with newlines collapsed, under the column's 2048-character cap. A parse failure — prose before the object, text after it, malformed JSON inside it — can therefore be diagnosed from the record without a replay. Before that round only the parser's message was kept. The stage is also bounded by `Benchmark:SecondOpinion:TimeoutSeconds` (default 900) and re-asks once for JSON-only output (`Benchmark:SecondOpinion:ParseRetryEnabled`); a timeout reads `Second opinion timeout exceeded (N s).`
+**A failed second opinion keeps the head of its raw text.** From the run-32 round, an unusable second-opinion verdict's `BenchmarkRunAnswer.SecondOpinionError` carries the parser's (or the timeout's) message, then ` | raw: ` and the first 600 characters of the model's last response with newlines collapsed, under the column's 2048-character cap. A parse failure — prose before the object, text after it, malformed JSON inside it — can therefore be diagnosed from the record without a replay. Before that round only the parser's message was kept. The stage is also bounded by `Benchmark:SecondOpinion:TimeoutSeconds` (code default 900; `appsettings.json` sets 600 from the run-34 round) and re-asks once for JSON-only output (`Benchmark:SecondOpinion:ParseRetryEnabled`); a timeout reads `Second opinion timeout exceeded (N s).`
 
 ---
 
@@ -129,6 +129,18 @@ A sixth pattern, and it is a *population* signal rather than a per-call verdict:
 **Why it is worth a finding.** Run 28's evidence: the two questions carrying the cascade consumed **42.6 % of the run's input tokens** and produced its **P90 and maximum model time**, and the source-family share of a question's calls correlated ***r* = 0.92** with its model time. Nothing was factually wrong; the run was slow and expensive.
 
 **Triage** (§ 9): a cascade is **3 Chat-Transferable** when the fix is routing or query-formulation guidance in the tool description or `_policy.md`, and **1 Harness Defect** when it is a tool-contract problem — a missing near-miss hint, or a limit that suppresses the tool's own advice. `MaxSourceResultLength` is the standing example of the latter: its *"refine your query or use source_code_view"* suffix is appended at 100,000 characters and then cut away by `ToolExecutor`'s 10,000-character cap, so **that** advice never reaches the model (`server_tool_parameter_reference` § 4). Qualify the claim to the tool-specific half: the generic `... [Truncated: showing …. Narrow the query, or ask for a specific section, to see the rest.]` suffix `ToolExecutor` appends in its place does reach the model, so a truncated plain-text result is not advice-free — what is suppressed is the pointer to `source_code_view`. It is **never** a Corpus / Environment Defect unless a § 5 rung actually fails.
+
+**A `get_function_definition` continuation that returns no body line is the pre-2026-09-10 clamp
+signature.** Until the run-34 round `SourceCodeService.GetFunctionBody` read `start_line` as a
+0-based index into its own output and clamped any value past the output's end to its last line, so a
+model that resumed with the absolute file line the result header prints got back the header and no
+body: run 34 Q16 call 19, `start_line: 1480` against `create_encounter` (236 output lines, file lines
+1330–1564), `ResultLengthChars` **65**. In a run recorded before that round this shape is a
+**tool-contract defect** (§ 9 category 3), not a miss and not a model error — and whatever the
+unreturned region held never reached the model. From the round, `start_line` accepts either the
+truncation notice's 1-based output line or an absolute file line inside the definition, and any other
+value returns an explicit `start_line N is outside this definition …` message, so a header-only
+continuation in a later run is a regression of that contract (`server_tool_parameter_reference` § 4).
 
 ---
 

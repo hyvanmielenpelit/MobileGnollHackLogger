@@ -147,6 +147,19 @@ public sealed class BenchmarkArtifactScrubber
     // interjection is followed by the model's own claim to a clear or complete picture; "Good —
     // the sword is cursed." opens with the same word and is not claimed. It does not admit
     // "I've got": NarrationSignatureRegex above already claims that anywhere in the text.
+    //
+    // Two more alternatives target run-34 openers that neither existing form catches. The
+    // pronoun-subject alternative claims a sufficiency claim with no source noun at all —
+    // "This/That/It has/covers/is full detail(s)", "...it well" / "...this well", "well
+    // covered", "everything you/we need", "all the detail(s)" — where the source-as-object
+    // alternative above insists on a wiki/article/source noun after the sufficiency word and so
+    // does not reach it. A pronoun subject followed by ordinary content stays outside it: "This
+    // spell covers a 3×3 area" and "It has full fire resistance" both put a noun or unrelated
+    // content between the subject and the claimed phrase. The "here's the ..." tail alternative
+    // claims the announcement that the substance follows — "here's the rundown/summary/
+    // breakdown/short version/quick version/answer" — within the first 80 characters, led by a
+    // dash, colon or comma; "Here's how it works:" as a first line stays outside it, since
+    // nothing precedes "here's" for that leading punctuation to claim.
     private static readonly Regex AnswerFramingRegex = new(
         @"\A\s*(?:Now\s+|OK[,.]?\s+|Alright[,.]?\s+)?I\s+(?:now|finally|also|just)\s+" +
         @"(?:have|need|found|located|confirmed)\s+(?:the|a|all|enough|everything|what|both|every)\b" +
@@ -167,7 +180,14 @@ public sealed class BenchmarkArtifactScrubber
         @"|\A\s*(?:This|That|It)\s+(?:is|has\s+been|gives|provides|offers)\s+[^.\n]{0,40}?" +
         @"\b(?:well|comprehensive(?:ly)?|thoroughly|fully|clearly)\b[^.\n]{0,20}?" +
         @"\b(?:covered|documented|described|explained|answered)\b[^.\n]{0,40}?" +
-        @"\b(?:wiki|article|source(?:\s+code)?|documentation|knowledge\s+base|page)\b",
+        @"\b(?:wiki|article|source(?:\s+code)?|documentation|knowledge\s+base|page)\b" +
+        // Pronoun-subject sufficiency, no source noun.
+        @"|\A\s*(?:This|That|It)\s+(?:has|covers|is)\b[^.\n—–]{0,40}?" +
+        @"\b(?:full\s+detail(?:s)?|(?:it|this)\s+well|well\s+covered|" +
+        @"everything\s+(?:you|we)\s+need|all\s+the\s+detail(?:s)?)\b" +
+        // The "here's the ..." tail announcing that the substance follows.
+        @"|\A[^.\n]{0,80}?[—–\-:,]\s*here(?:’|')s\s+(?:the\s+|a\s+|my\s+)?" +
+        @"(?:rundown|summary|breakdown|short\s+version|quick\s+version|answer)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     public static BenchmarkArtifactScrubber Default { get; } = new();

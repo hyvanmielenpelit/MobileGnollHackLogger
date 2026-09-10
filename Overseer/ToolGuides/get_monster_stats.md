@@ -12,6 +12,9 @@ Returns a unified JSON response with these fields:
 Use this tool for precise stat questions: exact AC, MR, damage dice, speed,
 resistances, flags. Every monster in the game is indexed.
 
+Within each `mattk` entry, `damn` is the number of dice and `damd` the die size —
+read `damn`d`damd`; `dice` prints it.
+
 ## Reading ac, mc and mr
 
 Three of these fields are on scales that run in different directions, and none of them is a

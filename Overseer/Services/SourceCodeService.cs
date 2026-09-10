@@ -836,24 +836,59 @@ namespace Overseer.Services
             }
 
             string[] resultLines = resultText.Split('\n');
+            if (resultLines.Length > 0 && resultLines[resultLines.Length - 1].Length == 0)
+            {
+                // Every extraction branch above ends with one AppendLine call, so resultText always
+                // ends with exactly one newline; Split leaves one empty element beyond the real
+                // content. Strip it so output lines map 1:1 onto the extracted file lines.
+                resultLines = resultLines.Take(resultLines.Length - 1).ToArray();
+            }
             int totalLines = resultLines.Length;
-            int startOutputLine = startLineReq ?? 0;
-            if (startOutputLine < 0) startOutputLine = 0;
-            if (startOutputLine >= totalLines) startOutputLine = totalLines - 1;
+
+            string headerLine = $"--- {matchDoc.RelativePath}:L{extractStart + 1}-L{extractEnd + 1} ({name}, {totalLines} lines) ---";
+
+            // start_line accepts two numberings: output-relative (1-based, as printed by the
+            // truncation notice's start_line value) and absolute file line (1-based, within the
+            // header's L-range). A value that fits neither range is never clamped — it is reported
+            // as an explicit error with no body, so a stale or mistaken value cannot silently return
+            // the wrong lines.
+            int startOutputLine;
+            if (startLineReq == null)
+            {
+                startOutputLine = 0;
+            }
+            else
+            {
+                int v = startLineReq.Value;
+                if (v >= 1 && v <= totalLines)
+                {
+                    startOutputLine = v - 1;
+                }
+                else if (v > totalLines && v >= extractStart + 1 && v <= extractEnd + 1)
+                {
+                    startOutputLine = v - (extractStart + 1);
+                }
+                else
+                {
+                    return $"{headerLine}{Environment.NewLine}start_line {v} is outside this definition: output lines 1–{totalLines}, file lines {extractStart + 1}–{extractEnd + 1}. Call again with a value in either range.";
+                }
+            }
 
             var finalSb = new System.Text.StringBuilder();
-            finalSb.AppendLine($"--- {matchDoc.RelativePath}:L{extractStart + 1}-L{extractEnd + 1} ({name}, {totalLines} lines) ---");
-            
+            finalSb.AppendLine(headerLine);
+
             int maxLines = _maxFunctionBodyLines;
             int outputCount = 0;
-            
+
             for (int i = startOutputLine; i < totalLines; i++)
             {
                 finalSb.AppendLine(resultLines[i].TrimEnd('\r'));
                 outputCount++;
                 if (outputCount >= maxLines && i < totalLines - 1)
                 {
-                    finalSb.AppendLine($"\n[Output truncated at line {i + 1} of {totalLines}. Call again with start_line={i + 1} to continue.]");
+                    // The next unseen line is output line i+2 (1-based) / file line extractStart+i+2 —
+                    // both name the same line, so either can be passed back as start_line.
+                    finalSb.AppendLine($"\n[Output truncated at line {i + 1} of {totalLines}. Call again with start_line={i + 2} (file line {extractStart + i + 2}) to continue.]");
                     break;
                 }
             }
@@ -1448,6 +1483,12 @@ namespace Overseer.Services
                         if (val.EndsWith("UL", StringComparison.OrdinalIgnoreCase))
                             val = val.Substring(0, val.Length - 2);
                         attack[attackFields[i]] = TryParseInt(val);
+                    }
+                    if (attack.TryGetValue("damn", out var damnVal) && damnVal is int damn &&
+                        attack.TryGetValue("damd", out var damdVal) && damdVal is int damd &&
+                        damn > 0)
+                    {
+                        attack["dice"] = $"{damn}d{damd}";
                     }
                     attacks.Add(attack);
                 }

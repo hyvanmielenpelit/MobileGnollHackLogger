@@ -313,4 +313,146 @@ public class SourceCodeServiceDefinitionTests : IDisposable
         Assert.DoesNotContain(".vs", result);
         Assert.Equal(string.Empty, service.ListFiles("cache.txt", includeNetCode: false));
     }
+
+    /// <summary>
+    /// Builds the service used by the <see cref="SourceCodeService.GetFunctionBody"/> continuation
+    /// tests: a small max-chunk size and a function preceded by filler lines, so the extracted
+    /// body's file lines (10-24, 1-based) never coincide with its output line numbers (1-15) — the
+    /// two numberings a start_line value can be resolved against.
+    /// </summary>
+    private SourceCodeService CreateServiceWithSmallFunctionBodyChunks()
+    {
+        var lines = new System.Text.StringBuilder();
+        lines.Append("/* big.c */\r\n");
+        for (int i = 1; i <= 9; i++) lines.Append($"int filler{i};\r\n");
+        lines.Append("void\r\n");
+        lines.Append("big_function(void)\r\n");
+        lines.Append("{\r\n");
+        for (int i = 1; i <= 10; i++) lines.Append($"    line{i};\r\n");
+        lines.Append("}\r\n");
+        File.WriteAllText(Path.Combine(_sourceDir, "src", "big.c"), lines.ToString());
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new[]
+            {
+                new KeyValuePair<string, string?>("SourceCodePath", _sourceDir),
+                new KeyValuePair<string, string?>("MaxSourceFileSizeKB", "800"),
+                new KeyValuePair<string, string?>("Tools:get_function_definition:MaxLinesPerChunk", "12")
+            })
+            .Build();
+
+        var service = new SourceCodeService(config, NullLogger<SourceCodeService>.Instance);
+        service.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+        return service;
+    }
+
+    /// <summary>
+    /// The extracted body of <c>big_function</c> is file lines 10-24 (1-based) but only 15 output
+    /// lines — the function sits well past the top of the file, so the two numberings never agree.
+    /// With a 12-line chunk, the first call truncates after output line 12 (file line 21,
+    /// <c>line8;</c>) and the notice names the next unseen line as both output line 13 and file
+    /// line 22.
+    /// </summary>
+    [Fact]
+    public void GetFunctionBody_FirstChunk_TruncatesWithBothNumberingsInTheNotice()
+    {
+        using var service = CreateServiceWithSmallFunctionBodyChunks();
+
+        string result = service.GetFunctionBody("big_function", "function");
+
+        // The truncation notice is appended as "\n[Output truncated ...]", a bare LF ahead of the
+        // AppendLine-supplied Environment.NewLine — not a second full line break — so it is spelled
+        // out here rather than folded into the string.Join(Environment.NewLine, ...) lines above it.
+        string expected =
+            "--- src/big.c:L10-L24 (big_function, 15 lines) ---" + Environment.NewLine +
+            "int filler9;" + Environment.NewLine +
+            "void" + Environment.NewLine +
+            "big_function(void)" + Environment.NewLine +
+            "{" + Environment.NewLine +
+            "    line1;" + Environment.NewLine +
+            "    line2;" + Environment.NewLine +
+            "    line3;" + Environment.NewLine +
+            "    line4;" + Environment.NewLine +
+            "    line5;" + Environment.NewLine +
+            "    line6;" + Environment.NewLine +
+            "    line7;" + Environment.NewLine +
+            "    line8;" + Environment.NewLine +
+            "\n[Output truncated at line 12 of 15. Call again with start_line=13 (file line 22) to continue.]";
+
+        Assert.Equal(expected, result);
+    }
+
+    /// <summary>
+    /// (a) Passing the notice's output-relative start_line (13) resumes at exactly the line after
+    /// the last one shown — <c>line9;</c> — with no line repeated or skipped, and since the
+    /// remaining body (3 lines) fits under the 12-line chunk size, this is the whole rest of the
+    /// body with no further truncation.
+    /// </summary>
+    [Fact]
+    public void GetFunctionBody_ContinuationByOutputLine_ResumesRightAfterTheLastLineShown()
+    {
+        using var service = CreateServiceWithSmallFunctionBodyChunks();
+
+        string result = service.GetFunctionBody("big_function", "function", startLineReq: 13);
+
+        string expected = string.Join(Environment.NewLine, new[]
+        {
+            "--- src/big.c:L10-L24 (big_function, 15 lines) ---",
+            "    line9;",
+            "    line10;",
+            "}"
+        });
+
+        Assert.Equal(expected, result);
+    }
+
+    /// <summary>
+    /// (b) The absolute file line (22) the notice names for the same next line resolves to the
+    /// identical continuation as the output-relative value (13) in the previous test.
+    /// </summary>
+    [Fact]
+    public void GetFunctionBody_ContinuationByFileLine_MatchesTheOutputLineContinuation()
+    {
+        using var service = CreateServiceWithSmallFunctionBodyChunks();
+
+        string byOutputLine = service.GetFunctionBody("big_function", "function", startLineReq: 13);
+        string byFileLine = service.GetFunctionBody("big_function", "function", startLineReq: 22);
+
+        Assert.Equal(byOutputLine, byFileLine);
+    }
+
+    /// <summary>
+    /// (c) A start_line outside both the output range (1-15) and the file range (10-24) returns the
+    /// header plus an explicit "outside this definition" message — never a clamp to the last line,
+    /// and no body line.
+    /// </summary>
+    [Fact]
+    public void GetFunctionBody_StartLineOutsideBothRanges_ReturnsTheExplicitMessage()
+    {
+        using var service = CreateServiceWithSmallFunctionBodyChunks();
+
+        string result = service.GetFunctionBody("big_function", "function", startLineReq: 999);
+
+        string expected = string.Join(Environment.NewLine, new[]
+        {
+            "--- src/big.c:L10-L24 (big_function, 15 lines) ---",
+            "start_line 999 is outside this definition: output lines 1–15, file lines 10–24. Call again with a value in either range."
+        });
+
+        Assert.Equal(expected, result);
+    }
+
+    /// <summary>
+    /// start_line 0 is neither a valid output line nor a valid file line, so it is rejected rather
+    /// than clamped to the first line.
+    /// </summary>
+    [Fact]
+    public void GetFunctionBody_StartLineZero_ReturnsTheExplicitMessage()
+    {
+        using var service = CreateServiceWithSmallFunctionBodyChunks();
+
+        string result = service.GetFunctionBody("big_function", "function", startLineReq: 0);
+
+        Assert.Contains("start_line 0 is outside this definition", result);
+    }
 }

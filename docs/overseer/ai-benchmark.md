@@ -905,6 +905,32 @@ re-run all change what a report — or a comparison across the boundary — mean
   `HarnessVersion` stays at `"18"`; but a cost or token comparison **across this date** that involves
   any Gemini role compares an inflated figure with a corrected one, and the stored pre-fix figures
   are not rewritten.
+- **Run 34 round, 2026-09-10 — reporting, detector and one default; no version bump.**
+  `HarnessVersion` stays at `"18"` and `ScoringMethodVersion` at **10**: nothing a run records
+  changes shape, and the only stored figure that can move is the advisory
+  `AnswerFramingOpenerAnswerCount`. The round's chat-side edits (`_policy.md`, the
+  `get_function_definition` continuation contract, `get_monster_stats` attack dice) move
+  `CandidateSystemPromptSha256` and `ToolGuidesSha256`, recorded in `server_benchmark_to_chat_transfer`
+  § 11; the four changes below move neither.
+  - **The Run Integrity Notice counts the second opinions that completed.** When some second-opinion
+    calls failed and others completed, the admin notice said grader agreement *"is not measured for
+    this run"* directly under an agreement card reporting a coverage of 3 of 18. It now says agreement
+    is measured over the answers whose second opinion completed, and keeps *"not measured"* for
+    coverage 0 only — the distinction `BenchmarkReportBuilder` already drew.
+  - **`AnswerFramingRegex` gains two alternatives**: a pronoun subject claiming sufficiency without
+    naming a source (*"This has full detail"*, *"This covers it well"*), and the *"— here's the
+    rundown / summary / breakdown / short version / answer"* tail within an answer's first 80
+    characters, which announces that the substance follows instead of starting it. Run 34's hand
+    count was 4 against a detector count of 2, the sixth consecutive under-count. Still
+    **detect-and-count only**.
+  - **The Claim Verification Yield line prints per-claim cost to three decimals below $0.01**, so a
+    non-zero cost ($0.04 over 15 claims) no longer reads `$0.00/claim`.
+  - **`Overseer/appsettings.json` sets `Benchmark:SecondOpinion:TimeoutSeconds` to 600** (it was
+    900; the code fallback in `BenchmarkService` for a missing key stays 900). On run 34 one second
+    opinion at `xhigh` ran the full 900 s and doubled the run's wall time; a healthy call at `high`
+    took about 84 s on run 33, so 600 s still stops only a hung call. A timeout is recorded in
+    `SecondOpinionError` with the raw head, as before. No run record fingerprints this setting, so the
+    registry entry records it per run.
 
 ### Run Progress Dialog Round (2026-09-10) — No Version Bump
 
@@ -1182,7 +1208,8 @@ Run 32 lost 3 of 5 GPT-5.6 Luna second opinions at `max` to JSON parsing, and th
   no longer rides along. The old first-to-last bracket span is the last resort, so a malformed object
   still reaches the parser and its error is the one recorded.
 - **Timeout and one re-ask.** `RunSecondOpinionCoreAsync` mirrors the claim-verification path: a
-  linked cancellation after **`Benchmark:SecondOpinion:TimeoutSeconds`** (default **900**), and on a
+  linked cancellation after **`Benchmark:SecondOpinion:TimeoutSeconds`** (default **900**; set to
+  600 in `appsettings.json` from the run-34 round), and on a
   parse failure one JSON-only re-ask (**`Benchmark:SecondOpinion:ParseRetryEnabled`**, default
   `true`) inside the request's existing two-model-call budget. The re-ask's tokens and duration are
   added to the answer's `SecondOpinion*` figures and to usage. A timeout is recorded in

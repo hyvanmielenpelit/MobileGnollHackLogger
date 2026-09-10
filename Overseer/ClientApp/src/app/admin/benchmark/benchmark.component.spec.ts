@@ -3824,6 +3824,34 @@ describe('AdminBenchmarkComponent', () => {
       expect(text).toContain('A second-opinion assessor was selected but no answer met a trigger');
       expect(text).not.toContain('second-opinion call failed');
     });
+
+    it('should measure agreement over the completed second opinions when some failed but others completed', () => {
+      component.selectedRunDetail = {
+        id: 1,
+        suiteName: 'Suite',
+        status: 'Completed',
+        secondOpinionAssessorModelConfigurationId: 4,
+        secondOpinionGradedAnswerCount: 3,
+        answers: [
+          { orderIndex: 3, status: 'Ok', secondOpinionError: '429 Rate limited' } as any,
+          { orderIndex: 1, status: 'Ok' } as any,
+          { orderIndex: 2, status: 'Ok' } as any,
+          { orderIndex: 4, status: 'Ok' } as any
+        ]
+      } as any;
+
+      expect(component.secondOpinionFailedAnswerCount).toBe(1);
+      expect(component.secondOpinionCompletedAnswerCount).toBe(3);
+
+      fixture.detectChanges();
+
+      const el: HTMLElement = fixture.nativeElement;
+      const text = el.textContent || '';
+      expect(text).toContain('1 answer(s) met a trigger but the second-opinion call failed');
+      expect(text).toContain('(question(s) 3)');
+      expect(text).toContain('grader agreement is measured over the 3 answer(s) whose second opinion completed');
+      expect(text).not.toContain('grader agreement is not measured for this run');
+    });
   });
 
   describe('Harness Version 11 fidelity features', () => {

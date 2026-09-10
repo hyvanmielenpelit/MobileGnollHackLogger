@@ -5483,7 +5483,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   get agreementCoverageLabel(): string {
     const run = this.selectedRunDetail;
     if (!run) return '';
-    return `${run.secondOpinionGradedAnswerCount ?? 0}/${run.answeredQuestionCount}`;
+    return `${this.secondOpinionCompletedAnswerCount}/${run.answeredQuestionCount}`;
   }
 
   get agreementModeLabel(): string {
@@ -5689,6 +5689,11 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return (this.selectedRunDetail?.answers ?? [])
       .filter(a => !!a.secondOpinionError && a.secondOpinionError.trim().length > 0)
       .length;
+  }
+
+  /** Numerator behind {@link agreementCoverageLabel}: answers whose second opinion completed. */
+  get secondOpinionCompletedAnswerCount(): number {
+    return this.selectedRunDetail?.secondOpinionGradedAnswerCount ?? 0;
   }
 
   get secondOpinionFailedQuestionNumbers(): string {

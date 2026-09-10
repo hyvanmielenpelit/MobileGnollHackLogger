@@ -806,6 +806,28 @@ public class BenchmarkArtifactScrubberTests
         Assert.False(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
     }
 
+    // Verbatim from the run-34 Claude benchmark (Q5, Q17): a pronoun-subject sufficiency claim
+    // with no source noun, followed by a "here's the ..." tail announcing the substance.
+    [Theory]
+    [InlineData("This has full detail — here's the rundown for GnollHack:\n\nPrayer timeout is a turn-based counter, not a real-time cooldown.")]
+    [InlineData("This covers it well — here's the summary:\n\nEach runeword requires runes engraved in a specific order.")]
+    public void HasAnswerFramingOpener_DetectsRun34Openers(string answer)
+    {
+        Assert.True(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
+    }
+
+    [Theory]
+    // A pronoun subject followed by ordinary content, not a sufficiency claim.
+    [InlineData("This spell covers a 3×3 area…")]
+    [InlineData("It has full fire resistance…")]
+    // "Here's ..." as a first line, with nothing before it for the tail alternative to anchor to.
+    [InlineData("Here's how it works:\n\nStand adjacent to the altar and pray during a favorable moon phase.")]
+    [InlineData("This is well suited to low-level characters.")]
+    public void HasAnswerFramingOpener_DoesNotFireOnRun34Controls(string answer)
+    {
+        Assert.False(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
+    }
+
     [Theory]
     // The same opening words with no claim of sufficiency behind them.
     [InlineData("This gives the player a clear advantage.")]

@@ -153,7 +153,7 @@ call reads `NetHackSourceCodeService`, a corpus `BenchmarkRun` does not fingerpr
 | `source_code_search` | `query` | `file_filter`, `max_results`, `is_regex`, `whole_word`, `case_sensitive`, `filenames_only`, `context_lines`, `repository` | `max_results` default 10, **clamped 1–100 in `SearchFiles` regardless of what's passed**; `context_lines` default 5, clamped 0–25 | `Tools:source_code_search:MaxResults`, `Tools:source_code_search:ContextLines` |
 | `source_code_view` | `file`, and either `start_line` or `search_term` | `line_count`, `repository` | `line_count` default 50, clamped 1–1000 | `Tools:source_code_view:LineCount` |
 | `search_definitions` | `symbol` | `kind` (`function`\|`struct`\|`macro`\|`enum`\|`type`\|`any`), `repository` | `kind` default `any`; result capped at **10 matches, hardcoded**, not configurable | none |
-| `get_function_definition` | `name` | `type` (`function`\|`macro`\|`struct`\|`any`), `start_line` (continuation offset), `repository` | chunk size 150 lines | `Tools:get_function_definition:MaxLinesPerChunk` |
+| `get_function_definition` | `name` | `type` (`function`\|`macro`\|`struct`\|`any`), `start_line` (where to resume: the 1-based output line the truncation notice names, **or** an absolute file line inside the header's L-range; anything else returns an explicit out-of-range message, never a clamp), `repository` | chunk size 150 lines | `Tools:get_function_definition:MaxLinesPerChunk` |
 | `get_constants` | `name` **or** `prefix_filter` (handler requires at least one; schema only requires `name`) | `prefix_filter`, `repository` | result capped at **100 constants, hardcoded** | none |
 | `list_indexed_files` | none | `path_filter`, `repository` | none | none |
 
@@ -277,9 +277,17 @@ rewrites `query` to `\b<escaped query>\b` and forces regex mode.
 
 **`get_function_definition` extraction**: macros are read by following `\`-continuation lines;
 functions and structs use `CLexer.ExtractBracedBlock` (brace-tracking, matching the tool's own
-description); if brace extraction fails, it falls back to a flat 10-line window. Truncation
-produces `[Output truncated at line X of Y. Call again with start_line=X to continue.]` — an
-informational continuation, not a failure.
+description); if brace extraction fails, it falls back to a flat 10-line window. Output lines map
+1:1 onto the file lines in the header's `L{A}-L{B}` range, and the header's line count is `B − A + 1`.
+Truncation produces `[Output truncated at line X of Y. Call again with start_line=X+1 (file line
+A+X) to continue.]` — an informational continuation, not a failure; both numbers name the next unseen
+line, and either can be passed back. `start_line` is resolved as output-relative when it is between 1
+and Y, as an absolute file line when it is above Y and inside A–B, and otherwise answered with the
+header plus `start_line N is outside this definition: output lines 1–Y, file lines A–B. Call again
+with a value in either range.` and **no body line**. A definition near the top of a file, whose file
+lines overlap 1–Y, is read as output-relative. Before the run-34 round (2026-09-10) the value was a
+0-based output index clamped to the last line, so an absolute file line returned the header alone
+(`server_benchmark_tool_diagnostics` § 4).
 
 **`search_definitions` / `get_function_definition` matching is line-pattern, not a C parser.**
 Function/macro/struct/type matches are anchored regexes against a single line
@@ -486,6 +494,15 @@ message              // string?
 > fully-working corpus reports "not found" as `error` inside a 200-shaped payload, so neither
 > `Success` nor the presence of an `error` field alone tells you whether the corpus was reachable
 > — you have to read the JSON.
+
+**`get_monster_stats` attacks** (`SourceCodeService.ParseAttacks`): `stats.mattk` is a list with
+one object per attack, carrying the `ATTK` slots by name — `aatyp`, `adtyp`, `damn`, `damd`, `damp`,
+`mcadj`, `mlevel`, `range`, `aflags`, `action_tile`. **`damn` is the number of dice and `damd` the die
+size**, so Master Kaen's claws (`damn: 16, damd: 2`) are **16d2**, not 2d16 — run 34's Q14 transposed
+exactly that. Each attack whose `damn` and `damd` parse as integers with `damn > 0` also carries
+**`dice`**, the pair already written as `"16d2"`; a 0/0 attack (damage computed from level, not rolled
+from dice) carries no `dice` key, so its absence is not a parse failure. The key adds about 15
+characters per attack and leaves every monster far under the truncation threshold below.
 
 **Truncation** (`Tools:get_monster_stats` / `get_item_stats` / `get_artifact_stats`, each with
 `TruncationThreshold` 9900 and `HardLimit` 10000): if the serialized JSON exceeds the threshold,
