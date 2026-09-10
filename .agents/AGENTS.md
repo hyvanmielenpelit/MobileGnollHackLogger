@@ -124,22 +124,23 @@ A plan is **not** required for single-file fixes, typo and comment corrections, 
 
 ## AI Benchmark Findings
 
-Any analysis of an AI benchmark run — its report, diagnostics, or assessments — and any implementation plan derived from one **MUST** read **all four** of these skills, in this order, **before the first finding is written**:
+Any analysis of an AI benchmark run — its report, diagnostics, or assessments — and any implementation plan derived from one **MUST** read **all five** of these skills, in this order, **before the first finding is written**:
 
 1. `server-benchmark-to-chat-transfer`
 2. `server-benchmark-tool-diagnostics`
 3. `server-tool-data-sources`
 4. `server-tool-parameter-reference`
+5. `server-wiki-handoff`
 
-This is **unconditional**. There is no finding-shaped condition to evaluate first, and none of the four is reached through any of the others. The earlier form of this rule made the last three conditional on *"any finding [that] turns on what a tool returned"* — a test an agent can only apply **after** the research those skills were meant to inform — and nested two of them inside the third, so a requirement lived inside a skill nobody had loaded. The run-28 analysis on 2026-09-09 read only the first and shipped with its tool layer un-audited, spending roughly 138,000 subagent tokens rediscovering a contract `server-tool-parameter-reference` already documented verbatim, and still filing the finding against the wrong contract.
+This is **unconditional**. There is no finding-shaped condition to evaluate first, and none of the five is reached through any of the others. The earlier form of this rule made the last three conditional on *"any finding [that] turns on what a tool returned"* — a test an agent can only apply **after** the research those skills were meant to inform — and nested two of them inside the third, so a requirement lived inside a skill nobody had loaded. The run-28 analysis on 2026-09-09 read only the first and shipped with its tool layer un-audited, spending roughly 138,000 subagent tokens rediscovering a contract `server-tool-parameter-reference` already documented verbatim, and still filing the finding against the wrong contract.
 
 The analysis **MUST** produce the **Chat Transfer** section `server-benchmark-to-chat-transfer` § 10 specifies, including the tool-diagnostics table and "Limits of this pass" statement that section requires. The benchmark grades the production chat system prompt, so a benchmark analysis that yields no conclusion about the chat assistant is incomplete, not merely brief. Both skills are living documents: every analysis appends its run to the model behaviour notes.
 
 Why the last three earn their place: what a run stores about its tool calls **depends on its harness version** — before harness 17 it stored tool *counts* and discarded arguments and results; from harness 17 it stores every attempted call's arguments, result, error and timings — so "the tool returned nothing" is several different verdicts and only one of them is about the model. A corpus that was missing, stale, outside the indexed scope or excluded by a size limit is a **Corpus / Environment Defect** and never produces a chat prompt change.
 
-**The cost is accepted deliberately.** Reading all four is roughly 1,200 lines of context up front. That is a considered trade against a session that spent far more than that on subagents rediscovering a subset of the same material and still got a finding wrong. Do not "optimise" this rule back into a conditional one.
+**The cost is accepted deliberately.** Reading all five is roughly 1,350 lines of context up front. That is a considered trade against a session that spent far more than that on subagents rediscovering a subset of the same material and still got a finding wrong. Do not "optimise" this rule back into a conditional one. The fifth, `server-wiki-handoff`, was added on 2026-09-10 after the run-34 wiki handoff shipped with an unverified target page and a presumed generator; it is short by design, and its body binds only when a finding lands on ladder rung 2.
 
-A `UserPromptSubmit` hook in `.claude/settings.json` backs this rule up by injecting the four skill names on benchmark-shaped prompts. It is a reminder, not the rule — if you edit either half, check the other. Two properties of it are deliberate and should not be "fixed": it matches by grepping the hook's **raw stdin** (neither `jq` nor `pwsh` is installed on this machine, so every JSON-parsing variant of the pattern is unusable here), which means a session whose `cwd` or id happens to contain "benchmark" also matches — an accepted false positive costing one injected line; and it ends in `|| true`, so a non-match, a missing `grep` or any error exits 0 and never blocks the prompt.
+A `UserPromptSubmit` hook in `.claude/settings.json` backs this rule up by injecting the five skill names on benchmark-shaped prompts. It is a reminder, not the rule — if you edit either half, check the other. Two properties of it are deliberate and should not be "fixed": it matches by grepping the hook's **raw stdin** (neither `jq` nor `pwsh` is installed on this machine, so every JSON-parsing variant of the pattern is unusable here), which means a session whose `cwd` or id happens to contain "benchmark" also matches — an accepted false positive costing one injected line; and it ends in `|| true`, so a non-match, a missing `grep` or any error exits 0 and never blocks the prompt.
 
 ## Publishing
 
@@ -150,7 +151,7 @@ A `UserPromptSubmit` hook in `.claude/settings.json` backs this rule up by injec
 Skills in this repository use the **`server_`** prefix. Canonical bodies live in
 `.agents/skills/<underscore_name>/SKILL.md`; the `.claude/skills/<kebab-name>/` stubs are
 **generated** by `SharedAgentSkills\tools\sync_stubs.ps1` and must never be hand-edited.
-Notable project skills include `server_implementation_planning`, `server_benchmark_to_chat_transfer`,
+Notable project skills include `server_implementation_planning`, `server_benchmark_to_chat_transfer`, `server_wiki_handoff`,
 `server_data_privacy_framework`, and the tool-layer trio `server_tool_data_sources`,
 `server_tool_parameter_reference` and `server_benchmark_tool_diagnostics`.
 

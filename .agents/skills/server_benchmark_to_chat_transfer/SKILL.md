@@ -300,6 +300,14 @@ When an empirical chat-transferable finding clears the evidence bar, resolve it 
      followed. What stays forbidden, unchanged from rung 1, is ingesting a model's own *answer* as
      fact; a citation to the game source or another primary text is not that, and this does not
      loosen rung 1's human-authorship requirement for knowledge-base articles.
+   - **A wiki edit leaves this repository as a handoff prompt for a separate session in the
+     `WikiPath` clone. Before writing one, complete the pre-flight checklist in
+     [`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) and use its template.** The
+     run-34 handoff (2026-09-10) presumed a page generator that does not exist and named
+     `Resistances and Saving Throws.md` as the formula's home when the formula is in
+     `Saving Throws.md`; its prescribed verification grep would have returned zero. Both were
+     checkable read-only on disk. The same rule that binds content gaps (§ 2 category 4: check
+     on disk before filing) binds handoff prompts.
 3. **Tool Descriptions and Tool Policy Text**:
    - For tool routing inefficiencies. Changing tool descriptions guides the model without altering core persona prompt sections.
    - `_toolRegistry.GetPolicyText()` only returns a cached string. The editable sources, loaded by `ToolRegistry.LoadGuides()` from `<AppBase>/ToolGuides`, are:
@@ -701,3 +709,4 @@ rewritten; see `docs/overseer/ai-benchmark.md` § *Harness Version 18 Updates*.
 - [`server_benchmark_tool_diagnostics`](../server_benchmark_tool_diagnostics/SKILL.md) — the tool-layer diagnostic method
 - [`server_tool_data_sources`](../server_tool_data_sources/SKILL.md) — the corpora, their paths and what each index excludes
 - [`server_tool_parameter_reference`](../server_tool_parameter_reference/SKILL.md) — the per-tool parameter and result contract
+- [`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) — pre-flight checklist and template for rung-2 wiki handoff prompts
