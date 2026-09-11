@@ -806,6 +806,32 @@ public class BenchmarkRunFinalizerTests
         Assert.Equal(BenchmarkAnswerIntegrity.TransportDefect, BenchmarkRunFinalizer.Classify(answer));
     }
 
+    // --- Re-run selection (harness 21) ---
+
+    [Theory]
+    [InlineData(BenchmarkAnswerStatus.ProviderError, null)]
+    [InlineData(BenchmarkAnswerStatus.Failed, null)]
+    [InlineData(BenchmarkAnswerStatus.EmptyAnswer, null)]
+    [InlineData(BenchmarkAnswerStatus.EmptyAnswer, "end_turn")]
+    public void NeedsReExecution_IsTrueForProviderErrorFailedAndEmptyAnswer(
+        BenchmarkAnswerStatus status, string? finishReason)
+    {
+        // The empty cases matter most: a model-produced empty answer carries a normal finish reason
+        // and is scored 0, and a cancelled or dropped one carries none. Both are unanswered questions,
+        // and the client's re-run scope has always listed them.
+        var answer = MakeAnswer(1, status: status);
+        answer.AnswerText = string.Empty;
+        answer.ProviderFinishReason = finishReason;
+
+        Assert.True(BenchmarkRunFinalizer.NeedsReExecution(answer));
+    }
+
+    [Fact]
+    public void NeedsReExecution_IsFalseForOkAnswer()
+    {
+        Assert.False(BenchmarkRunFinalizer.NeedsReExecution(MakeAnswer(1)));
+    }
+
     [Fact]
     public void IntegrityBuckets_WithTerminalFailures_StillSumToTheAnswerCount()
     {

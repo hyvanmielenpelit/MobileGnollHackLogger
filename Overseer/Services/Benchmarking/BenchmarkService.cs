@@ -623,7 +623,7 @@ public class BenchmarkService
             }
 
             var failedAnswers = run.Answers
-                .Where(a => a.Status == BenchmarkAnswerStatus.ProviderError || a.Status == BenchmarkAnswerStatus.Failed)
+                .Where(BenchmarkRunFinalizer.NeedsReExecution)
                 .OrderBy(a => a.OrderIndex)
                 .ToList();
 
@@ -1079,6 +1079,15 @@ public class BenchmarkService
         {
             status = BenchmarkAnswerStatus.Failed;
         }
+        else if (cancellationToken.IsCancellationRequested && string.IsNullOrWhiteSpace(sanitized.AnswerText))
+        {
+            // A run-level cancel mid-answer: the stream throws OperationCanceledException, the loop
+            // runner emits no error event, and the classifier declines a caller cancel — so without
+            // this branch the row would read EmptyAnswer with no reason. A per-question timeout
+            // cancels only its own linked token and is already caught above.
+            status = BenchmarkAnswerStatus.Failed;
+            terminalError = "Canceled before the answer completed.";
+        }
         else if (sanitized.Flags.HasFlag(BenchmarkAnswerFlags.Empty))
         {
             status = BenchmarkAnswerStatus.EmptyAnswer;
@@ -1314,6 +1323,12 @@ public class BenchmarkService
         else if (!string.IsNullOrEmpty(terminalError))
         {
             status = BenchmarkAnswerStatus.Failed;
+        }
+        else if (cancellationToken.IsCancellationRequested && string.IsNullOrWhiteSpace(sanitized.AnswerText))
+        {
+            // See ExecuteSingleQuestionAsync for why a cancelled answer needs its own branch here.
+            status = BenchmarkAnswerStatus.Failed;
+            terminalError = "Canceled before the answer completed.";
         }
         else if (sanitized.Flags.HasFlag(BenchmarkAnswerFlags.Empty))
         {

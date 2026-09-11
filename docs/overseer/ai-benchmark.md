@@ -1675,6 +1675,25 @@ stamped 20 on `HarnessVersion` alone, not on `ToolGuidesSha256` or `CandidateSys
   detail dialog gained a status badge and, when the run carries any terminal failure, a top failure
   alert carrying a **Re-run Failed Questions** button. Every index cell reads **"not computed"** rather
   than a blank or a stale figure whenever the suppression above applies.
+- **The failed-question re-run selects empty answers too.** `BenchmarkRunFinalizer.NeedsReExecution`
+  is now the single predicate behind both the controller gate and `RunFailedQuestionsAsync`, and it
+  covers `EmptyAnswer` alongside `ProviderError` and `Failed`. Two cases made the old pair wrong: a
+  cancel that lands while a question is in flight leaves the in-flight answer as `EmptyAnswer` with no
+  finish reason, so cancelling a re-run created a row the re-run could never repair; and an answer with
+  no text is an unanswered question whatever produced it, including a model that ended its turn
+  normally and is scored 0. The client already agreed — `isAnswerFailed` counts `EmptyAnswer`, the
+  button is enabled for one and the scope chip lists it — so this closes a client/server scope
+  disagreement in which the server either refused with a 400 or silently skipped the row. The refusal
+  text is now `This run has no failed, provider-error or empty answers to re-run.` Repairing a
+  scored-0 empty answer replaces that 0 with a graded score and therefore moves the run's Intelligence
+  Index; the re-run's own instrument fingerprints and scope are recorded as before.
+- **A user cancel mid-answer records `Failed`, not `EmptyAnswer`.** Both answer status blocks in
+  `BenchmarkService` now classify a run-level cancel that produced no text as `Failed` with
+  `Canceled before the answer completed.`, ahead of the empty-flag branch. A per-question timeout
+  cancels only its own linked token and is still reported as `Per-question timeout exceeded`.
+- **`HarnessVersion` stays at `21` and `ScoringMethodVersion` stays at `10`** for the two bullets
+  above: nothing changes about how a graded answer is scored or how the candidate is prompted — what
+  changes is which rows an operator action repairs.
 - **`BenchmarkAssessmentPrompt.HarnessVersion` is now `"21"`.**
 
 **The motivating case.** Run 37 on 2026-09-11 lost 12 of its 18 questions to an OpenAI in-stream
@@ -2108,7 +2127,7 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `GET /api/admin/benchmark/runs/{id}/calibrations`: List prior calibrations for a run, newest first.
 - `GET /api/admin/benchmark/suites/{id}/last-assessor`: The assessor of the suite's most recent completed run, for the start dialog's assessor-change advisory. Returns an empty object for a suite with no completed run.
 - `POST /api/admin/benchmark/runs/{id}/cancel`: Cancel an active run. The live run's own abort path records what it consumed — the totals over the answers that completed, and the wall clock up to the stop — and publishes no index. When there is no live run to cancel the row is orphaned and its abort path will never run, so the endpoint records those totals itself, deriving the elapsed figure from the two timestamps. When the row's answer rows already cover its suite — a cancelled retry of a finished run — it is restored to the status those answers describe rather than set to `Canceled`, with `Canceled by operator.` as the reason, so the cancel does not lock the run out of later re-runs.
-- `POST /api/admin/benchmark/runs/{id}/rerun-failed`: Re-run only questions that encountered provider errors (gated by spend caps). Cancelling it restores the run to the status its answers describe.
+- `POST /api/admin/benchmark/runs/{id}/rerun-failed`: Re-run every question whose answer failed, hit a provider error, or came back empty (`BenchmarkRunFinalizer.NeedsReExecution`) (gated by spend caps). Cancelling it restores the run to the status its answers describe.
 
 > A run that stopped before finishing its suite is refused by **rescore**, **rerun-failed**, **reassess**, **rerun answer**, **rerun synthesis**, **retry failed assessments** and **retry claim verification**: each ends in a full finalisation, which would publish an Intelligence Index and a Speed Index computed over only the questions that completed, into the same columns a complete run uses. The test is `BenchmarkRunFinalizer.IsAbortedRun` — `Canceled` or `Failed` **and** fewer answer rows than `TotalQuestionCount` — so a `Canceled` run whose answers cover its suite is accepted, and its re-run is finalised over the whole suite. Reading, reporting, calibrating, cancelling and deleting such a run are unaffected, and a `CompletedWithErrors` run — which did reach the end of its suite — is not refused. The run summary and detail DTOs carry the verdict as `isAborted`.
 - `GET /api/admin/benchmark/runs/{id}/report`: Download server-rendered Markdown report with compliance manifest.

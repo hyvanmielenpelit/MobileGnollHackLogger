@@ -3306,10 +3306,10 @@ public class AdminBenchmarkController : ControllerBase
         // ending it. Cancelling it first no longer locks it out either: CancelRun restores the
         // answers-derived status when the answer rows cover the suite, and the refusal above
         // accepts a Canceled row with that coverage in any case.
-        bool hasFailures = run.Answers.Any(a => a.Status == BenchmarkAnswerStatus.ProviderError || a.Status == BenchmarkAnswerStatus.Failed);
+        bool hasFailures = run.Answers.Any(BenchmarkRunFinalizer.NeedsReExecution);
         if (!hasFailures)
         {
-            return BadRequest("This run has no failed or provider-error questions to re-run.");
+            return BadRequest("This run has no failed, provider-error or empty answers to re-run.");
         }
 
         var cts = new CancellationTokenSource();

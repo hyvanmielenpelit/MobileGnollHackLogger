@@ -443,6 +443,59 @@ public class BenchmarkRerunStatusTests
     }
 
     [Fact]
+    public async Task RerunFailedQuestions_AcceptsRun_WhoseOnlyFailureIsAnEmptyAnswer()
+    {
+        // The client's re-run scope has always included EmptyAnswer rows; before the gate moved to
+        // BenchmarkRunFinalizer.NeedsReExecution the server refused this run outright.
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, modelA, _, modelC) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+
+        var run = BuildSeedRun(suite, modelA, modelC);
+        run.Status = BenchmarkRunStatus.CompletedWithErrors;
+        run.TotalQuestionCount = 1;
+        run.Answers.Add(new BenchmarkRunAnswer
+        {
+            QuestionText = "Q1",
+            AnswerText = string.Empty,
+            Status = BenchmarkAnswerStatus.EmptyAnswer,
+            OrderIndex = 1
+        });
+        db.BenchmarkRuns.Add(run);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await controller.RerunFailedQuestions(run.Id);
+
+        Assert.IsType<AcceptedResult>(result);
+        Assert.Equal(BenchmarkRunStatus.Running, run.Status);
+    }
+
+    [Fact]
+    public async Task RerunFailedQuestions_RefusesRun_WithOnlyOkAnswers()
+    {
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, modelA, _, modelC) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+
+        var run = BuildSeedRun(suite, modelA, modelC);
+        run.Status = BenchmarkRunStatus.Completed;
+        run.TotalQuestionCount = 1;
+        run.Answers.Add(new BenchmarkRunAnswer
+        {
+            QuestionText = "Q1",
+            AnswerText = "A1",
+            Status = BenchmarkAnswerStatus.Ok,
+            OrderIndex = 1
+        });
+        db.BenchmarkRuns.Add(run);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await controller.RerunFailedQuestions(run.Id);
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal("This run has no failed, provider-error or empty answers to re-run.", badRequest.Value);
+        Assert.Equal(BenchmarkRunStatus.Completed, run.Status);
+    }
+
+    [Fact]
     public async Task RerunFailedQuestions_RefusesCanceledRun_WithMissingAnswers()
     {
         var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController(maxRunsPerHour: 10);

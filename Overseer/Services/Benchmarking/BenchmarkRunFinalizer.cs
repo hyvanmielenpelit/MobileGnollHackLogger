@@ -17,9 +17,8 @@ public static class BenchmarkRunFinalizer
 
     /// <summary>
     /// An answer with no text stays here even when scoring method 10 has scored it 0: an unanswered
-    /// question is an error, not merely a low score, so it keeps the run at CompletedWithErrors. The
-    /// name predates that second meaning — nothing about a scored empty answer can be resolved by a
-    /// retry.
+    /// question is an error, not merely a low score, so it keeps the run at CompletedWithErrors, and
+    /// the failed-question re-run re-executes it — see <see cref="NeedsReExecution"/>.
     /// </summary>
     public static bool HasUnresolvedWork(BenchmarkRunAnswer answer)
     {
@@ -123,6 +122,18 @@ public static class BenchmarkRunFinalizer
     /// </summary>
     public static bool HasTerminalFailure(BenchmarkRunAnswer answer)
         => answer.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed;
+
+    /// <summary>
+    /// Whether a failed-question re-run re-executes this answer: the provider failed the request,
+    /// the harness caught a throw, or the answer carries no text. The empty case is included whatever
+    /// produced it — a cancelled retry, a transport drop, or a model that ended its turn without
+    /// answering — because none of them is an answer, and the run reports CompletedWithErrors for each.
+    /// The controller gate and the worker must both use this, or the button and the scope chip in the
+    /// client, which already count empty answers as failed, promise a re-run the server refuses.
+    /// <c>Skipped</c> is absent because no code path assigns it to an answer row.
+    /// </summary>
+    public static bool NeedsReExecution(BenchmarkRunAnswer answer)
+        => HasTerminalFailure(answer) || answer.Status == BenchmarkAnswerStatus.EmptyAnswer;
 
     /// <summary>A transport or provider defect corrupted this answer beyond recovery.</summary>
     public static bool HasTransportDefect(BenchmarkRunAnswer answer)
