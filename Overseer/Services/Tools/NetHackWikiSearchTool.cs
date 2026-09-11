@@ -18,6 +18,13 @@ namespace Overseer.Services.Tools
         public ToolExecutionLocation ExecutionLocation => ToolExecutionLocation.Server;
         public ToolCategory Category => ToolCategory.InformationRetrieval;
 
+        // Room for the note CapArticle appends to each shortened article (about 105 characters).
+        private const int ArticleNoticeReserve = 128;
+
+        // The floor equals a full yield of capped articles plus their notes, the separators and the
+        // spoiler-free suffix, so the per-article cap, not the generic cap, decides what the model sees.
+        public int? MaxResultLengthOverride => _configuredMaxResults * (_perResultChars + ArticleNoticeReserve) + 500;
+
         public JsonElement ParameterSchema { get; }
 
         public NetHackWikiSearchTool(NetHackWikiService netHackWikiService, IConfiguration configuration)

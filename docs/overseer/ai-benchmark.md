@@ -1248,6 +1248,10 @@ file on disk. The indexer is shared, so the NetHack source skips dot-directories
 **no fingerprint**: `SourceCodeHeadSha` is the repository's Git HEAD, not a description of what the
 indexer kept.
 
+> **Extended in the Harness Version 20 round**: the same method (renamed
+> `IsUnderExcludedDirectory`) also skips any segment equal to `bin` or `obj`, case-insensitively —
+> see § *Harness Version 20 Updates* for the 483-file measurement this caught.
+
 #### The run-progress dialog question list (H5)
 
 The dialog's question list (`.run-question-list`) no longer has its own height cap and scroller; the
@@ -1484,6 +1488,107 @@ is untouched and per-tool guides are not inlined into the candidate prompt.
 `ContestedCriticalErrorAnswerCount` is one added `int` column with a default of 0
 (`AddContestedCriticalErrorAnswerCount`); nothing else needed a migration, and no figure is
 backfilled.
+
+### Harness Version 20 Updates
+
+*2026-09-11.*
+
+Prompted by run 36 (GPT-5.6 Sol, the first candidate on the new series): two of the run's two
+refuted claims and its one out-of-rubric Accuracy deduction were **all three wrong**, and each was
+checkable on disk. The claim verifier refuted a fear-spell saving-throw claim citing the wiki's
+general skill-modifier table, when `src/zap.c:949` (plus the shared code at `:772`, `:815`, `:850`)
+applies an *extra* per-skill-level penalty on top of that table that the page never states. It
+refuted a −4 magic-cancellation claim about the touch of death citing a monster data table's `mcadj`
+field, when the code that actually applies the penalty is `src/mcastu.c:793`. And the assessor's own
+out-of-rubric deduction — that an experience-level-dependent prayer-timeout claim was wrong — was
+itself wrong: `src/rnd.c:200` shows `rne`'s cap rising with `u.ulevel` past level 15. In every case
+the grader cited a table or a secondary text instead of the code that computes the effect, and
+nothing in the harness had ever told it not to. Run 36 also measured, at rung zero, that 483 of 781
+candidate files under the GnollHack source's four target directories are git-ignored `bin`/`obj`
+build output, indexed as game source since at least 2026-09-09.
+
+`ScoringMethodVersion` stays at **10** — nothing here changes a score, a cap or an index —
+but `BenchmarkAssessmentPrompt.HarnessVersion` moves to **20**, because the claim-verification
+prompt's own text changes, a run records a new advisory count, and three tool guides move
+`ToolGuidesSha256`. A run stamped 20 therefore differs from a run stamped 19 on **two** instrument
+keys (`HarnessVersion`, `ToolGuidesSha256`) and not on `CandidateSystemPromptSha256`: `_policy.md` is
+untouched and per-tool guides are not inlined into the candidate prompt.
+
+- **The claim-verification prompt gains instruction 3a.** *"A claim about how a spell, attack or
+  effect is computed is checked in the code that implements it — the case or function that applies
+  the effect — not only in a data table (`src/monst.c`, `src/objects.c`) or a wiki page. A table or
+  page that omits a term does not refute a claim that names the term; a Refuted verdict needs code,
+  or a wiki statement, that contradicts the claim."* This is the shape both run-36 refutations
+  shared, and the seventh, sixth and earlier standing verifier-caution instances before them.
+- **The out-of-rubric Accuracy deduction is adjudicated on the same pipeline.** When an answer
+  carries `OutOfRubricAccuracyDeduction` (512), `BenchmarkService.ExtractOutOfRubricBasis` reads the
+  assessor's own accuracy evidence for the text after the `Not in rubric:` marker, up to the first
+  sentence end or line break and capped at 600 characters, and submits it to the claim verifier as
+  an adjudication claim — after the critical-error quote when an answer carries both (quote first,
+  basis second), alone otherwise — under a new `OUT-OF-RUBRIC DEDUCTION ADJUDICATION:` preamble. The
+  basis is the **assessor's** statement, not the answer's, so its verdict is excluded from the
+  answer's Supported/Refuted/Indeterminate claim counts, from `RefutedClaim`, from the claims handed
+  to the second reader, from the synthesis's refuted-claims list and from the report's Refuted Claims
+  section — it stays only in `ClaimVerificationJson`, where its citation is the record, and is never
+  written to `UnverifiedClaimsJson` or `UnverifiedClaimCount`. `NeedsClaimVerification` covers the
+  new case, so the post-run backfill pass reaches it too.
+- **`BenchmarkAnswerFlags.ContestedAccuracyDeduction` (4096) and
+  `BenchmarkRun.ContestedAccuracyDeductionAnswerCount`.** Set when the basis's own verdict comes back
+  `Refuted` — the statement the deduction rests on is false. `Supported` or `Indeterminate` clears
+  it. The flag joins `BenchmarkRunFinalizer.AdvisoryFlags`, so it counts under
+  `AdvisoryFlagAnswerCount` and **never** moves the clean count, the run status, the deduction, the
+  cap or any index — advisory in the same sense as `ContestedCriticalError`, and the same caution
+  applies: the flag says *contested*, never *overturned*. `ContestedAccuracyDeductionAnswerCount` is
+  `int?`; it reads as **not recorded**, never zero, on every run before harness 20, which never
+  adjudicated an out-of-rubric basis at all.
+- **Every surface that prints `ContestedCriticalError` gains the matching line for this flag.**
+  Report § Run Integrity carries a `Contested Accuracy Deductions:` line naming the questions when
+  the count is non-zero; the Advisory Flags breakdown gains `contested accuracy deductions: N` or
+  `not recorded`; § 5 Issues reads *"Contested out-of-rubric accuracy deduction (advisory, changed no
+  score)"*; the synthesis footer counts it beside refuted claims, disputed verdicts and contested
+  critical errors, and the synthesis prompt is told, per such answer, not to describe the deduction
+  as an error of the answer. The admin API's run-detail DTO, the Angular Run Integrity Notice, the
+  diagnostics `--- INTEGRITY ---` line (`contested accuracy deductions: N` / `not recorded`) and the
+  per-answer badge (dashed red, labelled "contested deduction") all agree with it.
+- **Three tool-contract fixes**, all found on run 36 and all moving `ToolGuidesSha256`:
+  - `get_function_definition`'s `start_line: 0` now behaves as omitted — starts the body at the
+    beginning — instead of returning the explicit out-of-range message it returned from the
+    run-34 round on. `0` is never printed by any truncation notice, so it cannot be a stale value; it
+    is the 0-based idiom for "from the start," and four of run 36's calls meant exactly that.
+  - `nethack_wiki_search` declares its own `MaxResultLengthOverride` —
+    `Tools:nethack_wiki_search:MaxResults × (PerResultChars + 128) + 500`, **16,140** at the current
+    settings — so a full five-article yield of capped articles is no longer cut mid-article by the
+    generic per-tool cap the way run 36 recorded four times at exactly 10,117 characters. The 128 is
+    headroom for `CapArticle`'s own per-article truncation note, appended after the 3,000-character
+    cut.
+  - `nethack_wiki_view` now announces a non-exact resolution instead of silently returning the
+    wrong article. `NetHackWikiService.GetArticleResolved` still takes the top hit of the
+    title/filename query with no relevance floor — the article chosen has not changed — but when
+    the normalised request and the normalised resolved title differ, `NetHackWikiViewTool` prepends
+    `[No NetHack wiki article titled 'X'. Showing 'Y'. Other candidates: A; B; C; D.]`, built from
+    the top five hits of the title/filename query and the top five of a `summary`-field query,
+    distinct, capped at 600 characters. Run 36 Q11 asked for *"Two weapon combat"* and silently
+    received `--- Combat ---` twice; the corpus's actual article is `Twoweapon`, reachable only
+    through its summary text. An exact-title hit still carries no line — this is an ordinary
+    `Success = true` result, never a miss.
+- **The GnollHack source indexer skips `bin` and `obj` directories, alongside dot-directories.**
+  `SourceCodeService.IsUnderExcludedDirectory` (renamed from `IsUnderDotDirectory`, see § *Harness
+  Version 18 Updates*, H4) now also skips any repository-relative path segment equal to `bin` or
+  `obj`, case-insensitively, logged in the same *"Skipped {Count} source file(s) under dot-, bin or
+  obj directories."* line. `NetHackSourceCodeService` inherits the fix, since the indexer is shared.
+  Measured 2026-09-11: 483 of 781 candidate files under the four target directories were git-ignored
+  build output under `win\win32\xpl\**\(bin|obj)` — 480 `.txt` and 3 `.h` — indexed since at least
+  2026-09-09; the index now holds about 298 files under those directories. This is a fix to the
+  indexer, not to a prompt, and moves **no fingerprint**: `SourceCodeHeadSha` is the repository's Git
+  HEAD, not a description of what the indexer kept.
+- **Grader roster and everything else about the round.** No `ChatService` prose or `_policy.md` text
+  was touched, so `CandidateSystemPromptSha256` does not move. The round's tool-contract and
+  indexer fixes reach live chat identically to a benchmark run, since both read the production tool
+  registry and the production source index.
+
+`ContestedAccuracyDeductionAnswerCount` is one added nullable `int` column
+(`AddContestedAccuracyDeductionAnswerCount`); it is left `NULL` on every existing row, read as *not
+recorded* rather than zero, and no figure is backfilled.
 
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).

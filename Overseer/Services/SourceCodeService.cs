@@ -326,21 +326,21 @@ namespace Overseer.Services
                 var newConstants = new ConcurrentDictionary<string, ConstantInfo>(StringComparer.OrdinalIgnoreCase);
                 
                 var targetDirs = TargetDirectories;
-                int skippedDotFiles = 0;
+                int skippedExcludedFiles = 0;
 
                 foreach (var dir in targetDirs)
                 {
                     string fullDirPath = Path.Combine(_sourceCodePath, dir);
                     if (!Directory.Exists(fullDirPath)) continue;
-                    
+
                     var files = Directory.GetFiles(fullDirPath, "*.*", SearchOption.AllDirectories);
-                    
+
                     foreach (var file in files)
                     {
                         string relPath = Path.GetRelativePath(_sourceCodePath, file).Replace('\\', '/');
-                        if (IsUnderDotDirectory(relPath))
+                        if (IsUnderExcludedDirectory(relPath))
                         {
-                            skippedDotFiles++;
+                            skippedExcludedFiles++;
                             continue;
                         }
 
@@ -434,9 +434,9 @@ namespace Overseer.Services
                 ParseGameData();
                 
                 _logger.LogInformation("Indexed {Count} source files.", _documents.Count);
-                if (skippedDotFiles > 0)
+                if (skippedExcludedFiles > 0)
                 {
-                    _logger.LogInformation("Skipped {SkippedCount} source file(s) under dot-directories.", skippedDotFiles);
+                    _logger.LogInformation("Skipped {Count} source file(s) under dot-, bin or obj directories.", skippedExcludedFiles);
                 }
             }
             catch (Exception ex)
@@ -446,13 +446,16 @@ namespace Overseer.Services
         }
 
         /// <summary>
-        /// True when any segment of a repository-relative path begins with a dot.
+        /// True when any segment of a repository-relative path begins with a dot, or equals
+        /// "bin" or "obj" — build output and IDE caches are never game source.
         /// </summary>
-        private static bool IsUnderDotDirectory(string relativePath)
+        private static bool IsUnderExcludedDirectory(string relativePath)
         {
             return relativePath
                 .Split('/')
-                .Any(segment => segment.StartsWith(".", StringComparison.Ordinal));
+                .Any(segment => segment.StartsWith(".", StringComparison.Ordinal)
+                    || string.Equals(segment, "bin", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(segment, "obj", StringComparison.OrdinalIgnoreCase));
         }
 
         protected virtual void ParseGameData()
@@ -860,7 +863,10 @@ namespace Overseer.Services
             else
             {
                 int v = startLineReq.Value;
-                if (v >= 1 && v <= totalLines)
+                // 0 is the model's idiom for "from the beginning" and is never printed by a
+                // notice, so it cannot be stale.
+                if (v == 0) startOutputLine = 0;
+                else if (v >= 1 && v <= totalLines)
                 {
                     startOutputLine = v - 1;
                 }

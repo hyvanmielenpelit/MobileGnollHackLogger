@@ -1,5 +1,7 @@
 using System;
+using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -60,11 +62,16 @@ namespace Overseer.Services.Tools
                 return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing article parameter" });
             }
 
-            string? content = _netHackWikiService.GetArticle(article, section);
+            var (content, resolvedTitle, candidates) = _netHackWikiService.GetArticleResolved(article, section);
 
             if (string.IsNullOrWhiteSpace(content))
             {
                 return Task.FromResult(new ToolResult { Success = true, Content = $"NetHack wiki article matching '{article}' not found." });
+            }
+
+            if (resolvedTitle != null && !string.Equals(NormalizeForComparison(article), NormalizeForComparison(resolvedTitle), StringComparison.Ordinal))
+            {
+                content = BuildResolutionLine(article, resolvedTitle, candidates) + "\n" + content;
             }
 
             if (context.SpoilerFreeMode)
@@ -73,6 +80,36 @@ namespace Overseer.Services.Tools
             }
 
             return Task.FromResult(new ToolResult { Success = true, Content = content });
+        }
+
+        private const int ResolutionLineMaxChars = 600;
+        private const int MaxOtherCandidates = 4;
+
+        // Trims, collapses internal whitespace, and lowercases, so a request differing from the resolved title only by spacing or case still counts as an exact hit.
+        private static string NormalizeForComparison(string s) => Regex.Replace(s.Trim(), @"\s+", " ").ToLowerInvariant();
+
+        /// <summary>
+        /// Builds the line prepended when the request did not resolve to an exact title: names
+        /// the article shown, then up to <see cref="MaxOtherCandidates"/> other candidates
+        /// (the resolved title itself excluded), semicolon-joined. Omits the "Other candidates"
+        /// clause when none remain, and never exceeds <see cref="ResolutionLineMaxChars"/>.
+        /// </summary>
+        private static string BuildResolutionLine(string request, string resolvedTitle, System.Collections.Generic.IReadOnlyList<string> candidates)
+        {
+            var others = candidates
+                .Where(c => !string.Equals(NormalizeForComparison(c), NormalizeForComparison(resolvedTitle), StringComparison.Ordinal))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(MaxOtherCandidates)
+                .ToList();
+
+            var line = $"[No NetHack wiki article titled '{request}'. Showing '{resolvedTitle}'.";
+            if (others.Count > 0)
+            {
+                line += $" Other candidates: {string.Join("; ", others)}.";
+            }
+            line += "]";
+
+            return line.Length > ResolutionLineMaxChars ? line.Substring(0, ResolutionLineMaxChars) : line;
         }
     }
 }

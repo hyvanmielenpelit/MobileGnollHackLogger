@@ -7,7 +7,7 @@ If the output is truncated, the tool's notice gives you two numbers for the next
 unseen line: an output line (1-based within the result you just got) and an
 absolute file line (inside the header's L-range). Call again with start_line set
 to either one — a value outside both ranges returns an explicit error, not a
-guess.
+guess. Omit start_line, or pass 0, to start at the beginning.
 
 A miss says where the name occurs in the indexed source — naming up to three
 files and how many lines mention it — or states that it does not occur there at
@@ -23,5 +23,5 @@ Use source_code_view when you need to read arbitrary file regions.
 ## Parameters
 - `name` (string, required): Function, macro, or struct name.
 - `type` (string, optional): Kind of definition ('function', 'macro', 'struct', or 'any'). Default 'any'.
-- `start_line` (integer, optional): Where to resume after truncation — the output line from the truncation notice, or an absolute file line inside the header's L-range. Out-of-range values return an explicit error.
+- `start_line` (integer, optional): 1-based. Omit, or pass 0, to start at the beginning. To resume after a truncated result, pass the output line the notice names, or an absolute file line inside the header's L-range. Any other value returns an explicit error.
 - `repository` (string, optional): Which codebase to extract from: 'gnollhack' (default) or 'nethack'.

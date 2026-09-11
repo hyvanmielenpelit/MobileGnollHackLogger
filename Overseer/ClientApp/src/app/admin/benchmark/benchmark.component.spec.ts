@@ -2068,6 +2068,8 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.isAdvisoryFlagName('RefutedClaim')).toBeTrue();
       expect(component.isAdvisoryFlagName('OutOfRubricAccuracyDeduction')).toBeTrue();
       expect(component.isAdvisoryFlagName('AnswerFramingOpener')).toBeTrue();
+      expect(component.isAdvisoryFlagName('ContestedCriticalError')).toBeTrue();
+      expect(component.isAdvisoryFlagName('ContestedAccuracyDeduction')).toBeTrue();
       expect(component.isAdvisoryFlagName('HarnessArtifacts')).toBeFalse();
       expect(component.isAdvisoryFlagName('Truncated')).toBeFalse();
       expect(component.isAdvisoryFlagName('Empty')).toBeFalse();
@@ -2192,6 +2194,25 @@ describe('AdminBenchmarkComponent', () => {
       const advisoryBadge = fixture.nativeElement.querySelector('.badge-flag-reasoningbleed') as HTMLElement;
       expect(advisoryBadge).toBeTruthy();
       expect(advisoryBadge.classList).toContain('badge-flag-advisory');
+    });
+
+    it('should label a contested accuracy deduction badge "contested deduction" and mute it as advisory', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        answers: [
+          buildScoredAnswer(1, {
+            answerFlags: 512 | 4096,
+            answerFlagNames: ['OutOfRubricAccuracyDeduction', 'ContestedAccuracyDeduction']
+          })
+        ]
+      });
+      fixture.detectChanges();
+
+      const badge = fixture.nativeElement.querySelector('.badge-flag-contestedaccuracydeduction') as HTMLElement;
+      expect(badge).toBeTruthy();
+      expect(badge.textContent!.trim()).toBe('contested deduction');
+      expect(badge.classList).toContain('badge-flag-advisory');
+      expect(badge.getAttribute('title')).toContain('refuted');
+      expect(badge.getAttribute('title')).toContain('the deduction stands');
     });
 
     it('should toggle the removed transport artifacts block per answer', () => {
@@ -3580,12 +3601,24 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(text).toContain('--- INTEGRITY ---');
       expect(text).toContain('clean: 1, transport defects: 0, recovered: 0, harness limits: 1 (sums to 2)');
-      expect(text).toContain('contested verdicts: 1, unevidenced deductions: 0, refuted claims: 0, contested critical errors: 0, re-assessed: 1');
+      expect(text).toContain('contested verdicts: 1, unevidenced deductions: 0, refuted claims: 0, contested critical errors: 0, contested accuracy deductions: not recorded, re-assessed: 1');
       expect(text).toContain('unverified claims: 2');
       expect(text).toContain('4.3 mean abs delta');
       expect(text).toContain('over 2 of 2 answered, disagreements: 1');
       // Full coverage, so no conditioning caveat.
       expect(text).not.toContain('coverage selected by trigger');
+    });
+
+    it('should print the contested accuracy deduction count when recorded, zero included', () => {
+      component.activeRunDetail = buildDiagnosticsRun({ contestedAccuracyDeductionAnswerCount: 2 });
+      expect(component.runDiagnosticsText).toContain('contested critical errors: 0, contested accuracy deductions: 2, re-assessed: 1');
+
+      // Zero is a measurement on a harness-20 run; only null reads as not recorded.
+      component.activeRunDetail = buildDiagnosticsRun({ contestedAccuracyDeductionAnswerCount: 0 });
+      expect(component.runDiagnosticsText).toContain('contested accuracy deductions: 0,');
+
+      component.activeRunDetail = buildDiagnosticsRun({ contestedAccuracyDeductionAnswerCount: null });
+      expect(component.runDiagnosticsText).toContain('contested accuracy deductions: not recorded');
     });
 
     it('should caveat the agreement rate when coverage was selected by trigger', () => {
@@ -3797,6 +3830,49 @@ describe('AdminBenchmarkComponent', () => {
       expect(text).toContain('1 answer(s) carry a contested critical error');
       expect(text).toContain('(question(s) 1)');
       expect(text).toContain('the cap stands and no score changed');
+    });
+
+    it('should display contested accuracy deduction clause in Run Integrity Notice when the count is above zero', () => {
+      component.selectedRunDetail = {
+        id: 1,
+        suiteName: 'Suite',
+        status: 'Completed',
+        contestedAccuracyDeductionAnswerCount: 2,
+        answers: [
+          { orderIndex: 3, status: 'Ok', answerFlagNames: ['OutOfRubricAccuracyDeduction', 'ContestedAccuracyDeduction'] } as any,
+          { orderIndex: 7, status: 'Ok', answerFlagNames: ['OutOfRubricAccuracyDeduction', 'ContestedAccuracyDeduction'] } as any
+        ]
+      } as any;
+
+      expect(component.contestedAccuracyDeductionAnswerCount).toBe(2);
+      expect(component.contestedAccuracyDeductionQuestionNumbers).toBe('3, 7');
+
+      fixture.detectChanges();
+
+      const el: HTMLElement = fixture.nativeElement;
+      const text = el.textContent || '';
+      expect(text).toContain('Run Integrity Notice');
+      expect(text).toContain('2 answer(s) carry a contested accuracy deduction');
+      expect(text).toContain('(question(s) 3, 7)');
+      expect(text).toContain('the deduction stands and no score changed');
+    });
+
+    it('should omit the contested accuracy deduction clause when the count is null or zero', () => {
+      for (const count of [null, 0]) {
+        component.selectedRunDetail = {
+          id: 1,
+          suiteName: 'Suite',
+          status: 'Completed',
+          contestedAccuracyDeductionAnswerCount: count,
+          answers: [{ orderIndex: 1, status: 'Ok', answerFlagNames: [] } as any]
+        } as any;
+
+        fixture.detectChanges();
+
+        const text = (fixture.nativeElement as HTMLElement).textContent || '';
+        expect(text).not.toContain('contested accuracy deduction');
+      }
+      expect(component.contestedAccuracyDeductionAnswerCount).toBe(0);
     });
 
     it('should render the tool call outcome split only when every answer with tool calls has recorded outcomes', () => {

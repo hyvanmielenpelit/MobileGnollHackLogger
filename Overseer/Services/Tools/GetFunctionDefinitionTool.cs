@@ -40,7 +40,7 @@ namespace Overseer.Services.Tools
                 },
                 "start_line": {
                     "type": "integer",
-                    "description": "Optional. Where to resume after a truncated result: the output line number printed in the truncation notice (1-based within the previous output), or an absolute file line inside the definition's L-range shown in its header. Not a line count."
+                    "description": "Optional. 1-based. Omit, or pass 0, to start at the beginning. To resume after a truncated result pass the output line the notice names, or an absolute file line inside the header's L-range. Any other value returns an explicit error."
                 },
                 "repository": {
                     "type": "string",

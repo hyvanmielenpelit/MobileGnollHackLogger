@@ -214,6 +214,20 @@ public class NetHackWikiService : IDisposable
 
     public string? GetArticle(string articleName, string? section = null)
     {
+        return GetArticleResolved(articleName, section).Content;
+    }
+
+    /// <summary>
+    /// Resolves an article exactly as <see cref="GetArticle"/> does, and additionally returns
+    /// the winning title plus a deduplicated candidate list (title/filename hits, then summary
+    /// hits, in index order) so a caller can tell when the request did not match verbatim. The
+    /// article itself is always the top hit of the title/filename query - the summary query
+    /// only widens the candidate list, never the article chosen. When the title/filename query
+    /// has no hit, Content and ResolvedTitle stay null even if the summary query has one, but
+    /// the candidates it found are still returned.
+    /// </summary>
+    public (string? Content, string? ResolvedTitle, IReadOnlyList<string> Candidates) GetArticleResolved(string articleName, string? section = null)
+    {
         IndexSearcher? searcher;
         StandardAnalyzer? analyzer;
         lock (_swapLock)
@@ -221,37 +235,71 @@ public class NetHackWikiService : IDisposable
             searcher = _searcher;
             analyzer = _analyzer;
         }
-        if (searcher == null || analyzer == null || string.IsNullOrWhiteSpace(articleName)) return null;
-        
+        if (searcher == null || analyzer == null || string.IsNullOrWhiteSpace(articleName))
+        {
+            return (null, null, Array.Empty<string>());
+        }
+
+        var candidates = new List<string>();
+
         // Try exact match on title or filename
         var parser = new MultiFieldQueryParser(
             LuceneVersion.LUCENE_48,
             new[] { "title", "filename" },
             analyzer
         );
-        Query luceneQuery;
+        ScoreDoc[] titleHits = Array.Empty<ScoreDoc>();
         try
         {
-            luceneQuery = parser.Parse(QueryParserBase.Escape(articleName));
+            var luceneQuery = parser.Parse(QueryParserBase.Escape(articleName));
+            titleHits = searcher.Search(luceneQuery, 5).ScoreDocs;
+            foreach (var hit in titleHits)
+            {
+                var doc = searcher.Doc(hit.Doc);
+                string candidateTitle = doc.Get("title") ?? Path.GetFileNameWithoutExtension(doc.Get("filename") ?? "");
+                if (!candidates.Contains(candidateTitle)) candidates.Add(candidateTitle);
+            }
         }
         catch (Lucene.Net.QueryParsers.Classic.ParseException)
         {
-            return null;
+            // Ignore parse errors, as the pre-existing title/filename query always has.
         }
-        
-        var hits = searcher.Search(luceneQuery, 1);
-        if (hits.TotalHits == 0) return null;
-        
-        var doc = searcher.Doc(hits.ScoreDocs[0].Doc);
-        string title = doc.Get("title") ?? Path.GetFileNameWithoutExtension(doc.Get("filename") ?? "");
-        string content = doc.Get("content");
-        
+
+        try
+        {
+            var summaryParser = new QueryParser(LuceneVersion.LUCENE_48, "summary", analyzer);
+            var summaryQuery = summaryParser.Parse(QueryParserBase.Escape(articleName));
+            foreach (var hit in searcher.Search(summaryQuery, 5).ScoreDocs)
+            {
+                var doc = searcher.Doc(hit.Doc);
+                string candidateTitle = doc.Get("title") ?? Path.GetFileNameWithoutExtension(doc.Get("filename") ?? "");
+                if (!candidates.Contains(candidateTitle)) candidates.Add(candidateTitle);
+            }
+        }
+        catch (Lucene.Net.QueryParsers.Classic.ParseException)
+        {
+            // Ignore parse errors, same as the title/filename query.
+        }
+        catch
+        {
+            // A candidate-list failure must never break article retrieval.
+        }
+
+        if (titleHits.Length == 0)
+        {
+            return (null, null, candidates);
+        }
+
+        var articleDoc = searcher.Doc(titleHits[0].Doc);
+        string title = articleDoc.Get("title") ?? Path.GetFileNameWithoutExtension(articleDoc.Get("filename") ?? "");
+        string content = articleDoc.Get("content");
+
         if (!string.IsNullOrWhiteSpace(section))
         {
             content = MarkdownSectionExtractor.Extract(content, section);
         }
 
-        return $"--- {title} ---\n{content}";
+        return ($"--- {title} ---\n{content}", title, candidates);
     }
 
     public void Dispose()

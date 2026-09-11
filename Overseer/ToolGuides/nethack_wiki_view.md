@@ -9,3 +9,7 @@ When no heading matches, the reply names every heading in the article.
 
 If you don't know the exact article title, use nethack_wiki_search first to find relevant
 articles, then use this tool to read the full content.
+
+If no article carries exactly the title you asked for, the reply opens with a line naming
+the article it shows instead and up to four other candidates; call again with one of those
+titles when the shown article is not the one you meant.

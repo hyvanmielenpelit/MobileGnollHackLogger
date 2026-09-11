@@ -125,7 +125,18 @@ public enum BenchmarkAnswerFlags
     // never that it is overturned — a refutation and a support are both advisory evidence, and a
     // human reads the cited code path before anything rests on either. A second-opinion trigger is
     // already implied by CriticalError itself, so this adds no trigger of its own.
-    ContestedCriticalError = 2048
+    ContestedCriticalError = 2048,
+
+    // The claim verifier checked the assessor's own-knowledge basis for an ACCURACY deduction (the
+    // text after "Not in rubric:") against the source code and wiki and returned Refuted with a
+    // citation: the statement the deduction rests on is false.
+    //
+    // Advisory, and grouped here for the same reason as ContestedCriticalError: the deduction and
+    // every score stand, and the verifier is a model the rubric never sanctioned as a grader. The flag
+    // says the deduction is *contested*, never that it is overturned; a human reads the cited code
+    // path before anything rests on it. OutOfRubricAccuracyDeduction already routes the verdict to a
+    // second reader, so this adds no trigger of its own.
+    ContestedAccuracyDeduction = 4096
 }
 
 /// <summary>
@@ -452,6 +463,13 @@ public class BenchmarkRun
     /// Zero on every run recorded before harness 19, which never adjudicated a critical-error quote.
     /// </summary>
     public int ContestedCriticalErrorAnswerCount { get; set; }
+
+    /// <summary>
+    /// Answers carrying <see cref="BenchmarkAnswerFlags.ContestedAccuracyDeduction"/>. Advisory.
+    /// Null means not recorded: every run before harness 20, which never adjudicated an
+    /// out-of-rubric accuracy deduction.
+    /// </summary>
+    public int? ContestedAccuracyDeductionAnswerCount { get; set; }
 
     /// <summary>Answers carrying <see cref="BenchmarkAnswerFlags.OmissionAsAccuracy"/>. Advisory.</summary>
     public int OmissionAsAccuracyAnswerCount { get; set; }

@@ -3,6 +3,7 @@ namespace Overseer.Tests.UnitTests;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Configuration;
 using MobileGnollHackLogger.Data;
@@ -1494,11 +1495,13 @@ public class BenchmarkReportBuilderTests
 
         // Every member of AdvisoryFlags is enumerated, so the parenthetical accounts for the
         // total rather than listing a subset of it. The two harness-18 members and the harness-19
-        // one are included for that reason and read 0 here.
+        // one are included for that reason and read 0 here; the harness-20 one reads "not
+        // recorded", because this run is stamped 7.
         Assert.Contains(
             "**Advisory Flags:** 2 (reasoning bleed: 1, repeated fragments: 0, contested verdicts: 1, " +
             "unevidenced deductions: 0, omissions as accuracy: 0, refuted claims: 0, " +
-            "contested critical errors: 0, out-of-rubric accuracy deductions: 0, answer-framing openers: 0)",
+            "contested critical errors: 0, out-of-rubric accuracy deductions: 0, " +
+            "contested accuracy deductions: not recorded, answer-framing openers: 0)",
             report);
     }
 
@@ -2715,6 +2718,101 @@ public class BenchmarkReportBuilderTests
 
         Assert.DoesNotContain("**Contested Critical Errors:**", report);
         Assert.Contains("contested critical errors: 0", report);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Contested accuracy deductions: the own-knowledge statement an out-of-rubric Accuracy
+    // deduction rested on, checked against the source and refuted. Advisory throughout, and
+    // "not recorded" rather than zero on a run before harness 20.
+    // -------------------------------------------------------------------------------------
+
+    private const string RefutedBasis = "The prayer timeout reset is independent of experience level.";
+
+    private static BenchmarkRunAnswer ContestedDeductionAnswer(int orderIndex)
+    {
+        var answer = ScoredAnswer(orderIndex, BenchmarkDifficulty.Advanced, 78, 60);
+        answer.AnswerFlags = (int)(BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction | BenchmarkAnswerFlags.ContestedAccuracyDeduction);
+        answer.AssessmentEvidenceJson = JsonSerializer.Serialize(new { accuracy = $"Level 4. Not in rubric: {RefutedBasis} Otherwise matches." });
+        return answer;
+    }
+
+    [Fact]
+    public void RunIntegrity_NamesContestedAccuracyDeductions_AndKeepsThemAdvisory()
+    {
+        var q1 = ContestedDeductionAnswer(1);
+        var q2 = ScoredAnswer(2, BenchmarkDifficulty.Simple, 25, 80);
+        var q3 = ContestedDeductionAnswer(3);
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1, q2, q3);
+        run.HarnessVersion = "20";
+        BenchmarkRunFinalizer.Apply(run, new[] { q1, q2, q3 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Contested Accuracy Deductions:** 2 (Q1, Q3)", report);
+        Assert.Contains("checked against the source code/wiki by the claim verifier and **refuted**", report);
+        Assert.Contains("the deduction stands and no index moved", report);
+
+        Assert.Contains("contested accuracy deductions: 2", report);
+        Assert.Contains("Contested out-of-rubric accuracy deduction (advisory, changed no score)", report);
+
+        // Carried into the synthesis caveat beside refuted claims and disputed verdicts.
+        Assert.Contains("0 refuted claim(s), 0 disputed verdict(s) and 2 contested accuracy deduction(s)", report);
+    }
+
+    [Fact]
+    public void RunIntegrity_PrintsAZeroContestedAccuracyDeductionCount_OnAHarness20Run()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.HarnessVersion = "20";
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.DoesNotContain("**Contested Accuracy Deductions:**", report);
+        Assert.Contains("contested accuracy deductions: 0", report);
+    }
+
+    [Fact]
+    public void RunIntegrity_PrintsTheContestedAccuracyDeductionCountAsNotRecorded_BeforeHarness20()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.HarnessVersion = "19";
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Null(run.ContestedAccuracyDeductionAnswerCount);
+        Assert.Contains("contested accuracy deductions: not recorded", report);
+        Assert.DoesNotContain("contested accuracy deductions: 0", report);
+        Assert.DoesNotContain("**Contested Accuracy Deductions:**", report);
+    }
+
+    [Fact]
+    public void RefutedClaims_ListsTheAnswersOwnClaims_AndNotTheRefutedOutOfRubricBasis()
+    {
+        const string candidateClaim = "Gnolls regenerate 3 HP per turn.";
+        var q1 = ContestedDeductionAnswer(1);
+        q1.ClaimsRefutedCount = 1;
+        q1.ClaimsSupportedCount = 0;
+        q1.ClaimsIndeterminateCount = 0;
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            new BenchmarkClaimVerification(0, RefutedBasis, BenchmarkClaimVerdict.Refuted, "src/pray.c:1020", "Timeout depends on level."),
+            new BenchmarkClaimVerification(1, candidateClaim, BenchmarkClaimVerdict.Refuted, "src/regen.c:40", "Regeneration is 1 HP.")
+        });
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.HarnessVersion = "20";
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("#### Refuted Claims", report);
+        Assert.Contains($"- **Q1:** \"{candidateClaim}\"", report);
+        Assert.DoesNotContain($"- **Q1:** \"{RefutedBasis}\"", report);
     }
 
     // -------------------------------------------------------------------------------------

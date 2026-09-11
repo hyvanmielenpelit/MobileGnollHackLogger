@@ -315,6 +315,32 @@ public class SourceCodeServiceDefinitionTests : IDisposable
     }
 
     /// <summary>
+    /// A file under a "bin" or "obj" directory — build output — is not indexed, even inside a
+    /// target directory and with an indexed extension; its sibling is. The rule is segment-based,
+    /// so the fixture's use of "src" (the fixture's target directory) rather than the real
+    /// "win\win32\xpl\**\(bin|obj)" location is representative.
+    /// </summary>
+    [Fact]
+    public void ListFiles_FileUnderBinOrObjDirectory_IsNotIndexed()
+    {
+        Directory.CreateDirectory(Path.Combine(_sourceDir, "src", "obj", "Release"));
+        Directory.CreateDirectory(Path.Combine(_sourceDir, "src", "bin", "Debug"));
+        File.WriteAllText(Path.Combine(_sourceDir, "src", "a.c"), "/* a.c */\r\nint a;\r\n");
+        File.WriteAllText(Path.Combine(_sourceDir, "src", "obj", "Release", "list.txt"), "build list\r\n");
+        File.WriteAllText(Path.Combine(_sourceDir, "src", "bin", "Debug", "h.h"), "/* h.h */\r\n");
+
+        using var service = CreateService();
+
+        string result = service.ListFiles(null, includeNetCode: false);
+
+        Assert.Contains("src/a.c (2 lines)", result);
+        Assert.DoesNotContain("list.txt", result);
+        Assert.DoesNotContain("bin/Debug/h.h", result);
+        Assert.Equal(string.Empty, service.ListFiles("obj", includeNetCode: false));
+        Assert.Equal(string.Empty, service.ListFiles("bin", includeNetCode: false));
+    }
+
+    /// <summary>
     /// Builds the service used by the <see cref="SourceCodeService.GetFunctionBody"/> continuation
     /// tests: a small max-chunk size and a function preceded by filler lines, so the extracted
     /// body's file lines (10-24, 1-based) never coincide with its output line numbers (1-15) — the
@@ -443,16 +469,17 @@ public class SourceCodeServiceDefinitionTests : IDisposable
     }
 
     /// <summary>
-    /// start_line 0 is neither a valid output line nor a valid file line, so it is rejected rather
-    /// than clamped to the first line.
+    /// start_line 0 is the model's idiom for "from the beginning" — the same result as omitting
+    /// start_line entirely, not an out-of-range error.
     /// </summary>
     [Fact]
-    public void GetFunctionBody_StartLineZero_ReturnsTheExplicitMessage()
+    public void GetFunctionBody_StartLineZero_StartsAtTheBeginning()
     {
         using var service = CreateServiceWithSmallFunctionBodyChunks();
 
-        string result = service.GetFunctionBody("big_function", "function", startLineReq: 0);
+        string zeroResult = service.GetFunctionBody("big_function", "function", startLineReq: 0);
+        string omittedResult = service.GetFunctionBody("big_function", "function", startLineReq: null);
 
-        Assert.Contains("start_line 0 is outside this definition", result);
+        Assert.Equal(omittedResult, zeroResult);
     }
 }

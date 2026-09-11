@@ -1713,7 +1713,8 @@ public class BenchmarkService
 
         // A critical-error quote is checked here too, not only an unadjudicable claim: the quote is
         // the one assertion in the answer whose truth the cap already turns on, and the assessor
-        // grades without tools while the verifier has them.
+        // grades without tools while the verifier has them. So is the statement an out-of-rubric
+        // Accuracy deduction rests on, which the assessor gave from its own knowledge.
         if (run.ClaimVerifierModelConfigurationId.HasValue && NeedsClaimVerification(answer))
         {
             try
@@ -2365,6 +2366,16 @@ public class BenchmarkService
             claims = WithCriticalErrorQuoteFirst(claims, answer.CriticalErrorQuote);
         }
 
+        // The out-of-rubric basis is carried the same way. Fixed order: the critical-error quote is
+        // claim 0 and the basis claim 1; alone, the basis is claim 0. The verifier preamble names
+        // the basis by that position.
+        string? outOfRubricBasis = OutOfRubricBasisOf(answer);
+        bool isOutOfRubricAdjudication = outOfRubricBasis != null;
+        if (isOutOfRubricAdjudication)
+        {
+            claims = WithOutOfRubricBasis(claims, outOfRubricBasis, isCriticalErrorAdjudication ? 1 : 0);
+        }
+
         if (claims == null || claims.Count == 0) return;
 
         if (expectedPoints == null)
@@ -2393,6 +2404,7 @@ public class BenchmarkService
             toolCallBudget,
             isDisputedVerdict: isDisputed,
             isCriticalErrorAdjudication: isCriticalErrorAdjudication,
+            isOutOfRubricAdjudication: isOutOfRubricAdjudication,
             assessorEvidence: accuracyEvidence);
 
         var runRequest = BuildClaimVerificationRequest(
@@ -2554,12 +2566,17 @@ public class BenchmarkService
             {
                 answer.ClaimVerificationError = null;
                 answer.ClaimVerificationRawText = null;
-                answer.ClaimsSupportedCount = parseResult.ClaimsSupportedCount;
-                answer.ClaimsRefutedCount = parseResult.ClaimsRefutedCount;
-                answer.ClaimsIndeterminateCount = parseResult.ClaimsIndeterminateCount;
+
+                // The out-of-rubric basis is the assessor's statement, not the answer's, so its
+                // verdict stays out of the answer's claim counts and the RefutedClaim flag. It is
+                // kept in ClaimVerificationJson, where its citation is the record.
+                var answerClaimVerifications = WithoutOutOfRubricBasis(parseResult.Verifications, outOfRubricBasis);
+                answer.ClaimsSupportedCount = answerClaimVerifications.Count(v => v.Verdict == BenchmarkClaimVerdict.Supported);
+                answer.ClaimsRefutedCount = answerClaimVerifications.Count(v => v.Verdict == BenchmarkClaimVerdict.Refuted);
+                answer.ClaimsIndeterminateCount = answerClaimVerifications.Count(v => v.Verdict == BenchmarkClaimVerdict.Indeterminate);
                 answer.ClaimVerificationJson = JsonSerializer.Serialize(parseResult.Verifications);
 
-                if (parseResult.ClaimsRefutedCount > 0)
+                if (answer.ClaimsRefutedCount > 0)
                 {
                     answer.AnswerFlags |= (int)BenchmarkAnswerFlags.RefutedClaim;
                 }
@@ -2580,6 +2597,20 @@ public class BenchmarkService
                 else
                 {
                     answer.AnswerFlags &= ~(int)BenchmarkAnswerFlags.ContestedCriticalError;
+                }
+
+                // The statement the out-of-rubric Accuracy deduction rests on was checked against
+                // the source and refuted. Advisory in the same way: the deduction stays, no index
+                // moves, and the flag says the deduction is contested. Cleared on Supported or
+                // Indeterminate, so a re-verification cannot leave a stale flag.
+                if (isOutOfRubricAdjudication &&
+                    OutOfRubricBasisWasRefuted(parseResult.Verifications, outOfRubricBasis))
+                {
+                    answer.AnswerFlags |= (int)BenchmarkAnswerFlags.ContestedAccuracyDeduction;
+                }
+                else
+                {
+                    answer.AnswerFlags &= ~(int)BenchmarkAnswerFlags.ContestedAccuracyDeduction;
                 }
             }
         }
@@ -3353,6 +3384,13 @@ public class BenchmarkService
             }
         }
 
+        // The out-of-rubric basis is the first assessor's own statement, not a claim of the answer,
+        // and this context is presented to the second reader as claims from the candidate answer.
+        if (claimVerifications != null)
+        {
+            claimVerifications = WithoutOutOfRubricBasis(claimVerifications, OutOfRubricBasisOf(answer));
+        }
+
         var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
         string prompt = BenchmarkAssessmentPrompt.BuildSecondOpinionPrompt(
             run.SuiteName,
@@ -3616,6 +3654,7 @@ public class BenchmarkService
 
         var summaries = answers.Select(a =>
         {
+            string? outOfRubricBasis = OutOfRubricBasisOf(a);
             var refutedList = new List<(string Claim, string? Citation, string? Basis)>();
             if (!string.IsNullOrWhiteSpace(a.ClaimVerificationJson))
             {
@@ -3626,7 +3665,8 @@ public class BenchmarkService
                         new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                     if (verifications != null)
                     {
-                        foreach (var v in verifications.Where(x => x.Verdict == BenchmarkClaimVerdict.Refuted))
+                        foreach (var v in WithoutOutOfRubricBasis(verifications, outOfRubricBasis)
+                                     .Where(x => x.Verdict == BenchmarkClaimVerdict.Refuted))
                         {
                             refutedList.Add((v.Claim, v.Citation, v.Basis));
                         }
@@ -3662,6 +3702,11 @@ public class BenchmarkService
                     (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedCriticalError) != 0
                      && !string.IsNullOrWhiteSpace(a.CriticalErrorQuote)
                         ? new[] { a.CriticalErrorQuote!.Trim() }
+                        : Array.Empty<string>(),
+                ContestedAccuracyDeductionBases =
+                    (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedAccuracyDeduction) != 0
+                     && outOfRubricBasis != null
+                        ? new[] { outOfRubricBasis }
                         : Array.Empty<string>(),
                 SecondOpinionQualityScore = a.SecondOpinionQualityScore,
                 SecondOpinionCriticalError = a.SecondOpinionCriticalError,
@@ -5020,12 +5065,134 @@ public class BenchmarkService
         => answer.CriticalError && !string.IsNullOrWhiteSpace(answer.CriticalErrorQuote);
 
     /// <summary>
+    /// The answer carries an out-of-rubric Accuracy deduction whose basis the verifier can check:
+    /// the flag is set and the stored accuracy evidence yields a statement after the marker.
+    /// </summary>
+    internal static bool IsOutOfRubricAdjudication(BenchmarkRunAnswer answer)
+        => OutOfRubricBasisOf(answer) != null;
+
+    /// <summary>
     /// Whether the claim verifier has something to check on this answer: a claim the assessor could
-    /// not adjudicate, or a critical-error quote. The two are independent and an answer may carry
-    /// both.
+    /// not adjudicate, a critical-error quote, or the basis of an out-of-rubric Accuracy deduction.
+    /// The three are independent and an answer may carry any of them.
     /// </summary>
     internal static bool NeedsClaimVerification(BenchmarkRunAnswer answer)
-        => (answer.UnverifiedClaimCount ?? 0) > 0 || IsCriticalErrorAdjudication(answer);
+        => (answer.UnverifiedClaimCount ?? 0) > 0 || IsCriticalErrorAdjudication(answer) || IsOutOfRubricAdjudication(answer);
+
+    /// <summary>
+    /// The out-of-rubric marker as <see cref="BenchmarkAssessmentParser"/> matches it when it sets
+    /// <see cref="BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction"/>: tolerant of "the", casing
+    /// and spacing, with the colon required. See
+    /// <see cref="BenchmarkAssessmentParser.OutOfRubricAccuracyMarker"/>.
+    /// </summary>
+    private static readonly Regex OutOfRubricBasisMarkerRegex = new(
+        @"\bnot\s+in\s+(?:the\s+)?rubric\s*:",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>A full stop, question or exclamation mark followed by whitespace or the end, or a line break.</summary>
+    private static readonly Regex BasisSentenceEndRegex = new(@"[.!?](?=\s|$)|[\r\n]", RegexOptions.Compiled);
+
+    internal const int OutOfRubricBasisMaxLength = 600;
+
+    /// <summary>
+    /// The assessor's own-knowledge statement behind an out-of-rubric Accuracy deduction: the text
+    /// after the first marker up to the end of that sentence, trimmed and capped at
+    /// <see cref="OutOfRubricBasisMaxLength"/> characters. Null when the evidence carries no marker
+    /// or nothing follows it. The basis is free prose, so only the marker's own sentence is taken; a
+    /// statement the verifier cannot check comes back Indeterminate, which sets nothing.
+    /// </summary>
+    internal static string? ExtractOutOfRubricBasis(string? accuracyEvidence)
+    {
+        if (string.IsNullOrWhiteSpace(accuracyEvidence)) return null;
+
+        var marker = OutOfRubricBasisMarkerRegex.Match(accuracyEvidence);
+        if (!marker.Success) return null;
+
+        string rest = accuracyEvidence.Substring(marker.Index + marker.Length).TrimStart();
+        var end = BasisSentenceEndRegex.Match(rest);
+        string sentence = end.Success
+            ? rest.Substring(0, rest[end.Index] is '\r' or '\n' ? end.Index : end.Index + 1)
+            : rest;
+        sentence = sentence.Trim();
+
+        if (sentence.Length > OutOfRubricBasisMaxLength)
+        {
+            sentence = sentence.Substring(0, OutOfRubricBasisMaxLength).TrimEnd();
+        }
+
+        return sentence.Length > 0 ? sentence : null;
+    }
+
+    /// <summary>
+    /// The basis this answer's out-of-rubric Accuracy deduction is adjudicated on, read from its
+    /// stored accuracy evidence; null when the answer does not carry
+    /// <see cref="BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction"/> or no basis can be extracted.
+    /// Deterministic, so every reader of <see cref="BenchmarkRunAnswer.ClaimVerificationJson"/>
+    /// recovers the same text the verifier was given.
+    /// </summary>
+    internal static string? OutOfRubricBasisOf(BenchmarkRunAnswer answer)
+        => (((BenchmarkAnswerFlags)answer.AnswerFlags) & BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction) != 0
+            ? ExtractOutOfRubricBasis(ReadEvidence(answer.AssessmentEvidenceJson, "accuracy"))
+            : null;
+
+    /// <summary>
+    /// The claim list the verifier is given for an out-of-rubric adjudication: the trimmed basis at
+    /// <paramref name="position"/> (clamped to the list), submitted once. Like the critical-error
+    /// quote it is carried in the prompt only and never written to
+    /// <see cref="BenchmarkRunAnswer.UnverifiedClaimsJson"/> or
+    /// <see cref="BenchmarkRunAnswer.UnverifiedClaimCount"/>: it is the assessor's statement, not a
+    /// claim of the answer.
+    /// </summary>
+    internal static List<string> WithOutOfRubricBasis(IReadOnlyList<string>? claims, string? basis, int position)
+    {
+        var result = claims != null ? new List<string>(claims) : new List<string>();
+        if (string.IsNullOrWhiteSpace(basis))
+        {
+            return result;
+        }
+
+        string trimmed = basis.Trim();
+        result.RemoveAll(c => string.Equals(c?.Trim(), trimmed, StringComparison.Ordinal));
+        result.Insert(Math.Clamp(position, 0, result.Count), trimmed);
+        return result;
+    }
+
+    /// <summary>
+    /// The verifications that concern the answer's own claims: every entry except the out-of-rubric
+    /// basis, matched by verbatim text — <see cref="BenchmarkClaimVerificationParser"/> echoes the
+    /// submitted text back and the basis is submitted once. The input is returned unchanged in
+    /// content when there is no basis.
+    /// </summary>
+    internal static List<BenchmarkClaimVerification> WithoutOutOfRubricBasis(
+        IReadOnlyList<BenchmarkClaimVerification>? verifications,
+        string? basis)
+    {
+        if (verifications == null) return new List<BenchmarkClaimVerification>();
+        if (string.IsNullOrWhiteSpace(basis)) return verifications.ToList();
+
+        string trimmed = basis.Trim();
+        return verifications
+            .Where(v => !string.Equals(v.Claim?.Trim(), trimmed, StringComparison.Ordinal))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Whether the verifier refuted the out-of-rubric basis itself: the statement the Accuracy
+    /// deduction rests on is false. Supported and Indeterminate both return false.
+    /// </summary>
+    internal static bool OutOfRubricBasisWasRefuted(
+        IReadOnlyList<BenchmarkClaimVerification>? verifications,
+        string? basis)
+    {
+        if (verifications == null || verifications.Count == 0) return false;
+        if (string.IsNullOrWhiteSpace(basis)) return false;
+
+        string trimmed = basis.Trim();
+        var match = verifications.FirstOrDefault(
+            v => string.Equals(v.Claim?.Trim(), trimmed, StringComparison.Ordinal));
+
+        return match != null && match.Verdict == BenchmarkClaimVerdict.Refuted;
+    }
 
     /// <summary>
     /// The claim list the verifier is given for a critical-error adjudication: the trimmed quote at

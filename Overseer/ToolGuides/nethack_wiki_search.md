@@ -19,3 +19,6 @@ You can filter by namespace:
 - "forum" — community discussion topics
 - "help" — wiki help pages
 - "nethackwiki" — internal wiki pages
+
+Returns up to 5 articles (default 3), each capped at 3,000 characters with a truncation note
+pointing at nethack_wiki_view; the whole result is never cut mid-article.

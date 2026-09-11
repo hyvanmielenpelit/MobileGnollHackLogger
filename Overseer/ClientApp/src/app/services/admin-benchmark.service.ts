@@ -784,6 +784,12 @@ export interface BenchmarkRunDetailDto {
    * Advisory: the quality cap stands and no index moved. Absent on a run before harness 19.
    */
   contestedCriticalErrorAnswerCount?: number | null;
+  /**
+   * Answers whose out-of-rubric Accuracy deduction rests on a statement the claim verifier refuted
+   * against the source code/wiki. Advisory: the deduction stands and no index moved. Null on a run
+   * before harness 20, which never adjudicated it: "not recorded", never 0.
+   */
+  contestedAccuracyDeductionAnswerCount?: number | null;
   /** Answers whose assessor marked an Accuracy deduction 'Not in rubric:'. Advisory. */
   outOfRubricAccuracyAnswerCount?: number;
   /** Answers opening with a claim of sufficiency. Advisory, and the text was not removed. */

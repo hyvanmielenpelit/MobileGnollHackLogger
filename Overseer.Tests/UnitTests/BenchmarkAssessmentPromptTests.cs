@@ -212,9 +212,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsNineteen()
+    public void HarnessVersion_IsTwenty()
     {
-        Assert.Equal("19", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("20", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -454,17 +454,17 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs19_ScoringMethodIs10()
+    public void Versions_HarnessIs20_ScoringMethodIs10()
     {
-        Assert.Equal("19", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("20", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 19 routes a critical-error quote through the claim verifier and records the
-        // advisory ContestedCriticalError flag and its run count, adds the § 5 rule that an
-        // unmentioned claim is not thereby invented, and reports per-question tool rounds. The cap,
-        // the levels and every index are untouched, so the scoring method does not move with it —
-        // but the round also changes two source-tool contracts and their guides, which moves
-        // ToolGuidesSha256, so a 19-stamped run differs from an 18-stamped one on two instrument
-        // keys and is below Tier B against it.
+        // Harness 20 adds claim-verifier instruction 3a and the out-of-rubric deduction
+        // adjudication: the advisory ContestedAccuracyDeduction flag and its run count, null on
+        // earlier runs. The same round changes three tool guides (get_function_definition,
+        // nethack_wiki_search, nethack_wiki_view), which moves ToolGuidesSha256, so a 20-stamped
+        // run differs from a 19-stamped one on two instrument keys (HarnessVersion,
+        // ToolGuidesSha256) and is below Tier B against it. The scoring method and
+        // CandidateSystemPromptSha256 do not move.
         Assert.Equal(10, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

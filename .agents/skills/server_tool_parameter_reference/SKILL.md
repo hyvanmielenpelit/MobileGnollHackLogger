@@ -153,7 +153,7 @@ call reads `NetHackSourceCodeService`, a corpus `BenchmarkRun` does not fingerpr
 | `source_code_search` | `query` | `file_filter`, `max_results`, `is_regex`, `whole_word`, `case_sensitive`, `filenames_only`, `context_lines`, `repository` | `max_results` default 10, **clamped 1–100 in `SearchFiles` regardless of what's passed**; `context_lines` default 5, clamped 0–25 | `Tools:source_code_search:MaxResults`, `Tools:source_code_search:ContextLines` |
 | `source_code_view` | `file` | `start_line`, `search_term`, `line_count`, `repository` | `start_line` defaults to 1 when neither it nor `search_term` is given; `line_count` default 50, clamped 1–1000 | `Tools:source_code_view:LineCount` |
 | `search_definitions` | `symbol` | `kind` (`function`\|`struct`\|`macro`\|`enum`\|`type`\|`any`), `repository` | `kind` default `any`; result capped at **10 matches, hardcoded**, not configurable | none |
-| `get_function_definition` | `name` | `type` (`function`\|`macro`\|`struct`\|`any`), `start_line` (where to resume: the 1-based output line the truncation notice names, **or** an absolute file line inside the header's L-range; anything else returns an explicit out-of-range message, never a clamp), `repository` | chunk size 150 lines | `Tools:get_function_definition:MaxLinesPerChunk` |
+| `get_function_definition` | `name` | `type` (`function`\|`macro`\|`struct`\|`any`), `start_line` (1-based; **omit, or pass 0, to start at the beginning** — from the run-36 round, 2026-09-11; otherwise where to resume: the 1-based output line the truncation notice names, **or** an absolute file line inside the header's L-range; any other out-of-range value returns an explicit message, never a clamp), `repository` | chunk size 150 lines | `Tools:get_function_definition:MaxLinesPerChunk` |
 | `get_constants` | `name` **or** `prefix_filter` (handler requires at least one; schema only requires `name`) | `prefix_filter`, `repository` | result capped at **100 constants, hardcoded** | none |
 | `list_indexed_files` | none | `path_filter`, `repository` | none | none |
 
@@ -289,6 +289,15 @@ lines overlap 1–Y, is read as output-relative. Before the run-34 round (2026-0
 0-based output index clamped to the last line, so an absolute file line returned the header alone
 (`server_benchmark_tool_diagnostics` § 4).
 
+**`start_line: 0` starts at the beginning, from the run-36 round (2026-09-11).** `0` is never printed
+by any truncation notice — the two numbers a notice names are always 1-based — so it cannot be a
+stale or mistaken value; it is the 0-based idiom for "from the start," and `GetFunctionBody` now
+treats it exactly as an omitted `start_line`. Before the run-36 round, `0` returned the explicit
+`start_line 0 is outside this definition: output lines 1–Y, file lines A–B. Call again with a value
+in either range.` message, the same as any other out-of-range value; before the run-34 round it was
+clamped instead (previous paragraph). A stored `start_line: 0` call that returned that explicit
+message therefore dates the run to before 2026-09-11.
+
 > 🛑 **A `get_function_definition` miss returns `Success = true` and, from the run-35 round, carries
 > a bounded occurrence probe.** The payload **opens with** `No definition found for '` — which is
 > what a reader matches on, never a length; before the round this opening sentence was the whole
@@ -349,10 +358,28 @@ empty result rather than surfaced as an error.
 > (default `"article"` when a file has no frontmatter or no `namespace:` key) — the two "category"
 > concepts are not the same mechanism despite the similar name.
 
-**`nethack_wiki_view` article resolution is still a single Lucene hit, not real fuzzy matching.**
-It runs a `MultiFieldQueryParser` over `title`/`filename`, takes `hits.ScoreDocs[0]` unconditionally
-when `TotalHits > 0`, and returns that document — there is no relevance floor, so a garbled or
-ambiguous `article` string can silently return the wrong article rather than a "not found" result.
+**`nethack_wiki_view` article resolution is still the top Lucene hit over `title`/`filename`, with no
+relevance floor — but from the run-36 round (2026-09-11) a non-exact resolution is announced, not
+silent.** `NetHackWikiService.GetArticleResolved` still takes `ScoreDocs[0]` of the title/filename
+query unconditionally when it has a hit, so the article chosen has not changed and a garbled or
+ambiguous `article` string can still resolve to the wrong article — that has not moved. What changed
+is the tool layer: `NetHackWikiViewTool` normalises the request and the resolved title alike (trim,
+collapse internal whitespace, lowercase) and, when they differ, prepends a resolution line before the
+content:
+
+```
+[No NetHack wiki article titled 'X'. Showing 'Y'. Other candidates: A; B; C; D.]
+```
+
+`Y` is the resolved title; the candidates are up to 4 *other* titles (the resolved title excluded,
+duplicates collapsed by the same normalisation), drawn from the top 5 hits of the title/filename
+query followed by the top 5 hits of a separate `summary`-field query, in that order, distinct — so a
+title only its summary mentions (e.g. `Twoweapon`, whose summary reads *"twoweaponing or two-weapon
+combat…"*) can surface as a candidate for a request like *"Two weapon combat"* even though the
+article shown is still whatever `ScoreDocs[0]` of the title/filename query names. The whole line is
+capped at 600 characters, and the "Other candidates" clause is omitted when none remain. An exact
+title hit (after normalisation) carries no line at all — this is an ordinary `Success = true` result
+with the article attached, never a miss; see the miss-payload table below.
 
 **`wiki_view` no longer works that way, from the run-30 round.** `WikiService.GetArticle`
 normalizes the request first — trims it, converts `\` to `/`, and strips one trailing `.md`,
@@ -422,7 +449,13 @@ bodies with no per-result cap of its own up to harness 17**, bounded only by the
 drops the ones after it, so which articles the model saw depended on Lucene's ordering. **From
 harness 18 it caps each article** at `Tools:nethack_wiki_search:PerResultChars` (3000) and marks a
 shortened one with `... [Article truncated: showing N of M characters. Use nethack_wiki_view for the
-full article.]`, so every hit stays present.
+full article.]`, so every hit stays present in principle — but a full five-article yield of capped
+articles (5 × 3000 chars plus separators) still exceeded the generic 10,000-character per-tool cap,
+so the harness-18 fix did not by itself stop the *last* article, and everything after it, from being
+cut mid-article on a full-yield call; run 36 recorded this at exactly 10,117 characters (the generic
+cap plus its truncation suffix) on 4 of 6 calls. **From the run-36 round (2026-09-11)
+`nethack_wiki_search` also declares its own `MaxResultLengthOverride`** (§8), sized so a full yield
+of capped articles is never cut again by the generic cap.
 
 An empty result from any of the four is `Success = true` — never a failure once indexing is
 complete — but **the payload changed under harness 18** and both forms must stay matchable when
@@ -456,6 +489,11 @@ hundred characters, listing extensionless candidate relative paths in index orde
 `…`) and naming the path form to call back with. It fires from branch 2 of the resolution order
 above, when two or more indexed articles share an exact case-insensitive title. A miss count read
 off the table above must not include it.
+
+**`nethack_wiki_view` has an analogous non-miss outcome, from the run-36 round**: the resolution line
+described above (opening `[No NetHack wiki article titled '`) prepends a `Success = true` result
+that carries the full requested (or best-matching) article, not a miss — a miss count read off the
+table above must not include it either.
 
 **A dated measured fact: the `.md`-suffix trap.** On run 30 (2026-09-10), 6 of its 20 `wiki_view`
 calls passed a filename carrying its own extension — the parameter schema calls `article` an
@@ -662,13 +700,14 @@ the config keys relevant to reading a tool's *output*, and where each is read.
 Per-handler `MaxResultLengthOverride` (`IToolHandler`) is a **floor**, never a ceiling:
 `ToolExecutor` takes `Math.Max(baseMaxLen, handlerMax)`, so an override raises the cap for its own
 tool and cannot lower one, and it touches no other tool and not the shared
-`AiPerformanceSettings:MaxResultLength:Default` that doubles as the live chat setting. Two tools
+`AiPerformanceSettings:MaxResultLength:Default` that doubles as the live chat setting. Three tools
 declare one:
 
 | Tool | Override | Why |
 |---|---|---|
 | `refresh_snapshot` | **60200** | Floors the cap so the client snapshot's tail sections (Discoveries, dungeon overview) are not silently lost to an arbitrary cut — plus headroom for the client's own `[SNAPSHOT TRUNCATED …]` marker. See the comment in `ClientToolHandlers.cs` |
 | `wiki_search` | **13000**, from harness 18 | The tool's own budget is `Tools:wiki_search:MaxResults` × `PerResultChars` = 5 × 2500 = **12500**, which exceeded the generic 10000 cap, so a full-yield search was **always** truncated mid-article on its last hit. 13000 is that 12500 plus headroom for the per-hit separators |
+| `nethack_wiki_search` | **16140**, from the run-36 round (2026-09-11) | `MaxResultLengthOverride` = `Tools:nethack_wiki_search:MaxResults` × (`PerResultChars` + 128) + 500 = 5 × (3000 + 128) + 500 = **16140** at current settings. The 128 is a per-article reserve for `CapArticle`'s own truncation note (`... [Article truncated: showing {shown} of {total} characters. Use nethack_wiki_view for the full article.]`, ≈ 105 characters), which is appended *after* the 3000-character cut — so a full five-article yield of capped articles plus their notes, the separators and the spoiler-free suffix runs to about 15,523 characters, not 15,000, and a floor set at `MaxResults × PerResultChars + 500` (15500) would still have been cut by the generic 10,000→override cap. See `server_benchmark_to_chat_transfer` run-36 entry (T2) for the arithmetic error this corrects |
 
 **Neither was fixed by raising the generic cap, deliberately.** `MaxResultLength` is the cap for
 all 30 tools *and* the live chat default (user-adjustable 1000–100000) *and* `Benchmark:MaxResultLength`,

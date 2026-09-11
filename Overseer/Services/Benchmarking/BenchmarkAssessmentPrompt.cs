@@ -37,6 +37,13 @@ public class BenchmarkPerQuestionVerdictSummary
     /// fabrication on the strength of the first assessor's flag alone.
     /// </summary>
     public IReadOnlyList<string> ContestedCriticalErrorQuotes { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Own-knowledge statements an out-of-rubric Accuracy deduction rested on, which the claim
+    /// verifier checked against the source or wiki and refuted. Printed into the synthesis prompt
+    /// so the narrative does not describe the deduction as an error of the answer.
+    /// </summary>
+    public IReadOnlyList<string> ContestedAccuracyDeductionBases { get; set; } = Array.Empty<string>();
     public int? SecondOpinionQualityScore { get; set; }
     public bool? SecondOpinionCriticalError { get; set; }
     public int? AssessedDifficulty { get; set; }
@@ -245,8 +252,25 @@ public static class BenchmarkAssessmentPrompt
     ///     therefore differs from a run stamped 18 on two instrument keys, which is below Tier B:
     ///     compare the two on counts and per-question thresholds, not as a reproduction pair.
     ///     ContestedCriticalErrorAnswerCount reads as "not recorded" on any earlier run, never as zero.
+    /// v20: the claim verifier gains § 3a — a claim about how a spell, attack or effect is computed
+    ///     is checked in the code that applies it, not only in a data table (src/monst.c,
+    ///     src/objects.c) or a wiki page that may simply omit the term — and the out-of-rubric
+    ///     Accuracy deduction becomes checkable. An answer carrying OutOfRubricAccuracyDeduction has
+    ///     the assessor's own-knowledge basis, the sentence after "Not in rubric:", sent to the claim
+    ///     verifier as an adjudication claim, after the critical-error quote when both apply and never
+    ///     written into UnverifiedClaimsJson or the answer's claim counts; a verdict of Refuted raises
+    ///     the advisory ContestedAccuracyDeduction flag, counted per run in
+    ///     ContestedAccuracyDeductionAnswerCount and named in the report and the synthesis prompt.
+    ///     The deduction, the levels and every index are untouched, and the column is null — "not
+    ///     recorded", never zero — on every earlier run. The candidate's system prompt and the
+    ///     grading rules are unchanged, so ScoringMethodVersion and CandidateSystemPromptSha256 do
+    ///     not move — but this version also changes three tool guides (get_function_definition,
+    ///     nethack_wiki_search, nethack_wiki_view), which moves ToolGuidesSha256. A run stamped 20
+    ///     therefore differs from a run stamped 19 on two instrument keys, HarnessVersion and
+    ///     ToolGuidesSha256, which is below Tier B: compare the two on counts and per-question
+    ///     thresholds, not as a reproduction pair.
     /// </summary>
-    public const string HarnessVersion = "19";
+    public const string HarnessVersion = "20";
 
     public static string BuildPerQuestionPrompt(
         string suiteName,
@@ -667,6 +691,13 @@ public static class BenchmarkAssessmentPrompt
                     foreach (var quote in v.ContestedCriticalErrorQuotes)
                     {
                         sb.AppendLine($"Critical error on Q{v.OrderIndex} whose quoted claim the verifier supported: \"{quote}\" — do not describe this answer as fabricating it.");
+                    }
+                }
+                if (v.ContestedAccuracyDeductionBases != null && v.ContestedAccuracyDeductionBases.Count > 0)
+                {
+                    foreach (var basis in v.ContestedAccuracyDeductionBases)
+                    {
+                        sb.AppendLine($"Accuracy deduction on Q{v.OrderIndex} rests on the assessor's own-knowledge statement \"{basis}\", which the verifier refuted against the source/wiki — do not describe this deduction as an error of the answer; if you name it, name it as a contested grading deduction.");
                     }
                 }
                 if (v.SecondOpinionQualityScore.HasValue)

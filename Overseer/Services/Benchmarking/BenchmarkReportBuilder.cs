@@ -1380,6 +1380,12 @@ public static class BenchmarkReportBuilder
         int omissionCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.OmissionAsAccuracy));
         int refutedCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.RefutedClaim));
         int contestedCriticalErrorCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedCriticalError));
+        int contestedAccuracyDeductionCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedAccuracyDeduction));
+        // Null on a run before harness 20, which never adjudicated an out-of-rubric basis: that is
+        // "not recorded", never zero.
+        string contestedAccuracyDeductionFigure = run.ContestedAccuracyDeductionAnswerCount.HasValue || contestedAccuracyDeductionCount > 0
+            ? Inv(contestedAccuracyDeductionCount)
+            : "not recorded";
         int outOfRubricAccuracyCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction));
         int answerFramingOpenerCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.AnswerFramingOpener));
         int providerErrorCount = answers.Count(a => a.Status == BenchmarkAnswerStatus.ProviderError);
@@ -1465,7 +1471,7 @@ public static class BenchmarkReportBuilder
         {
             advisoryNote += $" *Removal was not recorded for {bleedUnrecorded} of these — the run predates harness version {BenchmarkAssessmentPrompt.HarnessVersion}, which added the counter; that figure is inferred, not measured.*";
         }
-        sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {contestedCount}, unevidenced deductions: {unevidencedCount}, omissions as accuracy: {omissionCount}, refuted claims: {refutedCount}, contested critical errors: {contestedCriticalErrorCount}, out-of-rubric accuracy deductions: {outOfRubricAccuracyCount}, answer-framing openers: {answerFramingOpenerCount}) {advisoryNote}");
+        sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {contestedCount}, unevidenced deductions: {unevidencedCount}, omissions as accuracy: {omissionCount}, refuted claims: {refutedCount}, contested critical errors: {contestedCriticalErrorCount}, out-of-rubric accuracy deductions: {outOfRubricAccuracyCount}, contested accuracy deductions: {contestedAccuracyDeductionFigure}, answer-framing openers: {answerFramingOpenerCount}) {advisoryNote}");
         if (answerFramingOpenerCount > 0)
         {
             var answerFramingOpenerAnswers = answers
@@ -1485,6 +1491,14 @@ public static class BenchmarkReportBuilder
                 .OrderBy(a => a.OrderIndex)
                 .ToList();
             sb.AppendLine($"- **Contested Critical Errors:** {contestedCriticalErrorCount} (question(s) {string.Join(", ", contestedCriticalErrorAnswers.Select(a => $"Q{a.OrderIndex}"))}) — the critical-error quote was checked against the source code/wiki by the claim verifier and **supported**. Advisory: the cap stands and no index moved; re-assess from the run detail.");
+        }
+        if (contestedAccuracyDeductionCount > 0)
+        {
+            var contestedAccuracyDeductionAnswers = answers
+                .Where(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedAccuracyDeduction))
+                .OrderBy(a => a.OrderIndex)
+                .ToList();
+            sb.AppendLine($"- **Contested Accuracy Deductions:** {contestedAccuracyDeductionCount} ({string.Join(", ", contestedAccuracyDeductionAnswers.Select(a => $"Q{a.OrderIndex}"))}) — the own-knowledge statement an out-of-rubric Accuracy deduction rests on was checked against the source code/wiki by the claim verifier and **refuted**. Advisory: the deduction stands and no index moved; re-assess from the run detail.");
         }
         sb.AppendLine($"- **Answers Scrubbed:** {scrubbedAnyCount} of {totalQuestions} (transport payloads: {scrubbedTransportCount}, reasoning narration: {bleedRemoved})");
         sb.AppendLine();
@@ -1583,7 +1597,10 @@ public static class BenchmarkReportBuilder
                         var vers = JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(ans.ClaimVerificationJson!, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                         if (vers != null)
                         {
-                            foreach (var v in vers.Where(x => x.Verdict == BenchmarkClaimVerdict.Refuted))
+                            // The out-of-rubric basis is the assessor's statement, not a claim of
+                            // the answer; a refutation of it is reported as a contested deduction.
+                            foreach (var v in BenchmarkService.WithoutOutOfRubricBasis(vers, BenchmarkService.OutOfRubricBasisOf(ans))
+                                         .Where(x => x.Verdict == BenchmarkClaimVerdict.Refuted))
                             {
                                 sb.AppendLine($"- **Q{ans.OrderIndex}:** \"{v.Claim}\"");
                                 if (!string.IsNullOrWhiteSpace(v.Citation))
@@ -2627,6 +2644,7 @@ public static class BenchmarkReportBuilder
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.UnevidencedDeduction)) flagDescriptions.Add("Unevidenced deduction (advisory, changed no score)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.RefutedClaim)) flagDescriptions.Add("Refuted claim (advisory, changed no score)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.ContestedCriticalError)) flagDescriptions.Add("Contested critical error (advisory, changed no score)");
+                if (iaFlags.HasFlag(BenchmarkAnswerFlags.ContestedAccuracyDeduction)) flagDescriptions.Add("Contested out-of-rubric accuracy deduction (advisory, changed no score)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.OmissionAsAccuracy)) flagDescriptions.Add("Omission docked as accuracy (advisory, changed no score)");
                 if (ia.ToolBudgetExhausted)
                 {
@@ -2815,15 +2833,21 @@ public static class BenchmarkReportBuilder
 
         int totalRefutedClaims = run.ClaimsRefutedCount > 0 ? run.ClaimsRefutedCount : answers.Sum(a => a.ClaimsRefutedCount ?? 0);
         int disputedVerdicts = answers.Count(a => a.SecondOpinionDisagreed && a.SecondOpinionQualityScore.HasValue);
-        if (totalRefutedClaims > 0 || disputedVerdicts > 0 || contestedCriticalErrorCount > 0)
+        if (totalRefutedClaims > 0 || disputedVerdicts > 0 || contestedCriticalErrorCount > 0 || contestedAccuracyDeductionCount > 0)
         {
             // The first two figures are always stated, zero or not: the sentence exists to put the
-            // record beside the narrative, and "0 refuted claim(s)" is itself the record. The third
-            // is stated only when it is non-zero, because a zero there is indistinguishable from a
-            // run whose verifier never checked a critical-error quote at all.
-            string counts = contestedCriticalErrorCount > 0
-                ? $"{totalRefutedClaims} refuted claim(s), {disputedVerdicts} disputed verdict(s) and {contestedCriticalErrorCount} contested critical error(s)"
-                : $"{totalRefutedClaims} refuted claim(s) and {disputedVerdicts} disputed verdict(s)";
+            // record beside the narrative, and "0 refuted claim(s)" is itself the record. The
+            // contested figures are stated only when non-zero, because a zero there is
+            // indistinguishable from a run whose verifier never checked a critical-error quote or
+            // an out-of-rubric basis at all.
+            var countParts = new List<string>
+            {
+                $"{totalRefutedClaims} refuted claim(s)",
+                $"{disputedVerdicts} disputed verdict(s)"
+            };
+            if (contestedCriticalErrorCount > 0) countParts.Add($"{contestedCriticalErrorCount} contested critical error(s)");
+            if (contestedAccuracyDeductionCount > 0) countParts.Add($"{contestedAccuracyDeductionCount} contested accuracy deduction(s)");
+            string counts = string.Join(", ", countParts.Take(countParts.Count - 1)) + " and " + countParts[^1];
             sb.AppendLine($"*The synthesis above is the primary assessor's own narrative. This run recorded {counts} — see Run Integrity and Disputed Assessments.*");
             sb.AppendLine();
         }

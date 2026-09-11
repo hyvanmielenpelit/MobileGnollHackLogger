@@ -61,9 +61,19 @@ public static class BenchmarkRunFinalizer
         | BenchmarkAnswerFlags.UnevidencedDeduction
         | BenchmarkAnswerFlags.RefutedClaim
         | BenchmarkAnswerFlags.ContestedCriticalError
+        | BenchmarkAnswerFlags.ContestedAccuracyDeduction
         | BenchmarkAnswerFlags.OmissionAsAccuracy
         | BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction
         | BenchmarkAnswerFlags.AnswerFramingOpener;
+
+    /// <summary>
+    /// The harness version that first adjudicated an out-of-rubric Accuracy deduction, and so the
+    /// first whose <see cref="BenchmarkRun.ContestedAccuracyDeductionAnswerCount"/> is a measurement.
+    /// </summary>
+    private const int OutOfRubricAdjudicationHarnessVersion = 20;
+
+    private static bool PredatesOutOfRubricAdjudication(BenchmarkRun run)
+        => int.TryParse(run.HarnessVersion, out int version) && version < OutOfRubricAdjudicationHarnessVersion;
 
     /// <summary>
     /// Provider finish reasons that mean "the model chose to stop here". `tool_use` is deliberately
@@ -393,6 +403,15 @@ public static class BenchmarkRunFinalizer
             a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.RefutedClaim) != 0);
         run.ContestedCriticalErrorAnswerCount = answers.Count(
             a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedCriticalError) != 0);
+        // Left null, "not recorded", on a run stamped before harness 20 that carries no such flag:
+        // that harness never adjudicated the basis, so re-finalizing it must not turn the absence
+        // into a zero.
+        int contestedAccuracyDeductions = answers.Count(
+            a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedAccuracyDeduction) != 0);
+        if (contestedAccuracyDeductions > 0 || !PredatesOutOfRubricAdjudication(run))
+        {
+            run.ContestedAccuracyDeductionAnswerCount = contestedAccuracyDeductions;
+        }
         run.ClaimVerifiedAnswerCount = answers.Count(
             a => (a.ClaimsSupportedCount ?? 0) + (a.ClaimsRefutedCount ?? 0) + (a.ClaimsIndeterminateCount ?? 0) > 0);
         run.ClaimsSupportedCount = answers.Sum(a => a.ClaimsSupportedCount ?? 0);

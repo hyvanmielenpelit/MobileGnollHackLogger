@@ -126,7 +126,7 @@ Verified against `WikiService`, `NetHackWikiService`, `SourceCodeService`,
 | Corpus | Config key | Key lives in | Owning service | Indexed file types | Silent exclusions | Size limit key · code default | Refresh | Git-backed | Run fingerprint |
 |---|---|---|---|---|---|---|---|---|---|
 | GnollHack wiki | `WikiPath` | User Secrets | `WikiService` | `.md`, `.txt`, `.html`, all subdirectories | Any file over the size limit, dropped with no log line. An unconfigured key falls back to a hardcoded literal rather than no-opping. **From the run-30 round**: any file whose path relative to the wiki root has a segment beginning with `.` (e.g. `.agents`, `.plans`, `.vscode`) is skipped outright; the skipped count is logged once per index pass | `MaxWikiFileSizeKB` · **100** (this key is set in User Secrets, so the effective value is not the default) | ~10 min Git HEAD poll | yes | `WikiHeadSha` |
-| GnollHack source | `SourceCodePath` | User Secrets | `SourceCodeService` | Under `src`, `include`, `dat`, `win\win32\xpl` **only**: `.c`, `.h`, `.des`, `.txt`; plus `.cs` and `.xaml`, indexed but flagged `IsNetCode` and hidden unless a tool opts in | Everything outside those four directories. `vis_tab.c`, `vis_tab.h`, `date.h`; any file ending `conf.h`; any `win*.h` except `wintype.h` and `winprocs.h`; any `mac*.h`; any `qt*.h`. Any file over the size limit. **From the run-32 round**: any file whose path relative to the repository root has a segment beginning with `.` is skipped (one Visual Studio `.vs` cache file under `win\win32\xpl` was indexed before it); the skipped count is logged once per index pass. The indexer is shared, so the NetHack source skips them too | `MaxSourceFileSizeKB` · **800** (set in neither `appsettings.json` nor User Secrets, so the default applies) | ~10 min Git HEAD poll, plus makedefs header regeneration | yes | `SourceCodeHeadSha` |
+| GnollHack source | `SourceCodePath` | User Secrets | `SourceCodeService` | Under `src`, `include`, `dat`, `win\win32\xpl` **only**: `.c`, `.h`, `.des`, `.txt`; plus `.cs` and `.xaml`, indexed but flagged `IsNetCode` and hidden unless a tool opts in | Everything outside those four directories. `vis_tab.c`, `vis_tab.h`, `date.h`; any file ending `conf.h`; any `win*.h` except `wintype.h` and `winprocs.h`; any `mac*.h`; any `qt*.h`. Any file over the size limit. **From the run-32 round**: any file whose path relative to the repository root has a segment beginning with `.` is skipped (one Visual Studio `.vs` cache file under `win\win32\xpl` was indexed before it); the skipped count is logged once per index pass. The indexer is shared, so the NetHack source skips them too. **From the run-36 round**: any segment equal to `bin` or `obj` (case-insensitive), counted in the same log line | `MaxSourceFileSizeKB` · **800** (set in neither `appsettings.json` nor User Secrets, so the default applies) | ~10 min Git HEAD poll, plus makedefs header regeneration | yes | `SourceCodeHeadSha` |
 | NetHack wiki | `NetHackWikiPath` | `appsettings.json` — `c:\hmp\nethackwiki` | `NetHackWikiService` | `.md` only, all subdirectories; YAML frontmatter `title` / `namespace` / `summary` parsed into searchable fields | Every non-`.md` file, including the generated `_index.json`. Any file over the size limit. A per-file read or parse error is logged and the article is skipped | `MaxNetHackWikiFileSizeKB` · **500**; `appsettings.json` also sets 500 | **startup only — no timer** | **no — generated, not versioned** | **none** |
 | NetHack source | `NetHackSourceCodePath` | `appsettings.json` — `C:\repos\NetHack\NetHack` | `NetHackSourceCodeService` (derives from `SourceCodeService`) | Under `src`, `include`, `dat` only — **`win\win32\xpl` is not a target directory here** — otherwise the same extension rules | The same filename exclusions as above. Also: no makedefs header regeneration, no structured game-data parse (`monst.c` / `objects.c` macros), no flag descriptions — so the structured stats tools have nothing to read for NetHack and only the raw search and view tools work | `MaxSourceFileSizeKB` · **800** (shared with the GnollHack source; one key governs both) | ~10 min Git HEAD poll | yes | **none** |
 | Knowledge base | `KbPath` | User Secrets | `KnowledgeBaseService` | `.md` under **`<KbPath>\Content`**, all subdirectories; topic id is the path relative to `Content` without the extension | Everything outside `Content` — a `Content` directory that does not exist logs a warning and loads **zero** articles. **No size limit at all** | none | ~10 min Git HEAD poll on `KbPath` | yes | `KnowledgeBaseHeadSha` |
@@ -225,7 +225,9 @@ $files | Where-Object { $_.Length -gt $limitKB * 1024 } |
 Measured on this machine, 2026-09-09: `src/soundset.c` is **1,086,562 bytes ≈ 1,061 KB**, against
 the **800 KB** `MaxSourceFileSizeKB` default that is in force because the key is set in neither
 `appsettings.json` nor User Secrets. It is therefore **not in the source index at all**, and it is
-the **only** file of the 781 candidates under the four target directories that the limit excludes.
+the **only** file of the 781 candidates under the four target directories that the **size limit**
+excludes — most of the rest of the 781 that never reach the index are excluded by the dot-/bin-/obj-
+directory skip instead (below), not by size.
 
 A model asked about sound sets receives a confident "not found" that is a property of the indexer,
 not of the game. That is a **Corpus / Environment Defect** in the triage of
@@ -236,6 +238,10 @@ Measured in the same pass: **zero** files exceed either wiki limit — the large
 file is 58.6 KB against a 100 KB default, and the largest of 9,323 NetHack wiki articles is
 402.4 KB against 500 KB. **The wiki size limits are not presently a gap.** Re-measure rather than
 citing this; a single regeneration can change it.
+
+**Measured 2026-09-11**: 483 of the 781 candidates were git-ignored build output under
+`win\win32\xpl\**\(bin|obj)` — 480 `.txt` and 3 `.h` — indexed since at least 2026-09-09 and
+excluded from the run-36 round; the index now holds about 298 files. Re-measure rather than citing.
 
 ---
 

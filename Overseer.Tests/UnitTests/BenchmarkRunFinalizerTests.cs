@@ -1004,4 +1004,46 @@ public class BenchmarkRunFinalizerTests
         Assert.Equal(1, run.OutOfRubricAccuracyAnswerCount);
         Assert.Equal(1, run.AnswerFramingOpenerAnswerCount);
     }
+
+    [Fact]
+    public void Finalizer_CountsContestedAccuracyDeductions_AsAdvisoryOnly()
+    {
+        // The verifier refuted the statement an out-of-rubric Accuracy deduction rested on. A
+        // statement about the grading, not a regrade: the answer stays Clean and the run Completed.
+        var a1 = MakeAnswer(1, BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction | BenchmarkAnswerFlags.ContestedAccuracyDeduction);
+        var a2 = MakeAnswer(2, BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction);
+        var a3 = MakeAnswer(3);
+        var answers = new[] { a1, a2, a3 };
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 3, HarnessVersion = "20" };
+        BenchmarkRunFinalizer.Apply(run, answers);
+
+        Assert.Equal(1, run.ContestedAccuracyDeductionAnswerCount);
+        Assert.Equal(2, run.OutOfRubricAccuracyAnswerCount);
+        Assert.Equal(2, run.AdvisoryFlagAnswerCount);
+        Assert.True(BenchmarkRunFinalizer.HasAdvisoryFlag(MakeAnswer(4, BenchmarkAnswerFlags.ContestedAccuracyDeduction)));
+        Assert.All(answers, a => Assert.Equal(BenchmarkAnswerIntegrity.Clean, BenchmarkRunFinalizer.Classify(a)));
+        Assert.Equal(BenchmarkRunStatus.Completed, BenchmarkRunFinalizer.ComputeStatus(answers));
+        Assert.Equal(BenchmarkRunStatus.Completed, run.Status);
+    }
+
+    [Fact]
+    public void Finalizer_RecordsZeroContestedAccuracyDeductions_OnAHarness20RunWithoutTheFlag()
+    {
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 1, HarnessVersion = "20" };
+        BenchmarkRunFinalizer.Apply(run, new[] { MakeAnswer(1) });
+
+        Assert.Equal(0, run.ContestedAccuracyDeductionAnswerCount);
+    }
+
+    [Fact]
+    public void Finalizer_LeavesContestedAccuracyDeductionCountNull_OnARunBeforeHarness20()
+    {
+        // Harness 19 never adjudicated the basis, so re-finalizing one of its runs must not turn
+        // "not recorded" into a zero.
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 1, HarnessVersion = "19" };
+        BenchmarkRunFinalizer.Apply(run, new[] { MakeAnswer(1, BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction) });
+
+        Assert.Null(run.ContestedAccuracyDeductionAnswerCount);
+    }
 }

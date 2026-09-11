@@ -692,6 +692,14 @@ public class BenchmarkRunDetailDto
     public int ContestedCriticalErrorAnswerCount { get; set; }
 
     /// <summary>
+    /// Answers whose out-of-rubric Accuracy deduction rests on an own-knowledge statement the claim
+    /// verifier checked against the source code and wiki and refuted. Advisory: the deduction stands
+    /// and no index moved. Null on a run recorded before harness 20, which never adjudicated the
+    /// basis: "not recorded", never zero.
+    /// </summary>
+    public int? ContestedAccuracyDeductionAnswerCount { get; set; }
+
+    /// <summary>
     /// Answers where the assessor recorded a rubric point outside the question's scope under the
     /// `OUT-OF-SCOPE:` marker (scoring method v8) rather than deducting for it — the instrument's
     /// own share of the Accuracy→Completeness gap. Zero on a run graded before v8, same as a v8 run

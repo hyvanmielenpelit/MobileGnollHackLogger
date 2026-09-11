@@ -2,9 +2,12 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using Overseer.Services;
 using Overseer.Services.Tools;
 using Xunit;
@@ -65,6 +68,38 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
         File.WriteAllText(Path.Combine(_tempDir, "Cockatrice.md"), cockatriceContent);
         File.WriteAllText(Path.Combine(_tempDir, "Elbereth.md"), elberethContent);
         File.WriteAllText(Path.Combine(_tempDir, "Source__NetHack_3.4.3__src__objects.c.md"), sourceContent);
+
+        // 5 articles sharing "wandlore", each with a 4,000-character body - over the tool's
+        // 3,000-char PerResultChars cap, so a full MaxResults=5 yield carries five truncation notes.
+        var wandloreBody = string.Concat(Enumerable.Repeat("wandlore lore ", 300)).Substring(0, 4000);
+        for (int i = 1; i <= 5; i++)
+        {
+            var wandloreContent = $"---\ntitle: \"Wandlore{i}\"\nnamespace: article\nsummary: \"wandlore article {i}\"\n---\n\n{wandloreBody}";
+            File.WriteAllText(Path.Combine(_tempDir, $"Wandlore{i}.md"), wandloreContent);
+        }
+
+        // Two articles for the title-resolution test: "Two weapon combat" has no article of its
+        // own title/filename match, but Combat's title does, and Twoweapon's summary does.
+        var twoWeaponContent = @"---
+title: ""Twoweapon""
+namespace: article
+summary: ""Two-weapon combat is a fighting style requiring two weapons.""
+---
+
+Twoweapon is a fighting style that uses a weapon in each hand.
+";
+
+        var combatContent = @"---
+title: ""Combat""
+namespace: article
+summary: ""General combat mechanics.""
+---
+
+Combat covers how attacks, to-hit rolls, and damage work.
+";
+
+        File.WriteAllText(Path.Combine(_tempDir, "Twoweapon.md"), twoWeaponContent);
+        File.WriteAllText(Path.Combine(_tempDir, "Combat.md"), combatContent);
     }
 
     public void Dispose()
@@ -385,6 +420,113 @@ summary: ""Annotated source code for objects.c in NetHack 3.4.3.""
             Assert.Equal(ToolGuardMessages.NetHackWikiIndexingInProgress, result.ErrorMessage);
             Assert.Contains("Do not retry", result.ErrorMessage);
         }
+    }
+
+    private class NullClientBridge : IClientToolBridge
+    {
+        public bool IsClientConnected => true;
+        public Task<ToolResult> SendToolRequestAsync(Overseer.Services.Privacy.SessionRef sessionRef, string toolName, JsonElement parameters, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new ToolResult { Success = true, Content = "Client result" });
+        }
+    }
+
+    [Fact]
+    public async Task NetHackWikiSearchTool_MaxResultLengthOverride_CoversFullFiveArticleYield()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new[]
+            {
+                new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", _tempDir),
+                new System.Collections.Generic.KeyValuePair<string, string?>("Tools:nethack_wiki_search:MaxResults", "5"),
+                new System.Collections.Generic.KeyValuePair<string, string?>("Tools:nethack_wiki_search:PerResultChars", "3000"),
+                new System.Collections.Generic.KeyValuePair<string, string?>("ToolExecutionLimits:MaxProcessParallelToolCalls", "30"),
+                new System.Collections.Generic.KeyValuePair<string, string?>("ToolExecutionLimits:MaxProcessExternalLookupCalls", "3"),
+                new System.Collections.Generic.KeyValuePair<string, string?>("ToolExecutionLimits:MaxBatchResultLength", "40000")
+            })
+            .Build();
+
+        using var service = new NetHackWikiService(config);
+        await service.InitializationTask;
+        var searchTool = new NetHackWikiSearchTool(service, config);
+
+        Assert.True(searchTool.MaxResultLengthOverride.HasValue);
+        Assert.True(searchTool.MaxResultLengthOverride!.Value >= 5 * 3000);
+
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var executor = new ToolExecutor(
+            new IToolHandler[] { searchTool },
+            new NullClientBridge(),
+            NullLogger<ToolExecutor>.Instance,
+            cache,
+            config);
+
+        var jsonParams = JsonDocument.Parse("{\"query\": \"wandlore\", \"max_results\": 5}").RootElement;
+        var context = new ToolExecutionContext
+        {
+            SessionId = Overseer.Services.Privacy.SessionRef.Persistent(2001),
+            SpoilerFreeMode = false,
+            MaxResultLength = 5000,
+            MaxCallsPerSession = 50
+        };
+
+        var result = await executor.ExecuteAsync("nethack_wiki_search", jsonParams, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+        var headerMatches = Regex.Matches(result.Content, @"(?m)^--- .+ ---$");
+        Assert.Equal(5, headerMatches.Count);
+        Assert.Equal(5, Regex.Matches(result.Content, Regex.Escape("[Article truncated: showing 3000 of")).Count);
+        Assert.True(result.Content.Length <= searchTool.MaxResultLengthOverride.Value,
+            $"Result length {result.Content.Length} exceeded the {searchTool.MaxResultLengthOverride.Value}-char floor.");
+        Assert.DoesNotContain("[Truncated:", result.Content);
+    }
+
+    [Fact]
+    public async Task NetHackWikiViewTool_RequestResolvesToDifferentTitle_PrependsResolutionLine()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new[]
+            {
+                new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", _tempDir)
+            })
+            .Build();
+
+        using var service = new NetHackWikiService(config);
+        await service.InitializationTask;
+        var viewTool = new NetHackWikiViewTool(service);
+
+        var jsonParams = JsonDocument.Parse("{\"article\": \"Two weapon combat\"}").RootElement;
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(2002), SpoilerFreeMode = false };
+
+        var result = await viewTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.StartsWith("[No NetHack wiki article titled 'Two weapon combat'.", result.Content);
+        Assert.Contains("Twoweapon", result.Content);
+    }
+
+    [Fact]
+    public async Task NetHackWikiViewTool_RequestResolvesToExactTitle_OmitsResolutionLine()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new[]
+            {
+                new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", _tempDir)
+            })
+            .Build();
+
+        using var service = new NetHackWikiService(config);
+        await service.InitializationTask;
+        var viewTool = new NetHackWikiViewTool(service);
+
+        var jsonParams = JsonDocument.Parse("{\"article\": \"Combat\"}").RootElement;
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(2003), SpoilerFreeMode = false };
+
+        var result = await viewTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.DoesNotContain("[No NetHack wiki article titled", result.Content);
+        Assert.StartsWith("--- Combat ---", result.Content);
     }
 }
 
