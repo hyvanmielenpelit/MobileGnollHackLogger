@@ -96,6 +96,14 @@ deliverable.
   numbering, same line breaks. State which point(s) changed.
 - **Say what the edit does to the item** (§ 5), so the human is not surprised when the launcher
   refuses the next run.
+- **Mirror the edit into the seed file.** The default suite is imported from
+  `Overseer/Data/BenchmarkDefaultSuite.json` (`AdminBenchmarkController`, the default-suite
+  import endpoint), and importing does not touch rows already in the database
+  (`docs/overseer/ai-benchmark.md`, "Note on Default Suite Re-Import"). A rubric fixed only in
+  the database comes back wrong the next time the suite is deleted and re-imported, so the same
+  text goes into the matching `expectedPoints` entry — JSON-escaped (`\n` for line breaks, `\"`
+  for quotes), with the file's existing LF line endings and no BOM preserved. This is a
+  repository edit the agent makes itself; it is a single file and needs no plan.
 
 ## 4. The Deliverable
 

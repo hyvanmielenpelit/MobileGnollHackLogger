@@ -1751,15 +1751,26 @@
    BENCHMARK NATIVE DIALOGS & STICKY HEADERS
    ========================================================================== */
 
+/* Sized to match the Edit Question dialog it opens, so the two do not jump in width or
+   height as the operator moves between them. dvh so a collapsing mobile URL bar cannot
+   clip the footer. */
 .gh-dialog.benchmark-questions-dialog {
-  width: min(1050px, 94vw);
-  max-width: min(1050px, 94vw);
-  height: min(85dvh, 850px);
-  max-height: 85dvh;
+  width: min(920px, 94vw);
+  max-width: min(920px, 94vw);
+  height: calc(100dvh - 16px);
+  max-height: calc(100dvh - 16px);
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
   background: rgba(20, 20, 20, 0.98);
+}
+
+/* Half the inset on a phone, mirroring .gh-dialog-fullscreen's own 600px step. */
+@media (max-width: 600px) {
+  .gh-dialog.benchmark-questions-dialog {
+    height: calc(100dvh - 8px);
+    max-height: calc(100dvh - 8px);
+  }
 }
 
 .gh-dialog.benchmark-run-detail-dialog {
