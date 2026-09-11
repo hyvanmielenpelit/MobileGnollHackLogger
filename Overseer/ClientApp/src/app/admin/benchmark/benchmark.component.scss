@@ -1900,6 +1900,51 @@
   }
 }
 
+/* Wider and full height than its .benchmark-form-dialog siblings: this is the only one of them
+   holding a Markdown editor, and 920px is what lets the source and the preview sit side by side
+   at a readable measure. dvh so a collapsing mobile URL bar cannot clip the footer.
+
+   Must stay after .benchmark-form-dialog: both selectors have the same specificity, so source
+   order is what decides the width. */
+.gh-dialog.benchmark-question-form-dialog {
+  width: min(920px, 94vw);
+  max-width: min(920px, 94vw);
+  height: calc(100dvh - 16px);
+  max-height: calc(100dvh - 16px);
+
+  .dialog-body {
+    display: flex;
+    flex-direction: column;
+
+    /* The criteria editor is the last form-group; it takes what the first two leave. */
+    > .form-group:last-child {
+      flex: 1;
+      min-height: 0;
+      margin-bottom: 0;
+    }
+  }
+}
+
+/* Grows with the question, to a cap. rows="3" in the markup is the floor and the whole
+   fallback: where field-sizing is unsupported the box stays three rows and scrolls. */
+.q-text-autosize {
+  field-sizing: content;
+  height: auto;          /* an inherited fixed height would override field-sizing outright */
+  width: 100%;           /* stable inline size, so replacing a long placeholder cannot jolt it */
+  min-block-size: 3lh;
+  max-block-size: 12lh;  /* past this it scrolls rather than pushing the criteria editor away */
+  resize: vertical;
+}
+
+/* Half the inset on a phone, mirroring .gh-dialog-fullscreen's own 600px step. */
+@media (max-width: 600px) {
+  .gh-dialog.benchmark-question-form-dialog {
+    height: calc(100dvh - 8px);
+    max-height: calc(100dvh - 8px);
+  }
+}
+
+
 .gh-dialog.difficulty-assessor-dialog {
   /* Wider than the 640px shared by the other form dialogs: the terminal footer carries
      three buttons — Close, Assess Again, Retry Failed Questions — and .btn-gh's 34px

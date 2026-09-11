@@ -4,6 +4,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { By } from '@angular/platform-browser';
 import { of, throwError, Subject } from 'rxjs';
 import { AdminBenchmarkComponent } from './benchmark.component';
+import { MarkdownEditorComponent } from '../../shared/markdown-editor/markdown-editor.component';
 import { MultiRunComponent } from './multi-run/multi-run.component';
 import { AdminBenchmarkService, BenchmarkRunAnswerDto } from '../../services/admin-benchmark.service';
 import { SystemService } from '../../services/system.service';
@@ -349,6 +350,33 @@ describe('AdminBenchmarkComponent', () => {
     expect(markdownContent).toBeTruthy();
     expect(markdownContent.querySelector('strong')?.textContent).toContain('REQUIRED');
     expect(markdownContent.querySelectorAll('li').length).toBe(2);
+  });
+
+  it('should edit the expected answer criteria through the markdown editor', () => {
+    component.questionForm = {
+      questionText: 'What are the stats of silver dragon scale mail?',
+      difficulty: 1,
+      expectedPoints: '**REQUIRED**\n- Base AC 1'
+    };
+    fixture.detectChanges();
+
+    const editor = fixture.debugElement.query(By.directive(MarkdownEditorComponent));
+    expect(editor).toBeTruthy();
+    expect(editor.componentInstance.inputId).toBe('qExpectedInput');
+    expect(editor.componentInstance.value).toBe('**REQUIRED**\n- Base AC 1');
+
+    // The two-way binding writes back through the component's own accessor.
+    editor.componentInstance.valueChange.emit('**REQUIRED**\n- Reflection');
+    fixture.detectChanges();
+    expect(component.questionForm.expectedPoints).toBe('**REQUIRED**\n- Reflection');
+  });
+
+  it('should mark the question form dialog as the wide markdown-editor variant', () => {
+    fixture.detectChanges();
+
+    const dialog: HTMLDialogElement = fixture.nativeElement.querySelector('dialog.benchmark-question-form-dialog');
+    expect(dialog).toBeTruthy();
+    expect(dialog.classList.contains('benchmark-form-dialog')).toBeTrue();
   });
 
   it('should render model answers, thought text, and assessor comments as plain text and not innerHTML', () => {
@@ -924,8 +952,10 @@ describe('AdminBenchmarkComponent', () => {
   // ---------------------------------------------------------------------------
   describe('sub-navigation tab widget', () => {
     const tabList = () => fixture.nativeElement.querySelector('[role="tablist"]');
+    // Scoped to the sub-navigation's own tablist: the question form dialog carries a second
+    // one for the markdown editor's view modes.
     const tabs = () =>
-      Array.from(fixture.nativeElement.querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+      Array.from(tabList().querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
 
     beforeEach(() => fixture.detectChanges());
 

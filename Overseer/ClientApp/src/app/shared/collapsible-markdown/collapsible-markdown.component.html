@@ -2,7 +2,7 @@
   <div class="collapsible-markdown-container">
     <div
       #contentEl
-      class="markdown-content"
+      class="markdown-content markdown-body"
       [class.collapsed]="!isExpanded && isOverflowing"
       [style.max-height]="(!isExpanded && isOverflowing) ? (collapsedMaxHeight + 'px') : null"
       [innerHTML]="text | markdown">

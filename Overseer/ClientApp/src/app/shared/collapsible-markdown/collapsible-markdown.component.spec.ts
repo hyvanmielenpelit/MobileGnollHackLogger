@@ -77,4 +77,13 @@ describe('CollapsibleMarkdownComponent', () => {
     fixture.detectChanges();
     expect(contentEl.classList.contains('collapsed')).toBeFalse();
   });
+
+  it('should carry both markdown-content and markdown-body on the rendered content', () => {
+    component.text = '# Heading\n\nSome text.';
+    fixture.detectChanges();
+
+    const contentEl = fixture.nativeElement.querySelector('.markdown-content');
+    expect(contentEl).toBeTruthy();
+    expect(contentEl.classList.contains('markdown-body')).toBeTrue();
+  });
 });

@@ -43,6 +43,7 @@ import {
 import { SystemAiConfigDto } from '../../services/admin.service';
 
 import { CollapsibleMarkdownComponent } from '../../shared/collapsible-markdown/collapsible-markdown.component';
+import { MarkdownEditorComponent } from '../../shared/markdown-editor/markdown-editor.component';
 import { SuiteHealthComponent, SuiteHealthTab } from './suite-health/suite-health.component';
 import { MultiRunComponent } from './multi-run/multi-run.component';
 import { MultiRunProgressDialogComponent } from './multi-run/multi-run-progress-dialog.component';
@@ -203,7 +204,8 @@ interface BenchmarkRunSettings {
   selector: 'app-admin-benchmark',
   standalone: true,
   imports: [
-    CommonModule, DecimalPipe, FormsModule, CollapsibleMarkdownComponent, SuiteHealthComponent,
+    CommonModule, DecimalPipe, FormsModule, CollapsibleMarkdownComponent, MarkdownEditorComponent,
+    SuiteHealthComponent,
     SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent,
     SortHeaderComponent, TablePagerComponent, ModelComparisonComponent,
     ComparisonSourcePickerComponent, BenchmarkCostPanelComponent
@@ -237,6 +239,12 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
    * heading it owns, and asking whether an export is in flight before allowing a close.
    */
   @ViewChild(ModelComparisonComponent) comparisonWizard?: ModelComparisonComponent;
+
+  /**
+   * The criteria editor, for the one thing the host cannot reach through the DOM: putting it
+   * back on its Write tab before the dialog is shown again.
+   */
+  @ViewChild(MarkdownEditorComponent) expectedPointsEditor?: MarkdownEditorComponent;
   @ViewChild('snapshotViewer') snapshotViewer?: SnapshotViewerComponent;
   @ViewChild('multiRunPanel') multiRunPanel?: MultiRunComponent;
   @ViewChild('generationDialog') generationDialog!: ElementRef<HTMLDialogElement>;
@@ -767,6 +775,33 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   // Question Form Dialog
   editingQuestionId: number | null = null;
   questionForm: CreateBenchmarkQuestionRequest = { questionText: '', difficulty: 1, expectedPoints: '' };
+
+  /** A sample rubric in the shape the assessor reads: the four graded sections and a source line. */
+  readonly expectedPointsPlaceholder = [
+    '**REQUIRED** (accuracy + completeness)',
+    '- Fact 1.',
+    '- Fact 2.',
+    '',
+    '**CRITICAL ERROR** (set criticalError) — when the answer:',
+    '- Asserts a major hallucination.',
+    '',
+    '**SCOPE** (conciseness)',
+    '- Out-of-scope details.',
+    '',
+    '**FORM** (not graded — presentation note only)',
+    '- Short table or bullet list.',
+    '',
+    '**SOURCE** — src/role.c line 1217; GnollHack wiki'
+  ].join('\n');
+
+  /** expectedPoints is optional on the request DTO; the editor's value is always a string. */
+  get expectedPointsValue(): string {
+    return this.questionForm.expectedPoints ?? '';
+  }
+
+  set expectedPointsValue(value: string) {
+    this.questionForm.expectedPoints = value;
+  }
 
   ngOnInit() {
     ensureOverlayPolyfills();
@@ -2279,7 +2314,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   openCreateQuestion() {
     this.editingQuestionId = null;
     this.questionForm = { questionText: '', difficulty: 1, expectedPoints: '' };
-    this.questionFormDialog?.nativeElement.showModal();
+    this.showQuestionForm();
   }
 
   openEditQuestion(q: BenchmarkQuestionDto) {
@@ -2289,7 +2324,18 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       difficulty: typeof q.difficulty === 'number' ? q.difficulty : this.parseDifficulty(q.difficulty),
       expectedPoints: q.expectedPoints || ''
     };
+    this.showQuestionForm();
+  }
+
+  /**
+   * Opens the question form dialog on the editor's Write tab, whatever tab the previous session
+   * left it on. The anchor-positioning polyfill does not observe DOM mutations, so the editor's
+   * toolbar tooltips are re-scanned once the dialog is in the top layer.
+   */
+  private showQuestionForm(): void {
+    this.expectedPointsEditor?.resetToWrite();
     this.questionFormDialog?.nativeElement.showModal();
+    refreshAnchorPositioning();
   }
 
   saveQuestion() {

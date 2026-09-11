@@ -1,0 +1,134 @@
+.md-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.md-editor-fill {
+  flex: 1;
+  min-block-size: 0;
+}
+
+.md-editor-hint {
+  font-size: 0.85em;
+  color: #aaa;
+}
+
+.md-editor-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.md-editor-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  .action-btn {
+    margin-left: 0;
+  }
+}
+
+.md-editor-panes {
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+  border-radius: 4px;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
+  }
+}
+
+.md-editor-split .md-editor-panes {
+  flex-direction: row;
+  gap: 12px;
+}
+
+.md-editor-fill .md-editor-panes {
+  flex: 1;
+  min-block-size: 0;
+}
+
+.md-editor-pane {
+  display: flex;
+  flex: 1;
+  min-inline-size: 0;
+
+  /* The pane rule above sets display: flex, so hiding it needs an explicit override. */
+  &[hidden] {
+    display: none !important;
+  }
+}
+
+.md-editor-textarea {
+  flex: 1;
+  width: 100%;
+  min-block-size: 140px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.md-editor-fill .md-editor-textarea {
+  height: 100%;
+}
+
+.md-editor-preview {
+  /* .md-editor-pane makes this a flex container; the column keeps its single child
+     stretched to the pane's width rather than shrunk to its content. */
+  flex-direction: column;
+  font-size: 13px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-glass);
+  border-radius: 4px;
+  overflow: auto;
+  min-block-size: 140px;
+  background: var(--bg-input);
+}
+
+.md-editor-empty {
+  color: #888;
+  font-style: italic;
+  margin: 0;
+}
+
+/* The live region stays mounted so a warning appearing later is announced; the visible
+   frame belongs to the list, so an empty region takes no space in the layout. */
+.md-editor-warnings {
+  color: var(--color-warning, #ffc107);
+  font-size: 0.85em;
+
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 6px 10px;
+    border: 1px dashed var(--color-warning, #ffc107);
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  li {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .btn-icon {
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+}
+
+.md-editor-foot {
+  align-self: flex-end;
+  font-size: 0.8em;
+  color: #888;
+}
