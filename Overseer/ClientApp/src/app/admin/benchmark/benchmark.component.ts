@@ -3386,6 +3386,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     const inFlight = new Set<number>(run.inFlightOrderIndexes ?? []);
     const verifying = new Set<number>(run.inFlightVerificationOrderIndexes ?? []);
     const secondOpinion = new Set<number>(run.inFlightSecondOpinionOrderIndexes ?? []);
+    const rerunScope = new Set<number>(this.effectiveRerunScope);
+    const rerunAnswered = new Set<number>(run.rerunAnsweredOrderIndexes ?? []);
+    const rerunRunning = this.runIsRunning && this.runHasRerunScope;
 
     return [...source]
       .sort((a, b) => a.orderIndex - b.orderIndex)
@@ -3413,9 +3416,33 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
           };
         }
 
+        // An answer row is written only after the provider replies, so an in-flight row that
+        // already has one is being re-executed in place.
+        if (inFlight.has(q.orderIndex)) {
+          return {
+            orderIndex: q.orderIndex,
+            questionText: q.questionText,
+            status: 'Answering',
+            assessmentStatus: '',
+            errorMessage: null
+          };
+        }
+
         // A question inside a pending re-run's scope stops showing the failure it is about to
-        // be re-run for; once the server reports Running the in-flight sets above take over.
+        // be re-run for.
         if (this.rerunLaunchPending && this.effectiveRerunScope.includes(q.orderIndex)) {
+          return {
+            orderIndex: q.orderIndex,
+            questionText: q.questionText,
+            status: 'Pending',
+            assessmentStatus: '',
+            errorMessage: null
+          };
+        }
+
+        // While the re-run is Running, a scope member it has not answered again is still queued,
+        // the same rule runMeterFailed applies.
+        if (rerunRunning && rerunScope.has(q.orderIndex) && !rerunAnswered.has(q.orderIndex)) {
           return {
             orderIndex: q.orderIndex,
             questionText: q.questionText,
@@ -3498,12 +3525,23 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return 'status-ok';
   }
 
-  /** Recomputed each second by the elapsed ticker (and on each poll tick). */
+  /**
+   * Recomputed each second by the elapsed ticker (and on each poll tick). Under a re-run scope it
+   * measures the re-run's own span; the run's CompletedAtUtc stays fixed across a re-run.
+   */
   get runElapsedLabel(): string {
     const run = this.activeRunDetail;
-    if (!run?.startedAtUtc) return '—';
+    if (!run) return '—';
+    if (this.runElapsedIsRerun) {
+      return this.formatElapsed(elapsedMsBetween(run.rerunStartedAtUtc, run.rerunCompletedAtUtc));
+    }
+    if (!run.startedAtUtc) return '—';
     const ms = elapsedMsBetween(run.startedAtUtc, run.completedAtUtc);
     return this.formatElapsed(ms);
+  }
+
+  get runElapsedIsRerun(): boolean {
+    return this.runHasRerunScope && !!this.activeRunDetail?.rerunStartedAtUtc;
   }
 
   get runAverageAnswerDurationLabel(): string {
@@ -3568,6 +3606,10 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       const startedParsed = run.startedAtUtc ? parseServerUtcDate(run.startedAtUtc).toISOString() : 'n/a';
       lines.push(`Started (parsed): ${startedParsed}`);
       lines.push(`Completed:        ${run.completedAtUtc ?? 'n/a'}`);
+      if (this.runElapsedIsRerun) {
+        lines.push(`Re-run started:   ${run.rerunStartedAtUtc}`);
+        lines.push(`Re-run completed: ${run.rerunCompletedAtUtc ?? 'n/a'}`);
+      }
       lines.push(`Elapsed:          ${this.runElapsedLabel}`);
       lines.push('');
 
@@ -3619,6 +3661,10 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       lines.push(`Verified ${this.runVerifiedCount}, second-graded ${this.runSecondOpinionCount}`);
       if (this.runHasRerunScope) {
         lines.push(`Failed-question re-run in progress over: ${this.effectiveRerunScope.map(i => `Q${i}`).join(', ')}`);
+        const reAnswered = run.rerunAnsweredOrderIndexes ?? [];
+        const reScored = run.rerunScoredOrderIndexes ?? [];
+        const qList = (xs: number[]) => xs.length > 0 ? xs.map(i => `Q${i}`).join(', ') : 'none';
+        lines.push(`Re-run answered: ${qList(reAnswered)} (${reAnswered.length} of ${this.runMeterTotal}); re-run scored: ${qList(reScored)} (${reScored.length} of ${this.runMeterTotal})`);
       }
       lines.push(`Re-run launch pending: ${this.rerunLaunchPending}`);
       if (this.runProgressQuestions.length > 0 && this.runProgressQuestionsSuiteId != null) {

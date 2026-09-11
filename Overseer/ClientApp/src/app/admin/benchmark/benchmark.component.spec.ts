@@ -2687,6 +2687,86 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.runRowChipLabel(rows[2])).toBe('Scored');
     });
 
+    function buildRerunRun(overrides: any = {}, answer2: any = {}): any {
+      return buildCompletedRun({
+        status: 'Running',
+        stage: 'Answering',
+        totalQuestionCount: 3,
+        rerunScopeOrderIndexes: [2],
+        inFlightOrderIndexes: [],
+        rerunAnsweredOrderIndexes: [],
+        answers: [
+          buildScoredAnswer(1),
+          buildScoredAnswer(2, { status: 'ProviderError', assessmentStatus: 'Failed', ...answer2 }),
+          buildScoredAnswer(3)
+        ],
+        ...overrides
+      });
+    }
+
+    it('should chip a re-run question Answering while its request is in flight even though it already has an answer row', () => {
+      component.activeRunDetail = buildRerunRun({ inFlightOrderIndexes: [2] });
+
+      const rows = component.runProgressRows;
+
+      expect(rows[1].status).toBe('Answering');
+      expect(component.runRowChipLabel(rows[1])).toBe('Answering');
+      expect(component.runRowChipClass(rows[1])).toBe('status-answering');
+      expect(component.runRowChipLabel(rows[0])).toBe('Scored');
+      expect(component.runRowChipLabel(rows[2])).toBe('Scored');
+    });
+
+    it('should chip a queued re-run question Pending rather than its previous failure while the re-run is running', () => {
+      component.activeRunDetail = buildRerunRun();
+
+      let rows = component.runProgressRows;
+
+      expect(rows[1].status).toBe('Pending');
+      expect(component.runRowChipLabel(rows[1])).toBe('Pending');
+
+      // Bounded to a running re-run: a terminal run shows the row's real status.
+      component.activeRunDetail = buildRerunRun({ status: 'Completed' });
+      rows = component.runProgressRows;
+
+      expect(component.runRowChipLabel(rows[1])).toBe('Provider Error');
+    });
+
+    it('should follow a re-answered re-run question through Answered, Assessing and Scored', () => {
+      component.activeRunDetail = buildRerunRun({ rerunAnsweredOrderIndexes: [2] }, { status: 'Ok', assessmentStatus: 'Pending' });
+      expect(component.runRowChipLabel(component.runProgressRows[1])).toBe('Answered');
+
+      component.activeRunDetail = buildRerunRun({ rerunAnsweredOrderIndexes: [2] }, { status: 'Ok', assessmentStatus: 'Assessing' });
+      let row = component.runProgressRows[1];
+      expect(component.runRowChipLabel(row)).toBe('Assessing');
+      expect(component.runRowChipClass(row)).toBe('status-assessing');
+
+      component.activeRunDetail = buildRerunRun({ rerunAnsweredOrderIndexes: [2] }, { status: 'Ok', assessmentStatus: 'Scored' });
+      row = component.runProgressRows[1];
+      expect(component.runRowChipLabel(row)).toBe('Scored');
+    });
+
+    it("should measure Elapsed from the re-run's own start while a re-run scope is active", () => {
+      const ninetySecondsAgo = new Date(Date.now() - 90000).toISOString();
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running',
+        startedAtUtc: '2026-09-11T00:00:00Z',
+        completedAtUtc: '2026-09-11T01:00:00Z',
+        rerunStartedAtUtc: ninetySecondsAgo,
+        rerunCompletedAtUtc: null,
+        rerunScopeOrderIndexes: [4],
+        rerunAnsweredOrderIndexes: [4],
+        rerunScoredOrderIndexes: []
+      });
+
+      expect(component.runElapsedIsRerun).toBeTrue();
+      expect(component.runElapsedLabel).toMatch(/^1m 3\ds$/);
+
+      const diagnostics = component.runDiagnosticsText;
+      expect(diagnostics).toContain('Re-run answered: Q4 (1 of 1); re-run scored: none (0 of 1)');
+      expect(diagnostics).toContain(`Re-run started:   ${ninetySecondsAgo}`);
+      expect(diagnostics).toContain('Re-run completed: n/a');
+    });
+
     it('should count only gradeable answers as the index population', () => {
       component.activeRunDetail = buildCompletedRun({
         status: 'Completed',

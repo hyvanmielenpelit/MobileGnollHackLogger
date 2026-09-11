@@ -43,6 +43,7 @@ The per-question list merges the suite's questions (fetched once when the dialog
 - **Answered / Scored** — an answer row exists.
 - **Verifying** — the claim verifier is re-reading a row that already carries a score.
 - **Second opinion** — the second-opinion assessor is re-grading such a row.
+- **During a failed-question re-run**, a scope member reads **Pending** until its request is dispatched, **Answering** while it is in flight, and then its re-executed row's own state; its previous failure chip is not shown while the re-run is running. Under a re-run scope the Elapsed stat reads **Re-run elapsed** and measures the re-run's own span from `RerunStartedAtUtc`, because the run's `CompletedAtUtc` stays fixed across a re-run.
 
 The last two appear **inside stage 1** as well as during the follow-up passes, because that is where most of that work happens. Both come from in-flight sets that the wrapper methods `VerifyAnswerClaimsAsync` and `RunSecondOpinionAsync` set and clear in a `finally`, so every caller marks the row and a throw or a cancel cannot leave it pulsing.
 
@@ -1714,6 +1715,10 @@ stamped 20 on `HarnessVersion` alone, not on `ToolGuidesSha256` or `CandidateSys
   one, and the new `runMeterTotal`, `runMeterAnswered`, `runMeterScored` and `runMeterFailed` getters
   read against that scope instead of the whole run once one is active, so the run progress dialog's
   meters and `runStageLabel` describe the re-run's own population rather than the suite's.
+  `runProgressRows` checks `inFlightOrderIndexes` ahead of an answer row's own status, so a question
+  re-executed in place reads `Answering`, and while the re-run is running a scope member not yet in
+  `rerunAnsweredOrderIndexes` reads `Pending` rather than its previous failure. `runElapsedLabel`
+  measures from `rerunStartedAtUtc` under a re-run scope, since `CompletedAtUtc` is preserved.
 
 **The motivating case.** Run 37 on 2026-09-11 lost 12 of its 18 questions to an OpenAI in-stream
 overload. The harness graded the 12 error strings as if they were answers, reported
