@@ -14,7 +14,10 @@ files and how many lines mention it — or states that it does not occur there a
 all. A struct member, a function pointer field, or a macro alias has no
 extractable body under that name: read those with source_code_search (with
 context_lines) on the file the miss names, or with search_definitions for the
-symbol the alias resolves to.
+symbol the alias resolves to. If you name a kind and nothing of that kind
+exists but a definition of another kind does (a macro under a function's name
+is the common case), the tool returns that definition behind a one-line note
+saying so.
 
 Use this tool when you need to understand the full logic of a function.
 Use search_definitions when you only need to see the signature or a quick look.

@@ -3673,15 +3673,21 @@ describe('AdminBenchmarkComponent', () => {
       it('should report both counts as measurements, outside the integrity notice', () => {
         component.selectedRunDetail = buildFinishedRun({
           completenessOutOfScopeCount: 2,
-          readabilityFormOnlyCount: 3
+          readabilityFormOnlyCount: 3,
+          completenessOutOfScopeDeductedCount: 1,
+          readabilityFormOnlyDeductedCount: 2
         });
         fixture.detectChanges();
 
         expect(component.completenessOutOfScopeCount).toBe(2);
         expect(component.readabilityFormOnlyCount).toBe(3);
+        expect(component.completenessOutOfScopeDeductedCount).toBe(1);
+        expect(component.readabilityFormOnlyDeductedCount).toBe(2);
         expect(component.hasInstrumentMeasurements).toBeTrue();
         expect(measurementsText()).toContain('2 out-of-scope completeness deduction(s)');
         expect(measurementsText()).toContain('3 rubric format suggestion(s) not followed');
+        expect(measurementsText()).toContain('1 of them sit beside a Completeness level below 6');
+        expect(measurementsText()).toContain('2 of them sit beside a Readability level below 6');
       });
 
       it('should show only the count that was recorded', () => {
@@ -4758,6 +4764,51 @@ describe('AdminBenchmarkComponent', () => {
       const marker = card!.querySelector('.degraded-tag');
       expect(marker).toBeTruthy();
       expect(marker?.textContent?.trim()).toBe('*');
+    });
+
+    // H5. The summary row carries the same pair the run history Cost cell does: the model under
+    // test first, the catalog total beside it.
+    it('should render a Model Under Test card with the candidate figure and its share of the total', () => {
+      component.activeSubTab = 'run';
+      component.selectedRunDetail = {
+        id: 1,
+        benchmarkSuiteId: 1,
+        suiteName: 'Test',
+        status: 2,
+        estimatedCost: 3.03,
+        estimatedCandidateCost: 2.30,
+        pricingSource: 'Anthropic API',
+        answers: []
+      } as any;
+      fixture.detectChanges();
+
+      const cards = Array.from(fixture.nativeElement.querySelectorAll('.score-card')) as HTMLElement[];
+      const card = cards.find(c => c.querySelector('.score-label')?.textContent?.trim() === 'Model Under Test');
+      expect(card).toBeTruthy();
+
+      const content = card!.textContent?.replace(/\s+/g, ' ').trim() || '';
+      expect(content).toContain('$2.30');
+      expect(content).toContain('76 % of catalog total');
+    });
+
+    it('should omit the Model Under Test card when the candidate cost was never recorded', () => {
+      component.activeSubTab = 'run';
+      component.selectedRunDetail = {
+        id: 1,
+        benchmarkSuiteId: 1,
+        suiteName: 'Test',
+        status: 2,
+        estimatedCost: 3.03,
+        estimatedCandidateCost: null,
+        pricingSource: 'Anthropic API',
+        answers: []
+      } as any;
+      fixture.detectChanges();
+
+      const labels = (Array.from(fixture.nativeElement.querySelectorAll('.score-card')) as HTMLElement[])
+        .map(c => c.querySelector('.score-label')?.textContent?.trim());
+      expect(labels).not.toContain('Model Under Test');
+      expect(labels).toContain('Estimated Cost');
     });
 
     it('should render Cost column in run history table with the incomplete-pricing marker when pricingIncomplete is true', () => {

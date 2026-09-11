@@ -95,10 +95,53 @@ namespace Overseer.Services.Tools
 
             if (result.StartsWith(MissPrefix, StringComparison.Ordinal))
             {
+                // A requested kind with zero matches falls back to any kind, so a macro carrying a
+                // function's name is returned rather than a miss. A kind that did match never gets here.
+                if (!kind.Equals("any", StringComparison.OrdinalIgnoreCase))
+                {
+                    var anyResult = service.GetFunctionBody(name, "any", startLine);
+                    if (!anyResult.StartsWith(MissPrefix, StringComparison.Ordinal))
+                    {
+                        string note = $"[No {kind} named '{name}' in the indexed {repository} source; showing the {DescribeHitKind(anyResult, name)} definition instead.]\n";
+                        return Task.FromResult(new ToolResult { Success = true, Content = note + anyResult });
+                    }
+                }
+
                 result = BuildMissContent(service, result, name, repository);
             }
 
             return Task.FromResult(new ToolResult { Success = true, Content = result });
+        }
+
+        /// <summary>
+        /// Names the kind of a <see cref="SourceCodeService.GetFunctionBody"/> hit. The body opens with a
+        /// "--- path:L…-L… (name, N lines) ---" header and up to two lines of leading context, so the
+        /// declaring line is the first one naming the symbol; its first token decides the kind.
+        /// </summary>
+        private static string DescribeHitKind(string body, string name)
+        {
+            string? declaring = null;
+            string? firstBodyLine = null;
+
+            foreach (var raw in body.Split('\n'))
+            {
+                string line = raw.Trim();
+                if (line.Length == 0) continue;
+                if (line.StartsWith("--- ", StringComparison.Ordinal) && line.EndsWith("---", StringComparison.Ordinal)) continue;
+
+                firstBodyLine ??= line;
+                if (line.Contains(name, StringComparison.Ordinal))
+                {
+                    declaring = line;
+                    break;
+                }
+            }
+
+            string candidate = declaring ?? firstBodyLine ?? string.Empty;
+
+            if (candidate.StartsWith("#define", StringComparison.Ordinal)) return "macro";
+            if (Regex.IsMatch(candidate, @"^(struct|union|enum|typedef)\b")) return "struct";
+            return "function";
         }
 
         private const string MissPrefix = "No definition found for '";

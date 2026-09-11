@@ -286,8 +286,25 @@ public static class BenchmarkAssessmentPrompt
     ///     definition matcher finds same-line return types and typedefs named at their closing brace;
     ///     neither moves ToolGuidesSha256 or CandidateSystemPromptSha256, and ScoringMethodVersion
     ///     does not move, so a run stamped 22 differs from one stamped 21 on HarnessVersion alone.
+    /// v23: the unevidenced-deduction detector reads the evidence for a named defect rather than for
+    ///     a no-fault boilerplate string, so an Accuracy deduction whose evidence denies the defect in
+    ///     sentence form ("Matches rubric; accurately describes ... without error.") is flagged, and a
+    ///     Completeness deduction whose only evidence is an OUT-OF-SCOPE: clause is flagged as well —
+    ///     the marker records a point the instruction says not to deduct for, so a level below 6
+    ///     beside it is a deduction nobody named. The report, the run-detail card and the admin DTO
+    ///     count how many of the recorded OUT-OF-SCOPE: and FORM: points sit beside a sub-6 level with
+    ///     no in-scope defect named; the tool-call log export prints the result size the tool actually
+    ///     returned (ResultLengthChars) beside the stored length; and the run-detail card row carries
+    ///     the model-under-test cost beside the whole-run catalog total. source_code_view stops at the
+    ///     last whole line that fits under the executor's result cap and names the start_line to
+    ///     resume from, and get_function_definition falls back to any kind when the requested kind has
+    ///     no match, behind a one-line note; both change their tool guides, which moves
+    ///     ToolGuidesSha256. CandidateSystemPromptSha256 does not move and ScoringMethodVersion does
+    ///     not move — nothing here changes what a score is — so a run stamped 23 differs from one
+    ///     stamped 22 on HarnessVersion and ToolGuidesSha256, which is below Tier B: compare the two
+    ///     on counts and per-question thresholds, not as a reproduction pair.
     /// </summary>
-    public const string HarnessVersion = "22";
+    public const string HarnessVersion = "23";
 
     public static string BuildPerQuestionPrompt(
         string suiteName,

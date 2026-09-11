@@ -172,13 +172,23 @@ public static class BenchmarkVerdictConsistency
     ///
     /// Deliberately per-dimension: accuracy evidence never justifies a completeness deduction, and
     /// pairing them would let a detailed completeness finding excuse an empty accuracy one.
+    ///
+    /// The test each dimension applies is "names no defect", not "is one of the boilerplate no-fault
+    /// strings" — <see cref="NamesAnAccuracyDefect"/> and <see cref="NamesACompletenessDefect"/>
+    /// rather than <see cref="IsNoFaultEvidence"/> alone. Run 38's Q1 evidence read *"Matches
+    /// rubric; accurately describes Gnoll alignment options, available roles, and core racial traits
+    /// without error."* beside Accuracy 5: nothing in it is a defect, but it is a sentence rather
+    /// than the anchored boilerplate, so the narrower test let it through. The completeness side
+    /// additionally sets the <c>OUT-OF-SCOPE:</c> sentences aside first, because scoring method v8
+    /// tells the assessor to record those instead of deducting for them — a level docked to 5 whose
+    /// only stated basis is such a point is a deduction the instruction says should not exist.
     /// </summary>
     public static bool HasUnevidencedDeduction(
         int accuracyLevel, string? accuracyEvidence,
         int completenessLevel, string? completenessEvidence)
     {
-        return (accuracyLevel <= UnevidencedDeductionMaxLevel && IsNoFaultEvidence(accuracyEvidence))
-            || (completenessLevel <= UnevidencedDeductionMaxLevel && IsNoFaultEvidence(completenessEvidence));
+        return (accuracyLevel <= UnevidencedDeductionMaxLevel && !NamesAnAccuracyDefect(accuracyLevel, accuracyEvidence))
+            || (completenessLevel <= UnevidencedDeductionMaxLevel && !NamesACompletenessDefect(completenessLevel, completenessEvidence));
     }
 
     // Words that describe something the answer did not say.
@@ -355,18 +365,175 @@ public static class BenchmarkVerdictConsistency
             return false;
         }
 
-        if (IsNoFaultEvidence(accuracyEvidence))
+        return !NamesNoDefect(accuracyEvidence);
+    }
+
+    /// <summary>
+    /// The evidence test shared by <see cref="NamesAnAccuracyDefect"/>,
+    /// <see cref="NamesACompletenessDefect"/> and <see cref="IsFormOnlyDeduction"/>: true when the
+    /// string charges nothing, either as the anchored boilerplate <see cref="IsNoFaultEvidence"/>
+    /// recognises or as a sentence-form denial. One implementation rather than three copies, because
+    /// the four regexes only compose correctly together — the denial suppresses, and each of
+    /// <see cref="FalsehoodRegex"/>, <see cref="OmissionRegex"/> and <see cref="ConcessionRegex"/>
+    /// overrides that suppression — and a second copy would drift out of that arrangement silently.
+    /// </summary>
+    private static bool NamesNoDefect(string? evidence)
+    {
+        if (IsNoFaultEvidence(evidence))
+        {
+            return true;
+        }
+
+        return DefectDenialRegex.IsMatch(evidence!)
+            && !FalsehoodRegex.IsMatch(evidence!)
+            && !OmissionRegex.IsMatch(evidence!)
+            && !ConcessionRegex.IsMatch(evidence!);
+    }
+
+    /// <summary>
+    /// The evidence with every sentence that opens with <paramref name="marker"/> removed, so what
+    /// remains is what the assessor charged in its own right.
+    ///
+    /// A sentence that starts with the marker is the whole recorded point, not a prefix of a larger
+    /// claim: the assessor is instructed to write the marker at the start of the point it records,
+    /// so everything up to the sentence terminator belongs to it. Anything the assessor also meant
+    /// as a deduction is written as a separate sentence, and that is exactly what survives here.
+    /// Ordinal and case-insensitive, matching how <see cref="IsNoFaultEvidence"/> treats its own
+    /// input; a null or blank evidence string yields the empty string, which names no defect.
+    /// </summary>
+    private static string StripMarkerSentences(string? evidence, string marker)
+    {
+        if (string.IsNullOrWhiteSpace(evidence) || string.IsNullOrEmpty(marker))
+        {
+            return evidence ?? string.Empty;
+        }
+
+        var kept = SplitSentences(evidence)
+            .Select(s => s.Trim())
+            .Where(s => !s.StartsWith(marker, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        return string.Join(" ", kept);
+    }
+
+    /// <summary>
+    /// True when this verdict docked COMPLETENESS and its own evidence string names the defect,
+    /// counting only what the assessor charged rather than what it set aside.
+    ///
+    /// The accuracy counterpart's reasoning applies unchanged — see
+    /// <see cref="NamesAnAccuracyDefect"/> for why the boilerplate and the sentence-form denial are
+    /// both excluded — with one addition this dimension alone needs. Scoring method v8 tells the
+    /// assessor that the question defines the scope and that a rubric point the question did not ask
+    /// for is recorded under <see cref="BenchmarkAssessmentParser.OutOfScopeCompletenessMarker"/>
+    /// rather than deducted for, so those sentences are removed before the evidence is judged.
+    /// Run 38's Q6 carried Completeness 5 whose evidence was one such sentence and nothing else:
+    /// with the marker text left in, the evidence looks like a named defect, when what it names is
+    /// the reason there should have been no deduction at all.
+    /// </summary>
+    public static bool NamesACompletenessDefect(int? level, string? evidence)
+    {
+        if (!level.HasValue || level.Value >= FullAccuracyLevel)
         {
             return false;
         }
 
-        bool deniesDefect = !string.IsNullOrWhiteSpace(accuracyEvidence)
-            && DefectDenialRegex.IsMatch(accuracyEvidence)
-            && !FalsehoodRegex.IsMatch(accuracyEvidence)
-            && !OmissionRegex.IsMatch(accuracyEvidence)
-            && !ConcessionRegex.IsMatch(accuracyEvidence);
+        string rest = StripMarkerSentences(evidence, BenchmarkAssessmentParser.OutOfScopeCompletenessMarker);
+        return !NamesNoDefect(rest);
+    }
 
-        return !deniesDefect;
+    /// <summary>
+    /// True when a COMPLETENESS level below full rests on nothing but out-of-scope rubric points:
+    /// the marker is present, the level is at <see cref="UnevidencedDeductionMaxLevel"/> or below,
+    /// and what remains after the marked sentences names no defect.
+    ///
+    /// Narrower than the marker count the assessor's own flag gives, and that is the point. A
+    /// verdict may record an out-of-scope point beside a genuine omission and deduct for the
+    /// omission — run 38's Q18 — or record one at level 6 and deduct for nothing at all — its Q12.
+    /// Neither is a case of the instruction being disregarded; only this one is, and this is the
+    /// count the report and the admin DTO print beside the raw marker total.
+    /// </summary>
+    public static bool IsOutOfScopeOnlyDeduction(int completenessLevel, string? completenessEvidence)
+    {
+        return HasOutOfScopeMarker(completenessEvidence)
+            && completenessLevel <= UnevidencedDeductionMaxLevel
+            && !NamesACompletenessDefect(completenessLevel, completenessEvidence);
+    }
+
+    /// <summary>
+    /// The READABILITY counterpart of <see cref="IsOutOfScopeOnlyDeduction"/>, over scoring method
+    /// v9's <see cref="BenchmarkAssessmentParser.FormOnlyReadabilityMarker"/>: a level docked to
+    /// <see cref="UnevidencedDeductionMaxLevel"/> or below whose only stated basis is a rubric
+    /// format suggestion the prompt says to record instead of deducting for.
+    ///
+    /// Counted, never flagged. <see cref="HasUnevidencedDeduction"/> covers the two dimensions whose
+    /// evidence strings are a deduction basis; readability evidence is not one, so a shortfall here
+    /// is a measurement of the instrument rather than a contested verdict.
+    ///
+    /// <paramref name="markerRecorded"/> exists because a run graded before <c>readability</c> joined
+    /// <c>BenchmarkService.BuildEvidenceJson</c> has no stored readability evidence at all, leaving
+    /// the per-answer <c>ReadabilityFormOnly</c> column as its sole surviving marker signal. Passing
+    /// it with a null evidence string is the right reading rather than a concession: the FORM regex
+    /// is anchored at the start of the evidence, so a string carrying the marker has no second half
+    /// to charge a defect in, and a null one names no defect either way.
+    /// </summary>
+    public static bool IsFormOnlyDeduction(int readabilityLevel, string? readabilityEvidence, bool markerRecorded = false)
+    {
+        if (!markerRecorded && !HasFormOnlyMarker(readabilityEvidence))
+        {
+            return false;
+        }
+
+        if (readabilityLevel > UnevidencedDeductionMaxLevel)
+        {
+            return false;
+        }
+
+        string rest = StripMarkerSentences(readabilityEvidence, BenchmarkAssessmentParser.FormOnlyReadabilityMarker);
+        return NamesNoDefect(rest);
+    }
+
+    /// <summary>
+    /// The marker as models actually write it: hyphens or spaces between the words, any casing, and
+    /// the colon possibly spaced away from it. The colon is the one part that is required — without
+    /// it the pattern would be the ordinary English phrase, which appears in evidence strings that
+    /// are describing something else. Matched anywhere in the string rather than only at the start,
+    /// because an assessor that records a deduction and an out-of-scope point in one evidence string
+    /// puts the marker in front of the second half.
+    /// </summary>
+    private static readonly Regex OutOfScopeMarkerRegex = new(
+        @"\bout[-\s]?of[-\s]?scope\s*:",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// True when completeness evidence carries the out-of-scope marker. Total on its input: a null,
+    /// an empty string or a marker the assessor mangled all return false rather than failing the
+    /// parse — absence is the normal case, and one lost measurement must never cost a verdict.
+    /// </summary>
+    public static bool HasOutOfScopeMarker(string? completenessEvidence)
+    {
+        return !string.IsNullOrWhiteSpace(completenessEvidence)
+            && OutOfScopeMarkerRegex.IsMatch(completenessEvidence);
+    }
+
+    /// <summary>
+    /// Anchored to the start of the evidence string, unlike <see cref="OutOfScopeMarkerRegex"/>.
+    /// The word is short enough to occur in ordinary prose about an answer's presentation, and
+    /// <c>readabilityEvidence</c> carries nothing but this marker, so there is no second half for
+    /// it to introduce. Leading whitespace and casing are tolerated; the colon is required.
+    /// </summary>
+    private static readonly Regex FormOnlyMarkerRegex = new(
+        @"^\s*form\s*:",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// True when readability evidence opens with the FORM marker. Total on its input, for the same
+    /// reason <see cref="HasOutOfScopeMarker"/> is: absence is the normal case, and one lost
+    /// measurement must never cost a verdict.
+    /// </summary>
+    public static bool HasFormOnlyMarker(string? readabilityEvidence)
+    {
+        return !string.IsNullOrWhiteSpace(readabilityEvidence)
+            && FormOnlyMarkerRegex.IsMatch(readabilityEvidence);
     }
 
     /// <summary>

@@ -198,4 +198,34 @@ public class BenchmarkToolCallLogBuilderTests
         Assert.Contains("head of 600 chars", markdown);
         Assert.Contains("first 600 of 5,000 chars", markdown);
     }
+
+    [Fact]
+    public void Build_NamesBothTheReturnedAndTheStoredSize_WhenTheHarnessCappedWhatItKept()
+    {
+        // ResultLengthChars is what the tool returned; Result is what survived the harness's own
+        // storage cap. When they differ the label must say so, or the reader takes the stored
+        // prefix for the whole result and reads its tail as the result's tail.
+        var answer = new BenchmarkRunAnswer
+        {
+            OrderIndex = 1,
+            QuestionText = "Q1",
+            AnswerText = "A1",
+            ToolCalls = new List<BenchmarkRunAnswerToolCall>
+            {
+                new BenchmarkRunAnswerToolCall
+                {
+                    SortOrder = 0,
+                    Name = "wiki_search",
+                    Status = "completed",
+                    ArgsText = "{}",
+                    Result = new string('x', 12000),
+                    ResultLengthChars = 12897
+                }
+            }
+        };
+
+        string markdown = BenchmarkToolCallLogBuilder.Build(SampleRun(), new[] { answer });
+
+        Assert.Contains("Result (first 600 of 12,897 chars, stored 12,000):", markdown);
+    }
 }

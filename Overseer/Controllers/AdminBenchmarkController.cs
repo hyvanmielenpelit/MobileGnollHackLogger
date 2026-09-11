@@ -2305,6 +2305,16 @@ public class AdminBenchmarkController : ControllerBase
             AnswerFramingOpenerAnswerCount = run.AnswerFramingOpenerAnswerCount,
             CompletenessOutOfScopeCount = run.Answers.Count(a => a.CompletenessOutOfScope),
             ReadabilityFormOnlyCount = run.Answers.Count(a => a.ReadabilityFormOnly),
+
+            // The subset of the two counts above where the marked point sits beside a docked level
+            // whose evidence names no other defect — the marker recorded and the deduction taken
+            // anyway. Over the loaded Answers collection, so the evidence JSON is read in memory.
+            CompletenessOutOfScopeDeductedCount = run.Answers.Count(a => a.CompletenessOutOfScope && a.CompletenessLevel.HasValue
+                && BenchmarkVerdictConsistency.IsOutOfScopeOnlyDeduction(a.CompletenessLevel.Value,
+                    BenchmarkAssessmentParser.ReadEvidenceField(a.AssessmentEvidenceJson, "completeness"))),
+            ReadabilityFormOnlyDeductedCount = run.Answers.Count(a => a.ReadabilityFormOnly && a.ReadabilityLevel.HasValue
+                && BenchmarkVerdictConsistency.IsFormOnlyDeduction(a.ReadabilityLevel.Value,
+                    BenchmarkAssessmentParser.ReadEvidenceField(a.AssessmentEvidenceJson, "readability"), a.ReadabilityFormOnly)),
             ClaimVerifiedAnswerCount = run.ClaimVerifiedAnswerCount,
             ClaimsSupportedCount = run.ClaimsSupportedCount,
             ClaimsRefutedCount = run.ClaimsRefutedCount,

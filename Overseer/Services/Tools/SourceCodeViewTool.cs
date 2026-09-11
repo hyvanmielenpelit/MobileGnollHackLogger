@@ -32,7 +32,7 @@ namespace Overseer.Services.Tools
                 ""properties"": {
                     ""file"": { ""type"": ""string"", ""description"": ""File path relative to the repository root (e.g., 'src/potion.c')"" },
                     ""start_line"": { ""type"": ""integer"", ""description"": ""Optional. The starting line number to view; defaults to 1 when neither start_line nor search_term is given"" },
-                    ""line_count"": { ""type"": ""integer"", ""description"": ""Optional. Number of lines to view (default 50, max 1000)"" },
+                    ""line_count"": { ""type"": ""integer"", ""description"": ""Optional. Number of lines to view (default 50, max 1000). About 150-200 lines of C fit under the result cap; a longer request is cut at a whole line and the notice names where to resume."" },
                     ""search_term"": { ""type"": ""string"", ""description"": ""Optional. Find this term and show context around it (alternative to start_line)"" },
                     ""repository"": {
                         ""type"": ""string"",
@@ -135,7 +135,11 @@ namespace Overseer.Services.Tools
                 lineCount = lineCountElem.GetInt32();
             }
 
-            var content = service.GetFileExcerpt(file, startLine, lineCount, searchTerm);
+            // The excerpt stops one whole line ahead of the cap ToolExecutor applies afterwards, so
+            // the result ends on a line boundary rather than mid-line.
+            int maxChars = context.MaxResultLength > 0 ? context.MaxResultLength : 0;
+
+            var content = service.GetFileExcerpt(file, startLine, lineCount, searchTerm, maxChars: maxChars);
 
             if (context.SpoilerFreeMode)
             {

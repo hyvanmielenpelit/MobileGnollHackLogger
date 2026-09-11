@@ -1805,6 +1805,78 @@ Migration `AddBenchmarkRerunHarnessVersion` adds `BenchmarkRun.RerunHarnessVersi
 nullable). It reads `NULL` as *not recorded* on every row from before this round, never as an empty
 harness version, and no figure is backfilled.
 
+### Harness Version 23 Updates
+
+*2026-09-11.*
+
+Prompted by run 38 (GPT-5.6 Sol @ `medium`, harness 22, Intelligence Index 95 ± 4, 0 critical
+errors, 190 tool calls with 0 failures). The run confirmed the harness-22 round on every countable
+criterion except one: the level-5 unevidenced-deduction detector did not fire on the sentence shape
+it was added for. Q1 came back Accuracy 5/6 with evidence reading *"Matches rubric; accurately
+describes Gnoll alignment options, available roles, and core racial traits without error."* — a
+denial written as a sentence rather than as the boilerplate `IsNoFaultEvidence` matches — and Q6
+came back Completeness 5/6 with nothing in its evidence but an `OUT-OF-SCOPE:` clause, which is a
+point the instruction says not to deduct for.
+
+`ScoringMethodVersion` stays at **10** — nothing here changes how an answer is scored — and
+`BenchmarkAssessmentPrompt.HarnessVersion` moves to **23**. No `ChatService` prose and no
+knowledge-base article changed, so `CandidateSystemPromptSha256` does not move; **two
+`Overseer/ToolGuides/` files do change**, so `ToolGuidesSha256` does. A run stamped 23 therefore
+differs from a run stamped 22 on `HarnessVersion` **and** `ToolGuidesSha256`, which is below Tier B:
+compare the two on counts and per-question thresholds, not as a reproduction pair.
+
+- **The unevidenced-deduction detector reads for a named defect, not for a boilerplate string.**
+  `BenchmarkVerdictConsistency.HasUnevidencedDeduction`'s Accuracy clause now asks
+  `!NamesAnAccuracyDefect(...)` instead of `IsNoFaultEvidence(...)`, so the denial vocabulary
+  `DefectDenialRegex` already recognised — *"… without error."*, *"… with no factual errors."* —
+  flags when it carries no `FalsehoodRegex`, `OmissionRegex` or `ConcessionRegex` word. Evidence
+  naming a rubric point and an incorrect value is unaffected.
+- **A Completeness deduction whose only evidence is an `OUT-OF-SCOPE:` clause is flagged too.**
+  `NamesACompletenessDefect` strips the marker's own sentences from the evidence and applies the
+  same two tests to what is left, so the marker no longer stands in for a defect nobody named. The
+  companion predicates `IsOutOfScopeOnlyDeduction` and `IsFormOnlyDeduction` are what the report and
+  the admin DTO count: how many of the recorded `OUT-OF-SCOPE:` and `FORM:` points sit beside a
+  level below 6 with no in-scope defect named. The Completeness case raises `UnevidencedDeduction`
+  and routes to the blind second reader; the Readability case is **counted only** — Readability is
+  not a flagged dimension. Expected cost: roughly one extra second opinion per flagged answer
+  (run 38 would have added two).
+- **The exported report and the run-detail card say what the instruction was, not that it was
+  followed.** Both blocks now read *"recorded under the `OUT-OF-SCOPE:` marker; the instruction is
+  not to deduct for them"*, followed — only when the count is non-zero — by a line naming how many
+  of them sit beside a sub-6 level with no in-scope defect named, and which questions they are.
+- **`readabilityEvidence` is persisted.** `BenchmarkService.BuildEvidenceJson` gains a `readability`
+  key beside `accuracy` and `completeness`. On a run graded before this round the key is absent and
+  the per-answer `ReadabilityFormOnly` column is the only marker signal, which is what the
+  `FORM:` count falls back to; it cannot distinguish a marker-only evidence string from one that
+  also named a real defect, and a run from before this round is read on that basis.
+- **The tool-call log export prints the size the tool returned.** `BenchmarkToolCallLogBuilder`'s
+  truncated-result label now reads *"Result (first 600 of 12,897 chars, stored 12,000)"* —
+  `ResultLengthChars` is the length `ToolExecutor` handed over, and the stored note appears only when
+  the recorder kept less than that. Previously the label named the stored length as if it were the
+  result length, which reads as a tool returning less than it did.
+- **The run-detail summary cards carry the model-under-test cost.** A **Model Under Test** card
+  showing `EstimatedCandidateCost` and its share of the catalog total sits immediately before the
+  **Estimated Cost** card, which keeps its whole-run catalog figure — the pair the Run History cost
+  cell already shows. The card is rendered only when the candidate cost is priced.
+- **Two chat-visible tool contracts** (they move `ToolGuidesSha256`; both were found at rung zero in
+  run 38's tool-call log):
+  - **`source_code_view` stops at a whole line.** `SourceCodeService.GetFileExcerpt` takes a
+    character budget, which `SourceCodeViewTool` fills from `ToolExecutionContext.MaxResultLength` —
+    the same cap `ToolExecutor` applies afterwards — and appends
+    `[Output truncated at line X of Y requested (file line N). Call again with start_line=N+1 to
+    continue.]` when the requested range does not fit. A budget of 0 keeps the unbudgeted behaviour
+    for every other caller. Three of run 38's 12 `source_code_view` calls were cut mid-line by the
+    generic cap, with nothing saying where to resume.
+  - **`get_function_definition` falls back to any kind.** When the requested `type` has zero matches
+    and a definition of another kind exists, the tool returns it behind
+    `[No {kind} named '{name}' in the indexed {repository} source; showing the {found} definition
+    instead.]`. The fallback fires only on a zero-match requested kind, so a name with both a
+    function and a macro still returns the function when `function` is asked for. Three of run 38's
+    23 calls spent a tool round each missing a macro under `type: "function"`.
+
+No EF Core migration: the two new counts are computed at DTO build time from the run's answers, as
+`CompletenessOutOfScopeCount` already is.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.

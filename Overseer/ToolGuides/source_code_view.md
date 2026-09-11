@@ -15,5 +15,7 @@ WARNING: Reading item appearance strings in `src/objects.c` shows pre-shuffle co
 ## Parameters
 - `file` (string, required): File path relative to the repository root (e.g., 'src/potion.c')
 - `start_line` (integer, optional): The starting line number to view. Defaults to 1 when neither this nor `search_term` is given.
-- `line_count` (integer, optional): The number of lines to view. Defaults to 50. Max is 1000.
+- `line_count` (integer, optional): The number of lines to view. Defaults to 50. Max is 1000. About 150-200 lines of C fit under the result cap; a longer request is cut at a whole line and the notice names where to resume.
 - `repository` (string, optional): Which codebase to view: 'gnollhack' (default) or 'nethack'.
+
+If the output is truncated, the tool's notice names the last file line shown and the `start_line` to continue from. Prefer requests of 150 lines or fewer; a continuation is a dependent call, never part of the original batch.

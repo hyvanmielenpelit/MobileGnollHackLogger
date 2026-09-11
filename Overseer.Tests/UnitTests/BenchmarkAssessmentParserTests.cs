@@ -294,6 +294,35 @@ public class BenchmarkAssessmentParserTests
         Assert.True(result.Result!.CompletenessOutOfScope);
     }
 
+    [Fact]
+    public void CompletenessOutOfScope_Run38Q6Shape_AlsoCarriesTheUnevidencedDeductionFlag()
+    {
+        // The two readings of one verdict, and both belong on it. The marker was written, so the
+        // measurement counts it; the level was docked to 5 with nothing in scope named, so the
+        // advisory flag fires as well. Accuracy is held at 6 here so the flag can only have come
+        // from the completeness side.
+        const string verdict = """
+        {
+          "accuracyLevel": 6,
+          "completenessLevel": 5,
+          "concisenessLevel": 5,
+          "readabilityLevel": 5,
+          "criticalError": false,
+          "criticalErrorQuote": null,
+          "unverifiedClaims": [],
+          "accuracyEvidence": "Matches rubric.",
+          "completenessEvidence": "OUT-OF-SCOPE: the rubric enumerates the full material table; the question asked only about dragon scale mail.",
+          "comment": "A reasonable answer."
+        }
+        """;
+
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(verdict, Answer);
+
+        Assert.True(result.Success);
+        Assert.True(result.Result!.CompletenessOutOfScope);
+        Assert.True(result.Result!.UnevidencedDeduction);
+    }
+
     /// <summary>A verdict whose readability evidence is whatever the test needs it to be.</summary>
     private static string VerdictWithReadabilityEvidence(string readabilityEvidence)
     {

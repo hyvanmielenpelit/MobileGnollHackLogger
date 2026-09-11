@@ -966,7 +966,10 @@ namespace Overseer.Services
             return finalSb.ToString().Trim();
         }
 
-        public string GetFileExcerpt(string relativePath, int? startLineReq, int lineCount, string? searchTerm = null)
+        /// <summary>Characters <see cref="GetFileExcerpt"/> holds back from a maxChars budget for its truncation notice.</summary>
+        private const int NoticeReserve = 160;
+
+        public string GetFileExcerpt(string relativePath, int? startLineReq, int lineCount, string? searchTerm = null, int maxChars = 0)
         {
             // Normalize path for lookup
             relativePath = relativePath.Replace('\\', '/');
@@ -1019,14 +1022,33 @@ namespace Overseer.Services
             }
             
             int endLine = Math.Min(doc.ContentLines.Length - 1, startLine + lineCount - 1);
-            
+            int requestedLines = endLine - startLine + 1;
+
             var sb = new System.Text.StringBuilder();
             sb.AppendLine($"--- {doc.RelativePath}:L{startLine + 1}-L{endLine + 1} ---");
+
+            // The header keeps the requested range whatever the budget allows, so the notice's
+            // numbers can be checked against it.
+            int budget = maxChars > 0 ? maxChars - NoticeReserve : 0;
+            int shown = 0;
+            int lastShown = startLine;
+
             for (int i = startLine; i <= endLine; i++)
             {
-                sb.AppendLine($"{i + 1}: {doc.ContentLines[i]}");
+                string rendered = $"{i + 1}: {doc.ContentLines[i]}";
+
+                // At least one body line is always emitted, however small the budget.
+                if (budget > 0 && shown > 0 && sb.Length + rendered.Length + Environment.NewLine.Length > budget)
+                {
+                    sb.AppendLine($"[Output truncated at line {shown} of {requestedLines} requested (file line {lastShown + 1}). Call again with start_line={lastShown + 2} to continue.]");
+                    break;
+                }
+
+                sb.AppendLine(rendered);
+                shown++;
+                lastShown = i;
             }
-            
+
             return sb.ToString();
         }
 

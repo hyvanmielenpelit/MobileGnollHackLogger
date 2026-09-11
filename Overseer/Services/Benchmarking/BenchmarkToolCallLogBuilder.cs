@@ -112,6 +112,14 @@ public static class BenchmarkToolCallLogBuilder
     /// whose fence is picked longer than any run of backticks the payload itself contains. A
     /// field that is null beside a non-zero <c>ResultLengthChars</c> was nulled by the retention
     /// sweep rather than never recorded, and is marked as such.
+    ///
+    /// A truncated result's label names two sizes that can differ: <c>ResultLengthChars</c> is what
+    /// the tool actually returned, while <c>Result.Length</c> is what survived the harness's own
+    /// storage cap. When the second is smaller the label says so, because the head shown here is
+    /// then a head of the stored prefix and the reader must not take its tail as the result's tail.
+    /// A zero <c>ResultLengthChars</c> beside a non-null <c>Result</c> is defensive only — a row
+    /// recorded before harness 17 carries no <c>Result</c> to reach this branch with — and the
+    /// stored length stands in as the one figure that is known.
     /// </summary>
     private static string RenderCallBody(BenchmarkRunAnswerToolCall call)
     {
@@ -127,7 +135,11 @@ public static class BenchmarkToolCallLogBuilder
         {
             if (call.Result.Length > ResultHeadChars)
             {
-                resultLabel = $"Result (first {ResultHeadChars} of {Inv(call.Result.Length, "N0")} chars):";
+                int trueLength = call.ResultLengthChars != 0 ? call.ResultLengthChars : call.Result.Length;
+                string storedNote = call.Result.Length < trueLength
+                    ? $", stored {Inv(call.Result.Length, "N0")}"
+                    : string.Empty;
+                resultLabel = $"Result (first {ResultHeadChars} of {Inv(trueLength, "N0")} chars{storedNote}):";
                 resultSection = call.Result[..ResultHeadChars] + $"\n… [head of {ResultHeadChars} chars]";
             }
             else

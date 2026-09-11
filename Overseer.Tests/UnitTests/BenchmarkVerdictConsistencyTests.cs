@@ -518,4 +518,105 @@ public class BenchmarkVerdictConsistencyTests
     {
         Assert.False(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(5, null));
     }
+
+    [Fact]
+    public void HasUnevidencedDeduction_Run38Q1_AccuracyFiveWithSentenceFormNoFault_ReturnsTrue()
+    {
+        // Run 38's Q1 evidence verbatim: a sentence rather than the anchored boilerplate, and one
+        // that charges nothing — "without error" is a denial, and the rest of the sentence is
+        // praise. IsNoFaultEvidence alone does not recognise it, which is why the clause tests
+        // "names no defect" instead.
+        const string evidence =
+            "Matches rubric; accurately describes Gnoll alignment options, available roles, and core racial traits without error.";
+
+        Assert.True(BenchmarkVerdictConsistency.HasUnevidencedDeduction(
+            accuracyLevel: 5,
+            accuracyEvidence: evidence,
+            completenessLevel: 6,
+            completenessEvidence: "Matches rubric."));
+    }
+
+    [Fact]
+    public void HasUnevidencedDeduction_AccuracyFiveNamingARubricPoint_ReturnsFalse()
+    {
+        // The other side of the same widening: a level-5 verdict whose evidence names the rubric
+        // point and the values it got wrong is a deduction the reader can check, and must stay off
+        // the advisory list.
+        const string evidence =
+            "Rubric point 3: the answer gives incorrect modifier values for the Exceptional and Elite tiers.";
+
+        Assert.False(BenchmarkVerdictConsistency.HasUnevidencedDeduction(
+            accuracyLevel: 5,
+            accuracyEvidence: evidence,
+            completenessLevel: 6,
+            completenessEvidence: "Matches rubric."));
+    }
+
+    [Fact]
+    public void HasUnevidencedDeduction_Run38Q6_CompletenessFiveOutOfScopeOnly_ReturnsTrue()
+    {
+        // Run 38's Q6 shape: Completeness docked to 5 with one OUT-OF-SCOPE sentence as its entire
+        // evidence. The marker text reads like a named defect until the marked sentence is set
+        // aside, and what it actually names is the reason there should have been no deduction.
+        const string evidence =
+            "OUT-OF-SCOPE: the rubric enumerates the full material table; the question asked only about dragon scale mail.";
+
+        Assert.True(BenchmarkVerdictConsistency.HasUnevidencedDeduction(
+            accuracyLevel: 6,
+            accuracyEvidence: "Matches rubric.",
+            completenessLevel: 5,
+            completenessEvidence: evidence));
+    }
+
+    [Fact]
+    public void IsOutOfScopeOnlyDeduction_LevelSix_ReturnsFalse()
+    {
+        // Run 38's Q12 shape: the assessor recorded the out-of-scope point and did not deduct for
+        // it, which is the instruction being followed. The marker count includes it; this one does not.
+        const string evidence =
+            "OUT-OF-SCOPE: the rubric lists Celestial/Primordial/Infernal modifiers; the question asked only for Exceptional and Elite.";
+
+        Assert.False(BenchmarkVerdictConsistency.IsOutOfScopeOnlyDeduction(6, evidence));
+    }
+
+    [Fact]
+    public void IsOutOfScopeOnlyDeduction_OutOfScopeBesideNamedOmission_ReturnsFalse()
+    {
+        // Run 38's Q18 shape: one evidence string carrying both a recorded out-of-scope point and a
+        // genuine in-scope omission. The deduction is the omission's, so the instruction was
+        // followed here too.
+        const string evidence =
+            "OUT-OF-SCOPE: rubric point 5 covers Infernal armor, which the question did not ask about. " +
+            "The answer omits the crowning penalty the question did ask for.";
+
+        Assert.False(BenchmarkVerdictConsistency.IsOutOfScopeOnlyDeduction(5, evidence));
+    }
+
+    [Fact]
+    public void IsFormOnlyDeduction_FormOnlyBesideLevelFive_ReturnsTrue()
+    {
+        const string evidence =
+            "FORM: the rubric suggests a comparison table; the answer covers the same material as prose.";
+
+        Assert.True(BenchmarkVerdictConsistency.IsFormOnlyDeduction(5, evidence));
+    }
+
+    [Fact]
+    public void IsFormOnlyDeduction_MarkerRecordedWithoutStoredEvidence_ReturnsTrue()
+    {
+        // The stored-run case. readabilityEvidence is not persisted, so the per-answer marker column
+        // is the only signal left; a null evidence string names no defect, which is the right
+        // reading of an evidence string that carried the anchored marker and nothing after it.
+        Assert.True(BenchmarkVerdictConsistency.IsFormOnlyDeduction(5, null, markerRecorded: true));
+    }
+
+    [Fact]
+    public void IsFormOnlyDeduction_LevelSix_ReturnsFalse()
+    {
+        const string evidence =
+            "FORM: the rubric suggests a comparison table; the answer covers the same material as prose.";
+
+        Assert.False(BenchmarkVerdictConsistency.IsFormOnlyDeduction(6, evidence));
+        Assert.False(BenchmarkVerdictConsistency.IsFormOnlyDeduction(6, null, markerRecorded: true));
+    }
 }

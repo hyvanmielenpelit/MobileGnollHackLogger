@@ -224,12 +224,17 @@ public static class BenchmarkReportBuilder
     /// <summary>
     /// Reads the assessor's stored evidence. Returns nulls for a run graded before evidence was
     /// collected, which is every run up to harness version 3.
+    ///
+    /// <c>Readability</c> is absent on a run graded before the stored blob carried a readability
+    /// key, so a null there is the ordinary case for those runs rather than a malformed blob, and
+    /// the FORM count falls back to the per-answer
+    /// <see cref="BenchmarkRunAnswer.ReadabilityFormOnly"/> column for them.
     /// </summary>
-    private static (string? Accuracy, string? Completeness, bool CriticalErrorDemoted) ReadEvidence(BenchmarkRunAnswer answer)
+    private static (string? Accuracy, string? Completeness, string? Readability, bool CriticalErrorDemoted) ReadEvidence(BenchmarkRunAnswer answer)
     {
         if (string.IsNullOrWhiteSpace(answer.AssessmentEvidenceJson))
         {
-            return (null, null, false);
+            return (null, null, null, false);
         }
 
         try
@@ -241,15 +246,17 @@ public static class BenchmarkReportBuilder
                 ? acc.GetString() : null;
             string? completeness = root.TryGetProperty("completeness", out var comp) && comp.ValueKind == JsonValueKind.String
                 ? comp.GetString() : null;
+            string? readability = root.TryGetProperty("readability", out var read) && read.ValueKind == JsonValueKind.String
+                ? read.GetString() : null;
             bool demoted = root.TryGetProperty("criticalErrorDemoted", out var dem) && dem.ValueKind == JsonValueKind.True;
 
-            return (accuracy, completeness, demoted);
+            return (accuracy, completeness, readability, demoted);
         }
         catch (JsonException)
         {
             // Evidence is commentary, never a score input: a malformed blob costs a line of the
             // report and nothing else.
-            return (null, null, false);
+            return (null, null, null, false);
         }
     }
 
@@ -1888,7 +1895,20 @@ public static class BenchmarkReportBuilder
             {
                 string questionList = string.Join(", ", outOfScopeAnswers.Select(a => $"Q{a.OrderIndex}"));
                 sb.AppendLine($"- **Out-of-scope completeness deductions:** {outOfScopeAnswers.Count} ({questionList})");
-                sb.AppendLine($"  - These are rubric points the assessor itself placed outside what the question asked, recorded under the `OUT-OF-SCOPE:` marker and **not** deducted for. They are the instrument's share of the Accuracy→Completeness gap: the part of that gap the rubric caused rather than the answer.");
+                sb.AppendLine($"  - These are rubric points the assessor itself placed outside what the question asked, recorded under the `OUT-OF-SCOPE:` marker; the instruction is not to deduct for them. They are the instrument's share of the Accuracy→Completeness gap: the part of that gap the rubric caused rather than the answer.");
+
+                // Whether the instruction was followed is a separate question from whether the
+                // marker was written, and the marker count alone answers only the second. These are
+                // the verdicts where the assessor recorded the point and docked the level anyway,
+                // naming nothing in scope to justify it.
+                var outOfScopeOnly = outOfScopeAnswers
+                    .Where(a => BenchmarkVerdictConsistency.IsOutOfScopeOnlyDeduction(a.CompletenessLevel ?? 0, ReadEvidence(a).Completeness))
+                    .ToList();
+                if (outOfScopeOnly.Count > 0)
+                {
+                    string onlyList = string.Join(", ", outOfScopeOnly.Select(a => $"Q{a.OrderIndex}"));
+                    sb.AppendLine($"  - **{outOfScopeOnly.Count}** of them sit beside a Completeness level below 6 with no in-scope defect named ({onlyList}) — the instruction was not followed there; those verdicts carry the `UnevidencedDeduction` flag.");
+                }
             }
 
             // The Readability counterpart, printed on the same terms and suppressed at zero for the
@@ -1901,7 +1921,22 @@ public static class BenchmarkReportBuilder
             {
                 string questionList = string.Join(", ", formOnlyAnswers.Select(a => $"Q{a.OrderIndex}"));
                 sb.AppendLine($"- **Rubric format suggestions not followed:** {formOnlyAnswers.Count} ({questionList})");
-                sb.AppendLine($"  - These are rubric FORM criteria naming a presentation the answer did not adopt, recorded under the `FORM:` marker and **not** deducted for. Readability is graded on its level anchors alone, so this is the rubric's share of the Readability shortfall rather than the answer's.");
+                sb.AppendLine($"  - These are rubric FORM criteria naming a presentation the answer did not adopt, recorded under the `FORM:` marker; the instruction is not to deduct for them. Readability is graded on its level anchors alone, so this is the rubric's share of the Readability shortfall rather than the answer's.");
+
+                // The Readability counterpart of the out-of-scope split above, and counted on the
+                // same terms — but not flagged: readability evidence is not a deduction basis, so a
+                // level docked here is a measurement of the instrument, never a contested verdict.
+                // The stored marker column is passed alongside the evidence string because runs
+                // graded before the evidence blob carried a readability key have only the column.
+                var formOnlyDeductions = formOnlyAnswers
+                    .Where(a => BenchmarkVerdictConsistency.IsFormOnlyDeduction(
+                        a.ReadabilityLevel ?? 0, ReadEvidence(a).Readability, a.ReadabilityFormOnly))
+                    .ToList();
+                if (formOnlyDeductions.Count > 0)
+                {
+                    string deductionList = string.Join(", ", formOnlyDeductions.Select(a => $"Q{a.OrderIndex}"));
+                    sb.AppendLine($"  - **{formOnlyDeductions.Count}** of them sit beside a Readability level below 6 with no defect named ({deductionList}) — the instruction was not followed there.");
+                }
             }
 
             // The Accuracy counterpart to both markers above, but deducted rather than set aside:
@@ -2500,7 +2535,7 @@ public static class BenchmarkReportBuilder
                 // What the deductions rest on. A score argued from the authored rubric and one
                 // argued from the grader's own recall are different claims, and only the record
                 // can tell them apart afterwards.
-                var (accuracyEvidence, completenessEvidence, criticalErrorDemoted) = ReadEvidence(a);
+                var (accuracyEvidence, completenessEvidence, _, criticalErrorDemoted) = ReadEvidence(a);
                 if (!string.IsNullOrWhiteSpace(accuracyEvidence))
                 {
                     sb.AppendLine($"> - **Accuracy Evidence:** {accuracyEvidence}");

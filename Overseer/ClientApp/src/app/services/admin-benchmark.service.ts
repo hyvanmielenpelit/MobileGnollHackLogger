@@ -901,11 +901,21 @@ export interface BenchmarkRunDetailDto {
   completenessOutOfScopeCount?: number;
 
   /**
+   * The subset of the count above whose marked point sits beside a docked Completeness level with
+   * no in-scope defect named — recorded as out of scope and seemingly deducted for anyway. Zero on
+   * a run graded before the detector existed, which reads the same as an assessor that complied.
+   */
+  completenessOutOfScopeDeductedCount?: number;
+
+  /**
    * Rubric format suggestions the assessor recorded rather than deducting Readability for. The
    * Readability counterpart of the count above: if Readability rises by more than this count can
    * explain, the FORM rule changed grader behaviour beyond its remit.
    */
   readabilityFormOnlyCount?: number;
+
+  /** The Readability counterpart of `completenessOutOfScopeDeductedCount`. Counted, not flagged. */
+  readabilityFormOnlyDeductedCount?: number;
 
   /**
    * Answers actually graded twice by the deterministic top-up under FlaggedPlusSample. May fall

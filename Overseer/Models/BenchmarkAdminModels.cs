@@ -719,12 +719,33 @@ public class BenchmarkRunDetailDto
     public int CompletenessOutOfScopeCount { get; set; }
 
     /// <summary>
+    /// The subset of <see cref="CompletenessOutOfScopeCount"/> where the marked point sits beside a
+    /// Completeness level docked below the unevidenced-deduction ceiling whose remaining evidence
+    /// names no in-scope defect — the assessor recorded the point as out of scope and appears to
+    /// have deducted for it anyway, which is worth a second reading. Computed from the stored
+    /// evidence at read time, so it is available for an older run too — but zero on one whose
+    /// evidence was never stored, which is indistinguishable from a run where the assessor followed
+    /// the instruction everywhere.
+    /// </summary>
+    public int CompletenessOutOfScopeDeductedCount { get; set; }
+
+    /// <summary>
     /// Answers where the assessor recorded a rubric format suggestion under the `FORM:` marker
     /// (scoring method v9) rather than deducting Readability for it — the rubric's own share of
     /// the Readability shortfall. Zero on a run graded before v9, same as a v9 run where the
     /// assessor found none; the report distinguishes the two, this count does not.
     /// </summary>
     public int ReadabilityFormOnlyCount { get; set; }
+
+    /// <summary>
+    /// The Readability counterpart of <see cref="CompletenessOutOfScopeDeductedCount"/>: answers
+    /// carrying the `FORM:` marker whose Readability level is docked below the unevidenced-deduction
+    /// ceiling with no other basis stated. Counted, never flagged — readability evidence is not a
+    /// deduction basis. A run graded before the evidence blob carried a readability key rests on the
+    /// per-answer marker column alone, which cannot tell a marker-only evidence string from one that
+    /// also named a defect.
+    /// </summary>
+    public int ReadabilityFormOnlyDeductedCount { get; set; }
 
     public int ClaimVerifiedAnswerCount { get; set; }
     public int ClaimsSupportedCount { get; set; }

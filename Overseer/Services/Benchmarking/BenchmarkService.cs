@@ -1872,16 +1872,23 @@ public class BenchmarkService
     {
         if (string.IsNullOrWhiteSpace(res.AccuracyEvidence) &&
             string.IsNullOrWhiteSpace(res.CompletenessEvidence) &&
+            string.IsNullOrWhiteSpace(res.ReadabilityEvidence) &&
             string.IsNullOrWhiteSpace(res.CriticalErrorQuote) &&
             !res.CriticalErrorDemoted)
         {
             return null;
         }
 
+        // Readability evidence is stored for the same reason the other two are: the FORM: marker it
+        // carries is counted against the Readability level, and a count computed from a marker
+        // boolean alone cannot tell a marker-only string from one that also names a real defect.
+        // Absent on every run graded before this key existed, where the per-answer ReadabilityFormOnly
+        // column is the only marker signal.
         return JsonSerializer.Serialize(new
         {
             accuracy = res.AccuracyEvidence,
             completeness = res.CompletenessEvidence,
+            readability = res.ReadabilityEvidence,
             criticalErrorQuote = res.CriticalErrorQuote,
             criticalErrorDemoted = res.CriticalErrorDemoted
         });

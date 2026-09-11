@@ -212,9 +212,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsTwentyTwo()
+    public void HarnessVersion_IsTwentyThree()
     {
-        Assert.Equal("22", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("23", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -454,16 +454,15 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs22_ScoringMethodIs10()
+    public void Versions_HarnessIs23_ScoringMethodIs10()
     {
-        Assert.Equal("22", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("23", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 21 withholds the quality and speed indexes from a run in which any answer
-        // failed at the provider, leaves such an answer ungraded, and carries the provider's own
-        // error code out of an OpenAI in-stream failure. No tool guide and no candidate system
-        // prompt moves with it, so a 21-stamped run differs from a 20-stamped one on the single
-        // instrument key HarnessVersion. The scoring method does not move: the formula is
-        // unchanged, only whether a partial run publishes one.
+        // Harness 23 reads an evidence string for a named defect rather than for a no-fault
+        // boilerplate string, counts the out-of-scope and FORM points that sit beside a level
+        // below 6, and changes two tool guides — so a 23-stamped run differs from a 22-stamped
+        // one on two instrument keys, HarnessVersion and ToolGuidesSha256. The scoring method
+        // does not move: nothing here changes what a score is.
         Assert.Equal(10, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

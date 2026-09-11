@@ -487,6 +487,34 @@ public static class BenchmarkAssessmentParser
     }
 
     /// <summary>
+    /// One field out of a stored <c>AssessmentEvidenceJson</c> blob, or null when it is absent,
+    /// not a string, or the blob is malformed. Total on its input by design: evidence is the
+    /// commentary an assessor wrote beside its verdict and never a score input, so an unreadable
+    /// row means "nothing recorded" rather than a failed read.
+    /// </summary>
+    public static string? ReadEvidenceField(string? evidenceJson, string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(evidenceJson) || string.IsNullOrWhiteSpace(fieldName))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(evidenceJson);
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty(fieldName, out var prop)
+                && prop.ValueKind == JsonValueKind.String
+                ? prop.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// The prefix scoring method v8 asks the assessor to put in front of a rubric point that falls
     /// outside what the question asked. Public because the prompt, the parser and the tests must
     /// all mean the same string by it.
@@ -494,27 +522,13 @@ public static class BenchmarkAssessmentParser
     public const string OutOfScopeCompletenessMarker = "OUT-OF-SCOPE:";
 
     /// <summary>
-    /// The marker as models actually write it: hyphens or spaces between the words, any casing, and
-    /// the colon possibly spaced away from it. The colon is the one part that is required — without
-    /// it the pattern would be the ordinary English phrase, which appears in evidence strings that
-    /// are describing something else. Matched anywhere in the string rather than only at the start,
-    /// because an assessor that records a deduction and an out-of-scope point in one evidence string
-    /// puts the marker in front of the second half.
-    /// </summary>
-    private static readonly Regex OutOfScopeMarkerRegex = new(
-        @"\bout[-\s]?of[-\s]?scope\s*:",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
-
-    /// <summary>
-    /// True when completeness evidence carries the out-of-scope marker. Total on its input: a null,
-    /// an empty string or a marker the assessor mangled all return false rather than failing the
-    /// parse — absence is the normal case, and one lost measurement must never cost a verdict.
+    /// True when completeness evidence carries the out-of-scope marker. The marker regex and the
+    /// test live in <see cref="BenchmarkVerdictConsistency"/>, which reads the same evidence to
+    /// decide whether a marked point was also deducted for; this forwards so the parse path keeps
+    /// reading as a sequence of local marker checks.
     /// </summary>
     private static bool HasOutOfScopeMarker(string? completenessEvidence)
-    {
-        return !string.IsNullOrWhiteSpace(completenessEvidence)
-            && OutOfScopeMarkerRegex.IsMatch(completenessEvidence);
-    }
+        => BenchmarkVerdictConsistency.HasOutOfScopeMarker(completenessEvidence);
 
     /// <summary>
     /// The prefix scoring method v9 asks the assessor to put in front of a rubric format suggestion
@@ -524,25 +538,12 @@ public static class BenchmarkAssessmentParser
     public const string FormOnlyReadabilityMarker = "FORM:";
 
     /// <summary>
-    /// Anchored to the start of the evidence string, unlike <see cref="OutOfScopeMarkerRegex"/>.
-    /// The word is short enough to occur in ordinary prose about an answer's presentation, and
-    /// <c>readabilityEvidence</c> carries nothing but this marker, so there is no second half for
-    /// it to introduce. Leading whitespace and casing are tolerated; the colon is required.
-    /// </summary>
-    private static readonly Regex FormOnlyMarkerRegex = new(
-        @"^\s*form\s*:",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
-
-    /// <summary>
-    /// True when readability evidence opens with the FORM marker. Total on its input, for the same
-    /// reason <see cref="HasOutOfScopeMarker"/> is: absence is the normal case, and one lost
-    /// measurement must never cost a verdict.
+    /// True when readability evidence opens with the FORM marker. Forwards to
+    /// <see cref="BenchmarkVerdictConsistency"/> for the same reason
+    /// <see cref="HasOutOfScopeMarker"/> does.
     /// </summary>
     private static bool HasFormOnlyMarker(string? readabilityEvidence)
-    {
-        return !string.IsNullOrWhiteSpace(readabilityEvidence)
-            && FormOnlyMarkerRegex.IsMatch(readabilityEvidence);
-    }
+        => BenchmarkVerdictConsistency.HasFormOnlyMarker(readabilityEvidence);
 
     /// <summary>
     /// The prefix the prompt asks the assessor to put in front of an accuracy deduction that does
@@ -556,8 +557,8 @@ public static class BenchmarkAssessmentParser
     /// and the colon possibly spaced away from it. The colon is the one part that is required —
     /// without it the pattern would be the ordinary English phrase, which appears in evidence
     /// strings that are describing something else. Matched anywhere in the string, for the same
-    /// reason as <see cref="OutOfScopeMarkerRegex"/>: an assessor that records a rubric deduction
-    /// and an out-of-rubric one in one evidence string puts the marker in front of the second half.
+    /// reason the out-of-scope marker is: an assessor that records a rubric deduction and an
+    /// out-of-rubric one in one evidence string puts the marker in front of the second half.
     /// </summary>
     private static readonly Regex OutOfRubricMarkerRegex = new(
         @"\bnot\s+in\s+(?:the\s+)?rubric\s*:",

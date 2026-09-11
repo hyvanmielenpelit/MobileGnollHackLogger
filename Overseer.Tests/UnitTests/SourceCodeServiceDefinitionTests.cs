@@ -3,6 +3,7 @@ namespace Overseer.Tests.UnitTests;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.RegularExpressions;
 using System.Threading;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -481,5 +482,137 @@ public class SourceCodeServiceDefinitionTests : IDisposable
         string omittedResult = service.GetFunctionBody("big_function", "function", startLineReq: null);
 
         Assert.Equal(omittedResult, zeroResult);
+    }
+
+    private const string ExcerptFile = "src/excerpt.c";
+    private const int ExcerptFileLines = 40;
+
+    private static readonly Regex ExcerptNoticeRegex = new Regex(
+        @"^\[Output truncated at line (?<shown>\d+) of (?<requested>\d+) requested \(file line (?<last>\d+)\)\. Call again with start_line=(?<next>\d+) to continue\.\]$");
+
+    /// <summary>
+    /// Builds the service used by the <see cref="SourceCodeService.GetFileExcerpt"/> budget tests:
+    /// a 40-line file whose every line is reconstructible from its 1-based number, so a rendered
+    /// body line can be compared against the whole file line it claims to be.
+    /// </summary>
+    private SourceCodeService CreateServiceWithExcerptFile()
+    {
+        var lines = new System.Text.StringBuilder();
+        for (int i = 1; i <= ExcerptFileLines; i++) lines.Append(ExpectedFileLine(i)).Append("\r\n");
+        File.WriteAllText(Path.Combine(_sourceDir, "src", "excerpt.c"), lines.ToString());
+
+        return CreateService();
+    }
+
+    private static string ExpectedFileLine(int fileLine)
+        => fileLine == 1 ? "/* excerpt.c */" : $"    int excerpt_line_{fileLine - 1:D2};";
+
+    /// <summary>Splits an excerpt into its header, body lines and — when present — its trailing notice.</summary>
+    private static (string Header, string[] Body, string? Notice) SplitExcerpt(string excerpt)
+    {
+        var lines = excerpt.TrimEnd('\r', '\n').Split(Environment.NewLine);
+        bool hasNotice = lines[^1].StartsWith("[Output truncated", StringComparison.Ordinal);
+        int bodyEnd = hasNotice ? lines.Length - 1 : lines.Length;
+
+        return (lines[0], lines[1..bodyEnd], hasNotice ? lines[^1] : null);
+    }
+
+    /// <summary>
+    /// A budget far larger than the excerpt changes nothing: the result is character-identical to
+    /// the unbudgeted call and carries no notice.
+    /// </summary>
+    [Fact]
+    public void GetFileExcerpt_LargeMaxChars_IsIdenticalToTheUnbudgetedExcerpt()
+    {
+        using var service = CreateServiceWithExcerptFile();
+
+        string budgeted = service.GetFileExcerpt(ExcerptFile, 1, ExcerptFileLines, null, maxChars: 100000);
+        string unbudgeted = service.GetFileExcerpt(ExcerptFile, 1, ExcerptFileLines, null, maxChars: 0);
+
+        Assert.Equal(unbudgeted, budgeted);
+        Assert.DoesNotContain("[Output truncated", budgeted);
+    }
+
+    /// <summary>
+    /// A small budget stops on a line boundary — every emitted body line is a whole file line — and
+    /// the notice's shown / file-line / start_line values all agree with the lines actually emitted.
+    /// The header still names the requested range, so the notice's "of N requested" is checkable
+    /// against it.
+    /// </summary>
+    [Fact]
+    public void GetFileExcerpt_SmallMaxChars_StopsAtAWholeLineAndTheNoticeAgreesWithIt()
+    {
+        using var service = CreateServiceWithExcerptFile();
+
+        string result = service.GetFileExcerpt(ExcerptFile, 1, ExcerptFileLines, null, maxChars: 400);
+
+        Assert.True(result.Length <= 400, $"Excerpt length {result.Length} exceeded the 400-char budget.");
+
+        var (header, body, notice) = SplitExcerpt(result);
+        Assert.Equal($"--- {ExcerptFile}:L1-L{ExcerptFileLines} ---", header);
+        Assert.NotNull(notice);
+        Assert.InRange(body.Length, 1, ExcerptFileLines - 1);
+
+        for (int i = 0; i < body.Length; i++)
+        {
+            Assert.Equal($"{i + 1}: {ExpectedFileLine(i + 1)}", body[i]);
+        }
+
+        var m = ExcerptNoticeRegex.Match(notice!);
+        Assert.True(m.Success, $"Notice did not match the expected wording: {notice}");
+        Assert.Equal(body.Length, int.Parse(m.Groups["shown"].Value));
+        Assert.Equal(ExcerptFileLines, int.Parse(m.Groups["requested"].Value));
+        Assert.Equal(body.Length, int.Parse(m.Groups["last"].Value));
+        Assert.Equal(body.Length + 1, int.Parse(m.Groups["next"].Value));
+    }
+
+    /// <summary>
+    /// Calling again with the start_line the notice names resumes at exactly the next file line —
+    /// no line repeated, none skipped.
+    /// </summary>
+    [Fact]
+    public void GetFileExcerpt_ContinuationAtTheNoticesStartLine_HasNoOverlapAndNoGap()
+    {
+        using var service = CreateServiceWithExcerptFile();
+
+        string first = service.GetFileExcerpt(ExcerptFile, 1, ExcerptFileLines, null, maxChars: 400);
+        var (_, firstBody, notice) = SplitExcerpt(first);
+        Assert.NotNull(notice);
+
+        int next = int.Parse(ExcerptNoticeRegex.Match(notice!).Groups["next"].Value);
+        Assert.Equal(firstBody.Length + 1, next);
+
+        string second = service.GetFileExcerpt(ExcerptFile, next, ExcerptFileLines, null, maxChars: 0);
+        var (secondHeader, secondBody, secondNotice) = SplitExcerpt(second);
+
+        Assert.Equal($"--- {ExcerptFile}:L{next}-L{ExcerptFileLines} ---", secondHeader);
+        Assert.Null(secondNotice);
+        Assert.Equal($"{next}: {ExpectedFileLine(next)}", secondBody[0]);
+        Assert.Equal(ExcerptFileLines, firstBody.Length + secondBody.Length);
+    }
+
+    /// <summary>
+    /// maxChars 0 — the default every other caller uses — renders the whole requested range with no
+    /// notice, exactly as before the budget existed.
+    /// </summary>
+    [Fact]
+    public void GetFileExcerpt_MaxCharsZero_RendersTheWholeRequestedRange()
+    {
+        using var service = CreateServiceWithExcerptFile();
+
+        string result = service.GetFileExcerpt(ExcerptFile, 1, 5, null, maxChars: 0);
+
+        string expected = string.Join(Environment.NewLine, new[]
+        {
+            $"--- {ExcerptFile}:L1-L5 ---",
+            "1: /* excerpt.c */",
+            "2:     int excerpt_line_01;",
+            "3:     int excerpt_line_02;",
+            "4:     int excerpt_line_03;",
+            "5:     int excerpt_line_04;",
+            string.Empty
+        });
+
+        Assert.Equal(expected, result);
     }
 }

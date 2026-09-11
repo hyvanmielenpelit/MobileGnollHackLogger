@@ -1581,10 +1581,24 @@
             <span class="score-note">{{ runWallClockNote(selectedRunDetail) }}</span>
           </div>
           <!--
-            H5. The headline figure only. The per-role split it hides — on run 13 the candidate was
-            28 % of the cost and grading plus verification 72 %, which inverts the intuition that a
-            benchmark's cost is the model under test — is the cost panel further down the dialog.
+            H5. A pair: what the model under test cost, and the catalog total beside it. On run 13
+            the candidate was 28 % of the cost and grading plus verification 72 %, which inverts the
+            intuition that a benchmark's cost is the model under test, so the total alone misleads.
+            The rest of the per-role split is the cost panel further down the dialog. The candidate
+            card is absent on a run costed before that figure was recorded.
           -->
+          @if (selectedRunDetail.estimatedCandidateCost != null) {
+            <div class="score-card">
+              <span class="score-label">Model Under Test</span>
+              <span class="score-subvalue">
+                {{ formatRunCandidateCost(selectedRunDetail) }}
+                @if (selectedRunDetail.pricingIncomplete) {
+                  <span class="degraded-tag" title="Some participating models lack pricing">*</span>
+                }
+              </span>
+              <span class="score-note">{{ candidateCostShareLabel(selectedRunDetail) }}</span>
+            </div>
+          }
           <div class="score-card">
             <span class="score-label">Estimated Cost</span>
             <span class="score-subvalue">
@@ -1742,17 +1756,29 @@
                   <div>
                     <strong>{{ completenessOutOfScopeCount }} out-of-scope completeness deduction(s)</strong> &mdash;
                     rubric points the assessor itself placed outside what the question asked, recorded
-                    under the <code>OUT-OF-SCOPE:</code> marker and not deducted for. The instrument's
-                    share of the Accuracy-to-Completeness gap.
+                    under the <code>OUT-OF-SCOPE:</code> marker &mdash; the instruction is not to deduct
+                    for them. The instrument's share of the Accuracy-to-Completeness gap.
                   </div>
+                  @if (completenessOutOfScopeDeductedCount > 0) {
+                    <div>
+                      {{ completenessOutOfScopeDeductedCount }} of them sit beside a Completeness level
+                      below 6 with no in-scope defect named &mdash; flagged for a second reading.
+                    </div>
+                  }
                 }
                 @if (readabilityFormOnlyCount > 0) {
                   <div>
                     <strong>{{ readabilityFormOnlyCount }} rubric format suggestion(s) not followed</strong> &mdash;
                     rubric FORM criteria naming a presentation the answer did not adopt, recorded under
-                    the <code>FORM:</code> marker and not deducted for. Readability is graded on its
-                    level anchors alone.
+                    the <code>FORM:</code> marker &mdash; the instruction is not to deduct for them.
+                    Readability is graded on its level anchors alone.
                   </div>
+                  @if (readabilityFormOnlyDeductedCount > 0) {
+                    <div>
+                      {{ readabilityFormOnlyDeductedCount }} of them sit beside a Readability level
+                      below 6 with no other basis named.
+                    </div>
+                  }
                 }
               </div>
             </div>

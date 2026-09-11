@@ -1433,6 +1433,28 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   /**
+   * H5. What the model under test alone cost, beside the catalog total. The two are a pair: on run
+   * 13 the candidate was 28 % of the spend, so the total on its own invites the reading that a
+   * benchmark's cost is the model it grades.
+   */
+  formatRunCandidateCost(run: BenchmarkRunSummaryDto | BenchmarkRunDetailDto): string {
+    return this.formatCostAmount(run.estimatedCandidateCost);
+  }
+
+  /**
+   * The candidate's share of the catalog total, or `'share unknown'` when either figure is missing
+   * or the total is zero — a percentage of nothing would read as a measurement.
+   */
+  candidateCostShareLabel(run: BenchmarkRunSummaryDto | BenchmarkRunDetailDto): string {
+    const candidate = run.estimatedCandidateCost;
+    const total = run.estimatedCost;
+    if (candidate == null || total == null || !Number.isFinite(candidate) || !Number.isFinite(total) || total <= 0) {
+      return 'share unknown';
+    }
+    return `${Math.round((candidate / total) * 100)} % of catalog total`;
+  }
+
+  /**
    * Whether a run predates the harness version that costed the second opinion and the final
    * synthesis as roles of their own. Such a run's assessor line still carries the second
    * opinion's spend and its synthesis is uncosted, so the cost panel says so rather than
@@ -5935,6 +5957,20 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   get readabilityFormOnlyCount(): number {
     return this.selectedRunDetail?.readabilityFormOnlyCount ?? 0;
+  }
+
+  /**
+   * The subsets of the two counts above where the marker sits beside a docked level that names no
+   * other defect — the point recorded as set aside and deducted for all the same. Sub-lines of
+   * their own measurement rather than entries in the integrity notice: one of them is a second
+   * reading worth taking, not a verdict that has gone wrong.
+   */
+  get completenessOutOfScopeDeductedCount(): number {
+    return this.selectedRunDetail?.completenessOutOfScopeDeductedCount ?? 0;
+  }
+
+  get readabilityFormOnlyDeductedCount(): number {
+    return this.selectedRunDetail?.readabilityFormOnlyDeductedCount ?? 0;
   }
 
   get hasInstrumentMeasurements(): boolean {
