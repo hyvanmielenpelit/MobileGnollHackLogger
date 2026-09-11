@@ -44,17 +44,27 @@ text, and the agent cannot read it: follow `database_queries` and ask the user t
 against the Overseer database:
 
 ```sql
-SELECT q.Id, q.BenchmarkSuiteId, s.Name AS SuiteName, q.OrderIndex + 1 AS QuestionNumber,
+SELECT q.Id, q.BenchmarkSuiteId, s.Name AS SuiteName, q.OrderIndex,
        q.ItemRevision, q.Difficulty, q.AssessedDifficulty, q.ReviewedAtRevision, q.IsGenerated,
        q.QuestionText, q.ExpectedPoints
 FROM BenchmarkQuestions q
 JOIN BenchmarkSuites s ON s.Id = q.BenchmarkSuiteId
-WHERE q.BenchmarkSuiteId = <suite id> AND q.OrderIndex = <question number - 1>;
+WHERE q.BenchmarkSuiteId = <suite id> AND q.OrderIndex = <report question number>;
 ```
 
-`OrderIndex` is zero-based; the report's "Question 7" is `OrderIndex = 6`. Ask for the result
-with headers, and treat `ExpectedPoints` as the document to edit — line breaks and any Markdown
-in it are part of the text the grader sees.
+**The report's question number is `OrderIndex` itself** — `BenchmarkReportBuilder` prints
+`Question {OrderIndex}` — so "Question 7" is `OrderIndex = 7`. Do not subtract one: the first
+handoff written from this skill did, fetched Question 6, and cost a round trip. Confirm the row
+by its `QuestionText` and its `AssessedDifficulty` against the report before using it. Ask for
+the result with headers, and treat `ExpectedPoints` as the document to edit — line breaks and
+any Markdown in it are part of the text the grader sees.
+
+**House format.** Suite 6's rubrics follow one shape, and a replacement keeps it: a
+`**REQUIRED** (accuracy + completeness)` bullet list, a `**CRITICAL ERROR** (set
+\`criticalError\`) — when the answer:` list, `**SCOPE** (conciseness)`, `**FORM** (readability)`,
+and a `**SOURCE**` line naming files and line numbers. Only REQUIRED and CRITICAL ERROR points
+are ever charged; SCOPE and FORM are recorded under the `OUT-OF-SCOPE:` / `FORM:` markers and
+not deducted for. Put a changed fact's citation into SOURCE as well as into the point.
 
 ## 3. Pre-Flight Checklist
 
