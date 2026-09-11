@@ -763,7 +763,8 @@
                 <th app-sort-header [state]="historyTable" column="durationMs" label="Duration"
                     (changed)="onHistoryTableChanged()"></th>
                 <th app-sort-header [state]="historyTable" column="estimatedCost" label="Cost"
-                    (changed)="onHistoryTableChanged()"></th>
+                    (changed)="onHistoryTableChanged()" tabindex="0"
+                    interestfor="tip-cost-header" style="anchor-name: --tip-cost-header"></th>
                 <th app-sort-header [state]="historyTable" column="startedAtUtc" label="Date (UTC)"
                     (changed)="onHistoryTableChanged()"></th>
                 <th scope="col">Actions</th>
@@ -843,6 +844,12 @@
                       <span class="score-badge" [class]="getScoreBadgeClass(run.finalScore)">
                         {{ run.finalScore }} / 100
                       </span>
+                    } @else if ((run.terminalFailureAnswerCount ?? 0) > 0) {
+                      <span class="text-muted"
+                            [attr.interestfor]="'tip-notcomputed-q-' + run.id"
+                            [attr.style]="'anchor-name: --tip-notcomputed-q-' + run.id">not computed</span>
+                      <div popover="hint" class="gh-tooltip" [id]="'tip-notcomputed-q-' + run.id"
+                           [attr.style]="'position-anchor: --tip-notcomputed-q-' + run.id">{{ run.terminalFailureAnswerCount }} of {{ run.totalQuestionCount }} questions failed at the provider; indexes are withheld</div>
                     } @else {
                       <span class="text-muted">N/A</span>
                     }
@@ -855,6 +862,12 @@
                       @if (run.speedMeasurementDegraded) {
                         <span class="degraded-indicator" title="Advisory timing — measured under concurrent execution">*</span>
                       }
+                    } @else if ((run.terminalFailureAnswerCount ?? 0) > 0) {
+                      <span class="text-muted"
+                            [attr.interestfor]="'tip-notcomputed-s-' + run.id"
+                            [attr.style]="'anchor-name: --tip-notcomputed-s-' + run.id">not computed</span>
+                      <div popover="hint" class="gh-tooltip" [id]="'tip-notcomputed-s-' + run.id"
+                           [attr.style]="'position-anchor: --tip-notcomputed-s-' + run.id">{{ run.terminalFailureAnswerCount }} of {{ run.totalQuestionCount }} questions failed at the provider; indexes are withheld</div>
                     } @else {
                       <span class="text-muted">-</span>
                     }
@@ -884,12 +897,15 @@
                            [attr.style]="'position-anchor: --tip-dur-' + run.id">Wall-clock time until the run stopped</div>
                     }
                   </td>
-                  <td>
-                    @if (run.estimatedCost != null) {
-                      {{ formatRunEstimatedCost(run) }}
-                      @if (run.pricingIncomplete) {
-                        <span class="degraded-tag" title="Some participating models lack pricing">*</span>
-                      }
+                  <td class="cost-cell">
+                    @if (run.estimatedCandidateCost != null || run.estimatedCost != null) {
+                      <span class="cost-primary">
+                        {{ formatCostAmount(run.estimatedCandidateCost ?? run.estimatedCost) }}
+                        @if (run.pricingIncomplete) {
+                          <span class="degraded-tag" title="Some participating models lack pricing">*</span>
+                        }
+                      </span>
+                      <span class="cost-secondary">catalog {{ formatRunEstimatedCost(run) }}</span>
                     } @else {
                       <span class="text-muted">-</span>
                     }
@@ -934,6 +950,8 @@
             </tbody>
           </table>
         </div>
+        <div popover="hint" class="gh-tooltip" id="tip-cost-header"
+             style="position-anchor: --tip-cost-header">Model under test; whole-run catalog total beneath</div>
         <app-table-pager [state]="historyTable" [rows]="historyRuns" noun="runs" [announce]="false"
                          (changed)="onHistoryTableChanged()"></app-table-pager>
       }
@@ -1346,6 +1364,16 @@
       <div class="dialog-header">
         <div class="dialog-title-group">
           <h3>Run #{{ selectedRunDetail.id }}: {{ selectedRunDetail.suiteName }}</h3>
+          <span class="status-badge" [class]="statusBadgeClass(selectedRunDetail.status)">
+            {{ formatStatusLabel(selectedRunDetail.status) }}
+          </span>
+          @if (answerShortfallOf(selectedRunDetail); as progress) {
+            <span class="badge-progress-count"
+                  [attr.interestfor]="'tip-dialog-progress-' + selectedRunDetail.id"
+                  [attr.style]="'anchor-name: --tip-dialog-progress-' + selectedRunDetail.id">{{ progress.answered }} / {{ progress.total }}</span>
+            <div popover="hint" class="gh-tooltip" [id]="'tip-dialog-progress-' + selectedRunDetail.id"
+                 [attr.style]="'position-anchor: --tip-dialog-progress-' + selectedRunDetail.id">{{ progress.answered }} of {{ progress.total }} questions answered; the rest score 0</div>
+          }
           <p class="dialog-subtitle">
             Model: <strong>{{ selectedRunDetail.testedModelDisplayNameUsed }}</strong> |
             Assessor: <strong>{{ selectedRunDetail.assessorModelDisplayNameUsed }}</strong> |
@@ -1378,6 +1406,38 @@
           </div>
         }
 
+        @if (failedAnswers().length > 0 && (formatStatus(selectedRunDetail.status) === 'Failed' || formatStatus(selectedRunDetail.status) === 'Canceled' || formatStatus(selectedRunDetail.status) === 'CompletedWithErrors')) {
+          <div class="alert mb-20"
+               [class.alert-danger]="formatStatus(selectedRunDetail.status) === 'Failed' || formatStatus(selectedRunDetail.status) === 'Canceled'"
+               [class.alert-warning]="formatStatus(selectedRunDetail.status) === 'CompletedWithErrors'"
+               role="alert">
+            <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <div class="alert-content">
+              <div class="alert-heading"><strong>Run did not complete cleanly</strong></div>
+              <div class="alert-body">
+                @if ((selectedRunDetail.terminalFailureAnswerCount ?? 0) > 0) {
+                  {{ selectedRunDetail.terminalFailureAnswerCount }} of {{ selectedRunDetail.totalQuestionCount }} questions failed at the provider — indexes are not computed for this run.
+                } @else {
+                  {{ failedAnswers().length }} of {{ selectedRunDetail.totalQuestionCount }} questions produced no gradeable answer.
+                }
+                @for (group of failedAnswerGroups(); track group.message + group.questions[0]) {
+                  <div>{{ formatQuestionRanges(group.questions) }} — {{ group.httpStatusCode != null ? 'HTTP ' + group.httpStatusCode + ' — ' : '' }}{{ group.message }}</div>
+                }
+              </div>
+              <div class="alert-actions">
+                <button type="button" class="btn-gh" (click)="rerunFailedFromRunDetail(selectedRunDetail.id)" [disabled]="isRunBusy() || isAbortedRun(selectedRunDetail)">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+                  Re-run Failed Questions
+                </button>
+              </div>
+            </div>
+          </div>
+        }
+
         <!-- Cancel used to be the only action here, and cancelling is the one thing a stuck
              run cannot recover from: an aborted run refuses a re-run outright. The dialog is
              where a run's progress is actually visible, so it is offered first. -->
@@ -1397,14 +1457,19 @@
         <div class="score-summary-bar">
           <div class="score-card main-score">
             <span class="score-label">Intelligence Index</span>
-            <span class="score-value" [class]="getScoreBadgeClass(selectedRunDetail.qualityIndex ?? selectedRunDetail.finalScore)">
-              {{ selectedRunDetail.qualityIndex != null ? selectedRunDetail.qualityIndex : (selectedRunDetail.finalScore != null ? selectedRunDetail.finalScore : 'N/A') }} / 100
-            </span>
-            @if (indexConfidenceLabel) {
-              <span class="score-note">{{ indexConfidenceLabel }} (95%)</span>
-            }
-            @if ((selectedRunDetail.unansweredQuestionCount ?? 0) > 0) {
-              <span class="score-note">{{ selectedRunDetail.unansweredQuestionCount }} question(s) unanswered — the model produced no text, and each scores 0 here</span>
+            @if (selectedRunDetail.qualityIndex == null && selectedRunDetail.finalScore == null && (selectedRunDetail.terminalFailureAnswerCount ?? 0) > 0) {
+              <span class="score-value text-muted">Not computed</span>
+              <span class="score-note">{{ selectedRunDetail.terminalFailureAnswerCount }} question(s) failed at the provider</span>
+            } @else {
+              <span class="score-value" [class]="getScoreBadgeClass(selectedRunDetail.qualityIndex ?? selectedRunDetail.finalScore)">
+                {{ selectedRunDetail.qualityIndex != null ? selectedRunDetail.qualityIndex : (selectedRunDetail.finalScore != null ? selectedRunDetail.finalScore : 'N/A') }} / 100
+              </span>
+              @if (indexConfidenceLabel) {
+                <span class="score-note">{{ indexConfidenceLabel }} (95%)</span>
+              }
+              @if ((selectedRunDetail.unansweredQuestionCount ?? 0) > 0) {
+                <span class="score-note">{{ selectedRunDetail.unansweredQuestionCount }} question(s) unanswered — the model produced no text, and each scores 0 here</span>
+              }
             }
           </div>
           @if (selectedRunDetail.rawQualityIndex != null && selectedRunDetail.rawQualityIndex !== (selectedRunDetail.qualityIndex ?? selectedRunDetail.finalScore)) {
@@ -1445,6 +1510,10 @@
                 Speed Index {{ selectedRunDetail.speedIndex != null ? selectedRunDetail.speedIndex : 'N/A' }} / 100 &mdash;
                 advisory{{ showSpeedIndexSaturationAdvisory ? ' (saturated: ' + speedIndexCeilingAnswerCount + ' of ' + speedIndexScoredAnswerCount + ' at the ceiling)' : ' (profile latency target does not fit this thinking level)' }}
               </span>
+            } @else if (selectedRunDetail.speedIndex == null && (selectedRunDetail.terminalFailureAnswerCount ?? 0) > 0) {
+              <span class="score-label">Speed Index</span>
+              <span class="score-subvalue text-muted">Not computed</span>
+              <span class="score-note">{{ selectedRunDetail.terminalFailureAnswerCount }} question(s) failed at the provider</span>
             } @else {
               <span class="score-label">Speed Index</span>
               <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.speedIndex)">
@@ -1540,7 +1609,14 @@
                 rendered only when it applies.
               -->
               <div class="alert-body">
-                @if ((selectedRunDetail.transportDefectAnswerCount ?? 0) > 0) {
+                @if (selectedRunDetail.terminalFailureAnswerCount != null) {
+                  @if (selectedRunDetail.terminalFailureAnswerCount > 0) {
+                    <div>{{ selectedRunDetail.terminalFailureAnswerCount }} answer(s) failed at the provider (API error).</div>
+                  }
+                  @if (nonTerminalTransportDefectCount(selectedRunDetail) > 0) {
+                    <div>{{ nonTerminalTransportDefectCount(selectedRunDetail) }} answer(s) arrived empty or truncated.</div>
+                  }
+                } @else if ((selectedRunDetail.transportDefectAnswerCount ?? 0) > 0) {
                   <div>{{ selectedRunDetail.transportDefectAnswerCount }} answer(s) were corrupted beyond recovery (empty or truncated).</div>
                 }
                 @if ((selectedRunDetail.recoveredAnswerCount ?? 0) > 0) {
@@ -1736,12 +1812,6 @@
               {{ retryingClaimVerification ? 'Retrying...' : 'Retry Claim Verification' }}
             </button>
           }
-          @if (formatStatus(selectedRunDetail.status) === 'CompletedWithErrors' || formatStatus(selectedRunDetail.status) === 'Failed') {
-            <button type="button" class="btn-gh" (click)="rerunFailedFromRunDetail(selectedRunDetail.id)" [disabled]="isRunBusy() || isAbortedRun(selectedRunDetail)">
-              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
-              Re-run Failed Questions
-            </button>
-          }
         </div>
 
         <!-- Assessor Review Card -->
@@ -1930,7 +2000,7 @@
 
               @if (expandedQuestions.has(ans.orderIndex)) {
                 <div class="question-card-body">
-                  @if (ans.status === 2 || formatAnswerStatus(ans.status) === 'ProviderError') {
+                  @if (isAnswerFailed(ans) && (ans.errorMessage || ans.providerErrorDetail)) {
                     <div class="alert alert-danger mb-15" role="alert">
                       <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <circle cx="12" cy="12" r="10"></circle>
@@ -1938,8 +2008,13 @@
                         <line x1="12" y1="16" x2="12.01" y2="16"></line>
                       </svg>
                       <div class="alert-content">
-                        <div class="alert-heading"><strong>Provider Outage/Error (HTTP {{ ans.httpStatusCode }})</strong></div>
-                        <div class="alert-body">{{ ans.errorMessage }}</div>
+                        <div class="alert-heading"><strong>Provider Outage/Error@if (ans.httpStatusCode != null) { (HTTP {{ ans.httpStatusCode }}) }</strong></div>
+                        <div class="alert-body">
+                          {{ ans.errorMessage }}
+                          @if (ans.providerErrorDetail) {
+                            <div class="mt-5 text-muted text-11">{{ ans.providerErrorDetail }}</div>
+                          }
+                        </div>
                       </div>
                     </div>
                   }
@@ -2106,7 +2181,11 @@
                   }
 
                   <div class="section-title">Reply:</div>
-                  <div class="answer-box mb-15">{{ ans.answerText }}</div>
+                  @if (ans.answerText) {
+                    <div class="answer-box mb-15">{{ ans.answerText }}</div>
+                  } @else {
+                    <div class="answer-box mb-15 text-muted">No answer text — the candidate failed at the provider before returning content. See the error above.</div>
+                  }
 
                   @if (ans.thoughtText) {
                     <button type="button" class="btn-link mb-10" (click)="toggleThought(ans.orderIndex)"

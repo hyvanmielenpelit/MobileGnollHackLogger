@@ -13,6 +13,8 @@ public class ChatEvent
        to work for both kinds. */
     public string? SessionId { get; set; }
     public int? SeqNo { get; set; }
+    // Bounded raw provider failure payload; set only on "error" events, null otherwise.
+    public string? Detail { get; set; }
     public TokenUsageReport? UsageReport { get; set; }
 }
 

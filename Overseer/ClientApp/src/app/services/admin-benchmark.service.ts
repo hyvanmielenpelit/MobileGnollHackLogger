@@ -559,13 +559,16 @@ export interface BenchmarkRunAnswerDto {
   questionText: string;
   difficulty: string | number;
   assessedDifficulty?: number | null;
-  answerText: string;
+  /** Null when the candidate failed terminally at the provider; the failure is carried by errorMessage / httpStatusCode / providerErrorDetail instead. */
+  answerText: string | null;
   thoughtText?: string | null;
   status: string | number;
   assessmentStatus?: string | number;
   assessmentError?: string | null;
   errorMessage?: string | null;
   httpStatusCode?: number | null;
+  /** The provider's own error payload, verbatim, when the call failed terminally. */
+  providerErrorDetail?: string | null;
   score?: number | null;
   accuracyLevel?: number | null;
   completenessLevel?: number | null;
@@ -759,6 +762,14 @@ export interface BenchmarkRunDetailDto {
    * partition the run, so the four always sum to the question count.
    */
   transportDefectAnswerCount: number;
+  /**
+   * Answers that failed terminally at the provider (no text returned, carried by errorMessage /
+   * httpStatusCode / providerErrorDetail on the answer). Null on a run finalised before this was
+   * recorded. Any run with a nonzero count here has null qualityIndex, qualityIndexStandardError,
+   * unweightedQualityIndex and speedIndex: the indexes are withheld rather than computed over the
+   * surviving questions only.
+   */
+  terminalFailureAnswerCount?: number | null;
   /**
    * Answers the harness repaired: leaked transport artifacts removed, the answer beneath
    * graded normally. A provider-path defect worth reporting, not a failed answer.
@@ -1135,6 +1146,12 @@ export interface BenchmarkRunSummaryDto {
   degradedAnswerCount?: number;
   toolStarvedAnswerCount?: number;
   budgetSaturatedAnswerCount?: number;
+  /**
+   * Answers that failed terminally at the provider. Null on a run finalised before this was
+   * recorded. Any run with a nonzero count here has null qualityIndex, qualityIndexStandardError
+   * and speedIndex, withheld rather than computed over the surviving questions only.
+   */
+  terminalFailureAnswerCount?: number | null;
   secondOpinionBlindUsed?: boolean;
   secondOpinionMeanSignedDelta?: number | null;
   secondOpinionCriticalErrorSplitCount?: number;
@@ -1155,6 +1172,8 @@ export interface BenchmarkRunSummaryDto {
   wikiHeadSha?: string | null;
   sourceCodeHeadSha?: string | null;
   estimatedCost?: number | null;
+  /** The candidate model's own share of estimatedCost — the figure the history table's primary cost line shows. */
+  estimatedCandidateCost?: number | null;
   pricingIncomplete?: boolean;
 }
 

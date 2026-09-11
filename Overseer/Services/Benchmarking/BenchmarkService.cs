@@ -959,6 +959,14 @@ public class BenchmarkService
 
         string? terminalError = null;
 
+        // The provider's own bounded error payload, from the first "error" event that carried one.
+        // Stored on the answer as ProviderErrorDetail for a terminal failure.
+        string? terminalErrorDetail = null;
+
+        // Distinct error texts already folded into terminalError, so a provider that repeats the
+        // same message on every retry does not turn it into a wall of duplicates.
+        var seenErrorTexts = new HashSet<string>(StringComparer.Ordinal);
+
         // Retained for the typed classifier: a transport failure's message is an operating-system
         // string in the machine's display language, so the exception type is the only locale-stable
         // evidence of one. Null on the streamed "error" event path, which carries a string only.
@@ -974,7 +982,15 @@ public class BenchmarkService
             {
                 if (evt.Type == "error")
                 {
-                    terminalError = evt.Data?.ToString();
+                    // The first event's text is the terminal error; a later, distinct text is
+                    // appended rather than overwriting it, so a run that failed twice for two
+                    // different reasons reports both instead of only the last.
+                    string? text = evt.Data;
+                    if (!string.IsNullOrEmpty(text) && seenErrorTexts.Add(text))
+                    {
+                        terminalError = terminalError == null ? text : $"{terminalError} | {text}";
+                    }
+                    terminalErrorDetail ??= evt.Detail;
                 }
             }
         }
@@ -1039,6 +1055,13 @@ public class BenchmarkService
             status = BenchmarkAnswerStatus.Ok;
         }
 
+        // Same shape as BenchmarkRunFinalizer.HasTerminalFailure: the provider failed the request
+        // outright, so there is nothing authored to grade. AnswerText and ThoughtText are cleared —
+        // any text captured before the failure is a fragment, not an answer — and OutputTokens falls
+        // back to 0 rather than a character-based estimate against text that no longer exists, unless
+        // the provider itself already reported real usage before failing.
+        bool isTerminalFailure = status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed;
+
         var answer = new BenchmarkRunAnswer
         {
             BenchmarkRunId = run.Id,
@@ -1054,18 +1077,23 @@ public class BenchmarkService
             QuestionText = question.QuestionText,
             Difficulty = question.Difficulty,
             AssessedDifficulty = assessedDiff,
-            AnswerText = sanitized.AnswerText,
-            ThoughtText = sanitized.ThoughtText,
+            // AnswerText's column is NOT NULL, so "cleared" means empty here rather than null; every
+            // reader already treats the two identically through string.IsNullOrWhiteSpace.
+            AnswerText = isTerminalFailure ? string.Empty : sanitized.AnswerText,
+            ThoughtText = isTerminalFailure ? null : sanitized.ThoughtText,
             Status = status,
             AssessmentStatus = BenchmarkAssessmentStatus.Pending,
             ErrorMessage = BenchmarkAssessmentFailure.Truncate(terminalError),
+            ProviderErrorDetail = isTerminalFailure ? BenchmarkAssessmentFailure.Truncate(terminalErrorDetail, 4000) : null,
             HttpStatusCode = classification.HttpStatus,
             DurationMs = runResult.TotalDurationMs ?? sw.ElapsedMilliseconds,
             TimeToFirstTokenMs = runResult.TimeToFirstTokenMs,
             ActualServiceTierUsed = runResult.ActualServiceTier,
             ToolCallSummary = string.IsNullOrEmpty(toolSummary) ? null : toolSummary,
             InputTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens,
-            OutputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens,
+            OutputTokens = isTerminalFailure
+                ? (runResult.OutputTokens > 0 ? runResult.OutputTokens : 0)
+                : (runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens),
             CacheReadInputTokens = runResult.CacheReadTokens,
             CacheCreationInputTokens = runResult.CacheCreationTokens,
             LongContextInputTokens = longContextBuckets.InputTokens,
@@ -1180,6 +1208,10 @@ public class BenchmarkService
 
         string? terminalError = null;
 
+        // See ExecuteSingleQuestionAsync for the terminalErrorDetail and seenErrorTexts contract.
+        string? terminalErrorDetail = null;
+        var seenErrorTexts = new HashSet<string>(StringComparer.Ordinal);
+
         // See ExecuteSingleQuestionAsync for why the exception itself is retained.
         Exception? terminalException = null;
 
@@ -1191,7 +1223,12 @@ public class BenchmarkService
             {
                 if (evt.Type == "error")
                 {
-                    terminalError = evt.Data?.ToString();
+                    string? text = evt.Data;
+                    if (!string.IsNullOrEmpty(text) && seenErrorTexts.Add(text))
+                    {
+                        terminalError = terminalError == null ? text : $"{terminalError} | {text}";
+                    }
+                    terminalErrorDetail ??= evt.Detail;
                 }
             }
         }
@@ -1254,18 +1291,25 @@ public class BenchmarkService
             status = BenchmarkAnswerStatus.Ok;
         }
 
-        answer.AnswerText = sanitized.AnswerText;
-        answer.ThoughtText = sanitized.ThoughtText;
+        // See ExecuteSingleQuestionAsync for the rule this follows, and for why AnswerText clears
+        // to empty rather than null.
+        bool isTerminalFailure = status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed;
+
+        answer.AnswerText = isTerminalFailure ? string.Empty : sanitized.AnswerText;
+        answer.ThoughtText = isTerminalFailure ? null : sanitized.ThoughtText;
         answer.Status = status;
         answer.AssessmentStatus = BenchmarkAssessmentStatus.Pending;
         answer.ErrorMessage = BenchmarkAssessmentFailure.Truncate(terminalError);
+        answer.ProviderErrorDetail = isTerminalFailure ? BenchmarkAssessmentFailure.Truncate(terminalErrorDetail, 4000) : null;
         answer.HttpStatusCode = classification.HttpStatus;
         answer.DurationMs = runResult.TotalDurationMs ?? sw.ElapsedMilliseconds;
         answer.TimeToFirstTokenMs = runResult.TimeToFirstTokenMs;
         answer.ActualServiceTierUsed = runResult.ActualServiceTier;
         answer.ToolCallSummary = string.IsNullOrEmpty(toolSummary) ? null : toolSummary;
         answer.InputTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens;
-        answer.OutputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
+        answer.OutputTokens = isTerminalFailure
+            ? (runResult.OutputTokens > 0 ? runResult.OutputTokens : 0)
+            : (runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens);
         answer.CacheReadInputTokens = runResult.CacheReadTokens;
         answer.CacheCreationInputTokens = runResult.CacheCreationTokens;
         answer.LongContextInputTokens = longContextBuckets.InputTokens;
@@ -1412,8 +1456,9 @@ public class BenchmarkService
             else
             {
                 answer.AssessmentStatus = BenchmarkAssessmentStatus.Failed;
-                answer.AssessmentError =
-                    "Not assessed: the answer contained no text, and the provider reported no normal stop.";
+                answer.AssessmentError = BenchmarkRunFinalizer.HasTerminalFailure(answer)
+                    ? "Not assessed: the provider failed the request; excluded from scoring."
+                    : "Not assessed: the answer contained no text, and the provider reported no normal stop.";
             }
 
             await db.SaveChangesAsync(CancellationToken.None);

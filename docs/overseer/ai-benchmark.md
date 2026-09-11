@@ -1590,6 +1590,92 @@ untouched and per-tool guides are not inlined into the candidate prompt.
 (`AddContestedAccuracyDeductionAnswerCount`); it is left `NULL` on every existing row, read as *not
 recorded* rather than zero, and no figure is backfilled.
 
+### Harness Version 21 Updates
+
+*2026-09-11.*
+
+Prompted by run 37 (GPT-5.6 Sol, the confirming run for run 36's round): an OpenAI in-stream overload
+took out 12 of the run's 18 questions, and the harness graded the 12 error strings as if they were
+answers, reported `Provider Errors: 0`, and still published an Intelligence Index computed over the
+6 surviving questions — a number over a sixth of the suite, carrying the same confidence as a
+complete run. Nothing before this round distinguished a provider failure from an ordinary short
+answer once the failure had already been turned into text and handed to the assessor.
+
+`ScoringMethodVersion` stays at **10** — the scoring formula itself is unchanged, only whether a
+partial run is allowed to publish a number over it — but `BenchmarkAssessmentPrompt.HarnessVersion`
+moves to **21**. No `ChatService` prose and no `Overseer/ToolGuides/` file changed in this round, so
+unlike harness 19 and 20 this is a **single-instrument-key** move: a run stamped 21 differs from a run
+stamped 20 on `HarnessVersion` alone, not on `ToolGuidesSha256` or `CandidateSystemPromptSha256`.
+
+- **A shared retry vocabulary now covers every provider.** New `ProviderErrorRetryPolicy.IsRetryable(string?)`
+  is the one place the agent loop asks whether a provider error code is worth retrying, replacing the
+  per-provider logic that had let an Anthropic or Google overload retry while an OpenAI one failed
+  outright. An explicit deny list (`invalid_request_error`, `insufficient_quota`,
+  `context_length_exceeded`, `authentication`) wins over the allow tokens, so a request that is wrong
+  rather than merely rejected never retries.
+- **`OpenAiResponsesProvider` stops discarding the failure it already has.** It now parses
+  `response.failed` and a top-level `error` object into `OpenAI stream error: [{code}] {message}`,
+  instead of the previous bare `OpenAI stream error: response.failed` that dropped both the code and
+  the message. `ChatEvent.Detail` is new: a bounded raw provider failure payload, set only on `error`
+  events, and `OpenAiResponsesProvider` fills it alongside the formatted message.
+- **`AgentLoopRunner` logs a non-2xx status and a bounded response body at warning level
+  unconditionally** — no longer gated behind the debug-log flag every benchmark call site leaves off
+  — so a transport failure now leaves a trace in the server log even for a run that never set
+  `ShowDebugLog`.
+- **`BenchmarkProviderErrorClassifier` recognises four more shapes**: `server_error`,
+  `[server_error]`, `Our servers are currently overloaded`, `rate_limit_exceeded`, and a bracketed
+  numeric HTTP status — exactly the strings the `[code]` formatting above now puts in front of it.
+- **`BenchmarkService` captures the first error and keeps later, distinct ones.** An answer that
+  fails more than once records the first error text; a later attempt whose text differs is appended
+  after ` | ` rather than discarded or overwritten. A **terminal-failure answer** — one classified
+  `ProviderError` or `Failed` — now stores `AnswerText = null`, `ThoughtText = null`, and `0` output
+  tokens whenever the provider reported no usage, instead of persisting the error text as if it were a
+  graded response. The new `BenchmarkRunAnswer.ProviderErrorDetail` (`nvarchar(4000)`, nullable)
+  carries the raw detail from `ChatEvent.Detail` when one was captured. The assessor is **skipped** on
+  such an answer, with `"Not assessed: the provider failed the request; excluded from scoring."` in
+  place of a score.
+- **`BenchmarkRunFinalizer` withholds the indexes rather than publishing a partial number.** New
+  `BenchmarkRun.TerminalFailureAnswerCount` (`int?` — `null` means *not recorded*, i.e. the run was
+  finalised before harness 21). When **any** answer in the run carries a terminal failure (status
+  `ProviderError` or `Failed`), `QualityIndex`, `QualityIndexStandardError`, `UnweightedQualityIndex`
+  and `SpeedIndex` are all stored as `null` rather than computed over the survivors. A run that is
+  `CompletedWithErrors` only because of assessment failures or model-produced empty answers is
+  unaffected and keeps its indexes — the suppression is specific to a terminal *provider* failure.
+  Re-running the failed questions re-finalises the run, so a fully repaired run regains its indexes.
+  A minimum-item threshold (publish an index once fewer than some fraction of questions failed) was
+  considered and rejected: it would still publish a number over an item set that no longer matches the
+  suite's, and that number is comparable with no complete run.
+- **The report says so instead of showing a number.** § 2 and § 7 print
+  `Not computed — N of M questions failed at the provider` in place of an index whenever the
+  suppression above applies; `Provider Errors` now counts terminal failures directly, so run 37's own
+  report would have read 12 rather than 0; § 5 Issues prints the answer's full `ErrorMessage` and the
+  HTTP status rather than a truncated form; and the Run Integrity block gains a
+  `Terminal provider failures: N` line.
+- **The tool-call log names the real reason for an empty answer.** An answer with no `ToolCalls` rows
+  now reads `*No tool calls attempted — the answer failed before its first tool round.*` when the
+  answer failed terminally, and the existing `*No tool calls attempted on this answer.*` otherwise; a
+  run recorded before harness 17 keeps its own existing sentence, since it has no rows to reason about
+  either way.
+- **Admin UI.** The run history table's Cost column now shows the model-under-test's own cost with the
+  whole run's catalog total (grading included) beneath it, rather than one blended figure. The run
+  detail dialog gained a status badge and, when the run carries any terminal failure, a top failure
+  alert carrying a **Re-run Failed Questions** button. Every index cell reads **"not computed"** rather
+  than a blank or a stale figure whenever the suppression above applies.
+- **`BenchmarkAssessmentPrompt.HarnessVersion` is now `"21"`.**
+
+**The motivating case.** Run 37 on 2026-09-11 lost 12 of its 18 questions to an OpenAI in-stream
+overload. The harness graded the 12 error strings as if they were answers, reported
+`Provider Errors: 0`, and still published an Intelligence Index computed over the 6 surviving
+questions. Every change in this round traces back to closing one piece of that: the error is now
+retried when transient (the shared retry policy), captured with its code and detail instead of
+discarded (`OpenAiResponsesProvider`, `ChatEvent.Detail`), excluded from scoring rather than graded
+(`BenchmarkService`), and the run's indexes are withheld rather than published over the remainder
+(`BenchmarkRunFinalizer`).
+
+Migration adds `BenchmarkRunAnswer.ProviderErrorDetail` (`nvarchar(4000)`, nullable) and
+`BenchmarkRun.TerminalFailureAnswerCount` (`int`, nullable). Both are `NULL` on every existing row,
+read as *not recorded* rather than as "no failure" or zero, and no figure is backfilled.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.

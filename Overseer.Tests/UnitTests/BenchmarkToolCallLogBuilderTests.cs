@@ -46,13 +46,14 @@ public class BenchmarkToolCallLogBuilderTests
                 }
             }
         };
+        // Status defaults to 0 (not a named BenchmarkAnswerStatus member, and not ProviderError or
+        // Failed), so this is the harness-17-and-later, non-terminal-failure wording.
         var withoutRows = new BenchmarkRunAnswer
         {
             OrderIndex = 2,
             QuestionText = "Q2",
             AnswerText = "A2"
-            // ToolCalls stays at its default empty list: the shape of every answer from a run
-            // recorded before harness 17.
+            // ToolCalls stays at its default empty list: the turn made no calls.
         };
 
         string markdown = BenchmarkToolCallLogBuilder.Build(SampleRun(), new[] { withRows, withoutRows });
@@ -62,12 +63,53 @@ public class BenchmarkToolCallLogBuilderTests
         Assert.Contains("`wiki_search`", markdown);
 
         Assert.Contains("## Question 2: Q2", markdown);
-        Assert.Contains("No tool-call rows recorded for this answer", markdown);
+        Assert.Contains("No tool calls attempted on this answer.", markdown);
 
         // No table at all for the answer with no rows: everything from its heading onward is
         // the one-line explanation, never a header row.
         string fromQ2 = markdown.Substring(markdown.IndexOf("## Question 2", StringComparison.Ordinal));
         Assert.DoesNotContain("| SortOrder |", fromQ2);
+    }
+
+    [Fact]
+    public void Build_RendersTheLegacyNoRowsSentence_OnARunBeforeHarness17()
+    {
+        var run = SampleRun();
+        run.HarnessVersion = "16";
+        var answer = new BenchmarkRunAnswer { OrderIndex = 1, QuestionText = "Q1", AnswerText = "A1" };
+
+        string markdown = BenchmarkToolCallLogBuilder.Build(run, new[] { answer });
+
+        Assert.Contains("No tool-call rows recorded for this answer — a run before harness 17 records none.", markdown);
+    }
+
+    [Fact]
+    public void Build_RendersTheLegacyNoRowsSentence_WhenHarnessVersionIsUnrecorded()
+    {
+        var run = SampleRun();
+        run.HarnessVersion = null;
+        var answer = new BenchmarkRunAnswer { OrderIndex = 1, QuestionText = "Q1", AnswerText = "A1" };
+
+        string markdown = BenchmarkToolCallLogBuilder.Build(run, new[] { answer });
+
+        Assert.Contains("No tool-call rows recorded for this answer — a run before harness 17 records none.", markdown);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkAnswerStatus.Failed)]
+    [InlineData(BenchmarkAnswerStatus.ProviderError)]
+    public void Build_RendersTheTerminalFailureSentence_ForAZeroRowTerminalFailureAnswer_OnAHarness17PlusRun(
+        BenchmarkAnswerStatus status)
+    {
+        var run = SampleRun();
+        run.HarnessVersion = "18";
+        var answer = new BenchmarkRunAnswer { OrderIndex = 1, QuestionText = "Q1", AnswerText = string.Empty, Status = status };
+
+        string markdown = BenchmarkToolCallLogBuilder.Build(run, new[] { answer });
+
+        Assert.Contains("No tool calls attempted — the answer failed before its first tool round.", markdown);
+        Assert.DoesNotContain("No tool calls attempted on this answer.", markdown);
+        Assert.DoesNotContain("a run before harness 17 records none", markdown);
     }
 
     [Fact]

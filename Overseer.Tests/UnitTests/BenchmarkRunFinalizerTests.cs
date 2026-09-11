@@ -929,7 +929,11 @@ public class BenchmarkRunFinalizerTests
         gradeable.SpeedScore = 70;
         gradeable.AssessedDifficulty = 50;
 
-        var nonGradeable = MakeAnswer(2, status: BenchmarkAnswerStatus.ProviderError);
+        // Non-gradeable, but not a terminal failure: an EmptyAnswer with no recorded finish reason
+        // is a transport defect (HasTransportDefect true) yet HasTerminalFailure is false, so this
+        // case is decoupled from the index-withholding behaviour below.
+        var nonGradeable = MakeAnswer(2, status: BenchmarkAnswerStatus.EmptyAnswer);
+        nonGradeable.AnswerText = string.Empty;
         nonGradeable.SpeedScore = 999;
 
         var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 2 };
@@ -940,6 +944,106 @@ public class BenchmarkRunFinalizerTests
         // SpeedIndex's own filter already excluded a non-Ok answer, so nulling the stored score
         // here moves no published index. That is why the change carries no scoring-version bump.
         Assert.Equal(70, run.SpeedIndex);
+    }
+
+    // --- Index withholding on a terminal failure (harness version 21) ---
+
+    [Fact]
+    public void ApplyTotals_SetsTerminalFailureAnswerCount()
+    {
+        var ok = MakeAnswer(1);
+        var failed = MakeAnswer(2, status: BenchmarkAnswerStatus.Failed);
+        var providerError = MakeAnswer(3, status: BenchmarkAnswerStatus.ProviderError);
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 3 };
+        BenchmarkRunFinalizer.ApplyTotals(run, new[] { ok, failed, providerError });
+
+        Assert.Equal(2, run.TerminalFailureAnswerCount);
+    }
+
+    [Fact]
+    public void ApplyTotals_LeavesTerminalFailureAnswerCountAtZero_WhenNoAnswerHasOne()
+    {
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 1 };
+        BenchmarkRunFinalizer.ApplyTotals(run, new[] { MakeAnswer(1) });
+
+        Assert.Equal(0, run.TerminalFailureAnswerCount);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkAnswerStatus.Failed)]
+    [InlineData(BenchmarkAnswerStatus.ProviderError)]
+    public void Apply_WithholdsQualityAndSpeedIndices_WhenAnAnswerHasATerminalFailure(BenchmarkAnswerStatus status)
+    {
+        var ok = MakeAnswer(1);
+        ok.QualityScore = 90;
+        ok.SpeedScore = 80;
+        ok.AssessedDifficulty = 50;
+
+        var failed = MakeAnswer(2, status: status);
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 2 };
+        BenchmarkRunFinalizer.Apply(run, new[] { ok, failed });
+
+        Assert.Equal(1, run.TerminalFailureAnswerCount);
+        Assert.Null(run.QualityIndex);
+        Assert.Null(run.QualityIndexStandardError);
+        Assert.Null(run.UnweightedQualityIndex);
+        Assert.Null(run.SpeedIndex);
+        // The index withholding is presentation only: the run still reports what it reports today
+        // for a dead question, through the existing HasUnresolvedWork path.
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, run.Status);
+    }
+
+    [Fact]
+    public void Apply_KeepsIndices_WhenCompletedWithErrorsHasNoTerminalFailure()
+    {
+        // A run stopped only by a model-produced empty answer (scored 0 under scoring method 10)
+        // is CompletedWithErrors through HasUnresolvedWork, but carries no terminal failure, so its
+        // indexes must not be withheld.
+        var ok = MakeAnswer(1);
+        ok.QualityScore = 80;
+        ok.SpeedScore = 70;
+        ok.AssessedDifficulty = 25;
+
+        var unanswered = MakeUnansweredAnswer(2, assessedDifficulty: 25);
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 2 };
+        BenchmarkRunFinalizer.Apply(run, new[] { ok, unanswered });
+
+        Assert.Equal(0, run.TerminalFailureAnswerCount);
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, run.Status);
+        Assert.NotNull(run.QualityIndex);
+        Assert.NotNull(run.SpeedIndex);
+    }
+
+    [Fact]
+    public void Apply_KeepsIndices_OnACleanRunWithNoTerminalFailure()
+    {
+        var a1 = MakeAnswer(1);
+        a1.QualityScore = 90;
+        a1.SpeedScore = 80;
+        a1.AssessedDifficulty = 30;
+
+        var a2 = MakeAnswer(2);
+        a2.QualityScore = 70;
+        a2.SpeedScore = 60;
+        a2.AssessedDifficulty = 50;
+
+        // Three scored items, because the standard error is defined only from three up.
+        var a3 = MakeAnswer(3);
+        a3.QualityScore = 85;
+        a3.SpeedScore = 75;
+        a3.AssessedDifficulty = 40;
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 3 };
+        BenchmarkRunFinalizer.Apply(run, new[] { a1, a2, a3 });
+
+        Assert.Equal(0, run.TerminalFailureAnswerCount);
+        Assert.NotNull(run.QualityIndex);
+        Assert.NotNull(run.QualityIndexStandardError);
+        Assert.NotNull(run.UnweightedQualityIndex);
+        Assert.NotNull(run.SpeedIndex);
     }
 
     [Fact]

@@ -2350,6 +2350,7 @@ public class AdminBenchmarkController : ControllerBase
             MaxParallelQuestionsUsed = run.MaxParallelQuestionsUsed,
             AnsweredQuestionCount = run.AnsweredQuestionCount,
             UnansweredQuestionCount = run.UnansweredQuestionCount,
+            TerminalFailureAnswerCount = run.TerminalFailureAnswerCount,
             TotalQuestionCount = run.TotalQuestionCount,
             PurposeStatementUsed = run.PurposeStatementUsed,
             SameProviderAcknowledged = run.SameProviderAcknowledged,
@@ -2420,6 +2421,7 @@ public class AdminBenchmarkController : ControllerBase
                     AssessmentStatus = a.AssessmentStatus,
                     AssessmentError = a.AssessmentError,
                     ErrorMessage = a.ErrorMessage,
+                    ProviderErrorDetail = a.ProviderErrorDetail,
                     HttpStatusCode = a.HttpStatusCode,
                     Score = a.Score,
                     AccuracyLevel = a.AccuracyLevel,
@@ -2669,6 +2671,7 @@ public class AdminBenchmarkController : ControllerBase
                     SpeedMeasurementDegraded = r.SpeedMeasurementDegraded,
                     AnsweredQuestionCount = r.AnsweredQuestionCount,
                     UnansweredQuestionCount = r.UnansweredQuestionCount,
+                    TerminalFailureAnswerCount = r.TerminalFailureAnswerCount,
                     TotalQuestionCount = r.TotalQuestionCount,
                     DegradedAnswerCount = r.DegradedAnswerCount,
                     ToolStarvedAnswerCount = r.ToolStarvedAnswerCount,
@@ -2791,6 +2794,7 @@ public class AdminBenchmarkController : ControllerBase
                 if (!costs.Incomplete)
                 {
                     item.Summary.EstimatedCost = costs.Total;
+                    item.Summary.EstimatedCandidateCost = costs.Candidate;
                 }
             }
         }

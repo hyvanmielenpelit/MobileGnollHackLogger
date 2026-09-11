@@ -496,7 +496,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       speedIndex: r => r.speedIndex,
       // The same expression the Duration cell displays, so the column sorts by what it shows.
       durationMs: r => this.runDurationMs(r),
-      estimatedCost: r => r.estimatedCost,
+      estimatedCost: r => r.estimatedCandidateCost ?? r.estimatedCost,
       startedAtUtc: r => new Date(r.startedAtUtc)
     },
     {
@@ -3206,6 +3206,60 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return (this.activeRunDetail?.answers ?? []).filter(a => this.isAnswerFailed(a));
   }
 
+  /** The selected run detail's answers that failed, for the run-detail dialog's alert and integrity notice. */
+  failedAnswers(): BenchmarkRunAnswerDto[] {
+    return (this.selectedRunDetail?.answers ?? []).filter(a => this.isAnswerFailed(a));
+  }
+
+  /**
+   * Failed answers grouped by their error message, each with the shared status code and the
+   * questions it hit, ascending. Defaults to the selected run detail's own failures; the run
+   * diagnostics capture passes the active run's failures instead, since it describes a
+   * different run.
+   */
+  failedAnswerGroups(answers: BenchmarkRunAnswerDto[] = this.failedAnswers())
+    : { message: string; httpStatusCode: number | null; questions: number[] }[] {
+    const groups = new Map<string, { message: string; httpStatusCode: number | null; questions: number[] }>();
+    for (const ans of answers) {
+      const message = ans.errorMessage ?? '(no error message)';
+      let group = groups.get(message);
+      if (!group) {
+        group = { message, httpStatusCode: ans.httpStatusCode ?? null, questions: [] };
+        groups.set(message, group);
+      }
+      group.questions.push(ans.orderIndex);
+    }
+    for (const group of groups.values()) {
+      group.questions.sort((a, b) => a - b);
+    }
+    return Array.from(groups.values()).sort((a, b) => a.questions[0] - b.questions[0]);
+  }
+
+  /**
+   * The transport-defect count with the terminal provider failures already counted in the run
+   * integrity notice's first sentence removed, so the two sentences partition the total rather
+   * than double-count the answers that both crashed at the provider and arrived empty.
+   */
+  nonTerminalTransportDefectCount(run: BenchmarkRunDetailDto): number {
+    return Math.max(0, (run.transportDefectAnswerCount ?? 0) - (run.terminalFailureAnswerCount ?? 0));
+  }
+
+  /** [1,2,3,5,7,8,9] -> "Q1–Q3, Q5, Q7–Q9". Used where the failure list needs to stay compact. */
+  formatQuestionRanges(questions: number[]): string {
+    const parts: string[] = [];
+    let start = 0;
+    for (let i = 0; i < questions.length; i++) {
+      if (i + 1 < questions.length && questions[i + 1] === questions[i] + 1) {
+        continue;
+      }
+      const rangeStart = questions[start];
+      const rangeEnd = questions[i];
+      parts.push(rangeStart === rangeEnd ? `Q${rangeStart}` : `Q${rangeStart}–Q${rangeEnd}`);
+      start = i + 1;
+    }
+    return parts.join(', ');
+  }
+
   get runTotalQuestionCount(): number {
     return this.activeRunDetail?.totalQuestionCount ?? 0;
   }
@@ -3666,6 +3720,13 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     }
     if (this.runQuestionsLoadError) {
       lines.push(`Questions fetch error: ${this.runQuestionsLoadError}`);
+      hasError = true;
+    }
+    const failureGroups = this.failedAnswerGroups(this.runFailedAnswers);
+    for (const group of failureGroups) {
+      const statusPrefix = group.httpStatusCode != null ? `HTTP ${group.httpStatusCode} — ` : '';
+      const questionList = group.questions.map(q => `Q${q}`).join(', ');
+      lines.push(`${questionList}: ${statusPrefix}${group.message}`);
       hasError = true;
     }
     if (!hasError) {
@@ -5188,6 +5249,11 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (s === 'CompletedWithLimits') return 'Completed with limits';
     if (s === 'CompletedWithErrors') return 'Completed with errors';
     return s;
+  }
+
+  /** `formatStatus` never emits spaces, but the strip is kept in case that changes. */
+  statusBadgeClass(status: string | number): string {
+    return 'badge-status-' + this.formatStatus(status).toLowerCase().replace(/\s+/g, '');
   }
 
   formatAnswerStatus(status: string | number): string {

@@ -498,6 +498,25 @@ public static class BenchmarkReportBuilder
     private static long MedianMs(IReadOnlyList<long> sorted)
         => sorted.Count == 0 ? 0 : (long)Math.Round(Median(sorted.Select(v => (double)v)), MidpointRounding.AwayFromZero);
 
+    /// <summary>
+    /// The headline text for a per-run index <see cref="BenchmarkRunFinalizer.Apply"/> may have
+    /// withheld: the score plus <paramref name="scoredSuffix"/> when present, a pointer to § 5 when
+    /// withheld because of a terminal provider failure, otherwise <paramref name="noScoreText"/>. A
+    /// run finalised before harness 21 never recorded <see cref="BenchmarkRun.TerminalFailureAnswerCount"/>,
+    /// so <paramref name="terminalFailureCount"/> is expected to already carry that fallback.
+    /// </summary>
+    private static string IndexHeadline(int? value, string scoredSuffix, int terminalFailureCount, int totalQuestionCount, string noScoreText)
+    {
+        if (value.HasValue)
+        {
+            return $"{value.Value}{scoredSuffix}";
+        }
+
+        return terminalFailureCount > 0
+            ? $"Not computed — {terminalFailureCount} of {totalQuestionCount} question(s) failed at the provider; see § 5"
+            : noScoreText;
+    }
+
     public static string BuildMarkdownReport(BenchmarkRun run, string? overseerVersion = null, BenchmarkRunPricing? runPricing = null)
     {
         var sb = new StringBuilder();
@@ -823,6 +842,11 @@ public static class BenchmarkReportBuilder
             .OrderBy(a => a.OrderIndex)
             .ToList();
 
+        // BenchmarkRunFinalizer.Apply withholds the Quality and Speed Indices below when this is
+        // greater than zero (harness version 21). A run finalised before that version never recorded
+        // TerminalFailureAnswerCount, so it is recomputed here rather than trusted as zero.
+        int terminalFailureCount = run.TerminalFailureAnswerCount ?? answers.Count(BenchmarkRunFinalizer.HasTerminalFailure);
+
         var rawScorableItems = indexAnswers
             .Select(a => (a.RawQualityScore ?? a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
             .ToList();
@@ -849,7 +873,7 @@ public static class BenchmarkReportBuilder
             seText = $" ± {halfWidth:F0} (95% CI over {indexAnswers.Count} items)";
         }
 
-        sb.AppendLine($"### **Intelligence Index: {(run.QualityIndex.HasValue ? $"{run.QualityIndex.Value}{seText} / 100" : "Not Scored")}**");
+        sb.AppendLine($"### **Intelligence Index: {IndexHeadline(run.QualityIndex, $"{seText} / 100", terminalFailureCount, run.TotalQuestionCount, "Not Scored")}**");
         if (se.HasValue && run.QualityIndex.HasValue)
         {
             sb.AppendLine("*This reflects finite item-sampling uncertainty — how much the index would move under a different draw of questions of the same difficulty profile. Two runs whose intervals overlap are statistically indistinguishable on this suite.*");
@@ -910,11 +934,11 @@ public static class BenchmarkReportBuilder
         if (speedAdvisory && medianModelTimeMs.HasValue)
         {
             sb.AppendLine($"### **Median Model Time: {Inv(medianModelTimeMs.Value, "N0")} ms**");
-            sb.AppendLine($"*Speed Index {(run.SpeedIndex.HasValue ? $"{run.SpeedIndex.Value} / 100" : "Not Scored")} — advisory for this run{(run.SpeedMeasurementDegraded ? ", and measured under concurrency" : string.Empty)}.*");
+            sb.AppendLine($"*Speed Index {IndexHeadline(run.SpeedIndex, " / 100", terminalFailureCount, run.TotalQuestionCount, "Not Scored")} — advisory for this run{(run.SpeedMeasurementDegraded ? ", and measured under concurrency" : string.Empty)}.*");
         }
         else
         {
-            sb.AppendLine($"### **Speed Index: {(run.SpeedIndex.HasValue ? $"{run.SpeedIndex.Value} / 100" : "Not Scored")}**" + (run.SpeedMeasurementDegraded ? " *(Advisory — measured under concurrency)*" : ""));
+            sb.AppendLine($"### **Speed Index: {IndexHeadline(run.SpeedIndex, " / 100", terminalFailureCount, run.TotalQuestionCount, "Not Scored")}**" + (run.SpeedMeasurementDegraded ? " *(Advisory — measured under concurrency)*" : ""));
         }
         if (speedSaturated)
         {
@@ -1388,7 +1412,7 @@ public static class BenchmarkReportBuilder
             : "not recorded";
         int outOfRubricAccuracyCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction));
         int answerFramingOpenerCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.AnswerFramingOpener));
-        int providerErrorCount = answers.Count(a => a.Status == BenchmarkAnswerStatus.ProviderError);
+        int providerErrorCount = answers.Count(BenchmarkRunFinalizer.HasTerminalFailure);
 
         int transportDefectCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.TransportDefect);
         int recoveredCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Recovered);
@@ -1454,6 +1478,9 @@ public static class BenchmarkReportBuilder
         }
         sb.AppendLine($"- **Unanswered:** {unansweredCount} — *the model produced no answer; scored 0, not excluded*");
         sb.AppendLine($"- **Provider Errors:** {providerErrorCount}");
+        // The finalizer's own persisted count, as of the last Apply — see IndexHeadline above. A
+        // mismatch against Provider Errors means the answers moved since the run was last finalized.
+        sb.AppendLine($"- **Terminal provider failures:** {terminalFailureCount}");
         sb.AppendLine($"*Clean + transport defects + recovered + harness limits + unanswered = {cleanCount + transportDefectCount + recoveredCount + harnessLimitCount + unansweredCount} of {totalQuestions}.*");
         sb.AppendLine();
         // On the 2026-09-03 run the report claimed the removal was unconditional; the streaming
@@ -2612,8 +2639,9 @@ public static class BenchmarkReportBuilder
                         ? $"No answer — the model ended its turn without producing text (provider finish reason: {ia.ProviderFinishReason})"
                         : "Empty answer");
                 }
-                if (ia.Status == BenchmarkAnswerStatus.ProviderError) flagDescriptions.Add($"Provider error (HTTP {ia.HttpStatusCode}): {ia.ErrorMessage}");
-                if (ia.Status == BenchmarkAnswerStatus.Failed) flagDescriptions.Add($"Failed: {ia.ErrorMessage}");
+                string httpSuffix = ia.HttpStatusCode.HasValue ? $" (HTTP {ia.HttpStatusCode.Value})" : string.Empty;
+                if (ia.Status == BenchmarkAnswerStatus.ProviderError) flagDescriptions.Add($"Provider error{httpSuffix}: {ia.ErrorMessage}");
+                if (ia.Status == BenchmarkAnswerStatus.Failed) flagDescriptions.Add($"Failed{httpSuffix}: {ia.ErrorMessage}");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.HarnessArtifacts))
                 {
                     flagDescriptions.Add($"Transport artifacts removed before grading ({ia.ScrubbedArtifactCount} block(s)) — recovered, and graded normally; a provider-path defect, not a damaged answer");
@@ -2855,7 +2883,7 @@ public static class BenchmarkReportBuilder
         // 8. Final Score
         sb.AppendLine("## 7. Final Indices");
         sb.AppendLine();
-        sb.AppendLine($"# **Intelligence Index: {run.QualityIndex?.ToString() ?? "N/A"}{seText} / 100**");
+        sb.AppendLine($"# **Intelligence Index: {IndexHeadline(run.QualityIndex, $"{seText} / 100", terminalFailureCount, run.TotalQuestionCount, "N/A")}**");
         // As in the summary, only printed when a critical-error cap actually moved it.
         if (rawQualityIndex.HasValue && rawQualityIndex.Value != (run.QualityIndex ?? 0))
         {
@@ -2872,11 +2900,11 @@ public static class BenchmarkReportBuilder
         if (speedAdvisory && medianModelTimeMs.HasValue)
         {
             sb.AppendLine($"### Median Model Time: {Inv(medianModelTimeMs.Value, "N0")} ms");
-            sb.AppendLine($"*Speed Index {run.SpeedIndex?.ToString() ?? "N/A"} / 100 — advisory: {(speedSaturated ? "the index is saturated on this run" : "the profile's latency target does not fit this candidate's thinking level")}.*");
+            sb.AppendLine($"*Speed Index {IndexHeadline(run.SpeedIndex, " / 100", terminalFailureCount, run.TotalQuestionCount, "N/A")} — advisory: {(speedSaturated ? "the index is saturated on this run" : "the profile's latency target does not fit this candidate's thinking level")}.*");
         }
         else
         {
-            sb.AppendLine($"### Speed Index: {run.SpeedIndex?.ToString() ?? "N/A"} / 100");
+            sb.AppendLine($"### Speed Index: {IndexHeadline(run.SpeedIndex, " / 100", terminalFailureCount, run.TotalQuestionCount, "N/A")}");
         }
         sb.AppendLine($"### Holistic Assessor Score: {run.FinalScore?.ToString() ?? "N/A"} / 100");
         sb.AppendLine();

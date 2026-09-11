@@ -14,6 +14,9 @@ public static class BenchmarkProviderErrorClassifier
 {
     private static readonly Regex ApiErrorRegex = new(@"API Error:\s*(\d{3})", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    /// <summary>A bracketed status code an upstream returns verbatim, e.g. a Cloudflare edge code ([520], [521]).</summary>
+    private static readonly Regex BracketedStatusRegex = new(@"\[(\d{3})\]", RegexOptions.Compiled);
+
     /// <summary>
     /// Socket failures that mean the provider was unreachable rather than that it answered badly.
     /// </summary>
@@ -131,7 +134,8 @@ public static class BenchmarkProviderErrorClassifier
         string msg = errorMessage.Trim();
 
         // 429 Rate limiting
-        if (msg.Contains("429") || msg.IndexOf("rate limit", StringComparison.OrdinalIgnoreCase) >= 0)
+        if (msg.Contains("429") || msg.IndexOf("rate limit", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            msg.IndexOf("rate_limit_exceeded", StringComparison.OrdinalIgnoreCase) >= 0)
         {
             return new ProviderErrorClassification(true, 429, msg);
         }
@@ -142,15 +146,27 @@ public static class BenchmarkProviderErrorClassifier
             return new ProviderErrorClassification(true, 529, msg);
         }
 
-        // 503 / Overloaded / Service Unavailable / Bad Gateway / 504 Gateway Timeout / 500 Internal Server Error
+        // 503 / Overloaded / Service Unavailable / Bad Gateway / 504 Gateway Timeout / 500 Internal Server Error /
+        // server_error and [server_error] (OpenAI's in-stream error code) / "Our servers are currently
+        // overloaded" (OpenAI's own wording for the same condition)
         if (msg.Contains("503") || msg.IndexOf("overloaded", StringComparison.OrdinalIgnoreCase) >= 0 ||
             msg.IndexOf("service unavailable", StringComparison.OrdinalIgnoreCase) >= 0 ||
             msg.Contains("502") || msg.IndexOf("bad gateway", StringComparison.OrdinalIgnoreCase) >= 0 ||
             msg.Contains("504") || msg.IndexOf("gateway timeout", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            msg.Contains("500") || msg.IndexOf("internal server error", StringComparison.OrdinalIgnoreCase) >= 0)
+            msg.Contains("500") || msg.IndexOf("internal server error", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            msg.IndexOf("server_error", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            msg.IndexOf("Our servers are currently overloaded", StringComparison.OrdinalIgnoreCase) >= 0)
         {
             int code = msg.Contains("502") ? 502 : (msg.Contains("504") ? 504 : (msg.Contains("500") ? 500 : 503));
             return new ProviderErrorClassification(true, code, msg);
+        }
+
+        // A bracketed 5xx status the checks above did not already recognise by its literal digits.
+        var bracketedStatus = BracketedStatusRegex.Match(msg);
+        if (bracketedStatus.Success && int.TryParse(bracketedStatus.Groups[1].Value, out int bracketedCode) &&
+            bracketedCode is >= 500 and <= 599)
+        {
+            return new ProviderErrorClassification(true, bracketedCode, msg);
         }
 
         // Timeouts

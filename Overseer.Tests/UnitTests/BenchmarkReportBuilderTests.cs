@@ -2879,4 +2879,141 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("### Disputed Assessments", report);
         Assert.DoesNotContain("Second reader:", report);
     }
+
+    // --- Terminal provider failures withhold the indices (harness version 21) ---
+
+    private static BenchmarkRunAnswer TerminalFailureAnswer(int orderIndex, BenchmarkAnswerStatus status, int? httpStatusCode, string errorMessage)
+    {
+        return new BenchmarkRunAnswer
+        {
+            OrderIndex = orderIndex,
+            QuestionText = $"Q{orderIndex}",
+            AnswerText = string.Empty,
+            Difficulty = BenchmarkDifficulty.Simple,
+            AssessedDifficulty = 25,
+            Status = status,
+            AssessmentStatus = BenchmarkAssessmentStatus.Failed,
+            AssessmentError = "Not assessed: the provider failed the request; excluded from scoring.",
+            HttpStatusCode = httpStatusCode,
+            ErrorMessage = errorMessage
+        };
+    }
+
+    [Fact]
+    public void BuildMarkdownReport_ShowsNotComputedHeadline_WhenATerminalFailureWithheldTheIndices()
+    {
+        var ok = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90);
+        ok.SpeedScore = 80;
+        var failed = TerminalFailureAnswer(2, BenchmarkAnswerStatus.ProviderError, 503, "Our servers are currently overloaded.");
+
+        var run = new BenchmarkRun
+        {
+            Id = 60,
+            SuiteName = "Terminal Failure Suite",
+            TestedModelDisplayNameUsed = "Model X",
+            AssessorModelDisplayNameUsed = "Assessor Y",
+            Status = BenchmarkRunStatus.CompletedWithErrors,
+            StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            CompletedAtUtc = DateTime.UtcNow,
+            HarnessVersion = "21",
+            // Left null on purpose: this run was never finalized in this test, so the report must
+            // fall back to counting HasTerminalFailure over the answers rather than reading zero.
+            QualityIndex = null,
+            SpeedIndex = null,
+            TotalQuestionCount = 2,
+            Answers = new List<BenchmarkRunAnswer> { ok, failed }
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("### **Intelligence Index: Not computed — 1 of 2 question(s) failed at the provider; see § 5**", report);
+        Assert.Contains("# **Intelligence Index: Not computed — 1 of 2 question(s) failed at the provider; see § 5**", report);
+        Assert.DoesNotContain("Not Scored", report);
+    }
+
+    [Fact]
+    public void BuildMarkdownReport_UsesTheStoredTerminalFailureCount_WhenTheRunWasFinalized()
+    {
+        var ok = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90);
+        var failed = TerminalFailureAnswer(2, BenchmarkAnswerStatus.Failed, null, "Timed out.");
+
+        var run = new BenchmarkRun
+        {
+            Id = 61,
+            SuiteName = "Terminal Failure Suite",
+            TestedModelDisplayNameUsed = "Model X",
+            AssessorModelDisplayNameUsed = "Assessor Y",
+            Status = BenchmarkRunStatus.CompletedWithErrors,
+            StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            CompletedAtUtc = DateTime.UtcNow,
+            HarnessVersion = "21",
+            TotalQuestionCount = 2,
+            Answers = new List<BenchmarkRunAnswer> { ok, failed }
+        };
+        BenchmarkRunFinalizer.Apply(run, run.Answers);
+
+        Assert.Null(run.QualityIndex);
+        Assert.Null(run.SpeedIndex);
+        Assert.Equal(1, run.TerminalFailureAnswerCount);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("Not computed — 1 of 2 question(s) failed at the provider; see § 5", report);
+    }
+
+    [Fact]
+    public void BuildMarkdownReport_ProviderErrorsCount_IncludesBothProviderErrorAndFailed()
+    {
+        var ok = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90);
+        var providerError = TerminalFailureAnswer(2, BenchmarkAnswerStatus.ProviderError, 503, "overloaded");
+        var failed = TerminalFailureAnswer(3, BenchmarkAnswerStatus.Failed, null, "timed out");
+
+        var run = new BenchmarkRun
+        {
+            Id = 62,
+            SuiteName = "Terminal Failure Suite",
+            TestedModelDisplayNameUsed = "Model X",
+            AssessorModelDisplayNameUsed = "Assessor Y",
+            Status = BenchmarkRunStatus.CompletedWithErrors,
+            StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            CompletedAtUtc = DateTime.UtcNow,
+            HarnessVersion = "21",
+            TotalQuestionCount = 3,
+            Answers = new List<BenchmarkRunAnswer> { ok, providerError, failed }
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Provider Errors:** 2", report);
+        Assert.Contains("**Terminal provider failures:** 2", report);
+    }
+
+    [Fact]
+    public void BuildMarkdownReport_IssuesSection_PrintsFullErrorMessage_AndOmitsHttpParenWhenStatusIsNull()
+    {
+        var providerError = TerminalFailureAnswer(1, BenchmarkAnswerStatus.ProviderError, 503, "Our servers are currently overloaded.");
+        var failed = TerminalFailureAnswer(2, BenchmarkAnswerStatus.Failed, null, "Per-question timeout exceeded (60 s).");
+
+        var run = new BenchmarkRun
+        {
+            Id = 63,
+            SuiteName = "Terminal Failure Suite",
+            TestedModelDisplayNameUsed = "Model X",
+            AssessorModelDisplayNameUsed = "Assessor Y",
+            Status = BenchmarkRunStatus.CompletedWithErrors,
+            StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            CompletedAtUtc = DateTime.UtcNow,
+            HarnessVersion = "21",
+            TotalQuestionCount = 2,
+            Answers = new List<BenchmarkRunAnswer> { providerError, failed }
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("Provider error (HTTP 503): Our servers are currently overloaded.", report);
+        Assert.Contains("Failed: Per-question timeout exceeded (60 s).", report);
+        // No "(HTTP )" placeholder when the status code was never recorded.
+        Assert.DoesNotContain("Failed (HTTP ", report);
+        Assert.DoesNotContain("Failed (HTTP):", report);
+    }
 }

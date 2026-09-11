@@ -372,6 +372,7 @@ public static class BenchmarkRunFinalizer
 
         run.AnsweredQuestionCount = answers.Count(a => a.Status == BenchmarkAnswerStatus.Ok);
         run.UnansweredQuestionCount = answers.Count(IsModelProducedEmptyAnswer);
+        run.TerminalFailureAnswerCount = answers.Count(HasTerminalFailure);
 
         // The index weights each item by its assessed difficulty, and an unanswered question has none —
         // no grader read it — so it is weighted by its authored band's fallback.
@@ -463,6 +464,11 @@ public static class BenchmarkRunFinalizer
     /// <paramref name="preserveCompletedAt"/> keeps an already-recorded <c>CompletedAtUtc</c>: a
     /// failed-question re-run finishes long after the run it repairs, and the run's elapsed wall time
     /// belongs to the original execution. The default is the first-run behaviour.
+    ///
+    /// When any answer has a terminal failure (<see cref="HasTerminalFailure"/>), the Quality Index,
+    /// its standard error, the unweighted Quality Index and the Speed Index are withheld — set null —
+    /// because a run that lost a question at the provider has no honest headline over the questions
+    /// that happened to finish.
     /// </summary>
     public static void Apply(
         BenchmarkRun run,
@@ -497,6 +503,18 @@ public static class BenchmarkRunFinalizer
         // Equal weight: difficulty already scales each question's own speed target.
         run.SpeedIndex = BenchmarkScoring.SpeedIndex(
             answers.Where(a => a.Status == BenchmarkAnswerStatus.Ok).Select(a => a.SpeedScore));
+
+        // A run that lost a question at the provider is not honestly scored over the ones that
+        // happened to finish: withhold the headline indices rather than publish a partial one. A run
+        // stopped only by an assessment failure or a model-produced empty answer keeps its indexes —
+        // HasTerminalFailure is ProviderError or Failed, not every reason CompletedWithErrors fires.
+        if (run.TerminalFailureAnswerCount > 0)
+        {
+            run.QualityIndex = null;
+            run.QualityIndexStandardError = null;
+            run.UnweightedQualityIndex = null;
+            run.SpeedIndex = null;
+        }
 
         if (!preserveCompletedAt || run.CompletedAtUtc == null)
         {

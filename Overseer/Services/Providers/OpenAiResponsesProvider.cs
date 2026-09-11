@@ -459,23 +459,66 @@ public class OpenAiResponsesProvider : IAiProvider
                         }
                         else if (eventType == "response.failed")
                         {
-                            if (json.TryGetProperty("error", out var errorObj))
+                            /* The failure carries its code and message inside response.error; the
+                               top-level error object is the older shape. The status is the last
+                               informative fallback when neither carries a message. */
+                            JsonElement errorObj = default;
+                            bool hasError = false;
+                            if (json.TryGetProperty("response", out var failedResp) &&
+                                failedResp.ValueKind == JsonValueKind.Object &&
+                                failedResp.TryGetProperty("error", out var nestedError) &&
+                                nestedError.ValueKind == JsonValueKind.Object)
                             {
-                                var errMessage = errorObj.TryGetProperty("message", out var em) ? em.GetString() : "Unknown error";
-                                errorEvt = new ChatEvent { Type = "error", Data = $"OpenAI stream error: {errMessage}" };
+                                errorObj = nestedError;
+                                hasError = true;
                             }
-                            else
+                            else if (json.TryGetProperty("error", out var topError) &&
+                                     topError.ValueKind == JsonValueKind.Object)
                             {
-                                errorEvt = new ChatEvent { Type = "error", Data = "OpenAI stream error: response.failed" };
+                                errorObj = topError;
+                                hasError = true;
                             }
+
+                            string? errCode = hasError ? ReadStringProperty(errorObj, "code") : null;
+                            string? errMessage = hasError ? ReadStringProperty(errorObj, "message") : null;
+                            string? failedStatus = failedResp.ValueKind == JsonValueKind.Object
+                                ? ReadStringProperty(failedResp, "status")
+                                : null;
+
+                            string describedMessage = errMessage
+                                ?? (string.IsNullOrEmpty(failedStatus) ? "Unknown error" : $"status={failedStatus}");
+
+                            errorEvt = new ChatEvent
+                            {
+                                Type = "error",
+                                Data = $"OpenAI stream error: [{errCode ?? "response.failed"}] {describedMessage}",
+                                Detail = TruncateDetail(dataStr)
+                            };
                         }
                         else if (eventType == "error")
                         {
                             // In case they emit an "error" event directly
-                            if (json.TryGetProperty("error", out var errorObj))
+                            if (json.TryGetProperty("error", out var errorObj) && errorObj.ValueKind == JsonValueKind.Object)
                             {
-                                var errMessage = errorObj.TryGetProperty("message", out var em) ? em.GetString() : "Unknown error";
-                                errorEvt = new ChatEvent { Type = "error", Data = $"OpenAI stream error: {errMessage}" };
+                                string? errCode = ReadStringProperty(errorObj, "code");
+                                string? errMessage = ReadStringProperty(errorObj, "message");
+                                errorEvt = new ChatEvent
+                                {
+                                    Type = "error",
+                                    Data = $"OpenAI stream error: [{errCode ?? "error"}] {errMessage ?? "Unknown error"}",
+                                    Detail = TruncateDetail(dataStr)
+                                };
+                            }
+                            else
+                            {
+                                string? errCode = ReadStringProperty(json, "code");
+                                string? errMessage = ReadStringProperty(json, "message");
+                                errorEvt = new ChatEvent
+                                {
+                                    Type = "error",
+                                    Data = $"OpenAI stream error: [{errCode ?? "error"}] {errMessage ?? "Unknown error"}",
+                                    Detail = TruncateDetail(dataStr)
+                                };
                             }
                         }
                     }
@@ -708,5 +751,24 @@ public class OpenAiResponsesProvider : IAiProvider
             return ProviderHelper.NormalizeServiceTier(tier.GetString());
         }
         return null;
+    }
+
+    /// <summary>The named property as a non-empty string, or null when it is absent, null or another kind.</summary>
+    private static string? ReadStringProperty(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind != JsonValueKind.Object) return null;
+        if (!element.TryGetProperty(propertyName, out var prop)) return null;
+        if (prop.ValueKind != JsonValueKind.String) return null;
+        var value = prop.GetString();
+        return string.IsNullOrEmpty(value) ? null : value;
+    }
+
+    /// <summary>The raw failure payload kept for diagnostics, cut to a bounded length.</summary>
+    private const int MaxErrorDetailLength = 3500;
+
+    private static string? TruncateDetail(string? raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return raw;
+        return raw.Length <= MaxErrorDetailLength ? raw : raw.Substring(0, MaxErrorDetailLength);
     }
 }

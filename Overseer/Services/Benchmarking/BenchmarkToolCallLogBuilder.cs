@@ -26,6 +26,26 @@ public static class BenchmarkToolCallLogBuilder
     // The head size a long Result is cut to inside its fenced block.
     private const int ResultHeadChars = 600;
 
+    /// <summary>
+    /// The sentence for an answer with zero tool-call rows. A run before harness 17 never recorded
+    /// per-call rows at all, so "recorded none" is the only honest reading — an unparseable or
+    /// missing <see cref="BenchmarkRun.HarnessVersion"/> is treated the same way, since such a run
+    /// predates the version string itself. From harness 17 on, an empty row set means the turn made
+    /// no calls, and a terminal-failure answer (<see cref="BenchmarkRunFinalizer.HasTerminalFailure"/>)
+    /// says so specifically: it never reached a tool round.
+    /// </summary>
+    private static string NoToolCallsSentence(BenchmarkRun run, BenchmarkRunAnswer answer)
+    {
+        if (!int.TryParse(run.HarnessVersion, out int version) || version < 17)
+        {
+            return "*No tool-call rows recorded for this answer — a run before harness 17 records none.*";
+        }
+
+        return BenchmarkRunFinalizer.HasTerminalFailure(answer)
+            ? "*No tool calls attempted — the answer failed before its first tool round.*"
+            : "*No tool calls attempted on this answer.*";
+    }
+
     public static string Build(BenchmarkRun run, IReadOnlyList<BenchmarkRunAnswer> answers)
     {
         var sb = new StringBuilder();
@@ -50,7 +70,7 @@ public static class BenchmarkToolCallLogBuilder
 
             if (answer.ToolCalls.Count == 0)
             {
-                sb.AppendLine("*No tool-call rows recorded for this answer — a run before harness 17 records none.*");
+                sb.AppendLine(NoToolCallsSentence(run, answer));
                 sb.AppendLine();
                 continue;
             }

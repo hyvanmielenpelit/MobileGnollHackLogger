@@ -84,6 +84,13 @@ public class BenchmarkRunAnswer
 
     public int? HttpStatusCode { get; set; }
 
+    // Raw provider failure payload, bounded, kept beside the human-readable ErrorMessage:
+    // the provider's own error code and the head of the failure event it streamed. Null on
+    // every answer that did not fail at the provider, and on runs finalised before harness
+    // version 21, which never recorded it.
+    [MaxLength(4000)]
+    public string? ProviderErrorDetail { get; set; }
+
     // Superseded by QualityScore and dimensional level scoring
     public int? Score { get; set; }
 

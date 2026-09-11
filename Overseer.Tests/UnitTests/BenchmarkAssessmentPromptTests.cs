@@ -212,9 +212,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsTwenty()
+    public void HarnessVersion_IsTwentyOne()
     {
-        Assert.Equal("20", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("21", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -454,17 +454,16 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs20_ScoringMethodIs10()
+    public void Versions_HarnessIs21_ScoringMethodIs10()
     {
-        Assert.Equal("20", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("21", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 20 adds claim-verifier instruction 3a and the out-of-rubric deduction
-        // adjudication: the advisory ContestedAccuracyDeduction flag and its run count, null on
-        // earlier runs. The same round changes three tool guides (get_function_definition,
-        // nethack_wiki_search, nethack_wiki_view), which moves ToolGuidesSha256, so a 20-stamped
-        // run differs from a 19-stamped one on two instrument keys (HarnessVersion,
-        // ToolGuidesSha256) and is below Tier B against it. The scoring method and
-        // CandidateSystemPromptSha256 do not move.
+        // Harness 21 withholds the quality and speed indexes from a run in which any answer
+        // failed at the provider, leaves such an answer ungraded, and carries the provider's own
+        // error code out of an OpenAI in-stream failure. No tool guide and no candidate system
+        // prompt moves with it, so a 21-stamped run differs from a 20-stamped one on the single
+        // instrument key HarnessVersion. The scoring method does not move: the formula is
+        // unchanged, only whether a partial run publishes one.
         Assert.Equal(10, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

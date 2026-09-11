@@ -437,6 +437,14 @@ public class BenchmarkRun
     // Disjoint from RecoveredAnswerCount and ToolStarvedAnswerCount.
     public int TransportDefectAnswerCount { get; set; }
 
+    /// <summary>
+    /// Answers the provider never delivered: the request ended in a provider error or the answer
+    /// failed outright. Such answers are not graded and, while any of them exists, the run
+    /// publishes no quality or speed index. Null means not recorded: every run finalised before
+    /// harness version 21.
+    /// </summary>
+    public int? TerminalFailureAnswerCount { get; set; }
+
     // Answers the harness repaired: leaked transport artifacts were removed and the answer
     // beneath was graded normally. A provider-path defect worth reporting, not a run failure.
     public int RecoveredAnswerCount { get; set; }

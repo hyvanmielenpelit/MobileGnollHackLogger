@@ -12,6 +12,9 @@ using Overseer.Services.Tools;
 
 public class AgentLoopRunner
 {
+    /// <summary>How much of a non-2xx response body is logged and carried on the error event.</summary>
+    private const int MaxLoggedErrorBodyLength = 1000;
+
     private readonly Dictionary<string, IAiProvider> _aiProviders;
     private readonly ToolRegistry _toolRegistry;
     private readonly ToolExecutor _toolExecutor;
@@ -807,13 +810,7 @@ public class AgentLoopRunner
 
                             if (evt.Type == "error" && !hasYieldedChunks)
                             {
-                                bool isRetryable = !string.IsNullOrEmpty(evt.Data) && (
-                                    evt.Data.Contains("[overloaded_error]") ||
-                                    evt.Data.Contains("[rate_limit_error]") ||
-                                    evt.Data.Contains("[api_error]") ||
-                                    evt.Data.Contains("529") ||
-                                    evt.Data.Contains("503") ||
-                                    evt.Data.Contains("502"));
+                                bool isRetryable = ProviderErrorRetryPolicy.IsRetryable(evt.Data);
 
                                 if (isRetryable && attempt < retryDelays.Length)
                                 {
@@ -851,7 +848,13 @@ public class AgentLoopRunner
                                     {
                                         yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] Max retries exhausted for stream error: {evt.Data}" };
                                     }
-                                    yield return new ChatEvent { Type = "error", Data = $"The {providerName} API is currently overloaded. Max retries ({retryDelays.Length + 1}) exceeded. Please try again later." };
+                                    yield return new ChatEvent
+                                    {
+                                        Type = "error",
+                                        Data = $"The {providerName} API is currently overloaded. Max retries ({retryDelays.Length + 1}) exceeded. Please try again later.",
+                                        // The provider's own last failure payload, so the cause survives the retry loop.
+                                        Detail = evt.Detail
+                                    };
                                     break;
                                 }
                             }
@@ -922,6 +925,13 @@ public class AgentLoopRunner
                 else
                 {
                     var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                    // The debug event only reaches a session that asked for it; the failure itself is
+                    // always worth a server-side line, with the body bounded so a wall of HTML cannot
+                    // flood the log.
+                    string boundedErrorBody = errorBody.Length > MaxLoggedErrorBodyLength
+                        ? errorBody.Substring(0, MaxLoggedErrorBodyLength)
+                        : errorBody;
+                    _logger.LogWarning("{Provider} HTTP {Status}: {Body}", providerName, (int)response.StatusCode, boundedErrorBody);
                     if (showDebugLog)
                     {
                         yield return new ChatEvent { Type = "debug", Data = $"{mainPrefix} - {providerName}] HTTP {(int)response.StatusCode} Received ({sw.ElapsedMilliseconds}ms)\nBody: {errorBody}" };
@@ -1021,7 +1031,12 @@ public class AgentLoopRunner
                     }
                     else
                     {
-                        yield return new ChatEvent { Type = "error", Data = $"API Error: {(int)response.StatusCode} - {errorBody}" };
+                        yield return new ChatEvent
+                        {
+                            Type = "error",
+                            Data = $"API Error: {(int)response.StatusCode} - {errorBody}",
+                            Detail = boundedErrorBody
+                        };
                         yield break;
                     }
                 }

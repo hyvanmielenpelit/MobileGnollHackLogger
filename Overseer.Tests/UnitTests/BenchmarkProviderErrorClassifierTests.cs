@@ -44,6 +44,54 @@ public class BenchmarkProviderErrorClassifierTests
         Assert.Null(result.HttpStatus);
     }
 
+    // --- Message-based classifier: OpenAI in-stream error vocabulary (harness version 21) ---
+
+    [Theory]
+    [InlineData("server_error", 503)]
+    [InlineData("[server_error]", 503)]
+    [InlineData("Our servers are currently overloaded", 503)]
+    [InlineData("rate_limit_exceeded", 429)]
+    public void Classify_Message_OpenAiInStreamErrorCode_MatchesExpectedStatus(string message, int expectedStatus)
+    {
+        var result = BenchmarkProviderErrorClassifier.Classify(message);
+
+        Assert.True(result.IsProviderError);
+        Assert.Equal(expectedStatus, result.HttpStatus);
+    }
+
+    [Fact]
+    public void Classify_Message_RateLimitExceeded_IsCheckedBeforeServerError()
+    {
+        // 429 is checked first regardless of vocabulary added since: a message naming both must
+        // still classify as the rate limit, not the server error.
+        var result = BenchmarkProviderErrorClassifier.Classify("rate_limit_exceeded: server_error also present");
+
+        Assert.True(result.IsProviderError);
+        Assert.Equal(429, result.HttpStatus);
+    }
+
+    [Theory]
+    [InlineData("[520]", 520)]
+    [InlineData("[521]", 521)]
+    public void Classify_Message_BracketedFiveHundredsStatus_MapsToThatStatus(string message, int expectedStatus)
+    {
+        var result = BenchmarkProviderErrorClassifier.Classify(message);
+
+        Assert.True(result.IsProviderError);
+        Assert.Equal(expectedStatus, result.HttpStatus);
+    }
+
+    [Fact]
+    public void Classify_Message_BracketedStatusOutsideFiveHundreds_IsNotRecognizedByTheBracketRule()
+    {
+        // [429] is already caught by the 429 branch above (a plain substring match); a bracketed
+        // code the earlier branches do not already recognise, and that is not itself in 500-599, is
+        // not a provider error.
+        var result = BenchmarkProviderErrorClassifier.Classify("[418]");
+
+        Assert.False(result.IsProviderError);
+    }
+
     // --- Typed classifier: Classify(Exception?, string?, bool) ---
 
     [Fact]

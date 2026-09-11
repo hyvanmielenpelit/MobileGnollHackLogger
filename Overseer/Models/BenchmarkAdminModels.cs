@@ -383,6 +383,9 @@ public class BenchmarkRunAnswerDto
     public BenchmarkAssessmentStatus AssessmentStatus { get; set; }
     public string? AssessmentError { get; set; }
     public string? ErrorMessage { get; set; }
+
+    /// <summary>The provider's own bounded error payload for a terminal failure. Null otherwise.</summary>
+    public string? ProviderErrorDetail { get; set; }
     public int? HttpStatusCode { get; set; }
     public int? Score { get; set; }
     public int? AccuracyLevel { get; set; }
@@ -796,6 +799,15 @@ public class BenchmarkRunDetailDto
     /// </summary>
     public int UnansweredQuestionCount { get; set; }
 
+    /// <summary>
+    /// Answers whose provider failed the request outright (ProviderError or Failed) — see
+    /// <see cref="MobileGnollHackLogger.Data.BenchmarkRun.TerminalFailureAnswerCount"/>. Null on a
+    /// run finalized before harness 21, which never recorded it: "not recorded", never zero.
+    /// Greater than zero here is why <see cref="QualityIndex"/> and <see cref="SpeedIndex"/> may be
+    /// null on an otherwise-completed run.
+    /// </summary>
+    public int? TerminalFailureAnswerCount { get; set; }
+
     public int TotalQuestionCount { get; set; }
     public string? PurposeStatementUsed { get; set; }
     public bool SameProviderAcknowledged { get; set; }
@@ -1138,6 +1150,12 @@ public class BenchmarkRunSummaryDto
     /// </summary>
     public int UnansweredQuestionCount { get; set; }
 
+    /// <summary>
+    /// Answers whose provider failed the request outright (ProviderError or Failed). Null on a run
+    /// finalized before harness 21, which never recorded it: "not recorded", never zero.
+    /// </summary>
+    public int? TerminalFailureAnswerCount { get; set; }
+
     public int TotalQuestionCount { get; set; }
     public int DegradedAnswerCount { get; set; }
     public int ToolStarvedAnswerCount { get; set; }
@@ -1162,6 +1180,10 @@ public class BenchmarkRunSummaryDto
     public string? SourceCodeHeadSha { get; set; }
 
     public decimal? EstimatedCost { get; set; }
+
+    /// <summary>The candidate's own share of <see cref="EstimatedCost"/>. Null when pricing is incomplete.</summary>
+    public decimal? EstimatedCandidateCost { get; set; }
+
     public bool PricingIncomplete { get; set; }
 }
 

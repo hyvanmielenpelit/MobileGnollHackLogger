@@ -610,7 +610,7 @@
   th:nth-child(7), td:nth-child(7) { inline-size: 110px; }   // Intelligence / Speed Index
   th:nth-child(8), td:nth-child(8) { width: 1%; white-space: nowrap; padding-left: 8px; padding-right: 8px; } // Instrument
   th:nth-child(9), td:nth-child(9) { inline-size: 85px; }    // Duration
-  th:nth-child(10), td:nth-child(10) { inline-size: 75px; }  // Cost
+  th:nth-child(10), td:nth-child(10) { inline-size: 96px; }  // Cost
   th:nth-child(11), td:nth-child(11) { inline-size: 140px; } // Date (UTC)
   th:nth-child(12), td:nth-child(12) { inline-size: 136px; } // Actions
 }
@@ -827,6 +827,17 @@
   white-space: nowrap;
   padding-left: 8px;
   padding-right: 8px;
+}
+
+.cost-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cost-secondary {
+  color: #888;
+  font-size: .8em;
 }
 
 // The five entries stack, one per line, in the fixed order PROMPT, GUIDES, KB, WIKI, SRC. The
@@ -1754,12 +1765,20 @@
 .gh-dialog.benchmark-run-detail-dialog {
   width: min(1150px, 94vw);
   max-width: min(1150px, 94vw);
-  height: min(88dvh, 900px);
-  max-height: 88dvh;
+  height: calc(100dvh - 16px);
+  max-height: calc(100dvh - 16px);
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
   background: rgba(20, 20, 20, 0.98);
+}
+
+/* Half the inset on a phone, mirroring .gh-dialog-fullscreen's own 600px step. */
+@media (max-width: 600px) {
+  .gh-dialog.benchmark-run-detail-dialog {
+    height: calc(100dvh - 8px);
+    max-height: calc(100dvh - 8px);
+  }
 }
 
 .gh-dialog.benchmark-scoring-profiles-dialog {
@@ -2476,6 +2495,17 @@
       margin: 0;
       font-size: 13px;
       color: #888;
+    }
+
+    // Column direction stretches a bare flex item to the group's full width by default; these
+    // sit beside the title text rather than as a bar of their own.
+    .status-badge,
+    .badge-progress-count {
+      align-self: flex-start;
+    }
+
+    .status-badge {
+      margin-left: 10px;
     }
   }
 }

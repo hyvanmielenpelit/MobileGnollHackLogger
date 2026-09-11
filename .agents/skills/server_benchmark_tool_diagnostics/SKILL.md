@@ -205,6 +205,17 @@ provider-error count agrees with the bucket. Two consequences for reading a run:
   the machine's display language. A run recorded before 18 on a non-English host may therefore carry
   a `Failed` answer that was in truth a provider error, and nothing repairs those rows.
 
+**From harness 21, an OpenAI in-stream failure carries its own code and is retried when transient.**
+`response.failed` and a top-level `error` object are parsed into `OpenAI stream error: [{code}]
+{message}` instead of a bare, code-less sentence, and the shared `ProviderErrorRetryPolicy` retries the
+condition when it is not on the deny list (`invalid_request_error`, `insufficient_quota`,
+`context_length_exceeded`, `authentication`), so a transient overload no longer costs the question
+outright the way it did on run 37. The resulting answer, when the retries are exhausted, is classified
+`ProviderError` and carries an HTTP status. **An answer from harness 20 or earlier reading `OpenAI
+stream error: response.failed` with `Status = Failed` is that harness's own defect — the code and
+message were discarded before they ever reached the stored answer — and is not evidence of a model
+failure.**
+
 ## 5. Telling "No Access" from "No Data"
 
 The cold-start case is handled and visible: while a service is still indexing, each guarded tool returns `Success = false` with a `ToolGuardMessages.*` string, and `ToolBatchRunner` feeds that message back to the model as the tool result — so the model can and does paraphrase it into the answer. The tool→service→guard map and the cold/warm state matrix are **owned by [`background_indexing_architecture`](../background_indexing_architecture/SKILL.md) § 3**; read them there.
@@ -322,7 +333,7 @@ A tool-diagnostics pass **must** produce this table, one row per tool per run (o
 
 **Limits of this pass** — state this, or its equivalent, in every tool-diagnostics output:
 
-> This pass reads stored run columns only. **For any run before harness 17, arguments and results were never stored** for any benchmark tool call (`ShowDebugLog` is `false` at every benchmark call site, and a run creates no `ChatMessage` rows), so every statement about such a call's parameters or its returned content is a reconstruction or a replay, labelled as such. **From harness 17, a run's `BenchmarkRunAnswerToolCall` rows carry the real arguments, result, error, status, emission order and timings for every attempted call** — read them through the tool-calls endpoint (§ 7, rung 0) rather than reconstructing, unless the payload columns were later pruned by the retention sweep (`ChatRetentionSettings.PruneBenchmarkToolCallResultsDays`, default 90 days), in which case `ArgsText`/`Result` are null but `Name`, `Status`, `Error` and `ResultLengthChars` still are not. **Two corpora reachable from this run carry no fingerprint** — the NetHack source (`NetHackSourceCodePath`) and the NetHack wiki (`NetHackWikiPath`) — so any NetHack finding rests on `StartedAtUtc` against the corpus as it stands now. **Any run before harness 16 has no GnollHack wiki or GnollHack source provenance at all**: `WikiHeadSha` and `SourceCodeHeadSha` were added in harness 16, no historical row is backfilled and none can be, and null in either column means *not recorded*. `BenchmarkAssessmentPrompt.HarnessVersion` is now `"20"`.
+> This pass reads stored run columns only. **For any run before harness 17, arguments and results were never stored** for any benchmark tool call (`ShowDebugLog` is `false` at every benchmark call site, and a run creates no `ChatMessage` rows), so every statement about such a call's parameters or its returned content is a reconstruction or a replay, labelled as such. **From harness 17, a run's `BenchmarkRunAnswerToolCall` rows carry the real arguments, result, error, status, emission order and timings for every attempted call** — read them through the tool-calls endpoint (§ 7, rung 0) rather than reconstructing, unless the payload columns were later pruned by the retention sweep (`ChatRetentionSettings.PruneBenchmarkToolCallResultsDays`, default 90 days), in which case `ArgsText`/`Result` are null but `Name`, `Status`, `Error` and `ResultLengthChars` still are not. **Two corpora reachable from this run carry no fingerprint** — the NetHack source (`NetHackSourceCodePath`) and the NetHack wiki (`NetHackWikiPath`) — so any NetHack finding rests on `StartedAtUtc` against the corpus as it stands now. **Any run before harness 16 has no GnollHack wiki or GnollHack source provenance at all**: `WikiHeadSha` and `SourceCodeHeadSha` were added in harness 16, no historical row is backfilled and none can be, and null in either column means *not recorded*. `BenchmarkAssessmentPrompt.HarnessVersion` is now `"21"`.
 
 ---
 
