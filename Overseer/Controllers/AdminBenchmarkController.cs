@@ -2902,8 +2902,17 @@ public class AdminBenchmarkController : ControllerBase
             return Conflict("A benchmark run is already in progress.");
         }
 
+        // Captured before the flip so a trial can put both back exactly. Captured here and not in
+        // the service: by the time the service reads the row it already says Running.
+        var originalStatus = run.Status;
+        var originalCompletedAtUtc = run.CompletedAtUtc;
+        run.Status = BenchmarkRunStatus.Running;
+        run.CompletedAtUtc = null;
+        await _dbContext.SaveChangesAsync();
+
         _ = Task.Run(() => _benchmarkService.ReassessSingleQuestionAsync(
-            answerId, request?.AssessorModelConfigurationId, trial, cts.Token));
+            run.Id, answerId, request?.AssessorModelConfigurationId, trial,
+            originalStatus, originalCompletedAtUtc, cts.Token));
         return Accepted(new { runId = id, trial });
     }
 
@@ -3049,7 +3058,12 @@ public class AdminBenchmarkController : ControllerBase
             return Conflict("A benchmark run is already in progress.");
         }
 
-        _ = Task.Run(() => _benchmarkService.RerunSingleQuestionAsync(answerId, request?.AssessorModelConfigurationId, cts.Token));
+        // Marked here for the same reason as RerunFailedQuestions: the client polls the moment
+        // this returns, and the row must not still read its previous terminal status.
+        run.Status = BenchmarkRunStatus.Running;
+        await _dbContext.SaveChangesAsync();
+
+        _ = Task.Run(() => _benchmarkService.RerunSingleQuestionAsync(run.Id, answerId, request?.AssessorModelConfigurationId, cts.Token));
         return Accepted(new { runId = id });
     }
 
@@ -3094,6 +3108,11 @@ public class AdminBenchmarkController : ControllerBase
         {
             return Conflict("A benchmark run is already in progress.");
         }
+
+        // Marked here for the same reason as RerunFailedQuestions: the client polls the moment
+        // this returns, and the row must not still read its previous terminal status.
+        run.Status = BenchmarkRunStatus.Running;
+        await _dbContext.SaveChangesAsync();
 
         _ = Task.Run(() => _benchmarkService.RerunFinalSynthesisAsync(id, request?.AssessorModelConfigurationId, cts.Token));
         return Accepted(new { runId = id });
@@ -3141,6 +3160,11 @@ public class AdminBenchmarkController : ControllerBase
             return Conflict("A benchmark run is already in progress.");
         }
 
+        // Marked here for the same reason as RerunFailedQuestions: the client polls the moment
+        // this returns, and the row must not still read its previous terminal status.
+        run.Status = BenchmarkRunStatus.Running;
+        await _dbContext.SaveChangesAsync();
+
         _ = Task.Run(() => _benchmarkService.RetryFailedAssessmentsAsync(id, request?.AssessorModelConfigurationId, cts.Token));
         return Accepted(new { runId = id });
     }
@@ -3186,6 +3210,11 @@ public class AdminBenchmarkController : ControllerBase
         {
             return Conflict("A benchmark run is already in progress.");
         }
+
+        // Marked here for the same reason as RerunFailedQuestions: the client polls the moment
+        // this returns, and the row must not still read its previous terminal status.
+        run.Status = BenchmarkRunStatus.Running;
+        await _dbContext.SaveChangesAsync();
 
         _ = Task.Run(() => _benchmarkService.RetryFailedClaimVerificationAsync(id, targetVerifierId, cts.Token));
         return Accepted(new { runId = id });
@@ -3261,6 +3290,14 @@ public class AdminBenchmarkController : ControllerBase
         {
             return Conflict("A benchmark run is already in progress.");
         }
+
+        // Marked here, not only inside the service: the client polls the moment this returns, and a
+        // row still reading its previous terminal status on that poll is taken as "finished" —
+        // polling stops and the dialog freezes on stale totals.
+        run.Status = BenchmarkRunStatus.Running;
+        run.RerunStartedAtUtc = DateTime.UtcNow;
+        run.ErrorMessage = null;
+        await _dbContext.SaveChangesAsync();
 
         _ = Task.Run(() => _benchmarkService.RunFailedQuestionsAsync(run.Id, cts.Token));
 

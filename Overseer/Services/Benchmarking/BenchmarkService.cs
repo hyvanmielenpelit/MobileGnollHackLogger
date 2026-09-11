@@ -102,6 +102,35 @@ public class BenchmarkService
         }
     }
 
+    /// <summary>
+    /// Puts a run whose row was marked Running for a re-run that then did not, or could not, run
+    /// back on the terminal status its answers describe. Never Failed or Canceled: either would
+    /// make the run refuse every later re-run for a launch that changed none of its answers.
+    /// </summary>
+    private static async Task RestoreTerminalStatusAsync(
+        ApplicationDbContext db, BenchmarkRun run, string? reason)
+    {
+        var answers = await db.BenchmarkRunAnswers
+            .Where(a => a.BenchmarkRunId == run.Id)
+            .ToListAsync(CancellationToken.None);
+
+        BenchmarkRunFinalizer.Apply(run, answers, preserveCompletedAt: true);
+        if (reason != null)
+        {
+            run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(reason);
+        }
+        await db.SaveChangesAsync(CancellationToken.None);
+    }
+
+    /// <summary>A trial leaves the run byte-identical, so every exit from one puts back what the caller captured.</summary>
+    private static async Task RestoreCapturedStatusAsync(
+        ApplicationDbContext db, BenchmarkRun run, BenchmarkRunStatus originalStatus, DateTime? originalCompletedAtUtc)
+    {
+        run.Status = originalStatus;
+        run.CompletedAtUtc = originalCompletedAtUtc;
+        await db.SaveChangesAsync(CancellationToken.None);
+    }
+
     public async Task CleanupOrphanedRunsAsync()
     {
         using var scope = _scopeFactory.CreateScope();
@@ -567,6 +596,7 @@ public class BenchmarkService
             if (testedConfig == null || string.IsNullOrWhiteSpace(testedConfig.EncryptedApiKey) ||
                 assessorConfig == null || string.IsNullOrWhiteSpace(assessorConfig.EncryptedApiKey))
             {
+                await RestoreTerminalStatusAsync(db, run, "Failed-question re-run could not start: the tested or assessor model configuration is missing or has no API key.");
                 _runManager.Complete(runId);
                 return;
             }
@@ -593,6 +623,7 @@ public class BenchmarkService
 
             if (failedAnswers.Count == 0)
             {
+                await RestoreTerminalStatusAsync(db, run, null);
                 _runManager.Complete(runId);
                 return;
             }
@@ -4454,6 +4485,7 @@ public class BenchmarkService
     }
 
     public async Task RerunSingleQuestionAsync(
+        long runId,
         long answerId,
         long? assessorConfigId = null,
         CancellationToken cancellationToken = default)
@@ -4472,6 +4504,12 @@ public class BenchmarkService
         if (answer == null)
         {
             _logger.LogWarning("Answer {AnswerId} not found for rerun.", answerId);
+            var orphanedRun = await db.BenchmarkRuns.FindAsync(new object[] { runId }, cancellationToken);
+            if (orphanedRun != null)
+            {
+                await RestoreTerminalStatusAsync(db, orphanedRun, "Re-run could not start: the answer was not found.");
+            }
+            _runManager.Complete(runId);
             return;
         }
 
@@ -4482,7 +4520,7 @@ public class BenchmarkService
             if (testedConfig == null || string.IsNullOrWhiteSpace(testedConfig.EncryptedApiKey))
             {
                 answer.AssessmentError = BenchmarkAssessmentFailure.Truncate("Tested model configuration missing or has no API key.");
-                await db.SaveChangesAsync(CancellationToken.None);
+                await RestoreTerminalStatusAsync(db, run, "Tested model configuration missing or has no API key.");
                 return;
             }
 
@@ -4490,7 +4528,7 @@ public class BenchmarkService
             if (assessorConfig == null || assessorApiKey == null)
             {
                 answer.AssessmentError = BenchmarkAssessmentFailure.Truncate(assessorError);
-                await db.SaveChangesAsync(CancellationToken.None);
+                await RestoreTerminalStatusAsync(db, run, assessorError);
                 return;
             }
 
@@ -4592,9 +4630,12 @@ public class BenchmarkService
     /// the one in use without altering the result being compared.
     /// </summary>
     public async Task ReassessSingleQuestionAsync(
+        long runId,
         long answerId,
-        long? assessorConfigId = null,
-        bool trial = false,
+        long? assessorConfigId,
+        bool trial,
+        BenchmarkRunStatus originalStatus,
+        DateTime? originalCompletedAtUtc,
         CancellationToken cancellationToken = default)
     {
         using var scope = _scopeFactory.CreateScope();
@@ -4611,6 +4652,19 @@ public class BenchmarkService
         if (answer == null)
         {
             _logger.LogWarning("Answer {AnswerId} not found for reassessment.", answerId);
+            var orphanedRun = await db.BenchmarkRuns.FindAsync(new object[] { runId }, cancellationToken);
+            if (orphanedRun != null)
+            {
+                if (trial)
+                {
+                    await RestoreCapturedStatusAsync(db, orphanedRun, originalStatus, originalCompletedAtUtc);
+                }
+                else
+                {
+                    await RestoreTerminalStatusAsync(db, orphanedRun, "Re-assessment could not start: the answer was not found.");
+                }
+            }
+            _runManager.Complete(runId);
             return;
         }
 
@@ -4621,16 +4675,22 @@ public class BenchmarkService
             if (assessorConfig == null || assessorApiKey == null)
             {
                 answer.AssessmentError = BenchmarkAssessmentFailure.Truncate(error);
-                await db.SaveChangesAsync(CancellationToken.None);
+                if (trial)
+                {
+                    await RestoreCapturedStatusAsync(db, run, originalStatus, originalCompletedAtUtc);
+                }
+                else
+                {
+                    await RestoreTerminalStatusAsync(db, run, error);
+                }
                 return;
             }
 
-            // Flipped to Running so the admin UI shows the work in progress. For a trial these
-            // two are restored below: a trial must leave the stored run byte-identical, and
-            // CompletedAtUtc is part of the record, not scratch state.
-            var originalStatus = run.Status;
-            var originalCompletedAtUtc = run.CompletedAtUtc;
-
+            // The row was already flipped to Running by the caller before the answer was even
+            // loaded, and the original values captured there are what a trial restores below: a
+            // trial must leave the stored run byte-identical, and CompletedAtUtc is part of the
+            // record, not scratch state. The flip that follows is an idempotent belt-and-braces —
+            // the row already reads Running by the time this line runs.
             run.Status = BenchmarkRunStatus.Running;
             run.CompletedAtUtc = null;
             await db.SaveChangesAsync(cancellationToken);
@@ -4692,18 +4752,32 @@ public class BenchmarkService
         }
         catch (OperationCanceledException)
         {
-            run.Status = BenchmarkRunStatus.Canceled;
-            await ApplyAbortedTotalsAsync(db, run, null);
-            run.CompletedAtUtc ??= DateTime.UtcNow;
-            await db.SaveChangesAsync(CancellationToken.None);
+            if (!trial)
+            {
+                run.Status = BenchmarkRunStatus.Canceled;
+                await ApplyAbortedTotalsAsync(db, run, null);
+                run.CompletedAtUtc ??= DateTime.UtcNow;
+                await db.SaveChangesAsync(CancellationToken.None);
+            }
+            else
+            {
+                await RestoreCapturedStatusAsync(db, run, originalStatus, originalCompletedAtUtc);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Reassessment failed for answer {AnswerId}.", answerId);
             answer.AssessmentError = BenchmarkAssessmentFailure.Truncate(ex.Message);
-            run.Status = BenchmarkRunStatus.CompletedWithErrors;
-            run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(ex.Message);
-            await db.SaveChangesAsync(CancellationToken.None);
+            if (!trial)
+            {
+                run.Status = BenchmarkRunStatus.CompletedWithErrors;
+                run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(ex.Message);
+                await db.SaveChangesAsync(CancellationToken.None);
+            }
+            else
+            {
+                await RestoreCapturedStatusAsync(db, run, originalStatus, originalCompletedAtUtc);
+            }
         }
         finally
         {
@@ -4737,8 +4811,7 @@ public class BenchmarkService
             var (assessorConfig, assessorApiKey, error) = await ResolveAssessorAsync(db, run, assessorConfigId, cancellationToken);
             if (assessorConfig == null || assessorApiKey == null)
             {
-                run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(error);
-                await db.SaveChangesAsync(CancellationToken.None);
+                await RestoreTerminalStatusAsync(db, run, error);
                 return;
             }
 
@@ -4807,8 +4880,7 @@ public class BenchmarkService
             var (assessorConfig, assessorApiKey, error) = await ResolveAssessorAsync(db, run, assessorConfigId, cancellationToken);
             if (assessorConfig == null || assessorApiKey == null)
             {
-                run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(error);
-                await db.SaveChangesAsync(CancellationToken.None);
+                await RestoreTerminalStatusAsync(db, run, error);
                 return;
             }
 
@@ -4906,6 +4978,7 @@ public class BenchmarkService
             if (failedAnswers.Count == 0)
             {
                 _logger.LogInformation("Run {RunId} has no failed claim verifications to retry.", runId);
+                await RestoreTerminalStatusAsync(db, run, null);
                 return;
             }
 
@@ -4927,10 +5000,12 @@ public class BenchmarkService
         catch (OperationCanceledException)
         {
             _logger.LogInformation("Claim verification retry canceled for run {RunId}.", runId);
+            await RestoreTerminalStatusAsync(db, run, "Claim verification retry canceled.");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Retry failed claim verification failed for run {RunId}.", runId);
+            await RestoreTerminalStatusAsync(db, run, ex.Message);
         }
         finally
         {

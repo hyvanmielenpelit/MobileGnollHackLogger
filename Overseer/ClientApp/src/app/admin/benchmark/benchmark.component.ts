@@ -2539,6 +2539,10 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.startingRun = true;
     this.runErrorMessage = null;
     this.seriesErrorMessage = null;
+    // A new run replaces any re-run state a previous, now-superseded run left behind.
+    this.rerunLaunchPending = false;
+    this.rerunLaunchedAtMs = null;
+    this.rerunScopeOrderIndexes = [];
 
     const req: StartBenchmarkRunRequest = {
       suiteId: this.selectedSuiteId,
@@ -3047,12 +3051,38 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         this.lastRunPollError = null;
         this.activeRunDetail = run;
         const statusStr = this.formatStatus(run.status);
-        if (statusStr !== 'Running') {
+        if (statusStr === 'Running') {
+          this.rerunLaunchPending = false;
+          this.rerunLaunchedAtMs = null;
+          if (this.isRunProgressDialogOpen && !this.runElapsedInterval) {
+            this.startRunElapsedTicker();
+          }
+        } else if (this.rerunLaunchPending) {
+          // A re-run's first poll or two can still see the previous attempt's terminal status:
+          // the server only flips the row to Running from inside the background task it starts.
+          // Stay non-terminal and keep polling until either a rerunStartedAtUtc stamp at or after
+          // the launch proves this status is fresh, or the grace period runs out.
+          const rerunStartedMs = run.rerunStartedAtUtc ? parseServerUtcDate(run.rerunStartedAtUtc).getTime() : NaN;
+          const stampedAfterLaunch = !Number.isNaN(rerunStartedMs) && rerunStartedMs >= this.rerunLaunchedAtMs! - 5000;
+          const graceExpired = Date.now() - this.rerunLaunchedAtMs! > AdminBenchmarkComponent.RERUN_LAUNCH_GRACE_MS;
+          if (stampedAfterLaunch || graceExpired) {
+            this.rerunLaunchPending = false;
+            this.rerunLaunchedAtMs = null;
+            if (!stampedAfterLaunch && graceExpired) {
+              this.runErrorMessage = 'The failed-question re-run did not report starting within 60 seconds. '
+                + 'Check the run history; if the run is still listed as running, reopen it from the banner.';
+            }
+            this.stopPolling();
+            this.stopRunElapsedTicker();
+            this.loadHistory();
+          } else {
+            this.cdr.detectChanges();
+            return;
+          }
+        } else {
           this.stopPolling();
           this.stopRunElapsedTicker();
           this.loadHistory();
-        } else if (this.isRunProgressDialogOpen && !this.runElapsedInterval) {
-          this.startRunElapsedTicker();
         }
         this.cdr.detectChanges();
       },
@@ -3062,6 +3092,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
         const msg = typeof err?.error === 'string' ? err.error : (err?.error?.message || err?.message || 'Polling failed');
         this.lastRunPollError = `${msg}${httpStatus}`;
         console.error('Failed to poll run detail', err);
+        this.rerunLaunchPending = false;
+        this.rerunLaunchedAtMs = null;
         this.stopPolling();
       }
     });
@@ -3090,6 +3122,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   get runStage(): 'answering' | 'verifying' | 'secondopinion' | 'finalizing' | 'terminal' {
     const run = this.activeRunDetail;
     if (!run) return 'answering';
+    if (this.rerunLaunchPending) return 'answering';
     if (this.formatStatus(run.status) !== 'Running') return 'terminal';
 
     switch (run.stage) {
@@ -3161,6 +3194,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   get runStageLabel(): string {
     const run = this.activeRunDetail;
     if (!run) return '';
+    if (this.rerunLaunchPending) return 'Starting failed-question re-run…';
     const total = this.runTotalQuestionCount;
     switch (this.runStage) {
       case 'answering':
@@ -3269,7 +3303,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   get runIsTerminal(): boolean {
-    return this.activeRunDetail != null && this.formatStatus(this.activeRunDetail.status) !== 'Running';
+    return this.activeRunDetail != null && !this.rerunLaunchPending && this.formatStatus(this.activeRunDetail.status) !== 'Running';
   }
 
   /**
@@ -3327,6 +3361,18 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
           };
         }
 
+        // A question inside a pending re-run's scope stops showing the failure it is about to
+        // be re-run for; once the server reports Running the in-flight sets above take over.
+        if (this.rerunLaunchPending && this.rerunScopeOrderIndexes.includes(q.orderIndex)) {
+          return {
+            orderIndex: q.orderIndex,
+            questionText: q.questionText,
+            status: 'Pending',
+            assessmentStatus: '',
+            errorMessage: null
+          };
+        }
+
         return {
           orderIndex: q.orderIndex,
           questionText: q.questionText,
@@ -3343,6 +3389,15 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
    * outside the re-run keeps the status it already has. Empty when no re-run is in progress.
    */
   rerunScopeOrderIndexes: number[] = [];
+
+  /**
+   * True from the moment a failed-question re-run is requested until a poll reports the run
+   * Running, or reports a terminal status stamped by this launch, or the request is refused.
+   * While true the dialog is neither running nor terminal: it is starting.
+   */
+  rerunLaunchPending = false;
+  private rerunLaunchedAtMs: number | null = null;
+  private static readonly RERUN_LAUNCH_GRACE_MS = 60_000;
 
   get runHasRerunScope(): boolean {
     return this.rerunScopeOrderIndexes.length > 0;
@@ -3505,6 +3560,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       if (this.runHasRerunScope) {
         lines.push(`Failed-question re-run in progress over: ${this.rerunScopeOrderIndexes.map(i => `Q${i}`).join(', ')}`);
       }
+      lines.push(`Re-run launch pending: ${this.rerunLaunchPending}`);
       if (this.runProgressQuestions.length > 0 && this.runProgressQuestionsSuiteId != null) {
         lines.push(`Suite questions loaded: ${this.runProgressQuestions.length} for suite ${this.runProgressQuestionsSuiteId}`);
       } else {
@@ -3986,15 +4042,20 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   /**
-   * The one re-run launch path. Both entry points clear the stale dialog state before the
-   * request, because a re-run of a run that ended in an error would otherwise open showing the
-   * previous attempt's error and the previous attempt's stage.
+   * The one re-run launch path. Both entry points clear the stale error and question-load state
+   * before the request, because a re-run of a run that ended in an error would otherwise open
+   * showing the previous attempt's error. The loaded run detail itself is kept rather than
+   * nulled — it is what keeps the header (run number, suite, profile, model strip) legible
+   * during the launch — and `rerunLaunchPending` is what suppresses the previous attempt's
+   * stage label, terminal footer, and failure alert until a poll confirms the re-run has
+   * actually started.
    */
   private launchFailedQuestionRerun(runId: number, failedOrderIndexes: number[]): void {
     this.rerunScopeOrderIndexes = failedOrderIndexes;
+    this.rerunLaunchPending = true;
+    this.rerunLaunchedAtMs = Date.now();
     this.runErrorMessage = null;
     this.runQuestionsLoadError = null;
-    this.activeRunDetail = null;
     this.activeRunId = runId;
 
     if (!this.isRunProgressDialogOpen) {
@@ -4011,6 +4072,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       error: (err) => {
         // Surfaced in the dialog rather than only in the run-detail view: the dialog is now
         // where the operator is watching from, and a refusal there was previously invisible.
+        this.rerunLaunchPending = false;
+        this.rerunLaunchedAtMs = null;
         this.rerunScopeOrderIndexes = [];
         this.runErrorMessage = typeof err?.error === 'string'
           ? err.error

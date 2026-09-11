@@ -30,7 +30,7 @@ public class BenchmarkComplianceGuardTests
         return new ApplicationDbContext(dbOptions);
     }
 
-    private static IConfiguration CreateConfig(int maxQuestions = 50, int maxRunsPerDay = 20, int maxRunsPerHour = 5, string? purpose = null)
+    internal static IConfiguration CreateConfig(int maxQuestions = 50, int maxRunsPerDay = 20, int maxRunsPerHour = 5, string? purpose = null)
     {
         var dict = new Dictionary<string, string?>
         {
@@ -49,7 +49,7 @@ public class BenchmarkComplianceGuardTests
             .Build();
     }
 
-    private static BenchmarkRun CreateTestRun(string suiteName = "Test Suite", DateTime? startedAtUtc = null)
+    internal static BenchmarkRun CreateTestRun(string suiteName = "Test Suite", DateTime? startedAtUtc = null)
     {
         return new BenchmarkRun
         {
@@ -217,7 +217,7 @@ public class BenchmarkComplianceGuardTests
 
     // --- 3. Controller Endpoint Gating Tests ---
 
-    private static (AdminBenchmarkController controller, ApplicationDbContext db, BenchmarkComplianceGuard guard) CreateTestBenchmarkController(
+    internal static (AdminBenchmarkController controller, ApplicationDbContext db, BenchmarkComplianceGuard guard) CreateTestBenchmarkController(
         int maxRunsPerHour = 5, int maxRunsPerDay = 20, int maxQuestions = 50)
     {
         string dbName = Guid.NewGuid().ToString();
@@ -282,7 +282,7 @@ public class BenchmarkComplianceGuardTests
         return (controller, db, guard);
     }
 
-    private static async Task<(BenchmarkSuite suite, SystemAiApiConfiguration modelA, SystemAiApiConfiguration modelB, SystemAiApiConfiguration modelC)> SeedConfigsAndSuite(ApplicationDbContext db)
+    internal static async Task<(BenchmarkSuite suite, SystemAiApiConfiguration modelA, SystemAiApiConfiguration modelB, SystemAiApiConfiguration modelC)> SeedConfigsAndSuite(ApplicationDbContext db)
     {
         var suite = new BenchmarkSuite { Name = "Test Suite", Description = "Desc" };
         suite.Questions.Add(new BenchmarkQuestion { QuestionText = "Q1", OrderIndex = 1, Difficulty = BenchmarkDifficulty.Simple, AssessedDifficulty = 25 });

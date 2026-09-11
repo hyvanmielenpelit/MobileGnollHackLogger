@@ -1748,6 +1748,103 @@ describe('AdminBenchmarkComponent', () => {
       const terminalCancelBtn = dialogEl.querySelector('.dialog-footer .btn-gh-cancel') as HTMLButtonElement;
       expect(terminalCancelBtn.textContent?.trim()).toBe('Back to Series');
     });
+
+    it('should keep polling and stay non-terminal when the first poll after a re-run launch still reports the previous status', () => {
+      spyOn(component.runProgressDialog.nativeElement, 'showModal');
+      spyOn(component.runProgressDialog.nativeElement, 'close');
+
+      component.selectedRunDetail = buildRun({
+        id: 37,
+        status: 'CompletedWithErrors',
+        answers: [buildAnswer(3, { status: 'Failed' })]
+      });
+      benchmarkServiceMock.rerunFailedQuestions.and.returnValue(of({ runId: 37 }));
+      // The server has not yet flipped the row to Running: the first poll after the launch
+      // still sees the previous attempt's terminal status.
+      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({
+        id: 37,
+        status: 'CompletedWithErrors',
+        answers: [buildAnswer(3, { status: 'Failed' })]
+      })));
+
+      component.rerunFailedFromRunDetail(37);
+
+      expect(component.rerunLaunchPending).toBeTrue();
+      expect(component.runIsTerminal).toBeFalse();
+      expect(component.runStageLabel).toContain('Starting');
+      expect((component as any).pollInterval).not.toBeNull();
+
+      fixture.detectChanges();
+      const footer = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog .dialog-footer') as HTMLElement;
+      expect(footer.querySelector('.btn-gh-delete')).toBeTruthy();
+      const buttons = Array.from(footer.querySelectorAll('button')) as HTMLButtonElement[];
+      expect(buttons.some(b => (b.textContent || '').trim() === 'View Full Report')).toBeFalse();
+
+      component.closeRunProgressDialog();
+    });
+
+    it('should clear the launch-pending state once a poll reports the run running', () => {
+      spyOn(component.runProgressDialog.nativeElement, 'showModal');
+      spyOn(component.runProgressDialog.nativeElement, 'close');
+
+      component.activeRunId = 37;
+      component.rerunLaunchPending = true;
+      (component as any).rerunLaunchedAtMs = Date.now();
+      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 37, status: 'Running' })));
+
+      (component as any).pollRunDetail(37);
+
+      expect(component.rerunLaunchPending).toBeFalse();
+      expect(component.runIsRunning).toBeTrue();
+
+      component.closeRunProgressDialog();
+    });
+
+    it('should surface a refused re-run inside the progress dialog and keep the loaded run detail', () => {
+      spyOn(component.runProgressDialog.nativeElement, 'showModal');
+      spyOn(component.runProgressDialog.nativeElement, 'close');
+
+      component.activeRunDetail = buildRun({
+        id: 37,
+        status: 'CompletedWithErrors',
+        suiteName: 'Suite X',
+        answers: [buildAnswer(1, { status: 'Failed' })]
+      });
+      component.isRunProgressDialogOpen = true;
+      benchmarkServiceMock.rerunFailedQuestions.and.returnValue(throwError(() => ({
+        status: 409,
+        error: 'A benchmark run is already in progress.'
+      })));
+
+      component.rerunFailedFromProgress();
+
+      expect(component.runErrorMessage).toBe('A benchmark run is already in progress.');
+      expect(component.rerunLaunchPending).toBeFalse();
+      expect(component.activeRunDetail).not.toBeNull();
+
+      fixture.detectChanges();
+      const alert = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog .dialog-body .alert-danger') as HTMLElement;
+      expect(alert).toBeTruthy();
+      expect(alert.textContent).toContain('A benchmark run is already in progress.');
+      const subtitle = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog .dialog-subtitle') as HTMLElement;
+      expect(subtitle.textContent).toContain('Suite X');
+
+      component.closeRunProgressDialog();
+    });
+
+    it('should give benchmark dialog content no padding of its own', () => {
+      spyOn(component.runProgressDialog.nativeElement, 'showModal');
+      spyOn(component.runProgressDialog.nativeElement, 'close');
+
+      fixture.detectChanges();
+      const content = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog .dialog-content') as HTMLElement;
+      expect(content).toBeTruthy();
+      const style = getComputedStyle(content);
+      expect(style.paddingTop).toBe('0px');
+      expect(style.paddingBottom).toBe('0px');
+
+      component.closeRunProgressDialog();
+    });
   });
 
   describe('retry actions', () => {

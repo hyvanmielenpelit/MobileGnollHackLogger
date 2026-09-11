@@ -2460,6 +2460,9 @@
   width: 100%;
   min-height: 0;
   overflow: hidden;
+  /* styles.scss gives .dialog-content 20px for the settings dialogs; the header, body and
+     footer here carry their own. */
+  padding: 0;
 }
 
 .dialog-header {
