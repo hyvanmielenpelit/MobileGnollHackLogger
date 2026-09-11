@@ -964,6 +964,7 @@ export interface BenchmarkRunDetailDto {
    */
   rerunCandidateSystemPromptSha256?: string | null;
   rerunToolGuidesSha256?: string | null;
+  rerunHarnessVersion?: string | null;
   rerunStartedAtUtc?: string | null;
   rerunCompletedAtUtc?: string | null;
 

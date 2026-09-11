@@ -641,6 +641,7 @@ public class BenchmarkService
 
             run.Status = BenchmarkRunStatus.Running;
             run.RerunStartedAtUtc = DateTime.UtcNow;
+            run.RerunCompletedAtUtc = null;
             await db.SaveChangesAsync(cancellationToken);
 
             var profile = run.ScoringProfileId.HasValue
@@ -5139,10 +5140,11 @@ public class BenchmarkService
     }
 
     /// <summary>
-    /// The instrument a failed-question re-run executed under, written to the two <c>Rerun*</c>
-    /// columns. Only the two fingerprints that a code or guide change can move are recorded: the
-    /// three corpus heads belong to the corpora, which a re-run reads exactly as the original run
-    /// did, and duplicating them would invite a reader to compare a run against itself.
+    /// The instrument a failed-question re-run executed under, written to the three <c>Rerun*</c>
+    /// instrument columns: the two fingerprints that a code or guide change can move, and the harness
+    /// version the re-run's code carries. The three corpus heads belong to the corpora, which a re-run
+    /// reads exactly as the original run did, and duplicating them would invite a reader to compare a
+    /// run against itself.
     /// </summary>
     internal void PopulateRerunInstrumentFingerprint(BenchmarkRun run, string systemPrompt)
     {
@@ -5150,6 +5152,7 @@ public class BenchmarkService
         byte[] promptHash = sha256.ComputeHash(Encoding.UTF8.GetBytes(systemPrompt));
         run.RerunCandidateSystemPromptSha256 = Convert.ToHexString(promptHash).ToLowerInvariant();
         run.RerunToolGuidesSha256 = ComputeToolGuidesSha256();
+        run.RerunHarnessVersion = BenchmarkAssessmentPrompt.HarnessVersion;
     }
 
     internal static string? ComputeToolGuidesSha256()

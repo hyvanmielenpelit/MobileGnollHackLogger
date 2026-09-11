@@ -10,7 +10,7 @@ namespace Overseer.Services.Tools
     public class WikiSearchTool : IToolHandler
     {
         private readonly WikiService _wikiService;
-        private readonly int _defaultMaxResults;
+        private readonly int _configuredMaxResults;
         private readonly int _perResultChars;
 
         public string ToolName => "wiki_search";
@@ -23,7 +23,8 @@ namespace Overseer.Services.Tools
            always truncated mid-article on its last hit. A floor here raises the cap for this tool
            alone: ToolExecutor takes max(base, override), so it can never lower one, and it leaves
            the shared MaxResultLength default - which is every other tool's cap and the live chat
-           setting - untouched. 13000 is the 12500 plus headroom for the per-hit separators. */
+           setting - untouched. 13000 is the 12500 plus headroom for the per-hit separators, and
+           clamping max_results to _configuredMaxResults is what keeps a full yield inside it. */
         public int? MaxResultLengthOverride => 13000;
 
         public JsonElement ParameterSchema { get; }
@@ -31,18 +32,18 @@ namespace Overseer.Services.Tools
         public WikiSearchTool(WikiService wikiService, IConfiguration configuration)
         {
             _wikiService = wikiService;
-            _defaultMaxResults = configuration.GetValue<int>("Tools:wiki_search:MaxResults", 5);
+            _configuredMaxResults = configuration.GetValue<int>("Tools:wiki_search:MaxResults", 5);
             _perResultChars = configuration.GetValue<int>("Tools:wiki_search:PerResultChars", 2500);
-            ParameterSchema = JsonDocument.Parse(@"
-            {
+            ParameterSchema = JsonDocument.Parse($@"
+            {{
                 ""type"": ""object"",
-                ""properties"": {
-                    ""query"": { ""type"": ""string"", ""description"": ""The search terms to look up in the wiki"" },
-                    ""category"": { ""type"": ""string"", ""description"": ""Optional. Filter by category (e.g., 'monster', 'item', 'spell', 'class')"" },
-                    ""max_results"": { ""type"": ""integer"", ""description"": ""Maximum number of wiki articles to return (default 5)"" }
-                },
+                ""properties"": {{
+                    ""query"": {{ ""type"": ""string"", ""description"": ""The search terms to look up in the wiki"" }},
+                    ""category"": {{ ""type"": ""string"", ""description"": ""Optional. Filter by category (e.g., 'monster', 'item', 'spell', 'class')"" }},
+                    ""max_results"": {{ ""type"": ""integer"", ""description"": ""Maximum number of wiki articles to return (default and maximum {_configuredMaxResults}; larger values are clamped)."" }}
+                }},
                 ""required"": [""query""]
-            }").RootElement;
+            }}").RootElement;
         }
 
         public Task<ToolResult> ExecuteAsync(JsonElement parameters, ToolExecutionContext context, CancellationToken cancellationToken)
@@ -63,11 +64,12 @@ namespace Overseer.Services.Tools
                 return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing query parameter" });
             }
 
-            int maxResults = _defaultMaxResults;
+            int maxResults = _configuredMaxResults;
             if (parameters.TryGetProperty("max_results", out var maxResElem) && maxResElem.ValueKind == JsonValueKind.Number)
             {
                 maxResults = maxResElem.GetInt32();
             }
+            maxResults = Math.Clamp(maxResults, 1, Math.Max(1, _configuredMaxResults));
 
             string? category = null;
             if (parameters.TryGetProperty("category", out var categoryElem))

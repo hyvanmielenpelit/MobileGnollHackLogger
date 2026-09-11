@@ -2406,6 +2406,7 @@ public class AdminBenchmarkController : ControllerBase
 
             RerunCandidateSystemPromptSha256 = run.RerunCandidateSystemPromptSha256,
             RerunToolGuidesSha256 = run.RerunToolGuidesSha256,
+            RerunHarnessVersion = run.RerunHarnessVersion,
             RerunStartedAtUtc = run.RerunStartedAtUtc,
             RerunCompletedAtUtc = run.RerunCompletedAtUtc,
 
@@ -3326,9 +3327,11 @@ public class AdminBenchmarkController : ControllerBase
 
         // Marked here, not only inside the service: the client polls the moment this returns, and a
         // row still reading its previous terminal status on that poll is taken as "finished" —
-        // polling stops and the dialog freezes on stale totals.
+        // polling stops and the dialog freezes on stale totals. The previous re-run's end stamp is
+        // cleared so the progress dialog measures the new span rather than clamping to 0.
         run.Status = BenchmarkRunStatus.Running;
         run.RerunStartedAtUtc = DateTime.UtcNow;
+        run.RerunCompletedAtUtc = null;
         run.ErrorMessage = null;
         await _dbContext.SaveChangesAsync();
 

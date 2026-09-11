@@ -1573,12 +1573,12 @@
           <div class="score-card">
             <span class="score-label">Answer Duration</span>
             <span class="score-subvalue">{{ runAnswerDurationLabel(selectedRunDetail) }}</span>
-            <span class="score-note">candidate answering only</span>
+            <span class="score-note">{{ runAnswerDurationNote(selectedRunDetail) }}</span>
           </div>
           <div class="score-card">
             <span class="score-label">Elapsed Wall Time</span>
             <span class="score-subvalue">{{ runWallClockLabel(selectedRunDetail) }}</span>
-            <span class="score-note">start to finish, grading included</span>
+            <span class="score-note">{{ runWallClockNote(selectedRunDetail) }}</span>
           </div>
           <!--
             H5. The headline figure only. The per-role split it hides — on run 13 the candidate was
@@ -3556,7 +3556,7 @@
         </div>
         <div class="run-stat">
           <dt>Cache creation</dt>
-          <dd>{{ (activeRunDetail?.totalCacheCreationTokens ?? 0) | number }}</dd>
+          <dd>{{ runCacheCreationUnreported ? 'n/a' : ((activeRunDetail?.totalCacheCreationTokens ?? 0) | number) }}</dd>
         </div>
         <!-- Counts, not bars: only answers with unverified claims or a fired trigger are
              candidates, so neither number has an honest maximum to fill against. -->

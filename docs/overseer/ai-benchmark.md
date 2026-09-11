@@ -43,7 +43,7 @@ The per-question list merges the suite's questions (fetched once when the dialog
 - **Answered / Scored** — an answer row exists.
 - **Verifying** — the claim verifier is re-reading a row that already carries a score.
 - **Second opinion** — the second-opinion assessor is re-grading such a row.
-- **During a failed-question re-run**, a scope member reads **Pending** until its request is dispatched, **Answering** while it is in flight, and then its re-executed row's own state; its previous failure chip is not shown while the re-run is running. Under a re-run scope the Elapsed stat reads **Re-run elapsed** and measures the re-run's own span from `RerunStartedAtUtc`, because the run's `CompletedAtUtc` stays fixed across a re-run.
+- **During a failed-question re-run**, a scope member reads **Pending** until its request is dispatched, **Answering** while it is in flight, and then its re-executed row's own state; its previous failure chip is not shown while the re-run is running. Under a re-run scope the Elapsed stat reads **Re-run elapsed** and measures the re-run's own span from `RerunStartedAtUtc`, because the run's `CompletedAtUtc` stays fixed across a re-run. `RerunCompletedAtUtc` is cleared when a re-run starts and is ignored while the run's status is Running, so a second re-run's own elapsed stat is never computed against the previous re-run's stale end stamp.
 
 The last two appear **inside stage 1** as well as during the follow-up passes, because that is where most of that work happens. Both come from in-flight sets that the wrapper methods `VerifyAnswerClaimsAsync` and `RunSecondOpinionAsync` set and clear in a `finally`, so every caller marks the row and a throw or a cancel cannot leave it pulsing.
 
@@ -827,7 +827,10 @@ re-run all change what a report — or a comparison across the boundary — mean
   `preserveCompletedAt` parameter (default `false`, the previous behaviour) that
   `BenchmarkService.RunFailedQuestionsAsync` passes as `true` — a re-run launched hours later must
   not absorb that interval into the run's own elapsed time. **All four columns read as "not
-  recorded" on a run that was never re-run, never as zero.** The same migration also adds
+  recorded" on a run that was never re-run, never as zero.** Harness 22 later added a fifth,
+  nullable `RerunHarnessVersion` (`nvarchar(16)`) alongside these four, stamped with the re-run's
+  own `BenchmarkAssessmentPrompt.HarnessVersion`; see § *Harness Version 22 Updates*. The same
+  migration also adds
   `OutOfRubricAccuracyAnswerCount` and `AnswerFramingOpenerAnswerCount` from the advisory flags
   above — six new `BenchmarkRun` columns in total — but those two are ordinary non-nullable counts
   and do not follow this "not recorded" convention; see the advisory-flags item for why 0 is
@@ -1719,6 +1722,8 @@ stamped 20 on `HarnessVersion` alone, not on `ToolGuidesSha256` or `CandidateSys
   re-executed in place reads `Answering`, and while the re-run is running a scope member not yet in
   `rerunAnsweredOrderIndexes` reads `Pending` rather than its previous failure. `runElapsedLabel`
   measures from `rerunStartedAtUtc` under a re-run scope, since `CompletedAtUtc` is preserved.
+  `rerunCompletedAtUtc` is ignored by this label while the run's status is `Running`, since harness
+  22 clears that column when a re-run starts rather than leaving it at a stale value.
 
 **The motivating case.** Run 37 on 2026-09-11 lost 12 of its 18 questions to an OpenAI in-stream
 overload. The harness graded the 12 error strings as if they were answers, reported
@@ -1732,6 +1737,73 @@ discarded (`OpenAiResponsesProvider`, `ChatEvent.Detail`), excluded from scoring
 Migration adds `BenchmarkRunAnswer.ProviderErrorDetail` (`nvarchar(4000)`, nullable) and
 `BenchmarkRun.TerminalFailureAnswerCount` (`int`, nullable). Both are `NULL` on every existing row,
 read as *not recorded* rather than as "no failure" or zero, and no figure is backfilled.
+
+### Harness Version 22 Updates
+
+*2026-09-11.*
+
+Prompted by run 37's completed (repaired) report, once the failed-question re-run round finished: a
+second re-run's own "Re-run elapsed" stat read 0s, because `RerunCompletedAtUtc` still carried an
+earlier re-run's end stamp and that stamp fell before the new re-run's own start; and run 37 Q1 came
+back Accuracy 5/6 with evidence reading "Matches rubric; …" — naming no defect — which went
+unflagged while the synthesis went on to assert an accuracy defect nobody had named.
+
+`ScoringMethodVersion` stays at **10** — nothing here changes how an answer is scored — and
+`BenchmarkAssessmentPrompt.HarnessVersion` moves to **22**. No `ChatService` prose, no
+`Overseer/ToolGuides/` file, and no knowledge-base article changed in this round, so — as with
+harness 21 — a run stamped 22 differs from a run stamped 21 on `HarnessVersion` alone, not on
+`ToolGuidesSha256` or `CandidateSystemPromptSha256`.
+
+- **`RerunCompletedAtUtc` is cleared, not merely left stale, when a re-run starts.** Both
+  `AdminBenchmarkController`'s re-run start and `BenchmarkService.RunFailedQuestionsAsync` now null
+  the column at the same point they stamp `RerunStartedAtUtc`, and the Angular run-progress dialog
+  ignores `rerunCompletedAtUtc` while the run's status is `Running`. Previously a second re-run's own
+  "Re-run elapsed" timer read 0s, because the first re-run's end stamp predated the second re-run's
+  start and the dialog subtracted the wrong pair.
+- **`BenchmarkRun.RerunHarnessVersion`** (nullable, max 16 — migration
+  `AddBenchmarkRerunHarnessVersion`) records the harness version the re-run itself ran under,
+  stamped by `PopulateRerunInstrumentFingerprint` from `BenchmarkAssessmentPrompt.HarnessVersion`,
+  and mapped through to the admin DTO. The exported report now renders a **"Repaired by a
+  failed-question re-run"** manifest block whenever `RerunStartedAtUtc` is set — not only when the
+  re-run's prompt or ToolGuides hash differs from the original run's — naming the re-run's own span
+  and its harness version, printing *"not recorded (re-run predates harness 22)"* for a re-run
+  stamped before this round. The End Time line is now labelled **"original execution"**, followed by
+  a **"Re-run span (UTC)"** line; Total Candidate Answer Time carries a note that it includes
+  re-executed answers while the wall time stays the original execution's; and the report's "Measured
+  overlap" line is not computed for a repaired run — replaced by a sentence that stage durations
+  include the re-run, which lies outside the original wall clock. The run detail dialog's Elapsed
+  Wall Time and Answer Duration cards carry the matching notes. **Caveat**: an earlier repaired run
+  whose `CompletedAtUtc` already moved keeps its stored value, so the "original execution" label may
+  be inaccurate on those legacy rows.
+- **`BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel` moves from 4 to 5.** A level-5
+  Accuracy or Completeness verdict whose evidence names no defect — the shape run 37 Q1 hit,
+  "Matches rubric; …", unflagged, ahead of a synthesis that asserted an accuracy defect nobody had
+  named — is now flagged `UnevidencedDeduction`, routed to the blind second reader, and, where the
+  evidence reads `Not in rubric:`, submitted to the claim verifier as an out-of-rubric deduction
+  through the same pipeline as § *Harness Version 20 Updates*. Expected cost: roughly one extra
+  second opinion per run.
+- **`wiki_search`'s `max_results` is clamped to `1..max(1, configured)`**, where *configured* is
+  `Tools:wiki_search:MaxResults` (5) — mirroring the clamp `nethack_wiki_search` already had. Its
+  tool-schema description now reads *"default and maximum 5; larger values are clamped"*. The clamp
+  is what keeps a full yield inside the 13,000-character per-tool result override; run 37 Q4 asked
+  `max_results: 10` and got 13,117 stored characters, cut mid-result at the override.
+- **The source definition matcher gains two more shapes, in `SourceCodeService`.**
+  `search_definitions` and `get_function_definition` now try a second function alternative after the
+  original NetHack-style `^name\s*\(` line — a same-line return type followed by `[*]name(`, where
+  the first token is neither `extern` nor a control keyword (`return`, `else`, `if`, `while`, `for`,
+  `switch`, `case`, `goto`, `sizeof`) and the line does not end in `;` — and, for kinds `type` or
+  `any`, a closing-brace typedef alternative `^\s*\}\s*name\s*;` whose body locator walks back,
+  bounded at 400 lines, to the nearest `typedef struct|union|enum` opener and returns the whole
+  block, falling back to the closing line and its usual 10-line window when no opener is found. Run
+  37 Q15 missed both shapes: `void lib_print_glyph(...)` at `win/win32/xpl/libshare/libproc.c:470`,
+  and `} gbuf_entry;` at `src/display.c:161`.
+- **Admin UI.** The run-progress dialog is now full viewport height (`calc(100dvh - 16px)`, 8px on
+  phones), and the run detail dialog prints "n/a" for cache-creation tokens when the provider —
+  OpenAI — reports none, rather than a stray zero.
+
+Migration `AddBenchmarkRerunHarnessVersion` adds `BenchmarkRun.RerunHarnessVersion` (`nvarchar(16)`,
+nullable). It reads `NULL` as *not recorded* on every row from before this round, never as an empty
+harness version, and no figure is backfilled.
 
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).

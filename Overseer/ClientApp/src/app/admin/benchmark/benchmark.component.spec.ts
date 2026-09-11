@@ -2767,6 +2767,27 @@ describe('AdminBenchmarkComponent', () => {
       expect(diagnostics).toContain('Re-run completed: n/a');
     });
 
+    it("should keep counting Re-run elapsed when a previous re-run's completion stamp is still on the row", () => {
+      const ninetySecondsAgo = new Date(Date.now() - 90000).toISOString();
+      const anHourBeforeThatStart = new Date(Date.now() - 90000 - 3600000).toISOString();
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running',
+        startedAtUtc: '2026-09-11T00:00:00Z',
+        completedAtUtc: '2026-09-11T01:00:00Z',
+        rerunStartedAtUtc: ninetySecondsAgo,
+        // Left over from an earlier re-run of the same run; a legacy row predating the server-side
+        // clear-on-start fix. Earlier than rerunStartedAtUtc, so elapsedMsBetween would clamp to 0
+        // if it were passed as the end while the re-run is still running.
+        rerunCompletedAtUtc: anHourBeforeThatStart,
+        rerunScopeOrderIndexes: [4],
+        rerunAnsweredOrderIndexes: [],
+        rerunScoredOrderIndexes: []
+      });
+
+      expect(component.runElapsedIsRerun).toBeTrue();
+      expect(component.runElapsedLabel).toMatch(/^1m 3\ds$/);
+    });
+
     it('should count only gradeable answers as the index population', () => {
       component.activeRunDetail = buildCompletedRun({
         status: 'Completed',
@@ -3992,6 +4013,46 @@ describe('AdminBenchmarkComponent', () => {
       expect(text).toContain('8,910');
       expect(text).toContain('50,000');
       expect(text).toContain('12,000');
+    });
+
+    it("should report Cache Creation as n/a for OpenAI when the provider reports cache reads but no cache creation", () => {
+      component.activeRunDetail = {
+        id: 1,
+        suiteName: 'Suite',
+        status: 'Running',
+        testedModelProviderUsed: 'OpenAI',
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCacheReadTokens: 50000,
+        totalCacheCreationTokens: 0,
+        answers: []
+      } as any;
+
+      expect(component.runCacheCreationUnreported).toBeTrue();
+
+      fixture.detectChanges();
+      const el: HTMLElement = fixture.nativeElement;
+      expect(el.textContent || '').toContain('n/a');
+    });
+
+    it('should report Cache Creation as a number for a provider that does report it', () => {
+      component.activeRunDetail = {
+        id: 1,
+        suiteName: 'Suite',
+        status: 'Running',
+        testedModelProviderUsed: 'Anthropic',
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCacheReadTokens: 50000,
+        totalCacheCreationTokens: 12000,
+        answers: []
+      } as any;
+
+      expect(component.runCacheCreationUnreported).toBeFalse();
+
+      fixture.detectChanges();
+      const el: HTMLElement = fixture.nativeElement;
+      expect(el.textContent || '').toContain('12,000');
     });
 
     it('should display candidate totals when run is running', () => {
@@ -5233,6 +5294,24 @@ describe('AdminBenchmarkComponent', () => {
       const run = buildRun({ status: 'Failed', totalDurationMs: 0, completedAtUtc: null });
 
       expect(component.runWallClockLabel(run)).toBe('—');
+    });
+
+    it('should leave both card notes unchanged for a run that was never re-run', () => {
+      const run = buildRun({ status: 'Canceled' });
+
+      expect(component.runAnswerDurationNote(run)).toBe('candidate answering only');
+      expect(component.runWallClockNote(run)).toBe('start to finish, grading included');
+    });
+
+    it("should name the re-run's own span on the wall time note and flag re-executed answers on the answer duration note", () => {
+      const run = buildRun({
+        status: 'Canceled',
+        rerunStartedAtUtc: '2026-09-09T10:00:00Z',
+        rerunCompletedAtUtc: '2026-09-09T10:20:04Z'
+      });
+
+      expect(component.runAnswerDurationNote(run)).toBe('candidate answering only · includes re-executed answers');
+      expect(component.runWallClockNote(run)).toBe('start to finish, grading included · plus re-run 20m 4s');
     });
 
     it('should report the shortfall of a run that finished with errors', () => {

@@ -132,13 +132,32 @@ public class BenchmarkVerdictConsistencyTests
     }
 
     [Fact]
-    public void HasUnevidencedDeduction_Q5_AccuracyFiveWithNoFaultEvidence_ReturnsFalse_PinsMaxLevel()
+    public void HasUnevidencedDeduction_AccuracyFiveWithNoFaultEvidence_ReturnsTrue_PinsMaxLevel()
     {
-        // Q5 shape from run 8: Accuracy = 5/6 with accuracyEvidence = "Matches rubric."
-        // Must return false to pin UnevidencedDeductionMaxLevel == 4.
-        Assert.Equal(4, BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel);
-        Assert.False(BenchmarkVerdictConsistency.HasUnevidencedDeduction(
+        // Q1 shape from run 37: Accuracy = 5/6 with evidence that names no defect.
+        Assert.Equal(5, BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel);
+        Assert.True(BenchmarkVerdictConsistency.HasUnevidencedDeduction(
             accuracyLevel: 5,
+            accuracyEvidence: "Matches rubric.",
+            completenessLevel: 6,
+            completenessEvidence: "Matches rubric."));
+    }
+
+    [Fact]
+    public void HasUnevidencedDeduction_CompletenessFiveWithNoFaultEvidence_ReturnsTrue()
+    {
+        Assert.True(BenchmarkVerdictConsistency.HasUnevidencedDeduction(
+            accuracyLevel: 6,
+            accuracyEvidence: "Matches rubric.",
+            completenessLevel: 5,
+            completenessEvidence: "Matches rubric."));
+    }
+
+    [Fact]
+    public void HasUnevidencedDeduction_LevelSixWithNoFaultEvidence_ReturnsFalse()
+    {
+        Assert.False(BenchmarkVerdictConsistency.HasUnevidencedDeduction(
+            accuracyLevel: 6,
             accuracyEvidence: "Matches rubric.",
             completenessLevel: 6,
             completenessEvidence: "Matches rubric."));
@@ -190,10 +209,10 @@ public class BenchmarkVerdictConsistencyTests
     }
 
     [Fact]
-    public void IsUnverifiabilityGroundedDeduction_AccuracyLevelFive_DoesNotFlag()
+    public void IsUnverifiabilityGroundedDeduction_AccuracyLevelSix_DoesNotFlag()
     {
         Assert.False(BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
-            accuracyLevel: 5,
+            accuracyLevel: 6,
             accuracyEvidence: "Docked to 4 because claims cannot be verified from the provided context.",
             unverifiedClaimCount: 3));
     }
@@ -240,11 +259,16 @@ public class BenchmarkVerdictConsistencyTests
     }
 
     [Fact]
-    public void IsOmissionGroundedAccuracyDeduction_AccuracyLevelFiveOrSix_DoesNotFlag()
+    public void IsOmissionGroundedAccuracyDeduction_AccuracyLevelFive_Flags()
     {
-        Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
+        Assert.True(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
             accuracyLevel: 5,
             accuracyEvidence: "Omits attribute maxima."));
+    }
+
+    [Fact]
+    public void IsOmissionGroundedAccuracyDeduction_AccuracyLevelSix_DoesNotFlag()
+    {
         Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
             accuracyLevel: 6,
             accuracyEvidence: "Omits attribute maxima."));

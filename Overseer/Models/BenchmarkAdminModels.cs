@@ -935,6 +935,8 @@ public class BenchmarkRunDetailDto
 
     public string? RerunToolGuidesSha256 { get; set; }
 
+    public string? RerunHarnessVersion { get; set; }
+
     public DateTime? RerunStartedAtUtc { get; set; }
 
     public DateTime? RerunCompletedAtUtc { get; set; }

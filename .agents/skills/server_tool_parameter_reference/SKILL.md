@@ -320,6 +320,19 @@ requires an `enum ` token somewhere in the **preceding 50 lines** as a heuristic
 inside an enum body" — this can both false-negative (member more than 50 lines past the `enum`
 keyword) and false-positive (an unrelated `enum ` string within the lookback window).
 
+**The function matcher gained a second alternative, and kind `type`/`any` a closing-brace typedef
+alternative, from the run-37 re-run round (2026-09-11).** `SourceCodeService`'s matcher — shared by
+`search_definitions` and `get_function_definition` — tries the original NetHack-style `^name\s*\(`
+line first; when that misses, it now also tries a same-line-return-type alternative,
+`<type tokens> [*]name(`, accepted only when the line's first token is neither `extern` nor a
+control keyword (`return`, `else`, `if`, `while`, `for`, `switch`, `case`, `goto`, `sizeof`) and the
+line does not end in `;` — the shape that had missed
+`void lib_print_glyph(...)` at `win/win32/xpl/libshare/libproc.c:470`. For kinds `type` and `any`,
+the matcher also tries a closing-brace typedef alternative, `^\s*\}\s*name\s*;` — the shape that
+had missed `} gbuf_entry;` at `src/display.c:161` — whose body locator walks back, bounded at 400
+lines, to the nearest `typedef struct|union|enum` opener and returns the whole block; when no
+opener is found within the bound, it falls back to the closing line and the usual 10-line window.
+
 **Failure modes across the family**: missing required parameter → `Success = false` with a
 `"Missing … parameter"` message (this no longer applies to `source_code_view`'s `start_line` /
 `search_term` — `file` is now its only required parameter, and `start_line` defaults to 1 when
@@ -343,7 +356,7 @@ empty result rather than surfaced as an error.
 
 | Tool | Required | Optional | Defaults / clamps | Config key |
 |---|---|---|---|---|
-| `wiki_search` | `query` | `category`, `max_results` | `max_results` default 5, **no clamp/cap** — `maxResults > 0 ? maxResults : 5` is passed straight to Lucene's hit count | `Tools:wiki_search:MaxResults`, `Tools:wiki_search:PerResultChars` (2500) |
+| `wiki_search` | `query` | `category`, `max_results` | `max_results` default 5, **clamped `1..max(1, configured)`, from the run-37 re-run round (2026-09-11)** — mirroring `nethack_wiki_search`'s existing clamp; before this round it was `maxResults > 0 ? maxResults : 5` passed straight to Lucene's hit count with no upper bound | `Tools:wiki_search:MaxResults`, `Tools:wiki_search:PerResultChars` (2500) |
 | `wiki_view` | `article` | `section` | none | none |
 | `nethack_wiki_search` | `query` | `namespace_filter` (`article`\|`source`\|`category`\|`forum`\|`help`\|`nethackwiki`), `max_results` | `max_results` default **3** (tool-level, distinct from the config ceiling below), clamped `1..max(1, configured)` | `Tools:nethack_wiki_search:MaxResults` (5), `Tools:nethack_wiki_search:PerResultChars` (3000, **from harness 18**) |
 | `nethack_wiki_view` | `article` | `section` | none | none |
@@ -706,7 +719,7 @@ declare one:
 | Tool | Override | Why |
 |---|---|---|
 | `refresh_snapshot` | **60200** | Floors the cap so the client snapshot's tail sections (Discoveries, dungeon overview) are not silently lost to an arbitrary cut — plus headroom for the client's own `[SNAPSHOT TRUNCATED …]` marker. See the comment in `ClientToolHandlers.cs` |
-| `wiki_search` | **13000**, from harness 18 | The tool's own budget is `Tools:wiki_search:MaxResults` × `PerResultChars` = 5 × 2500 = **12500**, which exceeded the generic 10000 cap, so a full-yield search was **always** truncated mid-article on its last hit. 13000 is that 12500 plus headroom for the per-hit separators |
+| `wiki_search` | **13000**, from harness 18 | The tool's own budget is `Tools:wiki_search:MaxResults` × `PerResultChars` = 5 × 2500 = **12500**, which exceeded the generic 10000 cap, so a full-yield search was **always** truncated mid-article on its last hit. 13000 is that 12500 plus headroom for the per-hit separators. The `max_results` clamp added in the run-37 re-run round (§5) is what keeps a full yield inside this override — an unclamped `max_results: 10` call had stored 13,117 characters, cut mid-result at this override, on run 37 Q4 |
 | `nethack_wiki_search` | **16140**, from the run-36 round (2026-09-11) | `MaxResultLengthOverride` = `Tools:nethack_wiki_search:MaxResults` × (`PerResultChars` + 128) + 500 = 5 × (3000 + 128) + 500 = **16140** at current settings. The 128 is a per-article reserve for `CapArticle`'s own truncation note (`... [Article truncated: showing {shown} of {total} characters. Use nethack_wiki_view for the full article.]`, ≈ 105 characters), which is appended *after* the 3000-character cut — so a full five-article yield of capped articles plus their notes, the separators and the spoiler-free suffix runs to about 15,523 characters, not 15,000, and a floor set at `MaxResults × PerResultChars + 500` (15500) would still have been cut by the generic 10,000→override cap. See `server_benchmark_to_chat_transfer` run-36 entry (T2) for the arithmetic error this corrects |
 
 **Neither was fixed by raising the generic cap, deliberately.** `MaxResultLength` is the cap for

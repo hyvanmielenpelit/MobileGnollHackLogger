@@ -3533,7 +3533,10 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     const run = this.activeRunDetail;
     if (!run) return '—';
     if (this.runElapsedIsRerun) {
-      return this.formatElapsed(elapsedMsBetween(run.rerunStartedAtUtc, run.rerunCompletedAtUtc));
+      // While running, any completion stamp is a previous re-run's, earlier than this start, and
+      // would clamp the count to 0; measure against now instead.
+      const rerunEnd = this.runIsRunning ? null : run.rerunCompletedAtUtc;
+      return this.formatElapsed(elapsedMsBetween(run.rerunStartedAtUtc, rerunEnd));
     }
     if (!run.startedAtUtc) return '—';
     const ms = elapsedMsBetween(run.startedAtUtc, run.completedAtUtc);
@@ -3548,6 +3551,20 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     const run = this.activeRunDetail;
     if (!run || run.answers.length === 0) return '—';
     return this.formatDuration(Math.round(run.totalAnswerDurationMs / run.answers.length));
+  }
+
+  /**
+   * Whether the Cache Creation stat is a real zero or the provider simply does not report the
+   * counter. Mirrors BenchmarkReportBuilder's rule server-side: OpenAI reports cache reads but
+   * not cache creation, so a zero total for that provider beside a nonzero cache-read total is
+   * "not reported", not "no cache ever warmed".
+   */
+  get runCacheCreationUnreported(): boolean {
+    const run = this.activeRunDetail;
+    if (!run) return false;
+    return (run.totalCacheCreationTokens ?? 0) === 0 &&
+      (run.totalCacheReadTokens ?? 0) > 0 &&
+      (run.testedModelProviderUsed ?? '').toLowerCase() === 'openai';
   }
 
   /**
@@ -5527,6 +5544,26 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   runWallClockLabel(run: BenchmarkRunDetailDto): string {
     const elapsed = run.totalDurationMs || this.elapsedBetweenTimestamps(run);
     return elapsed ? this.formatDuration(elapsed) : '—';
+  }
+
+  /**
+   * The Elapsed Wall Time card's note. A repaired run's headline is the original execution's wall
+   * time, so the note names the re-run's own span; without a completion stamp it runs to now.
+   */
+  runWallClockNote(run: BenchmarkRunDetailDto): string {
+    const base = 'start to finish, grading included';
+    if (!run.rerunStartedAtUtc) return base;
+    const rerunMs = elapsedMsBetween(run.rerunStartedAtUtc, run.rerunCompletedAtUtc);
+    return `${base} · plus re-run ${this.formatDuration(rerunMs)}`;
+  }
+
+  /**
+   * The Answer Duration card's note. A repaired run's total includes every re-executed answer, so
+   * it can exceed the original execution's wall time.
+   */
+  runAnswerDurationNote(run: BenchmarkRunDetailDto): string {
+    const base = 'candidate answering only';
+    return run.rerunStartedAtUtc ? `${base} · includes re-executed answers` : base;
   }
 
   /**

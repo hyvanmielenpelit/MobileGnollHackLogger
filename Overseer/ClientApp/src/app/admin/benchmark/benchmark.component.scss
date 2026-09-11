@@ -1922,12 +1922,20 @@
 .gh-dialog.benchmark-run-progress-dialog {
   width: min(900px, 94vw);
   max-width: min(900px, 94vw);
-  height: min(85dvh, 840px);
-  max-height: 85dvh;
+  height: calc(100dvh - 16px);
+  max-height: calc(100dvh - 16px);
   padding: 0;
   overflow: hidden;
   border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
   background: rgba(20, 20, 20, 0.98);
+}
+
+/* Half the inset on a phone, mirroring .gh-dialog-fullscreen's own 600px step. */
+@media (max-width: 600px) {
+  .gh-dialog.benchmark-run-progress-dialog {
+    height: calc(100dvh - 8px);
+    max-height: calc(100dvh - 8px);
+  }
 }
 
 /* Both of these dialogs are full-screen, unlike every one of their siblings: four tabs of suite

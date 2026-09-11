@@ -107,6 +107,9 @@ public class BenchmarkRerunStatusTests
 
         var run = BuildSeedRun(suite, modelA, modelC);
         run.ErrorMessage = "previous attempt";
+        // A previous re-run's end stamp, earlier than the new start.
+        run.RerunStartedAtUtc = DateTime.UtcNow.AddMinutes(-50);
+        run.RerunCompletedAtUtc = DateTime.UtcNow.AddMinutes(-40);
         run.Answers.Add(new BenchmarkRunAnswer
         {
             QuestionText = "Q1",
@@ -122,6 +125,8 @@ public class BenchmarkRerunStatusTests
         Assert.IsType<AcceptedResult>(result);
         Assert.Equal(BenchmarkRunStatus.Running, run.Status);
         Assert.NotNull(run.RerunStartedAtUtc);
+        Assert.True(run.RerunStartedAtUtc > DateTime.UtcNow.AddMinutes(-1));
+        Assert.Null(run.RerunCompletedAtUtc);
         Assert.Null(run.ErrorMessage);
     }
 

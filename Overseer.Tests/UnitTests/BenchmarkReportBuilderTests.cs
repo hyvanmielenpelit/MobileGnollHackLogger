@@ -2398,6 +2398,90 @@ public class BenchmarkReportBuilderTests
         Assert.DoesNotContain("*Measured overlap:", parallelReport);
     }
 
+    private static BenchmarkRun RepairedSequentialRun()
+    {
+        // Run 37's shape: the stage sum exceeds the preserved wall clock by the re-run's answer time.
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        run.HarnessVersion = "21";
+        run.MaxParallelQuestionsUsed = 1;
+        run.TotalInputTokens = 10_000;
+        run.TotalOutputTokens = 1_000;
+        run.TotalAnswerDurationMs = 20_000;
+        run.TotalAssessmentInputTokens = 2_000;
+        run.TotalAssessmentOutputTokens = 200;
+        run.TotalAssessmentDurationMs = 3_000;
+        run.TotalDurationMs = 12_000;
+        run.CandidateSystemPromptSha256 = "aaaa";
+        run.ToolGuidesSha256 = "bbbb";
+        run.RerunCandidateSystemPromptSha256 = "aaaa";
+        run.RerunToolGuidesSha256 = "bbbb";
+        return run;
+    }
+
+    [Fact]
+    public void RepairedRun_SameInstrument_RendersRerunBlockAndOriginalExecutionTiming()
+    {
+        var run = RepairedSequentialRun();
+        run.RerunStartedAtUtc = new DateTime(2026, 9, 11, 9, 50, 0, DateTimeKind.Utc);
+        run.RerunCompletedAtUtc = new DateTime(2026, 9, 11, 10, 2, 8, DateTimeKind.Utc);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("> **Repaired by a failed-question re-run** from ", report);
+        Assert.Contains("(12m 8s) under harness not recorded (re-run predates harness 22) (this run: 21)", report);
+        Assert.DoesNotContain("Re-run under a different instrument", report);
+        Assert.Contains("- **End Time (UTC, original execution):**", report);
+        Assert.Contains("- **Re-run span (UTC):**", report);
+        Assert.DoesNotContain("- **End Time (UTC):**", report);
+        Assert.Contains("*(includes re-executed answers; the wall time above is the original execution's)*", report);
+        Assert.Contains("overlap is not computed for a repaired run.*", report);
+        Assert.DoesNotContain("*Measured overlap:", report);
+    }
+
+    [Fact]
+    public void RepairedRun_OnlyRerunStartRecorded_RendersRerunBlockWithRerunHarness()
+    {
+        var run = RepairedSequentialRun();
+        run.RerunStartedAtUtc = new DateTime(2026, 9, 11, 9, 50, 0, DateTimeKind.Utc);
+        run.RerunHarnessVersion = "22";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("> **Repaired by a failed-question re-run** from ", report);
+        Assert.Contains("to unrecorded end UTC under harness 22 (this run: 21)", report);
+    }
+
+    [Fact]
+    public void RepairedRun_DifferentInstrument_KeepsCautionAndNamesRerunHarness()
+    {
+        var run = RepairedSequentialRun();
+        run.RerunToolGuidesSha256 = "cccc";
+        run.RerunStartedAtUtc = new DateTime(2026, 9, 11, 9, 50, 0, DateTimeKind.Utc);
+        run.RerunCompletedAtUtc = new DateTime(2026, 9, 11, 10, 2, 8, DateTimeKind.Utc);
+        run.RerunHarnessVersion = "22";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("> **Re-run under a different instrument.**", report);
+        Assert.Contains("under harness 22 (this run: 21)", report);
+        Assert.DoesNotContain("**Repaired by a failed-question re-run**", report);
+    }
+
+    [Fact]
+    public void NeverRerunRun_KeepsPlainEndTimeAndNoRerunBlock()
+    {
+        var run = RepairedSequentialRun();
+        run.RerunCandidateSystemPromptSha256 = null;
+        run.RerunToolGuidesSha256 = null;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("- **End Time (UTC):**", report);
+        Assert.DoesNotContain("Re-run span", report);
+        Assert.DoesNotContain("Repaired by a failed-question re-run", report);
+        Assert.Contains("*Measured overlap:", report);
+    }
+
     [Fact]
     public void HarnessCost_MeasuredOverlap_StagesExceedingWallClockAreReportedAsAPositiveExcess()
     {

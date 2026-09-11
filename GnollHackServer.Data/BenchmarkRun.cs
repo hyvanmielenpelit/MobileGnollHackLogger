@@ -650,6 +650,13 @@ public class BenchmarkRun
     public string? RerunToolGuidesSha256 { get; set; }
 
     /// <summary>
+    /// <c>BenchmarkAssessmentPrompt.HarnessVersion</c> the most recent failed-question re-run
+    /// executed under. <see cref="HarnessVersion"/> stays the original execution's.
+    /// </summary>
+    [MaxLength(16)]
+    public string? RerunHarnessVersion { get; set; }
+
+    /// <summary>
     /// When the most recent failed-question re-run began. <see cref="CompletedAtUtc"/> and
     /// <see cref="TotalDurationMs"/> stay the original execution's, which is the run's elapsed wall
     /// time; a re-run started hours later would otherwise absorb the interval into it.

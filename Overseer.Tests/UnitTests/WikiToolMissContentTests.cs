@@ -49,6 +49,15 @@ Gnoll packs can overwhelm a low-level character. Retreat to a corridor and fight
 ## Enchanting
 Daggers can be enchanted at an altar like most other weapons.
 ");
+
+        // Six griffin articles sharing a term no other fixture article uses, so a query for it
+        // exercises max_results counting the actual returned hits rather than capping on a corpus
+        // too small to tell a clamp from a coincidence.
+        for (int i = 1; i <= 6; i++)
+        {
+            File.WriteAllText(Path.Combine(monsterDir, $"Griffin{i}.md"),
+                $"Griffin{i} is a griffin, a griffin-type monster article describing griffin behavior.\n");
+        }
     }
 
     public void Dispose()
@@ -174,6 +183,40 @@ Daggers can be enchanted at an altar like most other weapons.
         Assert.Null(result.ErrorMessage);
         Assert.NotNull(result.Content);
         Assert.DoesNotContain("Error:", result.Content);
+    }
+
+    [Fact]
+    public async Task WikiSearchTool_MaxResultsAboveConfiguredCeiling_ClampsToTheConfiguredCount()
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new WikiSearchTool(service, BuildConfig());
+
+        // Six articles match "griffin"; Tools:wiki_search:MaxResults defaults to 5, so max_results
+        // 10 must still come back with no more than 5 "--- ... ---" result headers.
+        var jsonParams = JsonDocument.Parse("{\"query\": \"griffin\", \"max_results\": 10}").RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        var headerMatches = System.Text.RegularExpressions.Regex.Matches(result.Content, @"(?m)^--- .+ ---\r?$");
+        Assert.Equal(5, headerMatches.Count);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    public async Task WikiSearchTool_MaxResultsZeroOrNegative_ClampsToOne(int maxResults)
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new WikiSearchTool(service, BuildConfig());
+
+        var jsonParams = JsonDocument.Parse($"{{\"query\": \"griffin\", \"max_results\": {maxResults}}}").RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        var headerMatches = System.Text.RegularExpressions.Regex.Matches(result.Content, @"(?m)^--- .+ ---\r?$");
+        Assert.Single(headerMatches);
     }
 
     // ----- wiki_view -----

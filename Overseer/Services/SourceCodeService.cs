@@ -645,9 +645,15 @@ namespace Overseer.Services
 
             // Compiled once per call: the per-line loop below only ever calls IsMatch on these.
             var functionRegex = new Regex($@"^{escapedSymbol}\s*\(");
+            // Definitions written as "<type tokens> [*]name(" on one line, e.g. "void foo(int x)".
+            // Excludes extern/prototype declarations and control-flow keywords like "return foo("
+            // or "else foo(" so a call or a prototype is never mistaken for a definition.
+            var functionDeclRegex = new Regex($@"^(?!(?:extern|return|else|if|while|for|switch|case|goto|sizeof)\b)(?:[A-Za-z_]\w*\s+|\*\s*)+\**{escapedSymbol}\s*\((?!.*;\s*$)");
             var macroRegex = new Regex($@"^\s*#define\s+{escapedSymbol}[\s(]");
             var structRegex = new Regex($@"^\s*struct\s+{escapedSymbol}\s*{{");
             var typeRegex = new Regex($@"^\s*typedef\s+.*\s+{escapedSymbol}\s*;");
+            // Closing line of a multi-line typedef block, e.g. "} gbuf_entry;".
+            var typedefCloseRegex = new Regex($@"^\s*\}}\s*{escapedSymbol}\s*;");
             var enumRegex = new Regex($@"^\s*enum\s+{escapedSymbol}\s*{{");
             var enumValueRegex = new Regex($@"^\s*{escapedSymbol}\s*=\s*\d+");
             var enumCommaRegex = new Regex($@"^\s*{escapedSymbol}\s*,");
@@ -668,10 +674,15 @@ namespace Overseer.Services
                     if ((kind == "any" || kind == "function") && isCFile)
                     {
                         // Function definition: match symbol at start of line followed by (
-                        if (functionRegex.IsMatch(line))
+                        if (functionRegex.IsMatch(line) && !line.TrimEnd().EndsWith(";"))
                         {
                             match = true;
                             // For C functions, include the preceding line for the return type
+                            contextLines = 8;
+                        }
+                        else if (functionDeclRegex.IsMatch(line))
+                        {
+                            match = true;
                             contextLines = 8;
                         }
                     }
@@ -694,7 +705,8 @@ namespace Overseer.Services
 
                     if ((kind == "any" || kind == "type") && !match)
                     {
-                        if (typeRegex.IsMatch(line))
+                        // Also matches the closing line of a multi-line typedef block.
+                        if (typeRegex.IsMatch(line) || typedefCloseRegex.IsMatch(line))
                         {
                             match = true;
                         }
@@ -756,6 +768,16 @@ namespace Overseer.Services
 
             string escapedSymbol = Regex.Escape(name);
 
+            // Compiled once per call, mirroring FindDefinition's patterns.
+            var functionRegex = new Regex($@"^{escapedSymbol}\s*\(");
+            var functionDeclRegex = new Regex($@"^(?!(?:extern|return|else|if|while|for|switch|case|goto|sizeof)\b)(?:[A-Za-z_]\w*\s+|\*\s*)+\**{escapedSymbol}\s*\((?!.*;\s*$)");
+            var macroRegex = new Regex($@"^\s*#define\s+{escapedSymbol}[\s(]");
+            var structRegex = new Regex($@"^\s*struct\s+{escapedSymbol}\s*{{");
+            var enumRegex = new Regex($@"^\s*enum\s+{escapedSymbol}\s*{{");
+            var typeRegex = new Regex($@"^\s*typedef\s+.*\s+{escapedSymbol}\s*;");
+            // Closing line of a multi-line typedef block, e.g. "} gbuf_entry;".
+            var typedefCloseRegex = new Regex($@"^\s*\}}\s*{escapedSymbol}\s*;");
+
             foreach (var doc in docsToSearch)
             {
                 bool isCFile = doc.FilePath.EndsWith(".c", StringComparison.OrdinalIgnoreCase);
@@ -767,19 +789,28 @@ namespace Overseer.Services
 
                     if ((kind == "any" || kind == "function") && isCFile)
                     {
-                        if (Regex.IsMatch(line, $@"^{escapedSymbol}\s*\(")) match = true;
+                        if (functionRegex.IsMatch(line) && !line.TrimEnd().EndsWith(";")) match = true;
+                        else if (functionDeclRegex.IsMatch(line)) match = true;
                     }
                     if ((kind == "any" || kind == "macro") && !match)
                     {
-                        if (Regex.IsMatch(line, $@"^\s*#define\s+{escapedSymbol}[\s(]")) match = true;
+                        if (macroRegex.IsMatch(line)) match = true;
                     }
                     if ((kind == "any" || kind == "struct") && !match)
                     {
-                        if (Regex.IsMatch(line, $@"^\s*struct\s+{escapedSymbol}\s*{{")) match = true;
+                        // Opening line of "struct name { ... }", or the closing line of an
+                        // anonymous "typedef struct { ... } name;" block (get_function_definition
+                        // exposes no "type" kind, so an anonymous typedef surfaces under "struct").
+                        if (structRegex.IsMatch(line) || typedefCloseRegex.IsMatch(line)) match = true;
                     }
                     if ((kind == "any" || kind == "enum") && !match)
                     {
-                        if (Regex.IsMatch(line, $@"^\s*enum\s+{escapedSymbol}\s*{{")) match = true;
+                        if (enumRegex.IsMatch(line)) match = true;
+                    }
+                    if ((kind == "any" || kind == "type") && !match)
+                    {
+                        // Also matches the closing line of a multi-line typedef block.
+                        if (typeRegex.IsMatch(line) || typedefCloseRegex.IsMatch(line)) match = true;
                     }
 
                     if (match) return (doc, i);
@@ -802,8 +833,41 @@ namespace Overseer.Services
             int extractStart = Math.Max(0, matchLine - (kind == "function" || kind == "any" ? 2 : 1));
             int extractEnd = matchLine;
             bool isMacro = Regex.IsMatch(matchDoc.ContentLines[matchLine], $@"^\s*#define");
-            
-            if (isMacro)
+            bool isTypedefClose = Regex.IsMatch(matchDoc.ContentLines[matchLine], $@"^\s*\}}\s*{Regex.Escape(name)}\s*;");
+
+            if (isTypedefClose)
+            {
+                // Multi-line typedef block: walk back to its "typedef struct/union/enum" opener,
+                // bounded so a missing opener cannot scan the whole file.
+                int opener = -1;
+                int scanStart = Math.Max(0, matchLine - 400);
+                for (int i = matchLine - 1; i >= scanStart; i--)
+                {
+                    if (Regex.IsMatch(matchDoc.ContentLines[i], @"^\s*typedef\s+(struct|union|enum)\b"))
+                    {
+                        opener = i;
+                        break;
+                    }
+                }
+
+                if (opener >= 0)
+                {
+                    extractStart = opener;
+                    extractEnd = matchLine;
+                    var sb = new System.Text.StringBuilder();
+                    for (int i = extractStart; i <= extractEnd; i++) sb.AppendLine(matchDoc.ContentLines[i]);
+                    resultText = sb.ToString();
+                }
+                else
+                {
+                    // No opener within the walk-back bound: fall back to the closing line's own context.
+                    extractEnd = Math.Min(matchDoc.ContentLines.Length - 1, matchLine + 10);
+                    var sb = new System.Text.StringBuilder();
+                    for (int i = extractStart; i <= extractEnd; i++) sb.AppendLine(matchDoc.ContentLines[i]);
+                    resultText = sb.ToString();
+                }
+            }
+            else if (isMacro)
             {
                 // Macro: read lines until no continuation
                 int current = matchLine;

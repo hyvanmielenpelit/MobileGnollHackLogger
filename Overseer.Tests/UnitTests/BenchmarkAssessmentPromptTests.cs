@@ -212,9 +212,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsTwentyOne()
+    public void HarnessVersion_IsTwentyTwo()
     {
-        Assert.Equal("21", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("22", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -454,9 +454,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs21_ScoringMethodIs10()
+    public void Versions_HarnessIs22_ScoringMethodIs10()
     {
-        Assert.Equal("21", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("22", BenchmarkAssessmentPrompt.HarnessVersion);
 
         // Harness 21 withholds the quality and speed indexes from a run in which any answer
         // failed at the provider, leaves such an answer ungraded, and carries the provider's own

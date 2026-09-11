@@ -277,8 +277,17 @@ public static class BenchmarkAssessmentPrompt
     ///     classified by the provider's own error code (server_error, rate_limit_exceeded) alongside
     ///     the existing HTTP-status vocabulary. Nothing a graded answer is scored on changed, so
     ///     ScoringMethodVersion does not move.
+    /// v22: unevidenced-deduction detection reaches level 5, so a level-5 Accuracy or Completeness
+    ///     verdict whose evidence names no defect is flagged and routed to a second reader; a
+    ///     failed-question re-run records the harness version it executed under
+    ///     (BenchmarkRun.RerunHarnessVersion); and a repaired run's report discloses the re-run span
+    ///     and harness, labels its End Time as the original execution's and does not compute a
+    ///     measured overlap. wiki_search clamps max_results to its configured maximum and the source
+    ///     definition matcher finds same-line return types and typedefs named at their closing brace;
+    ///     neither moves ToolGuidesSha256 or CandidateSystemPromptSha256, and ScoringMethodVersion
+    ///     does not move, so a run stamped 22 differs from one stamped 21 on HarnessVersion alone.
     /// </summary>
-    public const string HarnessVersion = "21";
+    public const string HarnessVersion = "22";
 
     public static string BuildPerQuestionPrompt(
         string suiteName,

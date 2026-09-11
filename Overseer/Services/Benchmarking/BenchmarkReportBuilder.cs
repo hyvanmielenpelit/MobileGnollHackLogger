@@ -562,9 +562,19 @@ public static class BenchmarkReportBuilder
                 : string.Empty));
         sb.AppendLine($"- **Run Status:** {run.Status}");
         sb.AppendLine($"- **Start Time (UTC):** {Stamp(run.StartedAtUtc)}");
-        sb.AppendLine($"- **End Time (UTC):** {(run.CompletedAtUtc.HasValue ? Stamp(run.CompletedAtUtc.Value) : "In Progress / Interrupted")}");
+        string endTime = run.CompletedAtUtc.HasValue ? Stamp(run.CompletedAtUtc.Value) : "In Progress / Interrupted";
+        if (run.RerunStartedAtUtc.HasValue)
+        {
+            sb.AppendLine($"- **End Time (UTC, original execution):** {endTime}");
+            sb.AppendLine($"- **Re-run span (UTC):** {RerunSpan(run)}");
+        }
+        else
+        {
+            sb.AppendLine($"- **End Time (UTC):** {endTime}");
+        }
         sb.AppendLine($"- **Total Elapsed Wall Time:** {FormatDuration(run.TotalDurationMs)}");
-        sb.AppendLine($"- **Total Candidate Answer Time:** {FormatDuration(run.TotalAnswerDurationMs)}");
+        sb.AppendLine($"- **Total Candidate Answer Time:** {FormatDuration(run.TotalAnswerDurationMs)}"
+            + (run.RerunStartedAtUtc.HasValue ? " *(includes re-executed answers; the wall time above is the original execution's)*" : string.Empty));
         // "Question Parallelism", not "Parallel …": the Model Under Test block reports the
         // provider's parallel *tool calls* under a similar name, and one report using the same
         // word for two mechanisms is how a reader concludes a sequential run ran concurrently.
@@ -650,18 +660,28 @@ public static class BenchmarkReportBuilder
         // A re-run that repairs answers under a system prompt or ToolGuides build different from
         // the run's own leaves the run graded on two instruments rather than one, and this is the
         // only place that fact survives: per-answer, only which answers the re-run touched is known,
-        // not which instrument produced them, so the caution is stated at run level.
+        // not which instrument produced them, so the caution is stated at run level. A re-run under the
+        // same prompt instrument is still disclosed: its answers came from the re-run's harness build.
         bool rerunPromptDiffers = !string.IsNullOrWhiteSpace(run.RerunCandidateSystemPromptSha256) &&
             !string.Equals(run.RerunCandidateSystemPromptSha256, run.CandidateSystemPromptSha256, StringComparison.Ordinal);
         bool rerunToolGuidesDiffers = !string.IsNullOrWhiteSpace(run.RerunToolGuidesSha256) &&
             !string.Equals(run.RerunToolGuidesSha256, run.ToolGuidesSha256, StringComparison.Ordinal);
-        if (rerunPromptDiffers || rerunToolGuidesDiffers)
+        if (run.RerunStartedAtUtc.HasValue || rerunPromptDiffers || rerunToolGuidesDiffers)
         {
             string rerunSpan = (run.RerunStartedAtUtc.HasValue || run.RerunCompletedAtUtc.HasValue)
-                ? $"{(run.RerunStartedAtUtc.HasValue ? Stamp(run.RerunStartedAtUtc.Value) : "unrecorded start")} to {(run.RerunCompletedAtUtc.HasValue ? Stamp(run.RerunCompletedAtUtc.Value) : "unrecorded end")} UTC"
+                ? RerunSpan(run)
                 : "not recorded";
+            string rerunHarness = run.RerunHarnessVersion ?? "not recorded (re-run predates harness 22)";
+            string runHarness = run.HarnessVersion ?? "1 (unversioned legacy)";
             sb.AppendLine();
-            sb.AppendLine($"> **Re-run under a different instrument.** This run was repaired by a re-run recorded under Candidate System Prompt SHA-256 `{run.RerunCandidateSystemPromptSha256 ?? run.CandidateSystemPromptSha256 ?? "not recorded"}` and ToolGuides SHA-256 `{run.RerunToolGuidesSha256 ?? run.ToolGuidesSha256 ?? "not recorded"}`, against this run's own `{run.CandidateSystemPromptSha256 ?? "not recorded"}` and `{run.ToolGuidesSha256 ?? "not recorded"}`. **This is not a clean reproduction half:** the answers the re-run repaired were produced under the re-run instrument, and the rest under the run's own. The re-run's own span was {rerunSpan} — distinct from the run's {FormatDuration(run.TotalDurationMs)} total elapsed wall time above.");
+            if (rerunPromptDiffers || rerunToolGuidesDiffers)
+            {
+                sb.AppendLine($"> **Re-run under a different instrument.** This run was repaired by a re-run recorded under Candidate System Prompt SHA-256 `{run.RerunCandidateSystemPromptSha256 ?? run.CandidateSystemPromptSha256 ?? "not recorded"}` and ToolGuides SHA-256 `{run.RerunToolGuidesSha256 ?? run.ToolGuidesSha256 ?? "not recorded"}`, against this run's own `{run.CandidateSystemPromptSha256 ?? "not recorded"}` and `{run.ToolGuidesSha256 ?? "not recorded"}`, under harness {rerunHarness} (this run: {runHarness}). **This is not a clean reproduction half:** the answers the re-run repaired were produced under the re-run instrument, and the rest under the run's own. The re-run's own span was {rerunSpan} — distinct from the run's {FormatDuration(run.TotalDurationMs)} total elapsed wall time above.");
+            }
+            else
+            {
+                sb.AppendLine($"> **Repaired by a failed-question re-run** from {rerunSpan} under harness {rerunHarness} (this run: {runHarness}). Candidate System Prompt and ToolGuides SHA-256 matched the run's own, so the answers are on one prompt instrument; the harness build differs where the versions differ.");
+            }
         }
         sb.AppendLine();
 
@@ -1353,7 +1373,13 @@ public static class BenchmarkReportBuilder
             // duration, candidate included. A run whose synthesis is available folds it into that sum,
             // since a synthesis call sits on the same critical path as the other grading stages —
             // one measured run's residual dropped to 17 seconds once synthesis was counted with it.
-            if (run.MaxParallelQuestionsUsed > 1)
+            // A repaired run's stage durations include its re-run, which the preserved wall clock
+            // does not, so no residual is meaningful there.
+            if (run.RerunStartedAtUtc.HasValue)
+            {
+                sb.AppendLine($"*Stage durations include the failed-question re-run ({RerunSpan(run)}), which lies outside the original wall clock; overlap is not computed for a repaired run.*");
+            }
+            else if (run.MaxParallelQuestionsUsed > 1)
             {
                 sb.AppendLine("*Assessment runs pipelined behind each answer, so assessment time overlaps the candidate's and the two do not sum to the wall time.*");
             }
@@ -2935,6 +2961,22 @@ public static class BenchmarkReportBuilder
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// The most recent failed-question re-run's span, "start to end UTC (duration)". The end reads
+    /// "unrecorded end" while the re-run is still running or when a stale stamp predates the start.
+    /// </summary>
+    private static string RerunSpan(BenchmarkRun run)
+    {
+        bool hasEnd = run.RerunCompletedAtUtc.HasValue &&
+            (!run.RerunStartedAtUtc.HasValue || run.RerunCompletedAtUtc.Value >= run.RerunStartedAtUtc.Value);
+        string start = run.RerunStartedAtUtc.HasValue ? Stamp(run.RerunStartedAtUtc.Value) : "unrecorded start";
+        string end = hasEnd ? Stamp(run.RerunCompletedAtUtc!.Value) : "unrecorded end";
+        string duration = hasEnd && run.RerunStartedAtUtc.HasValue
+            ? $" ({FormatDuration((long)(run.RerunCompletedAtUtc!.Value - run.RerunStartedAtUtc.Value).TotalMilliseconds)})"
+            : string.Empty;
+        return $"{start} to {end} UTC{duration}";
     }
 
     private static string FormatDuration(long ms)

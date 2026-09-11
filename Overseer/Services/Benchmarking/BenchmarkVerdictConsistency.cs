@@ -107,14 +107,11 @@ public static class BenchmarkVerdictConsistency
     /// <summary>
     /// The highest level at which a no-fault evidence string is still treated as a contradiction.
     ///
-    /// Scoring method v7 tells the assessor that such a string may accompany level 6 only, so this
-    /// constant is deliberately one level *below* the rule it enforces. Level 5 is "highly accurate
-    /// and precise; nuanced understanding", and a grader awarding 5 with "Matches rubric" is giving a
-    /// defensible reading of its own anchor; flagging that would fire on most answers of a strong run
-    /// and devalue the flag. Below 5 the contradiction is material — level 4 costs 28 points of the
-    /// 55%-weight dimension against level 6.
+    /// Scoring method v7 tells the assessor that such a string may accompany level 6 only, so any
+    /// level docked to 5 or below whose evidence names no defect is a deduction nobody can name — and
+    /// the final synthesis will otherwise invent one to explain it.
     /// </summary>
-    public const int UnevidencedDeductionMaxLevel = 4;
+    public const int UnevidencedDeductionMaxLevel = 5;
 
     /// <summary>
     /// Evidence strings that assert no defect. Anchored at both ends after trimming trailing
