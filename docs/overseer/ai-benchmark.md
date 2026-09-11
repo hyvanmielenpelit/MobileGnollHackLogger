@@ -1695,6 +1695,25 @@ stamped 20 on `HarnessVersion` alone, not on `ToolGuidesSha256` or `CandidateSys
   above: nothing changes about how a graded answer is scored or how the candidate is prompted — what
   changes is which rows an operator action repairs.
 - **`BenchmarkAssessmentPrompt.HarnessVersion` is now `"21"`.**
+- **2026-09-11: a cancel mid-answer now records `Canceled` (value 6), not `Failed`.** New
+  `BenchmarkAnswerStatus.Canceled = 6` records that the operator canceled the run while a question's
+  request was in flight; `BenchmarkService` writes `Status = Canceled`,
+  `ErrorMessage = "Canceled by the operator before the answer completed."` and `HttpStatusCode = null`
+  for such an answer. `BenchmarkRunFinalizer.HasTerminalFailure` and `HasUnresolvedWork` both cover the
+  new status, and `NeedsReExecution` and `HasTransportDefect` cover it through them, so a canceled
+  answer keeps the transport-defect treatment a `Failed` one already had. The classifier's caller-cancel
+  check — `BenchmarkProviderErrorClassifier.Classify(Exception, string, bool callerCanceled)` — now runs
+  ahead of its socket, I/O and HTTP rules rather than after them, so a caller-initiated cancel is never
+  misclassified as a provider error regardless of which transport exception wraps it. `HarnessVersion`
+  stays at `21` for the same reason as the bullet above: nothing about scoring or prompting moved.
+- **2026-09-11: the run-detail DTO gains three re-run progress fields.**
+  `BenchmarkRunDetailDto.rerunScopeOrderIndexes`, `rerunAnsweredOrderIndexes` and
+  `rerunScoredOrderIndexes` report a server-tracked re-run's scope and progress, beside the existing
+  `inFlightOrderIndexes`. The Angular client's `effectiveRerunScope` prefers the server-reported scope
+  over its own client-captured `rerunScopeOrderIndexes` field whenever the server reports a non-empty
+  one, and the new `runMeterTotal`, `runMeterAnswered`, `runMeterScored` and `runMeterFailed` getters
+  read against that scope instead of the whole run once one is active, so the run progress dialog's
+  meters and `runStageLabel` describe the re-run's own population rather than the suite's.
 
 **The motivating case.** Run 37 on 2026-09-11 lost 12 of its 18 questions to an OpenAI in-stream
 overload. The harness graded the 12 error strings as if they were answers, reported

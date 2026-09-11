@@ -2160,6 +2160,12 @@
     color: #d4a017;
     border: 1px solid rgba(212, 160, 23, 0.3);
   }
+
+  &.status-canceled {
+    background: rgba(158, 158, 158, 0.2);
+    color: #bdbdbd;
+    border: 1px solid #757575;
+  }
 }
 
 /* The models under one panel, above the stage rail. Layout only: the badges reuse
@@ -2483,6 +2489,20 @@
     gap: 4px;
     min-width: 0;
 
+    .dialog-title-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;          // badges drop below the title only when the header is too narrow
+      column-gap: 12px;
+      row-gap: 6px;
+      min-width: 0;
+
+      h3 {
+        flex: 0 1 auto;
+        min-width: 0;
+      }
+    }
+
     h3 {
       margin: 0;
       color: var(--title-color, var(--primary-color));
@@ -2500,15 +2520,20 @@
       color: #888;
     }
 
-    // Column direction stretches a bare flex item to the group's full width by default; these
-    // sit beside the title text rather than as a bar of their own.
-    .status-badge,
-    .badge-progress-count {
-      align-self: flex-start;
-    }
+    .dialog-title-badges {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
 
-    .status-badge {
-      margin-left: 10px;
+      .badge-progress-count {
+        margin-left: 0;   // the gap spaces them
+      }
+
+      .status-badge,
+      .badge-progress-count {
+        text-box: trim-both cap alphabetic;  // optical centring beside the Cinzel title; inert where unsupported
+      }
     }
   }
 }

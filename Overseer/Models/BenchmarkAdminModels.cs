@@ -905,6 +905,19 @@ public class BenchmarkRunDetailDto
     /// <summary>Order indexes currently with the second-opinion assessor.</summary>
     public List<int> InFlightSecondOpinionOrderIndexes { get; set; } = new();
 
+    /// <summary>
+    /// Order indexes a re-run is repairing. Empty unless this process is executing, or has just
+    /// finished, a re-run of this run. A re-run overwrites answer rows in place and adds none, so
+    /// the client scopes its progress meters to this set rather than to the suite totals.
+    /// </summary>
+    public List<int> RerunScopeOrderIndexes { get; set; } = new();
+
+    /// <summary>Scope members whose re-executed answer row has been saved.</summary>
+    public List<int> RerunAnsweredOrderIndexes { get; set; } = new();
+
+    /// <summary>Scope members whose per-question assessment has returned.</summary>
+    public List<int> RerunScoredOrderIndexes { get; set; } = new();
+
     /// <summary>Answers carrying an out-of-rubric Accuracy deduction. Advisory.</summary>
     public int OutOfRubricAccuracyAnswerCount { get; set; }
 

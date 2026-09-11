@@ -795,6 +795,7 @@ public class BenchmarkRunFinalizerTests
     [Theory]
     [InlineData(BenchmarkAnswerStatus.Failed)]
     [InlineData(BenchmarkAnswerStatus.ProviderError)]
+    [InlineData(BenchmarkAnswerStatus.Canceled)]
     public void FailedOrProviderError_ClassifyAsTransportDefect_ThroughHasTerminalFailure(BenchmarkAnswerStatus status)
     {
         // Before HasTerminalFailure existed, neither status matched any bucket check and both
@@ -813,6 +814,7 @@ public class BenchmarkRunFinalizerTests
     [InlineData(BenchmarkAnswerStatus.Failed, null)]
     [InlineData(BenchmarkAnswerStatus.EmptyAnswer, null)]
     [InlineData(BenchmarkAnswerStatus.EmptyAnswer, "end_turn")]
+    [InlineData(BenchmarkAnswerStatus.Canceled, null)]
     public void NeedsReExecution_IsTrueForProviderErrorFailedAndEmptyAnswer(
         BenchmarkAnswerStatus status, string? finishReason)
     {
@@ -830,6 +832,20 @@ public class BenchmarkRunFinalizerTests
     public void NeedsReExecution_IsFalseForOkAnswer()
     {
         Assert.False(BenchmarkRunFinalizer.NeedsReExecution(MakeAnswer(1)));
+    }
+
+    [Fact]
+    public void Finalizer_WithCanceledAnswer_SetsCompletedWithErrorsAndCountsATransportDefect()
+    {
+        // The operator canceled the run while this question's request was in flight: nothing was
+        // authored to grade, so the answer is a transport defect and the run reports the error.
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 1 };
+        var canceled = MakeAnswer(1, status: BenchmarkAnswerStatus.Canceled);
+
+        BenchmarkRunFinalizer.Apply(run, new[] { canceled });
+
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, run.Status);
+        Assert.Equal(1, run.TransportDefectAnswerCount);
     }
 
     [Fact]

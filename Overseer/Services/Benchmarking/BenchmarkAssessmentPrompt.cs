@@ -440,7 +440,12 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine($"- Transport artifacts removed by the harness before grading: {scrubbedArtifactCount} block(s)");
         sb.AppendLine();
 
-        if (status == BenchmarkAnswerStatus.ProviderError || status == BenchmarkAnswerStatus.Failed)
+        if (status == BenchmarkAnswerStatus.Canceled)
+        {
+            sb.AppendLine("Status: Canceled (The run was canceled by the operator before this question was answered).");
+            sb.AppendLine("Note for assessor: Return levels as 0, criticalError as false, and comment: 'Excluded: canceled by the operator'.");
+        }
+        else if (status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed)
         {
             sb.AppendLine("Status: ProviderError (The AI provider API experienced an outage or rate limit error on this question).");
             sb.AppendLine("Note for assessor: Return levels as 0, criticalError as false, and comment: 'Excluded: Provider API error'.");
@@ -646,6 +651,10 @@ public static class BenchmarkAssessmentPrompt
             if (v.Status == BenchmarkAnswerStatus.ProviderError)
             {
                 sb.AppendLine("Status: ProviderError (Excluded from scoring)");
+            }
+            else if (v.Status == BenchmarkAnswerStatus.Canceled)
+            {
+                sb.AppendLine("Status: Canceled by the operator (Excluded from scoring)");
             }
             else
             {

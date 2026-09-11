@@ -31,7 +31,11 @@ public enum BenchmarkAnswerStatus
     ProviderError = 2,
     Failed = 3,
     Skipped = 4,
-    EmptyAnswer = 5
+    EmptyAnswer = 5,
+
+    // The operator canceled the run while this question's request was in flight; there is
+    // nothing authored to grade, and a failed-question re-run re-executes it.
+    Canceled = 6
 }
 
 [Flags]

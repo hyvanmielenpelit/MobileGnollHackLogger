@@ -634,6 +634,11 @@ public class BenchmarkService
                 return;
             }
 
+            // A re-run overwrites answer rows in place and adds none, so the suite totals cannot
+            // describe its progress. The scope and the two marks below are what the progress
+            // dialog counts instead.
+            _runManager.SetRerunScope(runId, failedAnswers.Select(a => a.OrderIndex));
+
             run.Status = BenchmarkRunStatus.Running;
             run.RerunStartedAtUtc = DateTime.UtcNow;
             await db.SaveChangesAsync(cancellationToken);
@@ -673,11 +678,13 @@ public class BenchmarkService
                     db, configService, run, answer, testedConfig, testedApiKey,
                     systemPrompt, segmentedPrompt, allowedTools,
                     maxResultLength, maxCallsPerSession, cancellationToken);
+                _runManager.MarkRerunAnswered(runId, answer.OrderIndex);
 
                 suiteQuestions.TryGetValue(answer.OrderIndex, out var ep);
                 await ExecutePerQuestionAssessmentAsync(
                     db, configService, run, answer, ep,
                     assessorConfig, assessorApiKey, scoringConstants, cancellationToken);
+                _runManager.MarkRerunScored(runId, answer.OrderIndex);
             }
 
             // The same run-level sequence, in the same order, as ExecuteRunAsync. The ordering is
@@ -1043,6 +1050,10 @@ public class BenchmarkService
         }
         sw.Stop();
 
+        // A provider error that arrived before the cancel keeps its provider classification; only a
+        // cancel with no provider error on record is the operator's.
+        bool canceledByOperator = cancellationToken.IsCancellationRequested && seenErrorTexts.Count == 0;
+
         var classification = BenchmarkProviderErrorClassifier.Classify(
             terminalException, terminalError, cancellationToken.IsCancellationRequested);
         var sanitized = BenchmarkAnswerSanitizer.Sanitize(runResult.FinalText);
@@ -1070,23 +1081,24 @@ public class BenchmarkService
 
         int assessedDiff = question.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(question.Difficulty);
 
+        // The operator's cancel is decided ahead of the classification: tearing the provider stream
+        // down surfaces as a transport exception, which is what the classifier sees, and a transport
+        // exception is indistinguishable from a real outage without knowing the cancel was intended.
+        // A per-question timeout cancels only its own linked token and is already caught above.
         BenchmarkAnswerStatus status;
-        if (classification.IsProviderError)
+        if (canceledByOperator)
+        {
+            status = BenchmarkAnswerStatus.Canceled;
+            terminalError = "Canceled by the operator before the answer completed.";
+            terminalErrorDetail = null;
+        }
+        else if (classification.IsProviderError)
         {
             status = BenchmarkAnswerStatus.ProviderError;
         }
         else if (!string.IsNullOrEmpty(terminalError))
         {
             status = BenchmarkAnswerStatus.Failed;
-        }
-        else if (cancellationToken.IsCancellationRequested && string.IsNullOrWhiteSpace(sanitized.AnswerText))
-        {
-            // A run-level cancel mid-answer: the stream throws OperationCanceledException, the loop
-            // runner emits no error event, and the classifier declines a caller cancel — so without
-            // this branch the row would read EmptyAnswer with no reason. A per-question timeout
-            // cancels only its own linked token and is already caught above.
-            status = BenchmarkAnswerStatus.Failed;
-            terminalError = "Canceled before the answer completed.";
         }
         else if (sanitized.Flags.HasFlag(BenchmarkAnswerFlags.Empty))
         {
@@ -1098,11 +1110,13 @@ public class BenchmarkService
         }
 
         // Same shape as BenchmarkRunFinalizer.HasTerminalFailure: the provider failed the request
-        // outright, so there is nothing authored to grade. AnswerText and ThoughtText are cleared —
-        // any text captured before the failure is a fragment, not an answer — and OutputTokens falls
-        // back to 0 rather than a character-based estimate against text that no longer exists, unless
-        // the provider itself already reported real usage before failing.
-        bool isTerminalFailure = status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed;
+        // outright, or the operator cut it short, so there is nothing authored to grade. AnswerText
+        // and ThoughtText are cleared — any text captured before the end is a fragment, not an
+        // answer — and OutputTokens falls back to 0 rather than a character-based estimate against
+        // text that no longer exists, unless the provider itself already reported real usage before
+        // failing.
+        bool isTerminalFailure = status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed
+            or BenchmarkAnswerStatus.Canceled;
 
         var answer = new BenchmarkRunAnswer
         {
@@ -1127,7 +1141,7 @@ public class BenchmarkService
             AssessmentStatus = BenchmarkAssessmentStatus.Pending,
             ErrorMessage = BenchmarkAssessmentFailure.Truncate(terminalError),
             ProviderErrorDetail = isTerminalFailure ? BenchmarkAssessmentFailure.Truncate(terminalErrorDetail, 4000) : null,
-            HttpStatusCode = classification.HttpStatus,
+            HttpStatusCode = canceledByOperator ? null : classification.HttpStatus,
             DurationMs = runResult.TotalDurationMs ?? sw.ElapsedMilliseconds,
             TimeToFirstTokenMs = runResult.TimeToFirstTokenMs,
             ActualServiceTierUsed = runResult.ActualServiceTier,
@@ -1290,6 +1304,9 @@ public class BenchmarkService
         }
         sw.Stop();
 
+        // See ExecuteSingleQuestionAsync for the rule this follows.
+        bool canceledByOperator = cancellationToken.IsCancellationRequested && seenErrorTexts.Count == 0;
+
         var classification = BenchmarkProviderErrorClassifier.Classify(
             terminalException, terminalError, cancellationToken.IsCancellationRequested);
         var sanitized = BenchmarkAnswerSanitizer.Sanitize(runResult.FinalText);
@@ -1315,20 +1332,22 @@ public class BenchmarkService
                 : $"{toolSummary} ({blockedCount} blocked by budget)";
         }
 
+        // See ExecuteSingleQuestionAsync for why the operator's cancel is decided ahead of the
+        // classification.
         BenchmarkAnswerStatus status;
-        if (classification.IsProviderError)
+        if (canceledByOperator)
+        {
+            status = BenchmarkAnswerStatus.Canceled;
+            terminalError = "Canceled by the operator before the answer completed.";
+            terminalErrorDetail = null;
+        }
+        else if (classification.IsProviderError)
         {
             status = BenchmarkAnswerStatus.ProviderError;
         }
         else if (!string.IsNullOrEmpty(terminalError))
         {
             status = BenchmarkAnswerStatus.Failed;
-        }
-        else if (cancellationToken.IsCancellationRequested && string.IsNullOrWhiteSpace(sanitized.AnswerText))
-        {
-            // See ExecuteSingleQuestionAsync for why a cancelled answer needs its own branch here.
-            status = BenchmarkAnswerStatus.Failed;
-            terminalError = "Canceled before the answer completed.";
         }
         else if (sanitized.Flags.HasFlag(BenchmarkAnswerFlags.Empty))
         {
@@ -1341,7 +1360,8 @@ public class BenchmarkService
 
         // See ExecuteSingleQuestionAsync for the rule this follows, and for why AnswerText clears
         // to empty rather than null.
-        bool isTerminalFailure = status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed;
+        bool isTerminalFailure = status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed
+            or BenchmarkAnswerStatus.Canceled;
 
         answer.AnswerText = isTerminalFailure ? string.Empty : sanitized.AnswerText;
         answer.ThoughtText = isTerminalFailure ? null : sanitized.ThoughtText;
@@ -1349,7 +1369,7 @@ public class BenchmarkService
         answer.AssessmentStatus = BenchmarkAssessmentStatus.Pending;
         answer.ErrorMessage = BenchmarkAssessmentFailure.Truncate(terminalError);
         answer.ProviderErrorDetail = isTerminalFailure ? BenchmarkAssessmentFailure.Truncate(terminalErrorDetail, 4000) : null;
-        answer.HttpStatusCode = classification.HttpStatus;
+        answer.HttpStatusCode = canceledByOperator ? null : classification.HttpStatus;
         answer.DurationMs = runResult.TotalDurationMs ?? sw.ElapsedMilliseconds;
         answer.TimeToFirstTokenMs = runResult.TimeToFirstTokenMs;
         answer.ActualServiceTierUsed = runResult.ActualServiceTier;
@@ -1504,9 +1524,11 @@ public class BenchmarkService
             else
             {
                 answer.AssessmentStatus = BenchmarkAssessmentStatus.Failed;
-                answer.AssessmentError = BenchmarkRunFinalizer.HasTerminalFailure(answer)
-                    ? "Not assessed: the provider failed the request; excluded from scoring."
-                    : "Not assessed: the answer contained no text, and the provider reported no normal stop.";
+                answer.AssessmentError = answer.Status == BenchmarkAnswerStatus.Canceled
+                    ? "Not assessed: the operator canceled the run before the answer completed; excluded from scoring."
+                    : BenchmarkRunFinalizer.HasTerminalFailure(answer)
+                        ? "Not assessed: the provider failed the request; excluded from scoring."
+                        : "Not assessed: the answer contained no text, and the provider reported no normal stop.";
             }
 
             await db.SaveChangesAsync(CancellationToken.None);
@@ -4607,14 +4629,20 @@ public class BenchmarkService
 
             string? expectedPoints = MatchSuiteQuestion(run, answer)?.ExpectedPoints;
 
+            // A one-question scope, on the same contract as the failed-question re-run: the row is
+            // overwritten in place, so the suite totals say nothing about this pass.
+            _runManager.SetRerunScope(runId, new[] { answer.OrderIndex });
+
             await ReExecuteSingleAnswerAsync(
                 db, configService, run, answer, testedConfig, testedApiKey,
                 systemPrompt, segmentedPrompt, allowedTools,
                 maxResultLength, maxToolCallsPerQuestion, cancellationToken);
+            _runManager.MarkRerunAnswered(runId, answer.OrderIndex);
 
             await ExecutePerQuestionAssessmentAsync(
                 db, configService, run, answer, expectedPoints,
                 assessorConfig, assessorApiKey, scoringConstants, cancellationToken);
+            _runManager.MarkRerunScored(runId, answer.OrderIndex);
 
             var allAnswers = await db.BenchmarkRunAnswers
                 .Where(a => a.BenchmarkRunId == run.Id)

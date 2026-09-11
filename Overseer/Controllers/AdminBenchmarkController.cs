@@ -2398,6 +2398,12 @@ public class AdminBenchmarkController : ControllerBase
             InFlightSecondOpinionOrderIndexes = _runManager.GetInFlightSecondOpinion(run.Id).ToList(),
             Stage = _runManager.GetStage(run.Id)?.ToString(),
 
+            // Survives the run's completion, unlike the in-flight sets above, so the terminal
+            // footer still reports what the re-run covered.
+            RerunScopeOrderIndexes = _runManager.GetRerunScope(run.Id).ToList(),
+            RerunAnsweredOrderIndexes = _runManager.GetRerunAnswered(run.Id).ToList(),
+            RerunScoredOrderIndexes = _runManager.GetRerunScored(run.Id).ToList(),
+
             RerunCandidateSystemPromptSha256 = run.RerunCandidateSystemPromptSha256,
             RerunToolGuidesSha256 = run.RerunToolGuidesSha256,
             RerunStartedAtUtc = run.RerunStartedAtUtc,

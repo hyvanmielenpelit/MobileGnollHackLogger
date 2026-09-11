@@ -3162,16 +3162,22 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return (this.activeRunDetail?.inFlightSecondOpinionOrderIndexes ?? []).length;
   }
 
-  /** Answers the claim verifier has produced a verdict or an error for. */
+  /** Answers the claim verifier has produced a verdict or an error for, scoped to a re-run. */
   get runVerifiedCount(): number {
-    return (this.activeRunDetail?.answers ?? []).filter(
-      a => a.claimVerificationJson != null || a.claimVerificationError != null).length;
+    const verified = (this.activeRunDetail?.answers ?? []).filter(
+      a => a.claimVerificationJson != null || a.claimVerificationError != null);
+    if (!this.runHasRerunScope) return verified.length;
+    const scope = new Set(this.effectiveRerunScope);
+    return verified.filter(a => scope.has(a.orderIndex)).length;
   }
 
-  /** Answers carrying a second verdict. */
+  /** Answers carrying a second verdict, scoped to a re-run. */
   get runSecondOpinionCount(): number {
-    return (this.activeRunDetail?.answers ?? []).filter(
-      a => a.secondOpinionQualityScore != null || a.secondOpinionError != null).length;
+    const graded = (this.activeRunDetail?.answers ?? []).filter(
+      a => a.secondOpinionQualityScore != null || a.secondOpinionError != null);
+    if (!this.runHasRerunScope) return graded.length;
+    const scope = new Set(this.effectiveRerunScope);
+    return graded.filter(a => scope.has(a.orderIndex)).length;
   }
 
   /**
@@ -3196,22 +3202,34 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (!run) return '';
     if (this.rerunLaunchPending) return 'Starting failed-question re-run…';
     const total = this.runTotalQuestionCount;
+    const scoped = this.runHasRerunScope;
     switch (this.runStage) {
       case 'answering':
-        return `Stage 1 of 3 — Answering and grading. Answered ${this.runAnsweredCount} of ${total}, scored ${this.runScoredCount} of ${total}.`;
+        return scoped
+          ? `Re-run stage 1 of 3 — Answering and grading. Answered ${this.runMeterAnswered} of ${this.runMeterTotal} re-run questions, scored ${this.runMeterScored} of ${this.runMeterTotal}.`
+          : `Stage 1 of 3 — Answering and grading. Answered ${this.runAnsweredCount} of ${total}, scored ${this.runScoredCount} of ${total}.`;
       case 'verifying':
         // The label names the pass the rail's stage 2 cannot, and carries a count so it moves
-        // during the minutes the answer rows are static.
+        // during the minutes the answer rows are static. runVerifiedCount is itself scoped to
+        // a re-run, so this needs no wording change under one.
         return `Stage 2 of 3 — Follow-up grading passes: verifying remaining claims. ${this.runVerifiedCount} claims verified so far.`;
       case 'secondopinion':
         return `Stage 2 of 3 — Follow-up grading passes: second-opinion sweep. ${this.runSecondOpinionCount} second opinions so far.`;
       case 'finalizing':
-        return `Stage 3 of 3 — Synthesis and scoring. All ${total} answers assessed.`;
+        return scoped
+          ? `Stage 3 of 3 — Synthesis and scoring. All ${this.runMeterTotal} re-run answers assessed.`
+          : `Stage 3 of 3 — Synthesis and scoring. All ${total} answers assessed.`;
       default: {
         const status = this.formatStatus(run.status);
         const label = status === 'CompletedWithErrors'
           ? 'Completed with errors'
           : (status === 'CompletedWithLimits' ? 'Completed with limits' : status);
+        if (scoped) {
+          const failed = this.runMeterFailed;
+          return failed > 0
+            ? `${label}. Re-run answered ${this.runMeterAnswered} of ${this.runMeterTotal}, ${failed} failed.`
+            : `${label}. Re-run answered ${this.runMeterAnswered} of ${this.runMeterTotal}.`;
+        }
         const failed = this.runFailedAnswerCount;
         return failed > 0
           ? `${label}. Answered ${this.runAnsweredCount} of ${total}, ${failed} failed.`
@@ -3298,6 +3316,40 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return this.activeRunDetail?.totalQuestionCount ?? 0;
   }
 
+  /**
+   * Progress-meter denominator: the whole suite normally, or just the re-run's scope while one
+   * is in effect — a re-run overwrites answer rows in place rather than adding any, so counting
+   * the meters against the whole suite read as instantly complete the moment the re-run started.
+   */
+  get runMeterTotal(): number {
+    return this.runHasRerunScope ? this.effectiveRerunScope.length : this.runTotalQuestionCount;
+  }
+
+  /** Answered count for the progress meter: the whole run, or only the re-run's own answers. */
+  get runMeterAnswered(): number {
+    if (!this.runHasRerunScope) return this.runAnsweredCount;
+    return this.activeRunDetail?.rerunAnsweredOrderIndexes?.length ?? 0;
+  }
+
+  /** Scored count for the progress meter: the whole run, or only the re-run's own answers. */
+  get runMeterScored(): number {
+    if (!this.runHasRerunScope) return this.runScoredCount;
+    return this.activeRunDetail?.rerunScoredOrderIndexes?.length ?? 0;
+  }
+
+  /**
+   * Failed count for the progress meter. Under a re-run scope a question only counts once the
+   * re-run has actually answered it again — a scope member still waiting its turn keeps the
+   * failure it already carries, and counting it here would fail it a second time before the
+   * re-run even touched it.
+   */
+  get runMeterFailed(): number {
+    if (!this.runHasRerunScope) return this.runFailedAnswerCount;
+    const scope = new Set(this.effectiveRerunScope);
+    const reAnswered = new Set(this.activeRunDetail?.rerunAnsweredOrderIndexes ?? []);
+    return this.runFailedAnswers.filter(a => scope.has(a.orderIndex) && reAnswered.has(a.orderIndex)).length;
+  }
+
   get runIsRunning(): boolean {
     return this.activeRunDetail != null && this.formatStatus(this.activeRunDetail.status) === 'Running';
   }
@@ -3363,7 +3415,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
         // A question inside a pending re-run's scope stops showing the failure it is about to
         // be re-run for; once the server reports Running the in-flight sets above take over.
-        if (this.rerunLaunchPending && this.rerunScopeOrderIndexes.includes(q.orderIndex)) {
+        if (this.rerunLaunchPending && this.effectiveRerunScope.includes(q.orderIndex)) {
           return {
             orderIndex: q.orderIndex,
             questionText: q.questionText,
@@ -3399,12 +3451,18 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   private rerunLaunchedAtMs: number | null = null;
   private static readonly RERUN_LAUNCH_GRACE_MS = 60_000;
 
+  /** Server-reported scope once the re-run is Running; the client-captured list during launch. */
+  get effectiveRerunScope(): number[] {
+    const server = this.activeRunDetail?.rerunScopeOrderIndexes ?? [];
+    return server.length > 0 ? server : this.rerunScopeOrderIndexes;
+  }
+
   get runHasRerunScope(): boolean {
-    return this.rerunScopeOrderIndexes.length > 0;
+    return this.effectiveRerunScope.length > 0;
   }
 
   isRerunScope(row: BenchmarkRunProgressRow): boolean {
-    return this.rerunScopeOrderIndexes.includes(row.orderIndex);
+    return this.effectiveRerunScope.includes(row.orderIndex);
   }
 
   /**
@@ -3417,6 +3475,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (row.status === 'Verifying') return 'Verifying';
     if (row.status === 'SecondOpinion') return 'Second opinion';
     if (row.status === 'ProviderError') return 'Provider Error';
+    if (row.status === 'Canceled') return 'Canceled';
     if (row.status !== 'Ok') return row.status;
     if (row.assessmentStatus === 'Scored') return 'Scored';
     if (row.assessmentStatus === 'Failed') return 'Assessment Failed';
@@ -3432,6 +3491,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (row.status === 'ProviderError') return 'status-providererror';
     if (row.status === 'Failed') return 'status-failed';
     if (row.status === 'Skipped') return 'status-skipped';
+    if (row.status === 'Canceled') return 'status-canceled';
     if (row.assessmentStatus === 'Scored') return 'status-scored';
     if (row.assessmentStatus === 'Failed') return 'status-failed';
     if (row.assessmentStatus === 'Assessing') return 'status-assessing';
@@ -3558,7 +3618,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       lines.push(`Verifying now: ${verifyingNow.length > 0 ? verifyingNow.map(i => `Q${i}`).join(', ') : 'none'}; second opinion now: ${secondOpinionNow.length > 0 ? secondOpinionNow.map(i => `Q${i}`).join(', ') : 'none'}`);
       lines.push(`Verified ${this.runVerifiedCount}, second-graded ${this.runSecondOpinionCount}`);
       if (this.runHasRerunScope) {
-        lines.push(`Failed-question re-run in progress over: ${this.rerunScopeOrderIndexes.map(i => `Q${i}`).join(', ')}`);
+        lines.push(`Failed-question re-run in progress over: ${this.effectiveRerunScope.map(i => `Q${i}`).join(', ')}`);
       }
       lines.push(`Re-run launch pending: ${this.rerunLaunchPending}`);
       if (this.runProgressQuestions.length > 0 && this.runProgressQuestionsSuiteId != null) {
@@ -4705,7 +4765,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   isAnswerFailed(ans: BenchmarkRunAnswerDto): boolean {
     const s = this.formatAnswerStatus(ans.status);
-    return s === 'ProviderError' || s === 'Failed' || s === 'Skipped' || s === 'EmptyAnswer';
+    return s === 'ProviderError' || s === 'Failed' || s === 'Skipped' || s === 'EmptyAnswer' || s === 'Canceled';
   }
 
   /**
@@ -5325,6 +5385,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     if (status === 3 || status === 'Failed') return 'Failed';
     if (status === 4 || status === 'Skipped') return 'Skipped';
     if (status === 5 || status === 'EmptyAnswer') return 'EmptyAnswer';
+    if (status === 6 || status === 'Canceled') return 'Canceled';
     return String(status);
   }
 

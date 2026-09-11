@@ -930,6 +930,19 @@ export interface BenchmarkRunDetailDto {
   inFlightOrderIndexes?: number[];
 
   /**
+   * Order indexes the current failed-question re-run is scoped to. Same contract as
+   * inFlightOrderIndexes: empty unless this process is executing a re-run right now.
+   */
+  rerunScopeOrderIndexes?: number[];
+
+  /**
+   * Order indexes the current re-run has produced an answer or a score for. Same contract as
+   * inFlightOrderIndexes: empty unless this process is executing a re-run right now.
+   */
+  rerunAnsweredOrderIndexes?: number[];
+  rerunScoredOrderIndexes?: number[];
+
+  /**
    * Which run-level stage is executing — 'Answering', 'Verifying', 'SecondOpinion',
    * 'Synthesizing' or 'Terminal'. Absent for any run this process is not executing, including
    * a run whose process restarted mid-run; the client then derives a stage from the answer rows.

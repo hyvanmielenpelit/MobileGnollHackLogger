@@ -22,7 +22,8 @@ public static class BenchmarkRunFinalizer
     /// </summary>
     public static bool HasUnresolvedWork(BenchmarkRunAnswer answer)
     {
-        return answer.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed or BenchmarkAnswerStatus.EmptyAnswer
+        return answer.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed
+                or BenchmarkAnswerStatus.Canceled or BenchmarkAnswerStatus.EmptyAnswer
             || answer.AssessmentStatus is BenchmarkAssessmentStatus.Failed or BenchmarkAssessmentStatus.Pending or BenchmarkAssessmentStatus.Assessing;
     }
 
@@ -115,13 +116,14 @@ public static class BenchmarkRunFinalizer
         => Math.Round(value, 1, MidpointRounding.AwayFromZero);
 
     /// <summary>
-    /// The answer never completed: the provider failed the request, or the harness caught a throw.
-    /// Neither leaves text to grade, so both belong outside the clean count. There is no
-    /// <c>Ok</c>-status path into this predicate, which is why it is safe ahead of every other
-    /// bucket check.
+    /// The answer never completed: the provider failed the request, the harness caught a throw, or
+    /// the operator canceled the run mid-answer. None leaves text to grade, so all three belong
+    /// outside the clean count. There is no <c>Ok</c>-status path into this predicate, which is why
+    /// it is safe ahead of every other bucket check.
     /// </summary>
     public static bool HasTerminalFailure(BenchmarkRunAnswer answer)
-        => answer.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed;
+        => answer.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed
+            or BenchmarkAnswerStatus.Canceled;
 
     /// <summary>
     /// Whether a failed-question re-run re-executes this answer: the provider failed the request,
@@ -190,8 +192,8 @@ public static class BenchmarkRunFinalizer
     /// clean + transport defects + recovered + harness limits + unanswered equal to the question
     /// count.
     ///
-    /// A <see cref="HasTerminalFailure"/> answer — <c>ProviderError</c> or <c>Failed</c> — takes the
-    /// transport-defect bucket ahead of every other class, through
+    /// A <see cref="HasTerminalFailure"/> answer — <c>ProviderError</c>, <c>Failed</c> or
+    /// <c>Canceled</c> — takes the transport-defect bucket ahead of every other class, through
     /// <see cref="HasTransportDefect"/>. No index, no dimensional score and no run status depends on
     /// the bucket, so this precedence carries no <c>ScoringMethodVersion</c> movement; what it
     /// changes is the clean count and the provider-error count, which is a

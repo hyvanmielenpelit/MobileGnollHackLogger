@@ -2705,6 +2705,61 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.runDiagnosticsText).toContain('Gradeable answers (index population): 2 of 4');
     });
 
+    it('should read the rerun meters against the client-captured scope before any re-run answer lands', () => {
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running',
+        stage: 'Answering',
+        totalQuestionCount: 18,
+        answers: Array.from({ length: 18 }, (_, i) => buildScoredAnswer(i + 1)),
+        rerunAnsweredOrderIndexes: [],
+        rerunScoredOrderIndexes: []
+      });
+      component.rerunScopeOrderIndexes = [4, 9];
+
+      expect(component.effectiveRerunScope).toEqual([4, 9]);
+      expect(component.runMeterTotal).toBe(2);
+      expect(component.runMeterAnswered).toBe(0);
+      expect(component.runMeterScored).toBe(0);
+      expect(component.runStageLabel).toContain('Answered 0 of 2 re-run questions');
+    });
+
+    it('should read the rerun meters as re-run answers land inside the scope', () => {
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running',
+        stage: 'Answering',
+        totalQuestionCount: 18,
+        answers: Array.from({ length: 18 }, (_, i) => buildScoredAnswer(i + 1)),
+        rerunAnsweredOrderIndexes: [4],
+        rerunScoredOrderIndexes: [4]
+      });
+      component.rerunScopeOrderIndexes = [4, 9];
+
+      expect(component.runMeterTotal).toBe(2);
+      expect(component.runMeterAnswered).toBe(1);
+      expect(component.runMeterScored).toBe(1);
+      expect(component.runStageLabel).toContain('Answered 1 of 2 re-run questions');
+    });
+
+    it('should prefer the server-reported rerun scope over an empty client-captured one', () => {
+      component.activeRunDetail = buildCompletedRun({
+        rerunScopeOrderIndexes: [3, 7, 11]
+      });
+      component.rerunScopeOrderIndexes = [];
+
+      expect(component.effectiveRerunScope).toEqual([3, 7, 11]);
+    });
+
+    it('should chip a Canceled row with the Canceled label and class', () => {
+      const row = { orderIndex: 5, questionText: 'Q5', status: 'Canceled', assessmentStatus: '', errorMessage: null };
+
+      expect(component.runRowChipLabel(row)).toBe('Canceled');
+      expect(component.runRowChipClass(row)).toBe('status-canceled');
+    });
+
+    it('should format answer status 6 as Canceled', () => {
+      expect(component.formatAnswerStatus(6)).toBe('Canceled');
+    });
+
     it('should reject a speed difficulty scaling outside 0.0 to 5.0 before calling the server', () => {
       component.editingProfileId = null;
       component.profileForm = { ...component.profileForm, name: 'Scaled Profile', speedDifficultyScaling: 5.5 };

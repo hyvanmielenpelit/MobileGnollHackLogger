@@ -66,6 +66,14 @@ public static class BenchmarkProviderErrorClassifier
         var chain = Unwrap(exception).ToList();
         string message = !string.IsNullOrWhiteSpace(errorMessage) ? errorMessage!.Trim() : exception.Message;
 
+        // A caller cancel is checked ahead of every transport rule: tearing the provider stream down
+        // raises an IOException or SocketException around the cancellation, and those rules would
+        // otherwise claim the chain before the intent behind it is considered.
+        if (callerCanceled && chain.OfType<OperationCanceledException>().Any())
+        {
+            return new ProviderErrorClassification(false, null, message);
+        }
+
         // Each rule scans the whole chain before the next is tried, so the most specific transport
         // evidence wins over the HttpRequestException that usually wraps it.
         var socket = chain.OfType<SocketException>().FirstOrDefault(e => TransportSocketErrors.Contains(e.SocketErrorCode));
@@ -74,7 +82,7 @@ public static class BenchmarkProviderErrorClassifier
             return new ProviderErrorClassification(true, socket.SocketErrorCode == SocketError.TimedOut ? 408 : 503, message);
         }
 
-        if (!callerCanceled && chain.OfType<OperationCanceledException>().Any())
+        if (chain.OfType<OperationCanceledException>().Any())
         {
             return new ProviderErrorClassification(true, 408, message);
         }

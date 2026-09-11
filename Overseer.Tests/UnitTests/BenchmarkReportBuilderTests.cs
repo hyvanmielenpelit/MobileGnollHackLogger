@@ -3016,4 +3016,33 @@ public class BenchmarkReportBuilderTests
         Assert.DoesNotContain("Failed (HTTP ", report);
         Assert.DoesNotContain("Failed (HTTP):", report);
     }
+
+    [Fact]
+    public void BuildMarkdownReport_IssuesSection_ListsACanceledAnswer_WithNoHttpSuffix_AndExcludesItFromScoring()
+    {
+        var ok = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90);
+        var canceled = TerminalFailureAnswer(
+            2, BenchmarkAnswerStatus.Canceled, null, "Canceled by the operator before the answer completed.");
+
+        var run = new BenchmarkRun
+        {
+            Id = 64,
+            SuiteName = "Canceled Answer Suite",
+            TestedModelDisplayNameUsed = "Model X",
+            AssessorModelDisplayNameUsed = "Assessor Y",
+            Status = BenchmarkRunStatus.CompletedWithErrors,
+            StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            CompletedAtUtc = DateTime.UtcNow,
+            HarnessVersion = "21",
+            TotalQuestionCount = 2,
+            Answers = new List<BenchmarkRunAnswer> { ok, canceled }
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("Canceled: Canceled by the operator before the answer completed.", report);
+        // Unlike Provider error and Failed, the Canceled line never carries an HTTP suffix.
+        Assert.DoesNotContain("Canceled (HTTP", report);
+        Assert.Contains("*(Note: Excluded from scoring)*", report);
+    }
 }

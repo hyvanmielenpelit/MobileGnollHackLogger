@@ -251,4 +251,62 @@ public class BenchmarkProviderErrorClassifierTests
         Assert.True(result.IsProviderError);
         Assert.Equal(429, result.HttpStatus);
     }
+
+    // --- Caller-cancel precedence over the transport rules (harness version 21) ---
+
+    [Fact]
+    public void Classify_Typed_IOExceptionWrappingOperationCanceled_CallerCanceled_IsNotAProviderError()
+    {
+        var inner = new OperationCanceledException("The operation was canceled.");
+        var ex = new IOException("The pipe has been ended.", inner);
+
+        var result = BenchmarkProviderErrorClassifier.Classify(ex, null, true);
+
+        Assert.False(result.IsProviderError);
+        Assert.Null(result.HttpStatus);
+    }
+
+    [Fact]
+    public void Classify_Typed_SocketExceptionUnderHttpRequestUnderOperationCanceled_CallerCanceled_IsNotAProviderError()
+    {
+        var socket = new SocketException((int)SocketError.ConnectionAborted);
+        var http = new HttpRequestException("The request failed.", socket);
+        var ex = new OperationCanceledException("The operation was canceled.", http);
+
+        var result = BenchmarkProviderErrorClassifier.Classify(ex, null, true);
+
+        Assert.False(result.IsProviderError);
+        Assert.Null(result.HttpStatus);
+    }
+
+    [Fact]
+    public void Classify_Typed_IOExceptionWrappingOperationCanceled_NotCallerCanceled_KeepsItsPriorClassification()
+    {
+        // Without callerCanceled, this chain is unchanged from before the caller-cancel rule
+        // existed: the OperationCanceledException rule runs ahead of the IOException rule
+        // regardless of which exception wraps which, so this chain classifies as a 408 timeout,
+        // not the 502 a bare IOException alone would produce.
+        var inner = new OperationCanceledException("The operation was canceled.");
+        var ex = new IOException("The pipe has been ended.", inner);
+
+        var result = BenchmarkProviderErrorClassifier.Classify(ex, null, false);
+
+        Assert.True(result.IsProviderError);
+        Assert.Equal(408, result.HttpStatus);
+    }
+
+    [Fact]
+    public void Classify_Typed_SocketExceptionUnderHttpRequestUnderOperationCanceled_NotCallerCanceled_Returns503()
+    {
+        // The socket rule is checked first and wins regardless of the OperationCanceledException
+        // elsewhere in the chain: the more specific transport evidence takes precedence.
+        var socket = new SocketException((int)SocketError.ConnectionAborted);
+        var http = new HttpRequestException("The request failed.", socket);
+        var ex = new OperationCanceledException("The operation was canceled.", http);
+
+        var result = BenchmarkProviderErrorClassifier.Classify(ex, null, false);
+
+        Assert.True(result.IsProviderError);
+        Assert.Equal(503, result.HttpStatus);
+    }
 }

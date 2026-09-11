@@ -2391,6 +2391,10 @@ public static class BenchmarkReportBuilder
             {
                 sb.AppendLine($"**Provider Error:** {a.ErrorMessage}");
             }
+            else if (a.Status == BenchmarkAnswerStatus.Canceled)
+            {
+                sb.AppendLine($"**Canceled:** {a.ErrorMessage}");
+            }
             else if (a.Status == BenchmarkAnswerStatus.EmptyAnswer)
             {
                 // A finish reason that means a normal stop is the model failing to answer; anything else,
@@ -2614,7 +2618,8 @@ public static class BenchmarkReportBuilder
         sb.AppendLine("## 5. Issues");
         sb.AppendLine();
         var issueAnswers = answers.Where(a =>
-            a.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed or BenchmarkAnswerStatus.EmptyAnswer
+            a.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed
+                or BenchmarkAnswerStatus.Canceled or BenchmarkAnswerStatus.EmptyAnswer
             || a.ToolBudgetExhausted
             || a.AnswerFlags != 0).ToList();
 
@@ -2642,6 +2647,7 @@ public static class BenchmarkReportBuilder
                 string httpSuffix = ia.HttpStatusCode.HasValue ? $" (HTTP {ia.HttpStatusCode.Value})" : string.Empty;
                 if (ia.Status == BenchmarkAnswerStatus.ProviderError) flagDescriptions.Add($"Provider error{httpSuffix}: {ia.ErrorMessage}");
                 if (ia.Status == BenchmarkAnswerStatus.Failed) flagDescriptions.Add($"Failed{httpSuffix}: {ia.ErrorMessage}");
+                if (ia.Status == BenchmarkAnswerStatus.Canceled) flagDescriptions.Add($"Canceled: {ia.ErrorMessage}");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.HarnessArtifacts))
                 {
                     flagDescriptions.Add($"Transport artifacts removed before grading ({ia.ScrubbedArtifactCount} block(s)) — recovered, and graded normally; a provider-path defect, not a damaged answer");
@@ -2690,7 +2696,8 @@ public static class BenchmarkReportBuilder
                 {
                     note = " *(Scored 0: no answer produced)*";
                 }
-                else if (ia.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed or BenchmarkAnswerStatus.EmptyAnswer)
+                else if (ia.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed
+                    or BenchmarkAnswerStatus.Canceled or BenchmarkAnswerStatus.EmptyAnswer)
                 {
                     note = " *(Note: Excluded from scoring)*";
                 }

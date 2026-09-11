@@ -56,6 +56,19 @@ public class BenchmarkRunState
 
     /// <summary>Order indexes currently with the second-opinion assessor.</summary>
     public ConcurrentDictionary<int, byte> InFlightSecondOpinion { get; } = new();
+
+    /// <summary>
+    /// Order indexes a failed-question or single-question re-run is repairing; empty for a first run.
+    /// A re-run overwrites answer rows in place and adds none, so the suite totals say nothing about
+    /// its progress and the client scopes its meters to this set instead.
+    /// </summary>
+    public IReadOnlyList<int> RerunScopeOrderIndexes { get; set; } = Array.Empty<int>();
+
+    /// <summary>Scope members whose re-executed answer row has been saved.</summary>
+    public ConcurrentDictionary<int, byte> RerunAnswered { get; } = new();
+
+    /// <summary>Scope members whose per-question assessment has returned, scored or failed.</summary>
+    public ConcurrentDictionary<int, byte> RerunScored { get; } = new();
 }
 
 public class BenchmarkRunManager
@@ -251,6 +264,66 @@ public class BenchmarkRunManager
         return state == null
             ? Array.Empty<int>()
             : state.InFlightSecondOpinion.Keys.OrderBy(i => i).ToList();
+    }
+
+    /// <summary>
+    /// Records which order indexes this re-run is repairing. Ignored when the run is not the
+    /// current, still-running one, on the same discipline as <see cref="MarkQuestionInFlight"/>.
+    /// </summary>
+    public void SetRerunScope(long runId, IEnumerable<int> orderIndexes)
+    {
+        var state = TryGetRunning(runId);
+        if (state != null)
+        {
+            state.RerunScopeOrderIndexes = orderIndexes.Distinct().OrderBy(i => i).ToList();
+        }
+    }
+
+    /// <summary>Records that a scope member's re-executed answer row has been saved.</summary>
+    public void MarkRerunAnswered(long runId, int orderIndex)
+    {
+        var state = TryGetRunning(runId);
+        state?.RerunAnswered.TryAdd(orderIndex, 0);
+    }
+
+    /// <summary>Records that a scope member's per-question assessment has returned.</summary>
+    public void MarkRerunScored(long runId, int orderIndex)
+    {
+        var state = TryGetRunning(runId);
+        state?.RerunScored.TryAdd(orderIndex, 0);
+    }
+
+    /// <summary>
+    /// The order indexes this run's re-run is repairing, ascending. Read through
+    /// <see cref="TryGet"/> rather than <see cref="TryGetRunning"/>, so a finished re-run still
+    /// reports the scope it covered instead of the progress meters snapping back to suite totals.
+    /// A new run replaces the state, which is what drops the previous run's scope.
+    /// </summary>
+    public IReadOnlyList<int> GetRerunScope(long runId)
+    {
+        var state = TryGet(runId);
+        return state == null
+            ? Array.Empty<int>()
+            : state.RerunScopeOrderIndexes.OrderBy(i => i).ToList();
+    }
+
+    /// <summary>The scope members already re-answered, ascending. Same contract as
+    /// <see cref="GetRerunScope"/>.</summary>
+    public IReadOnlyList<int> GetRerunAnswered(long runId)
+    {
+        var state = TryGet(runId);
+        return state == null
+            ? Array.Empty<int>()
+            : state.RerunAnswered.Keys.OrderBy(i => i).ToList();
+    }
+
+    /// <summary>The scope members already re-assessed, ascending.</summary>
+    public IReadOnlyList<int> GetRerunScored(long runId)
+    {
+        var state = TryGet(runId);
+        return state == null
+            ? Array.Empty<int>()
+            : state.RerunScored.Keys.OrderBy(i => i).ToList();
     }
 
     private BenchmarkRunState? TryGetRunning(long runId)

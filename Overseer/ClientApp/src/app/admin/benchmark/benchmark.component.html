@@ -1363,17 +1363,21 @@
     <div class="dialog-content flex-col">
       <div class="dialog-header">
         <div class="dialog-title-group">
-          <h3>Run #{{ selectedRunDetail.id }}: {{ selectedRunDetail.suiteName }}</h3>
-          <span class="status-badge" [class]="statusBadgeClass(selectedRunDetail.status)">
-            {{ formatStatusLabel(selectedRunDetail.status) }}
-          </span>
-          @if (answerShortfallOf(selectedRunDetail); as progress) {
-            <span class="badge-progress-count"
-                  [attr.interestfor]="'tip-dialog-progress-' + selectedRunDetail.id"
-                  [attr.style]="'anchor-name: --tip-dialog-progress-' + selectedRunDetail.id">{{ progress.answered }} / {{ progress.total }}</span>
-            <div popover="hint" class="gh-tooltip" [id]="'tip-dialog-progress-' + selectedRunDetail.id"
-                 [attr.style]="'position-anchor: --tip-dialog-progress-' + selectedRunDetail.id">{{ progress.answered }} of {{ progress.total }} questions answered; the rest score 0</div>
-          }
+          <div class="dialog-title-row">
+            <h3>Run #{{ selectedRunDetail.id }}: {{ selectedRunDetail.suiteName }}</h3>
+            <div class="dialog-title-badges">
+              <span class="status-badge" [class]="statusBadgeClass(selectedRunDetail.status)">
+                {{ formatStatusLabel(selectedRunDetail.status) }}
+              </span>
+              @if (answerShortfallOf(selectedRunDetail); as progress) {
+                <span class="badge-progress-count"
+                      [attr.interestfor]="'tip-dialog-progress-' + selectedRunDetail.id"
+                      [attr.style]="'anchor-name: --tip-dialog-progress-' + selectedRunDetail.id">{{ progress.answered }} / {{ progress.total }}</span>
+                <div popover="hint" class="gh-tooltip" [id]="'tip-dialog-progress-' + selectedRunDetail.id"
+                     [attr.style]="'position-anchor: --tip-dialog-progress-' + selectedRunDetail.id">{{ progress.answered }} of {{ progress.total }} questions answered; the rest score 0</div>
+              }
+            </div>
+          </div>
           <p class="dialog-subtitle">
             Model: <strong>{{ selectedRunDetail.testedModelDisplayNameUsed }}</strong> |
             Assessor: <strong>{{ selectedRunDetail.assessorModelDisplayNameUsed }}</strong> |
@@ -3500,17 +3504,17 @@
 
       @if (runHasRerunScope) {
         <p class="rerun-scope-badge">
-          Re-running {{ rerunScopeOrderIndexes.length }} failed
-          {{ rerunScopeOrderIndexes.length === 1 ? 'question' : 'questions' }}. Every question of
+          Re-running {{ effectiveRerunScope.length }} failed
+          {{ effectiveRerunScope.length === 1 ? 'question' : 'questions' }}. Every question of
           the suite is listed below; the ones being re-run are marked.
         </p>
       }
 
       <div class="job-progress-block">
         <label class="progress-label" for="runAnswersProgressBar">Answers</label>
-        @if (runTotalQuestionCount > 0) {
+        @if (runMeterTotal > 0) {
           <progress id="runAnswersProgressBar" class="job-progress"
-                    [value]="runAnsweredCount" [max]="runTotalQuestionCount"></progress>
+                    [value]="runMeterAnswered" [max]="runMeterTotal"></progress>
         } @else {
           <progress id="runAnswersProgressBar" class="job-progress"></progress>
         }
@@ -3518,9 +3522,9 @@
 
       <div class="job-progress-block">
         <label class="progress-label" for="runAssessmentsProgressBar">Assessments</label>
-        @if (runTotalQuestionCount > 0) {
+        @if (runMeterTotal > 0) {
           <progress id="runAssessmentsProgressBar" class="job-progress"
-                    [value]="runScoredCount" [max]="runTotalQuestionCount"></progress>
+                    [value]="runMeterScored" [max]="runMeterTotal"></progress>
         } @else {
           <progress id="runAssessmentsProgressBar" class="job-progress"></progress>
         }
@@ -3600,10 +3604,10 @@
         }
       </ul>
 
-      @if (!rerunLaunchPending && (runFailedAnswerCount > 0 || (runIsTerminal && activeRunDetail?.errorMessage))) {
+      @if (!rerunLaunchPending && (runMeterFailed > 0 || (runIsTerminal && activeRunDetail?.errorMessage))) {
         <div class="alert alert-danger mt-15" role="alert">
-          @if (runFailedAnswerCount > 0) {
-            {{ runFailedAnswerCount }} question(s) failed during this run.
+          @if (runMeterFailed > 0) {
+            {{ runMeterFailed }} question(s) failed during this run.
           }
           @if (activeRunDetail?.errorMessage) {
             {{ activeRunDetail?.errorMessage }}
