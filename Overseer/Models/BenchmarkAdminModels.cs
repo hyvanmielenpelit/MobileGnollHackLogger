@@ -576,6 +576,14 @@ public class BenchmarkToolCallDto
 public class BenchmarkRunDetailDto
 {
     public long Id { get; set; }
+
+    /// <summary>
+    /// The run stopped before finishing its suite, so re-scoring and every re-run are refused.
+    /// <see cref="Overseer.Services.Benchmarking.BenchmarkRunFinalizer.IsAbortedRun(MobileGnollHackLogger.Data.BenchmarkRunStatus, int, int)"/>
+    /// decides it; the client reads this flag rather than reimplementing the test on the status.
+    /// </summary>
+    public bool IsAborted { get; set; }
+
     public long? BenchmarkSuiteId { get; set; }
     public string SuiteName { get; set; } = string.Empty;
     public long? TestedModelConfigurationId { get; set; }
@@ -1122,6 +1130,14 @@ public class BenchmarkCoverageReportDto
 public class BenchmarkRunSummaryDto
 {
     public long Id { get; set; }
+
+    /// <summary>
+    /// The run stopped before finishing its suite, so re-scoring and every re-run are refused.
+    /// <see cref="Overseer.Services.Benchmarking.BenchmarkRunFinalizer.IsAbortedRun(MobileGnollHackLogger.Data.BenchmarkRunStatus, int, int)"/>
+    /// decides it; the client reads this flag rather than reimplementing the test on the status.
+    /// </summary>
+    public bool IsAborted { get; set; }
+
     public long? BenchmarkSuiteId { get; set; }
     public string SuiteName { get; set; } = string.Empty;
     public long? TestedModelConfigurationId { get; set; }

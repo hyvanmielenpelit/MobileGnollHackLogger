@@ -329,4 +329,195 @@ public class BenchmarkRerunStatusTests
         Assert.Equal(fixedCompletedAt, reloaded.CompletedAtUtc);
         Assert.Null(runManager.CurrentRunId);
     }
+
+    // -----------------------------------------------------------------------
+    // Cancelling a retry must not lock the run out of later re-runs.
+    //
+    // A retry never removes an answer row, so a run whose suite was complete before the retry is
+    // still complete after the cancel. Writing Canceled there made every re-run gate refuse it --
+    // run #37 (2026-09-11) reached exactly that state. The handlers now restore the status the
+    // answers describe, and the gates test answer-row coverage rather than the status alone.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task RunFailedQuestionsAsync_RestoresTerminalStatus_WhenCanceled()
+    {
+        string dbName = Guid.NewGuid().ToString();
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: dbName)
+            .Options;
+        var config = BenchmarkComplianceGuardTests.CreateConfig(maxRunsPerHour: 10);
+        var (service, runManager) = CreateTestBenchmarkService(dbOptions, config);
+
+        using var seedDb = new ApplicationDbContext(dbOptions);
+        var (suite, modelA, _, modelC) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(seedDb);
+
+        var run = BuildSeedRun(suite, modelA, modelC);
+        run.Status = BenchmarkRunStatus.Running; // as the controller leaves it before Task.Run
+        run.TotalQuestionCount = 1;
+        run.Answers.Add(new BenchmarkRunAnswer
+        {
+            QuestionText = "Q1",
+            AnswerText = "A1",
+            Status = BenchmarkAnswerStatus.ProviderError,
+            OrderIndex = 1
+        });
+        seedDb.BenchmarkRuns.Add(run);
+        await seedDb.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(runManager.TryStart(run.Id, new CancellationTokenSource(), out _));
+
+        await service.RunFailedQuestionsAsync(run.Id, new CancellationToken(canceled: true));
+
+        using var freshDb = new ApplicationDbContext(dbOptions);
+        var reloaded = await freshDb.BenchmarkRuns.FindAsync(new object[] { run.Id }, TestContext.Current.CancellationToken);
+        Assert.NotNull(reloaded);
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, reloaded!.Status);
+        Assert.Equal("Failed-question re-run canceled.", reloaded.ErrorMessage);
+        Assert.NotNull(reloaded.RerunCompletedAtUtc);
+        Assert.Null(runManager.CurrentRunId);
+    }
+
+    [Fact]
+    public async Task RetryFailedAssessmentsAsync_RestoresTerminalStatus_WhenCanceled()
+    {
+        string dbName = Guid.NewGuid().ToString();
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: dbName)
+            .Options;
+        var config = BenchmarkComplianceGuardTests.CreateConfig(maxRunsPerHour: 10);
+        var (service, runManager) = CreateTestBenchmarkService(dbOptions, config);
+
+        using var seedDb = new ApplicationDbContext(dbOptions);
+        var (suite, modelA, _, modelC) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(seedDb);
+
+        var run = BuildSeedRun(suite, modelA, modelC);
+        run.Status = BenchmarkRunStatus.Running;
+        run.TotalQuestionCount = 1;
+        run.Answers.Add(new BenchmarkRunAnswer
+        {
+            QuestionText = "Q1",
+            AnswerText = "A1",
+            Status = BenchmarkAnswerStatus.Ok,
+            AssessmentStatus = BenchmarkAssessmentStatus.Failed,
+            OrderIndex = 1
+        });
+        seedDb.BenchmarkRuns.Add(run);
+        await seedDb.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(runManager.TryStart(run.Id, new CancellationTokenSource(), out _));
+
+        await service.RetryFailedAssessmentsAsync(run.Id, null, new CancellationToken(canceled: true));
+
+        using var freshDb = new ApplicationDbContext(dbOptions);
+        var reloaded = await freshDb.BenchmarkRuns.FindAsync(new object[] { run.Id }, TestContext.Current.CancellationToken);
+        Assert.NotNull(reloaded);
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, reloaded!.Status);
+        Assert.Equal("Assessment retry canceled.", reloaded.ErrorMessage);
+        Assert.Null(runManager.CurrentRunId);
+    }
+
+    [Fact]
+    public async Task RerunFailedQuestions_AcceptsCanceledRun_WhoseAnswersCoverTheSuite()
+    {
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, modelA, _, modelC) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+
+        var run = BuildSeedRun(suite, modelA, modelC);
+        run.Status = BenchmarkRunStatus.Canceled;
+        run.TotalQuestionCount = 1;
+        run.Answers.Add(new BenchmarkRunAnswer
+        {
+            QuestionText = "Q1",
+            AnswerText = "A1",
+            Status = BenchmarkAnswerStatus.ProviderError,
+            OrderIndex = 1
+        });
+        db.BenchmarkRuns.Add(run);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await controller.RerunFailedQuestions(run.Id);
+
+        Assert.IsType<AcceptedResult>(result);
+        Assert.Equal(BenchmarkRunStatus.Running, run.Status);
+    }
+
+    [Fact]
+    public async Task RerunFailedQuestions_RefusesCanceledRun_WithMissingAnswers()
+    {
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, modelA, _, modelC) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+
+        var run = BuildSeedRun(suite, modelA, modelC);
+        run.Status = BenchmarkRunStatus.Canceled;
+        run.TotalQuestionCount = 2;
+        run.Answers.Add(new BenchmarkRunAnswer
+        {
+            QuestionText = "Q1",
+            AnswerText = "A1",
+            Status = BenchmarkAnswerStatus.ProviderError,
+            OrderIndex = 1
+        });
+        db.BenchmarkRuns.Add(run);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await controller.RerunFailedQuestions(run.Id);
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal(BenchmarkService.AbortedRunRefusal, badRequest.Value);
+        Assert.Equal(BenchmarkRunStatus.Canceled, run.Status);
+    }
+
+    [Fact]
+    public async Task CancelRun_OrphanedRetryWithFullCoverage_RestoresAnswerDerivedStatus()
+    {
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, modelA, _, modelC) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+
+        var run = BuildSeedRun(suite, modelA, modelC);
+        run.Status = BenchmarkRunStatus.Running;
+        run.TotalQuestionCount = 1;
+        run.Answers.Add(new BenchmarkRunAnswer
+        {
+            QuestionText = "Q1",
+            AnswerText = "A1",
+            Status = BenchmarkAnswerStatus.ProviderError,
+            OrderIndex = 1
+        });
+        db.BenchmarkRuns.Add(run);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await controller.CancelRun(run.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        Assert.True((bool)ok.Value!.GetType().GetProperty("success")!.GetValue(ok.Value)!);
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, run.Status);
+        Assert.Equal("Canceled by operator.", run.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task CancelRun_OrphanedRunWithPartialCoverage_StaysCanceled()
+    {
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, modelA, _, modelC) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+
+        var run = BuildSeedRun(suite, modelA, modelC);
+        run.Status = BenchmarkRunStatus.Running;
+        run.TotalQuestionCount = 2;
+        run.Answers.Add(new BenchmarkRunAnswer
+        {
+            QuestionText = "Q1",
+            AnswerText = "A1",
+            Status = BenchmarkAnswerStatus.ProviderError,
+            OrderIndex = 1
+        });
+        db.BenchmarkRuns.Add(run);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = await controller.CancelRun(run.Id);
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(BenchmarkRunStatus.Canceled, run.Status);
+        Assert.True(run.TotalDurationMs > 0);
+    }
 }

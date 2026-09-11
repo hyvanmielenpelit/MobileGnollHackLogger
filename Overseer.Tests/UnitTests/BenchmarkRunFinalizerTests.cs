@@ -1150,4 +1150,55 @@ public class BenchmarkRunFinalizerTests
 
         Assert.Null(run.ContestedAccuracyDeductionAnswerCount);
     }
+
+    // -----------------------------------------------------------------------
+    // IsAbortedRun: "stopped before finishing its suite" is answer-row coverage, not the status
+    // alone. A cancelled retry of a finished run, and a run cancelled during its grading stages,
+    // both leave every answer row in place and are re-runnable.
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void IsAbortedRun_CanceledWithFullAnswerCoverage_IsNotAborted()
+    {
+        Assert.False(BenchmarkRunFinalizer.IsAbortedRun(BenchmarkRunStatus.Canceled, 18, 18));
+    }
+
+    [Fact]
+    public void IsAbortedRun_CanceledWithPartialCoverage_IsAborted()
+    {
+        Assert.True(BenchmarkRunFinalizer.IsAbortedRun(BenchmarkRunStatus.Canceled, 18, 7));
+    }
+
+    [Fact]
+    public void IsAbortedRun_FailedWithUnknownTotal_IsAborted()
+    {
+        // TotalQuestionCount 0 means the count was never recorded. "Not covered" is the safe
+        // reading: such a row stays refused exactly as it was before the coverage test existed.
+        Assert.True(BenchmarkRunFinalizer.IsAbortedRun(BenchmarkRunStatus.Failed, 0, 18));
+    }
+
+    [Fact]
+    public void IsAbortedRun_CompletedWithErrors_IsNeverAborted()
+    {
+        Assert.False(BenchmarkRunFinalizer.IsAbortedRun(BenchmarkRunStatus.CompletedWithErrors, 18, 18));
+        Assert.False(BenchmarkRunFinalizer.IsAbortedRun(BenchmarkRunStatus.CompletedWithErrors, 18, 3));
+    }
+
+    [Fact]
+    public void IsAbortedRun_ReadsTheAnswerRowCount_NotTheAnsweredQuestionCount()
+    {
+        // All 18 rows exist; 17 of them failed at the provider. The run covers its suite.
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 18, Status = BenchmarkRunStatus.Canceled };
+        var answers = new List<BenchmarkRunAnswer>();
+        for (int i = 1; i <= 18; i++)
+        {
+            answers.Add(new BenchmarkRunAnswer
+            {
+                OrderIndex = i,
+                Status = i == 1 ? BenchmarkAnswerStatus.Ok : BenchmarkAnswerStatus.ProviderError
+            });
+        }
+
+        Assert.False(BenchmarkRunFinalizer.IsAbortedRun(run, answers));
+    }
 }

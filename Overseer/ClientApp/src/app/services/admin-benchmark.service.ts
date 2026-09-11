@@ -684,6 +684,8 @@ export interface BenchmarkRunAnswerDto {
 
 export interface BenchmarkRunDetailDto {
   id: number;
+  /** The run stopped before finishing its suite. Decided by the server (BenchmarkRunFinalizer.IsAbortedRun). */
+  isAborted?: boolean;
   benchmarkSuiteId?: number | null;
   suiteName: string;
   testedModelConfigurationId?: number | null;
@@ -1116,6 +1118,8 @@ export interface BenchmarkCoverageReportDto {
 
 export interface BenchmarkRunSummaryDto {
   id: number;
+  /** The run stopped before finishing its suite. Decided by the server (BenchmarkRunFinalizer.IsAbortedRun). */
+  isAborted?: boolean;
   benchmarkSuiteId?: number | null;
   suiteName: string;
   testedModelConfigurationId?: number | null;

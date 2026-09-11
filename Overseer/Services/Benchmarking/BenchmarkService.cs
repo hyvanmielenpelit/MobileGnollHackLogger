@@ -559,10 +559,14 @@ public class BenchmarkService
     /// Re-executes the answers a run failed on, in place, and re-runs every run-level grading stage
     /// over the whole run.
     ///
-    /// It carries the same two terminal handlers as <see cref="ExecuteRunAsync"/> and for the same
-    /// reason: without them a throw escaped the method with the row still reading <c>Running</c> and
-    /// no owner in <see cref="BenchmarkRunManager"/>, which is a state nothing in the UI can leave.
-    /// Both open their own scope, because the one above may be gone by the time they run.
+    /// It carries two terminal handlers for the same reason <see cref="ExecuteRunAsync"/> does:
+    /// without them a throw escaped the method with the row still reading <c>Running</c> and no
+    /// owner in <see cref="BenchmarkRunManager"/>, which is a state nothing in the UI can leave.
+    /// Both open their own scope, because the one above may be gone by the time they run. Unlike
+    /// <see cref="ExecuteRunAsync"/>, the cancellation handler restores the status the answers
+    /// describe rather than writing <c>Canceled</c>: a retry never removes an answer row, so the
+    /// suite is as complete after the cancel as it was before it, and <c>Canceled</c> would make
+    /// every later re-run refuse the run.
     /// </summary>
     public async Task RunFailedQuestionsAsync(long runId, CancellationToken cancellationToken)
     {
@@ -570,6 +574,8 @@ public class BenchmarkService
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var configService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
@@ -709,13 +715,9 @@ public class BenchmarkService
             var run = await db.BenchmarkRuns.FindAsync(runId);
             if (run != null)
             {
-                run.Status = BenchmarkRunStatus.Canceled;
-                run.ErrorMessage = "Failed-question re-run canceled.";
                 rerunStopwatch.Stop();
                 run.RerunCompletedAtUtc = DateTime.UtcNow;
-                run.CompletedAtUtc ??= DateTime.UtcNow;
-                await ApplyAbortedTotalsAsync(db, run, null);
-                await db.SaveChangesAsync(CancellationToken.None);
+                await RestoreTerminalStatusAsync(db, run, "Failed-question re-run canceled.");
             }
         }
         catch (Exception ex)
@@ -4406,8 +4408,10 @@ public class BenchmarkService
 
         // Re-scoring recomputes QualityIndex and SpeedIndex from whatever answers exist. On a run that
         // stopped early that is an index over a fraction of the suite, stored in the same column a
-        // complete run uses, with nothing to mark the difference.
-        if (run.Status is BenchmarkRunStatus.Canceled or BenchmarkRunStatus.Failed)
+        // complete run uses, with nothing to mark the difference. "Stopped early" is the answer-row
+        // coverage, not the status alone: a Canceled row whose answers cover the suite — a cancelled
+        // retry of a finished run, or a run cancelled during grading — is scored over all of it.
+        if (BenchmarkRunFinalizer.IsAbortedRun(run, run.Answers))
         {
             return (false, AbortedRunRefusal);
         }
@@ -4494,12 +4498,16 @@ public class BenchmarkService
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var configService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
 
+        // CancellationToken.None: this load sits outside the try below, and the row it fetches is
+        // what the handlers there need in order to restore the status. Cancelling it would throw
+        // past every handler and past the finally that releases the run manager, leaving the row
+        // reading Running with no owner. The cancellation check is the first statement in the try.
         var answer = await db.BenchmarkRunAnswers
             .Include(a => a.BenchmarkRun).ThenInclude(r => r.TestedModelConfiguration)
             .Include(a => a.BenchmarkRun).ThenInclude(r => r.AssessorModelConfiguration)
             .Include(a => a.BenchmarkRun).ThenInclude(r => r.BenchmarkSuite).ThenInclude(s => s!.Questions)
             .Include(a => a.BenchmarkRun).ThenInclude(r => r.BenchmarkSuite).ThenInclude(s => s!.GameSnapshot)
-            .FirstOrDefaultAsync(a => a.Id == answerId, cancellationToken);
+            .FirstOrDefaultAsync(a => a.Id == answerId, CancellationToken.None);
 
         if (answer == null)
         {
@@ -4516,6 +4524,10 @@ public class BenchmarkService
         var run = answer.BenchmarkRun;
         try
         {
+            // Before the key is decrypted, so a retry launched with an already-cancelled token takes
+            // the restore path below rather than failing on whatever it touched first.
+            cancellationToken.ThrowIfCancellationRequested();
+
             var testedConfig = run.TestedModelConfiguration;
             if (testedConfig == null || string.IsNullOrWhiteSpace(testedConfig.EncryptedApiKey))
             {
@@ -4597,10 +4609,7 @@ public class BenchmarkService
         }
         catch (OperationCanceledException)
         {
-            run.Status = BenchmarkRunStatus.Canceled;
-            await ApplyAbortedTotalsAsync(db, run, null);
-            run.CompletedAtUtc ??= DateTime.UtcNow;
-            await db.SaveChangesAsync(CancellationToken.None);
+            await RestoreTerminalStatusAsync(db, run, "Answer re-run canceled.");
         }
         catch (Exception ex)
         {
@@ -4642,12 +4651,16 @@ public class BenchmarkService
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var configService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
 
+        // CancellationToken.None: this load sits outside the try below, and the row it fetches is
+        // what the handlers there need in order to restore the status. Cancelling it would throw
+        // past every handler and past the finally that releases the run manager, leaving the row
+        // reading Running with no owner. The cancellation check is the first statement in the try.
         var answer = await db.BenchmarkRunAnswers
             .Include(a => a.BenchmarkRun)
             .ThenInclude(r => r.BenchmarkSuite)
             .ThenInclude(s => s!.Questions)
             .Include(a => a.BenchmarkRun.AssessorModelConfiguration)
-            .FirstOrDefaultAsync(a => a.Id == answerId, cancellationToken);
+            .FirstOrDefaultAsync(a => a.Id == answerId, CancellationToken.None);
 
         if (answer == null)
         {
@@ -4671,6 +4684,10 @@ public class BenchmarkService
         var run = answer.BenchmarkRun;
         try
         {
+            // Before the assessor is resolved, so a retry launched with an already-cancelled token
+            // takes the restore path below rather than failing on whatever it touched first.
+            cancellationToken.ThrowIfCancellationRequested();
+
             var (assessorConfig, assessorApiKey, error) = await ResolveAssessorAsync(db, run, assessorConfigId, cancellationToken);
             if (assessorConfig == null || assessorApiKey == null)
             {
@@ -4754,10 +4771,7 @@ public class BenchmarkService
         {
             if (!trial)
             {
-                run.Status = BenchmarkRunStatus.Canceled;
-                await ApplyAbortedTotalsAsync(db, run, null);
-                run.CompletedAtUtc ??= DateTime.UtcNow;
-                await db.SaveChangesAsync(CancellationToken.None);
+                await RestoreTerminalStatusAsync(db, run, "Reassessment canceled.");
             }
             else
             {
@@ -4794,10 +4808,14 @@ public class BenchmarkService
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var configService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
 
+        // CancellationToken.None: this load sits outside the try below, and the row it fetches is
+        // what the handlers there need in order to restore the status. Cancelling it would throw
+        // past every handler and past the finally that releases the run manager, leaving the row
+        // reading Running with no owner. The cancellation check is the first statement in the try.
         var run = await db.BenchmarkRuns
             .Include(r => r.Answers)
             .Include(r => r.AssessorModelConfiguration)
-            .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
+            .FirstOrDefaultAsync(r => r.Id == runId, CancellationToken.None);
 
         if (run == null)
         {
@@ -4808,6 +4826,10 @@ public class BenchmarkService
 
         try
         {
+            // Before the assessor is resolved, so a retry launched with an already-cancelled token
+            // takes the restore path below rather than failing on whatever it touched first.
+            cancellationToken.ThrowIfCancellationRequested();
+
             var (assessorConfig, assessorApiKey, error) = await ResolveAssessorAsync(db, run, assessorConfigId, cancellationToken);
             if (assessorConfig == null || assessorApiKey == null)
             {
@@ -4834,10 +4856,7 @@ public class BenchmarkService
         }
         catch (OperationCanceledException)
         {
-            run.Status = BenchmarkRunStatus.Canceled;
-            await ApplyAbortedTotalsAsync(db, run, null);
-            run.CompletedAtUtc ??= DateTime.UtcNow;
-            await db.SaveChangesAsync(CancellationToken.None);
+            await RestoreTerminalStatusAsync(db, run, "Synthesis re-run canceled.");
         }
         catch (Exception ex)
         {
@@ -4861,12 +4880,16 @@ public class BenchmarkService
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var configService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
 
+        // CancellationToken.None: this load sits outside the try below, and the row it fetches is
+        // what the handlers there need in order to restore the status. Cancelling it would throw
+        // past every handler and past the finally that releases the run manager, leaving the row
+        // reading Running with no owner. The cancellation check is the first statement in the try.
         var run = await db.BenchmarkRuns
             .Include(r => r.Answers)
             .Include(r => r.AssessorModelConfiguration)
             .Include(r => r.BenchmarkSuite)
             .ThenInclude(s => s!.Questions)
-            .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
+            .FirstOrDefaultAsync(r => r.Id == runId, CancellationToken.None);
 
         if (run == null)
         {
@@ -4877,6 +4900,10 @@ public class BenchmarkService
 
         try
         {
+            // Before the assessor is resolved, so a retry launched with an already-cancelled token
+            // takes the restore path below rather than failing on whatever it touched first.
+            cancellationToken.ThrowIfCancellationRequested();
+
             var (assessorConfig, assessorApiKey, error) = await ResolveAssessorAsync(db, run, assessorConfigId, cancellationToken);
             if (assessorConfig == null || assessorApiKey == null)
             {
@@ -4905,10 +4932,7 @@ public class BenchmarkService
             {
                 if (cancellationToken.IsCancellationRequested)
                 {
-                    run.Status = BenchmarkRunStatus.Canceled;
-                    await ApplyAbortedTotalsAsync(db, run, null);
-                    run.CompletedAtUtc ??= DateTime.UtcNow;
-                    await db.SaveChangesAsync(CancellationToken.None);
+                    await RestoreTerminalStatusAsync(db, run, "Assessment retry canceled.");
                     return;
                 }
 
@@ -4926,10 +4950,7 @@ public class BenchmarkService
         }
         catch (OperationCanceledException)
         {
-            run.Status = BenchmarkRunStatus.Canceled;
-            await ApplyAbortedTotalsAsync(db, run, null);
-            run.CompletedAtUtc ??= DateTime.UtcNow;
-            await db.SaveChangesAsync(CancellationToken.None);
+            await RestoreTerminalStatusAsync(db, run, "Assessment retry canceled.");
         }
         catch (Exception ex)
         {
@@ -4953,9 +4974,13 @@ public class BenchmarkService
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var configService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
 
+        // CancellationToken.None: this load sits outside the try below, and the row it fetches is
+        // what the handlers there need in order to restore the status. Cancelling it would throw
+        // past every handler and past the finally that releases the run manager, leaving the row
+        // reading Running with no owner. The cancellation check is the first statement in the try.
         var run = await db.BenchmarkRuns
             .Include(r => r.Answers)
-            .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
+            .FirstOrDefaultAsync(r => r.Id == runId, CancellationToken.None);
 
         if (run == null)
         {
@@ -4966,6 +4991,10 @@ public class BenchmarkService
 
         try
         {
+            // Before any work, so a retry launched with an already-cancelled token takes the
+            // restore path below rather than failing on whatever it touched first.
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (verifierConfigId.HasValue)
             {
                 run.ClaimVerifierModelConfigurationId = verifierConfigId.Value;

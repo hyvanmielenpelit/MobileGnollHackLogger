@@ -5040,6 +5040,21 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.isAbortedRun(run)).toBeTrue();
     });
 
+    it('should not treat a Canceled run whose answers cover its suite as aborted', () => {
+      // A cancelled retry of a finished run: every answer row is still there, so the server
+      // reports isAborted false and the run is measured by its answers like any complete run.
+      const run = buildRun({ status: 'Canceled', isAborted: false });
+
+      expect(component.isAbortedRun(run)).toBeFalse();
+      expect(component.runDurationMs(run)).toBe(765466);
+    });
+
+    it('should trust the server flag over the status', () => {
+      const run = buildRun({ status: 'CompletedWithErrors', isAborted: true });
+
+      expect(component.isAbortedRun(run)).toBeTrue();
+    });
+
     it('should measure a completed run by the time its answers took', () => {
       const run = buildRun();
 

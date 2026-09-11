@@ -2263,6 +2263,7 @@ public class AdminBenchmarkController : ControllerBase
             StartedByUserId = run.StartedByUserId,
             StartedByUserName = run.StartedByUser?.UserName,
             Status = run.Status,
+            IsAborted = BenchmarkRunFinalizer.IsAbortedRun(run, run.Answers),
             StartedAtUtc = run.StartedAtUtc,
             CompletedAtUtc = run.CompletedAtUtc,
             FinalScore = run.FinalScore,
@@ -2689,6 +2690,9 @@ public class AdminBenchmarkController : ControllerBase
                     HarnessVersion = r.HarnessVersion,
                     TotalDurationMs = r.TotalDurationMs
                 },
+                // Outside the DTO: IsAbortedRun is not called inside the EF expression, so it cannot
+                // fail to translate. It is applied to each materialised row below.
+                AnswerRowCount = r.Answers.Count,
                 r.PricingSnapshotJson,
                 r.TestedModelConfigurationId,
                 r.TestedModelProviderUsed,
@@ -2736,6 +2740,12 @@ public class AdminBenchmarkController : ControllerBase
                 r.TotalSynthesisCacheCreationTokens
             })
             .ToListAsync();
+
+        foreach (var item in rows)
+        {
+            item.Summary.IsAborted = BenchmarkRunFinalizer.IsAbortedRun(
+                item.Summary.Status, item.Summary.TotalQuestionCount, item.AnswerRowCount);
+        }
 
         if (_modelPricingService != null)
         {
@@ -2865,7 +2875,7 @@ public class AdminBenchmarkController : ControllerBase
             .FirstOrDefaultAsync(r => r.Id == id);
         if (run == null) return NotFound();
 
-        if (run.Status is BenchmarkRunStatus.Canceled or BenchmarkRunStatus.Failed)
+        if (BenchmarkRunFinalizer.IsAbortedRun(run, run.Answers))
         {
             return BadRequest(BenchmarkService.AbortedRunRefusal);
         }
@@ -3018,7 +3028,7 @@ public class AdminBenchmarkController : ControllerBase
             .FirstOrDefaultAsync(r => r.Id == id);
         if (run == null) return NotFound();
 
-        if (run.Status is BenchmarkRunStatus.Canceled or BenchmarkRunStatus.Failed)
+        if (BenchmarkRunFinalizer.IsAbortedRun(run, run.Answers))
         {
             return BadRequest(BenchmarkService.AbortedRunRefusal);
         }
@@ -3086,7 +3096,7 @@ public class AdminBenchmarkController : ControllerBase
             .FirstOrDefaultAsync(r => r.Id == id);
         if (run == null) return NotFound();
 
-        if (run.Status is BenchmarkRunStatus.Canceled or BenchmarkRunStatus.Failed)
+        if (BenchmarkRunFinalizer.IsAbortedRun(run, run.Answers))
         {
             return BadRequest(BenchmarkService.AbortedRunRefusal);
         }
@@ -3137,7 +3147,7 @@ public class AdminBenchmarkController : ControllerBase
             .FirstOrDefaultAsync(r => r.Id == id);
         if (run == null) return NotFound();
 
-        if (run.Status is BenchmarkRunStatus.Canceled or BenchmarkRunStatus.Failed)
+        if (BenchmarkRunFinalizer.IsAbortedRun(run, run.Answers))
         {
             return BadRequest(BenchmarkService.AbortedRunRefusal);
         }
@@ -3188,7 +3198,7 @@ public class AdminBenchmarkController : ControllerBase
             .FirstOrDefaultAsync(r => r.Id == id);
         if (run == null) return NotFound();
 
-        if (run.Status is BenchmarkRunStatus.Canceled or BenchmarkRunStatus.Failed)
+        if (BenchmarkRunFinalizer.IsAbortedRun(run, run.Answers))
         {
             return BadRequest(BenchmarkService.AbortedRunRefusal);
         }
@@ -3227,26 +3237,42 @@ public class AdminBenchmarkController : ControllerBase
         var run = await _dbContext.BenchmarkRuns.FindAsync(id);
         if (run != null && run.Status == BenchmarkRunStatus.Running)
         {
-            run.Status = BenchmarkRunStatus.Canceled;
-            run.CompletedAtUtc = DateTime.UtcNow;
+            // Loaded before the branch, not only inside it: the coverage test below is what decides
+            // which of the two statuses this row goes to. One extra query per cancel.
+            var answers = await _dbContext.BenchmarkRunAnswers
+                .Where(a => a.BenchmarkRunId == run.Id)
+                .ToListAsync();
 
-            // No live run to cancel means the row is orphaned and its own abort path will never run, so
-            // what it consumed is recorded here instead. A live run measures its own wall clock, which
-            // is why this is not done unconditionally.
-            if (!cancelled)
+            if (BenchmarkRunFinalizer.CoversSuite(run.TotalQuestionCount, answers.Count))
             {
-                var answers = await _dbContext.BenchmarkRunAnswers
-                    .Where(a => a.BenchmarkRunId == run.Id)
-                    .ToListAsync();
+                // A retry of a run that already finished its suite. The answer set is whole, so the
+                // row returns to the status those answers describe rather than Canceled, which would
+                // make every later re-run refuse it. A live retry's own handler writes the same thing.
+                BenchmarkRunFinalizer.Apply(run, answers, preserveCompletedAt: true);
+                run.ErrorMessage = "Canceled by operator.";
+            }
+            else
+            {
+                run.Status = BenchmarkRunStatus.Canceled;
+                run.CompletedAtUtc = DateTime.UtcNow;
 
-                BenchmarkRunFinalizer.ApplyTotals(run, answers);
-                run.TotalDurationMs =
-                    (long)(run.CompletedAtUtc.Value - run.StartedAtUtc).TotalMilliseconds;
+                // No live run to cancel means the row is orphaned and its own abort path will never run, so
+                // what it consumed is recorded here instead. A live run measures its own wall clock, which
+                // is why this is not done unconditionally.
+                if (!cancelled)
+                {
+                    BenchmarkRunFinalizer.ApplyTotals(run, answers);
+                    run.TotalDurationMs =
+                        (long)(run.CompletedAtUtc.Value - run.StartedAtUtc).TotalMilliseconds;
+                }
             }
 
             await _dbContext.SaveChangesAsync();
         }
-        return Ok(new { success = cancelled || (run != null && run.Status == BenchmarkRunStatus.Canceled) });
+
+        // A restored row is a successful cancel too, so the test is "no longer Running" rather than
+        // "now Canceled".
+        return Ok(new { success = cancelled || (run != null && run.Status != BenchmarkRunStatus.Running) });
     }
 
     [HttpPost("runs/{id}/rerun-failed")]
@@ -3269,7 +3295,7 @@ public class AdminBenchmarkController : ControllerBase
 
         if (run == null) return NotFound();
 
-        if (run.Status is BenchmarkRunStatus.Canceled or BenchmarkRunStatus.Failed)
+        if (BenchmarkRunFinalizer.IsAbortedRun(run, run.Answers))
         {
             return BadRequest(BenchmarkService.AbortedRunRefusal);
         }
@@ -3277,8 +3303,9 @@ public class AdminBenchmarkController : ControllerBase
         // A row still reading Running past the CurrentRunId check above is orphaned — the same
         // condition CancelRun detects from TryCancel returning false — and it is accepted here
         // deliberately, because a re-run is the one action that repairs such a row rather than
-        // ending it. Cancelling it first sets Canceled, which the refusal above then makes
-        // permanent.
+        // ending it. Cancelling it first no longer locks it out either: CancelRun restores the
+        // answers-derived status when the answer rows cover the suite, and the refusal above
+        // accepts a Canceled row with that coverage in any case.
         bool hasFailures = run.Answers.Any(a => a.Status == BenchmarkAnswerStatus.ProviderError || a.Status == BenchmarkAnswerStatus.Failed);
         if (!hasFailures)
         {

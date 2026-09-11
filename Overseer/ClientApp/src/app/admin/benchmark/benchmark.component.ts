@@ -5369,8 +5369,13 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     return Math.abs(finalScore - computedScore) > 10;
   }
 
-  /** A run that stopped before finishing its suite: the operator cancelled it, or it died. */
+  /**
+   * A run that stopped before finishing its suite. The server decides it
+   * (BenchmarkRunFinalizer.IsAbortedRun, which tests answer-row coverage as well as the status);
+   * the status fallback covers rows from a server that predates the flag.
+   */
   isAbortedRun(run: BenchmarkRunSummaryDto | BenchmarkRunDetailDto): boolean {
+    if (run.isAborted != null) return run.isAborted;
     const status = this.formatStatus(run.status);
     return status === 'Canceled' || status === 'Failed';
   }

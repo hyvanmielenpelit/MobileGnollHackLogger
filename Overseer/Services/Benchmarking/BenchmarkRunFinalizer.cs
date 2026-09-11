@@ -206,6 +206,33 @@ public static class BenchmarkRunFinalizer
             || answer.AnswerFlags != 0;
     }
 
+    /// <summary>
+    /// True when every question of the suite has an answer row. A run cancelled during its grading
+    /// stages, or a cancelled retry of a finished run, covers its suite; a run cancelled part-way
+    /// through answering does not. Zero means the count was never recorded, which is treated as not
+    /// covered.
+    /// </summary>
+    public static bool CoversSuite(int totalQuestionCount, int answerRowCount)
+        => totalQuestionCount > 0 && answerRowCount >= totalQuestionCount;
+
+    /// <summary>
+    /// A run that stopped before finishing its suite. Re-scoring or re-running such a run would
+    /// publish indices computed over only the questions that completed, so every re-run gate and
+    /// <c>RescoreRunAsync</c> refuse it. A Canceled or Failed run whose answer rows cover the suite
+    /// is not aborted in this sense: its next finalisation recomputes its status over the whole
+    /// suite.
+    /// </summary>
+    public static bool IsAbortedRun(BenchmarkRunStatus status, int totalQuestionCount, int answerRowCount)
+        => status is BenchmarkRunStatus.Canceled or BenchmarkRunStatus.Failed
+           && !CoversSuite(totalQuestionCount, answerRowCount);
+
+    /// <summary>
+    /// The answer-row count is <c>answers.Count</c>, not <c>AnsweredQuestionCount</c>, which counts
+    /// only the answers that came back Ok.
+    /// </summary>
+    public static bool IsAbortedRun(BenchmarkRun run, IReadOnlyCollection<BenchmarkRunAnswer> answers)
+        => IsAbortedRun(run.Status, run.TotalQuestionCount, answers.Count);
+
     public static BenchmarkRunStatus ComputeStatus(IReadOnlyCollection<BenchmarkRunAnswer> answers)
     {
         if (answers == null || answers.Count == 0)
