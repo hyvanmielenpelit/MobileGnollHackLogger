@@ -87,6 +87,29 @@ describe('MarkdownEditorComponent', () => {
     expect(component.mode).toBe('preview');
   });
 
+  it('puts the fill modifier on the host element, not on the inner wrapper', () => {
+    component.fill = true;
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+
+    // The host is the flex child of whatever lays the editor out, so the modifier has to
+    // land there; on the inner div it is below the join and grows nothing.
+    expect(fixture.nativeElement.classList.contains('md-editor-fill')).toBeTrue();
+    expect(fixture.nativeElement.querySelector('.md-editor').classList.contains('md-editor-fill'))
+      .toBeFalse();
+
+    component.fill = false;
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.classList.contains('md-editor-fill')).toBeFalse();
+  });
+
+  it('lays the host out as a flex column so a fill parent can size it', () => {
+    const style = getComputedStyle(fixture.nativeElement);
+    expect(style.display).toBe('flex');
+    expect(style.flexDirection).toBe('column');
+  });
+
   it('below splitMinWidth the tablist renders two tabs, not three', () => {
     component.splitAvailable = false;
     fixture.changeDetectorRef.markForCheck();

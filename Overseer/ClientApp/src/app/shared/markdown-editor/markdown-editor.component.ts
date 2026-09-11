@@ -104,7 +104,10 @@ export function computeMarkdownWarnings(value: string): MarkdownEditorWarning[] 
   imports: [CommonModule, FormsModule, MarkdownPipe],
   templateUrl: './markdown-editor.component.html',
   styleUrls: ['./markdown-editor.component.scss'],
-  changeDetection: ChangeDetectionStrategy.OnPush
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  // The modifier belongs on the host, because the host is the flex child of whatever lays
+  // the editor out; a class on the inner div is below the join and cannot grow anything.
+  host: { '[class.md-editor-fill]': 'fill' }
 })
 export class MarkdownEditorComponent implements OnInit, AfterViewInit, OnChanges, OnDestroy {
   @Input({ required: true }) inputId!: string;

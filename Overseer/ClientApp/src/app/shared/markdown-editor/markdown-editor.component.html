@@ -1,4 +1,4 @@
-<div class="md-editor" [class.md-editor-fill]="fill" [class.md-editor-split]="mode === 'split'" #root>
+<div class="md-editor" [class.md-editor-split]="mode === 'split'" #root>
   <label [for]="inputId">{{ label }}</label>
   @if (hint) {
     <span [id]="inputId + '-hint'" class="md-editor-hint">{{ hint }}</span>
