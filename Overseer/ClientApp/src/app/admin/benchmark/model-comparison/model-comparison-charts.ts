@@ -12,8 +12,6 @@
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 import type { ChartConfiguration, ChartType, DefaultDataPoint, Plugin, Point } from 'chart.js';
 
-export { MODEL_COMPARISON_REGISTRABLES } from './chart-registrables';
-
 // ---------------------------------------------------------------------------------------------
 // Input model
 // ---------------------------------------------------------------------------------------------

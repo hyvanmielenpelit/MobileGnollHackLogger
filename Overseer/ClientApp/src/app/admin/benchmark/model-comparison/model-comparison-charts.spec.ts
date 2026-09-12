@@ -1,4 +1,4 @@
-import type { Chart } from 'chart.js';
+import { Chart } from 'chart.js';
 import {
   ACCENT,
   CATEGORICAL_PALETTE_DARK,
@@ -30,6 +30,8 @@ import type {
   ModelComparisonEntry,
   SmallMultiplesOptions,
 } from './model-comparison-charts';
+import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
+import { CONFIG_ANALYTICS_CHART_TYPE } from '../../config-analytics/config-analytics.component';
 
 /** Minimal shape of the scale options the specs assert on, so no test reaches into deep partials. */
 interface ScaleProbe {
@@ -793,5 +795,78 @@ describe('model-comparison-charts', () => {
         'C',
       ]);
     });
+  });
+});
+
+/** A figure reduced to the registry keys it asks for: its chart type, dataset types and scales. */
+interface RegistryDemand {
+  readonly id: string;
+  readonly type: string;
+  readonly datasetTypes: readonly string[];
+  readonly scaleTypes: readonly string[];
+}
+
+function demandOf(spec: unknown): RegistryDemand {
+  const probe = spec as {
+    id: string;
+    config: {
+      type: string;
+      data: { datasets: { type?: string }[] };
+      options?: { scales?: Record<string, { type?: string } | undefined> };
+    };
+  };
+  const isString = (value: string | undefined): value is string => typeof value === 'string';
+  return {
+    id: probe.id,
+    type: probe.config.type,
+    datasetTypes: probe.config.data.datasets.map((dataset) => dataset.type).filter(isString),
+    scaleTypes: Object.values(probe.config.options?.scales ?? {})
+      .map((scale) => scale?.type)
+      .filter(isString),
+  };
+}
+
+/**
+ * chart.js registers nothing on its own: a controller, element or scale missing from
+ * APP_CHART_REGISTRABLES is absent from the registry, and the figure that needs it throws at render
+ * time rather than failing to compile. These cases register exactly what the application registers,
+ * then ask the registry for every key the built configurations actually name - so the check follows
+ * the figures instead of a second list that has to be kept in step by hand.
+ */
+describe('chart.js registration', () => {
+  const figures = buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT });
+  const demands = [
+    figures.qualitySpeed,
+    figures.qualityCost,
+    figures.speedCost,
+    figures.smallMultiples.quality,
+    figures.smallMultiples.speed,
+    figures.smallMultiples.cost,
+    figures.profile,
+  ].map(demandOf);
+
+  beforeAll(() => {
+    Chart.register(...APP_CHART_REGISTRABLES);
+  });
+
+  it('demands cover all seven figures', () => {
+    expect(demands.length).toBe(7);
+    expect(new Set(demands.map((demand) => demand.id)).size).toBe(7);
+  });
+
+  demands.forEach((demand) => {
+    it(`registers everything ${demand.id} draws with`, () => {
+      expect(() => Chart.registry.getController(demand.type)).not.toThrow();
+      demand.datasetTypes.forEach((type) => {
+        expect(() => Chart.registry.getController(type)).not.toThrow();
+      });
+      demand.scaleTypes.forEach((type) => {
+        expect(() => Chart.registry.getScale(type)).not.toThrow();
+      });
+    });
+  });
+
+  it('registers the controller the config analytics panel draws with', () => {
+    expect(() => Chart.registry.getController(CONFIG_ANALYTICS_CHART_TYPE)).not.toThrow();
   });
 });

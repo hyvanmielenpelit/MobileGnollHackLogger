@@ -7,7 +7,7 @@ import * as Sentry from '@sentry/angular';
 import { routes } from './app.routes';
 import { authInterceptor } from './auth.interceptor';
 import { CustomRouteReuseStrategy } from './custom-route-reuse-strategy';
-import { MODEL_COMPARISON_REGISTRABLES } from './admin/benchmark/model-comparison/chart-registrables';
+import { APP_CHART_REGISTRABLES } from './chart-registrables';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -20,6 +20,6 @@ export const appConfig: ApplicationConfig = {
       withXsrfConfiguration({ cookieName: 'XSRF-TOKEN', headerName: 'X-XSRF-TOKEN' }),
       withInterceptors([authInterceptor])
     ),
-    provideCharts({ registerables: MODEL_COMPARISON_REGISTRABLES })
+    provideCharts({ registerables: APP_CHART_REGISTRABLES })
   ]
 };

@@ -4,7 +4,8 @@ import { By } from '@angular/platform-browser';
 import { provideCharts } from 'ng2-charts';
 
 import { ComparisonWizardStep, ModelComparisonComponent } from './model-comparison.component';
-import { MAX_PLOTTED_ENTRIES, MODEL_COMPARISON_REGISTRABLES, P1_STACK_BREAKPOINT_PX } from './model-comparison-charts';
+import { MAX_PLOTTED_ENTRIES, P1_STACK_BREAKPOINT_PX } from './model-comparison-charts';
+import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 import {
   BenchmarkComparabilityIndexDto,
   BenchmarkComparabilityIndexEntryDto,
@@ -225,7 +226,7 @@ describe('ModelComparisonComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [ModelComparisonComponent],
-      providers: [provideCharts({ registerables: MODEL_COMPARISON_REGISTRABLES })]
+      providers: [provideCharts({ registerables: APP_CHART_REGISTRABLES })]
     }).compileComponents();
 
     fixture = TestBed.createComponent(ModelComparisonComponent);
@@ -1401,7 +1402,7 @@ describe('ModelComparisonComponent projected step 1', () => {
   it('keeps the projected content alive across a step away and back', async () => {
     await TestBed.configureTestingModule({
       imports: [ProjectionHostComponent],
-      providers: [provideCharts({ registerables: MODEL_COMPARISON_REGISTRABLES })]
+      providers: [provideCharts({ registerables: APP_CHART_REGISTRABLES })]
     }).compileComponents();
 
     const fixture = TestBed.createComponent(ProjectionHostComponent);

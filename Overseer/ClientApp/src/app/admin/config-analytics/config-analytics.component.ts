@@ -8,6 +8,9 @@ import ChartDataLabels from 'chartjs-plugin-datalabels';
 import { Subject, Subscription, of } from 'rxjs';
 import { debounceTime, switchMap, catchError, tap } from 'rxjs/operators';
 
+/** The chart type this panel draws. Must be registered in APP_CHART_REGISTRABLES. */
+export const CONFIG_ANALYTICS_CHART_TYPE: ChartType = 'bar';
+
 @Component({
   selector: 'app-config-analytics',
   standalone: true,
@@ -59,7 +62,7 @@ export class ConfigAnalyticsComponent implements OnInit, OnChanges, OnDestroy {
   };
 
   chartPlugins = [ChartDataLabels];
-  chartType: ChartType = 'bar';
+  chartType: ChartType = CONFIG_ANALYTICS_CHART_TYPE;
 
   chartOptions: ChartConfiguration['options'] = {
     indexAxis: 'y', // Horizontal bars

@@ -1,10 +1,15 @@
 /**
- * The single chart.js registrable list for the cross-model comparison figures.
+ * The application-wide chart.js registrable list.
  *
- * It lives in its own module, apart from the chart core, so that `app.config.ts` and the component
- * spec can both register exactly the same set without the bootstrap pulling in the chart core. The
- * scatter, line and bar controllers, their elements, the three scales and the shared plugins are
- * all reachable from at least one of the six figures.
+ * chart.js v4 registers nothing by itself: a controller, element, scale or plugin that is not in
+ * this list is absent from the registry, and the first chart that asks for it throws at render
+ * time rather than failing to compile. `app.config.ts` hands the list to `provideCharts`, which is
+ * what `BaseChartDirective` registers from, so **every** charted surface in the client draws from
+ * this one list and any chart type used anywhere must appear here.
+ *
+ * It sits at the application level, apart from any feature and apart from the chart core, so that
+ * the bootstrap does not pull a feature's chart module in and so that no feature has cause to keep
+ * a list of its own.
  */
 
 import {
@@ -23,8 +28,8 @@ import {
   Tooltip,
 } from 'chart.js';
 
-/** Every chart.js registrable the six figures need. `app.config.ts` spreads this. */
-export const MODEL_COMPARISON_REGISTRABLES = [
+/** Every chart.js registrable the client's charts need. `app.config.ts` spreads this. */
+export const APP_CHART_REGISTRABLES = [
   ScatterController,
   LineController,
   BarController,
