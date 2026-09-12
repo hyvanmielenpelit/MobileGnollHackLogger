@@ -537,17 +537,6 @@
     flex-shrink: 0;
   }
 
-  .question-count-badge {
-    background: rgba(212, 160, 23, 0.15);
-    color: var(--primary-color);
-    border: 1px solid rgba(212, 160, 23, 0.3);
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 12px;
-    font-weight: 600;
-    white-space: nowrap;
-  }
-
   .suite-desc-container {
     margin: 10px 0 16px 0;
     flex-grow: 1;
@@ -570,6 +559,19 @@
     margin-top: auto;
     flex-wrap: wrap;
   }
+}
+
+/* Question count on a suite. At the component root rather than inside .suite-card, because the
+   Import Default Suites dialog shows the same badge outside any card. */
+.question-count-badge {
+  background: rgba(212, 160, 23, 0.15);
+  color: var(--primary-color);
+  border: 1px solid rgba(212, 160, 23, 0.3);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .history-toolbar, .suites-toolbar {
@@ -1950,6 +1952,203 @@
 /* Half the inset on a phone, mirroring .gh-dialog-fullscreen's own 600px step. */
 @media (max-width: 600px) {
   .gh-dialog.benchmark-question-form-dialog {
+    height: calc(100dvh - 8px);
+    max-height: calc(100dvh - 8px);
+  }
+}
+
+/* Same box as the Manage Questions dialog it sits beside in the suite workflow, so the
+   operator does not see the width jump between them. dvh so a collapsing mobile URL bar
+   cannot clip the footer. Must stay after .benchmark-form-dialog for the same source-order
+   reason as .benchmark-question-form-dialog above. */
+.gh-dialog.benchmark-import-suites-dialog {
+  width: min(920px, 94vw);
+  max-width: min(920px, 94vw);
+  height: calc(100dvh - 16px);
+  max-height: calc(100dvh - 16px);
+
+  .dialog-intro {
+    margin: 0 0 20px;
+    color: #ccc;
+    line-height: 1.5;
+  }
+
+  /* The fieldset is a plain grouping box; .form-section (above, on .benchmark-form-dialog)
+     gives the legend its header treatment. The list inside carries the spacing. */
+  .default-suite-picker {
+    min-inline-size: 0;
+  }
+
+  .default-suite-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .default-suite-card {
+    border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.025);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+
+    /* Selected state follows the checkbox, not a class toggled from TypeScript. */
+    &:has(input[type="checkbox"]:checked) {
+      border-color: rgba(212, 160, 23, 0.55);
+      background: rgba(212, 160, 23, 0.06);
+    }
+
+    &:has(input[type="checkbox"]:focus-visible) {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+    }
+  }
+
+  .default-suite-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+  }
+
+  .default-suite-name {
+    font-family: "Cinzel", serif;
+    font-weight: 700;
+    font-size: 15px;
+    color: #fff;
+  }
+
+  .default-suite-badges {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .default-suite-bands {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+
+    .difficulty-badge {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 5px;
+
+      strong { font-weight: 700; }
+    }
+  }
+
+  .default-suite-description {
+    /* The collapsible component owns its own type; this only pads it from the chips. */
+    margin-top: 2px;
+  }
+
+  .default-suite-provenance {
+    margin: 0;
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 4px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+
+    dt { color: #888; }
+    dd { margin: 0; color: #bbb; overflow-wrap: anywhere; }
+
+    @media (max-width: 500px) {
+      grid-template-columns: 1fr;
+      dd { margin-bottom: 4px; }
+    }
+  }
+
+  .default-suite-row-invalid {
+    border-color: rgba(239, 68, 68, 0.35);
+  }
+
+  /* Selection status. A flex sibling of the scrolling .dialog-body, not a child of it, so
+     nothing can scroll beneath it. */
+  .dialog-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 24px;
+    /* The count badge is 21px tall against the 16px icon of the empty state, so without a
+       floor the bar would grow by 5px the moment a suite is ticked. 44px clears the taller
+       state (1px border + 20px padding + 21px badge = 42px) with room for font-metric
+       drift, so both states settle on it. */
+    min-height: 44px;
+    border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+    background: rgba(16, 16, 16, 0.98);
+    flex-shrink: 0;
+    font-size: 13px;
+    color: #aaa;
+
+    .status-icon { flex-shrink: 0; color: #888; }
+
+    &.is-ready {
+      color: #ddd;
+      .status-icon { color: var(--primary-color); }
+    }
+
+    .selection-count-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      /* Explicit, so the badge's height does not follow the font's `normal` metrics and
+         drift away from the bar's min-height above. */
+      line-height: 1.25;
+      font-weight: 700;
+      background: rgba(212, 160, 23, 0.15);
+      color: var(--primary-color);
+      border: 1px solid rgba(212, 160, 23, 0.3);
+      white-space: nowrap;
+    }
+  }
+
+  /* Scroll affordance: a bottom shadow while more cards remain below. Chrome/Edge only
+     (container scroll-state queries); elsewhere the shadow simply never appears, which the
+     guidance accepts for a hint. */
+  .dialog-body {
+    container-type: scroll-state;
+
+    &::after {
+      content: "";
+      display: block;
+      position: sticky;
+      bottom: 0;
+      height: 28px;
+      margin-top: -28px;
+      pointer-events: none;
+      background: linear-gradient(to top, rgba(0, 0, 0, 0.45), transparent);
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+  }
+
+  @container scroll-state(scrollable: bottom) {
+    .dialog-body::after { opacity: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .default-suite-card,
+    .dialog-body::after { transition: none; }
+  }
+}
+
+@media (max-width: 600px) {
+  .gh-dialog.benchmark-import-suites-dialog {
     height: calc(100dvh - 8px);
     max-height: calc(100dvh - 8px);
   }

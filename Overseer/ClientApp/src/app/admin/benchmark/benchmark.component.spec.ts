@@ -518,7 +518,7 @@ describe('AdminBenchmarkComponent', () => {
       key: 'gnollhack-player-assistance',
       version: 1,
       name: 'GnollHack Player Assistance Benchmark Suite',
-      description: 'Core roguelike mechanics a player would ask about while looking at the board.',
+      description: 'Eighteen questions. ### Covered Domains\n- **Character & World**: creation.',
       questionCount: 18,
       difficultyCounts: { Simple: 6, Intermediate: 6, Advanced: 6 },
       fileName: 'gnollhack_player_assistance.json',
@@ -619,6 +619,66 @@ describe('AdminBenchmarkComponent', () => {
       expect(row).toBeTruthy();
       expect(row!.textContent).toContain('Missing "key" field.');
       expect(row!.querySelector('input[type="checkbox"]')).toBeNull();
+    });
+
+    it('renders the description as HTML, not Markdown source', () => {
+      benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([catalogEntry] as any));
+      fixture.detectChanges();
+      component.openImportDefaultSuitesDialog();
+      fixture.detectChanges();
+
+      const dialogEl = component.importDefaultSuitesDialog.nativeElement;
+      expect(dialogEl.querySelector('.default-suite-description .markdown-body strong')).toBeTruthy();
+      expect(dialogEl.textContent).not.toContain('**');
+    });
+
+    it('renders one difficulty badge per band with its count', () => {
+      benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([catalogEntry] as any));
+      fixture.detectChanges();
+      component.openImportDefaultSuitesDialog();
+      fixture.detectChanges();
+
+      const badges: HTMLElement[] = Array.from(
+        component.importDefaultSuitesDialog.nativeElement.querySelectorAll('.default-suite-bands .difficulty-badge'));
+      expect(badges.length).toBe(3);
+      expect(badges[0].classList).toContain('diff-simple');
+      expect(badges[0].textContent).toContain('Simple');
+      expect(badges[0].textContent).toContain('6');
+    });
+
+    it('shows the selection status bar and updates it on toggle', () => {
+      benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([catalogEntry] as any));
+      fixture.detectChanges();
+      component.openImportDefaultSuitesDialog();
+      fixture.detectChanges();
+
+      const bar = component.importDefaultSuitesDialog.nativeElement.querySelector('.dialog-status-bar') as HTMLElement;
+      expect(bar).toBeTruthy();
+      expect(bar.textContent).toContain('Select at least one suite');
+      expect(bar.classList).not.toContain('is-ready');
+
+      component.toggleDefaultSuite(catalogEntry.key);
+      (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
+
+      expect(bar.textContent).toContain('1 of 1');
+      expect(bar.classList).toContain('is-ready');
+    });
+
+    it('is sized like the Manage Questions dialog', () => {
+      expect(component.importDefaultSuitesDialog.nativeElement.classList)
+        .toContain('benchmark-import-suites-dialog');
+    });
+
+    it('does not put the description inside the checkbox label', () => {
+      benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([catalogEntry] as any));
+      fixture.detectChanges();
+      component.openImportDefaultSuitesDialog();
+      fixture.detectChanges();
+
+      const label = component.importDefaultSuitesDialog.nativeElement
+        .querySelector('.default-suite-picker label.checkbox-label') as HTMLElement;
+      expect(label).toBeTruthy();
+      expect(label.querySelector('.default-suite-description')).toBeNull();
     });
   });
 

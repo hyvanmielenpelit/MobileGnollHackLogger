@@ -2209,21 +2209,16 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return text;
   }
 
-  /** The catalog entry's per-band question counts, in band order, as one display line. */
-  formatDifficultyCounts(entry: DefaultSuiteCatalogEntryDto): string {
+  /** The catalog entry's per-band question counts, in band order, one item per band present. */
+  difficultyBands(entry: DefaultSuiteCatalogEntryDto): { band: string; count: number }[] {
     return AdminBenchmarkComponent.DIFFICULTY_BAND_ORDER
       .filter(band => entry.difficultyCounts && entry.difficultyCounts[band] != null)
-      .map(band => `${band}: ${entry.difficultyCounts[band]}`)
-      .join(', ');
+      .map(band => ({ band, count: entry.difficultyCounts[band] }));
   }
 
-  /** The first sentence of a catalog entry's description, for the compact picker row. */
-  firstSentence(text: string): string {
-    const idx = text.indexOf('. ');
-    if (idx === -1) {
-      return text.length > 160 ? text.slice(0, 160).trimEnd() + '…' : text;
-    }
-    return text.slice(0, idx + 1);
+  /** Catalog entries that can actually be imported (invalid files are listed but not selectable). */
+  get selectableDefaultSuiteCount(): number {
+    return this.defaultSuiteCatalog.filter(e => !e.error).length;
   }
 
   // --- Difficulty Assessor Dialog Actions ---
