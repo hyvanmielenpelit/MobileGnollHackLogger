@@ -684,7 +684,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   suiteForDifficultyAssessment: BenchmarkSuiteDto | null = null;
   difficultyAssessorConfigId: number | null = null;
   isDifficultyAssessorDropdownOpen = false;
-  difficultyAssessmentScope: 'suite' | 'question' = 'suite';
+  difficultyAssessmentScope: 'suite' | 'unassessed' | 'question' = 'suite';
   questionIdForDifficultyAssessment: number | null = null;
 
   difficultyDialogPhase: 'select' | 'progress' = 'select';
@@ -716,6 +716,29 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   get difficultyJobIsTerminal(): boolean {
     return this.difficultyJob != null && this.difficultyJob.status !== 'Running';
+  }
+
+  get suiteIsPartiallyAssessed(): boolean {
+    const s = this.suiteForDifficultyAssessment;
+    return s != null && s.assessedQuestionCount > 0 && !s.difficultyFullyAssessed;
+  }
+
+  get unassessedQuestionCount(): number {
+    const s = this.suiteForDifficultyAssessment;
+    return s == null ? 0 : Math.max(0, s.questionCount - s.assessedQuestionCount);
+  }
+
+  get difficultyAssessmentTargetDescription(): string {
+    const s = this.suiteForDifficultyAssessment;
+    const total = s?.questionCount || 0;
+    switch (this.difficultyAssessmentScope) {
+      case 'unassessed':
+        return `the ${this.unassessedQuestionCount} of ${total} questions in ${s?.name} that do not yet have an assessed difficulty`;
+      case 'suite':
+        return `${s?.name} — ${total} questions`;
+      default:
+        return 'this question';
+    }
   }
 
   get difficultyProgressValue(): number {
@@ -824,6 +847,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       next: (job) => {
         if (job) {
           this.difficultyJob = job;
+          this.terminatingDifficultyJob = false;
           if (job.status === 'Running') {
             this.startDifficultyPolling(job.id);
           }
@@ -1173,6 +1197,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.stopRunElapsedTicker();
     this.stopDetailPolling();
     this.stopDifficultyPolling();
+    this.terminatingDifficultyJob = false;
     this.stopSeriesPolling();
     if (this.copiedDiagnosticsTimer) { clearTimeout(this.copiedDiagnosticsTimer); }
     if (this.copiedRunDiagnosticsTimer) { clearTimeout(this.copiedRunDiagnosticsTimer); }
@@ -2089,7 +2114,9 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       if (suite) {
         this.suiteForDifficultyAssessment = suite;
       }
-      this.difficultyAssessmentScope = question == null ? 'suite' : 'question';
+      this.difficultyAssessmentScope = question != null
+        ? 'question'
+        : (this.suiteIsPartiallyAssessed ? 'unassessed' : 'suite');
       this.questionIdForDifficultyAssessment = question?.id ?? null;
       this.isDifficultyAssessorDropdownOpen = false;
       this.difficultyAssessorConfigId = this.resolveDefaultDifficultyAssessor(question);
@@ -2142,6 +2169,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     this.benchmarkService.startDifficultyAssessment({
       suiteId,
       questionIds,
+      onlyUnassessed: this.difficultyAssessmentScope === 'unassessed',
       assessorModelConfigurationId: this.difficultyAssessorConfigId
     }).subscribe({
       next: (res) => {
@@ -2196,6 +2224,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       next: (job) => {
         this.difficultyJob = job;
         if (job.status !== 'Running') {
+          this.terminatingDifficultyJob = false;
           this.stopDifficultyPolling();
           this.loadSuites();
           if (this.currentSuiteForQuestions) {
@@ -2223,10 +2252,10 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
 
   terminateDifficultyAssessment() {
     if (!this.difficultyJob) return;
+    // Stays set until a poll reports the job has left Running.
     this.terminatingDifficultyJob = true;
     this.benchmarkService.cancelDifficultyAssessment(this.difficultyJob.id).subscribe({
       next: () => {
-        this.terminatingDifficultyJob = false;
         this.pollDifficultyJob(this.difficultyJob!.id);
         this.cdr.detectChanges();
       },
@@ -2239,6 +2268,15 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   }
 
   assessAgain() {
+    // The suite list is reloaded when a job ends, so take the current counts from it.
+    const suiteId = this.suiteForDifficultyAssessment?.id ?? this.difficultyJob?.suiteId;
+    const currentSuite = this.suites.find(s => s.id === suiteId);
+    if (currentSuite) {
+      this.suiteForDifficultyAssessment = currentSuite;
+    }
+    if (this.difficultyAssessmentScope !== 'question') {
+      this.difficultyAssessmentScope = this.suiteIsPartiallyAssessed ? 'unassessed' : 'suite';
+    }
     this.difficultyDialogPhase = 'select';
     this.cdr.detectChanges();
   }

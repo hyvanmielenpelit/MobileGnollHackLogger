@@ -1,3 +1,4 @@
+import { ChangeDetectorRef } from '@angular/core';
 import { ComponentFixture, TestBed, fakeAsync, tick, discardPeriodicTasks } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
@@ -550,8 +551,60 @@ describe('AdminBenchmarkComponent', () => {
 
     expect(component.difficultyAssessorDialog.nativeElement.showModal).toHaveBeenCalled();
     expect(component.suiteForDifficultyAssessment).toBe(testSuite);
-    expect(component.difficultyAssessmentScope).toBe('suite');
+    expect(component.difficultyAssessmentScope).toBe('unassessed');
+    expect(component.difficultyAssessmentTargetDescription).toBe('the 5 of 15 questions in Default Suite that do not yet have an assessed difficulty');
     expect(benchmarkServiceMock.startDifficultyAssessment).not.toHaveBeenCalled();
+
+    (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
+    const radios: HTMLInputElement[] = Array.from(fixture.nativeElement.querySelectorAll('.difficulty-scope-fieldset input[type="radio"]'));
+    expect(radios.map(r => r.value)).toEqual(['unassessed', 'suite']);
+    expect(radios[0].checked).toBeTrue();
+  });
+
+  it('should default the difficulty assessment scope to the whole suite when no question is assessed yet', () => {
+    component.activeSubTab = 'suites';
+    const unassessedSuite = {
+      id: 1,
+      name: 'Default Suite',
+      description: 'Test',
+      createdAtUtc: '2026-09-01T00:00:00Z',
+      modifiedAtUtc: null,
+      questionCount: 15,
+      assessedQuestionCount: 0,
+      difficultyFullyAssessed: false
+    };
+    component.suites = [unassessedSuite];
+    fixture.detectChanges();
+    spyOn(component.difficultyAssessorDialog.nativeElement, 'showModal');
+
+    component.openDifficultyAssessorDialog(unassessedSuite);
+    (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
+
+    expect(component.difficultyAssessmentScope).toBe('suite');
+    expect(fixture.nativeElement.querySelector('.difficulty-scope-fieldset')).toBeNull();
+  });
+
+  it('should default the difficulty assessment scope to the whole suite when every question is assessed', () => {
+    component.activeSubTab = 'suites';
+    const assessedSuite = {
+      id: 1,
+      name: 'Default Suite',
+      description: 'Test',
+      createdAtUtc: '2026-09-01T00:00:00Z',
+      modifiedAtUtc: null,
+      questionCount: 15,
+      assessedQuestionCount: 15,
+      difficultyFullyAssessed: true
+    };
+    component.suites = [assessedSuite];
+    fixture.detectChanges();
+    spyOn(component.difficultyAssessorDialog.nativeElement, 'showModal');
+
+    component.openDifficultyAssessorDialog(assessedSuite);
+    (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
+
+    expect(component.difficultyAssessmentScope).toBe('suite');
+    expect(fixture.nativeElement.querySelector('.difficulty-scope-fieldset')).toBeNull();
   });
 
   it('should resolve default difficulty assessor preferring question stored config id if benchmark-capable', () => {
@@ -664,12 +717,58 @@ describe('AdminBenchmarkComponent', () => {
     expect(benchmarkServiceMock.startDifficultyAssessment).toHaveBeenCalledWith({
       suiteId: 1,
       questionIds: null,
+      onlyUnassessed: false,
       assessorModelConfigurationId: 1
     });
     expect(component.difficultyDialogPhase).toBe('progress');
     expect(benchmarkServiceMock.getDifficultyAssessment).toHaveBeenCalledWith('job-123');
     expect(component.difficultyJob).toEqual(mockJob);
     expect(component.difficultyJobIsRunning).toBeTrue();
+  });
+
+  it('should send onlyUnassessed when confirming the unassessed scope', () => {
+    component.suiteForDifficultyAssessment = {
+      id: 1,
+      name: 'Default Suite',
+      description: 'Test',
+      createdAtUtc: '2026-09-01T00:00:00Z',
+      modifiedAtUtc: null,
+      questionCount: 15,
+      assessedQuestionCount: 10,
+      difficultyFullyAssessed: false
+    };
+    component.difficultyAssessmentScope = 'unassessed';
+    component.difficultyAssessorConfigId = 1;
+
+    benchmarkServiceMock.startDifficultyAssessment.and.returnValue(of({ jobId: 'job-unassessed' }));
+    benchmarkServiceMock.getDifficultyAssessment.and.returnValue(of({
+      id: 'job-unassessed',
+      suiteId: 1,
+      suiteName: 'Default Suite',
+      scope: 'unassessed',
+      assessorConfigId: 1,
+      assessorDisplayName: 'Test Assessor',
+      startedAtUtc: '2026-09-02T00:00:00Z',
+      completedAtUtc: null,
+      status: 'Running',
+      ratedCount: 0,
+      failedCount: 0,
+      totalCount: 5,
+      totalModelCalls: 0,
+      promptTokens: 0,
+      outputTokens: 0,
+      items: [],
+      log: []
+    }));
+
+    component.confirmDifficultyAssessment();
+
+    expect(benchmarkServiceMock.startDifficultyAssessment).toHaveBeenCalledWith({
+      suiteId: 1,
+      questionIds: null,
+      onlyUnassessed: true,
+      assessorModelConfigurationId: 1
+    });
   });
 
   it('should handle 409 conflict when starting difficulty assessment by adopting running job', () => {
@@ -744,6 +843,95 @@ describe('AdminBenchmarkComponent', () => {
     component.terminateDifficultyAssessment();
 
     expect(benchmarkServiceMock.cancelDifficultyAssessment).toHaveBeenCalledWith('job-to-cancel');
+  });
+
+  it('should stay terminating until a poll reports the job has stopped', () => {
+    const runningJob = {
+      id: 'job-terminating',
+      suiteId: 1,
+      suiteName: 'Default Suite',
+      scope: 'suite',
+      assessorConfigId: 1,
+      assessorDisplayName: 'Test Assessor',
+      startedAtUtc: '2026-09-02T00:00:00Z',
+      completedAtUtc: null as string | null,
+      status: 'Running',
+      ratedCount: 1,
+      failedCount: 0,
+      totalCount: 3,
+      totalModelCalls: 1,
+      promptTokens: 50,
+      outputTokens: 20,
+      items: [
+        { questionId: 1, orderIndex: 1, questionTextExcerpt: 'Q1', status: 'Rated', difficulty: 40, errorMessage: null },
+        { questionId: 2, orderIndex: 2, questionTextExcerpt: 'Q2', status: 'Assessing', difficulty: null, errorMessage: null },
+        { questionId: 3, orderIndex: 3, questionTextExcerpt: 'Q3', status: 'Pending', difficulty: null, errorMessage: null }
+      ],
+      log: []
+    };
+
+    component.difficultyJob = runningJob;
+    component.difficultyDialogPhase = 'progress';
+    benchmarkServiceMock.cancelDifficultyAssessment.and.returnValue(of({ cancelled: true }));
+    benchmarkServiceMock.getDifficultyAssessment.and.returnValue(of(runningJob));
+
+    component.terminateDifficultyAssessment();
+    fixture.detectChanges();
+
+    expect(component.terminatingDifficultyJob).toBeTrue();
+    expect(component.difficultyJobIsRunning).toBeTrue();
+    const terminatingButtons: HTMLButtonElement[] = Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('button'))
+      .filter(b => b.textContent?.includes('Terminating…'));
+    expect(terminatingButtons.length).toBeGreaterThan(0);
+    terminatingButtons.forEach(b => {
+      expect(b.disabled).toBeTrue();
+      expect(b.getAttribute('aria-busy')).toBe('true');
+    });
+
+    const cancelledJob = {
+      ...runningJob,
+      status: 'Cancelled',
+      completedAtUtc: '2026-09-02T00:01:00Z',
+      items: runningJob.items.map(i => i.status === 'Rated' ? i : { ...i, status: 'Cancelled' })
+    };
+    benchmarkServiceMock.getDifficultyAssessment.and.returnValue(of(cancelledJob));
+
+    component.startDifficultyPolling('job-terminating');
+    component.stopDifficultyPolling();
+    fixture.detectChanges();
+
+    expect(component.terminatingDifficultyJob).toBeFalse();
+    expect(component.difficultyJobIsTerminal).toBeTrue();
+    expect(fixture.nativeElement.querySelectorAll('.job-status-chip.status-cancelled').length).toBe(2);
+    expect(fixture.nativeElement.querySelectorAll('.job-status-chip.status-rated').length).toBe(1);
+  });
+
+  it('should clear the terminating state when the cancel request fails', () => {
+    component.difficultyJob = {
+      id: 'job-cancel-fails',
+      suiteId: 1,
+      suiteName: 'Default Suite',
+      scope: 'suite',
+      assessorConfigId: 1,
+      assessorDisplayName: 'Test Assessor',
+      startedAtUtc: '2026-09-02T00:00:00Z',
+      completedAtUtc: null,
+      status: 'Running',
+      ratedCount: 0,
+      failedCount: 0,
+      totalCount: 1,
+      totalModelCalls: 0,
+      promptTokens: 0,
+      outputTokens: 0,
+      items: [],
+      log: []
+    };
+    benchmarkServiceMock.cancelDifficultyAssessment.and.returnValue(throwError(() => ({ status: 500, error: 'Boom' })));
+
+    component.terminateDifficultyAssessment();
+
+    expect(component.terminatingDifficultyJob).toBeFalse();
+    expect(component.actionErrorMessage).toBe('Boom');
   });
 
   it('should retry failed questions by starting assessment with failed question ids', () => {

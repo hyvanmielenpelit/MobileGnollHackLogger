@@ -3970,6 +3970,37 @@ public class BenchmarkService
             return;
         }
 
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await RunDifficultyAssessmentCoreAsync(job, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            FinalizeIfStillRunning(job, BenchmarkDifficultyJobStatus.Cancelled);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Difficulty assessment job {JobId} failed.", jobId);
+            job.AddLog($"Assessment failed: {ExceptionDetails.DescribeShort(ex)}", "error",
+                ExceptionDetails.Describe(ex, 4000));
+            FinalizeIfStillRunning(job, BenchmarkDifficultyJobStatus.Failed);
+        }
+    }
+
+    // The in-loop paths finalise the job themselves; this only closes a job an exception left open.
+    private void FinalizeIfStillRunning(BenchmarkDifficultyJob job, BenchmarkDifficultyJobStatus status)
+    {
+        if (job.Status != BenchmarkDifficultyJobStatus.Running) return;
+        if (status == BenchmarkDifficultyJobStatus.Cancelled) job.MarkRemainingCancelled();
+        else job.MarkRemainingSkipped();
+        job.SetStatus(status);
+        _difficultyJobManager.Complete(job.Id, status);
+        job.AddLog($"Assessment finished with status: {status}.", status == BenchmarkDifficultyJobStatus.Cancelled ? "info" : "error");
+    }
+
+    private async Task RunDifficultyAssessmentCoreAsync(BenchmarkDifficultyJob job, CancellationToken cancellationToken)
+    {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var configService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
@@ -4039,7 +4070,7 @@ public class BenchmarkService
         {
             if (cancellationToken.IsCancellationRequested)
             {
-                job.MarkRemainingSkipped();
+                job.MarkRemainingCancelled();
                 job.SetStatus(BenchmarkDifficultyJobStatus.Cancelled);
                 _difficultyJobManager.Complete(job.Id, BenchmarkDifficultyJobStatus.Cancelled);
                 return;
@@ -4115,7 +4146,7 @@ public class BenchmarkService
                 {
                     if (cancellationToken.IsCancellationRequested)
                     {
-                        job.MarkRemainingSkipped();
+                        job.MarkRemainingCancelled();
                         job.SetStatus(BenchmarkDifficultyJobStatus.Cancelled);
                         _difficultyJobManager.Complete(job.Id, BenchmarkDifficultyJobStatus.Cancelled);
                         return;
@@ -4288,7 +4319,7 @@ public class BenchmarkService
 
         if (cancellationToken.IsCancellationRequested)
         {
-            job.MarkRemainingSkipped();
+            job.MarkRemainingCancelled();
             job.SetStatus(BenchmarkDifficultyJobStatus.Cancelled);
             _difficultyJobManager.Complete(job.Id, BenchmarkDifficultyJobStatus.Cancelled);
         }

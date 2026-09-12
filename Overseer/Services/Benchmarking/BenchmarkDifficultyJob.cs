@@ -7,7 +7,11 @@ using System.Threading;
 using Overseer.Models;
 
 public enum BenchmarkDifficultyJobStatus { Running, Completed, CompletedWithErrors, Cancelled, Failed }
-public enum BenchmarkDifficultyItemStatus { Pending, Assessing, Rated, Failed, Skipped }
+/// <summary>
+/// <see cref="Skipped"/> marks questions the job abandoned after a failure or the runaway
+/// guard; <see cref="Cancelled"/> marks questions left unrated by an operator's termination.
+/// </summary>
+public enum BenchmarkDifficultyItemStatus { Pending, Assessing, Rated, Failed, Skipped, Cancelled }
 
 public class BenchmarkDifficultyJobItem
 {
@@ -124,6 +128,20 @@ public class BenchmarkDifficultyJob
                 if (item.Status == BenchmarkDifficultyItemStatus.Pending || item.Status == BenchmarkDifficultyItemStatus.Assessing)
                 {
                     item.Status = BenchmarkDifficultyItemStatus.Skipped;
+                }
+            }
+        }
+    }
+
+    public void MarkRemainingCancelled()
+    {
+        lock (_lock)
+        {
+            foreach (var item in Items)
+            {
+                if (item.Status == BenchmarkDifficultyItemStatus.Pending || item.Status == BenchmarkDifficultyItemStatus.Assessing)
+                {
+                    item.Status = BenchmarkDifficultyItemStatus.Cancelled;
                 }
             }
         }

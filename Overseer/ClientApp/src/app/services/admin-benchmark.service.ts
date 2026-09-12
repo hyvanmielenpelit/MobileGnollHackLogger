@@ -160,6 +160,7 @@ export interface UpdateBenchmarkScoringProfileRequest {
 export interface StartDifficultyAssessmentRequest {
   suiteId: number;
   questionIds?: number[] | null;
+  onlyUnassessed?: boolean;
   assessorModelConfigurationId: number;
 }
 

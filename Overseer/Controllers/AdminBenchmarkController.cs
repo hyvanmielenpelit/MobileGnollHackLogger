@@ -372,37 +372,19 @@ public class AdminBenchmarkController : ControllerBase
         var conflict = CheckConflictingBenchmarkJob(suite.Id, "difficulty assessment");
         if (conflict != null) return conflict;
 
-        List<BenchmarkQuestion> targetQuestions;
-        string scopeType = "suite";
-
-        if (request.QuestionIds != null && request.QuestionIds.Count > 0)
+        var selection = BenchmarkDifficultyTargetSelector.Select(
+            suite.Id, suite.Questions, request.QuestionIds, request.OnlyUnassessed);
+        if (selection.Error != null)
         {
-            scopeType = "questions";
-            var suiteQuestionIds = suite.Questions.Select(q => q.Id).ToHashSet();
-            foreach (var qId in request.QuestionIds)
-            {
-                if (!suiteQuestionIds.Contains(qId))
-                {
-                    return BadRequest($"Question ID {qId} does not belong to suite {request.SuiteId}.");
-                }
-            }
-
-            var requestIdsSet = request.QuestionIds.ToHashSet();
-            targetQuestions = suite.Questions
-                .Where(q => requestIdsSet.Contains(q.Id))
-                .OrderBy(q => q.OrderIndex)
-                .ToList();
-        }
-        else
-        {
-            targetQuestions = suite.Questions
-                .OrderBy(q => q.OrderIndex)
-                .ToList();
+            return BadRequest(selection.Error);
         }
 
+        var targetQuestions = selection.Questions;
         if (targetQuestions.Count == 0)
         {
-            return BadRequest("No questions found to assess.");
+            return BadRequest(selection.Scope == BenchmarkDifficultyTargetSelector.UnassessedScope
+                ? "Every question in this suite already has an assessed difficulty."
+                : "No questions found to assess.");
         }
 
         var assessorConfig = await _dbContext.SystemAiApiConfigurations.FindAsync(request.AssessorModelConfigurationId);
@@ -430,7 +412,7 @@ public class AdminBenchmarkController : ControllerBase
         {
             SuiteId = suite.Id,
             SuiteName = suite.Name,
-            Scope = scopeType,
+            Scope = selection.Scope,
             AssessorConfigId = assessorConfig.Id,
             AssessorDisplayName = assessorConfig.DisplayName,
             StartedByUserId = string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId,

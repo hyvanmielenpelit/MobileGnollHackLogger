@@ -80,6 +80,10 @@ public class StartDifficultyAssessmentRequest
 {
     public long SuiteId { get; set; }
     public List<long>? QuestionIds { get; set; }
+
+    /// <summary>When true and <see cref="QuestionIds"/> is empty, only questions without an assessed difficulty are targeted.</summary>
+    public bool OnlyUnassessed { get; set; }
+
     public long AssessorModelConfigurationId { get; set; }
 }
 

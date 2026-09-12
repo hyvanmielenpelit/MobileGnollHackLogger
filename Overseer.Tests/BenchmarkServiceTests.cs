@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -570,6 +571,62 @@ public class BenchmarkServiceTests
             Assert.NotNull(updated.CompletedAtUtc);
             Assert.Equal("Run interrupted by application restart.", updated.ErrorMessage);
         }
+    }
+
+    [Fact]
+    public async Task RunDifficultyAssessmentAsync_WithCancelledToken_EndsJobCancelledAndReleasesManager()
+    {
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new ApplicationDbContext(dbOptions));
+        var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+
+        var manager = new BenchmarkDifficultyJobManager();
+        var benchmarkService = new BenchmarkService(
+            scopeFactory,
+            null!,
+            null!,
+            null!,
+            new BenchmarkRunManager(),
+            manager,
+            null!,
+            new ConfigurationBuilder().Build(),
+            NullLogger<BenchmarkService>.Instance);
+
+        using var cts = new CancellationTokenSource();
+        var job = new BenchmarkDifficultyJob
+        {
+            SuiteId = 1,
+            SuiteName = "Test Suite",
+            Scope = "suite",
+            AssessorConfigId = 1,
+            AssessorDisplayName = "Assessor Model",
+            Cts = cts,
+            Items = new List<BenchmarkDifficultyJobItem>
+            {
+                new() { QuestionId = 1, OrderIndex = 1, QuestionTextExcerpt = "Q1" },
+                new() { QuestionId = 2, OrderIndex = 2, QuestionTextExcerpt = "Q2" }
+            }
+        };
+        Assert.True(manager.TryStart(job, out _));
+
+        cts.Cancel();
+        await benchmarkService.RunDifficultyAssessmentAsync(job.Id, cts.Token);
+
+        Assert.Equal(BenchmarkDifficultyJobStatus.Cancelled, job.Status);
+        Assert.All(job.Items, i => Assert.Equal(BenchmarkDifficultyItemStatus.Cancelled, i.Status));
+        Assert.NotNull(job.CompletedAtUtc);
+
+        var nextJob = new BenchmarkDifficultyJob
+        {
+            SuiteId = 1,
+            SuiteName = "Test Suite",
+            Cts = new CancellationTokenSource()
+        };
+        Assert.True(manager.TryStart(nextJob, out var existing));
+        Assert.Null(existing);
     }
 
     [Fact]
