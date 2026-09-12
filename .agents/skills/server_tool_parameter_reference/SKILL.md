@@ -313,6 +313,20 @@ message therefore dates the run to before 2026-09-11.
 > ordinary-miss one, exactly as with `source_code_search`. A stored result that is the bare sentence
 > alone is a run recorded **before** the run-35 round, or a call in which the builder threw.
 
+> 🛑 **A `search_definitions` miss returns `Success = true` and, from the run-40 round
+> (2026-09-12), carries the same bounded occurrence probe.** The payload **opens with**
+> `No definition found for '` — the same opening sentence `SourceCodeService.FindDefinition`
+> produces — and is then extended by the shared `SourceMissContentBuilder` with where the symbol
+> does occur (one bounded `filenames_only` probe: max 3 files, 1000 characters, non-regex,
+> case-insensitive, exceptions and `Error:`-prefixed content swallowed into "no hit") or a
+> statement that it does not occur in the indexed repository, followed by this tool's own
+> guidance: on a hit, that the symbol occurs but no definition line matched this kind, so try
+> `kind: "any"` or `source_code_search` with `context_lines` on the named file; on no hit, to
+> check the spelling or use `list_indexed_files` / `source_code_search` with
+> `filenames_only: true`. Capped at **600 characters**, builder inside a `catch`. A stored result
+> that is the bare sentence alone is a run recorded **before** the run-40 round, or a call in
+> which the builder threw — the **resolver-defect** payload, as with `get_function_definition`.
+
 **`search_definitions` / `get_function_definition` matching is line-pattern, not a C parser.**
 Function/macro/struct/type matches are anchored regexes against a single line
 (`^{symbol}\s*\(`, `^\s*#define\s+{symbol}[\s(]`, etc.); an enum-member match additionally

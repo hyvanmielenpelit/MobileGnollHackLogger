@@ -26,6 +26,11 @@ public static class BenchmarkToolCallLogBuilder
     // The head size a long Result is cut to inside its fenced block.
     private const int ResultHeadChars = 600;
 
+    // The tail size kept beside that head. A tool result's last line often carries the part that
+    // decides how to read the whole — "[Showing 5 of 271 matching articles — …]" — and a head-only
+    // cut loses it.
+    private const int ResultTailChars = 240;
+
     /// <summary>
     /// The sentence for an answer with zero tool-call rows. A run before harness 17 never recorded
     /// per-call rows at all, so "recorded none" is the only honest reading — an unparseable or
@@ -108,18 +113,23 @@ public static class BenchmarkToolCallLogBuilder
 
     /// <summary>
     /// One call's full <c>ArgsText</c>, its <c>Error</c> if any, and the first
-    /// <see cref="ResultHeadChars"/> characters of <c>Result</c>, inside a single fenced block
-    /// whose fence is picked longer than any run of backticks the payload itself contains. A
-    /// field that is null beside a non-zero <c>ResultLengthChars</c> was nulled by the retention
-    /// sweep rather than never recorded, and is marked as such.
+    /// <see cref="ResultHeadChars"/> and last <see cref="ResultTailChars"/> characters of
+    /// <c>Result</c>, inside a single fenced block whose fence is picked longer than any run of
+    /// backticks the payload itself contains. A field that is null beside a non-zero
+    /// <c>ResultLengthChars</c> was nulled by the retention sweep rather than never recorded, and
+    /// is marked as such.
     ///
-    /// A truncated result's label names two sizes that can differ: <c>ResultLengthChars</c> is what
-    /// the tool actually returned, while <c>Result.Length</c> is what survived the harness's own
-    /// storage cap. When the second is smaller the label says so, because the head shown here is
-    /// then a head of the stored prefix and the reader must not take its tail as the result's tail.
-    /// A zero <c>ResultLengthChars</c> beside a non-null <c>Result</c> is defensive only — a row
-    /// recorded before harness 17 carries no <c>Result</c> to reach this branch with — and the
-    /// stored length stands in as the one figure that is known.
+    /// A result no longer than <see cref="ResultHeadChars"/> + <see cref="ResultTailChars"/> is
+    /// written whole: cutting it would emit two fragments that overlap, or abut, and together run
+    /// longer than the original.
+    ///
+    /// A cut result's label names two sizes that can differ: <c>ResultLengthChars</c> is what the
+    /// tool actually returned, while <c>Result.Length</c> is what survived the harness's own
+    /// storage cap. When the second is smaller the label says so, because the fragments shown here
+    /// are then taken from the stored prefix and the reader must not take the tail for the
+    /// result's own tail. A zero <c>ResultLengthChars</c> beside a non-null <c>Result</c> is
+    /// defensive only — a row recorded before harness 17 carries no <c>Result</c> to reach this
+    /// branch with — and the stored length stands in as the one figure that is known.
     /// </summary>
     private static string RenderCallBody(BenchmarkRunAnswerToolCall call)
     {
@@ -133,14 +143,16 @@ public static class BenchmarkToolCallLogBuilder
         string resultSection;
         if (call.Result != null)
         {
-            if (call.Result.Length > ResultHeadChars)
+            if (call.Result.Length > ResultHeadChars + ResultTailChars)
             {
                 int trueLength = call.ResultLengthChars != 0 ? call.ResultLengthChars : call.Result.Length;
                 string storedNote = call.Result.Length < trueLength
                     ? $", stored {Inv(call.Result.Length, "N0")}"
                     : string.Empty;
-                resultLabel = $"Result (first {ResultHeadChars} of {Inv(trueLength, "N0")} chars{storedNote}):";
-                resultSection = call.Result[..ResultHeadChars] + $"\n… [head of {ResultHeadChars} chars]";
+                resultLabel = $"Result (first {ResultHeadChars} and last {ResultTailChars} of {Inv(trueLength, "N0")} chars{storedNote}):";
+                resultSection = call.Result[..ResultHeadChars] +
+                    $"\n… [head of {ResultHeadChars} chars; tail of {ResultTailChars} chars follows]\n" +
+                    call.Result[^ResultTailChars..];
             }
             else
             {

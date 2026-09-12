@@ -41,22 +41,28 @@ namespace Overseer.Services.Tools
             }").RootElement;
         }
 
-        private SourceCodeService ResolveService(JsonElement parameters, out string guardMessage)
+        private SourceCodeService ResolveService(JsonElement parameters, out string guardMessage, out string repository)
         {
             if (parameters.TryGetProperty("repository", out var repo) &&
                 repo.GetString()?.Equals("nethack", StringComparison.OrdinalIgnoreCase) == true)
             {
                 guardMessage = ToolGuardMessages.NetHackSourceCodeIndexingInProgress;
+                repository = "nethack";
                 return _netHackService;
             }
 
             guardMessage = ToolGuardMessages.SourceCodeIndexingInProgress;
+            repository = "gnollhack";
             return _sourceCodeService;
         }
 
+        private const string HitGuidance = " The symbol occurs but no definition line matched this kind: try `kind: \"any\"`, or `source_code_search` with `context_lines` on the named file.";
+
+        private const string NoHitGuidance = " Check the spelling, or use `list_indexed_files` / `source_code_search` with `filenames_only: true`.";
+
         public Task<ToolResult> ExecuteAsync(JsonElement parameters, ToolExecutionContext context, CancellationToken cancellationToken)
         {
-            var service = ResolveService(parameters, out var guardMessage);
+            var service = ResolveService(parameters, out var guardMessage, out var repository);
             if (!service.IsIndexingComplete)
             {
                 return Task.FromResult(new ToolResult { Success = false, ErrorMessage = guardMessage });
@@ -80,6 +86,11 @@ namespace Overseer.Services.Tools
             }
 
             string result = service.FindDefinition(symbol, kind);
+
+            if (result.StartsWith(SourceMissContentBuilder.MissPrefix, StringComparison.Ordinal))
+            {
+                result = SourceMissContentBuilder.Build(service, result, symbol, repository, HitGuidance, NoHitGuidance);
+            }
 
             return Task.FromResult(new ToolResult { Success = true, Content = result });
         }

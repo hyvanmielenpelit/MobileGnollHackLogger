@@ -6,6 +6,8 @@ you only want to see where a function, struct, macro, or typedef is defined.
 Use the `kind` parameter to disambiguate (e.g., function, struct, macro, enum, type).
 If you don't know the kind, leave it as 'any'.
 
+A miss says where the symbol does occur, or that it does not occur in the indexed source; follow that rather than retrying the same name.
+
 ## Parameters
 - `symbol` (string, required): The name of the symbol to find. Bare name — `encounterdef`, not `struct encounterdef`; use `kind` to narrow.
 - `kind` (string, optional): The kind of symbol ('function', 'struct', 'macro', 'enum', 'type', 'any'). Default 'any'.

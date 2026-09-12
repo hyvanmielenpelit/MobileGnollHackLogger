@@ -1093,6 +1093,118 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("**Unverified Claims:** not recorded", report);
     }
 
+    /// <summary>
+    /// An answer in the verification-cleared population: Accuracy docked out of rubric, unverified
+    /// claims recorded, and every claim the verifier checked supported — nothing refuted, nothing
+    /// left indeterminate. All four levels are present so the sensitivity index has something to
+    /// recompute from.
+    /// </summary>
+    private static BenchmarkRunAnswer VerificationClearedAnswer(
+        int orderIndex,
+        BenchmarkDifficulty band,
+        int assessedDifficulty,
+        int qualityScore,
+        int accuracyLevel = 4)
+    {
+        var answer = ScoredAnswer(orderIndex, band, assessedDifficulty, qualityScore);
+        answer.AnswerFlags = (int)BenchmarkAnswerFlags.UnevidencedDeduction;
+        answer.UnverifiedClaimCount = 2;
+        answer.ClaimsSupportedCount = 2;
+        answer.ClaimsRefutedCount = 0;
+        answer.ClaimsIndeterminateCount = 0;
+        answer.AccuracyLevel = accuracyLevel;
+        answer.CompletenessLevel = 5;
+        answer.ConcisenessLevel = 5;
+        answer.ReadabilityLevel = 5;
+        return answer;
+    }
+
+    [Fact]
+    public void AssessorFindings_ListVerificationClearedAccuracyDeductions_AndExcludeEveryNearMiss()
+    {
+        var cleared = VerificationClearedAnswer(1, BenchmarkDifficulty.Simple, 25, 70);
+
+        // One near miss per condition, each otherwise identical to the population answer.
+        var noFlag = VerificationClearedAnswer(2, BenchmarkDifficulty.Simple, 25, 70);
+        noFlag.AnswerFlags = 0;
+
+        var noClaims = VerificationClearedAnswer(3, BenchmarkDifficulty.Simple, 25, 70);
+        noClaims.UnverifiedClaimCount = 0;
+        noClaims.ClaimsSupportedCount = 0;
+
+        var refuted = VerificationClearedAnswer(4, BenchmarkDifficulty.Simple, 25, 70);
+        refuted.ClaimsRefutedCount = 1;
+
+        var indeterminate = VerificationClearedAnswer(5, BenchmarkDifficulty.Simple, 25, 70);
+        indeterminate.ClaimsIndeterminateCount = 1;
+
+        var accuracyUndocked = VerificationClearedAnswer(6, BenchmarkDifficulty.Simple, 25, 70, accuracyLevel: 6);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off, cleared, noFlag, noClaims, refuted, indeterminate, accuracyUndocked));
+
+        Assert.Contains("**Verification-cleared Accuracy deductions:** 1 (Q1)", report);
+        Assert.Contains("as OUT-OF-SCOPE is of Completeness", report);
+    }
+
+    [Fact]
+    public void AssessorFindings_OmitVerificationClearedAccuracyDeductions_WhenNoAnswerQualifies()
+    {
+        var refuted = VerificationClearedAnswer(1, BenchmarkDifficulty.Simple, 25, 70);
+        refuted.ClaimsRefutedCount = 1;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(BenchmarkSecondOpinionMode.Off, refuted));
+
+        Assert.DoesNotContain("Verification-cleared Accuracy deductions", report);
+        Assert.DoesNotContain("Verification-cleared Accuracy Sensitivity", report);
+    }
+
+    [Fact]
+    public void VerificationClearedSensitivity_RaisesAccuracyByOne_AndStillHonoursTheCriticalErrorCap()
+    {
+        // Levels 5/5/5/5 score 87, so Q1 rises 70 → 87. Q2 is recomputed from the same levels but
+        // carries a critical error, so its 87 is capped back to 25 rather than lifting the index.
+        // Q3 is outside the population and keeps its stored 90. Equal difficulties, so the index
+        // is the plain mean: (87 + 25 + 90) / 3 = 67.
+        var cleared = VerificationClearedAnswer(1, BenchmarkDifficulty.Intermediate, 50, 70);
+        var clearedWithCriticalError = VerificationClearedAnswer(2, BenchmarkDifficulty.Intermediate, 50, 25);
+        clearedWithCriticalError.CriticalError = true;
+        var untouched = ScoredAnswer(3, BenchmarkDifficulty.Intermediate, 50, 90);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off, cleared, clearedWithCriticalError, untouched));
+
+        Assert.Contains("**Verification-cleared Accuracy Sensitivity:** 67 / 100", report);
+        Assert.Contains("Accuracy one level higher on the 2 answer(s) above", report);
+
+        // § 2 and § 7 carry one computation, so the two figures cannot drift.
+        int finalIndicesStart = report.IndexOf("## 7. Final Indices", StringComparison.Ordinal);
+        Assert.True(finalIndicesStart >= 0);
+        var matches = Regex.Matches(report, @"Verification-cleared Accuracy Sensitivity:\**\s*(\d+)\s*/\s*100");
+        Assert.Equal(2, matches.Count);
+        Assert.True(matches[0].Index < finalIndicesStart, "§ 2 must carry the sensitivity figure.");
+        Assert.True(matches[1].Index > finalIndicesStart, "§ 7 must carry the same sensitivity figure.");
+        Assert.Equal(matches[0].Groups[1].Value, matches[1].Groups[1].Value);
+    }
+
+    [Fact]
+    public void VerificationClearedSensitivity_IsNotRenderedAtAll_WhenThePopulationIsEmpty()
+    {
+        // Nothing to raise, so no second index is produced and the real Intelligence Index stands
+        // alone in both § 2 and § 7.
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 70);
+        q1.UnverifiedClaimCount = 2;
+        q1.ClaimsSupportedCount = 2;
+        var q2 = ScoredAnswer(2, BenchmarkDifficulty.Advanced, 85, 90);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1, q2));
+
+        Assert.DoesNotContain("Verification-cleared Accuracy Sensitivity", report);
+        Assert.Contains("**Unverified Claims:** 2 across 1 answer(s) (Q1)", report);
+    }
+
     [Fact]
     public void AssessorAgreement_CarriesTheConditioningCaveat_UnderTriggerSelectedCoverage()
     {

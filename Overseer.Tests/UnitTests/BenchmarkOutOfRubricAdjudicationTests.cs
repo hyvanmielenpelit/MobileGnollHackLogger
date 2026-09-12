@@ -12,8 +12,9 @@ using Xunit;
 /// The basis of an out-of-rubric Accuracy deduction as a verifiable claim: what is extracted from
 /// the assessor's "Not in rubric:" evidence, which answers reach the claim verifier on that ground,
 /// where the basis sits in the claim list, which verdict raises the advisory
-/// <see cref="BenchmarkAnswerFlags.ContestedAccuracyDeduction"/> flag, how the basis is kept out of
-/// the answer's own claim figures, and what the verifier and synthesis prompts say about it.
+/// <see cref="BenchmarkAnswerFlags.ContestedAccuracyDeduction"/> flag, how the basis and the
+/// critical-error quote are both kept out of the answer's own claim figures, and what the verifier
+/// and synthesis prompts say about it.
 /// </summary>
 public class BenchmarkOutOfRubricAdjudicationTests
 {
@@ -282,6 +283,54 @@ public class BenchmarkOutOfRubricAdjudicationTests
 
         Assert.Equal(3, BenchmarkService.WithoutOutOfRubricBasis(verifications, null).Count);
         Assert.Empty(BenchmarkService.WithoutOutOfRubricBasis(null, Basis));
+    }
+
+    [Fact]
+    public void TheCriticalErrorQuoteIsExcludedFromTheAnswersOwnVerifications_ButStillContestsTheFinding()
+    {
+        // The quote sits at ClaimIndex 0, where the critical-error adjudication submits it.
+        var verifications = new[]
+        {
+            new BenchmarkClaimVerification(0, Quote, BenchmarkClaimVerdict.Supported, "src/pray.c:1020", "The answer is right."),
+            new BenchmarkClaimVerification(1, "Gnolls have keen smell", BenchmarkClaimVerdict.Supported, "src/role.c:45", "Found."),
+            new BenchmarkClaimVerification(2, "Master Kaen has AC -2", BenchmarkClaimVerdict.Indeterminate, null, "Not located."),
+            new BenchmarkClaimVerification(3, "Gnolls have infravision", BenchmarkClaimVerdict.Refuted, "src/role.c:50", "Not present.")
+        };
+
+        var own = BenchmarkService.WithoutCriticalErrorQuote(verifications, Quote);
+
+        // The counts the answer records are the answer's own claims: the quote is the assessor's
+        // finding, so Unverified Claims and Claim Verification Yield stay equal to it.
+        Assert.Equal(3, own.Count);
+        Assert.Equal(1, own.Count(v => v.Verdict == BenchmarkClaimVerdict.Supported));
+        Assert.Equal(1, own.Count(v => v.Verdict == BenchmarkClaimVerdict.Refuted));
+        Assert.Equal(1, own.Count(v => v.Verdict == BenchmarkClaimVerdict.Indeterminate));
+        Assert.DoesNotContain(own, v => string.Equals(v.Claim, Quote, StringComparison.Ordinal));
+
+        // The contested-critical-error decision reads the unfiltered list, so it still fires.
+        Assert.True(BenchmarkService.CriticalErrorQuoteWasSupported(verifications, Quote));
+
+        Assert.Equal(4, BenchmarkService.WithoutCriticalErrorQuote(verifications, null).Count);
+        Assert.Equal(4, BenchmarkService.WithoutCriticalErrorQuote(verifications, "  ").Count);
+        Assert.Empty(BenchmarkService.WithoutCriticalErrorQuote(null, Quote));
+    }
+
+    [Fact]
+    public void TheBasisAndTheCriticalErrorQuote_AreBothExcludedFromTheAnswersOwnVerifications()
+    {
+        var verifications = new[]
+        {
+            new BenchmarkClaimVerification(0, Quote, BenchmarkClaimVerdict.Supported, "src/pray.c:1020", "The answer is right."),
+            new BenchmarkClaimVerification(1, Basis, BenchmarkClaimVerdict.Refuted, "src/pray.c:1040", "The reset scales with level."),
+            new BenchmarkClaimVerification(2, "Gnolls have keen smell", BenchmarkClaimVerdict.Supported, "src/role.c:45", "Found.")
+        };
+
+        var own = BenchmarkService.WithoutCriticalErrorQuote(
+            BenchmarkService.WithoutOutOfRubricBasis(verifications, Basis),
+            Quote);
+
+        Assert.Single(own);
+        Assert.Equal("Gnolls have keen smell", own[0].Claim);
     }
 
     [Fact]

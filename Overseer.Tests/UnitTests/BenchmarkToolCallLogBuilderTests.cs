@@ -169,7 +169,7 @@ public class BenchmarkToolCallLogBuilderTests
     }
 
     [Fact]
-    public void Build_CutsALongResultToA600CharacterHead_WithAMarkerNamingTheTrueSize()
+    public void Build_CutsALongResultToA600CharacterHeadAnda240CharacterTail_WithAMarkerNamingTheTrueSize()
     {
         string longResult = new string('x', 5000);
         var answer = new BenchmarkRunAnswer
@@ -195,8 +195,71 @@ public class BenchmarkToolCallLogBuilderTests
 
         Assert.Contains(new string('x', 600), markdown);
         Assert.DoesNotContain(new string('x', 601), markdown);
-        Assert.Contains("head of 600 chars", markdown);
-        Assert.Contains("first 600 of 5,000 chars", markdown);
+        Assert.Contains("head of 600 chars; tail of 240 chars follows", markdown);
+        Assert.Contains("first 600 and last 240 of 5,000 chars", markdown);
+    }
+
+    [Fact]
+    public void Build_KeepsTheLastLineOfALongResult()
+    {
+        // The line a reader needs most is often the last one: it says what the result is a subset
+        // of, and a head-only cut discards it.
+        const string lastLine = "[Showing 5 of 271 matching articles — …]";
+        string longResult = new string('x', 2000 - lastLine.Length) + lastLine;
+        var answer = new BenchmarkRunAnswer
+        {
+            OrderIndex = 1,
+            QuestionText = "Q1",
+            AnswerText = "A1",
+            ToolCalls = new List<BenchmarkRunAnswerToolCall>
+            {
+                new BenchmarkRunAnswerToolCall
+                {
+                    SortOrder = 0,
+                    Name = "wiki_search",
+                    Status = "completed",
+                    ArgsText = "{}",
+                    Result = longResult,
+                    ResultLengthChars = 2000
+                }
+            }
+        };
+
+        string markdown = BenchmarkToolCallLogBuilder.Build(SampleRun(), new[] { answer });
+
+        Assert.Contains(lastLine, markdown);
+        Assert.Contains("first 600 and last 240 of 2,000 chars", markdown);
+    }
+
+    [Fact]
+    public void Build_WritesAResultOfExactlyTheHeadPlusTailLengthWhole()
+    {
+        // At the boundary a cut would emit two fragments that abut, together no shorter than the
+        // original, so the whole result is written under the plain label instead.
+        string boundaryResult = new string('a', 600) + new string('b', 240);
+        var answer = new BenchmarkRunAnswer
+        {
+            OrderIndex = 1,
+            QuestionText = "Q1",
+            AnswerText = "A1",
+            ToolCalls = new List<BenchmarkRunAnswerToolCall>
+            {
+                new BenchmarkRunAnswerToolCall
+                {
+                    SortOrder = 0,
+                    Name = "wiki_search",
+                    Status = "completed",
+                    ArgsText = "{}",
+                    Result = boundaryResult,
+                    ResultLengthChars = 840
+                }
+            }
+        };
+
+        string markdown = BenchmarkToolCallLogBuilder.Build(SampleRun(), new[] { answer });
+
+        Assert.Contains("Result:\n" + boundaryResult, markdown);
+        Assert.DoesNotContain("head of 600 chars", markdown);
     }
 
     [Fact]
@@ -204,7 +267,7 @@ public class BenchmarkToolCallLogBuilderTests
     {
         // ResultLengthChars is what the tool returned; Result is what survived the harness's own
         // storage cap. When they differ the label must say so, or the reader takes the stored
-        // prefix for the whole result and reads its tail as the result's tail.
+        // prefix for the whole result and reads the tail shown as the result's own tail.
         var answer = new BenchmarkRunAnswer
         {
             OrderIndex = 1,
@@ -226,6 +289,6 @@ public class BenchmarkToolCallLogBuilderTests
 
         string markdown = BenchmarkToolCallLogBuilder.Build(SampleRun(), new[] { answer });
 
-        Assert.Contains("Result (first 600 of 12,897 chars, stored 12,000):", markdown);
+        Assert.Contains("Result (first 600 and last 240 of 12,897 chars, stored 12,000):", markdown);
     }
 }

@@ -130,10 +130,26 @@ public static class BenchmarkVerdictConsistency
     }
 
     /// <summary>
-    /// Vocabulary citing unverifiability as a reason for an assessment finding.
+    /// Vocabulary citing unverifiability, absent corroboration, or an out-of-rubric basis as the
+    /// reason for an assessment finding.
+    ///
+    /// The "not in/from/covered by/supported by/given in ... rubric" alternative carries a negative
+    /// lookahead against a following colon. The assessment prompt requires an out-of-rubric
+    /// deduction's evidence to begin with the literal marker <c>Not in rubric:</c>, a separate signal
+    /// this class reads through <c>BenchmarkAssessmentParser.HasOutOfRubricMarker</c>; the lookahead
+    /// keeps that marker sentence from also matching here.
     /// </summary>
     private static readonly Regex UnverifiabilityRegex = new(
-        @"could not (?:be )?verif|cannot (?:be )?verif|unable to verif|unverifi|could not confirm|not confirmed|no confirmation|not verifiable",
+        @"could not (?:be )?verif|cannot (?:be )?verif|unable to verif|unverifi|could not confirm|not confirmed|no confirmation|not verifiable"
+        + @"|corroborat"
+        + @"|unsupported"
+        + @"|without\s+(?:any\s+)?(?:basis|support|source\s+support|corroboration|rubric\s+corroboration)"
+        + @"|adjudicat"
+        + @"|beyond\s+(?:the\s+)?(?:verifiable\s+)?rubric"
+        + @"|outside\s+(?:the\s+)?rubric"
+        + @"|not\s+(?:in|from|covered\s+by|supported\s+by|given\s+in)\s+(?:the\s+)?rubric(?!\s*:)"
+        + @"|rubric\s+(?:does\s+not|doesn't|did\s+not|neither)\s+(?:support|cover|mention|corroborate|state|include)"
+        + @"|(?:withh?old|kept|keeping|held)\s+(?:it\s+)?(?:below|under)\s+(?:level\s+)?[56]",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>

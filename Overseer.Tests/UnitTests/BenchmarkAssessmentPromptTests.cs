@@ -212,9 +212,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsTwentyFour()
+    public void HarnessVersion_IsTwentyFive()
     {
-        Assert.Equal("24", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("25", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -454,15 +454,16 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs24_ScoringMethodIs10()
+    public void Versions_HarnessIs25_ScoringMethodIs10()
     {
-        Assert.Equal("24", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("25", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 23 reads an evidence string for a named defect rather than for a no-fault
-        // boilerplate string, counts the out-of-scope and FORM points that sit beside a level
-        // below 6, and changes two tool guides — so a 23-stamped run differs from a 22-stamped
-        // one on two instrument keys, HarnessVersion and ToolGuidesSha256. The scoring method
-        // does not move: nothing here changes what a score is.
+        // Harness 25 widens the unevidenced-deduction vocabulary, makes the out-of-rubric marker
+        // mandatory, grounds the synthesis in the verifier-supported claims, takes the
+        // critical-error quote out of the answer's claim counts and adds an advisory report index —
+        // so a 25-stamped run differs from a 24-stamped one on two instrument keys, HarnessVersion
+        // and ToolGuidesSha256. The scoring method does not move: nothing here changes what a score
+        // is.
         Assert.Equal(10, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 
@@ -590,6 +591,79 @@ public class BenchmarkAssessmentPromptTests
         Assert.Contains(BenchmarkAssessmentParser.FormOnlyReadabilityMarker, prompt);
         Assert.Contains("`readabilityEvidence`", prompt);
         Assert.Contains("\"readabilityEvidence\": null", prompt);
+    }
+
+    [Fact]
+    public void PerQuestionPrompt_SaysAnOutOfRubricClaimDoesNotLowerTheAccuracyLevel()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            "Suite",
+            1,
+            "What does Yeenaghu's gaze do?",
+            BenchmarkDifficulty.Advanced,
+            "Rubric point one.",
+            "Answer.",
+            BenchmarkAnswerStatus.Ok);
+
+        Assert.Contains(
+            "A claim outside the rubric does not lower the ACCURACY level either — do not withhold level 5 or 6 because the answer states something the rubric does not cover. Levels 5 and 6 are withheld only for a named defect.",
+            prompt);
+    }
+
+    [Fact]
+    public void PerQuestionPrompt_RequiresTheOutOfRubricMarkerOnADeductionTheRubricDoesNotCarry()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            "Suite",
+            1,
+            "How long is the prayer timeout?",
+            BenchmarkDifficulty.Advanced,
+            "Rubric point one.",
+            "Answer.",
+            BenchmarkAnswerStatus.Ok);
+
+        // The marker is what routes the basis to the claim verifier, so the instruction names it
+        // verbatim from the constant the parser matches on.
+        Assert.Contains(
+            $"- If a deduction does not come from the rubric, the evidence sentence MUST begin with `{BenchmarkAssessmentParser.OutOfRubricAccuracyMarker}` followed by the basis — the harness sends that basis to the claim verifier, and a deduction written without the marker is never checked.",
+            prompt);
+        Assert.Equal("Not in rubric:", BenchmarkAssessmentParser.OutOfRubricAccuracyMarker);
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_EmitsTheVerifierSupportedClaims()
+    {
+        var summary = Verdict(7, accuracyLevel: 5, accuracyEvidence: "Level 5.");
+        summary.SupportedClaims = new[]
+        {
+            "Yeenaghu's gaze inflicts fear on a failed save.",
+            "Gnolls have keen smell."
+        };
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { summary });
+
+        Assert.Contains(
+            "Verifier-supported claims (checked against source/wiki; do not describe any of these as invented, fabricated, unsupported, uncorroborated or inflated): \"Yeenaghu's gaze inflicts fear on a failed save.\"; \"Gnolls have keen smell.\"",
+            prompt);
+
+        // And the instruction the line exists to make actionable.
+        Assert.Contains(
+            "A claim listed as verifier-supported is a fact of the game, whatever the rubric omitted; naming it as embellishment is a grading error, not a finding.",
+            prompt);
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_OmitsTheSupportedClaimsLine_WhenThereAreNone()
+    {
+        var summary = Verdict(7, accuracyLevel: 5, accuracyEvidence: "Level 5.");
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { summary });
+
+        // Scoped past the header: CRITICAL INSTRUCTION 2 names verifier-supported claims whether or
+        // not any question carries one.
+        string blocks = prompt.Substring(prompt.IndexOf("### Question #", StringComparison.Ordinal));
+
+        Assert.DoesNotContain("Verifier-supported claims", blocks);
     }
 
     /// <summary>A verdict summary carrying only the fields these tests turn on.</summary>

@@ -217,6 +217,58 @@ public class BenchmarkVerdictConsistencyTests
             unverifiedClaimCount: 3));
     }
 
+    [Theory]
+    // Run 40's assessor withheld Accuracy 5-6 on nine answers using vocabulary the original
+    // regex did not match; only one of the nine was detected before this vocabulary was added.
+    [InlineData("Not corroborated by the rubric.")]
+    [InlineData("Unsupported gloss on the mechanic, asserted without basis in the rubric.")]
+    [InlineData("Could not be adjudicated against the rubric's ground truth.")]
+    [InlineData("Withholding 5-6 for unverified precision.")]
+    [InlineData("Asserted beyond verifiable rubric ground truth.")]
+    [InlineData("Asserted without source support.")]
+    [InlineData("Stated confidently without rubric corroboration.")]
+    [InlineData("Kept below 6 because the damage figure is not corroborated.")]
+    public void IsUnverifiabilityGroundedDeduction_Run40Vocabulary_Flags(string evidence)
+    {
+        Assert.True(BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
+            accuracyLevel: 5,
+            accuracyEvidence: evidence,
+            unverifiedClaimCount: 1));
+    }
+
+    [Theory]
+    [InlineData("Not corroborated by the rubric, and the stated AC of 3 is incorrect (rubric: 1).")]
+    [InlineData("Unsupported by the rubric; omits the delay of 5.")]
+    public void IsUnverifiabilityGroundedDeduction_Run40VocabularyNamingADefect_DoesNotFlag(string evidence)
+    {
+        Assert.False(BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
+            accuracyLevel: 5,
+            accuracyEvidence: evidence,
+            unverifiedClaimCount: 1));
+    }
+
+    [Fact]
+    public void IsUnverifiabilityGroundedDeduction_Run40Vocabulary_NoUnverifiedClaims_DoesNotFlag()
+    {
+        Assert.False(BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
+            accuracyLevel: 5,
+            accuracyEvidence: "Not corroborated by the rubric.",
+            unverifiedClaimCount: 0));
+    }
+
+    [Fact]
+    public void IsUnverifiabilityGroundedDeduction_OutOfRubricMarker_DoesNotFlag()
+    {
+        // The marker sentence is a separate signal (BenchmarkAssessmentParser.HasOutOfRubricMarker)
+        // and must not also match here; the negative lookahead on the "not in ... rubric"
+        // alternative is what keeps it out.
+        const string evidence = "Not in rubric: from my own knowledge of the GnollHack source";
+        Assert.False(BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
+            accuracyLevel: 5,
+            accuracyEvidence: evidence,
+            unverifiedClaimCount: 1));
+    }
+
     [Fact]
     public void IsOmissionGroundedAccuracyDeduction_SubstitutionEvidence_DoesNotFlag()
     {

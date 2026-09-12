@@ -400,7 +400,7 @@ Prompted by the 2026-09-04 GPT-5.6 Luna benchmark run (run 11), which revealed e
   - `SourceCodeHeadSha`: Git HEAD commit SHA of the GnollHack source repository (`SourceCodePath`). Recorded from harness 16.
   Two runs represent an exact reproduction of the evaluation instrument only when `CandidateSystemPromptSha256`, `ToolGuidesSha256`, and `KnowledgeBaseHeadSha` match. `WikiHeadSha` and `SourceCodeHeadSha` are **provenance, not comparability keys** — see **Harness Version 16 Updates**.
 - **Contested-Verdict Adjudication (H1)**:
-  When the primary assessor and second-opinion assessor split on `CriticalError` or when an answer carries `BenchmarkAnswerFlags.ContestedVerdict`, the answer is automatically selected for claim verification (`RunClaimVerificationAsync`), even if `UnverifiedClaimCount == 0`. The verifier receives a disputed verdict prompt testing both the candidate's claims and the assessor's counter-claims against source code facts. Reports summarize `Critical Errors: {confirmed} confirmed, {contested} contested` and print a **Contested-Verdict Sensitivity** line showing the Intelligence Index if contested verdicts were upheld at the second grader's score.
+  When the primary assessor and second-opinion assessor split on `CriticalError` or when an answer carries `BenchmarkAnswerFlags.ContestedVerdict`, the answer is automatically selected for claim verification (`RunClaimVerificationAsync`), even if `UnverifiedClaimCount == 0`. The verifier receives a disputed verdict prompt testing both the candidate's claims and the assessor's counter-claims against source code facts. Reports summarize `Critical Errors: {confirmed} confirmed, {contested} contested` and print a **Contested-Verdict Sensitivity** line showing the Intelligence Index if contested verdicts were upheld at the second grader's score. From harness 25 a second advisory figure, **Verification-cleared Accuracy Sensitivity**, is printed beside it; see § *Harness Version 25 Updates*.
 - **Estimated Harness Cost Block (H7)**:
   Under `### Harness Cost`, token pricing is resolved with fallback precedence: run snapshot → custom override (Admin System AI Configs) → catalog default (`pricing` object in model catalog JSON). The report renders an **Estimated Cost** breakdown (candidate uncached input, cached input, cache creation, and output; primary assessor; and claim verifier, plus total cost). Cache creation tokens are costed at the model's `cacheWritePerMillion` rate when published. If participating models use different currencies, per-role costs are printed but the total is suppressed with an explanatory note. If any participating model lacks pricing, an advisory notice names the specific role(s) lacking pricing and indicates where to configure custom rates or catalog entries, ensuring no misleading partial totals are displayed. A provenance line distinguishes catalog rates (with `asOf` date) from custom overrides.
   > As of harness 15 the breakdown carries **five** peer roles — candidate, assessor, second opinion, claim verifier, synthesis — plus a Grading subtotal, not the three named above. See **Harness Version 15 Updates**.
@@ -1024,7 +1024,7 @@ differing instrument key, not two or more.
 
 A new admin-only `GET runs/{id}/tool-call-log`, returning `text/markdown` and downloadable from the
 run detail page as **Tool-call log**, covers every answer of the run: the per-call table, plus per
-call the full arguments, the error, and the first 600 characters of the result, with
+call the full arguments, the error, and the first 600 characters of the result (from harness 25, its last 240 as well), with
 `(pruned by retention)` markers wherever the sweep nulled a payload. Payloads render inside fenced
 code blocks rather than table cells, so no escaping can corrupt them. It loads the run's answers
 with their tool calls included, which the run-detail endpoint deliberately does not.
@@ -1850,7 +1850,7 @@ compare the two on counts and per-question thresholds, not as a reproduction pai
   `FORM:` count falls back to; it cannot distinguish a marker-only evidence string from one that
   also named a real defect, and a run from before this round is read on that basis.
 - **The tool-call log export prints the size the tool returned.** `BenchmarkToolCallLogBuilder`'s
-  truncated-result label now reads *"Result (first 600 of 12,897 chars, stored 12,000)"* —
+  truncated-result label read *"Result (first 600 of 12,897 chars, stored 12,000)"* from this round until harness 25 added the tail —
   `ResultLengthChars` is the length `ToolExecutor` handed over, and the stored note appears only when
   the recorder kept less than that. Previously the label named the stored length as if it were the
   result length, which reads as a tool returning less than it did.
@@ -1932,6 +1932,95 @@ Migration `AddBenchmarkDefaultSuiteKey` adds `BenchmarkSuite.DefaultSuiteKey` (`
 nullable), `BenchmarkSuite.DefaultSuiteVersion` (`int`, nullable) and `BenchmarkRun.DefaultSuiteKeyUsed`
 (`nvarchar(64)`, nullable); no data is backfilled, so a suite imported before this round reads
 `DefaultSuiteKey` as `null` — "unknown, match by name" — rather than as "custom".
+
+### Harness Version 25 Updates
+
+*2026-09-12.*
+
+Prompted by run 40 (Gemini 3.7 Flash @ `medium`, harness 24, Intelligence Index 68 ± 8, unchanged
+from run 39): on seven of eighteen questions the assessor deducted Accuracy for statements the
+candidate had taken verbatim from the wiki or the source its tools returned, and the claim verifier
+later supported every such claim it checked. The unevidenced-deduction detector caught one of the
+nine, because it matches only `verif*` vocabulary and this assessor wrote "not corroborated by the
+rubric", "asserted without source support" and "could not be adjudicated"; the final synthesis, which
+sees refuted claims but not supported ones, called four verifier-supported facts invented. Two tool
+records were also unreadable rather than wrong: the tool-call log export cut every result to its
+first 600 characters, hiding the end markers a `wiki_search` result carries, and a
+`search_definitions` miss returned a bare sentence with nothing to act on.
+
+`ScoringMethodVersion` stays at **10** — nothing here changes how an answer is scored, and the new
+index is advisory — and `BenchmarkAssessmentPrompt.HarnessVersion` moves to **25**.
+`Overseer/ToolGuides/wiki_search.md` and `Overseer/ToolGuides/search_definitions.md` each gain a
+sentence, so **`ToolGuidesSha256` moves**; no `ChatService` prose and no knowledge-base article
+changed, so `CandidateSystemPromptSha256` does not move. A run stamped 25 therefore differs from a
+run stamped 24 on `HarnessVersion` **and** `ToolGuidesSha256`, which is below Tier B: compare the two
+on counts and per-question thresholds, not as a reproduction pair.
+
+- **The unevidenced-deduction detector matches the vocabulary assessors actually use (H1).**
+  `BenchmarkVerdictConsistency.UnverifiabilityRegex` also matches *corroborat*, *unsupported*,
+  *without basis / support / source support / corroboration*, *adjudicat*, *beyond the verifiable
+  rubric*, *outside the rubric*, *not in / from / covered by / supported by / given in the rubric*,
+  *the rubric does not support / cover / mention / corroborate / state / include*, and *withheld /
+  kept / held below level 5 or 6*. The `DefectRegex` guard is unchanged, so evidence that also names
+  a real fault still counts as a legitimate deduction. The `not in the rubric` alternative carries a
+  `(?!\s*:)` lookahead so the mandatory `Not in rubric:` marker below is read on its own path rather
+  than here.
+- **Two sentences in the assessment prompt (H2).** After preamble instruction 8: *"A claim outside
+  the rubric does not lower the ACCURACY level either — do not withhold level 5 or 6 because the
+  answer states something the rubric does not cover. Levels 5 and 6 are withheld only for a named
+  defect."* And the evidence rule now makes the marker mandatory rather than exemplary: an
+  out-of-rubric deduction's evidence sentence **MUST** begin with `Not in rubric:`, because that
+  basis is what the harness sends to the claim verifier, and a deduction written without the marker
+  is never checked.
+- **The final synthesis receives the verifier-supported claims (H3).** Each per-question verdict
+  summary now carries up to six supported claims (300 characters each), with the out-of-rubric basis
+  and the critical-error quote excluded as they already were from the refuted list, and the synthesis
+  prompt names them: *"Verifier-supported claims (checked against source/wiki; do not describe any of
+  these as invented, fabricated, unsupported, uncorroborated or inflated)"*. Instruction 2 adds that
+  a claim listed as verifier-supported is a fact of the game whatever the rubric omitted, so naming
+  it as embellishment is a grading error rather than a finding. Costs roughly 2k input tokens per
+  synthesis.
+- **Verification-cleared Accuracy deductions, and a sensitivity index for them (H4).** An answer is
+  *verification-cleared* when it carries `UnevidencedDeduction`, has unverified claims, has no
+  refuted and no indeterminate claim, and sits at Accuracy level 5 or below — that is, Accuracy was
+  docked citing only claims the rubric did not cover, and every such claim the verifier checked was
+  supported. *Assessor Findings* names them after the *Unverified Claims* line, and **§ 2** and
+  **§ 7 Final Indices** print a **Verification-cleared Accuracy Sensitivity**: the Intelligence Index
+  recomputed with Accuracy one level higher (capped at 6) on exactly those answers, every other level
+  and every other answer unchanged, the critical-error cap and the unanswered-at-0 rule applied as in
+  the real index, and quality recomputed from the run's own scoring profile snapshot. It is the
+  instrument's share of the Accuracy shortfall, as `OUT-OF-SCOPE:` is of Completeness. Advisory: it
+  changes no score, has no DTO, no column and no client surface, and is omitted when the population
+  is empty — exactly like *Contested-Verdict Sensitivity*.
+- **Claim counts exclude the critical-error quote (H5).** The quote is the assessor's statement about
+  the answer, not a claim the answer makes, and it was already excluded from the refuted list and the
+  `RefutedClaim` flag by way of `WithoutOutOfRubricBasis`'s sibling treatment of the basis. A
+  `WithoutCriticalErrorQuote` filter now removes it from `ClaimsSupportedCount`,
+  `ClaimsRefutedCount` and `ClaimsIndeterminateCount` as well, so *Unverified Claims* and *Claim
+  Verification Yield* total the unverified-claim count. `ClaimVerificationJson` still stores every
+  verification, and the `ContestedCriticalError` decision still reads the unfiltered set.
+- **The tool-call log export writes the tail of a cut result (H6).** A result longer than 600 + 240
+  characters is written as its first 600 characters, the marker `… [head of 600 chars; tail of 240
+  chars follows]`, and its last 240; the label reads *Result (first 600 and last 240 of N chars…)*.
+  A shorter result is written whole. The end of a tool result is where `wiki_search` puts its
+  `[Showing N of M matching articles …]` line and `source_code_search` its truncation notice, and
+  head-only export made both invisible to a diagnostics pass.
+- **A `search_definitions` miss says where the symbol does occur (H7).** The occurrence probe
+  `get_function_definition` has carried since the run-35 round moves into a shared
+  `SourceMissContentBuilder`, and `search_definitions` uses it with its own guidance: on a hit, that
+  the symbol occurs but no definition line matched this kind, so try `kind: "any"` or
+  `source_code_search` with `context_lines` on the named file; on no hit, to check the spelling or
+  use `list_indexed_files` / `source_code_search` with `filenames_only: true`. Bounded and capped at
+  600 characters as before, and inside a `catch` that returns the service's bare sentence, which is
+  therefore the resolver-defect payload. `get_function_definition`'s own payload is byte-identical to
+  what it produced before the lift. `search_definitions.md` gains one sentence saying a miss is to be
+  followed rather than retried.
+- **`wiki_search.md` gains a stop rule (T1).** *"When a returned article answers the question as
+  asked, answer from it — including its examples and lists — and go to the source only for a part the
+  article does not cover or when the question asks for the implementation."* Run 40's Q2 spent 17
+  rounds and 21 % of the run's input tokens exploring the source after the wiki article had already
+  answered; this is the fourth observation of serial over-exploration and the second candidate to
+  show it.
 
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).

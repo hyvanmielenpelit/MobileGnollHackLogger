@@ -2714,10 +2714,14 @@ public class BenchmarkService
                 answer.ClaimVerificationError = null;
                 answer.ClaimVerificationRawText = null;
 
-                // The out-of-rubric basis is the assessor's statement, not the answer's, so its
-                // verdict stays out of the answer's claim counts and the RefutedClaim flag. It is
-                // kept in ClaimVerificationJson, where its citation is the record.
-                var answerClaimVerifications = WithoutOutOfRubricBasis(parseResult.Verifications, outOfRubricBasis);
+                // The out-of-rubric basis and the critical-error quote are the assessor's statements,
+                // not the answer's, so their verdicts stay out of the answer's claim counts and the
+                // RefutedClaim flag; the counts then total the unverified claims the answer actually
+                // made. Both are kept in ClaimVerificationJson, where their citations are the record,
+                // and the ContestedCriticalError decision below reads that unfiltered list.
+                var answerClaimVerifications = WithoutCriticalErrorQuote(
+                    WithoutOutOfRubricBasis(parseResult.Verifications, outOfRubricBasis),
+                    answer.CriticalErrorQuote);
                 answer.ClaimsSupportedCount = answerClaimVerifications.Count(v => v.Verdict == BenchmarkClaimVerdict.Supported);
                 answer.ClaimsRefutedCount = answerClaimVerifications.Count(v => v.Verdict == BenchmarkClaimVerdict.Refuted);
                 answer.ClaimsIndeterminateCount = answerClaimVerifications.Count(v => v.Verdict == BenchmarkClaimVerdict.Indeterminate);
@@ -3789,6 +3793,12 @@ public class BenchmarkService
     /// </summary>
     internal const int UnverifiedClaimsAccuracyMaxLevel = 3;
 
+    /// <summary>Length a verifier-supported claim is cut to for the synthesis prompt.</summary>
+    internal const int SupportedClaimMaxLength = 300;
+
+    /// <summary>Verifier-supported claims carried into the synthesis prompt per answer.</summary>
+    internal const int SupportedClaimsPerAnswer = 6;
+
     private async Task ExecuteFinalSynthesisAsync(
         ApplicationDbContext db,
         SystemAiConfigService configService,
@@ -3807,6 +3817,7 @@ public class BenchmarkService
         {
             string? outOfRubricBasis = OutOfRubricBasisOf(a);
             var refutedList = new List<(string Claim, string? Citation, string? Basis)>();
+            var supportedList = new List<string>();
             if (!string.IsNullOrWhiteSpace(a.ClaimVerificationJson))
             {
                 try
@@ -3816,10 +3827,31 @@ public class BenchmarkService
                         new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                     if (verifications != null)
                     {
-                        foreach (var v in WithoutOutOfRubricBasis(verifications, outOfRubricBasis)
-                                     .Where(x => x.Verdict == BenchmarkClaimVerdict.Refuted))
+                        // The assessor's own statements — the out-of-rubric basis and the
+                        // critical-error quote — are excluded from both lists: a verdict on either
+                        // is a statement about the grading, and the synthesis prints those
+                        // separately.
+                        var ownClaims = WithoutCriticalErrorQuote(
+                            WithoutOutOfRubricBasis(verifications, outOfRubricBasis),
+                            a.CriticalErrorQuote);
+
+                        foreach (var v in ownClaims.Where(x => x.Verdict == BenchmarkClaimVerdict.Refuted))
                         {
                             refutedList.Add((v.Claim, v.Citation, v.Basis));
+                        }
+
+                        foreach (var v in ownClaims
+                                     .Where(x => x.Verdict == BenchmarkClaimVerdict.Supported
+                                                 && !string.IsNullOrWhiteSpace(x.Claim))
+                                     .Take(SupportedClaimsPerAnswer))
+                        {
+                            string claim = v.Claim.Trim();
+                            if (claim.Length > SupportedClaimMaxLength)
+                            {
+                                claim = claim.Substring(0, SupportedClaimMaxLength).TrimEnd();
+                            }
+
+                            supportedList.Add(claim);
                         }
                     }
                 }
@@ -3849,6 +3881,7 @@ public class BenchmarkService
                 ClaimsRefutedCount = a.ClaimsRefutedCount,
                 ClaimsIndeterminateCount = a.ClaimsIndeterminateCount,
                 RefutedClaims = refutedList,
+                SupportedClaims = supportedList,
                 ContestedCriticalErrorQuotes =
                     (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedCriticalError) != 0
                      && !string.IsNullOrWhiteSpace(a.CriticalErrorQuote)
@@ -5437,6 +5470,32 @@ public class BenchmarkService
         string trimmed = basis.Trim();
         return verifications
             .Where(v => !string.Equals(v.Claim?.Trim(), trimmed, StringComparison.Ordinal))
+            .ToList();
+    }
+
+    /// <summary>
+    /// The verifications that concern the answer's own claims: every entry except the critical-error
+    /// quote, matched by verbatim text the way <see cref="WithoutOutOfRubricBasis"/> matches the
+    /// basis — <see cref="WithCriticalErrorQuoteFirst"/> submits the quote once and
+    /// <see cref="BenchmarkClaimVerificationParser"/> echoes the submitted text back. The input is
+    /// returned unchanged in content when there is no quote.
+    ///
+    /// The quote is the assessor's finding, not a claim of the answer, so its verdict stays out of
+    /// the answer's claim counts; it remains in
+    /// <see cref="BenchmarkRunAnswer.ClaimVerificationJson"/> and in the
+    /// <see cref="BenchmarkAnswerFlags.ContestedCriticalError"/> decision, which read the unfiltered
+    /// list.
+    /// </summary>
+    internal static List<BenchmarkClaimVerification> WithoutCriticalErrorQuote(
+        IReadOnlyList<BenchmarkClaimVerification>? verifications,
+        string? criticalErrorQuote)
+    {
+        if (verifications == null) return new List<BenchmarkClaimVerification>();
+        if (string.IsNullOrWhiteSpace(criticalErrorQuote)) return verifications.ToList();
+
+        string quote = criticalErrorQuote.Trim();
+        return verifications
+            .Where(v => !string.Equals(v.Claim?.Trim(), quote, StringComparison.Ordinal))
             .ToList();
     }
 

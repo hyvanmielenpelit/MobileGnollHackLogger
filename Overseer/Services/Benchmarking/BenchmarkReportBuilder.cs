@@ -143,6 +143,10 @@ public static class BenchmarkReportBuilder
     /// </summary>
     private const int UnverifiedClaimsHarnessVersion = 12;
 
+    // The top of the 0-6 assessment level scale, the ceiling an advisory recomputation raises a
+    // level to.
+    private const int MaxAssessmentLevel = 6;
+
     private static readonly Regex BlockedCallsRegex =
         new(@"\((\d+)\s+blocked by budget\)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
@@ -1057,6 +1061,24 @@ public static class BenchmarkReportBuilder
         // § 7 Final Indices prints this same figure; one computation, so the two cannot drift.
         int? sensitivityIndex = null;
 
+        // Answers whose Accuracy was docked out of rubric and whose claims the verifier then
+        // supported — none refuted, none left indeterminate. This is the instrument's own share of
+        // the Accuracy shortfall, the way OUT-OF-SCOPE is of Completeness: on run 40 seven-plus
+        // answers were docked citing only claims the rubric did not cover, and every one the
+        // verifier checked came back supported. The Assessor Findings block below names them and
+        // the sensitivity index beside the contested one prices them; both are advisory and move
+        // no score. § 7 prints the index from this same variable, so the two cannot drift.
+        var verificationClearedAnswers = answers
+            .Where(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.UnevidencedDeduction)
+                && (a.UnverifiedClaimCount ?? 0) > 0
+                && (a.ClaimsRefutedCount ?? 0) == 0
+                && (a.ClaimsIndeterminateCount ?? 0) == 0
+                && a.AccuracyLevel.HasValue
+                && a.AccuracyLevel.Value <= BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel)
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+        int? verificationClearedIndex = null;
+
         // Every critical-error split, in either direction, is resolved at the second reader's score.
         var splitAnswers = disputedBySecondReader.Concat(raisedOnlyBySecondReader).ToList();
 
@@ -1099,6 +1121,43 @@ public static class BenchmarkReportBuilder
             if (sensitivityIndex.HasValue)
             {
                 sb.AppendLine($"- **Contested-Verdict Sensitivity:** {sensitivityIndex.Value} / 100 — Intelligence Index recomputed with each split resolved at the second reader's score (raises and lowers both).");
+            }
+        }
+
+        if (verificationClearedAnswers.Count > 0)
+        {
+            // The run's own scoring profile snapshot, not today's profile: a sensitivity figure
+            // beside a run's index has to be computed under the constants that produced it. The
+            // critical-error cap comes along unchanged, because the recomputation runs through the
+            // same Quality call that produced the stored score. An answer missing any of the four
+            // levels keeps its stored score: there is nothing to raise it from. The item set is
+            // indexAnswers — the Intelligence Index's own, unanswered questions at 0 included — so
+            // the figure is comparable with the index it sits beside rather than with a narrower
+            // set that would read higher for that reason alone.
+            var clearedOrderIndexes = verificationClearedAnswers.Select(a => a.OrderIndex).ToHashSet();
+            var clearedScorableItems = indexAnswers
+                .Select(a =>
+                {
+                    int? score = a.QualityScore;
+                    if (clearedOrderIndexes.Contains(a.OrderIndex) &&
+                        a.AccuracyLevel.HasValue && a.CompletenessLevel.HasValue &&
+                        a.ConcisenessLevel.HasValue && a.ReadabilityLevel.HasValue)
+                    {
+                        score = BenchmarkScoring.Quality(
+                            Math.Min(MaxAssessmentLevel, a.AccuracyLevel.Value + 1),
+                            a.CompletenessLevel.Value,
+                            a.ConcisenessLevel.Value,
+                            a.ReadabilityLevel.Value,
+                            a.CriticalError,
+                            scoringConstants).Score;
+                    }
+                    return (score, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty));
+                })
+                .ToList();
+            verificationClearedIndex = BenchmarkScoring.QualityIndex(clearedScorableItems);
+            if (verificationClearedIndex.HasValue)
+            {
+                sb.AppendLine($"- **Verification-cleared Accuracy Sensitivity:** {verificationClearedIndex.Value} / 100 — Intelligence Index recomputed with Accuracy one level higher on the {verificationClearedAnswers.Count} answer(s) above; advisory, changes no score.");
             }
         }
 
@@ -1699,6 +1758,11 @@ public static class BenchmarkReportBuilder
                     : string.Empty;
 
                 sb.AppendLine($"- **Unverified Claims:** {unverifiedTotal} across {withClaims.Count} answer(s) ({string.Join(", ", withClaims.Select(a => $"Q{a.OrderIndex}"))}){outcome} — *claims the assessor could neither confirm nor refute against the rubric. Advisory: from harness version 7 these do not reduce Accuracy.*");
+
+                if (verificationClearedAnswers.Count > 0)
+                {
+                    sb.AppendLine($"- **Verification-cleared Accuracy deductions:** {verificationClearedAnswers.Count} ({string.Join(", ", verificationClearedAnswers.Select(a => $"Q{a.OrderIndex}"))}) — Accuracy was docked citing only claims the rubric did not cover, and every such claim the verifier later checked was supported. Advisory; this is the instrument's share of the Accuracy shortfall, as OUT-OF-SCOPE is of Completeness.");
+                }
 
                 if (verificationFailedAnswers.Count > 0)
                 {
@@ -3042,6 +3106,11 @@ public static class BenchmarkReportBuilder
         if (splitAnswers.Count > 0 && sensitivityIndex.HasValue)
         {
             sb.AppendLine($"### Contested-Verdict Sensitivity: {sensitivityIndex.Value} / 100 — Intelligence Index recomputed with each split resolved at the second reader's score (raises and lowers both).");
+        }
+        // Likewise the same value as § 2, from the same variable.
+        if (verificationClearedIndex.HasValue)
+        {
+            sb.AppendLine($"### Verification-cleared Accuracy Sensitivity: {verificationClearedIndex.Value} / 100 — Intelligence Index recomputed with Accuracy one level higher on the {verificationClearedAnswers.Count} answer(s) above; advisory, changes no score.");
         }
         // H9. The same demotion as § 2, from the same two conditions, so the headline block and the
         // summary cannot present the speed figure differently.

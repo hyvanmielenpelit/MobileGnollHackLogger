@@ -2,6 +2,7 @@ namespace Overseer.Services.Benchmarking;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using MobileGnollHackLogger.Data;
 
@@ -30,6 +31,13 @@ public class BenchmarkPerQuestionVerdictSummary
     public int? ClaimsRefutedCount { get; set; }
     public int? ClaimsIndeterminateCount { get; set; }
     public IReadOnlyList<(string Claim, string? Citation, string? Basis)> RefutedClaims { get; set; } = Array.Empty<(string, string?, string?)>();
+
+    /// <summary>
+    /// Claims of the answer the verifier checked against the source or wiki and supported, capped in
+    /// length and in number. Printed into the synthesis prompt so the narrative does not describe a
+    /// checked fact as embellishment on the strength of the rubric's silence.
+    /// </summary>
+    public IReadOnlyList<string> SupportedClaims { get; set; } = Array.Empty<string>();
 
     /// <summary>
     /// Critical-error quotes the claim verifier checked against the source or wiki and supported.
@@ -311,8 +319,23 @@ public static class BenchmarkAssessmentPrompt
     ///     suite's assessed difficulties become a Fundamental comparability key; the report's Critical
     ///     Errors line states the applied caps and the direction of each second-reader split; and a run
     ///     records the default suite it was launched from. ScoringMethodVersion does not move.
+    /// v25: the unevidenced-deduction detector's vocabulary widens to the phrasings run 40's assessor
+    ///     used, so an Accuracy or Completeness deduction whose evidence names no defect in those
+    ///     words is flagged and routed to a second reader. The assessor preamble states that a claim
+    ///     outside the rubric does not lower the ACCURACY level — levels 5 and 6 are withheld only
+    ///     for a named defect — and makes the `Not in rubric:` marker mandatory on any deduction that
+    ///     does not come from the rubric, since the harness adjudicates only a basis carrying it. The
+    ///     final synthesis receives each answer's verifier-supported claims and is told not to call
+    ///     them invented; the critical-error quote's verdict leaves the answer's claim counts, as the
+    ///     out-of-rubric basis already had, so Unverified Claims and Claim Verification Yield agree
+    ///     with the unverified-claim count. The report gains an advisory Verification-cleared Accuracy
+    ///     Sensitivity index, which changes no score, so ScoringMethodVersion stays 10. The tool-call
+    ///     log export writes the tail of a cut result beside its head, and a search_definitions miss
+    ///     carries an occurrence probe. CandidateSystemPromptSha256 does not move, so a run stamped 25
+    ///     differs from one stamped 24 on HarnessVersion and ToolGuidesSha256, which is below Tier B:
+    ///     compare the two on counts and per-question thresholds, not as a reproduction pair.
     /// </summary>
-    public const string HarnessVersion = "24";
+    public const string HarnessVersion = "25";
 
     /// <summary>
     /// The complete per-question assessor prompt: <see cref="BuildPerQuestionPreamble"/>, a blank
@@ -381,7 +404,7 @@ public static class BenchmarkAssessmentPrompt
         // confirm this" is ACCURACY level 3, so an unverifiable claim cost the same as a verified
         // falsehood: on the 2026-09-03 run Q1 was docked to 3/6 for a Yeenaghu trait the assessor
         // called "unverified", which is a deduction for knowing more than the rubric.
-        sb.AppendLine("8. A claim the rubric neither states nor contradicts, and that you cannot positively say is **wrong**, is **not** an accuracy deduction. Report it in `unverifiedClaims` instead — verbatim from the answer — and grade ACCURACY on the claims you can actually adjudicate. \"I could not confirm this\" and \"this is false\" are different findings and the harness records them differently.");
+        sb.AppendLine("8. A claim the rubric neither states nor contradicts, and that you cannot positively say is **wrong**, is **not** an accuracy deduction. Report it in `unverifiedClaims` instead — verbatim from the answer — and grade ACCURACY on the claims you can actually adjudicate. \"I could not confirm this\" and \"this is false\" are different findings and the harness records them differently. A claim outside the rubric does not lower the ACCURACY level either — do not withhold level 5 or 6 because the answer states something the rubric does not cover. Levels 5 and 6 are withheld only for a named defect.");
         sb.AppendLine();
         sb.AppendLine("--- SCORING DIMENSIONS (BARS 0-6) ---");
         sb.AppendLine();
@@ -460,7 +483,7 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine("For accuracy and completeness, state what your deduction rests on:");
         sb.AppendLine("- `accuracyEvidence` / `completenessEvidence`: name the rubric point the answer failed, quoting the rubric where you can.");
         sb.AppendLine("- **An omission is NEVER an ACCURACY deduction**, however material. Missing information is graded through COMPLETENESS, and charging it on both dimensions costs the answer 80% of the quality weight for one defect. An accuracy deduction must name something the answer **states** that is wrong. \"The answer gives X instead of Y\" and \"the answer fails to mention Y\" are completeness findings; \"the answer says X, and X is false\" is an accuracy finding. The harness checks this and routes a mismatch to a second reader.");
-        sb.AppendLine("- If a deduction does not come from the rubric, say so explicitly, e.g. 'Not in rubric: from my own knowledge of the GnollHack source'.");
+        sb.AppendLine($"- If a deduction does not come from the rubric, the evidence sentence MUST begin with `{BenchmarkAssessmentParser.OutOfRubricAccuracyMarker}` followed by the basis — the harness sends that basis to the claim verifier, and a deduction written without the marker is never checked.");
         sb.AppendLine("- A no-fault evidence string such as 'Matches rubric' may accompany **level 6 only**. If you award any level below 6, the evidence string MUST name specifically what kept it below — the rubric point, the claim, or the missing element. 'Matches rubric' beside level 4 asserts both that the answer was faultless and that it was not; the harness records that contradiction and routes the answer to a second reader.");
         sb.AppendLine("- Never invent a rubric point that is not present above.");
         sb.AppendLine("- Never write \"unverified\", \"could not confirm\", or equivalent as the basis of an accuracy deduction. That finding belongs in `unverifiedClaims`.");
@@ -764,7 +787,7 @@ public static class BenchmarkAssessmentPrompt
         // recorded a concrete false assertion each at Accuracy 5/6. An accuracy deduction whose
         // evidence names a defect IS a factual error the run's own grader found, whatever the level
         // it left the answer at, and the paragraph a human reads first may not say otherwise.
-        sb.AppendLine("2. Note any refuted claims, second-opinion verdicts, and accuracy deductions. These findings are advisory and did not change any per-question score or level, so do not attempt to re-derive finalScore from them. However, a run containing refuted claims, critical-error splits, or **any answer marked `Accuracy defect recorded: yes` below** must NOT be described as free of factual errors, as having weaknesses confined to omissions, or in any equivalent wording — and the synthesis MUST name those questions in `weaknesses`. An accuracy deduction whose evidence names what the answer got wrong is a factual error this run's own grader found, regardless of the level it was left at.");
+        sb.AppendLine("2. Note any refuted claims, second-opinion verdicts, and accuracy deductions. These findings are advisory and did not change any per-question score or level, so do not attempt to re-derive finalScore from them. However, a run containing refuted claims, critical-error splits, or **any answer marked `Accuracy defect recorded: yes` below** must NOT be described as free of factual errors, as having weaknesses confined to omissions, or in any equivalent wording — and the synthesis MUST name those questions in `weaknesses`. An accuracy deduction whose evidence names what the answer got wrong is a factual error this run's own grader found, regardless of the level it was left at. A claim listed as verifier-supported is a fact of the game, whatever the rubric omitted; naming it as embellishment is a grading error, not a finding.");
         sb.AppendLine("3. Produce a holistic finalScore (1-100), key strengths, key weaknesses, and a comprehensive overall review commentary.");
         sb.AppendLine("4. Output ONLY a valid JSON object matching the exact schema specified at the end.");
         sb.AppendLine();
@@ -837,6 +860,14 @@ public static class BenchmarkAssessmentPrompt
                         string bas = !string.IsNullOrWhiteSpace(rc.Basis) ? $" Basis: {rc.Basis}" : string.Empty;
                         sb.AppendLine($"Refuted claim: \"{rc.Claim}\" — refuted {cit}.{bas}");
                     }
+                }
+                // The supported side of the same verification the refuted lines above report. Without
+                // it the synthesis sees only what the verifier knocked down, and a claim the rubric
+                // merely omits reads as embellishment however well the source bears it out.
+                if (v.SupportedClaims != null && v.SupportedClaims.Count > 0)
+                {
+                    string supported = string.Join("; ", v.SupportedClaims.Select(c => $"\"{c}\""));
+                    sb.AppendLine($"Verifier-supported claims (checked against source/wiki; do not describe any of these as invented, fabricated, unsupported, uncorroborated or inflated): {supported}");
                 }
                 if (v.ContestedCriticalErrorQuotes != null && v.ContestedCriticalErrorQuotes.Count > 0)
                 {
