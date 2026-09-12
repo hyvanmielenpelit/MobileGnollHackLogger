@@ -10,20 +10,9 @@
  */
 
 import ChartDataLabels from 'chartjs-plugin-datalabels';
-import {
-  BarController,
-  BarElement,
-  CategoryScale,
-  Legend,
-  LinearScale,
-  LineController,
-  LineElement,
-  LogarithmicScale,
-  PointElement,
-  ScatterController,
-  Tooltip,
-} from 'chart.js';
 import type { ChartConfiguration, ChartType, DefaultDataPoint, Plugin, Point } from 'chart.js';
+
+export { MODEL_COMPARISON_REGISTRABLES } from './chart-registrables';
 
 // ---------------------------------------------------------------------------------------------
 // Input model
@@ -526,21 +515,6 @@ function strokeWhisker(
   }
   ctx.stroke();
 }
-
-/** Every chart.js registrable the six figures need. `app.config.ts` spreads this. */
-export const MODEL_COMPARISON_REGISTRABLES = [
-  ScatterController,
-  LineController,
-  BarController,
-  PointElement,
-  LineElement,
-  BarElement,
-  CategoryScale,
-  LinearScale,
-  LogarithmicScale,
-  Legend,
-  Tooltip,
-];
 
 // ---------------------------------------------------------------------------------------------
 // The Pareto frontier

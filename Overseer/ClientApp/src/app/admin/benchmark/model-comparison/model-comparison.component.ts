@@ -70,15 +70,34 @@ import {
   FigureExportResolution,
   FigureExportResult,
   composeFigureImage,
+  copyImageToClipboard,
   encodeFigureImage,
   figureExportFilename,
   renderPlotOffscreen,
   resolveFigureLayout,
   saveFigureBlob
 } from './figure-export';
+import {
+  ComparisonTableProvenance,
+  TableExportFormat,
+  buildComparisonTableModel,
+  comparisonStateLabel,
+  encodeComparisonTable,
+  formatIndexText,
+  formatMsText,
+  formatUsdText,
+  tableExportFilename,
+  toMarkdown
+} from './table-export';
 
-/** Which wizard step is on screen. Three, in a fixed order: sources, then filters, then figures. */
-export type ComparisonWizardStep = 1 | 2 | 3;
+/**
+ * Which wizard step is on screen. Four, in a fixed order: sources, then filters, then the table,
+ * then the figures.
+ *
+ * The table comes before the figures deliberately. It is the artefact that carries the numbers, so
+ * a reader who steps through in order meets the record before the pictures drawn from it.
+ */
+export type ComparisonWizardStep = 1 | 2 | 3 | 4;
 
 /** One figure's chrome, as the export composer and the layout resolver both take it. */
 type FigureExportChrome = Omit<FigureExportRequest, 'canvas' | 'format' | 'layout'>;
@@ -137,10 +156,11 @@ export interface ComparisonFigureCard {
  *
  * Three display rules here are load-bearing rather than cosmetic:
  *
- * 1. **The table is present, always, and is never behind a toggle.** A chart is far more persuasive
- *    than a table, and a reader will trust six figures without checking twenty-three comparability
- *    keys. The canvases are `role="img"` summaries; the table is the artefact that carries the
- *    numbers, the states and the differing keys, and it renders whether or not anything is plotted.
+ * 1. **The table has a step of its own, is never behind a toggle, and opens before the figures
+ *    do.** A chart is far more persuasive than a table, and a reader will trust six figures
+ *    without checking twenty-three comparability keys. The canvases are `role="img"` summaries;
+ *    the table is the artefact that carries the numbers, the states and the differing keys, and
+ *    its step opens over a set no figure can draw.
  * 2. **An excluded entry stays visible and stays explained.** The service refuses to return measures
  *    for one, so it can never reach a figure; dropping it from the view as well would make an
  *    unchartable model invisible, which is exactly how a reader concludes a set is comparable when
@@ -213,7 +233,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    */
   @Output() compare = new EventEmitter<void>();
 
-  /** Step 3's Close, and the header's close control. The host owns the dialog element. */
+  /** The last step's Close, and the header's close control. The host owns the dialog element. */
   @Output() closeRequested = new EventEmitter<void>();
 
   /** Focused by the host after showModal(), which would otherwise focus the close button. */
@@ -360,23 +380,28 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   // ---------------------------------------------------------------------------------------------
   // The wizard
   //
-  // Three steps in a fixed order, with the step header as a tablist and Previous / Next as the
+  // Four steps in a fixed order, with the step header as a tablist and Previous / Next as the
   // primary traversal. Next is enabled only when the current step's selection is valid, and where
   // it is not, the reason is rendered as text beside it rather than left to a disabled button.
   // ---------------------------------------------------------------------------------------------
 
   step: ComparisonWizardStep = 1;
 
-  readonly steps: readonly ComparisonWizardStep[] = [1, 2, 3];
+  readonly steps: readonly ComparisonWizardStep[] = [1, 2, 3, 4];
 
   readonly stepTitles: Record<ComparisonWizardStep, string> = {
     1: 'Sources',
     2: 'Comparability & filters',
-    3: 'Figures'
+    3: 'Table',
+    4: 'Figures'
   };
 
   /**
-   * Steps 2 and 3 need a computed comparison; step 3 additionally needs something chartable.
+   * Steps 2 and 3 need a computed comparison; step 4 additionally needs something chartable.
+   *
+   * The table step is reachable over a set no figure can draw, which is the point of it: an
+   * incomparable set still has measures, states and differing keys to read, and the step that
+   * carries them must not close behind the same gate as the pictures.
    *
    * An unreachable step is `aria-disabled`, not `disabled`: it stays in the focus order, so a
    * keyboard reader still learns the step exists and can read why it is unavailable.
@@ -388,7 +413,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (this.comparison === null) {
       return false;
     }
-    return step === 2 || this.showFigures;
+    return step === 2 || step === 3 || this.showFigures;
   }
 
   get canGoPrevious(): boolean {
@@ -400,6 +425,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       return !this.loading && this.selectedSourceCount > 0 && this.selectedSourceCount <= this.maxSources;
     }
     if (this.step === 2) {
+      return this.comparison !== null;
+    }
+    if (this.step === 3) {
       return this.showFigures;
     }
     return true;
@@ -407,7 +435,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /** Compare while the current selection has no computed comparison; Next once it does. */
   get nextLabel(): string {
-    if (this.step === 3) {
+    if (this.step === 4) {
       return 'Close';
     }
     return this.step === 1 && this.comparison === null ? 'Compare' : 'Next';
@@ -429,6 +457,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         'compared in one request. A comparison over every stored run is a slow query and an ' +
         'unreadable figure.';
     }
+    // Step 2 has no blocked state once a comparison exists, and step 4 is the last one, so what is
+    // left is step 3 refusing to open the figures: the shape of the set is the reason.
     return this.shape === 'single'
       ? 'Only one entry is plotted; a comparison needs two.'
       : 'Nothing in this set may be charted together.';
@@ -497,7 +527,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   nextStep(): void {
-    if (this.step === 3) {
+    if (this.step === 4) {
       this.closeRequested.emit();
       return;
     }
@@ -550,7 +580,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * refetch under an unchanged selection — the pricing basis control, which lives on step 2 —
    * replaces one non-null payload with another and must leave the step alone, or changing a cost
    * basis would yank the reader forward. Losing the payload drops back to step 1, where the
-   * sources are: steps 2 and 3 have nothing to render without one.
+   * sources are: every later step has nothing to render without one.
    */
   private applyComparisonToStep(previous: BenchmarkModelComparisonDto | null | undefined): void {
     if (this.comparison === null) {
@@ -814,7 +844,13 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   exportFormat: FigureExportFormat = 'png';
 
-  /** Set while an export is running, so a second click cannot interleave two canvas resizes. */
+  /**
+   * Set while any export is running — figure download, table download, either clipboard copy.
+   *
+   * One flag rather than one per path, because it is what the host's close guard reads: a dialog
+   * torn down mid-export leaves a detached chart and a half-written file whichever of the four
+   * started it.
+   */
   exporting = false;
 
   /** The last export's outcome, announced politely: how many files, at what size, and any refusal. */
@@ -907,6 +943,44 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   async downloadAllFigures(): Promise<void> {
     await this.downloadFigures(this.exportableCards);
+  }
+
+  /**
+   * Puts one figure on the system clipboard, composed exactly as the on-screen download composes
+   * it — caption, notices and footer inside the same bitmap.
+   *
+   * There is deliberately no *Copy all figures*: an operating-system clipboard holds one image, so
+   * a batch would appear to copy six and silently keep the last.
+   */
+  async copyFigure(card: ComparisonFigureCard): Promise<void> {
+    if (this.exporting) {
+      return;
+    }
+    const canvas = this.canvasFor(card);
+    if (!canvas) {
+      return;
+    }
+    this.exporting = true;
+    this.exportStatus = '';
+    this.cdr.markForCheck();
+
+    try {
+      const encoded = await this.encodeFromLiveCanvas(this.exportChrome(card), canvas, 'png');
+      const outcome = await copyImageToClipboard(encoded.blob);
+      if (outcome === 'copied') {
+        this.exportStatus = `Copied ${card.title} to the clipboard.`;
+      } else if (outcome === 'unsupported') {
+        this.exportStatus =
+          'This browser cannot copy images to the clipboard — download the figure instead.';
+      } else {
+        this.exportStatus = 'The clipboard write was refused.';
+      }
+    } catch {
+      this.exportStatus = 'The figure could not be copied.';
+    } finally {
+      this.exporting = false;
+      this.cdr.markForCheck();
+    }
   }
 
   /**
@@ -1027,12 +1101,16 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /**
    * Re-renders one live chart at twice its device pixels, composes it and encodes it.
    *
+   * The format is a parameter rather than the control's value because the clipboard path is fixed
+   * at PNG: every engine that implements `ClipboardItem` rejects `image/webp` in one.
+   *
    * The previous `devicePixelRatio` is restored and the chart resized again in a `finally`, so a
    * thrown encode cannot strand the on-screen figure at export density.
    */
   private async encodeFromLiveCanvas(
     chrome: FigureExportChrome,
-    canvas: HTMLCanvasElement
+    canvas: HTMLCanvasElement,
+    format: FigureExportFormat = this.exportFormat
   ): Promise<FigureExportResult> {
     const chart = this.chartFor(canvas);
     const previousRatio = chart?.options?.devicePixelRatio;
@@ -1041,8 +1119,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         chart.options.devicePixelRatio = 2;
         chart.resize();
       }
-      const composed = composeFigureImage({ ...chrome, canvas, format: this.exportFormat, layout: null });
-      return await encodeFigureImage(composed, this.exportFormat);
+      const composed = composeFigureImage({ ...chrome, canvas, format, layout: null });
+      return await encodeFigureImage(composed, format);
     } finally {
       if (chart?.options) {
         chart.options.devicePixelRatio = previousRatio;
@@ -1090,27 +1168,44 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /**
    * Suite, pricing basis, entry count, the reference condition and the computation time — the
-   * provenance of one figure.
+   * provenance of this comparison, in the one place both exports read it from.
    *
    * The condition segment is twelve hex characters of the baseline's must-match signature, which is
-   * what a reader holding only the exported PNG matches against the methods block in the wizard. A
-   * comparison that reached no baseline carries no signature, and the segment is then omitted
-   * rather than printed empty.
+   * what a reader holding only an exported PNG or spreadsheet matches against the methods block in
+   * the wizard. A comparison that reached no baseline carries no signature, and the segment is
+   * omitted rather than printed empty.
    */
-  private exportFooter(): string {
+  get tableProvenance(): ComparisonTableProvenance {
     const dto = this.comparison;
-    const suite = dto?.baselineSuiteName || 'Suite not set';
-    const basis = dto?.pricingBasisLabel || dto?.pricingBasis || 'Unknown pricing basis';
-    const plotted = this.plotted.length;
-    const total = this.entries.length;
-    const computed = dto?.computedAtUtc ? new Date(dto.computedAtUtc).toLocaleString() : 'unknown time';
-    const signature = (dto?.baselineSignature ?? '').trim();
+    return {
+      suite: dto?.baselineSuiteName || 'Suite not set',
+      pricingBasis: dto?.pricingBasisLabel || dto?.pricingBasis || 'Unknown pricing basis',
+      conditionSignature: (dto?.baselineSignature ?? '').trim().slice(0, 12),
+      computedAt: dto?.computedAtUtc ? new Date(dto.computedAtUtc).toLocaleString() : 'unknown time',
+      plottedOfTotal: `${this.plotted.length} of ${this.entries.length} entries charted`,
+      notices: this.setNotices
+    };
+  }
 
-    const parts = [suite, basis, `${plotted} of ${total} entries charted`];
-    if (signature !== '') {
-      parts.push(`condition ${signature.slice(0, 12)}`);
+  /** The same provenance as one line, rendered above the table so the screen carries what a file does. */
+  get tableProvenanceLine(): string {
+    const provenance = this.tableProvenance;
+    const parts = [provenance.suite, provenance.pricingBasis];
+    if (provenance.conditionSignature !== '') {
+      parts.push(`condition ${provenance.conditionSignature}`);
     }
-    parts.push(`computed ${computed}`);
+    parts.push(`computed at ${provenance.computedAt}`);
+    return parts.join(' · ');
+  }
+
+  /** The figure footer: the same facts, with the charted count, in the composer's own separator. */
+  private exportFooter(): string {
+    const provenance = this.tableProvenance;
+    const parts = [provenance.suite, provenance.pricingBasis, provenance.plottedOfTotal];
+    if (provenance.conditionSignature !== '') {
+      parts.push(`condition ${provenance.conditionSignature}`);
+    }
+    parts.push(`computed ${provenance.computedAt}`);
     return parts.join(' — ');
   }
 
@@ -1165,6 +1260,92 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   private canvasOf(directive: BaseChartDirective): HTMLCanvasElement | null {
     return (directive.chart?.canvas as HTMLCanvasElement | undefined) ?? null;
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Table export
+  //
+  // The scope is every entry passing the current filters, in the current sort, across all pages —
+  // never the visible page, which is why this reads `viewAll` rather than `view`. The status line
+  // says so in as many words: a file holding ten of forty rows, with nothing on it to say which
+  // ten, is worse than no file.
+  // ---------------------------------------------------------------------------------------------
+
+  tableExportFormat: TableExportFormat = 'xlsx';
+
+  /** Nothing to write from an empty comparison, and never two writes at once. */
+  get canExportTable(): boolean {
+    return this.entries.length > 0 && !this.exporting;
+  }
+
+  onTableExportFormatChange(value: TableExportFormat): void {
+    this.tableExportFormat = value;
+  }
+
+  /** Encodes the filtered, sorted, unpaged table in the chosen format and saves it. */
+  async downloadTable(): Promise<void> {
+    if (!this.canExportTable) {
+      return;
+    }
+    const format = this.tableExportFormat;
+    const rows = this.entryTable.viewAll(this.entries);
+    this.exporting = true;
+    this.exportStatus = '';
+    this.cdr.markForCheck();
+
+    try {
+      const model = buildComparisonTableModel(rows, this.tableProvenance);
+      const encoded = await encodeComparisonTable(model, format);
+      const filename = tableExportFilename(encoded.format);
+      saveFigureBlob(encoded.blob, filename);
+
+      const noun = rows.length === 1 ? 'entry' : 'entries';
+      const fallback = encoded.fellBackToPng
+        ? ' This browser cannot encode WebP, so the file was written as PNG.'
+        : '';
+      this.exportStatus =
+        `Table saved as ${filename} — ${rows.length} ${noun}, current sort, filters applied, ` +
+        `all pages.${fallback}`;
+    } catch {
+      this.exportStatus = 'The table could not be exported.';
+    } finally {
+      this.exporting = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  /**
+   * Copies the same rows as a GFM table.
+   *
+   * Markdown rather than the chosen format: the clipboard's destination is a document or a chat
+   * message, and a pasted spreadsheet or a pasted HTML document is not one. Both the refusal and
+   * the absence of the API land as inline text — a bare console error tells the reader nothing.
+   */
+  async copyTableMarkdown(): Promise<void> {
+    if (!this.canExportTable) {
+      return;
+    }
+    const rows = this.entryTable.viewAll(this.entries);
+    this.exporting = true;
+    this.exportStatus = '';
+    this.cdr.markForCheck();
+
+    try {
+      const clipboard = navigator.clipboard as Clipboard | undefined;
+      if (!clipboard || typeof clipboard.writeText !== 'function') {
+        this.exportStatus =
+          'This browser cannot copy text to the clipboard — download the table instead.';
+        return;
+      }
+      await clipboard.writeText(toMarkdown(buildComparisonTableModel(rows, this.tableProvenance)));
+      this.exportStatus =
+        `Copied ${rows.length} ${rows.length === 1 ? 'entry' : 'entries'} as Markdown.`;
+    } catch {
+      this.exportStatus = 'The clipboard write was refused.';
+    } finally {
+      this.exporting = false;
+      this.cdr.markForCheck();
+    }
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -1255,10 +1436,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   stateLabel(entry: BenchmarkModelComparisonEntryDto): string {
-    if (entry.excluded) {
-      return 'Excluded';
-    }
-    return entry.state === 'Degraded' ? 'Degraded' : 'Comparable';
+    return comparisonStateLabel(entry);
   }
 
   stateClass(entry: BenchmarkModelComparisonEntryDto): string {
@@ -1280,25 +1458,20 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return axes;
   }
 
+  // The three cell formats live in `table-export`, not here: an exported table and the screen it
+  // was taken from have to agree character for character, including what an absent measure is
+  // printed as, and one of the two would drift the moment there were two copies of the rule.
+
   formatIndex(value: number | null | undefined): string {
-    return value == null || !Number.isFinite(value) ? '—' : value.toFixed(1);
+    return formatIndexText(value);
   }
 
   formatMs(value: number | null | undefined): string {
-    if (value == null || !Number.isFinite(value)) {
-      return '—';
-    }
-    return value >= 10000 ? `${(value / 1000).toFixed(1)} s` : `${Math.round(value)} ms`;
+    return formatMsText(value);
   }
 
   formatUsd(value: number | null | undefined): string {
-    if (value == null || !Number.isFinite(value)) {
-      return '—';
-    }
-    if (value === 0) {
-      return '$0';
-    }
-    return value < 0.01 ? `$${value.toFixed(4)}` : `$${value.toFixed(2)}`;
+    return formatUsdText(value);
   }
 
   /**

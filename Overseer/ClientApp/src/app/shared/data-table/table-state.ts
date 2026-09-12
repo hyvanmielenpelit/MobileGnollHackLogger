@@ -105,6 +105,14 @@ export class TableState<T> {
     return this.applySort(filtered).slice(start, start + this.pageSize);
   }
 
+  /**
+   * Filter and sort without paging. Exports and clipboard copies take the whole matching set,
+   * not just the visible page, so they read this instead of `view`.
+   */
+  viewAll(rows: readonly T[]): T[] {
+    return this.applySort(this.applyFilters(rows));
+  }
+
   /** How many rows survive the active filters. */
   filteredCount(rows: readonly T[]): number {
     return this.applyFilters(rows).length;

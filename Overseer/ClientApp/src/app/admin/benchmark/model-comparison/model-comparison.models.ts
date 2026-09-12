@@ -591,6 +591,206 @@ export function selectionNotices(state: ComparisonSelectionState): ComparisonSel
 }
 
 // ---------------------------------------------------------------------------------------------
+// The condition detail: key by key, how one source differs from the reference condition
+// ---------------------------------------------------------------------------------------------
+
+/** One `name=value` field of a configuration-shaped comparability value. */
+export interface ConfigurationField {
+  readonly name: string;
+  readonly value: string;
+}
+
+/**
+ * A `key=value;key=value` value split into its fields in the order it carries them, or null when
+ * the value is not of that shape.
+ *
+ * `AssessorConfiguration` and its siblings are written this way, and a reader holding two of them
+ * side by side wants the one field that moved, not two forty-character strings to diff by eye.
+ * Everything else the index carries — a digest, a serialized options object, a comma-separated
+ * list — has no fields, and null is how the caller learns to render the value whole instead.
+ *
+ * A field value of `(none)` stays verbatim: it is what the wire writes for a setting that is not
+ * configured, and a field set on one side and absent on the other is precisely the difference.
+ */
+export function parseConfigurationValue(value: string): ConfigurationField[] | null {
+  const text = (value ?? '').trim();
+  if (text === '') {
+    return null;
+  }
+  const fields: ConfigurationField[] = [];
+  for (const part of text.split(';')) {
+    const segment = part.trim();
+    if (segment === '') {
+      continue;
+    }
+    const separator = segment.indexOf('=');
+    const name = separator < 0 ? '' : segment.slice(0, separator).trim();
+    // One malformed field disqualifies the whole value: a half-parsed configuration would show
+    // fields that are real beside a remainder that silently vanished.
+    if (name === '' || !/^[A-Za-z][A-Za-z0-9_.-]*$/.test(name)) {
+      return null;
+    }
+    fields.push({ name, value: segment.slice(separator + 1).trim() });
+  }
+  return fields.length > 0 ? fields : null;
+}
+
+/** One value of a differing key, with the runs that carried it. */
+export interface ConditionDetailVariant {
+  readonly value: string;
+  readonly runIds: readonly number[];
+}
+
+/** One key a source differs from the reference condition on, with both sides of the difference. */
+export interface ConditionDetailRow {
+  readonly name: string;
+  /** The human label the reference condition describes the key by, falling back to its name. */
+  readonly label: string;
+  /** `Fundamental`, `Candidate`, `Instrument` or `SpeedAndCost`, as the server spells them. */
+  readonly kind: string;
+  /** `Text`, `Identifier`, `Hash`, `Json` or `List` — what shape the values are, not what they mean. */
+  readonly valueKind: string;
+  /** One line on what a difference costs a comparison, as the reference condition describes the key. */
+  readonly description: string;
+  /** This source's value, or null when no variant could be attributed to its runs. */
+  readonly thisValue: string | null;
+  /** The reference condition's value, or null when no variant could be attributed to it. */
+  readonly referenceValue: string | null;
+  readonly thisFields: ConfigurationField[] | null;
+  readonly referenceFields: ConfigurationField[] | null;
+  /** Field names that differ between the two parsed sets, including those present on one side only. */
+  readonly changedFields: string[];
+  /** Every variant with its runs, populated only when a side could not be attributed. */
+  readonly variants: ConditionDetailVariant[];
+}
+
+/** Everything one source's comparability detail says, ready to render and to paste. */
+export interface ConditionDetail {
+  readonly key: string;
+  /** `Run` or `Group`. */
+  readonly sourceKind: string;
+  readonly sourceId: number;
+  /** How an operator names the source in prose: "Run 46", "Analysis group 3". */
+  readonly sourceLabel: string;
+  readonly conditionLabel: string;
+  readonly conditionOrdinal: number;
+  readonly referenceConditionLabel: string;
+  readonly selfInconsistent: boolean;
+  readonly selfInconsistentKeys: string[];
+  readonly rows: ConditionDetailRow[];
+}
+
+/** The field names two parsed configurations disagree on, this side's order first. */
+function changedFieldNames(
+  thisFields: ConfigurationField[] | null,
+  referenceFields: ConfigurationField[] | null
+): string[] {
+  if (thisFields == null || referenceFields == null) {
+    return [];
+  }
+  const reference = new Map(referenceFields.map(field => [field.name, field.value] as const));
+  const changed = thisFields
+    .filter(field => reference.get(field.name) !== field.value)
+    .map(field => field.name);
+  for (const field of referenceFields) {
+    if (!thisFields.some(other => other.name === field.name)) {
+      changed.push(field.name);
+    }
+  }
+  return changed;
+}
+
+/**
+ * Which variant is this source's and which is the reference condition's.
+ *
+ * Two independent facts are available and neither is always present. A variant's `runIds` names
+ * this source when the caller knows its runs — which it does for a single run and may not for a
+ * group, whose membership the picker's list endpoint does not carry. The reference condition's own
+ * value for the key is in `largestConditionKeys` whenever the key is described there. Either alone
+ * settles a two-variant difference; with neither, both sides stay null and the caller lists every
+ * variant rather than guessing.
+ */
+function attributeVariants(
+  variants: readonly ConditionDetailVariant[],
+  memberRunIds: readonly number[],
+  referenceKeyValue: string | null
+): { mine: ConditionDetailVariant | null; reference: ConditionDetailVariant | null } {
+  let mine = variants.find(
+    variant => variant.runIds.some(id => memberRunIds.includes(id))) ?? null;
+  let reference = referenceKeyValue == null
+    ? null
+    : variants.find(variant => variant !== mine && variant.value === referenceKeyValue) ?? null;
+
+  // A two-variant difference is settled by either fact alone: whichever side is known, the other
+  // is the remaining variant. Three or more variants are left unattributed rather than guessed at.
+  if (variants.length === 2) {
+    if (mine == null && reference != null) {
+      mine = variants.find(variant => variant !== reference) ?? null;
+    } else if (reference == null && mine != null) {
+      reference = variants.find(variant => variant !== mine) ?? null;
+    }
+  }
+  return { mine, reference };
+}
+
+/**
+ * One source's comparability detail, or null when the index has not loaded or lacks the key.
+ *
+ * `memberRunIds` is the source's own runs — one id for a run, the group's membership for a group —
+ * and is used only to tell this source's value of a differing key from the reference condition's.
+ * An empty list is legitimate and costs the attribution, not the row.
+ */
+export function conditionDetailFor(
+  index: BenchmarkComparabilityIndexDto | null,
+  key: string,
+  memberRunIds: readonly number[]
+): ConditionDetail | null {
+  const entry = index?.entries.find(candidate => candidate.key === key);
+  if (index == null || entry == null) {
+    return null;
+  }
+
+  const rows = entry.differencesFromLargest.map(difference => {
+    const described = index.largestConditionKeys
+      .find(referenceKey => referenceKey.name === difference.name);
+    const variants: ConditionDetailVariant[] = difference.variants
+      .map(variant => ({ value: variant.value, runIds: [...variant.runIds] }));
+    const { mine, reference } = attributeVariants(variants, memberRunIds, described?.value ?? null);
+
+    const thisFields = mine == null ? null : parseConfigurationValue(mine.value);
+    const referenceFields = reference == null ? null : parseConfigurationValue(reference.value);
+    return {
+      name: difference.name,
+      label: described?.label || difference.name,
+      kind: described?.kind || difference.kind,
+      valueKind: described?.valueKind || 'Text',
+      description: described?.description || difference.description,
+      thisValue: mine?.value ?? null,
+      referenceValue: reference?.value ?? null,
+      thisFields,
+      referenceFields,
+      changedFields: changedFieldNames(thisFields, referenceFields),
+      // Listed whole only where the two sides could not be told apart, so the reader is given the
+      // evidence rather than an attribution the data does not support.
+      variants: mine == null || reference == null ? variants : []
+    };
+  });
+
+  return {
+    key: entry.key,
+    sourceKind: entry.sourceKind,
+    sourceId: entry.sourceId,
+    sourceLabel: sourceLabel(entry),
+    conditionLabel: entry.conditionLabel,
+    conditionOrdinal: entry.conditionOrdinal,
+    referenceConditionLabel: referenceLabel(index),
+    selfInconsistent: entry.selfInconsistent,
+    selfInconsistentKeys: [...entry.selfInconsistentKeys],
+    rows
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
 // The adapter onto the chart core's input shape
 // ---------------------------------------------------------------------------------------------
 

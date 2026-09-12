@@ -205,6 +205,16 @@ To find specific popups, look in the corresponding component's `.html` template:
     catalog of the default suite files under `Overseer/Data/DefaultSuites/`, opened by the
     toolbar's Import Default Suites button (from harness 24).
 
+- **Comparison Source Picker (`comparison-source-picker.component.html`, Admin → AI Benchmark →
+  Run History → Cross-model comparison, step 1)**
+  - `#legendDialog`: Comparability legend — what each must-match key is and the value the
+    reference condition holds for it.
+  - `#conditionDetailDialog`: Comparability detail for one source — one row per key it differs
+    from the reference condition on, with this source's value beside the reference's, a
+    `key=value;` configuration split into fields with the changed ones marked, and a copy-as-
+    Markdown control. Opened by the info button beside a row's *Condition X* badge, and offered
+    only where that source actually differs.
+
 ## Component Reuse and State Management
 
 The Overseer frontend utilizes a custom `RouteReuseStrategy` (indicated by `data: { reuse: true }` in `app.routes.ts`) for primary views like the `ChatComponent`. This prevents the component from being destroyed when navigating away, ensuring chat history and UI state are preserved.

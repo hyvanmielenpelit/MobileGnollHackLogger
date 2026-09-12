@@ -116,14 +116,19 @@ const RULE_GAP = 12;
 /** The narrowest content column a figure is laid out in. */
 const MIN_CONTENT_WIDTH = 360;
 
-/** The card ground the comparison view draws on, so an exported figure matches what was on screen. */
-const BACKGROUND = '#181818';
-const TITLE_COLOR = '#e0ba6d';
-const BODY_COLOR = '#d4d4d8';
-const MUTED_COLOR = '#a1a1aa';
-const RULE_COLOR = '#2a2a2a';
+/**
+ * The card ground the comparison view draws on, so an exported figure matches what was on screen.
+ *
+ * Exported because the table composer draws on the same ground: two palettes would make a figure
+ * and the table beside it in one document read as coming from two applications.
+ */
+export const FIGURE_BACKGROUND = '#181818';
+export const FIGURE_TITLE_COLOR = '#e0ba6d';
+export const FIGURE_BODY_COLOR = '#d4d4d8';
+export const FIGURE_MUTED_COLOR = '#a1a1aa';
+export const FIGURE_RULE_COLOR = '#2a2a2a';
 
-const FONT_STACK = '"Segoe UI", "Helvetica Neue", Arial, sans-serif';
+export const FIGURE_FONT_STACK = '"Segoe UI", "Helvetica Neue", Arial, sans-serif';
 
 /**
  * Resolves one figure's composition box, or refuses it.
@@ -216,14 +221,14 @@ export function composeFigureImage(request: FigureExportRequest): HTMLCanvasElem
 
   // Opaque, and painted before anything else: a transparent PNG of a Chart.js canvas is
   // dark-on-dark in any light document it is pasted into.
-  context.fillStyle = BACKGROUND;
+  context.fillStyle = FIGURE_BACKGROUND;
   context.fillRect(0, 0, width, height);
 
   context.textBaseline = 'top';
   let y = PADDING;
 
-  y = drawBlock(context, chrome.titleLines, PADDING, y, TITLE_SIZE, '600', TITLE_COLOR);
-  y = drawBlock(context, chrome.subtitleLines, PADDING, y, SUBTITLE_SIZE, '400', MUTED_COLOR);
+  y = drawBlock(context, chrome.titleLines, PADDING, y, TITLE_SIZE, '600', FIGURE_TITLE_COLOR);
+  y = drawBlock(context, chrome.subtitleLines, PADDING, y, SUBTITLE_SIZE, '400', FIGURE_MUTED_COLOR);
   if (chrome.titleLines.length > 0 || chrome.subtitleLines.length > 0) {
     y += LINE_GAP;
   }
@@ -235,23 +240,23 @@ export function composeFigureImage(request: FigureExportRequest): HTMLCanvasElem
 
   if (chrome.captionLines.length > 0) {
     y += LINE_GAP;
-    y = drawBlock(context, chrome.captionLines, PADDING, y, BODY_SIZE, '400', BODY_COLOR);
+    y = drawBlock(context, chrome.captionLines, PADDING, y, BODY_SIZE, '400', FIGURE_BODY_COLOR);
   }
   for (const lines of chrome.noticeLines) {
     y += LINE_GAP;
-    y = drawBlock(context, lines, PADDING, y, BODY_SIZE, '400', MUTED_COLOR);
+    y = drawBlock(context, lines, PADDING, y, BODY_SIZE, '400', FIGURE_MUTED_COLOR);
   }
 
   if (chrome.footerLines.length > 0) {
     y += RULE_GAP / 2;
-    context.strokeStyle = RULE_COLOR;
+    context.strokeStyle = FIGURE_RULE_COLOR;
     context.lineWidth = 1;
     context.beginPath();
     context.moveTo(PADDING, Math.round(y) + 0.5);
     context.lineTo(width - PADDING, Math.round(y) + 0.5);
     context.stroke();
     y += RULE_GAP / 2;
-    drawBlock(context, chrome.footerLines, PADDING, y, BODY_SIZE, '400', MUTED_COLOR);
+    drawBlock(context, chrome.footerLines, PADDING, y, BODY_SIZE, '400', FIGURE_MUTED_COLOR);
   }
 
   return target;
@@ -389,6 +394,32 @@ export function saveFigureBlob(blob: Blob, filename: string): void {
   anchor.click();
   document.body.removeChild(anchor);
   URL.revokeObjectURL(url);
+}
+
+/** What a clipboard write did: it succeeded, the browser has no such API, or it was refused. */
+export type ClipboardImageOutcome = 'copied' | 'unsupported' | 'denied';
+
+/**
+ * Writes one image onto the system clipboard.
+ *
+ * Only PNG is worth passing here: every engine that implements `ClipboardItem` rejects
+ * `image/webp` in one, so a WebP blob returns `'denied'` rather than landing on the clipboard.
+ *
+ * Never throws. The API is absent outside a secure context and can be refused inside one — by a
+ * permission prompt, by a document that is not focused — and a caller's only sane response to
+ * either is an inline message, which is what the three outcomes are for.
+ */
+export async function copyImageToClipboard(blob: Blob): Promise<ClipboardImageOutcome> {
+  const clipboard = navigator.clipboard as Clipboard | undefined;
+  if (!clipboard || typeof clipboard.write !== 'function' || typeof ClipboardItem === 'undefined') {
+    return 'unsupported';
+  }
+  try {
+    await clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+    return 'copied';
+  } catch {
+    return 'denied';
+  }
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -537,7 +568,7 @@ function cssHeightOf(canvas: HTMLCanvasElement): number {
 }
 
 function fontOf(size: number, weight: string): string {
-  return `${weight} ${size}px ${FONT_STACK}`;
+  return `${weight} ${size}px ${FIGURE_FONT_STACK}`;
 }
 
 function blockHeight(lines: readonly string[], size: number): number {
@@ -567,8 +598,12 @@ function drawBlock(
   return cursor;
 }
 
-/** Greedy word wrap. A single word wider than the column is left to overflow rather than broken. */
-function wrapText(
+/**
+ * Greedy word wrap. A single word wider than the column is left to overflow rather than broken.
+ *
+ * Exported for the table composer, which wraps header and cell text into the same typography.
+ */
+export function wrapText(
   context: CanvasRenderingContext2D,
   text: string,
   maxWidth: number,

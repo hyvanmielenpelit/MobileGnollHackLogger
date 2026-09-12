@@ -64,13 +64,14 @@
   <div class="dialog-body mc-wizard-body">
 
     <!--
-      STEP 1 USES [hidden]; STEPS 2 AND 3 USE @if. THE ASYMMETRY IS DELIBERATE.
+      STEP 1 USES [hidden]; STEPS 2, 3 AND 4 USE @if. THE ASYMMETRY IS DELIBERATE.
 
       Projected content inside an @if is destroyed when the branch is removed, which would reset
       the source picker's two TableState instances — its sort column, page and filters — every
-      time the reader stepped back to it. Steps 2 and 3 own no such state and genuinely want @if:
-      a Chart.js canvas created inside a display: none container lays out at zero size, so the
-      figures must be built on entering step 3 rather than kept alive hidden.
+      time the reader stepped back to it. The later steps own no such state — the comparison
+      table's own TableState is a field on this component, which outlives its markup — and they
+      genuinely want @if: a Chart.js canvas created inside a display: none container lays out at
+      zero size, so the figures must be built on entering step 4 rather than kept alive hidden.
     -->
     <div class="mc-step" role="tabpanel" tabindex="0"
          id="mc-step-panel-1" aria-labelledby="mc-step-tab-1" [hidden]="step !== 1">
@@ -379,9 +380,9 @@
         <!-- ===================================================================================
              WHAT THIS SET CAN BE CHARTED AS
 
-             The degenerate shapes, and the refusal, live beside the table rather than on the
-             Figures step: step 3 opens only where at least two entries may be plotted, so a set
-             that cannot be charted would state its refusal on a step the reader can never reach.
+             The degenerate shapes, and the refusal, live here rather than on the Figures step:
+             step 4 opens only where at least two entries may be plotted, so a set that cannot be
+             charted would state its refusal on a step the reader can never reach.
              =================================================================================== -->
         @if (!showFigures) {
           <section class="mc-section" aria-labelledby="mc-shape-heading">
@@ -426,19 +427,72 @@
           </section>
         }
 
+      </div>
+    }
+
+    @if (step === 3) {
+      <div class="mc-step" role="tabpanel" tabindex="0"
+           id="mc-step-panel-3" aria-labelledby="mc-step-tab-3">
+
         <!-- ===================================================================================
              THE TABLE VIEW
 
-             The accessible artefact, present unconditionally. It is not behind a toggle and has no
-             "off" state: a canvas is a picture, and this is the record of what the picture shows -
-             including every entry no figure could draw.
+             The accessible artefact, on a step of its own and reachable over a set no figure can
+             draw. It is not behind a toggle and has no "off" state: a canvas is a picture, and
+             this is the record of what the picture shows — including every entry no figure could
+             draw.
              =================================================================================== -->
         <section class="mc-section" aria-labelledby="mc-table-heading">
           <h4 id="mc-table-heading" class="mc-subheading">Comparison table</h4>
           <p class="section-note">
             Every entry, charted or not, with its state, its measures and the keys it differs on. This is
-            the accessible record of the figures above.
+            the accessible record of the figures on the next step.
           </p>
+
+          <!-- The provenance a reader needs to check the numbers, on screen as well as in every
+               exported file: costs read without their pricing basis compare price cards. -->
+          <p class="mc-table-provenance">{{ tableProvenanceLine }}</p>
+
+          <!--
+            Export. The scope is every entry passing the current filters, in the current sort,
+            across all pages — never the visible page — and the status line below says so, because
+            a file holding ten of forty rows with nothing on it to say which ten is worse than no
+            file at all.
+
+            Excel first: it is the format an operator takes this to a spreadsheet in, and it is the
+            only one that keeps the numbers as numbers *and* the provenance beside them.
+          -->
+          <div class="mc-export mc-table-export">
+            <label class="visually-hidden" for="mc-table-export-format">Table export format</label>
+            <select id="mc-table-export-format" class="gh-input mc-export-format"
+                    [ngModel]="tableExportFormat" [ngModelOptions]="{ standalone: true }"
+                    (ngModelChange)="onTableExportFormatChange($event)">
+              <option value="xlsx">Excel (.xlsx)</option>
+              <option value="csv">CSV</option>
+              <option value="tsv">TSV</option>
+              <option value="md">Markdown</option>
+              <option value="json">JSON</option>
+              <option value="html">HTML</option>
+              <option value="png">PNG</option>
+              <option value="webp">WebP (quality 85)</option>
+            </select>
+            <button type="button" class="btn-gh btn-gh-small" [disabled]="!canExportTable"
+                    (click)="downloadTable()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="12" y1="18" x2="12" y2="12"></line>
+                <polyline points="9 15 12 18 15 15"></polyline>
+              </svg>
+              Download table
+            </button>
+            <!-- Markdown whatever the format control says: the clipboard's destination is a
+                 document or a chat message, and neither pastes a spreadsheet. -->
+            <button type="button" class="btn-gh btn-gh-small btn-gh-cancel" [disabled]="!canExportTable"
+                    (click)="copyTableMarkdown()">Copy as Markdown</button>
+          </div>
+
+          <p class="mc-export-status" role="status">{{ exportStatus }}</p>
 
           @if (entries.length === 0) {
             <p class="text-muted">Nothing to compare yet.</p>
@@ -606,12 +660,29 @@
             </div>
           }
         </section>
+
+        <!-- The set-level caveats repeat here, compactly: this is a step a reader exports from,
+             and a table downloaded without them is exactly the misreading they prevent. -->
+        @if (setNotices.length > 0) {
+          <ul class="mc-notices mc-notices-compact" aria-label="Notices about this comparison">
+            @for (notice of setNotices; track $index) {
+              <li>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="16" x2="12" y2="12"></line>
+                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <span>{{ notice }}</span>
+              </li>
+            }
+          </ul>
+        }
       </div>
     }
 
-    @if (step === 3) {
+    @if (step === 4) {
       <div class="mc-step" role="tabpanel" tabindex="0"
-           id="mc-step-panel-3" aria-labelledby="mc-step-tab-3">
+           id="mc-step-panel-4" aria-labelledby="mc-step-tab-4">
 
         <!-- The set-level caveats repeat here, compactly: this is the step a reader exports from,
              and a figure downloaded without them is exactly the misreading they prevent. -->
@@ -708,19 +779,33 @@
                     <figcaption class="mc-card-head">
                       <h5 class="mc-card-title" [id]="card.id + '-title'">{{ card.title }}</h5>
                       <p class="mc-card-subtitle">{{ card.subtitle }}</p>
-                      <button type="button" class="action-btn mc-download" [disabled]="!canExport"
-                              [attr.aria-label]="'Download ' + card.title"
-                              [attr.interestfor]="tipId('dl', card.id)"
-                              [attr.style]="'anchor-name: --' + tipId('dl', card.id)"
-                              (click)="downloadFigure(card)">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                          <polyline points="7 10 12 15 17 10"></polyline>
-                          <line x1="12" y1="15" x2="12" y2="3"></line>
-                        </svg>
-                      </button>
+                      <div class="mc-card-actions">
+                        <button type="button" class="action-btn mc-download" [disabled]="!canExport"
+                                [attr.aria-label]="'Download ' + card.title"
+                                [attr.interestfor]="tipId('dl', card.id)"
+                                [attr.style]="'anchor-name: --' + tipId('dl', card.id)"
+                                (click)="downloadFigure(card)">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                          </svg>
+                        </button>
+                        <button type="button" class="action-btn mc-copy" [disabled]="!canExport"
+                                [attr.aria-label]="'Copy ' + card.title + ' to the clipboard'"
+                                [attr.interestfor]="tipId('copy', card.id)"
+                                [attr.style]="'anchor-name: --' + tipId('copy', card.id)"
+                                (click)="copyFigure(card)">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                          </svg>
+                        </button>
+                      </div>
                       <div popover="hint" class="gh-tooltip" [id]="tipId('dl', card.id)"
                            [attr.style]="'position-anchor: --' + tipId('dl', card.id)">Download this figure with its caption and notices</div>
+                      <div popover="hint" class="gh-tooltip" [id]="tipId('copy', card.id)"
+                           [attr.style]="'position-anchor: --' + tipId('copy', card.id)">Copy this figure as an image, with its caption and notices</div>
                     </figcaption>
                     <div class="mc-canvas" [style.height.px]="card.heightPx">
                       <canvas baseChart role="img" [attr.aria-label]="card.ariaLabel"
@@ -744,19 +829,33 @@
                   <figcaption class="mc-card-head">
                     <h5 class="mc-card-title" [id]="profile.id + '-title'">{{ profile.title }}</h5>
                     <p class="mc-card-subtitle">{{ profile.subtitle }}</p>
-                    <button type="button" class="action-btn mc-download" [disabled]="!canExport"
-                            [attr.aria-label]="'Download ' + profile.title"
-                            [attr.interestfor]="tipId('dl', profile.id)"
-                            [attr.style]="'anchor-name: --' + tipId('dl', profile.id)"
-                            (click)="downloadFigure(profile)">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="7 10 12 15 17 10"></polyline>
-                        <line x1="12" y1="15" x2="12" y2="3"></line>
-                      </svg>
-                    </button>
+                    <div class="mc-card-actions">
+                      <button type="button" class="action-btn mc-download" [disabled]="!canExport"
+                              [attr.aria-label]="'Download ' + profile.title"
+                              [attr.interestfor]="tipId('dl', profile.id)"
+                              [attr.style]="'anchor-name: --' + tipId('dl', profile.id)"
+                              (click)="downloadFigure(profile)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                          <polyline points="7 10 12 15 17 10"></polyline>
+                          <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                      </button>
+                      <button type="button" class="action-btn mc-copy" [disabled]="!canExport"
+                              [attr.aria-label]="'Copy ' + profile.title + ' to the clipboard'"
+                              [attr.interestfor]="tipId('copy', profile.id)"
+                              [attr.style]="'anchor-name: --' + tipId('copy', profile.id)"
+                              (click)="copyFigure(profile)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                      </button>
+                    </div>
                     <div popover="hint" class="gh-tooltip" [id]="tipId('dl', profile.id)"
                          [attr.style]="'position-anchor: --' + tipId('dl', profile.id)">Download this figure with its caption and notices</div>
+                    <div popover="hint" class="gh-tooltip" [id]="tipId('copy', profile.id)"
+                         [attr.style]="'position-anchor: --' + tipId('copy', profile.id)">Copy this figure as an image, with its caption and notices</div>
                   </figcaption>
                   <div class="mc-canvas" [style.height.px]="profile.heightPx">
                     <canvas baseChart role="img" [attr.aria-label]="profile.ariaLabel"
@@ -800,19 +899,33 @@
                       @if (card.cornerLabel) {
                         <p class="mc-card-corner">{{ card.cornerLabel }}</p>
                       }
-                      <button type="button" class="action-btn mc-download" [disabled]="!canExport"
-                              [attr.aria-label]="'Download ' + card.title"
-                              [attr.interestfor]="tipId('dl', card.id)"
-                              [attr.style]="'anchor-name: --' + tipId('dl', card.id)"
-                              (click)="downloadFigure(card)">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                          <polyline points="7 10 12 15 17 10"></polyline>
-                          <line x1="12" y1="15" x2="12" y2="3"></line>
-                        </svg>
-                      </button>
+                      <div class="mc-card-actions">
+                        <button type="button" class="action-btn mc-download" [disabled]="!canExport"
+                                [attr.aria-label]="'Download ' + card.title"
+                                [attr.interestfor]="tipId('dl', card.id)"
+                                [attr.style]="'anchor-name: --' + tipId('dl', card.id)"
+                                (click)="downloadFigure(card)">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                          </svg>
+                        </button>
+                        <button type="button" class="action-btn mc-copy" [disabled]="!canExport"
+                                [attr.aria-label]="'Copy ' + card.title + ' to the clipboard'"
+                                [attr.interestfor]="tipId('copy', card.id)"
+                                [attr.style]="'anchor-name: --' + tipId('copy', card.id)"
+                                (click)="copyFigure(card)">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                          </svg>
+                        </button>
+                      </div>
                       <div popover="hint" class="gh-tooltip" [id]="tipId('dl', card.id)"
                            [attr.style]="'position-anchor: --' + tipId('dl', card.id)">Download this figure with its caption and notices</div>
+                      <div popover="hint" class="gh-tooltip" [id]="tipId('copy', card.id)"
+                           [attr.style]="'position-anchor: --' + tipId('copy', card.id)">Copy this figure as an image, with its caption and notices</div>
                     </figcaption>
                     <div class="mc-canvas" [style.height.px]="card.heightPx">
                       <canvas baseChart role="img" [attr.aria-label]="card.ariaLabel"
@@ -915,7 +1028,7 @@
             [disabled]="!canGoPrevious" (click)="previousStep()">Previous</button>
 
     <p class="mc-wizard-position" aria-live="polite">
-      Step {{ step }} of 3 — {{ stepTitles[step] }}
+      Step {{ step }} of 4 — {{ stepTitles[step] }}
       @if (nextBlockedReason) {
         <span class="mc-wizard-blocked" id="mc-next-blocked">{{ nextBlockedReason }}</span>
       }
@@ -923,10 +1036,11 @@
 
     <!-- aria-disabled rather than disabled, so the reason stays reachable: a disabled button
          cannot be focused, and the reader would be left guessing why Next does nothing.
-         Step 3's Close is genuinely disabled while an export is running. -->
+         Genuinely disabled while an export is running: the table and figure steps are the only
+         ones that can start one, and leaving either mid-write is what the guard is for. -->
     <button type="button" class="btn-gh"
             [attr.aria-disabled]="!canGoNext"
-            [disabled]="step === 3 && exporting"
+            [disabled]="exporting"
             aria-describedby="mc-next-blocked"
             (click)="nextStep()">{{ nextLabel }}</button>
   </div>

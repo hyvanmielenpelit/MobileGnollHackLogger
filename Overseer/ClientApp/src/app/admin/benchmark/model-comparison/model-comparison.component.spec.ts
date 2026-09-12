@@ -17,6 +17,7 @@ import {
   toChartEntries
 } from './model-comparison.models';
 import { GROUP_SECTION_TITLE, RUN_SECTION_TITLE } from './comparison-source-picker.component';
+import { TableExportFormat, xlsxWriterModule } from './table-export';
 
 describe('ModelComparisonComponent', () => {
   let component: ModelComparisonComponent;
@@ -178,10 +179,10 @@ describe('ModelComparisonComponent', () => {
    * and opens one wizard step.
    *
    * The step is explicit because the wizard opens on step 1 — the projected source picker — and
-   * almost every assertion below is about the two steps behind it. Step 2 is the default: it
-   * carries the filters, the caveats and the comparison table. `goToStep` refuses an unreachable
-   * step, so a test that asks for step 3 over an unchartable set finds an empty panel rather than
-   * a quietly passing assertion.
+   * almost every assertion below is about the three steps behind it. Step 2 is the default: it
+   * carries the filters and the caveats. The comparison table is step 3 and the figures are step
+   * 4. `goToStep` refuses an unreachable step, so a test that asks for step 4 over an unchartable
+   * set finds an empty panel rather than a quietly passing assertion.
    */
   function render(dto: BenchmarkModelComparisonDto | null, step: ComparisonWizardStep = 2): void {
     fixture.componentRef.setInput('comparison', dto);
@@ -235,8 +236,8 @@ describe('ModelComparisonComponent', () => {
   // The table view
   // -------------------------------------------------------------------------------------------
 
-  it('renders the table view alongside the figures, not behind a toggle', () => {
-    render(buildDto(comparableSet(4)));
+  it('renders the table view on its own step, not behind a toggle', () => {
+    render(buildDto(comparableSet(4)), 3);
 
     const table = fixture.debugElement.query(By.css('table.mc-table'));
     expect(table).withContext('the table view must always be in the DOM').toBeTruthy();
@@ -251,7 +252,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('keeps an excluded entry in the table even though no figure can draw it', () => {
-    render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringMethodVersion'])]));
+    render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringMethodVersion'])]), 3);
 
     expect(fixture.debugElement.queryAll(By.css('tbody tr')).length).toBe(4);
     expect(component.figures?.selection.plotted.length).toBe(3);
@@ -281,7 +282,11 @@ describe('ModelComparisonComponent', () => {
     expect(component.shape).toBe('none');
     expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(0);
     expect(textOf('.alert-heading')).toContain('Nothing in this set may be charted together');
-    // The refusal is explained and the entries stay listed.
+
+    // The refusal is explained on step 2 and the entries stay listed on step 3, which opens over
+    // a set no figure can draw precisely so that they do.
+    component.goToStep(3);
+    fixture.detectChanges();
     expect(fixture.debugElement.queryAll(By.css('tbody tr')).length).toBe(2);
   });
 
@@ -300,7 +305,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('suppresses the profile plot at two entries and keeps P1 and the scatters', () => {
-    render(buildDto(comparableSet(2)), 3);
+    render(buildDto(comparableSet(2)), 4);
 
     expect(component.shape).toBe('pair');
     expect(component.profileCard).toBeNull();
@@ -310,7 +315,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('renders all six figures from three entries upward', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 4);
 
     expect(component.shape).toBe('full');
     expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(7);
@@ -325,9 +330,9 @@ describe('ModelComparisonComponent', () => {
     render(buildDto(comparableSet(4)));
     expect(fixture.debugElement.queryAll(By.css('.mc-filters')).length).toBe(1);
 
-    // The figures are a step further on, and none of them may carry a control of its own: six
+    // The figures are two steps further on, and none of them may carry a control of its own: six
     // figures scoped by six controls would each describe a different slice of one set.
-    component.goToStep(3);
+    component.goToStep(4);
     fixture.detectChanges();
     expect(fixture.debugElement.queryAll(By.css('.mc-filters')).length).toBe(0);
     expect(fixture.debugElement.queryAll(By.css('.mc-card select, .mc-card input')).length).toBe(0);
@@ -398,7 +403,10 @@ describe('ModelComparisonComponent', () => {
 
     expect(component.figures?.selection.plotted.length).toBe(3);
     expect(textOf('.mc-notices')).toContain('Strict comparability is on');
+
     // Withheld, not hidden: the table still carries it.
+    component.goToStep(3);
+    fixture.detectChanges();
     expect(fixture.debugElement.queryAll(By.css('tbody tr')).length).toBe(4);
   });
 
@@ -432,6 +440,9 @@ describe('ModelComparisonComponent', () => {
 
     expect(component.allSingleRun).toBeTrue();
     expect(textOf('.alert-heading')).toContain('n = 1');
+
+    component.goToStep(3);
+    fixture.detectChanges();
     expect(fixture.debugElement.queryAll(By.css('tbody .mc-n1')).length).toBe(3);
   });
 
@@ -504,36 +515,46 @@ describe('ModelComparisonComponent', () => {
   // Figure export
   // -------------------------------------------------------------------------------------------
 
-  it('offers a download control on every figure card and one for the whole set', () => {
-    render(buildDto(comparableSet(3)), 3);
+  it('offers a download and a copy control on every figure card, and one download for the set', () => {
+    render(buildDto(comparableSet(3)), 4);
 
     const cards = fixture.debugElement.queryAll(By.css('.mc-card')).length;
     const downloads = fixture.debugElement.queryAll(By.css('.mc-card .mc-download'));
+    const copies = fixture.debugElement.queryAll(By.css('.mc-card .mc-copy'));
     expect(cards).toBe(7);
     expect(downloads.length).toBe(7);
-    // An icon-only button has no text, so aria-label is its accessible name.
+    expect(copies.length).toBe(7);
+    // An icon-only button has no text, so aria-label is its accessible name — and it has to name
+    // the card, or seven buttons share one name in a screen reader's control list.
     expect((downloads[0].nativeElement as HTMLElement).getAttribute('aria-label'))
       .toContain('Download ');
+    const copyNames = copies.map(copy =>
+      (copy.nativeElement as HTMLElement).getAttribute('aria-label') ?? '');
+    expect(copyNames.every(name => name.startsWith('Copy ') && name.endsWith('to the clipboard')))
+      .toBeTrue();
+    expect(new Set(copyNames).size).toBe(7);
 
     expect(fixture.debugElement.query(By.css('#mc-export-format'))).toBeTruthy();
     expect(textOf('.mc-export')).toContain('Download all figures');
+    // One image on the clipboard at a time, so there is deliberately no batch copy.
+    expect(textOf('.mc-export')).not.toContain('Copy all figures');
   });
 
   it('hides the export controls where no figure is rendered', () => {
     // Not merely hidden: the whole Figures step refuses to open, because there is nothing on it.
-    render(buildDto(comparableSet(1)), 3);
+    render(buildDto(comparableSet(1)), 4);
     expect(component.shape).toBe('single');
-    expect(component.isStepReachable(3)).toBeFalse();
+    expect(component.isStepReachable(4)).toBeFalse();
     expect(fixture.debugElement.query(By.css('.mc-export'))).toBeNull();
     expect(fixture.debugElement.queryAll(By.css('.mc-download')).length).toBe(0);
 
     render(buildDto([
       buildExcludedEntry('run:8', ['ScoringMethodVersion']),
       buildExcludedEntry('run:9', ['CandidatePromptOptions'])
-    ]), 3);
+    ]), 4);
     expect(component.shape).toBe('none');
-    expect(component.isStepReachable(3)).toBeFalse();
-    expect(fixture.debugElement.query(By.css('.mc-export'))).toBeNull();
+    expect(component.isStepReachable(4)).toBeFalse();
+    expect(fixture.debugElement.query(By.css('.mc-card'))).toBeNull();
 
     render(null);
     expect(component.shape).toBe('empty');
@@ -781,26 +802,28 @@ describe('ModelComparisonComponent', () => {
     fixture.detectChanges();
     expect(component.step).toBe(2);
 
-    component.goToStep(3);
+    component.goToStep(4);
     // A pricing-basis refetch replaces one payload with another; it must not move the reader.
     fixture.componentRef.setInput('comparison', buildDto(comparableSet(3)));
     fixture.detectChanges();
-    expect(component.step).toBe(3);
+    expect(component.step).toBe(4);
 
     fixture.componentRef.setInput('comparison', null);
     fixture.detectChanges();
     expect(component.step).toBe(1);
   });
 
-  it('marks Next on step 2 aria-disabled where nothing may be charted, never disabled', () => {
+  it('opens the table step over a set no figure can draw, and refuses the figures step', () => {
     render(buildDto([
       buildExcludedEntry('run:8', ['ScoringMethodVersion']),
       buildExcludedEntry('run:9', ['CandidatePromptOptions'])
-    ]));
+    ]), 3);
 
-    expect(component.step).toBe(2);
+    // The table is the artefact that says what could not be compared, so its step opens here.
+    expect(component.step).toBe(3);
+    expect(component.isStepReachable(3)).toBeTrue();
     expect(component.canGoNext).toBeFalse();
-    expect(component.isStepReachable(3)).toBeFalse();
+    expect(component.isStepReachable(4)).toBeFalse();
 
     const next = fixture.debugElement.queryAll(By.css('.mc-wizard-nav .btn-gh'))[1]
       .nativeElement as HTMLElement;
@@ -811,21 +834,36 @@ describe('ModelComparisonComponent', () => {
     expect(textOf('.mc-wizard-blocked')).toContain('Nothing in this set may be charted together');
 
     const figuresTab = fixture.debugElement
-      .queryAll(By.css('.mc-wizard-steps .gh-tab'))[2].nativeElement as HTMLElement;
+      .queryAll(By.css('.mc-wizard-steps .gh-tab'))[3].nativeElement as HTMLElement;
     expect(figuresTab.getAttribute('aria-disabled')).toBe('true');
     expect(figuresTab.hasAttribute('disabled')).toBeFalse();
   });
 
+  it('reaches the table step whenever a comparison exists, and neither step without one', () => {
+    render(null);
+
+    expect(component.isStepReachable(3)).toBeFalse();
+    expect(component.isStepReachable(4)).toBeFalse();
+
+    render(buildDto(comparableSet(3)));
+    expect(component.isStepReachable(3)).toBeTrue();
+    expect(component.isStepReachable(4)).toBeTrue();
+    // Step 2 no longer gates on anything but the payload: the table behind it always has rows.
+    expect(component.canGoNext).toBeTrue();
+    expect(component.nextBlockedReason).toBe('');
+  });
+
   it('names the single-entry case separately, because it is a different fix', () => {
-    render(buildDto(comparableSet(1)));
+    render(buildDto(comparableSet(1)), 3);
 
     expect(component.shape).toBe('single');
+    expect(component.step).toBe(3);
     expect(component.nextBlockedReason).toContain('Only one entry is plotted');
   });
 
-  it('labels step 3 Next as Close and emits closeRequested from it', () => {
-    render(buildDto(comparableSet(3)), 3);
-    expect(component.step).toBe(3);
+  it('labels step 4 Next as Close and emits closeRequested from it', () => {
+    render(buildDto(comparableSet(3)), 4);
+    expect(component.step).toBe(4);
     expect(component.nextLabel).toBe('Close');
 
     const closed: number[] = [];
@@ -835,15 +873,21 @@ describe('ModelComparisonComponent', () => {
     expect(closed.length).toBe(1);
   });
 
-  it('draws the figures on step 3 and keeps the comparison table on step 2, always reachable', () => {
-    render(buildDto(comparableSet(3)), 3);
+  it('draws the figures on step 4 and keeps the comparison table on step 3', () => {
+    render(buildDto(comparableSet(3)), 4);
     expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(7);
     expect(fixture.debugElement.query(By.css('table.mc-table'))).toBeNull();
 
-    component.goToStep(2);
+    component.goToStep(3);
     fixture.detectChanges();
     expect(fixture.debugElement.query(By.css('table.mc-table'))).toBeTruthy();
     expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(0);
+
+    // Step 2 keeps the filters and gives up the table.
+    component.goToStep(2);
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.css('table.mc-table'))).toBeNull();
+    expect(fixture.debugElement.queryAll(By.css('.mc-filters')).length).toBe(1);
   });
 
   it('drives the step tablist with a roving tabindex and the arrow keys', () => {
@@ -851,11 +895,12 @@ describe('ModelComparisonComponent', () => {
 
     const tabs = fixture.debugElement.queryAll(By.css('.mc-wizard-steps .gh-tab'))
       .map(tab => tab.nativeElement as HTMLElement);
-    expect(tabs.length).toBe(3);
+    expect(tabs.length).toBe(4);
     expect(tabs[1].getAttribute('aria-selected')).toBe('true');
     expect(tabs[1].getAttribute('tabindex')).toBe('0');
     expect(tabs[0].getAttribute('tabindex')).toBe('-1');
     expect(tabs[2].getAttribute('tabindex')).toBe('-1');
+    expect(tabs[3].getAttribute('tabindex')).toBe('-1');
 
     component.onStepKeydown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }), 1);
     fixture.detectChanges();
@@ -863,7 +908,7 @@ describe('ModelComparisonComponent', () => {
 
     component.onStepKeydown(new KeyboardEvent('keydown', { key: 'End' }), 0);
     fixture.detectChanges();
-    expect(component.step).toBe(3);
+    expect(component.step).toBe(4);
   });
 
   it('hides the step 1 panel rather than rendering it beside the open step', () => {
@@ -883,14 +928,14 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('survives being measured at width zero, which is what a closed dialog reports', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 4);
 
     expect(() => component.applyContainerWidth(0)).not.toThrow();
     expect(component.orientation).toBe('vertical');
   });
 
   it('disables its own close controls while an export is running, and nothing else', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 4);
     component.exporting = true;
     refresh();
 
@@ -912,7 +957,7 @@ describe('ModelComparisonComponent', () => {
   // -------------------------------------------------------------------------------------------
 
   it('shows the two custom size inputs only for Custom, and names what will be written', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 4);
     expect(fixture.debugElement.query(By.css('#mc-export-width'))).toBeNull();
     expect(textOf('.mc-export-dimensions')).toContain('on-screen size');
 
@@ -928,7 +973,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('refuses an out-of-range custom size in words, and will not export under one', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 4);
     component.onExportResolutionChange('custom');
     component.customExportHeight = 10;
     refresh();
@@ -942,6 +987,182 @@ describe('ModelComparisonComponent', () => {
     refresh();
     expect(component.customResolutionError).toBe('');
     expect(component.canExport).toBeTrue();
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // Table export, and the two clipboard paths
+  // -------------------------------------------------------------------------------------------
+
+  /**
+   * Intercepts the save path rather than the module that performs it: the object URL names the
+   * blob that was written and the anchor names the file it was written under, which between them
+   * are everything a download can be asserted on without a real file system.
+   */
+  function captureSaves(): { blobs: Blob[]; names: string[] } {
+    const saved: { blobs: Blob[]; names: string[] } = { blobs: [], names: [] };
+    spyOn(URL, 'createObjectURL').and.callFake((source: Blob | MediaSource) => {
+      saved.blobs.push(source as Blob);
+      return 'blob:model-comparison-test';
+    });
+    spyOn(URL, 'revokeObjectURL').and.stub();
+    spyOn(HTMLAnchorElement.prototype, 'click').and.callFake(function (this: HTMLAnchorElement) {
+      saved.names.push(this.download);
+    });
+    return saved;
+  }
+
+  /** `navigator.clipboard` is a prototype getter, so it is stood in for on the instance. */
+  function withClipboard(value: unknown): void {
+    Object.defineProperty(navigator, 'clipboard', { value, configurable: true });
+  }
+
+  afterEach(() => {
+    delete (navigator as unknown as { clipboard?: unknown }).clipboard;
+  });
+
+  /** A stand-in for the dynamically imported spreadsheet writer, which the specs never really run. */
+  function stubXlsxWriter(): void {
+    spyOn(xlsxWriterModule, 'load').and.returnValue(Promise.resolve({
+      default: () => ({ toBlob: () => Promise.resolve(new Blob(['xlsx-bytes'])) })
+    } as any));
+  }
+
+  it('offers the eight table formats with Excel first, and a Markdown copy beside the download', () => {
+    render(buildDto(comparableSet(4)), 3);
+
+    const select = fixture.debugElement.query(By.css('#mc-table-export-format'))
+      .nativeElement as HTMLSelectElement;
+    expect(Array.from(select.options).map(option => option.value))
+      .toEqual(['xlsx', 'csv', 'tsv', 'md', 'json', 'html', 'png', 'webp']);
+    // A placeholder is not a label, and this control carries no visible one.
+    expect(fixture.debugElement.query(By.css('label[for="mc-table-export-format"]'))).toBeTruthy();
+    expect(textOf('.mc-table-export')).toContain('Download table');
+    expect(textOf('.mc-table-export')).toContain('Copy as Markdown');
+    expect(textOf('.mc-table-provenance')).toContain('Current catalog, as of 2026-09-07');
+    expect(textOf('.mc-table-provenance')).toContain('condition 9c79137965e4');
+  });
+
+  it('writes one file per table format, under the extension that format names', async () => {
+    render(buildDto(comparableSet(4)), 3);
+    const saved = captureSaves();
+    stubXlsxWriter();
+
+    for (const format of ['xlsx', 'csv', 'tsv', 'md', 'json', 'html'] as TableExportFormat[]) {
+      component.tableExportFormat = format;
+      await component.downloadTable();
+    }
+
+    expect(saved.blobs.length).toBe(6);
+    expect(saved.names.map(name => name.split('.').pop()))
+      .toEqual(['xlsx', 'csv', 'tsv', 'md', 'json', 'html']);
+    expect(saved.names.every(name => /^model-comparison_table_\d{8}_\d{6}\./.test(name))).toBeTrue();
+    expect(saved.blobs.every(blob => blob.size > 0)).toBeTrue();
+    expect(component.exportStatus).toContain('4 entries');
+    expect(component.exportStatus).toContain('current sort, filters applied, all pages');
+    expect(component.exporting).toBeFalse();
+  });
+
+  it('writes the table as an image in both image formats', async () => {
+    render(buildDto(comparableSet(2)), 3);
+    const saved = captureSaves();
+
+    component.tableExportFormat = 'png';
+    await component.downloadTable();
+    component.tableExportFormat = 'webp';
+    await component.downloadTable();
+
+    expect(saved.names[0]).toMatch(/\.png$/);
+    // A browser with no WebP encoder answers with a PNG, and the file is then named .png.
+    expect(saved.names[1]).toMatch(/\.(webp|png)$/);
+    expect(saved.blobs.every(blob => blob.size > 0)).toBeTrue();
+  });
+
+  it('exports every filtered row across all pages, not the visible page', async () => {
+    render(buildDto(comparableSet(12)), 3);
+    const saved = captureSaves();
+    expect(component.entryTable.view(component.entries).length).toBe(10);
+
+    component.tableExportFormat = 'csv';
+    await component.downloadTable();
+
+    // Twelve records and a header, from a page showing ten.
+    const text = await saved.blobs[0].text();
+    expect(text.trimEnd().split('\r\n').length).toBe(13);
+    expect(component.exportStatus).toContain('12 entries');
+  });
+
+  it('exports the rows the column filters leave, and says how many', async () => {
+    render(buildDto(comparableSet(12)), 3);
+    const saved = captureSaves();
+    // Model 1, Model 10, Model 11 and Model 12.
+    component.entryTable.setFilter('label', 'Model 1');
+
+    component.tableExportFormat = 'csv';
+    await component.downloadTable();
+
+    expect((await saved.blobs[0].text()).trimEnd().split('\r\n').length).toBe(5);
+    expect(component.exportStatus).toContain('4 entries');
+  });
+
+  it('copies the table as Markdown, whatever the format control says', async () => {
+    render(buildDto(comparableSet(3)), 3);
+    const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+    withClipboard({ writeText });
+
+    await component.copyTableMarkdown();
+
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(writeText.calls.mostRecent().args[0] as string).toContain('| Model |');
+    expect(component.exportStatus).toBe('Copied 3 entries as Markdown.');
+    expect(component.exporting).toBeFalse();
+  });
+
+  it('reports a refused clipboard write inline rather than throwing', async () => {
+    render(buildDto(comparableSet(3)), 3);
+    withClipboard({ writeText: () => Promise.reject(new Error('Document is not focused.')) });
+
+    await expectAsync(component.copyTableMarkdown()).toBeResolved();
+
+    expect(component.exportStatus).toBe('The clipboard write was refused.');
+    expect(component.exporting).toBeFalse();
+  });
+
+  it('reports an absent clipboard API inline, and names the way out', async () => {
+    render(buildDto(comparableSet(3)), 3);
+    withClipboard(undefined);
+
+    await component.copyTableMarkdown();
+
+    expect(component.exportStatus).toContain('cannot copy text to the clipboard');
+    expect(component.exportStatus).toContain('download the table instead');
+    expect(component.exporting).toBeFalse();
+  });
+
+  it('copies one figure to the clipboard and names the card in the status', async () => {
+    render(buildDto(comparableSet(3)), 4);
+    const write = jasmine.createSpy('write').and.returnValue(Promise.resolve());
+    withClipboard({ write });
+    const card = component.panelCards[0];
+
+    await component.copyFigure(card);
+
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(component.exportStatus).toBe(`Copied ${card.title} to the clipboard.`);
+    expect(component.exporting).toBeFalse();
+  });
+
+  it('reports a refused figure copy, and an absent clipboard API, as inline text', async () => {
+    render(buildDto(comparableSet(3)), 4);
+    withClipboard({ write: () => Promise.reject(new Error('Write permission denied.')) });
+
+    await component.copyFigure(component.panelCards[0]);
+    expect(component.exportStatus).toBe('The clipboard write was refused.');
+
+    withClipboard(undefined);
+    await component.copyFigure(component.panelCards[0]);
+    expect(component.exportStatus).toContain('cannot copy images to the clipboard');
+    expect(component.exportStatus).toContain('download the figure instead');
+    expect(component.exporting).toBeFalse();
   });
 
 });

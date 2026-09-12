@@ -636,3 +636,309 @@
   margin-left: 4px;
 }
 
+/* --- The condition detail dialog --- */
+
+/* Sizing and the header / body / actions column only; the glass frame, the `::backdrop` and the
+   type are `.gh-dialog`'s and are not redefined. Wider than the legend because each row carries
+   two machine values side by side. The transition notes on `.csp-legend-dialog` above apply here
+   unchanged — `display` alone is gated on the open state, and `display` and `overlay` are both in
+   the transition list with `allow-discrete`. */
+.csp-condition-dialog {
+  width: min(96vw, 1100px);
+  max-width: min(96vw, 1100px);
+  max-height: min(86dvh, 820px);
+  padding: 0;
+  overflow: hidden;
+  flex-direction: column;
+
+  &[open],
+  &:modal {
+    display: flex;
+  }
+
+  opacity: 0;
+  transform: scale(0.985);
+  transition:
+    opacity 0.16s ease,
+    transform 0.16s ease,
+    display 0.16s allow-discrete,
+    overlay 0.16s allow-discrete;
+
+  &[open] {
+    opacity: 1;
+    transform: none;
+
+    @starting-style {
+      opacity: 0;
+      transform: scale(0.985);
+    }
+  }
+
+  /* `.dialog-actions` supplies the row and the divider; the padding is this dialog's, since its
+     body owns the horizontal rhythm. */
+  .dialog-actions {
+    flex-shrink: 0;
+    margin-top: 0;
+    padding: 15px 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csp-condition-dialog {
+    transform: none;
+    transition-duration: 0.01s;
+
+    &[open] {
+      @starting-style {
+        transform: none;
+      }
+    }
+  }
+}
+
+/* The body scrolls, so the title and both footer controls stay in view however many keys the
+   source differs on. The key table scrolls sideways inside it on its own. */
+.csp-condition-body {
+  gap: 14px;
+}
+
+.csp-condition-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.csp-condition-table {
+  width: 100%;
+  min-width: 720px;
+
+  th,
+  td {
+    vertical-align: top;
+  }
+
+  /* The human label above, the machine name under it: the name identifies the key everywhere else
+     in the product, and the label is what the row is read by. */
+  .csp-condition-key {
+    min-width: 150px;
+    text-align: left;
+    font-weight: 600;
+    color: #c3c2b7;
+
+    code {
+      display: block;
+      margin-top: 3px;
+      font-family: "Consolas", "Menlo", monospace;
+      font-size: 11px;
+      font-weight: 400;
+      color: #8b8b90;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  .csp-condition-meaning {
+    min-width: 200px;
+    max-width: 40ch;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #a1a1aa;
+  }
+}
+
+/* --- The kind badge ---
+   Text plus a hue, from the same palette as the tier and condition badges: a reader who cannot
+   tell the hues apart still reads "Fundamental" against "Instrument". */
+
+.csp-kind {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+
+  &.csp-kind-fundamental {
+    border-color: rgba(220, 110, 110, 0.5);
+    background: rgba(220, 110, 110, 0.12);
+    color: #e09090;
+  }
+
+  &.csp-kind-candidate {
+    border-color: rgba(224, 186, 109, 0.5);
+    background: rgba(224, 186, 109, 0.12);
+    color: var(--primary-color, #e0ba6d);
+  }
+
+  &.csp-kind-instrument {
+    border-color: rgba(214, 150, 90, 0.5);
+    background: rgba(214, 150, 90, 0.12);
+    color: #e0a878;
+  }
+
+  &.csp-kind-speedandcost {
+    border-color: rgba(120, 200, 130, 0.5);
+    background: rgba(120, 200, 130, 0.12);
+    color: #a8dcb0;
+  }
+
+  /* A kind the taxonomy gains before this view names it: neutral, and still legible. */
+  &.csp-kind-other {
+    background: rgba(255, 255, 255, 0.04);
+    color: #c3c2b7;
+  }
+}
+
+/* --- The two value panels --- */
+
+/* Two columns where the cell is wide enough for them and one below the other where it is not, so
+   the pair never forces the table wider than the values themselves already do. */
+.csp-condition-values {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px 16px;
+  min-width: 300px;
+}
+
+.csp-condition-side {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.csp-condition-side-title {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #8b8b90;
+}
+
+/* One `name=value` field per line: the field name in the left column, its value in the right. */
+.csp-condition-fields {
+  display: grid;
+  margin: 0;
+  gap: 3px 0;
+  font-size: 12px;
+
+  > div {
+    display: grid;
+    grid-template-columns: minmax(0, 11ch) minmax(0, 1fr);
+    gap: 0 10px;
+    min-width: 0;
+  }
+
+  dt {
+    color: #8b8b90;
+    overflow-wrap: anywhere;
+  }
+
+  dd {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+    margin: 0;
+    min-width: 0;
+    color: #c3c2b7;
+    overflow-wrap: anywhere;
+  }
+
+  /* Weight marks the field that moved; the word beside it carries the same fact for a reader who
+     cannot see the weight difference, and for one listening to the row. */
+  .csp-condition-changed dd {
+    font-weight: 700;
+    color: var(--primary-color, #e0ba6d);
+  }
+}
+
+.csp-condition-changed-mark {
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(224, 186, 109, 0.5);
+  background: rgba(224, 186, 109, 0.12);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--primary-color, #e0ba6d);
+}
+
+/* A value with no fields to split: a serialized options object, a prompt, a list. Pre-wrapped so
+   its own line breaks survive, and collapsed above the length at which it stops being readable. */
+.csp-condition-raw {
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.32);
+  font-family: "Consolas", "Menlo", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #a1a1aa;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 22em;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.csp-condition-raw-collapsed {
+  max-height: 7.5em;
+}
+
+/* Every variant with its runs, shown whole where neither side could be attributed: the reader is
+   given the evidence rather than an attribution the data does not support. */
+.csp-condition-variants {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+
+  > li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+    min-width: 0;
+  }
+
+  code {
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.32);
+    font-family: "Consolas", "Menlo", monospace;
+    font-size: 12px;
+    color: #a1a1aa;
+    overflow-wrap: anywhere;
+  }
+
+  span {
+    font-size: 11px;
+    color: #8b8b90;
+  }
+}
+
+/* Pushed left of the two footer controls, and holding its line height while empty so the copy
+   result appearing does not shift them. */
+.csp-condition-copy-state {
+  margin: 0 auto 0 0;
+  align-self: center;
+  min-height: 1.3em;
+  font-size: 12px;
+  color: var(--primary-color, #e0ba6d);
+}
+
+@media (max-width: 500px) {
+  /* `.dialog-actions` stacks in column-reverse below this width, where an auto left margin would
+     only add a gap above the status line. */
+  .csp-condition-copy-state {
+    margin: 0;
+    align-self: stretch;
+  }
+}
+

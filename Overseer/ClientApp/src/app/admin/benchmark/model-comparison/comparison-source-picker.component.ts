@@ -1,11 +1,13 @@
 import {
   ChangeDetectorRef,
   Component,
+  ElementRef,
   EventEmitter,
   Input,
   OnDestroy,
   OnInit,
   Output,
+  ViewChild,
   inject
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -21,6 +23,7 @@ import type {
   BenchmarkRunSummaryDto
 } from '../../../services/admin-benchmark.service';
 import {
+  conditionDetailFor,
   conditionOf,
   selectedConditions
 } from './model-comparison.models';
@@ -29,7 +32,10 @@ import type {
   BenchmarkComparabilityDifferenceDto,
   BenchmarkComparabilityIndexDto,
   BenchmarkComparabilityIndexEntryDto,
-  BenchmarkComparabilityKeyValueDto
+  BenchmarkComparabilityKeyValueDto,
+  ConditionDetail,
+  ConditionDetailRow,
+  ConfigurationField
 } from './model-comparison.models';
 
 /** One selectable suite for the scope control. Structural, so any suite DTO with these two fits. */
@@ -115,6 +121,60 @@ export interface MethodsKindGroup {
   readonly title: string;
   readonly note: string;
   readonly keys: readonly BenchmarkComparabilityKeyValueDto[];
+}
+
+/**
+ * The taxonomy kind as an operator reads it, beside the hue the badge carries it in.
+ *
+ * The word is the carrier and the hue only reinforces it, so a kind the server adds renders under
+ * its own name in the neutral treatment rather than disappearing into an unlabelled colour.
+ */
+const CONDITION_KIND_LABELS: Readonly<Record<string, string | undefined>> = {
+  Fundamental: 'Fundamental',
+  Candidate: 'Candidate',
+  Instrument: 'Instrument',
+  SpeedAndCost: 'Speed and cost'
+};
+
+/** Characters of an unparsed value that render before the collapsed box and its control take over. */
+const LONG_VALUE_CHARS = 600;
+
+/** A digest-shaped value, abbreviated on screen whatever kind the index declares for its key. */
+const HASH_SHAPED = /^[0-9a-fA-F]{32,}$/;
+
+/**
+ * One side of a difference, so both panels of a row render from one block of markup.
+ *
+ * Absence is carried by its own flag rather than by a null value: the template branches on
+ * `attributed` and `hasFields` and never on the shape of `value`, so one markup block covers a
+ * parsed configuration, a digest, a long raw value and a side nothing could be attributed to.
+ */
+export interface ConditionDetailSide {
+  /** Part of the DOM id of the row's expand control, and of nothing else. */
+  readonly side: 'this' | 'reference';
+  readonly title: string;
+  readonly value: string;
+  /** False when no variant could be attributed to this side; the row lists them all instead. */
+  readonly attributed: boolean;
+  readonly fields: readonly ConfigurationField[];
+  readonly hasFields: boolean;
+}
+
+/** One panel of a difference row, with absence folded into its own flags. */
+function conditionSide(
+  side: 'this' | 'reference',
+  title: string,
+  value: string | null,
+  fields: ConfigurationField[] | null
+): ConditionDetailSide {
+  return {
+    side,
+    title,
+    value: value ?? '',
+    attributed: value != null,
+    fields: fields ?? [],
+    hasFields: fields != null
+  };
 }
 
 /** One condition the figures are not measured under, and what it disagrees with the reference on. */
@@ -232,6 +292,7 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.clearCopyStateTimer();
+    this.clearConditionCopyTimer();
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -342,25 +403,13 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * One string for the row's detail tooltip: for a self-inconsistent source, the keys its own
-   * members disagree on; otherwise every key it differs on from the largest condition, each with
-   * its value there. Empty when the source is itself in the largest condition — there is nothing
-   * to say.
+   * Whether the row has anything to say beyond its badge: a self-inconsistent source, or one that
+   * differs from the largest condition. A source inside the largest condition offers no control,
+   * because the dialog would open on an empty table.
    */
-  conditionTooltip(key: string): string {
+  hasConditionDetail(key: string): boolean {
     const entry = this.comparabilityEntry(key);
-    if (!entry) {
-      return '';
-    }
-    if (entry.selfInconsistent) {
-      return entry.selfInconsistentKeys.length > 0
-        ? `Its own members disagree on ${entry.selfInconsistentKeys.join(', ')}.`
-        : 'Its own members disagree.';
-    }
-    return entry.differencesFromLargest
-      .map(difference => `${difference.name}: ${difference.description} `
-        + `(${difference.variants.map(variant => variant.value).join(' vs ')})`)
-      .join(' ');
+    return entry != null && (entry.selfInconsistent || entry.differencesFromLargest.length > 0);
   }
 
   /** A DOM id and anchor name derived from an entry key, which carries a `run:12` style colon. */
@@ -375,6 +424,240 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
       return 'csp-condition csp-condition-none';
     }
     return `csp-condition csp-condition-${((ordinal - 1) % 3) + 1}`;
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The condition detail dialog
+  //
+  // A badge says which cohort a source is in; this says why. One row per must-match key it differs
+  // on, both values side by side, and — where the value is a `key=value;…` configuration — the one
+  // field that moved rather than two long strings for the reader to diff by eye.
+  //
+  // A dialog rather than the hint tooltip it replaces: the values run to serialized options blobs
+  // and 64-character digests, a tooltip cannot be scrolled, selected or copied from, and the whole
+  // point of the detail is that it can be pasted into a report beside the figure it explains.
+  // ---------------------------------------------------------------------------------------------
+
+  @ViewChild('conditionDetailDialog')
+  private conditionDetailDialogRef?: ElementRef<HTMLDialogElement>;
+
+  /** What the dialog is showing. Kept after a close so the exit transition has content to draw. */
+  conditionDetail: ConditionDetail | null = null;
+
+  /** The result of the last copy made from the dialog, on its own line and its own timer. */
+  conditionCopyState = '';
+
+  private conditionCopyTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** The button the dialog was opened from, so focus returns where the reader left it. */
+  private conditionDetailTrigger: HTMLElement | null = null;
+
+  /** Which long values the reader has expanded, by {@link conditionValueId}. */
+  private readonly expandedConditionValues = new Set<string>();
+
+  openConditionDetail(key: string, event?: Event): void {
+    this.conditionDetail = conditionDetailFor(this.comparabilityIndex, key, this.sourceRunIds(key));
+    this.conditionDetailTrigger = (event?.currentTarget as HTMLElement | null) ?? null;
+    this.conditionCopyState = '';
+    this.expandedConditionValues.clear();
+    // The body is autofocused, so it has to hold this source's rows before the dialog is promoted
+    // to the top layer rather than the previous source's.
+    this.cdr.detectChanges();
+    this.conditionDetailDialogRef?.nativeElement.showModal();
+  }
+
+  /**
+   * The runs behind one source, which is what attributes a differing key's value to it.
+   *
+   * A run is its own single run. A group's membership is only present when the group was fetched
+   * individually — the list endpoint this picker is fed from sends none — so this is empty for a
+   * group in practice, and the detail falls back to listing every variant with its runs.
+   */
+  private sourceRunIds(key: string): number[] {
+    const entry = this.comparabilityEntry(key);
+    if (entry == null) {
+      return [];
+    }
+    if (entry.sourceKind === 'Group') {
+      const group = this.groups.find(candidate => candidate.id === entry.sourceId);
+      return (group?.members ?? []).map(member => member.runId);
+    }
+    return [entry.sourceId];
+  }
+
+  /** "Run 46 — Condition E": the source as an operator names it, and the cohort it fell into. */
+  get conditionDetailTitle(): string {
+    const detail = this.conditionDetail;
+    return detail == null
+      ? 'Comparability detail'
+      : `${detail.sourceLabel} — ${detail.conditionLabel}`;
+  }
+
+  /** The two panels of one row, in reading order. */
+  conditionSides(row: ConditionDetailRow): ConditionDetailSide[] {
+    return [
+      conditionSide('this', 'This source', row.thisValue, row.thisFields),
+      conditionSide('reference', 'Reference', row.referenceValue, row.referenceFields)
+    ];
+  }
+
+  conditionKindLabel(kind: string): string {
+    return CONDITION_KIND_LABELS[kind] ?? kind;
+  }
+
+  /** A hue per kind. The badge's text carries the kind; this only reinforces it. */
+  conditionKindClass(kind: string): string {
+    return `csp-kind csp-kind-${(CONDITION_KIND_LABELS[kind] ? kind : 'Other').toLowerCase()}`;
+  }
+
+  /** A DOM id for one panel of one row, unique within the dialog. */
+  conditionValueId(row: ConditionDetailRow, side: ConditionDetailSide): string {
+    return `csp-cond-${row.name.replace(/[^A-Za-z0-9_-]/g, '-')}-${side.side}`;
+  }
+
+  /** A digest renders abbreviated, with the copy control writing it whole. */
+  isHashValue(row: ConditionDetailRow, value: string): boolean {
+    return row.valueKind === 'Hash' || HASH_SHAPED.test(value.trim());
+  }
+
+  isLongValue(value: string): boolean {
+    return value.length > LONG_VALUE_CHARS;
+  }
+
+  isConditionValueExpanded(row: ConditionDetailRow, side: ConditionDetailSide): boolean {
+    return this.expandedConditionValues.has(this.conditionValueId(row, side));
+  }
+
+  toggleConditionValue(row: ConditionDetailRow, side: ConditionDetailSide): void {
+    const id = this.conditionValueId(row, side);
+    if (!this.expandedConditionValues.delete(id)) {
+      this.expandedConditionValues.add(id);
+    }
+    this.cdr.detectChanges();
+  }
+
+  isChangedField(row: ConditionDetailRow, name: string): boolean {
+    return row.changedFields.includes(name);
+  }
+
+  /**
+   * The detail as Markdown, values in full.
+   *
+   * The abbreviations and the collapsed boxes are screen affordances; what gets pasted into a
+   * report or a bug is the evidence someone else verifies the figure against.
+   */
+  conditionDetailMarkdown(): string {
+    const detail = this.conditionDetail;
+    if (detail == null) {
+      return '';
+    }
+    const lines = [`${detail.sourceLabel} — ${detail.conditionLabel}`, ''];
+    if (detail.selfInconsistent) {
+      lines.push(detail.selfInconsistentKeys.length > 0
+        ? `Its own members disagree on ${detail.selfInconsistentKeys.join(', ')}, so it is not one point.`
+        : 'Its own members disagree, so it is not one point.');
+      return lines.join('\n');
+    }
+
+    lines.push(`Differences from the reference condition, ${detail.referenceConditionLabel}:`);
+    lines.push('');
+    lines.push('| Key | Kind | This source | Reference |');
+    lines.push('| --- | --- | --- | --- |');
+    for (const row of detail.rows) {
+      lines.push(`| ${row.label} (\`${row.name}\`) | ${this.conditionKindLabel(row.kind)} `
+        + `| ${this.markdownCell(row.thisValue)} | ${this.markdownCell(row.referenceValue)} |`);
+    }
+
+    const unattributed = detail.rows.filter(row => row.variants.length > 0);
+    if (unattributed.length > 0) {
+      lines.push('');
+      lines.push('Values no side could be attributed to:');
+      for (const row of unattributed) {
+        for (const variant of row.variants) {
+          const runs = variant.runIds.length > 0 ? variant.runIds.join(', ') : 'none recorded';
+          lines.push(`- ${row.label}: ${variant.value} (runs ${runs})`);
+        }
+      }
+    }
+    return lines.join('\n');
+  }
+
+  /** One table cell: the value whole, pipes escaped and newlines flattened so a row stays a row. */
+  private markdownCell(value: string | null): string {
+    return value == null ? '—' : value.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+  }
+
+  async copyConditionDetail(): Promise<void> {
+    const copied = await copyToClipboard(this.conditionDetailMarkdown());
+    this.setConditionCopyState(copied ? 'Comparability detail copied.' : COPY_FAILED);
+  }
+
+  /** Copies one abbreviated value in full, never the twelve characters the row shows. */
+  async copyConditionValue(row: ConditionDetailRow, value: string): Promise<void> {
+    const copied = await copyToClipboard(value);
+    this.setConditionCopyState(copied ? `Full ${row.label} value copied.` : COPY_FAILED);
+  }
+
+  private setConditionCopyState(message: string): void {
+    this.clearConditionCopyTimer();
+    this.conditionCopyState = message;
+    this.cdr.markForCheck();
+    this.conditionCopyTimer = setTimeout(() => {
+      this.conditionCopyTimer = null;
+      this.conditionCopyState = '';
+      this.cdr.markForCheck();
+    }, COPY_STATE_MS);
+  }
+
+  private clearConditionCopyTimer(): void {
+    if (this.conditionCopyTimer != null) {
+      clearTimeout(this.conditionCopyTimer);
+      this.conditionCopyTimer = null;
+    }
+  }
+
+  /** Light dismiss where `closedby` is unsupported, exactly as the legend does it. */
+  onConditionDialogClick(event: MouseEvent): void {
+    if ('closedBy' in HTMLDialogElement.prototype) {
+      return;
+    }
+    const dialog = event.currentTarget as HTMLDialogElement;
+    if (event.target !== dialog) {
+      return;
+    }
+    const rect = dialog.getBoundingClientRect();
+    const inside = rect.top <= event.clientY && event.clientY <= rect.top + rect.height
+      && rect.left <= event.clientX && event.clientX <= rect.left + rect.width;
+    if (!inside) {
+      dialog.close();
+    }
+  }
+
+  /**
+   * Keeps the dialog's own close and cancel events off the wizard dialog that contains it, and
+   * returns focus to the row control the reader opened it from.
+   *
+   * Escape fires `cancel` and then `close`; only the second is acted on, because the dialog is
+   * still modal during the first and every element outside it is still inert. `cancel` is never
+   * prevented — a close request the dialog refuses to honour is a trapped reader.
+   */
+  onConditionDialogClose(event: Event): void {
+    event.stopPropagation();
+    if (event.type !== 'close') {
+      return;
+    }
+    const trigger = this.conditionDetailTrigger;
+    this.conditionDetailTrigger = null;
+    if (trigger?.isConnected) {
+      trigger.focus();
+      return;
+    }
+    // The row has been paged, filtered or refreshed away; the heading of the table it was in is
+    // the nearest place a reader can carry on from.
+    const headingId = this.conditionDetail?.sourceKind === 'Group'
+      ? 'csp-groups-heading'
+      : 'csp-runs-heading';
+    document.getElementById(headingId)?.focus();
   }
 
   // ---------------------------------------------------------------------------------------------

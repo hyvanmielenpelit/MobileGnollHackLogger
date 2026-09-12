@@ -43,3 +43,21 @@ To update DataTables to a newer version:
 - **VanillaJS Initialization:** Always initialize DataTables using the `new DataTable(element, options)` constructor, rather than the legacy jQuery `$(...).dataTable()` wrapper.
 - **CSS Overrides:** Custom DataTables styling overrides are located in `wwwroot/css/site2.scss` (around line 738). When updating DataTables, ensure you are overriding the modern `dt-*` classes (e.g., `.dt-container`, `.dt-search`, `.dt-paging`), rather than legacy `dataTables_*` classes.
 - **SCSS Compilation:** If you modify `site2.scss`, you MUST recompile it using `npx sass` (refer to the `scss_compilation` skill).
+
+## 3. Overseer Angular Client (`npm`)
+
+`Overseer/ClientApp/` is an ordinary npm project; runtime libraries go under `dependencies` and
+build-time ones under `devDependencies`, both pinned by `package-lock.json`. Install from
+`Overseer/ClientApp/`, never from the repository root, and never hardcode a version in a skill or a
+plan -- `package.json` is the source of truth.
+
+### Notable Runtime Dependencies
+- **`write-excel-file`** -- the `.xlsx` encoder behind the Admin AI Benchmark cross-model
+  comparison's table export. Browser-first, MIT, one runtime dependency (`fflate`), and it returns a
+  `Blob` when called without `fileName`, which is what the export pipeline needs. It is reached
+  through a **dynamic `await import('write-excel-file')`** inside the encoder alone, so it lands in
+  a lazy chunk and the admin bundle pays for it on first use rather than on load. It was chosen over
+  `xlsx` (the npm SheetJS Community build is frozen at 0.18.5 with unpatched prototype-pollution and
+  ReDoS advisories; current builds ship only from the vendor's own registry, which this project does
+  not use), `exceljs` (Node-first, 21 MB unpacked, nine transitive dependencies needing browser
+  polyfills) and `xlsx-populate` (15 MB, `lodash` and `jszip`).

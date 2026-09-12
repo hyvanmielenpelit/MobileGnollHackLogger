@@ -2173,6 +2173,77 @@ one sentence, so **`ToolGuidesSha256` moves**; no `ChatService` prose changed, s
   *never stated / states / mentioned* and *is not stated*. The five run-42 evidence strings are unit
   tests, alongside four strings from the same run that name a real defect and must stay unflagged.
 
+### Cross-Model Comparison Round (2026-09-12) — No Version Bump
+
+*Prompted by runs 43–46.* Nothing here grades anything: `BenchmarkAssessmentPrompt.HarnessVersion`
+stays at **27**, `ScoringMethodVersion` at **10**, and `CandidateSystemPromptSha256` and
+`ToolGuidesSha256` do not move. The round repairs the Admin → AI Benchmark → Run History →
+*Cross-model comparison* wizard, which the four-run set had exercised harder than any earlier round.
+
+**The wizard is four steps, not three.**
+
+| Step | Title | Reachable when |
+|---|---|---|
+| 1 | Sources | always |
+| 2 | Comparability & filters | a comparison has been computed |
+| 3 | Table | a comparison has been computed |
+| 4 | Figures | something in it can actually be charted |
+
+The comparison table used to sit at the bottom of step 2, below the filters, the caveats and the
+exclusions, and could not leave the screen. It is now step 3 of its own, and step 4 is the figures.
+A set that no figure can draw therefore still opens its table: step 3 is reachable on a comparison
+alone, and only step 4 is gated on a chartable entry.
+
+- **The table step carries the provenance line the figures already carried** — suite, pricing basis,
+  the reference condition's must-match signature abbreviated to twelve hex characters, and the time
+  the comparison was computed — so an exported table is matchable against the wizard's methods block
+  and against an exported figure from the same comparison.
+- **Eight export formats**, chosen from the *Table export format* select and written by **Download
+  table**: **Excel (`.xlsx`)**, CSV, TSV, Markdown, JSON, HTML, PNG and WebP. Excel is first and is
+  the default, because it is the format that opens correctly on a Windows admin's machine whatever
+  their list separator; the CSV and TSV writers carry a UTF-8 BOM and CRLF rows for the same reason.
+  The `.xlsx` file has a *Comparison* sheet with a frozen bold header, typed numeric columns with
+  per-kind formats, and a second *Provenance* sheet carrying the fields above and one row per set
+  notice. Machine formats (XLSX, CSV, TSV, JSON) carry raw values; human formats (Markdown, HTML,
+  PNG, WebP) carry the text exactly as the on-screen table prints it, the same formatters serving
+  both so the screen and the file cannot drift. CSV and TSV prefix a text cell beginning with `=`,
+  `+`, `-`, `@`, tab or CR with an apostrophe (OWASP formula injection); a typed XLSX string cell is
+  never evaluated and needs no guard.
+- **The export is the whole matching set, not the visible page.** Every entry passing the current
+  column filters, in the current sort, across all pages — and the status line says so, naming the
+  file, the row count and the scope.
+- **Clipboard copy beside every download.** The table offers **Copy as Markdown**; each figure card
+  offers an icon-only **Copy figure** that writes the composed image — caption, notices and all — to
+  the clipboard. Copies are always PNG, because browsers reject `image/webp` in a `ClipboardItem`.
+  Every clipboard path feature-detects `navigator.clipboard` and `ClipboardItem`, reports *copied*,
+  *unsupported* or *refused* inline, and never throws. There is deliberately no *Copy all figures*:
+  an operating-system clipboard holds one image, so a batch would silently keep only the last.
+- **The condition badge opens a dialog, not a tooltip.** The info button beside a source's
+  *Condition X* badge in step 1 used to show a hint popover holding every differing key's full
+  serialised configuration as one unbroken string — about 1,200 characters on run 46.
+  `#conditionDetailDialog` now lays the same information out one row per differing key: the key's
+  label and machine name, its kind as a text badge (*Fundamental*, *Candidate*, *Instrument*,
+  *Speed and cost* — text plus a hue, never hue alone), the one line saying what a difference on it
+  costs a comparison, and this source's value beside the reference condition's. A
+  `key=value;key=value` configuration is split into its fields with the changed ones marked; a
+  digest is abbreviated with the full value on its copy control; anything longer than about 600
+  characters collapses behind an *Expand*. A source whose own runs disagree gets the
+  self-inconsistent explanation and its keys instead. The whole thing copies as Markdown.
+  The button is offered only where the source actually differs from the reference condition.
+- **The *Model profiles* figure draws again.** `app.config.ts` registered `ScatterController`,
+  `BarController`, `LineElement` and `PointElement` but **not `LineController`**, while
+  `buildProfilePlot` builds a `type: 'line'` chart. Chart.js keys controllers by type id, and
+  `ScatterController` being a `LineController` subclass does not register `'line'` — so the
+  directive threw *"line" is not a registered controller* and the canvas stayed blank, on screen and
+  in the offscreen export path alike. The registrable list now lives in one module,
+  `model-comparison/chart-registrables.ts`, imported by both `app.config.ts` and the component spec
+  so the two cannot drift apart again, and a spec asserts the profile card renders three line
+  datasets rather than asserting a configuration object.
+
+`write-excel-file` is the one new client dependency. It is reached through a dynamic import inside
+the XLSX encoder alone, so it builds into its own lazy chunk and neither the initial bundle nor the
+admin chunk carries it until someone exports a spreadsheet.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.
@@ -2200,6 +2271,15 @@ Cross-model comparison is valid only when every candidate was graded by the **sa
 otherwise the models are measured with different instruments and the indices are not comparable. The
 benchmark's own recorded purpose is *operational model selection*, which is a cross-family choice, so
 this constraint is binding rather than academic.
+
+Runs 43–46 (2026-09-12) are the worked example. Four runs of suite 6 at identical item revisions,
+assessed difficulties, prompt options and instrument SHAs scored 70 / 68 / 72 under GPT-5.6 Sol @
+`medium` and **97** under Gemini 3.7 Flash @ `high`, with the blind second reader's signed delta
+flipping from about +30 on the three Sol-graded runs to −13.3 on the Gemini-graded one — a grader
+effect five to ten times the spread between the candidates themselves. The comparison view's
+comparability index enforced the rule automatically, putting run 46 in its own condition and
+excluding it from the figures, because `AssessorConfiguration`, `SecondOpinionConfiguration` and
+`ClaimVerifierConfiguration` are `Instrument` keys.
 
 ### The roster, and why the destination is Anthropic
 

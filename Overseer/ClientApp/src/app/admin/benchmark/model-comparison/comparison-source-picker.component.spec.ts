@@ -11,6 +11,7 @@ import type {
   BenchmarkRunGroupDto,
   BenchmarkRunSummaryDto
 } from '../../../services/admin-benchmark.service';
+import { conditionDetailFor } from './model-comparison.models';
 import type {
   BenchmarkComparabilityIndexDto,
   BenchmarkComparabilityIndexEntryDto,
@@ -387,7 +388,8 @@ describe('ComparisonSourcePickerComponent', () => {
 
     expect(component.conditionLabel('run:1')).toBe('—');
     expect(component.conditionOrdinal('run:1')).toBeNull();
-    expect(component.conditionTooltip('run:1')).toBe('');
+    expect(conditionDetailFor(component.comparabilityIndex, 'run:1', [1])).toBeNull();
+    expect(component.hasConditionDetail('run:1')).toBeFalse();
     // The failed run is still unselectable for its own reason, not because of the index.
     expect(component.isRunSelectable(component.runs[0])).toBeTrue();
     expect(component.isRunSelectable(component.runs[1])).toBeFalse();
@@ -409,6 +411,141 @@ describe('ComparisonSourcePickerComponent', () => {
     expect(component.showCompatibleRunsOnly).toBeTrue();
     // The run table sorts by id descending by default, so the surviving rows come back 2 then 1.
     expect(component.runTable.view(component.runs).map(r => r.id)).toEqual([2, 1]);
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // The condition detail dialog
+  // -------------------------------------------------------------------------------------------
+
+  describe('the condition detail dialog', () => {
+    function conditionDialog(): HTMLDialogElement {
+      return fixture.debugElement.query(By.css('dialog.csp-condition-dialog'))
+        .nativeElement as HTMLDialogElement;
+    }
+
+    /** The row controls actually offered: only a source with something to say carries one. */
+    function detailButtons(): HTMLButtonElement[] {
+      return fixture.debugElement.queryAll(By.css('.csp-condition-detail'))
+        .map(element => element.nativeElement as HTMLButtonElement);
+    }
+
+    it('offers the control only where the source differs from the reference condition', () => {
+      render({ runs: runs(3), groups: [buildGroup({ id: 1 })], comparabilityIndex: buildIndex() });
+
+      // Runs 1 and 2 and the group are the reference condition itself; run 3 is not.
+      expect(detailButtons().length).toBe(1);
+      expect(detailButtons()[0].getAttribute('aria-label')).toBe('Comparability detail for run 3');
+      expect(component.hasConditionDetail('run:1')).toBeFalse();
+      expect(component.hasConditionDetail('run:3')).toBeTrue();
+    });
+
+    it('opens the dialog populated with that entry\'s rows', () => {
+      render({ runs: runs(3), comparabilityIndex: buildIndex() });
+      const showModal = spyOn(conditionDialog(), 'showModal');
+
+      detailButtons()[0].click();
+      fixture.detectChanges();
+
+      expect(showModal).toHaveBeenCalled();
+      expect(component.conditionDetail?.sourceLabel).toBe('Run 3');
+      expect(component.conditionDetailTitle).toBe('Run 3 — Condition B');
+
+      const rows = fixture.debugElement
+        .queryAll(By.css('dialog.csp-condition-dialog tbody tr'))
+        .map(element => (element.nativeElement as HTMLElement).textContent ?? '');
+      expect(rows.length).toBe(1);
+      expect(rows[0]).toContain('serviceTier');
+      // Both sides of the difference, attributed from the variant run ids.
+      expect(rows[0]).toContain('priority');
+      expect(rows[0]).toContain('standard');
+    });
+
+    it('copies the detail as Markdown with the values in full', async () => {
+      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText }, configurable: true, writable: true
+      });
+      try {
+        render({ runs: runs(3), comparabilityIndex: buildIndex() });
+        spyOn(conditionDialog(), 'showModal');
+        detailButtons()[0].click();
+
+        await component.copyConditionDetail();
+
+        const written = writeText.calls.mostRecent().args[0] as string;
+        expect(written).toContain('Run 3 — Condition B');
+        expect(written).toContain('| serviceTier');
+        expect(written).toContain('priority');
+        expect(component.conditionCopyState).toContain('copied');
+      } finally {
+        delete (navigator as { clipboard?: unknown }).clipboard;
+      }
+    });
+
+    it('closes on Escape and returns focus to the control that opened it', async () => {
+      render({ runs: runs(3), comparabilityIndex: buildIndex() });
+      const dialog = conditionDialog();
+      const trigger = detailButtons()[0];
+
+      trigger.click();
+      fixture.detectChanges();
+      expect(dialog.open).toBeTrue();
+
+      // A synthetic key event cannot drive a dialog's own close request, so Escape is exercised as
+      // the two events it produces: a cancel the handler must not prevent, then the close itself.
+      const cancel = new Event('cancel', { cancelable: true });
+      dialog.dispatchEvent(cancel);
+      expect(cancel.defaultPrevented)
+        .withContext('a refused close request leaves the reader trapped').toBeFalse();
+
+      dialog.close();
+      // `close` is fired from a queued element task, so it has not run yet.
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+
+      expect(dialog.open).toBeFalse();
+      expect(document.activeElement).toBe(trigger);
+    });
+
+    it('renders the keys a self-inconsistent source disagrees with itself on', () => {
+      const index = buildIndex({
+        entries: [
+          ...buildIndex().entries,
+          buildIndexEntry({
+            key: 'group:2',
+            sourceKind: 'Group',
+            sourceId: 2,
+            conditionOrdinal: 0,
+            conditionLabel: 'Self-inconsistent',
+            signature: '',
+            selfInconsistent: true,
+            selfInconsistentKeys: ['BenchmarkSuiteId', 'CandidateModelId']
+          })
+        ]
+      });
+      // No runs, so the group's own control is the only one on the page.
+      render({ runs: [], groups: [buildGroup({ id: 2 })], comparabilityIndex: index });
+      spyOn(conditionDialog(), 'showModal');
+
+      detailButtons()[0].click();
+      fixture.detectChanges();
+
+      expect(component.conditionDetail?.selfInconsistent).toBeTrue();
+      const chips = fixture.debugElement
+        .queryAll(By.css('dialog.csp-condition-dialog .csp-key-chips li'))
+        .map(element => (element.nativeElement as HTMLElement).textContent?.trim());
+      expect(chips).toEqual(['BenchmarkSuiteId', 'CandidateModelId']);
+      // A source in no condition differs from the reference on nothing named, so no table is drawn.
+      expect(fixture.debugElement.query(By.css('dialog.csp-condition-dialog tbody'))).toBeNull();
+    });
+
+    it('keeps the detail dialog close event off the wizard', () => {
+      const event = new Event('close');
+      const stopPropagation = spyOn(event, 'stopPropagation');
+
+      component.onConditionDialogClose(event);
+
+      expect(stopPropagation).toHaveBeenCalled();
+    });
   });
 
   // -------------------------------------------------------------------------------------------

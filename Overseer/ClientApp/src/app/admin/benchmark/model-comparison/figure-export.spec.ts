@@ -5,6 +5,7 @@ import {
   FIGURE_EXPORT_SCALE,
   FigureExportResolution,
   composeFigureImage,
+  copyImageToClipboard,
   encodeFigureImage,
   figureExportFilename,
   resolveFigureLayout
@@ -222,5 +223,51 @@ describe('figure-export', () => {
     const name = figureExportFilename('run:12/panel', 'png', new Date(2026, 0, 2, 3, 4, 5));
 
     expect(name).toBe('model-comparison_run-12-panel_20260102_030405.png');
+  });
+
+  describe('copyImageToClipboard', () => {
+    /**
+     * `navigator.clipboard` is a getter on the prototype, so it is stood in for with an own
+     * property on the instance; deleting that property afterwards restores the real one.
+     */
+    function withClipboard(value: unknown): void {
+      Object.defineProperty(navigator, 'clipboard', { value, configurable: true });
+    }
+
+    afterEach(() => {
+      delete (navigator as unknown as { clipboard?: unknown }).clipboard;
+    });
+
+    it('writes the blob as a clipboard item and reports it copied', async () => {
+      const write = jasmine.createSpy('write').and.returnValue(Promise.resolve());
+      withClipboard({ write });
+      const blob = new Blob(['png'], { type: 'image/png' });
+
+      expect(await copyImageToClipboard(blob)).toBe('copied');
+      expect(write).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a refused write rather than throwing', async () => {
+      withClipboard({ write: () => Promise.reject(new Error('Document is not focused.')) });
+
+      // Never throws: the caller's only sane response to a refusal is an inline message.
+      await expectAsync(copyImageToClipboard(new Blob(['png'], { type: 'image/png' })))
+        .toBeResolvedTo('denied');
+    });
+
+    it('reports an absent clipboard API as unsupported', async () => {
+      withClipboard(undefined);
+
+      expect(await copyImageToClipboard(new Blob(['png'], { type: 'image/png' })))
+        .toBe('unsupported');
+    });
+
+    it('reports a clipboard with no write method as unsupported', async () => {
+      // The read-only half of the API is available in more places than the write half.
+      withClipboard({ readText: () => Promise.resolve('') });
+
+      expect(await copyImageToClipboard(new Blob(['png'], { type: 'image/png' })))
+        .toBe('unsupported');
+    });
   });
 });

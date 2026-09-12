@@ -2,12 +2,12 @@ import { ApplicationConfig, provideZoneChangeDetection, ErrorHandler } from '@an
 import { provideRouter, RouteReuseStrategy } from '@angular/router';
 import { provideHttpClient, withFetch, withInterceptors, withXsrfConfiguration } from '@angular/common/http';
 import { provideCharts } from 'ng2-charts';
-import { BarController, BarElement, CategoryScale, LinearScale, Legend, Tooltip, ScatterController, PointElement, LineElement, LogarithmicScale, Title, SubTitle } from 'chart.js';
 import * as Sentry from '@sentry/angular';
 
 import { routes } from './app.routes';
 import { authInterceptor } from './auth.interceptor';
 import { CustomRouteReuseStrategy } from './custom-route-reuse-strategy';
+import { MODEL_COMPARISON_REGISTRABLES } from './admin/benchmark/model-comparison/chart-registrables';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -20,6 +20,6 @@ export const appConfig: ApplicationConfig = {
       withXsrfConfiguration({ cookieName: 'XSRF-TOKEN', headerName: 'X-XSRF-TOKEN' }),
       withInterceptors([authInterceptor])
     ),
-    provideCharts({ registerables: [BarController, BarElement, CategoryScale, LinearScale, Legend, Tooltip, ScatterController, PointElement, LineElement, LogarithmicScale, Title, SubTitle] })
+    provideCharts({ registerables: MODEL_COMPARISON_REGISTRABLES })
   ]
 };

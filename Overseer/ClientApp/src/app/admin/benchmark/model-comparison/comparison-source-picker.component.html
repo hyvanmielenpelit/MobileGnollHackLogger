@@ -47,7 +47,10 @@
        SINGLE RUNS
        =================================================================================== -->
   <section class="csp-section" aria-labelledby="csp-runs-heading">
-    <h4 id="csp-runs-heading" class="csp-subheading">{{ runSectionTitle }}</h4>
+    <!-- tabindex="-1" makes the heading a programmatic focus target and nothing more: it is where
+         the condition-detail dialog returns focus when the row it was opened from has been paged
+         or filtered away. It stays out of the Tab order. -->
+    <h4 id="csp-runs-heading" class="csp-subheading" tabindex="-1">{{ runSectionTitle }}</h4>
 
     @if (runs.length === 0) {
       <p class="text-muted">
@@ -149,19 +152,20 @@
                   <td>{{ runStatus(run) }}</td>
                   <td class="col-center">
                     <span [class]="conditionBadgeClass('run:' + run.id)">{{ conditionLabel('run:' + run.id) }}</span>
-                    @if (conditionTooltip('run:' + run.id)) {
+                    @if (hasConditionDetail('run:' + run.id)) {
                       <button type="button" class="action-btn csp-condition-detail"
                               [attr.aria-label]="'Comparability detail for run ' + run.id"
                               [attr.interestfor]="conditionTipId('run:' + run.id)"
-                              [attr.style]="'anchor-name: --' + conditionTipId('run:' + run.id)">
+                              [attr.style]="'anchor-name: --' + conditionTipId('run:' + run.id)"
+                              (click)="openConditionDetail('run:' + run.id, $event)">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                           <circle cx="12" cy="12" r="10"></circle>
                           <line x1="12" y1="16" x2="12" y2="12"></line>
                           <line x1="12" y1="8" x2="12.01" y2="8"></line>
                         </svg>
                       </button>
-                      <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="conditionTipId('run:' + run.id)"
-                           [attr.style]="'position-anchor: --' + conditionTipId('run:' + run.id)">{{ conditionTooltip('run:' + run.id) }}</div>
+                      <div popover="hint" class="gh-tooltip" [id]="conditionTipId('run:' + run.id)"
+                           [attr.style]="'position-anchor: --' + conditionTipId('run:' + run.id)">Show comparability detail</div>
                     }
                   </td>
                   <td class="col-center">{{ formatIndex(run.qualityIndex ?? run.finalScore) }}</td>
@@ -196,7 +200,7 @@
        ANALYSIS GROUPS
        =================================================================================== -->
   <section class="csp-section" aria-labelledby="csp-groups-heading">
-    <h4 id="csp-groups-heading" class="csp-subheading">{{ groupSectionTitle }}</h4>
+    <h4 id="csp-groups-heading" class="csp-subheading" tabindex="-1">{{ groupSectionTitle }}</h4>
     <p class="section-note">
       Every group is offered, whatever its tier. A group whose members do not pool comes back
       <strong>excluded with the keys it differs on named</strong>, which is more informative than a
@@ -290,19 +294,20 @@
                   </td>
                   <td class="col-center">
                     <span [class]="conditionBadgeClass('group:' + group.id)">{{ conditionLabel('group:' + group.id) }}</span>
-                    @if (conditionTooltip('group:' + group.id)) {
+                    @if (hasConditionDetail('group:' + group.id)) {
                       <button type="button" class="action-btn csp-condition-detail"
                               [attr.aria-label]="'Comparability detail for group ' + group.name"
                               [attr.interestfor]="conditionTipId('group:' + group.id)"
-                              [attr.style]="'anchor-name: --' + conditionTipId('group:' + group.id)">
+                              [attr.style]="'anchor-name: --' + conditionTipId('group:' + group.id)"
+                              (click)="openConditionDetail('group:' + group.id, $event)">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                           <circle cx="12" cy="12" r="10"></circle>
                           <line x1="12" y1="16" x2="12" y2="12"></line>
                           <line x1="12" y1="8" x2="12.01" y2="8"></line>
                         </svg>
                       </button>
-                      <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="conditionTipId('group:' + group.id)"
-                           [attr.style]="'position-anchor: --' + conditionTipId('group:' + group.id)">{{ conditionTooltip('group:' + group.id) }}</div>
+                      <div popover="hint" class="gh-tooltip" [id]="conditionTipId('group:' + group.id)"
+                           [attr.style]="'position-anchor: --' + conditionTipId('group:' + group.id)">Show comparability detail</div>
                     }
                   </td>
                   <td class="col-center">{{ group.runCount }}</td>
@@ -570,5 +575,198 @@
 
   <div class="dialog-actions">
     <button type="button" class="btn-gh btn-gh-cancel" (click)="legendDialog.close()">Close</button>
+  </div>
+</dialog>
+
+<!--
+  THE CONDITION DETAIL
+
+  What the badge cannot say: key by key, how one source differs from the reference condition. It
+  replaces the hint tooltip these row controls used to carry, because the values are serialized
+  options blobs and 64-character digests — a tooltip cannot be scrolled, selected or copied from,
+  and the detail is only useful if it can be pasted beside the figure it explains.
+
+  Same containment, same light-dismiss arrangement and the same Safari fallback as the legend
+  above; nothing here is configured, so a mis-click costs a reopen.
+-->
+<dialog #conditionDetailDialog class="gh-dialog csp-condition-dialog" closedby="any"
+        aria-labelledby="csp-condition-title"
+        (click)="onConditionDialogClick($event)"
+        (cancel)="onConditionDialogClose($event)"
+        (close)="onConditionDialogClose($event)">
+  <div class="csp-legend-header">
+    <h3 id="csp-condition-title">{{ conditionDetailTitle }}</h3>
+    <button type="button" class="btn-icon-action" aria-label="Close the comparability detail"
+            (click)="conditionDetailDialog.close()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+           style="width: 20px; height: 20px;">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+  </div>
+
+  <div class="csp-legend-body csp-condition-body" tabindex="-1" autofocus>
+    @if (conditionDetail) {
+      <p class="csp-legend-lead">
+        How this source differs from the reference condition,
+        {{ conditionDetail.referenceConditionLabel }}. A must-match difference excludes it from the
+        figures; the model-axis keys are what the comparison is about.
+      </p>
+
+      @if (conditionDetail.selfInconsistent) {
+        <!-- Not one point at all, whatever the rest of the selection is in: its own runs were not
+             measured under one instrument, so there is no cohort to compare it against. -->
+        <section class="csp-legend-group" aria-labelledby="csp-condition-self">
+          <h4 id="csp-condition-self">Its own members disagree</h4>
+          <p>
+            The runs behind this source were not all measured under the same instrument, so it does
+            not describe one point and is excluded whichever condition the rest of the selection is
+            in.
+          </p>
+          @if (conditionDetail.selfInconsistentKeys.length > 0) {
+            <ul class="csp-key-chips">
+              @for (name of conditionDetail.selfInconsistentKeys; track name) {
+                <li>{{ name }}</li>
+              }
+            </ul>
+          } @else {
+            <p class="csp-legend-empty">No disagreeing key was reported for it.</p>
+          }
+        </section>
+      } @else if (conditionDetail.rows.length > 0) {
+        <!-- Machine values of unbounded width, so the table scrolls inside the dialog rather than
+             widening it: a digest, a serialized options object and a semicolon-separated
+             configuration all sit in the same column. -->
+        <div class="csp-condition-scroll">
+          <table class="gh-table csp-condition-table">
+            <caption class="visually-hidden">
+              Every comparability key this source differs from the reference condition on: the key,
+              what kind of key it is, what a difference on it means, and both values.
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Key</th>
+                <th scope="col">Kind</th>
+                <th scope="col">What a difference means</th>
+                <th scope="col">Values</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of conditionDetail.rows; track row.name) {
+                <tr>
+                  <th scope="row" class="csp-condition-key">
+                    {{ row.label }}
+                    <code>{{ row.name }}</code>
+                  </th>
+                  <td>
+                    <!-- The word carries the kind; the hue only reinforces it. -->
+                    <span [class]="conditionKindClass(row.kind)">{{ conditionKindLabel(row.kind) }}</span>
+                  </td>
+                  <td class="csp-condition-meaning">{{ row.description }}</td>
+                  <td>
+                    <div class="csp-condition-values">
+                      @for (side of conditionSides(row); track side.side) {
+                        <div class="csp-condition-side">
+                          <p class="csp-condition-side-title">{{ side.title }}</p>
+                          @if (!side.attributed) {
+                            <p class="csp-legend-empty">Not attributable — every value is listed below.</p>
+                          } @else if (side.hasFields) {
+                            <!-- A `key=value;…` configuration, one field per row, so the reader
+                                 sees the field that moved rather than two long strings. -->
+                            <dl class="csp-condition-fields">
+                              @for (field of side.fields; track field.name) {
+                                <div [class.csp-condition-changed]="isChangedField(row, field.name)">
+                                  <dt>{{ field.name }}</dt>
+                                  <dd>
+                                    <span>{{ field.value }}</span>
+                                    @if (isChangedField(row, field.name)) {
+                                      <!-- Weight alone would carry this in colour and shape only. -->
+                                      <span class="csp-condition-changed-mark">changed</span>
+                                    }
+                                  </dd>
+                                </div>
+                              }
+                            </dl>
+                          } @else if (isHashValue(row, side.value)) {
+                            <div class="csp-methods-hash">
+                              <code>{{ shortHash(side.value) }}</code>
+                              <button type="button" class="action-btn"
+                                      [attr.aria-label]="'Copy the full ' + row.label + ' value of ' + side.title"
+                                      [attr.interestfor]="conditionValueId(row, side) + '-tip'"
+                                      [attr.style]="'anchor-name: --' + conditionValueId(row, side) + '-tip'"
+                                      (click)="copyConditionValue(row, side.value)">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+                                     viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                                     aria-hidden="true">
+                                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                </svg>
+                              </button>
+                              <div popover="hint" class="gh-tooltip"
+                                   [id]="conditionValueId(row, side) + '-tip'"
+                                   [attr.style]="'position-anchor: --' + conditionValueId(row, side) + '-tip'">
+                                Copy the full value
+                              </div>
+                            </div>
+                          } @else {
+                            <pre class="csp-condition-raw"
+                                 [class.csp-condition-raw-collapsed]="isLongValue(side.value) && !isConditionValueExpanded(row, side)"
+                                 [id]="conditionValueId(row, side)">{{ side.value }}</pre>
+                            @if (isLongValue(side.value)) {
+                              <button type="button" class="gh-filter-clear"
+                                      [attr.aria-expanded]="isConditionValueExpanded(row, side)"
+                                      [attr.aria-controls]="conditionValueId(row, side)"
+                                      (click)="toggleConditionValue(row, side)">
+                                {{ isConditionValueExpanded(row, side) ? 'Collapse' : 'Expand' }}
+                              </button>
+                            }
+                          }
+                        </div>
+                      }
+                    </div>
+
+                    @if (row.variants.length > 0) {
+                      <!-- Neither side could be attributed — a group whose membership this view was
+                           not sent, or a key with more than two values. The evidence is shown
+                           whole rather than a side guessed at. -->
+                      <ul class="csp-condition-variants">
+                        @for (variant of row.variants; track $index) {
+                          <li>
+                            <code>{{ variant.value }}</code>
+                            <span>
+                              {{ variant.runIds.length > 0
+                                  ? 'runs ' + variant.runIds.join(', ')
+                                  : 'no runs recorded' }}
+                            </span>
+                          </li>
+                        }
+                      </ul>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else {
+        <p class="csp-legend-empty">
+          This source is in the reference condition — it differs from it on no key at all.
+        </p>
+      }
+    } @else {
+      <p class="csp-legend-empty">
+        The comparability index does not carry this source, so there is no detail to show.
+      </p>
+    }
+  </div>
+
+  <div class="dialog-actions">
+    <p class="csp-condition-copy-state" role="status">{{ conditionCopyState }}</p>
+    <button type="button" class="btn-gh btn-gh-cancel"
+            (click)="conditionDetailDialog.close()">Close</button>
+    <button type="button" class="btn-gh" (click)="copyConditionDetail()">Copy as Markdown</button>
   </div>
 </dialog>
