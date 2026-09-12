@@ -386,23 +386,38 @@ a run before this line existed.
 | `nethack_wiki_view` | `article` | `section` | none | none |
 
 > 🛑 **`wiki_search`'s `category` filter is not a stored taxonomy field.** It compiles to
-> `new WildcardQuery(new Term("path", "*{categoryFilter}*"))` — a substring match against the
-> indexed file's **full filesystem path**. It only narrows results if the wiki repository happens
-> to keep monster/item/spell articles under a directory or filename containing that substring.
+> `new WildcardQuery(new Term("pathlower", "*{folded categoryFilter}*"))` — a substring match against
+> the article's **wiki-relative path with its extension, lower-cased and forward-slashed**, with the
+> supplied value folded the same way, **from harness 27**. It only narrows results if the wiki
+> repository happens to keep monster/item/spell articles under a directory or filename containing that
+> substring; the wiki's real top-level directories are `Artifacts`, `Conducts`, `Development`,
+> `Difficulties`, `Dungeon`, `Guides`, `Items`, `Monsters`, `Races`, `Roles`, `Rooms`, `Skills`,
+> `Spells`. **Before harness 27 it was a `StringField` over the absolute filesystem path** — one exact,
+> case-sensitive term — so a lower-case category never matched a capitalised directory and excluded
+> every hit instead of narrowing: on run 42 four `wiki_search` calls whose unfiltered query had hits
+> returned nothing for this reason alone, and the §6 exact-title contract was unreachable except
+> through the unfiltered retry (run 42 T1). In a run stamped 26 or earlier, read every categorised
+> call as effectively unfiltered-or-empty rather than as a narrowed search.
 > `monster_lookup` and `item_lookup` rely on exactly this mechanism (§6) and are built to degrade
 > gracefully — `nethack_wiki_search`'s `namespace_filter`, by contrast, is a real
 > `TermQuery` against a `namespace` field parsed from each file's YAML-style frontmatter
 > (default `"article"` when a file has no frontmatter or no `namespace:` key) — the two "category"
 > concepts are not the same mechanism despite the similar name.
 
-**`nethack_wiki_view` article resolution is still the top Lucene hit over `title`/`filename`, with no
-relevance floor — but from the run-36 round (2026-09-11) a non-exact resolution is announced, not
-silent.** `NetHackWikiService.GetArticleResolved` still takes `ScoreDocs[0]` of the title/filename
-query unconditionally when it has a hit, so the article chosen has not changed and a garbled or
-ambiguous `article` string can still resolve to the wrong article — that has not moved. What changed
-is the tool layer: `NetHackWikiViewTool` normalises the request and the resolved title alike (trim,
-collapse internal whitespace, lowercase) and, when they differ, prepends a resolution line before the
-content:
+**`nethack_wiki_view` article resolution prefers an exact title from harness 27, and a non-exact
+resolution has been announced rather than silent since the run-36 round (2026-09-11).**
+`NetHackWikiService.GetArticleResolved` scans the title/filename hits in order and takes the first
+whose stored `title`, normalised (trim, internal whitespace collapsed, lower-cased), equals the
+normalised request, falling back to `ScoreDocs[0]` when none does; the query window widened from 5
+hits to 8 so a stem-equal title cannot crowd the exact one out, while the candidate list still reports
+only the first 5. **Before harness 27 it took `ScoreDocs[0]` unconditionally**, so the highest-scoring
+hit won even when the exact title was sitting in the same result set: on run 42 Q9,
+`nethack_wiki_view("Spellcasting")` served *Spellcaster* twice while listing *Spellcasting* as a
+candidate, because Lucene's English stemmer reduces both titles to one token (run 42 T2). A garbled or
+genuinely ambiguous `article` string can still resolve to the wrong article — only the exact-title case
+moved. The tool layer is unchanged: `NetHackWikiViewTool` normalises the request and the resolved
+title alike (trim, collapse internal whitespace, lowercase) and, when they differ, prepends a
+resolution line before the content:
 
 ```
 [No NetHack wiki article titled 'X'. Showing 'Y'. Other candidates: A; B; C; D.]
@@ -560,7 +575,13 @@ category mechanism as `wiki_search` §5, run for the top 8 hits — and if that 
 found for monster/item: {name}"`. This double fallback makes both tools resilient to the wiki
 repository not actually organizing articles under a `monster`/`item` path segment.
 
-**The exact-title contract, from harness 26.** When exactly one category hit's title equals the
+**The exact-title contract, from harness 26 — but unreachable until harness 27.** The category query
+it runs first could not match any directory before harness 27 (§5), so every lookup fell through to
+the unfiltered retry, which is `GetRelevantContext` and never narrows: run 42 Q3's `item_lookup` on an
+exact title returned *Guide to Dragon Scale Mails.md* while `Items/Silver dragon scale mail.md`
+existed. Read the contract below as describing runs stamped **27 or later**; in a run stamped 26, a
+lookup result with several headers is the filter, not a regression of this contract.
+When exactly one category hit's title equals the
 normalised request (`NormalizeArticleName` — trimmed, one trailing `.md`/`.txt`/`.html`
 stripped — then compared case-insensitively, `GetArticle`'s title-equality rule; internal
 whitespace is not collapsed), the result is **that article alone**, followed by one line
@@ -571,8 +592,9 @@ only a prefix of a title — returns the top-5 join `GetRelevantContext` returns
 retry is `GetRelevantContext` unchanged, so it never narrows. **Up to harness 25** the first call
 was `GetRelevantContext` itself and an exact hit came back with its neighbours: run 41 Q13
 `red dragon` carried *Red dragon scale mail* (4,498 characters) and Q14 `Master Kaen` carried
-*Master lich* (4,001). In a run stamped 26 or later, an exact-title request whose result carries a
-second `--- <file> ---` header is a regression of this contract.
+*Master lich* (4,001). In a run stamped **27 or later**, an exact-title request whose result carries a
+second `--- <file> ---` header is a regression of this contract; in one stamped 26 it is the
+case-sensitive category filter above, which is what run 42 found.
 
 **`get_monster_stats` / `get_item_stats` / `get_artifact_stats`** — `name` (required, exact as
 written in the source: `src/monst.c`, `src/objects.c`, `include/artilist.h` respectively). For

@@ -141,7 +141,19 @@ public enum BenchmarkAnswerFlags
     // says the deduction is *contested*, never that it is overturned; a human reads the cited code
     // path before anything rests on it. OutOfRubricAccuracyDeduction already routes the verdict to a
     // second reader, so this adds no trigger of its own.
-    ContestedAccuracyDeduction = 4096
+    ContestedAccuracyDeduction = 4096,
+
+    // Exactly one of the four graded dimensions collapsed to level 1 or 0 while the other three
+    // stand at 3 or above, and neither the assessor's comment nor that dimension's own evidence
+    // names a defect of the kind that dimension grades. A dimension carries between 10% and 55% of
+    // the quality weight, so a collapse nobody described is the single cheapest place a verdict can
+    // be wrong by a wide margin — and the one shape no other flag here looks at, because each of
+    // them reads what the assessor wrote rather than what it left unwritten.
+    //
+    // Advisory, and grouped here for the same reason as UnevidencedDeduction: the answer is intact
+    // and the level may well be deserved. Nothing here changes a score; it routes the verdict to a
+    // second reader. See BenchmarkVerdictConsistency.IsDimensionOutlier.
+    DimensionOutlier = 8192
 }
 
 /// <summary>
@@ -491,6 +503,12 @@ public class BenchmarkRun
     /// out-of-rubric accuracy deduction.
     /// </summary>
     public int? ContestedAccuracyDeductionAnswerCount { get; set; }
+
+    /// <summary>
+    /// Answers carrying <see cref="BenchmarkAnswerFlags.DimensionOutlier"/>. Advisory.
+    /// Zero on every run recorded before harness 27, which never looked for a collapsed dimension.
+    /// </summary>
+    public int DimensionOutlierAnswerCount { get; set; }
 
     /// <summary>Answers carrying <see cref="BenchmarkAnswerFlags.OmissionAsAccuracy"/>. Advisory.</summary>
     public int OmissionAsAccuracyAnswerCount { get; set; }

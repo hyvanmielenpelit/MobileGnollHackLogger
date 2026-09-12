@@ -762,6 +762,14 @@ public class BenchmarkRunDetailDto
     public int? ContestedAccuracyDeductionAnswerCount { get; set; }
 
     /// <summary>
+    /// Answers where exactly one graded dimension sits at level 1 or 0 beside three at 3 or above,
+    /// with no defect of that dimension's kind named anywhere the assessor wrote. Advisory: the
+    /// level stands and no index moved; the verdict is routed to a second reader. Zero on a run
+    /// recorded before harness 27, which never looked for a collapsed dimension.
+    /// </summary>
+    public int DimensionOutlierAnswerCount { get; set; }
+
+    /// <summary>
     /// Answers where the assessor recorded a rubric point outside the question's scope under the
     /// `OUT-OF-SCOPE:` marker (scoring method v8) rather than deducting for it — the instrument's
     /// own share of the Accuracy→Completeness gap. Zero on a run graded before v8, same as a v8 run

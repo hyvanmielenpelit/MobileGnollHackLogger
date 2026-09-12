@@ -308,6 +308,42 @@ public class BenchmarkVerdictConsistencyTests
             unverifiedClaimCount: 1));
     }
 
+    [Theory]
+    // Assessor evidence naming unverifiability through forms that carry no "verif" root at all: a
+    // bare denial of support or of established standing, a claim the source entry itself does not
+    // define, a withholding clause whose reason follows directly rather than through "for" or
+    // "because", and — beside it in the same string — a shortfall framed as missing detail rather
+    // than as unconfirmability. The fourth string also carries "incorrect", so it doubles as a check
+    // that the denial vocabulary reads "no incorrect claim" as a denied defect rather than a named
+    // one, the same trap the falsehood-root denials guard against.
+    [InlineData(5, "asserts per-attribute bonuses that the race entry does not define; confidently asserted and not supported")]
+    [InlineData(5, "nothing below level 6 beyond lacking source-level detail on item categories")]
+    [InlineData(5, "are stated with confidence but are not established mechanics I can confirm as precise")]
+    [InlineData(5, "no incorrect claim, but no implementation detail given, keeping it below 6")]
+    public void IsUnverifiabilityGroundedDeduction_FurtherVocabulary_Flags(int accuracyLevel, string evidence)
+    {
+        Assert.True(BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
+            accuracyLevel: accuracyLevel,
+            accuracyEvidence: evidence,
+            unverifiedClaimCount: 1));
+    }
+
+    [Theory]
+    // Each of these names a real, adjudicated defect — a unit mismatch, a double-counted mechanic, a
+    // misnamed item, a contestable framing — and none of the unverifiability vocabulary above, old or
+    // newly widened, has a foothold in any of them; the detector must stay silent on all four.
+    [InlineData("rendered as a fraction rather than the actual roll")]
+    [InlineData("double-counting the same mechanic")]
+    [InlineData("a misnaming of the stolen item")]
+    [InlineData("a questionable reframing")]
+    public void IsUnverifiabilityGroundedDeduction_RealDefectVocabulary_DoesNotFlag(string evidence)
+    {
+        Assert.False(BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
+            accuracyLevel: 5,
+            accuracyEvidence: evidence,
+            unverifiedClaimCount: 1));
+    }
+
     [Fact]
     public void UnverifiabilityBasisOf_Q9Evidence_ReturnsTheUnverifiabilitySentence()
     {
@@ -401,6 +437,35 @@ public class BenchmarkVerdictConsistencyTests
         Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(3, null));
         Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(3, ""));
         Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(3, "   "));
+    }
+
+    [Fact]
+    public void IsOmissionGroundedAccuracyDeduction_NeverStatedPassiveForm_Flags()
+    {
+        // The passive shape names the missing fact, not the answer, as the sentence's subject — "the
+        // axis is never stated" rather than "the answer never states the axis" — which the
+        // mentions/states pair alone does not cover. The clause that follows names the same
+        // shortfall again as an absence of source-level precision, still an omission rather than an
+        // assertion that anything stated is untrue.
+        const string evidence =
+            "the combat-difficulty axis is never stated, so no source-level precision on that modifier";
+        Assert.True(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
+            accuracyLevel: 5,
+            accuracyEvidence: evidence));
+    }
+
+    [Theory]
+    // The same four real-defect strings the unverifiability guard checks: none of them name an
+    // absent fact, so OmissionRegex's widened vocabulary must not fire on any of them either.
+    [InlineData("rendered as a fraction rather than the actual roll")]
+    [InlineData("double-counting the same mechanic")]
+    [InlineData("a misnaming of the stolen item")]
+    [InlineData("a questionable reframing")]
+    public void IsOmissionGroundedAccuracyDeduction_RealDefectVocabulary_DoesNotFlag(string evidence)
+    {
+        Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
+            accuracyLevel: 5,
+            accuracyEvidence: evidence));
     }
 
     /// <summary>
@@ -739,5 +804,58 @@ public class BenchmarkVerdictConsistencyTests
 
         Assert.False(BenchmarkVerdictConsistency.IsFormOnlyDeduction(6, evidence));
         Assert.False(BenchmarkVerdictConsistency.IsFormOnlyDeduction(6, null, markerRecorded: true));
+    }
+
+    [Fact]
+    public void IsDimensionOutlier_OneCollapsedDimensionWithNothingNamingIt_ReturnsTrue()
+    {
+        // Accuracy 5, Completeness 5, Conciseness 3, Readability 0: one dimension on the floor beside
+        // three healthy ones, and a comment that describes nothing a reader of that answer could
+        // call unreadable.
+        Assert.True(BenchmarkVerdictConsistency.IsDimensionOutlier(
+            accuracyLevel: 5, accuracyEvidence: "Matches rubric.",
+            completenessLevel: 5, completenessEvidence: "Matches rubric.",
+            concisenessLevel: 3,
+            readabilityLevel: 0,
+            comment: "Covers the material the rubric asks for and stops there."));
+    }
+
+    [Fact]
+    public void IsDimensionOutlier_LevelTwo_ReturnsFalse()
+    {
+        // 2 is a deduction, not a collapse. The threshold is the point of the detector: a level the
+        // assessor merely docked is ordinary grading, and flagging it would fire across the suite.
+        Assert.False(BenchmarkVerdictConsistency.IsDimensionOutlier(
+            accuracyLevel: 5, accuracyEvidence: "Matches rubric.",
+            completenessLevel: 5, completenessEvidence: "Matches rubric.",
+            concisenessLevel: 3,
+            readabilityLevel: 2,
+            comment: "Covers the material the rubric asks for and stops there."));
+    }
+
+    [Fact]
+    public void IsDimensionOutlier_DefectOfThatDimensionNamed_ReturnsFalse()
+    {
+        // Accuracy 0 beside three healthy dimensions is exactly the shape — and the assessor said
+        // what it was. A collapse somebody described is a verdict, not an outlier.
+        Assert.False(BenchmarkVerdictConsistency.IsDimensionOutlier(
+            accuracyLevel: 0, accuracyEvidence: "Rubric point 2.",
+            completenessLevel: 5, completenessEvidence: "Matches rubric.",
+            concisenessLevel: 5,
+            readabilityLevel: 5,
+            comment: "fabricated throughout"));
+    }
+
+    [Fact]
+    public void IsDimensionOutlier_ProviderErrorGrading_ReturnsFalse()
+    {
+        // The 0/0/0/0 an ungraded answer carries: four dimensions at the floor is not one dimension
+        // away from three healthy ones, so the rule excludes it without a status of its own.
+        Assert.False(BenchmarkVerdictConsistency.IsDimensionOutlier(
+            accuracyLevel: 0, accuracyEvidence: null,
+            completenessLevel: 0, completenessEvidence: null,
+            concisenessLevel: 0,
+            readabilityLevel: 0,
+            comment: null));
     }
 }

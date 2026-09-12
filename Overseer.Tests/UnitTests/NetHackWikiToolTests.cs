@@ -100,6 +100,30 @@ Combat covers how attacks, to-hit rolls, and damage work.
 
         File.WriteAllText(Path.Combine(_tempDir, "Twoweapon.md"), twoWeaponContent);
         File.WriteAllText(Path.Combine(_tempDir, "Combat.md"), combatContent);
+
+        // "Spellcasting" and "Spellcaster" stem to the same term under the English analyzer, so a
+        // title/filename query for either name scores both documents equally - the exact-title
+        // request must not be pushed out of the window by its close, equally-scored neighbor.
+        var spellcastingContent = @"---
+title: ""Spellcasting""
+namespace: article
+summary: ""Spellcasting is the practice of casting spells from spellbooks.""
+---
+
+Spellcasting is governed by intelligence and wisdom, and by experience level.
+";
+
+        var spellcasterContent = @"---
+title: ""Spellcaster""
+namespace: article
+summary: ""A spellcaster is a monster capable of casting spells.""
+---
+
+Spellcasters include gnomish wizards and other spell-slinging monsters.
+";
+
+        File.WriteAllText(Path.Combine(_tempDir, "Spellcasting.md"), spellcastingContent);
+        File.WriteAllText(Path.Combine(_tempDir, "Spellcaster.md"), spellcasterContent);
     }
 
     public void Dispose()
@@ -527,6 +551,53 @@ Combat covers how attacks, to-hit rolls, and damage work.
         Assert.True(result.Success);
         Assert.DoesNotContain("[No NetHack wiki article titled", result.Content);
         Assert.StartsWith("--- Combat ---", result.Content);
+    }
+
+    [Fact]
+    public async Task NetHackWikiViewTool_ExactTitleAmongEquallyScoredNeighbor_ReturnsExactArticle_OmitsResolutionLine()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new[]
+            {
+                new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", _tempDir)
+            })
+            .Build();
+
+        using var service = new NetHackWikiService(config);
+        await service.InitializationTask;
+        var viewTool = new NetHackWikiViewTool(service);
+
+        var jsonParams = JsonDocument.Parse("{\"article\": \"Spellcasting\"}").RootElement;
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(2004), SpoilerFreeMode = false };
+
+        var result = await viewTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.DoesNotContain("[No NetHack wiki article titled", result.Content);
+        Assert.StartsWith("--- Spellcasting ---", result.Content);
+    }
+
+    [Fact]
+    public async Task NetHackWikiViewTool_NonExactRequestAmongEquallyScoredNeighbors_StillPrependsResolutionLine()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new[]
+            {
+                new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", _tempDir)
+            })
+            .Build();
+
+        using var service = new NetHackWikiService(config);
+        await service.InitializationTask;
+        var viewTool = new NetHackWikiViewTool(service);
+
+        var jsonParams = JsonDocument.Parse("{\"article\": \"Spellcasters\"}").RootElement;
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(2005), SpoilerFreeMode = false };
+
+        var result = await viewTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.StartsWith("[No NetHack wiki article titled 'Spellcasters'.", result.Content);
     }
 }
 

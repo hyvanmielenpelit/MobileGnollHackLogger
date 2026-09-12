@@ -839,6 +839,12 @@ export interface BenchmarkRunDetailDto {
    * before harness 20, which never adjudicated it: "not recorded", never 0.
    */
   contestedAccuracyDeductionAnswerCount?: number | null;
+  /**
+   * Answers where one grading dimension came back at level 1 or below while the other three were 3
+   * or above, with no defect of that kind named. Advisory: no index moved, and the verdict is routed
+   * to a second reader. Null on a run before harness 27, which never looked for it.
+   */
+  dimensionOutlierAnswerCount?: number | null;
   /** Answers whose assessor marked an Accuracy deduction 'Not in rubric:'. Advisory. */
   outOfRubricAccuracyAnswerCount?: number;
   /** Answers opening with a claim of sufficiency. Advisory, and the text was not removed. */

@@ -555,4 +555,67 @@ public class BenchmarkAssessmentParserTests
         Assert.True(result.Success);
         Assert.True(result.Result!.CompletenessOutOfScope);
     }
+
+    [Fact]
+    public void MissingLevel_FailsTheParseAndNamesTheField()
+    {
+        // Level 0 is a grade an assessor may mean, so an omitted field cannot be defaulted: the
+        // verdict would be recorded as Readability 0 and cost a quarter of the quality weight with
+        // nothing in the record to show the assessor never graded it.
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            """
+            {
+              "accuracyLevel": 5, "completenessLevel": 5, "concisenessLevel": 5,
+              "criticalError": false,
+              "accuracyEvidence": "Matches rubric.",
+              "completenessEvidence": "Matches rubric.",
+              "comment": "A reasonable answer."
+            }
+            """,
+            Answer);
+
+        Assert.False(result.Success);
+        Assert.Null(result.Result);
+        Assert.Contains("readabilityLevel", result.ErrorMessage!);
+        // Carried on a failure as well as a success: this is the only record of what the assessor
+        // actually wrote, and a failed verdict is the one it is most needed for.
+        Assert.Contains("\"accuracyLevel\": 5", result.RawText!);
+    }
+
+    [Fact]
+    public void NonNumericLevel_FailsTheParseAndNamesTheField()
+    {
+        // "5/6" is the level as an assessor sometimes writes it back. It is not a number, and
+        // treating it as an absent field is the same verdict: ask the assessor for the schema again.
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            """
+            {
+              "accuracyLevel": 5, "completenessLevel": 5, "concisenessLevel": 5,
+              "readabilityLevel": "5/6",
+              "criticalError": false,
+              "accuracyEvidence": "Matches rubric.",
+              "completenessEvidence": "Matches rubric.",
+              "comment": "A reasonable answer."
+            }
+            """,
+            Answer);
+
+        Assert.False(result.Success);
+        Assert.Contains("readabilityLevel", result.ErrorMessage!);
+    }
+
+    [Fact]
+    public void AllFourLevels_Present_ParseUnchanged()
+    {
+        // The happy path the requirement did not move: a complete verdict still parses, and the
+        // levels are the ones the assessor wrote.
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(Verdict(), Answer);
+
+        Assert.True(result.Success);
+        Assert.Equal(3, result.Result!.AccuracyLevel);
+        Assert.Equal(4, result.Result.CompletenessLevel);
+        Assert.Equal(5, result.Result.ConcisenessLevel);
+        Assert.Equal(5, result.Result.ReadabilityLevel);
+        Assert.NotNull(result.RawText);
+    }
 }

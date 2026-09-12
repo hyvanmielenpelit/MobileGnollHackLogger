@@ -212,9 +212,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsTwentySix()
+    public void HarnessVersion_IsTwentySeven()
     {
-        Assert.Equal("26", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("27", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -454,15 +454,16 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs26_ScoringMethodIs10()
+    public void Versions_HarnessIs27_ScoringMethodIs10()
     {
-        Assert.Equal("26", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("27", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 26 makes the unverifiability detector denial-aware, routes the deductions it flags
-        // to the claim verifier, adds an advisory FORM-cleared Readability index, narrows the
-        // lookup tools to an exact-title article and re-anchors the difficulty prompt — so a
-        // 26-stamped run differs from a 25-stamped one on two instrument keys, HarnessVersion and
-        // ToolGuidesSha256. The scoring method does not move: nothing here changes what a score is.
+        // Harness 27 case-folds the wiki category filter against the wiki-relative path, prefers an
+        // exact title in the NetHack wiki resolver, requires the four assessor levels and stores the
+        // assessor's own text, flags and re-reads a collapsed dimension, and widens the detector
+        // vocabulary — so a 27-stamped run differs from a 26-stamped one on two instrument keys,
+        // HarnessVersion and ToolGuidesSha256. The scoring method does not move: nothing here
+        // changes what a score is.
         Assert.Equal(10, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

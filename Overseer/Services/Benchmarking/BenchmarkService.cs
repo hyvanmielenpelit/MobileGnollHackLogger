@@ -1768,6 +1768,29 @@ public class BenchmarkService
                 flags &= ~BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction;
             }
 
+            // Decided here rather than in the parser, unlike the flags above: the detector weighs
+            // all four levels against one another, and the gate is the answer's own status, which
+            // the parser never sees. An answer outside the quality index carries no verdict worth a
+            // second reading — the detector's own rule already refuses a 0/0/0/0 grading, and the
+            // gate says so at the level where the status is known. Cleared on re-assessment for the
+            // same reason ContestedVerdict is.
+            bool dimensionOutlier = BenchmarkRunFinalizer.CountsTowardQualityIndex(answer)
+                && BenchmarkVerdictConsistency.IsDimensionOutlier(
+                    res.AccuracyLevel, res.AccuracyEvidence,
+                    res.CompletenessLevel, res.CompletenessEvidence,
+                    res.ConcisenessLevel,
+                    res.ReadabilityLevel,
+                    res.Comment);
+
+            if (dimensionOutlier)
+            {
+                flags |= BenchmarkAnswerFlags.DimensionOutlier;
+            }
+            else
+            {
+                flags &= ~BenchmarkAnswerFlags.DimensionOutlier;
+            }
+
             // Read off the graded answer text and not cleared on re-assessment: the opener is the
             // candidate's own output, so a second grading pass over the same text cannot change it.
             if (BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer.AnswerText))
@@ -1819,6 +1842,13 @@ public class BenchmarkService
                     run.Id, answer.OrderIndex, BenchmarkAssessmentParser.OutOfRubricAccuracyMarker);
             }
 
+            if (dimensionOutlier)
+            {
+                _logger.LogInformation(
+                    "Benchmark run {RunId} answer {OrderIndex}: one graded dimension collapsed beside three healthy ones with no defect of that kind named; recorded as a dimension outlier.",
+                    run.Id, answer.OrderIndex);
+            }
+
             answer.AccuracyScore = BenchmarkScoring.Score(res.AccuracyLevel, constants.LevelScores);
             answer.CompletenessScore = BenchmarkScoring.Score(res.CompletenessLevel, constants.LevelScores);
             answer.ConcisenessScore = BenchmarkScoring.Score(res.ConcisenessLevel, constants.LevelScores);
@@ -1846,6 +1876,13 @@ public class BenchmarkService
             _logger.LogWarning("Benchmark run {RunId} answer {OrderIndex} assessment failed: {Error}",
                 run.Id, answer.OrderIndex, failure.Message);
         }
+
+        // The assessor's own text, on every graded answer and on both branches above: a verdict that
+        // failed to parse is exactly the one whose text is worth having, and a verdict that parsed
+        // still cannot say afterwards whether a dimension was graded at the floor or never graded at
+        // all. The parse result carries the text when a reply arrived; runResult.FinalText is what
+        // remains when the call ended in a terminal error before any parse.
+        answer.AssessmentRawText = CapAssessmentRawText(parseResult.RawText ?? runResult.FinalText);
 
         answer.AssessedByModelConfigurationId = assessorConfig.Id;
         answer.AssessedByModelDisplayNameUsed = assessorConfig.DisplayName;
@@ -1905,6 +1942,29 @@ public class BenchmarkService
 
         await MaybeRunSecondOpinionAsync(
             db, configService, run, answer, expectedPoints, constants, cancellationToken);
+    }
+
+    /// <summary>
+    /// The length <see cref="BenchmarkRunAnswer.AssessmentRawText"/> holds. A verdict runs to a few
+    /// hundred characters, so the cap bounds a runaway reply rather than a normal one.
+    /// </summary>
+    private const int AssessmentRawTextMaxLength = 8000;
+
+    /// <summary>
+    /// The assessor's final text as that column stores it: trimmed, truncated to
+    /// <see cref="AssessmentRawTextMaxLength"/> characters, and null when there was no text at all.
+    /// Bounding is the writer's job — the column is the record of what the grader wrote, so a long
+    /// reply is shortened rather than allowed to fail the save.
+    /// </summary>
+    private static string? CapAssessmentRawText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        string trimmed = text.Trim();
+        return trimmed.Length > AssessmentRawTextMaxLength ? trimmed[..AssessmentRawTextMaxLength] : trimmed;
     }
 
     /// <summary>
@@ -2063,6 +2123,15 @@ public class BenchmarkService
         if ((((BenchmarkAnswerFlags)answer.AnswerFlags) & BenchmarkAnswerFlags.OmissionAsAccuracy) != 0)
         {
             return SecondOpinionTriggers.OmissionAsAccuracy;
+        }
+
+        // One dimension collapsed to 1 or 0 beside three at 3 or above, with nothing naming a defect
+        // of that kind. Below every trigger above because each of those rests on something the
+        // assessor wrote and this one rests on what it did not write, and above the two below
+        // because a level nobody explained moves the quality score further than either of them can.
+        if ((((BenchmarkAnswerFlags)answer.AnswerFlags) & BenchmarkAnswerFlags.DimensionOutlier) != 0)
+        {
+            return SecondOpinionTriggers.DimensionOutlier;
         }
 
         // Finding F3: UnverifiedClaims trigger condition adjusted.
@@ -3471,6 +3540,7 @@ public class BenchmarkService
         public const string OutOfRubricAccuracy = "OutOfRubricAccuracy";
         public const string UnevidencedDeduction = "UnevidencedDeduction";
         public const string OmissionAsAccuracy = "OmissionAsAccuracy";
+        public const string DimensionOutlier = "DimensionOutlier";
         public const string UnverifiedClaims = "UnverifiedClaims";
         public const string BelowThreshold = "BelowThreshold";
         public const string Outlier = "Outlier";

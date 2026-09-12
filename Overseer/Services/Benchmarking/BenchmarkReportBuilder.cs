@@ -813,7 +813,7 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Mode:** {configuredMode}{ModeGloss(configuredMode)} Advisory throughout: the first verdict is what scored.");
             if (configuredMode is BenchmarkSecondOpinionMode.Flagged or BenchmarkSecondOpinionMode.FlaggedAndOutliers)
             {
-                sb.AppendLine($"- **Triggers:** a critical error; a refuted claim; a contested verdict; an out-of-rubric Accuracy deduction (an accuracy level of {BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel} or below whose deduction rests on the assessor's own knowledge rather than the rubric); an unevidenced deduction (a level docked to {BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel} or below whose stated evidence names no defect, or rests only on unverifiability); an omission docked as an accuracy defect; unverifiable claims alongside an accuracy level of {BenchmarkService.UnverifiedClaimsAccuracyMaxLevel} or below; a quality score below the profile's threshold of {scoringConstants.SecondOpinionQualityThreshold}" +
+                sb.AppendLine($"- **Triggers:** a critical error; a refuted claim; a contested verdict; an out-of-rubric Accuracy deduction (an accuracy level of {BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel} or below whose deduction rests on the assessor's own knowledge rather than the rubric); an unevidenced deduction (a level docked to {BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel} or below whose stated evidence names no defect, or rests only on unverifiability); an omission docked as an accuracy defect; a dimension outlier (one level at 1 or 0 beside three at {BenchmarkVerdictConsistency.DimensionOutlierCompanionMinLevel} or above, with no defect of that kind named); unverifiable claims alongside an accuracy level of {BenchmarkService.UnverifiedClaimsAccuracyMaxLevel} or below; a quality score below the profile's threshold of {scoringConstants.SecondOpinionQualityThreshold}" +
                     (configuredMode == BenchmarkSecondOpinionMode.FlaggedAndOutliers
                         ? $"; and, after scoring, any answer more than {scoringConstants.SecondOpinionOutlierDeltaPoints} points below the run's median."
                         : "."));
@@ -1616,6 +1616,7 @@ public static class BenchmarkReportBuilder
         string contestedAccuracyDeductionFigure = run.ContestedAccuracyDeductionAnswerCount.HasValue || contestedAccuracyDeductionCount > 0
             ? Inv(contestedAccuracyDeductionCount)
             : "not recorded";
+        int dimensionOutlierCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.DimensionOutlier));
         int outOfRubricAccuracyCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction));
         int answerFramingOpenerCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.AnswerFramingOpener));
         int providerErrorCount = answers.Count(BenchmarkRunFinalizer.HasTerminalFailure);
@@ -1704,7 +1705,7 @@ public static class BenchmarkReportBuilder
         {
             advisoryNote += $" *Removal was not recorded for {bleedUnrecorded} of these — the run predates harness version {BenchmarkAssessmentPrompt.HarnessVersion}, which added the counter; that figure is inferred, not measured.*";
         }
-        sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {contestedCount}, unevidenced deductions: {unevidencedCount}, omissions as accuracy: {omissionCount}, refuted claims: {refutedCount}, contested critical errors: {contestedCriticalErrorCount}, out-of-rubric accuracy deductions: {outOfRubricAccuracyCount}, contested accuracy deductions: {contestedAccuracyDeductionFigure}, answer-framing openers: {answerFramingOpenerCount}) {advisoryNote}");
+        sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {contestedCount}, unevidenced deductions: {unevidencedCount}, omissions as accuracy: {omissionCount}, refuted claims: {refutedCount}, contested critical errors: {contestedCriticalErrorCount}, out-of-rubric accuracy deductions: {outOfRubricAccuracyCount}, contested accuracy deductions: {contestedAccuracyDeductionFigure}, dimension outliers: {dimensionOutlierCount}, answer-framing openers: {answerFramingOpenerCount}) {advisoryNote}");
         if (answerFramingOpenerCount > 0)
         {
             var answerFramingOpenerAnswers = answers
@@ -1753,6 +1754,10 @@ public static class BenchmarkReportBuilder
             .Where(a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.OmissionAsAccuracy) != 0)
             .OrderBy(a => a.OrderIndex)
             .ToList();
+        var dimensionOutlierAnswers = answers
+            .Where(a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.DimensionOutlier) != 0)
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
         var refutedAnswers = answers
             .Where(a => (a.ClaimsRefutedCount ?? 0) > 0 && !string.IsNullOrWhiteSpace(a.ClaimVerificationJson))
             .OrderBy(a => a.OrderIndex)
@@ -1771,7 +1776,7 @@ public static class BenchmarkReportBuilder
             .OrderBy(a => a.OrderIndex)
             .ToList();
 
-        if (!claimsRecorded || unverifiedTotal > 0 || contestedAnswers.Count > 0 || omissionAnswers.Count > 0 || refutedAnswers.Count > 0 || verificationFailedAnswers.Count > 0 || notCheckedAnswers.Count > 0)
+        if (!claimsRecorded || unverifiedTotal > 0 || contestedAnswers.Count > 0 || omissionAnswers.Count > 0 || dimensionOutlierAnswers.Count > 0 || refutedAnswers.Count > 0 || verificationFailedAnswers.Count > 0 || notCheckedAnswers.Count > 0)
         {
             sb.AppendLine("### Assessor Findings");
             if (!claimsRecorded)
@@ -1821,6 +1826,10 @@ public static class BenchmarkReportBuilder
             if (omissionAnswers.Count > 0)
             {
                 sb.AppendLine($"- **Omission Docked as Accuracy:** {omissionAnswers.Count} ({string.Join(", ", omissionAnswers.Select(a => $"Q{a.OrderIndex}"))}) — *the assessor docked Accuracy citing an omission, which scoring rules reserve for Completeness. An omission is not a defect of truthfulness.*");
+            }
+            if (dimensionOutlierAnswers.Count > 0)
+            {
+                sb.AppendLine($"- **Dimension Outliers:** {dimensionOutlierAnswers.Count} ({string.Join(", ", dimensionOutlierAnswers.Select(a => $"Q{a.OrderIndex}"))}) — *one dimension at level ≤ 1 beside three at ≥ 3 with no defect of that kind named. Advisory; routed to a second reader.*");
             }
             if (refutedAnswers.Count > 0)
             {
@@ -2920,6 +2929,7 @@ public static class BenchmarkReportBuilder
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.ContestedCriticalError)) flagDescriptions.Add("Contested critical error (advisory, changed no score)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.ContestedAccuracyDeduction)) flagDescriptions.Add("Contested out-of-rubric accuracy deduction (advisory, changed no score)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.OmissionAsAccuracy)) flagDescriptions.Add("Omission docked as accuracy (advisory, changed no score)");
+                if (iaFlags.HasFlag(BenchmarkAnswerFlags.DimensionOutlier)) flagDescriptions.Add("Dimension outlier: one level ≤ 1 beside three at ≥ 3, no defect of that kind named (advisory, changed no score)");
                 if (ia.ToolBudgetExhausted)
                 {
                     flagDescriptions.Add($"Tool call budget reached ({FormatToolBudgetLine(ia)}) — configured harness limit, not an error");

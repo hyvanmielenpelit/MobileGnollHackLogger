@@ -62,6 +62,7 @@ public static class BenchmarkRunFinalizer
         | BenchmarkAnswerFlags.RefutedClaim
         | BenchmarkAnswerFlags.ContestedCriticalError
         | BenchmarkAnswerFlags.ContestedAccuracyDeduction
+        | BenchmarkAnswerFlags.DimensionOutlier
         | BenchmarkAnswerFlags.OmissionAsAccuracy
         | BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction
         | BenchmarkAnswerFlags.AnswerFramingOpener;
@@ -453,6 +454,11 @@ public static class BenchmarkRunFinalizer
         {
             run.ContestedAccuracyDeductionAnswerCount = contestedAccuracyDeductions;
         }
+        // Non-nullable, unlike the count above: a run stamped before the detector existed carries no
+        // such flag, so zero is the honest figure and the run's own harness version is what says
+        // whether the detector was ever asked.
+        run.DimensionOutlierAnswerCount = answers.Count(
+            a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.DimensionOutlier) != 0);
         run.ClaimVerifiedAnswerCount = answers.Count(
             a => (a.ClaimsSupportedCount ?? 0) + (a.ClaimsRefutedCount ?? 0) + (a.ClaimsIndeterminateCount ?? 0) > 0);
         run.ClaimsSupportedCount = answers.Sum(a => a.ClaimsSupportedCount ?? 0);

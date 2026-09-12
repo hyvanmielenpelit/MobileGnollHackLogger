@@ -121,6 +121,11 @@ public class WikiService : IDisposable
                     // shows. Displayed only, so it is stored without being indexed.
                     doc.Add(new StoredField("relfile", relativeFile));
 
+                    // The case-folded, forward-slashed wiki-relative path (with extension) the
+                    // category filter matches, so a lowercase category value still matches a
+                    // capitalized wiki directory.
+                    doc.Add(new StringField("pathlower", relativeFile.ToLowerInvariant().Replace('\\', '/'), Field.Store.NO));
+
                     writer.AddDocument(doc);
                     indexedCount++;
                 }
@@ -212,7 +217,7 @@ public class WikiService : IDisposable
         {
             var boolQuery = new BooleanQuery();
             boolQuery.Add(luceneQuery, Occur.MUST);
-            boolQuery.Add(new WildcardQuery(new Term("path", $"*{categoryFilter}*")), Occur.MUST);
+            boolQuery.Add(new WildcardQuery(new Term("pathlower", $"*{categoryFilter.Trim().ToLowerInvariant().Replace('\\', '/')}*")), Occur.MUST);
             luceneQuery = boolQuery;
         }
         
@@ -275,7 +280,7 @@ public class WikiService : IDisposable
         {
             var boolQuery = new BooleanQuery();
             boolQuery.Add(luceneQuery, Occur.MUST);
-            boolQuery.Add(new WildcardQuery(new Term("path", $"*{categoryFilter}*")), Occur.MUST);
+            boolQuery.Add(new WildcardQuery(new Term("pathlower", $"*{categoryFilter.Trim().ToLowerInvariant().Replace('\\', '/')}*")), Occur.MUST);
             luceneQuery = boolQuery;
         }
 
@@ -489,7 +494,7 @@ public class WikiService : IDisposable
         {
             var boolQuery = new BooleanQuery();
             boolQuery.Add(luceneQuery, Occur.MUST);
-            boolQuery.Add(new WildcardQuery(new Term("path", $"*{categoryFilter}*")), Occur.MUST);
+            boolQuery.Add(new WildcardQuery(new Term("pathlower", $"*{categoryFilter.Trim().ToLowerInvariant().Replace('\\', '/')}*")), Occur.MUST);
             luceneQuery = boolQuery;
         }
 

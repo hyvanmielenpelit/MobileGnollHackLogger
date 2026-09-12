@@ -2101,6 +2101,78 @@ The difficulty prompt is re-anchored (§ D below), so a suite re-assessed under 
   that a fact being GnollHack-specific does not by itself raise the band. The authored bands are
   untouched. Suite 6 was re-assessed as a whole after this change.
 
+### Harness Version 27 Updates
+
+*2026-09-12.*
+
+Prompted by run 42 (GPT-5.6 Luna @ `high`, harness 26, Intelligence Index 76 ± 5): at rung zero the
+run showed two tool contracts that had never worked as written. Four `wiki_search` calls whose
+unfiltered query had hits returned nothing at all, solely because a `category` of `monster` or `item`
+was set; and `item_lookup` on an exact article title returned a guide article rather than the article
+whose title it had been given, because the exact-title branch harness 26 added sits behind the same
+filter and was therefore unreachable. Separately, `nethack_wiki_view("Spellcasting")` resolved twice
+to *Spellcaster* while *Spellcasting* itself was listed as a candidate. On the grading side one answer
+was recorded at Readability **0** beside Accuracy 5, Completeness 5 and Conciseness 3, with nothing in
+the assessor's comment naming a readability defect — worth about 2.6 index points, unflagged and
+ungated by a second reader — and the assessor's own text is stored nowhere, so whether the field was
+omitted or deliberately zero cannot be settled from the record. The detectors again caught fewer
+instances than a hand count (9 of 14).
+
+`ScoringMethodVersion` stays at **10** — no formula changed and no flag here moves a score — and
+`BenchmarkAssessmentPrompt.HarnessVersion` moves to **27**. `Overseer/ToolGuides/wiki_search.md` gains
+one sentence, so **`ToolGuidesSha256` moves**; no `ChatService` prose changed, so
+`CandidateSystemPromptSha256` does not move. Two columns are added by the
+`AddDimensionOutlierAndAssessmentRawText` migration: `BenchmarkRuns.DimensionOutlierAnswerCount` and
+`BenchmarkRunAnswers.AssessmentRawText`.
+
+- **The `category` filter is case-insensitive and matches inside the wiki (T1).** `WikiService`
+  indexes a `pathlower` `StringField` — the wiki-relative path with its extension, lower-cased and
+  forward-slashed — and `GetRelevantContext`, `GetRelevantSnippets` and `GetLookupContext` build their
+  category clause against it, folding the supplied value the same way. A `StringField` is one exact,
+  case-sensitive term, so the previous clause over the raw absolute `path` could never match a
+  capitalised directory from a lower-case category, and a category value excluded every hit rather
+  than narrowing them; because `monster_lookup` and `item_lookup` run the category query first, the
+  harness-26 exact-title contract was reached only through their unfiltered retry, which does not
+  narrow. Indexing against the wiki-relative path also means a category can never match a directory
+  above the wiki root. The `wiki_search` schema and guide now name the wiki's real top-level
+  directories — Artifacts, Conducts, Development, Difficulties, Dungeon, Guides, Items, Monsters,
+  Races, Roles, Rooms, Skills, Spells — and say the match is case-insensitive.
+- **`nethack_wiki_view` prefers an exact title (T2).** `NetHackWikiService.GetArticleResolved` takes
+  the first title/filename hit whose normalised title equals the normalised request — trimmed,
+  internal whitespace collapsed, lower-cased, the rule `NetHackWikiViewTool` already applies when it
+  decides whether to prepend a resolution line — and falls back to the top hit when none does. The
+  title query widens from 5 hits to 8 so a stem-equal title cannot crowd the exact one out of the
+  window; the candidate list keeps its first-5 semantics. Under Lucene's English stemmer
+  *Spellcasting* and *Spellcaster* reduce to the same token, which is how the top hit came to be the
+  wrong article.
+- **The four assessor levels are required, and the assessor's text is kept (H1).**
+  `BenchmarkAssessmentParser` reads `accuracyLevel`, `completenessLevel`, `concisenessLevel` and
+  `readabilityLevel` through `TryGetIntProperty`; a missing or non-numeric one fails the parse with a
+  message naming the field, which the existing per-question retry feeds back to the assessor, and a
+  second failure follows the existing parse-failure path to `AssessmentStatus.Failed`. A level of 0 is
+  now something the assessor stated rather than something the parser supplied. Every graded answer
+  stores the assessor's final text in `BenchmarkRunAnswer.AssessmentRawText`, capped at 8,000
+  characters, whether or not the parse succeeded.
+- **A collapsed dimension is flagged and read twice (H2).**
+  `BenchmarkVerdictConsistency.IsDimensionOutlier` is true when exactly one of the four levels is 1 or
+  below while the other three are 3 or above, and neither the assessor's comment nor that dimension's
+  evidence names a defect of that kind — the class's own defect and omission vocabulary for Accuracy
+  and Completeness, and *filler / rambling / verbose / padding / tangent / repetition* and *format /
+  markdown / heading / table / garbled / unreadable / wall of text / incoherent / disjointed* for
+  Conciseness and Readability, which carry no evidence string of their own. Answers that do not count
+  toward the quality index are excluded at the call site, so a provider error graded 0/0/0/0 never
+  qualifies. The verdict carries `BenchmarkAnswerFlags.DimensionOutlier`, is counted into
+  `DimensionOutlierAnswerCount`, appears in the Run Integrity breakdown, in an Assessor Findings line
+  and as a per-question harness note, and triggers a second opinion — placed after `OmissionAsAccuracy`
+  and before `UnverifiedClaims`, so the stronger triggers keep their priority. Advisory: no index moves.
+- **The detectors read more of the assessor's vocabulary (H3).** `UnverifiabilityRegex` also matches
+  *not supported* (outside the *by the rubric* form it already carried), *not established*, *does not
+  define*, *lacking / lacks / without / no source-level or implementation detail or precision*, and
+  *below level 6 beyond*; `UnverifiabilityDenialRegex` reads *incorrect* and *wrong* as denied defects,
+  so *"no incorrect claim"* and *"nothing wrong"* no longer veto the flag; and `OmissionRegex` matches
+  *never stated / states / mentioned* and *is not stated*. The five run-42 evidence strings are unit
+  tests, alongside four strings from the same run that name a real defect and must stay unflagged.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.

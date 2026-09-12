@@ -39,7 +39,7 @@ namespace Overseer.Services.Tools
                 ""type"": ""object"",
                 ""properties"": {{
                     ""query"": {{ ""type"": ""string"", ""description"": ""The search terms to look up in the wiki"" }},
-                    ""category"": {{ ""type"": ""string"", ""description"": ""Optional. Filter by category (e.g., 'monster', 'item', 'spell', 'class')"" }},
+                    ""category"": {{ ""type"": ""string"", ""description"": ""Optional. Case-insensitive substring of the article's path inside the wiki, i.e. its directory: Artifacts, Conducts, Development, Difficulties, Dungeon, Guides, Items, Monsters, Races, Roles, Rooms, Skills, Spells. Omit it unless you know the directory."" }},
                     ""max_results"": {{ ""type"": ""integer"", ""description"": ""Maximum number of wiki articles to return (default and maximum {_configuredMaxResults}; larger values are clamped)."" }}
                 }},
                 ""required"": [""query""]
@@ -121,7 +121,7 @@ namespace Overseer.Services.Tools
                     // taxonomy field, so a plausible-looking value that appears in no path
                     // excludes every hit.
                     sb.Append(" with category='").Append(category).Append('\'');
-                    sb.Append(". category matches the article's file path as a substring, not a tag");
+                    sb.Append(". category matches the article's file path as a substring, not a tag (case-insensitive)");
 
                     var unfiltered = SafeProbe(query, null, maxResults);
                     sb.Append(unfiltered.Count > 0

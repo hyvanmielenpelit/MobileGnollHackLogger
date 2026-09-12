@@ -144,6 +144,16 @@ public class PerQuestionAssessmentParseResult
     public BenchmarkPerQuestionAssessmentResult? Result { get; set; }
     public string? RawJson { get; set; }
     public string? ErrorMessage { get; set; }
+
+    /// <summary>
+    /// The assessor's final text, trimmed, carried on a failed parse as well as a successful one.
+    /// Distinct from <see cref="RawJson"/>, which holds only what the extractor could isolate and is
+    /// empty when the reply was not JSON at all. This is what a disputed verdict is argued from:
+    /// the stored levels alone cannot say whether an assessor graded a dimension 0 or never graded
+    /// it. <see cref="BenchmarkService"/> writes it to
+    /// <c>BenchmarkRunAnswer.AssessmentRawText</c>, capped to that column's length.
+    /// </summary>
+    public string? RawText { get; set; }
 }
 
 public class BenchmarkSynthesisResult
@@ -248,10 +258,36 @@ public static class BenchmarkAssessmentParser
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            int accuracyLevel = GetIntProperty(root, "accuracyLevel", "accuracy", "accuracy_level");
-            int completenessLevel = GetIntProperty(root, "completenessLevel", "completeness", "completeness_level");
-            int concisenessLevel = GetIntProperty(root, "concisenessLevel", "conciseness", "conciseness_level");
-            int readabilityLevel = GetIntProperty(root, "readabilityLevel", "readability", "readability_level");
+            PerQuestionAssessmentParseResult MissingLevel(string field) => new()
+            {
+                Success = false,
+                RawJson = json,
+                RawText = rawText.Trim(),
+                ErrorMessage = $"Assessment JSON lacks a numeric {field}."
+            };
+
+            // The four levels are required: a missing or non-numeric one fails the parse rather than
+            // taking a default. Level 0 is a grade an assessor may deliberately award, so a numeric
+            // default makes "never graded" and "graded at the floor" the same recorded verdict, and a
+            // dimension the assessor merely omitted costs the answer its whole share of the quality
+            // weight with nothing in the record to say why. A failure here routes to the retry in
+            // BenchmarkService.ExecutePerQuestionAssessmentAsync, which asks for the schema again.
+            if (!TryGetIntProperty(root, out int accuracyLevel, "accuracyLevel", "accuracy", "accuracy_level"))
+            {
+                return MissingLevel("accuracyLevel");
+            }
+            if (!TryGetIntProperty(root, out int completenessLevel, "completenessLevel", "completeness", "completeness_level"))
+            {
+                return MissingLevel("completenessLevel");
+            }
+            if (!TryGetIntProperty(root, out int concisenessLevel, "concisenessLevel", "conciseness", "conciseness_level"))
+            {
+                return MissingLevel("concisenessLevel");
+            }
+            if (!TryGetIntProperty(root, out int readabilityLevel, "readabilityLevel", "readability", "readability_level"))
+            {
+                return MissingLevel("readabilityLevel");
+            }
 
             bool criticalError = false;
             if (root.TryGetProperty("criticalError", out var ceProp) || root.TryGetProperty("critical_error", out ceProp))
@@ -372,7 +408,8 @@ public static class BenchmarkAssessmentParser
             {
                 Success = true,
                 Result = result,
-                RawJson = json
+                RawJson = json,
+                RawText = rawText.Trim()
             };
         }
         catch (Exception ex)
@@ -381,6 +418,7 @@ public static class BenchmarkAssessmentParser
             {
                 Success = false,
                 RawJson = json,
+                RawText = rawText.Trim(),
                 ErrorMessage = $"JSON parse error: {ex.Message}"
             };
         }
@@ -579,23 +617,33 @@ public static class BenchmarkAssessmentParser
             && OutOfRubricMarkerRegex.IsMatch(accuracyEvidence);
     }
 
-    private static int GetIntProperty(JsonElement element, params string[] propertyNames)
+    /// <summary>
+    /// A required integer property: true only when one of <paramref name="names"/> is present and
+    /// genuinely numeric — a JSON integer, or a string that parses whole. The name aliases are the
+    /// spellings assessors actually return, and the first that carries a usable value wins.
+    ///
+    /// False is the answer for an absent field, a null, a fractional number and a string like
+    /// "5/6" alike, because none of them is a grade. The caller turns that into a failed parse; a
+    /// numeric default cannot, since every value in the BARS range is one an assessor may mean.
+    /// </summary>
+    private static bool TryGetIntProperty(JsonElement element, out int value, params string[] names)
     {
-        foreach (var name in propertyNames)
+        foreach (var name in names)
         {
-            if (element.TryGetProperty(name, out var prop))
+            if (!element.TryGetProperty(name, out var prop)) continue;
+
+            if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out value))
             {
-                if (prop.ValueKind == JsonValueKind.Number)
-                {
-                    return prop.GetInt32();
-                }
-                if (prop.ValueKind == JsonValueKind.String && int.TryParse(prop.GetString(), out var val))
-                {
-                    return val;
-                }
+                return true;
+            }
+            if (prop.ValueKind == JsonValueKind.String && int.TryParse(prop.GetString(), out value))
+            {
+                return true;
             }
         }
-        return 0;
+
+        value = 0;
+        return false;
     }
 
     private static string? GetStringProperty(JsonElement element, params string[] propertyNames)

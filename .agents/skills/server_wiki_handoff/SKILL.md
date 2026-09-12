@@ -63,9 +63,13 @@ result is copied into the prompt.
 - **Do not assert that a generator, template or data file exists unless you found one.** There
   is none for spell, monster or item pages as of 2026-09-10; every such page is hand-maintained
   Markdown. If you looked and found none, the prompt says "edit in place".
-- **Every fact the edit adds carries a citation** to the game source or wiki page it was
-  verified against (`server_benchmark_to_chat_transfer` § 7 rung 2 authorship rule). A
-  link-only edit needs no citation beyond the target page.
+- **Every fact the edit adds is verified** against the game source or another primary text, and
+  the citation proving it goes **in the handoff document and the analysis — never into the text
+  the page will carry** (`server_benchmark_to_chat_transfer` § 7 rung 2 authorship rule). The
+  wiki is player documentation and forbids source references on a page outright; `wiki_editing`
+  § 4 and § 17 own that rule. Verification is what licenses an AI-authored wiki edit, and a
+  reviewer checks it in the handoff, where it is read once, rather than on the page, which is
+  read by every player forever. A link-only edit needs no citation beyond the target page.
 
 ## 3. What the Prompt Must Not Do
 
@@ -78,6 +82,19 @@ result is copied into the prompt.
   and prints the commands.
 - **Do not write a verification step against a page name that was not confirmed in pre-flight.**
   A `grep -c` against a page that does not exist reports zero and reads as a failed edit.
+- **Do not put source-code references in the page text the prompt prescribes** — no file paths,
+  no line numbers, and no C identifiers, whether macros, struct fields, enum constants or
+  function names. State the mechanic in the game's own vocabulary: *"monsters that are immune to
+  fear"*, never `` `MR_FEAR` ``. The code locations belong in the evidence table above the
+  prompt, which is what a reviewer reads. `wiki_editing` § 4 owns the rule; the prompt does not
+  restate it, it simply must not ask for text that breaks it.
+- **Do not verify with a grep for a code identifier.** A `Verify:` step reading
+  `grep -c "MR_FEAR"` can only pass if a macro name reached a player-facing page, so the prompt's
+  own verification enforces the defect the bullet above forbids. Grep for a distinctive
+  player-facing phrase from the sentence instead.
+- **Do not prescribe a heading or a table per finding.** One added fact is usually one sentence,
+  extending what the page already says. `wiki_editing` § 17 owns the shape of a benchmark-driven
+  edit; a prompt that dictates structure overrides it from the wrong side of the handoff.
 
 ## 4. Prompt Template
 
@@ -87,7 +104,10 @@ Do not edit any other repository. Do not commit or push; leave the changes in th
 tree and print the git commands at the end.
 
 Read .agents/skills/wiki_editing/SKILL.md and .agents/skills/wiki_bulk_edits/SKILL.md
-first and follow them. No page generator exists; edit pages in place.
+first and follow them. No page generator exists; edit pages in place. The page text
+carries no source-code references and stays in the page's own register, for players;
+where the wording below conflicts with those skills, theirs wins — write the readable
+version and say so in the report.
 
 Origin: Gnoll Overseer benchmark run <N>, finding <Tk>, ladder rung 2. <One sentence on
 what the model got wrong and why the wiki is the right place to fix it.>
@@ -102,11 +122,13 @@ Verified on disk before this prompt was written:
 Task: <exact edit, with the exact line form to write, keeping any per-page value exactly as
 found>. Skip <exceptions>.
 
-Verify: <commands using the confirmed names, with the expected numbers>. No other lines may
+Verify: <commands using the confirmed names, with the expected numbers; grep for a
+distinctive player-facing phrase, never for a code identifier>. No other lines may
 change (git diff --stat).
 
 Report: mechanism used (in place), number of files changed, the exact line form written,
-the verification output, and the git commands to commit and push.
+anything changed from the wording above and why, the verification output, and the git
+commands to commit and push.
 ```
 
 ## 5. After the Wiki Session
@@ -121,7 +143,9 @@ When the user has committed and pushed the wiki change, record in
 
 Rung 2 is exempt from the re-run requirement (§ 9), so this is a record, not a gate.
 
-## 6. Worked Example: Run 34, T4 (2026-09-10)
+## 6. Worked Examples
+
+### Run 34, T4 (2026-09-10)
 
 The handoff prompt presumed a page generator or template that does not exist, so the wiki
 session spent a step looking for one. It named `Resistances and Saving Throws.md` as the home
@@ -131,6 +155,27 @@ facts were checkable read-only on disk with the access the analyst already had.
 
 The edit itself was correct once the wiki session re-derived the target: 27 spell pages, each
 gaining `- **Saving throw:** Against <attribute> — see [[/Saving Throws]]`.
+
+### Run 42, W1 and W2 (2026-09-12)
+
+The prompt prescribed the page text with its citations inline — *"unaffected before any saving
+throw is rolled (`src/zap.c` lines 951-956, `include/mondata.h` lines 752-753)"* — named the
+`MR_FEAR` macro on two pages, and verified with `grep -c "MR_FEAR"`, a check that can only pass
+if a C macro name reaches a player-facing page. It was faithful to this skill as it then stood,
+which required a citation on every fact the edit added: the defect was in the method, not in the
+analyst applying it.
+
+The wiki session overrode the prescribed wording and wrote the readable form —
+*"Monsters that are immune to fear, along with all undead and all mindless monsters, are
+unaffected before any saving throw is rolled"* — which is what `wiki_editing` § 4 and § 17
+require. So the containment came from the wiki repository, one step after the mistake, and not
+from the side that made it.
+
+Two rules above are the response: the analyst separates the fact from the evidence (§ 2), and the
+prompt may not carry a source reference or a code-identifier grep into the page (§ 3). One page
+still shows what the old rule produced — `Saving Throws.md` gained a paragraph of `save_adj`,
+`src/zap.c` line numbers and a function name in the run-39/40 round, and is the only
+player-facing page in the wiki that cites the source.
 
 ## 7. Cross-References
 

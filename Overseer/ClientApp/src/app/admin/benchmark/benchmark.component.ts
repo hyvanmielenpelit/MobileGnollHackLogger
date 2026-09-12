@@ -293,10 +293,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * failure: ReasoningBleed = 8, RepeatedFragments = 16, ContestedVerdict = 32,
    * UnevidencedDeduction = 64, RefutedClaim = 128, OmissionAsAccuracy = 256,
    * OutOfRubricAccuracyDeduction = 512, AnswerFramingOpener = 1024, ContestedCriticalError = 2048,
-   * ContestedAccuracyDeduction = 4096. Must track BenchmarkRunFinalizer.AdvisoryFlags on the
-   * server as the source of truth.
+   * ContestedAccuracyDeduction = 4096, DimensionOutlier = 8192. Must track
+   * BenchmarkRunFinalizer.AdvisoryFlags on the server as the source of truth.
    */
-  private static readonly ADVISORY_FLAGS = 8 | 16 | 32 | 64 | 128 | 256 | 512 | 1024 | 2048 | 4096;
+  private static readonly ADVISORY_FLAGS = 8 | 16 | 32 | 64 | 128 | 256 | 512 | 1024 | 2048 | 4096 | 8192;
 
   /** The same advisory members by name, as they arrive in answerFlagNames. */
   private static readonly ADVISORY_FLAG_NAMES: readonly string[] = [
@@ -309,7 +309,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     'OutOfRubricAccuracyDeduction',
     'AnswerFramingOpener',
     'ContestedCriticalError',
-    'ContestedAccuracyDeduction'
+    'ContestedAccuracyDeduction',
+    'DimensionOutlier'
   ];
 
   // Suites
@@ -3968,7 +3969,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           - (run.toolStarvedAnswerCount ?? 0);
         lines.push(`clean: ${clean}, transport defects: ${run.transportDefectAnswerCount ?? 0}, recovered: ${run.recoveredAnswerCount ?? 0}, harness limits: ${run.toolStarvedAnswerCount ?? 0} (sums to ${run.totalQuestionCount})`);
         // A null contested-accuracy-deduction count is a run before harness 20: not recorded, never 0.
-        lines.push(`advisory flags: ${run.advisoryFlagAnswerCount ?? 0}, scrubbed: ${run.scrubbedArtifactAnswerCount ?? 0}, contested verdicts: ${run.contestedVerdictAnswerCount ?? 0}, unevidenced deductions: ${run.unevidencedDeductionAnswerCount ?? 0}, refuted claims: ${run.refutedClaimAnswerCount ?? 0}, contested critical errors: ${run.contestedCriticalErrorAnswerCount ?? 0}, contested accuracy deductions: ${run.contestedAccuracyDeductionAnswerCount ?? 'not recorded'}, re-assessed: ${run.reassessedAnswerCount ?? 0}`);
+        lines.push(`advisory flags: ${run.advisoryFlagAnswerCount ?? 0}, scrubbed: ${run.scrubbedArtifactAnswerCount ?? 0}, contested verdicts: ${run.contestedVerdictAnswerCount ?? 0}, unevidenced deductions: ${run.unevidencedDeductionAnswerCount ?? 0}, refuted claims: ${run.refutedClaimAnswerCount ?? 0}, contested critical errors: ${run.contestedCriticalErrorAnswerCount ?? 0}, contested accuracy deductions: ${run.contestedAccuracyDeductionAnswerCount ?? 'not recorded'}, dimension outliers: ${run.dimensionOutlierAnswerCount ?? 'not recorded'}, re-assessed: ${run.reassessedAnswerCount ?? 0}`);
         // Computed from `run`, not from the run-detail getters: this capture describes the
         // *active* run, and those getters read whichever run the detail dialog has open.
         const criticalHere = run.answers.filter(a => a.criticalError).map(a => a.orderIndex);
@@ -5121,7 +5122,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** The text a flag badge shows: the flag's name, except where a short reading is clearer. */
   flagBadgeLabel(flag: string): string {
-    return flag === 'ContestedAccuracyDeduction' ? 'contested deduction' : flag;
+    return flag === 'ContestedAccuracyDeduction' ? 'contested deduction' : flag === 'DimensionOutlier' ? 'dimension outlier' : flag;
   }
 
   // --- Difficulty bands ---
@@ -6235,6 +6236,18 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   get contestedAccuracyDeductionQuestionNumbers(): string {
     return (this.selectedRunDetail?.answers ?? [])
       .filter(a => (a.answerFlagNames ?? []).includes('ContestedAccuracyDeduction'))
+      .map(a => a.orderIndex)
+      .join(', ');
+  }
+
+  /** Null on a run before the harness version that added the dimension-outlier check. */
+  get dimensionOutlierAnswerCount(): number | null {
+    return this.selectedRunDetail?.dimensionOutlierAnswerCount ?? null;
+  }
+
+  get dimensionOutlierQuestionNumbers(): string {
+    return (this.selectedRunDetail?.answers ?? [])
+      .filter(a => (a.answerFlagNames ?? []).includes('DimensionOutlier'))
       .map(a => a.orderIndex)
       .join(', ');
   }

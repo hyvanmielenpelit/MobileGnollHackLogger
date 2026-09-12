@@ -145,6 +145,18 @@ public static class BenchmarkVerdictConsistency
     /// because that group otherwise needs "support" directly after "without"; "adjudicab" beside
     /// "adjudicat" for "adjudicable"; and "not established/supported by the source/rubric" beside
     /// the narrower "supported by the rubric" alternative.
+    ///
+    /// A further band of forms names the same unverifiability without the word "verif" anywhere in
+    /// it: the bare "not supported", for a denial of grounding stated on its own rather than tied to
+    /// "the source" or "the rubric" — carrying a negative lookahead against "by (the) rubric" so it
+    /// never re-fires the narrower, already-anchored "not established/supported by ... rubric"
+    /// alternative on the same span; "not established" alone, the same bare shape for the
+    /// neighbouring verb; "does not define", for evidence that blames the rubric's or source
+    /// entry's own silence rather than naming what the answer got wrong; "lacking/lacks/without/no
+    /// source-level detail" and its "implementation ... precision" counterpart, for a deduction
+    /// framed as a shortfall of specificity rather than of confirmability; and "below level 6
+    /// beyond", the withholding phrase's shape when the clause that follows names the reason
+    /// directly rather than through a "for" or "because" the other withholding alternative expects.
     /// </summary>
     private static readonly Regex UnverifiabilityRegex = new(
         @"could not (?:be )?verif|cannot (?:be )?verif|unable to verif|unverifi|could not confirm|not confirmed|no confirmation|not verifiable|unconfirmed"
@@ -159,7 +171,12 @@ public static class BenchmarkVerdictConsistency
         + @"|not\s+(?:in|from|covered\s+by|supported\s+by|given\s+in)\s+(?:the\s+)?rubric(?!\s*:)"
         + @"|not\s+(?:established|supported)\s+by\s+(?:the\s+)?(?:source|rubric)"
         + @"|rubric\s+(?:does\s+not|doesn't|did\s+not|neither)\s+(?:support|cover|mention|corroborate|state|include)"
-        + @"|(?:withh?old|kept|keeping|held)\s+(?:it\s+)?(?:below|under)\s+(?:level\s+)?[56]",
+        + @"|(?:withh?old|kept|keeping|held)\s+(?:it\s+)?(?:below|under)\s+(?:level\s+)?[56]"
+        + @"|\bnot\s+supported\b(?!\s+by\s+(?:the\s+)?rubric)"
+        + @"|\bnot\s+established\b"
+        + @"|\bdoes\s+not\s+define\b"
+        + @"|(?:lacking|lacks|without|no)\s+(?:source-level|implementation)\s+(?:detail|precision)"
+        + @"|\bbelow\s+level\s+6\s+beyond\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>
@@ -188,9 +205,14 @@ public static class BenchmarkVerdictConsistency
     /// what is denied is the rubric's own coverage rather than the answer's truthfulness, and which
     /// <see cref="DefectRegex"/>'s "does not (?:state|mention|include)" alternative would otherwise
     /// read as an omission charge against the answer.
+    ///
+    /// The denied-defect group also names "incorrect" and "wrong" beside its falsehood roots, since
+    /// <see cref="DefectRegex"/> carries both as bare defect words: "no incorrect claim" and "nothing
+    /// wrong" deny a defect using exactly the word that would otherwise read as one, the same trap
+    /// the falsehood roots above exist to catch.
     /// </summary>
     private static readonly Regex UnverifiabilityDenialRegex = new(
-        @"\b(?:no|nothing|none|neither)\b[^.;,]{0,60}?(?:false|falsehood|contradict\w*|error|inaccura\w*|misstat\w*)"
+        @"\b(?:no|nothing|none|neither)\b[^.;,]{0,60}?(?:false|falsehood|contradict\w*|error|inaccura\w*|misstat\w*|incorrect|wrong)"
         + @"|\b(?:the\s+)?rubric\s+(?:does\s+not|doesn't|neither)\s+(?:state|mention|include|cover|list)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
@@ -298,9 +320,15 @@ public static class BenchmarkVerdictConsistency
             || (completenessLevel <= UnevidencedDeductionMaxLevel && !NamesACompletenessDefect(completenessLevel, completenessEvidence));
     }
 
-    // Words that describe something the answer did not say.
+    // Words that describe something the answer did not say. "never (?:stated|states|mentioned)"
+    // widens the existing "never (?:mentions|states)" alternative to the passive and past-participle
+    // forms an assessor reaches for when the missing fact, not the answer, is the sentence's subject
+    // ("the combat-difficulty axis is never stated"); "is not stated" catches the same passive shape
+    // without "never" at all.
     private static readonly Regex OmissionRegex = new(
-        @"\bomit|\bomission|does not (?:mention|include|state|list|cover|address|provide)|fails? to (?:mention|include|state|list|identify|note|cover|address|provide)|missing|no mention of|never (?:mentions|states)|leaves out|does not name",
+        @"\bomit|\bomission|does not (?:mention|include|state|list|cover|address|provide)|fails? to (?:mention|include|state|list|identify|note|cover|address|provide)|missing|no mention of|never (?:mentions|states)|leaves out|does not name"
+        + @"|never\s+(?:stated|states|mentioned)"
+        + @"|is\s+not\s+stated",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     // "X rather than Y" / "X instead of Y" describes a SUBSTITUTION: the answer stated X, and X is not
@@ -334,6 +362,78 @@ public static class BenchmarkVerdictConsistency
         return OmissionRegex.IsMatch(accuracyEvidence)
             && !FalsehoodRegex.IsMatch(accuracyEvidence)
             && !SubstitutionRegex.IsMatch(accuracyEvidence);
+    }
+
+    /// <summary>
+    /// True when exactly one of the four graded dimensions sits at level 1 or 0 while the other
+    /// three stand at <see cref="DimensionOutlierCompanionMinLevel"/> or above, and nothing the
+    /// assessor wrote names a defect of the kind that dimension grades.
+    ///
+    /// The shape is a verdict of 5/5/3/0: one dimension collapsed beside three healthy ones, with a
+    /// comment that describes no defect of that kind anywhere. A real collapse is always
+    /// describable — an answer is garbled, or padded, or false, or incomplete — so the test is
+    /// whether the assessor described it, never whether the level was deserved.
+    ///
+    /// ACCURACY and COMPLETENESS are judged on their own evidence string as well as the comment,
+    /// because that is where the assessor is instructed to write a deduction's basis, and they reuse
+    /// <see cref="DefectRegex"/> and its neighbours so one dimension's defect vocabulary cannot
+    /// drift from another's. CONCISENESS and READABILITY carry no evidence string, so the comment is
+    /// their whole record; their two vocabularies are local to this method because nothing else in
+    /// the class reads presentation or padding words.
+    ///
+    /// A verdict of 0/0/0/0 — the shape a provider failure leaves behind — cannot match: four
+    /// dimensions at the floor is not one dimension away from three healthy ones. Advisory;
+    /// changes no score, and routes the verdict to a second reader.
+    /// </summary>
+    /// <summary>
+    /// The level the three surviving dimensions must reach for the fourth to read as a collapse
+    /// rather than as ordinary grading. It sits at 3 rather than at 4 because the motivating verdict
+    /// is 5/5/3/0: a middling Conciseness beside a floored Readability is still one dimension away
+    /// from the rest, and a floor of 4 would have excluded the only answer the detector exists for.
+    /// The discriminating half of the test is the collapse itself — a level of 1 or 0 — not this.
+    /// </summary>
+    public const int DimensionOutlierCompanionMinLevel = 3;
+
+    public static bool IsDimensionOutlier(
+        int accuracyLevel, string? accuracyEvidence,
+        int completenessLevel, string? completenessEvidence,
+        int concisenessLevel,
+        int readabilityLevel,
+        string? comment)
+    {
+        const RegexOptions options = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
+        const string concisenessDefects = @"filler|rambl|verbose|padding|tangent|repetit";
+        const string readabilityDefects = @"format|markdown|heading|table|garbled|unreadable|wall of text|incoherent|disjointed";
+
+        int[] levels = { accuracyLevel, completenessLevel, concisenessLevel, readabilityLevel };
+
+        int collapsed = -1;
+        for (int i = 0; i < levels.Length; i++)
+        {
+            if (levels[i] > 1) continue;
+            if (collapsed >= 0) return false;
+            collapsed = i;
+        }
+
+        if (collapsed < 0) return false;
+        if (levels.Where((_, i) => i != collapsed).Any(level => level < DimensionOutlierCompanionMinLevel)) return false;
+
+        bool NamesTheDefect(string? text) => !string.IsNullOrWhiteSpace(text) && (collapsed switch
+        {
+            0 => DefectRegex.IsMatch(text) || FalsehoodRegex.IsMatch(text),
+            1 => DefectRegex.IsMatch(text) || OmissionRegex.IsMatch(text),
+            2 => Regex.IsMatch(text, concisenessDefects, options),
+            _ => Regex.IsMatch(text, readabilityDefects, options)
+        });
+
+        string? evidence = collapsed switch
+        {
+            0 => accuracyEvidence,
+            1 => completenessEvidence,
+            _ => null
+        };
+
+        return !NamesTheDefect(comment) && !NamesTheDefect(evidence);
     }
 
     /// <summary>

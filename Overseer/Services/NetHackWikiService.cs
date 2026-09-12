@@ -221,12 +221,14 @@ public class NetHackWikiService : IDisposable
 
     /// <summary>
     /// Resolves an article exactly as <see cref="GetArticle"/> does, and additionally returns
-    /// the winning title plus a deduplicated candidate list (title/filename hits, then summary
-    /// hits, in index order) so a caller can tell when the request did not match verbatim. The
-    /// article itself is always the top hit of the title/filename query - the summary query
-    /// only widens the candidate list, never the article chosen. When the title/filename query
-    /// has no hit, Content and ResolvedTitle stay null even if the summary query has one, but
-    /// the candidates it found are still returned.
+    /// the winning title plus a deduplicated candidate list (the first 5 title/filename hits,
+    /// then the first 5 summary hits, in index order) so a caller can tell when the request did
+    /// not match verbatim. The article itself is the first of the title/filename hits (up to 8,
+    /// widened past the candidate list's first 5 so a stem match cannot crowd out an exact one)
+    /// whose normalized title equals the normalized request, or the top hit if none does - the
+    /// summary query only widens the candidate list, never the article chosen. When the
+    /// title/filename query has no hit, Content and ResolvedTitle stay null even if the summary
+    /// query has one, but the candidates it found are still returned.
     /// </summary>
     public (string? Content, string? ResolvedTitle, IReadOnlyList<string> Candidates) GetArticleResolved(string articleName, string? section = null)
     {
@@ -254,8 +256,8 @@ public class NetHackWikiService : IDisposable
         try
         {
             var luceneQuery = parser.Parse(QueryParserBase.Escape(articleName));
-            titleHits = searcher.Search(luceneQuery, 5).ScoreDocs;
-            foreach (var hit in titleHits)
+            titleHits = searcher.Search(luceneQuery, 8).ScoreDocs;
+            foreach (var hit in titleHits.Take(5))
             {
                 var doc = searcher.Doc(hit.Doc);
                 string candidateTitle = doc.Get("title") ?? Path.GetFileNameWithoutExtension(doc.Get("filename") ?? "");
@@ -292,7 +294,18 @@ public class NetHackWikiService : IDisposable
             return (null, null, candidates);
         }
 
+        var normalizedRequest = NormalizeForComparison(articleName);
         var articleDoc = searcher.Doc(titleHits[0].Doc);
+        foreach (var hit in titleHits)
+        {
+            var doc = searcher.Doc(hit.Doc);
+            var candidateTitle = doc.Get("title") ?? Path.GetFileNameWithoutExtension(doc.Get("filename") ?? "");
+            if (NormalizeForComparison(candidateTitle) == normalizedRequest)
+            {
+                articleDoc = doc;
+                break;
+            }
+        }
         string title = articleDoc.Get("title") ?? Path.GetFileNameWithoutExtension(articleDoc.Get("filename") ?? "");
         string content = articleDoc.Get("content");
 
@@ -303,6 +316,11 @@ public class NetHackWikiService : IDisposable
 
         return ($"--- {title} ---\n{content}", title, candidates);
     }
+
+    // Trims, collapses internal whitespace and lowercases, so a request differing from a stored
+    // title only by spacing or case still counts as an exact match. NetHackWikiViewTool applies the
+    // same rule when it decides whether to prepend a resolution line.
+    private static string NormalizeForComparison(string s) => Regex.Replace(s.Trim(), @"\s+", " ").ToLowerInvariant();
 
     public void Dispose()
     {

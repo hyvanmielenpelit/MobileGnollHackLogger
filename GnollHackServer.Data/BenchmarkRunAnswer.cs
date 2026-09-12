@@ -155,6 +155,19 @@ public class BenchmarkRunAnswer
     public string? AssessmentEvidenceJson { get; set; }
 
     /// <summary>
+    /// The assessor's final text for this answer, verbatim, as the writer leaves it: the first
+    /// 8,000 characters, which is what this column holds. Written on every graded answer, whether
+    /// its verdict parsed or not.
+    ///
+    /// A stored verdict cannot distinguish a dimension the assessor graded at the floor from one it
+    /// never graded at all, and the levels are what every index is computed from — so when a verdict
+    /// is disputed after the fact, this is the only record of what the grader actually wrote. Null
+    /// on every answer graded before the column existed, and on one no assessor ever read.
+    /// </summary>
+    [MaxLength(8000)]
+    public string? AssessmentRawText { get; set; }
+
+    /// <summary>
     /// The assessor recorded a rubric point that lies outside what the question asked, under the
     /// <c>OUT-OF-SCOPE:</c> marker scoring method v8 requires, and did not deduct for it.
     ///

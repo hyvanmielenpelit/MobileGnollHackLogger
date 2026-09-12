@@ -1613,7 +1613,8 @@ public class BenchmarkReportBuilderTests
             "**Advisory Flags:** 2 (reasoning bleed: 1, repeated fragments: 0, contested verdicts: 1, " +
             "unevidenced deductions: 0, omissions as accuracy: 0, refuted claims: 0, " +
             "contested critical errors: 0, out-of-rubric accuracy deductions: 0, " +
-            "contested accuracy deductions: not recorded, answer-framing openers: 0)",
+            "contested accuracy deductions: not recorded, dimension outliers: 0, " +
+            "answer-framing openers: 0)",
             report);
     }
 

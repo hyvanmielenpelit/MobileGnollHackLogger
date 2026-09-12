@@ -347,8 +347,21 @@ public static class BenchmarkAssessmentPrompt
     ///     belongs to, so a suite re-assessed under it moves SuiteAssessedDifficulties.
     ///     CandidateSystemPromptSha256 does not move. A run stamped 26 differs from one stamped 25 on
     ///     HarnessVersion and ToolGuidesSha256 and on the candidate message, which is below Tier B.
+    /// v27: wiki_search's category filter matches a case-folded, forward-slashed wiki-relative path
+    ///     (the pathlower field) rather than the raw absolute path, so a lowercase category selects a
+    ///     capitalised directory instead of excluding every hit; the schema and the guide name the
+    ///     wiki's real directories, which moves ToolGuidesSha256. nethack_wiki_view resolves to the
+    ///     title-hit whose normalised title equals the request before falling back to the top hit.
+    ///     The four assessor levels are required: a missing or non-numeric one fails the parse, naming
+    ///     the field, and runs through the existing per-question retry, and every graded answer stores
+    ///     the assessor's own text in AssessmentRawText, capped at 8,000 characters. An answer with one
+    ///     dimension at level 1 or below beside three at 3 or above, with no defect of that kind named,
+    ///     carries DimensionOutlier, is counted on the run and is routed to a second reader. The
+    ///     unverifiability, denial and omission detectors widen their vocabulary. ScoringMethodVersion
+    ///     stays 10 and CandidateSystemPromptSha256 does not move. A run stamped 27 differs from one
+    ///     stamped 26 on HarnessVersion and ToolGuidesSha256, which is below Tier B.
     /// </summary>
-    public const string HarnessVersion = "26";
+    public const string HarnessVersion = "27";
 
     /// <summary>
     /// The complete per-question assessor prompt: <see cref="BuildPerQuestionPreamble"/>, a blank

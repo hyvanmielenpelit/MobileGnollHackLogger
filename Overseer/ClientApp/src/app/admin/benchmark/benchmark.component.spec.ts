@@ -2592,6 +2592,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.isAdvisoryFlagName('AnswerFramingOpener')).toBeTrue();
       expect(component.isAdvisoryFlagName('ContestedCriticalError')).toBeTrue();
       expect(component.isAdvisoryFlagName('ContestedAccuracyDeduction')).toBeTrue();
+      expect(component.isAdvisoryFlagName('DimensionOutlier')).toBeTrue();
       expect(component.isAdvisoryFlagName('HarnessArtifacts')).toBeFalse();
       expect(component.isAdvisoryFlagName('Truncated')).toBeFalse();
       expect(component.isAdvisoryFlagName('Empty')).toBeFalse();
@@ -2735,6 +2736,24 @@ describe('AdminBenchmarkComponent', () => {
       expect(badge.classList).toContain('badge-flag-advisory');
       expect(badge.getAttribute('title')).toContain('refuted');
       expect(badge.getAttribute('title')).toContain('the deduction stands');
+    });
+
+    it('should label a dimension outlier badge "dimension outlier" and mute it as advisory', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        answers: [
+          buildScoredAnswer(1, {
+            answerFlags: 8192,
+            answerFlagNames: ['DimensionOutlier']
+          })
+        ]
+      });
+      fixture.detectChanges();
+
+      const badge = fixture.nativeElement.querySelector('.badge-flag-dimensionoutlier') as HTMLElement;
+      expect(badge).toBeTruthy();
+      expect(badge.textContent!.trim()).toBe('dimension outlier');
+      expect(badge.classList).toContain('badge-flag-advisory');
+      expect(badge.getAttribute('title')).toContain('Routed to a second reader');
     });
 
     it('should toggle the removed transport artifacts block per answer', () => {
@@ -4285,7 +4304,7 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(text).toContain('--- INTEGRITY ---');
       expect(text).toContain('clean: 1, transport defects: 0, recovered: 0, harness limits: 1 (sums to 2)');
-      expect(text).toContain('contested verdicts: 1, unevidenced deductions: 0, refuted claims: 0, contested critical errors: 0, contested accuracy deductions: not recorded, re-assessed: 1');
+      expect(text).toContain('contested verdicts: 1, unevidenced deductions: 0, refuted claims: 0, contested critical errors: 0, contested accuracy deductions: not recorded, dimension outliers: not recorded, re-assessed: 1');
       expect(text).toContain('unverified claims: 2');
       expect(text).toContain('4.3 mean abs delta');
       expect(text).toContain('over 2 of 2 answered, disagreements: 1');
@@ -4295,7 +4314,7 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should print the contested accuracy deduction count when recorded, zero included', () => {
       component.activeRunDetail = buildDiagnosticsRun({ contestedAccuracyDeductionAnswerCount: 2 });
-      expect(component.runDiagnosticsText).toContain('contested critical errors: 0, contested accuracy deductions: 2, re-assessed: 1');
+      expect(component.runDiagnosticsText).toContain('contested critical errors: 0, contested accuracy deductions: 2, dimension outliers: not recorded, re-assessed: 1');
 
       // Zero is a measurement on a harness-20 run; only null reads as not recorded.
       component.activeRunDetail = buildDiagnosticsRun({ contestedAccuracyDeductionAnswerCount: 0 });
@@ -4579,6 +4598,31 @@ describe('AdminBenchmarkComponent', () => {
       expect(text).toContain('2 answer(s) carry a contested accuracy deduction');
       expect(text).toContain('(question(s) 3, 7)');
       expect(text).toContain('the deduction stands and no score changed');
+    });
+
+    it('should display dimension outlier clause in Run Integrity Notice when the count is above zero', () => {
+      component.selectedRunDetail = {
+        id: 1,
+        suiteName: 'Suite',
+        status: 'Completed',
+        dimensionOutlierAnswerCount: 2,
+        answers: [
+          { orderIndex: 3, status: 'Ok', answerFlagNames: ['DimensionOutlier'] } as any,
+          { orderIndex: 7, status: 'Ok', answerFlagNames: ['DimensionOutlier'] } as any
+        ]
+      } as any;
+
+      expect(component.dimensionOutlierAnswerCount).toBe(2);
+      expect(component.dimensionOutlierQuestionNumbers).toBe('3, 7');
+
+      fixture.detectChanges();
+
+      const el: HTMLElement = fixture.nativeElement;
+      const text = el.textContent || '';
+      expect(text).toContain('Run Integrity Notice');
+      expect(text).toContain('2 answer(s) with a dimension outlier');
+      expect(text).toContain('(question(s) 3, 7)');
+      expect(text).toContain('routed to a second reader and no score changed');
     });
 
     it('should omit the contested accuracy deduction clause when the count is null or zero', () => {

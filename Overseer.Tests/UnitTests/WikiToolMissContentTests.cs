@@ -50,6 +50,16 @@ Gnoll packs can overwhelm a low-level character. Retreat to a corridor and fight
 Daggers can be enchanted at an altar like most other weapons.
 ");
 
+        // Titled differently from Gnoll.md and Dagger.md but still matching an exact-title lookup
+        // query through content, so a lookup's "Other matches" line has something to name.
+        File.WriteAllText(Path.Combine(monsterDir, "Gnoll Whelp.md"),
+@"A gnoll whelp is a young gnoll cub found in gnoll lairs alongside adult gnolls.
+");
+
+        File.WriteAllText(Path.Combine(itemDir, "Dagger Sheath.md"),
+@"A dagger sheath holds a dagger safely at the hip when not in use.
+");
+
         // Six griffin articles sharing a term no other fixture article uses, so a query for it
         // exercises max_results counting the actual returned hits rather than capping on a corpus
         // too small to tell a clamp from a coincidence.
@@ -429,6 +439,24 @@ Spell{i} requires no material components to cast.
         Assert.True(result.Content!.Length < MissContentMaxChars);
     }
 
+    [Fact]
+    public async Task MonsterLookupTool_ExactTitle_ReturnsOneHeaderPlusOtherMatchesLine()
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new MonsterLookupTool(service);
+
+        var jsonParams = JsonDocument.Parse("{\"name\": \"Gnoll\"}").RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Null(result.ErrorMessage);
+        var headerMatches = System.Text.RegularExpressions.Regex.Matches(result.Content, @"(?m)^--- .+ ---\r?$");
+        Assert.Single(headerMatches);
+        Assert.Contains("[Other matches:", result.Content);
+        Assert.Contains("Gnoll Whelp", result.Content);
+    }
+
     [Theory]
     [InlineData("gnoll AND (")]
     [InlineData("*")]
@@ -482,6 +510,24 @@ Spell{i} requires no material components to cast.
         Assert.Contains("get_item_stats", result.Content);
         Assert.Contains("wiki_search", result.Content);
         Assert.True(result.Content!.Length < MissContentMaxChars);
+    }
+
+    [Fact]
+    public async Task ItemLookupTool_ExactTitle_ReturnsOneHeaderPlusOtherMatchesLine()
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new ItemLookupTool(service);
+
+        var jsonParams = JsonDocument.Parse("{\"name\": \"Dagger\"}").RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Null(result.ErrorMessage);
+        var headerMatches = System.Text.RegularExpressions.Regex.Matches(result.Content, @"(?m)^--- .+ ---\r?$");
+        Assert.Single(headerMatches);
+        Assert.Contains("[Other matches:", result.Content);
+        Assert.Contains("Dagger Sheath", result.Content);
     }
 
     [Theory]
@@ -602,13 +648,15 @@ Every sokobanboulderpuzzle has exactly one solution that does not waste a boulde
         return result.Content;
     }
 
-    private async Task<string?> SearchAsync(string query)
+    private async Task<string?> SearchAsync(string query, string? category = null)
     {
         using var service = new WikiService(BuildConfig());
         await service.InitializationTask;
         var tool = new WikiSearchTool(service, BuildConfig());
 
-        var jsonParams = JsonDocument.Parse(JsonSerializer.Serialize(new { query })).RootElement;
+        var jsonParams = category == null
+            ? JsonDocument.Parse(JsonSerializer.Serialize(new { query })).RootElement
+            : JsonDocument.Parse(JsonSerializer.Serialize(new { query, category })).RootElement;
         var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
 
         Assert.True(result.Success);
@@ -722,5 +770,35 @@ Every sokobanboulderpuzzle has exactly one solution that does not waste a boulde
 
         Assert.Contains("--- Monsters/Gnoll.md ---", content);
         Assert.Contains("--- Races/Gnoll.md ---", content);
+    }
+
+    [Fact]
+    public async Task WikiSearch_CategoryMonster_MatchesCapitalizedMonstersDirectory()
+    {
+        // Both Monsters/Gnoll.md and Races/Gnoll.md match the bare query; category "monster"
+        // must keep the former and exclude the latter even though the directory is capitalized.
+        string? content = await SearchAsync("gnoll", "monster");
+
+        Assert.Contains("--- Monsters/Gnoll.md ---", content);
+        Assert.DoesNotContain("--- Races/Gnoll.md ---", content);
+    }
+
+    [Fact]
+    public async Task WikiSearch_CategoryUppercase_StillMatchesLowercasePathSegment()
+    {
+        string? content = await SearchAsync("gnoll", "MONSTERS");
+
+        Assert.Contains("--- Monsters/Gnoll.md ---", content);
+        Assert.DoesNotContain("--- Races/Gnoll.md ---", content);
+    }
+
+    [Fact]
+    public async Task WikiSearch_CategoryNamesNoDirectory_ReturnsMissPayload()
+    {
+        // The corpus has no Spells/ directory, so "spell" excludes every hit rather than
+        // narrowing them, even though "sokoban" alone matches Guides/Sokoban.md.
+        string? content = await SearchAsync("sokoban", "spell");
+
+        Assert.Contains("No GnollHack wiki article matched", content);
     }
 }

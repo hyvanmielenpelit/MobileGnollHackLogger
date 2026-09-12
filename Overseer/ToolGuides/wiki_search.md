@@ -10,11 +10,12 @@ Results are heading-scoped excerpts (snippets) from the most relevant sections o
 
 The query is matched word by word against article titles (weighted 5×) and bodies, with English stemming, so `material` and `materials` match alike; when a result ends with a `Showing N of M` line, the query matched more articles than were returned — add a word the article's title would contain rather than re-running the same query.
 
-`category` is **not** a taxonomy field. It compiles to a wildcard match against the matching
-file's path inside the wiki repository, so a plausible value that appears in no path — `spell`,
-`class` — silently excludes every hit rather than narrowing them. Omit it unless you know the
-articles you want live under a directory of that name; a miss with a category set is more often
-the filter than the query.
+`category` is **not** a taxonomy field. It is a case-insensitive substring of the article's
+path inside the wiki, so it selects a directory — `Monsters`, `Items`, `Spells`, `Skills`,
+`Races`, `Artifacts`, `Guides`, `Rooms`, `Roles`, `Dungeon`, `Difficulties`, `Conducts`,
+`Development` — and a value that names no directory excludes every hit rather than narrowing
+them. Omit it unless you know the directory; a miss with a category set is more often the
+filter than the query.
 
 Monster articles returned by this tool use the same `## Level N …` header as `monster_lookup`;
 that number is the difficulty rating, and the `Hit dice` line is the level.
