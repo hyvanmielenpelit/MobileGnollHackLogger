@@ -494,7 +494,7 @@ Six standing cautions from these entries, kept because they still bind:
   - **Now nine recorded instances.** Fourth (run 30, Q11 trident range, `src/apply.c:5233`), fifth (run 33, Q1 wish-repeat odds), sixth and seventh (run 35, Q16 group-size `#if 0` citation and Q7's "d20-style save" wrongly marked Supported) were followed by two more on run 36, both at claim-verifier `low`: eighth, Q7's fear-skill save table refuted against a wiki table that omits the spell's extra per-skill-level term (`src/zap.c:949`); ninth, Q14's −4 magic-cancellation penalty refuted against Master Kaen's `mcadj` data field instead of the code that applies it, `src/mcastu.c:793`. From harness 20 the claim-verification prompt's instruction 3a is the response: a claim about how a spell, attack or effect is computed is checked in the code that implements it, not only a data table or a wiki page that may simply omit the term.
 - **Two controlled runs remain deferred, and both must run under v10 rather than across the boundary**: (a) one model, one suite, `verboseMode` false vs. true, to settle whether verbosity buys Completeness — cheap now that `e9b3e9a752…`/`bb19dc24…` is a known isolated pair; and (b) a tool-policy variant run, to test whether the source-family-share-versus-latency correlation is causal.
 - **A critical error is a grader judgement, not a fact.** Three of the five critical errors ever published on the Claude 5 Sonnet series were spurious — run 28 Q3 (rubric units), run 31 Q18 (`src/engrave.c`), run 35 Q1 (`src/attrib.c:117`, `Races/Gnoll.md:25`) — and on run 35 the blind second opinion agreed with the false verdict. A critical error caps quality at 25, so it is the single most consequential judgement in the assessment prompt and the one most worth re-reading on disk. From harness 19 the harness itself sends the assessor's `criticalErrorQuote` to the claim verifier and flags a supported quote as `ContestedCriticalError`; that flag is **advisory and says *contested*, never *overturned*** — read it, and the cited code path, before the count. From harness 20 the same treatment reaches an out-of-rubric Accuracy deduction: its own-knowledge basis (the text after `Not in rubric:`) is sent to the verifier as a claim, and a Refuted verdict flags `ContestedAccuracyDeduction` — advisory in the same sense, no score, cap or index change, run 36 Q5 being the motivating case (`src/rnd.c:200`).
-- **Band drift was the difficulty prompt's, and its repair is a comparability break (closed at harness 26).** From run 29 to run 41 every run of suite 6 assessed its items 25–29 points above the authored bands on average (run 41: +25.1, 11 of 18 upward, none downward). Run 29 traced it to `BenchmarkDifficultyPrompt`, whose Advanced anchor named *"subtle patch-specific GnollHack changes"* and Simple anchor *"widely known NetHack lore"* — on a suite GnollHack-specific by design, every item read as Advanced. The run-41 round re-anchored the bands on the work an answer needs, added an instruction that variant-specificity alone does not raise a band, and re-assessed the whole suite, leaving the authored bands alone. **No run of suite 6 after that round is comparable with runs 29–41 on the Intelligence Index** — `SuiteAssessedDifficulties` moved for every item. If drift persists after re-anchoring (mean signed delta above +10, or more than 6 of 18 outside the authored band), record that the prompt was not the whole cause; do not re-edit the prompt in the same round.
+- **Band drift was the difficulty prompt's, and its repair is a comparability break (repaired at harness 26; criterion missed).** From run 29 to run 41 every run of suite 6 assessed its items 25–29 points above the authored bands on average (run 41: +25.1, 11 of 18 upward, none downward). Run 29 traced it to `BenchmarkDifficultyPrompt`, whose Advanced anchor named *"subtle patch-specific GnollHack changes"* and Simple anchor *"widely known NetHack lore"* — on a suite GnollHack-specific by design, every item read as Advanced. The run-41 round re-anchored the bands on the work an answer needs, added an instruction that variant-specificity alone does not raise a band, and re-assessed the whole suite, leaving the authored bands alone. **No run of suite 6 after that round is comparable with runs 29–41 on the Intelligence Index** — `SuiteAssessedDifficulties` moved for every item (suite mean 70.4 → 61.8). **The re-anchoring halved the drift but did not meet its criterion**: 8 of 18 outside the authored band and a mean signed delta of +12.8, against the pre-declared ≤ 6 and ± 10 (run 41: 11 and +25.1), and the drift is now two-sided (5 up, 3 down). So the prompt was not the whole cause. The residual mismatches look like authored bands that misplace an item's work — Q13 and Q14 are single structured stats lookups authored Advanced (now 38 and 42), while Q3 and Q5, authored Simple, need unit conversions and an `rnz` derivation (now 78 and 82). Revising an authored band is a Fundamental change of its own, to be decided in a later round, not drifted into. **Do not re-edit the difficulty prompt to chase the residual.**
 
 **Correction, 2026-09-10 (run-33 H1): every Gemini-role token and cost figure in this registry —
 the table above and every entry below — is inflated.** Until the run-33 round `GoogleProvider`
@@ -694,10 +694,20 @@ rewritten; see `docs/overseer/ai-benchmark.md` § *Harness Version 18 Updates*.
   `CandidateSystemPromptSha256` asserted unchanged. **S1** (Q16 formula) and **S2** (Q1 tripe value)
   rubric handoff (`rubric_handoff_v2.md`) — both **mirrored into
   `Overseer/Data/DefaultSuites/gnollhack_player_assistance.json`** in this round (the suite is the
-  imported default suite, hand-edited); the human paste, the whole-suite **Assess Difficulty** and the
-  resulting `ItemRevision` (Q1, Q16: 2 → 3 expected) and all 18 new `AssessedDifficulty` values are
-  pending human steps and not yet reported (old: Q1 42, Q2 52, Q3 52, Q4 50, Q5 72, Q6 38, Q7 83,
-  Q8 58, Q9 78, Q10 84, Q11 76, Q12 74, Q13 84, Q14 88, Q15 92, Q16 88, Q17 78, Q18 78). **T5**
+  imported default suite, hand-edited). **The paste is done**: Q1 and Q16 at `ItemRevision` 3, live
+  text equal to the seed (§ 1 query, 2026-09-12). The first **Assess Difficulty** re-rated only those
+  two (Q1 42 → 45, Q16 88 → 90; the other 16 unchanged) — the dialog defaults to scope *unassessed*
+  while a suite is partially assessed — and was then re-run at scope *suite*. **Whole-suite
+  `AssessedDifficulty`, old → new** (authored band S / I / A): Q1 S 42 → 64, Q2 S 52 → 34, Q3 S 52 →
+  78, Q4 S 50 → 30, Q5 S 72 → 82, Q6 S 38 → 61, Q7 I 83 → 95, Q8 I 58 → 48, Q9 I 78 → 66, Q10 I 84
+  → 52, Q11 I 76 → 59, Q12 I 74 → 43, Q13 A 84 → 38, Q14 A 88 → 42, Q15 A 92 → 78, Q16 A 88 → 97,
+  Q17 A 78 → 52, Q18 A 78 → 94; suite mean 70.4 → 61.8 (authored-midpoint mean 55). **§ D criterion
+  missed**, computed with the report's own Band Agreement formula (bands 1–35 / 36–70 / 71–100,
+  signed against the authored midpoints 25 / 55 / 85, averaged over mismatches; the old values
+  reproduce run 41's +25.1): **8 of 18 outside the authored band** (criterion ≤ 6; run 41: 11) and
+  mean signed delta **+12.8** (criterion ± 10), now **two-sided** — 5 up (Q1, Q3, Q5, Q6, Q7), 3 down
+  (Q13, Q14, Q17) against run 41's 11 up, 0 down. Recorded per the pre-declared rule — the prompt was
+  not the whole cause — with no in-round re-edit. **T5**
   calibration re-assessment of run 38 under Opus @ `low` recommended as a human step;
   `RecommendedModels:Google` stays `gemini-3.8-flash` @ `high`. H6, T2–T4, T6, T7 recorded.
 - **Verification Outcome (for this round)**: the **next run of suite 6, whatever the candidate** —
@@ -708,7 +718,9 @@ rewritten; see `docs/overseer/ai-benchmark.md` § *Harness Version 18 Updates*.
   Indeterminate on more than 50 % of routed bases; the FORM-cleared line present when FORM-only
   deductions > 0; no `Result truncated for length` in the export; no self-introduction; one
   `--- <file> ---` header per exact-title lookup; Band Agreement ≤ 6 of 18 outside the authored band
-  and mean signed delta within ± 10; no Q16 formula or Q1 tripe-value deduction. Roster
+  and mean signed delta within ± 10 (a suite property, already measured on the re-assessed suite —
+  missed, 8 of 18 and +12.8; the next report should show the same figures); no Q16 formula or Q1
+  tripe-value deduction. Roster
   recommendation: keep the verifier at `high`.
 ---
 
