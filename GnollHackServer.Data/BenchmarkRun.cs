@@ -100,8 +100,9 @@ public enum BenchmarkAnswerFlags
     // See BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction.
     OmissionAsAccuracy = 256,
 
-    // The assessor prefixed an ACCURACY deduction with the prompted marker "Not in rubric:",
-    // declaring that the basis for it came from its own knowledge rather than from the rubric.
+    // The assessor docked ACCURACY from its own knowledge rather than from the rubric: it prefixed
+    // the deduction with the prompted marker "Not in rubric:", or its evidence grounds the deduction
+    // only in a claim it could not verify (BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction).
     // Scoring method v9 grades against the rubric, so a deduction the grader itself places outside
     // it is a deduction the instrument did not sanction.
     //

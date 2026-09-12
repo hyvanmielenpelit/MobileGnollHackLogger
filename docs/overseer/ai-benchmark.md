@@ -2022,6 +2022,85 @@ on counts and per-question thresholds, not as a reproduction pair.
   answered; this is the fourth observation of serial over-exploration and the second candidate to
   show it.
 
+### Harness Version 26 Updates
+
+*2026-09-12.*
+
+Prompted by run 41 (Gemini 3.7 Flash @ `medium`, harness 25, Intelligence Index 78 ± 3): on ten of
+eighteen questions the assessor docked Accuracy citing only claims the rubric did not cover, and the
+claim verifier later supported every such claim it checked on eight of them. The detector caught
+three, because its defect guard fired on words inside clauses that *denied* a defect — "no
+adjudicable falsehood found", "nothing stated contradicts the rubric" — and its vocabulary lacked
+*unconfirmed* and *beyond what can be confirmed*; and the `Not in rubric:` marker harness 25 made
+mandatory was written **zero** times, so no such deduction reached the verifier. Seventeen of
+seventeen `FORM:` markers again sat beside a sub-6 Readability with nothing else named. At rung zero
+the run also showed `monster_lookup` returning neighbouring articles beside the exact hit, and the
+tool-call record cutting a `wiki_search` result that had reached the model whole.
+
+`ScoringMethodVersion` stays at **10** — the new index is advisory and no formula changed — and
+`BenchmarkAssessmentPrompt.HarnessVersion` moves to **26**. `Overseer/ToolGuides/monster_lookup.md`
+and `Overseer/ToolGuides/item_lookup.md` each gain a sentence, so **`ToolGuidesSha256` moves**; no
+`ChatService` prose and no knowledge-base article changed, so `CandidateSystemPromptSha256` does not
+move. The candidate message, which no key fingerprints, now carries the no-greet instruction (H5).
+The difficulty prompt is re-anchored (§ D below), so a suite re-assessed under it moves
+`SuiteAssessedDifficulties` for every item and `SuiteItemRevisions` for any item edited alongside:
+**a run of suite 6 stamped 26 is not comparable with any earlier run of suite 6** on
+`HarnessVersion`, `ToolGuidesSha256`, `SuiteAssessedDifficulties` and `SuiteItemRevisions`.
+
+- **The unverifiability detector reads denials as denials (H1).**
+  `BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction` strips each clause that denies a
+  defect — *no / nothing / none / neither … false, falsehood, contradicts, error, inaccurate,
+  misstated*, and *the rubric does not state / mention / include / cover / list* — before applying
+  `DefectRegex`, so only the remainder can veto the flag. A concession leading into a real charge
+  ("no error in the table, but the level is wrong") keeps its charge: only the denial clause is
+  removed. `UnverifiabilityRegex` also matches *unconfirmed*, *beyond (the) verifiable*, *beyond what
+  can be verified / confirmed*, *without (any) rubric support*, *adjudicable* and *not established /
+  supported by the source / rubric*. The ten run-41 and seven run-40 evidence strings are unit tests.
+- **A flagged deduction is adjudicated even without the marker (H2b).** When the detector flags an
+  Accuracy deduction whose evidence carries no `Not in rubric:` marker, `BenchmarkAssessmentParser`
+  also sets `OutOfRubricAccuracyDeduction`, and `BenchmarkService.OutOfRubricBasisOf` falls back from
+  the marker's sentence to `BenchmarkVerdictConsistency.UnverifiabilityBasisOf` — the first evidence
+  sentence carrying the unverifiability wording, capped at 600 characters. The verifier checks it
+  exactly as it checks a marked basis, and a Refuted verdict sets `ContestedAccuracyDeduction`;
+  an Indeterminate one sets nothing. The flag's meaning is unchanged: the assessor docked Accuracy
+  from its own knowledge.
+- **FORM-cleared Readability Sensitivity (H3).** Beside *Verification-cleared Accuracy
+  Sensitivity*, § 2 and § 7 Final Indices print the Intelligence Index recomputed with Readability one
+  level higher (capped at 6) on every answer whose only Readability basis was a rubric `FORM:`
+  suggestion, through the same recompute as the Accuracy line. Advisory, no score, no DTO, omitted
+  when no answer qualifies.
+- **The tool-call record stores what the model received (H4).** When
+  `Benchmark:ToolCallRecord:MaxResultChars` is unset, `BenchmarkToolCallRecordLimits.Resolve` derives
+  it from the larger of `Benchmark:MaxResultLength` and the largest `MaxResultLengthOverride` among
+  the run's allowed tools (`ToolRegistry.LargestResultLengthOverride`), plus 2,000 — 18,140 at current
+  settings, from `nethack_wiki_search`'s 16,140. A stored cut ends
+  `... [Record truncated: stored N of M characters]`, so it can no longer be mistaken for
+  `ToolExecutor`'s pre-run-28 `... [Result truncated for length]`, which it had reused.
+- **The candidate message carries chat's no-greet instruction (H5).** Chat appends
+  `[System instruction: Do not greet me, unless I greet you first.]` to every non-first user turn;
+  the benchmark message carried neither that nor the greeting instruction, so on run 41 Q8 the model
+  introduced itself as the frozen prompt's greeting rule asks. The string is one constant,
+  `ChatService.NoGreetInstruction`, used at both sites; the chat text is byte-identical.
+- **`monster_lookup` and `item_lookup` return an exact-title article alone (T1).**
+  `WikiService.GetLookupContext` runs the category query for the top 8 hits; when exactly one title
+  equals the normalised request it returns that article and one `[Other matches: …]` line naming up
+  to four other titles, two or more exact titles return the `Several wiki articles are titled '…'`
+  disambiguation, and anything else returns the previous top-5 join. The unfiltered fallback is
+  unchanged. Each guide gains: *"When the name matches an article title exactly, only that article is
+  returned, with other matching titles listed on one line; pass one of those titles to get a
+  different article."*
+- **The difficulty prompt anchors bands on the work an answer needs (§ D).** The Advanced band had
+  named *"subtle patch-specific GnollHack changes"* and the Simple band *"widely known NetHack lore"*,
+  so on a suite that is GnollHack-specific by design every item drifted upward (+25 to +29 mean
+  signed delta on every run since 29, 11 of 18 above the authored band on run 41). The bands now read:
+  Simple — a single fact, value or short list from one wiki article or one structured stats lookup,
+  whichever variant it belongs to; Intermediate — two or more sources or mechanics, a formula whose
+  terms, conditions and exceptions must all be stated, or a NetHack-versus-GnollHack contrast on one
+  mechanic; Advanced — reasoning over the C implementation, multi-function control flow, probability
+  or scaling derivations, or interactions across several systems. A new critical instruction says
+  that a fact being GnollHack-specific does not by itself raise the band. The authored bands are
+  untouched. Suite 6 was re-assessed as a whole after this change.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.

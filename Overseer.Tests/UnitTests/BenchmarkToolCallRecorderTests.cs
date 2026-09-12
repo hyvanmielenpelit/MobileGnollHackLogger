@@ -2,9 +2,14 @@ namespace Overseer.Tests.UnitTests;
 
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
+using Overseer.Services.Tools;
 using Xunit;
 
 /// <summary>
@@ -254,6 +259,67 @@ public class BenchmarkToolCallRecorderTests
     }
 
     [Fact]
+    public void Resolve_NoOverride_DerivesCapFromMaxResultLengthAlone()
+    {
+        // Benchmark:MaxResultLength defaults to 10,000; with no handler in the allowed set
+        // declaring MaxResultLengthOverride, the cap is just the agent figure plus headroom.
+        var limits = BenchmarkToolCallRecordLimits.Resolve(EmptyConfig(), maxResultLength: 10_000);
+
+        Assert.Equal(12_000, limits.MaxResultChars);
+    }
+
+    [Fact]
+    public void Resolve_OverrideLargerThanMaxResultLength_DerivesCapFromTheOverride()
+    {
+        // nethack_wiki_search declares MaxResultLengthOverride 16,140, above the 10,000
+        // Benchmark:MaxResultLength default -- the cap must track the larger of the two, or a
+        // full-yield result reaches the model whole while the record still cuts it.
+        var limits = BenchmarkToolCallRecordLimits.Resolve(
+            EmptyConfig(), maxResultLength: 10_000, largestAllowedOverride: 16_140);
+
+        Assert.Equal(18_140, limits.MaxResultChars);
+    }
+
+    [Fact]
+    public void Build_ResultAtOverriddenCap_IsStoredWhole_NotTruncated()
+    {
+        // A 12,221-character result -- above the 10,000 + 2,000 cap this same run would get
+        // without the override, but under the 16,140 + 2,000 cap the override derives.
+        string result = new string('w', 12_221);
+        var limits = BenchmarkToolCallRecordLimits.Resolve(
+            EmptyConfig(), maxResultLength: 10_000, largestAllowedOverride: 16_140);
+
+        var row = BenchmarkToolCallRecorder.Build(new[] { Call(result: result) }, limits).Single();
+
+        Assert.False(row.ResultTruncated);
+        Assert.Equal(12_221, row.Result!.Length);
+    }
+
+    [Fact]
+    public void Build_ResultOverCap_MarkerNamesStoredAndTotalCharacterCounts()
+    {
+        // The marker must be self-describing enough that an export reader can never mistake it
+        // for ToolExecutor's own "... [Result truncated for length]" or
+        // "... [Truncated: showing ...]" markers on the pre-storage payload the model saw.
+        string result = new string('x', 500);
+
+        var row = BenchmarkToolCallRecorder.Build(
+            new[] { Call(result: result) }, Limits(maxResult: 100)).Single();
+
+        Assert.True(row.ResultTruncated);
+        Assert.True(row.Result!.Length <= 100);
+        Assert.DoesNotContain("Result truncated for length", row.Result);
+        Assert.Contains("Record truncated: stored", row.Result);
+        Assert.Contains("of 500 characters", row.Result);
+
+        // {stored} counts the kept prefix excluding the marker itself.
+        int markerStart = row.Result.IndexOf("... [Record truncated:", System.StringComparison.Ordinal);
+        Assert.True(markerStart >= 0);
+        Assert.Equal(new string('x', markerStart), row.Result.Substring(0, markerStart));
+        Assert.Contains($"stored {markerStart} of 500 characters", row.Result);
+    }
+
+    [Fact]
     public void Resolve_MaxArgsChars_DefaultsTo4000_AndHonoursItsConfigurationKey()
     {
         var defaults = BenchmarkToolCallRecordLimits.Resolve(EmptyConfig(), maxResultLength: 1000);
@@ -376,5 +442,84 @@ public class BenchmarkToolCallRecorderTests
         var (succeeded, failed, refused) = BenchmarkToolCallRecorder.Outcomes(System.Array.Empty<BenchmarkRunAnswerToolCall>());
 
         Assert.Equal((0, 0, 0), (succeeded, failed, refused));
+    }
+
+    // --- ToolRegistry.LargestResultLengthOverride ------------------------------------------
+
+    [Fact]
+    public void ToolRegistry_LargestResultLengthOverride_PicksTheMaxAmongTheNamedTools()
+    {
+        var registry = new ToolRegistry(
+            new IToolHandler[]
+            {
+                new FakeToolHandler("wiki_search", 13_000),
+                new FakeToolHandler("nethack_wiki_search", 16_140),
+                new FakeToolHandler("source_code_search", null)
+            },
+            new FakeClientToolBridge(),
+            NullLogger<ToolRegistry>.Instance);
+
+        var largest = registry.LargestResultLengthOverride(
+            new[] { "wiki_search", "nethack_wiki_search", "source_code_search" });
+
+        Assert.Equal(16_140, largest);
+    }
+
+    [Fact]
+    public void ToolRegistry_LargestResultLengthOverride_IgnoresToolsOutsideTheNamedSet()
+    {
+        var registry = new ToolRegistry(
+            new IToolHandler[]
+            {
+                new FakeToolHandler("wiki_search", 13_000),
+                new FakeToolHandler("nethack_wiki_search", 16_140)
+            },
+            new FakeClientToolBridge(),
+            NullLogger<ToolRegistry>.Instance);
+
+        // Only wiki_search is in the allowed set, so nethack_wiki_search's larger override must
+        // not leak in.
+        var largest = registry.LargestResultLengthOverride(new[] { "wiki_search" });
+
+        Assert.Equal(13_000, largest);
+    }
+
+    [Fact]
+    public void ToolRegistry_LargestResultLengthOverride_NullWhenNoNamedToolDeclaresOne()
+    {
+        var registry = new ToolRegistry(
+            new IToolHandler[] { new FakeToolHandler("source_code_search", null) },
+            new FakeClientToolBridge(),
+            NullLogger<ToolRegistry>.Instance);
+
+        Assert.Null(registry.LargestResultLengthOverride(new[] { "source_code_search" }));
+    }
+
+    private sealed class FakeToolHandler : IToolHandler
+    {
+        public FakeToolHandler(string toolName, int? maxResultLengthOverride)
+        {
+            ToolName = toolName;
+            MaxResultLengthOverride = maxResultLengthOverride;
+        }
+
+        public string ToolName { get; }
+        public string Description { get; set; } = string.Empty;
+        public ToolExecutionLocation ExecutionLocation => ToolExecutionLocation.Server;
+        public ToolCategory Category => ToolCategory.InformationRetrieval;
+        public JsonElement ParameterSchema => JsonDocument.Parse("{}").RootElement;
+        public int? MaxResultLengthOverride { get; }
+
+        public Task<ToolResult> ExecuteAsync(JsonElement parameters, ToolExecutionContext context, CancellationToken cancellationToken)
+            => Task.FromResult(new ToolResult { Success = true });
+    }
+
+    private sealed class FakeClientToolBridge : IClientToolBridge
+    {
+        public bool IsClientConnected => false;
+
+        public Task<ToolResult> SendToolRequestAsync(
+            Overseer.Services.Privacy.SessionRef sessionRef, string toolName, JsonElement parameters, CancellationToken ct)
+            => Task.FromResult(new ToolResult { Success = true });
     }
 }

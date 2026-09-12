@@ -307,6 +307,12 @@ public class WikiService : IDisposable
     /// <summary>How many colliding paths a disambiguation payload names before it elides.</summary>
     private const int DisambiguationMaxCandidates = 6;
 
+    /// <summary>How many hits GetLookupContext inspects for an exact-title match.</summary>
+    private const int LookupContextMaxHits = 8;
+
+    /// <summary>How many other hit titles GetLookupContext's exact-match line names.</summary>
+    private const int OtherMatchesMaxTitles = 4;
+
     /// <summary>
     /// The form of an article request that resolution matches against: trimmed, with <c>\</c>
     /// normalized to <c>/</c> and one trailing indexed extension (<c>.md</c>, <c>.txt</c> or
@@ -398,7 +404,7 @@ public class WikiService : IDisposable
         foreach (var scoreDoc in hits.ScoreDocs.OrderBy(s => s.Doc))
         {
             var candidate = searcher.Doc(scoreDoc.Doc);
-            if (string.Equals(candidate.Get("title"), normalized, StringComparison.OrdinalIgnoreCase))
+            if (TitleEquals(candidate.Get("title"), normalized))
             {
                 titleMatches.Add(candidate);
             }
@@ -426,6 +432,116 @@ public class WikiService : IDisposable
         // No indexed title equals the request: the best-scoring article stands, with no relevance
         // floor, so a garbled or invented name still yields something rather than a miss.
         return RenderArticle(searcher.Doc(hits.ScoreDocs[0].Doc), section);
+    }
+
+    /// <summary>
+    /// True when an indexed title equals a normalized request under the case-insensitive
+    /// comparison <see cref="GetArticle(string, string?, out bool)"/> and
+    /// <see cref="GetLookupContext(string, string)"/> both use to detect an exact-title hit.
+    /// </summary>
+    private static bool TitleEquals(string? title, string normalizedRequest)
+    {
+        return string.Equals(title, normalizedRequest, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// As <see cref="GetRelevantContext(string, string?, int?)"/>, but when the request's
+    /// normalized form (<see cref="NormalizeArticleName"/>) equals exactly one of the top
+    /// <see cref="LookupContextMaxHits"/> hits' titles, returns that article alone — in the same
+    /// per-article format <see cref="GetRelevantContext(string, string?, int?)"/> uses — followed
+    /// by one <c>[Other matches: …]</c> line naming up to <see cref="OtherMatchesMaxTitles"/> of
+    /// the other hit titles, so an exact-name lookup (e.g. "red dragon") is not diluted by
+    /// neighbouring articles the boosted title/content query also matched (e.g. "Red dragon scale
+    /// mail"). Two or more exact-title hits fall back to the same disambiguation shape
+    /// <see cref="GetArticle(string, string?, out bool)"/> uses. Anything else — no exact-title
+    /// hit at all — returns exactly what <see cref="GetRelevantContext(string, string?, int?)"/>
+    /// returns.
+    /// </summary>
+    public IEnumerable<string> GetLookupContext(string name, string categoryFilter)
+    {
+        IndexSearcher? searcher;
+        Analyzer? analyzer;
+        lock (_swapLock)
+        {
+            searcher = _searcher;
+            analyzer = _analyzer;
+        }
+        if (searcher == null || analyzer == null || string.IsNullOrWhiteSpace(name)) return Enumerable.Empty<string>();
+
+        var parser = new MultiFieldQueryParser(
+            LuceneVersion.LUCENE_48,
+            new[] { "title", "content" },
+            analyzer,
+            new Dictionary<string, float> { { "title", 5.0f }, { "content", 1.0f } }
+        );
+
+        Query luceneQuery;
+        try
+        {
+            luceneQuery = parser.Parse(QueryParserBase.Escape(name));
+        }
+        catch (Lucene.Net.QueryParsers.Classic.ParseException)
+        {
+            return Enumerable.Empty<string>();
+        }
+
+        if (!string.IsNullOrEmpty(categoryFilter))
+        {
+            var boolQuery = new BooleanQuery();
+            boolQuery.Add(luceneQuery, Occur.MUST);
+            boolQuery.Add(new WildcardQuery(new Term("path", $"*{categoryFilter}*")), Occur.MUST);
+            luceneQuery = boolQuery;
+        }
+
+        var hits = searcher.Search(luceneQuery, LookupContextMaxHits);
+        if (hits.TotalHits == 0) return Enumerable.Empty<string>();
+
+        string normalized = NormalizeArticleName(name);
+        var docs = hits.ScoreDocs.Select(scoreDoc => searcher.Doc(scoreDoc.Doc)).ToList();
+        var matchIndexes = docs
+            .Select((doc, index) => (doc, index))
+            .Where(x => TitleEquals(x.doc.Get("title"), normalized))
+            .Select(x => x.index)
+            .ToList();
+
+        if (matchIndexes.Count > 1)
+        {
+            var paths = matchIndexes
+                .Select(i => docs[i].Get("relpath"))
+                .Where(p => !string.IsNullOrEmpty(p))
+                .ToList();
+
+            if (paths.Count > 1)
+            {
+                return new[] { BuildDisambiguation(normalized, paths) };
+            }
+        }
+
+        if (matchIndexes.Count > 0)
+        {
+            int matchIndex = matchIndexes[0];
+            var matchDoc = docs[matchIndex];
+            string article = $"--- {matchDoc.Get("filename")} ---\n{matchDoc.Get("content")}";
+
+            var otherTitles = docs
+                .Where((_, index) => index != matchIndex)
+                .Select(doc => doc.Get("title"))
+                .Where(t => !string.IsNullOrEmpty(t))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(OtherMatchesMaxTitles)
+                .ToList();
+
+            if (otherTitles.Count > 0)
+            {
+                article += $"\n[Other matches: {string.Join("; ", otherTitles)}]";
+            }
+
+            return new[] { article };
+        }
+
+        // No hit's title equals the request: fall back to the same category-filtered top-N join
+        // GetRelevantContext returns.
+        return GetRelevantContext(name, categoryFilter);
     }
 
     /// <summary>

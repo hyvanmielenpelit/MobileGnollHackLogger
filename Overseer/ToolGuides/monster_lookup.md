@@ -1,5 +1,7 @@
 Search the GnollHack wiki for monster information.
 
+When the name matches an article title exactly, only that article is returned, with other matching titles listed on one line; pass one of those titles to get a different article.
+
 Uses keyword search across wiki articles in the "monster" category.
 Results are wiki articles, not structured game data — they may be
 incomplete or not available for all monsters. If you need exact stats

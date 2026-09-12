@@ -33,16 +33,19 @@ public static class BenchmarkDifficultyPrompt
         sb.AppendLine("TASK: Rate the intrinsic difficulty of each question on a 1-100 scale.");
         sb.AppendLine();
         sb.AppendLine($"GUIDELINES FOR DIFFICULTY RATING ({BenchmarkDifficultyBands.MinDifficulty}-{BenchmarkDifficultyBands.MaxDifficulty}):");
-        sb.AppendLine($"- {BenchmarkDifficultyBands.SimpleMin} to {BenchmarkDifficultyBands.SimpleMax} (Simple): Basic game facts, foundational items/roles/monsters, introductory mechanics, widely known NetHack lore.");
-        sb.AppendLine($"- {BenchmarkDifficultyBands.IntermediateMin} to {BenchmarkDifficultyBands.IntermediateMax} (Intermediate): Multi-step tactical interactions, non-trivial mechanics (spell failure, intrinsics, resistances, standard dungeon branch rules), intermediate combat/identification logic.");
-        sb.AppendLine($"- {BenchmarkDifficultyBands.AdvancedMin} to {BenchmarkDifficultyBands.MaxDifficulty} (Advanced): Obscure interactions, deep C source code mechanics, complex damage/probability formulas, rare artifact quirks, subtle patch-specific GnollHack changes, multi-layered strategic edge cases.");
+        // The bands are anchored on the work an answer needs, not on which variant a fact belongs to:
+        // every suite question concerns GnollHack, so a variant anchor would place every item in one band.
+        sb.AppendLine($"- {BenchmarkDifficultyBands.SimpleMin} to {BenchmarkDifficultyBands.SimpleMax} (Simple): A single fact, value or short list retrievable from one wiki article or one structured stats lookup — whether the fact is GnollHack-specific or shared with NetHack.");
+        sb.AppendLine($"- {BenchmarkDifficultyBands.IntermediateMin} to {BenchmarkDifficultyBands.IntermediateMax} (Intermediate): Combining two or more sources or mechanics, a formula with named terms, conditions and exceptions that must all be stated, or a NetHack-versus-GnollHack contrast on one mechanic.");
+        sb.AppendLine($"- {BenchmarkDifficultyBands.AdvancedMin} to {BenchmarkDifficultyBands.MaxDifficulty} (Advanced): Reading or reasoning over the C implementation, multi-function control flow, probability or scaling derivations, or interactions across several game systems.");
         sb.AppendLine();
         sb.AppendLine("CRITICAL INSTRUCTIONS:");
         sb.AppendLine("1. Evaluate the question text, the rubric reference points, and the game context board (if present). A question answerable only by reading and reasoning over live game state is NOT Simple merely because its question text is brief. The author's own difficulty band is deliberately withheld so your rating is independent of it.");
-        sb.AppendLine("2. Assign an integer difficulty between 1 and 100 to each question.");
-        sb.AppendLine("3. Provide a brief 1-sentence rationale for each difficulty score.");
-        sb.AppendLine("4. The 'id' value MUST be copied verbatim from the 'ID:' field of the question it rates. Do not renumber.");
-        sb.AppendLine("5. Respond with the JSON object and nothing else — no prose, no explanation, no Markdown code fences.");
+        sb.AppendLine("2. Every question in this suite concerns GnollHack. That a fact is GnollHack-specific, or differs from NetHack, does not by itself raise the band; rate the work needed to answer, not the variant the fact belongs to.");
+        sb.AppendLine("3. Assign an integer difficulty between 1 and 100 to each question.");
+        sb.AppendLine("4. Provide a brief 1-sentence rationale for each difficulty score.");
+        sb.AppendLine("5. The 'id' value MUST be copied verbatim from the 'ID:' field of the question it rates. Do not renumber.");
+        sb.AppendLine("6. Respond with the JSON object and nothing else — no prose, no explanation, no Markdown code fences.");
         sb.AppendLine();
 
         if (!string.IsNullOrWhiteSpace(boardDigest))

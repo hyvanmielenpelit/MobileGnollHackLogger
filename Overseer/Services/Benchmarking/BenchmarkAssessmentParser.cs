@@ -113,8 +113,9 @@ public class BenchmarkPerQuestionAssessmentResult
 
     /// <summary>
     /// The assessor recorded an accuracy deduction resting on a basis the rubric neither states
-    /// nor implies, under the <c>Not in rubric:</c> marker the prompt asks it to prefix such a
-    /// deduction with.
+    /// nor implies: either under the <c>Not in rubric:</c> marker the prompt asks it to prefix such
+    /// a deduction with, or as a deduction grounded on unverifiability that
+    /// <see cref="BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction"/> detects.
     ///
     /// Advisory, like <see cref="CompletenessOutOfScope"/>: never changes a score. Not from the
     /// model as a field — it is derived from <see cref="AccuracyEvidence"/>, which is where the
@@ -318,11 +319,12 @@ public static class BenchmarkAssessmentParser
 
             // The inverse of contestedVerdict: there the prose says more than the flag, here it says less.
             // Same treatment — recorded, routed to a second reader, never applied to the score.
+            bool unverifiabilityGroundedDeduction = BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
+                Math.Clamp(accuracyLevel, 0, 6), accuracyEvidence, unverifiedClaims.Count);
             bool unevidencedDeduction = BenchmarkVerdictConsistency.HasUnevidencedDeduction(
                 Math.Clamp(accuracyLevel, 0, 6), accuracyEvidence,
                 Math.Clamp(completenessLevel, 0, 6), completenessEvidence)
-                || BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
-                    Math.Clamp(accuracyLevel, 0, 6), accuracyEvidence, unverifiedClaims.Count);
+                || unverifiabilityGroundedDeduction;
 
             bool omissionAsAccuracy = BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
                 Math.Clamp(accuracyLevel, 0, 6), accuracyEvidence);
@@ -334,8 +336,10 @@ public static class BenchmarkAssessmentParser
 
             // The out-of-rubric marker, read from Accuracy rather than Completeness, on the same
             // terms: absent in the normal case, and worth a measurement rather than a verdict when
-            // the assessor mangles it.
-            bool accuracyOutOfRubric = HasOutOfRubricMarker(accuracyEvidence);
+            // the assessor mangles it. A deduction grounded on unverifiability is the unmarked form
+            // of the same thing: a claim docked because the grader could not confirm it rests on
+            // the grader's own knowledge, not on the rubric.
+            bool accuracyOutOfRubric = HasOutOfRubricMarker(accuracyEvidence) || unverifiabilityGroundedDeduction;
 
             // Scoring method v9's format marker, on the same terms: absent in the normal case,
             // and worth a measurement rather than a verdict when the assessor mangles it.

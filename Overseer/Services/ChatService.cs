@@ -116,6 +116,12 @@ public class ChatService
     public const string GameSnapshotPrefix = "Game Context Snapshot:";
 
     /// <summary>
+    /// Appended to every user turn after the first. The benchmark appends it to its candidate
+    /// message as well, so a benchmark question reads as a chat follow-up does.
+    /// </summary>
+    internal const string NoGreetInstruction = "\n\n[System instruction: Do not greet me, unless I greet you first.]";
+
+    /// <summary>
     /// Cap on a session title in plaintext characters, matching
     /// <see cref="Overseer.Controllers.ChatController.MaxPlaintextTitleLength"/>. Both write
     /// paths enforce it because the column no longer does.
@@ -1185,7 +1191,7 @@ public class ChatService
             }
             else
             {
-                finalMessageText += "\n\n[System instruction: Do not greet me, unless I greet you first.]";
+                finalMessageText += NoGreetInstruction;
             }
 
             /* Covers the new message and the wrapped text of every uploaded document in one

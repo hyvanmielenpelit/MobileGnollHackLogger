@@ -334,8 +334,21 @@ public static class BenchmarkAssessmentPrompt
     ///     carries an occurrence probe. CandidateSystemPromptSha256 does not move, so a run stamped 25
     ///     differs from one stamped 24 on HarnessVersion and ToolGuidesSha256, which is below Tier B:
     ///     compare the two on counts and per-question thresholds, not as a reproduction pair.
+    /// v26: the unverifiability detector ignores defect words inside a clause that denies a defect
+    ///     ("no adjudicable falsehood", "nothing contradicts the rubric") and widens its vocabulary; an
+    ///     Accuracy deduction it flags without a `Not in rubric:` marker sets
+    ///     OutOfRubricAccuracyDeduction, and the verifier adjudicates the sentence that carries the
+    ///     unverifiability wording as its basis. The report gains an advisory FORM-cleared Readability
+    ///     Sensitivity index, so ScoringMethodVersion stays 10. The tool-call record's result cap covers
+    ///     the largest allowed tool's own result cap, and its cut names itself with the stored and total
+    ///     lengths. The candidate message carries chat's no-greet instruction. monster_lookup and
+    ///     item_lookup return an exact-title article alone, which moves ToolGuidesSha256. The difficulty
+    ///     prompt anchors its bands on the work an answer needs rather than on the variant a fact
+    ///     belongs to, so a suite re-assessed under it moves SuiteAssessedDifficulties.
+    ///     CandidateSystemPromptSha256 does not move. A run stamped 26 differs from one stamped 25 on
+    ///     HarnessVersion and ToolGuidesSha256 and on the candidate message, which is below Tier B.
     /// </summary>
-    public const string HarnessVersion = "25";
+    public const string HarnessVersion = "26";
 
     /// <summary>
     /// The complete per-question assessor prompt: <see cref="BuildPerQuestionPreamble"/>, a blank

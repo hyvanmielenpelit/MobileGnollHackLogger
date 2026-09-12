@@ -225,5 +225,30 @@ namespace Overseer.Services.Tools
                 string.Equals(h.ToolName, toolName, StringComparison.OrdinalIgnoreCase));
             return handler?.ExecutionLocation;
         }
+
+        /// <summary>
+        /// The largest <see cref="IToolHandler.MaxResultLengthOverride"/> declared by any handler
+        /// named in <paramref name="toolNames"/>, or null when none of them declares one. Name
+        /// matching is case-insensitive, matching <see cref="GetExecutionLocation"/> and the
+        /// allowed-tool filtering in <see cref="BuildToolsForRequest"/>.
+        /// </summary>
+        public int? LargestResultLengthOverride(IEnumerable<string> toolNames)
+        {
+            if (toolNames == null) return null;
+
+            var names = new HashSet<string>(toolNames, StringComparer.OrdinalIgnoreCase);
+            int? largest = null;
+
+            foreach (var handler in _handlers)
+            {
+                if (!names.Contains(handler.ToolName)) continue;
+                if (handler.MaxResultLengthOverride is int over && (largest == null || over > largest))
+                {
+                    largest = over;
+                }
+            }
+
+            return largest;
+        }
     }
 }

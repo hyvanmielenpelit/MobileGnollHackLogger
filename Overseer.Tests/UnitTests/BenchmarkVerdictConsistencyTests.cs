@@ -269,6 +269,75 @@ public class BenchmarkVerdictConsistencyTests
             unverifiedClaimCount: 1));
     }
 
+    [Theory]
+    // Run 41's assessor withheld Accuracy 5-6 (and once docked Accuracy 3) on ten answers using
+    // vocabulary neither the original regex nor run 40's additions matched, several of them because
+    // DefectRegex read a denial of a defect ("no adjudicable falsehood", "the rubric does not
+    // state") as the defect itself. Evidence verbatim, with its own real level, from
+    // GnollHack_Player_Assistance_Benchmark_Suite_Gemini_3.7_Flash_20260912_122537.md.
+    [InlineData(3, "Accuracy claims made are largely consistent with the rubric (lycanthropy resistance, smell traits, triple tripe nutrition, eating bones, neutral/chaotic). The specific numeric claim 'triple nutrition from tripe rations (600 points instead of 200)' is a precision claim not supported by the rubric's stated tripe ration value, and the Yeenaghu/Howling Flail wish mechanics are asserted confidently without support; withheld above level 3 for these unsupported specifics.")]
+    [InlineData(5, "All adjudicable claims match the rubric (three runewords, correct effects and domains); level 5 rather than 6 as several peripheral claims (Hypocrite Penalty, Elemental/Astral Planes, shopkeeper exceptions) go beyond verifiable ground truth.")]
+    [InlineData(5, "All rubric-adjudicable claims (150/300 start, 175/350 rnz reset, 200/100/0 thresholds, +500/+1000 penalties, 614/1229 95th percentiles) are correct; withheld from 6 because the holy-symbol/prayerstone shimmer and 'never safe in Gehennom' claims are asserted confidently without rubric support.")]
+    [InlineData(5, "All seven names and the damage-scaling directions match the rubric; kept below 6 because combat-difficulty percentages (9.9/17/31/56/100/177/316) are never stated, and the score multipliers given (200%/400%) are only partial, so the mechanical axes are not fully specified.")]
+    [InlineData(4, "Rubric lists Divination and Transmutation as 'any' attribute; the answer's rendering as Int/Wis/Cha is consistent. No adjudicable falsehood found, but the detailed success formula and item bonus figures are unverified against rubric, so level 6 withheld.")]
+    [InlineData(4, "Claims adjudicable against the rubric (orichalcum, hard crystal, mithril AC/MC, gemstone -4 AC, 'lower is better') are all correct; nothing stated contradicts the rubric, but adamantium and mithril extras are unconfirmed so precision short of level 5.")]
+    [InlineData(5, "All adjudicable claims (0-turn swap, launcher damage, Grand Master cap, crit chance, dual-wield artifacts/spiked shields/main-gauche, quality tiers) match the rubric; level held below 6 because several unverified numeric embellishments (50% crit, 2 shots) are asserted without source grounding.")]
+    [InlineData(5, "All adjudicable claims (slots, Exceptional/Elite AC and MC values, lower AC is better) match the rubric; withheld from 6 only for the unverified dragon-scale parenthetical which the rubric does not state.")]
+    [InlineData(4, "Core stats, attacks, resistances and M1_STEED all match the rubric; no adjudicable false claim, but unverified extrapolations (corpse 50% fire resistance, MC percentage) keep it below 5.")]
+    [InlineData(5, "All adjudicable claims match the rubric (level 3, non-negative Luck, co-aligned altar, 1/(10+2*Gifts*Artifacts), total artifacts, first gift 10%); level 5 rather than 6 because several extra specifics (guaranteed role gifts, projectile counts) go beyond what can be confirmed against source-level detail.")]
+    public void IsUnverifiabilityGroundedDeduction_Run41Vocabulary_Flags(int accuracyLevel, string evidence)
+    {
+        Assert.True(BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
+            accuracyLevel: accuracyLevel,
+            accuracyEvidence: evidence,
+            unverifiedClaimCount: 1));
+    }
+
+    [Theory]
+    // None of these cite unverifiability at all, so the denial-aware guard never enters into it:
+    // the first is a plain factual substitution, the second a completeness-shaped omission, and the
+    // third a real, adjudicated contradiction rather than a denied one.
+    [InlineData("states the level as 40 when it is 25")]
+    [InlineData("omits manual_adj")]
+    [InlineData("the answer contradicts the rubric on the base AC")]
+    public void IsUnverifiabilityGroundedDeduction_Run41NegativeVocabulary_DoesNotFlag(string evidence)
+    {
+        Assert.False(BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
+            accuracyLevel: 5,
+            accuracyEvidence: evidence,
+            unverifiedClaimCount: 1));
+    }
+
+    [Fact]
+    public void UnverifiabilityBasisOf_Q9Evidence_ReturnsTheUnverifiabilitySentence()
+    {
+        // Q9's evidence carries two sentences; the first states a plain match against the rubric and
+        // the second is the one that names the unverifiability basis for withholding level 6.
+        const string evidence =
+            "Rubric lists Divination and Transmutation as 'any' attribute; the answer's rendering as Int/Wis/Cha is consistent. No adjudicable falsehood found, but the detailed success formula and item bonus figures are unverified against rubric, so level 6 withheld.";
+
+        Assert.Equal(
+            "No adjudicable falsehood found, but the detailed success formula and item bonus figures are unverified against rubric, so level 6 withheld.",
+            BenchmarkVerdictConsistency.UnverifiabilityBasisOf(evidence));
+    }
+
+    [Fact]
+    public void UnverifiabilityBasisOf_Q13Evidence_ReturnsTheWholeSentence()
+    {
+        // Q13's evidence is one sentence carrying both the denial and the unverifiability basis, so
+        // the basis is the entire string.
+        const string evidence =
+            "Core stats, attacks, resistances and M1_STEED all match the rubric; no adjudicable false claim, but unverified extrapolations (corpse 50% fire resistance, MC percentage) keep it below 5.";
+
+        Assert.Equal(evidence, BenchmarkVerdictConsistency.UnverifiabilityBasisOf(evidence));
+    }
+
+    [Fact]
+    public void UnverifiabilityBasisOf_NoUnverifiabilityWording_ReturnsNull()
+    {
+        Assert.Null(BenchmarkVerdictConsistency.UnverifiabilityBasisOf("Matches rubric."));
+    }
+
     [Fact]
     public void IsOmissionGroundedAccuracyDeduction_SubstitutionEvidence_DoesNotFlag()
     {

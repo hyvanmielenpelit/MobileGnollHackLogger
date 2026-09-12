@@ -138,16 +138,26 @@ public static class BenchmarkVerdictConsistency
     /// deduction's evidence to begin with the literal marker <c>Not in rubric:</c>, a separate signal
     /// this class reads through <c>BenchmarkAssessmentParser.HasOutOfRubricMarker</c>; the lookahead
     /// keeps that marker sentence from also matching here.
+    ///
+    /// Run 41's assessor's forms are matched too: the bare "unconfirmed"; "beyond verifiable ..."
+    /// with no following "rubric", which the "beyond ... rubric" alternative requires; "beyond what
+    /// can be verified/confirmed"; "without rubric support", inside the "without support" group
+    /// because that group otherwise needs "support" directly after "without"; "adjudicab" beside
+    /// "adjudicat" for "adjudicable"; and "not established/supported by the source/rubric" beside
+    /// the narrower "supported by the rubric" alternative.
     /// </summary>
     private static readonly Regex UnverifiabilityRegex = new(
-        @"could not (?:be )?verif|cannot (?:be )?verif|unable to verif|unverifi|could not confirm|not confirmed|no confirmation|not verifiable"
+        @"could not (?:be )?verif|cannot (?:be )?verif|unable to verif|unverifi|could not confirm|not confirmed|no confirmation|not verifiable|unconfirmed"
         + @"|corroborat"
         + @"|unsupported"
-        + @"|without\s+(?:any\s+)?(?:basis|support|source\s+support|corroboration|rubric\s+corroboration)"
-        + @"|adjudicat"
+        + @"|without\s+(?:any\s+)?(?:basis|support|source\s+support|corroboration|rubric\s+corroboration|rubric\s+support)"
+        + @"|adjudicat|adjudicab"
         + @"|beyond\s+(?:the\s+)?(?:verifiable\s+)?rubric"
+        + @"|beyond\s+(?:the\s+)?verifiable"
+        + @"|beyond\s+what\s+can\s+be\s+(?:verified|confirmed)"
         + @"|outside\s+(?:the\s+)?rubric"
         + @"|not\s+(?:in|from|covered\s+by|supported\s+by|given\s+in)\s+(?:the\s+)?rubric(?!\s*:)"
+        + @"|not\s+(?:established|supported)\s+by\s+(?:the\s+)?(?:source|rubric)"
         + @"|rubric\s+(?:does\s+not|doesn't|did\s+not|neither)\s+(?:support|cover|mention|corroborate|state|include)"
         + @"|(?:withh?old|kept|keeping|held)\s+(?:it\s+)?(?:below|under)\s+(?:level\s+)?[56]",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -159,6 +169,52 @@ public static class BenchmarkVerdictConsistency
     private static readonly Regex DefectRegex = new(
         @"omit|missing|wrong|incorrect|inaccurat|contradic|error|misstat|conflat|false|mischaracteris|mischaracteriz|fails to|does not (?:state|mention|include)|rubric point",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// A clause that denies a defect rather than charges one, for use against
+    /// <see cref="DefectRegex"/>'s own vocabulary before it is applied in
+    /// <see cref="IsUnverifiabilityGroundedDeduction"/>.
+    ///
+    /// Shares its root vocabulary with <see cref="DefectDenialRegex"/> — "falsehood" and
+    /// "contradict" — but cannot reuse that regex directly: <see cref="DefectDenialRegex"/> is
+    /// anchored to compact phrases ("no factual error"), while an assessor's denial here carries an
+    /// arbitrary clause in between, as in run 41's Q9 evidence *"No adjudicable falsehood found, but
+    /// the detailed success formula and item bonus figures are unverified against rubric, so level 6
+    /// withheld."* The <c>[^.;,]{0,60}?</c> gap is bounded the same way <see cref="SubstitutionRegex"/>
+    /// bounds its own, so the denial cannot bleed into a second, unrelated clause.
+    ///
+    /// The second alternative catches the denial's other shape, run 41's Q12: *"... withheld from 6
+    /// only for the unverified dragon-scale parenthetical which the rubric does not state."* — where
+    /// what is denied is the rubric's own coverage rather than the answer's truthfulness, and which
+    /// <see cref="DefectRegex"/>'s "does not (?:state|mention|include)" alternative would otherwise
+    /// read as an omission charge against the answer.
+    /// </summary>
+    private static readonly Regex UnverifiabilityDenialRegex = new(
+        @"\b(?:no|nothing|none|neither)\b[^.;,]{0,60}?(?:false|falsehood|contradict\w*|error|inaccura\w*|misstat\w*)"
+        + @"|\b(?:the\s+)?rubric\s+(?:does\s+not|doesn't|neither)\s+(?:state|mention|include|cover|list)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// True when <see cref="DefectRegex"/> matches some part of <paramref name="evidence"/> that
+    /// survives stripping every <see cref="UnverifiabilityDenialRegex"/> clause, sentence by sentence
+    /// via <see cref="SplitSentences"/> so a denial in one sentence cannot absorb a defect word from
+    /// another. Only the denial clause itself is removed, never its whole sentence, so a concession
+    /// that goes on to charge a real defect — "no error in the table, but the level is wrong" — still
+    /// matches on what follows "but".
+    /// </summary>
+    private static bool HasUndeniedDefect(string evidence)
+    {
+        foreach (string sentence in SplitSentences(evidence))
+        {
+            string stripped = UnverifiabilityDenialRegex.Replace(sentence, " ");
+            if (DefectRegex.IsMatch(stripped))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// True when accuracy was docked to <see cref="UnevidencedDeductionMaxLevel"/> or below with
@@ -178,8 +234,43 @@ public static class BenchmarkVerdictConsistency
         }
 
         return UnverifiabilityRegex.IsMatch(accuracyEvidence)
-            && !DefectRegex.IsMatch(accuracyEvidence)
+            && !HasUndeniedDefect(accuracyEvidence)
             && !MentionsFabrication(accuracyEvidence);
+    }
+
+    /// <summary>
+    /// The first sentence of <paramref name="accuracyEvidence"/> — per <see cref="SplitSentences"/> —
+    /// in which <see cref="UnverifiabilityRegex"/> matches, trimmed and capped at
+    /// <see cref="BenchmarkService.OutOfRubricBasisMaxLength"/> characters. Null when no sentence
+    /// matches. The counterpart of <see cref="BenchmarkService.ExtractOutOfRubricBasis"/> for a
+    /// deduction that names no <c>Not in rubric:</c> marker but is grounded in unverifiability
+    /// vocabulary all the same — <c>BenchmarkService.OutOfRubricBasisOf</c> calls this with the
+    /// signature kept exactly as here.
+    /// </summary>
+    internal static string? UnverifiabilityBasisOf(string? accuracyEvidence)
+    {
+        if (string.IsNullOrWhiteSpace(accuracyEvidence))
+        {
+            return null;
+        }
+
+        foreach (string sentence in SplitSentences(accuracyEvidence))
+        {
+            if (!UnverifiabilityRegex.IsMatch(sentence))
+            {
+                continue;
+            }
+
+            string basis = sentence.Trim();
+            if (basis.Length > BenchmarkService.OutOfRubricBasisMaxLength)
+            {
+                basis = basis.Substring(0, BenchmarkService.OutOfRubricBasisMaxLength).TrimEnd();
+            }
+
+            return basis.Length > 0 ? basis : null;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -325,18 +416,18 @@ public static class BenchmarkVerdictConsistency
     /// Each alternative is a denial form a grader has actually written:
     /// - "no factual error(s)" / "zero factual errors" — the run 22 Q3/Q4/Q17 form: "All stated
     ///   stats ... match the rubric with no factual errors."
-    /// - "no contradiction(s)" / "no contradicted claims" — the same denial aimed at the
-    ///   contradiction vocabulary instead of "factual error".
+    /// - "no contradict..." (contradiction(s), contradicted claim(s), contradicts) — the same denial
+    ///   aimed at the contradiction vocabulary instead of "factual error".
     /// - "no error(s)" — the bare form, without "factual" in front.
     /// - "no inaccurac(y|ies)" — the near neighbour of "error".
-    /// - "no false statement(s)" / "no misstatement(s)" — the remaining near neighbours in the
-    ///   family, included because they cost nothing once the others are here.
+    /// - "no false statement(s)" / "no falsehood" / "no misstatement(s)" — the remaining near
+    ///   neighbours in the family, included because they cost nothing once the others are here.
     /// - "free of factual errors" / "devoid of factual errors" — the direct-claim form
     ///   <see cref="NoFactualErrorsRegex"/> also carries.
     /// - "without error(s)" / "without factual error(s)" — the participle form.
     /// </summary>
     private static readonly Regex DefectDenialRegex = new(
-        @"(?:free|devoid)\s+of\s+(?:any\s+)?factual\s+error|\b(?:no|zero)\s+(?:material\s+|significant\s+|outright\s+)?(?:factual\s+error|contradict(?:ion|ed\s+claim)|error|inaccurac|false\s+statement|misstatement)|\bwithout\s+(?:any\s+)?(?:factual\s+)?error",
+        @"(?:free|devoid)\s+of\s+(?:any\s+)?factual\s+error|\b(?:no|zero)\s+(?:material\s+|significant\s+|outright\s+)?(?:factual\s+error|contradict\w*|error|inaccurac|false\s+statement|falsehood|misstatement)|\bwithout\s+(?:any\s+)?(?:factual\s+)?error",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>

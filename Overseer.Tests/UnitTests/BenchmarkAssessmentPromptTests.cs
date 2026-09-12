@@ -212,9 +212,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsTwentyFive()
+    public void HarnessVersion_IsTwentySix()
     {
-        Assert.Equal("25", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("26", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -454,16 +454,15 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs25_ScoringMethodIs10()
+    public void Versions_HarnessIs26_ScoringMethodIs10()
     {
-        Assert.Equal("25", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("26", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 25 widens the unevidenced-deduction vocabulary, makes the out-of-rubric marker
-        // mandatory, grounds the synthesis in the verifier-supported claims, takes the
-        // critical-error quote out of the answer's claim counts and adds an advisory report index —
-        // so a 25-stamped run differs from a 24-stamped one on two instrument keys, HarnessVersion
-        // and ToolGuidesSha256. The scoring method does not move: nothing here changes what a score
-        // is.
+        // Harness 26 makes the unverifiability detector denial-aware, routes the deductions it flags
+        // to the claim verifier, adds an advisory FORM-cleared Readability index, narrows the
+        // lookup tools to an exact-title article and re-anchors the difficulty prompt — so a
+        // 26-stamped run differs from a 25-stamped one on two instrument keys, HarnessVersion and
+        // ToolGuidesSha256. The scoring method does not move: nothing here changes what a score is.
         Assert.Equal(10, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

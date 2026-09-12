@@ -47,25 +47,38 @@ public sealed record BenchmarkToolCallRecordLimits(
     /// Resolves the caps from configuration, falling back to the effective defaults.
     ///
     /// <paramref name="maxResultLength"/> is the already-resolved <c>Benchmark:MaxResultLength</c>
-    /// the caller passes to the agent context, and the default for <see cref="MaxResultChars"/> is
-    /// derived from it — <c>maxResultLength + <see cref="ResultHeadroomChars"/></c> — never written
-    /// as a literal. <c>ToolExecutor</c> truncates every successful tool result to that same figure
-    /// *before* the content reaches a record, so a stored result cannot exceed it at the current
-    /// configuration: a hardcoded 16,000 would be a cap that never fires, expressed as a magic
-    /// number that silently becomes wrong the day an operator raises <c>Benchmark:MaxResultLength</c>.
+    /// the caller passes to the agent context, and <paramref name="largestAllowedOverride"/> is the
+    /// largest <c>IToolHandler.MaxResultLengthOverride</c> among the tools the run allows — see
+    /// <c>ToolRegistry.LargestResultLengthOverride</c>. The default for <see cref="MaxResultChars"/>
+    /// is derived from whichever of the two is larger — <c>Math.Max(maxResultLength,
+    /// largestAllowedOverride ?? 0) + <see cref="ResultHeadroomChars"/></c> — never written as a
+    /// literal. <c>ToolExecutor</c> truncates every successful tool result to that same greater-of
+    /// figure *before* the content reaches a record, so a stored result cannot exceed it at the
+    /// current configuration: a hardcoded 16,000 would be a cap that never fires, expressed as a
+    /// magic number that silently becomes wrong the day an operator raises
+    /// <c>Benchmark:MaxResultLength</c> or a handler's override. At today's settings
+    /// <c>wiki_search</c> overrides to 13,000 and <c>nethack_wiki_search</c> to roughly 16,140 (its
+    /// five-article yield), both above the <c>Benchmark:MaxResultLength</c> default of 10,000 —
+    /// omitting either from the derivation is what let a full-yield result reach the model whole
+    /// while the record cut it.
     ///
     /// The derivation also covers a ceiling the benchmark does not set. <c>Benchmark:AllowedTools</c>
     /// is operator-configurable; adding a sub-agent tool would put that tool's results under
     /// <c>MaxSubAgentResultLength</c> (30,000) instead, which the benchmark never configures. Reading
-    /// the cap from the same value the agent context was given is what keeps the record honest if
-    /// either figure moves.
+    /// the cap from the same values the agent context was given is what keeps the record honest if
+    /// any of them move.
     ///
     /// Configuration keys: <c>Benchmark:ToolCallRecord:MaxArgsChars</c>,
     /// <c>Benchmark:ToolCallRecord:MaxResultChars</c>, <c>Benchmark:ToolCallRecord:MaxErrorChars</c>.
+    /// An explicit <c>Benchmark:ToolCallRecord:MaxResultChars</c> config value still wins over the
+    /// derived default.
     /// </summary>
-    public static BenchmarkToolCallRecordLimits Resolve(IConfiguration configuration, int maxResultLength)
+    public static BenchmarkToolCallRecordLimits Resolve(
+        IConfiguration configuration, int maxResultLength, int? largestAllowedOverride = null)
     {
-        int derivedResultCap = maxResultLength > 0 ? maxResultLength + ResultHeadroomChars : 0;
+        int derivedResultCap = maxResultLength > 0
+            ? Math.Max(maxResultLength, largestAllowedOverride ?? 0) + ResultHeadroomChars
+            : 0;
 
         if (configuration == null)
         {
@@ -112,7 +125,6 @@ public static class BenchmarkToolCallRecorder
     public const string PerQuestionBudgetRefusalMarker = "Tool call budget for this question is exhausted";
 
     private const string ArgsTruncationMarker = "... [Arguments truncated for length]";
-    private const string ResultTruncationMarker = "... [Result truncated for length]";
     private const string ErrorTruncationMarker = "... [Error truncated for length]";
 
     private const int NameColumnLength = 256;
@@ -170,7 +182,7 @@ public static class BenchmarkToolCallRecorder
             if (call == null) continue;
 
             string? args = Cap(call.ArgsText, maxArgs, ArgsTruncationMarker, out bool argsTruncated);
-            string? result = Cap(call.Result, maxResult, ResultTruncationMarker, out bool resultTruncated);
+            string? result = CapResult(call.Result, maxResult, out bool resultTruncated);
             string? error = Cap(call.Error, maxError, ErrorTruncationMarker, out _);
 
             rows.Add(new BenchmarkRunAnswerToolCall
@@ -257,6 +269,42 @@ public static class BenchmarkToolCallRecorder
 
         return value.Substring(0, limit - marker.Length) + marker;
     }
+
+    /// <summary>
+    /// Caps a stored result at <paramref name="limit"/> characters, appending a marker that names
+    /// both the number of characters kept and the tool's true output size — never
+    /// "<c>... [Result truncated for length]</c>" (the old marker here) or
+    /// "<c>... [Truncated: showing ... ]</c>" (<c>ToolExecutor</c>'s own marker on the pre-storage
+    /// payload the model saw) — so an export reader can never mistake this cut for either.
+    ///
+    /// <c>{stored}</c> counts the kept prefix *excluding* the marker itself — the characters of the
+    /// original result a reader gets back before the marker text starts. <c>{total}</c> is the
+    /// untruncated length, already captured separately as <c>ResultLengthChars</c>.
+    ///
+    /// The marker's own length depends on the digit count of <c>{stored}</c>, which is what this
+    /// method is solving for. Sizing the marker against <paramref name="limit"/> first is always a
+    /// safe over-estimate — <c>{stored}</c> can never exceed <paramref name="limit"/>, so
+    /// <paramref name="limit"/>'s digit count is never fewer than <c>{stored}</c>'s, and a marker
+    /// built from it is never shorter than the one actually used. The stored payload can therefore
+    /// land a character or two short of the cap at a digit-count boundary, but it never exceeds it.
+    /// </summary>
+    private static string? CapResult(string? value, int limit, out bool truncated)
+    {
+        truncated = false;
+        if (string.IsNullOrEmpty(value) || limit <= 0 || value.Length <= limit) return value;
+
+        truncated = true;
+        int total = value.Length;
+
+        string sizingMarker = ResultTruncationMarker(limit, total);
+        int stored = limit - sizingMarker.Length;
+        if (stored <= 0) return value.Substring(0, limit);
+
+        return value.Substring(0, stored) + ResultTruncationMarker(stored, total);
+    }
+
+    private static string ResultTruncationMarker(int stored, int total) =>
+        $"... [Record truncated: stored {stored} of {total} characters]";
 
     /// <summary>
     /// Hard-clips a short field to its database column length. Defensive only: a provider that

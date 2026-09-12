@@ -51,7 +51,7 @@ namespace Overseer.Services.Tools
             }
 
             // Using WikiService with 'item' filter.
-            var results = _wikiService.GetRelevantContext(name, "item");
+            var results = _wikiService.GetLookupContext(name, "item");
             var content = string.Join("\n\n", results);
 
             if (string.IsNullOrWhiteSpace(content))

@@ -554,11 +554,25 @@ Two tools sit on `WikiService`; three parse the GnollHack C sources directly. Bo
 only a bare `name` — no wildcards, no repository selector.
 
 **`monster_lookup` / `item_lookup`** — `name` (required) only. Both call
-`WikiService.GetRelevantContext(name, "monster")` / `(name, "item")` — the same path-substring
-category mechanism as `wiki_search` §5 — and if that returns nothing, **silently retry
-unfiltered** before finally returning `Success = true, Content = "No information found for
-monster/item: {name}"`. This double fallback makes both tools resilient to the wiki repository
-not actually organizing articles under a `monster`/`item` path segment.
+`WikiService.GetLookupContext(name, "monster")` / `(name, "item")` — the same path-substring
+category mechanism as `wiki_search` §5, run for the top 8 hits — and if that returns nothing,
+**silently retry unfiltered** before finally returning `Success = true, Content = "No information
+found for monster/item: {name}"`. This double fallback makes both tools resilient to the wiki
+repository not actually organizing articles under a `monster`/`item` path segment.
+
+**The exact-title contract, from harness 26.** When exactly one category hit's title equals the
+normalised request (`NormalizeArticleName` — trimmed, one trailing `.md`/`.txt`/`.html`
+stripped — then compared case-insensitively, `GetArticle`'s title-equality rule; internal
+whitespace is not collapsed), the result is **that article alone**, followed by one line
+`[Other matches: A; B; C]` naming up to four other hit titles (absent when there are none); the
+model passes one of those titles to get a different article. Two or more exact titles return the
+`Several wiki articles are titled '…'` disambiguation. Anything else — including a name that is
+only a prefix of a title — returns the top-5 join `GetRelevantContext` returns, and the unfiltered
+retry is `GetRelevantContext` unchanged, so it never narrows. **Up to harness 25** the first call
+was `GetRelevantContext` itself and an exact hit came back with its neighbours: run 41 Q13
+`red dragon` carried *Red dragon scale mail* (4,498 characters) and Q14 `Master Kaen` carried
+*Master lich* (4,001). In a run stamped 26 or later, an exact-title request whose result carries a
+second `--- <file> ---` header is a regression of this contract.
 
 **`get_monster_stats` / `get_item_stats` / `get_artifact_stats`** — `name` (required, exact as
 written in the source: `src/monst.c`, `src/objects.c`, `include/artilist.h` respectively). For
@@ -760,6 +774,16 @@ results to repair 2.
 > `Tools:*:MaxResults`, `Tools:*:PerResultChars` or `MaxResultLength` is invisible in every run
 > record — including a change that moves what a tool returns. Read the configuration alongside the
 > run when a result size is part of a finding.
+
+**The benchmark's stored copy has its own cap.** `BenchmarkToolCallRecorder` stores each result
+under `Benchmark:ToolCallRecord:MaxResultChars`. When that key is unset, `BenchmarkToolCallRecordLimits.Resolve`
+derives it from harness 26 as `Math.Max(Benchmark:MaxResultLength, largest MaxResultLengthOverride
+among the run's allowed tools) + 2000` — 16,140 + 2,000 = **18,140** at current settings, from
+`nethack_wiki_search` — so a result `ToolExecutor` handed over whole is stored whole. A stored cut
+ends `... [Record truncated: stored N of M characters]`. Up to harness 25 the derivation ignored the
+overrides (10,000 + 2,000 = 12,000), so a full-yield `wiki_search` or `nethack_wiki_search` result
+was stored cut behind the old `... [Result truncated for length]` string —
+`server_benchmark_tool_diagnostics` § 4 says how to tell that from a `ToolExecutor` cut.
 
 ---
 

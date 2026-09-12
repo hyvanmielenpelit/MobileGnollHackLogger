@@ -51,7 +51,7 @@ namespace Overseer.Services.Tools
             }
 
             // Using WikiService with 'monster' filter.
-            var results = _wikiService.GetRelevantContext(name, "monster");
+            var results = _wikiService.GetLookupContext(name, "monster");
             var content = string.Join("\n\n", results);
 
             if (string.IsNullOrWhiteSpace(content))

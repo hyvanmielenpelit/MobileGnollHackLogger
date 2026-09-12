@@ -908,6 +908,11 @@ public class BenchmarkService
         }
     }
 
+    /// <summary>
+    /// The candidate's message history: the suite's game snapshot when it has one, then the question
+    /// carrying the instruction chat appends to every turn after the first. The suffix is in the
+    /// model-facing message only; the question text stored on the answer is the plain question.
+    /// </summary>
     private static List<object> BuildCandidateSeedHistory(BenchmarkRun run, string questionText)
     {
         var seed = new List<object>();
@@ -920,8 +925,20 @@ public class BenchmarkService
                 content = ChatService.GameSnapshotPrefix + "\n" + board.SanitizedText
             });
         }
-        seed.Add(new { role = "user", content = questionText });
+        seed.Add(new { role = "user", content = questionText + ChatService.NoGreetInstruction });
         return seed;
+    }
+
+    /// <summary>
+    /// The largest result cap a handler of one of <paramref name="allowedToolNames"/> declares, or
+    /// null when none declares one or the tool registry cannot be resolved. The registry is a
+    /// singleton, reached through a scope so the service's constructor does not depend on it.
+    /// </summary>
+    private int? ResolveLargestResultLengthOverride(IEnumerable<string> allowedToolNames)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var toolRegistry = scope.ServiceProvider.GetService<Tools.ToolRegistry>();
+        return toolRegistry?.LargestResultLengthOverride(allowedToolNames);
     }
 
     /// <summary>
@@ -971,8 +988,10 @@ public class BenchmarkService
         int maxTotalModelCalls = ResolveTotalModelCalls();
 
         // The stored tool-call record's payload caps, derived from the same maxResultLength the
-        // agent context below is given, so the two cannot drift apart.
-        var toolCallRecordLimits = BenchmarkToolCallRecordLimits.Resolve(_configuration, maxResultLength);
+        // agent context below is given, so the two cannot drift apart, and from the largest result
+        // cap an allowed tool's handler declares above it.
+        var toolCallRecordLimits = BenchmarkToolCallRecordLimits.Resolve(
+            _configuration, maxResultLength, ResolveLargestResultLengthOverride(allowedTools));
 
         var runRequest = new AgentRunRequest
         {
@@ -1240,8 +1259,10 @@ public class BenchmarkService
         int maxTotalModelCalls = ResolveTotalModelCalls();
 
         // The stored tool-call record's payload caps, derived from the same maxResultLength the
-        // agent context below is given, so the two cannot drift apart.
-        var toolCallRecordLimits = BenchmarkToolCallRecordLimits.Resolve(_configuration, maxResultLength);
+        // agent context below is given, so the two cannot drift apart, and from the largest result
+        // cap an allowed tool's handler declares above it.
+        var toolCallRecordLimits = BenchmarkToolCallRecordLimits.Resolve(
+            _configuration, maxResultLength, ResolveLargestResultLengthOverride(allowedTools));
 
         var runRequest = new AgentRunRequest
         {
@@ -2018,11 +2039,12 @@ public class BenchmarkService
             return SecondOpinionTriggers.ContestedVerdict;
         }
 
-        // The assessor prefixed an accuracy deduction with "Not in rubric:", declaring the basis for
-        // it outside the instrument. Weaker evidence than a refutation or a self-described
-        // fabrication, and stronger than an unevidenced deduction, because the grader has stated
-        // where the basis came from. Gated on the level so a level-6 answer whose evidence merely
-        // mentions an out-of-rubric observation does not spend a verdict.
+        // The assessor docked Accuracy on its own knowledge: it prefixed the deduction with "Not in
+        // rubric:", or grounded it on a claim it could not verify. Read from the flag, which carries
+        // both. Weaker evidence than a refutation or a self-described fabrication, and stronger than
+        // an unevidenced deduction, because the grader has stated where the basis came from. Gated
+        // on the level so a level-6 answer whose evidence merely mentions an out-of-rubric
+        // observation does not spend a verdict.
         if ((((BenchmarkAnswerFlags)answer.AnswerFlags) & BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction) != 0
             && (answer.AccuracyLevel ?? 6) <= BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel)
         {
@@ -5363,7 +5385,8 @@ public class BenchmarkService
 
     /// <summary>
     /// The answer carries an out-of-rubric Accuracy deduction whose basis the verifier can check:
-    /// the flag is set and the stored accuracy evidence yields a statement after the marker.
+    /// the flag is set and <see cref="OutOfRubricBasisOf"/> yields a statement from the stored
+    /// accuracy evidence.
     /// </summary>
     internal static bool IsOutOfRubricAdjudication(BenchmarkRunAnswer answer)
         => OutOfRubricBasisOf(answer) != null;
@@ -5422,15 +5445,24 @@ public class BenchmarkService
 
     /// <summary>
     /// The basis this answer's out-of-rubric Accuracy deduction is adjudicated on, read from its
-    /// stored accuracy evidence; null when the answer does not carry
-    /// <see cref="BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction"/> or no basis can be extracted.
-    /// Deterministic, so every reader of <see cref="BenchmarkRunAnswer.ClaimVerificationJson"/>
+    /// stored accuracy evidence: the sentence after the <c>Not in rubric:</c> marker when there is
+    /// one, otherwise the sentence citing unverifiability
+    /// (<see cref="BenchmarkVerdictConsistency.UnverifiabilityBasisOf"/>). Null when the answer does
+    /// not carry <see cref="BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction"/> or neither yields a
+    /// basis. Deterministic, so every reader of <see cref="BenchmarkRunAnswer.ClaimVerificationJson"/>
     /// recovers the same text the verifier was given.
     /// </summary>
     internal static string? OutOfRubricBasisOf(BenchmarkRunAnswer answer)
-        => (((BenchmarkAnswerFlags)answer.AnswerFlags) & BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction) != 0
-            ? ExtractOutOfRubricBasis(ReadEvidence(answer.AssessmentEvidenceJson, "accuracy"))
-            : null;
+    {
+        if ((((BenchmarkAnswerFlags)answer.AnswerFlags) & BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction) == 0)
+        {
+            return null;
+        }
+
+        string? accuracyEvidence = ReadEvidence(answer.AssessmentEvidenceJson, "accuracy");
+        return ExtractOutOfRubricBasis(accuracyEvidence)
+            ?? BenchmarkVerdictConsistency.UnverifiabilityBasisOf(accuracyEvidence);
+    }
 
     /// <summary>
     /// The claim list the verifier is given for an out-of-rubric adjudication: the trimmed basis at

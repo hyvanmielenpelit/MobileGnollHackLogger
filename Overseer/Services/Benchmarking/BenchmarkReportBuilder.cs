@@ -1079,6 +1079,17 @@ public static class BenchmarkReportBuilder
             .ToList();
         int? verificationClearedIndex = null;
 
+        // The Readability counterpart of verificationClearedAnswers above: answers whose only
+        // Readability basis was a rubric FORM suggestion the answer did not adopt, so the level
+        // was docked with no defect named. § 7 Final Indices prints the index from this same
+        // variable, so the two cannot drift.
+        var formClearedAnswers = scoredAnswers
+            .Where(a => a.ReadabilityFormOnly &&
+                BenchmarkVerdictConsistency.IsFormOnlyDeduction(a.ReadabilityLevel ?? 0, ReadEvidence(a).Readability, a.ReadabilityFormOnly))
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+        int? formClearedIndex = null;
+
         // Every critical-error split, in either direction, is resolved at the second reader's score.
         var splitAnswers = disputedBySecondReader.Concat(raisedOnlyBySecondReader).ToList();
 
@@ -1124,40 +1135,64 @@ public static class BenchmarkReportBuilder
             }
         }
 
-        if (verificationClearedAnswers.Count > 0)
+        // The run's own scoring profile snapshot, not today's profile: a sensitivity figure
+        // beside a run's index has to be computed under the constants that produced it. The
+        // critical-error cap comes along unchanged, because the recomputation runs through the
+        // same Quality call that produced the stored score. An answer missing any of the four
+        // levels keeps its stored score: there is nothing to raise it from. The item set is
+        // indexAnswers — the Intelligence Index's own, unanswered questions at 0 included — so
+        // the figure is comparable with the index it sits beside rather than with a narrower
+        // set that would read higher for that reason alone. Shared by the Accuracy and
+        // Readability sensitivity figures below, which differ only in which levels the caller
+        // lifts, so the aggregation exists once.
+        int? ClearedSensitivityIndex(HashSet<int> targetOrderIndexes, Func<BenchmarkRunAnswer, (int Accuracy, int Completeness, int Conciseness, int Readability)> liftedLevels)
         {
-            // The run's own scoring profile snapshot, not today's profile: a sensitivity figure
-            // beside a run's index has to be computed under the constants that produced it. The
-            // critical-error cap comes along unchanged, because the recomputation runs through the
-            // same Quality call that produced the stored score. An answer missing any of the four
-            // levels keeps its stored score: there is nothing to raise it from. The item set is
-            // indexAnswers — the Intelligence Index's own, unanswered questions at 0 included — so
-            // the figure is comparable with the index it sits beside rather than with a narrower
-            // set that would read higher for that reason alone.
-            var clearedOrderIndexes = verificationClearedAnswers.Select(a => a.OrderIndex).ToHashSet();
-            var clearedScorableItems = indexAnswers
+            var scorableItems = indexAnswers
                 .Select(a =>
                 {
                     int? score = a.QualityScore;
-                    if (clearedOrderIndexes.Contains(a.OrderIndex) &&
+                    if (targetOrderIndexes.Contains(a.OrderIndex) &&
                         a.AccuracyLevel.HasValue && a.CompletenessLevel.HasValue &&
                         a.ConcisenessLevel.HasValue && a.ReadabilityLevel.HasValue)
                     {
+                        var (accuracy, completeness, conciseness, readability) = liftedLevels(a);
                         score = BenchmarkScoring.Quality(
-                            Math.Min(MaxAssessmentLevel, a.AccuracyLevel.Value + 1),
-                            a.CompletenessLevel.Value,
-                            a.ConcisenessLevel.Value,
-                            a.ReadabilityLevel.Value,
+                            accuracy,
+                            completeness,
+                            conciseness,
+                            readability,
                             a.CriticalError,
                             scoringConstants).Score;
                     }
                     return (score, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty));
                 })
                 .ToList();
-            verificationClearedIndex = BenchmarkScoring.QualityIndex(clearedScorableItems);
+            return BenchmarkScoring.QualityIndex(scorableItems);
+        }
+
+        if (verificationClearedAnswers.Count > 0)
+        {
+            var clearedOrderIndexes = verificationClearedAnswers.Select(a => a.OrderIndex).ToHashSet();
+            verificationClearedIndex = ClearedSensitivityIndex(clearedOrderIndexes, a =>
+                (Math.Min(MaxAssessmentLevel, a.AccuracyLevel!.Value + 1), a.CompletenessLevel!.Value, a.ConcisenessLevel!.Value, a.ReadabilityLevel!.Value));
             if (verificationClearedIndex.HasValue)
             {
                 sb.AppendLine($"- **Verification-cleared Accuracy Sensitivity:** {verificationClearedIndex.Value} / 100 — Intelligence Index recomputed with Accuracy one level higher on the {verificationClearedAnswers.Count} answer(s) above; advisory, changes no score.");
+            }
+        }
+
+        if (formClearedAnswers.Count > 0)
+        {
+            // The Readability counterpart of the block above: recomputed with Readability one
+            // level higher, on the answers whose only Readability basis was a rubric FORM
+            // suggestion the answer did not adopt (formClearedAnswers). Omitted at zero for the
+            // same reason as the Assessor Findings rubric-format-suggestions count further down.
+            var formClearedOrderIndexes = formClearedAnswers.Select(a => a.OrderIndex).ToHashSet();
+            formClearedIndex = ClearedSensitivityIndex(formClearedOrderIndexes, a =>
+                (a.AccuracyLevel!.Value, a.CompletenessLevel!.Value, a.ConcisenessLevel!.Value, Math.Min(MaxAssessmentLevel, a.ReadabilityLevel!.Value + 1)));
+            if (formClearedIndex.HasValue)
+            {
+                sb.AppendLine($"- **FORM-cleared Readability Sensitivity:** {formClearedIndex.Value} / 100 — Intelligence Index recomputed with Readability one level higher on the {formClearedAnswers.Count} answer(s) whose only Readability basis was a rubric FORM suggestion; advisory, changes no score.");
             }
         }
 
@@ -2095,7 +2130,7 @@ public static class BenchmarkReportBuilder
             {
                 string questionList = string.Join(", ", outOfRubricAccuracyAnswers.Select(a => $"Q{a.OrderIndex}"));
                 sb.AppendLine($"- **Out-of-rubric Accuracy deductions:** {run.OutOfRubricAccuracyAnswerCount} ({questionList})");
-                sb.AppendLine($"  - These are Accuracy deductions recorded under the `{BenchmarkAssessmentParser.OutOfRubricAccuracyMarker}` marker: the assessor's stated basis is its own knowledge rather than the rubric or the corpus it was given. Routed to a second reader rather than trusted outright.");
+                sb.AppendLine($"  - These are Accuracy deductions whose basis is the assessor's own knowledge rather than the rubric or the corpus it was given: recorded under the `{BenchmarkAssessmentParser.OutOfRubricAccuracyMarker}` marker, or grounded only in a claim the assessor could not verify. Routed to a second reader rather than trusted outright.");
             }
 
             sb.AppendLine();
@@ -3111,6 +3146,11 @@ public static class BenchmarkReportBuilder
         if (verificationClearedIndex.HasValue)
         {
             sb.AppendLine($"### Verification-cleared Accuracy Sensitivity: {verificationClearedIndex.Value} / 100 — Intelligence Index recomputed with Accuracy one level higher on the {verificationClearedAnswers.Count} answer(s) above; advisory, changes no score.");
+        }
+        // Likewise the Readability counterpart's same value as § 2, from the same variable.
+        if (formClearedIndex.HasValue)
+        {
+            sb.AppendLine($"### FORM-cleared Readability Sensitivity: {formClearedIndex.Value} / 100 — Intelligence Index recomputed with Readability one level higher on the {formClearedAnswers.Count} answer(s) whose only Readability basis was a rubric FORM suggestion; advisory, changes no score.");
         }
         // H9. The same demotion as § 2, from the same two conditions, so the headline block and the
         // summary cannot present the speed figure differently.
