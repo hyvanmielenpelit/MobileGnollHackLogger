@@ -1963,6 +1963,9 @@
      two lines at 640px. */
   width: min(820px, 94vw);
   max-width: min(820px, 94vw);
+  /* Full height, like the run progress dialog: the question list fills the body. */
+  height: calc(100dvh - 16px);
+  max-height: calc(100dvh - 16px);
   overflow: visible;
 
   .dialog-content {
@@ -1971,7 +1974,18 @@
 
   .dialog-body {
     overflow-y: auto;
-    min-height: 28rem;
+  }
+
+  .job-item-list {
+    max-height: none;
+  }
+}
+
+/* Half the inset on a phone, mirroring .gh-dialog-fullscreen's own 600px step. */
+@media (max-width: 600px) {
+  .gh-dialog.difficulty-assessor-dialog {
+    height: calc(100dvh - 8px);
+    max-height: calc(100dvh - 8px);
   }
 }
 
