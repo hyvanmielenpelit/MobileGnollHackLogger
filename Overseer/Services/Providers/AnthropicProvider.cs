@@ -87,7 +87,8 @@ public class AnthropicProvider : IAiProvider
         string? serviceTier = null,
         bool? parallelToolCalls = null,
         SegmentedPrompt? segmentedPrompt = null,
-        string? promptCacheKey = null)
+        string? promptCacheKey = null,
+        bool cacheConversationTail = true)
     {
         var (systemContent, extraSystemContent, nonSystemMessages) = ExtractSystemAndNonSystemMessages(messageHistory);
 
@@ -203,8 +204,8 @@ public class AnthropicProvider : IAiProvider
             req["tools"] = toolsPayload;
         }
 
-        // Breakpoint 4: Conversation tail in messages
-        if (enableCacheControl && nonSystemMessages.Count > 0)
+        // Breakpoint 4: Conversation tail in messages, omitted for single-shot requests
+        if (enableCacheControl && cacheConversationTail && nonSystemMessages.Count > 0)
         {
             var lastIdx = nonSystemMessages.Count - 1;
             var lastMsg = nonSystemMessages[lastIdx];

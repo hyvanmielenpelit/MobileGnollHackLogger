@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Lucene.Net.Analysis.Standard;
+using Lucene.Net.Analysis;
+using Lucene.Net.Analysis.En;
 using Lucene.Net.Documents;
 using Lucene.Net.Index;
 using Lucene.Net.Search;
@@ -26,7 +27,7 @@ public class NetHackWikiService : IDisposable
     private RAMDirectory? _directory;
     private DirectoryReader? _reader;
     private IndexSearcher? _searcher;
-    private StandardAnalyzer? _analyzer;
+    private Analyzer? _analyzer;
 
     public Task InitializationTask { get; private set; }
     public bool IsIndexingComplete => InitializationTask?.IsCompleted ?? false;
@@ -59,8 +60,9 @@ public class NetHackWikiService : IDisposable
 
         var files = System.IO.Directory.GetFiles(_wikiPath, "*.md", SearchOption.AllDirectories).ToList();
 
-        _analyzer = new StandardAnalyzer(LuceneVersion.LUCENE_48);
-        
+        // Porter stemming: title and body tokens match across inflections (material/materials).
+        _analyzer = new EnglishAnalyzer(LuceneVersion.LUCENE_48);
+
         // Build the new index into a fresh directory
         var newDirectory = new RAMDirectory();
         var config = new IndexWriterConfig(LuceneVersion.LUCENE_48, _analyzer)
@@ -163,7 +165,7 @@ public class NetHackWikiService : IDisposable
     public IEnumerable<string> GetRelevantContext(string query, string? namespaceFilter = null, int? maxResults = null)
     {
         IndexSearcher? searcher;
-        StandardAnalyzer? analyzer;
+        Analyzer? analyzer;
         lock (_swapLock)
         {
             searcher = _searcher;
@@ -229,7 +231,7 @@ public class NetHackWikiService : IDisposable
     public (string? Content, string? ResolvedTitle, IReadOnlyList<string> Candidates) GetArticleResolved(string articleName, string? section = null)
     {
         IndexSearcher? searcher;
-        StandardAnalyzer? analyzer;
+        Analyzer? analyzer;
         lock (_swapLock)
         {
             searcher = _searcher;

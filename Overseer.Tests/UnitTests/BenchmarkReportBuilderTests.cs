@@ -600,7 +600,7 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.Contains("**Critical Errors:** 1 of 2 answered (question(s) 1)", report);
+        Assert.Contains("**Critical Errors:** 1 applied (question(s) 1)", report);
     }
 
     [Fact]
@@ -680,7 +680,7 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.Contains("**Critical Errors:** 0 confirmed, 1 contested (question(s) 12)", report);
+        Assert.Contains("**Critical Errors:** 0 applied; 1 raised only by the second reader (question(s) 12)", report);
         Assert.Contains("**Contested-Verdict Sensitivity:**", report);
     }
 
@@ -727,7 +727,7 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.Contains("**Critical Errors:** 1 confirmed, 1 contested (question(s) 3, 12)", report);
+        Assert.Contains("**Critical Errors:** 1 applied (question(s) 3); 1 raised only by the second reader (question(s) 12)", report);
         Assert.Contains("**Contested-Verdict Sensitivity:**", report);
     }
 

@@ -96,6 +96,47 @@ public static class BenchmarkReportBuilder
     }
 
     /// <summary>
+    /// Where the run's suite came from: a default suite (with its key and, when reliably known, its
+    /// version), a custom suite, or "not recorded" for a run that predates <see cref="BenchmarkRun.DefaultSuiteKeyUsed"/>.
+    ///
+    /// <para>Unlike <see cref="PredatesHarnessVersion"/>, an absent or unparseable
+    /// <see cref="BenchmarkRun.HarnessVersion"/> counts as "before harness 24" here rather than
+    /// "not before" — this run has no <c>DefaultSuiteKeyUsed</c> column to read at all, so its
+    /// origin genuinely was never recorded, which is a different fact from a harness-24-or-later
+    /// run that recorded a null (a custom suite).</para>
+    ///
+    /// <para>The suite's own <c>DefaultSuiteVersion</c> is read from <see cref="BenchmarkRun.BenchmarkSuite"/>,
+    /// which the caller may not have loaded — the version is appended only when that navigation is
+    /// present, its <c>DefaultSuiteKey</c> still matches this run's <c>DefaultSuiteKeyUsed</c> (the
+    /// suite could have been deleted and a differently-keyed one re-imported since), and its
+    /// <c>DefaultSuiteVersion</c> is not null. Otherwise the key is printed alone rather than
+    /// guessing a version.</para>
+    /// </summary>
+    private static string SuiteOriginText(BenchmarkRun run)
+    {
+        bool harnessRecordsSuiteOrigin = int.TryParse(run.HarnessVersion, out int version) && version >= 24;
+        if (!harnessRecordsSuiteOrigin)
+        {
+            return "not recorded (run before harness 24)";
+        }
+
+        if (string.IsNullOrWhiteSpace(run.DefaultSuiteKeyUsed))
+        {
+            return "custom suite";
+        }
+
+        string versionSuffix = string.Empty;
+        if (run.BenchmarkSuite != null &&
+            string.Equals(run.BenchmarkSuite.DefaultSuiteKey, run.DefaultSuiteKeyUsed, StringComparison.Ordinal) &&
+            run.BenchmarkSuite.DefaultSuiteVersion.HasValue)
+        {
+            versionSuffix = $" (v{run.BenchmarkSuite.DefaultSuiteVersion.Value.ToString(CultureInfo.InvariantCulture)})";
+        }
+
+        return $"default suite `{run.DefaultSuiteKeyUsed}`{versionSuffix}";
+    }
+
+    /// <summary>
     /// The harness version that added <see cref="BenchmarkRunAnswer.UnverifiedClaimCount"/>. A
     /// constant rather than the current version: interpolating the latter made every run claim to
     /// predate the harness it ran under.
@@ -554,6 +595,7 @@ public static class BenchmarkReportBuilder
         sb.AppendLine();
         sb.AppendLine($"- **Overseer Version:** {overseerVersion ?? "1.0.0"}");
         sb.AppendLine($"- **Suite Name:** {run.SuiteName}");
+        sb.AppendLine($"- **Suite origin:** {SuiteOriginText(run)}");
         if (!string.IsNullOrEmpty(run.GameSnapshotNameUsed))
         {
             string shaPrefix = run.GameSnapshotSha256Used?.Length >= 12
@@ -597,6 +639,13 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"- **Harness Version:** {run.HarnessVersion ?? "1 (unversioned legacy)"}");
         sb.AppendLine($"- **Scoring Method Version:** {run.ScoringMethodVersion}");
         sb.AppendLine($"- **Scoring Profile:** {run.ScoringProfile?.Name ?? "Default Intelligence Profile"}");
+        string itemRevisionsLine = string.Join(", ", answers
+            .Select(a => $"Q{a.OrderIndex} r{a.ItemRevisionUsed?.ToString(CultureInfo.InvariantCulture) ?? "?"}"));
+        sb.AppendLine($"- **Suite item revisions:** {(string.IsNullOrEmpty(itemRevisionsLine) ? "none" : itemRevisionsLine)}");
+        string assessedDifficultiesLine = string.Join(", ", answers
+            .Select(a => $"Q{a.OrderIndex} {a.AssessedDifficulty?.ToString(CultureInfo.InvariantCulture) ?? "?"}"));
+        sb.AppendLine($"- **Assessed difficulties:** {(string.IsNullOrEmpty(assessedDifficultiesLine) ? "none" : assessedDifficultiesLine)}");
+        sb.AppendLine("  - *An item revision moves only when the rubric text is edited; an assessed difficulty can move on its own from Assess Difficulty, with no edit and no revision bump — so two runs can match on every item revision and still have been weighted by two different exams (see `SuiteAssessedDifficulties`).*");
 
         // A heavy-thinking candidate graded against an interactive-latency profile produces a
         // Speed Index that describes the profile more than the model: the 2026-09-03 run scored
@@ -980,30 +1029,66 @@ public static class BenchmarkReportBuilder
         // by as little as one point (see the "How to read these" note under Final Indices). The
         // headline below gives the reader the actual count instead of asking them to infer it
         // from a small index shift.
-        var contestedCriticalAnswers = answers
-            .Where(a => a.Status == BenchmarkAnswerStatus.Ok &&
-                        ((((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedVerdict) != 0 ||
-                         (a.SecondOpinionCriticalError.HasValue && a.SecondOpinionCriticalError.Value != a.CriticalError)))
+        // "Applied" means the cap actually fired (CriticalError == true), independent of whether
+        // anyone disputed it — a run whose every cap is disputed must still say 2, not 0, or the
+        // reader cannot tell a capped-and-unchallenged answer from a capped-and-contested one.
+        var appliedCriticalAnswers = answers.Where(a => a.CriticalError).OrderBy(a => a.OrderIndex).ToList();
+
+        // Split direction matters: an applied cap the second reader disagreed with is a different
+        // claim from a critical error the second reader raised on its own initiative.
+        var disputedBySecondReader = appliedCriticalAnswers
+            .Where(a => a.SecondOpinionCriticalError.HasValue && a.SecondOpinionCriticalError.Value != a.CriticalError)
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+        var raisedOnlyBySecondReader = answers
+            .Where(a => !a.CriticalError && a.SecondOpinionCriticalError == true)
             .OrderBy(a => a.OrderIndex)
             .ToList();
 
-        var criticalErrorAnswers = answers.Where(a => a.CriticalError).OrderBy(a => a.OrderIndex).ToList();
-        var confirmedAnswers = criticalErrorAnswers.Where(a => !contestedCriticalAnswers.Any(ca => ca.OrderIndex == a.OrderIndex)).ToList();
+        // ContestedCriticalError is set only for a critical-error adjudication (CriticalError ==
+        // true, see BenchmarkService.IsCriticalErrorAdjudication) whose quote the claim verifier
+        // checked against the source or wiki and found supported — so it is always a subset of
+        // appliedCriticalAnswers, never of raisedOnlyBySecondReader.
+        var verifierSupportedQuoteAnswers = appliedCriticalAnswers
+            .Where(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedCriticalError))
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
 
         // § 7 Final Indices prints this same figure; one computation, so the two cannot drift.
         int? sensitivityIndex = null;
 
-        if (contestedCriticalAnswers.Count > 0)
-        {
-            var affectedAnswers = confirmedAnswers.Concat(contestedCriticalAnswers).OrderBy(a => a.OrderIndex).DistinctBy(a => a.OrderIndex).ToList();
-            string questionNumbers = string.Join(", ", affectedAnswers.Select(a => a.OrderIndex));
-            sb.AppendLine($"- **Critical Errors:** {confirmedAnswers.Count} confirmed, {contestedCriticalAnswers.Count} contested (question(s) {questionNumbers})");
+        // Every critical-error split, in either direction, is resolved at the second reader's score.
+        var splitAnswers = disputedBySecondReader.Concat(raisedOnlyBySecondReader).ToList();
 
+        if (appliedCriticalAnswers.Count > 0 || splitAnswers.Count > 0)
+        {
+            var criticalErrorsLine = new StringBuilder($"- **Critical Errors:** {appliedCriticalAnswers.Count} applied");
+            if (appliedCriticalAnswers.Count > 0)
+            {
+                criticalErrorsLine.Append($" (question(s) {string.Join(", ", appliedCriticalAnswers.Select(a => a.OrderIndex))})");
+            }
+            if (disputedBySecondReader.Count > 0)
+            {
+                criticalErrorsLine.Append($" — {disputedBySecondReader.Count} disputed by the second reader (question(s) {string.Join(", ", disputedBySecondReader.Select(a => a.OrderIndex))})");
+            }
+            if (raisedOnlyBySecondReader.Count > 0)
+            {
+                criticalErrorsLine.Append($"; {raisedOnlyBySecondReader.Count} raised only by the second reader (question(s) {string.Join(", ", raisedOnlyBySecondReader.Select(a => a.OrderIndex))})");
+            }
+            if (verifierSupportedQuoteAnswers.Count > 0)
+            {
+                criticalErrorsLine.Append($"; verifier-supported quote(s): {string.Join(", ", verifierSupportedQuoteAnswers.Select(a => $"Q{a.OrderIndex}"))}");
+            }
+            sb.AppendLine(criticalErrorsLine.ToString());
+        }
+
+        if (splitAnswers.Count > 0)
+        {
             var sensitivityScorableItems = scoredAnswers
                 .Select(a =>
                 {
                     int? score = a.QualityScore;
-                    if (contestedCriticalAnswers.Any(ca => ca.OrderIndex == a.OrderIndex) && a.SecondOpinionQualityScore.HasValue)
+                    if (splitAnswers.Any(ca => ca.OrderIndex == a.OrderIndex) && a.SecondOpinionQualityScore.HasValue)
                     {
                         score = a.SecondOpinionQualityScore.Value;
                     }
@@ -1013,14 +1098,8 @@ public static class BenchmarkReportBuilder
             sensitivityIndex = BenchmarkScoring.QualityIndex(sensitivityScorableItems);
             if (sensitivityIndex.HasValue)
             {
-                sb.AppendLine($"- **Contested-Verdict Sensitivity:** {sensitivityIndex.Value} / 100 — Intelligence Index recomputed with each contested verdict upheld at the second reader's score.");
+                sb.AppendLine($"- **Contested-Verdict Sensitivity:** {sensitivityIndex.Value} / 100 — Intelligence Index recomputed with each split resolved at the second reader's score (raises and lowers both).");
             }
-        }
-        else if (criticalErrorAnswers.Count > 0)
-        {
-            int answeredCountForCritical = answers.Count(a => a.Status == BenchmarkAnswerStatus.Ok);
-            string criticalQuestionNumbers = string.Join(", ", criticalErrorAnswers.Select(a => a.OrderIndex));
-            sb.AppendLine($"- **Critical Errors:** {criticalErrorAnswers.Count} of {answeredCountForCritical} answered (question(s) {criticalQuestionNumbers})");
         }
 
         if (unansweredAnswers.Count > 0)
@@ -2013,7 +2092,7 @@ public static class BenchmarkReportBuilder
             .ToList();
 
         sb.AppendLine("### Band Agreement");
-        sb.AppendLine("Assessed difficulty is a property of the suite item, not of this run — it is stamped once per question and stays byte-identical across every run of this suite, so this section describes the suite, not this run.");
+        sb.AppendLine("Assessed difficulty is a property of the suite item, not of this run — it is stamped once per question and stays byte-identical across every run of this suite until the item is re-assessed or edited, so this section describes the suite, not this run.");
         sb.AppendLine();
         if (bandDisagreements.Count == 0)
         {
@@ -2364,7 +2443,8 @@ public static class BenchmarkReportBuilder
                 ? $" → {BenchmarkDifficultyBands.BandOf(a.AssessedDifficulty.Value)}"
                 : string.Empty;
 
-            sb.AppendLine($"### Question {a.OrderIndex} [Authored: {a.Difficulty} | Assessed Diff: {shownDifficulty}{assessedBandNote}]");
+            string itemRevisionText = a.ItemRevisionUsed?.ToString(CultureInfo.InvariantCulture) ?? "?";
+            sb.AppendLine($"### Question {a.OrderIndex} [Authored: {a.Difficulty} | Assessed Diff: {shownDifficulty}{assessedBandNote} | Item rev {itemRevisionText}]");
             sb.AppendLine($"**Question:** {a.QuestionText}");
             sb.AppendLine();
             sb.AppendLine($"- **Status:** {a.Status}" + (a.HttpStatusCode.HasValue ? $" (HTTP {a.HttpStatusCode.Value})" : ""));
@@ -2959,9 +3039,9 @@ public static class BenchmarkReportBuilder
         }
         // Same value and clause as § 2 — this is where the headline figures live, and it is the
         // one that says how fragile they are.
-        if (contestedCriticalAnswers.Count > 0 && sensitivityIndex.HasValue)
+        if (splitAnswers.Count > 0 && sensitivityIndex.HasValue)
         {
-            sb.AppendLine($"### Contested-Verdict Sensitivity: {sensitivityIndex.Value} / 100 — Intelligence Index recomputed with each contested verdict upheld at the second reader's score.");
+            sb.AppendLine($"### Contested-Verdict Sensitivity: {sensitivityIndex.Value} / 100 — Intelligence Index recomputed with each split resolved at the second reader's score (raises and lowers both).");
         }
         // H9. The same demotion as § 2, from the same two conditions, so the headline block and the
         // summary cannot present the speed figure differently.

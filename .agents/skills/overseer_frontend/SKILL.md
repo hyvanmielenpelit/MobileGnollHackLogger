@@ -199,6 +199,12 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `#confirmDialog`: Confirm
   - `#changelogDialog`: Changelog
 
+- **Benchmark Component (`benchmark.component.html`, Admin → AI Benchmark)** — not an exhaustive
+  list of this component's dialogs, only the one this entry was added to record:
+  - `#importDefaultSuitesDialog`: Import Default Suites (Manage Suites tab) — a multi-select
+    catalog of the default suite files under `Overseer/Data/DefaultSuites/`, opened by the
+    toolbar's Import Default Suites button (from harness 24).
+
 ## Component Reuse and State Management
 
 The Overseer frontend utilizes a custom `RouteReuseStrategy` (indicated by `data: { reuse: true }` in `app.routes.ts`) for primary views like the `ChatComponent`. This prevents the component from being destroyed when navigating away, ensuring chat history and UI state are preserved.

@@ -391,8 +391,8 @@ public class BenchmarkComparabilityIndexTests
     [Fact]
     public async Task AStubbedAnswerGraph_SignsIdenticallyToAFullyLoadedRun()
     {
-        // The index loads three answer columns instead of the whole graph. The item revision
-        // signature reads exactly those three, so the signatures must coincide.
+        // The index loads four answer columns instead of the whole graph. The item revision and
+        // assessed difficulty signatures read exactly those four, so the signatures must coincide.
         var run = Run(1);
 
         var options = NewDatabase();

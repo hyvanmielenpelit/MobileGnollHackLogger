@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Lucene.Net.Analysis.Standard;
+using Lucene.Net.Analysis;
+using Lucene.Net.Analysis.En;
 using Lucene.Net.Documents;
 using Lucene.Net.Index;
 using Lucene.Net.Search;
@@ -27,7 +28,7 @@ public class WikiService : IDisposable
     private RAMDirectory? _directory;
     private DirectoryReader? _reader;
     private IndexSearcher? _searcher;
-    private StandardAnalyzer? _analyzer;
+    private Analyzer? _analyzer;
     private Timer? _reindexTimer;
     private string? _lastGitSha;
 
@@ -83,8 +84,9 @@ public class WikiService : IDisposable
         int skippedDotFiles = candidates.Count - files.Count;
         int indexedCount = 0;
 
-        _analyzer = new StandardAnalyzer(LuceneVersion.LUCENE_48);
-        
+        // Porter stemming: title and body tokens match across inflections (material/materials).
+        _analyzer = new EnglishAnalyzer(LuceneVersion.LUCENE_48);
+
         // Build the new index into a fresh directory
         var newDirectory = new RAMDirectory();
         var config = new IndexWriterConfig(LuceneVersion.LUCENE_48, _analyzer)
@@ -179,7 +181,7 @@ public class WikiService : IDisposable
     public IEnumerable<string> GetRelevantContext(string query, string? categoryFilter = null, int? maxResults = null)
     {
         IndexSearcher? searcher;
-        StandardAnalyzer? analyzer;
+        Analyzer? analyzer;
         lock (_swapLock)
         {
             searcher = _searcher;
@@ -230,22 +232,35 @@ public class WikiService : IDisposable
 
     public IEnumerable<string> GetRelevantSnippets(string query, string? categoryFilter, int maxResults, int perResultChars)
     {
+        return GetRelevantSnippets(query, categoryFilter, maxResults, perResultChars, out _);
+    }
+
+    /// <summary>
+    /// As <see cref="GetRelevantSnippets(string, string?, int, int)"/>, and additionally reports
+    /// the query's total match count through <paramref name="totalHits"/> — which may exceed
+    /// <paramref name="maxResults"/> — so a caller can tell the model more articles matched than
+    /// were returned.
+    /// </summary>
+    public IEnumerable<string> GetRelevantSnippets(string query, string? categoryFilter, int maxResults, int perResultChars, out int totalHits)
+    {
+        totalHits = 0;
+
         IndexSearcher? searcher;
-        StandardAnalyzer? analyzer;
+        Analyzer? analyzer;
         lock (_swapLock)
         {
             searcher = _searcher;
             analyzer = _analyzer;
         }
         if (searcher == null || analyzer == null || string.IsNullOrWhiteSpace(query)) return Enumerable.Empty<string>();
-        
+
         var parser = new MultiFieldQueryParser(
             LuceneVersion.LUCENE_48,
             new[] { "title", "content" },
             analyzer,
             new Dictionary<string, float> { { "title", 5.0f }, { "content", 1.0f } }
         );
-        
+
         Query luceneQuery;
         try
         {
@@ -255,7 +270,7 @@ public class WikiService : IDisposable
         {
             return Enumerable.Empty<string>();
         }
-        
+
         if (!string.IsNullOrEmpty(categoryFilter))
         {
             var boolQuery = new BooleanQuery();
@@ -263,11 +278,12 @@ public class WikiService : IDisposable
             boolQuery.Add(new WildcardQuery(new Term("path", $"*{categoryFilter}*")), Occur.MUST);
             luceneQuery = boolQuery;
         }
-        
+
         var hits = searcher.Search(luceneQuery, maxResults > 0 ? maxResults : 5);
+        totalHits = hits.TotalHits;
         var results = new List<string>();
         var queryTerms = WikiSnippetExtractor.ExtractQueryTerms(query);
-        
+
         foreach (var hit in hits.ScoreDocs)
         {
             var doc = searcher.Doc(hit.Doc);
@@ -278,7 +294,7 @@ public class WikiService : IDisposable
             string content = doc.Get("content");
             results.Add(WikiSnippetExtractor.BuildSnippet(articlePath, content, queryTerms, perResultChars));
         }
-        
+
         return results;
     }
 
@@ -335,7 +351,7 @@ public class WikiService : IDisposable
         isDisambiguation = false;
 
         IndexSearcher? searcher;
-        StandardAnalyzer? analyzer;
+        Analyzer? analyzer;
         lock (_swapLock)
         {
             searcher = _searcher;

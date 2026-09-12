@@ -247,6 +247,7 @@ public static class BenchmarkComparabilityKey
     // and a differing key reported by a string literal in three places drifts.
     public const string SuiteKey = "BenchmarkSuiteId";
     public const string ItemRevisionsKey = "SuiteItemRevisions";
+    public const string AssessedDifficultiesKey = "SuiteAssessedDifficulties";
     public const string CandidateProviderKey = "CandidateProvider";
     public const string CandidateModelKey = "CandidateModelId";
     public const string CandidateThinkingLevelKey = "CandidateThinkingLevel";
@@ -312,6 +313,13 @@ public static class BenchmarkComparabilityKey
                 "Suite item revisions",
                 "A rubric edit bumps an item's revision, so a difference means the same questions "
                 + "were graded against a different answer key.",
+                BenchmarkComparabilityValueKind.List),
+
+            AssessedDifficultiesKey => Info(name,
+                "Suite assessed difficulties",
+                "Assess Difficulty re-weights a question without bumping its item revision, so a "
+                + "difference means the same answer key was scored under different Intelligence "
+                + "Index weights.",
                 BenchmarkComparabilityValueKind.List),
 
             // --- Candidate specification ------------------------------------------------------
@@ -480,6 +488,7 @@ public static class BenchmarkComparabilityKey
             Key(SuiteKey, BenchmarkComparabilityKeyKind.Fundamental,
                 Render(run.BenchmarkSuiteIdUsed ?? run.BenchmarkSuiteId)),
             Key(ItemRevisionsKey, BenchmarkComparabilityKeyKind.Fundamental, ItemRevisionSignature(run)),
+            Key(AssessedDifficultiesKey, BenchmarkComparabilityKeyKind.Fundamental, AssessedDifficultySignature(run)),
 
             // --- Candidate specification ------------------------------------------------------
             Key(CandidateProviderKey, BenchmarkComparabilityKeyKind.Candidate, Render(run.TestedModelProviderUsed)),
@@ -795,6 +804,40 @@ public static class BenchmarkComparabilityKey
                     .OrderBy(r => r ?? int.MinValue)
                     .Select(r => r?.ToString(CultureInfo.InvariantCulture) ?? "?");
                 return $"{g.Key}:{string.Join("/", revisions)}";
+            });
+
+        return string.Join(",", parts);
+    }
+
+    /// <summary>
+    /// The assessed difficulty of every question this run answered, as <c>questionId:difficulty</c>
+    /// pairs in question-id order. Assess Difficulty rewrites <see cref="BenchmarkRunAnswer.AssessedDifficulty"/>
+    /// without bumping <see cref="BenchmarkRunAnswer.ItemRevisionUsed"/>, so this is a distinct
+    /// Fundamental key from <see cref="ItemRevisionSignature"/> rather than folded into it: two runs
+    /// can agree on every item revision and still have been weighted by two different exams.
+    ///
+    /// An answer whose difficulty was never assessed renders as <c>?</c>, following the same
+    /// convention as <see cref="ItemRevisionSignature"/>. Unlinked answers are skipped.
+    /// </summary>
+    private static string AssessedDifficultySignature(BenchmarkRun run)
+    {
+        var answers = run.Answers ?? new List<BenchmarkRunAnswer>();
+        var parts = answers
+            .Select(a => new
+            {
+                QuestionId = a.BenchmarkQuestionIdUsed ?? a.BenchmarkQuestionId,
+                a.AssessedDifficulty
+            })
+            .Where(a => a.QuestionId.HasValue)
+            .GroupBy(a => a.QuestionId!.Value)
+            .OrderBy(g => g.Key)
+            .Select(g =>
+            {
+                var difficulties = g.Select(a => a.AssessedDifficulty)
+                    .Distinct()
+                    .OrderBy(d => d ?? int.MinValue)
+                    .Select(d => d?.ToString(CultureInfo.InvariantCulture) ?? "?");
+                return $"{g.Key}:{string.Join("/", difficulties)}";
             });
 
         return string.Join(",", parts);

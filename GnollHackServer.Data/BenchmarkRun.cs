@@ -247,6 +247,14 @@ public class BenchmarkRun
     [MaxLength(128)]
     public string SuiteName { get; set; } = default!;
 
+    /// <summary>
+    /// The default-suite key of the suite this run was launched against, retained after the suite
+    /// row is gone. Null for a custom suite, and for a run made before runs recorded their suite's
+    /// origin.
+    /// </summary>
+    [MaxLength(64)]
+    public string? DefaultSuiteKeyUsed { get; set; }
+
     [MaxLength(128)]
     public string? GameSnapshotNameUsed { get; set; }
 

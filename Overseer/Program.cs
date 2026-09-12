@@ -281,6 +281,9 @@ builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRunLauncher>(
 // Singleton: it drives a series across many requests and outlives every one of them, creating its
 // own scope per member.
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkSeriesOrchestrator>();
+// Singleton: caches the parsed default-suite files per write time, and takes the DbContext and the
+// compliance guard per call rather than capturing scoped services.
+builder.Services.AddSingleton<Overseer.Services.Benchmarking.DefaultSuiteCatalogService>();
 builder.Services.AddScoped<SettingsService>();
 builder.Services.AddScoped<Overseer.Services.ChatRetentionService>();
 builder.Services.AddScoped<Overseer.Services.DatabaseStorageMetricsService>();

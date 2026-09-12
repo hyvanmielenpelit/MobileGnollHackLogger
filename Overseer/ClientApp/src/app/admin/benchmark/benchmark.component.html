@@ -189,6 +189,24 @@
           </div>
         }
 
+        @if (!loadingSuites && suites.length === 0) {
+          <div class="empty-state alert alert-info mb-20" role="status">
+            <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+            </svg>
+            <div class="alert-content">
+              <div class="alert-heading"><strong>No question suite available</strong></div>
+              <div class="alert-body">
+                A benchmark needs a question suite. Import a default suite or create one on the Manage Suites tab.
+              </div>
+              <div class="alert-actions">
+                <button type="button" class="alert-action-btn" (click)="selectSubTab('suites')">Go to Manage Suites</button>
+              </div>
+            </div>
+          </div>
+        }
+
         <div class="setup-form-rows">
           <!-- Row 1: Suite and Scoring Profile -->
           <div class="form-row two-cols">
@@ -696,15 +714,19 @@
         <div class="form-actions mt-20">
           <button type="button"
             class="btn-gh"
-            [disabled]="!canStartRun"
+            [attr.aria-disabled]="!canStartRun"
+            aria-describedby="startBenchmarkHint"
             (click)="startBenchmark()">
             @if (startingRun) {
               Starting...
             } @else {
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
               Start Benchmark
             }
           </button>
+          @if (!canStartRun && startBenchmarkHint) {
+            <div id="startBenchmarkHint" class="text-muted mt-10">{{ startBenchmarkHint }}</div>
+          }
         </div>
       </div>
     </div>
@@ -1005,14 +1027,16 @@
         </div>
       }
 
+      <div class="visually-hidden" aria-live="polite">{{ suiteActionAnnouncement }}</div>
+
       <div class="suites-toolbar mb-20">
         <button type="button" class="btn-gh" (click)="openCreateSuite()">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
           Create Suite
         </button>
-        <button type="button" class="btn-gh" (click)="importDefaultSuite()">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-          Import Default Suite
+        <button type="button" class="btn-gh" (click)="openImportDefaultSuitesDialog()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          Import Default Suites
         </button>
       </div>
 
@@ -1023,6 +1047,9 @@
               <div class="suite-title-group">
                 <h4>{{ suite.name }}</h4>
                 <span class="question-count-badge">{{ suite.questionCount }} Questions</span>
+                @if (suite.defaultSuiteKey) {
+                  <span class="default-suite-badge">Default suite</span>
+                }
                 @if (suite.gameSnapshotName) {
                   <button type="button" class="badge-board" (click)="openSnapshotViewer(suite.gameSnapshotId!)" aria-label="View Game Board Snapshot">
                     🎮 {{ suite.gameSnapshotName }} ({{ suite.gameSnapshotCharCount | number }} chars)
@@ -1130,6 +1157,27 @@
             </div>
 
           </div>
+        } @empty {
+          @if (loadingSuites) {
+            <div class="loading-spinner">Loading suites...</div>
+          } @else {
+            <div class="empty-state alert alert-info" role="status">
+              <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+              </svg>
+              <div class="alert-content">
+                <div class="alert-heading"><strong>No question suites yet</strong></div>
+                <div class="alert-body">
+                  Import one of the default suites to start benchmarking, or create an empty suite and add questions.
+                </div>
+                <div class="alert-actions">
+                  <button type="button" class="alert-action-btn" (click)="openImportDefaultSuitesDialog()">Import default suites…</button>
+                  <button type="button" class="alert-action-btn" (click)="openCreateSuite()">Create suite</button>
+                </div>
+              </div>
+            </div>
+          }
         }
       </div>
     </div>
@@ -1813,7 +1861,7 @@
             </button>
           }
           <button type="button" class="btn-gh" (click)="downloadReport(selectedRunDetail.id)">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
             Download Markdown Report
           </button>
           <button type="button" class="btn-gh" (click)="downloadToolCallLog(selectedRunDetail.id)">
@@ -2741,6 +2789,119 @@
     <div class="dialog-footer">
       <button type="button" class="btn-gh btn-gh-cancel" (click)="suiteDialog.close()">Cancel</button>
       <button type="button" class="btn-gh" [disabled]="!suiteForm.name.trim()" (click)="saveSuite()">Save Suite</button>
+    </div>
+  </div>
+</dialog>
+
+<!--
+  IMPORT DEFAULT SUITES DIALOG
+
+  closedby="any" for light dismiss; the fallback for browsers without `closedby` (Safari, at
+  the time of writing) is attached from ngAfterViewInit rather than a template binding, since
+  nothing here needs to stop propagation to an ancestor dialog the way the legend dialog does.
+-->
+<dialog #importDefaultSuitesDialog class="gh-dialog benchmark-form-dialog" aria-labelledby="importDefaultSuitesTitle" closedby="any">
+  <div class="dialog-content flex-col">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="importDefaultSuitesTitle">Import Default Suites</h3>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close import default suites" (click)="importDefaultSuitesDialog.close()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="dialog-body">
+      <p>
+        Choose one or more default suites to import. Importing a suite already present creates
+        a numbered copy — it never overwrites an existing suite.
+      </p>
+
+      @if (defaultSuiteDialogError) {
+        <div class="alert alert-danger mb-15" role="alert" aria-live="assertive">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <div class="alert-content">
+            <div class="alert-body">{{ defaultSuiteDialogError }}</div>
+          </div>
+        </div>
+      }
+
+      @if (loadingDefaultSuiteCatalog) {
+        <div class="loading-spinner">Loading default suites...</div>
+      } @else if (defaultSuiteCatalog.length === 0) {
+        <div class="empty-state alert alert-info" role="status">
+          <div class="alert-content">
+            <div class="alert-body">No default suite files were found on the server.</div>
+          </div>
+        </div>
+      } @else {
+        <fieldset class="default-suite-picker">
+          <legend>Default suites available</legend>
+          @for (entry of defaultSuiteCatalog; track entry.key ?? entry.fileName) {
+            @if (entry.error) {
+              <div class="default-suite-row default-suite-row-invalid">
+                <div class="default-suite-row-body">
+                  <strong>{{ entry.fileName }}</strong>
+                  <div class="alert alert-danger mt-10" role="alert">
+                    <div class="alert-content">
+                      <div class="alert-body">{{ entry.error }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            } @else {
+              <label class="checkbox-label align-start" [for]="'dsp-' + entry.key!">
+                <input type="checkbox" [id]="'dsp-' + entry.key!"
+                       [checked]="isDefaultSuiteSelected(entry.key!)"
+                       (change)="toggleDefaultSuite(entry.key!)">
+                <div class="default-suite-row-body">
+                  <div class="default-suite-row-heading">
+                    <strong>{{ entry.name }}</strong>
+                    <span class="question-count-badge">{{ entry.questionCount }} questions</span>
+                    @if (entry.alreadyImportedCount > 0) {
+                      <span class="status-badge badge-warning">Already imported ×{{ entry.alreadyImportedCount }}</span>
+                    }
+                  </div>
+                  @if (formatDifficultyCounts(entry)) {
+                    <div class="text-muted">{{ formatDifficultyCounts(entry) }}</div>
+                  }
+                  @if (entry.description) {
+                    <div class="text-muted">{{ firstSentence(entry.description) }}</div>
+                  }
+                  @if (entry.alreadyImportedNames.length > 0) {
+                    <div class="text-muted">Existing: {{ entry.alreadyImportedNames.join(', ') }}</div>
+                  }
+                  @if (entry.nameMatchedSuiteNames.length > 0) {
+                    <div class="text-muted">Possibly imported earlier (matched by name): {{ entry.nameMatchedSuiteNames.join(', ') }}</div>
+                  }
+                </div>
+              </label>
+            }
+          }
+        </fieldset>
+      }
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="importDefaultSuitesDialog.close()">Cancel</button>
+      <button type="button" class="btn-gh"
+              [attr.aria-disabled]="!canImportDefaultSuites"
+              aria-describedby="importDefaultSuitesHint"
+              (click)="importSelectedDefaultSuites()">
+        @if (importingDefaultSuites) {
+          Importing…
+        } @else {
+          Import selected
+        }
+      </button>
+      @if (selectedDefaultSuiteKeys.size === 0) {
+        <span id="importDefaultSuitesHint" class="text-muted">Select at least one suite.</span>
+      }
     </div>
   </div>
 </dialog>

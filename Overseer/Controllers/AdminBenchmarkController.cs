@@ -107,7 +107,8 @@ public class AdminBenchmarkController : ControllerBase
         GameSnapshotName = s.GameSnapshot?.Name,
         GameSnapshotCharCount = s.GameSnapshot?.CharCount,
         HasGeneratedQuestions = s.HasGeneratedQuestions,
-        ReviewedQuestionCount = s.Questions.Count(q => !q.IsGenerated || (q.ReviewedAtRevision != null && q.ReviewedAtRevision == q.ItemRevision))
+        ReviewedQuestionCount = s.Questions.Count(q => !q.IsGenerated || (q.ReviewedAtRevision != null && q.ReviewedAtRevision == q.ItemRevision)),
+        DefaultSuiteKey = s.DefaultSuiteKey
     };
 
     private static BenchmarkQuestionDto ToQuestionDto(BenchmarkQuestion q) => new()
@@ -481,11 +482,6 @@ public class AdminBenchmarkController : ControllerBase
     [HttpGet("suites")]
     public async Task<IActionResult> GetSuites()
     {
-        if (!await _dbContext.BenchmarkSuites.AnyAsync())
-        {
-            await EnsureDefaultSuiteInternalAsync();
-        }
-
         var suites = await _dbContext.BenchmarkSuites
             .Include(s => s.Questions)
             .Include(s => s.GameSnapshot)
@@ -659,92 +655,82 @@ public class AdminBenchmarkController : ControllerBase
         });
     }
 
-    [HttpPost("suites/import-default")]
-    public async Task<IActionResult> ImportDefaultSuite()
-    {
-        var suite = await EnsureDefaultSuiteInternalAsync(forceNewCopy: true);
-        if (suite == null)
-        {
-            return BadRequest("Default suite file not found.");
-        }
+    public const int MaxDefaultSuitesPerImport = 20;
 
-        return Ok(ToSuiteDto(suite));
+    /// <summary>
+    /// The default-suite files on the server, each with the suites already imported from it. An
+    /// invalid file is listed with its error. Suites with no recorded key are matched by name only,
+    /// as a hint that they may have been imported before suites recorded their origin.
+    /// </summary>
+    [HttpGet("suites/default-catalog")]
+    public async Task<IActionResult> GetDefaultSuiteCatalog([FromServices] DefaultSuiteCatalogService catalogService)
+    {
+        var catalog = catalogService.GetCatalog();
+
+        var existing = await _dbContext.BenchmarkSuites
+            .AsNoTracking()
+            .Select(s => new { s.Name, s.DefaultSuiteKey })
+            .ToListAsync();
+
+        var dtos = catalog.Select(e =>
+        {
+            var importedNames = e.Key == null
+                ? new List<string>()
+                : existing.Where(s => s.DefaultSuiteKey == e.Key)
+                    .Select(s => s.Name)
+                    .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+            return new DefaultSuiteCatalogEntryDto
+            {
+                Key = e.Key,
+                Version = e.Version,
+                Name = e.Name,
+                Description = e.Description,
+                QuestionCount = e.QuestionCount,
+                DifficultyCounts = new Dictionary<string, int>(e.DifficultyCounts),
+                FileName = e.FileName,
+                Error = e.Error,
+                AlreadyImportedCount = importedNames.Count,
+                AlreadyImportedNames = importedNames,
+                NameMatchedSuiteNames = existing
+                    .Where(s => s.DefaultSuiteKey == null && string.Equals(s.Name, e.Name, StringComparison.Ordinal))
+                    .Select(s => s.Name)
+                    .ToList()
+            };
+        }).ToList();
+
+        return Ok(dtos);
     }
 
-    private async Task<BenchmarkSuite?> EnsureDefaultSuiteInternalAsync(bool forceNewCopy = false)
+    /// <summary>
+    /// Imports the selected default suites as new suites. Each key is imported or skipped on its
+    /// own, with the reason; an existing suite is never overwritten.
+    /// </summary>
+    [HttpPost("suites/import-default")]
+    public async Task<IActionResult> ImportDefaultSuites(
+        [FromBody] ImportDefaultSuitesRequest request,
+        [FromServices] DefaultSuiteCatalogService catalogService)
     {
-        var defaultPath = Path.Combine(AppContext.BaseDirectory, "Data", "BenchmarkDefaultSuite.json");
-        if (!System.IO.File.Exists(defaultPath))
+        if (request?.Keys == null || request.Keys.Count == 0)
         {
-            defaultPath = Path.Combine(Directory.GetCurrentDirectory(), "Data", "BenchmarkDefaultSuite.json");
+            return BadRequest("Select at least one default suite to import.");
         }
 
-        if (!System.IO.File.Exists(defaultPath))
+        if (request.Keys.Count > MaxDefaultSuitesPerImport)
         {
-            return null;
+            return BadRequest($"At most {MaxDefaultSuitesPerImport} default suites can be imported at once.");
         }
 
-        var json = await System.IO.File.ReadAllTextAsync(defaultPath);
-        var defaultDoc = JsonDocument.Parse(json);
-        var root = defaultDoc.RootElement;
+        var outcome = await catalogService.ImportAsync(request.Keys, _dbContext, _complianceGuard);
 
-        string suiteName = root.TryGetProperty("name", out var nProp) ? nProp.GetString() ?? "GnollHack Intelligence Benchmark Suite" : "GnollHack Intelligence Benchmark Suite";
-        string description = root.TryGetProperty("description", out var dProp) ? dProp.GetString() ?? "" : "";
-
-        string finalName = suiteName;
-        if (forceNewCopy)
+        return Ok(new ImportDefaultSuitesResultDto
         {
-            int counter = 1;
-            while (await _dbContext.BenchmarkSuites.AnyAsync(s => s.Name == finalName))
-            {
-                counter++;
-                finalName = $"{suiteName} ({counter})";
-            }
-        }
-        else if (await _dbContext.BenchmarkSuites.AnyAsync(s => s.Name == finalName))
-        {
-            return await _dbContext.BenchmarkSuites.Include(s => s.Questions).FirstOrDefaultAsync(s => s.Name == finalName);
-        }
-
-        var suite = new BenchmarkSuite
-        {
-            Name = finalName,
-            Description = description,
-            CreatedAtUtc = DateTime.UtcNow
-        };
-
-        if (root.TryGetProperty("questions", out var qArray) && qArray.ValueKind == JsonValueKind.Array)
-        {
-            int qCount = qArray.GetArrayLength();
-            var (canAddDefault, _) = _complianceGuard.CanAddQuestions(0, qCount);
-            if (!canAddDefault)
-            {
-                return null;
-            }
-
-            int order = 1;
-            foreach (var qEl in qArray.EnumerateArray())
-            {
-                string text = qEl.GetProperty("questionText").GetString() ?? "";
-                string diffStr = qEl.TryGetProperty("difficulty", out var diffProp) ? diffProp.GetString() ?? "Simple" : "Simple";
-                var difficulty = Enum.TryParse<BenchmarkDifficulty>(diffStr, true, out var parsedDiff) ? parsedDiff : BenchmarkDifficulty.Simple;
-                string? exp = qEl.TryGetProperty("expectedPoints", out var epProp) ? epProp.GetString() : null;
-
-                suite.Questions.Add(new BenchmarkQuestion
-                {
-                    OrderIndex = order++,
-                    QuestionText = text,
-                    Difficulty = difficulty,
-                    ExpectedPoints = exp,
-                    CreatedAtUtc = DateTime.UtcNow,
-                    ModifiedAtUtc = DateTime.UtcNow
-                });
-            }
-        }
-
-        _dbContext.BenchmarkSuites.Add(suite);
-        await _dbContext.SaveChangesAsync();
-        return suite;
+            Imported = outcome.Imported.Select(ToSuiteDto).ToList(),
+            Skipped = outcome.Skipped
+                .Select(s => new DefaultSuiteImportSkipDto { Key = s.Key, Reason = s.Reason })
+                .ToList()
+        });
     }
 
     // --- Questions CRUD ---
@@ -2320,6 +2306,7 @@ public class AdminBenchmarkController : ControllerBase
             KnowledgeBaseHeadSha = run.KnowledgeBaseHeadSha,
             WikiHeadSha = run.WikiHeadSha,
             SourceCodeHeadSha = run.SourceCodeHeadSha,
+            DefaultSuiteKeyUsed = run.DefaultSuiteKeyUsed,
             ToolFamilyCounts = toolRouting.FamilyCalls.ToDictionary(
                 kv => kv.Key switch
                 {
@@ -4004,7 +3991,8 @@ public class AdminBenchmarkController : ControllerBase
                 a.BenchmarkRunId,
                 a.BenchmarkQuestionIdUsed,
                 a.BenchmarkQuestionId,
-                a.ItemRevisionUsed
+                a.ItemRevisionUsed,
+                a.AssessedDifficulty
             })
             .ToListAsync();
 
@@ -4020,7 +4008,8 @@ public class AdminBenchmarkController : ControllerBase
                     BenchmarkRunId = a.BenchmarkRunId,
                     BenchmarkQuestionIdUsed = a.BenchmarkQuestionIdUsed,
                     BenchmarkQuestionId = a.BenchmarkQuestionId,
-                    ItemRevisionUsed = a.ItemRevisionUsed
+                    ItemRevisionUsed = a.ItemRevisionUsed,
+                    AssessedDifficulty = a.AssessedDifficulty
                 })
                 .ToList();
         }

@@ -23,6 +23,12 @@ public class AgentRunRequest
     public string? VolatileSuffix { get; set; }
     public SegmentedPrompt? SegmentedPrompt { get; set; }
     public string? PromptCacheKey { get; set; }
+
+    /// <summary>
+    /// Whether the provider marks the last message as a cache breakpoint. False for single-shot
+    /// requests whose only message is never re-sent.
+    /// </summary>
+    public bool CacheConversationTail { get; set; } = true;
     public string? CredentialKey { get; set; }
     public TimeSpan? PermitWaitTimeout { get; set; }
     public List<object> SeedHistory { get; set; } = new();

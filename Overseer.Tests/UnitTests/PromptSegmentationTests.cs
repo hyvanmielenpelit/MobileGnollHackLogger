@@ -13,6 +13,7 @@ using Overseer.Services;
 using Overseer.Services.Providers;
 using Overseer.Services.Tools;
 using Xunit;
+using BenchmarkAssessmentPrompt = Overseer.Services.Benchmarking.BenchmarkAssessmentPrompt;
 
 namespace Overseer.Tests.UnitTests;
 
@@ -260,6 +261,137 @@ public class PromptSegmentationTests
         var lastBlockCc = ProviderHelper.GetProperty(lastMsgContent[^1], "cache_control");
         Assert.NotNull(lastBlockCc);
         Assert.Equal("ephemeral", ProviderHelper.GetProperty(lastBlockCc, "type")?.ToString());
+    }
+
+    private static AnthropicProvider CreateAnthropicCacheProvider() =>
+        new AnthropicProvider(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            { "PromptCacheSettings:EnableAnthropicCacheControl", "true" }
+        }).Build());
+
+    private static Dictionary<string, object> BuildSingleShotAnthropicBody(AnthropicProvider provider, bool? cacheConversationTail)
+    {
+        var segmentedPrompt = new SegmentedPrompt("Frozen grading preamble", "", "");
+        var prepared = provider.PrepareMessageHistory(new List<object>
+        {
+            provider.FormatMessage("system", segmentedPrompt.FullPrompt, null),
+            provider.FormatMessage("user", "Question-specific grading body", null)
+        });
+
+        return cacheConversationTail.HasValue
+            ? provider.BuildChatRequestBody(
+                "claude-3-7-sonnet-20250219", prepared, 1024, null, new ToolsForRequest(),
+                segmentedPrompt: segmentedPrompt, cacheConversationTail: cacheConversationTail.Value)
+            : provider.BuildChatRequestBody(
+                "claude-3-7-sonnet-20250219", prepared, 1024, null, new ToolsForRequest(),
+                segmentedPrompt: segmentedPrompt);
+    }
+
+    private static int CountCacheControl(Dictionary<string, object> requestBody)
+    {
+        string json = JsonSerializer.Serialize(requestBody);
+        int count = 0;
+        for (int i = json.IndexOf("\"cache_control\"", StringComparison.Ordinal); i >= 0;
+             i = json.IndexOf("\"cache_control\"", i + 1, StringComparison.Ordinal))
+        {
+            count++;
+        }
+        return count;
+    }
+
+    [Fact]
+    public void AnthropicProvider_BuildChatRequestBody_CacheConversationTailFalse_MarksOnlyTheFrozenBlock()
+    {
+        var provider = CreateAnthropicCacheProvider();
+
+        var requestBody = BuildSingleShotAnthropicBody(provider, cacheConversationTail: false);
+
+        var systemBlocks = requestBody["system"] as List<object>;
+        Assert.NotNull(systemBlocks);
+        Assert.Single(systemBlocks);
+        Assert.Equal("Frozen grading preamble", ProviderHelper.GetProperty(systemBlocks[0], "text")?.ToString());
+        var frozenCc = ProviderHelper.GetProperty(systemBlocks[0], "cache_control");
+        Assert.NotNull(frozenCc);
+        Assert.Equal("ephemeral", ProviderHelper.GetProperty(frozenCc, "type")?.ToString());
+
+        // No tools, so the frozen block is the request's only breakpoint: the user turn carries none.
+        var reqMessages = requestBody["messages"] as List<object>;
+        Assert.NotNull(reqMessages);
+        if (ProviderHelper.GetProperty(reqMessages[^1], "content") is IEnumerable<object> blocks)
+        {
+            Assert.All(blocks, b => Assert.Null(ProviderHelper.GetProperty(b, "cache_control")));
+        }
+        Assert.Equal(1, CountCacheControl(requestBody));
+    }
+
+    [Fact]
+    public void AnthropicProvider_BuildChatRequestBody_CacheConversationTailDefaultsToTrue()
+    {
+        Assert.True(new Overseer.Services.Agents.AgentRunRequest().CacheConversationTail);
+
+        var provider = CreateAnthropicCacheProvider();
+
+        var requestBody = BuildSingleShotAnthropicBody(provider, cacheConversationTail: null);
+
+        var reqMessages = requestBody["messages"] as List<object>;
+        Assert.NotNull(reqMessages);
+        var lastMsgContent = ProviderHelper.GetProperty(reqMessages[^1], "content") as List<object>;
+        Assert.NotNull(lastMsgContent);
+        var tailCc = ProviderHelper.GetProperty(lastMsgContent[^1], "cache_control");
+        Assert.NotNull(tailCc);
+        Assert.Equal("ephemeral", ProviderHelper.GetProperty(tailCc, "type")?.ToString());
+        Assert.Equal(2, CountCacheControl(requestBody));
+    }
+
+    [Fact]
+    public void BenchmarkAssessmentPrompt_PreambleAndBody_ReassembleTheFullPromptsByteForByte()
+    {
+        const string suite = "Split Suite";
+        const string question = "Which QX-UNIQUE-QUESTION altar is safest?";
+        const string rubric = "RB-UNIQUE-RUBRIC point one.";
+        const string answer = "AN-UNIQUE-ANSWER text.";
+        var tools = new[] { "wiki_search", "source_code_search" };
+        string nl = Environment.NewLine;
+
+        string preamble = BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(suite);
+        string body = BenchmarkAssessmentPrompt.BuildPerQuestionBody(
+            7, question, BenchmarkDifficulty.Advanced, rubric, answer, BenchmarkAnswerStatus.Ok,
+            tools, 5, true, 2, 45, "BD-UNIQUE-BOARD", "Board text");
+        string full = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            suite, 7, question, BenchmarkDifficulty.Advanced, rubric, answer, BenchmarkAnswerStatus.Ok,
+            tools, 5, true, 2, 45, "BD-UNIQUE-BOARD", "Board text");
+
+        Assert.Equal(preamble + nl + body, full);
+
+        // The seam is the blank line between the unverified-claims section and the question block.
+        Assert.StartsWith("You are an expert game knowledge and reasoning assessor", preamble);
+        Assert.EndsWith("Return an empty list when every claim is adjudicable." + nl, preamble);
+        Assert.StartsWith("--- QUESTION AND CANDIDATE ANSWER ---" + nl, body);
+        Assert.Contains("adjudicable." + nl + nl + "--- QUESTION AND CANDIDATE ANSWER ---" + nl, full);
+
+        // The preamble carries the suite and nothing question-specific; the body carries none of the preamble.
+        Assert.Contains($"Suite: {suite}" + nl, preamble);
+        Assert.Equal(preamble, BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(suite));
+        foreach (var marker in new[] { "QX-UNIQUE-QUESTION", "RB-UNIQUE-RUBRIC", "AN-UNIQUE-ANSWER", "BD-UNIQUE-BOARD", "Question #7" })
+        {
+            Assert.DoesNotContain(marker, preamble);
+            Assert.Contains(marker, body);
+        }
+        Assert.DoesNotContain("CRITICAL INSTRUCTIONS:", body);
+        Assert.DoesNotContain("--- SCORING DIMENSIONS (BARS 0-6) ---", body);
+
+        string secondOpinionBody = BenchmarkAssessmentPrompt.BuildSecondOpinionBody(
+            7, question, BenchmarkDifficulty.Advanced, rubric, answer, BenchmarkAnswerStatus.Ok,
+            80, false, "First comment", tools, 5, true, 2, 45, "BD-UNIQUE-BOARD", "Board text",
+            blind: true, triggerLabel: "BelowThreshold");
+        string secondOpinion = BenchmarkAssessmentPrompt.BuildSecondOpinionPrompt(
+            suite, 7, question, BenchmarkDifficulty.Advanced, rubric, answer, BenchmarkAnswerStatus.Ok,
+            80, false, "First comment", tools, 5, true, 2, 45, "BD-UNIQUE-BOARD", "Board text",
+            blind: true, triggerLabel: "BelowThreshold");
+
+        Assert.Equal(preamble + nl + secondOpinionBody, secondOpinion);
+        Assert.StartsWith(body + nl, secondOpinionBody);
+        Assert.Contains("--- SECOND OPINION ---", secondOpinionBody);
     }
 
     private class DummyToolHandler : IToolHandler

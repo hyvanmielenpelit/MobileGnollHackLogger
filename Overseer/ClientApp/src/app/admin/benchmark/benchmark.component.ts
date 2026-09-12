@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, OnChanges, SimpleChanges, Input, ChangeDetectorRef, HostListener, ViewChild, ElementRef, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, OnChanges, AfterViewInit, SimpleChanges, Input, ChangeDetectorRef, HostListener, ViewChild, ElementRef, inject } from '@angular/core';
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -38,7 +38,9 @@ import {
   BenchmarkComparabilityIndexDto,
   BenchmarkModelComparisonDto,
   BenchmarkModelComparisonPricingBasis,
-  BenchmarkToolCallDto
+  BenchmarkToolCallDto,
+  DefaultSuiteCatalogEntryDto,
+  ImportDefaultSuitesResultDto
 } from '../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../services/admin.service';
 
@@ -213,7 +215,7 @@ interface BenchmarkRunSettings {
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
 })
-export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
+export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy, OnChanges {
   @Input() systemConfigs: SystemAiConfigDto[] = [];
 
   @ViewChild('suiteDialog') suiteDialog!: ElementRef<HTMLDialogElement>;
@@ -249,6 +251,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   @ViewChild('multiRunPanel') multiRunPanel?: MultiRunComponent;
   @ViewChild('generationDialog') generationDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('generationProgressHeading') generationProgressHeading?: ElementRef<HTMLElement>;
+  @ViewChild('importDefaultSuitesDialog') importDefaultSuitesDialog!: ElementRef<HTMLDialogElement>;
   suiteHealthInitialTab: SuiteHealthTab = 'items';
 
   // Confirm Action Dialog State
@@ -313,6 +316,18 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   suites: BenchmarkSuiteDto[] = [];
   selectedSuiteId: number | null = null;
   loadingSuites = false;
+
+  // Import Default Suites dialog
+  defaultSuiteCatalog: DefaultSuiteCatalogEntryDto[] = [];
+  loadingDefaultSuiteCatalog = false;
+  selectedDefaultSuiteKeys = new Set<string>();
+  importingDefaultSuites = false;
+  defaultSuiteDialogError: string | null = null;
+  /** Result of the most recent suite-list action (import, for now), for the polite live region. */
+  suiteActionAnnouncement = '';
+
+  /** In band order, since `difficultyCounts` is a plain object with no guaranteed key order. */
+  private static readonly DIFFICULTY_BAND_ORDER: readonly string[] = ['Simple', 'Intermediate', 'Advanced'];
 
   // Scoring Profiles
   scoringProfiles: BenchmarkScoringProfileDto[] = [];
@@ -840,6 +855,29 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     // running must reattach its banner exactly as a single run does.
     this.loadRunLimits();
     this.checkActiveRunSeries();
+  }
+
+  /**
+   * Light-dismiss for the import-default-suites dialog where `closedby` is unsupported (Safari,
+   * at the time of writing). A backdrop click reports the dialog itself as the target, so a hit
+   * outside the dialog's own border box closes it. A no-op in every browser that has `closedby`.
+   */
+  ngAfterViewInit(): void {
+    if ('closedBy' in HTMLDialogElement.prototype) {
+      return;
+    }
+    const dialog = this.importDefaultSuitesDialog?.nativeElement;
+    dialog?.addEventListener('click', (event: MouseEvent) => {
+      if (event.target !== dialog) {
+        return;
+      }
+      const rect = dialog.getBoundingClientRect();
+      const inside = rect.top <= event.clientY && event.clientY <= rect.top + rect.height
+        && rect.left <= event.clientX && event.clientX <= rect.left + rect.width;
+      if (!inside) {
+        dialog.close();
+      }
+    });
   }
 
   checkActiveDifficultyAssessment(): void {
@@ -1974,6 +2012,8 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
           this.selectedSuiteId = rememberedSuiteId;
         } else if (this.suites.length > 0 && (!this.selectedSuiteId || !this.suites.some(s => s.id === this.selectedSuiteId))) {
           this.selectedSuiteId = this.suites[0].id;
+        } else if (this.suites.length === 0) {
+          this.selectedSuiteId = null;
         }
         this.markRunSettingsApplied('suite');
         this.loadLastAssessor();
@@ -2092,11 +2132,98 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
     });
   }
 
-  importDefaultSuite() {
-    this.benchmarkService.importDefaultSuite().subscribe({
-      next: () => this.loadSuites(),
-      error: (err) => console.error('Failed to import default suite', err)
+  // --- Import Default Suites Dialog ---
+
+  openImportDefaultSuitesDialog(): void {
+    this.selectedDefaultSuiteKeys.clear();
+    this.defaultSuiteDialogError = null;
+    this.importingDefaultSuites = false;
+    this.loadDefaultSuiteCatalog();
+    this.importDefaultSuitesDialog?.nativeElement.showModal();
+  }
+
+  loadDefaultSuiteCatalog(): void {
+    this.loadingDefaultSuiteCatalog = true;
+    this.benchmarkService.getDefaultSuiteCatalog().subscribe({
+      next: (catalog) => {
+        this.defaultSuiteCatalog = catalog;
+        this.loadingDefaultSuiteCatalog = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.loadingDefaultSuiteCatalog = false;
+        this.defaultSuiteDialogError = err?.error || 'Failed to load the default suite catalog.';
+        this.cdr.detectChanges();
+      }
     });
+  }
+
+  toggleDefaultSuite(key: string): void {
+    if (this.selectedDefaultSuiteKeys.has(key)) {
+      this.selectedDefaultSuiteKeys.delete(key);
+    } else {
+      this.selectedDefaultSuiteKeys.add(key);
+    }
+  }
+
+  isDefaultSuiteSelected(key: string): boolean {
+    return this.selectedDefaultSuiteKeys.has(key);
+  }
+
+  get canImportDefaultSuites(): boolean {
+    return this.selectedDefaultSuiteKeys.size > 0 && !this.importingDefaultSuites;
+  }
+
+  importSelectedDefaultSuites(): void {
+    if (!this.canImportDefaultSuites) return;
+
+    this.importingDefaultSuites = true;
+    this.defaultSuiteDialogError = null;
+    const keys = Array.from(this.selectedDefaultSuiteKeys);
+
+    this.benchmarkService.importDefaultSuites(keys).subscribe({
+      next: (result: ImportDefaultSuitesResultDto) => {
+        this.importingDefaultSuites = false;
+        this.importDefaultSuitesDialog?.nativeElement.close();
+        this.loadSuites();
+        this.suiteActionAnnouncement = this.formatImportAnnouncement(result);
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.importingDefaultSuites = false;
+        this.defaultSuiteDialogError = err?.error || 'Failed to import the selected suites.';
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /** What the polite live region announces once an import request completes. */
+  private formatImportAnnouncement(result: ImportDefaultSuitesResultDto): string {
+    const importedNames = result.imported.map(s => s.name).join(', ');
+    let text = result.imported.length > 0
+      ? `Imported ${result.imported.length} suite${result.imported.length === 1 ? '' : 's'}: ${importedNames}`
+      : 'No suites were imported.';
+    if (result.skipped.length > 0) {
+      text += ' Skipped: ' + result.skipped.map(s => `${s.key} — ${s.reason}`).join('; ');
+    }
+    return text;
+  }
+
+  /** The catalog entry's per-band question counts, in band order, as one display line. */
+  formatDifficultyCounts(entry: DefaultSuiteCatalogEntryDto): string {
+    return AdminBenchmarkComponent.DIFFICULTY_BAND_ORDER
+      .filter(band => entry.difficultyCounts && entry.difficultyCounts[band] != null)
+      .map(band => `${band}: ${entry.difficultyCounts[band]}`)
+      .join(', ');
+  }
+
+  /** The first sentence of a catalog entry's description, for the compact picker row. */
+  firstSentence(text: string): string {
+    const idx = text.indexOf('. ');
+    if (idx === -1) {
+      return text.length > 160 ? text.slice(0, 160).trimEnd() + '…' : text;
+    }
+    return text.slice(0, idx + 1);
   }
 
   // --- Difficulty Assessor Dialog Actions ---
@@ -2640,7 +2767,7 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
   // --- Run Execution ---
 
   startBenchmark(acknowledgeSameProvider: boolean = false) {
-    if (!this.selectedSuiteId || !this.testedConfigId || !this.assessorConfigId) return;
+    if (!this.canStartRun || this.selectedSuiteId == null || this.testedConfigId == null || this.assessorConfigId == null) return;
 
     this.startingRun = true;
     this.runErrorMessage = null;
@@ -6290,6 +6417,20 @@ export class AdminBenchmarkComponent implements OnInit, OnDestroy, OnChanges {
       !!this.assessorConfigId &&
       !(this.activeRunDetail && this.formatStatus(this.activeRunDetail.status) === 'Running') &&
       !!this.selectedSuite?.difficultyFullyAssessed;
+  }
+
+  /** Names the first condition Start Benchmark is waiting on, for the button's aria-disabled hint. Empty once canStartRun is true. */
+  get startBenchmarkHint(): string {
+    if (!this.selectedSuiteId) {
+      return 'Select a question suite first.';
+    }
+    if (!this.selectedSuite?.difficultyFullyAssessed) {
+      return "Assess every question's difficulty first.";
+    }
+    if (!this.testedConfigId || !this.assessorConfigId) {
+      return 'Choose a model under test and an assessor.';
+    }
+    return '';
   }
 
   // --- Question Generation & Board Snapshot State ---

@@ -19,6 +19,53 @@ public class BenchmarkSuiteDto
     public int? GameSnapshotCharCount { get; set; }
     public bool HasGeneratedQuestions { get; set; }
     public int ReviewedQuestionCount { get; set; }
+
+    /// <summary>The default-suite file this suite was imported from; null for a custom suite.</summary>
+    public string? DefaultSuiteKey { get; set; }
+}
+
+/// <summary>One file in the default-suite directory, as the import dialog lists it.</summary>
+public class DefaultSuiteCatalogEntryDto
+{
+    public string? Key { get; set; }
+    public int? Version { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public int QuestionCount { get; set; }
+
+    /// <summary>Question counts keyed "Simple", "Intermediate" and "Advanced".</summary>
+    public Dictionary<string, int> DifficultyCounts { get; set; } = new();
+    public string FileName { get; set; } = string.Empty;
+
+    /// <summary>Null when the file is valid. An entry with an error cannot be imported.</summary>
+    public string? Error { get; set; }
+
+    /// <summary>Suites whose <c>DefaultSuiteKey</c> equals this entry's key.</summary>
+    public int AlreadyImportedCount { get; set; }
+    public List<string> AlreadyImportedNames { get; set; } = new();
+
+    /// <summary>
+    /// Suites with no recorded default-suite key whose name equals this file's name: possibly
+    /// imported earlier, before suites recorded their origin.
+    /// </summary>
+    public List<string> NameMatchedSuiteNames { get; set; } = new();
+}
+
+public class ImportDefaultSuitesRequest
+{
+    public List<string> Keys { get; set; } = new();
+}
+
+public class ImportDefaultSuitesResultDto
+{
+    public List<BenchmarkSuiteDto> Imported { get; set; } = new();
+    public List<DefaultSuiteImportSkipDto> Skipped { get; set; } = new();
+}
+
+public class DefaultSuiteImportSkipDto
+{
+    public string Key { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
 }
 
 public class CreateBenchmarkSuiteRequest
@@ -805,6 +852,9 @@ public class BenchmarkRunDetailDto
     public string? KnowledgeBaseHeadSha { get; set; }
     public string? WikiHeadSha { get; set; }
     public string? SourceCodeHeadSha { get; set; }
+
+    /// <summary>The default-suite key the run's suite carried at launch; null for a custom suite or an older run.</summary>
+    public string? DefaultSuiteKeyUsed { get; set; }
 
     /// <summary>
     /// H3. Run-wide tool calls by family, keyed "source", "wiki", "lookup", "knowledgeBase", "other", and

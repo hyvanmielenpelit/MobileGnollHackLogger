@@ -212,9 +212,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsTwentyThree()
+    public void HarnessVersion_IsTwentyFour()
     {
-        Assert.Equal("23", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("24", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -454,9 +454,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs23_ScoringMethodIs10()
+    public void Versions_HarnessIs24_ScoringMethodIs10()
     {
-        Assert.Equal("23", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("24", BenchmarkAssessmentPrompt.HarnessVersion);
 
         // Harness 23 reads an evidence string for a named defect rather than for a no-fault
         // boilerplate string, counts the out-of-scope and FORM points that sit beside a level

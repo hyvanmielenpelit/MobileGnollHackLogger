@@ -1272,6 +1272,101 @@ label.checkbox-label,
   }
 }
 
+/* Placeholder shown where a list or tab has nothing to show yet — Run History with no runs
+   recorded, its own "no matches" state, the Manage Suites list with no suites, and the Run
+   Benchmark tab with no suite to select from. Used alone it is centred body text on a dashed
+   panel; combined with .alert.alert-info elsewhere in the benchmark view it becomes a
+   placeholder that also carries an action, and the more specific alert-info rule above
+   settles which border and background apply. */
+.empty-state {
+  padding: 32px 16px;
+  text-align: center;
+  border: 1px dashed var(--border-glass);
+  border-radius: 8px;
+
+  &.alert {
+    text-align: left;
+  }
+}
+
+/* Suite card badge naming the default-suite catalog entry a suite was imported from. Mirrors
+   .question-count-badge's look (defined in benchmark.component.scss, scoped to .suite-card) so
+   the two badges read as one family; declared globally because this one is also needed inside
+   the import dialog below, which is not a .suite-card descendant. */
+.default-suite-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(212, 160, 23, 0.12);
+  color: var(--primary-color);
+  border: 1px solid rgba(212, 160, 23, 0.3);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The Import Default Suites dialog's suite picker. A <fieldset> with one row per catalog
+   entry — a checkbox label for a valid entry, a plain row for an invalid one — laid out as a
+   vertical list rather than the browser's default fieldset box. */
+.default-suite-picker {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  legend {
+    padding: 0;
+    margin-bottom: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--nav-color);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .checkbox-label,
+  .default-suite-row {
+    padding: 10px 12px;
+    border: 1px solid var(--border-glass);
+    border-radius: 8px;
+  }
+
+  .default-suite-row-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .default-suite-row-heading {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Mirrors .question-count-badge (benchmark.component.scss, scoped to .suite-card) — this
+     picker lives in a dialog, outside any .suite-card, so the badge needs its own copy here. */
+  .question-count-badge {
+    background: rgba(212, 160, 23, 0.15);
+    color: var(--primary-color);
+    border: 1px solid rgba(212, 160, 23, 0.3);
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .default-suite-row-invalid {
+    border-color: rgba(239, 68, 68, 0.35);
+  }
+}
+
 /* --- Models List --- */
 .models-list {
   display: flex;

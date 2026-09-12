@@ -191,7 +191,8 @@ public class AgentLoopRunner
                 request.ServiceTier,
                 parallelToolCalls: execContext.ParallelExecutionMode != ParallelExecutionMode.Disabled,
                 segmentedPrompt: request.SegmentedPrompt,
-                promptCacheKey: request.PromptCacheKey);
+                promptCacheKey: request.PromptCacheKey,
+                cacheConversationTail: request.CacheConversationTail);
 
             var jsonRequest = JsonSerializer.Serialize(requestBody);
             if (request.ShowDebugLog)

@@ -58,6 +58,31 @@ Daggers can be enchanted at an altar like most other weapons.
             File.WriteAllText(Path.Combine(monsterDir, $"Griffin{i}.md"),
                 $"Griffin{i} is a griffin, a griffin-type monster article describing griffin behavior.\n");
         }
+
+        // "Object Materials" carries the plural in its title, where EnglishAnalyzer's Porter
+        // stemming lets the singular query "material" match it; the title field's 5x boost ranks
+        // it above the Spells articles below, which only match through the body.
+        File.WriteAllText(Path.Combine(_tempDir, "Object Materials.md"),
+@"Objects in GnollHack are made of different materials, which affect their weight, value, and resistance to damage or corrosion.
+
+## Common materials
+Materials include wood, iron, mithril, and dragonhide.
+");
+
+        // Seven spell articles whose only mention of "material" is the body heading, so the query
+        // "material" matches eight articles in total - enough to exercise the tool's hit-count
+        // line (three of eight returned) as well as its absence when nothing is truncated.
+        var spellsDir = Path.Combine(_tempDir, "Spells");
+        Directory.CreateDirectory(spellsDir);
+        for (int i = 1; i <= 7; i++)
+        {
+            File.WriteAllText(Path.Combine(spellsDir, $"Spell{i}.md"),
+$@"Spell{i} is a spell available to certain classes in GnollHack.
+
+### Material components
+Spell{i} requires no material components to cast.
+");
+        }
     }
 
     public void Dispose()
@@ -217,6 +242,56 @@ Daggers can be enchanted at an altar like most other weapons.
         Assert.True(result.Success);
         var headerMatches = System.Text.RegularExpressions.Regex.Matches(result.Content, @"(?m)^--- .+ ---\r?$");
         Assert.Single(headerMatches);
+    }
+
+    [Fact]
+    public async Task WikiSearchTool_Query_Material_MatchesInflectedTitleAndRanksItFirst()
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new WikiSearchTool(service, BuildConfig());
+
+        var jsonParams = JsonDocument.Parse("{\"query\": \"material\"}").RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Contains("Object Materials.md", result.Content);
+
+        var firstHeader = System.Text.RegularExpressions.Regex.Match(result.Content!, @"^--- (.+?) ---", System.Text.RegularExpressions.RegexOptions.Multiline);
+        Assert.True(firstHeader.Success);
+        Assert.Equal("Object Materials.md", firstHeader.Groups[1].Value);
+    }
+
+    [Fact]
+    public async Task WikiSearchTool_HitsExceedMaxResults_AppendsShowingLine()
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new WikiSearchTool(service, BuildConfig());
+
+        // "material" matches all eight of Object Materials.md and Spell1-7.md; max_results 3
+        // returns only three of them.
+        var jsonParams = JsonDocument.Parse("{\"query\": \"material\", \"max_results\": 3}").RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Contains("[Showing 3 of 8 matching articles", result.Content);
+    }
+
+    [Fact]
+    public async Task WikiSearchTool_HitsDoNotExceedMaxResults_NoShowingLine()
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new WikiSearchTool(service, BuildConfig(("Tools:wiki_search:MaxResults", "8")));
+
+        // The same eight-article match as above, this time with a ceiling wide enough to return
+        // every hit, so nothing was left out and no line is appended.
+        var jsonParams = JsonDocument.Parse("{\"query\": \"material\", \"max_results\": 8}").RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.DoesNotContain("Showing", result.Content);
     }
 
     // ----- wiki_view -----

@@ -19,6 +19,16 @@ public class BenchmarkSuite
     /// <summary>True when any question in this suite came from the generator rather than a human.</summary>
     public bool HasGeneratedQuestions { get; set; }
 
+    /// <summary>
+    /// The key of the default-suite file this suite was imported from. Null for a suite created by
+    /// hand, and for one imported before suites recorded their origin.
+    /// </summary>
+    [MaxLength(64)]
+    public string? DefaultSuiteKey { get; set; }
+
+    /// <summary>The default-suite file's <c>version</c> at import; null with <see cref="DefaultSuiteKey"/>.</summary>
+    public int? DefaultSuiteVersion { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     public DateTime ModifiedAtUtc { get; set; } = DateTime.UtcNow;

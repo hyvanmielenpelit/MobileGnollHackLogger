@@ -924,6 +924,28 @@ public class BenchmarkService
         return seed;
     }
 
+    /// <summary>
+    /// A single-shot grading request's system text as one frozen segment, and a seed history that
+    /// carries the same text as its system message ahead of the user message. Providers that honour
+    /// segments build <c>system</c> from the segment; the others read the history entry.
+    /// </summary>
+    private static (SegmentedPrompt Prompt, List<object> SeedHistory) BuildGradingPrompt(
+        string systemPrompt,
+        string? preamble,
+        string userMessage)
+    {
+        string frozen = string.IsNullOrEmpty(preamble)
+            ? systemPrompt
+            : systemPrompt + Environment.NewLine + Environment.NewLine + preamble;
+        var segmented = new SegmentedPrompt(frozen, "", "");
+        var seedHistory = new List<object>
+        {
+            new { role = "system", content = segmented.FullPrompt },
+            new { role = "user", content = userMessage }
+        };
+        return (segmented, seedHistory);
+    }
+
     private async Task<BenchmarkRunAnswer> ExecuteSingleQuestionAsync(
         ApplicationDbContext db,
         SystemAiConfigService configService,
@@ -1540,8 +1562,7 @@ public class BenchmarkService
         await db.SaveChangesAsync(CancellationToken.None);
 
         var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
-        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
-            run.SuiteName,
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionBody(
             answer.OrderIndex,
             answer.QuestionText,
             answer.Difficulty,
@@ -1555,6 +1576,10 @@ public class BenchmarkService
             answer.ToolCallBudgetUsed,
             boardName: run.BenchmarkSuite?.GameSnapshot?.Name,
             boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText);
+        var (gradingPrompt, gradingSeedHistory) = BuildGradingPrompt(
+            "You are an objective AI benchmark evaluator. Strictly adhere to the requested JSON response format.",
+            BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(run.SuiteName),
+            prompt);
 
         int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
 
@@ -1564,7 +1589,8 @@ public class BenchmarkService
             ModelId = assessorConfig.ModelId,
             ApiKey = assessorApiKey,
             ModelDisplayName = assessorConfig.DisplayName,
-            SystemPrompt = "You are an objective AI benchmark evaluator. Strictly adhere to the requested JSON response format.",
+            SystemPrompt = gradingPrompt.FullPrompt,
+            SegmentedPrompt = gradingPrompt,
             ThinkingLevel = assessorConfig.ThinkingLevel,
             ReasoningMode = assessorConfig.ReasoningMode,
             ReasoningSummary = assessorConfig.ReasoningSummary,
@@ -1576,6 +1602,7 @@ public class BenchmarkService
             EnableSubAgents = false,
             SystemModelId = assessorConfig.Id,
             PromptCacheKey = $"benchmark:per_question:{assessorConfig.ModelId}",
+            CacheConversationTail = false,
             Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
             ToolExecutionContext = new Tools.ToolExecutionContext
             {
@@ -1583,10 +1610,7 @@ public class BenchmarkService
                 UserId = run.StartedByUserId ?? string.Empty,
                 ShowDebugLog = false
             },
-            SeedHistory = new List<object>
-            {
-                new { role = "user", content = prompt }
-            }
+            SeedHistory = gradingSeedHistory
         };
 
         var runResult = new AgentRunResult();
@@ -3050,8 +3074,7 @@ public class BenchmarkService
         CancellationToken cancellationToken)
     {
         var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
-        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
-            run.SuiteName,
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionBody(
             answer.OrderIndex,
             answer.QuestionText,
             answer.Difficulty,
@@ -3065,6 +3088,10 @@ public class BenchmarkService
             answer.ToolCallBudgetUsed,
             boardName: run.BenchmarkSuite?.GameSnapshot?.Name,
             boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText);
+        var (gradingPrompt, gradingSeedHistory) = BuildGradingPrompt(
+            "You are an objective AI benchmark evaluator. Strictly adhere to the requested JSON response format.",
+            BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(run.SuiteName),
+            prompt);
 
         int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
 
@@ -3074,7 +3101,8 @@ public class BenchmarkService
             ModelId = assessorConfig.ModelId,
             ApiKey = assessorApiKey,
             ModelDisplayName = assessorConfig.DisplayName,
-            SystemPrompt = "You are an objective AI benchmark evaluator. Strictly adhere to the requested JSON response format.",
+            SystemPrompt = gradingPrompt.FullPrompt,
+            SegmentedPrompt = gradingPrompt,
             ThinkingLevel = assessorConfig.ThinkingLevel,
             ReasoningMode = assessorConfig.ReasoningMode,
             ReasoningSummary = assessorConfig.ReasoningSummary,
@@ -3086,6 +3114,7 @@ public class BenchmarkService
             EnableSubAgents = false,
             SystemModelId = assessorConfig.Id,
             PromptCacheKey = $"benchmark:per_question:{assessorConfig.ModelId}",
+            CacheConversationTail = false,
             Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
             ToolExecutionContext = new Tools.ToolExecutionContext
             {
@@ -3093,10 +3122,7 @@ public class BenchmarkService
                 UserId = run.StartedByUserId ?? string.Empty,
                 ShowDebugLog = false
             },
-            SeedHistory = new List<object>
-            {
-                new { role = "user", content = prompt }
-            }
+            SeedHistory = gradingSeedHistory
         };
 
         var runResult = new AgentRunResult();
@@ -3515,8 +3541,7 @@ public class BenchmarkService
         }
 
         var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
-        string prompt = BenchmarkAssessmentPrompt.BuildSecondOpinionPrompt(
-            run.SuiteName,
+        string prompt = BenchmarkAssessmentPrompt.BuildSecondOpinionBody(
             answer.OrderIndex,
             answer.QuestionText,
             answer.Difficulty,
@@ -3536,6 +3561,10 @@ public class BenchmarkService
             blind: blind,
             triggerLabel: trigger,
             claimVerifications: claimVerifications);
+        var (gradingPrompt, gradingSeedHistory) = BuildGradingPrompt(
+            "You are an objective AI benchmark evaluator. Strictly adhere to the requested JSON response format.",
+            BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(run.SuiteName),
+            prompt);
 
         int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
 
@@ -3545,7 +3574,8 @@ public class BenchmarkService
             ModelId = secondConfig.ModelId,
             ApiKey = secondApiKey,
             ModelDisplayName = secondConfig.DisplayName,
-            SystemPrompt = "You are an objective AI benchmark evaluator. Strictly adhere to the requested JSON response format.",
+            SystemPrompt = gradingPrompt.FullPrompt,
+            SegmentedPrompt = gradingPrompt,
             ThinkingLevel = secondConfig.ThinkingLevel,
             ReasoningMode = secondConfig.ReasoningMode,
             ReasoningSummary = secondConfig.ReasoningSummary,
@@ -3557,6 +3587,7 @@ public class BenchmarkService
             EnableSubAgents = false,
             SystemModelId = secondConfig.Id,
             PromptCacheKey = $"benchmark:second_opinion:{secondConfig.ModelId}",
+            CacheConversationTail = false,
             Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
             ToolExecutionContext = new Tools.ToolExecutionContext
             {
@@ -3564,10 +3595,7 @@ public class BenchmarkService
                 UserId = run.StartedByUserId ?? string.Empty,
                 ShowDebugLog = false
             },
-            SeedHistory = new List<object>
-            {
-                new { role = "user", content = prompt }
-            }
+            SeedHistory = gradingSeedHistory
         };
 
         int timeoutSeconds = _configuration.GetValue<int>("Benchmark:SecondOpinion:TimeoutSeconds", 900);
@@ -3854,6 +3882,10 @@ public class BenchmarkService
         }
 
         string synthesisPrompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt(run.SuiteName, summaries);
+        var (gradingPrompt, gradingSeedHistory) = BuildGradingPrompt(
+            "You are an objective AI benchmark evaluator synthesizing a final report. Strictly adhere to the requested JSON response format.",
+            null,
+            synthesisPrompt);
 
         int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
 
@@ -3863,7 +3895,8 @@ public class BenchmarkService
             ModelId = assessorConfig.ModelId,
             ApiKey = assessorApiKey,
             ModelDisplayName = assessorConfig.DisplayName,
-            SystemPrompt = "You are an objective AI benchmark evaluator synthesizing a final report. Strictly adhere to the requested JSON response format.",
+            SystemPrompt = gradingPrompt.FullPrompt,
+            SegmentedPrompt = gradingPrompt,
             ThinkingLevel = assessorConfig.ThinkingLevel,
             ReasoningMode = assessorConfig.ReasoningMode,
             ReasoningSummary = assessorConfig.ReasoningSummary,
@@ -3874,6 +3907,7 @@ public class BenchmarkService
             EnableWebSearch = false,
             EnableSubAgents = false,
             SystemModelId = assessorConfig.Id,
+            CacheConversationTail = false,
             Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
             ToolExecutionContext = new Tools.ToolExecutionContext
             {
@@ -3881,10 +3915,7 @@ public class BenchmarkService
                 UserId = run.StartedByUserId ?? string.Empty,
                 ShowDebugLog = false
             },
-            SeedHistory = new List<object>
-            {
-                new { role = "user", content = synthesisPrompt }
-            }
+            SeedHistory = gradingSeedHistory
         };
 
         var runResult = new AgentRunResult();

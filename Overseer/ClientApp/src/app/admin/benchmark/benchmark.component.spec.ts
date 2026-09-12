@@ -53,7 +53,8 @@ describe('AdminBenchmarkComponent', () => {
       'updateSuite',
       'deleteSuite',
       'duplicateSuite',
-      'importDefaultSuite',
+      'getDefaultSuiteCatalog',
+      'importDefaultSuites',
       'getSuiteRunsFootprint',
       'deleteSuiteRuns',
       'reorderQuestions',
@@ -106,6 +107,7 @@ describe('AdminBenchmarkComponent', () => {
     benchmarkServiceMock.getQuestions.and.returnValue(of([]));
     benchmarkServiceMock.getSuiteRunsFootprint.and.returnValue(of({ runCount: 0, totalAnswerCharacters: 0 }));
     benchmarkServiceMock.getCalibrations.and.returnValue(of([]));
+    benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([]));
     // A suite with no completed run has no assessor to differ from, which is not an error.
     benchmarkServiceMock.getLastAssessor.and.returnValue(of({}));
     benchmarkServiceMock.getSuites.and.returnValue(of([
@@ -501,13 +503,158 @@ describe('AdminBenchmarkComponent', () => {
     expect(proseReview.textContent).toContain('<div id="assessment-html">');
   });
 
-  it('should display "Import Default Suite" on import button without hardcoded question count', () => {
+  it('should display "Import Default Suites" on the import button without hardcoded question count', () => {
     component.activeSubTab = 'suites';
     fixture.detectChanges();
 
-    const importBtn = fixture.nativeElement.querySelectorAll('.suites-toolbar .btn-gh')[1];
-    expect(importBtn.textContent.trim()).toBe('Import Default Suite');
-    expect(importBtn.textContent).not.toContain('15-Question');
+    const buttons: HTMLButtonElement[] = Array.from(fixture.nativeElement.querySelectorAll('.suites-toolbar .btn-gh'));
+    const importBtn = buttons.find(b => b.textContent!.trim() === 'Import Default Suites');
+    expect(importBtn).toBeTruthy();
+    expect(importBtn!.textContent).not.toContain('15-Question');
+  });
+
+  describe('Import Default Suites dialog', () => {
+    const catalogEntry = {
+      key: 'gnollhack-player-assistance',
+      version: 1,
+      name: 'GnollHack Player Assistance Benchmark Suite',
+      description: 'Core roguelike mechanics a player would ask about while looking at the board.',
+      questionCount: 18,
+      difficultyCounts: { Simple: 6, Intermediate: 6, Advanced: 6 },
+      fileName: 'gnollhack_player_assistance.json',
+      error: null,
+      alreadyImportedCount: 0,
+      alreadyImportedNames: [],
+      nameMatchedSuiteNames: []
+    };
+
+    beforeEach(() => {
+      component.activeSubTab = 'suites';
+      spyOn(component.importDefaultSuitesDialog.nativeElement, 'showModal');
+      spyOn(component.importDefaultSuitesDialog.nativeElement, 'close');
+    });
+
+    it('loads the catalog and renders one checkbox per entry, named for the suite', () => {
+      benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([catalogEntry] as any));
+      fixture.detectChanges();
+
+      component.openImportDefaultSuitesDialog();
+      fixture.detectChanges();
+
+      expect(benchmarkServiceMock.getDefaultSuiteCatalog).toHaveBeenCalled();
+      expect(component.importDefaultSuitesDialog.nativeElement.showModal).toHaveBeenCalled();
+
+      const dialogEl = component.importDefaultSuitesDialog.nativeElement;
+      const label = dialogEl.querySelector('.default-suite-picker label.checkbox-label');
+      expect(label).toBeTruthy();
+      expect(label!.textContent).toContain(catalogEntry.name);
+      expect(label!.querySelector('input[type="checkbox"]')).toBeTruthy();
+    });
+
+    it('keeps Import selected aria-disabled until a suite is checked', () => {
+      benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([catalogEntry] as any));
+      fixture.detectChanges();
+      component.openImportDefaultSuitesDialog();
+      fixture.detectChanges();
+
+      const dialogEl = component.importDefaultSuitesDialog.nativeElement;
+      const importBtn = dialogEl.querySelector('.dialog-footer .btn-gh:not(.btn-gh-cancel)') as HTMLButtonElement;
+      expect(importBtn.getAttribute('aria-disabled')).toBe('true');
+
+      component.toggleDefaultSuite(catalogEntry.key);
+      (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
+
+      expect(component.canImportDefaultSuites).toBeTrue();
+      expect(importBtn.getAttribute('aria-disabled')).toBe('false');
+    });
+
+    it('imports the selected keys and reloads the suite list', () => {
+      benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([catalogEntry] as any));
+      benchmarkServiceMock.importDefaultSuites.and.returnValue(of({
+        imported: [{ id: 9, name: catalogEntry.name }],
+        skipped: []
+      } as any));
+      fixture.detectChanges();
+      component.openImportDefaultSuitesDialog();
+      component.toggleDefaultSuite(catalogEntry.key);
+      fixture.detectChanges();
+
+      component.importSelectedDefaultSuites();
+
+      expect(benchmarkServiceMock.importDefaultSuites).toHaveBeenCalledWith([catalogEntry.key]);
+      expect(component.importDefaultSuitesDialog.nativeElement.close).toHaveBeenCalled();
+      // Once from ngOnInit, once from the post-import reload.
+      expect(benchmarkServiceMock.getSuites).toHaveBeenCalledTimes(2);
+      expect(component.suiteActionAnnouncement).toContain(catalogEntry.name);
+    });
+
+    it('announces a skipped entry with its reason', () => {
+      benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([catalogEntry] as any));
+      benchmarkServiceMock.importDefaultSuites.and.returnValue(of({
+        imported: [],
+        skipped: [{ key: catalogEntry.key, reason: 'Suite quota reached.' }]
+      } as any));
+      fixture.detectChanges();
+      component.openImportDefaultSuitesDialog();
+      component.toggleDefaultSuite(catalogEntry.key);
+      fixture.detectChanges();
+
+      component.importSelectedDefaultSuites();
+
+      expect(component.suiteActionAnnouncement).toContain('Suite quota reached.');
+    });
+
+    it('shows an invalid catalog entry with its error and no checkbox', () => {
+      const invalidEntry = {
+        key: null, version: null, name: 'broken.json', description: null, questionCount: 0,
+        difficultyCounts: {}, fileName: 'broken.json', error: 'Missing "key" field.',
+        alreadyImportedCount: 0, alreadyImportedNames: [], nameMatchedSuiteNames: []
+      };
+      benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([invalidEntry] as any));
+      fixture.detectChanges();
+      component.openImportDefaultSuitesDialog();
+      fixture.detectChanges();
+
+      const row = component.importDefaultSuitesDialog.nativeElement.querySelector('.default-suite-row-invalid');
+      expect(row).toBeTruthy();
+      expect(row!.textContent).toContain('Missing "key" field.');
+      expect(row!.querySelector('input[type="checkbox"]')).toBeNull();
+    });
+  });
+
+  it('shows the Manage Suites empty state and the Run Benchmark notice when no suites exist', () => {
+    benchmarkServiceMock.getSuites.and.returnValue(of([]));
+    component.loadSuites();
+    fixture.detectChanges();
+
+    component.activeSubTab = 'suites';
+    fixture.detectChanges();
+
+    const suitesEmptyState = fixture.nativeElement.querySelector('.suites-grid .empty-state[role="status"]');
+    expect(suitesEmptyState).toBeTruthy();
+    expect(suitesEmptyState.textContent).toContain('No question suites yet');
+
+    component.activeSubTab = 'run';
+    (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
+
+    const runNotice = fixture.nativeElement.querySelector('.setup-card .empty-state[role="status"]');
+    expect(runNotice).toBeTruthy();
+    expect(runNotice.textContent).toContain('No question suite available');
+  });
+
+  it('keeps Start Benchmark aria-disabled with a hint naming the missing suite when none is selected', () => {
+    benchmarkServiceMock.getSuites.and.returnValue(of([]));
+    component.loadSuites();
+    fixture.detectChanges();
+
+    const startBtn = fixture.nativeElement.querySelector('.form-actions .btn-gh') as HTMLButtonElement;
+    expect(startBtn.getAttribute('aria-disabled')).toBe('true');
+
+    const hint = fixture.nativeElement.querySelector('#startBenchmarkHint');
+    expect(hint.textContent.trim()).toBe('Select a question suite first.');
+
+    startBtn.click();
+    expect(benchmarkServiceMock.startRun).not.toHaveBeenCalled();
   });
 
   it('should open confirmActionDialog modal on deleteSuite and delete when confirmed', () => {
@@ -1072,7 +1219,7 @@ describe('AdminBenchmarkComponent', () => {
     expect(warningEl.textContent).toContain('Every question must have an assessed difficulty');
 
     const startBtn = fixture.nativeElement.querySelector('.form-actions button.btn-gh');
-    expect(startBtn.disabled).toBeTrue();
+    expect(startBtn.getAttribute('aria-disabled')).toBe('true');
   });
 
   it('should render per-question assessor info and badges when assessed, or not assessed message', () => {

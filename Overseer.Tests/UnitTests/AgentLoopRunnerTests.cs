@@ -34,7 +34,7 @@ public class AgentLoopRunnerTests
             }
         }
 
-        public virtual Dictionary<string, object> BuildChatRequestBody(string modelId, List<object> messageHistory, int? maxOutputTokens, string? thinkingLevel, ToolsForRequest requestTools, string? reasoningMode = null, string? reasoningSummary = null, string? serviceTier = null, bool? parallelToolCalls = null, SegmentedPrompt? segmentedPrompt = null, string? promptCacheKey = null)
+        public virtual Dictionary<string, object> BuildChatRequestBody(string modelId, List<object> messageHistory, int? maxOutputTokens, string? thinkingLevel, ToolsForRequest requestTools, string? reasoningMode = null, string? reasoningSummary = null, string? serviceTier = null, bool? parallelToolCalls = null, SegmentedPrompt? segmentedPrompt = null, string? promptCacheKey = null, bool cacheConversationTail = true)
         {
             return new Dictionary<string, object> { { "model", modelId }, { "messages", messageHistory } };
         }
@@ -520,10 +520,10 @@ public class AgentLoopRunnerTests
             return formatted;
         }
 
-        public override Dictionary<string, object> BuildChatRequestBody(string modelId, List<object> messageHistory, int? maxOutputTokens, string? thinkingLevel, ToolsForRequest requestTools, string? reasoningMode = null, string? reasoningSummary = null, string? serviceTier = null, bool? parallelToolCalls = null, SegmentedPrompt? segmentedPrompt = null, string? promptCacheKey = null)
+        public override Dictionary<string, object> BuildChatRequestBody(string modelId, List<object> messageHistory, int? maxOutputTokens, string? thinkingLevel, ToolsForRequest requestTools, string? reasoningMode = null, string? reasoningSummary = null, string? serviceTier = null, bool? parallelToolCalls = null, SegmentedPrompt? segmentedPrompt = null, string? promptCacheKey = null, bool cacheConversationTail = true)
         {
             CapturedHistory ??= new List<object>(messageHistory);
-            return base.BuildChatRequestBody(modelId, messageHistory, maxOutputTokens, thinkingLevel, requestTools, reasoningMode, reasoningSummary, serviceTier, parallelToolCalls, segmentedPrompt, promptCacheKey);
+            return base.BuildChatRequestBody(modelId, messageHistory, maxOutputTokens, thinkingLevel, requestTools, reasoningMode, reasoningSummary, serviceTier, parallelToolCalls, segmentedPrompt, promptCacheKey, cacheConversationTail);
         }
     }
 

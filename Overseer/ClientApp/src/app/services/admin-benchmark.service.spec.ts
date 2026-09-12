@@ -90,6 +90,41 @@ describe('AdminBenchmarkService', () => {
     req.flush({ runId: 42 });
   });
 
+  it('should get the default suite catalog', () => {
+    const mockCatalog = [
+      {
+        key: 'gnollhack-player-assistance', version: 1, name: 'GnollHack Player Assistance Benchmark Suite',
+        description: 'Core roguelike mechanics.', questionCount: 18,
+        difficultyCounts: { Simple: 6, Intermediate: 6, Advanced: 6 },
+        fileName: 'gnollhack_player_assistance.json', error: null,
+        alreadyImportedCount: 0, alreadyImportedNames: [], nameMatchedSuiteNames: []
+      }
+    ];
+
+    service.getDefaultSuiteCatalog().subscribe(res => {
+      expect(res.length).toBe(1);
+      expect(res[0].key).toBe('gnollhack-player-assistance');
+    });
+
+    const req = httpMock.expectOne('/api/admin/benchmark/suites/default-catalog');
+    expect(req.request.method).toBe('GET');
+    req.flush(mockCatalog);
+  });
+
+  it('should import default suites by key', () => {
+    const mockResult = { imported: [{ id: 5, name: 'Imported Suite' }], skipped: [] };
+
+    service.importDefaultSuites(['gnollhack-player-assistance']).subscribe(res => {
+      expect(res.imported.length).toBe(1);
+      expect(res.imported[0].name).toBe('Imported Suite');
+    });
+
+    const req = httpMock.expectOne('/api/admin/benchmark/suites/import-default');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ keys: ['gnollhack-player-assistance'] });
+    req.flush(mockResult);
+  });
+
   it('should get the comparability index with repeated runIds and groupIds params', () => {
     const mockIndex = {
       computedAtUtc: '2026-09-01T00:00:00Z',

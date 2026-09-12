@@ -302,6 +302,7 @@ public class BenchmarkRunLauncher
             BenchmarkSuiteId = suite.Id,
             BenchmarkSuiteIdUsed = suite.Id,
             SuiteName = suite.Name,
+            DefaultSuiteKeyUsed = suite.DefaultSuiteKey,
             TestedModelConfigurationId = testedConfig.Id,
             TestedModelDisplayNameUsed = testedConfig.DisplayName,
             TestedModelProviderUsed = testedConfig.Provider,

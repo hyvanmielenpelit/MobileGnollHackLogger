@@ -214,6 +214,8 @@ export interface BenchmarkSuiteDto {
   gameSnapshotCharCount?: number | null;
   hasGeneratedQuestions?: boolean;
   reviewedQuestionCount?: number;
+  /** The default-suite catalog key this suite was imported from. Null for a custom suite, and for a suite imported before this field existed. */
+  defaultSuiteKey?: string | null;
 }
 
 export interface CreateBenchmarkSuiteRequest {
@@ -224,6 +226,37 @@ export interface CreateBenchmarkSuiteRequest {
 export interface UpdateBenchmarkSuiteRequest {
   name: string;
   description?: string | null;
+}
+
+/**
+ * One `*.json` file found under the server's default-suite directory. `key` and `version` are
+ * null only when `error` is set: an invalid file is listed with its error and cannot be
+ * imported, never thrown. Invalid entries have no stable key, so the template tracks and
+ * identifies them by `fileName` instead.
+ */
+export interface DefaultSuiteCatalogEntryDto {
+  key: string | null;
+  version: number | null;
+  name: string;
+  description: string | null;
+  questionCount: number;
+  /** Band name ("Simple" | "Intermediate" | "Advanced") to question count. */
+  difficultyCounts: { [band: string]: number };
+  fileName: string;
+  error: string | null;
+  alreadyImportedCount: number;
+  alreadyImportedNames: string[];
+  /**
+   * Suites with no recorded `defaultSuiteKey` whose name equals this file's name — the
+   * pre-key-column fallback for "this looks like it was already imported". Shown under
+   * "possibly imported earlier (matched by name)".
+   */
+  nameMatchedSuiteNames: string[];
+}
+
+export interface ImportDefaultSuitesResultDto {
+  imported: BenchmarkSuiteDto[];
+  skipped: { key: string; reason: string }[];
 }
 
 export interface BenchmarkQuestionDto {
@@ -689,6 +722,8 @@ export interface BenchmarkRunDetailDto {
   isAborted?: boolean;
   benchmarkSuiteId?: number | null;
   suiteName: string;
+  /** The default-suite catalog key the suite carried when this run was launched. Null for a custom suite, and for a run recorded before harness 24. */
+  defaultSuiteKeyUsed?: string | null;
   testedModelConfigurationId?: number | null;
   testedModelDisplayNameUsed: string;
   testedModelProviderUsed: string;
@@ -1552,8 +1587,14 @@ export class AdminBenchmarkService {
     return this.http.post<BenchmarkSuiteDto>(`/api/admin/benchmark/suites/${id}/duplicate`, {});
   }
 
-  importDefaultSuite(): Observable<BenchmarkSuiteDto> {
-    return this.http.post<BenchmarkSuiteDto>('/api/admin/benchmark/suites/import-default', {});
+  /** Every `*.json` file under the server's default-suite directory, valid or not. */
+  getDefaultSuiteCatalog(): Observable<DefaultSuiteCatalogEntryDto[]> {
+    return this.http.get<DefaultSuiteCatalogEntryDto[]>('/api/admin/benchmark/suites/default-catalog');
+  }
+
+  /** Imports the named catalog entries. Never overwrites an existing suite — a repeat import creates a numbered copy. */
+  importDefaultSuites(keys: string[]): Observable<ImportDefaultSuitesResultDto> {
+    return this.http.post<ImportDefaultSuitesResultDto>('/api/admin/benchmark/suites/import-default', { keys });
   }
 
   // Questions

@@ -171,10 +171,16 @@ you already read the label, it is noise; drop it.
 | play | Start Benchmark, Acknowledge & Start Run | "This begins now", and it reinforces the consequence of a button that starts real work |
 | trash | Delete Runs, Delete All Suite Runs | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
 | refresh / rotate | Refresh, Re-score Run, Re-run Failed Questions | "This runs again" — the circular-arrow convention is universal |
-| download | Download Markdown Report | "A file arrives on your disk" |
-| upload | Import Default Suite | Direction of data movement, which the word "Import" alone does not picture |
+| file-with-arrow | Download Markdown Report | "A file arrives on your disk" |
+| download | Import Default Suites | Data arriving into the application; the arrow points into the tray |
 | star | Set Default | The marker used for the default item elsewhere in the UI; the icon *is* the concept |
 | chevron | Show / Hide Model Reasoning | A **state** indicator: which way it points says whether the section is open |
+
+*Changed 2026-09-12 (harness 24 round): Import Default Suite(s) moved from `upload` to `download` —
+importing brings suites from the server's catalog into the application, which is the same
+data-arrives-here direction `download` already carries elsewhere, not data leaving it. Download
+Markdown Report keeps its meaning but moves to the distinct file-with-arrow glyph, since two buttons
+now on the same toolbar cannot both read `download` under the one-glyph-one-meaning rule above.*
 
 **Leave the icon off when the label is already the whole message:**
 

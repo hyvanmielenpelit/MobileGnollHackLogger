@@ -102,7 +102,8 @@ public class OpenAiResponsesProvider : IAiProvider
         string? serviceTier = null,
         bool? parallelToolCalls = null,
         SegmentedPrompt? segmentedPrompt = null,
-        string? promptCacheKey = null)
+        string? promptCacheKey = null,
+        bool cacheConversationTail = true)
     {
         // Extract system message
         string systemContent = "";

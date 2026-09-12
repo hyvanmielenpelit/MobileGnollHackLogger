@@ -303,9 +303,21 @@ public static class BenchmarkAssessmentPrompt
     ///     not move — nothing here changes what a score is — so a run stamped 23 differs from one
     ///     stamped 22 on HarnessVersion and ToolGuidesSha256, which is below Tier B: compare the two
     ///     on counts and per-question thresholds, not as a reproduction pair.
+    /// v24: the per-question and second-opinion grading requests carry the assessor preamble
+    ///     (BuildPerQuestionPreamble) in a frozen, cacheable system segment and the question-specific
+    ///     body in the user turn; every single-shot grading request omits the conversation-tail cache
+    ///     breakpoint. The text a grader receives is unchanged apart from that placement. wiki_search
+    ///     stems English and reports how many articles matched, which moves ToolGuidesSha256; the
+    ///     suite's assessed difficulties become a Fundamental comparability key; the report's Critical
+    ///     Errors line states the applied caps and the direction of each second-reader split; and a run
+    ///     records the default suite it was launched from. ScoringMethodVersion does not move.
     /// </summary>
-    public const string HarnessVersion = "23";
+    public const string HarnessVersion = "24";
 
+    /// <summary>
+    /// The complete per-question assessor prompt: <see cref="BuildPerQuestionPreamble"/>, a blank
+    /// line, then <see cref="BuildPerQuestionBody"/>.
+    /// </summary>
     public static string BuildPerQuestionPrompt(
         string suiteName,
         int orderIndex,
@@ -321,6 +333,31 @@ public static class BenchmarkAssessmentPrompt
         int? toolCallBudget = null,
         string? boardName = null,
         string? boardText = null)
+    {
+        return BuildPerQuestionPreamble(suiteName)
+            + Environment.NewLine
+            + BuildPerQuestionBody(
+                orderIndex,
+                questionText,
+                difficulty,
+                expectedPoints,
+                answerText,
+                status,
+                allowedTools,
+                toolCallsCompleted,
+                toolBudgetExhausted,
+                scrubbedArtifactCount,
+                toolCallBudget,
+                boardName,
+                boardText);
+    }
+
+    /// <summary>
+    /// The part of the per-question assessor prompt that is identical for every question of a
+    /// suite: the role, the instructions, the BARS scales and the evidence rules. Grading requests
+    /// send it as a frozen system segment so the provider can cache it across questions.
+    /// </summary>
+    public static string BuildPerQuestionPreamble(string suiteName)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are an expert game knowledge and reasoning assessor for GnollHack (a roguelike game derived from NetHack 3.6.2).");
@@ -432,7 +469,30 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine("### 7. UNVERIFIED CLAIMS");
         sb.AppendLine("`unverifiedClaims` is a list of sentences the answer asserts that the rubric neither states nor contradicts, and that you cannot positively refute. Copy each one **verbatim** from the candidate answer — the harness checks that the text appears there and silently drops a paraphrase, exactly as it does for `criticalErrorQuote`.");
         sb.AppendLine("These are recorded, not penalised. Across several runs by unrelated models, a claim that keeps recurring is evidence the rubric is incomplete; a claim only one model ever makes is evidence that model invented it. Return an empty list when every claim is adjudicable.");
-        sb.AppendLine();
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// The question-specific part of the per-question assessor prompt: the question, the board,
+    /// the rubric, the harness context, the candidate answer and the output schema.
+    /// </summary>
+    public static string BuildPerQuestionBody(
+        int orderIndex,
+        string questionText,
+        BenchmarkDifficulty difficulty,
+        string? expectedPoints,
+        string answerText,
+        BenchmarkAnswerStatus status,
+        IReadOnlyList<string>? allowedTools = null,
+        int toolCallsCompleted = 0,
+        bool toolBudgetExhausted = false,
+        int scrubbedArtifactCount = 0,
+        int? toolCallBudget = null,
+        string? boardName = null,
+        string? boardText = null)
+    {
+        var sb = new StringBuilder();
         sb.AppendLine("--- QUESTION AND CANDIDATE ANSWER ---");
         sb.AppendLine($"Question #{orderIndex} [Authored Band: {difficulty}]");
         sb.AppendLine($"Question: {questionText}");
@@ -529,9 +589,58 @@ public static class BenchmarkAssessmentPrompt
         string? triggerLabel = null,
         IReadOnlyList<BenchmarkClaimVerification>? claimVerifications = null)
     {
+        return BuildPerQuestionPreamble(suiteName)
+            + Environment.NewLine
+            + BuildSecondOpinionBody(
+                orderIndex,
+                questionText,
+                difficulty,
+                expectedPoints,
+                answerText,
+                status,
+                firstQualityScore,
+                firstCriticalError,
+                firstComment,
+                allowedTools,
+                toolCallsCompleted,
+                toolBudgetExhausted,
+                scrubbedArtifactCount,
+                toolCallBudget,
+                boardName,
+                boardText,
+                blind,
+                triggerLabel,
+                claimVerifications);
+    }
+
+    /// <summary>
+    /// The second-opinion prompt without <see cref="BuildPerQuestionPreamble"/>: the per-question
+    /// body followed by the second-opinion section. <see cref="BuildSecondOpinionPrompt"/> is the
+    /// preamble, a blank line, then this.
+    /// </summary>
+    public static string BuildSecondOpinionBody(
+        int orderIndex,
+        string questionText,
+        BenchmarkDifficulty difficulty,
+        string? expectedPoints,
+        string answerText,
+        BenchmarkAnswerStatus status,
+        int firstQualityScore,
+        bool firstCriticalError,
+        string? firstComment,
+        IReadOnlyList<string>? allowedTools = null,
+        int toolCallsCompleted = 0,
+        bool toolBudgetExhausted = false,
+        int scrubbedArtifactCount = 0,
+        int? toolCallBudget = null,
+        string? boardName = null,
+        string? boardText = null,
+        bool blind = true,
+        string? triggerLabel = null,
+        IReadOnlyList<BenchmarkClaimVerification>? claimVerifications = null)
+    {
         var sb = new StringBuilder();
-        sb.AppendLine(BuildPerQuestionPrompt(
-            suiteName,
+        sb.AppendLine(BuildPerQuestionBody(
             orderIndex,
             questionText,
             difficulty,

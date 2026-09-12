@@ -904,7 +904,8 @@ public class BenchmarkSeriesOrchestrator
                 a.BenchmarkRunId,
                 a.BenchmarkQuestionIdUsed,
                 a.BenchmarkQuestionId,
-                a.ItemRevisionUsed
+                a.ItemRevisionUsed,
+                a.AssessedDifficulty
             })
             .ToListAsync(ct);
 
@@ -920,7 +921,8 @@ public class BenchmarkSeriesOrchestrator
                     BenchmarkRunId = a.BenchmarkRunId,
                     BenchmarkQuestionIdUsed = a.BenchmarkQuestionIdUsed,
                     BenchmarkQuestionId = a.BenchmarkQuestionId,
-                    ItemRevisionUsed = a.ItemRevisionUsed
+                    ItemRevisionUsed = a.ItemRevisionUsed,
+                    AssessedDifficulty = a.AssessedDifficulty
                 })
                 .ToList();
         }

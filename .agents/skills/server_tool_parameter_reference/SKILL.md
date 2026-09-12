@@ -346,13 +346,23 @@ finding nothing → `Success = true` with an explanatory "No … found" `Content
 
 ## 5. Wiki Family
 
-Both wiki services build an in-memory Lucene.NET 4.8 index (`RAMDirectory`, `StandardAnalyzer`,
+Both wiki services build an in-memory Lucene.NET 4.8 index (`RAMDirectory`, `EnglishAnalyzer`,
 `BM25Similarity`) at startup and hot-swap it on reindex; both guard on `IsIndexingComplete`
 (`ToolGuardMessages.WikiIndexingInProgress` / `.NetHackWikiIndexingInProgress`, `Success = false`
 while warming up). **An empty hit list from any of these four tools is a tokenization/analyzer
-question before it is an absence question** — `StandardAnalyzer` lowercases and strips stop
-words, `QueryParserBase.Escape` runs before parsing, and a `ParseException` is swallowed into an
-empty result rather than surfaced as an error.
+question before it is an absence question** — from harness 24 `EnglishAnalyzer` (Porter stemming)
+lowercases, strips stop words **and** stems both the query and the indexed title/body tokens, so
+`material` and `materials` match alike (`WikiService.cs`, `NetHackWikiService.cs`; before harness 24
+it was `StandardAnalyzer`, which does neither and cost `wiki_search` a title's ×5 boost whenever the
+query differed from the title only by inflection — run 39 T1). `QueryParserBase.Escape` runs before
+parsing, and a `ParseException` is swallowed into an empty result rather than surfaced as an error.
+
+**`wiki_search` reports how many articles matched, not only how many it returned, from harness 24.**
+When the query's total hit count exceeds `max_results`, the tool appends *"[Showing N of M matching
+articles — narrow the query, or add a distinctive word from the article's title, to see others.]"*
+after the snippets (`WikiSearchTool.cs`, `WikiService.GetRelevantSnippets`'s `totalHits` overload).
+Absent on a result whose hit count did not exceed what was returned — never assume M from N alone on
+a run before this line existed.
 
 | Tool | Required | Optional | Defaults / clamps | Config key |
 |---|---|---|---|---|

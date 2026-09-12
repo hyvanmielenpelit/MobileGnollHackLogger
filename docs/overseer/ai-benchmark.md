@@ -1877,6 +1877,62 @@ compare the two on counts and per-question thresholds, not as a reproduction pai
 No EF Core migration: the two new counts are computed at DTO build time from the run's answers, as
 `CompletenessOutOfScopeCount` already is.
 
+### Harness Version 24 Updates
+
+*2026-09-12.*
+
+Prompted by run 39 (Gemini 3.7 Flash @ `medium`, harness 23, Intelligence Index 68 ± 8, both of its
+applied critical errors traced to rubric defects) and its tool-diagnostics pass: `wiki_search` missed
+an article whose title differed from the query only by an inflection, costing 22% of the run's input
+tokens recovering from it; every Anthropic grading call paid the 1.25× cache-write price and never
+read a cache back; the Critical Errors line could read "0 confirmed" while two caps were in fact
+applied and disputed; and five suite items were re-assessed between runs 38 and 39 with no
+comparability key moving, so the report could not show why the weights had changed.
+
+`ScoringMethodVersion` stays at **10** — nothing here changes how an answer is scored — and
+`BenchmarkAssessmentPrompt.HarnessVersion` moves to **24**. `Overseer/ToolGuides/wiki_search.md`
+gains a sentence on query matching, so **`ToolGuidesSha256` moves**; no `ChatService` prose and no
+knowledge-base article changed, so `CandidateSystemPromptSha256` does not move. A run stamped 24
+therefore differs from a run stamped 23 on `HarnessVersion` **and** `ToolGuidesSha256`, which is
+below Tier B: compare the two on counts and per-question thresholds, not as a reproduction pair.
+
+- **`wiki_search` stems both wiki indexes (T1, T1b).** `WikiService` and `NetHackWikiService` build
+  their Lucene analyzer as `EnglishAnalyzer` (Porter stemming) rather than `StandardAnalyzer`, so a
+  query differing from an indexed title only by inflection (`material` / `materials`) still engages
+  the title's ×5 boost. `GetRelevantSnippets` gains an overload that also returns the query's total
+  hit count, and `WikiSearchTool` appends *"[Showing N of M matching articles — narrow the query, or
+  add a distinctive word from the article's title, to see others.]"* whenever a query matched more
+  articles than were returned.
+- **Grading prompts carry their shared preamble as a frozen, cacheable segment (H1).**
+  `BenchmarkAssessmentPrompt.BuildPerQuestionPrompt` splits into `BuildPerQuestionPreamble` (the text
+  identical across every question of a suite) and `BuildPerQuestionBody` (the per-question
+  remainder). `AgentRunRequest` gains `CacheConversationTail` (default `true`); the assessor, second
+  opinion, claim verifier and synthesis grading call sites in `BenchmarkService` set it `false` and
+  send the preamble as a `SegmentedPrompt` frozen prefix, so a single-shot request whose only message
+  is never re-sent gets no conversation-tail cache breakpoint — the preamble is written to cache once
+  per suite and read on every later question instead of being rewritten, uncached, on each one.
+- **The Critical Errors line states the applied count before any split (H2).** It now reads *"N
+  applied (question(s) …)"*, followed — only when the count is non-zero — by how many of those the
+  second reader disputed, how many critical errors the second reader raised on its own that the
+  assessor never applied, and which applied quotes the claim verifier checked against the source or
+  wiki and found supported. The Contested-Verdict Sensitivity line is recomputed over the disputed
+  set alone and reworded *"… with each split resolved at the second reader's score (raises and lowers
+  both)"*.
+- **A Fundamental `SuiteAssessedDifficulties` key, and both revision axes are shown (H5).** Assess
+  Difficulty rewrites `BenchmarkQuestion.AssessedDifficulty` without bumping `ItemRevision`, so two
+  runs could previously agree on `SuiteItemRevisions` and still have been weighted by two different
+  exams with nothing to say so. Each question header now prints `Item rev N`, the Comparability
+  block gains a *Suite item revisions* line and an *Assessed difficulties* line (both Q-by-Q), and the
+  Band Agreement sentence is qualified *"… until the item is re-assessed or edited"* rather than
+  claiming unconditional byte-identity.
+- **Default suites move from one hardcoded file to a discovered catalog, and runs record their
+  origin.** See *Default Suites* under § 5.
+
+Migration `AddBenchmarkDefaultSuiteKey` adds `BenchmarkSuite.DefaultSuiteKey` (`nvarchar(64)`,
+nullable), `BenchmarkSuite.DefaultSuiteVersion` (`int`, nullable) and `BenchmarkRun.DefaultSuiteKeyUsed`
+(`nvarchar(64)`, nullable); no data is backfilled, so a suite imported before this round reads
+`DefaultSuiteKey` as `null` — "unknown, match by name" — rather than as "custom".
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.
@@ -2248,7 +2304,36 @@ Rendering policy strictly depends on content author:
   - **A `**FORM**` section must not name a presentation the graded response style cannot produce.** The suite grades the production chat system prompt, which asks for concise prose, so a rubric demanding a comparison table or a multi-section layout asks the candidate to disobey the very prompt under test. Since scoring method version 9 the assessor records such a suggestion under a `FORM:` marker and does not deduct Readability for it, so the criterion no longer costs the candidate points — but it also no longer means anything, and a `**FORM**` section is worth writing only when the requested shape is one a concise answer could plausibly take.
 - **AI-Generated Content** (Candidate model answers, thought reasoning text, assessor evaluations): Untrusted external completions rendered strictly as **plain text** within `<pre>` containers, never through `[innerHTML]`.
 
-> **Note on Default Suite Re-Import:** Updating `BenchmarkDefaultSuite.json` does not automatically modify previously imported database rows. To reflect updated default suite descriptions or questions, re-import the default suite or edit existing suites manually.
+### Default Suites
+
+From harness 24, default suites are discovered rather than hardcoded. Each is one file under
+`Overseer/Data/DefaultSuites/<key>.json` (configurable via `Benchmark:DefaultSuitesPath`; empty
+resolves to `<AppBase>/Data/DefaultSuites`), carrying top-level `key` (a lowercase slug, 1–64
+characters) and `version` (an integer) fields alongside the existing `name`, `description` and
+`questions` array. `DefaultSuiteCatalogService` parses every `*.json` file in the directory into a
+catalog entry; an entry whose file fails validation (missing `key`, a `key` that collides with
+another file, missing `name`, or a question with no `questionText`) is listed with its `error` and
+cannot be imported, never thrown. A missing directory yields an empty catalog.
+
+Importing a key copies its questions into a new `BenchmarkSuite` — unassessed, `ItemRevision` 1 per
+question — and stamps `BenchmarkSuite.DefaultSuiteKey` and `BenchmarkSuite.DefaultSuiteVersion` from
+the file. **Import never overwrites an existing row**: re-importing a key already in the database
+creates a second suite, with a name-collision suffix (`"<name> (2)"`, `(3)`, …) exactly as
+`POST suites/{id}/duplicate` already does. Updating a default-suite file therefore does **not**
+retroactively change previously imported rows — to reflect an edited default suite, re-import it or
+edit the existing suite manually. This is also why the seed-mirror rule in `server_rubric_handoff`
+§ 3a exists: a rubric repair applied only to the database is undone the next time someone re-imports
+that key.
+
+A run stamps `BenchmarkRun.DefaultSuiteKeyUsed` from the suite it ran against at launch, so a run
+records which default suite (if any) produced its questions independently of whether that suite row
+still exists. The exported report's Run Manifest carries this as a **Suite origin** line: `default
+suite `<key>` (v<N>)` when the suite row is loaded and its `DefaultSuiteKey` still matches the run's
+own, `default suite `<key>`` alone when the version cannot be read back, `custom suite` when no
+default-suite key was recorded, and `not recorded (run before harness 24)` for a run from before this
+column existed. A suite imported before harness 24 carries `DefaultSuiteKey = null` and is not
+backfilled — its runs read as *not recorded*, and the catalog dialog can only offer a *possibly
+imported earlier (matched by name)* hint for it, never a definite count.
 
 ---
 
@@ -2268,12 +2353,13 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `POST /api/admin/benchmark/questions/{id}/rate-difficulty`: Auto-rate difficulty for a single question with an explicitly selected assessor model; returns `{ difficulty }`.
 
 ### Suites & Questions
-- `GET /api/admin/benchmark/suites`: List all suites with question counts and assessed question progress.
+- `GET /api/admin/benchmark/suites`: List all suites with question counts and assessed question progress. No longer seeds a default suite when the list is empty — an empty database returns an empty list; see *Default Suites* below.
 - `POST /api/admin/benchmark/suites`: Create a new suite.
 - `PUT /api/admin/benchmark/suites/{id}`: Update suite name and description.
 - `DELETE /api/admin/benchmark/suites/{id}`: Delete suite.
 - `POST /api/admin/benchmark/suites/{id}/duplicate`: Clone a suite, its questions, and their assessment snapshots.
-- `POST /api/admin/benchmark/suites/import-default`: Import the default suite (arrives unassessed).
+- `GET /api/admin/benchmark/suites/default-catalog`: List every default suite file found on disk (`DefaultSuiteCatalogEntryDto[]`: key, version, name, description, question count, per-band counts, file name, `error` when the file does not parse, `alreadyImportedCount` and `alreadyImportedNames`). No AI calls; cached per file `LastWriteTimeUtc`.
+- `POST /api/admin/benchmark/suites/import-default`: Import one or more default suites by key (body `{ keys: string[] }`, 1–20; 400 when empty). Returns `{ imported: BenchmarkSuiteDto[], skipped: { key, reason }[] }` — imported suites arrive unassessed; import never overwrites an existing row, and a name collision is imported as `"<name> (2)"`, `(3)`, etc.
 - `GET /api/admin/benchmark/suites/{id}/item-analysis`: Per-item statistics over the suite's stored runs, with the suite-level sample size, assessor mix and scoring-method mix. Pure arithmetic; no AI calls, no spend gate.
 - `GET /api/admin/benchmark/suites/{id}/rubric-gaps`: Clustered unverified claims with a `LikelyRubricGap` / `LikelyHallucination` verdict per cluster. No AI calls.
 - `POST /api/admin/benchmark/suites/{id}/validate-citations`: Resolves the rubrics' `**SOURCE**` citations against the running source and wiki indexes. A POST rather than a GET because it walks the whole index. No AI calls.

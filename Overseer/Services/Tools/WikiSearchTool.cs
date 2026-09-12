@@ -77,12 +77,17 @@ namespace Overseer.Services.Tools
                 category = categoryElem.GetString();
             }
 
-            var results = _wikiService.GetRelevantSnippets(query, category, maxResults, _perResultChars);
+            var results = _wikiService.GetRelevantSnippets(query, category, maxResults, _perResultChars, out int totalHits).ToList();
             var content = string.Join("\n\n", results);
 
             if (string.IsNullOrWhiteSpace(content))
             {
                 return Task.FromResult(new ToolResult { Success = true, Content = BuildMissContent(query, category, maxResults) });
+            }
+
+            if (totalHits > results.Count)
+            {
+                content += $"\n\n[Showing {results.Count} of {totalHits} matching articles — narrow the query, or add a distinctive word from the article's title, to see others.]";
             }
 
             if (context.SpoilerFreeMode)

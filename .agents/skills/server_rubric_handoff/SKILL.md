@@ -96,14 +96,41 @@ deliverable.
   numbering, same line breaks. State which point(s) changed.
 - **Say what the edit does to the item** (§ 5), so the human is not surprised when the launcher
   refuses the next run.
-- **Mirror the edit into the seed file.** The default suite is imported from
-  `Overseer/Data/BenchmarkDefaultSuite.json` (`AdminBenchmarkController`, the default-suite
-  import endpoint), and importing does not touch rows already in the database
-  (`docs/overseer/ai-benchmark.md`, "Note on Default Suite Re-Import"). A rubric fixed only in
-  the database comes back wrong the next time the suite is deleted and re-imported, so the same
-  text goes into the matching `expectedPoints` entry — JSON-escaped (`\n` for line breaks, `\"`
-  for quotes), with the file's existing LF line endings and no BOM preserved. This is a
-  repository edit the agent makes itself; it is a single file and needs no plan.
+- **Mirror the edit into the seed file — but only for a default suite.** See § 3a for the rule,
+  how to tell a default suite from a custom one, and what the handoff says when it is custom.
+
+## 3a. The Seed File Moves With the Database — For Default Suites
+
+From harness 24, default suites are discovered from one file per suite under
+`Overseer/Data/DefaultSuites/<key>.json` (`DefaultSuiteCatalogService`), each carrying its own
+`key` and `version` alongside `name`, `description` and `questions`. **Importing never overwrites
+a row already in the database** (`docs/overseer/ai-benchmark.md`, *Default Suites*), so a rubric
+fixed only in the database comes back wrong the moment someone deletes that suite and re-imports
+its key — the file still carries the defect.
+
+**The rule:** when the changed question belongs to a suite that was imported from a default
+suite, the matching entry in that suite's `Overseer/Data/DefaultSuites/<key>.json` is updated in
+the same round — a single-file edit, JSON-escaped (`\n` for line breaks, `\"` for quotes), with
+the file's existing LF line endings and no BOM, verified by a `ConvertFrom-Json` round-trip before
+and after. This is a repository edit the agent makes itself; it is one file and needs no plan.
+**When the suite is a custom suite, there is no seed entry and no file to edit — the handoff says
+so explicitly**, rather than staying silent about the check having been made.
+
+**How to tell, in order of preference:**
+
+1. **The run report's manifest line *Suite origin*, or the run's `DefaultSuiteKeyUsed` column**
+   (harness 24 onward) — the most direct evidence, because it names the exact key the run's
+   questions came from at launch time.
+2. **The suite row's `DefaultSuiteKey`** — add the column to the § 2 query
+   (`SELECT … s.DefaultSuiteKey … FROM BenchmarkSuites s …`). Present and non-null means the suite
+   was imported from that key; null means either a custom suite or one imported before harness 24
+   (the column is not backfilled).
+3. **For an older run or an unbackfilled suite, a `SuiteName` match against a catalog file's
+   `name`** — stated in the handoff as an **inference**, never as a fact, because a suite can be
+   renamed after import and two files could plausibly share a display name.
+
+Applies to every change of a default-suite question, not rubric edits alone: question text, band,
+an added or deleted question, or an accepted rubric addition (§ 5) all move the file the same way.
 
 ## 4. The Deliverable
 
@@ -116,7 +143,11 @@ it, in prose:
 - the human steps (§ 6) and the consequences (§ 5);
 - the pre-declared criterion that says the defect is closed on the next run (for example:
   *the assessor no longer charges Accuracy on Q7 for a table matching `src/zap.c:361-364` plus
-  `:949` at 5 % per point*).
+  `:949` at 5 % per point*);
+- **the seed-mirror step**, when § 3a's check finds this is a default suite: the
+  `Overseer/Data/DefaultSuites/<key>.json` entry the agent updates, alongside the deliverable, in
+  the same round. When § 3a's check finds a custom suite, this bullet says so instead — *"custom
+  suite; no seed file to mirror"* — so the check is visibly made rather than silently skipped.
 
 If the query result has not been received yet, say so and deliver the block only after it has.
 A "full rubric" reconstructed from a report paraphrase is not the deliverable; it is a guess
@@ -136,6 +167,14 @@ Verified in `AdminBenchmarkController` (the question editor and `AcceptRubricAdd
   for the whole suite before running a benchmark."*) until the human re-runs **Assess
   Difficulty**. The new assessed difficulty may differ from the old one, and assessed difficulty
   is the Intelligence Index weight for that question — say so in the handoff.
+  - **Assess Difficulty also moves this weight on an item nobody edited** — running it again on a
+    question whose `AssessedDifficulty` is already set re-assesses and overwrites it, with **no**
+    `ItemRevision` bump (H5, run 39). Two runs of a suite can therefore agree on every item
+    revision and still have been weighted by two different exams. From harness 24 this is a
+    Fundamental comparability key of its own, `SuiteAssessedDifficulties`
+    (`BenchmarkComparabilityKey.AssessedDifficultiesKey`), read alongside `SuiteItemRevisions`
+    rather than folded into it — record both old and new `AssessedDifficulty` in § 8 even when
+    `ItemRevision` did not move.
 - **The review mark is invalidated** for a generated question: `IsReviewed` holds only while
   `ReviewedAtRevision == ItemRevision`, so the human re-marks the question reviewed after the
   edit (`ReviewedAtRevision` is set to the current revision by the review endpoint).
@@ -157,8 +196,13 @@ Verified in `AdminBenchmarkController` (the question editor and `AcceptRubricAdd
 4. If the question is generated, mark it **reviewed** again.
 5. Note the question's new `ItemRevision` and `AssessedDifficulty` (the same query as § 2), for
    the registry entry.
+6. **If § 3a found this is a default suite**, the agent — not the human — mirrors the saved text
+   into the matching `Overseer/Data/DefaultSuites/<key>.json` entry in the same round; for a
+   custom suite this step does not apply and the handoff says so.
 
-## 7. Worked Example: Run 38, S9 (Q7, GnollHack Player Assistance Benchmark Suite)
+## 7. Worked Examples
+
+### Run 38, S9 (Q7, GnollHack Player Assistance Benchmark Suite)
 
 The rubric's point 3 listed the general Wisdom-save skill modifiers (+15/0/−15/−30/−45/−60 %).
 The Fear spell adds an extra `save_adj -= 2 * (skill_level - P_UNSKILLED)` on top of the general
@@ -170,6 +214,29 @@ runs recorded the defect before it cost a score. The wiki (`Saving Throws.md`, s
 Penalty for Slow, Hold, and Fear Spells*) had carried the right table since the run-36 round;
 only the rubric had not moved.
 
+### Run 39, S1–S3 (Q1, Q3, Q18, GnollHack Player Assistance Benchmark Suite)
+
+Three defects on one suite, each fourth-or-later observation, each closed the same way: read the
+source, replace the point, cite the line. **Q1** (`Id` 88) charged a critical error for a true
+Gnoll intrinsic — the CRITICAL ERROR clause banned invented intrinsics generally, and REQUIRED
+never listed lycanthropy resistance, so a correct answer tripped it (`src/attrib.c:117-119`,
+`gnl_abil[]`; `src/u_init.c:1475`). **Q3** (`Id` 90) is the same units-rule shape as run 28 (§ 3):
+the CRITICAL ERROR clause forbade *"NetHack's … base AC of 9"*, but 9 **is** the GnollHack
+player-visible AC bonus (`objects.c:1005`'s `10 − ac`), so the clause forbade GnollHack's own
+number under a NetHack label. **Q18** (`Id` 105) had it backwards: the CRITICAL ERROR clause
+penalised describing erosion-on-attack, which is exactly what GnollHack's `u_wipe_engr` does on
+every melee hit (`src/uhitm.c:602`, `src/engrave.c:304-323`), and the REQUIRED point it should
+have carried — the wear-by-engraving-type rule — had been miscopied from `include/engrave.h`'s
+type *constants* as if they were durability figures.
+
+All three rows queried at `ItemRevision` 1, byte-identical to the seed file at query time — no
+edit had reached either the database or the file since the suite was authored, which is what let
+the same three defects reach a fourth run undetected. All three are default-suite questions (the
+suite's `SuiteName` matched the seed's `name`, the only test available before harness 24 added
+`DefaultSuiteKeyUsed`), so § 3a's mirror applied to all three: the same replacement texts were
+written into `Overseer/Data/DefaultSuites/gnollhack_player_assistance.json` in the same round the
+deliverable was produced, verified by the `ConvertFrom-Json` round-trip.
+
 ## 8. After the Edit
 
 When the human has saved, re-assessed and (if generated) re-reviewed the question, record in
@@ -178,7 +245,11 @@ When the human has saved, re-assessed and (if generated) re-reviewed the questio
 - suite, question, old → new `ItemRevision`, old → new `AssessedDifficulty`;
 - the run number from which the new text applies, and that the question is a comparability
   break against earlier runs;
-- the pre-declared criterion from § 4 and whether the next run met it.
+- the pre-declared criterion from § 4 and whether the next run met it;
+- **whether the seed file was mirrored** (§ 3a) — the `Overseer/Data/DefaultSuites/<key>.json`
+  entry updated, or *"custom suite; no seed file"* when it does not apply. A default-suite repair
+  recorded without this line leaves the next reader unable to tell whether a re-import would
+  bring the defect back.
 
 A rubric repair is exempt from the re-run requirement of § 9 (it adds no instruction to the
 candidate), but it is not exempt from being recorded: a later reader comparing two runs on that

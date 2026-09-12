@@ -191,6 +191,23 @@ public class BenchmarkComparabilityKeyTests
     }
 
     [Fact]
+    public void AssessedDifficultyChangeAlone_EndsTheReplicateSet_ButLeavesItemRevisionsUnchanged()
+    {
+        // Assess Difficulty rewrites BenchmarkRunAnswer.AssessedDifficulty without bumping
+        // ItemRevisionUsed (H5), so this must move a Fundamental key of its own — distinct from a
+        // rubric edit (ARubricEditEndsTheReplicateSet above), which moves ItemRevisionsKey instead.
+        var a = Run(13);
+        var b = Run(14);
+        b.Answers[1].AssessedDifficulty = 62;
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
+
+        Assert.Equal(BenchmarkComparabilityTier.NotComparable, result.Tier);
+        Assert.Contains(result.Differences, d => d.Name == BenchmarkComparabilityKey.AssessedDifficultiesKey);
+        Assert.DoesNotContain(result.Differences, d => d.Name == BenchmarkComparabilityKey.ItemRevisionsKey);
+    }
+
+    [Fact]
     public void TwoInstrumentDifferences_AreNotACrossConditionExperiment()
     {
         var a = Run(13);
@@ -271,6 +288,7 @@ public class BenchmarkComparabilityKeyTests
         {
             BenchmarkComparabilityKey.SuiteKey,
             BenchmarkComparabilityKey.ItemRevisionsKey,
+            BenchmarkComparabilityKey.AssessedDifficultiesKey,
             BenchmarkComparabilityKey.CandidateProviderKey,
             BenchmarkComparabilityKey.CandidateModelKey,
             BenchmarkComparabilityKey.CandidateThinkingLevelKey,
