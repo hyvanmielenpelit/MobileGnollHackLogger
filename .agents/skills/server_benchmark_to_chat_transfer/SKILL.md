@@ -324,6 +324,12 @@ When an empirical chat-transferable finding clears the evidence bar, resolve it 
      `Saving Throws.md`; its prescribed verification grep would have returned zero. Both were
      checkable read-only on disk. The same rule that binds content gaps (§ 2 category 4: check
      on disk before filing) binds handoff prompts.
+   - **The handoff document carries the prompt and notes that need no action — nothing for the
+     human to do but paste it into a chat opened on the GnollHackWiki clone**
+     ([`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) § 3a); anything else that has to be
+     done is done by the analyst, or stated inside the prompt for the wiki session. When another
+     step of the round depends on the wiki change having landed, the round stops at the
+     confirmation gate in § 4a there instead of proceeding on the assumption that it did.
 3. **Tool Descriptions and Tool Policy Text**:
    - For tool routing inefficiencies. Changing tool descriptions guides the model without altering core persona prompt sections.
    - `_toolRegistry.GetPolicyText()` only returns a cached string. The editable sources, loaded by `ToolRegistry.LoadGuides()` from `<AppBase>/ToolGuides`, are:
@@ -379,7 +385,7 @@ A protocol that authorises production prompt edits but specifies no way to detec
 
 4. **Rollback trigger.** A change that fails to meet its pre-declared criterion, or that degrades another dimension by more than the run's CI, is **reverted**. Record the attempt and its outcome in § 11 so the same change is not re-proposed a year later by someone reading only the finding that motivated it.
 
-Rungs 1 and 2 — knowledge base and wiki content — are exempt from the re-run requirement, because they add facts rather than change instructions. They are still recorded in § 11, since rung 1 alters the frozen prompt segment (§ 7).
+Rungs 1 and 2 — knowledge base and wiki content — are exempt from the re-run requirement, because they add facts rather than change instructions. They are still recorded in § 11, since rung 1 alters the frozen prompt segment (§ 7). **Exemption from re-running is not exemption from sequencing**: whenever another step of the round reads the edited pages, see [`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) § 4a for the gate that holds it until the user confirms the wiki session has finished.
 
 ---
 
@@ -391,6 +397,7 @@ Any formal analysis of an AI benchmark run report or diagnostics **MUST** includ
 - The proposed ladder rung (1 to 7).
 - Evidence bar assessment (Single run / Motivated vs. Multi-run / Justified), **including the comparability assessment** from § 6.
 - For any proposed change at rung 3 or above, the **pre-declared acceptance criterion** and **rollback trigger** required by § 9.
+- For any rung-2 finding, **whether the round has a confirmation gate** ([`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) § 4a) and which steps sit behind it, or the explicit statement that nothing in the round depends on the wiki change.
 
 It **MUST** also include the tool-layer output that [`server_benchmark_tool_diagnostics`](../server_benchmark_tool_diagnostics/SKILL.md) § 10 mandates:
 
@@ -565,9 +572,31 @@ recalibration and the AD_SAMU wording rest on. Everything in this shared block h
   degrades the speed aggregates and leaves quality comparable, which is what made re-tuning possible
   at all; the model-comparison figures move to the candidate's own model time as their speed axis.
   **H2**: the claim-verification prompt gains instruction 3b (verifier caution instance 11). **C1,
-  C2** wiki handoff (`wiki_handoff_prompt_v2.md`); **S1, S2** rubric handoff
-  (`rubric_handoff_v2.md`, Q10 and Q4), the human paste and the seed-file mirror pending. T2–T5
-  recorded with no change.
+  C2** wiki handoff (`wiki_handoff_prompt_v2.md`). T2–T5 recorded with no change.
+- **S1 and S2 — rubric edits, saved 2026-09-13** (`rubric_handoff_v2.md`; suite 6, *GnollHack Player
+  Assistance Benchmark Suite*). **S1, Q10** (`Id` 97): the mithril bullet read *"−3 AC, +2 MC on body
+  armor"*; `src/o_init.c:139` gives `acbonus_armor {3, 2, …}` and `mcbonus_armor {3, 1, …}` with
+  index 0 = `ARM_SUIT` (`include/objclass.h:71,383-384`), and `get_object_base_mc`
+  (`src/o_init.c:1821-1833`) adds that value straight onto `oc_magic_cancellation`, so the
+  player-visible figure is **+3 MC** and the rubric was one point low. The sign convention was fixed
+  against the undisputed dragonhide bullet. `ItemRevision` **2 → 3**; `AssessedDifficulty`
+  **82 → 82** (unmoved). **S2, Q4** (`Id` 91): the engraving-method bullet moved from REQUIRED to
+  SCOPE — no fact changed — because the assessor filed it under `OUT-OF-SCOPE:` on both runs and
+  still held Completeness at 5 with no in-scope defect named (`UnevidencedDeduction` on Q4 of both).
+  `ItemRevision` **1 → 2**; `AssessedDifficulty` **30 → 32**. **Both are Fundamental comparability
+  breaks** on `SuiteItemRevisions`, and Q4 on `SuiteAssessedDifficulties` too, against every run
+  ≤ 48; the new text applies from the next run of suite 6. **Seed file mirrored**:
+  `Overseer/Data/DefaultSuites/gnollhack_player_assistance.json`, both entries, verified by a
+  `ConvertFrom-Json` round-trip either side and a two-line diff. Before the paste the database and
+  the seed file were byte-identical on both questions, which is better evidence that this file is
+  the suite's seed than the `SuiteName` match rule 3 allows — `DefaultSuiteKey` is still null.
+  **Closure criteria**: S1 — a candidate stating mithril body armour at +3 MC is graded as matching
+  the rubric and the verifier records no refutation of a +3 MC claim; S2 — Q4 carries no
+  `UnevidencedDeduction`, and an answer naming the three runewords, their effects and their domains
+  reaches Completeness 6 when nothing in scope is missing. **Sequencing**: W1
+  (`wiki_handoff_prompt_v2.md`) corrects the same mithril figure in the wiki's `Object Materials.md`;
+  until it lands, a candidate faithfully reporting the wiki is marked wrong on Q10 — correct
+  grading for a corpus reason, not a candidate one.
 - **Verification Outcome — runs 43–46 round**: nothing to verify. That round made no prompt, guide
   or limit change, and the calibration re-assessment it pre-declared (re-grade run 46 under GPT-5.6
   Sol, or one of runs 43–45 under Gemini 3.7 Flash) **is still outstanding**. Until it is done,

@@ -6,7 +6,10 @@ description: >-
   read-only pre-flight checks against WikiPath the analyst must do before writing the prompt
   (target page exists, which of two similarly named pages carries the fact, exact match count,
   existing links, clean tree, line endings, no presumed generator), what the prompt must not
-  restate or prescribe, the prompt template, and what to record after the wiki change lands.
+  restate or prescribe, the prompt-only document contract (the prompt plus notes that need no
+  action, and nothing for the human to do but paste it into a chat opened on the GnollHackWiki
+  clone), the prompt template, the confirmation gate that pauses a round until the user reports
+  the wiki session has finished, and what to record after the wiki change lands.
   Read with the other four benchmark skills before the first finding is written; act on it
   whenever a finding lands on ladder rung 2.
 ---
@@ -17,7 +20,9 @@ description: >-
 
 A rung-2 wiki finding (`server_benchmark_to_chat_transfer` § 7) leaves this repository as a
 prompt for a **separate session** opened in the GnollHackWiki clone at `WikiPath`. That
-session cannot ask the analyst anything, so **the prompt is the whole interface**.
+session cannot ask the analyst anything, so **the prompt is the whole interface**. § 3a fixes
+what the document carrying it may contain, because a handoff that buries the one action among
+steps the analyst could have taken is a second interface, and a worse one.
 
 The division of labour is fixed:
 
@@ -96,10 +101,55 @@ result is copied into the prompt.
   extending what the page already says. `wiki_editing` § 17 owns the shape of a benchmark-driven
   edit; a prompt that dictates structure overrides it from the wrong side of the handoff.
 
+## 3a. The Document Contract: the Prompt, Plus Notes That Need No Action
+
+The deliverable is **one file** in the round's plans task directory,
+`wiki_handoff_prompt_v<N>.md`. It is a member of the round's document set, so revising it bumps
+every member to the same version.
+
+**It contains two things, in this order, and nothing else:**
+
+1. **The prompt**, as a single fenced block, self-contained and ready to select-all and paste.
+   It comes first, after at most two sentences of framing that name what it is for and the one
+   action: open a new chat whose **project folder is the GnollHackWiki clone**, paste, send.
+2. **Notes that require no action from the human**, under a heading that says so — the § 2
+   pre-flight results, the source citations that license the edit, what the wiki session will do,
+   what the analyst will do afterwards, and the pre-declared criterion from § 5. These are read,
+   reviewed and filed; nothing in them is a step.
+
+**It carries no step, checklist or instruction addressed to the human beyond *paste this prompt
+into a GnollHackWiki chat*.** Four creep back most often:
+
+- no *"first check…"* pre-steps — those are § 2, and the analyst has already done them;
+- no post-steps — see the commit exception below;
+- no *"verify the change landed"* step — that is § 4a, done by the analyst, read-only;
+- no *"tell me when you are done"* inside the document — the wait is requested **in chat**, which
+  is where the user answers.
+
+**The reassignment rule.** Any piece of work that surfaces while the handoff is being written has
+exactly three legitimate destinations: **(a)** the analyst, before the prompt is written;
+**(b)** the wiki session, stated inside the prompt; **(c)** the analyst, after the confirmation in
+§ 4a. There is no fourth. A step that appears to need the human has been put in the wrong place.
+
+**The one exception, stated rather than omitted: the commit and push in the wiki clone.** No agent
+commits there, and the § 4 prompt already ends by making the wiki session print those commands.
+That is the wiki session's own handoff to the human, one step downstream, and this document does
+not restate it.
+
+**Document versus chat message.** The paste instruction and, when § 4a applies, the wait request
+live in the **chat message** that reports the document, not in the document. The document must
+still read correctly on its own to someone opening it a month later, which is what the two
+framing sentences are for.
+
+This contract was set on 2026-09-13 by the user's instruction, not by an incident. Its purpose is
+that the one action that matters does not compete for attention with steps the agent could have
+taken itself.
+
 ## 4. Prompt Template
 
 ```text
-You are working in the GnollHack wiki repository at <WikiPath> (HEAD <sha>, clean tree).
+You are working in the GnollHack wiki repository at <WikiPath> (HEAD <sha>, clean tree),
+which is this session's project folder; paths below are repository-relative to it.
 Do not edit any other repository. Do not commit or push; leave the changes in the working
 tree and print the git commands at the end.
 
@@ -130,6 +180,57 @@ Report: mechanism used (in place), number of files changed, the exact line form 
 anything changed from the wording above and why, the verification output, and the git
 commands to commit and push.
 ```
+
+## 4a. Sequencing: When the Round Waits for the Human
+
+**Decide explicitly whether anything else in the round depends on the wiki change having landed**,
+and say which way the answer went.
+
+| Dependent on the wiki change | Independent of it |
+|---|---|
+| Recording the new `WikiHeadSha` (§ 5) | A rubric handoff |
+| Any verification that greps the wiki, or calls `wiki_view` / `wiki_search` | A harness fix |
+| A re-run whose questions touch the edited pages | A tool-guide edit |
+| A corpus refresh or an Overseer restart | A registry entry that does not name the new SHA |
+| Any plan step whose acceptance criterion names the page | |
+
+**Finish every independent piece of work first, then stop.** A round that gates before doing what
+it could have done wastes the wait.
+
+**When dependent work exists, the round pauses at an explicit gate**, announced in chat in one
+message carrying: the clickable link to the handoff document; the single action — open a new chat
+with the GnollHackWiki clone as its project folder and paste the prompt; what is waiting on it;
+and the request in plain words —
+
+> Tell me when you have pasted the prompt into a GnollHackWiki chat **and that session has
+> finished**, and I will continue with `<the dependent steps>`.
+
+**Both facts, not one.** *"I pasted it"* is not the gate: the edit may not exist yet, and every
+dependent step would read an unchanged tree.
+
+**Do not poll, do not proceed on a timer, and do not read a clean `WikiPath` working tree as
+confirmation.** The wiki session leaves its changes uncommitted (§ 3), so a clean tree is
+ambiguous between *not started* and *finished and committed*.
+
+**On confirmation, verify read-only before continuing** rather than taking the report at face
+value:
+
+```powershell
+git -C <WikiPath> status --porcelain
+git -C <WikiPath> log -1 --format="%h %ad %s" --date=short
+```
+
+together with the § 2 grep for the distinctive player-facing phrase, whose count is recorded. If
+the phrase is absent, say so and do **not** start the dependent work — the wiki session's job is
+not done.
+
+**Under a plan, the gate is a step of its own**, named as such in Proposed Changes with the
+dependent steps listed beneath it, so a resumed session can see it has not been passed. Its
+`task.md` checkbox is ticked after the read-only verification, never on the user's word alone.
+
+**When nothing depends on it, say so explicitly** and close the round. Rung 2 is exempt from the
+re-run requirement (`server_benchmark_to_chat_transfer` § 9), so this is the common case; the
+defect is silence about the check, not the absence of a gate.
 
 ## 5. After the Wiki Session
 
@@ -184,6 +285,9 @@ player-facing page in the wiki that cites the source.
   authorship rule), § 9 (the rung-2 re-run exemption), § 11 (where the outcome is recorded)
 - [`server_tool_data_sources`](../server_tool_data_sources/SKILL.md) — § 2 path resolution for
   `WikiPath`, § 6 corpus provenance and `WikiHeadSha`
+- [`server_rubric_handoff`](../server_rubric_handoff/SKILL.md) — the sibling handoff whose store
+  has **no** session to delegate to. Its human steps in the Admin UI are irreducible, so § 3a's
+  contract does not transfer to it: there, the numbered steps for the human are the deliverable
 - `.agents/skills/wiki_editing/SKILL.md` and `.agents/skills/wiki_bulk_edits/SKILL.md` in the
   **GnollHackWiki** repository, cited by repository-relative path because they live in another
   repository

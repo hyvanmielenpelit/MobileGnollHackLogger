@@ -6,7 +6,10 @@ description: >-
   read-only pre-flight checks against WikiPath the analyst must do before writing the prompt
   (target page exists, which of two similarly named pages carries the fact, exact match count,
   existing links, clean tree, line endings, no presumed generator), what the prompt must not
-  restate or prescribe, the prompt template, and what to record after the wiki change lands.
+  restate or prescribe, the prompt-only document contract (the prompt plus notes that need no
+  action, and nothing for the human to do but paste it into a chat opened on the GnollHackWiki
+  clone), the prompt template, the confirmation gate that pauses a round until the user reports
+  the wiki session has finished, and what to record after the wiki change lands.
   Read with the other four benchmark skills before the first finding is written; act on it
   whenever a finding lands on ladder rung 2.
 ---

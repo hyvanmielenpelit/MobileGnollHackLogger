@@ -214,7 +214,7 @@ chains above are what constrains sequencing here.
 
 ## AI Benchmark Plans and Chat Transfer
 
-Any plan derived from an AI benchmark run analysis, report, or diagnostic review **MUST** include a dedicated **Chat Transfer** section, and **MUST** consult all four skills `.agents/AGENTS.md` § *AI Benchmark Findings* names — `server_benchmark_to_chat_transfer`, `server_benchmark_tool_diagnostics`, `server_tool_data_sources` and `server_tool_parameter_reference` — before drafting. That requirement is unconditional; do not treat the last three as conditional on the shape of a finding.
+Any plan derived from an AI benchmark run analysis, report, or diagnostic review **MUST** include a dedicated **Chat Transfer** section, and **MUST** consult all five skills `.agents/AGENTS.md` § *AI Benchmark Findings* names — `server_benchmark_to_chat_transfer`, `server_benchmark_tool_diagnostics`, `server_tool_data_sources`, `server_tool_parameter_reference` and `server_wiki_handoff` — before drafting. That requirement is unconditional; do not treat the last four as conditional on the shape of a finding.
 
 ### The `Skills consulted:` line
 
@@ -222,7 +222,7 @@ Every plan and every analysis document derived from a benchmark run **MUST** car
 
 ```
 Skills consulted: server_benchmark_to_chat_transfer, server_benchmark_tool_diagnostics,
-server_tool_data_sources, server_tool_parameter_reference
+server_tool_data_sources, server_tool_parameter_reference, server_wiki_handoff
 ```
 
 One line, checkable at a glance. Its purpose is to make the next gap visible to the user without their having to ask: the run-28 analysis on 2026-09-09 shipped having read one of the four, and it took a direct question from the user to surface that. A document that claims a skill it did not read is a worse defect than one that admits the omission, so write what actually happened.
@@ -236,6 +236,7 @@ The benchmark evaluates the production chat system prompt (`ChatService.BuildSys
 4. Evaluate whether the evidence bar is met (minimum two comparable runs or an isolated variable pair) before any chat prompt change is proposed.
 5. State the pre-declared acceptance criterion and the rollback trigger for any proposed change, per the skill's Verification and Rollback section.
 6. Carry the **tool-diagnostics table** and the **"Limits of this pass"** statement that `server_benchmark_to_chat_transfer` § 10 requires, with columns as `server_benchmark_tool_diagnostics` § 10 defines them.
+7. For any rung-2 wiki finding, name the wiki handoff document and state whether the plan has a **confirmation gate** before the steps that depend on the wiki change, per `server_wiki_handoff` § 4a — or that nothing in the plan depends on it.
 
 If the plan addresses only harness or suite infrastructure, it must explicitly state: *"No chat-transferable changes proposed in this plan."*
 
@@ -247,4 +248,5 @@ If the plan addresses only harness or suite infrastructure, it must explicitly s
 - `server_benchmark_tool_diagnostics` (reading a run as a tool-layer instrument; the § 10 table)
 - `server_tool_data_sources` (the corpora behind each tool, and what each index excludes)
 - `server_tool_parameter_reference` (the per-tool parameter and result contract)
+- `server_wiki_handoff` (the rung-2 handoff prompt, its prompt-only document contract, and the confirmation gate)
 - `testing_guidelines` (test classification and execution)
