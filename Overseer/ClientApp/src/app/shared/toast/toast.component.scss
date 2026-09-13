@@ -1,7 +1,11 @@
 :host {
   box-sizing: border-box;
   position: fixed;
-  inset: auto 24px 24px auto;
+  /* Top-centre, clear of the primary actions modals keep in their footer. `--toast-top` is the
+     distance from the viewport top, 24px by default; a host with a fixed header sets it to a
+     value that clears that header. */
+  inset: var(--toast-top, 24px) auto auto 50%;
+  transform: translateX(-50%);
   margin: 0;
   padding: 14px 18px;
   border-radius: 8px;
@@ -19,7 +23,7 @@
      polyfilled path. */
   transition: display 0.3s allow-discrete, overlay 0.3s allow-discrete, opacity 0.3s, translate 0.3s;
   opacity: 0;
-  translate: 0 8px;
+  translate: 0 -8px;
 
   &:is(:popover-open, .\:popover-open) {
     opacity: 1;
@@ -27,7 +31,7 @@
 
     @starting-style {
       opacity: 0;
-      translate: 0 8px;
+      translate: 0 -8px;
     }
   }
 

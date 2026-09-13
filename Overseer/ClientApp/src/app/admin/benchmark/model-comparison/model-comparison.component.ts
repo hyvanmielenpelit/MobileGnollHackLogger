@@ -1549,9 +1549,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** The target size's refusal, in the words the download refuses it in. Empty while it fits. */
   previewRefusal = '';
 
-  /** The pixels **Download** will write — the target size, never the size fitted to the stage. */
-  previewPixels = '';
-
   /** A composition is asynchronous, so a slow one must not paint over a newer one behind it. */
   private previewSeq = 0;
 
@@ -1582,7 +1579,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     }
     this.previewCardId = target.id;
     this.previewRefusal = '';
-    this.previewPixels = '';
     this.previewOpen = true;
 
     // The figure select and the stage render from state this method has just changed, so they have
@@ -1705,9 +1701,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       const chrome = this.exportChrome(card);
       const onScreen = this.onScreenSizeOf(canvas);
       const target = resolveFigureLayout(chrome, this.exportResolution, onScreen);
-      this.previewPixels = target.layout
-        ? `${target.layout.pixelWidth} × ${target.layout.pixelHeight} px`
-        : '';
       if (!target.layout) {
         this.previewRefusal = target.refusal ?? '';
         this.blankPreview();

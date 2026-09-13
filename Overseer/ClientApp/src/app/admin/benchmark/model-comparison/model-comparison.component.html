@@ -1499,9 +1499,6 @@
         }
 
         <p class="mc-export-dimensions">{{ exportDimensionsLabel }}@if (exportAspectLabel) { · {{ exportAspectLabel }}}</p>
-        @if (previewPixels) {
-          <p class="mc-preview-pixels">Download writes {{ previewPixels }}.</p>
-        }
         @if (customResolutionError) {
           <p class="mc-export-error" id="mc-export-resolution-error" role="alert">{{ customResolutionError }}</p>
         }

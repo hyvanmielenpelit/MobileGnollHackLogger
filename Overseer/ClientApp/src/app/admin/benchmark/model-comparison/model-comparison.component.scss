@@ -971,6 +971,12 @@
   flex: 1;
   min-width: 0;
   min-height: 0;
+
+  /* Both toast hosts — the wizard dialog and the figure preview dialog — carry a 72px header
+     (14px padding, a 44px icon button, 14px padding) inside an 8px full-screen dialog inset;
+     the toast sits 12px below it. Custom properties inherit, so both `<app-toast>` instances
+     read it, including the one inside the `<dialog>`. */
+  --toast-top: 92px;
 }
 
 .mc-wizard {
@@ -1393,13 +1399,6 @@
   .checkbox-label {
     margin: 0;
   }
-}
-
-/* The size the file will carry, which the bitmap on the stage beside it may be a reduction of. */
-.mc-preview-pixels {
-  margin: 0;
-  font-size: 12px;
-  color: #c3c2b7;
 }
 
 /* Near-black rather than the card ground: the composition carries its own opaque background, and a

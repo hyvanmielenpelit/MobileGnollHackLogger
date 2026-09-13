@@ -1602,7 +1602,7 @@ describe('ModelComparisonComponent', () => {
     }
   });
 
-  it('rasterises the export at the density the stage affords, and states the box it fills', async () => {
+  it('rasterises the export at the density the stage affords', async () => {
     render(buildDto(comparableSet(3)), 4);
     // A fixture's element is never laid out, so the stage's geometry is given rather than measured.
     spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
@@ -1616,8 +1616,6 @@ describe('ModelComparisonComponent', () => {
     expect(stage.height).toBe(900);
     expect(stage.style.width).toBe('800px');
     expect(parseFloat(stage.style.height)).toBeCloseTo(450, 6);
-    // The file is still the target's, whatever the stage could show of it.
-    expect(component.previewPixels).toContain('1920 × 1080 px');
   });
 
   it('fits a portrait target to the stage’s height, in the target’s own ratio', async () => {

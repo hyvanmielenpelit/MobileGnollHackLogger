@@ -20,6 +20,9 @@ const DEFAULT_DURATION_MS = 6000;
  *
  * `popover="manual"` so it has no light dismiss and can coexist with the modal
  * dialogs it is rendered inside.
+ *
+ * Fixed to the top-centre of the viewport, where no modal keeps its primary
+ * actions; a host sets `--toast-top` to keep it below a sticky or dialog header.
  */
 @Component({
   selector: 'app-toast',
