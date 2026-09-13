@@ -105,12 +105,12 @@ where $\text{ModelTime}$ is the turn duration with harness tool I/O removed, and
 
 Overseer supports configuring scoring profiles to accommodate different agent architectures:
 1. **Standard Intelligence Index** (Default / Interactive Agent Profile):
-   - **Target Latency (`SpeedTargetMs`):** 15,000 ms (15 s)
-   - **Decay Factor (`SpeedDecayK`):** 20.0
+   - **Target Latency (`SpeedTargetMs`):** 2,000 ms (2 s)
+   - **Decay Factor (`SpeedDecayK`):** 12.0
    - **Max Parallel Questions:** 1 (Sequential, strict timing)
-   - **Intended Use:** Standard conversational models and interactive agents where rapid turn completion is desired. At assessed difficulty 0 a 15-second response yields 100 points, decaying to 80 at 30s, 60 at 60s, and 40 at 120s; difficulty raises the target proportionally, so a difficulty-50 question is scored against 22.5 s rather than 15 s.
+   - **Intended Use:** Standard conversational models and interactive agents where rapid turn completion is desired. At assessed difficulty 0 a 2-second response yields 100 points, decaying to 88 at 4 s, 76 at 8 s, 64 at 16 s and 52 at 32 s; difficulty raises the target proportionally, so a difficulty-50 question is scored against 3 s rather than 2 s. The target is model time with tool I/O already removed, which is why two seconds is a reachable figure for an agentic turn.
 
-> These two constants are pinned by the invariants documented on `BenchmarkScoringConstants`, and `BenchmarkScoringTests` fails the build if they are changed without re-deriving the per-band timeout margins. **This section previously documented 5,000 ms and k = 25.0**, which is what the constants were before the floor-versus-timeout analysis; the seeded default has been 15,000 ms and k = 20.0 since, and 15,000 is what reproduces published run scores.
+> These two constants are pinned by the invariants documented on `BenchmarkScoringConstants`, and `BenchmarkScoringTests` fails the build if they are changed without re-deriving the per-band timeout margins. **This section previously documented 5,000 ms / k = 25.0, and then 15,000 ms / k = 20.0.** The first pair floored at ≈ 78 s and tied slow answers together; the second saturated at the ceiling instead — run 48 scored 100 on 18 of 18 — and was replaced in the runs 47–48 round once the speed constants left the quality comparability signature (harness 28). **15,000 ms / k = 20.0 is what reproduces the published scores of every run up to 48**; a run scored before the recalibration keeps its old-scale Speed Index until an administrator uses the per-run **Rescore** action on it.
 2. **Reasoning Agent Profile** (Deep Thinker Profile):
    - **Target Latency (`SpeedTargetMs`):** 30,000 ms (30 s)
    - **Decay Factor (`SpeedDecayK`):** 15.0
@@ -165,7 +165,7 @@ Prompted by a second defect the 2026-09-03 GPT-5.6 Luna run exposed: the report 
   Sizing rule of thumb: `ToolIterations` ≈ half of `ToolCallBudget`, and `TotalModelCalls` = `ToolIterations` + 4 to 6 (room for the answer-composing calls that don't call a tool).
 
   Configuration keys are `Benchmark:ToolCallBudget:{Band}`, `Benchmark:ToolIterations:{Band}`, `Benchmark:TotalModelCalls:{Band}` and `Benchmark:QuestionTimeoutSeconds:{Band}` (`{Band}` is `Simple`, `Intermediate`, or `Advanced`). The old flat keys — `Benchmark:MaxToolCallsPerQuestion`, `Benchmark:MaxToolIterations`, `Benchmark:MaxTotalModelCalls`, `Benchmark:PerQuestionTimeoutSeconds` — are **removed**, so there is exactly one place to set each cap rather than a flat default and a banded override that could disagree.
-- **The timeout is coupled to the speed floor.** The speed score reaches its floor of 1 point at $\text{ModelTime} / Target(q) = 2^{99/20} \approx 30.91$, where $Target(q) = \text{SpeedTargetMs} \cdot (1 + \text{Difficulty}(q)/100)$. Inside a band, the binding case is always its **lowest** difficulty: a lower difficulty means a smaller $Target(q)$, which means the floor is reached at a smaller `ModelTime` — the floor arrives earliest for the easiest question in the band. At the Simple band's floor difficulty (1) the floor sits at ≈468 s; Intermediate (36) at ≈631 s; Advanced (71) at ≈793 s. Each band's `QuestionTimeoutSeconds` sits below its own floor with 60-70 s of margin, which is why the timeout is banded rather than raised to one flat value: a flat 720 s — the value an Advanced question needs in order to spend 45 tool calls over 22 rounds — would let a Simple question run some 250 s *past* its own 468 s floor without timing out, so every Simple answer slower than 468 s would score 1 and be indistinguishable from every other slow Simple answer. That is exactly the flattening the speed constants were pinned to avoid.
+- **The timeout is coupled to the speed floor.** The speed score reaches its floor of 1 point at $\text{ModelTime} / Target(q) = 2^{99/12} \approx 304.4$, where $Target(q) = \text{SpeedTargetMs} \cdot (1 + \text{Difficulty}(q)/100)$. Inside a band, the binding case is always its **lowest** difficulty: a lower difficulty means a smaller $Target(q)$, which means the floor is reached at a smaller `ModelTime` — the floor arrives earliest for the easiest question in the band. At the Simple band's floor difficulty (1) the floor sits at ≈615 s; Intermediate (36) at ≈828 s; Advanced (71) at ≈1,041 s. Each band's `QuestionTimeoutSeconds` sits below its own floor with 195–321 s of margin, which is why the timeout is banded rather than raised to one flat value: a flat 720 s — the value an Advanced question needs in order to spend 45 tool calls over 22 rounds — would let a Simple question run some 105 s *past* its own 615 s floor without timing out, so every Simple answer slower than 615 s would score 1 and be indistinguishable from every other slow Simple answer. That is exactly the flattening the speed constants were pinned to avoid.
 - **Report changes.** Answer headings are demoted (`BenchmarkReportBuilder.DemoteAnswerHeadings`) so a model's own `##`/`###` heading can never land at or above the report's own outline level; the advisory sentence for reasoning narration now distinguishes narration that was actually removed from narration that was merely detected (using `ScrubbedArtifactText` non-empty as the per-answer signal, since `NarrationBlockCount` is not a persisted column); the scrub counter reports transport payloads and reasoning narration as two separate figures instead of one that hid the narration count entirely; and a **Critical Errors** headline is printed under Results Summary — with the affected question numbers — whenever at least one answer was critical-error capped, omitted entirely when none was.
 
 ### Harness Version 6 Updates
@@ -623,16 +623,21 @@ run must therefore read the fingerprints, not the harness version, and the run r
   classifies as `Clean` with `Harness Limits: 0`, and a test asserts that.
   The round count itself is not persisted on an answer; `ModelCallCount` stands in for it, which
   is exact for a tool-using turn because the agent loop makes one model call per round.
-- **A saturated Speed Index is demoted rather than re-tuned.** When at least half the scored
-  answers sit at the Speed Index ceiling, or when a deliberating candidate ran against an
-  interactive-latency profile, § 2 and § 7 Final Indices both lead with **median model time** and
-  mark the index advisory; the Angular score card does the same, with the index on its sub-line.
-  No score, no scoring profile and no method version changes. The tempting alternative — a second
-  scoring profile with a larger `SpeedTargetMs` — was rejected: `speedTargetMs` is inside
-  `BenchmarkScoringProfileService.CanonicalSignature`, which is hashed into the comparability key,
-  so a profile differing *only* in its speed target would mark its runs non-comparable on every
-  quality dimension as well, for a reason that cannot touch a quality score. A metric that has run
-  out of resolution is a reporting problem, not a scoring one.
+- **A saturated Speed Index is demoted, and from harness 28 it is also re-tuned.** When at least
+  half the scored answers sit at the Speed Index ceiling, or when a deliberating candidate ran
+  against an interactive-latency profile, § 2 and § 7 Final Indices both lead with **median model
+  time** and mark the index advisory; the Angular score card does the same, with the index on its
+  sub-line. That demotion is unchanged. What changed is that re-tuning is no longer forbidden:
+  re-tuning was rejected for three rounds because `speedTargetMs`, `speedDecayK` and
+  `speedDifficultyScaling` sat inside `BenchmarkScoringProfileService.CanonicalSignature`, which is
+  hashed into the `ScoringProfile` comparability key, so a profile differing *only* in its speed
+  target marked its runs non-comparable on every **quality** dimension as well — for a reason that
+  cannot touch a quality score. Harness 28 moves the three constants out of that signature into
+  `SpeedCalibrationSignature`, reached by a `SpeedCalibration` comparability key of kind
+  SpeedAndCost, and then recalibrates them (below). A recalibration now degrades the **speed**
+  aggregates across the boundary and leaves quality comparable, which is the treatment the
+  difference always deserved. Demotion still covers the case a calibration cannot: a candidate run
+  far outside the profile the run was scored against.
 - **The confidence interval carries a caveat when answers were capped.** A critical-error cap
   replaces a score with 25, and that deviation enters the variance weighted by the item's assessed
   difficulty *squared*, so a run with critical errors reports a wide interval for a reason that is
@@ -2243,6 +2248,87 @@ alone, and only step 4 is gated on a chartable entry.
 `write-excel-file` is the one new client dependency. It is reached through a dynamic import inside
 the XLSX encoder alone, so it builds into its own lazy chunk and neither the initial bundle nor the
 admin chunk carries it until someone exports a spreadsheet.
+
+### Harness Version 28 Updates
+
+Prompted by benchmark runs 47 and 48 (2026-09-12; GPT-5.6 Luna @ `max` and Gemini 3.7 Flash @
+`medium`, a Tier A pair on one roster). `ScoringMethodVersion` stays **10** — nothing here changes
+what a quality score is — and `CandidateSystemPromptSha256` does not move. `ToolGuidesSha256` does
+not move either, which is precisely why the harness stamp matters this round: the tool-data change
+below is carried by a file no fingerprint covers.
+
+- **`AD_SAMU` is described by what the attack steals.** `Overseer/Data/flag_descriptions.json` read
+  *"hits, may steal Amulet (Wizard)"*, and every candidate that called `get_monster_stats` for Master
+  Kaen framed his theft attack around the Amulet of Yendor. `stealamulet` (`src/steal.c:655-701`)
+  takes the hero's **quest artifact** first and reaches the Amulet branch only for a monster carrying
+  `M3_WANTSAMUL`; Kaen carries `M3_WANTSARTI`. The entry now reads *"hits, steals the hero's quest
+  artifact (monsters that want it); steals the Amulet of Yendor only for a monster that wants the
+  Amulet, such as the Wizard"*. The file is loaded at startup by
+  `SourceCodeService.LoadFlagDescriptions` from the published `Data/` directory and is **not** part
+  of `ToolGuidesSha256`, so `HarnessVersion` 27 → 28 is the only record that the tool's output
+  changed. This is a production tool result, so the fix reaches the chat assistant and the benchmark
+  candidate identically.
+- **The claim verifier checks a magnitude where the property is applied.** Instruction **3b** follows
+  3a in `BenchmarkClaimVerificationPrompt`: a claim about the magnitude or tier of a resistance or
+  property is checked against the code that applies the property — the enlightenment strings in
+  `src/cmd.c` and the resistance rolls in `src/zap.c` — not against the code that grants it, because
+  how an intrinsic is acquired says nothing about how much it protects. Run 48's Q13 refutation of a
+  50 % fire-resistance claim was wrong in exactly that way (verifier-caution instance 11). The
+  verdict was advisory and entered no index; the clause is the response, and deleting it is the
+  rollback.
+- **The Speed Index is recalibrated: `SpeedTargetMs` 15,000 → 2,000, `SpeedDecayK` 20 → 12**
+  (`SpeedDifficultyScaling` stays 1.0). The old pair saturated — run 48 sat at the ceiling on 18 of
+  18 answers, and three consecutive rounds read the median model time instead of the index because
+  the index had run out of resolution at the top. The floor stays unreachable inside every band's
+  timeout, which is invariant 1 of `BenchmarkScoringConstants`:
+
+  | Band | Lowest difficulty | Target(q) | Floor at | Timeout | Margin |
+  |---|---|---|---|---|---|
+  | Simple | 1 | 2,020 ms | ~615 s | 420 s | ~195 s |
+  | Intermediate | 36 | 2,720 ms | ~828 s | 600 s | ~228 s |
+  | Advanced | 71 | 3,420 ms | ~1,041 s | 720 s | ~321 s |
+
+  The floor ratio is $2^{99/12} \approx 304.4$. Invariant 2 still binds at the top: a 3.4 s answer at
+  difficulty 61 scores 99, not 100. Under the new constants run 48 recomputes to ≈ 86 with none at
+  the ceiling, run 47 to ≈ 53, and a 15 s median run to ≈ 70.
+- **The speed constants left the quality comparability signature.** The three of them are no longer
+  in `BenchmarkScoringProfileService.CanonicalSignature`, which the `ScoringProfile` **Instrument**
+  key hashes; they are rendered by a new `SpeedCalibrationSignature` and reach the ladder through a
+  new `SpeedCalibration` key of kind **SpeedAndCost**, `DegradesSpeed` true and `DegradesCost` false.
+  Two runs on opposite sides of the recalibration are therefore **QualityComparable**, with the speed
+  aggregates flagged degraded — rather than NotComparable on every quality dimension for a reason no
+  quality score can read. The key is also in `BenchmarkCrossModelComparability.DegradingKeys`, which
+  is enumerated rather than derived from the kind: a speed-and-cost key left out of that list is
+  treated as must-match and would exclude every point across the boundary from every chart.
+  Consequences for existing data: stored **group analyses** hash the old key set and should be
+  re-analysed from the Multi-Run tab (the standing caution on the scoring-profile key already says
+  so); runs at or below 48 keep their old-scale Speed Index until an administrator uses the per-run
+  **Rescore** action, which recomputes quality from stored levels under identical weights and so
+  leaves the Intelligence Index untouched by construction; and a run with no profile snapshot reads
+  `(none)` on the new key exactly as it does on the profile key.
+- **Data-only migration `RecalibrateBenchmarkSpeedIndex`.** The columns already exist, so the C#
+  defaults alone would leave every stored profile on the old scale. `Up` moves profiles still holding
+  exactly 15,000 / 20.0 to 2,000 / 12.0; `Down` reverses it under the mirrored guard. A profile an
+  administrator has tuned is left alone in both directions.
+- **The model-comparison speed axis is the candidate's own model time.** `SpeedMeasure` gains
+  `meanModelTime` (the default) and `totalModelTime` beside `ttftP50` and `speedIndex`; both speed
+  scatters and the profile figure read the selected measure, and the comparison table and every
+  export format carry *Model time / question* and *Suite total*. The server side of it is
+  `BenchmarkGroupSpeedStatistics.ModelTimeMeanMs`, `TotalModelTimePerRunMeanMs`,
+  `PerRunTotalModelTimeMs` and `TotalModelTimeStandardDeviationMs`, computed over the same pooled
+  answers and item-set restriction as the existing TTFT figures, and surfaced on
+  `BenchmarkModelComparisonSpeedDto` and in the group report. TTFT stays available and stays the
+  perceived-latency figure; model time is the turn duration less tool I/O, which is what the two
+  runs actually differ on.
+- **A run or a series that finishes plays a sound.** The Run Benchmark tab carries a persisted
+  *completion sound* setting, on by default, with a *Test sound* button that also satisfies the
+  browsers that require one user gesture before programmatic playback. A single run chimes once; a
+  series chimes once at the end and never per member; a run opened from history already terminal
+  never chimes. When the sound is enabled the run and series polls keep going in a hidden tab at a
+  15-second cadence instead of pausing — browsers throttle background timers to roughly once a minute
+  after five minutes, so the chime can lag by up to a minute — and the document title carries a
+  "✓ " prefix until the tab is revisited. Blocked playback is reported in the dialog rather than
+  swallowed.
 
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).

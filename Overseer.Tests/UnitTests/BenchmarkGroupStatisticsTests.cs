@@ -523,6 +523,31 @@ public class BenchmarkGroupStatisticsTests
         Assert.Equal(4, speed.PooledAnswerCount);
     }
 
+    /// <summary>
+    /// The candidate's own model time, both pooled per answer and totalled per run — the figures the
+    /// model-comparison speed axis now plots beside time to first token.
+    /// </summary>
+    [Fact]
+    public void Speed_ReportsMeanAndPerRunTotalModelTime()
+    {
+        var questions = Questions(50, 50);
+        var runs = new[]
+        {
+            Run(1, questions, new[] { 80, 80 }, speedIndex: 70, modelTimesMs: new long[] { 10000, 20000 }),
+            Run(2, questions, new[] { 80, 80 }, speedIndex: 90, modelTimesMs: new long[] { 30000, 40000 })
+        };
+
+        var speed = BenchmarkGroupStatistics.Compute(Suite(), questions, runs).Speed;
+
+        // Pooled {10000, 20000, 30000, 40000}: mean 25000.
+        Assert.Equal(25000.0, speed.ModelTimeMeanMs!.Value, 9);
+
+        // Per-run totals 30000 and 70000: mean 50000, sample SD sqrt(800,000,000).
+        Assert.Equal(new[] { 30000.0, 70000.0 }, speed.PerRunTotalModelTimeMs);
+        Assert.Equal(50000.0, speed.TotalModelTimePerRunMeanMs!.Value, 9);
+        Assert.Equal(Math.Sqrt(800_000_000.0), speed.TotalModelTimeStandardDeviationMs!.Value, 6);
+    }
+
     [Fact]
     public void Cost_SplitsByRoleAndDerivesPerQuestionAndPerIndexPoint()
     {

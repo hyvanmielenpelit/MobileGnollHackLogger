@@ -53,6 +53,13 @@ export interface ModelComparisonEntry {
   /** Time to first token, P90, in milliseconds. The upper whisker; latency is right-skewed. */
   readonly ttftP90Ms: number;
 
+  /** Mean model time per question, ms - turn duration with tool I/O removed. UNMEASURED when absent. */
+  readonly modelTimeMeanMs: number;
+  /** Mean per-run total model time for the whole suite, ms. UNMEASURED when absent. */
+  readonly totalModelTimeMs: number;
+  /** SD of totalModelTimeMs across runs. Null below R = 2, where no run-to-run spread exists. */
+  readonly totalModelTimeSdMs: number | null;
+
   /** Candidate-only cost of one question, in USD, on the request's pricing basis. */
   readonly candidateCostPerQuestionUsd: number;
   /** SD of that cost across runs. Null at R = 1, where the mark instead carries an `n = 1` note. */
@@ -198,8 +205,11 @@ export function glyphFor(glyphs: ReadonlyMap<string, IdentityGlyph>, key: string
 // Measures, sorting and the plotted set
 // ---------------------------------------------------------------------------------------------
 
-/** P1's speed panel switches between these two. The scatters always use TTFT P50. */
-export type SpeedMeasure = 'speedIndex' | 'ttftP50';
+/**
+ * P1's speed panel switches between these four; the three scatters and the profile plot read
+ * whichever one is selected off {@link speedValue} rather than a figure-specific fixed measure.
+ */
+export type SpeedMeasure = 'meanModelTime' | 'totalModelTime' | 'ttftP50' | 'speedIndex';
 /** P1's cost panel switches between these two. The scatters always use candidate cost per question. */
 export type CostMeasure = 'candidateSuite' | 'totalRun';
 
@@ -225,9 +235,18 @@ function suiteCostSdUsd(entry: ModelComparisonEntry, context: ModelComparisonCon
     : entry.candidateCostPerQuestionSdUsd * context.itemsPerRun;
 }
 
-/** The value P1's speed panel plots under the selected measure. */
+/** The value P1's speed panel, the scatters and the profile plot read under the selected measure. */
 export function speedValue(entry: ModelComparisonEntry, measure: SpeedMeasure): number | null {
-  return measure === 'speedIndex' ? entry.speedIndex : entry.ttftP50Ms;
+  switch (measure) {
+    case 'meanModelTime':
+      return entry.modelTimeMeanMs;
+    case 'totalModelTime':
+      return entry.totalModelTimeMs;
+    case 'ttftP50':
+      return entry.ttftP50Ms;
+    case 'speedIndex':
+      return entry.speedIndex;
+  }
 }
 
 /** The value P1's cost panel plots under the selected measure. */
@@ -241,7 +260,7 @@ export function costValue(
 
 /** True when lower is the better direction for the measure - drives axis markers and the frontier. */
 export function speedLowerIsBetter(measure: SpeedMeasure): boolean {
-  return measure === 'ttftP50';
+  return measure !== 'speedIndex';
 }
 
 /**
@@ -637,6 +656,8 @@ export interface FigureOptions {
   readonly highlightedKey?: string | null;
   /** Explicitly selected models. Empty means "nothing selected", which is not the same as "none". */
   readonly selectedKeys?: readonly string[];
+  /** Which measure the scatters' speed axis reads. Defaults to mean model time. */
+  readonly speedMeasure?: SpeedMeasure;
 }
 
 /** Effective hit radius is `radius + hitRadius`, so the target is 36 px across - well over the 24 px floor. */
@@ -764,6 +785,57 @@ const COST_AXIS: ScatterAxisSpec = {
   errLow: (e) => e.candidateCostPerQuestionSdUsd ?? undefined,
   errHigh: (e) => e.candidateCostPerQuestionSdUsd ?? undefined,
 };
+
+const SPEED_INDEX_AXIS: ScatterAxisSpec = {
+  title: 'Speed Index (0-100) — higher is better',
+  type: 'linear',
+  better: 'higher',
+  min: 0,
+  max: 100,
+  format: (v) => v.toFixed(1),
+  value: (e) => speedValue(e, 'speedIndex') ?? Number.NaN,
+  errLow: (e) => e.speedIndexSd ?? undefined,
+  errHigh: (e) => e.speedIndexSd ?? undefined,
+};
+
+// Model time shares TTFT's order of magnitude (known runs span seconds to minutes), so the same
+// logarithmic treatment that keeps TTFT legible on a scatter carries over to it. No per-answer
+// dispersion is returned at the DTO level, so the mean draws no whisker at all.
+const MEAN_MODEL_TIME_AXIS: ScatterAxisSpec = {
+  title: 'Model time per question, mean (ms, logarithmic scale) — lower is better',
+  type: 'logarithmic',
+  better: 'lower',
+  format: formatMs,
+  value: (e) => speedValue(e, 'meanModelTime') ?? Number.NaN,
+  errLow: () => undefined,
+  errHigh: () => undefined,
+};
+
+// Unlike the mean, the per-run total carries a genuine run-to-run SD once R >= 2 - the same
+// dispersion the small-multiples panel draws as a whisker.
+const TOTAL_MODEL_TIME_AXIS: ScatterAxisSpec = {
+  title: 'Candidate model time for the whole suite (ms, logarithmic scale) — lower is better',
+  type: 'logarithmic',
+  better: 'lower',
+  format: formatMs,
+  value: (e) => speedValue(e, 'totalModelTime') ?? Number.NaN,
+  errLow: (e) => e.totalModelTimeSdMs ?? undefined,
+  errHigh: (e) => e.totalModelTimeSdMs ?? undefined,
+};
+
+/** The scatter axis for whichever speed measure is currently selected. */
+function speedAxisFor(measure: SpeedMeasure): ScatterAxisSpec {
+  switch (measure) {
+    case 'speedIndex':
+      return SPEED_INDEX_AXIS;
+    case 'meanModelTime':
+      return MEAN_MODEL_TIME_AXIS;
+    case 'totalModelTime':
+      return TOTAL_MODEL_TIME_AXIS;
+    case 'ttftP50':
+      return TTFT_AXIS;
+  }
+}
 
 function scatterPoint(entry: ModelComparisonEntry, x: ScatterAxisSpec, y: ScatterAxisSpec): ErrorBarPoint {
   return {
@@ -913,7 +985,7 @@ function buildScatter(
   };
 }
 
-/** S1 — Intelligence Index against time to first token. */
+/** S1 — Intelligence Index against speed, on whichever speed measure is currently selected. */
 export function buildQualitySpeedScatter(
   plotted: readonly ModelComparisonEntry[],
   options: FigureOptions,
@@ -922,7 +994,7 @@ export function buildQualitySpeedScatter(
     's1-quality-speed',
     'Quality against speed',
     plotted,
-    TTFT_AXIS,
+    speedAxisFor(options.speedMeasure ?? 'meanModelTime'),
     QUALITY_AXIS,
     options,
     degradedNotices(plotted, ['speed']),
@@ -945,7 +1017,7 @@ export function buildQualityCostScatter(
   );
 }
 
-/** S3 — candidate cost per question against time to first token. */
+/** S3 — candidate cost per question against speed, on whichever speed measure is currently selected. */
 export function buildSpeedCostScatter(
   plotted: readonly ModelComparisonEntry[],
   options: FigureOptions,
@@ -954,7 +1026,7 @@ export function buildSpeedCostScatter(
     's3-speed-cost',
     'Speed against cost',
     plotted,
-    TTFT_AXIS,
+    speedAxisFor(options.speedMeasure ?? 'meanModelTime'),
     COST_AXIS,
     options,
     degradedNotices(plotted, ['speed', 'cost']),
@@ -1132,16 +1204,31 @@ export function buildSmallMultiples(
   const qualityErr = plotted.map((e) => e.intelligenceIndexCi95HalfWidth);
 
   const speedValues = plotted.map((e) => speedValue(e, speedMeasure));
-  // Speed Index has no percentile spread; TTFT carries the P50-to-P90 whisker, which is one-sided
-  // because latency is right-skewed and an SD would imply a symmetry the data does not have.
-  const speedErrLow = plotted.map((e) =>
-    speedMeasure === 'speedIndex' ? e.speedIndexSd ?? undefined : undefined,
-  );
-  const speedErrHigh = plotted.map((e) =>
-    speedMeasure === 'speedIndex'
-      ? e.speedIndexSd ?? undefined
-      : Math.max(0, e.ttftP90Ms - e.ttftP50Ms),
-  );
+  // Speed Index has no percentile spread, so its whisker is the reproducibility SD. TTFT carries
+  // the P50-to-P90 whisker, one-sided because latency is right-skewed. The total model time for
+  // the whole suite carries a genuine run-to-run SD once R >= 2. The mean model time per question
+  // has no per-answer dispersion at the DTO level, so it draws no whisker at all.
+  const speedErrLow = plotted.map((e) => {
+    if (speedMeasure === 'speedIndex') {
+      return e.speedIndexSd ?? undefined;
+    }
+    if (speedMeasure === 'totalModelTime') {
+      return e.totalModelTimeSdMs ?? undefined;
+    }
+    return undefined;
+  });
+  const speedErrHigh = plotted.map((e) => {
+    if (speedMeasure === 'speedIndex') {
+      return e.speedIndexSd ?? undefined;
+    }
+    if (speedMeasure === 'totalModelTime') {
+      return e.totalModelTimeSdMs ?? undefined;
+    }
+    if (speedMeasure === 'ttftP50') {
+      return Math.max(0, e.ttftP90Ms - e.ttftP50Ms);
+    }
+    return undefined;
+  });
 
   const costValues = plotted.map((e) => costValue(e, costMeasure, context));
   // At R = 1 there is no reproducibility SD, so the bar carries no interval and an explicit
@@ -1167,11 +1254,20 @@ export function buildSmallMultiples(
       `No Speed Index for ${missingIndex.map((e) => e.label).join(', ')}; those bars are drawn at zero.`,
     );
   }
+  if (speedMeasure === 'meanModelTime') {
+    speedNotices.push(
+      'Mean model time carries no interval: no per-answer dispersion is returned at the DTO level.',
+    );
+  }
 
   const speedTitle =
     speedMeasure === 'speedIndex'
       ? 'Speed Index (0-100) — higher is better'
-      : 'Time to first token, P50 (ms) — lower is better';
+      : speedMeasure === 'meanModelTime'
+        ? 'Model time per question, mean (ms) — lower is better'
+        : speedMeasure === 'totalModelTime'
+          ? 'Candidate model time for the whole suite (ms) — lower is better'
+          : 'Time to first token, P50 (ms) — lower is better';
   const costTitle =
     costMeasure === 'candidateSuite'
       ? `Candidate cost for the whole suite (USD, ${context.itemsPerRun} items) — lower is better`
@@ -1294,7 +1390,13 @@ export function normalizeProfile(
   const axisMeta: Record<ProfileAxisId, { title: string; lowerIsBetter: boolean; format: (v: number) => string }> = {
     quality: { title: 'Quality', lowerIsBetter: false, format: (v) => v.toFixed(1) },
     speed: {
-      title: speedMeasure === 'speedIndex' ? 'Speed Index' : 'Speed (TTFT P50)',
+      title: speedMeasure === 'speedIndex'
+        ? 'Speed Index'
+        : speedMeasure === 'meanModelTime'
+          ? 'Speed (mean model time)'
+          : speedMeasure === 'totalModelTime'
+            ? 'Speed (total model time)'
+            : 'Speed (TTFT P50)',
       lowerIsBetter: speedLowerIsBetter(speedMeasure),
       format: speedMeasure === 'speedIndex' ? (v) => v.toFixed(1) : formatMs,
     },
@@ -1499,7 +1601,7 @@ export function buildComparisonFigures(
 ): ComparisonFigureSet {
   const context = options.context;
   const sort = options.sort ?? DEFAULT_MODEL_SORT;
-  const speedMeasure = options.speedMeasure ?? 'speedIndex';
+  const speedMeasure = options.speedMeasure ?? 'meanModelTime';
   const costMeasure = options.costMeasure ?? 'candidateSuite';
   const orientation = options.orientation ?? 'vertical';
   const reducedMotion = options.reducedMotion ?? false;
@@ -1513,6 +1615,7 @@ export function buildComparisonFigures(
     reducedMotion,
     highlightedKey: options.highlightedKey ?? null,
     selectedKeys: options.selectedKeys ?? [],
+    speedMeasure,
   };
   const smallMultiplesOptions: SmallMultiplesOptions = {
     ...figureOptions,

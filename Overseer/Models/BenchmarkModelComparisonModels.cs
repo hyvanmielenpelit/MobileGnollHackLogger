@@ -104,8 +104,9 @@ public class BenchmarkModelComparisonQualityDto
 }
 
 /// <summary>
-/// The speed axis: time to first token, which is the latency a chat user actually perceives. Model
-/// time is carried beside it as a secondary column, never as the axis.
+/// The speed axis: the candidate's own model time, mean per answer and mean total per run. Time to
+/// first token is carried beside it, because it is the latency a chat user actually perceives, but
+/// it does not drive a total-cost-of-ownership figure the way model time does.
 /// </summary>
 public class BenchmarkModelComparisonSpeedDto
 {
@@ -119,6 +120,16 @@ public class BenchmarkModelComparisonSpeedDto
 
     public double? ModelTimeP50Ms { get; set; }
     public double? ModelTimeP90Ms { get; set; }
+
+    /// <summary>Mean of the pooled per-answer model times.</summary>
+    public double? ModelTimeMeanMs { get; set; }
+
+    /// <summary>Mean over member runs of that run's own total model time over its Ok answers.</summary>
+    public double? TotalModelTimePerRunMeanMs { get; set; }
+
+    /// <summary>Sample standard deviation of the per-run total model times. Null below two runs.</summary>
+    public double? TotalModelTimeSdMs { get; set; }
+
     public int PooledAnswerCount { get; set; }
 
     /// <summary>The plotted set mixes timing conditions.</summary>

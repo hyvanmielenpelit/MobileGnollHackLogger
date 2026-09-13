@@ -935,6 +935,19 @@
                   <dt>Slowest answer</dt>
                   <dd>{{ formatMs(speedStats.modelTimeMaxMs) }}</dd>
                 </div>
+                <div class="mr-stat">
+                  <dt>Mean model time / answer</dt>
+                  <dd>{{ formatMs(speedStats.modelTimeMeanMs) }}</dd>
+                </div>
+                <div class="mr-stat">
+                  <dt>Mean total model time / run</dt>
+                  <dd>
+                    {{ formatMs(speedStats.totalModelTimePerRunMeanMs) }}
+                    @if (speedStats.totalModelTimeStandardDeviationMs != null) {
+                      <span> ± {{ formatMs(speedStats.totalModelTimeStandardDeviationMs) }}</span>
+                    }
+                  </dd>
+                </div>
               </dl>
               <p class="text-muted">
                 Percentiles are pooled over all {{ speedStats.pooledAnswerCount }} answers of every

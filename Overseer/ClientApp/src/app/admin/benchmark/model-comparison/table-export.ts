@@ -101,7 +101,7 @@ export const XLSX_MEDIA_TYPE =
  * The columns, in reading order: identity first, then the comparability verdict, then the three
  * measured axes with their uncertainty beside them, then everything that qualifies the verdict.
  *
- * Twenty-four of them — every field the on-screen table renders plus the configuration keys it
+ * Twenty-six of them — every field the on-screen table renders plus the configuration keys it
  * shows only in a tooltip, because an exported table is read away from the tooltips.
  */
 export const COMPARISON_TABLE_COLUMNS: readonly ComparisonTableColumn[] = [
@@ -116,6 +116,8 @@ export const COMPARISON_TABLE_COLUMNS: readonly ComparisonTableColumn[] = [
   { key: 'intelligenceIndex', header: 'Intelligence Index', kind: 'number' },
   { key: 'intervalHalfWidth', header: '±', kind: 'number' },
   { key: 'intervalBasis', header: 'Interval basis', kind: 'text' },
+  { key: 'modelTimeMeanMs', header: 'Model time mean ms', kind: 'ms' },
+  { key: 'totalModelTimeMs', header: 'Suite total ms', kind: 'ms' },
   { key: 'ttftP50Ms', header: 'TTFT P50 ms', kind: 'ms' },
   { key: 'ttftP90Ms', header: 'TTFT P90 ms', kind: 'ms' },
   { key: 'speedIndex', header: 'Speed Index', kind: 'number' },
@@ -213,6 +215,8 @@ function cellsOf(entry: BenchmarkModelComparisonEntryDto): Record<string, Compar
     intelligenceIndex: indexCell(quality?.pointEstimate),
     intervalHalfWidth: indexCell(quality?.intervalHalfWidth),
     intervalBasis: textCell(quality?.intervalBasis),
+    modelTimeMeanMs: msCell(speed?.modelTimeMeanMs),
+    totalModelTimeMs: msCell(speed?.totalModelTimePerRunMeanMs),
     ttftP50Ms: msCell(speed?.ttftP50Ms),
     ttftP90Ms: msCell(speed?.ttftP90Ms),
     speedIndex: indexCell(table?.meanSpeedIndex),

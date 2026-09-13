@@ -632,6 +632,23 @@ exactly that. Each attack whose `damn` and `damd` parse as integers with `damn >
 from dice) carries no `dice` key, so its absence is not a parse failure. The key adds about 15
 characters per attack and leaves every monster far under the truncation threshold below.
 
+**`flag_descriptions` is authored prose, and it is not fingerprinted.** The values come from
+`Overseer/Data/flag_descriptions.json`, read once at startup by
+`SourceCodeService.LoadFlagDescriptions` from `AppDomain.CurrentDomain.BaseDirectory/Data/` — the
+*published output*, not the repository — into `_flagDescriptions`, and merged into a stats response by
+`PopulateFlagDescriptions`. Two consequences. First, **the file is not part of `ToolGuidesSha256`**,
+which covers `Overseer/ToolGuides/` alone, and it has no fingerprint of its own on a benchmark run, so
+a change to it is invisible on the comparability ladder — only a `HarnessVersion` bump records it.
+Second, **a wrong description is a wrong answer** the model has no way to check: the flag name is
+correct game data and the gloss beside it is not derived from anything. `AD_SAMU` was
+*"hits, may steal Amulet (Wizard)"* until harness 28, and every model that read it framed Master
+Kaen's theft attack around the Amulet of Yendor; `stealamulet` (`src/steal.c:655-701`) takes the
+hero's **quest artifact** first and reaches the Amulet branch only for a monster carrying
+`M3_WANTSAMUL`, which Kaen does not. It now reads *"hits, steals the hero's quest artifact (monsters
+that want it); steals the Amulet of Yendor only for a monster that wants the Amulet, such as the
+Wizard"*. Judge a description against the code that implements the flag, the way any other tool
+result is judged.
+
 **Truncation** (`Tools:get_monster_stats` / `get_item_stats` / `get_artifact_stats`, each with
 `TruncationThreshold` 9900 and `HardLimit` 10000): if the serialized JSON exceeds the threshold,
 the handler re-serializes a minified version — dropping `flag_descriptions` if only `Stats` was

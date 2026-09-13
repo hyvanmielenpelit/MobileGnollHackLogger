@@ -370,6 +370,23 @@ public sealed record BenchmarkGroupSpeedStatistics
     public double? ModelTimeP90Ms { get; init; }
     public double? ModelTimeMaxMs { get; init; }
 
+    /// <summary>Mean of the pooled per-answer model times underlying the percentiles above.</summary>
+    public double? ModelTimeMeanMs { get; init; }
+
+    /// <summary>
+    /// Mean over the member runs of that run's own total model time: the sum of
+    /// <c>ModelTimeMs</c> over its <c>Ok</c> answers within the group's item set.
+    /// </summary>
+    public double? TotalModelTimePerRunMeanMs { get; init; }
+
+    /// <summary>The per-run totals underlying <see cref="TotalModelTimePerRunMeanMs"/>, in member order.</summary>
+    public IReadOnlyList<double> PerRunTotalModelTimeMs { get; init; } = Array.Empty<double>();
+
+    /// <summary>
+    /// Sample standard deviation of <see cref="PerRunTotalModelTimeMs"/>. Null below two runs.
+    /// </summary>
+    public double? TotalModelTimeStandardDeviationMs { get; init; }
+
     /// <summary>
     /// Percentiles of time to first token over every answer that reported one, by the same
     /// interpolation the model-time percentiles use.
@@ -1266,6 +1283,16 @@ public static class BenchmarkGroupStatistics
             .Select(a => (double)a.TimeToFirstTokenMs!.Value)
             .ToList();
 
+        // One total per member, over its own Ok answers within the group's item set — the same
+        // restriction the pooled list above applies, just kept apart by run.
+        var perRunTotalModelTime = members
+            .Select(m => (m.Answers ?? new List<BenchmarkRunAnswer>())
+                .Where(a => a.Status == BenchmarkAnswerStatus.Ok
+                            && a.BenchmarkQuestionId.HasValue
+                            && questionIds.Contains(a.BenchmarkQuestionId.Value))
+                .Sum(a => (double)a.ModelTimeMs))
+            .ToList();
+
         return new BenchmarkGroupSpeedStatistics
         {
             RunCount = members.Count,
@@ -1276,6 +1303,10 @@ public static class BenchmarkGroupStatistics
             ModelTimeP50Ms = Percentile(pooled, 50.0),
             ModelTimeP90Ms = Percentile(pooled, 90.0),
             ModelTimeMaxMs = pooled.Count > 0 ? pooled.Max() : null,
+            ModelTimeMeanMs = pooled.Count > 0 ? pooled.Average() : null,
+            TotalModelTimePerRunMeanMs = perRunTotalModelTime.Count > 0 ? perRunTotalModelTime.Average() : null,
+            PerRunTotalModelTimeMs = perRunTotalModelTime,
+            TotalModelTimeStandardDeviationMs = SampleStandardDeviation(perRunTotalModelTime),
             TtftAnswerCount = pooledTtft.Count,
             TtftP50Ms = Percentile(pooledTtft, 50.0),
             TtftP90Ms = Percentile(pooledTtft, 90.0),

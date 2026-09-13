@@ -74,7 +74,10 @@ describe('table-export', () => {
         pooledAnswerCount: 54,
         degraded: false,
         degradedReason: null,
-        caveat: 'Timings were recorded under parallel question execution.'
+        caveat: 'Timings were recorded under parallel question execution.',
+        modelTimeMeanMs: 28400,
+        totalModelTimePerRunMeanMs: 511200,
+        totalModelTimeSdMs: 21300
       },
       cost: {
         candidateCostPerQuestionUsd: 0.0432,
@@ -146,14 +149,29 @@ describe('table-export', () => {
   // The model
   // -------------------------------------------------------------------------------------------
 
-  it('declares twenty-four columns, and a cell for every one of them on every row', () => {
+  it('declares twenty-six columns, and a cell for every one of them on every row', () => {
     const built = model([buildEntry(), buildEntry({ key: 'run:2', sourceId: 44 })]);
 
-    expect(built.columns.length).toBe(24);
+    expect(built.columns.length).toBe(26);
     expect(built.rows.length).toBe(2);
     for (const row of built.rows) {
-      expect(Object.keys(row.cells).length).toBe(24);
+      expect(Object.keys(row.cells).length).toBe(26);
     }
+  });
+
+  it('carries the mean model time and the suite total model time, in milliseconds', () => {
+    const [row] = model().rows;
+
+    expect(row.cells['modelTimeMeanMs'].raw).toBe(28400);
+    // Ten seconds and over reads in seconds, exactly as the on-screen table prints it.
+    expect(row.cells['modelTimeMeanMs'].text).toBe('28.4 s');
+    expect(row.cells['totalModelTimeMs'].raw).toBe(511200);
+    // Ten seconds and over reads in seconds, exactly as the on-screen table prints it.
+    expect(row.cells['totalModelTimeMs'].text).toBe('511.2 s');
+
+    const columnKinds = new Map(COMPARISON_TABLE_COLUMNS.map(column => [column.key, column.kind]));
+    expect(columnKinds.get('modelTimeMeanMs')).toBe('ms');
+    expect(columnKinds.get('totalModelTimeMs')).toBe('ms');
   });
 
   it('carries the machine value beside the on-screen text in every cell', () => {
@@ -185,6 +203,9 @@ describe('table-export', () => {
 
     expect(row.cells['intelligenceIndex'].raw).toBeNull();
     expect(row.cells['intelligenceIndex'].text).toBe('—');
+    expect(row.cells['modelTimeMeanMs'].raw).toBeNull();
+    expect(row.cells['modelTimeMeanMs'].text).toBe('—');
+    expect(row.cells['totalModelTimeMs'].raw).toBeNull();
     expect(row.cells['costPerQuestion'].raw).toBeNull();
     expect(row.cells['pricingResolved'].raw).toBeNull();
     expect(row.cells['state'].text).toBe('Excluded');
@@ -242,8 +263,8 @@ describe('table-export', () => {
 
     expect(text.startsWith('\uFEFF')).toBeTrue();
     const columns = dataLines(text)[0].split('\t');
-    expect(columns.length).toBe(24);
-    expect(columns[23]).toBe('before after');
+    expect(columns.length).toBe(26);
+    expect(columns[25]).toBe('before after');
   });
 
   // -------------------------------------------------------------------------------------------
@@ -257,7 +278,7 @@ describe('table-export', () => {
     expect(text).toContain('Flash \\| medium');
     // Header, separator and one body row, each with the same number of cells.
     expect(rows.length).toBe(3);
-    expect(rows.map(row => row.split(' | ').length)).toEqual([24, 24, 24]);
+    expect(rows.map(row => row.split(' | ').length)).toEqual([26, 26, 26]);
   });
 
   it('carries the provenance as a caption and the notices as a list', () => {
@@ -275,7 +296,7 @@ describe('table-export', () => {
       rows: Record<string, unknown>[];
     };
 
-    expect(parsed.columns.length).toBe(24);
+    expect(parsed.columns.length).toBe(26);
     expect(parsed.columns.map(column => column.key))
       .toEqual(COMPARISON_TABLE_COLUMNS.map(column => column.key));
     // Numbers, not the strings the human formats carry.
@@ -311,17 +332,17 @@ describe('table-export', () => {
   // The spreadsheet
   // -------------------------------------------------------------------------------------------
 
-  it('writes one sheet of twenty-four columns and a header row, and a second of provenance', async () => {
+  it('writes one sheet of twenty-six columns and a header row, and a second of provenance', async () => {
     const captured = captureXlsx();
 
     const blob = await toXlsx(model([buildEntry(), buildEntry({ key: 'run:2', sourceId: 44 })]));
 
     expect(captured.sheets.length).toBe(2);
     expect(captured.sheets[0].sheet).toBe('Comparison');
-    // A frozen header, so twenty-four columns stay identifiable after a scroll.
+    // A frozen header, so twenty-six columns stay identifiable after a scroll.
     expect(captured.sheets[0].stickyRowsCount).toBe(1);
     expect(captured.sheets[0].data.length).toBe(3);
-    expect(captured.sheets[0].data.every((row: unknown[]) => row.length === 24)).toBeTrue();
+    expect(captured.sheets[0].data.every((row: unknown[]) => row.length === 26)).toBeTrue();
     expect(captured.sheets[1].sheet).toBe('Provenance');
 
     expect(blob.size).toBeGreaterThan(0);
@@ -342,6 +363,8 @@ describe('table-export', () => {
     expect(row[columnAt('costPerQuestion')].format).toBe('$0.0000');
     expect(row[columnAt('intelligenceIndex')].format).toBe('0.0');
     expect(row[columnAt('ttftP50Ms')].format).toBe('#,##0');
+    expect(row[columnAt('modelTimeMeanMs')].format).toBe('#,##0');
+    expect(row[columnAt('totalModelTimeMs')].format).toBe('#,##0');
     expect(row[columnAt('speedIndexSaturated')].type).toBe(Boolean);
     expect(row[columnAt('label')].type).toBe(String);
   });

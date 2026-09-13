@@ -101,6 +101,9 @@
             <div>
               <h4>Benchmark Series #{{ activeSeries.id }} ({{ activeSeries.suiteName }})</h4>
               <p class="text-muted">{{ seriesProgressLabel }}</p>
+              @if (completionSoundStatus) {
+                <p class="text-muted" role="status">{{ completionSoundStatus }}</p>
+              }
             </div>
           </div>
           @if (seriesErrorMessage) {
@@ -597,6 +600,24 @@
                 <option [ngValue]="true">Detailed — diagnostic; not comparable with previous runs</option>
               </select>
               <span id="candidateResponseStyleHint" class="form-hint">{{ candidateResponseStyleHint }}</span>
+
+              <!--
+                The completion sound sits inside this column rather than beside it: the row's own
+                layout guard pins its two direct .form-group children to Claim Verifier and
+                Candidate Response Style, and a third column would displace Number of Runs.
+              -->
+              <label class="gh-checkbox completion-sound-toggle" for="completionSoundInput">
+                <input id="completionSoundInput" type="checkbox" [(ngModel)]="completionSound">
+                <span>Play a sound when the run &mdash; or the whole series &mdash; completes</span>
+              </label>
+              <span class="form-hint">
+                While this tab is hidden, the check for completion keeps running, but only once
+                every 15 seconds instead of pausing outright, so the chime still arrives without
+                the tab open.
+              </span>
+              <div class="completion-sound-actions">
+                <button type="button" class="btn-gh btn-gh-small" (click)="testCompletionSound()">Test sound</button>
+              </div>
             </div>
 
             <!--
@@ -2668,12 +2689,12 @@
           <div class="form-group">
             <label for="speedTarget">Speed Target (ms)</label>
             <input id="speedTarget" type="number" min="1" class="gh-input" [(ngModel)]="profileForm.speedTargetMs" aria-describedby="speedTargetHint">
-            <span id="speedTargetHint" class="form-hint">The base response time that scores a full 100 speed points. Speed is <code>100 - k &times; log2(modelTime / effectiveTarget)</code>, clamped to 1&ndash;100, where <code>modelTime</code> is the turn duration with tool I/O removed. Must be greater than 0. Default <code>15000</code>.</span>
+            <span id="speedTargetHint" class="form-hint">The base response time that scores a full 100 speed points. Speed is <code>100 - k &times; log2(modelTime / effectiveTarget)</code>, clamped to 1&ndash;100, where <code>modelTime</code> is the turn duration with tool I/O removed. Must be greater than 0. Default <code>2000</code>.</span>
           </div>
           <div class="form-group">
             <label for="speedDecay">Speed Decay (k)</label>
             <input id="speedDecay" type="number" step="1" min="1" class="gh-input" [(ngModel)]="profileForm.speedDecayK" aria-describedby="speedDecayHint">
-            <span id="speedDecayHint" class="form-hint">Speed points lost per doubling of model time past the effective target. At the default <code>20</code>, a response taking 4&times; the target scores 60 and one taking 8&times; scores 40. Higher values punish slow answers harder; lower values flatten the curve. Must be greater than 0.</span>
+            <span id="speedDecayHint" class="form-hint">Speed points lost per doubling of model time past the effective target. At the default <code>12</code>, a response taking 4&times; the target scores 76 and one taking 8&times; scores 64. Higher values punish slow answers harder; lower values flatten the curve. Must be greater than 0.</span>
           </div>
           <div class="form-group">
             <label for="speedDifficultyScaling">Speed Difficulty Scaling</label>
@@ -3636,6 +3657,9 @@
             <div class="alert-body">{{ runErrorMessage }}</div>
           </div>
         </div>
+      }
+      @if (completionSoundStatus) {
+        <p class="text-muted" role="status">{{ completionSoundStatus }}</p>
       }
       <h4 #runProgressHeading tabindex="-1" class="progress-heading">
         @if (activeRunDetail) {

@@ -364,6 +364,7 @@ public class BenchmarkComparabilityIndexService
                     ? new List<BenchmarkComparabilityDifferenceDto>()
                     : Differences(state, mustMatchKeyNames, largestValues, largestRunIds, taxonomy),
                 QuestionParallelism = state.Value(BenchmarkComparabilityKey.QuestionParallelismKey),
+                SpeedCalibration = state.Value(BenchmarkComparabilityKey.SpeedCalibrationKey),
                 PricingSnapshot = state.Value(BenchmarkComparabilityKey.PricingSnapshotKey)
             });
         }

@@ -9,6 +9,7 @@ import { MarkdownEditorComponent } from '../../shared/markdown-editor/markdown-e
 import { MultiRunComponent } from './multi-run/multi-run.component';
 import { AdminBenchmarkService, BenchmarkRunAnswerDto } from '../../services/admin-benchmark.service';
 import { SystemService } from '../../services/system.service';
+import { BenchmarkCompletionSoundService } from '../../services/benchmark-completion-sound.service';
 
 describe('AdminBenchmarkComponent', () => {
   let component: AdminBenchmarkComponent;
@@ -3551,7 +3552,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should warn when a deliberating model is graded against an interactive latency profile', () => {
-      // The default profile targets 15000 ms, which is well inside the interactive band.
+      // The default profile targets 2000 ms, which is well inside the interactive band.
       for (const level of ['high', 'max', 'Max', 'HIGH']) {
         selectTestedModelWithThinkingLevel(level);
         expect(component.showProfileFitAdvisory).withContext(level).toBeTrue();
@@ -5481,6 +5482,148 @@ describe('AdminBenchmarkComponent', () => {
       expect(stored.acknowledgeSameProvider).toBeUndefined();
       component.ngOnDestroy();
     });
+
+    it('should default completionSound to true before anything is remembered', () => {
+      expect(component.completionSound).toBeTrue();
+    });
+
+    it('should persist completionSound when a run is started', () => {
+      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 99 }));
+      component.selectedSuiteId = 1;
+      component.testedConfigId = 1;
+      component.assessorConfigId = 1;
+      component.completionSound = false;
+
+      component.startBenchmark();
+
+      const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
+      expect(stored.completionSound).toBeFalse();
+      component.ngOnDestroy();
+    });
+
+    it('should restore a remembered completionSound value on the next construction', () => {
+      localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({
+        suiteId: 1, testedConfigId: 1, assessorConfigId: 1,
+        secondOpinionConfigId: null, claimVerifierConfigId: null,
+        secondOpinionMode: null, scoringProfileId: 1, verboseMode: null,
+        completionSound: false
+      }));
+
+      const restored = TestBed.createComponent(AdminBenchmarkComponent);
+      restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
+      restored.detectChanges();
+
+      expect(restored.componentInstance.completionSound).toBeFalse();
+      restored.componentInstance.ngOnDestroy();
+    });
+
+    it('should default completionSound to true when the stored blob predates the field', () => {
+      localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({
+        suiteId: 1, testedConfigId: 1, assessorConfigId: 1,
+        secondOpinionConfigId: null, claimVerifierConfigId: null,
+        secondOpinionMode: null, scoringProfileId: 1, verboseMode: null
+      }));
+
+      const restored = TestBed.createComponent(AdminBenchmarkComponent);
+      restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
+      restored.detectChanges();
+
+      expect(restored.componentInstance.completionSound).toBeTrue();
+      restored.componentInstance.ngOnDestroy();
+    });
+  });
+
+  describe('completion sound transition detection', () => {
+    let playSpy: jasmine.Spy;
+
+    function makeRun(overrides: Record<string, unknown> = {}): any {
+      return {
+        id: 42,
+        benchmarkSuiteId: 1,
+        suiteName: 'Default Suite',
+        testedModelDisplayNameUsed: 'Test Model',
+        testedModelProviderUsed: 'Anthropic',
+        testedModelIdUsed: 'claude-3-5-sonnet',
+        assessorModelDisplayNameUsed: 'Test Assessor',
+        assessorModelProviderUsed: 'Anthropic',
+        assessorModelIdUsed: 'claude-3-5-sonnet',
+        startedByUserName: 'admin',
+        status: 'Running',
+        startedAtUtc: '2026-09-02T00:00:00Z',
+        completedAtUtc: null,
+        totalQuestionCount: 3,
+        answers: [],
+        ...overrides
+      };
+    }
+
+    beforeEach(() => {
+      const soundService = TestBed.inject(BenchmarkCompletionSoundService);
+      playSpy = spyOn(soundService, 'play').and.returnValue(Promise.resolve('played'));
+    });
+
+    it('should chime once for a run seen Running and then reaching a terminal status', () => {
+      benchmarkServiceMock.getRun.and.returnValue(of(makeRun({ id: 42, status: 'Running' })));
+      (component as any).pollRunDetail(42);
+      expect(playSpy).not.toHaveBeenCalled();
+
+      benchmarkServiceMock.getRun.and.returnValue(of(makeRun({ id: 42, status: 'Completed' })));
+      (component as any).pollRunDetail(42);
+      expect(playSpy).toHaveBeenCalledWith('run:42');
+      expect(playSpy).toHaveBeenCalledTimes(1);
+
+      // A later poll of the same, already-terminal run must not chime a second time.
+      (component as any).pollRunDetail(42);
+      expect(playSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not chime for a run first observed already terminal', () => {
+      benchmarkServiceMock.getRun.and.returnValue(of(makeRun({ id: 42, status: 'Completed' })));
+      (component as any).pollRunDetail(42);
+
+      expect(playSpy).not.toHaveBeenCalled();
+    });
+
+    it('should not chime individually for a run that is a member of a still-live series', () => {
+      component.activeSeries = { id: 7, status: 'Running', members: [] } as any;
+      component.activeSeriesId = 7;
+
+      benchmarkServiceMock.getRun.and.returnValue(of(makeRun({ id: 42, status: 'Running' })));
+      (component as any).pollRunDetail(42);
+
+      benchmarkServiceMock.getRun.and.returnValue(of(makeRun({ id: 42, status: 'Completed' })));
+      (component as any).pollRunDetail(42);
+
+      expect(playSpy).not.toHaveBeenCalledWith('run:42');
+    });
+
+    it('should chime once for a series seen live and then reaching a terminal status', () => {
+      benchmarkServiceMock.getRunSeries.and.returnValue(of({
+        id: 8, status: 'Running', completedRunCount: 0, requestedRunCount: 2, members: []
+      } as any));
+      (component as any).pollSeries(8);
+      expect(playSpy).not.toHaveBeenCalled();
+
+      benchmarkServiceMock.getRunSeries.and.returnValue(of({
+        id: 8, status: 'Completed', completedRunCount: 2, requestedRunCount: 2, members: []
+      } as any));
+      (component as any).pollSeries(8);
+      expect(playSpy).toHaveBeenCalledWith('series:8');
+      expect(playSpy).toHaveBeenCalledTimes(1);
+
+      // A later poll of the same, already-finished series must not chime a second time.
+      (component as any).pollSeries(8);
+      expect(playSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not chime for a series first observed already finished', () => {
+      benchmarkServiceMock.getRunSeries.and.returnValue(of({
+        id: 8, status: 'Completed', completedRunCount: 2, requestedRunCount: 2, members: []
+      } as any));
+      (component as any).pollSeries(8);
+
+      expect(playSpy).not.toHaveBeenCalled();
+    });
   });
 
   describe('series banner lifecycle', () => {
@@ -6168,19 +6311,19 @@ describe('AdminBenchmarkComponent', () => {
             key: 'run:1', sourceKind: 'Run', sourceId: 1, conditionOrdinal: 1,
             conditionLabel: 'Condition A', signature: 'sig-a', selfInconsistent: false,
             selfInconsistentKeys: [], differencesFromLargest: [],
-            questionParallelism: '1', pricingSnapshot: '2026-09-01'
+            questionParallelism: '1', speedCalibration: 'speed-a', pricingSnapshot: '2026-09-01'
           },
           {
             key: 'run:2', sourceKind: 'Run', sourceId: 2, conditionOrdinal: 1,
             conditionLabel: 'Condition A', signature: 'sig-a', selfInconsistent: false,
             selfInconsistentKeys: [], differencesFromLargest: [],
-            questionParallelism: '1', pricingSnapshot: '2026-09-01'
+            questionParallelism: '1', speedCalibration: 'speed-a', pricingSnapshot: '2026-09-01'
           },
           {
             key: 'run:3', sourceKind: 'Run', sourceId: 3, conditionOrdinal: 2,
             conditionLabel: 'Condition B', signature: 'sig-b', selfInconsistent: false,
             selfInconsistentKeys: [], differencesFromLargest: [],
-            questionParallelism: '1', pricingSnapshot: '2026-09-01'
+            questionParallelism: '1', speedCalibration: 'speed-a', pricingSnapshot: '2026-09-01'
           }
         ],
         conditions: [

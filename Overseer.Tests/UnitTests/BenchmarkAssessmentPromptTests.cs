@@ -212,9 +212,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsTwentySeven()
+    public void HarnessVersion_IsTwentyEight()
     {
-        Assert.Equal("27", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("28", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -454,16 +454,16 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs27_ScoringMethodIs10()
+    public void Versions_HarnessIs28_ScoringMethodIs10()
     {
-        Assert.Equal("27", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("28", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 27 case-folds the wiki category filter against the wiki-relative path, prefers an
-        // exact title in the NetHack wiki resolver, requires the four assessor levels and stores the
-        // assessor's own text, flags and re-reads a collapsed dimension, and widens the detector
-        // vocabulary — so a 27-stamped run differs from a 26-stamped one on two instrument keys,
-        // HarnessVersion and ToolGuidesSha256. The scoring method does not move: nothing here
-        // changes what a score is.
+        // Harness 28 rewords the AD_SAMU attack description, adds the resistance-magnitude clause to
+        // the claim verifier, and recalibrates the speed model while moving its constants out of the
+        // scoring profile's quality signature. None of it is carried by a fingerprinted file — the
+        // flag descriptions are not part of ToolGuidesSha256 — so a 28-stamped run differs from a
+        // 27-stamped one on HarnessVersion alone, which is Tier C. The scoring method does not move:
+        // nothing here changes what a quality score is.
         Assert.Equal(10, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

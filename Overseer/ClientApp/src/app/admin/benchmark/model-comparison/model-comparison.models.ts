@@ -89,6 +89,12 @@ export interface BenchmarkModelComparisonSpeedDto {
   degraded: boolean;
   degradedReason?: string | null;
   caveat: string;
+  /** Mean model time per question, ms — turn duration with tool I/O removed, pooled across the run(s). */
+  modelTimeMeanMs?: number | null;
+  /** Mean of the per-run total model time for the whole suite, ms. */
+  totalModelTimePerRunMeanMs?: number | null;
+  /** SD of the per-run total model time across runs, ms. Null below R = 2, where no run-to-run spread exists. */
+  totalModelTimeSdMs?: number | null;
 }
 
 /**
@@ -232,6 +238,8 @@ export interface BenchmarkComparabilityIndexEntryDto {
   differencesFromLargest: BenchmarkComparabilityDifferenceDto[];
   /** Degrading key value: question parallelism as run. */
   questionParallelism: string;
+  /** Degrading key value: the speed calibration the Speed Index was computed under. */
+  speedCalibration: string;
   /** Degrading key value: the pricing snapshot as run. */
   pricingSnapshot: string;
 }
@@ -495,7 +503,7 @@ function singlePointNotice(state: ComparisonSelectionState): ComparisonSelection
 /**
  * That a degrading key differs across the sources the figures would actually draw.
  *
- * The index carries both degrading values per entry precisely so the picker can say this before
+ * The index carries every degrading value per entry precisely so the picker can say this before
  * Compare. The `AsRun` condition on the pricing snapshot mirrors the server's own rule: a set
  * repriced to one basis is not charting the stored snapshot prices, so a snapshot difference no
  * longer describes the cost axis.
@@ -505,13 +513,24 @@ function degradingKeysNotice(state: ComparisonSelectionState): ComparisonSelecti
     .filter(entry => entry.conditionOrdinal === 1);
 
   const sentences: string[] = [];
-  const parallelismDiffers = new Set(inReference.map(entry => entry.questionParallelism)).size > 1;
-  if (parallelismDiffers) {
+  let speedAtStake = false;
+  let costAtStake = false;
+
+  if (new Set(inReference.map(entry => entry.questionParallelism)).size > 1) {
+    speedAtStake = true;
+    costAtStake = true;
     sentences.push('QuestionParallelism differs across them, which flags the speed axis and the '
       + 'cost axis: running questions concurrently changes prompt-cache behaviour as well as timing.');
   }
+  if (new Set(inReference.map(entry => entry.speedCalibration)).size > 1) {
+    speedAtStake = true;
+    sentences.push('SpeedCalibration differs, which flags the speed axis: the Speed Index of these '
+      + 'runs was computed against different targets, so their indices are not on one scale. The '
+      + 'model time measures are unaffected — rescore a run to move it onto the current scale.');
+  }
   if (state.pricingBasis === 'AsRun'
     && new Set(inReference.map(entry => entry.pricingSnapshot)).size > 1) {
+    costAtStake = true;
     sentences.push('PricingSnapshot differs, which flags the cost axis while costs are charted as '
       + 'they were run.');
   }
@@ -522,10 +541,12 @@ function degradingKeysNotice(state: ComparisonSelectionState): ComparisonSelecti
     id: 'degrading-keys',
     severity: 'warning',
     // The heading names the axes actually at stake: question parallelism degrades speed and cost
-    // alike, the pricing snapshot degrades cost only.
-    heading: parallelismDiffers
+    // alike, the speed calibration degrades speed only, the pricing snapshot cost only.
+    heading: speedAtStake && costAtStake
       ? 'The speed and cost axes will be flagged'
-      : 'The cost axis will be flagged',
+      : speedAtStake
+        ? 'The speed axis will be flagged'
+        : 'The cost axis will be flagged',
     body: `${sentences.join(' ')} A flagged axis is still charted, with the notice that names the `
       + 'key on the figure itself.'
   };
@@ -796,7 +817,9 @@ export function conditionDetailFor(
 
 /**
  * Three fields the chart core declares that this endpoint does not carry, named once here so the
- * view can say so out loud rather than each caller rediscovering it:
+ * view can say so out loud rather than each caller rediscovering it. `modelTimeMeanMs`,
+ * `totalModelTimeMs` and `totalModelTimeSdMs` are deliberately not in this set — the DTO does carry
+ * them, and {@link toChartEntries} maps them below like every other measured field:
  *
  * - **`speedIndexSd`** — no per-run Speed Index dispersion is returned, so the speed panel draws no
  *   interval under that measure and the saturation notice carries the caveat instead.
@@ -865,6 +888,10 @@ export function toChartEntries(dto: BenchmarkModelComparisonDto | null): ModelCo
 
     ttftP50Ms: entry.speed?.ttftP50Ms ?? UNMEASURED,
     ttftP90Ms: entry.speed?.ttftP90Ms ?? UNMEASURED,
+
+    modelTimeMeanMs: entry.speed?.modelTimeMeanMs ?? UNMEASURED,
+    totalModelTimeMs: entry.speed?.totalModelTimePerRunMeanMs ?? UNMEASURED,
+    totalModelTimeSdMs: entry.speed?.totalModelTimeSdMs ?? null,
 
     candidateCostPerQuestionUsd: entry.cost?.candidateCostPerQuestionUsd ?? UNMEASURED,
     candidateCostPerQuestionSdUsd: null,

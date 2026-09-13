@@ -105,8 +105,8 @@ public class BenchmarkScoringTests
     {
         var cfg = BenchmarkScoringConstants.Default;
 
-        Assert.Equal(15000, cfg.SpeedTargetMs);
-        Assert.Equal(20.0, cfg.SpeedDecayK);
+        Assert.Equal(2000, cfg.SpeedTargetMs);
+        Assert.Equal(12.0, cfg.SpeedDecayK);
         Assert.Equal(1.0, cfg.SpeedDifficultyScaling);
     }
 
@@ -185,19 +185,19 @@ public class BenchmarkScoringTests
     {
         var cfg = BenchmarkScoringConstants.Default;
 
-        // 15000 * (1 + 1.0 * d/100)
-        Assert.Equal(15150.0, BenchmarkScoring.EffectiveSpeedTargetMs(1, cfg), 1);
-        Assert.Equal(18750.0, BenchmarkScoring.EffectiveSpeedTargetMs(25, cfg), 1);
-        Assert.Equal(26250.0, BenchmarkScoring.EffectiveSpeedTargetMs(75, cfg), 1);
-        Assert.Equal(30000.0, BenchmarkScoring.EffectiveSpeedTargetMs(100, cfg), 1);
+        // 2000 * (1 + 1.0 * d/100)
+        Assert.Equal(2020.0, BenchmarkScoring.EffectiveSpeedTargetMs(1, cfg), 1);
+        Assert.Equal(2500.0, BenchmarkScoring.EffectiveSpeedTargetMs(25, cfg), 1);
+        Assert.Equal(3500.0, BenchmarkScoring.EffectiveSpeedTargetMs(75, cfg), 1);
+        Assert.Equal(4000.0, BenchmarkScoring.EffectiveSpeedTargetMs(100, cfg), 1);
     }
 
     [Fact]
     public void Speed_UnderDifficultyScaledTarget_ScoresFull()
     {
         // A hard question is allowed more time before it starts losing points.
-        Assert.Equal(100, BenchmarkScoring.Speed(26000, 75));
-        Assert.True(BenchmarkScoring.Speed(26000, 25) < 100);
+        Assert.Equal(100, BenchmarkScoring.Speed(3400, 75));
+        Assert.True(BenchmarkScoring.Speed(3400, 25) < 100);
     }
 
     [Fact]
@@ -217,7 +217,9 @@ public class BenchmarkScoringTests
             Assert.InRange(score, 2, 100);
         }
 
-        // Strictly ordered: no ties, and a real spread across the range.
+        // Strictly ordered: no ties, and a real spread across the range. Under the 2000 ms / k=12
+        // constants these score 64 / 57 / 45 / 37 / 34, so the spread sits exactly on the bound
+        // below — a later constant tweak that narrows it must move this anchor with it.
         Assert.True(q1 > q8 && q8 > q2 && q2 > q13 && q13 > q15,
             $"expected a strict ordering, got {q1}, {q8}, {q2}, {q13}, {q15}");
         Assert.True(q1 - q15 >= 30, $"expected a spread of at least 30 points, got {q1 - q15}");
@@ -254,12 +256,12 @@ public class BenchmarkScoringTests
     {
         // The binding case inside a band is its *lowest* difficulty: Target(q) grows with
         // difficulty, so the smallest target in a band reaches the floor first. Documented in
-        // BenchmarkScoring's calibration comment as ~468 s / ~631 s / ~793 s against timeouts of
+        // BenchmarkScoring's calibration comment as ~615 s / ~828 s / ~1,041 s against timeouts of
         // 420 s / 600 s / 720 s.
         //
         // This test is the reason the timeout is banded rather than raised flat: a flat 720 s,
         // which an Advanced question needs to spend 45 tool calls over 22 rounds, would put the
-        // Simple band's floor 300 s inside the timeout. It fails on any edit to either the speed
+        // Simple band's floor 105 s inside the timeout. It fails on any edit to either the speed
         // constants or the timeout bands that breaks the coupling, in either direction.
         var constants = BenchmarkScoringConstants.Default;
         Assert.Equal(band, BenchmarkDifficultyBands.BandOf(lowestDifficulty));

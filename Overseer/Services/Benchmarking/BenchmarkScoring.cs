@@ -52,24 +52,29 @@ public record BenchmarkScoringConstants
     //     compress at the top instead of at the bottom.
     //
     // Invariant 1 is why the per-question timeout is banded rather than flat. The floor is
-    // reached at ModelTime / Target(q) = 2^(99/20) ≈ 30.91, and Target(q) grows with difficulty,
+    // reached at ModelTime / Target(q) = 2^(99/12) ≈ 304.4, and Target(q) grows with difficulty,
     // so the binding case inside a band is its *lowest* difficulty — the smallest target, and
     // therefore the earliest floor:
     //
     //     Band          Lowest diff.  Target(q)   Floor at   Timeout   Margin
-    //     Simple                   1   15,150 ms    ~468 s     420 s    ~48 s
-    //     Intermediate            36   20,400 ms    ~631 s     600 s    ~31 s
-    //     Advanced                71   25,650 ms    ~793 s     720 s    ~73 s
+    //     Simple                   1    2,020 ms    ~615 s     420 s   ~195 s
+    //     Intermediate            36    2,720 ms    ~828 s     600 s   ~228 s
+    //     Advanced                71    3,420 ms  ~1,041 s     720 s   ~321 s
     //
     // A flat 720 s — the value an Advanced question needs to spend 45 tool calls over 22 rounds
-    // — would let a Simple question run ~250 s past its own 468 s floor without timing out, so
-    // every Simple answer slower than 468 s would score 1 and be indistinguishable from every
+    // — would let a Simple question run ~105 s past its own 615 s floor without timing out, so
+    // every Simple answer slower than 615 s would score 1 and be indistinguishable from every
     // other slow one. That is the exact failure these constants exist to prevent, and it is what
     // the old 5000 ms / k=25 pair actually did. BenchmarkScoringTests asserts
     // every margin above, so editing either these constants or the timeout bands without
     // re-deriving the table fails the build rather than quietly degrading the metric.
-    public int SpeedTargetMs { get; init; } = 15000;
-    public double SpeedDecayK { get; init; } = 20.0;
+    //
+    // Invariant 2 binds at the top of the scale: under these constants a 3.4 s answer at
+    // difficulty 61 scores 99, not 100, so the index still separates a fast agentic turn from an
+    // instantaneous one. The target is the model-attributable time only — tool I/O is excluded
+    // before the score is computed — which is why a 2 s target is reachable at all.
+    public int SpeedTargetMs { get; init; } = 2000;
+    public double SpeedDecayK { get; init; } = 12.0;
 
     /// <summary>
     /// Scales the speed target by assessed difficulty. Difficulty raises the expected time

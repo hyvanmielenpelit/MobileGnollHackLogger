@@ -268,6 +268,7 @@ public static class BenchmarkComparabilityKey
     public const string ClaimVerifierConfigurationKey = "ClaimVerifierConfiguration";
     public const string PerQuestionBudgetsKey = "PerQuestionBudgets";
     public const string QuestionParallelismKey = "QuestionParallelism";
+    public const string SpeedCalibrationKey = "SpeedCalibration";
     public const string PricingSnapshotKey = "PricingSnapshot";
 
     /// <summary>
@@ -410,7 +411,7 @@ public static class BenchmarkComparabilityKey
 
             ScoringProfileKey => Info(name,
                 "Scoring profile",
-                "The profile identity and the scoring semantics it held at run time: a difference "
+                "The profile identity and the quality semantics it held at run time: a difference "
                 + "means the weights, level scores or error ceiling behind the scores moved.",
                 BenchmarkComparabilityValueKind.List),
 
@@ -444,6 +445,13 @@ public static class BenchmarkComparabilityKey
                 "Answering questions concurrently changes both timing and prompt-cache behaviour, "
                 + "so a difference degrades the speed and the cost aggregates alike.",
                 BenchmarkComparabilityValueKind.Text),
+
+            SpeedCalibrationKey => Info(name,
+                "Speed calibration",
+                "The target, decay rate and difficulty scaling behind the Speed Index; a "
+                + "difference puts the two runs' speed scores on different scales and degrades "
+                + "speed alone, because none of the three enters a quality score.",
+                BenchmarkComparabilityValueKind.Hash),
 
             PricingSnapshotKey => Info(name,
                 "Pricing snapshot",
@@ -530,10 +538,13 @@ public static class BenchmarkComparabilityKey
             //
             // Question parallelism degrades speed *and* cost, not speed alone: running questions
             // concurrently changes prompt-cache behaviour and therefore token spend, so a cost
-            // aggregate that mixes timing modes is not comparable either. The pricing snapshot
-            // degrades cost only — prices cannot move a quality or a speed score.
+            // aggregate that mixes timing modes is not comparable either. The speed calibration
+            // and the pricing snapshot each degrade one aggregate: the calibration cannot move a
+            // quality or a cost number, and prices cannot move a quality or a speed score.
             Key(QuestionParallelismKey, BenchmarkComparabilityKeyKind.SpeedAndCost,
                 Render(run.MaxParallelQuestionsUsed), degradesSpeed: true, degradesCost: true),
+            Key(SpeedCalibrationKey, BenchmarkComparabilityKeyKind.SpeedAndCost,
+                SpeedCalibrationSignature(run), degradesSpeed: true, degradesCost: false),
             Key(PricingSnapshotKey, BenchmarkComparabilityKeyKind.SpeedAndCost,
                 PricingSignature(run), degradesSpeed: false, degradesCost: true)
         };
@@ -992,9 +1003,11 @@ public static class BenchmarkComparabilityKey
     /// run time is correct historical data. Only what this key reads out of it is narrowed.</para>
     ///
     /// <para>Covered: the four dimension weights, the level-score table, the critical-error
-    /// ceiling, every second-opinion setting, the three speed constants, and question parallelism.
-    /// See <see cref="BenchmarkScoringProfileService.CanonicalSignature"/> for the exact list and
-    /// its canonical rendering.</para>
+    /// ceiling, every second-opinion setting, and question parallelism. See
+    /// <see cref="BenchmarkScoringProfileService.CanonicalSignature"/> for the exact list and its
+    /// canonical rendering. The three speed constants are fingerprinted separately by
+    /// <see cref="SpeedCalibrationSignature"/>, because they govern the Speed Index alone and a
+    /// recalibration of them must not cost a quality comparison a tier.</para>
     ///
     /// <para>Deliberately ignored: <c>Name</c>, <c>IsDefault</c>, <c>CreatedAtUtc</c> and
     /// <c>ModifiedAtUtc</c>. None of them can move a score, and hashing the raw snapshot blob made
@@ -1009,6 +1022,31 @@ public static class BenchmarkComparabilityKey
     /// degrades to a blob comparison rather than matching everything.</para>
     /// </summary>
     private static string ScoringProfileSemanticsSignature(BenchmarkRun run)
+        => ProfileSnapshotSignature(run, BenchmarkScoringProfileService.CanonicalSignature);
+
+    /// <summary>
+    /// A fingerprint of the speed model the run's Speed Index was computed under — the target, the
+    /// decay rate and the difficulty scaling — read from the same profile snapshot as
+    /// <see cref="ScoringProfileSemanticsSignature"/> and rendered by
+    /// <see cref="BenchmarkScoringProfileService.SpeedCalibrationSignature"/>.
+    ///
+    /// <para>Its own key rather than part of the profile key because the two differences are not
+    /// alike: a weight that moved means the quality scores are on different scales, while a speed
+    /// constant that moved leaves every quality number exactly where it was. Folding this into an
+    /// instrument key would put two runs below Tier B over a number that only the speed aggregates
+    /// read.</para>
+    /// </summary>
+    private static string SpeedCalibrationSignature(BenchmarkRun run)
+        => ProfileSnapshotSignature(run, BenchmarkScoringProfileService.SpeedCalibrationSignature);
+
+    /// <summary>
+    /// Deserialises a run's scoring-profile snapshot and hashes one rendering of it, abbreviated to
+    /// twelve hex characters. A snapshot that is absent renders as <see cref="NoValue"/>; one that
+    /// will not deserialise degrades to a hash of the whole blob.
+    /// </summary>
+    private static string ProfileSnapshotSignature(
+        BenchmarkRun run,
+        Func<BenchmarkScoringProfile, string> render)
     {
         string? json = run.ScoringProfileSnapshotJson;
         if (string.IsNullOrWhiteSpace(json)) return NoValue;
@@ -1018,7 +1056,7 @@ public static class BenchmarkComparabilityKey
             var profile = JsonSerializer.Deserialize<BenchmarkScoringProfile>(json, SnapshotSerializerOptions);
             if (profile == null) return ShortHash(json);
 
-            return Sha256Hex(BenchmarkScoringProfileService.CanonicalSignature(profile)).Substring(0, 12);
+            return Sha256Hex(render(profile)).Substring(0, 12);
         }
         catch (JsonException)
         {

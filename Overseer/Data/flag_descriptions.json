@@ -166,7 +166,7 @@
   "AD_REY2": "random eyestalk 2",
   "AD_ROTS": "confers mummy rot",
   "AD_RUST": "rusts armour (Rust Monster)",
-  "AD_SAMU": "hits, may steal Amulet (Wizard)",
+  "AD_SAMU": "hits, steals the hero's quest artifact (monsters that want it); steals the Amulet of Yendor only for a monster that wants the Amulet, such as the Wizard",
   "AD_SEDU": "seduces & steals multiple items",
   "AD_SGLD": "steals gold (leppie)",
   "AD_SHOC": "system shock",

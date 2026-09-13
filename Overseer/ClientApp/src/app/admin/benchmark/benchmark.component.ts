@@ -53,6 +53,7 @@ import { BenchmarkCostPanelComponent } from './cost-panel/benchmark-cost-panel.c
 import { SnapshotViewerComponent } from '../../shared/snapshot-viewer/snapshot-viewer.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import { SystemService } from '../../services/system.service';
+import { BenchmarkCompletionSoundService } from '../../services/benchmark-completion-sound.service';
 import { parseServerUtcDate, elapsedMsBetween } from '../../utils/date.util';
 import { TableState, exactFilter } from '../../shared/data-table/table-state';
 import { SortHeaderComponent } from '../../shared/data-table/sort-header.component';
@@ -200,6 +201,8 @@ interface BenchmarkRunSettings {
   scoringProfileId: number | null;
   verboseMode: boolean | null;
   runCount: number | null;
+  /** Whether a run or series completion plays the chime. Defaults to true when absent. */
+  completionSound: boolean | null;
 }
 
 @Component({
@@ -271,6 +274,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   private benchmarkService = inject(AdminBenchmarkService);
   private systemService = inject(SystemService);
+  private completionSoundService = inject(BenchmarkCompletionSoundService);
   private cdr = inject(ChangeDetectorRef);
 
   activeSubTab: 'run' | 'history' | 'multirun' | 'suites' | 'profiles' | 'modelcomparison' = 'run';
@@ -348,8 +352,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     secondOpinionMode: BenchmarkSecondOpinionMode.Flagged,
     secondOpinionOutlierDeltaPoints: 25,
     secondOpinionBlind: true,
-    speedTargetMs: 15000,
-    speedDecayK: 20.0,
+    speedTargetMs: 2000,
+    speedDecayK: 12.0,
     speedDifficultyScaling: 1.0,
     maxParallelQuestions: 1
   };
@@ -496,6 +500,39 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   seriesErrorMessage: string | null = null;
   resumingSeries = false;
+
+  // --- Completion sound ---
+  //
+  // The chime plays once per run or series that was actually watched live, never for one opened
+  // from history already terminal. runsSeenLive and seriesSeenLive hold the ids pollRunDetail and
+  // pollSeries have observed Running/live; a terminal poll only chimes if its id is still in the
+  // set, and removes it either way so a later poll of the same id cannot chime twice. A run that is
+  // a member of a still-live series never chimes on its own — the series chimes once for all of
+  // them.
+
+  private static readonly HIDDEN_POLL_INTERVAL_MS = 15000;
+
+  /** Whether a run or series completion plays the chime. Bound to the Run tab's own checkbox. */
+  completionSound = true;
+
+  /** Set only when the last chime attempt was blocked by the browser's autoplay policy. */
+  completionSoundStatus: string | null = null;
+  private lastCompletionSoundOutcome: 'played' | 'blocked' | 'unsupported' | 'duplicate' | null = null;
+
+  private runsSeenLive = new Set<number>();
+  private seriesSeenLive = new Set<number>();
+
+  /** Last time either poller actually polled, hidden or not — what the hidden-tab cadence gates on. */
+  private lastRunPollAttemptAtMs = 0;
+  private lastSeriesPollAttemptAtMs = 0;
+
+  /**
+   * Set while the tab is hidden at the moment a chime-eligible completion is seen, so the tab strip
+   * shows the completion even when the sound itself is off or blocked. Restored, and the listener
+   * detached, the next time the tab becomes visible.
+   */
+  private originalDocumentTitleBeforeCompletion: string | null = null;
+  private titleRestoreVisibilityHandler: (() => void) | null = null;
 
   // History
   historyRuns: BenchmarkRunSummaryDto[] = [];
@@ -1240,6 +1277,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.stopSeriesPolling();
     if (this.copiedDiagnosticsTimer) { clearTimeout(this.copiedDiagnosticsTimer); }
     if (this.copiedRunDiagnosticsTimer) { clearTimeout(this.copiedRunDiagnosticsTimer); }
+    if (this.titleRestoreVisibilityHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.titleRestoreVisibilityHandler);
+      this.titleRestoreVisibilityHandler = null;
+    }
   }
 
   @HostListener('document:click', ['$event'])
@@ -2685,7 +2726,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         secondOpinionMode: this.secondOpinionModeOverride,
         scoringProfileId: this.selectedScoringProfileId,
         verboseMode: this.candidateVerboseMode,
-        runCount: this.effectiveRunCount
+        runCount: this.effectiveRunCount,
+        completionSound: this.completionSound
       };
       localStorage.setItem(
         AdminBenchmarkComponent.RUN_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
@@ -2720,12 +2762,17 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       secondOpinionMode: num(raw.secondOpinionMode),
       scoringProfileId: num(raw.scoringProfileId),
       verboseMode: typeof raw.verboseMode === 'boolean' ? raw.verboseMode : null,
-      runCount: num(raw.runCount)
+      runCount: num(raw.runCount),
+      completionSound: typeof raw.completionSound === 'boolean' ? raw.completionSound : null
     };
 
     // These need no list to validate against, so they restore immediately.
     if (this.pendingRunSettings.verboseMode !== null) {
       this.candidateVerboseMode = this.pendingRunSettings.verboseMode;
+    }
+    // Absent (a blob predating this field, or storage that threw) leaves the true default standing.
+    if (this.pendingRunSettings.completionSound !== null) {
+      this.completionSound = this.pendingRunSettings.completionSound;
     }
     const count = this.pendingRunSettings.runCount;
     if (count !== null && count >= 1) {
@@ -2987,11 +3034,17 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   private startSeriesPolling(seriesId: number): void {
     this.stopSeriesPolling();
+    this.lastSeriesPollAttemptAtMs = Date.now();
     this.pollSeries(seriesId);
     this.seriesPollInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) {
-        return;
+        const hiddenPollDue = this.completionSound
+          && (Date.now() - this.lastSeriesPollAttemptAtMs) >= AdminBenchmarkComponent.HIDDEN_POLL_INTERVAL_MS;
+        if (!hiddenPollDue) {
+          return;
+        }
       }
+      this.lastSeriesPollAttemptAtMs = Date.now();
       this.pollSeries(seriesId);
     }, AdminBenchmarkComponent.SERIES_POLL_INTERVAL_MS);
 
@@ -3020,6 +3073,16 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.benchmarkService.getRunSeries(seriesId).subscribe({
       next: (series) => {
         this.activeSeries = series;
+        // Chimes once per series actually watched live: seriesIsLive keeps re-adding the id while
+        // it runs, and the transition into Completed/Cancelled/Failed or Stopped (which needs the
+        // operator to continue it) fires the chime only for an id this poller has seen live —
+        // never for a series opened from history already finished.
+        if (this.seriesIsLive) {
+          this.seriesSeenLive.add(series.id);
+        } else if (this.seriesSeenLive.has(series.id) && (this.seriesIsFinished || this.seriesIsStopped)) {
+          this.seriesSeenLive.delete(series.id);
+          this.signalCompletion(`series:${series.id}`);
+        }
         // The member currently running is what the single-run banner and dialog describe, so the
         // run poller follows the series rather than being started again per member.
         const running = series.members.find(m => this.formatStatus(m.status) === 'Running');
@@ -3227,11 +3290,17 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   private startPolling(runId: number) {
     this.stopPolling();
+    this.lastRunPollAttemptAtMs = Date.now();
     this.pollRunDetail(runId);
     this.pollInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) {
-        return;
+        const hiddenPollDue = this.completionSound
+          && (Date.now() - this.lastRunPollAttemptAtMs) >= AdminBenchmarkComponent.HIDDEN_POLL_INTERVAL_MS;
+        if (!hiddenPollDue) {
+          return;
+        }
       }
+      this.lastRunPollAttemptAtMs = Date.now();
       this.pollRunDetail(runId);
     }, AdminBenchmarkComponent.RUN_POLL_INTERVAL_MS);
 
@@ -3273,6 +3342,79 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
+  /**
+   * The run half of transition detection: chimes only for an id this poller watched Running, and
+   * only when it is not a member of a series still live — a series chimes once for the whole
+   * group instead, via `signalCompletion` in `pollSeries`.
+   */
+  private maybeSignalRunCompletion(runId: number): void {
+    if (!this.runsSeenLive.has(runId)) return;
+    this.runsSeenLive.delete(runId);
+    if (this.activeSeries != null && this.seriesIsLive) return;
+    this.signalCompletion(`run:${runId}`);
+  }
+
+  /**
+   * Marks the tab title even when the sound is off, so a hidden tab shows the completion either
+   * way; then, if the setting is on, attempts the chime and records the outcome for the fallback
+   * status line and the diagnostics capture.
+   */
+  private signalCompletion(key: string): void {
+    this.markTabTitleForCompletion();
+    if (!this.completionSound) return;
+    this.completionSoundService.play(key).then(outcome => {
+      this.lastCompletionSoundOutcome = outcome;
+      if (outcome === 'played') {
+        this.completionSoundStatus = null;
+      } else if (outcome === 'blocked') {
+        this.completionSoundStatus = 'Playback was blocked by the browser — press Test sound once to allow it.';
+      }
+      this.cdr.detectChanges();
+    });
+  }
+
+  /**
+   * Prefixes the document title with a checkmark while the tab is hidden, so the tab strip shows a
+   * run or series finished even when the operator never hears it. Restored, and the listener
+   * detached, on the next visibilitychange that finds the tab visible again.
+   */
+  private markTabTitleForCompletion(): void {
+    if (typeof document === 'undefined' || !document.hidden) return;
+    if (this.originalDocumentTitleBeforeCompletion === null) {
+      this.originalDocumentTitleBeforeCompletion = document.title;
+      document.title = '✓ ' + document.title;
+    }
+    if (!this.titleRestoreVisibilityHandler) {
+      this.titleRestoreVisibilityHandler = () => {
+        if (document.hidden) return;
+        if (this.originalDocumentTitleBeforeCompletion !== null) {
+          document.title = this.originalDocumentTitleBeforeCompletion;
+          this.originalDocumentTitleBeforeCompletion = null;
+        }
+        if (this.titleRestoreVisibilityHandler) {
+          document.removeEventListener('visibilitychange', this.titleRestoreVisibilityHandler);
+          this.titleRestoreVisibilityHandler = null;
+        }
+      };
+      document.addEventListener('visibilitychange', this.titleRestoreVisibilityHandler);
+    }
+  }
+
+  /**
+   * The *Test sound* button: plays under this click's user gesture, which also unlocks later
+   * programmatic playback on browsers that require one interaction before audio is allowed.
+   */
+  testCompletionSound(): void {
+    this.completionSoundStatus = null;
+    this.completionSoundService.prime().then(outcome => {
+      this.lastCompletionSoundOutcome = outcome;
+      if (outcome === 'blocked') {
+        this.completionSoundStatus = 'Playback was blocked by the browser — press Test sound once to allow it.';
+      }
+      this.cdr.detectChanges();
+    });
+  }
+
   private pollRunDetail(runId: number) {
     this.benchmarkService.getRun(runId).subscribe({
       next: (run) => {
@@ -3281,6 +3423,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         this.activeRunDetail = run;
         const statusStr = this.formatStatus(run.status);
         if (statusStr === 'Running') {
+          this.runsSeenLive.add(run.id);
           this.rerunLaunchPending = false;
           this.rerunLaunchedAtMs = null;
           if (this.isRunProgressDialogOpen && !this.runElapsedInterval) {
@@ -3304,6 +3447,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
             this.stopPolling();
             this.stopRunElapsedTicker();
             this.loadHistory();
+            this.maybeSignalRunCompletion(run.id);
           } else {
             this.cdr.detectChanges();
             return;
@@ -3312,6 +3456,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           this.stopPolling();
           this.stopRunElapsedTicker();
           this.loadHistory();
+          this.maybeSignalRunCompletion(run.id);
         }
         this.cdr.detectChanges();
       },
@@ -4117,6 +4262,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       lines.push(`Last poll error: ${this.lastRunPollError}`);
     }
     lines.push(`Document hidden: ${typeof document !== 'undefined' ? document.hidden : false}`);
+    lines.push(`Completion sound: ${this.completionSound ? 'enabled' : 'disabled'}, last outcome ${this.lastCompletionSoundOutcome ?? 'n/a'}`);
     lines.push('');
 
     // --- ERRORS ---

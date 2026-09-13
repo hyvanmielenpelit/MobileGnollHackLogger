@@ -35,6 +35,7 @@ function buildEntry(
     selfInconsistentKeys: [],
     differencesFromLargest: [],
     questionParallelism: '1',
+    speedCalibration: 'speed-a',
     pricingSnapshot: '2026-09-01',
     ...overrides
   };

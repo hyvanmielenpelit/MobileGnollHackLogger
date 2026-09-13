@@ -261,15 +261,18 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   sort: ModelSort = DEFAULT_MODEL_SORT;
 
   /**
-   * Time to first token by default, not Speed Index.
+   * Mean model time per question by default, not time to first token and not Speed Index.
    *
+   * Model time is turn duration with tool I/O subtracted out — the figure the scoring profile
+   * targets and the one a candidate's own speed is judged on. Time to first token stays offered
+   * because it is the latency a chat user actually perceives, which model time does not capture.
    * Speed Index saturates — half the scored answers finish inside their difficulty-scaled target,
    * so several models sit at the ceiling and read as equally fast when their real latency differs
-   * severalfold — and the server classes it as a table figure for that reason. The switch is offered
+   * severalfold — and the server classes it as a table figure for that reason; it stays offered
    * because the index is what the run report scores on, and selecting it raises the saturation
    * notice on the panel.
    */
-  speedMeasure: SpeedMeasure = 'ttftP50';
+  speedMeasure: SpeedMeasure = 'meanModelTime';
 
   /**
    * Candidate cost for the whole suite. There is no second measure to switch to: the endpoint's cost
@@ -314,6 +317,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       runCount: e => e.runCount,
       state: e => this.stateOrder(e),
       intelligenceIndex: e => e.quality?.pointEstimate ?? null,
+      modelTimeMeanMs: e => e.speed?.modelTimeMeanMs ?? null,
+      totalModelTimeMs: e => e.speed?.totalModelTimePerRunMeanMs ?? null,
       ttftP50Ms: e => e.speed?.ttftP50Ms ?? null,
       speedIndex: e => e.table?.meanSpeedIndex ?? null,
       costPerQuestion: e => e.cost?.candidateCostPerQuestionUsd ?? null

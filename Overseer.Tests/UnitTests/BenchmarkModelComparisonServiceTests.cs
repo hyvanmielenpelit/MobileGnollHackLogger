@@ -423,7 +423,7 @@ public class BenchmarkModelComparisonServiceTests
     }
 
     [Fact]
-    public void TheSpeedAxis_IsTimeToFirstToken_WithModelTimeBesideIt()
+    public void TheSpeedAxis_IsModelTime_WithTtftBesideIt()
     {
         var dto = Build(new[]
         {
@@ -435,8 +435,11 @@ public class BenchmarkModelComparisonServiceTests
         Assert.Equal(300.0, Entry(dto, "b").Speed!.TtftP50Ms!.Value, 6);
         Assert.Equal(3, Entry(dto, "a").Speed!.TtftAnswerCount);
 
-        // Model time is the secondary column, never the axis.
+        // Each of "a"'s three answers carries DurationMs 30000 with no tool time, so every model-time
+        // figure resolves to the same 30000 ms.
         Assert.Equal(30000.0, Entry(dto, "a").Speed!.ModelTimeP50Ms!.Value, 6);
+        Assert.Equal(30000.0, Entry(dto, "a").Speed!.ModelTimeMeanMs!.Value, 6);
+        Assert.Equal(90000.0, Entry(dto, "a").Speed!.TotalModelTimePerRunMeanMs!.Value, 6);
     }
 
     [Fact]

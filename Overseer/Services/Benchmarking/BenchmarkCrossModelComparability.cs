@@ -174,11 +174,18 @@ public static class BenchmarkCrossModelComparability
     /// in <see cref="BenchmarkComparabilityKey"/>. Which axes each one costs is read from the key's
     /// own <see cref="BenchmarkComparabilityKeyEntry.DegradesSpeed"/> and
     /// <see cref="BenchmarkComparabilityKeyEntry.DegradesCost"/> flags rather than restated here, so
-    /// there is one definition of what a differing parallelism or pricing snapshot invalidates.
+    /// there is one definition of what a differing parallelism, speed calibration or pricing
+    /// snapshot invalidates.
+    ///
+    /// <para>The list is enumerated rather than derived from
+    /// <see cref="BenchmarkComparabilityKeyKind.SpeedAndCost"/>, and
+    /// <see cref="IsMustMatchKey"/> is its complement: a speed-and-cost key left out of it is
+    /// treated as must-match and excludes every point that differs on it from every chart.</para>
     /// </summary>
     public static readonly IReadOnlyList<string> DegradingKeys = new[]
     {
         BenchmarkComparabilityKey.QuestionParallelismKey,
+        BenchmarkComparabilityKey.SpeedCalibrationKey,
         BenchmarkComparabilityKey.PricingSnapshotKey
     };
 

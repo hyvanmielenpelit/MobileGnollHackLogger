@@ -57,6 +57,7 @@ public static class BenchmarkClaimVerificationPrompt
         sb.AppendLine("2. The question text and rubric below are provided for CONTEXT ONLY. A claim absent from the rubric is NOT thereby false — rubrics are often incomplete. Your task is to check each claim against GnollHack source code and wiki facts.");
         sb.AppendLine("3. Use the available tools to search the GnollHack codebase and wiki for evidence supporting or refuting each claim.");
         sb.AppendLine("3a. A claim about how a spell, attack or effect is computed is checked in the code that implements it — the case or function that applies the effect — not only in a data table (src/monst.c, src/objects.c) or a wiki page. A table or page that omits a term does not refute a claim that names the term; a Refuted verdict needs code, or a wiki statement, that contradicts the claim.");
+        sb.AppendLine("3b. A claim about the magnitude or tier of a resistance or property (for example \"50 % fire resistance\") is checked against the code that applies the property — the enlightenment strings in src/cmd.c and the resistance rolls in src/zap.c — not against the code that grants it: how an intrinsic is acquired says nothing about how much it protects.");
         sb.AppendLine("4. Possible verdicts for each claim:");
         sb.AppendLine("   - Supported: Concrete evidence was found in the source code or wiki that the claim is true.");
         sb.AppendLine("   - Refuted: Concrete evidence was found in the source code or wiki that the claim is false.");

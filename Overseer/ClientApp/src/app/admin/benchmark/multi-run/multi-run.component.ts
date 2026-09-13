@@ -109,6 +109,15 @@ export interface MultiRunSpeedStatistics {
   ttftP90Ms?: number | null;
   ttftMaxMs?: number | null;
   ttftAnswerCount?: number;
+  /**
+   * The candidate's own working time: `modelTimeMeanMs` is pooled over the same answers as the
+   * percentiles above, while the two totals are per member run — `perRunTotalModelTimeMs` in member
+   * order, their mean, and their sample standard deviation, which is null below two runs.
+   */
+  modelTimeMeanMs?: number | null;
+  totalModelTimePerRunMeanMs?: number | null;
+  perRunTotalModelTimeMs?: number[];
+  totalModelTimeStandardDeviationMs?: number | null;
   degraded?: boolean;
   degradedReason?: string | null;
   caveat?: string | null;

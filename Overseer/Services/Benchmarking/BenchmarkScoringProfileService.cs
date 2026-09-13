@@ -346,10 +346,19 @@ public class BenchmarkScoringProfileService
     /// profile a run picks when none is named, and the other four are identity and audit data — so
     /// two profiles agreeing here score identically.</para>
     ///
-    /// <para>The field list is exhaustive over the entity by construction: a scoring field added
-    /// to <see cref="BenchmarkScoringProfile"/> and not added here would make two profiles that
-    /// score differently compare equal, which is a false replicate rather than a false
-    /// difference. Extend this method whenever the entity gains a field.</para>
+    /// <para>Also deliberately absent: <c>SpeedTargetMs</c>, <c>SpeedDecayK</c> and
+    /// <c>SpeedDifficultyScaling</c>. None of the three can move a quality score — they enter only
+    /// the Speed Index, which is a separate aggregate — so including them here would mark two runs
+    /// non-comparable *on quality* for a recalibration that cannot touch a quality number, and
+    /// would make the speed model unadjustable without ending every comparable series. They are
+    /// fingerprinted instead by <see cref="SpeedCalibrationSignature"/>, which reaches the
+    /// comparability ladder as a speed-and-cost key and degrades the speed aggregates alone.</para>
+    ///
+    /// <para>The field list is exhaustive over the entity's <i>quality</i> semantics by
+    /// construction: a scoring field added to <see cref="BenchmarkScoringProfile"/> and not added
+    /// here or to <see cref="SpeedCalibrationSignature"/> would make two profiles that score
+    /// differently compare equal, which is a false replicate rather than a false difference.
+    /// Extend one of the two methods whenever the entity gains a field.</para>
     /// </summary>
     public static string CanonicalSignature(BenchmarkScoringProfile profile)
     {
@@ -368,10 +377,30 @@ public class BenchmarkScoringProfileService
             $"secondOpinionBlind={(profile.SecondOpinionBlind ? "1" : "0")}",
             $"secondOpinionOutlierDeltaPoints={Number(profile.SecondOpinionOutlierDeltaPoints)}",
             $"secondOpinionMinimumSample={Number(profile.SecondOpinionMinimumSample)}",
+            $"maxParallelQuestions={Number(profile.MaxParallelQuestions)}"
+        });
+    }
+
+    /// <summary>
+    /// A stable string over the three constants of the speed model — the target, the decay rate and
+    /// the difficulty scaling — rendered exactly as <see cref="CanonicalSignature"/> renders its
+    /// own fields.
+    ///
+    /// <para>Separate from the quality signature because the two govern different aggregates. A
+    /// difference here changes what a Speed Index means and leaves every quality number untouched,
+    /// so the comparability ladder treats it as a speed-and-cost key rather than an instrument
+    /// key: runs on either side of a recalibration stay comparable on quality, and only their
+    /// speed aggregates carry the degraded flag.</para>
+    /// </summary>
+    public static string SpeedCalibrationSignature(BenchmarkScoringProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        return string.Join(";", new[]
+        {
             $"speedTargetMs={Number(profile.SpeedTargetMs)}",
             $"speedDecayK={Number(profile.SpeedDecayK)}",
-            $"speedDifficultyScaling={Number(profile.SpeedDifficultyScaling)}",
-            $"maxParallelQuestions={Number(profile.MaxParallelQuestions)}"
+            $"speedDifficultyScaling={Number(profile.SpeedDifficultyScaling)}"
         });
     }
 
@@ -462,12 +491,12 @@ public class BenchmarkScoringProfileService
             SecondOpinionOutlierDeltaPoints = 25,
             SecondOpinionMinimumSample = 4,
             SecondOpinionBlind = true,
-            // Recalibrated: the old 5000 ms / k=25 pair drove the speed score to its floor at
-            // roughly 78 s, tying together every slower answer on an agentic run. See
-            // BenchmarkScoringConstants for the two invariants these satisfy. Existing databases
-            // are updated by the AddBenchmarkIntegrityAndTiming migration.
-            SpeedTargetMs = 15000,
-            SpeedDecayK = 20.0,
+            // The speed model's target and decay rate, which must agree with the defaults in
+            // BenchmarkScoringConstants — see that type for the two invariants they satisfy. This
+            // is the fresh-install seed only; an existing database's profiles are moved onto these
+            // values by the RecalibrateBenchmarkSpeedIndex migration.
+            SpeedTargetMs = 2000,
+            SpeedDecayK = 12.0,
             SpeedDifficultyScaling = 1.0,
             MaxParallelQuestions = 1,
             CreatedAtUtc = DateTime.UtcNow,

@@ -85,7 +85,10 @@ describe('ModelComparisonComponent', () => {
         pooledAnswerCount: 54,
         degraded: false,
         degradedReason: null,
-        caveat: 'Timings were recorded under parallel question execution.'
+        caveat: 'Timings were recorded under parallel question execution.',
+        modelTimeMeanMs: 28000,
+        totalModelTimePerRunMeanMs: 504000,
+        totalModelTimeSdMs: 31500
       },
       cost: {
         candidateCostPerQuestionUsd: 0.0123,
@@ -252,6 +255,25 @@ describe('ModelComparisonComponent', () => {
     expect(toggles.some(label => /show table|hide table|table view/i.test(label))).toBeFalse();
   });
 
+  it('shows model time per question and the suite total right after Intelligence Index', () => {
+    render(buildDto(comparableSet(1)), 3);
+
+    // Model, R, State, Intelligence Index, Model time / question, Suite total, ...
+    const headers = fixture.debugElement.queryAll(By.css('table.mc-table thead tr:first-child th'))
+      .map(header => (header.nativeElement as HTMLElement).textContent?.trim());
+    expect(headers[3]).toContain('Intelligence Index');
+    expect(headers[4]).toContain('Model time');
+    expect(headers[5]).toContain('Suite total');
+
+    // The body row's Model cell is a <th scope="row">, so the <td> list starts at R.
+    const row = fixture.debugElement.query(By.css('table.mc-table tbody tr'));
+    const cellsText = row.queryAll(By.css('td')).map(cell => (cell.nativeElement as HTMLElement).textContent ?? '');
+    expect(cellsText[3]).toContain('28.0 s');
+    expect(cellsText[4]).toContain('504.0 s');
+    // The SD is appended when the DTO carries one.
+    expect(cellsText[4]).toContain('31.5 s');
+  });
+
   it('keeps an excluded entry in the table even though no figure can draw it', () => {
     render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringMethodVersion'])]), 3);
 
@@ -415,12 +437,24 @@ describe('ModelComparisonComponent', () => {
     const entries = comparableSet(3);
     entries[0] = { ...entries[0], table: { ...entries[0].table!, speedIndexSaturated: true } };
     render(buildDto(entries));
+    // TTFT carries no notice in this scenario; the default (mean model time) always carries its
+    // own "no per-answer dispersion" notice, which would otherwise pollute this assertion.
+    component.onSpeedMeasureChange('ttftP50');
+    fixture.detectChanges();
     expect(component.figures?.smallMultiples.speed.notices.length).toBe(0);
 
     component.onSpeedMeasureChange('speedIndex');
     fixture.detectChanges();
 
     expect(component.figures?.smallMultiples.speed.notices.join(' ')).toContain('saturated');
+  });
+
+  it('carries no interval for mean model time, the default measure, and says so', () => {
+    render(buildDto(comparableSet(3)));
+
+    expect(component.speedMeasure).toBe('meanModelTime');
+    expect(component.figures?.smallMultiples.speed.notices.join(' '))
+      .toContain('no per-answer dispersion');
   });
 
   it('offers no total-run cost measure, because the endpoint carries candidate spend only', () => {
@@ -1183,6 +1217,7 @@ describe('selectionNotices', () => {
       selfInconsistentKeys: [],
       differencesFromLargest: [],
       questionParallelism: '1',
+      speedCalibration: 'speed-a',
       pricingSnapshot: '2026-09-01',
       ...overrides
     };
@@ -1342,6 +1377,21 @@ describe('selectionNotices', () => {
     expect(notices[0].body).toContain('QuestionParallelism');
     expect(notices[0].body).toContain('speed axis');
     expect(notices[0].body).toContain('cost axis');
+  });
+
+  it('warns that a differing speed calibration flags the speed axis alone', () => {
+    const index = buildIndex([
+      entry({ key: 'run:1', sourceId: 1, speedCalibration: 'speed-old' }),
+      entry({ key: 'run:2', sourceId: 2, speedCalibration: 'speed-new' })
+    ]);
+
+    const notices = selectionNotices(state({ index, runIds: [1, 2] }));
+
+    expect(ids(notices)).toEqual(['degrading-keys']);
+    // The calibration cannot move a quality or a cost number, so the heading claims neither.
+    expect(notices[0].heading).toBe('The speed axis will be flagged');
+    expect(notices[0].body).toContain('SpeedCalibration');
+    expect(notices[0].body).not.toContain('cost axis');
   });
 
   it('warns about a differing pricing snapshot only on the As-run basis', () => {
@@ -1508,10 +1558,13 @@ describe('model-comparison adapter', () => {
     // NaN, never 0: a zero cost would plot as a bar on the baseline and read as "free".
     expect(Number.isNaN(entry.intelligenceIndex)).toBeTrue();
     expect(Number.isNaN(entry.ttftP50Ms)).toBeTrue();
+    expect(Number.isNaN(entry.modelTimeMeanMs)).toBeTrue();
+    expect(Number.isNaN(entry.totalModelTimeMs)).toBeTrue();
     expect(Number.isNaN(entry.candidateCostPerQuestionUsd)).toBeTrue();
     expect(Number.isNaN(entry.totalRunCostUsd)).toBeTrue();
     expect(entry.candidateCostPerQuestionSdUsd).toBeNull();
     expect(entry.speedIndexSd).toBeNull();
+    expect(entry.totalModelTimeSdMs).toBeNull();
   });
 
   it('reads items per run and the pricing label off the payload header', () => {

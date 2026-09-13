@@ -195,10 +195,12 @@
               <select id="mc-speed-measure" class="gh-input"
                       [ngModel]="speedMeasure" [ngModelOptions]="{ standalone: true }"
                       (ngModelChange)="onSpeedMeasureChange($event)">
+                <option value="meanModelTime">Model time per question, mean</option>
+                <option value="totalModelTime">Candidate model time for the whole suite</option>
                 <option value="ttftP50">Time to first token, P50</option>
                 <option value="speedIndex">Speed Index (0-100)</option>
               </select>
-              <p class="mc-field-hint">Speed Index saturates, so several models can sit tied at the ceiling while their real latency differs severalfold.</p>
+              <p class="mc-field-hint">Model time is the turn duration with tool I/O removed; time to first token remains the perceived-latency figure a chat user experiences. Speed Index saturates, so several models can sit tied at the ceiling while their real latency differs severalfold.</p>
             </div>
 
             <div class="mc-field">
@@ -503,8 +505,8 @@
               <table class="gh-table gh-datatable mc-table">
                 <caption class="visually-hidden">
                   Cross-model comparison entries: model, runs behind the point, comparability state,
-                  Intelligence Index, time to first token, Speed Index, candidate cost, and the
-                  comparability keys each entry differs on.
+                  Intelligence Index, model time per question, suite total model time, time to first
+                  token, Speed Index, candidate cost, and the comparability keys each entry differs on.
                 </caption>
                 <thead>
                   <tr>
@@ -512,6 +514,8 @@
                     <th app-sort-header [state]="entryTable" column="runCount" label="R" class="col-center" (changed)="onTableChanged()"></th>
                     <th app-sort-header [state]="entryTable" column="state" label="State" (changed)="onTableChanged()"></th>
                     <th app-sort-header [state]="entryTable" column="intelligenceIndex" label="Intelligence Index" (changed)="onTableChanged()"></th>
+                    <th app-sort-header [state]="entryTable" column="modelTimeMeanMs" label="Model time / question" (changed)="onTableChanged()"></th>
+                    <th app-sort-header [state]="entryTable" column="totalModelTimeMs" label="Suite total" (changed)="onTableChanged()"></th>
                     <th app-sort-header [state]="entryTable" column="ttftP50Ms" label="TTFT P50 / P90" (changed)="onTableChanged()"></th>
                     <th app-sort-header [state]="entryTable" column="speedIndex" label="Speed Index" (changed)="onTableChanged()"></th>
                     <th app-sort-header [state]="entryTable" column="costPerQuestion" label="Candidate $ / question" (changed)="onTableChanged()"></th>
@@ -540,6 +544,8 @@
                     <td></td>
                     <td></td>
                     <td></td>
+                    <td></td>
+                    <td></td>
                     <td>
                       @if (entryTable.hasActiveFilters) {
                         <button type="button" class="gh-filter-clear"
@@ -550,7 +556,7 @@
                 </thead>
                 <tbody>
                   @if (entryTable.noMatches(entries)) {
-                    <tr><td colspan="8" class="text-muted">No entries match these filters.</td></tr>
+                    <tr><td colspan="10" class="text-muted">No entries match these filters.</td></tr>
                   }
                   @for (entry of entryTable.view(entries); track entry.key) {
                     <tr [class.mc-row-highlighted]="highlightedKey === entry.key"
@@ -610,6 +616,13 @@
                           <span class="mc-interval-basis">{{ entry.quality?.intervalBasis }}</span>
                         } @else if (!entry.excluded) {
                           <span class="mc-interval-basis">No interval available</span>
+                        }
+                      </td>
+                      <td>{{ formatMs(entry.speed?.modelTimeMeanMs) }}</td>
+                      <td>
+                        {{ formatMs(entry.speed?.totalModelTimePerRunMeanMs) }}
+                        @if (entry.speed?.totalModelTimeSdMs != null) {
+                          <span class="mc-interval"> ± {{ formatMs(entry.speed?.totalModelTimeSdMs) }}</span>
                         }
                       </td>
                       <td>

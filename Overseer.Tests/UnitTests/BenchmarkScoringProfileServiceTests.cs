@@ -96,11 +96,15 @@ public class BenchmarkScoringProfileServiceTests
     // --- CanonicalSignature ---------------------------------------------------------------------
 
     /// <summary>
-    /// One mutation per scoring field on <see cref="BenchmarkScoringProfile"/>. A field left out of
-    /// the signature makes two profiles that score differently compare equal — a false replicate,
-    /// which is worse than a false difference — so this list must be extended whenever the entity
-    /// gains a field. The names of any fields that failed to move the signature are reported, so a
-    /// failure says which one is missing.
+    /// One mutation per quality-scoring field on <see cref="BenchmarkScoringProfile"/>. A field left
+    /// out of the signature makes two profiles that score differently compare equal — a false
+    /// replicate, which is worse than a false difference — so this list must be extended whenever
+    /// the entity gains a field. The names of any fields that failed to move the signature are
+    /// reported, so a failure says which one is missing.
+    ///
+    /// <para>The three speed constants are covered by
+    /// <see cref="SpeedCalibrationSignature_MovesWithEverySpeedConstant"/> instead: they carry no
+    /// quality meaning, and the two signatures partition the entity between them.</para>
     /// </summary>
     [Fact]
     public void CanonicalSignature_MovesWithEveryScoringField()
@@ -118,9 +122,6 @@ public class BenchmarkScoringProfileServiceTests
             (nameof(BenchmarkScoringProfile.SecondOpinionBlind), p => p.SecondOpinionBlind = false),
             (nameof(BenchmarkScoringProfile.SecondOpinionOutlierDeltaPoints), p => p.SecondOpinionOutlierDeltaPoints = 30),
             (nameof(BenchmarkScoringProfile.SecondOpinionMinimumSample), p => p.SecondOpinionMinimumSample = 6),
-            (nameof(BenchmarkScoringProfile.SpeedTargetMs), p => p.SpeedTargetMs = 18000),
-            (nameof(BenchmarkScoringProfile.SpeedDecayK), p => p.SpeedDecayK = 22.0),
-            (nameof(BenchmarkScoringProfile.SpeedDifficultyScaling), p => p.SpeedDifficultyScaling = 1.5),
             (nameof(BenchmarkScoringProfile.MaxParallelQuestions), p => p.MaxParallelQuestions = 3)
         };
 
@@ -139,6 +140,74 @@ public class BenchmarkScoringProfileServiceTests
         }
 
         Assert.Empty(unmoved);
+    }
+
+    /// <summary>
+    /// The quality signature is blind to the speed model. A recalibration of the target, the decay
+    /// rate or the difficulty scaling changes no quality score, so two runs on either side of one
+    /// stay comparable on quality — which is what makes the speed model adjustable at all.
+    /// </summary>
+    [Fact]
+    public void CanonicalSignature_IgnoresTheSpeedConstants()
+    {
+        string baseline = BenchmarkScoringProfileService.CanonicalSignature(FullProfile());
+
+        var recalibrated = FullProfile();
+        recalibrated.SpeedTargetMs = 2000;
+        recalibrated.SpeedDecayK = 12.0;
+        recalibrated.SpeedDifficultyScaling = 1.5;
+
+        Assert.Equal(baseline, BenchmarkScoringProfileService.CanonicalSignature(recalibrated));
+    }
+
+    /// <summary>
+    /// The other half of the partition: every constant of the speed model moves the speed
+    /// signature, so a recalibration is still visible on the comparability ladder — as a
+    /// speed-and-cost difference rather than an instrument one.
+    /// </summary>
+    [Fact]
+    public void SpeedCalibrationSignature_MovesWithEverySpeedConstant()
+    {
+        var mutations = new (string Field, Action<BenchmarkScoringProfile> Mutate)[]
+        {
+            (nameof(BenchmarkScoringProfile.SpeedTargetMs), p => p.SpeedTargetMs = 18000),
+            (nameof(BenchmarkScoringProfile.SpeedDecayK), p => p.SpeedDecayK = 22.0),
+            (nameof(BenchmarkScoringProfile.SpeedDifficultyScaling), p => p.SpeedDifficultyScaling = 1.5)
+        };
+
+        string baseline = BenchmarkScoringProfileService.SpeedCalibrationSignature(FullProfile());
+        var unmoved = new List<string>();
+
+        foreach (var (field, mutate) in mutations)
+        {
+            var mutated = FullProfile();
+            mutate(mutated);
+
+            if (BenchmarkScoringProfileService.SpeedCalibrationSignature(mutated) == baseline)
+            {
+                unmoved.Add(field);
+            }
+        }
+
+        Assert.Empty(unmoved);
+    }
+
+    /// <summary>
+    /// The speed signature carries nothing but the speed model: a weight or a level-score table
+    /// that moved must leave it where it was, or the two signatures would double-count a quality
+    /// edit as a speed difference too.
+    /// </summary>
+    [Fact]
+    public void SpeedCalibrationSignature_IgnoresTheQualityFields()
+    {
+        string baseline = BenchmarkScoringProfileService.SpeedCalibrationSignature(FullProfile());
+
+        var reweighted = FullProfile();
+        reweighted.WeightAccuracy = 0.60;
+        reweighted.LevelScoresJson = "[1, 15, 35, 55, 72, 90, 100]";
+        reweighted.CriticalErrorCeiling = 30;
+
+        Assert.Equal(baseline, BenchmarkScoringProfileService.SpeedCalibrationSignature(reweighted));
     }
 
     /// <summary>

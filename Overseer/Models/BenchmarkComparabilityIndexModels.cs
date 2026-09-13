@@ -46,8 +46,10 @@ public class BenchmarkComparabilityIndexEntryDto
     /// <summary>Must-match keys on which this source differs from the largest condition, with both values.</summary>
     public List<BenchmarkComparabilityDifferenceDto> DifferencesFromLargest { get; set; } = new();
 
-    /// <summary>The two degrading key values, so the picker can warn before Compare.</summary>
+    /// <summary>The degrading key values, so the picker can warn before Compare.</summary>
     public string QuestionParallelism { get; set; } = string.Empty;
+
+    public string SpeedCalibration { get; set; } = string.Empty;
 
     public string PricingSnapshot { get; set; } = string.Empty;
 }

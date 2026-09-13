@@ -606,6 +606,9 @@ public static class BenchmarkGroupReportBuilder
         sb.AppendLine($"- **Per-run Speed Indices:** {string.Join(", ", sp.PerRunSpeedIndices.Select(v => Inv(v, "F0")))}");
         sb.AppendLine($"- **Pooled per-answer model time** over {sp.PooledAnswerCount} answers — P50 {Seconds(sp.ModelTimeP50Ms)}, P90 {Seconds(sp.ModelTimeP90Ms)}, max {Seconds(sp.ModelTimeMaxMs)}");
         sb.AppendLine("  - Pooled across all *R* × *Q* cells rather than averaged per run: the question is what a single slow turn looks like, and a mean of per-run medians cannot answer it.");
+        sb.AppendLine($"- **Mean model time per answer:** {Seconds(sp.ModelTimeMeanMs)}");
+        sb.AppendLine($"- **Mean total model time per run (SD):** {Seconds(sp.TotalModelTimePerRunMeanMs)}" +
+                      (sp.TotalModelTimeStandardDeviationMs.HasValue ? $" ± {Seconds(sp.TotalModelTimeStandardDeviationMs)} (SD across {sp.RunCount} runs)" : string.Empty));
 
         // Time to first token is the latency a chat user perceives, and it carries its own
         // denominator because the per-answer figure is nullable where model time is not.

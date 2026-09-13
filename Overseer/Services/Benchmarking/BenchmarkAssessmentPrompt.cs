@@ -360,8 +360,20 @@ public static class BenchmarkAssessmentPrompt
     ///     unverifiability, denial and omission detectors widen their vocabulary. ScoringMethodVersion
     ///     stays 10 and CandidateSystemPromptSha256 does not move. A run stamped 27 differs from one
     ///     stamped 26 on HarnessVersion and ToolGuidesSha256, which is below Tier B.
+    /// v28: the AD_SAMU attack description in Data/flag_descriptions.json names the quest artifact as
+    ///     what the attack steals and confines the Amulet of Yendor to a monster that wants it; that
+    ///     file is read from the application base and is not part of ToolGuidesSha256, so this stamp
+    ///     is the only marker of the change. The claim verifier checks a claim about the magnitude or
+    ///     tier of a resistance against the code that applies the property rather than the code that
+    ///     grants it. The speed model is recalibrated to a 2,000 ms target with k = 12, and its three
+    ///     constants leave the scoring profile's quality signature for a SpeedCalibration
+    ///     comparability key of kind SpeedAndCost — so a recalibration degrades the speed aggregates
+    ///     and leaves quality comparable, and a run scored before it keeps its old-scale Speed Index
+    ///     until it is rescored. ScoringMethodVersion stays 10 and CandidateSystemPromptSha256 does
+    ///     not move. A run stamped 28 differs from one stamped 27 on HarnessVersion alone, which is
+    ///     Tier C.
     /// </summary>
-    public const string HarnessVersion = "27";
+    public const string HarnessVersion = "28";
 
     /// <summary>
     /// The complete per-question assessor prompt: <see cref="BuildPerQuestionPreamble"/>, a blank

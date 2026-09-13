@@ -23,6 +23,8 @@ import {
   glyphFor,
   normalizeProfile,
   selectPlottedEntries,
+  speedLowerIsBetter,
+  speedValue,
   suiteCostUsd,
 } from './model-comparison-charts';
 import type {
@@ -79,6 +81,9 @@ function makeEntry(overrides: Partial<ModelComparisonEntry> & { key: string }): 
     speedIndexSd: null,
     ttftP50Ms: 1000,
     ttftP90Ms: 1800,
+    modelTimeMeanMs: 900,
+    totalModelTimeMs: 9000,
+    totalModelTimeSdMs: 1200,
     candidateCostPerQuestionUsd: 0.002,
     candidateCostPerQuestionSdUsd: 0.0003,
     totalRunCostUsd: 0.4,
@@ -221,17 +226,39 @@ describe('model-comparison-charts', () => {
   });
 
   describe('scatter scales', () => {
-    it('S1 puts TTFT on a logarithmic x axis and says so in the axis title', () => {
+    it('S1 defaults to mean model time, logarithmic and lower is better', () => {
       const spec = buildQualitySpeedScatter(PROFILE_FIXTURE, BASE_FIGURE_OPTIONS);
       const x = scaleOf(spec.config, 'x');
       const y = scaleOf(spec.config, 'y');
 
       expect(x.type).toBe('logarithmic');
+      expect(x.title?.text).toContain('Model time per question, mean');
       expect(x.title?.text).toContain('logarithmic');
+      expect(x.title?.text).toContain('lower is better');
       expect(y.type).toBe('linear');
       expect(y.min).toBe(0);
       expect(y.max).toBe(100);
       expect(y.title?.text).not.toContain('logarithmic');
+    });
+
+    it('S1 puts TTFT on a logarithmic x axis and says so in the axis title, when TTFT is selected', () => {
+      const spec = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, speedMeasure: 'ttftP50' });
+      const x = scaleOf(spec.config, 'x');
+
+      expect(x.type).toBe('logarithmic');
+      expect(x.title?.text).toContain('Time to first token');
+      expect(x.title?.text).toContain('logarithmic');
+    });
+
+    it('S1 switches to Speed Index, linear 0-100, when that measure is selected', () => {
+      const spec = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, speedMeasure: 'speedIndex' });
+      const x = scaleOf(spec.config, 'x');
+
+      expect(x.type).toBe('linear');
+      expect(x.min).toBe(0);
+      expect(x.max).toBe(100);
+      expect(x.title?.text).toContain('higher is better');
+      expect(pointsOf(spec.config)[0]['x']).toBe(PROFILE_FIXTURE[0].speedIndex!);
     });
 
     it('S2 puts cost on a logarithmic x axis and keeps quality linear', () => {
@@ -241,10 +268,11 @@ describe('model-comparison-charts', () => {
       expect(scaleOf(spec.config, 'y').type).toBe('linear');
     });
 
-    it('S3 is logarithmic on both axes and labels both', () => {
-      const spec = buildSpeedCostScatter(PROFILE_FIXTURE, BASE_FIGURE_OPTIONS);
+    it('S3 is logarithmic on both axes and labels both, on the selected speed measure', () => {
+      const spec = buildSpeedCostScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, speedMeasure: 'totalModelTime' });
       expect(scaleOf(spec.config, 'x').type).toBe('logarithmic');
       expect(scaleOf(spec.config, 'y').type).toBe('logarithmic');
+      expect(scaleOf(spec.config, 'x').title?.text).toContain('Candidate model time for the whole suite');
       expect(scaleOf(spec.config, 'x').title?.text).toContain('logarithmic');
       expect(scaleOf(spec.config, 'y').title?.text).toContain('logarithmic');
     });
@@ -277,16 +305,41 @@ describe('model-comparison-charts', () => {
       expect(datasets[1]['backgroundColor']).toBe(CATEGORICAL_PALETTE_DARK[1]);
     });
 
-    it('carries the quality interval and the one-sided latency whisker on every mark', () => {
+    it('carries the quality interval and the one-sided latency whisker on every mark, on TTFT', () => {
       const spec = buildQualitySpeedScatter([PROFILE_FIXTURE[0]], {
         ...BASE_FIGURE_OPTIONS,
         glyphs: buildIdentityGlyphs([PROFILE_FIXTURE[0]]),
+        speedMeasure: 'ttftP50',
       });
       const point = pointsOf(spec.config)[0];
       expect(point['yErrLow']).toBe(4);
       // P50 -> P90 only: latency is right-skewed, so the whisker never mirrors below the median.
       expect(point['xErrHigh']).toBe(1300);
       expect(point['xErrLow']).toBeUndefined();
+    });
+
+    it('draws no whisker for mean model time, the default measure', () => {
+      const spec = buildQualitySpeedScatter([PROFILE_FIXTURE[0]], {
+        ...BASE_FIGURE_OPTIONS,
+        glyphs: buildIdentityGlyphs([PROFILE_FIXTURE[0]]),
+      });
+      const point = pointsOf(spec.config)[0];
+      expect(point['x']).toBe(PROFILE_FIXTURE[0].modelTimeMeanMs);
+      expect(point['xErrLow']).toBeUndefined();
+      expect(point['xErrHigh']).toBeUndefined();
+    });
+
+    it('carries the run-to-run SD whisker for total model time', () => {
+      const entry = makeEntry({ key: 'once', totalModelTimeMs: 40000, totalModelTimeSdMs: 5000 });
+      const spec = buildQualitySpeedScatter([entry], {
+        ...BASE_FIGURE_OPTIONS,
+        glyphs: buildIdentityGlyphs([entry]),
+        speedMeasure: 'totalModelTime',
+      });
+      const point = pointsOf(spec.config)[0];
+      expect(point['x']).toBe(40000);
+      expect(point['xErrLow']).toBe(5000);
+      expect(point['xErrHigh']).toBe(5000);
     });
 
     it('marks a single-run entry with an explicit n = 1 note rather than an empty interval', () => {
@@ -301,7 +354,8 @@ describe('model-comparison-charts', () => {
     });
 
     it('draws the Pareto frontier and keeps it out of the identity legend', () => {
-      const spec = buildQualitySpeedScatter(PROFILE_FIXTURE, BASE_FIGURE_OPTIONS);
+      // Distinguishing x values, on TTFT: the fixture's model time is tied across all three entries.
+      const spec = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, speedMeasure: 'ttftP50' });
       const labels = datasetsOf(spec.config).map((d) => d['label']);
       expect(labels).toContain('Pareto frontier');
 
@@ -368,9 +422,11 @@ describe('model-comparison-charts', () => {
       expect(byQuality.quality.config.data.labels).not.toEqual(byCost.quality.config.data.labels ?? []);
     });
 
-    it('switches the speed panel between Speed Index and TTFT P50', () => {
+    it('switches the speed panel across all four measures', () => {
       const index = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ speedMeasure: 'speedIndex' }));
       const ttft = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ speedMeasure: 'ttftP50' }));
+      const mean = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ speedMeasure: 'meanModelTime' }));
+      const total = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ speedMeasure: 'totalModelTime' }));
 
       expect(scaleOf(index.speed.config, 'y').title?.text).toContain('Speed Index');
       expect(scaleOf(index.speed.config, 'y').max).toBe(100);
@@ -379,9 +435,26 @@ describe('model-comparison-charts', () => {
       expect(scaleOf(ttft.speed.config, 'y').title?.text).toContain('Time to first token');
       expect(scaleOf(ttft.speed.config, 'y').title?.text).toContain('lower is better');
       expect(scaleOf(ttft.speed.config, 'y').max).toBeUndefined();
-      const point = pointsOf(ttft.speed.config)[0];
-      expect(point['y']).toBe(500);
-      expect(point['yErrHigh']).toBe(1300);
+      const ttftPoint = pointsOf(ttft.speed.config)[0];
+      expect(ttftPoint['y']).toBe(500);
+      expect(ttftPoint['yErrHigh']).toBe(1300);
+
+      expect(scaleOf(mean.speed.config, 'y').title?.text).toBe(
+        'Model time per question, mean (ms) — lower is better',
+      );
+      const meanPoint = pointsOf(mean.speed.config)[0];
+      expect(meanPoint['y']).toBe(PROFILE_FIXTURE[0].modelTimeMeanMs);
+      expect(meanPoint['yErrLow']).toBeUndefined();
+      expect(meanPoint['yErrHigh']).toBeUndefined();
+      expect(mean.speed.notices.join(' ')).toContain('no per-answer dispersion');
+
+      expect(scaleOf(total.speed.config, 'y').title?.text).toBe(
+        'Candidate model time for the whole suite (ms) — lower is better',
+      );
+      const totalPoint = pointsOf(total.speed.config)[0];
+      expect(totalPoint['y']).toBe(PROFILE_FIXTURE[0].totalModelTimeMs);
+      expect(totalPoint['yErrLow']).toBe(PROFILE_FIXTURE[0].totalModelTimeSdMs!);
+      expect(totalPoint['yErrHigh']).toBe(PROFILE_FIXTURE[0].totalModelTimeSdMs!);
     });
 
     it('switches the cost panel between the candidate suite cost and the total run cost', () => {
@@ -794,6 +867,44 @@ describe('model-comparison-charts', () => {
         'B',
         'C',
       ]);
+    });
+
+    it('defaults the speed measure to mean model time, everywhere the measure is read', () => {
+      const figures = buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT });
+
+      expect(scaleOf(figures.smallMultiples.speed.config, 'y').title?.text).toBe(
+        'Model time per question, mean (ms) — lower is better',
+      );
+      expect(scaleOf(figures.qualitySpeed.config, 'x').title?.text).toContain(
+        'Model time per question, mean',
+      );
+      expect(scaleOf(figures.speedCost.config, 'x').title?.text).toContain(
+        'Model time per question, mean',
+      );
+      expect(figures.profile.config.data.labels).toContain('Speed (mean model time)');
+    });
+  });
+
+  describe('speedValue and speedLowerIsBetter', () => {
+    it('reads every one of the four measures off its own field', () => {
+      const entry = makeEntry({
+        key: 'x',
+        modelTimeMeanMs: 111,
+        totalModelTimeMs: 222,
+        ttftP50Ms: 333,
+        speedIndex: 44,
+      });
+      expect(speedValue(entry, 'meanModelTime')).toBe(111);
+      expect(speedValue(entry, 'totalModelTime')).toBe(222);
+      expect(speedValue(entry, 'ttftP50')).toBe(333);
+      expect(speedValue(entry, 'speedIndex')).toBe(44);
+    });
+
+    it('is true for the three time measures and false only for Speed Index', () => {
+      expect(speedLowerIsBetter('meanModelTime')).toBeTrue();
+      expect(speedLowerIsBetter('totalModelTime')).toBeTrue();
+      expect(speedLowerIsBetter('ttftP50')).toBeTrue();
+      expect(speedLowerIsBetter('speedIndex')).toBeFalse();
     });
   });
 });

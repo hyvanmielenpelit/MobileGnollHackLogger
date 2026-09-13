@@ -1881,6 +1881,23 @@
     }
   }
 
+  // The completion sound shares a .form-group with the field above it, so it carries its own top
+  // margin rather than relying on the gap between groups.
+  .completion-sound-toggle {
+    margin-top: 10px;
+  }
+
+  // .form-group is a flex column with align-items: stretch, which would otherwise stretch the
+  // Test sound button to the full width of the field it sits under.
+  .completion-sound-actions {
+    display: flex;
+    align-items: center;
+
+    .btn-gh-small {
+      align-self: flex-start;
+    }
+  }
+
   .form-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

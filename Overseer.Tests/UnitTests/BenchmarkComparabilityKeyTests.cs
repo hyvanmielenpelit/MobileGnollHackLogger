@@ -242,7 +242,7 @@ public class BenchmarkComparabilityKeyTests
         // been scored under two different definitions of it. The id alone would miss this.
         var a = Run(13);
         var b = Run(14);
-        b.ScoringProfileSnapshotJson = "{\"SpeedTargetMs\":15000,\"SpeedDecayK\":22.0}";
+        b.ScoringProfileSnapshotJson = "{\"SpeedTargetMs\":15000,\"SpeedDecayK\":20.0,\"WeightAccuracy\":0.6}";
 
         var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
 
@@ -539,6 +539,46 @@ public class BenchmarkComparabilityKeyTests
 
         Assert.Equal(BenchmarkComparabilityTier.CrossCondition, result.Tier);
         Assert.Equal(BenchmarkComparabilityKey.ScoringProfileKey, Assert.Single(result.Differences).Name);
+    }
+
+    /// <summary>
+    /// A recalibration of the speed model leaves every quality score exactly where it was, so it
+    /// must cost the speed aggregates and nothing else. Folding the three constants into the
+    /// profile key instead would put two runs below Tier B over a number no quality score reads —
+    /// which is what made the model unadjustable before the keys were split.
+    /// </summary>
+    [Fact]
+    public void RecalibratingTheSpeedModel_DegradesSpeedAloneAndKeepsQualityComparable()
+    {
+        var result = ResolveWithProfileSnapshots(
+            Snapshot(),
+            Snapshot(p =>
+            {
+                p.SpeedTargetMs = 2000;
+                p.SpeedDecayK = 12.0;
+            }));
+
+        Assert.Equal(BenchmarkComparabilityTier.QualityComparable, result.Tier);
+        Assert.Equal(BenchmarkComparabilityKey.SpeedCalibrationKey, Assert.Single(result.Differences).Name);
+        Assert.True(result.SpeedAggregatesDegraded);
+        Assert.False(result.CostAggregatesDegraded);
+        Assert.True(result.PoolingPermitted);
+    }
+
+    /// <summary>
+    /// The key is extracted from the profile snapshot, so a run stored before the snapshot existed
+    /// reads as absent rather than as agreeing with everything — the same treatment the profile key
+    /// gives a missing snapshot.
+    /// </summary>
+    [Fact]
+    public void TheSpeedCalibrationKey_HasNoValueWithoutAProfileSnapshot()
+    {
+        var run = Run(13);
+        run.ScoringProfileSnapshotJson = null;
+
+        Assert.Equal(
+            BenchmarkComparabilityKey.NoValue,
+            Value(BenchmarkComparabilityKey.Extract(run), BenchmarkComparabilityKey.SpeedCalibrationKey));
     }
 
     /// <summary>
