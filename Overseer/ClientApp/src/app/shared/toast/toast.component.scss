@@ -1,0 +1,110 @@
+:host {
+  box-sizing: border-box;
+  position: fixed;
+  inset: auto 24px 24px auto;
+  margin: 0;
+  padding: 14px 18px;
+  border-radius: 8px;
+  color: #fff;
+  max-width: min(480px, calc(100vw - 32px));
+  z-index: 9999;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+
+  /* Entry/exit via @starting-style and discrete display transitions. The :is()
+     with the polyfill's escaped class form is mandatory -- a browser without
+     native :popover-open drops a whole rule whose selector list contains an
+     unknown pseudo-class, so :host(:popover-open) alone would break the
+     polyfilled path. */
+  transition: display 0.3s allow-discrete, overlay 0.3s allow-discrete, opacity 0.3s, translate 0.3s;
+  opacity: 0;
+  translate: 0 8px;
+
+  &:is(:popover-open, .\:popover-open) {
+    opacity: 1;
+    translate: 0 0;
+
+    @starting-style {
+      opacity: 0;
+      translate: 0 8px;
+    }
+  }
+
+  &.toast--success {
+    background: rgba(20, 35, 20, 0.95);
+    border: 1px solid var(--color-success, #28a745);
+
+    .toast-icon {
+      color: var(--color-success, #28a745);
+    }
+  }
+
+  &.toast--error {
+    background: rgba(40, 20, 20, 0.95);
+    border: 1px solid var(--color-error, #dc3545);
+
+    .toast-icon {
+      color: var(--color-error, #dc3545);
+    }
+  }
+
+  &.toast--info {
+    background: rgba(25, 25, 35, 0.95);
+    border: 1px solid var(--primary-color, #e0ba6d);
+
+    .toast-icon {
+      color: var(--primary-color, #e0ba6d);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :host {
+    transition: none;
+  }
+}
+
+.toast-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.toast-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  svg {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+.toast-body {
+  margin: 0;
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.toast-close {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+
+  svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color, #e0ba6d);
+    outline-offset: 2px;
+  }
+}

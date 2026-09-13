@@ -526,12 +526,8 @@ export function figureExportFilename(
   format: FigureExportFormat,
   now: Date = new Date()
 ): string {
-  const pad = (value: number): string => String(value).padStart(2, '0');
-  const stamp =
-    `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_` +
-    `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
   const safeId = (figureId || 'figure').replace(/[^A-Za-z0-9_-]/g, '-');
-  return `model-comparison_${safeId}_${stamp}.${format}`;
+  return `model-comparison_${safeId}_${exportTimestamp(now)}.${format}`;
 }
 
 /** Saves a blob under a filename, through the object-URL and anchor pattern the debug log uses. */
@@ -544,6 +540,53 @@ export function saveFigureBlob(blob: Blob, filename: string): void {
   anchor.click();
   document.body.removeChild(anchor);
   URL.revokeObjectURL(url);
+}
+
+/** One file of an archive: the name it is stored under and the encoded image. */
+export interface FigureArchiveEntry {
+  name: string;
+  blob: Blob;
+}
+
+/** The one function this module calls from `fflate`, typed to the shape version 0.8 exports. */
+export interface ZipWriterModule {
+  zipSync(
+    data: Record<string, [Uint8Array, { level: 0 }]>,
+    options?: { level: 0 }
+  ): Uint8Array;
+}
+
+/**
+ * The zip encoder, behind a holder rather than a bare `import()` call.
+ *
+ * Dynamic, so the admin bundle pays for `fflate` on the first archive rather than on load;
+ * behind a holder so a spec can stand a fake in its place, which a bare dynamic import offers no
+ * seam for. Same shape as `xlsxWriterModule` in `table-export.ts`.
+ */
+export const zipWriterModule: { load(): Promise<ZipWriterModule> } = {
+  load: async (): Promise<ZipWriterModule> => (await import('fflate')) as unknown as ZipWriterModule
+};
+
+/**
+ * Packs already-encoded figures into one zip.
+ *
+ * Stored, not deflated: PNG and WebP are already compressed, and deflating them again costs CPU
+ * for a size change of a few bytes either way. Synchronous rather than `fflate`'s worker-backed
+ * `zip()`: the Content-Security-Policy's `worker-src` falls back to `'self'` with no `blob:`, and
+ * `fflate` builds its workers from blob URLs, so the async path would be refused at runtime.
+ */
+export async function buildFigureArchive(entries: readonly FigureArchiveEntry[]): Promise<Blob> {
+  const writer = await zipWriterModule.load();
+  const files: Record<string, [Uint8Array, { level: 0 }]> = {};
+  for (const entry of entries) {
+    files[entry.name] = [new Uint8Array(await entry.blob.arrayBuffer()), { level: 0 }];
+  }
+  return new Blob([writer.zipSync(files, { level: 0 }) as unknown as BlobPart], { type: 'application/zip' });
+}
+
+/** `model-comparison_figures_YYYYMMDD_HHMMSS.zip`, the same stamp shape the figures carry. */
+export function figureArchiveFilename(now: Date = new Date()): string {
+  return `model-comparison_figures_${exportTimestamp(now)}.zip`;
 }
 
 /** What a clipboard write did: it succeeded, the browser has no such API, or it was refused. */
@@ -575,6 +618,15 @@ export async function copyImageToClipboard(blob: Blob): Promise<ClipboardImageOu
 // -----------------------------------------------------------------------------------------------
 // Internals
 // -----------------------------------------------------------------------------------------------
+
+/** `yyyyMMdd_HHmmss` in local time: sortable, and shared by every filename this module writes. */
+function exportTimestamp(now: Date): string {
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  return (
+    `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_` +
+    `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+  );
+}
 
 /** Everything the composition draws around the plot, wrapped to a content column and summed. */
 interface FigureChrome {

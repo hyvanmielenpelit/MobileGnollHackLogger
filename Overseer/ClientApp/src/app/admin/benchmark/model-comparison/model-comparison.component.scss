@@ -81,12 +81,6 @@
   min-width: 110px;
 }
 
-.mc-export-status {
-  margin: 0;
-  font-size: 13px;
-  color: #c3c2b7;
-}
-
 /* The settings as a read-out beside the two buttons: what will be written, and at what size. */
 .mc-export-summary {
   margin: 0;
@@ -1433,16 +1427,18 @@
   right: 12px;
 }
 
+/* Its own row: `.dialog-footer` is scoped to the benchmark component and never reaches this
+   dialog. Wraps on a narrow dialog, buttons kept together at the end. */
 .mc-preview-foot {
   flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
   align-items: center;
-
-  /* The status takes the row's slack, so the three buttons stay together at its right. */
-  .mc-export-status {
-    flex: 1;
-    min-width: 0;
-    margin-right: auto;
-  }
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0;
+  padding: 12px 24px;
+  border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
 }
 
 /* Controls first, then the stage: a reader on a narrow dialog is still configuring a size, and a

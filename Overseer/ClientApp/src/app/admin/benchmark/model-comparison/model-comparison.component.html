@@ -21,7 +21,7 @@
       </p>
     </div>
     <!-- Disabled mid-export: tearing the DOM out from under a running export would leave a
-         detached chart and a half-written batch. The reason is in the export status line. -->
+         detached chart and a half-written batch. The reason is in the export toast. -->
     <button type="button" class="btn-icon-action" aria-label="Close cross-model comparison"
             [disabled]="exporting" (click)="closeRequested.emit()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
@@ -558,7 +558,7 @@
 
           <!--
             Export. The scope is every entry passing the current filters, in the current sort,
-            across all pages — never the visible page — and the status line below says so, because
+            across all pages — never the visible page — and the export toast says so, because
             a file holding ten of forty rows with nothing on it to say which ten is worse than no
             file at all.
 
@@ -606,8 +606,6 @@
             <button type="button" class="btn-gh btn-gh-small btn-gh-cancel" [disabled]="!canExportTable"
                     (click)="copyTableMarkdown()">Copy as Markdown</button>
           </div>
-
-          <p class="mc-export-status" role="status">{{ exportStatus }}</p>
 
           @if (entries.length === 0) {
             <p class="text-muted">Nothing to compare yet.</p>
@@ -1012,10 +1010,6 @@
             }
           </div>
 
-          @if (exportStatus) {
-            <p class="mc-export-status" role="status">{{ exportStatus }}</p>
-          }
-
           @if (showFigures) {
             <div class="mc-charts" #chartsHost [class.mc-single-run]="allSingleRun">
 
@@ -1377,6 +1371,12 @@
       {{ nextLabel }}
     </button>
   </div>
+
+  <!-- The export outcome, as a toast. Two instances, one per modal, because everything outside
+       the innermost open modal dialog is inert: a toast rendered here would be unreachable
+       while the figure preview is open, and one rendered in the preview would be gone once it
+       closed. Each is always in the DOM so its live region exists before it first speaks. -->
+  <app-toast [notice]="previewOpen ? null : exportNotice" (dismissed)="clearExportNotice()"></app-toast>
 </div>
 
 <!--
@@ -1523,8 +1523,7 @@
       </div>
     </div>
 
-    <footer class="dialog-footer mc-preview-foot">
-      <p class="mc-export-status" role="status">{{ exportStatus }}</p>
+    <footer class="mc-preview-foot">
       <button type="button" class="btn-gh btn-gh-small" [disabled]="!canExport"
               (click)="copyPreviewedFigure()">Copy</button>
       <button type="button" class="btn-gh btn-gh-small" [disabled]="!canExport"
@@ -1532,5 +1531,7 @@
       <button type="button" class="btn-gh btn-gh-small" [disabled]="!canExport"
               (click)="downloadAllFromPreview()">Download all figures</button>
     </footer>
+
+    <app-toast [notice]="previewOpen ? exportNotice : null" (dismissed)="clearExportNotice()"></app-toast>
   </div>
 </dialog>

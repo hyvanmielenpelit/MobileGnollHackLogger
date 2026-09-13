@@ -1,4 +1,5 @@
 import { Chart } from 'chart.js';
+import { unzipSync } from 'fflate';
 
 import {
   DEFAULT_WEBP_QUALITY,
@@ -13,9 +14,11 @@ import {
   WEBP_QUALITY_OPTIONS,
   WebpQuality,
   aspectRatioLabel,
+  buildFigureArchive,
   composeFigureImage,
   copyImageToClipboard,
   encodeFigureImage,
+  figureArchiveFilename,
   figureExportFilename,
   layoutBoxFor,
   previewLayoutFor,
@@ -452,6 +455,29 @@ describe('figure-export', () => {
     const name = figureExportFilename('run:12/panel', 'png', new Date(2026, 0, 2, 3, 4, 5));
 
     expect(name).toBe('model-comparison_run-12-panel_20260102_030405.png');
+  });
+
+  it('names the archive after the same sortable timestamp', () => {
+    const name = figureArchiveFilename(new Date(2026, 8, 7, 14, 3, 9));
+
+    expect(name).toBe('model-comparison_figures_20260907_140309.zip');
+  });
+
+  describe('buildFigureArchive', () => {
+    it('packs every entry into one zip under its own name', async () => {
+      const entries = [
+        { name: 'p1-panels.png', blob: new Blob(['first figure'], { type: 'image/png' }) },
+        { name: 'p2-panels.webp', blob: new Blob(['second figure'], { type: 'image/webp' }) }
+      ];
+
+      const archive = await buildFigureArchive(entries);
+
+      expect(archive.type).toBe('application/zip');
+      const unzipped = unzipSync(new Uint8Array(await archive.arrayBuffer()));
+      expect(Object.keys(unzipped).sort()).toEqual(['p1-panels.png', 'p2-panels.webp']);
+      expect(new TextDecoder().decode(unzipped['p1-panels.png'])).toBe('first figure');
+      expect(new TextDecoder().decode(unzipped['p2-panels.webp'])).toBe('second figure');
+    });
   });
 
   describe('copyImageToClipboard', () => {

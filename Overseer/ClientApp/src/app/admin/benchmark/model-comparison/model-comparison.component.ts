@@ -68,6 +68,7 @@ import {
   FIGURE_EXPORT_MIN_DIMENSION,
   FIGURE_EXPORT_PRESETS,
   FIGURE_EXPORT_PRESET_GROUPS,
+  FigureArchiveEntry,
   FigureExportFormat,
   FigureExportLayout,
   FigureExportRequest,
@@ -77,9 +78,11 @@ import {
   WEBP_QUALITY_OPTIONS,
   WebpQuality,
   aspectRatioLabel,
+  buildFigureArchive,
   composeFigureImage,
   copyImageToClipboard,
   encodeFigureImage,
+  figureArchiveFilename,
   figureExportFilename,
   layoutBoxFor,
   previewLayoutFor,
@@ -88,6 +91,7 @@ import {
   saveFigureBlob
 } from './figure-export';
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
+import { ToastComponent, ToastNotice } from '../../../shared/toast/toast.component';
 import {
   COMPARISON_TABLE_COLUMNS,
   ComparisonTableProvenance,
@@ -198,7 +202,7 @@ export interface ComparisonFigureCard {
 @Component({
   selector: 'app-benchmark-model-comparison',
   standalone: true,
-  imports: [CommonModule, FormsModule, BaseChartDirective, SortHeaderComponent, TablePagerComponent, ProviderBadgeComponent],
+  imports: [CommonModule, FormsModule, BaseChartDirective, SortHeaderComponent, TablePagerComponent, ProviderBadgeComponent, ToastComponent],
   templateUrl: './model-comparison.component.html',
   styleUrls: ['./model-comparison.component.scss']
 })
@@ -999,8 +1003,23 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    */
   exporting = false;
 
-  /** The last export's outcome, announced politely: how many files, at what size, and any refusal. */
-  exportStatus = '';
+  /** The last export's outcome, shown as a toast: how many files, at what size, and any refusal. */
+  exportNotice: ToastNotice | null = null;
+
+  private exportNoticeSerial = 0;
+
+  /** The outcome's text alone, for the specs and for anything that only needs the words. */
+  get exportStatus(): string {
+    return this.exportNotice?.message ?? '';
+  }
+
+  private announce(message: string, kind: 'success' | 'error'): void {
+    this.exportNotice = { id: ++this.exportNoticeSerial, kind, message };
+  }
+
+  clearExportNotice(): void {
+    this.exportNotice = null;
+  }
 
   // --- Export resolution ---
   //
@@ -1158,11 +1177,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   async downloadFigure(card: ComparisonFigureCard): Promise<void> {
-    await this.downloadFigures([card]);
+    await this.downloadFigures([card], 'file');
   }
 
   async downloadAllFigures(): Promise<void> {
-    await this.downloadFigures(this.exportableCards);
+    await this.downloadFigures(this.exportableCards, 'archive');
   }
 
   /**
@@ -1181,22 +1200,24 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       return;
     }
     this.exporting = true;
-    this.exportStatus = '';
+    this.exportNotice = null;
     this.cdr.markForCheck();
 
     try {
       const encoded = await this.encodeFromLiveCanvas(this.exportChrome(card), canvas, 'png');
       const outcome = await copyImageToClipboard(encoded.blob);
       if (outcome === 'copied') {
-        this.exportStatus = `Copied ${card.title} to the clipboard.`;
+        this.announce(`Copied ${card.title} to the clipboard.`, 'success');
       } else if (outcome === 'unsupported') {
-        this.exportStatus =
-          'This browser cannot copy images to the clipboard — download the figure instead.';
+        this.announce(
+          'This browser cannot copy images to the clipboard — download the figure instead.',
+          'error'
+        );
       } else {
-        this.exportStatus = 'The clipboard write was refused.';
+        this.announce('The clipboard write was refused.', 'error');
       }
     } catch {
-      this.exportStatus = 'The figure could not be copied.';
+      this.announce('The figure could not be copied.', 'error');
     } finally {
       this.exporting = false;
       this.cdr.markForCheck();
@@ -1204,25 +1225,28 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * Writes one file per card, in sequence with a short gap.
+   * Writes the cards as one file each, or as one archive holding them all.
    *
-   * Sequential rather than parallel, and gapped: several browsers prompt once before allowing a
-   * second save from one gesture, and a burst of simultaneous anchor clicks is what triggers the
-   * prompt in the first place.
+   * An archive rather than one save per card: several browsers prompt before allowing a second
+   * save from one gesture, and a batch that trips the prompt writes an unpredictable subset.
    *
    * A card the target size cannot fit is skipped with its refusal collected rather than aborting
    * the batch, so a partially-refused export names both what it wrote and what it would not.
    */
-  private async downloadFigures(cards: readonly ComparisonFigureCard[]): Promise<void> {
+  private async downloadFigures(
+    cards: readonly ComparisonFigureCard[],
+    mode: 'file' | 'archive'
+  ): Promise<void> {
     if (this.exporting || cards.length === 0 || this.customResolutionError !== '') {
       return;
     }
     const resolution = this.exportResolution;
     this.exporting = true;
-    this.exportStatus = '';
+    this.exportNotice = null;
     this.cdr.markForCheck();
 
-    let written = 0;
+    const stamp = new Date();
+    const entries: FigureArchiveEntry[] = [];
     let fellBack = false;
     let liveFallback = false;
     let pixels = '';
@@ -1244,16 +1268,24 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         fellBack = fellBack || outcome.result.fellBackToPng;
         liveFallback = liveFallback || outcome.liveFallback;
         pixels = outcome.pixels || pixels;
-        saveFigureBlob(outcome.result.blob, figureExportFilename(card.id, outcome.result.format));
-        written++;
-        if (written < cards.length) {
-          await new Promise<void>(resolve => setTimeout(resolve, 250));
-        }
+        entries.push({
+          name: figureExportFilename(card.id, outcome.result.format, stamp),
+          blob: outcome.result.blob
+        });
       }
-      this.exportStatus =
-        this.exportOutcomeSummary(written, cards.length, pixels, fellBack, liveFallback, refusals);
+      let archive = '';
+      if (entries.length === 1 && mode === 'file') {
+        saveFigureBlob(entries[0].blob, entries[0].name);
+      } else if (entries.length > 0) {
+        archive = figureArchiveFilename(stamp);
+        saveFigureBlob(await buildFigureArchive(entries), archive);
+      }
+      this.announce(
+        this.exportOutcomeSummary(entries.length, cards.length, pixels, fellBack, liveFallback, refusals, archive),
+        entries.length > 0 && refusals.length === 0 ? 'success' : 'error'
+      );
     } catch {
-      this.exportStatus = 'The figures could not be exported.';
+      this.announce('The figures could not be exported.', 'error');
     } finally {
       this.exporting = false;
       this.cdr.markForCheck();
@@ -1442,7 +1474,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     pixels: string,
     fellBack: boolean,
     liveFallback: boolean,
-    refusals: readonly string[]
+    refusals: readonly string[],
+    archive: string
   ): string {
     const parts: string[] = [];
     if (written === 0) {
@@ -1453,7 +1486,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       const noun = written === 1 ? 'figure' : 'figures';
       const shortfall = written < requested ? ` of ${requested}` : '';
       const size = pixels ? ` at ${pixels}` : '';
-      parts.push(`${written}${shortfall} ${noun} saved${size}.`);
+      if (archive !== '') {
+        parts.push(`${written}${shortfall} ${noun} saved to ${archive}${size}.`);
+      } else {
+        parts.push(`${written}${shortfall} ${noun} saved${size}.`);
+      }
     }
     if (fellBack) {
       parts.push('This browser cannot encode WebP, so the file was written as PNG.');
@@ -1973,7 +2010,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     }
     const format = this.tableExportFormat;
     this.exporting = true;
-    this.exportStatus = '';
+    this.exportNotice = null;
     this.cdr.markForCheck();
 
     try {
@@ -1987,11 +2024,13 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       const fallback = encoded.fellBackToPng
         ? ' This browser cannot encode WebP, so the file was written as PNG.'
         : '';
-      this.exportStatus =
+      this.announce(
         `Table saved as ${filename} — ${rows.length} ${noun}, current sort, filters applied, ` +
-        `all pages, ${columnKeys.length} of ${this.tableColumns.length} columns.${fallback}`;
+        `all pages, ${columnKeys.length} of ${this.tableColumns.length} columns.${fallback}`,
+        'success'
+      );
     } catch {
-      this.exportStatus = 'The table could not be exported.';
+      this.announce('The table could not be exported.', 'error');
     } finally {
       this.exporting = false;
       this.cdr.markForCheck();
@@ -2011,21 +2050,25 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     }
     const rows = this.entryTable.viewAll(this.entries);
     this.exporting = true;
-    this.exportStatus = '';
+    this.exportNotice = null;
     this.cdr.markForCheck();
 
     try {
       const clipboard = navigator.clipboard as Clipboard | undefined;
       if (!clipboard || typeof clipboard.writeText !== 'function') {
-        this.exportStatus =
-          'This browser cannot copy text to the clipboard — download the table instead.';
+        this.announce(
+          'This browser cannot copy text to the clipboard — download the table instead.',
+          'error'
+        );
         return;
       }
       await clipboard.writeText(toMarkdown(buildComparisonTableModel(rows, this.tableProvenance)));
-      this.exportStatus =
-        `Copied ${rows.length} ${rows.length === 1 ? 'entry' : 'entries'} as Markdown.`;
+      this.announce(
+        `Copied ${rows.length} ${rows.length === 1 ? 'entry' : 'entries'} as Markdown.`,
+        'success'
+      );
     } catch {
-      this.exportStatus = 'The clipboard write was refused.';
+      this.announce('The clipboard write was refused.', 'error');
     } finally {
       this.exporting = false;
       this.cdr.markForCheck();

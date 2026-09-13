@@ -24,6 +24,8 @@ import {
 } from './model-comparison.models';
 import { GROUP_SECTION_TITLE, RUN_SECTION_TITLE } from './comparison-source-picker.component';
 import { TableExportFormat, xlsxWriterModule } from './table-export';
+import { zipWriterModule } from './figure-export';
+import { ToastComponent } from '../../../shared/toast/toast.component';
 
 describe('ModelComparisonComponent', () => {
   let component: ModelComparisonComponent;
@@ -1714,6 +1716,24 @@ describe('ModelComparisonComponent', () => {
     } as any));
   }
 
+  /**
+   * A stand-in for the dynamically imported zip writer, which the specs never really run.
+   *
+   * The recorder holds the entry names of every archive it was asked to pack, which is what a
+   * batch export can be asserted on without decoding one.
+   */
+  function stubZipWriter(): { names: string[][]; load: jasmine.Spy } {
+    const names: string[][] = [];
+    const load = spyOn(zipWriterModule, 'load').and.returnValue(Promise.resolve({
+      zipSync: (data: Record<string, unknown>) => {
+        names.push(Object.keys(data));
+        // An empty archive's end-of-central-directory record: a valid zip, and nothing in it.
+        return new Uint8Array([0x50, 0x4b, 0x05, 0x06]);
+      }
+    } as any));
+    return { names, load };
+  }
+
   it('offers the eight table formats with Excel first, and a Markdown copy beside the download', () => {
     render(buildDto(comparableSet(4)), 3);
 
@@ -1943,6 +1963,121 @@ describe('ModelComparisonComponent', () => {
     expect(component.exportStatus).toContain('cannot copy images to the clipboard');
     expect(component.exportStatus).toContain('download the figure instead');
     expect(component.exporting).toBeFalse();
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // The figure archive, and the toast the outcome lands in
+  // -------------------------------------------------------------------------------------------
+
+  it('writes a batch as one archive, under one timestamp shared with every figure in it', async () => {
+    render(buildDto(comparableSet(3)), 4);
+    const saved = captureSaves();
+    const zip = stubZipWriter();
+
+    await component.downloadAllFigures();
+
+    // One save for the whole batch: a second anchor click from one gesture is what browsers prompt
+    // over, and a prompt mid-batch writes an unpredictable subset.
+    expect(saved.names.length).toBe(1);
+    expect(saved.names[0]).toMatch(/^model-comparison_figures_\d{8}_\d{6}\.zip$/);
+    expect(saved.blobs[0].type).toBe('application/zip');
+
+    const stamp = /_(\d{8}_\d{6})\.zip$/.exec(saved.names[0])![1];
+    expect(zip.names.length).toBe(1);
+    expect(zip.names[0].length).toBe(component.exportableCards.length);
+    expect(zip.names[0].every(name => /^model-comparison_.+\.(png|webp)$/.test(name))).toBeTrue();
+    expect(zip.names[0].every(name => name.includes(stamp))).toBeTrue();
+  });
+
+  it('writes one image and no archive for a single figure from the preview', async () => {
+    render(buildDto(comparableSet(3)), 4);
+    const saved = captureSaves();
+    const zip = stubZipWriter();
+    openPreview(component.panelCards[0]);
+
+    await component.downloadPreviewedFigure();
+
+    expect(saved.names.length).toBe(1);
+    expect(saved.names[0]).toMatch(/^model-comparison_.+\.(png|webp)$/);
+    expect(zip.load).not.toHaveBeenCalled();
+    expect(zip.names.length).toBe(0);
+  });
+
+  it('announces a written batch as a success naming the archive', async () => {
+    render(buildDto(comparableSet(3)), 4);
+    captureSaves();
+    stubZipWriter();
+
+    await component.downloadAllFigures();
+
+    expect(component.exportNotice?.kind).toBe('success');
+    expect(component.exportNotice?.message).toContain('saved to model-comparison_figures_');
+    expect(component.exporting).toBeFalse();
+  });
+
+  it('announces a wholly refused batch as an error, and writes nothing', async () => {
+    render(buildDto(comparableSet(3)), 4);
+    const saved = captureSaves();
+    const zip = stubZipWriter();
+
+    // Caveats no offered box can hold, so every card is refused for what it carries rather than
+    // for the size it was asked for.
+    const notice = (index: number): string =>
+      `Notice ${index}: ` +
+      'the speed axis is degraded for this entry, so its bar is drawn from a partial sample. '
+        .repeat(6);
+    spyOn(component as unknown as { exportChrome(card: ComparisonFigureCard): unknown }, 'exportChrome')
+      .and.returnValue({
+        title: 'Figure',
+        subtitle: '',
+        caption: '',
+        notices: [1, 2, 3, 4, 5, 6].map(notice),
+        footer: 'Suite A — Current catalog — 3 of 3 entries charted'
+      });
+
+    component.onExportResolutionChange('custom');
+    component.onCustomWidthChange(1280);
+    component.onCustomHeightChange(720);
+    expect(component.customResolutionError).toBe('');
+
+    await component.downloadAllFigures();
+
+    expect(saved.names.length).toBe(0);
+    expect(zip.names.length).toBe(0);
+    expect(component.exportNotice?.kind).toBe('error');
+    expect(component.exportNotice?.message).toContain('No figure was written at this size.');
+  });
+
+  it('lays the preview footer out as a row of its own, its controls spaced', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openPreview();
+
+    const foot = fixture.debugElement.query(By.css('.mc-preview-foot')).nativeElement as HTMLElement;
+    const style = getComputedStyle(foot);
+    expect(style.display).toBe('flex');
+    expect(style.columnGap).not.toBe('0px');
+    expect(style.columnGap).not.toBe('normal');
+  });
+
+  it('hands the notice to the toast inside whichever modal is innermost', async () => {
+    render(buildDto(comparableSet(3)), 4);
+    withClipboard({ write: () => Promise.resolve() });
+
+    await component.copyFigure(component.panelCards[0]);
+    refresh();
+
+    // Two, one per modal: everything outside the innermost open dialog is inert.
+    expect(fixture.debugElement.queryAll(By.css('app-toast')).length).toBe(2);
+    const toasts = fixture.debugElement.queryAll(By.directive(ToastComponent))
+      .map(element => element.componentInstance as ToastComponent);
+    expect(toasts.length).toBe(2);
+    expect(toasts[0].notice).toBe(component.exportNotice);
+    expect(toasts[1].notice).toBeNull();
+
+    openPreview();
+
+    expect(toasts[0].notice).toBeNull();
+    expect(toasts[1].notice).toBe(component.exportNotice);
   });
 
 });
