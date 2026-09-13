@@ -171,6 +171,7 @@ describe('ModelComparisonComponent', () => {
         {
           measure: 'Speed Index',
           reason: 'It saturates: several models sit at the ceiling while their real latency differs.',
+          summary: 'Fast models tie at the top, so the chart would hide real latency gaps.',
           instead: 'Time to first token, P50.'
         }
       ],
@@ -292,8 +293,8 @@ describe('ModelComparisonComponent', () => {
     const rows = fixture.debugElement.queryAll(By.css('table.mc-table tbody tr'));
     const first = rows[0].nativeElement as HTMLElement;
 
-    expect(first.querySelector('.mc-name-btn')?.textContent?.trim()).toBe('Gemini 2.5 Flash');
-    expect(first.querySelector('.mc-name-btn')?.getAttribute('aria-label')).toContain('Model 1');
+    // Plain text, not a control: emphasis is chosen on step 4, where its effect is visible.
+    expect(first.querySelector('.mc-model-name')?.textContent?.trim()).toBe('Gemini 2.5 Flash');
     expect(first.querySelector('.provider-badge')?.textContent?.trim()).toBe('Google');
     expect(first.querySelector('.thinking-badge')?.textContent?.trim()).toBe('medium');
     expect(first.querySelector('.mc-source')?.textContent?.trim()).toBe('Run 1');
@@ -523,6 +524,78 @@ describe('ModelComparisonComponent', () => {
     expect((option.nativeElement as HTMLOptionElement).disabled).toBeTrue();
   });
 
+  it('splits the six filters into two named groups inside the one filter row', () => {
+    render(buildDto(comparableSet(3)));
+
+    expect(fixture.debugElement.queryAll(By.css('.mc-filters')).length).toBe(1);
+    const legends = fixture.debugElement.queryAll(By.css('.mc-filters .gh-fieldset > legend'))
+      .map(legend => (legend.nativeElement as HTMLElement).textContent?.trim());
+    expect(legends).toEqual(['Scope and order', 'Measures']);
+
+    // Every control keeps its id and its own <label>, so the split is layout and naming only.
+    expect(fixture.debugElement.queryAll(By.css('.mc-fieldset-scope .mc-field')).length).toBe(4);
+    expect(fixture.debugElement.queryAll(By.css('.mc-fieldset-measures .mc-field')).length).toBe(2);
+    expect(fixture.debugElement.query(By.css('.mc-fieldset-measures #mc-speed-measure'))).toBeTruthy();
+    expect(fixture.debugElement.query(By.css('.mc-fieldset-scope #mc-pricing-basis'))).toBeTruthy();
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // The entry picker
+  // -------------------------------------------------------------------------------------------
+
+  it('renders each entry as a checkbox, and an excluded one as a disabled box that keeps its reason', () => {
+    render(buildDto([...comparableSet(2), buildExcludedEntry('run:9', ['ScoringMethodVersion'])]));
+
+    expect(fixture.debugElement.queryAll(By.css('.mc-entry-list .mc-entry')).length).toBe(3);
+    // Toggle buttons dressed as tags are gone: this is a multi-select over a fixed set.
+    expect(fixture.debugElement.queryAll(By.css('.mc-entry-list button')).length).toBe(0);
+
+    const boxes = fixture.debugElement.queryAll(By.css('.mc-entry-list input[type="checkbox"]'))
+      .map(box => box.nativeElement as HTMLInputElement);
+    expect(boxes.length).toBe(3);
+    expect(boxes.slice(0, 2).every(box => box.checked && !box.disabled)).toBeTrue();
+    expect(boxes[2].disabled).toBeTrue();
+    expect(boxes[2].checked).toBeFalse();
+
+    // The accessible name contains the visible label, so the two never contradict each other.
+    expect(boxes[0].getAttribute('aria-label')).toBe('Plot Model 1 in the figures');
+    expect(textOf('.mc-entry-list')).toContain('R = 3');
+    expect(textOf('.mc-entry-excluded')).toContain('excluded');
+    expect(fixture.debugElement.query(By.css('.mc-entry-excluded [popover="hint"]'))).toBeTruthy();
+
+    boxes[1].checked = false;
+    fixture.debugElement.queryAll(By.css('.mc-entry-list input[type="checkbox"]'))[1]
+      .triggerEventHandler('change', { target: boxes[1] });
+    fixture.detectChanges();
+
+    expect(component.includedKeys).toEqual(['run:1']);
+    expect(component.figures?.selection.plotted.length).toBe(1);
+  });
+
+  it('lets more entries be ticked than the figures plot, and restores one that was unticked', () => {
+    render(buildDto(comparableSet(MAX_PLOTTED_ENTRIES + 1)));
+
+    const boxes = () => fixture.debugElement.queryAll(By.css('.mc-entry-list input[type="checkbox"]'));
+    expect(boxes().length).toBe(MAX_PLOTTED_ENTRIES + 1);
+    // A fresh payload ticks every selectable entry, which is already past the plot cap.
+    expect(component.includedKeys.length).toBe(MAX_PLOTTED_ENTRIES + 1);
+
+    const first = boxes()[0];
+    (first.nativeElement as HTMLInputElement).checked = false;
+    first.triggerEventHandler('change', { target: first.nativeElement });
+    fixture.detectChanges();
+    expect(component.includedKeys.length).toBe(MAX_PLOTTED_ENTRIES);
+    expect(component.isIncluded('run:1')).toBeFalse();
+
+    // The seeded state has to stay reachable, so re-ticking at the cap is honoured.
+    const again = boxes()[0];
+    (again.nativeElement as HTMLInputElement).checked = true;
+    again.triggerEventHandler('change', { target: again.nativeElement });
+    fixture.detectChanges();
+    expect(component.includedKeys.length).toBe(MAX_PLOTTED_ENTRIES + 1);
+    expect(component.isIncluded('run:1')).toBeTrue();
+  });
+
   // -------------------------------------------------------------------------------------------
   // Uncertainty
   // -------------------------------------------------------------------------------------------
@@ -572,6 +645,22 @@ describe('ModelComparisonComponent', () => {
     expect(textOf('.alert-body')).toContain('Speed is not comparable across thinking levels.');
     expect(textOf('.mc-measures')).toContain('Speed Index');
     expect(textOf('.mc-measures')).toContain('Time to first token, P50.');
+  });
+
+  it('leads each refused measure with its plain-language summary, the reason behind a disclosure', () => {
+    render(buildDto(comparableSet(3)));
+
+    // The summary is the visible line; the specialist reason is one click away rather than absent.
+    expect(textOf('.mc-measure-summary'))
+      .toContain('Fast models tie at the top, so the chart would hide real latency gaps.');
+    expect(textOf('.mc-measures-lead')).toContain('The catch, in one line');
+
+    const detail = fixture.debugElement.query(By.css('.mc-measure-detail'))
+      .nativeElement as HTMLDetailsElement;
+    expect(detail.open).toBeFalse();
+    expect(detail.querySelector('summary')?.textContent?.trim()).toBe('Why, in full');
+    expect(detail.textContent).toContain('It saturates');
+    expect(textOf('.mc-measure-instead')).toContain('Time to first token, P50.');
   });
 
   // -------------------------------------------------------------------------------------------
@@ -693,6 +782,71 @@ describe('ModelComparisonComponent', () => {
       component.profileCard!.id,
       ...component.scatterCards.map(card => card.id)
     ]);
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // Emphasis
+  // -------------------------------------------------------------------------------------------
+
+  /** The Clear emphasis control, found by its label rather than by its position in the fieldset. */
+  function clearEmphasisButton(): HTMLButtonElement {
+    return fixture.debugElement.queryAll(By.css('.mc-emphasis-actions button'))
+      .map(button => button.nativeElement as HTMLButtonElement)
+      .find(button => (button.textContent ?? '').trim() === 'Clear emphasis')!;
+  }
+
+  it('chooses emphasis on the figures step, one checkbox per plotted entry', () => {
+    render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringMethodVersion'])]), 4);
+
+    const fieldset = fixture.debugElement.query(By.css('.mc-emphasis')).nativeElement as HTMLElement;
+    expect(fieldset.querySelector('legend')?.textContent?.trim()).toBe('Emphasise models');
+    // The hint names the group once, rather than being repeated onto every box.
+    expect(fieldset.getAttribute('aria-describedby')).toBe('mc-emphasis-hint');
+    expect(fixture.debugElement.query(By.css('#mc-emphasis-hint'))).toBeTruthy();
+
+    const boxes = fixture.debugElement.queryAll(By.css('.mc-emphasis-list input[type="checkbox"]'))
+      .map(box => box.nativeElement as HTMLInputElement);
+    // Only what the figures actually draw, so an excluded entry is never offered.
+    expect(boxes.length).toBe(3);
+    expect(textOf('.mc-emphasis-list')).not.toContain('Model run:9');
+    // The state is in words as well as in the box, and never in the gold alone.
+    expect(textOf('.mc-emphasis-status')).toContain('No emphasis');
+    expect(clearEmphasisButton().disabled).toBeTrue();
+
+    fixture.debugElement.queryAll(By.css('.mc-emphasis-list input[type="checkbox"]'))[0]
+      .triggerEventHandler('change', { target: boxes[0] });
+    fixture.detectChanges();
+
+    expect(component.emphasisKeys.length).toBe(1);
+    expect(textOf('.mc-emphasis-status')).toContain('1 of 3 emphasised');
+    expect(clearEmphasisButton().disabled).toBeFalse();
+
+    clearEmphasisButton().click();
+    fixture.detectChanges();
+
+    expect(component.emphasisKeys).toEqual([]);
+    expect(textOf('.mc-emphasis-status')).toContain('No emphasis');
+    expect(clearEmphasisButton().disabled).toBeTrue();
+  });
+
+  it('carries no emphasis control in the table cell, where its effect cannot be seen', () => {
+    render(buildDto(comparableSet(2)), 3);
+
+    const cell = fixture.debugElement.query(By.css('table.mc-table tbody tr .col-name'))
+      .nativeElement as HTMLElement;
+    expect(cell.querySelector('button')).toBeNull();
+    expect(cell.querySelector('.mc-model-name')?.textContent?.trim()).toBe('Gemini 2.5 Flash');
+    expect(fixture.debugElement.query(By.css('.mc-emphasis'))).toBeNull();
+  });
+
+  it('describes the direct-label checkbox with the hint that sits under it', () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    const box = fixture.debugElement.query(By.css('.mc-scatter-options input[type="checkbox"]'))
+      .nativeElement as HTMLInputElement;
+    expect(box.getAttribute('aria-describedby')).toBe('mc-direct-labels-hint');
+    expect((fixture.debugElement.query(By.css('#mc-direct-labels-hint'))
+      .nativeElement as HTMLElement).textContent).toContain('leader line');
   });
   // -------------------------------------------------------------------------------------------
   // The wizard
@@ -896,6 +1050,81 @@ describe('ModelComparisonComponent', () => {
     band({ runs: 2, notices: [] });
 
     expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeNull();
+  });
+
+  it('says in the band that nothing is selected yet, and stops as soon as something is', () => {
+    band({ runs: 0, notices: [] });
+
+    expect(component.bandNotices.map(notice => notice.id)).toEqual(['nothing-selected']);
+    const alerts = bandAlerts();
+    expect(alerts.length).toBe(1);
+    // A warning: Compare is blocked, but nothing is wrong with the view or the index.
+    expect(alerts[0].classList).toContain('alert-warning');
+    expect(alerts[0].textContent).toContain('Nothing is selected yet');
+    expect(alerts[0].textContent).toContain('Tick at least one completed run or analysis group');
+    // The band explains; the footer names the blocked control, and neither repeats the other.
+    expect(textOf('.mc-wizard-blocked')).toContain('at least one run or analysis group');
+
+    fixture.componentRef.setInput('selectedRunCount', 1);
+    fixture.detectChanges();
+
+    expect(component.nothingSelectedNotice).toBeNull();
+    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeNull();
+  });
+
+  it('drops the nothing-selected notice while a comparison is being computed', () => {
+    band({ runs: 0, notices: [] });
+    fixture.componentRef.setInput('loading', true);
+    fixture.detectChanges();
+
+    expect(component.nothingSelectedNotice).toBeNull();
+    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeNull();
+  });
+
+  it('shows a spinner and Comparing on the footer while step 1 waits for its comparison', () => {
+    render(null, 1);
+    fixture.componentRef.setInput('selectedRunCount', 2);
+    fixture.componentRef.setInput('loading', true);
+    fixture.detectChanges();
+
+    expect(component.comparing).toBeTrue();
+    expect(component.nextLabel).toBe('Comparing…');
+
+    const next = fixture.debugElement.queryAll(By.css('.mc-wizard-nav .btn-gh'))[1]
+      .nativeElement as HTMLButtonElement;
+    expect(next.textContent).toContain('Comparing…');
+    expect(next.querySelector('.gh-spinner-small')).toBeTruthy();
+    expect(next.getAttribute('aria-busy')).toBe('true');
+    // aria-disabled, never disabled: the reason has to stay reachable by keyboard.
+    expect(next.getAttribute('aria-disabled')).toBe('true');
+    expect(next.hasAttribute('disabled')).toBeFalse();
+
+    // The status row above the tabs carries the same fact, with its own spinner.
+    const status = fixture.debugElement.query(By.css('.mc-wizard-loading'))
+      .nativeElement as HTMLElement;
+    expect(status.getAttribute('role')).toBe('status');
+    expect(status.querySelector('.gh-spinner-small')).toBeTruthy();
+    expect(status.textContent).toContain('pricing every entry server-side');
+
+    // The step-1 panel says its result is pending; the picker's own controls stay live.
+    const panel = fixture.debugElement.query(By.css('#mc-step-panel-1')).nativeElement as HTMLElement;
+    expect(panel.getAttribute('aria-busy')).toBe('true');
+
+    fixture.componentRef.setInput('loading', false);
+    fixture.detectChanges();
+    expect(component.comparing).toBeFalse();
+    expect(component.nextLabel).toBe('Compare');
+    expect(next.hasAttribute('aria-busy')).toBeFalse();
+  });
+
+  it('labels the footer Next rather than Comparing while a later step refetches', () => {
+    render(buildDto(comparableSet(3)), 2);
+    fixture.componentRef.setInput('loading', true);
+    fixture.detectChanges();
+
+    // A pricing-basis refetch loads too, and Next on step 2 is not blocked by it.
+    expect(component.comparing).toBeFalse();
+    expect(component.nextLabel).toBe('Next');
   });
 
   it('emits compare from the footer rather than advancing, while no comparison exists', () => {

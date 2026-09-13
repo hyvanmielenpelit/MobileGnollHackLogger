@@ -26,6 +26,8 @@ import {
   glyphFor,
   normalizeProfile,
   placeDirectLabels,
+  segmentIntersectsRect,
+  segmentsIntersect,
   selectPlottedEntries,
   speedLowerIsBetter,
   speedValue,
@@ -850,6 +852,21 @@ describe('model-comparison-charts', () => {
       return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
     }
 
+    /** A placed box as the edge-shaped rect the obstacle and segment helpers work in. */
+    function boxEdges(box: DirectLabelBox) {
+      return { left: box.x, top: box.y, right: box.x + box.width, bottom: box.y + box.height };
+    }
+
+    function boxOverlapsRect(
+      box: DirectLabelBox,
+      rect: { left: number; top: number; right: number; bottom: number },
+    ): boolean {
+      const edges = boxEdges(box);
+      return (
+        edges.left < rect.right && rect.left < edges.right && edges.top < rect.bottom && rect.top < edges.bottom
+      );
+    }
+
     it('places every label inside the plot area and never two on top of each other', () => {
       const anchors = [
         anchor('A', 100, 100),
@@ -915,6 +932,54 @@ describe('model-comparison-charts', () => {
         expect(box.x + box.width).withContext(box.key).toBeLessThanOrEqual(tight.right);
         expect(box.y + box.height).withContext(box.key).toBeLessThanOrEqual(tight.bottom);
       }
+    });
+
+    it('moves a label off a supplied whisker rect when a clear candidate exists', () => {
+      const anchors = [anchor('A', 100, 100)];
+      const whisker = { left: 110, top: 88, right: 200, bottom: 112 };
+
+      const unobstructed = placeDirectLabels(anchors, AREA, 9);
+      const avoiding = placeDirectLabels(anchors, AREA, 9, { rects: [whisker] });
+
+      // With nothing in the way the placer takes the right-hand candidate, which lies on the whisker.
+      expect(unobstructed[0].x).toBeGreaterThan(100);
+      expect(boxOverlapsRect(unobstructed[0], whisker)).toBeTrue();
+
+      expect(boxOverlapsRect(avoiding[0], whisker)).toBeFalse();
+      expect(avoiding[0].x + avoiding[0].width).toBeLessThanOrEqual(100);
+    });
+
+    it('does not lay a label across a supplied frontier polyline when a clear candidate exists', () => {
+      const frontier = [{ x: 120, y: 80 }, { x: 120, y: 200 }];
+      const boxes = placeDirectLabels([anchor('A', 100, 100)], AREA, 9, { polylines: [frontier] });
+
+      expect(boxes.length).toBe(1);
+      expect(segmentIntersectsRect(frontier[0], frontier[1], boxEdges(boxes[0]))).toBeFalse();
+    });
+
+    it('places the label of a mark 10 px from the right edge to its left', () => {
+      const boxes = placeDirectLabels([anchor('A', AREA.right - 10, 150)], AREA, 9);
+
+      expect(boxes.length).toBe(1);
+      expect(boxes[0].x + boxes[0].width).toBeLessThanOrEqual(AREA.right - 10);
+    });
+
+    describe('segment geometry', () => {
+      it('separates crossing, collinear-overlapping and disjoint segments', () => {
+        expect(segmentsIntersect({ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }, { x: 10, y: 0 })).toBeTrue();
+        expect(segmentsIntersect({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 5, y: 0 }, { x: 15, y: 0 })).toBeTrue();
+        expect(segmentsIntersect({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 5 }, { x: 10, y: 5 })).toBeFalse();
+        expect(segmentsIntersect({ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 5, y: 5 }, { x: 6, y: 6 })).toBeFalse();
+      });
+
+      it('treats a rect as filled, so an endpoint inside it counts as much as an edge crossed', () => {
+        const rect = { left: 0, top: 0, right: 10, bottom: 10 };
+
+        expect(segmentIntersectsRect({ x: -5, y: 5 }, { x: 15, y: 5 }, rect)).toBeTrue();
+        expect(segmentIntersectsRect({ x: 2, y: 2 }, { x: 3, y: 3 }, rect)).toBeTrue();
+        expect(segmentIntersectsRect({ x: -5, y: -5 }, { x: 15, y: -5 }, rect)).toBeFalse();
+        expect(segmentIntersectsRect({ x: 20, y: 20 }, { x: 30, y: 30 }, rect)).toBeFalse();
+      });
     });
 
     interface DirectCall {

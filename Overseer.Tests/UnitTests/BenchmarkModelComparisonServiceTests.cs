@@ -482,6 +482,7 @@ public class BenchmarkModelComparisonServiceTests
         Assert.Contains("Speed Index", measures);
         Assert.Contains("Cost per index point", measures);
         Assert.Contains("Pairwise significance", measures);
+        Assert.All(dto.ExcludedMeasures, m => Assert.False(string.IsNullOrWhiteSpace(m.Summary)));
     }
 
     [Fact]

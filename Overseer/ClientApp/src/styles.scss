@@ -127,6 +127,18 @@ a:hover {
   filter: grayscale(100%);
   cursor: not-allowed;
 }
+
+/* A button blocked by a condition the user can still read about keeps its place in the tab
+   order, so it carries aria-disabled rather than the disabled attribute. Without this rule it
+   renders at full gold and looks live. */
+.btn-gh[aria-disabled="true"] {
+  filter: grayscale(100%);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.btn-gh[aria-disabled="true"]:hover {
+  filter: grayscale(100%);
+}
 .btn-gh:focus-visible {
   outline: 2px solid var(--primary-color);
   outline-offset: 3px;
@@ -371,6 +383,9 @@ a:hover {
   }
   .gh-tabs {
     scroll-behavior: auto;
+  }
+  .gh-spinner-small {
+    animation-duration: 3s;
   }
 }
 
@@ -1083,6 +1098,30 @@ label.checkbox-label,
   }
 }
 
+/* Themed grouping box for a set of related form controls. <legend> names the group, which is
+   what gives a checkbox or radio group its accessible name; the border is the only visual cue
+   that the controls inside belong together. The browser default border and legend typography
+   are replaced here, not per component. */
+.gh-fieldset {
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  padding: 12px 16px 16px;
+  margin: 0;
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.15);
+
+  > legend {
+    font-family: "Cinzel", serif;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--primary-color);
+    padding: 0 8px;
+    margin-left: -4px;
+  }
+}
+
 /* --- Status Badge --- */
 .status-badge {
   font-size: 0.75rem;
@@ -1282,6 +1321,25 @@ label.checkbox-label,
     .alert-heading {
       color: #f3f4f6;
     }
+  }
+}
+
+/* Density variant for an alert that sits in a grid of advisory cards beside its siblings
+   rather than spanning the panel on its own. Its own margin is dropped because the grid gap
+   supplies the spacing. */
+.alert.alert-compact {
+  padding: 12px;
+  font-size: 13px;
+  margin-bottom: 0;
+
+  .alert-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .alert-heading,
+  .alert-body {
+    font-size: 13px;
   }
 }
 

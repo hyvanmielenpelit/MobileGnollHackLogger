@@ -121,6 +121,13 @@ export type ComparabilityStrictness = 'all' | 'comparableOnly';
 /** A degenerate shape the entry set can take, each of which is rendered differently. */
 export type ComparisonShape = 'empty' | 'none' | 'single' | 'pair' | 'full';
 
+/** One plotted model in the emphasis selector: the name it is drawn under, and its thinking level. */
+export interface EmphasisOption {
+  readonly key: string;
+  readonly name: string;
+  readonly thinkingLevel: string | null;
+}
+
 /** One statistic in the single-entry KPI row, where a chart would be one bar and say nothing. */
 export interface ComparisonStatTile {
   readonly label: string;
@@ -456,10 +463,23 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return true;
   }
 
+  /**
+   * A comparison is being computed for the selection on step 1.
+   *
+   * Step-scoped rather than the bare `loading` flag: a pricing-basis refetch from step 2 loads too,
+   * and the footer button there is Next, which the request does not block.
+   */
+  get comparing(): boolean {
+    return this.loading && this.step === 1;
+  }
+
   /** Compare while the current selection has no computed comparison; Next once it does. */
   get nextLabel(): string {
     if (this.step === 4) {
       return 'Close';
+    }
+    if (this.comparing) {
+      return 'Comparing…';
     }
     return this.step === 1 && this.comparison === null ? 'Compare' : 'Next';
   }
@@ -524,13 +544,34 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
+   * That nothing is ticked yet, or null once something is.
+   *
+   * The band explains; the footer's `nextBlockedReason` names the control. Silent while a
+   * comparison is being computed, where an empty selection is a transient state of the request
+   * rather than something the reader has to act on.
+   */
+  get nothingSelectedNotice(): ComparisonSelectionNotice | null {
+    if (this.loading || this.selectedSourceCount > 0) {
+      return null;
+    }
+    return {
+      id: 'nothing-selected',
+      severity: 'warning',
+      heading: 'Nothing is selected yet',
+      body: 'Tick at least one completed run or analysis group in the tables above. Compare stays '
+        + 'unavailable until you do.'
+    };
+  }
+
+  /**
    * Everything the band renders: the host's index-derived notices plus this component's own
-   * plot-cap notice, re-ordered so nothing that blocks a figure sits below something that only
-   * shrinks one.
+   * empty-selection and plot-cap notices, re-ordered so nothing that blocks a figure sits below
+   * something that only shrinks one.
    */
   get bandNotices(): ComparisonSelectionNotice[] {
-    const capNotice = this.plotCapNotice;
-    return orderedNotices(capNotice == null ? this.selectionNotices : [...this.selectionNotices, capNotice]);
+    const own = [this.nothingSelectedNotice, this.plotCapNotice]
+      .filter((notice): notice is ComparisonSelectionNotice => notice !== null);
+    return orderedNotices(own.length === 0 ? this.selectionNotices : [...this.selectionNotices, ...own]);
   }
 
   goToStep(step: ComparisonWizardStep): void {
@@ -632,6 +673,13 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   // Client-side filter controls — these re-render every figure against the same slice
   // ---------------------------------------------------------------------------------------------
 
+  /**
+   * Adds or removes one entry from the plotted set.
+   *
+   * Ticking more entries than the figures plot is allowed: the chart core takes the first
+   * {@link MAX_PLOTTED_ENTRIES} and names the rest in an overflow notice, which is also the state
+   * a fresh payload seeds, so a refusal here would leave that state unreachable once left.
+   */
   toggleEntry(key: string): void {
     this.includedKeys = this.includedKeys.includes(key)
       ? this.includedKeys.filter(k => k !== key)
@@ -691,6 +739,29 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   isEmphasised(key: string): boolean {
     return this.emphasisKeys.includes(key);
+  }
+
+  /** Drops every pin at once, which restores the plain figures. */
+  clearEmphasis(): void {
+    this.emphasisKeys = [];
+    this.rebuild();
+  }
+
+  /**
+   * The plotted entries as the emphasis selector names them.
+   *
+   * The chart entry carries only the axis label, so the display name and the thinking level are
+   * read off the payload beside it — the same two facts the comparison table's model cell shows.
+   */
+  get emphasisOptions(): EmphasisOption[] {
+    return this.plotted.map(entry => {
+      const dto = this.entries.find(candidate => candidate.key === entry.key);
+      return {
+        key: entry.key,
+        name: dto?.modelDisplayName || entry.label,
+        thinkingLevel: dto?.thinkingLevel ?? null
+      };
+    });
   }
 
   /** `Run 48` or `Analysis group 3` — the run line under a model name in the table. */

@@ -93,6 +93,8 @@ public static class BenchmarkModelComparison
                 Reason = "Saturated — nearly every answer sits at the ceiling — and comparable only "
                     + "within one thinking level. As a bar chart it would show several models tied at "
                     + "100 that differ severalfold in the latency a user perceives.",
+                Summary = "Most models score the maximum, so the chart would show a tie between "
+                    + "models that actually differ several-fold in how long a user waits.",
                 Instead = "Time to first token P50, which is the speed axis."
             },
             new BenchmarkModelComparisonExcludedMeasureDto
@@ -101,6 +103,8 @@ public static class BenchmarkModelComparison
                 Reason = "A ratio of two noisy estimators. It has no simple confidence interval and "
                     + "inverts its meaning as the index approaches zero, which is why the group cost "
                     + "statistics already guard it against a non-positive index.",
+                Summary = "Dividing cost by a noisy score gives a number whose error bars cannot be "
+                    + "computed and which flips meaning near zero.",
                 Instead = "The table column, read beside the quality interval."
             },
             new BenchmarkModelComparisonExcludedMeasureDto
@@ -109,6 +113,8 @@ public static class BenchmarkModelComparison
                 Reason = "An overview of several models must not sprout an unadjusted pairwise test "
                     + "matrix. Wilcoxon signed-rank, the paired t-test, Cohen's dz and "
                     + "Benjamini-Hochberg control already exist for a chosen pair.",
+                Summary = "Testing every pair at once produces false \"significant\" results; a proper "
+                    + "test exists for one chosen pair.",
                 Instead = "The two-group comparison, run on the pair you care about."
             }
         };

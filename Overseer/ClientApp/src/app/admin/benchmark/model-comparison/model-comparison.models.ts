@@ -185,6 +185,9 @@ export interface BenchmarkModelComparisonEntryDto {
 export interface BenchmarkModelComparisonExcludedMeasureDto {
   measure: string;
   reason: string;
+
+  /** One plain-language sentence: what the catch is, for a reader who will not follow the reason. */
+  summary: string;
   /** Where the reader should look instead. */
   instead: string;
 }

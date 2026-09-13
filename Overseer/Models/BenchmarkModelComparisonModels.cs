@@ -352,6 +352,11 @@ public class BenchmarkModelComparisonExcludedMeasureDto
     public string Measure { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
 
+    /// <summary>
+    /// One plain-language sentence: what the catch is, for a reader who will not follow the reason.
+    /// </summary>
+    public string Summary { get; set; } = string.Empty;
+
     /// <summary>Where the reader should look instead.</summary>
     public string Instead { get; set; } = string.Empty;
 }

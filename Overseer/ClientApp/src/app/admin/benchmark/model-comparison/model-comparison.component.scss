@@ -77,6 +77,60 @@
   max-width: 90ch;
 }
 
+/* One rule per line, each opening on the clause that carries it, so the must-match rule is not the
+   middle of a paragraph. */
+.mc-howto {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 90ch;
+
+  li {
+    position: relative;
+    padding-left: 18px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #a1a1aa;
+  }
+
+  li::before {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 8px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--primary-color);
+  }
+
+  strong {
+    color: #e4e4e7;
+  }
+}
+
+/* The sentence that summarises the outcome, framed as a result rather than as more prose. */
+.mc-explanation-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 3px solid var(--primary-color);
+  border-radius: 6px;
+  background: rgba(20, 20, 20, 0.85);
+  color: #d4d4d8;
+
+  svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--primary-color);
+  }
+}
+
 .mc-meta {
   display: flex;
   flex-wrap: wrap;
@@ -97,18 +151,66 @@
   }
 }
 
+/* The four facts as a strip of tiles, so they scan as a row of values rather than as a wrapped
+   run of label / value pairs. */
+.mc-meta-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+
+  > div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 12px;
+    border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
+    border-radius: 6px;
+    background: rgba(17, 17, 17, 0.65);
+  }
+}
+
 /* ==========================================================================
    The filter row
    ========================================================================== */
 
+/* The query root for the two fieldsets, so they respond to the panel they sit in rather than to
+   the window. Nothing with a popover may become a containment context, which is why the container
+   is this wrapper and not the section around it. */
+.mc-filters-container {
+  container-type: inline-size;
+}
+
+/* The box comes from `.gh-fieldset`; this holds the layout and nothing else. */
 .mc-filters {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: 1fr;
   gap: 14px 18px;
-  padding: 14px 16px;
-  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
-  border-radius: 8px;
-  background: rgba(17, 17, 17, 0.65);
+}
+
+/* A <fieldset> is not a grid container by default in every engine, so the display is explicit. */
+.mc-fieldset {
+  display: grid;
+  gap: 12px 16px;
+  align-content: start;
+}
+
+.mc-fieldset-scope {
+  grid-template-columns: 1fr;
+}
+
+.mc-fieldset-measures {
+  grid-template-columns: 1fr;
+}
+
+/* 720px is the same width the figure grid stacks at, so the whole view changes shape once. */
+@container (min-width: 720px) {
+  .mc-filters {
+    grid-template-columns: 2fr 1fr;
+  }
+
+  .mc-fieldset-scope {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .mc-field {
@@ -137,45 +239,52 @@
   gap: 8px;
 }
 
-.mc-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+/*
+ * At most two columns. `columns` caps the count without a query container, which matters here: the
+ * excluded rows carry `popover` tooltips, and a containment context around one breaks the
+ * anchor-positioning polyfill's placement.
+ */
+.mc-entry-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  columns: 320px 2;
+  column-gap: 24px;
 }
 
-.mc-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 12px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(255, 255, 255, 0.04);
-  color: #a1a1aa;
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+.mc-entry {
+  break-inside: avoid;
+  padding: 3px 0;
 
-  &:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 3px;
+  /* The label's own 10px gap separates the glyph; the inline margin it carries elsewhere doubles it. */
+  .mc-glyph {
+    margin-right: 0;
   }
 }
 
-/* Inclusion is carried by the border and the label weight as well as the fill, so a monochrome
-   rendering still says which entries are plotted. `aria-pressed` remains the announced truth. */
-.mc-chip-on {
-  border-color: var(--primary-color);
-  background: rgba(224, 186, 109, 0.14);
-  color: #ffffff;
-  font-weight: 600;
+.mc-entry-name {
+  font-size: 13px;
+  color: #e4e4e7;
 }
 
-.mc-chip-excluded {
-  cursor: default;
-  border-style: dashed;
+.mc-entry-meta {
+  font-size: 11px;
   color: #898781;
+}
+
+.mc-entry-excluded {
+  .checkbox-label {
+    cursor: default;
+  }
+
+  .mc-entry-name {
+    color: #898781;
+  }
+
+  svg {
+    flex-shrink: 0;
+    color: #898781;
+  }
 }
 
 .mc-glyph {
@@ -208,6 +317,19 @@
 /* ==========================================================================
    Notices
    ========================================================================== */
+
+/* The two alerts and the notice list side by side as cards, under one heading, rather than three
+   full-width blocks a reader scrolls past before reaching the figures. */
+.mc-advisories {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+  align-items: start;
+
+  .mc-notices {
+    margin: 0;
+  }
+}
 
 .mc-notices {
   list-style: none;
@@ -475,29 +597,75 @@
 }
 
 .mc-measures {
+  list-style: none;
   margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.mc-measure-card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  background: rgba(17, 17, 17, 0.65);
+}
 
-  dt {
-    font-size: 13px;
-    font-weight: 600;
-    color: #e4e4e7;
+.mc-measure-title {
+  margin: 0;
+  font-family: "Cinzel", serif;
+  font-size: 14px;
+  color: #ffffff;
+}
+
+.mc-measure-summary {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #d4d4d8;
+}
+
+.mc-measure-detail {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #a1a1aa;
+
+  > summary {
+    cursor: pointer;
+    color: #c3c2b7;
   }
 
-  dd {
-    margin: 0;
-    font-size: 12px;
-    line-height: 1.5;
-    color: #a1a1aa;
+  > summary:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  p {
+    margin: 6px 0 0;
   }
 }
 
+/* What to read instead is the actionable half, so it is the highlighted line of the card. */
 .mc-measure-instead {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--primary-color);
+  font-size: 12px;
+  line-height: 1.5;
+  color: #d4d4d8;
+}
+
+.mc-measure-instead-label {
   display: block;
-  margin-top: 3px;
-  color: #c3c2b7;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--primary-color);
 }
 
 /* ==========================================================================
@@ -545,6 +713,12 @@
    with them rather than in the filter row above every figure. */
 .mc-scatter-options {
   margin: 12px 0 8px;
+
+  /* 30px = the global checkbox's 20px box plus `.checkbox-label`'s 10px gap, so the hint starts
+     under the label text rather than under the box. */
+  .mc-field-hint {
+    margin-left: 30px;
+  }
 }
 
 /* Reserved whether or not the rows overflow, so a filter that shortens the table does not shift it. */
@@ -613,26 +787,8 @@
   background: rgba(224, 186, 109, 0.1);
 }
 
-.mc-name-btn {
-  background: transparent;
-  border: none;
-  padding: 0;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  text-decoration: underline;
-  text-decoration-color: rgba(255, 255, 255, 0.25);
-
-  &[aria-pressed="true"] {
-    color: var(--primary-color);
-    font-weight: 700;
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
+.mc-model-name {
+  color: #e4e4e7;
 }
 
 /* Name, badges and the source line, stacked with a small gap so the source reads as a caption
@@ -722,10 +878,47 @@
   max-width: 36ch;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .mc-chip {
-    transition: none;
+/* ==========================================================================
+   Emphasis, on the step whose figures it paints
+   ========================================================================== */
+
+.mc-emphasis {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mc-emphasis-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 6px 16px;
+
+  /* The label's own 10px gap separates the glyph; the inline margin it carries elsewhere doubles it. */
+  .mc-glyph {
+    margin-right: 0;
   }
+}
+
+.mc-emphasis-name {
+  font-size: 13px;
+  color: #e4e4e7;
+}
+
+.mc-emphasis-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.mc-emphasis-status {
+  margin: 0;
+  font-size: 12px;
+  color: #c3c2b7;
 }
 
 /* ==========================================================================
@@ -802,6 +995,14 @@
 .mc-wizard-loading {
   flex-shrink: 0;
   margin: 12px 24px 0;
+}
+
+/* A status row rather than a line of muted prose: the spinner says work is under way and the
+   sentence says what the work is. */
+.mc-wizard-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 /* Pinned under the header. `.gh-tabs` sets `position: relative` for its own scroll-state

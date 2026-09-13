@@ -10,7 +10,7 @@
  */
 
 import ChartDataLabels from 'chartjs-plugin-datalabels';
-import type { ChartConfiguration, ChartType, DefaultDataPoint, Plugin, Point } from 'chart.js';
+import type { Chart, ChartConfiguration, ChartType, DefaultDataPoint, Plugin, Point } from 'chart.js';
 
 // ---------------------------------------------------------------------------------------------
 // Input model
@@ -530,6 +530,9 @@ function strokeWhisker(
 
 export type BetterDirection = 'lower' | 'higher';
 
+/** The frontier dataset's series name. It identifies the annotation to the legend and the placer. */
+export const PARETO_FRONTIER_LABEL = 'Pareto frontier';
+
 export interface ParetoCandidate {
   readonly key: string;
   readonly x: number;
@@ -770,11 +773,25 @@ export interface DirectLabelBox {
 }
 
 /** The plot area, and the shape every overlap test works in. */
-interface LabelRect {
+export interface LabelRect {
   readonly left: number;
   readonly top: number;
   readonly right: number;
   readonly bottom: number;
+}
+
+/** A pixel coordinate, structural so a chart element and a plain vertex both fit it. */
+export interface PixelPoint {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** Other ink already on the canvas, which a label should avoid without being forbidden it. */
+export interface DirectLabelObstacles {
+  /** Axis-aligned rects a label should not sit on: whisker extents, one per mark. */
+  readonly rects?: readonly LabelRect[];
+  /** Polylines a label should not cross: the Pareto frontier, as pixel vertices. */
+  readonly polylines?: readonly { x: number; y: number }[][];
 }
 
 function boxRect(box: { x: number; y: number; width: number; height: number }): LabelRect {
@@ -796,6 +813,69 @@ function coversMark(rect: LabelRect, mark: { x: number; y: number }, radius: num
   const dx = mark.x - nearestX;
   const dy = mark.y - nearestY;
   return dx * dx + dy * dy < radius * radius;
+}
+
+/** Sign of the cross product of `ab` and `bc`: 1 turning left, -1 turning right, 0 collinear. */
+function orientation(a: PixelPoint, b: PixelPoint, c: PixelPoint): number {
+  const value = (b.y - a.y) * (c.x - b.x) - (b.x - a.x) * (c.y - b.y);
+  if (value > 0) {
+    return 1;
+  }
+  return value < 0 ? -1 : 0;
+}
+
+/** True when `c`, already known to be collinear with `ab`, lies within that segment's extent. */
+function withinSegment(a: PixelPoint, b: PixelPoint, c: PixelPoint): boolean {
+  return (
+    c.x >= Math.min(a.x, b.x) &&
+    c.x <= Math.max(a.x, b.x) &&
+    c.y >= Math.min(a.y, b.y) &&
+    c.y <= Math.max(a.y, b.y)
+  );
+}
+
+/** True when segments `p1p2` and `p3p4` share at least one point, a collinear touch included. */
+export function segmentsIntersect(p1: PixelPoint, p2: PixelPoint, p3: PixelPoint, p4: PixelPoint): boolean {
+  const o1 = orientation(p1, p2, p3);
+  const o2 = orientation(p1, p2, p4);
+  const o3 = orientation(p3, p4, p1);
+  const o4 = orientation(p3, p4, p2);
+  if (o1 !== o2 && o3 !== o4) {
+    return true;
+  }
+  return (
+    (o1 === 0 && withinSegment(p1, p2, p3)) ||
+    (o2 === 0 && withinSegment(p1, p2, p4)) ||
+    (o3 === 0 && withinSegment(p3, p4, p1)) ||
+    (o4 === 0 && withinSegment(p3, p4, p2))
+  );
+}
+
+function pointInRect(point: PixelPoint, rect: LabelRect): boolean {
+  return point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom;
+}
+
+/** True when the segment meets the filled rectangle: an endpoint inside it, or any edge crossed. */
+export function segmentIntersectsRect(p1: PixelPoint, p2: PixelPoint, rect: LabelRect): boolean {
+  if (pointInRect(p1, rect) || pointInRect(p2, rect)) {
+    return true;
+  }
+  const corners: PixelPoint[] = [
+    { x: rect.left, y: rect.top },
+    { x: rect.right, y: rect.top },
+    { x: rect.right, y: rect.bottom },
+    { x: rect.left, y: rect.bottom },
+  ];
+  return corners.some((corner, index) => segmentsIntersect(p1, p2, corner, corners[(index + 1) % corners.length]));
+}
+
+/** True when the segment passes within `radius` of `centre` - the test a mark's disc needs. */
+function segmentMeetsDisc(p1: PixelPoint, p2: PixelPoint, centre: PixelPoint, radius: number): boolean {
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const lengthSq = dx * dx + dy * dy;
+  const t = lengthSq === 0 ? 0 : Math.min(1, Math.max(0, ((centre.x - p1.x) * dx + (centre.y - p1.y) * dy) / lengthSq));
+  return Math.hypot(centre.x - (p1.x + t * dx), centre.y - (p1.y + t * dy)) < radius;
 }
 
 /** The eight directions a label is tried in, in preference order, as unit offsets on each ring. */
@@ -838,12 +918,92 @@ function clampIntoArea(
 }
 
 /**
+ * Soft penalties, in the same pixel units as the ring radius that forms a candidate's base score.
+ *
+ * Sitting on another piece of ink costs more than two extra rings of leader, so a label crosses a
+ * whisker or the frontier only when every ring is blocked; a leader crossing costs less than one
+ * ring, and the direction preferences less again.
+ */
+const PENALTY_OBSTACLE_RECT = 40;
+const PENALTY_OBSTACLE_SEGMENT = 40;
+const PENALTY_LEADER_CROSSING = 25;
+const PENALTY_TOWARD_EDGE = 10;
+const PENALTY_DIAGONAL = 5;
+
+/** What the candidate costs for the ink it lands on: whisker rects and frontier segments. */
+function obstaclePenalty(rect: LabelRect, obstacles: DirectLabelObstacles): number {
+  let penalty = obstacles.rects?.some((obstacle) => rectsOverlap(rect, obstacle)) ? PENALTY_OBSTACLE_RECT : 0;
+  for (const polyline of obstacles.polylines ?? []) {
+    for (let i = 1; i < polyline.length; i += 1) {
+      if (segmentIntersectsRect(polyline[i - 1], polyline[i], rect)) {
+        penalty += PENALTY_OBSTACLE_SEGMENT;
+      }
+    }
+  }
+  return penalty;
+}
+
+/** The leader as the plugin draws it: the mark centre to the point of the plate nearest to it. */
+function leaderTarget(anchor: DirectLabelAnchor, box: { x: number; y: number; width: number; height: number }): PixelPoint {
+  return {
+    x: Math.min(Math.max(anchor.x, box.x), box.x + box.width),
+    y: Math.min(Math.max(anchor.y, box.y), box.y + box.height),
+  };
+}
+
+/** True when the leader would run through a label already placed or through another mark's disc. */
+function leaderCrosses(
+  anchor: DirectLabelAnchor,
+  box: { x: number; y: number; width: number; height: number },
+  placed: readonly DirectLabelBox[],
+  marks: readonly DirectLabelAnchor[],
+  markRadius: number,
+): boolean {
+  const target = leaderTarget(anchor, box);
+  if (placed.some((other) => segmentIntersectsRect(anchor, target, boxRect(other)))) {
+    return true;
+  }
+  return marks.some((mark) => mark.key !== anchor.key && segmentMeetsDisc(anchor, target, mark, markRadius));
+}
+
+/**
+ * True when the direction heads for the plot edge the mark is already closest to, and that edge is
+ * within `2 * ring`. It fans labels inward along the margins while leaving the middle unbiased.
+ */
+function pointsTowardNearEdge(
+  anchor: DirectLabelAnchor,
+  direction: { dx: number; dy: number },
+  area: LabelRect,
+  ring: number,
+): boolean {
+  const gaps = [
+    { distance: anchor.x - area.left, toward: direction.dx < 0 },
+    { distance: area.right - anchor.x, toward: direction.dx > 0 },
+    { distance: anchor.y - area.top, toward: direction.dy < 0 },
+    { distance: area.bottom - anchor.y, toward: direction.dy > 0 },
+  ];
+  let nearest = gaps[0];
+  for (const gap of gaps) {
+    if (gap.distance < nearest.distance) {
+      nearest = gap;
+    }
+  }
+  return nearest.toward && nearest.distance < 2 * ring;
+}
+
+/**
  * Places a label beside every mark so that no two labels overlap and no label covers a mark.
  *
  * Pure geometry, with no canvas and no chart: the caller measures the text and passes the sizes in,
  * which is what makes the placement testable and its determinism checkable. The order is fixed —
  * ascending x, then y, then key — so a rebuild on hover re-places the labels identically rather
  * than reshuffling them under the pointer.
+ *
+ * Every (ring, direction) candidate that clears the three hard constraints is scored, and the
+ * cheapest wins; ties keep the earlier candidate, so the ring and direction orders still decide and
+ * the output stays deterministic. The score starts at the ring radius and adds the penalties above,
+ * which is what lets the placer route a label around a whisker, the frontier, or a plot edge instead
+ * of taking the first opening it finds.
  *
  * A dense corner can exhaust every ring. The fallback then takes the first ring's right-hand
  * candidate clamped into the plot area: a visible label that may touch its neighbour beats a hidden
@@ -853,12 +1013,14 @@ export function placeDirectLabels(
   anchors: readonly DirectLabelAnchor[],
   area: LabelRect,
   markRadius: number = POINT_HOVER_RADIUS,
+  obstacles: DirectLabelObstacles = {},
 ): DirectLabelBox[] {
   const ordered = [...anchors].sort((a, b) => a.x - b.x || a.y - b.y || a.key.localeCompare(b.key));
   const placed: DirectLabelBox[] = [];
 
   for (const anchor of ordered) {
     let chosen: { x: number; y: number; width: number; height: number } | null = null;
+    let bestScore = Number.POSITIVE_INFINITY;
 
     for (const ring of DIRECT_LABEL_RINGS) {
       for (const direction of DIRECT_LABEL_DIRECTIONS) {
@@ -873,11 +1035,21 @@ export function placeDirectLabels(
         if (anchors.some((other) => coversMark(rect, other, markRadius))) {
           continue;
         }
-        chosen = box;
-        break;
-      }
-      if (chosen) {
-        break;
+
+        let score = ring + obstaclePenalty(rect, obstacles);
+        if (leaderCrosses(anchor, box, placed, anchors, markRadius)) {
+          score += PENALTY_LEADER_CROSSING;
+        }
+        if (pointsTowardNearEdge(anchor, direction, area, ring)) {
+          score += PENALTY_TOWARD_EDGE;
+        }
+        if (direction.dx !== 0 && direction.dy !== 0) {
+          score += PENALTY_DIAGONAL;
+        }
+        if (score < bestScore) {
+          bestScore = score;
+          chosen = box;
+        }
       }
     }
 
@@ -915,6 +1087,64 @@ function strokeLeader(ctx: CanvasRenderingContext2D, box: DirectLabelBox, markRa
 }
 
 /**
+ * The whiskers `errorBarPlugin` draws for one mark, as rects: the vertical extent widened to the
+ * cap, the horizontal extent heightened to it. A scale a datum has no interval on yields nothing.
+ */
+function whiskerRects(
+  chart: Chart,
+  meta: { xAxisID?: string; yAxisID?: string },
+  raw: ErrorBarPoint,
+  mark: PixelPoint,
+): LabelRect[] {
+  const rects: LabelRect[] = [];
+  const xScale = chart.scales[meta.xAxisID ?? 'x'];
+  const yScale = chart.scales[meta.yAxisID ?? 'y'];
+  if (yScale && (raw.yErrLow !== undefined || raw.yErrHigh !== undefined)) {
+    const low = pixelForBound(yScale, raw.y, -(raw.yErrLow ?? 0));
+    const high = pixelForBound(yScale, raw.y, raw.yErrHigh ?? 0);
+    if (Number.isFinite(low) && Number.isFinite(high)) {
+      rects.push({
+        left: mark.x - ERROR_BAR_CAP_HALF_WIDTH,
+        right: mark.x + ERROR_BAR_CAP_HALF_WIDTH,
+        top: Math.min(low, high),
+        bottom: Math.max(low, high),
+      });
+    }
+  }
+  if (xScale && (raw.xErrLow !== undefined || raw.xErrHigh !== undefined)) {
+    const low = pixelForBound(xScale, raw.x, -(raw.xErrLow ?? 0));
+    const high = pixelForBound(xScale, raw.x, raw.xErrHigh ?? 0);
+    if (Number.isFinite(low) && Number.isFinite(high)) {
+      rects.push({
+        left: Math.min(low, high),
+        right: Math.max(low, high),
+        top: mark.y - ERROR_BAR_CAP_HALF_WIDTH,
+        bottom: mark.y + ERROR_BAR_CAP_HALF_WIDTH,
+      });
+    }
+  }
+  return rects;
+}
+
+/**
+ * The frontier staircase as pixel vertices, or nothing when the figure carries no frontier. It sits
+ * at the index straight after the labelled model datasets, which is where `buildScatter` pushes it.
+ */
+function frontierPolylines(chart: Chart, frontierIndex: number): { x: number; y: number }[][] {
+  if (chart.data.datasets[frontierIndex]?.label !== PARETO_FRONTIER_LABEL) {
+    return [];
+  }
+  const meta = chart.getDatasetMeta(frontierIndex);
+  if (meta.hidden) {
+    return [];
+  }
+  const vertices = meta.data
+    .filter((element) => Number.isFinite(element.x) && Number.isFinite(element.y))
+    .map((element) => ({ x: element.x, y: element.y }));
+  return vertices.length > 1 ? [vertices] : [];
+}
+
+/**
  * Names every mark on the canvas, on a leader line, with the legend switched off.
  *
  * It draws rather than delegating to `chartjs-plugin-datalabels`, which places a label at a fixed
@@ -939,6 +1169,7 @@ export const directLabelPlugin: Plugin = {
     ctx.textAlign = 'left';
 
     const anchors: DirectLabelAnchor[] = [];
+    const obstacleRects: LabelRect[] = [];
     labels.forEach((label, datasetIndex) => {
       const meta = chart.getDatasetMeta(datasetIndex);
       if (meta.hidden) {
@@ -956,9 +1187,17 @@ export const directLabelPlugin: Plugin = {
         width: ctx.measureText(label).width + DIRECT_LABEL_PAD_X * 2,
         height: DIRECT_LABEL_LINE_HEIGHT + DIRECT_LABEL_PAD_Y * 2,
       });
+      // The whiskers `errorBarPlugin` has already drawn, so a plate does not land on one.
+      const raw = chart.data.datasets[datasetIndex]?.data[0];
+      if (isErrorBarPoint(raw)) {
+        obstacleRects.push(...whiskerRects(chart, meta, raw, element));
+      }
     });
 
-    const boxes = placeDirectLabels(anchors, area);
+    const boxes = placeDirectLabels(anchors, area, POINT_HOVER_RADIUS, {
+      rects: obstacleRects,
+      polylines: frontierPolylines(chart, labels.length),
+    });
     const highlighted = options?.highlightedIndex === undefined ? undefined : labels[options.highlightedIndex];
 
     // Leaders first, so a plate covers the end of its own line rather than the line crossing it.
@@ -1141,7 +1380,7 @@ function buildScatter(
   );
   if (pareto.steps.length > 1) {
     datasets.push({
-      label: 'Pareto frontier',
+      label: PARETO_FRONTIER_LABEL,
       data: pareto.steps.map((p) => ({ x: p.x, y: p.y })),
       pointStyle: 'circle',
       backgroundColor: 'transparent',
@@ -1196,7 +1435,7 @@ function buildScatter(
             color: CHART_INK.secondary,
             usePointStyle: true,
             // The frontier is an annotation, not a series, so it stays out of the identity legend.
-            filter: (item) => item.text !== 'Pareto frontier',
+            filter: (item) => item.text !== PARETO_FRONTIER_LABEL,
           },
         },
         tooltip: {
