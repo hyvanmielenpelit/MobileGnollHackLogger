@@ -20,6 +20,7 @@ import {
   RubricGapAuthorDraftDto,
   RubricAdditionAcceptanceDto
 } from './rubric-gap-author.service';
+import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
 
 export type SuiteHealthTab = 'items' | 'gaps' | 'citations' | 'coverage' | 'board-facts';
 
@@ -61,7 +62,7 @@ export type SortDirection = 'asc' | 'desc';
 @Component({
   selector: 'app-benchmark-suite-health',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ProviderBadgeComponent],
   templateUrl: './suite-health.component.html',
   styleUrls: ['./suite-health.component.scss']
 })

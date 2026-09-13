@@ -29,6 +29,7 @@ import {
 import { SystemService } from '../../../services/system.service';
 import { elapsedMsBetween, parseServerUtcDate } from '../../../utils/date.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
+import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
 
 /**
  * The stages of a multi-run operation. `waitingForCap` and `stopped` are stages in their own
@@ -143,7 +144,7 @@ interface GroupComparisonShape {
 @Component({
   selector: 'app-multi-run-progress-dialog',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, ProviderBadgeComponent],
   templateUrl: './multi-run-progress-dialog.component.html',
   styleUrls: ['./multi-run-progress-dialog.component.scss']
 })

@@ -737,7 +737,7 @@
                     @if (showReasoningBadge(selectedModel?.reasoningMode)) {
                       <span class="reasoning-badge">{{ selectedModel?.reasoningMode }}</span>
                     }
-                    <span class="provider-badge">{{ selectedModel?.provider }}</span>
+                    <app-provider-badge [provider]="selectedModel?.provider"></app-provider-badge>
                     @if (shouldRenderParallelBadge && selectedModel?.parallelExecutionMode === 0) {
                       <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
                     }
@@ -760,7 +760,7 @@
                           @if (showReasoningBadge(model.reasoningMode)) {
                             <span class="reasoning-badge">{{ model.reasoningMode }}</span>
                           }
-                          <span class="provider-badge">{{ model.provider }}</span>
+                          <app-provider-badge [provider]="model.provider"></app-provider-badge>
                           @if (shouldRenderParallelBadge && model.parallelExecutionMode === 0) {
                             <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
                           }
@@ -781,7 +781,7 @@
                           @if (showReasoningBadge(model.reasoningMode)) {
                             <span class="reasoning-badge">{{ model.reasoningMode }}</span>
                           }
-                          <span class="provider-badge">{{ model.provider }}</span>
+                          <app-provider-badge [provider]="model.provider"></app-provider-badge>
                           @if (shouldRenderParallelBadge && model.parallelExecutionMode === 0) {
                             <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
                           }
@@ -801,7 +801,7 @@
                     @if (showReasoningBadge(selectedModel?.reasoningMode || singleModelInfo?.reasoningMode)) {
                       <span class="reasoning-badge">{{ selectedModel?.reasoningMode || singleModelInfo?.reasoningMode }}</span>
                     }
-                    <span class="provider-badge">{{ selectedModel?.provider || singleModelInfo?.provider }}</span>
+                    <app-provider-badge [provider]="selectedModel?.provider || singleModelInfo?.provider"></app-provider-badge>
                     @if (shouldRenderParallelBadge && (selectedModel?.parallelExecutionMode === 0 || (!selectedModel && singleModelInfo?.parallelExecutionMode === 0))) {
                       <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
                     }

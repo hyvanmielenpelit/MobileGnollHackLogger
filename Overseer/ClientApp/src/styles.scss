@@ -15,6 +15,15 @@
   --color-success: #28a745;
   --color-error: #dc3545;
   --color-warning: #ffc107;
+
+  /* Provider identity. The brand hue paints the tint; the ink is a lighter tint of the same hue
+     that clears 4.5:1 on the dark badge ground. Any provider without a pair renders neutral. */
+  --provider-openai: #10a37f;
+  --provider-openai-ink: #55d6be;
+  --provider-anthropic: #d97757;
+  --provider-anthropic-ink: #f0997d;
+  --provider-google: #4285f4;
+  --provider-google-ink: #8ab4f8;
 }
 
 *, *::before, *::after {
@@ -757,12 +766,24 @@ dialog:not([open]),
    cross-model comparison table, the chat and models pickers and the admin configuration list.
    One definition is what keeps a provider or a thinking level looking the same across them. */
 .provider-badge {
+  display: inline-block;
   font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
   color: #aaa;
   background: #252525;
   padding: 2px 6px;
   border-radius: 4px;
   border: 1px solid #383838;
+  white-space: nowrap;
+
+  &--openai    { color: var(--provider-openai-ink);    background: color-mix(in srgb, var(--provider-openai) 15%, #252525);    border-color: color-mix(in srgb, var(--provider-openai) 35%, #383838); }
+  &--anthropic { color: var(--provider-anthropic-ink); background: color-mix(in srgb, var(--provider-anthropic) 15%, #252525); border-color: color-mix(in srgb, var(--provider-anthropic) 35%, #383838); }
+  &--google    { color: var(--provider-google-ink);    background: color-mix(in srgb, var(--provider-google) 15%, #252525);    border-color: color-mix(in srgb, var(--provider-google) 35%, #383838); }
+}
+
+@media (forced-colors: active) {
+  .provider-badge { border-color: CanvasText; }
 }
 
 .thinking-badge {

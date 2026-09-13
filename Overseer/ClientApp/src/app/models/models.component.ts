@@ -12,11 +12,12 @@ import {
   posturePrivacyLevel
 } from '../services/settings.service';
 import { AiModelFormComponent, AiModelFormResult } from '../shared/ai-model-form/ai-model-form.component';
+import { ProviderBadgeComponent } from '../shared/provider-badge/provider-badge.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
 
 @Component({
     selector: 'app-models',
-    imports: [FormsModule, RouterModule, AiModelFormComponent],
+    imports: [FormsModule, RouterModule, AiModelFormComponent, ProviderBadgeComponent],
     templateUrl: './models.component.html',
     changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './models.component.scss'

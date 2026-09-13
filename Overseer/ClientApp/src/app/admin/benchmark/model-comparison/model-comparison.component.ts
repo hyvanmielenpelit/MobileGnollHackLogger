@@ -54,6 +54,7 @@ import {
   BenchmarkModelComparisonDto,
   BenchmarkModelComparisonEntryDto,
   BenchmarkModelComparisonPricingBasis,
+  ComparisonSelectedSource,
   ComparisonSelectionNotice,
   orderedNotices,
   sourceLabel,
@@ -67,20 +68,24 @@ import {
   FIGURE_EXPORT_MAX_DIMENSION,
   FIGURE_EXPORT_MIN_DIMENSION,
   FIGURE_EXPORT_PRESETS,
+  FIGURE_EXPORT_PRESET_GROUPS,
   FigureExportFormat,
   FigureExportRequest,
   FigureExportResolution,
   FigureExportResult,
   WEBP_QUALITY_OPTIONS,
   WebpQuality,
+  aspectRatioLabel,
   composeFigureImage,
   copyImageToClipboard,
   encodeFigureImage,
   figureExportFilename,
+  previewResolution,
   renderPlotOffscreen,
   resolveFigureLayout,
   saveFigureBlob
 } from './figure-export';
+import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
 import {
   COMPARISON_TABLE_COLUMNS,
   ComparisonTableProvenance,
@@ -191,7 +196,7 @@ export interface ComparisonFigureCard {
 @Component({
   selector: 'app-benchmark-model-comparison',
   standalone: true,
-  imports: [CommonModule, FormsModule, BaseChartDirective, SortHeaderComponent, TablePagerComponent],
+  imports: [CommonModule, FormsModule, BaseChartDirective, SortHeaderComponent, TablePagerComponent, ProviderBadgeComponent],
   templateUrl: './model-comparison.component.html',
   styleUrls: ['./model-comparison.component.scss']
 })
@@ -229,6 +234,12 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * excluded, and what is still being computed. Empty while the selection is unremarkable.
    */
   @Input() selectionNotices: readonly ComparisonSelectionNotice[] = [];
+
+  /** Every source the host has selected, named for the selection band's chips. */
+  @Input() selectedSources: readonly ComparisonSelectedSource[] = [];
+
+  /** One chip's remove button, emitted for the host to drop from its selection. */
+  @Output() removeSource = new EventEmitter<ComparisonSelectedSource>();
 
   /** The two counts together, which is what both caps and Next are judged on. */
   get selectedSourceCount(): number {
@@ -405,6 +416,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.reducedMotion.dispose();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    this.cancelScheduledPreview();
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -520,6 +532,20 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       return `${RUN_SECTION_TITLE} and ${GROUP_SECTION_TITLE}`;
     }
     return this.selectedGroupCount > 0 ? GROUP_SECTION_TITLE : RUN_SECTION_TITLE;
+  }
+
+  /** The band's headline count, in words — it does not mention the request cap; `nextBlockedReason` already does. */
+  get selectionSummary(): string {
+    const count = this.selectedSources.length;
+    if (count === 0) {
+      return 'Nothing selected yet';
+    }
+    return count === 1 ? '1 source selected' : `${count} sources selected`;
+  }
+
+  /** One chip's tooltip anchor id, for its remove button's `interestfor` / `position-anchor` pair. */
+  sourceChipId(source: ComparisonSelectedSource): string {
+    return `mc-sel-${source.kind}-${source.id}`;
   }
 
   /**
@@ -980,12 +1006,22 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   // the on-screen preset keeps the previous behaviour of following the rendered figure at 2x.
 
   readonly exportPresets = FIGURE_EXPORT_PRESETS;
+
+  /** The same presets as the picker renders them: one `<optgroup>` per aspect ratio. */
+  readonly exportPresetGroups = FIGURE_EXPORT_PRESET_GROUPS;
+
   readonly minExportDimension = FIGURE_EXPORT_MIN_DIMENSION;
   readonly maxExportDimension = FIGURE_EXPORT_MAX_DIMENSION;
 
   exportResolutionId = 'onscreen';
   customExportWidth = 1920;
   customExportHeight = 1080;
+
+  /** On, one custom side follows the other so the shape survives a change of size. */
+  customRatioLocked = false;
+
+  /** The ratio the lock captured, which is what the unedited side is derived from. */
+  private customRatio = 16 / 9;
 
   get isCustomResolution(): boolean {
     return this.exportResolutionId === 'custom';
@@ -1000,9 +1036,33 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return {
       id: 'custom',
       label: 'Custom',
+      group: 'Custom',
       widthPx: this.clampDimension(this.customExportWidth),
       heightPx: this.clampDimension(this.customExportHeight)
     };
+  }
+
+  /** The current size's shape, or empty for the on-screen size, which has no fixed one. */
+  get exportAspectLabel(): string {
+    const resolution = this.exportResolution;
+    if (resolution.widthPx === null || resolution.heightPx === null) {
+      return '';
+    }
+    return aspectRatioLabel(resolution.widthPx, resolution.heightPx);
+  }
+
+  /**
+   * The size and format in one line, for the Figures header.
+   *
+   * The header carries the settings as a read-out rather than as controls: the controls live in the
+   * preview dialog, where their effect is visible, and two sets of them on one screen would let the
+   * reader change a size in the place that cannot show what it did.
+   */
+  get exportSummary(): string {
+    const format = this.exportFormat === 'webp'
+      ? `WebP q${this.figureWebpQuality}`
+      : 'PNG';
+    return `${this.exportResolution.label} · ${format}`;
   }
 
   /** An out-of-range custom size, named. Empty while the current setting is usable. */
@@ -1035,6 +1095,45 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   onExportResolutionChange(value: string): void {
     this.exportResolutionId = value;
+    this.schedulePreview();
+  }
+
+  /**
+   * Captures the current shape when the lock goes on, and releases it when it goes off.
+   *
+   * Captured rather than held from the preset the reader came from: the two fields are what is on
+   * screen, and a lock that snapped them to some earlier ratio would change the size it was asked
+   * to preserve.
+   */
+  lockCustomRatio(locked: boolean): void {
+    this.customRatioLocked = locked;
+    if (locked) {
+      const width = this.clampDimension(this.customExportWidth);
+      const height = this.clampDimension(this.customExportHeight);
+      this.customRatio = height > 0 ? width / height : 1;
+    }
+    this.schedulePreview();
+  }
+
+  onCustomWidthChange(width: number): void {
+    this.customExportWidth = width;
+    if (this.customRatioLocked) {
+      this.customExportHeight = this.clampDimension(Math.round(width / this.customRatio));
+    }
+    this.schedulePreview();
+  }
+
+  onCustomHeightChange(height: number): void {
+    this.customExportHeight = height;
+    if (this.customRatioLocked) {
+      this.customExportWidth = this.clampDimension(Math.round(height * this.customRatio));
+    }
+    this.schedulePreview();
+  }
+
+  onFigureWebpQualityChange(value: WebpQuality): void {
+    this.figureWebpQuality = value;
+    this.schedulePreview();
   }
 
   /** Every card currently rendered, in the order the template draws them. */
@@ -1052,6 +1151,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   onExportFormatChange(value: FigureExportFormat): void {
     this.exportFormat = value;
+    this.schedulePreview();
   }
 
   async downloadFigure(card: ComparisonFigureCard): Promise<void> {
@@ -1148,7 +1248,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         }
       }
       this.exportStatus =
-        this.exportSummary(written, cards.length, pixels, fellBack, liveFallback, refusals);
+        this.exportOutcomeSummary(written, cards.length, pixels, fellBack, liveFallback, refusals);
     } catch {
       this.exportStatus = 'The figures could not be exported.';
     } finally {
@@ -1333,7 +1433,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * A refused figure is named in full: a batch that silently wrote five of six files reads as a
    * success, and the missing one is exactly the figure whose caveats did not fit.
    */
-  private exportSummary(
+  private exportOutcomeSummary(
     written: number,
     requested: number,
     pixels: string,
@@ -1378,6 +1478,259 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   private canvasOf(directive: BaseChartDirective): HTMLCanvasElement | null {
     return (directive.chart?.canvas as HTMLCanvasElement | undefined) ?? null;
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The figure preview
+  //
+  // One figure at a time, composed by the same pipeline the download uses and drawn onto a canvas
+  // in a full-screen dialog: the size, the aspect ratio, the format and the quality are chosen
+  // against the image they produce rather than against a file already on disk. A figure whose
+  // caveats do not fit the chosen box is refused here, in the same words the download would refuse
+  // it in, which is the whole reason the controls moved into this dialog.
+  // ---------------------------------------------------------------------------------------------
+
+  @ViewChild('figurePreviewDialog') figurePreviewDialog?: ElementRef<HTMLDialogElement>;
+
+  /** The stage the composed image is drawn onto. Always in the template, so it is never absent. */
+  @ViewChild('previewCanvas') previewCanvas?: ElementRef<HTMLCanvasElement>;
+
+  /** Which card is previewed. Null before the dialog has ever been opened. */
+  previewCardId: string | null = null;
+
+  /** True while the dialog is open, which is what a control change checks before composing. */
+  previewOpen = false;
+
+  previewBusy = false;
+
+  /** The target size's refusal, in the words the download refuses it in. Empty while it fits. */
+  previewRefusal = '';
+
+  /** The pixels **Download** will write — the target size, never the capped size on the stage. */
+  previewPixels = '';
+
+  /** A composition is asynchronous, so a slow one must not paint over a newer one behind it. */
+  private previewSeq = 0;
+
+  private previewTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Long enough that a held arrow key in a size field composes once, short enough to feel live. */
+  private readonly previewDebounceMs = 150;
+
+  /** The card the stage is showing, or null where the current slice no longer draws it. */
+  get previewCard(): ComparisonFigureCard | null {
+    return this.exportableCards.find(card => card.id === this.previewCardId) ?? null;
+  }
+
+  /** The stage is a `role="img"`, so it carries the card's own summary rather than a bare noun. */
+  get previewAriaLabel(): string {
+    const card = this.previewCard;
+    return card ? `Preview of ${card.ariaLabel}` : 'Figure preview';
+  }
+
+  /** Opens on the given card, or on the first one where the header's own control opened it. */
+  openFigurePreview(card?: ComparisonFigureCard): void {
+    const target = card ?? this.exportableCards[0];
+    if (!target) {
+      return;
+    }
+    this.previewCardId = target.id;
+    this.previewRefusal = '';
+    this.previewPixels = '';
+    this.previewOpen = true;
+
+    // The figure select and the stage render from state this method has just changed, so they have
+    // to hold it before the dialog is promoted to the top layer.
+    this.cdr.detectChanges();
+    this.figurePreviewDialog?.nativeElement.showModal();
+    this.schedulePreview();
+  }
+
+  closeFigurePreview(): void {
+    this.figurePreviewDialog?.nativeElement.close();
+  }
+
+  /**
+   * Drops the composition and keeps the dialog's own close event off the wizard that contains it.
+   *
+   * The host closes the whole wizard from its own dialog's `close`, and this one is a descendant of
+   * it. The stage is blanked rather than left holding the last figure: reopening on another card
+   * would show the previous one until the first composition landed.
+   */
+  onFigurePreviewClosed(event?: Event): void {
+    event?.stopPropagation();
+    this.previewOpen = false;
+    this.cancelScheduledPreview();
+    this.previewSeq++;
+    this.previewBusy = false;
+    this.blankPreview();
+    this.cdr.markForCheck();
+  }
+
+  previewPrevious(): void {
+    this.stepPreview(-1);
+  }
+
+  previewNext(): void {
+    this.stepPreview(1);
+  }
+
+  selectPreviewCard(id: string): void {
+    this.previewCardId = id;
+    this.schedulePreview();
+    this.cdr.markForCheck();
+  }
+
+  /** Delegates, so the preview and the card buttons cannot drift apart in what they write. */
+  async downloadPreviewedFigure(): Promise<void> {
+    const card = this.previewCard;
+    if (card) {
+      await this.downloadFigure(card);
+    }
+  }
+
+  async copyPreviewedFigure(): Promise<void> {
+    const card = this.previewCard;
+    if (card) {
+      await this.copyFigure(card);
+    }
+  }
+
+  async downloadAllFromPreview(): Promise<void> {
+    await this.downloadAllFigures();
+  }
+
+  /** Wrapping: seven figures in a ring, so neither end of the set is a dead control. */
+  private stepPreview(delta: number): void {
+    const cards = this.exportableCards;
+    if (cards.length === 0) {
+      return;
+    }
+    const current = cards.findIndex(card => card.id === this.previewCardId);
+    const next = ((current < 0 ? 0 : current + delta) + cards.length) % cards.length;
+    this.selectPreviewCard(cards[next].id);
+  }
+
+  /** Coalesces a burst of control changes — a held arrow key, a typed size — into one composition. */
+  private schedulePreview(): void {
+    if (!this.previewOpen) {
+      return;
+    }
+    this.cancelScheduledPreview();
+    this.previewTimer = setTimeout(() => {
+      this.previewTimer = null;
+      void this.renderPreview();
+    }, this.previewDebounceMs);
+  }
+
+  private cancelScheduledPreview(): void {
+    if (this.previewTimer !== null) {
+      clearTimeout(this.previewTimer);
+      this.previewTimer = null;
+    }
+  }
+
+  /**
+   * Composes the current card at the current settings and draws it onto the stage.
+   *
+   * The layout is resolved twice, at two different sizes, and the difference matters: the stage
+   * composes at {@link previewResolution}'s cap, while the pixel count and any refusal come from
+   * the target size, because that is the size Download would write and the size it would refuse.
+   *
+   * Nothing here produces a blob or an object URL — the composed canvas is drawn straight onto the
+   * on-screen one — so a closed dialog leaves nothing to revoke.
+   */
+  private async renderPreview(): Promise<void> {
+    const card = this.previewCard;
+    const canvas = card ? this.canvasFor(card) : null;
+    if (!card || !canvas || !this.previewCanvas) {
+      return;
+    }
+
+    const sequence = ++this.previewSeq;
+    this.previewBusy = true;
+    this.previewRefusal = '';
+    this.cdr.markForCheck();
+
+    try {
+      const chrome = this.exportChrome(card);
+      const onScreen = this.onScreenSizeOf(canvas);
+      const target = resolveFigureLayout(chrome, this.exportResolution, onScreen);
+      this.previewPixels = target.layout
+        ? `${target.layout.pixelWidth} × ${target.layout.pixelHeight} px`
+        : '';
+      if (!target.layout) {
+        this.previewRefusal = target.refusal ?? '';
+        this.blankPreview();
+        return;
+      }
+
+      const composed = await this.composePreview(card, canvas, chrome, onScreen);
+      if (sequence !== this.previewSeq) {
+        return;
+      }
+      if (composed) {
+        this.paintPreview(composed);
+      } else {
+        this.blankPreview();
+      }
+    } catch {
+      this.previewRefusal = 'This figure could not be composed at that size.';
+      this.blankPreview();
+    } finally {
+      if (sequence === this.previewSeq) {
+        this.previewBusy = false;
+      }
+      this.cdr.markForCheck();
+    }
+  }
+
+  /** One composition at the preview cap, through the same two paths the export itself takes. */
+  private async composePreview(
+    card: ComparisonFigureCard,
+    canvas: HTMLCanvasElement,
+    chrome: FigureExportChrome,
+    onScreen: { width: number; height: number }
+  ): Promise<HTMLCanvasElement | null> {
+    const resolution = previewResolution(this.exportResolution);
+    if (resolution.widthPx === null || resolution.heightPx === null) {
+      return composeFigureImage({ ...chrome, canvas, format: this.exportFormat, layout: null });
+    }
+
+    const { layout } = resolveFigureLayout(chrome, resolution, onScreen);
+    if (!layout) {
+      return null;
+    }
+    const plot = await renderPlotOffscreen(
+      { type: card.type, data: card.data, options: card.options, plugins: card.plugins },
+      layout
+    );
+    // The live canvas is the same fallback the export takes where an offscreen chart cannot be
+    // built: a preview that showed nothing would read as a refusal the download does not make.
+    return plot
+      ? composeFigureImage({ ...chrome, canvas: plot, format: this.exportFormat, layout })
+      : composeFigureImage({ ...chrome, canvas, format: this.exportFormat, layout: null });
+  }
+
+  private paintPreview(composed: HTMLCanvasElement): void {
+    const stage = this.previewCanvas?.nativeElement;
+    if (!stage) {
+      return;
+    }
+    stage.width = composed.width;
+    stage.height = composed.height;
+    stage.getContext('2d')?.drawImage(composed, 0, 0);
+  }
+
+  /** A refused size shows no image at all: the last one that fitted is not what was asked for. */
+  private blankPreview(): void {
+    const stage = this.previewCanvas?.nativeElement;
+    if (!stage) {
+      return;
+    }
+    stage.getContext('2d')?.clearRect(0, 0, stage.width, stage.height);
+    stage.width = 0;
+    stage.height = 0;
   }
 
   // ---------------------------------------------------------------------------------------------

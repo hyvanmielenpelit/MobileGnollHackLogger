@@ -215,6 +215,12 @@ To find specific popups, look in the corresponding component's `.html` template:
     Markdown control. Opened by the info button beside a row's *Condition X* badge, and offered
     only where that source actually differs.
 
+- **Model Comparison (`model-comparison.component.html`, Admin → AI Benchmark → Run History →
+  Cross-model comparison, step 4)**
+  - `#figurePreviewDialog`: Figure preview — one figure at a time, composited exactly as it will
+    be exported at the chosen size, aspect ratio, format and quality; opened from the Figures
+    header and from each card's preview button.
+
 ## Component Reuse and State Management
 
 The Overseer frontend utilizes a custom `RouteReuseStrategy` (indicated by `data: { reuse: true }` in `app.routes.ts`) for primary views like the `ChatComponent`. This prevents the component from being destroyed when navigating away, ensuring chat history and UI state are preserved.

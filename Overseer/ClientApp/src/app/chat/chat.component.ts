@@ -13,6 +13,7 @@ import { ClientBridgeService } from '../services/client-bridge.service';
 import { setSentryConfidentialSession } from '../utils/sentry-filter.util';
 import { AdminAlertsComponent } from './admin-alerts.component';
 import { TrashModalComponent } from '../shared/trash-modal/trash-modal.component';
+import { ProviderBadgeComponent } from '../shared/provider-badge/provider-badge.component';
 import { AdminBenchmarkService } from '../services/admin-benchmark.service';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
 import * as signalR from '@microsoft/signalr';
@@ -52,7 +53,7 @@ export interface AttachmentExcerptNotice {
 
 @Component({
     selector: 'app-chat',
-    imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe, AdminAlertsComponent, TrashModalComponent],
+    imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe, AdminAlertsComponent, TrashModalComponent, ProviderBadgeComponent],
     styleUrl: './chat.component.scss',
     changeDetection: ChangeDetectionStrategy.Eager,
     templateUrl: './chat.component.html'

@@ -6368,6 +6368,46 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.comparison).toBeNull();
     });
 
+    // --- The selection band's chips ---
+
+    it('names every selected source for the band, runs then groups, skipping one outside suite scope', () => {
+      component.comparisonSuiteId = 5;
+      component.comparisonRunIds = [1, 3, 2];
+      component.comparisonGroupIds = [11, 12];
+
+      // Run 3 and group 12 belong to suite 6, which the current scope no longer offers: skipped
+      // rather than rendered as a placeholder, same as the picker's own checkboxes.
+      expect(component.comparisonSelectedSources).toEqual([
+        { kind: 'run', id: 1, label: 'Model 1', provider: 'Google', detail: '#1' },
+        { kind: 'run', id: 2, label: 'Model 2', provider: 'Google', detail: '#2' },
+        { kind: 'group', id: 11, label: 'Group 11', provider: null, detail: '3 runs' }
+      ]);
+    });
+
+    it('names a group of one run in the singular', () => {
+      component.runGroups = [...component.runGroups, { ...buildGroup(13, 5), runCount: 1 }];
+      component.comparisonGroupIds = [13];
+
+      expect(component.comparisonSelectedSources).toEqual([
+        { kind: 'group', id: 13, label: 'Group 13', provider: null, detail: '1 run' }
+      ]);
+    });
+
+    it('removes one source through the same path every other selection change takes', () => {
+      component.comparisonRunIds = [1, 2];
+      component.comparisonGroupIds = [11];
+      component.comparison = { entries: [] } as any;
+
+      component.onComparisonRemoveSource(
+        { kind: 'run', id: 1, label: 'Model 1', provider: 'Google', detail: '#1' });
+
+      expect(component.comparisonRunIds).toEqual([2]);
+      expect(component.comparisonGroupIds).toEqual([11]);
+      // Persistence, the dropped payload and the Compare reset are onComparisonSelectionChange's
+      // job, so routing through it is what keeps them all in force after a chip is removed.
+      expect(component.comparison).toBeNull();
+    });
+
     // --- The .gh-dialog-fullscreen lift ---
 
     it('leaves the suite health dialog opening and closing after the full-screen lift', () => {

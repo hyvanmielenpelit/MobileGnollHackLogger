@@ -42,17 +42,115 @@ export interface FigureExportResolution {
   /** Null for `'onscreen'`, which follows the live canvas. */
   readonly widthPx: number | null;
   readonly heightPx: number | null;
+  /** The aspect ratio the size belongs to, as the picker's `<optgroup>` names it. */
+  readonly group: string;
 }
 
-/** The offered sizes, in ascending order. `'custom'` is not among them: the view builds that one. */
+/**
+ * The offered sizes, grouped by aspect ratio and ascending inside each group. `'custom'` is not
+ * among them: the view builds that one.
+ *
+ * The groups are the unit a reader chooses in: a figure destined for a 16:9 slide and one destined
+ * for an A4 page differ in shape before they differ in pixels, and a flat ascending list hides that
+ * distinction behind arithmetic.
+ */
 export const FIGURE_EXPORT_PRESETS: readonly FigureExportResolution[] = [
-  { id: 'onscreen', label: 'On-screen (2×)', widthPx: null, heightPx: null },
-  { id: 'hd', label: 'HD — 1280 × 720', widthPx: 1280, heightPx: 720 },
-  { id: 'wide', label: 'Slide — 1600 × 900', widthPx: 1600, heightPx: 900 },
-  { id: 'fullhd', label: 'Full HD — 1920 × 1080', widthPx: 1920, heightPx: 1080 },
-  { id: 'qhd', label: 'QHD — 2560 × 1440', widthPx: 2560, heightPx: 1440 },
-  { id: 'uhd', label: '4K UHD — 3840 × 2160', widthPx: 3840, heightPx: 2160 }
+  { id: 'onscreen', label: 'On-screen (2×)', widthPx: null, heightPx: null, group: 'On-screen' },
+
+  { id: 'hd', label: 'HD — 1280 × 720', widthPx: 1280, heightPx: 720, group: '16:9' },
+  { id: 'fullhd', label: 'Full HD — 1920 × 1080', widthPx: 1920, heightPx: 1080, group: '16:9' },
+  { id: 'qhd', label: 'QHD — 2560 × 1440', widthPx: 2560, heightPx: 1440, group: '16:9' },
+  { id: 'uhd', label: '4K UHD — 3840 × 2160', widthPx: 3840, heightPx: 2160, group: '16:9' },
+
+  { id: 'wxga', label: 'WXGA — 1920 × 1200', widthPx: 1920, heightPx: 1200, group: '16:10' },
+  { id: 'wqxga', label: 'WQXGA — 2560 × 1600', widthPx: 2560, heightPx: 1600, group: '16:10' },
+
+  { id: 'xga', label: 'XGA — 1024 × 768', widthPx: 1024, heightPx: 768, group: '4:3' },
+  { id: 'uxga', label: 'UXGA — 1600 × 1200', widthPx: 1600, heightPx: 1200, group: '4:3' },
+  { id: 'qxga', label: 'QXGA — 2048 × 1536', widthPx: 2048, heightPx: 1536, group: '4:3' },
+
+  { id: 'p3x2', label: 'Classic photo — 1620 × 1080', widthPx: 1620, heightPx: 1080, group: '3:2' },
+  { id: 'p3x2l', label: 'Classic photo large — 3000 × 2000', widthPx: 3000, heightPx: 2000, group: '3:2' },
+
+  { id: 'square1080', label: 'Square — 1080 × 1080', widthPx: 1080, heightPx: 1080, group: '1:1' },
+  { id: 'square2048', label: 'Square large — 2048 × 2048', widthPx: 2048, heightPx: 2048, group: '1:1' },
+
+  { id: 'uw1080', label: 'Ultrawide — 2560 × 1080', widthPx: 2560, heightPx: 1080, group: '21:9' },
+  { id: 'uw1440', label: 'Ultrawide QHD — 3440 × 1440', widthPx: 3440, heightPx: 1440, group: '21:9' },
+
+  { id: 'a4l', label: 'A4 landscape 300 dpi — 3508 × 2480', widthPx: 3508, heightPx: 2480, group: 'Print' },
+  { id: 'a4p', label: 'A4 portrait 300 dpi — 2480 × 3508', widthPx: 2480, heightPx: 3508, group: 'Print' },
+  { id: 'letterl', label: 'Letter landscape 300 dpi — 3300 × 2550', widthPx: 3300, heightPx: 2550, group: 'Print' }
 ];
+
+/** One `<optgroup>`: an aspect ratio, and the sizes offered in it. */
+export interface FigureExportPresetGroup {
+  readonly label: string;
+  readonly presets: readonly FigureExportResolution[];
+}
+
+/**
+ * {@link FIGURE_EXPORT_PRESETS} as the picker renders it, in the order the presets declare.
+ *
+ * Derived once at module load rather than per change-detection pass: the grouping is a property of
+ * the constant above and cannot change while the application runs.
+ */
+export const FIGURE_EXPORT_PRESET_GROUPS: readonly FigureExportPresetGroup[] = (() => {
+  const groups: { label: string; presets: FigureExportResolution[] }[] = [];
+  for (const preset of FIGURE_EXPORT_PRESETS) {
+    const last = groups[groups.length - 1];
+    if (last && last.label === preset.group) {
+      last.presets.push(preset);
+    } else {
+      groups.push({ label: preset.group, presets: [preset] });
+    }
+  }
+  return groups;
+})();
+
+/**
+ * `'16:9'`, `'4:3'`, `'1:1'` — the gcd-reduced ratio of one size.
+ *
+ * A ratio whose reduced terms are both small is the name a reader already knows the shape by. Above
+ * {@link RATIO_TERM_CEILING} neither term means anything — A4's 877:620 names nothing — so the
+ * width is expressed in units of the height instead.
+ */
+export function aspectRatioLabel(width: number, height: number): string {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return '';
+  }
+  const divisor = greatestCommonDivisor(Math.round(width), Math.round(height));
+  const reducedWidth = Math.round(width) / divisor;
+  const reducedHeight = Math.round(height) / divisor;
+  if (reducedWidth > RATIO_TERM_CEILING || reducedHeight > RATIO_TERM_CEILING) {
+    return `${(width / height).toFixed(2)}:1`;
+  }
+  return `${reducedWidth}:${reducedHeight}`;
+}
+
+/** The widest bitmap a preview composes, whatever the export size behind it is. */
+export const FIGURE_PREVIEW_MAX_WIDTH = 1600;
+
+/**
+ * The size one preview is composed at: the export size itself, or a proportional reduction of it.
+ *
+ * A 4K or 300 dpi export is several times the stage it would be shown on, and composing it in full
+ * costs an offscreen chart at that density for every keystroke in the size fields. The cap keeps
+ * the ratio exactly, so what the reader sees is the export's shape and composition; the pixel count
+ * beside it is still the target's, because that is what the file will carry.
+ */
+export function previewResolution(resolution: FigureExportResolution): FigureExportResolution {
+  const { widthPx, heightPx } = resolution;
+  if (widthPx === null || heightPx === null || widthPx <= FIGURE_PREVIEW_MAX_WIDTH) {
+    return resolution;
+  }
+  return {
+    ...resolution,
+    id: 'preview',
+    widthPx: FIGURE_PREVIEW_MAX_WIDTH,
+    heightPx: Math.round((heightPx * FIGURE_PREVIEW_MAX_WIDTH) / widthPx)
+  };
+}
 
 /** The layout width every explicit resolution composes at, so relative typography never changes. */
 export const FIGURE_EXPORT_LAYOUT_WIDTH = 960;
@@ -63,6 +161,9 @@ export const FIGURE_EXPORT_MAX_DIMENSION = 8000;
 
 /** The smallest plot box a figure may be composed with, in layout px. */
 export const FIGURE_EXPORT_MIN_PLOT_HEIGHT = 160;
+
+/** The largest reduced term {@link aspectRatioLabel} will print as a ratio rather than a decimal. */
+const RATIO_TERM_CEILING = 32;
 
 /**
  * The box one figure is composed in, and the device pixels it is written at.
@@ -520,6 +621,18 @@ function dimensionRefusal(width: number | null, height: number | null): string {
     `${shown(width)} × ${shown(height)} px is not a usable export size: each side must be between ` +
     `${FIGURE_EXPORT_MIN_DIMENSION} and ${FIGURE_EXPORT_MAX_DIMENSION} px.`
   );
+}
+
+/** Euclid, iteratively: the terms reach 8000 at most, but recursion buys nothing here. */
+function greatestCommonDivisor(a: number, b: number): number {
+  let left = Math.abs(a);
+  let right = Math.abs(b);
+  while (right > 0) {
+    const remainder = left % right;
+    left = right;
+    right = remainder;
+  }
+  return left === 0 ? 1 : left;
 }
 
 /** A refusal reads as a sentence about the figure, so an untitled one still gets a subject. */

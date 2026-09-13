@@ -379,6 +379,18 @@ export interface ComparisonSelectionNotice {
   readonly body: string;
 }
 
+/** One selected source as the wizard's selection band names it. Built by the host from its option lists. */
+export interface ComparisonSelectedSource {
+  readonly kind: 'run' | 'group';
+  readonly id: number;
+  /** Run: the tested model's display name. Group: the group's name. */
+  readonly label: string;
+  /** Run: the tested model's provider. Groups carry none. */
+  readonly provider: string | null;
+  /** Run: "#48". Group: "3 runs". */
+  readonly detail: string;
+}
+
 /** Everything the notice set is a function of. Nothing else about the wizard bears on it. */
 export interface ComparisonSelectionState {
   readonly index: BenchmarkComparabilityIndexDto | null;

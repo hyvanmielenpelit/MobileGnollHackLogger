@@ -43,7 +43,7 @@
             <div class="model-details">
               <div class="mb-4 d-flex align-items-center" style="flex-wrap: wrap; gap: 8px;">
                 <span>{{ model.modelId }}</span>
-                <span class="provider-badge">{{ model.provider }}</span>
+                <app-provider-badge [provider]="model.provider"></app-provider-badge>
                 <span class="posture-badge"
                       [class.posture-strong]="postureLevel(model) === 'strong'"
                       [class.posture-moderate]="postureLevel(model) === 'moderate'"
@@ -132,7 +132,7 @@
               <div class="model-details">
                 <div class="mb-4 d-flex align-items-center" style="flex-wrap: wrap; gap: 8px;">
                   <span>{{ model.modelId }}</span>
-                  <span class="provider-badge">{{ model.provider }}</span>
+                  <app-provider-badge [provider]="model.provider"></app-provider-badge>
                   <span class="posture-badge"
                         [class.posture-strong]="postureLevel(model) === 'strong'"
                         [class.posture-moderate]="postureLevel(model) === 'moderate'"
@@ -220,7 +220,7 @@
                   <span class="reasoning-badge">{{ selectedTitleModel?.reasoningMode }}</span>
                 }
                 @if (selectedTitleModel?.provider) {
-                  <span class="provider-badge">{{ selectedTitleModel?.provider }}</span>
+                  <app-provider-badge [provider]="selectedTitleModel?.provider"></app-provider-badge>
                 }
                 <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
               </button>
@@ -241,7 +241,7 @@
                       @if (showReasoningBadge(m.reasoningMode)) {
                         <span class="reasoning-badge">{{ m.reasoningMode }}</span>
                       }
-                      <span class="provider-badge">{{ m.provider }}</span>
+                      <app-provider-badge [provider]="m.provider"></app-provider-badge>
                     </div>
                   }
                   @if (titleSystemModels.length > 0) {
@@ -256,7 +256,7 @@
                       @if (showReasoningBadge(m.reasoningMode)) {
                         <span class="reasoning-badge">{{ m.reasoningMode }}</span>
                       }
-                      <span class="provider-badge">{{ m.provider }}</span>
+                      <app-provider-badge [provider]="m.provider"></app-provider-badge>
                     </div>
                   }
                 </div>

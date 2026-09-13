@@ -6,12 +6,13 @@
  * only this component, so the dialog would quietly stop looking like the rest of the application
  * while every other view stayed correct.
  *
- * The badge classes below (.model-name, .provider-badge, .thinking-badge, .reasoning-badge,
- * .parallel-badge, .tier-badge, .second-opinion-mode-badge) and the progress vocabulary
- * (.progress-heading, .run-stage-rail, .run-stat-strip, .job-diagnostics …) are *duplicated* from
+ * The badge classes below (.model-name, .thinking-badge, .reasoning-badge, .parallel-badge,
+ * .tier-badge, .second-opinion-mode-badge) and the progress vocabulary (.progress-heading,
+ * .run-stage-rail, .run-stat-strip, .job-diagnostics …) are *duplicated* from
  * benchmark.component.scss, which owns them as component-scoped styles. They belong in
  * styles.scss so both components can share one definition; moving them is a change to a file this
- * component does not own, so it is left as a follow-up rather than done halfway.
+ * component does not own, so it is left as a follow-up rather than done halfway. .provider-badge
+ * is defined once, globally, in styles.scss.
  */
 
 .gh-dialog.multi-run-progress-dialog {
@@ -170,15 +171,6 @@
   font-weight: 500;
   color: #fff;
   overflow-wrap: anywhere;
-}
-
-.provider-badge {
-  font-size: 11px;
-  color: #aaa;
-  background: #252525;
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid #383838;
 }
 
 .thinking-badge {

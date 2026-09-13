@@ -1251,40 +1251,6 @@ progress.telemetry-progress-bar {
   font-size: 0.8em;
 }
 
-.badge-provider {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 0.8em;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-  text-transform: capitalize;
-
-  &-google {
-    background: rgba(66, 133, 244, 0.15);
-    color: #8ab4f8;
-    border: 1px solid rgba(66, 133, 244, 0.3);
-  }
-
-  &-openai {
-    background: rgba(16, 163, 127, 0.15);
-    color: #55d6be;
-    border: 1px solid rgba(16, 163, 127, 0.3);
-  }
-
-  &-anthropic {
-    background: rgba(217, 119, 87, 0.15);
-    color: #f0997d;
-    border: 1px solid rgba(217, 119, 87, 0.3);
-  }
-
-  &-default {
-    background: rgba(255, 255, 255, 0.08);
-    color: #ddd;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-  }
-}
-
 .model-id-chip {
   font-family: var(--font-mono, monospace);
   font-size: 0.85em;

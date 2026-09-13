@@ -672,7 +672,7 @@
                                     [style.background-color]="g.hue" aria-hidden="true"></span>
                             }
                             <span class="mc-model-name">{{ entry.modelDisplayName || entry.label }}</span>
-                            <span class="provider-badge">{{ entry.provider }}</span>
+                            <app-provider-badge [provider]="entry.provider"></app-provider-badge>
                             @if (entry.thinkingLevel) {
                               <span class="thinking-badge">{{ entry.thinkingLevel }}</span>
                             }
@@ -980,70 +980,25 @@
             <h4 id="mc-figures-heading" class="mc-subheading">Figures</h4>
 
             <!--
-              Export lives in the section header rather than in a card: the format and the target
-              size apply to every figure at once, and a per-card copy of either would let two
-              downloaded figures disagree about what they are. Hidden entirely where no figure is
-              rendered — a download control over an empty axis would produce a file saying nothing.
+              The header carries the settings as a read-out and two buttons; the controls that
+              change them are in the preview dialog, where their effect is visible. Two sets of the
+              same controls on one screen would let a size be chosen in the place that cannot show
+              what it did. Hidden entirely where no figure is rendered — a download control over an
+              empty axis would produce a file saying nothing.
             -->
             @if (showFigures) {
               <div class="mc-export">
-                <label class="visually-hidden" for="mc-export-resolution">Export resolution</label>
-                <select id="mc-export-resolution" class="gh-input mc-export-resolution"
-                        [ngModel]="exportResolutionId" [ngModelOptions]="{ standalone: true }"
-                        (ngModelChange)="onExportResolutionChange($event)">
-                  @for (preset of exportPresets; track preset.id) {
-                    <option [value]="preset.id">{{ preset.label }}</option>
-                  }
-                  <option value="custom">Custom…</option>
-                </select>
-
-                @if (isCustomResolution) {
-                  <label class="visually-hidden" for="mc-export-width">Export width in pixels</label>
-                  <input id="mc-export-width" type="number" class="gh-input mc-export-dimension"
-                         [min]="minExportDimension" [max]="maxExportDimension" step="10"
-                         aria-describedby="mc-export-resolution-error"
-                         [ngModel]="customExportWidth" [ngModelOptions]="{ standalone: true }"
-                         (ngModelChange)="customExportWidth = $event">
-                  <span class="mc-export-times" aria-hidden="true">×</span>
-                  <label class="visually-hidden" for="mc-export-height">Export height in pixels</label>
-                  <input id="mc-export-height" type="number" class="gh-input mc-export-dimension"
-                         [min]="minExportDimension" [max]="maxExportDimension" step="10"
-                         aria-describedby="mc-export-resolution-error"
-                         [ngModel]="customExportHeight" [ngModelOptions]="{ standalone: true }"
-                         (ngModelChange)="customExportHeight = $event">
-                }
-
-                <label class="visually-hidden" for="mc-export-format">Export format</label>
-                <select id="mc-export-format" class="gh-input mc-export-format"
-                        [ngModel]="exportFormat" [ngModelOptions]="{ standalone: true }"
-                        (ngModelChange)="onExportFormatChange($event)">
-                  <option value="png">PNG</option>
-                  <option value="webp">WebP</option>
-                </select>
-                <!-- Quality after the format rather than before it, so choosing WebP never shifts
-                     the control the reader has just used. -->
-                @if (exportFormat === 'webp') {
-                  <label class="visually-hidden" for="mc-export-webp-quality">WebP quality</label>
-                  <select id="mc-export-webp-quality" class="gh-input mc-export-quality"
-                          [ngModel]="figureWebpQuality" [ngModelOptions]="{ standalone: true }"
-                          (ngModelChange)="figureWebpQuality = $event">
-                    @for (q of webpQualityOptions; track q) {
-                      <option [ngValue]="q">{{ q }}</option>
-                    }
-                  </select>
-                }
+                <p class="mc-export-summary">
+                  {{ exportSummary }}
+                  <small>{{ exportDimensionsLabel }}</small>
+                </p>
+                <button type="button" class="btn-gh btn-gh-small" [disabled]="!canExport"
+                        (click)="openFigurePreview()">Figure preview…</button>
                 <button type="button" class="btn-gh btn-gh-small" [disabled]="!canExport"
                         (click)="downloadAllFigures()">Download all figures</button>
               </div>
             }
           </div>
-
-          @if (showFigures) {
-            <p class="mc-export-dimensions">{{ exportDimensionsLabel }}</p>
-            @if (customResolutionError) {
-              <p class="mc-export-error" id="mc-export-resolution-error" role="alert">{{ customResolutionError }}</p>
-            }
-          }
 
           @if (exportStatus) {
             <p class="mc-export-status" role="status">{{ exportStatus }}</p>
@@ -1081,11 +1036,22 @@
                             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                           </svg>
                         </button>
+                        <button type="button" class="action-btn mc-preview-open" [disabled]="!canExport"
+                                [attr.aria-label]="'Preview ' + card.title + ' at export size'"
+                                [attr.interestfor]="tipId('prev', card.id)"
+                                [attr.style]="'anchor-name: --' + tipId('prev', card.id)"
+                                (click)="openFigurePreview(card)">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path>
+                          </svg>
+                        </button>
                       </div>
                       <div popover="hint" class="gh-tooltip" [id]="tipId('dl', card.id)"
                            [attr.style]="'position-anchor: --' + tipId('dl', card.id)">Download this figure with its caption and notices</div>
                       <div popover="hint" class="gh-tooltip" [id]="tipId('copy', card.id)"
                            [attr.style]="'position-anchor: --' + tipId('copy', card.id)">Copy this figure as an image, with its caption and notices</div>
+                      <div popover="hint" class="gh-tooltip" [id]="tipId('prev', card.id)"
+                           [attr.style]="'position-anchor: --' + tipId('prev', card.id)">Preview at the export size</div>
                     </figcaption>
                     <div class="mc-canvas" [style.height.px]="card.heightPx">
                       <canvas baseChart role="img" [attr.aria-label]="card.ariaLabel"
@@ -1131,11 +1097,22 @@
                           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                         </svg>
                       </button>
+                      <button type="button" class="action-btn mc-preview-open" [disabled]="!canExport"
+                              [attr.aria-label]="'Preview ' + profile.title + ' at export size'"
+                              [attr.interestfor]="tipId('prev', profile.id)"
+                              [attr.style]="'anchor-name: --' + tipId('prev', profile.id)"
+                              (click)="openFigurePreview(profile)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path>
+                        </svg>
+                      </button>
                     </div>
                     <div popover="hint" class="gh-tooltip" [id]="tipId('dl', profile.id)"
                          [attr.style]="'position-anchor: --' + tipId('dl', profile.id)">Download this figure with its caption and notices</div>
                     <div popover="hint" class="gh-tooltip" [id]="tipId('copy', profile.id)"
                          [attr.style]="'position-anchor: --' + tipId('copy', profile.id)">Copy this figure as an image, with its caption and notices</div>
+                    <div popover="hint" class="gh-tooltip" [id]="tipId('prev', profile.id)"
+                         [attr.style]="'position-anchor: --' + tipId('prev', profile.id)">Preview at the export size</div>
                   </figcaption>
                   <div class="mc-canvas" [style.height.px]="profile.heightPx">
                     <canvas baseChart role="img" [attr.aria-label]="profile.ariaLabel"
@@ -1213,11 +1190,22 @@
                             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                           </svg>
                         </button>
+                        <button type="button" class="action-btn mc-preview-open" [disabled]="!canExport"
+                                [attr.aria-label]="'Preview ' + card.title + ' at export size'"
+                                [attr.interestfor]="tipId('prev', card.id)"
+                                [attr.style]="'anchor-name: --' + tipId('prev', card.id)"
+                                (click)="openFigurePreview(card)">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path>
+                          </svg>
+                        </button>
                       </div>
                       <div popover="hint" class="gh-tooltip" [id]="tipId('dl', card.id)"
                            [attr.style]="'position-anchor: --' + tipId('dl', card.id)">Download this figure with its caption and notices</div>
                       <div popover="hint" class="gh-tooltip" [id]="tipId('copy', card.id)"
                            [attr.style]="'position-anchor: --' + tipId('copy', card.id)">Copy this figure as an image, with its caption and notices</div>
+                      <div popover="hint" class="gh-tooltip" [id]="tipId('prev', card.id)"
+                           [attr.style]="'position-anchor: --' + tipId('prev', card.id)">Preview at the export size</div>
                     </figcaption>
                     <div class="mc-canvas" [style.height.px]="card.heightPx">
                       <canvas baseChart role="img" [attr.aria-label]="card.ariaLabel"
@@ -1244,26 +1232,29 @@
   </div>
 
   <!--
-    THE STEP-1 NOTICE BAND
+    THE STEP-1 SELECTION BAND
 
     A flex item of the wizard column rather than a sticky element inside the step scroller: a
     sibling of the footer shrinks the step panel to make room, so it cannot come to rest over a
     table row the reader is trying to read.
 
-    Labelled with the source table the selection came from, and kept visually separate from the
-    navigation row below it: these notices report on the selection made in the step panel above,
-    not on Previous and Compare. The titles come from the picker's own exported constants, so the
-    label cannot name a heading the picker no longer uses.
+    Always rendered on step 1, whatever the selection: the summary line and, below it, either the
+    chips naming every selected source or a hint to tick something above. Each chip carries a
+    remove button, so a source can be dropped without scrolling back up to the table it was ticked
+    in. The titles the summary names come from the picker's own exported constants, so the label
+    cannot name a heading the picker no longer uses.
 
-    Errors above warnings above information, and none of them repeats the request-cap refusal,
-    which `nextBlockedReason` states in the footer below: two differently worded accounts of one
-    fact is worse than one account in the place the reader is already looking.
+    The notices this band used to gate its own presence on are still here, unchanged, beneath the
+    chips whenever there are any. Errors above warnings above information, and none of them
+    repeats the request-cap refusal, which `nextBlockedReason` states in the footer below: two
+    differently worded accounts of one fact is worse than one account in the place the reader is
+    already looking.
 
-    One live region on the container, polite, and no role on the individual notices. Polite rather
-    than assertive because a selection that cannot be charted loses no work and blocks nothing but
-    Compare; and a `role="alert"` or `role="status"` nested inside an `aria-live` ancestor
-    double-announces in several screen readers. `aria-atomic="false"` announces only the notice
-    that appeared, not the whole band again.
+    The summary line carries the container's one `role="status"`; the notice list carries the
+    container's one `aria-live="polite"` region. The two are siblings rather than nested, because
+    a `role="status"` (or `role="alert"`) inside an `aria-live` ancestor double-announces in
+    several screen readers. `aria-atomic="false"` announces only the notice that appeared, not the
+    whole list again.
 
     Severity reaches the reader through three channels, never colour alone: the heading states the
     fact in words, the glyph differs in shape, and the alert variant supplies the hue.
@@ -1272,44 +1263,74 @@
     the figures name their own overflow, so a selection-stage band would be a second, differently
     worded account of facts already on screen.
   -->
-  @if (step === 1 && bandNotices.length > 0) {
-    <div class="mc-wizard-notice" role="group" aria-labelledby="mc-notice-label"
-         aria-live="polite" aria-atomic="false">
-      <p class="mc-wizard-notice-label" id="mc-notice-label">
-        Your selection in {{ selectionScopeLabel }} — {{ selectedSourceCount }} selected
-      </p>
-      @for (notice of bandNotices; track notice.id) {
-        <div class="alert"
-             [class.alert-danger]="notice.severity === 'error'"
-             [class.alert-warning]="notice.severity === 'warning'"
-             [class.alert-info]="notice.severity === 'info'">
-          @switch (notice.severity) {
-            @case ('error') {
-              <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="8" x2="12" y2="12"></line>
-                <line x1="12" y1="16" x2="12.01" y2="16"></line>
-              </svg>
+  @if (step === 1) {
+    <div class="mc-wizard-notice mc-wizard-selection" role="region" aria-labelledby="mc-selection-label">
+      <div class="mc-selection-head">
+        <p class="mc-wizard-notice-label" id="mc-selection-label" role="status">
+          Your selection in {{ selectionScopeLabel }} — {{ selectionSummary }}
+        </p>
+        @if (selectedSources.length > 0) {
+          <ul class="mc-selection-chips" aria-label="Selected sources">
+            @for (source of selectedSources; track source.kind + source.id) {
+              <li class="mc-selection-chip" [class.mc-selection-chip--group]="source.kind === 'group'">
+                <span class="mc-selection-chip-detail">{{ source.detail }}</span>
+                <span class="mc-selection-chip-label">{{ source.label }}</span>
+                @if (source.provider) { <app-provider-badge [provider]="source.provider"></app-provider-badge> }
+                <button type="button" class="action-btn mc-selection-remove"
+                        [attr.aria-label]="'Remove ' + source.detail + ' ' + source.label + ' from the selection'"
+                        [attr.interestfor]="sourceChipId(source)"
+                        [attr.style]="'anchor-name: --' + sourceChipId(source)"
+                        (click)="removeSource.emit(source)">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="sourceChipId(source)"
+                     [attr.style]="'position-anchor: --' + sourceChipId(source)">Remove from the selection</div>
+              </li>
             }
-            @case ('warning') {
-              <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                <line x1="12" y1="9" x2="12" y2="13"></line>
-                <line x1="12" y1="17" x2="12.01" y2="17"></line>
-              </svg>
-            }
-            @default {
-              <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="16" x2="12" y2="12"></line>
-                <line x1="12" y1="8" x2="12.01" y2="8"></line>
-              </svg>
-            }
+          </ul>
+        } @else {
+          <p class="mc-wizard-selection-hint">Tick runs or analysis groups above; they are listed here.</p>
+        }
+      </div>
+      @if (bandNotices.length > 0) {
+        <div class="mc-wizard-notices" aria-live="polite" aria-atomic="false">
+          @for (notice of bandNotices; track notice.id) {
+            <div class="alert"
+                 [class.alert-danger]="notice.severity === 'error'"
+                 [class.alert-warning]="notice.severity === 'warning'"
+                 [class.alert-info]="notice.severity === 'info'">
+              @switch (notice.severity) {
+                @case ('error') {
+                  <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                  </svg>
+                }
+                @case ('warning') {
+                  <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                  </svg>
+                }
+                @default {
+                  <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                  </svg>
+                }
+              }
+              <div class="alert-content">
+                <p class="alert-heading">{{ notice.heading }}</p>
+                <div class="alert-body">{{ notice.body }}</div>
+              </div>
+            </div>
           }
-          <div class="alert-content">
-            <p class="alert-heading">{{ notice.heading }}</p>
-            <div class="alert-body">{{ notice.body }}</div>
-          </div>
         </div>
       }
     </div>
@@ -1345,3 +1366,159 @@
     </button>
   </div>
 </div>
+
+<!--
+  THE FIGURE PREVIEW
+
+  One figure, composed exactly as the export will write it, with the size, aspect ratio, format and
+  quality controls beside it. The controls live here and nowhere else: a size chosen in a header
+  cannot be checked until the file is on disk, and a figure whose caveats do not fit the chosen box
+  is refused in the same words here that the download refuses it in.
+
+  Full-screen, like the wizard it is nested in, and outside the step panel so the stage is never
+  clipped by its scroller. No `closedby="any"`: the backdrop over a full-screen wizard is a thin
+  ring rather than an honest click target. Escape and the close control still work.
+-->
+<dialog #figurePreviewDialog class="gh-dialog gh-dialog-fullscreen mc-preview-dialog"
+        aria-labelledby="mc-preview-title"
+        (cancel)="onFigurePreviewClosed($event)"
+        (close)="onFigurePreviewClosed($event)">
+  <div class="mc-preview">
+    <header class="mc-preview-head">
+      <h3 id="mc-preview-title">Figure preview</h3>
+
+      <div class="mc-preview-switch">
+        <button type="button" class="action-btn" aria-label="Previous figure"
+                (click)="previewPrevious()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <label class="visually-hidden" for="mc-preview-figure">Figure</label>
+        <select id="mc-preview-figure" class="gh-input mc-preview-figure"
+                [ngModel]="previewCardId" [ngModelOptions]="{ standalone: true }"
+                (ngModelChange)="selectPreviewCard($event)">
+          @for (card of exportableCards; track card.id) {
+            <option [value]="card.id">{{ card.title }}</option>
+          }
+        </select>
+        <button type="button" class="action-btn" aria-label="Next figure"
+                (click)="previewNext()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Disabled mid-export, like the wizard's own close: a download started from this dialog
+           must not have its DOM torn out from under it. -->
+      <button type="button" class="btn-icon-action" aria-label="Close figure preview"
+              [disabled]="exporting" (click)="closeFigurePreview()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+             style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </header>
+
+    <div class="mc-preview-body">
+      <!-- Visible labels, not `visually-hidden` ones: the panel has the room a header row did not,
+           and a labelled form is what a reader configuring four settings at once needs. -->
+      <aside class="mc-preview-controls" aria-labelledby="mc-preview-controls-title">
+        <h4 id="mc-preview-controls-title" class="mc-subheading">Size and format</h4>
+
+        <label for="mc-export-resolution">Size and aspect ratio</label>
+        <select id="mc-export-resolution" class="gh-input"
+                [ngModel]="exportResolutionId" [ngModelOptions]="{ standalone: true }"
+                (ngModelChange)="onExportResolutionChange($event)">
+          @for (group of exportPresetGroups; track group.label) {
+            <optgroup [label]="group.label">
+              @for (preset of group.presets; track preset.id) {
+                <option [value]="preset.id">{{ preset.label }}</option>
+              }
+            </optgroup>
+          }
+          <optgroup label="Custom">
+            <option value="custom">Custom…</option>
+          </optgroup>
+        </select>
+
+        @if (isCustomResolution) {
+          <label for="mc-export-width">Width in pixels</label>
+          <input id="mc-export-width" type="number" class="gh-input mc-export-dimension"
+                 [min]="minExportDimension" [max]="maxExportDimension" step="10"
+                 aria-describedby="mc-export-resolution-error"
+                 [ngModel]="customExportWidth" [ngModelOptions]="{ standalone: true }"
+                 (ngModelChange)="onCustomWidthChange($event)">
+          <label for="mc-export-height">Height in pixels</label>
+          <input id="mc-export-height" type="number" class="gh-input mc-export-dimension"
+                 [min]="minExportDimension" [max]="maxExportDimension" step="10"
+                 aria-describedby="mc-export-resolution-error"
+                 [ngModel]="customExportHeight" [ngModelOptions]="{ standalone: true }"
+                 (ngModelChange)="onCustomHeightChange($event)">
+          <label class="checkbox-label">
+            <input type="checkbox" [ngModel]="customRatioLocked"
+                   [ngModelOptions]="{ standalone: true }"
+                   (ngModelChange)="lockCustomRatio($event)">
+            Keep {{ exportAspectLabel }}
+          </label>
+        }
+
+        <label for="mc-export-format">Format</label>
+        <select id="mc-export-format" class="gh-input mc-export-format"
+                [ngModel]="exportFormat" [ngModelOptions]="{ standalone: true }"
+                (ngModelChange)="onExportFormatChange($event)">
+          <option value="png">PNG</option>
+          <option value="webp">WebP</option>
+        </select>
+        <!-- Quality after the format rather than before it, so choosing WebP never shifts the
+             control the reader has just used. -->
+        @if (exportFormat === 'webp') {
+          <label for="mc-export-webp-quality">WebP quality</label>
+          <select id="mc-export-webp-quality" class="gh-input mc-export-quality"
+                  [ngModel]="figureWebpQuality" [ngModelOptions]="{ standalone: true }"
+                  (ngModelChange)="onFigureWebpQualityChange($event)">
+            @for (q of webpQualityOptions; track q) {
+              <option [ngValue]="q">{{ q }}</option>
+            }
+          </select>
+        }
+
+        <p class="mc-export-dimensions">{{ exportDimensionsLabel }}@if (exportAspectLabel) { · {{ exportAspectLabel }}}</p>
+        @if (previewPixels) {
+          <p class="mc-preview-pixels">Download writes {{ previewPixels }}.</p>
+        }
+        @if (customResolutionError) {
+          <p class="mc-export-error" id="mc-export-resolution-error" role="alert">{{ customResolutionError }}</p>
+        }
+        @if (previewRefusal) {
+          <p class="mc-export-error" role="alert">{{ previewRefusal }}</p>
+        }
+      </aside>
+
+      <div class="mc-preview-stage" [attr.aria-busy]="previewBusy ? 'true' : null">
+        <!-- Only while the dialog is open: the stage is sized to each composition, and a closed
+             preview would otherwise keep a full-size bitmap alive beside the figures it copies. -->
+        @if (previewOpen) {
+          <canvas #previewCanvas class="mc-preview-canvas" role="img"
+                  [attr.aria-label]="previewAriaLabel"></canvas>
+        }
+        @if (previewBusy) {
+          <span class="gh-spinner-small mc-preview-spinner" aria-hidden="true"></span>
+        }
+      </div>
+    </div>
+
+    <footer class="dialog-footer mc-preview-foot">
+      <p class="mc-export-status" role="status">{{ exportStatus }}</p>
+      <button type="button" class="btn-gh btn-gh-small" [disabled]="!canExport"
+              (click)="copyPreviewedFigure()">Copy</button>
+      <button type="button" class="btn-gh btn-gh-small" [disabled]="!canExport"
+              (click)="downloadPreviewedFigure()">Download this figure</button>
+      <button type="button" class="btn-gh btn-gh-small" [disabled]="!canExport"
+              (click)="downloadAllFromPreview()">Download all figures</button>
+    </footer>
+  </div>
+</dialog>

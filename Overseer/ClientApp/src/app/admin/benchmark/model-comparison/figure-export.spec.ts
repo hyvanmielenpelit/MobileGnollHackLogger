@@ -3,14 +3,18 @@ import {
   FIGURE_EXPORT_LAYOUT_WIDTH,
   FIGURE_EXPORT_MIN_DIMENSION,
   FIGURE_EXPORT_PRESETS,
+  FIGURE_EXPORT_PRESET_GROUPS,
   FIGURE_EXPORT_SCALE,
+  FIGURE_PREVIEW_MAX_WIDTH,
   FigureExportResolution,
   WEBP_QUALITY_OPTIONS,
   WebpQuality,
+  aspectRatioLabel,
   composeFigureImage,
   copyImageToClipboard,
   encodeFigureImage,
   figureExportFilename,
+  previewResolution,
   resolveFigureLayout,
   webpEncoderQuality
 } from './figure-export';
@@ -57,8 +61,11 @@ describe('figure-export', () => {
     return FIGURE_EXPORT_PRESETS.find(candidate => candidate.id === id)!;
   }
 
+  /** Every preset as the picker offers it: the grouped list, flattened back to one sequence. */
+  const groupedPresets = FIGURE_EXPORT_PRESET_GROUPS.flatMap(group => group.presets);
+
   /** Explicit sizes only: `onscreen` follows the live canvas and has no dimensions of its own. */
-  const explicitPresets = FIGURE_EXPORT_PRESETS.filter(
+  const explicitPresets = groupedPresets.filter(
     candidate => candidate.widthPx !== null && candidate.heightPx !== null
   );
 
@@ -169,17 +176,32 @@ describe('figure-export', () => {
 
       const retry = resolveFigureLayout(
         chrome,
-        { id: 'custom', label: 'Custom', widthPx: 1280, heightPx: minimumHeight },
+        { id: 'custom', label: 'Custom', group: 'Custom', widthPx: 1280, heightPx: minimumHeight },
         onScreen
       );
       expect(retry.refusal).toBeNull();
       expect(retry.layout!.pixelHeight).toBe(minimumHeight);
     });
 
+    it('offers every preset in exactly one group, in the order the list declares them', () => {
+      // The grouping is what the picker renders, so a preset missing from it is a size nobody can
+      // choose however correctly it resolves.
+      expect(groupedPresets.map(preset => preset.id))
+        .toEqual(FIGURE_EXPORT_PRESETS.map(preset => preset.id));
+      expect(FIGURE_EXPORT_PRESET_GROUPS.map(group => group.label))
+        .toEqual(['On-screen', '16:9', '16:10', '4:3', '3:2', '1:1', '21:9', 'Print']);
+      for (const group of FIGURE_EXPORT_PRESET_GROUPS) {
+        expect(group.presets.every(preset => preset.group === group.label))
+          .withContext(group.label)
+          .toBeTrue();
+      }
+    });
+
     it('rejects a custom size below the minimum dimension', () => {
       const custom: FigureExportResolution = {
         id: 'custom',
         label: 'Custom',
+        group: 'Custom',
         widthPx: FIGURE_EXPORT_MIN_DIMENSION - 1,
         heightPx: 720
       };
@@ -188,6 +210,45 @@ describe('figure-export', () => {
 
       expect(layout).toBeNull();
       expect(refusal).toContain(String(FIGURE_EXPORT_MIN_DIMENSION));
+    });
+  });
+
+  describe('aspectRatioLabel', () => {
+    it('names a size by its reduced ratio', () => {
+      expect(aspectRatioLabel(1920, 1080)).toBe('16:9');
+      expect(aspectRatioLabel(2048, 1536)).toBe('4:3');
+      expect(aspectRatioLabel(1080, 1080)).toBe('1:1');
+    });
+
+    it('falls back to a decimal where neither reduced term names anything', () => {
+      // A4 reduces to 877:620, which is arithmetic rather than a shape a reader recognises.
+      expect(aspectRatioLabel(3508, 2480)).toBe('1.41:1');
+    });
+  });
+
+  describe('previewResolution', () => {
+    it('leaves a size at or under the cap exactly as it is', () => {
+      const hd = preset('hd');
+      // Exactly at the cap, which is the boundary the comparison has to include.
+      const uxga = preset('uxga');
+
+      expect(previewResolution(hd)).toBe(hd);
+      expect(uxga.widthPx).toBe(FIGURE_PREVIEW_MAX_WIDTH);
+      expect(previewResolution(uxga)).toBe(uxga);
+    });
+
+    it('scales a larger size down to the cap, keeping its ratio', () => {
+      const capped = previewResolution(preset('uhd'));
+
+      expect(capped.id).toBe('preview');
+      expect(capped.widthPx).toBe(FIGURE_PREVIEW_MAX_WIDTH);
+      expect(capped.heightPx).toBe(900);
+    });
+
+    it('returns the on-screen size untouched, which has no dimensions to cap', () => {
+      const onscreen = preset('onscreen');
+
+      expect(previewResolution(onscreen)).toBe(onscreen);
     });
   });
 

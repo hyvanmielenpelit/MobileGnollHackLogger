@@ -48,7 +48,7 @@
                 <span class="reasoning-badge">{{ run.testedModelReasoningModeUsed }}</span>
               }
               @if (run.testedModelProviderUsed) {
-                <span class="provider-badge">{{ run.testedModelProviderUsed }}</span>
+                <app-provider-badge [provider]="run.testedModelProviderUsed"></app-provider-badge>
               }
               @if (run.testedModelServiceTierUsed) {
                 <span class="tier-badge">{{ formatServiceTier(run.testedModelServiceTierUsed) }}</span>
@@ -72,7 +72,7 @@
                 <span class="reasoning-badge">{{ run.assessorModelReasoningModeUsed }}</span>
               }
               @if (run.assessorModelProviderUsed) {
-                <span class="provider-badge">{{ run.assessorModelProviderUsed }}</span>
+                <app-provider-badge [provider]="run.assessorModelProviderUsed"></app-provider-badge>
               }
             </dd>
           </div>
@@ -85,7 +85,7 @@
                   <span class="thinking-badge">{{ formatThinkingLevel(run.secondOpinionAssessorModelThinkingLevelUsed) }}</span>
                 }
                 @if (run.secondOpinionAssessorModelProviderUsed) {
-                  <span class="provider-badge">{{ run.secondOpinionAssessorModelProviderUsed }}</span>
+                  <app-provider-badge [provider]="run.secondOpinionAssessorModelProviderUsed"></app-provider-badge>
                 }
                 @if (formatSecondOpinionMode(run.secondOpinionModeUsed)) {
                   <span class="second-opinion-mode-badge"
@@ -103,7 +103,7 @@
                   <span class="thinking-badge">{{ formatThinkingLevel(run.claimVerifierThinkingLevelUsed) }}</span>
                 }
                 @if (run.claimVerifierProviderUsed) {
-                  <span class="provider-badge">{{ run.claimVerifierProviderUsed }}</span>
+                  <app-provider-badge [provider]="run.claimVerifierProviderUsed"></app-provider-badge>
                 }
               </dd>
             </div>

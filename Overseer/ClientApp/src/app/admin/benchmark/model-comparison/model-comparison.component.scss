@@ -68,6 +68,18 @@
   color: #c3c2b7;
 }
 
+/* The settings as a read-out beside the two buttons: what will be written, and at what size. */
+.mc-export-summary {
+  margin: 0;
+  font-size: 12px;
+  color: #c3c2b7;
+
+  small {
+    display: block;
+    color: #8b8b90;
+  }
+}
+
 .section-note,
 .mc-explanation {
   margin: 0;
@@ -1062,11 +1074,11 @@
   border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
   background: rgba(16, 16, 16, 0.98);
 
-  /* Up to five notices can be in force at once — a failed index over a stale selection that
-     crosses conditions, carries a self-inconsistent group and exceeds the plot cap. Bounded with
-     its own contained scroller so the band never eats the step panel it sits above, and so a
-     scroll gesture inside it does not carry on into that panel. */
-  max-height: 38dvh;
+  /* Holds the summary line, the chip row and up to five notices at once — a failed index over a
+     stale selection that crosses conditions, carries a self-inconsistent group and exceeds the
+     plot cap. Bounded with its own contained scroller so the band never eats the step panel it
+     sits above, and so a scroll gesture inside it does not carry on into that panel. */
+  max-height: 44dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
 
@@ -1086,6 +1098,68 @@
   font-size: 12px;
   font-weight: 600;
   color: #8b8b90;
+}
+
+/* The summary line above the chip row or the hint, stacked with a small gap. */
+.mc-selection-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mc-selection-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* One selected source: its detail, its label, an optional provider badge and a remove button.
+   The left accent on a group chip is what distinguishes it from a run chip at a glance, next to
+   the provider badge a run chip carries and a group chip does not. */
+.mc-selection-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+
+  &.mc-selection-chip--group {
+    border-left: 3px solid var(--primary-color);
+  }
+}
+
+.mc-selection-chip-detail {
+  font-size: 11px;
+  color: #898781;
+}
+
+.mc-selection-chip-label {
+  font-size: 12px;
+  color: #e6e6e6;
+  overflow-wrap: anywhere;
+}
+
+.mc-selection-remove {
+  width: 22px;
+  height: 22px;
+}
+
+.mc-wizard-selection-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #8b8b90;
+}
+
+/* The notices below the chip row, unchanged from what the band used to render on its own. */
+.mc-wizard-notices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 /* Pinned to the bottom of the wizard column: Previous, the step read-out and Next stay reachable
@@ -1131,16 +1205,8 @@
 
 /* --- Export resolution controls --- */
 
-.mc-export-resolution {
-  min-width: 190px;
-}
-
 .mc-export-dimension {
   width: 90px;
-}
-
-.mc-export-times {
-  color: #8b8b90;
 }
 
 .mc-export-dimensions {
@@ -1231,5 +1297,145 @@
   .mc-columns-count {
     margin: 0;
     align-self: stretch;
+  }
+}
+
+/* --- The figure preview dialog --- */
+
+/* A header / body / footer column inside a full-screen dialog whose own padding is zero. The
+   container query root is here rather than on the body, so the controls and the stage collapse to
+   one column on the dialog's own width and not on the viewport's — the wizard behind it is already
+   narrower than the window on a split screen. */
+.mc-preview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  container-type: inline-size;
+}
+
+/* Three columns: the title, the figure switch centred between them, and the close control. A flex
+   row would centre the switch between the title's width and the button's, not in the dialog. */
+.mc-preview-head {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+
+  h3 {
+    margin: 0;
+    font-size: 18px;
+  }
+
+  .btn-icon-action {
+    justify-self: end;
+  }
+}
+
+.mc-preview-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Seven figure titles, the longest of which is a full sentence fragment; bounded so the header row
+   keeps its three columns rather than letting the select set the dialog's width. */
+.mc-preview-figure {
+  width: auto;
+  min-width: 200px;
+  max-width: 46cqw;
+}
+
+.mc-preview-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  gap: 16px;
+  padding: 16px 20px;
+}
+
+.mc-preview-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+
+  label {
+    font-size: 13px;
+    color: #c3c2b7;
+  }
+
+  /* A checkbox and its text are one row; the column gap already separates it from the fields. */
+  .checkbox-label {
+    margin: 0;
+  }
+}
+
+/* The size the file will carry, which the bitmap on the stage beside it may be a reduction of. */
+.mc-preview-pixels {
+  margin: 0;
+  font-size: 12px;
+  color: #c3c2b7;
+}
+
+/* Near-black rather than the card ground: the composition carries its own opaque background, and a
+   stage in the same colour would hide where the image ends. */
+.mc-preview-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  padding: 12px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: #0f0f0f;
+}
+
+/* Contained rather than scaled to fit the box: a portrait A4 or a 21:9 bitmap has to shrink on the
+   axis that overflows without the other one following it, or the stage scrolls. */
+.mc-preview-canvas {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.mc-preview-spinner {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+.mc-preview-foot {
+  flex-shrink: 0;
+  align-items: center;
+
+  /* The status takes the row's slack, so the three buttons stay together at its right. */
+  .mc-export-status {
+    flex: 1;
+    min-width: 0;
+    margin-right: auto;
+  }
+}
+
+/* Controls first, then the stage: a reader on a narrow dialog is still configuring a size, and a
+   stage above the controls would push every one of them below the fold. */
+@container (max-width: 860px) {
+  .mc-preview-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mc-preview-controls {
+    overflow-y: visible;
+  }
+
+  .mc-preview-stage {
+    min-height: 240px;
   }
 }

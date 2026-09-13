@@ -304,7 +304,7 @@
                     <span class="reasoning-badge">{{ selectedTestedModel?.reasoningMode }}</span>
                   }
                   @if (selectedTestedModel?.provider) {
-                    <span class="provider-badge">{{ selectedTestedModel?.provider }}</span>
+                    <app-provider-badge [provider]="selectedTestedModel?.provider"></app-provider-badge>
                   }
                   @if (selectedTestedModel?.effectiveInputPricePerMillion != null) {
                     <span class="price-badge">{{ formatPickerPrice(selectedTestedModel) }}</span>
@@ -331,7 +331,7 @@
                         @if (showReasoningBadge(model.reasoningMode)) {
                           <span class="reasoning-badge">{{ model.reasoningMode }}</span>
                         }
-                        <span class="provider-badge">{{ model.provider }}</span>
+                        <app-provider-badge [provider]="model.provider"></app-provider-badge>
                         @if (model.effectiveInputPricePerMillion != null) {
                           <span class="price-badge">{{ formatPickerPrice(model) }}</span>
                         }
@@ -367,7 +367,7 @@
                     <span class="reasoning-badge">{{ selectedAssessorModel?.reasoningMode }}</span>
                   }
                   @if (selectedAssessorModel?.provider) {
-                    <span class="provider-badge">{{ selectedAssessorModel?.provider }}</span>
+                    <app-provider-badge [provider]="selectedAssessorModel?.provider"></app-provider-badge>
                   }
                   @if (selectedAssessorModel?.effectiveInputPricePerMillion != null) {
                     <span class="price-badge">{{ formatPickerPrice(selectedAssessorModel) }}</span>
@@ -394,7 +394,7 @@
                         @if (showReasoningBadge(model.reasoningMode)) {
                           <span class="reasoning-badge">{{ model.reasoningMode }}</span>
                         }
-                        <span class="provider-badge">{{ model.provider }}</span>
+                        <app-provider-badge [provider]="model.provider"></app-provider-badge>
                         @if (model.effectiveInputPricePerMillion != null) {
                           <span class="price-badge">{{ formatPickerPrice(model) }}</span>
                         }
@@ -449,7 +449,7 @@
                     <span class="reasoning-badge">{{ selectedSecondOpinionModel?.reasoningMode }}</span>
                   }
                   @if (selectedSecondOpinionModel?.provider) {
-                    <span class="provider-badge">{{ selectedSecondOpinionModel?.provider }}</span>
+                    <app-provider-badge [provider]="selectedSecondOpinionModel?.provider"></app-provider-badge>
                   }
                   @if (selectedSecondOpinionModel?.effectiveInputPricePerMillion != null) {
                     <span class="price-badge">{{ formatPickerPrice(selectedSecondOpinionModel) }}</span>
@@ -470,7 +470,7 @@
                         @if (showReasoningBadge(model.reasoningMode)) {
                           <span class="reasoning-badge">{{ model.reasoningMode }}</span>
                         }
-                        <span class="provider-badge">{{ model.provider }}</span>
+                        <app-provider-badge [provider]="model.provider"></app-provider-badge>
                         @if (model.effectiveInputPricePerMillion != null) {
                           <span class="price-badge">{{ formatPickerPrice(model) }}</span>
                         }
@@ -541,7 +541,7 @@
                     <span class="reasoning-badge">{{ selectedClaimVerifierModel?.reasoningMode }}</span>
                   }
                   @if (selectedClaimVerifierModel?.provider) {
-                    <span class="provider-badge">{{ selectedClaimVerifierModel?.provider }}</span>
+                    <app-provider-badge [provider]="selectedClaimVerifierModel?.provider"></app-provider-badge>
                   }
                   @if (selectedClaimVerifierModel?.effectiveInputPricePerMillion != null) {
                     <span class="price-badge">{{ formatPickerPrice(selectedClaimVerifierModel) }}</span>
@@ -562,7 +562,7 @@
                         @if (showReasoningBadge(model.reasoningMode)) {
                           <span class="reasoning-badge">{{ model.reasoningMode }}</span>
                         }
-                        <span class="provider-badge">{{ model.provider }}</span>
+                        <app-provider-badge [provider]="model.provider"></app-provider-badge>
                         @if (model.effectiveInputPricePerMillion != null) {
                           <span class="price-badge">{{ formatPickerPrice(model) }}</span>
                         }
@@ -2521,7 +2521,7 @@
                 <button type="button" class="selector-trigger" (click)="toggleCalibrationAssessorDropdown($event)" [class.open]="isCalibrationAssessorDropdownOpen">
                   <span class="model-name" [class.text-muted]="!selectedCalibrationAssessorModel">{{ selectedCalibrationAssessorModel?.displayName || selectedCalibrationAssessorModel?.modelId || 'Select a model' }}</span>
                   @if (selectedCalibrationAssessorModel?.provider) {
-                    <span class="provider-badge">{{ selectedCalibrationAssessorModel?.provider }}</span>
+                    <app-provider-badge [provider]="selectedCalibrationAssessorModel?.provider"></app-provider-badge>
                   }
                   <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
                 </button>
@@ -2533,7 +2533,7 @@
                         @if (model.thinkingLevel) {
                           <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
                         }
-                        <span class="provider-badge">{{ model.provider }}</span>
+                        <app-provider-badge [provider]="model.provider"></app-provider-badge>
                       </div>
                     }
                   </div>
@@ -2574,7 +2574,7 @@
                   <tr>
                     <td>
                       {{ cal.assessorDisplayNameUsed }}
-                      <span class="provider-badge">{{ cal.assessorProviderUsed }}</span>
+                      <app-provider-badge [provider]="cal.assessorProviderUsed"></app-provider-badge>
                     </td>
                     <td>{{ cal.meanAbsDelta != null ? (cal.meanAbsDelta | number:'1.1-1') : 'N/A' }}</td>
                     <td>{{ cal.disagreementCount }}</td>
@@ -3351,7 +3351,7 @@
                 <span class="reasoning-badge">{{ selectedDifficultyAssessorModel?.reasoningMode }}</span>
               }
               @if (selectedDifficultyAssessorModel?.provider) {
-                <span class="provider-badge">{{ selectedDifficultyAssessorModel?.provider }}</span>
+                <app-provider-badge [provider]="selectedDifficultyAssessorModel?.provider"></app-provider-badge>
               }
               @if (selectedDifficultyAssessorModel?.parallelExecutionMode === 0) {
                 <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
@@ -3375,7 +3375,7 @@
                     @if (showReasoningBadge(model.reasoningMode)) {
                       <span class="reasoning-badge">{{ model.reasoningMode }}</span>
                     }
-                    <span class="provider-badge">{{ model.provider }}</span>
+                    <app-provider-badge [provider]="model.provider"></app-provider-badge>
                     @if (model.parallelExecutionMode === 0) {
                       <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
                     }
@@ -3569,7 +3569,7 @@
               <span class="reasoning-badge">{{ selectedRetryAssessorModel?.reasoningMode }}</span>
             }
             @if (selectedRetryAssessorModel?.provider) {
-              <span class="provider-badge">{{ selectedRetryAssessorModel?.provider }}</span>
+              <app-provider-badge [provider]="selectedRetryAssessorModel?.provider"></app-provider-badge>
             }
             @if (selectedRetryAssessorModel?.parallelExecutionMode === 0) {
               <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
@@ -3593,7 +3593,7 @@
                   @if (showReasoningBadge(model.reasoningMode)) {
                     <span class="reasoning-badge">{{ model.reasoningMode }}</span>
                   }
-                  <span class="provider-badge">{{ model.provider }}</span>
+                  <app-provider-badge [provider]="model.provider"></app-provider-badge>
                   @if (model.parallelExecutionMode === 0) {
                     <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
                   }
@@ -3684,7 +3684,7 @@
                 <span class="reasoning-badge">{{ activeRunDetail.testedModelReasoningModeUsed }}</span>
               }
               @if (activeRunDetail.testedModelProviderUsed) {
-                <span class="provider-badge">{{ activeRunDetail.testedModelProviderUsed }}</span>
+                <app-provider-badge [provider]="activeRunDetail.testedModelProviderUsed"></app-provider-badge>
               }
               @if (activeRunDetail.testedModelServiceTierUsed) {
                 <span class="tier-badge" title="Requested service tier">{{ formatServiceTier(activeRunDetail.testedModelServiceTierUsed) }}</span>
@@ -3708,7 +3708,7 @@
                 <span class="reasoning-badge">{{ activeRunDetail.assessorModelReasoningModeUsed }}</span>
               }
               @if (activeRunDetail.assessorModelProviderUsed) {
-                <span class="provider-badge">{{ activeRunDetail.assessorModelProviderUsed }}</span>
+                <app-provider-badge [provider]="activeRunDetail.assessorModelProviderUsed"></app-provider-badge>
               }
             </dd>
           </div>
@@ -3724,7 +3724,7 @@
                   <span class="reasoning-badge">{{ activeRunDetail.secondOpinionAssessorModelReasoningModeUsed }}</span>
                 }
                 @if (activeRunDetail.secondOpinionAssessorModelProviderUsed) {
-                  <span class="provider-badge">{{ activeRunDetail.secondOpinionAssessorModelProviderUsed }}</span>
+                  <app-provider-badge [provider]="activeRunDetail.secondOpinionAssessorModelProviderUsed"></app-provider-badge>
                 }
                 @if (formatSecondOpinionMode(activeRunDetail.secondOpinionModeUsed)) {
                   <span class="second-opinion-mode-badge" [title]="secondOpinionModeHintOf(activeRunDetail.secondOpinionModeUsed)">{{ formatSecondOpinionMode(activeRunDetail.secondOpinionModeUsed) }}</span>
@@ -3744,7 +3744,7 @@
                   <span class="reasoning-badge">{{ activeRunDetail.claimVerifierReasoningModeUsed }}</span>
                 }
                 @if (activeRunDetail.claimVerifierProviderUsed) {
-                  <span class="provider-badge">{{ activeRunDetail.claimVerifierProviderUsed }}</span>
+                  <app-provider-badge [provider]="activeRunDetail.claimVerifierProviderUsed"></app-provider-badge>
                 }
               </dd>
             </div>
@@ -4018,7 +4018,7 @@
                 <span class="reasoning-badge">{{ selectedGenerationModel?.reasoningMode }}</span>
               }
               @if (selectedGenerationModel?.provider) {
-                <span class="provider-badge">{{ selectedGenerationModel?.provider }}</span>
+                <app-provider-badge [provider]="selectedGenerationModel?.provider"></app-provider-badge>
               }
               <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
             </button>
@@ -4037,7 +4037,7 @@
                     @if (model.thinkingLevel) {
                       <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
                     }
-                    <span class="provider-badge">{{ model.provider }}</span>
+                    <app-provider-badge [provider]="model.provider"></app-provider-badge>
                   </div>
                 }
               </div>
@@ -4170,9 +4170,11 @@
       [selectedRunCount]="comparisonRunIds.length"
       [selectedGroupCount]="comparisonGroupIds.length"
       [selectionNotices]="comparisonSelectionNotices"
+      [selectedSources]="comparisonSelectedSources"
       (pricingBasisChange)="onComparisonPricingBasisChange($event)"
       (refresh)="runComparison()"
       (compare)="runComparison()"
+      (removeSource)="onComparisonRemoveSource($event)"
       (closeRequested)="closeComparisonWizard()">
       <app-comparison-source-picker
         [runs]="comparisonRunOptions"

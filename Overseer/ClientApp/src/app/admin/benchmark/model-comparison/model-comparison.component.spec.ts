@@ -3,7 +3,11 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideCharts } from 'ng2-charts';
 
-import { ComparisonWizardStep, ModelComparisonComponent } from './model-comparison.component';
+import {
+  ComparisonFigureCard,
+  ComparisonWizardStep,
+  ModelComparisonComponent
+} from './model-comparison.component';
 import { MAX_PLOTTED_ENTRIES, P1_STACK_BREAKPOINT_PX, directLabelPlugin } from './model-comparison-charts';
 import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 import {
@@ -11,6 +15,7 @@ import {
   BenchmarkComparabilityIndexEntryDto,
   BenchmarkModelComparisonDto,
   BenchmarkModelComparisonEntryDto,
+  ComparisonSelectedSource,
   ComparisonSelectionNotice,
   ComparisonSelectionState,
   selectionNotices,
@@ -897,15 +902,41 @@ describe('ModelComparisonComponent', () => {
     body: 'The Condition column stays muted until the index lands.'
   };
 
-  /** Step 1 with a notice set in force, which is what puts the band on screen. */
+  /** `n` run sources, for tests that only care about the chip count and the band label. */
+  function runSources(count: number): ComparisonSelectedSource[] {
+    return Array.from({ length: count }, (_unused, index) => ({
+      kind: 'run',
+      id: index + 1,
+      label: `Model ${index + 1}`,
+      provider: 'Google',
+      detail: `#${index + 1}`
+    }));
+  }
+
+  /** `n` group sources, for the same reason. */
+  function groupSources(count: number): ComparisonSelectedSource[] {
+    return Array.from({ length: count }, (_unused, index) => ({
+      kind: 'group',
+      id: index + 1,
+      label: `Group ${index + 1}`,
+      provider: null,
+      detail: '3 runs'
+    }));
+  }
+
+  /** Step 1, with counts, an optional chip list and a notice set in force. */
   function band(counts: {
     runs?: number;
     groups?: number;
+    sources?: readonly ComparisonSelectedSource[];
     notices?: readonly ComparisonSelectionNotice[];
   } = {}): void {
     render(null, 1);
     fixture.componentRef.setInput('selectedRunCount', counts.runs ?? 0);
     fixture.componentRef.setInput('selectedGroupCount', counts.groups ?? 0);
+    if (counts.sources) {
+      fixture.componentRef.setInput('selectedSources', counts.sources);
+    }
     fixture.componentRef.setInput('selectionNotices', counts.notices ?? [crossCondition]);
     fixture.detectChanges();
   }
@@ -922,51 +953,109 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('names the runs table in the band label when only runs are selected', () => {
-    band({ runs: 3 });
+    band({ runs: 3, sources: runSources(3) });
 
     const label = textOf('.mc-wizard-notice-label');
     expect(label).toContain(RUN_SECTION_TITLE);
-    expect(label).toContain('3 selected');
+    expect(label).toContain('3 sources selected');
     expect(label).not.toContain(GROUP_SECTION_TITLE);
   });
 
   it('names the groups table when only groups are selected', () => {
-    band({ groups: 2 });
+    band({ groups: 2, sources: groupSources(2) });
 
     const label = textOf('.mc-wizard-notice-label');
     expect(label).toContain(GROUP_SECTION_TITLE);
-    expect(label).toContain('2 selected');
+    expect(label).toContain('2 sources selected');
     expect(label).not.toContain(RUN_SECTION_TITLE);
   });
 
   it('names both tables when the selection spans them', () => {
-    band({ runs: 2, groups: 1 });
+    band({ runs: 2, groups: 1, sources: [...runSources(2), ...groupSources(1)] });
 
     const label = textOf('.mc-wizard-notice-label');
     expect(label).toContain(`${RUN_SECTION_TITLE} and ${GROUP_SECTION_TITLE}`);
-    expect(label).toContain('3 selected');
+    expect(label).toContain('3 sources selected');
   });
 
   it('labels the band for assistive technology', () => {
-    band({ runs: 2 });
+    band({ runs: 2, sources: runSources(2) });
 
     const strip = fixture.debugElement.query(By.css('.mc-wizard-notice')).nativeElement as HTMLElement;
-    expect(strip.getAttribute('role')).toBe('group');
+    expect(strip.getAttribute('role')).toBe('region');
     const labelId = strip.getAttribute('aria-labelledby')!;
     expect((fixture.debugElement.query(By.css('.mc-wizard-notice-label'))
       .nativeElement as HTMLElement).id).toBe(labelId);
   });
 
-  it('announces through one polite live region on the container, and no role per notice', () => {
+  it('renders one chip per selected source, the provider badge on a run chip and not on a group chip', () => {
+    const sources: ComparisonSelectedSource[] = [
+      { kind: 'run', id: 1, label: 'Gemini 2.5 Flash', provider: 'Google', detail: '#1' },
+      { kind: 'group', id: 3, label: 'Nightly regression', provider: null, detail: '4 runs' }
+    ];
+    band({ runs: 1, groups: 1, sources, notices: [] });
+
+    const chips = fixture.debugElement.queryAll(By.css('.mc-selection-chip'));
+    expect(chips.length).toBe(2);
+    expect(chips[0].nativeElement.textContent).toContain('#1');
+    expect(chips[0].nativeElement.textContent).toContain('Gemini 2.5 Flash');
+    expect(chips[0].query(By.css('app-provider-badge'))).toBeTruthy();
+    expect(chips[0].nativeElement.classList).not.toContain('mc-selection-chip--group');
+
+    expect(chips[1].nativeElement.textContent).toContain('4 runs');
+    expect(chips[1].nativeElement.textContent).toContain('Nightly regression');
+    expect(chips[1].query(By.css('app-provider-badge'))).toBeNull();
+    expect(chips[1].nativeElement.classList).toContain('mc-selection-chip--group');
+  });
+
+  it('emits the chip through removeSource when its remove button is clicked', () => {
+    const source: ComparisonSelectedSource =
+      { kind: 'run', id: 1, label: 'Gemini 2.5 Flash', provider: 'Google', detail: '#1' };
+    band({ runs: 1, sources: [source], notices: [] });
+
+    const removed: ComparisonSelectedSource[] = [];
+    component.removeSource.subscribe(s => removed.push(s));
+
+    (fixture.debugElement.query(By.css('.mc-selection-remove')).nativeElement as HTMLButtonElement).click();
+
+    expect(removed).toEqual([source]);
+  });
+
+  it('renders on step 1 with nothing selected, and says so in the summary and the hint', () => {
+    band({ notices: [] });
+
+    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeTruthy();
+    expect(textOf('.mc-wizard-notice-label')).toContain('Nothing selected yet');
+    expect(textOf('.mc-wizard-selection-hint')).toContain('Tick runs or analysis groups above');
+    expect(fixture.debugElement.query(By.css('.mc-selection-chips'))).toBeNull();
+  });
+
+  it('keeps the notices below the chip row when the selection carries both', () => {
+    const source: ComparisonSelectedSource =
+      { kind: 'run', id: 1, label: 'Gemini 2.5 Flash', provider: 'Google', detail: '#1' };
+    band({ runs: 1, sources: [source], notices: [crossCondition] });
+
+    const head = fixture.debugElement.query(By.css('.mc-selection-head')).nativeElement as HTMLElement;
+    const notices = fixture.debugElement.query(By.css('.mc-wizard-notices')).nativeElement as HTMLElement;
+    expect(head.nextElementSibling).toBe(notices);
+  });
+
+  it('announces through one polite live region around the notices, apart from the summary status', () => {
     band({ runs: 3, notices: [indexFailure, crossCondition, stillComputing] });
 
     const strip = fixture.debugElement.query(By.css('.mc-wizard-notice')).nativeElement as HTMLElement;
-    expect(strip.getAttribute('aria-live')).toBe('polite');
-    // Only the notice that appeared is announced, rather than the whole band again.
-    expect(strip.getAttribute('aria-atomic')).toBe('false');
+    expect(strip.hasAttribute('aria-live')).toBeFalse();
 
-    // A role="alert" or role="status" nested inside an aria-live ancestor double-announces in
-    // several screen readers, so the notices carry no role of their own.
+    const list = fixture.debugElement.query(By.css('.mc-wizard-notices')).nativeElement as HTMLElement;
+    expect(list.getAttribute('aria-live')).toBe('polite');
+    // Only the notice that appeared is announced, rather than the whole list again.
+    expect(list.getAttribute('aria-atomic')).toBe('false');
+
+    // The summary line carries the band's one role="status"; a role nested inside the aria-live
+    // region above would double-announce in several screen readers, so no notice carries one.
+    const statuses = fixture.debugElement.queryAll(By.css('.mc-wizard-notice [role="status"]'));
+    expect(statuses.length).toBe(1);
+    expect((statuses[0].nativeElement as HTMLElement).id).toBe('mc-selection-label');
     expect(bandAlerts().map(alert => alert.getAttribute('role'))).toEqual([null, null, null]);
   });
 
@@ -1025,11 +1114,12 @@ describe('ModelComparisonComponent', () => {
     expect(alerts[0].textContent).toContain(`plot at most ${component.maxPlottedEntries}`);
   });
 
-  it('drops the plot-cap notice above the request cap', () => {
+  it('drops the plot-cap notice above the request cap, leaving the band with no notice list', () => {
     band({ runs: component.maxSources + 1, notices: [] });
 
     expect(component.plotCapNotice).toBeNull();
-    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeTruthy();
+    expect(fixture.debugElement.query(By.css('.mc-wizard-notices'))).toBeNull();
   });
 
   it('sorts the wizard-derived plot-cap notice in with the host-derived ones', () => {
@@ -1046,10 +1136,11 @@ describe('ModelComparisonComponent', () => {
     expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeNull();
   });
 
-  it('renders no band when the selection is within both caps and has nothing to report', () => {
-    band({ runs: 2, notices: [] });
+  it('renders the band with no notice list when the selection is within both caps and has nothing to report', () => {
+    band({ runs: 2, sources: runSources(2), notices: [] });
 
-    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeTruthy();
+    expect(fixture.debugElement.query(By.css('.mc-wizard-notices'))).toBeNull();
   });
 
   it('says in the band that nothing is selected yet, and stops as soon as something is', () => {
@@ -1069,7 +1160,9 @@ describe('ModelComparisonComponent', () => {
     fixture.detectChanges();
 
     expect(component.nothingSelectedNotice).toBeNull();
-    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeNull();
+    // The band itself stays on screen; only its notice list, now with nothing to report, is gone.
+    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeTruthy();
+    expect(fixture.debugElement.query(By.css('.mc-wizard-notices'))).toBeNull();
   });
 
   it('drops the nothing-selected notice while a comparison is being computed', () => {
@@ -1078,7 +1171,8 @@ describe('ModelComparisonComponent', () => {
     fixture.detectChanges();
 
     expect(component.nothingSelectedNotice).toBeNull();
-    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeTruthy();
+    expect(fixture.debugElement.query(By.css('.mc-wizard-notices'))).toBeNull();
   });
 
   it('shows a spinner and Comparing on the footer while step 1 waits for its comparison', () => {
@@ -1302,11 +1396,46 @@ describe('ModelComparisonComponent', () => {
   });
 
   // -------------------------------------------------------------------------------------------
-  // Export resolution
+  // Export resolution, and the preview dialog that now carries its controls
   // -------------------------------------------------------------------------------------------
+
+  function previewDialog(): HTMLDialogElement {
+    return fixture.debugElement.query(By.css('dialog.mc-preview-dialog'))
+      .nativeElement as HTMLDialogElement;
+  }
+
+  /**
+   * Opens the preview with `showModal` stubbed.
+   *
+   * A fixture's element is never in the document, and `showModal` on a detached dialog throws; the
+   * source picker's own dialog specs stand it in the same way. The controls themselves are in the
+   * DOM either way — a closed dialog is hidden, not absent — so the open state is about the
+   * component's own behaviour rather than about reaching them.
+   */
+  function openPreview(card?: ComparisonFigureCard): void {
+    const dialog = previewDialog();
+    if (!jasmine.isSpy(dialog.showModal)) {
+      spyOn(dialog, 'showModal');
+    }
+    component.openFigurePreview(card);
+    refresh();
+  }
+
+  /** The composition the debounce would run, without waiting 150 ms for the timer to fire it. */
+  async function composePreview(): Promise<void> {
+    await (component as unknown as { renderPreview(): Promise<void> }).renderPreview();
+    refresh();
+  }
+
+  // An open preview leaves a debounced composition behind it, and a timer that outlived its test
+  // would compose against the next one's fixture.
+  afterEach(() => {
+    component.onFigurePreviewClosed();
+  });
 
   it('shows the two custom size inputs only for Custom, and names what will be written', () => {
     render(buildDto(comparableSet(3)), 4);
+    openPreview();
     expect(fixture.debugElement.query(By.css('#mc-export-width'))).toBeNull();
     expect(textOf('.mc-export-dimensions')).toContain('on-screen size');
 
@@ -1323,6 +1452,7 @@ describe('ModelComparisonComponent', () => {
 
   it('refuses an out-of-range custom size in words, and will not export under one', () => {
     render(buildDto(comparableSet(3)), 4);
+    openPreview();
     component.onExportResolutionChange('custom');
     component.customExportHeight = 10;
     refresh();
@@ -1336,6 +1466,102 @@ describe('ModelComparisonComponent', () => {
     refresh();
     expect(component.customResolutionError).toBe('');
     expect(component.canExport).toBeTrue();
+  });
+
+  it('derives the other custom side from the locked ratio', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openPreview();
+    component.onExportResolutionChange('custom');
+    component.customExportWidth = 1920;
+    component.customExportHeight = 1080;
+
+    component.lockCustomRatio(true);
+    component.onCustomWidthChange(1280);
+    expect(component.customExportHeight).toBe(720);
+
+    component.onCustomHeightChange(1080);
+    expect(component.customExportWidth).toBe(1920);
+    expect(component.exportAspectLabel).toBe('16:9');
+
+    // Unlocked, a side is exactly what was typed into it.
+    component.lockCustomRatio(false);
+    component.onCustomWidthChange(1000);
+    expect(component.customExportHeight).toBe(1080);
+  });
+
+  it('opens the preview on one card and steps through the set, wrapping at both ends', () => {
+    render(buildDto(comparableSet(3)), 4);
+    const cards = component.exportableCards;
+    expect(cards.length).toBe(7);
+
+    const showModal = spyOn(previewDialog(), 'showModal');
+    openPreview(cards[2]);
+    expect(component.previewCardId).toBe(cards[2].id);
+    expect(component.previewOpen).toBeTrue();
+    expect(showModal).toHaveBeenCalled();
+
+    component.previewNext();
+    expect(component.previewCardId).toBe(cards[3].id);
+
+    component.selectPreviewCard(cards[0].id);
+    component.previewPrevious();
+    expect(component.previewCardId).toBe(cards[cards.length - 1].id);
+
+    component.previewNext();
+    expect(component.previewCardId).toBe(cards[0].id);
+
+    // The header's own control opens on the first card rather than on nothing.
+    component.onFigurePreviewClosed();
+    openPreview();
+    expect(component.previewCardId).toBe(cards[0].id);
+  });
+
+  it('refuses a size the figure does not fit, naming it, and leaves the stage blank', async () => {
+    render(buildDto(comparableSet(3)), 4);
+    openPreview(component.panelCards[0]);
+
+    // In range as a size, and still too short once the title, caption and notices are measured.
+    component.onExportResolutionChange('custom');
+    component.onCustomWidthChange(1280);
+    component.onCustomHeightChange(320);
+    await composePreview();
+
+    expect(component.customResolutionError).toBe('');
+    expect(component.previewRefusal).toContain(component.panelCards[0].title);
+    // The target size, not the capped size the stage would have composed at.
+    expect(component.previewRefusal).toContain('1280 × 320 px');
+    expect(textOf('.mc-preview-controls .mc-export-error')).toContain('1280 × 320 px');
+    expect(component.previewCanvas!.nativeElement.width).toBe(0);
+    expect(component.previewBusy).toBeFalse();
+  });
+
+  it('summarises the export size and format in the Figures header', () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    component.onExportResolutionChange('fullhd');
+    refresh();
+    expect(textOf('.mc-export-summary')).toContain('Full HD — 1920 × 1080');
+    expect(textOf('.mc-export-summary')).toContain('PNG');
+
+    component.onExportFormatChange('webp');
+    refresh();
+    expect(textOf('.mc-export-summary')).toContain('WebP q85');
+    expect(component.exportAspectLabel).toBe('16:9');
+  });
+
+  it('offers a preview control on every figure card, each naming its own figure', () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    const previews = fixture.debugElement.queryAll(By.css('.mc-card .mc-preview-open'))
+      .map(button => button.nativeElement as HTMLButtonElement);
+    expect(previews.length).toBe(7);
+
+    // Icon-only, so aria-label is the accessible name — and seven of them must not share one.
+    const names = previews.map(button => button.getAttribute('aria-label') ?? '');
+    expect(names.every(name => name.startsWith('Preview ') && name.endsWith(' at export size')))
+      .toBeTrue();
+    expect(new Set(names).size).toBe(7);
+    expect(previews.every(button => button.textContent?.trim() === '')).toBeTrue();
   });
 
   // -------------------------------------------------------------------------------------------

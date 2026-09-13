@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { AdminService, UserDto, GroupDto, SystemAiConfigDto, UserSystemAiConfigDto, GroupSystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult, AiTelemetrySummaryDto, AiGovernorStatusDto } from '../services/admin.service';
 import { AiModelFormComponent, AiModelFormResult } from '../shared/ai-model-form/ai-model-form.component';
+import { ProviderBadgeComponent } from '../shared/provider-badge/provider-badge.component';
 import { ConfigAnalyticsComponent } from './config-analytics/config-analytics.component';
 import { AdminBenchmarkComponent } from './benchmark/benchmark.component';
 import { ConfigFilterComponent } from './config-filter/config-filter.component';
@@ -20,7 +21,7 @@ export type AdminTabId =
 
 @Component({
     selector: 'app-admin',
-    imports: [CommonModule, FormsModule, RouterModule, AiModelFormComponent, ConfigAnalyticsComponent, AdminBenchmarkComponent, ConfigFilterComponent],
+    imports: [CommonModule, FormsModule, RouterModule, AiModelFormComponent, ConfigAnalyticsComponent, AdminBenchmarkComponent, ConfigFilterComponent, ProviderBadgeComponent],
     templateUrl: './admin.component.html',
     changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './admin.component.scss'

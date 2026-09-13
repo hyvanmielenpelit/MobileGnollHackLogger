@@ -64,9 +64,11 @@ import {
   ModelComparisonSelection
 } from './model-comparison/comparison-source-picker.component';
 import {
+  ComparisonSelectedSource,
   ComparisonSelectionNotice,
   selectionNotices
 } from './model-comparison/model-comparison.models';
+import { ProviderBadgeComponent } from '../../shared/provider-badge/provider-badge.component';
 
 /**
  * The Model Comparison selection, as it is remembered between visits and between sessions.
@@ -213,7 +215,7 @@ interface BenchmarkRunSettings {
     SuiteHealthComponent,
     SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent,
     SortHeaderComponent, TablePagerComponent, ModelComparisonComponent,
-    ComparisonSourcePickerComponent, BenchmarkCostPanelComponent
+    ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, ProviderBadgeComponent
   ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
@@ -985,6 +987,40 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       : this.runGroups.filter(group => group.benchmarkSuiteId === this.comparisonSuiteId);
   }
 
+  /**
+   * Every selected source as the wizard's selection band names it, runs before groups, in
+   * selection order.
+   *
+   * Read off the current option lists rather than the raw ids: an id the suite scope no longer
+   * offers is skipped rather than rendered as a placeholder, because the picker has already
+   * dropped it from what it shows ticked.
+   */
+  get comparisonSelectedSources(): ComparisonSelectedSource[] {
+    const runOptions = this.comparisonRunOptions;
+    const groupOptions = this.comparisonGroupOptions;
+    const runs: ComparisonSelectedSource[] = this.comparisonRunIds
+      .map(id => runOptions.find(run => run.id === id))
+      .filter((run): run is BenchmarkRunSummaryDto => run != null)
+      .map(run => ({
+        kind: 'run',
+        id: run.id,
+        label: run.testedModelDisplayNameUsed,
+        provider: run.testedModelProviderUsed,
+        detail: `#${run.id}`
+      }));
+    const groups: ComparisonSelectedSource[] = this.comparisonGroupIds
+      .map(id => groupOptions.find(group => group.id === id))
+      .filter((group): group is BenchmarkRunGroupDto => group != null)
+      .map(group => ({
+        kind: 'group',
+        id: group.id,
+        label: group.name,
+        provider: null,
+        detail: group.runCount === 1 ? '1 run' : `${group.runCount} runs`
+      }));
+    return [...runs, ...groups];
+  }
+
   onComparisonSelectionChange(selection: ModelComparisonSelection): void {
     this.comparisonRunIds = [...selection.runIds];
     this.comparisonGroupIds = [...selection.groupIds];
@@ -994,6 +1030,22 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     // this selection yet, which is what puts Compare back on its Next button.
     this.comparison = null;
     this.comparisonError = null;
+  }
+
+  /**
+   * Drops one source from the selection band's chips, through the same path every other
+   * selection change takes — persistence, the dropped comparison payload and the Compare reset
+   * all happen there and nowhere else.
+   */
+  onComparisonRemoveSource(source: ComparisonSelectedSource): void {
+    this.onComparisonSelectionChange({
+      runIds: source.kind === 'run'
+        ? this.comparisonRunIds.filter(id => id !== source.id)
+        : [...this.comparisonRunIds],
+      groupIds: source.kind === 'group'
+        ? this.comparisonGroupIds.filter(id => id !== source.id)
+        : [...this.comparisonGroupIds]
+    });
   }
 
   /**

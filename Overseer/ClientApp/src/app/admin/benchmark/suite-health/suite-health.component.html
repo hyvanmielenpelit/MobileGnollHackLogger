@@ -401,7 +401,7 @@
                   <span class="reasoning-badge">{{ selectedRubricGapAuthorModel?.reasoningMode }}</span>
                 }
                 @if (selectedRubricGapAuthorModel?.provider) {
-                  <span class="provider-badge">{{ selectedRubricGapAuthorModel?.provider }}</span>
+                  <app-provider-badge [provider]="selectedRubricGapAuthorModel?.provider"></app-provider-badge>
                 }
                 <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
               </button>
@@ -419,7 +419,7 @@
                       @if (model.thinkingLevel) {
                         <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
                       }
-                      <span class="provider-badge">{{ model.provider }}</span>
+                      <app-provider-badge [provider]="model.provider"></app-provider-badge>
                     </div>
                   }
                 </div>
@@ -689,7 +689,7 @@
                 <span class="reasoning-badge">{{ selectedCoverageModel?.reasoningMode }}</span>
               }
               @if (selectedCoverageModel?.provider) {
-                <span class="provider-badge">{{ selectedCoverageModel?.provider }}</span>
+                <app-provider-badge [provider]="selectedCoverageModel?.provider"></app-provider-badge>
               }
               @if (selectedCoverageModel?.parallelExecutionMode === 0) {
                 <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
@@ -718,7 +718,7 @@
                     @if (showReasoningBadge(model.reasoningMode)) {
                       <span class="reasoning-badge">{{ model.reasoningMode }}</span>
                     }
-                    <span class="provider-badge">{{ model.provider }}</span>
+                    <app-provider-badge [provider]="model.provider"></app-provider-badge>
                     @if (model.parallelExecutionMode === 0) {
                       <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
                     }
@@ -819,7 +819,7 @@
                   <span class="reasoning-badge">{{ selectedRubricChecker?.reasoningMode }}</span>
                 }
                 @if (selectedRubricChecker?.provider) {
-                  <span class="provider-badge">{{ selectedRubricChecker?.provider }}</span>
+                  <app-provider-badge [provider]="selectedRubricChecker?.provider"></app-provider-badge>
                 }
                 <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
               </button>
@@ -837,7 +837,7 @@
                       @if (model.thinkingLevel) {
                         <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
                       }
-                      <span class="provider-badge">{{ model.provider }}</span>
+                      <app-provider-badge [provider]="model.provider"></app-provider-badge>
                     </div>
                   }
                 </div>
