@@ -422,8 +422,13 @@ function selectedEntries(
     .filter((entry): entry is BenchmarkComparabilityIndexEntryDto => entry != null);
 }
 
-/** How an operator names one source in prose: the table it was ticked in, plus its id. */
-function sourceLabel(entry: BenchmarkComparabilityIndexEntryDto): string {
+/**
+ * How an operator names one source in prose: the table it was ticked in, plus its id.
+ *
+ * The parameter is the pair of fields the label reads rather than one DTO, so the comparability
+ * index entry and the comparison entry both satisfy it.
+ */
+export function sourceLabel(entry: { sourceKind: string; sourceId: number }): string {
   return entry.sourceKind === 'Group' ? `Analysis group ${entry.sourceId}` : `Run ${entry.sourceId}`;
 }
 

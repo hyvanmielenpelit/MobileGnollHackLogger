@@ -263,6 +263,11 @@ describe('figure-export', () => {
       );
     });
 
+    // 85 is the project-wide WebP quality (`.agents/AGENTS.md` § Image Conventions).
+    it('defaults WebP encoding to quality 85', () => {
+      expect(DEFAULT_WEBP_QUALITY).toBe(85);
+    });
+
     it('uses DEFAULT_WEBP_QUALITY when no quality is provided', async () => {
       const canvas = sourceCanvas(120, 80);
       const blobSpy = spyOn(canvas, 'toBlob').and.callFake((callback: BlobCallback) => {

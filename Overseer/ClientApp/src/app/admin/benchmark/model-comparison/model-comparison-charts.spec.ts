@@ -3,6 +3,7 @@ import ChartDataLabels from 'chartjs-plugin-datalabels';
 import {
   ACCENT,
   CATEGORICAL_PALETTE_DARK,
+  CHART_INK,
   CHART_SURFACE,
   DEFAULT_MODEL_SORT,
   DE_EMPHASIS_FILL,
@@ -20,15 +21,19 @@ import {
   buildSmallMultiples,
   buildSpeedCostScatter,
   computeParetoFrontier,
+  directLabelPlugin,
   errorBarPlugin,
   glyphFor,
   normalizeProfile,
+  placeDirectLabels,
   selectPlottedEntries,
   speedLowerIsBetter,
   speedValue,
   suiteCostUsd,
 } from './model-comparison-charts';
 import type {
+  DirectLabelAnchor,
+  DirectLabelBox,
   ModelComparisonContext,
   ModelComparisonEntry,
   SmallMultiplesOptions,
@@ -348,15 +353,16 @@ describe('model-comparison-charts', () => {
       expect(point['xErrHigh']).toBe(5000);
     });
 
-    it('marks a single-run entry with an explicit n = 1 note rather than an empty interval', () => {
+    it('leaves a single-run mark unannotated: the caption and P1 are where the run count is stated', () => {
       const entry = makeEntry({ key: 'once', runCount: 1, candidateCostPerQuestionSdUsd: null });
       const spec = buildQualityCostScatter([entry], {
         ...BASE_FIGURE_OPTIONS,
         glyphs: buildIdentityGlyphs([entry]),
       });
       const point = pointsOf(spec.config)[0];
-      expect(point['note']).toBe('n = 1');
+      expect(point['note']).toBeUndefined();
       expect(point['xErrLow']).toBeUndefined();
+      expect(spec.caption).toContain('Hollow marks are single runs (R = 1)');
     });
 
     it('draws the Pareto frontier and keeps it out of the identity legend', () => {
@@ -370,7 +376,7 @@ describe('model-comparison-charts', () => {
       expect(spec.caption).toContain('No trend line');
     });
 
-    it('direct-labels the marks once there are four or more entries', () => {
+    it('leaves identity text to the direct-label toggle, whatever the entry count', () => {
       const four = Array.from({ length: 4 }, (_, i) => makeEntry({ key: `m${i}` }));
       const many = buildQualitySpeedScatter(four, { ...BASE_FIGURE_OPTIONS, glyphs: buildIdentityGlyphs(four) });
       const few = buildQualitySpeedScatter(PROFILE_FIXTURE.slice(0, 2), BASE_FIGURE_OPTIONS);
@@ -379,13 +385,35 @@ describe('model-comparison-charts', () => {
         const options = spec.config.options as unknown as {
           plugins?: { datalabels?: { display?: unknown } };
         };
-        const value = options.plugins?.datalabels?.display;
-        return typeof value === 'function'
-          ? (value as (c: { datasetIndex: number }) => unknown)({ datasetIndex: 0 })
-          : value;
+        return options.plugins?.datalabels?.display;
       };
-      expect(display(many)).toBeTrue();
+      expect(display(many)).toBeFalse();
       expect(display(few)).toBeFalse();
+      expect(many.plugins).not.toContain(ChartDataLabels);
+    });
+
+    it('names both axes in the tooltip body and keeps the frontier out of it', () => {
+      const spec = buildQualitySpeedScatter(PROFILE_FIXTURE, {
+        ...BASE_FIGURE_OPTIONS,
+        speedMeasure: 'ttftP50',
+      });
+      const tooltip = spec.config.options?.plugins?.tooltip as unknown as {
+        filter?: (item: { datasetIndex: number }) => boolean;
+        callbacks?: {
+          title?: (items: { dataset: { label?: string } }[]) => string;
+          label?: (item: { parsed: { x: number | null; y: number | null } }) => string | string[];
+        };
+      };
+
+      expect(tooltip.callbacks?.title?.([{ dataset: { label: 'Model A' } }])).toBe('Model A');
+      expect(tooltip.callbacks?.label?.({ parsed: { x: 2000, y: 80.1 } })).toEqual([
+        'Time to first token, P50: 2.00 s',
+        'Intelligence Index: 80.1',
+      ]);
+
+      // Three models are plotted, so dataset index 3 is the frontier annotation.
+      expect(tooltip.filter?.({ datasetIndex: 0 })).toBeTrue();
+      expect(tooltip.filter?.({ datasetIndex: 3 })).toBeFalse();
     });
   });
 
@@ -478,15 +506,25 @@ describe('model-comparison-charts', () => {
       expect(pointsOf(total.cost.config)[0]['y']).toBe(0.4);
     });
 
-    it('drops the cost interval and marks n = 1 when a single run backs the entry', () => {
-      const entry = makeEntry({ key: 'once', runCount: 1, candidateCostPerQuestionSdUsd: null });
-      const figure = buildSmallMultiples([entry], {
+    it('drops the cost interval and marks n = 1 on the category tick of all three panels', () => {
+      const once = makeEntry({ key: 'once', runCount: 1, candidateCostPerQuestionSdUsd: null });
+      const twice = makeEntry({ key: 'twice', runCount: 2 });
+      const entries = [once, twice];
+      const figure = buildSmallMultiples(entries, {
         ...smallMultiplesOptions(),
-        glyphs: buildIdentityGlyphs([entry]),
+        glyphs: buildIdentityGlyphs(entries),
       });
+
       const point = pointsOf(figure.cost.config)[0];
-      expect(point['note']).toBe('n = 1');
+      expect(point['note']).toBeUndefined();
       expect(point['yErrHigh']).toBeUndefined();
+
+      // One label list across the three panels: a two-line tick on one alone would shrink its
+      // plot area and put its bars out of line with the other two.
+      for (const panel of [figure.quality, figure.speed, figure.cost]) {
+        expect(panel.config.data.labels?.[0]).withContext(panel.id).toEqual([once.label, 'n = 1']);
+        expect(panel.config.data.labels?.[1]).withContext(panel.id).toBe(twice.label);
+      }
     });
 
     it('badges Speed Index saturation whenever any plotted entry sits at the ceiling', () => {
@@ -538,25 +576,27 @@ describe('model-comparison-charts', () => {
       }
     });
 
-    it('gives only the cost panel scriptable value labels, past the SD whisker with a grace margin', () => {
+    it('gives every panel scriptable value labels, past the SD whisker with a grace margin', () => {
       const figure = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ costMeasure: 'candidateSuite' }));
 
-      expect(figure.cost.plugins).toContain(ChartDataLabels);
-      expect(figure.quality.plugins).not.toContain(ChartDataLabels);
-      expect(figure.speed.plugins).not.toContain(ChartDataLabels);
+      for (const panel of [figure.quality, figure.speed, figure.cost]) {
+        expect(panel.plugins).withContext(panel.id).toContain(ChartDataLabels);
+        const datalabels = panel.config.options?.plugins?.datalabels as {
+          display?: (ctx: { dataIndex: number }) => boolean;
+        };
+        expect(typeof datalabels.display).withContext(panel.id).toBe('function');
+        expect(datalabels.display?.({ dataIndex: 0 })).withContext(panel.id).toBeTrue();
+      }
 
-      const costDatalabels = figure.cost.config.options?.plugins?.datalabels as {
-        display?: (ctx: { dataIndex: number }) => boolean;
-      };
-      const qualityDatalabels = figure.quality.config.options?.plugins?.datalabels as { display?: unknown };
-      const speedDatalabels = figure.speed.config.options?.plugins?.datalabels as { display?: unknown };
-
-      expect(typeof costDatalabels.display).toBe('function');
-      expect(costDatalabels.display?.({ dataIndex: 0 })).toBeTrue();
-      expect(qualityDatalabels.display).toBeFalse();
-      expect(speedDatalabels.display).toBeFalse();
-
+      // Grace is the headroom the label needs, and it is ignored once an axis max is explicit —
+      // which the intelligence panel sets at 100, and the speed panel at 100 on Speed Index only.
+      // Where the max is explicit `clamp` keeps the label inside the plot area instead.
       expect(scaleOf(figure.cost.config, 'y').grace).toBe('12%');
+      expect(scaleOf(figure.quality.config, 'y').grace).toBeUndefined();
+      expect(scaleOf(figure.speed.config, 'y').grace).toBeUndefined();
+
+      const timed = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ speedMeasure: 'meanModelTime' }));
+      expect(scaleOf(timed.speed.config, 'y').grace).toBe('12%');
       // Grace extends both ends of the scale; an explicit min keeps the zero baseline a bar requires.
       expect(scaleOf(figure.cost.config, 'y').min).toBe(0);
     });
@@ -645,7 +685,7 @@ describe('model-comparison-charts', () => {
       expect(y.max).toBe(1);
       expect(spec.plugins).toEqual([]);
       expect(spec.caption).toContain('read shape and crossings, not values');
-      expect(spec.config.data.labels).toEqual(['Quality', 'Speed Index', 'Cost (candidate, suite)']);
+      expect(spec.config.data.labels).toEqual(['Intelligence', 'Speed Index', 'Cost (candidate, suite)']);
     });
 
     it('mutes every polyline and lifts only the emphasised one', () => {
@@ -799,6 +839,176 @@ describe('model-comparison-charts', () => {
     });
   });
 
+  describe('direct labels on a scatter', () => {
+    const AREA = { left: 0, top: 0, right: 400, bottom: 300 };
+
+    function anchor(key: string, x: number, y: number, width = 60, height = 16): DirectLabelAnchor {
+      return { key, x, y, width, height };
+    }
+
+    function rectsOverlap(a: DirectLabelBox, b: DirectLabelBox): boolean {
+      return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    }
+
+    it('places every label inside the plot area and never two on top of each other', () => {
+      const anchors = [
+        anchor('A', 100, 100),
+        anchor('B', 120, 110),
+        anchor('C', 140, 100),
+        anchor('D', 110, 130),
+      ];
+      const boxes = placeDirectLabels(anchors, AREA);
+
+      expect(boxes.length).toBe(anchors.length);
+      for (const box of boxes) {
+        expect(box.x).withContext(box.key).toBeGreaterThanOrEqual(AREA.left);
+        expect(box.y).withContext(box.key).toBeGreaterThanOrEqual(AREA.top);
+        expect(box.x + box.width).withContext(box.key).toBeLessThanOrEqual(AREA.right);
+        expect(box.y + box.height).withContext(box.key).toBeLessThanOrEqual(AREA.bottom);
+      }
+      for (let i = 0; i < boxes.length; i += 1) {
+        for (let j = i + 1; j < boxes.length; j += 1) {
+          expect(rectsOverlap(boxes[i], boxes[j]))
+            .withContext(`${boxes[i].key} over ${boxes[j].key}`)
+            .toBeFalse();
+        }
+      }
+    });
+
+    it('never lays a label over another mark, so identity is never hidden by identity', () => {
+      const anchors = [anchor('A', 100, 100), anchor('B', 175, 100), anchor('C', 100, 140)];
+      const boxes = placeDirectLabels(anchors, AREA, 9);
+
+      for (const box of boxes) {
+        for (const mark of anchors) {
+          const nearestX = Math.min(Math.max(mark.x, box.x), box.x + box.width);
+          const nearestY = Math.min(Math.max(mark.y, box.y), box.y + box.height);
+          const distance = Math.hypot(mark.x - nearestX, mark.y - nearestY);
+          expect(distance).withContext(`${box.key} over mark ${mark.key}`).toBeGreaterThanOrEqual(9);
+        }
+      }
+    });
+
+    it('keeps every label with its own mark and places them in a deterministic order', () => {
+      const anchors = [anchor('A', 140, 100), anchor('B', 100, 100), anchor('C', 120, 160)];
+      const first = placeDirectLabels(anchors, AREA);
+      const second = placeDirectLabels([...anchors].reverse(), AREA);
+
+      expect(first.map((b) => b.key)).toEqual(['B', 'C', 'A']);
+      expect(second).toEqual(first);
+      for (const box of first) {
+        const mark = anchors.find((a) => a.key === box.key)!;
+        expect(box.anchorX).toBe(mark.x);
+        expect(box.anchorY).toBe(mark.y);
+      }
+    });
+
+    it('falls back to a clamped box rather than dropping a label it cannot place cleanly', () => {
+      // A plot area barely wider than one label, with two marks in it: no ring can separate them.
+      const tight = { left: 0, top: 0, right: 70, bottom: 40 };
+      const boxes = placeDirectLabels([anchor('A', 35, 20), anchor('B', 36, 21)], tight);
+
+      expect(boxes.length).toBe(2);
+      for (const box of boxes) {
+        expect(box.x).withContext(box.key).toBeGreaterThanOrEqual(tight.left);
+        expect(box.y).withContext(box.key).toBeGreaterThanOrEqual(tight.top);
+        expect(box.x + box.width).withContext(box.key).toBeLessThanOrEqual(tight.right);
+        expect(box.y + box.height).withContext(box.key).toBeLessThanOrEqual(tight.bottom);
+      }
+    });
+
+    interface DirectCall {
+      readonly op: string;
+      readonly args: readonly unknown[];
+    }
+
+    function runDirectPlugin(
+      labels: readonly string[],
+      marks: readonly { x: number; y: number }[],
+    ): { calls: DirectCall[]; fills: string[] } {
+      const calls: DirectCall[] = [];
+      const fills: string[] = [];
+      const record = (op: string) => (...args: unknown[]) => calls.push({ op, args });
+      const ctx = {
+        save: record('save'),
+        restore: record('restore'),
+        beginPath: record('beginPath'),
+        moveTo: record('moveTo'),
+        lineTo: record('lineTo'),
+        stroke: record('stroke'),
+        fillRect: record('fillRect'),
+        fillText: (...args: unknown[]) => {
+          fills.push(ctx.fillStyle);
+          calls.push({ op: 'fillText', args });
+        },
+        measureText: (text: string) => ({ width: text.length * 6 }),
+        strokeStyle: '',
+        fillStyle: '',
+        globalAlpha: 1,
+        lineWidth: 0,
+        font: '',
+        textBaseline: '',
+        textAlign: '',
+      };
+      const chart = {
+        ctx,
+        chartArea: { left: 0, top: 0, right: 400, bottom: 300 },
+        // One dataset per mark, plus a frontier dataset the plugin has no label for.
+        data: { datasets: marks.map(() => ({ data: [] })).concat([{ data: [] }]) },
+        getDatasetMeta: (index: number) => ({
+          hidden: false,
+          data: marks[index] ? [marks[index]] : [],
+        }),
+      };
+      directLabelPlugin.afterDatasetsDraw?.(
+        chart as unknown as Chart,
+        {} as never,
+        { labels, highlightedIndex: 1 } as never,
+        false as never,
+      );
+      return { calls, fills };
+    }
+
+    it('writes one label per model dataset and none for the frontier', () => {
+      const { calls } = runDirectPlugin(['Model A', 'Model B'], [{ x: 100, y: 100 }, { x: 200, y: 180 }]);
+      const written = calls.filter((c) => c.op === 'fillText').map((c) => c.args[0]);
+
+      expect(written.length).toBe(2);
+      expect(written).toContain('Model A');
+      expect(written).toContain('Model B');
+      // A leader per label, each a moveTo and a lineTo of its own.
+      expect(calls.filter((c) => c.op === 'moveTo').length).toBe(2);
+    });
+
+    it('gives the highlighted model the accent its mark already wears', () => {
+      const { fills } = runDirectPlugin(['Model A', 'Model B'], [{ x: 100, y: 100 }, { x: 200, y: 180 }]);
+
+      expect(fills).toContain(ACCENT);
+      expect(fills).toContain(CHART_INK.secondary);
+    });
+
+    it('draws nothing when the figure carries no labels', () => {
+      const { calls } = runDirectPlugin([], [{ x: 100, y: 100 }]);
+      expect(calls.length).toBe(0);
+    });
+
+    it('registers the plugin and hides the legend only when the toggle is on', () => {
+      const off = buildQualitySpeedScatter(PROFILE_FIXTURE, BASE_FIGURE_OPTIONS);
+      const on = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, directLabels: true });
+
+      expect(off.plugins).not.toContain(directLabelPlugin);
+      expect(off.config.options?.plugins?.legend?.display).toBeTrue();
+
+      expect(on.plugins).toContain(directLabelPlugin);
+      expect(on.config.options?.plugins?.legend?.display).toBeFalse();
+
+      const options = (on.config.options?.plugins as unknown as Record<string, { labels: string[] }>)[
+        directLabelPlugin.id
+      ];
+      expect(options.labels).toEqual(PROFILE_FIXTURE.map((e) => e.label));
+    });
+  });
+
   describe('the error-bar plugin', () => {
     interface RecordedCall {
       readonly op: string;
@@ -880,12 +1090,9 @@ describe('model-comparison-charts', () => {
       expect(first?.args).toEqual([50, 0.5]);
     });
 
-    it('draws the n = 1 marker beside a mark that has no interval', () => {
-      const calls = runPlugin([{ x: 1, y: 1, note: 'n = 1' }], {
-        x: makeScale('linear'),
-        y: makeScale('linear'),
-      });
-      expect(calls.some((c) => c.op === 'fillText' && c.args[0] === 'n = 1')).toBeTrue();
+    it('writes no text at all: the plugin strokes intervals and nothing else', () => {
+      const calls = runPlugin([{ x: 1, y: 1 }], { x: makeScale('linear'), y: makeScale('linear') });
+      expect(calls.some((c) => c.op === 'fillText')).toBeFalse();
       expect(calls.some((c) => c.op === 'lineTo')).toBeFalse();
     });
 

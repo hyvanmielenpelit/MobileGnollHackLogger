@@ -27,7 +27,7 @@ export type FigureExportFormat = 'png' | 'webp';
 
 export type WebpQuality = 75 | 80 | 85 | 90 | 95 | 100;
 export const WEBP_QUALITY_OPTIONS: readonly WebpQuality[] = [75, 80, 85, 90, 95, 100];
-export const DEFAULT_WEBP_QUALITY: WebpQuality = 100;
+export const DEFAULT_WEBP_QUALITY: WebpQuality = 85;
 
 /** What `toBlob` is given: the percentage as a fraction. 1.0 is what Chromium encodes losslessly. */
 export function webpEncoderQuality(quality: WebpQuality): number {

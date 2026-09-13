@@ -62,7 +62,7 @@ export interface ModelComparisonEntry {
 
   /** Candidate-only cost of one question, in USD, on the request's pricing basis. */
   readonly candidateCostPerQuestionUsd: number;
-  /** SD of that cost across runs. Null at R = 1, where the mark instead carries an `n = 1` note. */
+  /** SD of that cost across runs. Null at R = 1, where P1's category tick says `n = 1` instead. */
   readonly candidateCostPerQuestionSdUsd: number | null;
   /** Cost of the whole run including grading roles, in USD. */
   readonly totalRunCostUsd: number;
@@ -428,14 +428,11 @@ export interface ErrorBarPoint extends Point {
   readonly xErrHigh?: number;
   readonly yErrLow?: number;
   readonly yErrHigh?: number;
-  /** Short annotation drawn beside the mark, used for the explicit `n = 1` marker. */
-  readonly note?: string;
 }
 
 /** Half-width of an error-bar cap, in pixels. */
 const ERROR_BAR_CAP_HALF_WIDTH = 5;
 const ERROR_BAR_LINE_WIDTH = 1.5;
-const ANNOTATION_FONT = '11px "Lato", system-ui, sans-serif';
 
 function isErrorBarPoint(value: unknown): value is ErrorBarPoint {
   if (typeof value !== 'object' || value === null || !('x' in value) || !('y' in value)) {
@@ -460,10 +457,7 @@ export const errorBarPlugin: Plugin = {
     }
     ctx.save();
     ctx.strokeStyle = CHART_INK.muted;
-    ctx.fillStyle = CHART_INK.muted;
     ctx.lineWidth = ERROR_BAR_LINE_WIDTH;
-    ctx.font = ANNOTATION_FONT;
-    ctx.textBaseline = 'middle';
 
     chart.data.datasets.forEach((dataset, datasetIndex) => {
       const meta = chart.getDatasetMeta(datasetIndex);
@@ -486,9 +480,6 @@ export const errorBarPlugin: Plugin = {
           const low = pixelForBound(xScale, raw.x, -(raw.xErrLow ?? 0));
           const high = pixelForBound(xScale, raw.x, raw.xErrHigh ?? 0);
           strokeWhisker(ctx, low, element.y, high, element.y, 'horizontal');
-        }
-        if (raw.note) {
-          ctx.fillText(raw.note, element.x + 10, element.y - 10);
         }
       });
     });
@@ -658,6 +649,8 @@ export interface FigureOptions {
   readonly selectedKeys?: readonly string[];
   /** Which measure the scatters' speed axis reads. Defaults to mean model time. */
   readonly speedMeasure?: SpeedMeasure;
+  /** Names every scatter mark on the canvas and hides the legend. Off unless the wizard asks. */
+  readonly directLabels?: boolean;
 }
 
 /** Effective hit radius is `radius + hitRadius`, so the target is 36 px across - well over the 24 px floor. */
@@ -736,9 +729,258 @@ function degradedNotices(plotted: readonly ModelComparisonEntry[], axes: readonl
   return notices;
 }
 
-function n1Note(entry: ModelComparisonEntry): string | undefined {
-  return entry.runCount === 1 ? 'n = 1' : undefined;
+// ---------------------------------------------------------------------------------------------
+// Direct labels on a scatter
+// ---------------------------------------------------------------------------------------------
+
+/** The label font, matching the axis ticks so a direct label reads as chart chrome. */
+const DIRECT_LABEL_FONT = '11px "Lato", system-ui, sans-serif';
+
+/** Rings tried in turn, in pixels out from the mark. Past the last one the fallback applies. */
+const DIRECT_LABEL_RINGS = [14, 28, 42] as const;
+
+/** Padding around the label text, so the backing plate does not touch the glyphs. */
+const DIRECT_LABEL_PAD_X = 3;
+const DIRECT_LABEL_PAD_Y = 2;
+
+/** Line box of one label at {@link DIRECT_LABEL_FONT}. Measured text carries no height. */
+const DIRECT_LABEL_LINE_HEIGHT = 12;
+
+/** How much of the surface the backing plate keeps, so a gridline behind the text stays subdued. */
+const DIRECT_LABEL_PLATE_ALPHA = 0.85;
+
+/** One mark to label: its pixel position, and the plate size its text needs. */
+export interface DirectLabelAnchor {
+  readonly key: string;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
 }
+
+/** A placed label: where the plate goes, and the mark its leader line runs back to. */
+export interface DirectLabelBox {
+  readonly key: string;
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+  readonly anchorX: number;
+  readonly anchorY: number;
+}
+
+/** The plot area, and the shape every overlap test works in. */
+interface LabelRect {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+}
+
+function boxRect(box: { x: number; y: number; width: number; height: number }): LabelRect {
+  return { left: box.x, top: box.y, right: box.x + box.width, bottom: box.y + box.height };
+}
+
+function rectsOverlap(a: LabelRect, b: LabelRect): boolean {
+  return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+}
+
+function rectInside(rect: LabelRect, area: LabelRect): boolean {
+  return rect.left >= area.left && rect.top >= area.top && rect.right <= area.right && rect.bottom <= area.bottom;
+}
+
+/** True when the box reaches into a mark's disc, its own mark included. */
+function coversMark(rect: LabelRect, mark: { x: number; y: number }, radius: number): boolean {
+  const nearestX = Math.min(Math.max(mark.x, rect.left), rect.right);
+  const nearestY = Math.min(Math.max(mark.y, rect.top), rect.bottom);
+  const dx = mark.x - nearestX;
+  const dy = mark.y - nearestY;
+  return dx * dx + dy * dy < radius * radius;
+}
+
+/** The eight directions a label is tried in, in preference order, as unit offsets on each ring. */
+const DIRECT_LABEL_DIRECTIONS: readonly { dx: number; dy: number }[] = [
+  { dx: 1, dy: 0 },
+  { dx: -1, dy: 0 },
+  { dx: 0, dy: -1 },
+  { dx: 0, dy: 1 },
+  { dx: 0.7071, dy: -0.7071 },
+  { dx: -0.7071, dy: -0.7071 },
+  { dx: 0.7071, dy: 0.7071 },
+  { dx: -0.7071, dy: 0.7071 },
+];
+
+/** The ring offset moves the box edge nearest the mark, so a wide label is not pulled in by half. */
+function candidateBox(
+  anchor: DirectLabelAnchor,
+  direction: { dx: number; dy: number },
+  ring: number,
+): { x: number; y: number; width: number; height: number } {
+  const centreX = anchor.x + direction.dx * (ring + anchor.width / 2);
+  const centreY = anchor.y + direction.dy * (ring + anchor.height / 2);
+  return {
+    x: centreX - anchor.width / 2,
+    y: centreY - anchor.height / 2,
+    width: anchor.width,
+    height: anchor.height,
+  };
+}
+
+function clampIntoArea(
+  box: { x: number; y: number; width: number; height: number },
+  area: LabelRect,
+): { x: number; y: number; width: number; height: number } {
+  return {
+    ...box,
+    x: Math.min(Math.max(box.x, area.left), Math.max(area.left, area.right - box.width)),
+    y: Math.min(Math.max(box.y, area.top), Math.max(area.top, area.bottom - box.height)),
+  };
+}
+
+/**
+ * Places a label beside every mark so that no two labels overlap and no label covers a mark.
+ *
+ * Pure geometry, with no canvas and no chart: the caller measures the text and passes the sizes in,
+ * which is what makes the placement testable and its determinism checkable. The order is fixed —
+ * ascending x, then y, then key — so a rebuild on hover re-places the labels identically rather
+ * than reshuffling them under the pointer.
+ *
+ * A dense corner can exhaust every ring. The fallback then takes the first ring's right-hand
+ * candidate clamped into the plot area: a visible label that may touch its neighbour beats a hidden
+ * one, and the leader line still says which mark it belongs to.
+ */
+export function placeDirectLabels(
+  anchors: readonly DirectLabelAnchor[],
+  area: LabelRect,
+  markRadius: number = POINT_HOVER_RADIUS,
+): DirectLabelBox[] {
+  const ordered = [...anchors].sort((a, b) => a.x - b.x || a.y - b.y || a.key.localeCompare(b.key));
+  const placed: DirectLabelBox[] = [];
+
+  for (const anchor of ordered) {
+    let chosen: { x: number; y: number; width: number; height: number } | null = null;
+
+    for (const ring of DIRECT_LABEL_RINGS) {
+      for (const direction of DIRECT_LABEL_DIRECTIONS) {
+        const box = candidateBox(anchor, direction, ring);
+        const rect = boxRect(box);
+        if (!rectInside(rect, area)) {
+          continue;
+        }
+        if (placed.some((other) => rectsOverlap(rect, boxRect(other)))) {
+          continue;
+        }
+        if (anchors.some((other) => coversMark(rect, other, markRadius))) {
+          continue;
+        }
+        chosen = box;
+        break;
+      }
+      if (chosen) {
+        break;
+      }
+    }
+
+    const fallback = candidateBox(anchor, DIRECT_LABEL_DIRECTIONS[0], DIRECT_LABEL_RINGS[0]);
+    const box = chosen ?? clampIntoArea(fallback, area);
+    placed.push({ ...box, key: anchor.key, anchorX: anchor.x, anchorY: anchor.y });
+  }
+
+  return placed;
+}
+
+/** What the plugin reads off the chart options: one label per model dataset, in dataset order. */
+export interface DirectLabelPluginOptions {
+  /** Indexed by dataset. Datasets past the list — the frontier — are never labelled. */
+  readonly labels: readonly string[];
+  /** The emphasised model, whose label wears the accent its mark already does. */
+  readonly highlightedIndex?: number;
+}
+
+/** Draws a leader from the edge of the mark to the nearest edge of its label plate. */
+function strokeLeader(ctx: CanvasRenderingContext2D, box: DirectLabelBox, markRadius: number): void {
+  const targetX = Math.min(Math.max(box.anchorX, box.x), box.x + box.width);
+  const targetY = Math.min(Math.max(box.anchorY, box.y), box.y + box.height);
+  const dx = targetX - box.anchorX;
+  const dy = targetY - box.anchorY;
+  const distance = Math.hypot(dx, dy);
+  // A plate that already touches the mark needs no leader, and normalising zero would be NaN.
+  if (distance <= markRadius) {
+    return;
+  }
+  ctx.beginPath();
+  ctx.moveTo(box.anchorX + (dx / distance) * markRadius, box.anchorY + (dy / distance) * markRadius);
+  ctx.lineTo(targetX, targetY);
+  ctx.stroke();
+}
+
+/**
+ * Names every mark on the canvas, on a leader line, with the legend switched off.
+ *
+ * It draws rather than delegating to `chartjs-plugin-datalabels`, which places a label at a fixed
+ * offset with no knowledge of its neighbours — two models close together got two names on top of
+ * each other. Drawing on the canvas is also what carries the labels into every export path without
+ * a change to the composer.
+ */
+export const directLabelPlugin: Plugin = {
+  id: 'overseerDirectLabels',
+  afterDatasetsDraw(chart, _args, pluginOptions): void {
+    const options = pluginOptions as unknown as DirectLabelPluginOptions | undefined;
+    const labels = options?.labels ?? [];
+    const ctx = chart.ctx;
+    const area = chart.chartArea;
+    if (!ctx || !area || labels.length === 0) {
+      return;
+    }
+
+    ctx.save();
+    ctx.font = DIRECT_LABEL_FONT;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+
+    const anchors: DirectLabelAnchor[] = [];
+    labels.forEach((label, datasetIndex) => {
+      const meta = chart.getDatasetMeta(datasetIndex);
+      if (meta.hidden) {
+        return;
+      }
+      // One mark per model dataset, which is how the scatters are built.
+      const element = meta.data[0];
+      if (!element || !Number.isFinite(element.x) || !Number.isFinite(element.y)) {
+        return;
+      }
+      anchors.push({
+        key: label,
+        x: element.x,
+        y: element.y,
+        width: ctx.measureText(label).width + DIRECT_LABEL_PAD_X * 2,
+        height: DIRECT_LABEL_LINE_HEIGHT + DIRECT_LABEL_PAD_Y * 2,
+      });
+    });
+
+    const boxes = placeDirectLabels(anchors, area);
+    const highlighted = options?.highlightedIndex === undefined ? undefined : labels[options.highlightedIndex];
+
+    // Leaders first, so a plate covers the end of its own line rather than the line crossing it.
+    ctx.strokeStyle = CHART_INK.muted;
+    ctx.lineWidth = 1;
+    for (const box of boxes) {
+      strokeLeader(ctx, box, POINT_HOVER_RADIUS);
+    }
+
+    for (const box of boxes) {
+      // A backing plate, so a label crossing a gridline stays readable without an outline halo.
+      ctx.globalAlpha = DIRECT_LABEL_PLATE_ALPHA;
+      ctx.fillStyle = CHART_SURFACE;
+      ctx.fillRect(box.x, box.y, box.width, box.height);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = box.key === highlighted ? ACCENT : CHART_INK.secondary;
+      ctx.fillText(box.key, box.x + DIRECT_LABEL_PAD_X, box.y + box.height / 2);
+    }
+
+    ctx.restore();
+  },
+};
 
 // ---------------------------------------------------------------------------------------------
 // S1-S3: the scatters
@@ -746,6 +988,8 @@ function n1Note(entry: ModelComparisonEntry): string | undefined {
 
 interface ScatterAxisSpec {
   readonly title: string;
+  /** The name a tooltip line is prefixed with: the measure without its unit parenthetical. */
+  readonly tooltipLabel: string;
   readonly type: 'linear' | 'logarithmic';
   readonly better: BetterDirection;
   readonly min?: number;
@@ -758,6 +1002,7 @@ interface ScatterAxisSpec {
 
 const QUALITY_AXIS: ScatterAxisSpec = {
   title: 'Intelligence Index (0-100)',
+  tooltipLabel: 'Intelligence Index',
   type: 'linear',
   better: 'higher',
   min: 0,
@@ -772,6 +1017,7 @@ const QUALITY_AXIS: ScatterAxisSpec = {
 // collapses into the left edge. The word is in the title because an unannounced log axis deceives.
 const TTFT_AXIS: ScatterAxisSpec = {
   title: 'Time to first token, P50 (ms, logarithmic scale)',
+  tooltipLabel: 'Time to first token, P50',
   type: 'logarithmic',
   better: 'lower',
   format: formatMs,
@@ -783,6 +1029,7 @@ const TTFT_AXIS: ScatterAxisSpec = {
 
 const COST_AXIS: ScatterAxisSpec = {
   title: 'Candidate cost per question (USD, logarithmic scale)',
+  tooltipLabel: 'Candidate cost per question',
   type: 'logarithmic',
   better: 'lower',
   format: formatUsd,
@@ -793,6 +1040,7 @@ const COST_AXIS: ScatterAxisSpec = {
 
 const SPEED_INDEX_AXIS: ScatterAxisSpec = {
   title: 'Speed Index (0-100)',
+  tooltipLabel: 'Speed Index',
   type: 'linear',
   better: 'higher',
   min: 0,
@@ -808,6 +1056,7 @@ const SPEED_INDEX_AXIS: ScatterAxisSpec = {
 // dispersion is returned at the DTO level, so the mean draws no whisker at all.
 const MEAN_MODEL_TIME_AXIS: ScatterAxisSpec = {
   title: 'Model time per question, mean (ms, logarithmic scale)',
+  tooltipLabel: 'Model time per question, mean',
   type: 'logarithmic',
   better: 'lower',
   format: formatMs,
@@ -820,6 +1069,7 @@ const MEAN_MODEL_TIME_AXIS: ScatterAxisSpec = {
 // dispersion the small-multiples panel draws as a whisker.
 const TOTAL_MODEL_TIME_AXIS: ScatterAxisSpec = {
   title: 'Candidate model time for the whole suite (ms, logarithmic scale)',
+  tooltipLabel: 'Candidate model time for the whole suite',
   type: 'logarithmic',
   better: 'lower',
   format: formatMs,
@@ -850,7 +1100,6 @@ function scatterPoint(entry: ModelComparisonEntry, x: ScatterAxisSpec, y: Scatte
     xErrHigh: x.errHigh(entry),
     yErrLow: y.errLow(entry),
     yErrHigh: y.errHigh(entry),
-    note: n1Note(entry),
   };
 }
 
@@ -864,6 +1113,7 @@ function buildScatter(
   extraNotices: readonly string[],
 ): ChartSpec<'scatter', ErrorBarPoint[]> {
   const { context, glyphs, reducedMotion, highlightedKey } = options;
+  const directLabels = options.directLabels ?? false;
 
   const datasets = plotted.map((entry) => {
     const glyph = glyphFor(glyphs, entry.key);
@@ -910,6 +1160,8 @@ function buildScatter(
     label: 'Better',
   };
 
+  const highlightedIndex = plotted.findIndex((entry) => entry.key === highlightedKey);
+
   const config: ChartConfiguration<'scatter', ErrorBarPoint[]> = {
     type: 'scatter',
     data: { datasets },
@@ -937,7 +1189,8 @@ function buildScatter(
       },
       plugins: {
         legend: {
-          display: true,
+          // The direct labels name every mark on the canvas, so a legend would say it all twice.
+          display: !directLabels,
           position: 'bottom',
           labels: {
             color: CHART_INK.secondary,
@@ -948,29 +1201,36 @@ function buildScatter(
         },
         tooltip: {
           ...TOOLTIP_STYLE,
+          // The frontier's step vertices sit on a model's own coordinates, so nearest-without-
+          // intersect would list the annotation beside the model it was derived from.
+          filter: (item) => item.datasetIndex < plotted.length,
           callbacks: {
+            title: (items) => items[0]?.dataset.label ?? '',
             label: (item) => {
               // Chart.js parses a gap as a null coordinate. No entry plotted here carries one, so
               // this is the unreachable branch rather than a formatting case.
               const { x, y } = item.parsed;
-              return x === null || y === null
-                ? `${item.dataset.label}: not measured`
-                : `${item.dataset.label}: ${xAxis.format(x)}, ${yAxis.format(y)}`;
+              if (x === null || y === null) {
+                return 'not measured';
+              }
+              return [
+                `${xAxis.tooltipLabel}: ${xAxis.format(x)}`,
+                `${yAxis.tooltipLabel}: ${yAxis.format(y)}`,
+              ];
             },
           },
         },
-        datalabels: {
-          // Past three entries the hue x shape composite needs its text partner: at four or more
-          // models the marks are direct-labelled so identity never rests on colour alone. The
-          // frontier dataset sits past the model datasets and is never labelled.
-          display: (ctx: { datasetIndex: number }) => plotted.length >= 4 && ctx.datasetIndex < plotted.length,
-          color: CHART_INK.muted,
-          align: 'right',
-          offset: 8,
-          font: { size: 11 },
-          formatter: (_value: unknown, ctx: { datasetIndex: number }) =>
-            plotted[ctx.datasetIndex]?.label ?? '',
-        },
+        // Identity text on a scatter is the direct-label plugin's job, behind the wizard's own
+        // toggle; the datalabels plugin is not registered on these figures at all.
+        datalabels: { display: false },
+        ...(directLabels
+          ? {
+              [directLabelPlugin.id]: {
+                labels: plotted.map((e) => e.label),
+                highlightedIndex: highlightedIndex < 0 ? undefined : highlightedIndex,
+              } satisfies DirectLabelPluginOptions,
+            }
+          : {}),
       },
     },
   };
@@ -986,7 +1246,8 @@ function buildScatter(
     notices: [...extraNotices],
     preferredCorner,
     config,
-    plugins: [errorBarPlugin, ChartDataLabels as Plugin],
+    // After the error bars, so a leader line draws over a whisker rather than under it.
+    plugins: directLabels ? [errorBarPlugin, directLabelPlugin] : [errorBarPlugin],
   };
 }
 
@@ -997,7 +1258,7 @@ export function buildQualitySpeedScatter(
 ): ChartSpec<'scatter', ErrorBarPoint[]> {
   return buildScatter(
     's1-quality-speed',
-    'Quality against speed',
+    'Intelligence against speed',
     plotted,
     speedAxisFor(options.speedMeasure ?? 'meanModelTime'),
     QUALITY_AXIS,
@@ -1013,7 +1274,7 @@ export function buildQualityCostScatter(
 ): ChartSpec<'scatter', ErrorBarPoint[]> {
   return buildScatter(
     's2-quality-cost',
-    'Quality against cost',
+    'Intelligence against cost',
     plotted,
     COST_AXIS,
     QUALITY_AXIS,
@@ -1057,25 +1318,33 @@ export interface SmallMultiplesOptions extends FigureOptions {
 }
 
 export interface SmallMultiplesFigure {
-  readonly quality: ChartSpec<'bar', ErrorBarPoint[], string>;
-  readonly speed: ChartSpec<'bar', ErrorBarPoint[], string>;
-  readonly cost: ChartSpec<'bar', ErrorBarPoint[], string>;
+  readonly quality: ChartSpec<'bar', ErrorBarPoint[], PanelCategoryLabel>;
+  readonly speed: ChartSpec<'bar', ErrorBarPoint[], PanelCategoryLabel>;
+  readonly cost: ChartSpec<'bar', ErrorBarPoint[], PanelCategoryLabel>;
   /** The single model order all three panels share, as entry keys, in drawing order. */
   readonly order: readonly string[];
   readonly notices: readonly string[];
 }
+
+/**
+ * A panel's category tick: the model name, or the name over `n = 1` where one run backs it.
+ *
+ * Chart.js renders a string array as a multi-line tick on either axis orientation, which is where
+ * the single-run marker lives: beside the bar it collided with the value label, and on the axis it
+ * stays out of the plot area entirely.
+ */
+export type PanelCategoryLabel = string | string[];
 
 function barPoint(
   index: number,
   value: number,
   errLow: number | undefined,
   errHigh: number | undefined,
-  note: string | undefined,
   orientation: BarOrientation,
 ): ErrorBarPoint {
   return orientation === 'vertical'
-    ? { x: index, y: value, yErrLow: errLow, yErrHigh: errHigh, note }
-    : { x: value, y: index, xErrLow: errLow, xErrHigh: errHigh, note };
+    ? { x: index, y: value, yErrLow: errLow, yErrHigh: errHigh }
+    : { x: value, y: index, xErrLow: errLow, xErrHigh: errHigh };
 }
 
 /** The context a datalabels callback receives: only the fields this panel's labels read. */
@@ -1088,6 +1357,7 @@ function buildPanel(
   id: string,
   title: string,
   plotted: readonly ModelComparisonEntry[],
+  categoryLabels: readonly PanelCategoryLabel[],
   panelHue: string,
   axisTitleText: string,
   better: BetterDirection,
@@ -1096,11 +1366,9 @@ function buildPanel(
   values: readonly (number | null)[],
   errLows: readonly (number | undefined)[],
   errHighs: readonly (number | undefined)[],
-  notes: readonly (string | undefined)[],
   options: SmallMultiplesOptions,
   notices: readonly string[],
-  valueLabels = false,
-): ChartSpec<'bar', ErrorBarPoint[], string> {
+): ChartSpec<'bar', ErrorBarPoint[], PanelCategoryLabel> {
   const { context, reducedMotion, highlightedKey, selectedKeys, orientation } = options;
   const emphasised = new Set<string>(selectedKeys ?? []);
   if (highlightedKey) {
@@ -1109,7 +1377,7 @@ function buildPanel(
   const hasEmphasis = emphasised.size > 0;
 
   const data = plotted.map((_entry, index) =>
-    barPoint(index, values[index] ?? 0, errLows[index], errHighs[index], notes[index], orientation),
+    barPoint(index, values[index] ?? 0, errLows[index], errHighs[index], orientation),
   );
 
   // A panel is one hue for every bar. Bars are never ramped by value: darker-where-bigger would
@@ -1158,15 +1426,15 @@ function buildPanel(
     grid: gridOptions(),
     border: { color: CHART_INK.baseline },
     ticks: { ...tickOptions(), callback: (value: string | number) => format(Number(value)) },
-    // Only reached where axisMax is undefined - grace is ignored once max is explicit - which is
-    // why only the cost panel, whose bars carry value labels, ever sets it.
-    ...(valueLabels ? { grace: '12%' } : {}),
+    // Headroom for the value label every bar carries. Only reached where axisMax is undefined -
+    // grace is ignored once max is explicit, and the label is clamped into the area there instead.
+    ...(axisMax === undefined ? { grace: '12%' } : {}),
   };
 
-  const config: ChartConfiguration<'bar', ErrorBarPoint[], string> = {
+  const config: ChartConfiguration<'bar', ErrorBarPoint[], PanelCategoryLabel> = {
     type: 'bar',
     data: {
-      labels: plotted.map((e) => e.label),
+      labels: [...categoryLabels],
       datasets: [
         {
           label: title,
@@ -1201,26 +1469,24 @@ function buildPanel(
             },
           },
         },
-        datalabels: valueLabels
-          ? {
-              display: (ctx: DataLabelCtx) => values[ctx.dataIndex] !== null,
-              formatter: (_v: unknown, ctx: DataLabelCtx) => format(values[ctx.dataIndex] ?? 0),
-              anchor: 'end' as const,
-              align: orientation === 'vertical' ? ('top' as const) : ('right' as const),
-              clamp: true,
-              offset: (ctx: DataLabelCtx) => whiskerLength(ctx) + 4,
-              color: CHART_INK.secondary,
-              font: { size: 11 },
-            }
-          : { display: false as const },
+        // Every bar states its own value, past the whisker cap rather than inside the bar: a
+        // solid bar and a hollow one would carry secondary ink differently, and on the panel hue
+        // it would fail contrast outright.
+        datalabels: {
+          display: (ctx: DataLabelCtx) => values[ctx.dataIndex] !== null,
+          formatter: (_v: unknown, ctx: DataLabelCtx) => format(values[ctx.dataIndex] ?? 0),
+          anchor: 'end' as const,
+          align: orientation === 'vertical' ? ('top' as const) : ('right' as const),
+          clamp: true,
+          offset: (ctx: DataLabelCtx) => whiskerLength(ctx) + 4,
+          color: CHART_INK.secondary,
+          font: { size: 11 },
+        },
       },
     },
   };
 
-  const plugins: Plugin[] = [errorBarPlugin];
-  if (valueLabels) {
-    plugins.push(ChartDataLabels as Plugin);
-  }
+  const plugins: Plugin[] = [errorBarPlugin, ChartDataLabels as Plugin];
 
   return {
     id,
@@ -1275,12 +1541,11 @@ export function buildSmallMultiples(
   });
 
   const costValues = plotted.map((e) => costValue(e, costMeasure, context));
-  // At R = 1 there is no reproducibility SD, so the bar carries no interval and an explicit
-  // `n = 1` marker instead - silence would read as certainty.
+  // At R = 1 there is no reproducibility SD, so the bar carries no interval at all - silence would
+  // read as certainty, which is why the category tick says `n = 1` under the model's name instead.
   const costSd = plotted.map((e) =>
     costMeasure === 'candidateSuite' ? suiteCostSdUsd(e, context) ?? undefined : e.totalRunCostSdUsd ?? undefined,
   );
-  const notes = plotted.map((e) => n1Note(e));
 
   const saturated = plotted.filter((e) => e.speedIndexSaturated);
   const speedNotices = degradedNotices(plotted, ['speed']);
@@ -1317,13 +1582,19 @@ export function buildSmallMultiples(
       ? `Candidate cost for the whole suite (USD, ${context.itemsPerRun} items)`
       : 'Total run cost including grading roles (USD)';
 
-  const noop = plotted.map(() => undefined);
+  // One label list for all three panels. A two-line tick block on one panel alone would shrink
+  // that panel's plot area and put its bars out of line with the other two, which share a height
+  // and a model order.
+  const categoryLabels: PanelCategoryLabel[] = plotted.map((e) =>
+    e.runCount === 1 ? [e.label, 'n = 1'] : e.label,
+  );
 
   return {
     quality: buildPanel(
       'p1a-quality',
-      'Quality',
+      'Intelligence',
       plotted,
+      categoryLabels,
       CATEGORICAL_PALETTE_DARK[0],
       'Intelligence Index (0-100)',
       'higher',
@@ -1332,7 +1603,6 @@ export function buildSmallMultiples(
       qualityValues,
       qualityErr,
       qualityErr,
-      noop,
       options,
       [],
     ),
@@ -1340,6 +1610,7 @@ export function buildSmallMultiples(
       'p1b-speed',
       'Speed',
       plotted,
+      categoryLabels,
       CATEGORICAL_PALETTE_DARK[1],
       speedTitle,
       speedLowerIsBetter(speedMeasure) ? 'lower' : 'higher',
@@ -1348,7 +1619,6 @@ export function buildSmallMultiples(
       speedValues,
       speedErrLow,
       speedErrHigh,
-      noop,
       options,
       speedNotices,
     ),
@@ -1356,6 +1626,7 @@ export function buildSmallMultiples(
       'p1c-cost',
       'Cost',
       plotted,
+      categoryLabels,
       CATEGORICAL_PALETTE_DARK[2],
       costTitle,
       'lower',
@@ -1364,10 +1635,8 @@ export function buildSmallMultiples(
       costValues,
       costSd,
       costSd,
-      notes,
       options,
       degradedNotices(plotted, ['cost']),
-      true,
     ),
     order: plotted.map((e) => e.key),
     notices: [],
@@ -1436,7 +1705,7 @@ export function normalizeProfile(
   };
 
   const axisMeta: Record<ProfileAxisId, { title: string; lowerIsBetter: boolean; format: (v: number) => string }> = {
-    quality: { title: 'Quality', lowerIsBetter: false, format: (v) => v.toFixed(1) },
+    quality: { title: 'Intelligence', lowerIsBetter: false, format: (v) => v.toFixed(1) },
     speed: {
       title: speedMeasure === 'speedIndex'
         ? 'Speed Index'
@@ -1633,6 +1902,8 @@ export interface FigureSetOptions {
   readonly costMeasure?: CostMeasure;
   readonly orientation?: BarOrientation;
   readonly reducedMotion?: boolean;
+  /** Names every scatter mark on the canvas and hides the legend. Off unless the wizard asks. */
+  readonly directLabels?: boolean;
   readonly highlightedKey?: string | null;
   readonly selectedKeys?: readonly string[];
   /**
@@ -1664,6 +1935,7 @@ export function buildComparisonFigures(
     highlightedKey: options.highlightedKey ?? null,
     selectedKeys: options.selectedKeys ?? [],
     speedMeasure,
+    directLabels: options.directLabels ?? false,
   };
   const smallMultiplesOptions: SmallMultiplesOptions = {
     ...figureOptions,

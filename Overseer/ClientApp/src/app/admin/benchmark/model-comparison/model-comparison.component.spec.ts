@@ -4,7 +4,7 @@ import { By } from '@angular/platform-browser';
 import { provideCharts } from 'ng2-charts';
 
 import { ComparisonWizardStep, ModelComparisonComponent } from './model-comparison.component';
-import { MAX_PLOTTED_ENTRIES, P1_STACK_BREAKPOINT_PX } from './model-comparison-charts';
+import { MAX_PLOTTED_ENTRIES, P1_STACK_BREAKPOINT_PX, directLabelPlugin } from './model-comparison-charts';
 import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 import {
   BenchmarkComparabilityIndexDto,
@@ -283,6 +283,26 @@ describe('ModelComparisonComponent', () => {
     expect(timings).toContain('TTFT P50 / P90');
   });
 
+  it('names the model with its provider and thinking badges, over the source it came from', () => {
+    const entries = comparableSet(2);
+    // A set that mixes thinking levels: the badge is only drawn for the entry that carries one.
+    entries[1] = { ...entries[1], thinkingLevel: null };
+    render(buildDto(entries), 3);
+
+    const rows = fixture.debugElement.queryAll(By.css('table.mc-table tbody tr'));
+    const first = rows[0].nativeElement as HTMLElement;
+
+    expect(first.querySelector('.mc-name-btn')?.textContent?.trim()).toBe('Gemini 2.5 Flash');
+    expect(first.querySelector('.mc-name-btn')?.getAttribute('aria-label')).toContain('Model 1');
+    expect(first.querySelector('.provider-badge')?.textContent?.trim()).toBe('Google');
+    expect(first.querySelector('.thinking-badge')?.textContent?.trim()).toBe('medium');
+    expect(first.querySelector('.mc-source')?.textContent?.trim()).toBe('Run 1');
+
+    expect((rows[1].nativeElement as HTMLElement).querySelector('.thinking-badge')).toBeNull();
+    expect((rows[1].nativeElement as HTMLElement).querySelector('.mc-source')?.textContent?.trim())
+      .toBe('Run 2');
+  });
+
   it('keeps an excluded entry in the table even though no figure can draw it', () => {
     render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringMethodVersion'])]), 3);
 
@@ -344,6 +364,35 @@ describe('ModelComparisonComponent', () => {
     expect(component.panelCards.length).toBe(3);
     expect(component.scatterCards.length).toBe(3);
     expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(6);
+  });
+
+  it('swaps the scatter legends for direct labels when the toggle is ticked, and back', () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    const legendDisplays = (): unknown[] =>
+      component.scatterCards.map(card => (card.options?.plugins?.legend as { display?: unknown })?.display);
+    const pluginIds = (): string[][] =>
+      component.scatterCards.map(card => card.plugins.map(plugin => plugin.id));
+
+    expect(legendDisplays()).toEqual([true, true, true]);
+    expect(pluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBeFalse();
+
+    const toggle = fixture.debugElement.query(By.css('.mc-scatter-options input[type="checkbox"]'));
+    expect(toggle).withContext('the toggle sits above the three scatters').toBeTruthy();
+    (toggle.nativeElement as HTMLInputElement).checked = true;
+    toggle.triggerEventHandler('change', { target: toggle.nativeElement });
+    fixture.detectChanges();
+
+    expect(component.scatterDirectLabels).toBeTrue();
+    expect(legendDisplays()).toEqual([false, false, false]);
+    expect(pluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBeTrue();
+
+    (toggle.nativeElement as HTMLInputElement).checked = false;
+    toggle.triggerEventHandler('change', { target: toggle.nativeElement });
+    fixture.detectChanges();
+
+    expect(legendDisplays()).toEqual([true, true, true]);
+    expect(pluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBeFalse();
   });
 
   it('renders all six figures from three entries upward', () => {
@@ -604,8 +653,9 @@ describe('ModelComparisonComponent', () => {
       .nativeElement as HTMLSelectElement;
     const labels = Array.from(quality.options).map(option => option.textContent?.trim());
     expect(labels).toEqual(['75', '80', '85', '90', '95', '100']);
-    expect(quality.selectedIndex).toBe(labels.length - 1);
-    expect(component.figureWebpQuality).toBe(100);
+    // 85 is the project-wide WebP quality, so the control opens on it rather than on lossless.
+    expect(quality.selectedIndex).toBe(labels.indexOf('85'));
+    expect(component.figureWebpQuality).toBe(85);
     // A placeholder is not a label, and this control carries no visible one.
     expect(fixture.debugElement.query(By.css('label[for="mc-export-webp-quality"]'))).toBeTruthy();
   });
@@ -1131,8 +1181,9 @@ describe('ModelComparisonComponent', () => {
       .nativeElement as HTMLSelectElement;
     const labels = Array.from(quality.options).map(option => option.textContent?.trim());
     expect(labels).toEqual(['75', '80', '85', '90', '95', '100']);
-    expect(quality.selectedIndex).toBe(labels.length - 1);
-    expect(component.tableWebpQuality).toBe(100);
+    // 85 is the project-wide WebP quality, so the control opens on it rather than on lossless.
+    expect(quality.selectedIndex).toBe(labels.indexOf('85'));
+    expect(component.tableWebpQuality).toBe(85);
     expect(fixture.debugElement.query(By.css('label[for="mc-table-export-webp-quality"]'))).toBeTruthy();
   });
 

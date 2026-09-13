@@ -541,6 +541,12 @@
   }
 }
 
+/* The one control that belongs to the scatters rather than to the whole figure set, so it sits
+   with them rather than in the filter row above every figure. */
+.mc-scatter-options {
+  margin: 12px 0 8px;
+}
+
 /* Reserved whether or not the rows overflow, so a filter that shortens the table does not shift it. */
 .mc-table-scroll {
   scrollbar-gutter: stable;
@@ -629,9 +635,31 @@
   }
 }
 
+/* Name, badges and the source line, stacked with a small gap so the source reads as a caption
+   under the model rather than as another field beside it. */
+.mc-model-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.mc-model-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+
+  /* The row's own gap separates the glyph; the inline margin it carries elsewhere would double it. */
+  .mc-glyph {
+    margin-right: 0;
+  }
+}
+
 .mc-source {
   font-size: 11px;
   color: #898781;
+  letter-spacing: 0.02em;
 }
 
 /* State is icon plus word: colour reinforces it and never carries it alone. */

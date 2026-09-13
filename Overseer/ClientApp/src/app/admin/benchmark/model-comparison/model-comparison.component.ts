@@ -56,6 +56,7 @@ import {
   BenchmarkModelComparisonPricingBasis,
   ComparisonSelectionNotice,
   orderedNotices,
+  sourceLabel,
   toChartContext,
   toChartEntries,
   unmeasuredAxes
@@ -285,6 +286,15 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * the control shows that option disabled rather than omitting it silently.
    */
   costMeasure: CostMeasure = 'candidateSuite';
+
+  /**
+   * Names every scatter mark on the canvas instead of in the legend below it.
+   *
+   * Off by default: a reader who wants the names on the marks asks for them, and the plugin behind
+   * it places them without collisions — which the automatic rule this replaced, direct-labelling
+   * at four or more models from a fixed offset, never did.
+   */
+  scatterDirectLabels = false;
 
   /** The model under the pointer or the keyboard, highlighted in every panel and in the profile. */
   highlightedKey: string | null = null;
@@ -658,6 +668,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.rebuild();
   }
 
+  onScatterDirectLabelsChange(on: boolean): void {
+    this.scatterDirectLabels = on;
+    this.rebuild();
+  }
+
   /** Hover and keyboard focus light the same model in all three panels and in the profile. */
   setHighlight(key: string | null): void {
     if (this.highlightedKey === key) {
@@ -676,6 +691,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   isEmphasised(key: string): boolean {
     return this.emphasisKeys.includes(key);
+  }
+
+  /** `Run 48` or `Analysis group 3` — the run line under a model name in the table. */
+  sourceLabel(entry: { sourceKind: string; sourceId: number }): string {
+    return sourceLabel(entry);
   }
 
   onTableChanged(): void {
@@ -1700,6 +1720,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       speedMeasure: this.speedMeasure,
       costMeasure: this.costMeasure,
       orientation: this.orientation,
+      directLabels: this.scatterDirectLabels,
       reducedMotion: this.reducedMotion.matches,
       highlightedKey: this.highlightedKey,
       selectedKeys: this.emphasisKeys,

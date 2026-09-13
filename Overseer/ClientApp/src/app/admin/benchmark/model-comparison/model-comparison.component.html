@@ -16,7 +16,7 @@
           {{ comparison.pricingBasisLabel || comparison.pricingBasis }} &middot;
           {{ comparison.comparableCount }} of {{ comparison.entries.length }} entries charted
         } @else {
-          Choose runs or analysis groups, then compare them on quality, speed and cost
+          Choose runs or analysis groups, then compare them on intelligence, speed and cost
         }
       </p>
     </div>
@@ -571,17 +571,30 @@
                     <tr [class.mc-row-highlighted]="highlightedKey === entry.key"
                         (mouseenter)="setHighlight(entry.key)" (mouseleave)="setHighlight(null)">
                       <th scope="row" class="col-name">
-                        @if (glyph(entry.key); as g) {
-                          <span [class]="'mc-glyph mc-glyph-' + g.shape"
-                                [style.background-color]="g.hue" aria-hidden="true"></span>
-                        }
-                        <button type="button" class="mc-name-btn mc-nowrap"
-                                [attr.aria-pressed]="isEmphasised(entry.key)"
-                                [attr.aria-label]="'Emphasise ' + entry.label + ' in every figure'"
-                                (click)="toggleEmphasis(entry.key)"
-                                (focus)="setHighlight(entry.key)"
-                                (blur)="setHighlight(null)">{{ entry.label }}</button>
-                        <span class="mc-source">{{ entry.sourceKind }} {{ entry.sourceId }}</span>
+                        <!-- The name, its badges and the source line, stacked. The flex lives on
+                             the inner divs: a flex <th> drops out of the column grid entirely.
+                             The button shows the display name and the thinking level rides beside
+                             it as a badge, so the level is not printed twice; the accessible name
+                             keeps the full chart label the figures use. -->
+                        <div class="mc-model-cell">
+                          <div class="mc-model-row">
+                            @if (glyph(entry.key); as g) {
+                              <span [class]="'mc-glyph mc-glyph-' + g.shape"
+                                    [style.background-color]="g.hue" aria-hidden="true"></span>
+                            }
+                            <button type="button" class="mc-name-btn"
+                                    [attr.aria-pressed]="isEmphasised(entry.key)"
+                                    [attr.aria-label]="'Emphasise ' + entry.label + ' in every figure'"
+                                    (click)="toggleEmphasis(entry.key)"
+                                    (focus)="setHighlight(entry.key)"
+                                    (blur)="setHighlight(null)">{{ entry.modelDisplayName || entry.label }}</button>
+                            <span class="provider-badge">{{ entry.provider }}</span>
+                            @if (entry.thinkingLevel) {
+                              <span class="thinking-badge">{{ entry.thinkingLevel }}</span>
+                            }
+                          </div>
+                          <span class="mc-source">{{ sourceLabel(entry) }}</span>
+                        </div>
                       </th>
                       <td class="col-center">
                         <div class="mc-cell-stack mc-cell-stack-center">
@@ -1018,6 +1031,16 @@
               }
 
               <!-- S1-S3 — the trade-off scatters. -->
+              <div class="mc-scatter-options">
+                <label class="checkbox-label">
+                  <input type="checkbox" [checked]="scatterDirectLabels"
+                         (change)="onScatterDirectLabelsChange($any($event.target).checked)">
+                  Label models inside the trade-off charts
+                </label>
+                <p class="mc-field-hint">On, each mark carries its name on a leader line and the
+                   legend is hidden. Off, the legend below each chart names the marks.</p>
+              </div>
+
               <div class="mc-grid">
                 @for (card of scatterCards; track card.id) {
                   <figure class="mc-card" [attr.aria-labelledby]="card.id + '-title'">
