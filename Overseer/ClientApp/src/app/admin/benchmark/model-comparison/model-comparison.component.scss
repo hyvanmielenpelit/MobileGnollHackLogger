@@ -12,7 +12,13 @@
 .mc-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
+}
+
+.mc-section + .mc-section,
+.mc-section + * + .mc-section {   /* an @if comment node may sit between two sections */
+  padding-top: 24px;
+  border-top: 1px solid var(--border-glass);
 }
 
 .mc-section-head {
@@ -20,20 +26,33 @@
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-
-  h3 {
-    margin: 0;
-    font-family: "Cinzel", serif;
-    font-size: 20px;
-    color: var(--primary-color);
-  }
 }
 
-.mc-subheading {
+/* Section title: one per section, on every step and in the preview aside. */
+.mc-section-title {
   margin: 0;
   font-family: "Cinzel", serif;
-  font-size: 16px;
+  font-size: 18px;
+  line-height: 1.3;
   color: var(--primary-color);
+}
+
+/* Sub-section title: a group inside a section, e.g. the entry picker under Filters. */
+.mc-subsection-title {
+  margin: 0;
+  font-family: "Cinzel", serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--primary-color);
+}
+
+/* Heading and its lead note as one unit, tighter than the section's own gap. */
+.mc-section-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 /* The Figures heading and the export controls on one row, the controls pushed to the far end. */
@@ -248,7 +267,12 @@
 .mc-entry-picker {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.15);
 }
 
 /*
@@ -1048,7 +1072,7 @@
   padding: 16px 24px 24px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 32px;
 
   /* `display: flex` above is an author declaration and outranks the user-agent `[hidden]`
      rule, so step 1 — hidden rather than destroyed, to keep the picker's table state — needs
@@ -1354,6 +1378,7 @@
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 16px;
   padding: 16px 20px;
 }
@@ -1391,19 +1416,15 @@
   place-items: center;
   min-height: 0;
   padding: 12px;
+  overflow: hidden;
   border: 1px solid var(--border-glass);
   border-radius: 8px;
   background: #0f0f0f;
 }
 
-/* Contained rather than scaled to fit the box: a portrait A4 or a 21:9 bitmap has to shrink on the
-   axis that overflows without the other one following it, or the stage scrolls. */
+/* The component sets this canvas's CSS width and height directly. */
 .mc-preview-canvas {
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-  object-fit: contain;
+  display: block;
 }
 
 .mc-preview-spinner {
@@ -1429,6 +1450,9 @@
 @container (max-width: 860px) {
   .mc-preview-body {
     grid-template-columns: minmax(0, 1fr);
+    /* Stacked, both rows are content-sized and the body itself is what scrolls. */
+    grid-template-rows: auto auto;
+    overflow-y: auto;
   }
 
   .mc-preview-controls {
@@ -1436,6 +1460,6 @@
   }
 
   .mc-preview-stage {
-    min-height: 240px;
+    height: min(60dvh, 520px);
   }
 }

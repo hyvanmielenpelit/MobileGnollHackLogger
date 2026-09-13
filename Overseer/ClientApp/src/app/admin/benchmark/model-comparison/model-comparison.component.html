@@ -93,26 +93,28 @@
              WHAT THIS VIEW IS, AND WHAT IT REFUSES TO DO
              =================================================================================== -->
         <section class="mc-section" aria-labelledby="mc-intro-heading">
-          <div class="mc-section-head">
-            <h4 id="mc-intro-heading" class="mc-subheading">This comparison</h4>
-            <button type="button" class="action-btn" (click)="onRefresh()"
-                    aria-label="Recompute the cross-model comparison"
-                    interestfor="mc-tip-refresh"
-                    style="anchor-name: --mc-tip-refresh">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <polyline points="23 4 23 10 17 10"></polyline>
-                <polyline points="1 20 1 14 7 14"></polyline>
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-              </svg>
-            </button>
-            <div popover="hint" class="gh-tooltip" id="mc-tip-refresh"
-                 style="position-anchor: --mc-tip-refresh">Recompute this comparison</div>
-          </div>
+          <div class="mc-section-intro">
+            <div class="mc-section-head">
+              <h4 id="mc-intro-heading" class="mc-section-title">This comparison</h4>
+              <button type="button" class="action-btn" (click)="onRefresh()"
+                      aria-label="Recompute the cross-model comparison"
+                      interestfor="mc-tip-refresh"
+                      style="anchor-name: --mc-tip-refresh">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <polyline points="1 20 1 14 7 14"></polyline>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                </svg>
+              </button>
+              <div popover="hint" class="gh-tooltip" id="mc-tip-refresh"
+                   style="position-anchor: --mc-tip-refresh">Recompute this comparison</div>
+            </div>
 
-          <p class="section-note">
-            Six charts are more persuasive than a table, so this view never hides what it could not
-            compare.
-          </p>
+            <p class="section-note">
+              Six charts are more persuasive than a table, so this view never hides what it could not
+              compare.
+            </p>
+          </div>
 
           <!-- Three points, one per line, rather than one paragraph carrying all three: the rule
                about must-match keys is the one a reader has to hold, and it was the middle clause
@@ -176,8 +178,10 @@
              view exists to prevent.
              =================================================================================== -->
         <section class="mc-section" aria-labelledby="mc-filters-heading">
-          <h4 id="mc-filters-heading" class="mc-subheading">Filters</h4>
-          <p class="section-note">Every control here scopes all six figures and the table at once.</p>
+          <div class="mc-section-intro">
+            <h4 id="mc-filters-heading" class="mc-section-title">Filters</h4>
+            <p class="section-note">Every control here scopes all six figures and the table at once.</p>
+          </div>
 
           <!-- The wrapper is the query container, and nothing else: it holds no popover, because a
                containment context around one breaks the anchor-positioning polyfill's placement. -->
@@ -274,7 +278,7 @@
 
           @if (entries.length > 0) {
             <div class="mc-entry-picker">
-              <h5 id="mc-entry-picker-heading" class="mc-subheading">
+              <h5 id="mc-entry-picker-heading" class="mc-subsection-title">
                 Entries in the figures — at most {{ maxPlottedEntries }} are plotted
               </h5>
               <p class="mc-field-hint">
@@ -344,8 +348,10 @@
              =================================================================================== -->
         @if ((comparison && comparison.thinkingLevelsDiffer) || allSingleRun || setNotices.length > 0) {
           <section class="mc-section" aria-labelledby="mc-advisories-heading">
-            <h5 id="mc-advisories-heading" class="mc-subheading">Advisory notes</h5>
-            <p class="section-note">These notes qualify the figures. None of them blocks a comparison.</p>
+            <div class="mc-section-intro">
+              <h4 id="mc-advisories-heading" class="mc-section-title">Advisory notes</h4>
+              <p class="section-note">These notes qualify the figures. None of them blocks a comparison.</p>
+            </div>
 
             <div class="mc-advisories">
               @if (comparison && comparison.thinkingLevelsDiffer) {
@@ -407,7 +413,7 @@
              =================================================================================== -->
         @if (excludedEntries.length > 0) {
           <section class="mc-section" aria-labelledby="mc-excluded-heading">
-            <h4 id="mc-excluded-heading" class="mc-subheading">Entries excluded from every figure</h4>
+            <h4 id="mc-excluded-heading" class="mc-section-title">Entries excluded from every figure</h4>
             @for (entry of excludedEntries; track entry.key) {
               <div class="mc-excluded">
                 <h5 class="mc-excluded-title">{{ entry.label }}</h5>
@@ -441,12 +447,14 @@
              =================================================================================== -->
         @if (comparison && comparison.excludedMeasures.length > 0) {
           <section class="mc-section" aria-labelledby="mc-measures-heading">
-            <h4 id="mc-measures-heading" class="mc-subheading">Measures deliberately left off every axis</h4>
-            <p class="section-note mc-measures-lead">
-              <strong>The catch, in one line:</strong> these numbers exist in the data but are not
-              plotted, because each one would mislead as a chart. Each card says what to read
-              instead.
-            </p>
+            <div class="mc-section-intro">
+              <h4 id="mc-measures-heading" class="mc-section-title">Measures deliberately left off every axis</h4>
+              <p class="section-note mc-measures-lead">
+                <strong>The catch, in one line:</strong> these numbers exist in the data but are not
+                plotted, because each one would mislead as a chart. Each card says what to read
+                instead.
+              </p>
+            </div>
             <!-- The summary is the visible line and the full reason sits behind a native
                  <details>, so a reader who wants the specialist account still reaches it. -->
             <ul class="mc-measures" role="list">
@@ -477,7 +485,9 @@
              =================================================================================== -->
         @if (!showFigures) {
           <section class="mc-section" aria-labelledby="mc-shape-heading">
-            <h4 id="mc-shape-heading" class="mc-subheading">What this set can be charted as</h4>
+            <div class="mc-section-intro">
+              <h4 id="mc-shape-heading" class="mc-section-title">What this set can be charted as</h4>
+            </div>
             @switch (shape) {
             @case ('empty') {
               <p class="text-muted">No entries in this comparison yet. Choose runs or analysis groups to compare.</p>
@@ -534,11 +544,13 @@
              draw.
              =================================================================================== -->
         <section class="mc-section" aria-labelledby="mc-table-heading">
-          <h4 id="mc-table-heading" class="mc-subheading">Comparison table</h4>
-          <p class="section-note">
-            Every entry, charted or not, with its state, its measures and the keys it differs on. This is
-            the accessible record of the figures on the next step.
-          </p>
+          <div class="mc-section-intro">
+            <h4 id="mc-table-heading" class="mc-section-title">Comparison table</h4>
+            <p class="section-note">
+              Every entry, charted or not, with its state, its measures and the keys it differs on. This is
+              the accessible record of the figures on the next step.
+            </p>
+          </div>
 
           <!-- The provenance a reader needs to check the numbers, on screen as well as in every
                exported file: costs read without their pricing basis compare price cards. -->
@@ -977,7 +989,7 @@
              =================================================================================== -->
         <section class="mc-section" aria-labelledby="mc-figures-heading">
           <div class="mc-figures-head">
-            <h4 id="mc-figures-heading" class="mc-subheading">Figures</h4>
+            <h4 id="mc-figures-heading" class="mc-section-title">Figures</h4>
 
             <!--
               The header carries the settings as a read-out and two buttons; the controls that
@@ -1427,7 +1439,7 @@
       <!-- Visible labels, not `visually-hidden` ones: the panel has the room a header row did not,
            and a labelled form is what a reader configuring four settings at once needs. -->
       <aside class="mc-preview-controls" aria-labelledby="mc-preview-controls-title">
-        <h4 id="mc-preview-controls-title" class="mc-subheading">Size and format</h4>
+        <h4 id="mc-preview-controls-title" class="mc-section-title">Size and format</h4>
 
         <label for="mc-export-resolution">Size and aspect ratio</label>
         <select id="mc-export-resolution" class="gh-input"
@@ -1498,7 +1510,7 @@
         }
       </aside>
 
-      <div class="mc-preview-stage" [attr.aria-busy]="previewBusy ? 'true' : null">
+      <div class="mc-preview-stage" #previewStage [attr.aria-busy]="previewBusy ? 'true' : null">
         <!-- Only while the dialog is open: the stage is sized to each composition, and a closed
              preview would otherwise keep a full-size bitmap alive beside the figures it copies. -->
         @if (previewOpen) {

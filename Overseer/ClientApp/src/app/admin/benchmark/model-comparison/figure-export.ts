@@ -13,11 +13,12 @@
  *    the same bitmap as the plot.
  * 2. **The background is opaque.** Chart.js canvases are transparent; a PNG of one dropped into a
  *    light document renders as dark-on-dark and is unreadable.
- * 3. **An explicit resolution buys sharpness, not more content.** Every explicit size composes at
- *    one layout width of {@link FIGURE_EXPORT_LAYOUT_WIDTH} CSS px and scales the whole
- *    composition by `targetWidth / FIGURE_EXPORT_LAYOUT_WIDTH`, so a 4K export and a Full HD
- *    export are the same figure at different densities: the typography keeps its proportions and
- *    only the plot box absorbs the difference in height.
+ * 3. **An explicit resolution buys sharpness, not more content.** Every explicit size composes in
+ *    the smallest box that carries the target's own aspect ratio and is at least
+ *    {@link FIGURE_EXPORT_LAYOUT_WIDTH} × {@link FIGURE_EXPORT_LAYOUT_HEIGHT} CSS px, and one
+ *    density maps that box onto the bitmap on both axes. A 4K export and a Full HD export are
+ *    therefore the same figure at two densities, while a 21:9 or a portrait target is the same
+ *    typography over a wider or a taller composition: the type size never moves with the pixels.
  */
 
 import { Chart } from 'chart.js';
@@ -128,32 +129,9 @@ export function aspectRatioLabel(width: number, height: number): string {
   return `${reducedWidth}:${reducedHeight}`;
 }
 
-/** The widest bitmap a preview composes, whatever the export size behind it is. */
-export const FIGURE_PREVIEW_MAX_WIDTH = 1600;
-
-/**
- * The size one preview is composed at: the export size itself, or a proportional reduction of it.
- *
- * A 4K or 300 dpi export is several times the stage it would be shown on, and composing it in full
- * costs an offscreen chart at that density for every keystroke in the size fields. The cap keeps
- * the ratio exactly, so what the reader sees is the export's shape and composition; the pixel count
- * beside it is still the target's, because that is what the file will carry.
- */
-export function previewResolution(resolution: FigureExportResolution): FigureExportResolution {
-  const { widthPx, heightPx } = resolution;
-  if (widthPx === null || heightPx === null || widthPx <= FIGURE_PREVIEW_MAX_WIDTH) {
-    return resolution;
-  }
-  return {
-    ...resolution,
-    id: 'preview',
-    widthPx: FIGURE_PREVIEW_MAX_WIDTH,
-    heightPx: Math.round((heightPx * FIGURE_PREVIEW_MAX_WIDTH) / widthPx)
-  };
-}
-
-/** The layout width every explicit resolution composes at, so relative typography never changes. */
+/** The narrowest and the shortest composition an explicit size is laid out in, in layout px. */
 export const FIGURE_EXPORT_LAYOUT_WIDTH = 960;
+export const FIGURE_EXPORT_LAYOUT_HEIGHT = 540;
 
 /** Bounds on either side of a custom size. */
 export const FIGURE_EXPORT_MIN_DIMENSION = 320;
@@ -239,6 +217,24 @@ export const FIGURE_RULE_COLOR = '#2a2a2a';
 export const FIGURE_FONT_STACK = '"Segoe UI", "Helvetica Neue", Arial, sans-serif';
 
 /**
+ * The composition box for one target bitmap.
+ *
+ * Typography is fixed in layout px, so the box decides how much plot a size gets. Anchoring the
+ * width alone gives a 21:9 image a 405 px tall composition and a plot shorter than its caption;
+ * anchoring both minimums lets a wide image grow wider and a tall image grow taller, at the same
+ * type size. Density is what maps the box onto the bitmap and is the same on both axes, so the
+ * box always has the target's exact aspect ratio.
+ */
+export function layoutBoxFor(pixelWidth: number, pixelHeight: number):
+  { layoutWidth: number; layoutHeight: number; density: number } {
+  const density = Math.min(
+    pixelWidth / FIGURE_EXPORT_LAYOUT_WIDTH,
+    pixelHeight / FIGURE_EXPORT_LAYOUT_HEIGHT
+  );
+  return { layoutWidth: pixelWidth / density, layoutHeight: pixelHeight / density, density };
+}
+
+/**
  * Resolves one figure's composition box, or refuses it.
  *
  * The chrome is measured with the same wrapping code {@link composeFigureImage} draws with, at the
@@ -265,10 +261,8 @@ export function resolveFigureLayout(
 
   const pixelWidth = Math.round(requestedWidth);
   const pixelHeight = Math.round(requestedHeight);
-  const layoutWidth = FIGURE_EXPORT_LAYOUT_WIDTH;
+  const { layoutWidth, layoutHeight, density } = layoutBoxFor(pixelWidth, pixelHeight);
   const plotWidth = layoutWidth - PADDING * 2;
-  const density = pixelWidth / layoutWidth;
-  const layoutHeight = pixelHeight / density;
 
   const chrome = measureFigureChrome(request, plotWidth);
   const plotHeight = layoutHeight - chrome.height;
@@ -286,6 +280,46 @@ export function resolveFigureLayout(
   return {
     layout: { layoutWidth, layoutHeight, plotWidth, plotHeight, density, pixelWidth, pixelHeight },
     refusal: null
+  };
+}
+
+/** The box a preview is shown in, in CSS px, and the device pixel ratio to rasterise at. */
+export interface PreviewStage {
+  readonly width: number;
+  readonly height: number;
+  readonly devicePixelRatio: number;
+}
+
+/**
+ * The export's own layout, rasterised at the density that fits the stage.
+ *
+ * Every field that shapes the composition — layoutWidth, layoutHeight, plotWidth, plotHeight —
+ * is carried over unchanged, so the preview is the export re-rendered, never a scaled copy of it:
+ * only density, pixelWidth and pixelHeight differ. Letterboxed to the target's aspect ratio, and
+ * never larger than the target itself. Returns null for a stage with no usable area.
+ */
+export function previewLayoutFor(
+  target: FigureExportLayout,
+  stage: PreviewStage
+): { layout: FigureExportLayout; cssWidth: number; cssHeight: number } | null {
+  const dpr = Math.min(4, Math.max(1, stage.devicePixelRatio));
+  const aspect = target.pixelWidth / target.pixelHeight;
+  if (!Number.isFinite(aspect) || aspect <= 0) {
+    return null;
+  }
+
+  const cssWidth = Math.min(stage.width, stage.height * aspect, target.pixelWidth / dpr);
+  const cssHeight = cssWidth / aspect;
+  if (!(cssWidth >= 1) || !(cssHeight >= 1)) {
+    return null;
+  }
+
+  const pixelWidth = Math.round(cssWidth * dpr);
+  const pixelHeight = Math.round(cssHeight * dpr);
+  return {
+    layout: { ...target, density: pixelWidth / target.layoutWidth, pixelWidth, pixelHeight },
+    cssWidth,
+    cssHeight
   };
 }
 
@@ -409,6 +443,13 @@ export async function renderPlotOffscreen(
   container.style.height = `${layout.plotHeight}px`;
 
   const canvas = document.createElement('canvas');
+  // Stated on the element, not left to the container: `responsive: false` is what keeps the chart
+  // off the visible page's layout, and it also stops Chart.js reading the container at all, so an
+  // unsized canvas would keep the HTML default of 300 × 150 and `retinaScale` would multiply that.
+  canvas.width = layout.plotWidth;
+  canvas.height = layout.plotHeight;
+  canvas.style.width = `${layout.plotWidth}px`;
+  canvas.style.height = `${layout.plotHeight}px`;
   container.appendChild(canvas);
   document.body.appendChild(container);
 

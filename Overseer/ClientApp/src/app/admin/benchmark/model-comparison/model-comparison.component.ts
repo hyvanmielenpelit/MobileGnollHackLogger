@@ -64,15 +64,16 @@ import {
 } from './model-comparison.models';
 import {
   DEFAULT_WEBP_QUALITY,
-  FIGURE_EXPORT_LAYOUT_WIDTH,
   FIGURE_EXPORT_MAX_DIMENSION,
   FIGURE_EXPORT_MIN_DIMENSION,
   FIGURE_EXPORT_PRESETS,
   FIGURE_EXPORT_PRESET_GROUPS,
   FigureExportFormat,
+  FigureExportLayout,
   FigureExportRequest,
   FigureExportResolution,
   FigureExportResult,
+  PreviewStage,
   WEBP_QUALITY_OPTIONS,
   WebpQuality,
   aspectRatioLabel,
@@ -80,7 +81,8 @@ import {
   copyImageToClipboard,
   encodeFigureImage,
   figureExportFilename,
-  previewResolution,
+  layoutBoxFor,
+  previewLayoutFor,
   renderPlotOffscreen,
   resolveFigureLayout,
   saveFigureBlob
@@ -416,6 +418,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.reducedMotion.dispose();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    this.disconnectStageObserver();
     this.cancelScheduledPreview();
   }
 
@@ -1087,10 +1090,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (resolution.widthPx === null || resolution.heightPx === null) {
       return 'Twice each figure’s on-screen size — the width follows the panel it is rendered in.';
     }
-    const density = resolution.widthPx / FIGURE_EXPORT_LAYOUT_WIDTH;
-    const layoutHeight = Math.round(resolution.heightPx / density);
+    const box = layoutBoxFor(resolution.widthPx, resolution.heightPx);
     return `${resolution.widthPx} × ${resolution.heightPx} px — laid out at ` +
-      `${FIGURE_EXPORT_LAYOUT_WIDTH} × ${layoutHeight}, ${this.formatDensity(density)}× density`;
+      `${Math.round(box.layoutWidth)} × ${Math.round(box.layoutHeight)}, ` +
+      `${this.formatDensity(box.density)}× density`;
   }
 
   onExportResolutionChange(value: string): void {
@@ -1495,6 +1498,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** The stage the composed image is drawn onto. Always in the template, so it is never absent. */
   @ViewChild('previewCanvas') previewCanvas?: ElementRef<HTMLCanvasElement>;
 
+  /** The box the stage canvas is fitted into, and the element whose size the preview follows. */
+  @ViewChild('previewStage') previewStage?: ElementRef<HTMLElement>;
+
   /** Which card is previewed. Null before the dialog has ever been opened. */
   previewCardId: string | null = null;
 
@@ -1506,13 +1512,16 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** The target size's refusal, in the words the download refuses it in. Empty while it fits. */
   previewRefusal = '';
 
-  /** The pixels **Download** will write — the target size, never the capped size on the stage. */
+  /** The pixels **Download** will write — the target size, never the size fitted to the stage. */
   previewPixels = '';
 
   /** A composition is asynchronous, so a slow one must not paint over a newer one behind it. */
   private previewSeq = 0;
 
   private previewTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Watches the stage, so a resized window, a split screen or a zoom re-composes rather than scales. */
+  private previewResizeObserver: ResizeObserver | null = null;
 
   /** Long enough that a held arrow key in a size field composes once, short enough to feel live. */
   private readonly previewDebounceMs = 150;
@@ -1543,6 +1552,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     // to hold it before the dialog is promoted to the top layer.
     this.cdr.detectChanges();
     this.figurePreviewDialog?.nativeElement.showModal();
+    this.observeStage();
     this.schedulePreview();
   }
 
@@ -1561,6 +1571,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     event?.stopPropagation();
     this.previewOpen = false;
     this.cancelScheduledPreview();
+    this.disconnectStageObserver();
     this.previewSeq++;
     this.previewBusy = false;
     this.blankPreview();
@@ -1633,9 +1644,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /**
    * Composes the current card at the current settings and draws it onto the stage.
    *
-   * The layout is resolved twice, at two different sizes, and the difference matters: the stage
-   * composes at {@link previewResolution}'s cap, while the pixel count and any refusal come from
-   * the target size, because that is the size Download would write and the size it would refuse.
+   * The target layout is what Download would write, and it alone decides the pixel count and any
+   * refusal. The stage then gets that same composition re-rendered at the density its own box
+   * affords, so what the reader judges a size by is the export itself rather than a bitmap CSS has
+   * squeezed into the box after the fact.
    *
    * Nothing here produces a blob or an object URL — the composed canvas is drawn straight onto the
    * on-screen one — so a closed dialog leaves nothing to revoke.
@@ -1665,12 +1677,19 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         return;
       }
 
-      const composed = await this.composePreview(card, canvas, chrome, onScreen);
+      const stage = this.measureStage();
+      const fit = stage ? previewLayoutFor(target.layout, stage) : null;
+      if (!fit) {
+        this.blankPreview();
+        return;
+      }
+
+      const composed = await this.composePreview(card, canvas, chrome, fit.layout);
       if (sequence !== this.previewSeq) {
         return;
       }
       if (composed) {
-        this.paintPreview(composed);
+        this.paintPreview(composed, fit.cssWidth, fit.cssHeight);
       } else {
         this.blankPreview();
       }
@@ -1685,22 +1704,19 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     }
   }
 
-  /** One composition at the preview cap, through the same two paths the export itself takes. */
+  /**
+   * One composition at the fitted layout, through the same two paths the export itself takes.
+   *
+   * The on-screen preset goes through the offscreen chart as well: its target box is the live
+   * canvas's own, and re-rendering it at the fitted density is what lets the preview fill the stage
+   * without any of it being a scaled copy.
+   */
   private async composePreview(
     card: ComparisonFigureCard,
     canvas: HTMLCanvasElement,
     chrome: FigureExportChrome,
-    onScreen: { width: number; height: number }
+    layout: FigureExportLayout
   ): Promise<HTMLCanvasElement | null> {
-    const resolution = previewResolution(this.exportResolution);
-    if (resolution.widthPx === null || resolution.heightPx === null) {
-      return composeFigureImage({ ...chrome, canvas, format: this.exportFormat, layout: null });
-    }
-
-    const { layout } = resolveFigureLayout(chrome, resolution, onScreen);
-    if (!layout) {
-      return null;
-    }
     const plot = await renderPlotOffscreen(
       { type: card.type, data: card.data, options: card.options, plugins: card.plugins },
       layout
@@ -1712,13 +1728,67 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       : composeFigureImage({ ...chrome, canvas, format: this.exportFormat, layout: null });
   }
 
-  private paintPreview(composed: HTMLCanvasElement): void {
+  /**
+   * The stage's content box and the ratio to rasterise at, or null where the element is absent.
+   *
+   * The padding is subtracted from the border box rather than read as a content box, because that
+   * is the number the canvas actually has to fit inside; `window.devicePixelRatio` is read here on
+   * every composition, so a window dragged to another display re-rasterises instead of softening.
+   */
+  measureStage(): PreviewStage | null {
+    const element = this.previewStage?.nativeElement;
+    if (!element) {
+      return null;
+    }
+    const box = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    const horizontal = parseFloat(style.paddingLeft || '0') + parseFloat(style.paddingRight || '0');
+    const vertical = parseFloat(style.paddingTop || '0') + parseFloat(style.paddingBottom || '0');
+    return {
+      width: Math.max(0, box.width - (Number.isFinite(horizontal) ? horizontal : 0)),
+      height: Math.max(0, box.height - (Number.isFinite(vertical) ? vertical : 0)),
+      devicePixelRatio: window.devicePixelRatio || 1
+    };
+  }
+
+  /**
+   * Re-composes whenever the stage changes size.
+   *
+   * Window resizes, a split screen and browser zoom all arrive here rather than through three
+   * separate listeners, and the debounce behind `schedulePreview` collapses a drag into one
+   * composition. Absent outside a browser, where the dialog is never laid out to begin with.
+   */
+  private observeStage(): void {
+    this.disconnectStageObserver();
+    const element = this.previewStage?.nativeElement;
+    if (!element || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    this.previewResizeObserver = new ResizeObserver(() => this.schedulePreview());
+    this.previewResizeObserver.observe(element);
+  }
+
+  private disconnectStageObserver(): void {
+    this.previewResizeObserver?.disconnect();
+    this.previewResizeObserver = null;
+  }
+
+  /**
+   * Draws the composition at its own bitmap size and states the CSS box it occupies.
+   *
+   * Both are stated: the canvas carries the composed pixels one for one, and the box it is shown in
+   * is the fitted size in CSS px, so nothing about the stage is left to a percentage rule that
+   * would resample what was just rasterised to fit it.
+   */
+  private paintPreview(composed: HTMLCanvasElement, cssWidth: number, cssHeight: number): void {
     const stage = this.previewCanvas?.nativeElement;
     if (!stage) {
       return;
     }
     stage.width = composed.width;
     stage.height = composed.height;
+    stage.style.width = `${cssWidth}px`;
+    stage.style.height = `${cssHeight}px`;
     stage.getContext('2d')?.drawImage(composed, 0, 0);
   }
 
@@ -1731,6 +1801,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     stage.getContext('2d')?.clearRect(0, 0, stage.width, stage.height);
     stage.width = 0;
     stage.height = 0;
+    // The CSS box goes with the bitmap, or a blanked stage keeps the footprint of the last figure.
+    stage.style.width = '';
+    stage.style.height = '';
   }
 
   // ---------------------------------------------------------------------------------------------

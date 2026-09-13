@@ -1444,6 +1444,12 @@ describe('ModelComparisonComponent', () => {
     expect(textOf('.mc-export-dimensions')).toContain('1920 × 1080 px');
     expect(textOf('.mc-export-dimensions')).toContain('2× density');
 
+    // A 21:9 size is laid out wider rather than shorter, at the same type size and density.
+    component.onExportResolutionChange('uw1080');
+    refresh();
+    expect(textOf('.mc-export-dimensions')).toContain('1280 × 540');
+    expect(textOf('.mc-export-dimensions')).toContain('2× density');
+
     component.onExportResolutionChange('custom');
     refresh();
     expect(fixture.debugElement.query(By.css('#mc-export-width'))).toBeTruthy();
@@ -1518,21 +1524,127 @@ describe('ModelComparisonComponent', () => {
 
   it('refuses a size the figure does not fit, naming it, and leaves the stage blank', async () => {
     render(buildDto(comparableSet(3)), 4);
-    openPreview(component.panelCards[0]);
+    const card = component.panelCards[0];
 
-    // In range as a size, and still too short once the title, caption and notices are measured.
+    // Every offered size is laid out in at least 960 × 540 layout px, so a figure is refused for
+    // the caveats it carries rather than for the box it was asked for: this one's do not fit.
+    const notice = (index: number): string =>
+      `Notice ${index}: ` +
+      'the speed axis is degraded for this entry, so its bar is drawn from a partial sample. '
+        .repeat(6);
+    spyOn(component as unknown as { exportChrome(card: ComparisonFigureCard): unknown }, 'exportChrome')
+      .and.returnValue({
+        title: card.title,
+        subtitle: card.subtitle,
+        caption: card.caption,
+        notices: [1, 2, 3, 4, 5, 6].map(notice),
+        footer: 'Suite A — Current catalog — 3 of 3 entries charted'
+      });
+    openPreview(card);
+
     component.onExportResolutionChange('custom');
     component.onCustomWidthChange(1280);
-    component.onCustomHeightChange(320);
+    component.onCustomHeightChange(720);
     await composePreview();
 
     expect(component.customResolutionError).toBe('');
-    expect(component.previewRefusal).toContain(component.panelCards[0].title);
-    // The target size, not the capped size the stage would have composed at.
-    expect(component.previewRefusal).toContain('1280 × 320 px');
-    expect(textOf('.mc-preview-controls .mc-export-error')).toContain('1280 × 320 px');
+    expect(component.previewRefusal).toContain(card.title);
+    // The target size, which is what Download would write and what it would refuse.
+    expect(component.previewRefusal).toContain('1280 × 720 px');
+    expect(textOf('.mc-preview-controls .mc-export-error')).toContain('1280 × 720 px');
     expect(component.previewCanvas!.nativeElement.width).toBe(0);
     expect(component.previewBusy).toBeFalse();
+  });
+
+  /**
+   * A `ResizeObserver` that records what it watched and whether it was disconnected.
+   *
+   * The stage observer is what carries a window resize, a split screen and a browser zoom into the
+   * preview, and none of the three can be produced inside a fixture.
+   */
+  class RecordingResizeObserver {
+    static readonly created: RecordingResizeObserver[] = [];
+    readonly observed: Element[] = [];
+    disconnected = 0;
+
+    constructor(_callback: ResizeObserverCallback) {
+      RecordingResizeObserver.created.push(this);
+    }
+
+    observe(target: Element): void {
+      this.observed.push(target);
+    }
+
+    unobserve(): void {
+      // Never used: the component disconnects rather than unobserving one element at a time.
+    }
+
+    disconnect(): void {
+      this.disconnected++;
+    }
+  }
+
+  let realResizeObserver: typeof ResizeObserver | undefined;
+
+  function installFakeResizeObserver(): RecordingResizeObserver[] {
+    realResizeObserver = window.ResizeObserver;
+    RecordingResizeObserver.created.length = 0;
+    (window as unknown as { ResizeObserver: unknown }).ResizeObserver = RecordingResizeObserver;
+    return RecordingResizeObserver.created;
+  }
+
+  afterEach(() => {
+    if (realResizeObserver) {
+      (window as unknown as { ResizeObserver: unknown }).ResizeObserver = realResizeObserver;
+      realResizeObserver = undefined;
+    }
+  });
+
+  it('rasterises the export at the density the stage affords, and states the box it fills', async () => {
+    render(buildDto(comparableSet(3)), 4);
+    // A fixture's element is never laid out, so the stage's geometry is given rather than measured.
+    spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
+    openPreview();
+
+    component.onExportResolutionChange('fullhd');
+    await composePreview();
+
+    const stage = component.previewCanvas!.nativeElement;
+    expect(stage.width).toBe(1600);
+    expect(stage.height).toBe(900);
+    expect(stage.style.width).toBe('800px');
+    expect(parseFloat(stage.style.height)).toBeCloseTo(450, 6);
+    // The file is still the target's, whatever the stage could show of it.
+    expect(component.previewPixels).toContain('1920 × 1080 px');
+  });
+
+  it('fits a portrait target to the stage’s height, in the target’s own ratio', async () => {
+    render(buildDto(comparableSet(3)), 4);
+    spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
+    openPreview();
+
+    component.onExportResolutionChange('a4p');
+    await composePreview();
+
+    const stage = component.previewCanvas!.nativeElement;
+    expect(parseFloat(stage.style.height)).toBeCloseTo(600, 6);
+    expect(stage.height).toBeGreaterThan(stage.width);
+    expect(Math.abs(stage.width - stage.height * (2480 / 3508))).toBeLessThan(1);
+  });
+
+  it('stops watching the stage when the preview closes', () => {
+    render(buildDto(comparableSet(3)), 4);
+    const observers = installFakeResizeObserver();
+    openPreview();
+
+    const stage = fixture.debugElement.query(By.css('.mc-preview-stage'))
+      .nativeElement as HTMLElement;
+    const watching = observers.filter(observer => observer.observed.includes(stage));
+    expect(watching.length).toBe(1);
+
+    component.onFigurePreviewClosed();
+
+    expect(watching[0].disconnected).toBe(1);
   });
 
   it('summarises the export size and format in the Figures header', () => {

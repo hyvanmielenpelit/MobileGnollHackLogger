@@ -1,11 +1,14 @@
+import { Chart } from 'chart.js';
+
 import {
   DEFAULT_WEBP_QUALITY,
+  FIGURE_EXPORT_LAYOUT_HEIGHT,
   FIGURE_EXPORT_LAYOUT_WIDTH,
   FIGURE_EXPORT_MIN_DIMENSION,
   FIGURE_EXPORT_PRESETS,
   FIGURE_EXPORT_PRESET_GROUPS,
   FIGURE_EXPORT_SCALE,
-  FIGURE_PREVIEW_MAX_WIDTH,
+  FigureExportLayout,
   FigureExportResolution,
   WEBP_QUALITY_OPTIONS,
   WebpQuality,
@@ -14,10 +17,13 @@ import {
   copyImageToClipboard,
   encodeFigureImage,
   figureExportFilename,
-  previewResolution,
+  layoutBoxFor,
+  previewLayoutFor,
+  renderPlotOffscreen,
   resolveFigureLayout,
   webpEncoderQuality
 } from './figure-export';
+import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 
 describe('figure-export', () => {
   /** A stand-in for a rendered Chart.js canvas: painted, and sized through its style box. */
@@ -123,14 +129,29 @@ describe('figure-export', () => {
       }
     });
 
-    it('composes every explicit size at one layout width, so the typography never changes', () => {
+    it('lays every explicit size out at least 960 wide and 540 tall, in the target’s ratio', () => {
+      const epsilon = 1e-9;
       for (const resolution of explicitPresets) {
         const { layout } = resolveFigureLayout(chromeOf(), resolution, onScreen);
 
-        expect(layout!.layoutWidth).withContext(resolution.id).toBe(FIGURE_EXPORT_LAYOUT_WIDTH);
-        expect(layout!.density)
+        expect(layout!.layoutWidth)
           .withContext(resolution.id)
-          .toBeCloseTo(resolution.widthPx! / FIGURE_EXPORT_LAYOUT_WIDTH, 10);
+          .toBeGreaterThanOrEqual(FIGURE_EXPORT_LAYOUT_WIDTH - epsilon);
+        expect(layout!.layoutHeight)
+          .withContext(resolution.id)
+          .toBeGreaterThanOrEqual(FIGURE_EXPORT_LAYOUT_HEIGHT - epsilon);
+
+        // Smallest such box: one of the two minimums is met exactly, never both overshot.
+        const slack = Math.min(
+          layout!.layoutWidth / FIGURE_EXPORT_LAYOUT_WIDTH,
+          layout!.layoutHeight / FIGURE_EXPORT_LAYOUT_HEIGHT
+        );
+        expect(slack).withContext(resolution.id).toBeCloseTo(1, 9);
+
+        // One density on both axes, so the composition carries the target's own shape.
+        expect(layout!.layoutWidth / layout!.layoutHeight)
+          .withContext(resolution.id)
+          .toBeCloseTo(resolution.widthPx! / resolution.heightPx!, 9);
       }
     });
 
@@ -213,6 +234,42 @@ describe('figure-export', () => {
     });
   });
 
+  describe('renderPlotOffscreen', () => {
+    // No `provideCharts` here: this spec builds a chart without a TestBed, so the controllers,
+    // elements and scales the application registers have to be registered by hand.
+    beforeAll(() => {
+      Chart.register(...APP_CHART_REGISTRABLES);
+    });
+
+    it('renders the plot box at the layout’s own density', async () => {
+      const layout: FigureExportLayout = {
+        layoutWidth: 960,
+        layoutHeight: 540,
+        plotWidth: 920,
+        plotHeight: 380,
+        density: 2,
+        pixelWidth: 1920,
+        pixelHeight: 1080
+      };
+
+      const plot = await renderPlotOffscreen(
+        {
+          type: 'bar',
+          data: { labels: ['A', 'B'], datasets: [{ data: [1, 2] }] }
+        },
+        layout
+      );
+
+      // `responsive: false` stops Chart.js measuring the container, so an unsized canvas would be
+      // rasterised from the HTML default and composed into the plot box stretched.
+      expect(plot).not.toBeNull();
+      expect(plot!.width).toBe(1840);
+      expect(plot!.height).toBe(760);
+      expect(plot!.style.width).toBe('920px');
+      expect(plot!.style.height).toBe('380px');
+    });
+  });
+
   describe('aspectRatioLabel', () => {
     it('names a size by its reduced ratio', () => {
       expect(aspectRatioLabel(1920, 1080)).toBe('16:9');
@@ -226,29 +283,69 @@ describe('figure-export', () => {
     });
   });
 
-  describe('previewResolution', () => {
-    it('leaves a size at or under the cap exactly as it is', () => {
-      const hd = preset('hd');
-      // Exactly at the cap, which is the boundary the comparison has to include.
-      const uxga = preset('uxga');
-
-      expect(previewResolution(hd)).toBe(hd);
-      expect(uxga.widthPx).toBe(FIGURE_PREVIEW_MAX_WIDTH);
-      expect(previewResolution(uxga)).toBe(uxga);
+  describe('layoutBoxFor', () => {
+    it('anchors a 16:9 size on both minimums at once', () => {
+      expect(layoutBoxFor(1920, 1080)).toEqual({ layoutWidth: 960, layoutHeight: 540, density: 2 });
     });
 
-    it('scales a larger size down to the cap, keeping its ratio', () => {
-      const capped = previewResolution(preset('uhd'));
-
-      expect(capped.id).toBe('preview');
-      expect(capped.widthPx).toBe(FIGURE_PREVIEW_MAX_WIDTH);
-      expect(capped.heightPx).toBe(900);
+    it('lets a 21:9 size grow wider rather than shrinking its composition', () => {
+      // Anchored on the height: 405 layout px of composition would leave the plot shorter than the
+      // caption under it.
+      expect(layoutBoxFor(2560, 1080)).toEqual({ layoutWidth: 1280, layoutHeight: 540, density: 2 });
     });
 
-    it('returns the on-screen size untouched, which has no dimensions to cap', () => {
-      const onscreen = preset('onscreen');
+    it('lets a portrait size grow taller at the same width', () => {
+      const box = layoutBoxFor(2480, 3508);
 
-      expect(previewResolution(onscreen)).toBe(onscreen);
+      expect(box.density).toBe(2480 / 960);
+      expect(box.layoutWidth).toBeCloseTo(960, 9);
+      expect(box.layoutHeight).toBeCloseTo((3508 * 960) / 2480, 9);
+    });
+  });
+
+  describe('previewLayoutFor', () => {
+    /** The export layout a preview is fitted from. */
+    function target(id: string): FigureExportLayout {
+      return resolveFigureLayout(chromeOf(), preset(id), onScreen).layout!;
+    }
+
+    it('keeps the export’s composition and changes only its density', () => {
+      const full = target('fullhd');
+
+      const fit = previewLayoutFor(full, { width: 900, height: 700, devicePixelRatio: 2 })!;
+
+      expect(fit.cssWidth).toBe(900);
+      expect(fit.cssHeight).toBeCloseTo(506.25, 9);
+      expect(fit.layout.pixelWidth).toBe(1800);
+      expect(fit.layout.pixelHeight).toBe(1013);
+      // The composition itself is the export's, or the preview would be a picture of another figure.
+      expect(fit.layout.layoutWidth).toBe(full.layoutWidth);
+      expect(fit.layout.layoutHeight).toBe(full.layoutHeight);
+      expect(fit.layout.plotWidth).toBe(full.plotWidth);
+      expect(fit.layout.plotHeight).toBe(full.plotHeight);
+    });
+
+    it('fits a portrait target by the stage’s height', () => {
+      const portrait = target('a4p');
+
+      const fit = previewLayoutFor(portrait, { width: 900, height: 700, devicePixelRatio: 2 })!;
+
+      expect(fit.cssHeight).toBeCloseTo(700, 9);
+      expect(fit.cssWidth).toBeCloseTo(700 * (2480 / 3508), 9);
+    });
+
+    it('does not upscale a target smaller than the stage', () => {
+      const hd = target('hd');
+
+      const fit = previewLayoutFor(hd, { width: 3000, height: 2000, devicePixelRatio: 1 })!;
+
+      expect(fit.cssWidth).toBe(1280);
+      expect(fit.layout.pixelWidth).toBe(1280);
+    });
+
+    it('returns null for a stage with no usable area', () => {
+      expect(previewLayoutFor(target('fullhd'), { width: 900, height: 0, devicePixelRatio: 2 }))
+        .toBeNull();
     });
   });
 
