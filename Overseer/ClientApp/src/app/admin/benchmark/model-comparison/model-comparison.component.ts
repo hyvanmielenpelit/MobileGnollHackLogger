@@ -61,6 +61,7 @@ import {
   unmeasuredAxes
 } from './model-comparison.models';
 import {
+  DEFAULT_WEBP_QUALITY,
   FIGURE_EXPORT_LAYOUT_WIDTH,
   FIGURE_EXPORT_MAX_DIMENSION,
   FIGURE_EXPORT_MIN_DIMENSION,
@@ -69,6 +70,8 @@ import {
   FigureExportRequest,
   FigureExportResolution,
   FigureExportResult,
+  WEBP_QUALITY_OPTIONS,
+  WebpQuality,
   composeFigureImage,
   copyImageToClipboard,
   encodeFigureImage,
@@ -78,6 +81,7 @@ import {
   saveFigureBlob
 } from './figure-export';
 import {
+  COMPARISON_TABLE_COLUMNS,
   ComparisonTableProvenance,
   TableExportFormat,
   buildComparisonTableModel,
@@ -86,6 +90,7 @@ import {
   formatIndexText,
   formatMsText,
   formatUsdText,
+  populatedColumnKeys,
   tableExportFilename,
   toMarkdown
 } from './table-export';
@@ -310,6 +315,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    *
    * State sorts on a rank rather than the label so the first click puts the entries a reader has to
    * check — excluded, then degraded — at the top instead of ordering them alphabetically.
+   *
+   * The three timings share one column and one sort key, the mean model time per question: it is the
+   * figure the scoring profile targets, and the suite total is that mean multiplied by a constant
+   * item count. Sorting on the suite total or on TTFT P50 is available in the exported table, which
+   * carries every timing as a column of its own.
    */
   readonly entryTable = new TableState<BenchmarkModelComparisonEntryDto>('state', 'desc').registerAccessors(
     {
@@ -318,8 +328,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       state: e => this.stateOrder(e),
       intelligenceIndex: e => e.quality?.pointEstimate ?? null,
       modelTimeMeanMs: e => e.speed?.modelTimeMeanMs ?? null,
-      totalModelTimeMs: e => e.speed?.totalModelTimePerRunMeanMs ?? null,
-      ttftP50Ms: e => e.speed?.ttftP50Ms ?? null,
       speedIndex: e => e.table?.meanSpeedIndex ?? null,
       costPerQuestion: e => e.cost?.candidateCostPerQuestionUsd ?? null
     },
@@ -849,6 +857,19 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   exportFormat: FigureExportFormat = 'png';
 
+  /** The qualities a WebP export may be written at, offered whenever WebP is the chosen format. */
+  readonly webpQualityOptions = WEBP_QUALITY_OPTIONS;
+
+  /**
+   * WebP quality for the figures and for the table, held separately.
+   *
+   * Two settings rather than one: the two exports already choose their formats independently, and a
+   * shared quality would make a figure's setting silently rewrite the table's.
+   */
+  figureWebpQuality: WebpQuality = DEFAULT_WEBP_QUALITY;
+
+  tableWebpQuality: WebpQuality = DEFAULT_WEBP_QUALITY;
+
   /**
    * Set while any export is running — figure download, table download, either clipboard copy.
    *
@@ -1096,7 +1117,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
     const composed = composeFigureImage({ ...chrome, canvas: plot, format: this.exportFormat, layout });
     return {
-      result: await encodeFigureImage(composed, this.exportFormat),
+      result: await encodeFigureImage(composed, this.exportFormat, this.figureWebpQuality),
       refusal: null,
       liveFallback: false,
       pixels: `${layout.pixelWidth} × ${layout.pixelHeight} px`
@@ -1125,7 +1146,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         chart.resize();
       }
       const composed = composeFigureImage({ ...chrome, canvas, format, layout: null });
-      return await encodeFigureImage(composed, format);
+      // Quality is read only by the WebP encoder, so the clipboard's fixed PNG ignores it.
+      return await encodeFigureImage(composed, format, this.figureWebpQuality);
     } finally {
       if (chart?.options) {
         chart.options.devicePixelRatio = previousRatio;
@@ -1289,18 +1311,158 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /** Encodes the filtered, sorted, unpaged table in the chosen format and saves it. */
   async downloadTable(): Promise<void> {
+    await this.writeTable(this.entryTable.viewAll(this.entries));
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The download column chooser
+  //
+  // The exported table carries twenty-six columns, of which a given comparison populates rather
+  // fewer: a comparable, fully priced set leaves the differing-key and scheduled-price columns
+  // empty on every row. The chooser opens with exactly the populated ones ticked and marks the rest
+  // as empty, so a reader who wants them has to ask for them and never has to guess which blank
+  // column is a missing measure and which is a column this set never fills.
+  // ---------------------------------------------------------------------------------------------
+
+  @ViewChild('tableColumnsDialog') tableColumnsDialogRef?: ElementRef<HTMLDialogElement>;
+
+  /** Every exportable column, in the order the file writes them. */
+  readonly tableColumns = COMPARISON_TABLE_COLUMNS;
+
+  /** Keys chosen in the column dialog; null until the first download seeds it. */
+  private tableColumnSelection: Set<string> | null = null;
+
+  /**
+   * The rows the open dialog will write, captured when it opened so a filter change mid-dialog
+   * cannot desync them.
+   */
+  private pendingTableRows: BenchmarkModelComparisonEntryDto[] = [];
+
+  /** Columns with no value on any row of the captured set, marked as empty in the chooser. */
+  tableColumnEmpty = new Set<string>();
+
+  /** The control the chooser was opened from, so focus returns where the reader left it. */
+  private tableColumnTrigger: HTMLElement | null = null;
+
+  openTableColumnDialog(event?: Event): void {
+    if (!this.canExportTable) {
+      return;
+    }
+    this.tableColumnTrigger = (event?.currentTarget as HTMLElement | null) ?? null;
+
+    const rows = this.entryTable.viewAll(this.entries);
+    this.pendingTableRows = rows;
+    const populated = populatedColumnKeys(buildComparisonTableModel(rows, this.tableProvenance));
+    const populatedKeys = new Set(populated);
+    this.tableColumnEmpty = new Set(
+      this.tableColumns.filter(column => !populatedKeys.has(column.key)).map(column => column.key)
+    );
+
+    // Seeded once and then kept for the wizard's lifetime: a reader who ticked four columns for one
+    // download wants the same four for the next, not the default back again.
+    if (this.tableColumnSelection === null) {
+      this.tableColumnSelection = new Set(populated);
+    }
+
+    // The checkboxes are rendered from state this method has just changed, so they have to hold it
+    // before the dialog is promoted to the top layer.
+    this.cdr.detectChanges();
+    this.tableColumnsDialogRef?.nativeElement.showModal();
+  }
+
+  isTableColumnSelected(key: string): boolean {
+    return this.tableColumnSelection?.has(key) ?? false;
+  }
+
+  toggleTableColumn(key: string): void {
+    const selection = this.tableColumnSelection ?? new Set<string>();
+    if (selection.has(key)) {
+      selection.delete(key);
+    } else {
+      selection.add(key);
+    }
+    this.tableColumnSelection = selection;
+    this.cdr.markForCheck();
+  }
+
+  selectAllTableColumns(): void {
+    this.tableColumnSelection = new Set(this.tableColumns.map(column => column.key));
+    this.cdr.markForCheck();
+  }
+
+  selectPopulatedTableColumns(): void {
+    this.tableColumnSelection = new Set(
+      this.tableColumns
+        .filter(column => !this.tableColumnEmpty.has(column.key))
+        .map(column => column.key)
+    );
+    this.cdr.markForCheck();
+  }
+
+  get tableColumnSelectedCount(): number {
+    return this.tableColumnSelection?.size ?? 0;
+  }
+
+  /** Closes the chooser and writes the rows it was opened over, in the chosen columns. */
+  async confirmTableDownload(): Promise<void> {
+    const rows = this.pendingTableRows.length > 0
+      ? this.pendingTableRows
+      : this.entryTable.viewAll(this.entries);
+    this.tableColumnsDialogRef?.nativeElement.close();
+    await this.writeTable(rows);
+  }
+
+  /**
+   * Keeps the chooser's own close and cancel events off the wizard dialog that contains it, and
+   * returns focus to the control it was opened from.
+   *
+   * The host closes the whole wizard from its own dialog's `close`, and this one is a descendant of
+   * it. Escape fires `cancel` and then `close`; only the second is acted on, because the chooser is
+   * still modal during the first. `cancel` is never prevented — a close request the dialog refuses
+   * to honour is a trapped reader.
+   */
+  onTableColumnsDialogClose(event: Event): void {
+    event.stopPropagation();
+    if (event.type !== 'close') {
+      return;
+    }
+    const trigger = this.tableColumnTrigger;
+    this.tableColumnTrigger = null;
+    if (trigger?.isConnected) {
+      trigger.focus();
+    }
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * The columns one download writes: what the chooser holds, or every populated column where the
+   * chooser has never been opened.
+   *
+   * Both branches come out in the order {@link COMPARISON_TABLE_COLUMNS} declares, which is the
+   * order the file is read in; the order a reader ticked boxes in is not it.
+   */
+  private tableColumnKeys(rows: readonly BenchmarkModelComparisonEntryDto[]): string[] {
+    const selection = this.tableColumnSelection;
+    if (selection !== null) {
+      return this.tableColumns.filter(column => selection.has(column.key)).map(column => column.key);
+    }
+    return populatedColumnKeys(buildComparisonTableModel(rows, this.tableProvenance));
+  }
+
+  /** The one write path, shared by the direct download and by the chooser's Download. */
+  private async writeTable(rows: readonly BenchmarkModelComparisonEntryDto[]): Promise<void> {
     if (!this.canExportTable) {
       return;
     }
     const format = this.tableExportFormat;
-    const rows = this.entryTable.viewAll(this.entries);
     this.exporting = true;
     this.exportStatus = '';
     this.cdr.markForCheck();
 
     try {
-      const model = buildComparisonTableModel(rows, this.tableProvenance);
-      const encoded = await encodeComparisonTable(model, format);
+      const columnKeys = this.tableColumnKeys(rows);
+      const model = buildComparisonTableModel(rows, this.tableProvenance, columnKeys);
+      const encoded = await encodeComparisonTable(model, format, { webpQuality: this.tableWebpQuality });
       const filename = tableExportFilename(encoded.format);
       saveFigureBlob(encoded.blob, filename);
 
@@ -1310,7 +1472,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         : '';
       this.exportStatus =
         `Table saved as ${filename} — ${rows.length} ${noun}, current sort, filters applied, ` +
-        `all pages.${fallback}`;
+        `all pages, ${columnKeys.length} of ${this.tableColumns.length} columns.${fallback}`;
     } catch {
       this.exportStatus = 'The table could not be exported.';
     } finally {

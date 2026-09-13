@@ -5194,11 +5194,11 @@ describe('AdminBenchmarkComponent', () => {
     });
   });
   describe('Model Pricing Feature', () => {
-    // U3. Two decimals at or above $1 so the card reads the same as the report; four below it so a
-    // sub-cent run still resolves to something other than $0.00.
-    it('should format a cost at or above $1 with two decimals and below it with four', () => {
-      expect(component.formatCostAmount(2.5312)).toBe('$2.53');
-      expect(component.formatCostAmount(1)).toBe('$1.00');
+    // U3. Four decimals throughout, so a sub-cent run resolves to something other than $0.00 and
+    // every cost in the admin benchmark views lines up on the decimal point.
+    it('should format every cost with four decimals', () => {
+      expect(component.formatCostAmount(2.5312)).toBe('$2.5312');
+      expect(component.formatCostAmount(1)).toBe('$1.0000');
       expect(component.formatCostAmount(0.9912)).toBe('$0.9912');
       expect(component.formatCostAmount(0.0004)).toBe('$0.0004');
     });
@@ -5228,7 +5228,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(card).toBeTruthy();
       
       const content = card!.textContent?.replace(/\s+/g, ' ').trim() || '';
-      expect(content).toContain('$1.23');
+      expect(content).toContain('$1.2345');
       expect(content).toContain('Anthropic API');
       
       const marker = card!.querySelector('.degraded-tag');
@@ -5257,7 +5257,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(card).toBeTruthy();
 
       const content = card!.textContent?.replace(/\s+/g, ' ').trim() || '';
-      expect(content).toContain('$2.30');
+      expect(content).toContain('$2.3000');
       expect(content).toContain('76 % of catalog total');
     });
 
@@ -5302,8 +5302,8 @@ describe('AdminBenchmarkComponent', () => {
       expect(row).toBeTruthy();
       
       const cellText = row!.textContent || '';
-      expect(cellText).toContain('$0.50');
-      
+      expect(cellText).toContain('$0.5000');
+
       const marker = row!.querySelector('.degraded-tag');
       expect(marker).toBeTruthy();
       expect(marker?.textContent?.trim()).toBe('*');

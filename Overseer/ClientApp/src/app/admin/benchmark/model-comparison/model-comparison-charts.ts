@@ -684,8 +684,16 @@ function tickOptions() {
   return { color: CHART_INK.muted, font: { family: '"Lato", system-ui, sans-serif', size: 11 } };
 }
 
-function axisTitle(text: string) {
-  return { display: true, text, color: CHART_INK.secondary, font: { size: 12 } };
+/** Draws the axis label on its own line and, when given a direction, a "lower/higher is better" second line. */
+function axisTitle(text: string | string[], better?: BetterDirection) {
+  return {
+    display: true,
+    text: better
+      ? [...(Array.isArray(text) ? text : [text]), better === 'lower' ? 'lower is better' : 'higher is better']
+      : text,
+    color: CHART_INK.secondary,
+    font: { size: 12 },
+  };
 }
 
 function subtitleFor(plotted: readonly ModelComparisonEntry[], context: ModelComparisonContext): string {
@@ -702,10 +710,7 @@ function formatMs(value: number): string {
 }
 
 function formatUsd(value: number): string {
-  if (value === 0) {
-    return '$0';
-  }
-  return value < 0.01 ? `$${value.toFixed(5)}` : `$${value.toFixed(3)}`;
+  return `$${value.toFixed(4)}`;
 }
 
 function degradedNotices(plotted: readonly ModelComparisonEntry[], axes: readonly ('speed' | 'cost')[]): string[] {
@@ -752,7 +757,7 @@ interface ScatterAxisSpec {
 }
 
 const QUALITY_AXIS: ScatterAxisSpec = {
-  title: 'Intelligence Index (0-100) — higher is better',
+  title: 'Intelligence Index (0-100)',
   type: 'linear',
   better: 'higher',
   min: 0,
@@ -766,7 +771,7 @@ const QUALITY_AXIS: ScatterAxisSpec = {
 // The axis is logarithmic because known runs span 7 s to 200 s; on a linear axis every fast model
 // collapses into the left edge. The word is in the title because an unannounced log axis deceives.
 const TTFT_AXIS: ScatterAxisSpec = {
-  title: 'Time to first token, P50 (ms, logarithmic scale) — lower is better',
+  title: 'Time to first token, P50 (ms, logarithmic scale)',
   type: 'logarithmic',
   better: 'lower',
   format: formatMs,
@@ -777,7 +782,7 @@ const TTFT_AXIS: ScatterAxisSpec = {
 };
 
 const COST_AXIS: ScatterAxisSpec = {
-  title: 'Candidate cost per question (USD, logarithmic scale) — lower is better',
+  title: 'Candidate cost per question (USD, logarithmic scale)',
   type: 'logarithmic',
   better: 'lower',
   format: formatUsd,
@@ -787,7 +792,7 @@ const COST_AXIS: ScatterAxisSpec = {
 };
 
 const SPEED_INDEX_AXIS: ScatterAxisSpec = {
-  title: 'Speed Index (0-100) — higher is better',
+  title: 'Speed Index (0-100)',
   type: 'linear',
   better: 'higher',
   min: 0,
@@ -802,7 +807,7 @@ const SPEED_INDEX_AXIS: ScatterAxisSpec = {
 // logarithmic treatment that keeps TTFT legible on a scatter carries over to it. No per-answer
 // dispersion is returned at the DTO level, so the mean draws no whisker at all.
 const MEAN_MODEL_TIME_AXIS: ScatterAxisSpec = {
-  title: 'Model time per question, mean (ms, logarithmic scale) — lower is better',
+  title: 'Model time per question, mean (ms, logarithmic scale)',
   type: 'logarithmic',
   better: 'lower',
   format: formatMs,
@@ -814,7 +819,7 @@ const MEAN_MODEL_TIME_AXIS: ScatterAxisSpec = {
 // Unlike the mean, the per-run total carries a genuine run-to-run SD once R >= 2 - the same
 // dispersion the small-multiples panel draws as a whisker.
 const TOTAL_MODEL_TIME_AXIS: ScatterAxisSpec = {
-  title: 'Candidate model time for the whole suite (ms, logarithmic scale) — lower is better',
+  title: 'Candidate model time for the whole suite (ms, logarithmic scale)',
   type: 'logarithmic',
   better: 'lower',
   format: formatMs,
@@ -915,7 +920,7 @@ function buildScatter(
           type: xAxis.type,
           min: xAxis.min,
           max: xAxis.max,
-          title: axisTitle(xAxis.title),
+          title: axisTitle(xAxis.title, xAxis.better),
           grid: gridOptions(),
           border: { color: CHART_INK.baseline },
           ticks: { ...tickOptions(), callback: (value) => xAxis.format(Number(value)) },
@@ -924,7 +929,7 @@ function buildScatter(
           type: yAxis.type,
           min: yAxis.min,
           max: yAxis.max,
-          title: axisTitle(yAxis.title),
+          title: axisTitle(yAxis.title, yAxis.better),
           grid: gridOptions(),
           border: { color: CHART_INK.baseline },
           ticks: { ...tickOptions(), callback: (value) => yAxis.format(Number(value)) },
@@ -1073,12 +1078,19 @@ function barPoint(
     : { x: value, y: index, xErrLow: errLow, xErrHigh: errHigh, note };
 }
 
+/** The context a datalabels callback receives: only the fields this panel's labels read. */
+interface DataLabelCtx {
+  readonly dataIndex: number;
+  readonly chart: { scales: Record<string, { getPixelForValue(value: number): number }> };
+}
+
 function buildPanel(
   id: string,
   title: string,
   plotted: readonly ModelComparisonEntry[],
   panelHue: string,
   axisTitleText: string,
+  better: BetterDirection,
   axisMax: number | undefined,
   format: (value: number) => string,
   values: readonly (number | null)[],
@@ -1087,6 +1099,7 @@ function buildPanel(
   notes: readonly (string | undefined)[],
   options: SmallMultiplesOptions,
   notices: readonly string[],
+  valueLabels = false,
 ): ChartSpec<'bar', ErrorBarPoint[], string> {
   const { context, reducedMotion, highlightedKey, selectedKeys, orientation } = options;
   const emphasised = new Set<string>(selectedKeys ?? []);
@@ -1115,6 +1128,18 @@ function buildPanel(
     return emphasised.has(entry.key) ? ACCENT : DE_EMPHASIS_STROKE;
   });
 
+  // Places a value label past the SD whisker rather than on top of it: zero when the entry carries
+  // no errHigh, so an unmeasured or interval-free bar's label sits directly past its own end.
+  const whiskerLength = (ctx: DataLabelCtx): number => {
+    const value = values[ctx.dataIndex];
+    const errHigh = errHighs[ctx.dataIndex];
+    if (value === null || errHigh === undefined) {
+      return 0;
+    }
+    const scale = ctx.chart.scales[orientation === 'vertical' ? 'y' : 'x'];
+    return Math.abs(scale.getPixelForValue(value + errHigh) - scale.getPixelForValue(value));
+  };
+
   const categoryScale = {
     type: 'category' as const,
     title: axisTitle('Model'),
@@ -1129,10 +1154,13 @@ function buildPanel(
     beginAtZero: true,
     min: 0,
     max: axisMax,
-    title: axisTitle(axisTitleText),
+    title: axisTitle(axisTitleText, better),
     grid: gridOptions(),
     border: { color: CHART_INK.baseline },
     ticks: { ...tickOptions(), callback: (value: string | number) => format(Number(value)) },
+    // Only reached where axisMax is undefined - grace is ignored once max is explicit - which is
+    // why only the cost panel, whose bars carry value labels, ever sets it.
+    ...(valueLabels ? { grace: '12%' } : {}),
   };
 
   const config: ChartConfiguration<'bar', ErrorBarPoint[], string> = {
@@ -1173,10 +1201,26 @@ function buildPanel(
             },
           },
         },
-        datalabels: { display: false },
+        datalabels: valueLabels
+          ? {
+              display: (ctx: DataLabelCtx) => values[ctx.dataIndex] !== null,
+              formatter: (_v: unknown, ctx: DataLabelCtx) => format(values[ctx.dataIndex] ?? 0),
+              anchor: 'end' as const,
+              align: orientation === 'vertical' ? ('top' as const) : ('right' as const),
+              clamp: true,
+              offset: (ctx: DataLabelCtx) => whiskerLength(ctx) + 4,
+              color: CHART_INK.secondary,
+              font: { size: 11 },
+            }
+          : { display: false as const },
       },
     },
   };
+
+  const plugins: Plugin[] = [errorBarPlugin];
+  if (valueLabels) {
+    plugins.push(ChartDataLabels as Plugin);
+  }
 
   return {
     id,
@@ -1184,7 +1228,7 @@ function buildPanel(
     subtitle: subtitleFor(plotted, context),
     notices: [...notices],
     config,
-    plugins: [errorBarPlugin],
+    plugins,
   };
 }
 
@@ -1262,16 +1306,16 @@ export function buildSmallMultiples(
 
   const speedTitle =
     speedMeasure === 'speedIndex'
-      ? 'Speed Index (0-100) — higher is better'
+      ? 'Speed Index (0-100)'
       : speedMeasure === 'meanModelTime'
-        ? 'Model time per question, mean (ms) — lower is better'
+        ? 'Model time per question, mean (ms)'
         : speedMeasure === 'totalModelTime'
-          ? 'Candidate model time for the whole suite (ms) — lower is better'
-          : 'Time to first token, P50 (ms) — lower is better';
+          ? 'Candidate model time for the whole suite (ms)'
+          : 'Time to first token, P50 (ms)';
   const costTitle =
     costMeasure === 'candidateSuite'
-      ? `Candidate cost for the whole suite (USD, ${context.itemsPerRun} items) — lower is better`
-      : 'Total run cost including grading roles (USD) — lower is better';
+      ? `Candidate cost for the whole suite (USD, ${context.itemsPerRun} items)`
+      : 'Total run cost including grading roles (USD)';
 
   const noop = plotted.map(() => undefined);
 
@@ -1281,7 +1325,8 @@ export function buildSmallMultiples(
       'Quality',
       plotted,
       CATEGORICAL_PALETTE_DARK[0],
-      'Intelligence Index (0-100) — higher is better',
+      'Intelligence Index (0-100)',
+      'higher',
       100,
       (v) => v.toFixed(0),
       qualityValues,
@@ -1297,6 +1342,7 @@ export function buildSmallMultiples(
       plotted,
       CATEGORICAL_PALETTE_DARK[1],
       speedTitle,
+      speedLowerIsBetter(speedMeasure) ? 'lower' : 'higher',
       speedMeasure === 'speedIndex' ? 100 : undefined,
       speedMeasure === 'speedIndex' ? (v) => v.toFixed(0) : formatMs,
       speedValues,
@@ -1312,6 +1358,7 @@ export function buildSmallMultiples(
       plotted,
       CATEGORICAL_PALETTE_DARK[2],
       costTitle,
+      'lower',
       undefined,
       formatUsd,
       costValues,
@@ -1320,6 +1367,7 @@ export function buildSmallMultiples(
       notes,
       options,
       degradedNotices(plotted, ['cost']),
+      true,
     ),
     order: plotted.map((e) => e.key),
     notices: [],
@@ -1514,7 +1562,7 @@ export function buildProfilePlot(
           type: 'linear',
           min: 0,
           max: 1,
-          title: axisTitle('Normalized, 0-1 — up is better on every axis'),
+          title: axisTitle(['Normalized, 0-1', 'up is better on every axis']),
           grid: gridOptions(),
           border: { color: CHART_INK.baseline },
           // The tick values carry no absolute meaning, so only the two ends are labelled.

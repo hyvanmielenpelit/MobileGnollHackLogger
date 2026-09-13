@@ -255,23 +255,32 @@ describe('ModelComparisonComponent', () => {
     expect(toggles.some(label => /show table|hide table|table view/i.test(label))).toBeFalse();
   });
 
-  it('shows model time per question and the suite total right after Intelligence Index', () => {
+  it('carries the three timings in one labelled column, after Speed Index', () => {
     render(buildDto(comparableSet(1)), 3);
 
-    // Model, R, State, Intelligence Index, Model time / question, Suite total, ...
+    // Model, R, State, Intelligence Index, Speed Index, Timings, Candidate $ / question, Notes.
     const headers = fixture.debugElement.queryAll(By.css('table.mc-table thead tr:first-child th'))
-      .map(header => (header.nativeElement as HTMLElement).textContent?.trim());
+      .map(header => (header.nativeElement as HTMLElement).textContent?.trim() ?? '');
+    expect(headers.length).toBe(8);
     expect(headers[3]).toContain('Intelligence Index');
-    expect(headers[4]).toContain('Model time');
-    expect(headers[5]).toContain('Suite total');
+    expect(headers[4]).toContain('Speed Index');
+    expect(headers[5]).toContain('Timings');
+    // No TTFT column of its own: the exported table still carries both percentiles.
+    expect(headers.some(header => header.includes('TTFT'))).toBeFalse();
 
     // The body row's Model cell is a <th scope="row">, so the <td> list starts at R.
     const row = fixture.debugElement.query(By.css('table.mc-table tbody tr'));
     const cellsText = row.queryAll(By.css('td')).map(cell => (cell.nativeElement as HTMLElement).textContent ?? '');
-    expect(cellsText[3]).toContain('28.0 s');
-    expect(cellsText[4]).toContain('504.0 s');
+    const timings = cellsText[4];
+    expect(timings).toContain('28.0 s');
+    expect(timings).toContain('504.0 s');
     // The SD is appended when the DTO carries one.
-    expect(cellsText[4]).toContain('31.5 s');
+    expect(timings).toContain('31.5 s');
+    expect(timings).toContain('2000 ms');
+    // Each value is named, so three numbers in one cell are not three unlabelled numbers.
+    expect(timings).toContain('Model time / question');
+    expect(timings).toContain('Suite total');
+    expect(timings).toContain('TTFT P50 / P90');
   });
 
   it('keeps an excluded entry in the table even though no figure can draw it', () => {
@@ -573,6 +582,32 @@ describe('ModelComparisonComponent', () => {
     expect(textOf('.mc-export')).toContain('Download all figures');
     // One image on the clipboard at a time, so there is deliberately no batch copy.
     expect(textOf('.mc-export')).not.toContain('Copy all figures');
+  });
+
+  it('offers a WebP quality for the figures only while WebP is the chosen format', async () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    const format = fixture.debugElement.query(By.css('#mc-export-format'))
+      .nativeElement as HTMLSelectElement;
+    // The quality is a control of its own now, so the format option no longer names one.
+    expect(Array.from(format.options).find(option => option.value === 'webp')?.textContent?.trim())
+      .toBe('WebP');
+    expect(fixture.debugElement.query(By.css('#mc-export-webp-quality'))).toBeNull();
+
+    component.onExportFormatChange('webp');
+    refresh();
+    // `ngModel` writes a freshly created select's initial value in a microtask, not in the pass
+    // that renders it.
+    await fixture.whenStable();
+
+    const quality = fixture.debugElement.query(By.css('#mc-export-webp-quality'))
+      .nativeElement as HTMLSelectElement;
+    const labels = Array.from(quality.options).map(option => option.textContent?.trim());
+    expect(labels).toEqual(['75', '80', '85', '90', '95', '100']);
+    expect(quality.selectedIndex).toBe(labels.length - 1);
+    expect(component.figureWebpQuality).toBe(100);
+    // A placeholder is not a label, and this control carries no visible one.
+    expect(fixture.debugElement.query(By.css('label[for="mc-export-webp-quality"]'))).toBeTruthy();
   });
 
   it('hides the export controls where no figure is rendered', () => {
@@ -1075,6 +1110,98 @@ describe('ModelComparisonComponent', () => {
     expect(textOf('.mc-table-export')).toContain('Copy as Markdown');
     expect(textOf('.mc-table-provenance')).toContain('Current catalog, as of 2026-09-07');
     expect(textOf('.mc-table-provenance')).toContain('condition 9c79137965e4');
+  });
+
+  it('offers a WebP quality for the table only while WebP is the chosen format', async () => {
+    render(buildDto(comparableSet(4)), 3);
+
+    const format = fixture.debugElement.query(By.css('#mc-table-export-format'))
+      .nativeElement as HTMLSelectElement;
+    expect(Array.from(format.options).find(option => option.value === 'webp')?.textContent?.trim())
+      .toBe('WebP');
+    expect(fixture.debugElement.query(By.css('#mc-table-export-webp-quality'))).toBeNull();
+
+    component.onTableExportFormatChange('webp');
+    refresh();
+    // `ngModel` writes a freshly created select's initial value in a microtask, not in the pass
+    // that renders it.
+    await fixture.whenStable();
+
+    const quality = fixture.debugElement.query(By.css('#mc-table-export-webp-quality'))
+      .nativeElement as HTMLSelectElement;
+    const labels = Array.from(quality.options).map(option => option.textContent?.trim());
+    expect(labels).toEqual(['75', '80', '85', '90', '95', '100']);
+    expect(quality.selectedIndex).toBe(labels.length - 1);
+    expect(component.tableWebpQuality).toBe(100);
+    expect(fixture.debugElement.query(By.css('label[for="mc-table-export-webp-quality"]'))).toBeTruthy();
+  });
+
+  it('opens the column chooser on the populated columns, and writes only those', async () => {
+    render(buildDto(comparableSet(3)), 3);
+    const saved = captureSaves();
+
+    component.openTableColumnDialog();
+    refresh();
+
+    expect(fixture.debugElement.queryAll(By.css('.mc-columns-grid .checkbox-label')).length).toBe(26);
+    // A comparable, fully priced set fills neither of these, so they open unticked and say so.
+    expect(component.tableColumnEmpty.has('scheduledChange')).toBeTrue();
+    expect(component.tableColumnEmpty.has('differsOn')).toBeTrue();
+    expect(component.isTableColumnSelected('scheduledChange')).toBeFalse();
+    expect(component.isTableColumnSelected('intelligenceIndex')).toBeTrue();
+    expect(component.tableColumnSelectedCount).toBe(22);
+    expect(textOf('.mc-columns-count')).toContain('22 of 26 columns');
+    expect(textOf('.mc-columns-grid')).toContain('empty');
+
+    component.tableExportFormat = 'csv';
+    await component.confirmTableDownload();
+
+    const header = (await saved.blobs[0].text()).split('\r\n')[0];
+    expect(header).toContain('Intelligence Index');
+    expect(header).not.toContain('Scheduled price change');
+    expect(component.exportStatus).toContain('22 of 26 columns');
+  });
+
+  it('writes every ticked column, empty ones included, and refuses an empty selection', async () => {
+    render(buildDto(comparableSet(3)), 3);
+    const saved = captureSaves();
+
+    component.openTableColumnDialog();
+    component.selectAllTableColumns();
+    refresh();
+    expect(component.tableColumnSelectedCount).toBe(26);
+
+    component.tableExportFormat = 'csv';
+    await component.confirmTableDownload();
+    expect((await saved.blobs[0].text()).split('\r\n')[0]).toContain('Scheduled price change');
+
+    component.openTableColumnDialog();
+    for (const column of component.tableColumns) {
+      if (component.isTableColumnSelected(column.key)) {
+        component.toggleTableColumn(column.key);
+      }
+    }
+    refresh();
+
+    expect(component.tableColumnSelectedCount).toBe(0);
+    const download = fixture.debugElement
+      .queryAll(By.css('.mc-columns-dialog .dialog-actions .btn-gh'))
+      .map(button => button.nativeElement as HTMLButtonElement)
+      .find(button => (button.textContent ?? '').trim() === 'Download');
+    expect(download!.disabled).toBeTrue();
+  });
+
+  it('keeps the nested chooser close event off the wizard dialog that contains it', () => {
+    render(buildDto(comparableSet(3)), 3);
+
+    // The host closes the whole wizard from its own dialog's close, and this one is a descendant:
+    // both events have to stop where they are raised.
+    for (const type of ['cancel', 'close']) {
+      const event = new Event(type, { bubbles: true });
+      const stopped = spyOn(event, 'stopPropagation').and.callThrough();
+      component.onTableColumnsDialogClose(event);
+      expect(stopped).withContext(type).toHaveBeenCalled();
+    }
   });
 
   it('writes one file per table format, under the extension that format names', async () => {

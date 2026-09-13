@@ -470,7 +470,7 @@ describe('MultiRunComponent', () => {
     expect(panel).toContain('Question parallelism differs across members.');
     expect(panel).toContain('Cost aggregates degraded');
     expect(panel).toContain('The pricing snapshot differs across members.');
-    expect(panel).toContain('$7.59');
+    expect(panel).toContain('$7.5900');
   });
 
   it('should flag speed and cost as degraded when only the comparability tier says so', () => {
@@ -560,8 +560,8 @@ describe('MultiRunComponent', () => {
 
   // --- Formatting ---
 
-  it('should format cost at two decimals from a dollar and four below it', () => {
-    expect(component.formatCost(2.5311)).toBe('$2.53');
+  it('should format cost at four decimals at every magnitude', () => {
+    expect(component.formatCost(2.5311)).toBe('$2.5311');
     expect(component.formatCost(0.0042)).toBe('$0.0042');
     expect(component.formatCost(null)).toBe('—');
   });

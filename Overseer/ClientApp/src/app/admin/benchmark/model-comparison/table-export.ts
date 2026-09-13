@@ -36,7 +36,7 @@ import {
   encodeFigureImage,
   wrapText
 } from './figure-export';
-import type { FigureExportResult } from './figure-export';
+import type { FigureExportResult, WebpQuality } from './figure-export';
 
 /** The eight offered formats. Each id is also the file extension it is written under. */
 export type TableExportFormat = 'xlsx' | 'csv' | 'tsv' | 'md' | 'json' | 'html' | 'png' | 'webp';
@@ -156,15 +156,12 @@ export function formatMsText(value: number | null | undefined): string {
   return value >= 10000 ? `${(value / 1000).toFixed(1)} s` : `${Math.round(value)} ms`;
 }
 
-/** Four decimal places under a cent, two above: a candidate cost per question is usually the first. */
+/** Four decimal places always, so a sub-cent cost and a multi-dollar cost line up. */
 export function formatUsdText(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) {
     return ABSENT_TEXT;
   }
-  if (value === 0) {
-    return '$0';
-  }
-  return value < 0.01 ? `$${value.toFixed(4)}` : `$${value.toFixed(2)}`;
+  return `$${value.toFixed(4)}`;
 }
 
 /** `Excluded`, `Degraded` or `Comparable` — the verdict in words, never in a colour. */
@@ -185,16 +182,39 @@ export function comparisonStateLabel(entry: BenchmarkModelComparisonEntryDto): s
  * Excluded entries are included, and carry nulls on every axis: the server returns no measures for
  * one at all, and dropping them here would make an unchartable model invisible in the artefact
  * whose whole job is to say what could not be compared.
+ *
+ * `columnKeys`, when given, narrows `model.columns` to those keys — in {@link COMPARISON_TABLE_COLUMNS}'
+ * declared order, never the caller's. Every encoder iterates `model.columns`, so no encoder needs to
+ * know about the subset; `cellsOf` still builds every cell and the ones outside the subset are simply
+ * never written.
  */
 export function buildComparisonTableModel(
   entries: readonly BenchmarkModelComparisonEntryDto[],
-  provenance: ComparisonTableProvenance
+  provenance: ComparisonTableProvenance,
+  columnKeys?: readonly string[]
 ): ComparisonTableModel {
+  const columns = columnKeys
+    ? COMPARISON_TABLE_COLUMNS.filter(column => columnKeys.includes(column.key))
+    : COMPARISON_TABLE_COLUMNS;
   return {
-    columns: COMPARISON_TABLE_COLUMNS,
+    columns,
     rows: entries.map(entry => ({ cells: cellsOf(entry) })),
     provenance
   };
+}
+
+/**
+ * Keys of the columns that hold at least one non-absent cell across these rows.
+ *
+ * An absent measure is `raw: null`, whether it prints as `—` (a text cell) or was never computed (a
+ * numeric one); a `false` boolean and a `0` count are not absent and count as populated. Operates on
+ * whatever `model.columns` already is — the wizard calls this on a model built without a column
+ * subset, so every column present in the model is considered.
+ */
+export function populatedColumnKeys(model: ComparisonTableModel): string[] {
+  return model.columns
+    .filter(column => model.rows.some(row => (row.cells[column.key]?.raw ?? null) !== null))
+    .map(column => column.key);
 }
 
 function cellsOf(entry: BenchmarkModelComparisonEntryDto): Record<string, ComparisonTableCell> {
@@ -748,9 +768,10 @@ export function composeTableImage(
 /** Encodes a composed table canvas, through the figure encoder and its WebP fallback reporting. */
 export function encodeTableImage(
   canvas: HTMLCanvasElement,
-  format: 'png' | 'webp'
+  format: 'png' | 'webp',
+  quality?: WebpQuality
 ): Promise<FigureExportResult> {
-  return encodeFigureImage(canvas, format);
+  return encodeFigureImage(canvas, format, quality);
 }
 
 /**
@@ -784,11 +805,12 @@ const TABLE_MEDIA_TYPES: Record<string, string> = {
  */
 export async function encodeComparisonTable(
   model: ComparisonTableModel,
-  format: TableExportFormat
+  format: TableExportFormat,
+  options?: { webpQuality?: WebpQuality }
 ): Promise<TableExportResult> {
   if (format === 'png' || format === 'webp') {
     const canvas = composeTableImage(model, { scale: FIGURE_EXPORT_SCALE });
-    const encoded = await encodeTableImage(canvas, format);
+    const encoded = await encodeTableImage(canvas, format, options?.webpQuality);
     return { blob: encoded.blob, format: encoded.format, fellBackToPng: encoded.fellBackToPng };
   }
   if (format === 'xlsx') {

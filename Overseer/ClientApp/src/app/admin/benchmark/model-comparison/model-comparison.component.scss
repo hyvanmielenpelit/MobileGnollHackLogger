@@ -56,6 +56,12 @@
   min-width: 170px;
 }
 
+/* Six two- and three-digit options, so it is sized to the numbers rather than to the row. */
+.mc-export-quality {
+  width: auto;
+  min-width: 110px;
+}
+
 .mc-export-status {
   margin: 0;
   font-size: 13px;
@@ -498,7 +504,32 @@
    The table view
    ========================================================================== */
 
+/*
+ * Eight columns, several of which carry a value and its qualifiers. Every such cell is a flex
+ * column with the value on the first line, so a badge or a basis wraps under the number it belongs
+ * to instead of widening the column; the values themselves never wrap, and only the headings and
+ * the Notes prose do.
+ */
 .mc-table {
+  th,
+  td {
+    vertical-align: top;
+  }
+
+  .mc-nowrap,
+  .mc-timings dd,
+  .col-center {
+    white-space: nowrap;
+    text-wrap: nowrap;
+  }
+
+  /* Set on the cell rather than on the sort header's own label span: the label is rendered by
+     another component, which this stylesheet's emulated encapsulation cannot reach, and
+     `text-wrap` inherits into it. */
+  th {
+    text-wrap: balance;
+  }
+
   .col-center {
     text-align: center;
   }
@@ -507,6 +538,68 @@
   .col-name {
     text-align: left;
     min-width: 200px;
+  }
+}
+
+/* Reserved whether or not the rows overflow, so a filter that shortens the table does not shift it. */
+.mc-table-scroll {
+  scrollbar-gutter: stable;
+}
+
+.mc-cell-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mc-cell-stack-center {
+  align-items: center;
+}
+
+/* The three timings as label / value pairs in one column: `display: contents` on each row lets both
+   halves join the two-column grid, so the values line up across all three. */
+.mc-timings {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content max-content;
+  gap: 2px 10px;
+  font-size: 12px;
+
+  > div {
+    display: contents;
+  }
+
+  dt {
+    color: #898781;
+  }
+
+  dd {
+    margin: 0;
+    color: #d4d4d8;
+  }
+}
+
+/* The interval basis is a sentence in a narrow cell, so it reads as one clipped line with the whole
+   of it in the popover anchored to it. */
+.mc-basis-btn {
+  max-width: 26ch;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  color: #898781;
+  text-align: left;
+  cursor: help;
+  white-space: nowrap;
+  overflow: clip;
+  text-overflow: ellipsis;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
   }
 }
 
@@ -580,12 +673,13 @@
   color: #c3c2b7;
 }
 
-.mc-n1,
-.mc-saturated,
-.mc-unpriced,
-.mc-scheduled {
-  display: inline-block;
-  margin-left: 5px;
+/* One pill for every qualifier a cell hangs off a value. It carries no margin: in a cell stack the
+   4px column gap already separates it from the value, and beside inline text the surrounding space
+   does. The four qualifier classes stay on the elements as the hooks the specs query. */
+.mc-badge {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
   padding: 1px 6px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.25);
@@ -596,7 +690,8 @@
 }
 
 .mc-notes {
-  min-width: 180px;
+  min-width: 22ch;
+  max-width: 36ch;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -846,4 +941,66 @@
    and wrapping them under it is what happens anyway. */
 .mc-table-export {
   flex-wrap: wrap;
+}
+
+/* --- The download column chooser --- */
+
+/* A header / note / actions / grid column. `dialog:not([open])` in `styles.scss` hides it when it
+   is closed with an `!important` of its own, so `display` needs no open-state gate here; there is
+   no exit transition whose length it would have to survive. */
+.mc-columns-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  .dialog-header {
+    margin-bottom: 0;
+  }
+
+  .dialog-actions {
+    margin-top: 0;
+  }
+}
+
+.mc-columns-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+/* Twenty-six checkboxes: a grid that scrolls inside the dialog rather than a dialog that grows past
+   the viewport. `overscroll-behavior` keeps the wizard behind it from scrolling at either end. */
+.mc-columns-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px 16px;
+  max-height: 50dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* `.checkbox-label` is a flex row, so its own gap already separates this from the header text. */
+.mc-column-empty {
+  padding: 0 5px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: #898781;
+}
+
+.mc-columns-count {
+  margin: 0 auto 0 0;
+  align-self: center;
+  font-size: 12px;
+  color: #8b8b90;
+}
+
+@media (max-width: 500px) {
+  /* `.dialog-actions` stacks in column-reverse below this width, where an auto left margin would
+     only add a gap above the count. */
+  .mc-columns-count {
+    margin: 0;
+    align-self: stretch;
+  }
 }

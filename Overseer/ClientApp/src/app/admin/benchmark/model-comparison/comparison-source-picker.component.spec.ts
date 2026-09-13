@@ -430,6 +430,24 @@ describe('ComparisonSourcePickerComponent', () => {
         .map(element => element.nativeElement as HTMLButtonElement);
     }
 
+    /**
+     * Intercepts the save path rather than the module that performs it: the object URL names the
+     * blob that was written and the anchor names the file it was written under, which between them
+     * are everything a download can be asserted on without a real file system.
+     */
+    function captureSaves(): { blobs: Blob[]; names: string[] } {
+      const saved: { blobs: Blob[]; names: string[] } = { blobs: [], names: [] };
+      spyOn(URL, 'createObjectURL').and.callFake((source: Blob | MediaSource) => {
+        saved.blobs.push(source as Blob);
+        return 'blob:comparison-source-picker-test';
+      });
+      spyOn(URL, 'revokeObjectURL').and.stub();
+      spyOn(HTMLAnchorElement.prototype, 'click').and.callFake(function (this: HTMLAnchorElement) {
+        saved.names.push(this.download);
+      });
+      return saved;
+    }
+
     it('offers the control only where the source differs from the reference condition', () => {
       render({ runs: runs(3), groups: [buildGroup({ id: 1 })], comparabilityIndex: buildIndex() });
 
@@ -450,6 +468,10 @@ describe('ComparisonSourcePickerComponent', () => {
       expect(showModal).toHaveBeenCalled();
       expect(component.conditionDetail?.sourceLabel).toBe('Run 3');
       expect(component.conditionDetailTitle).toBe('Run 3 — Condition B');
+      // Full-screen, like the wizard it is nested in — its backdrop is too thin to be an honest
+      // click target, so it carries no closedby and no light-dismiss handler.
+      expect(conditionDialog().classList.contains('gh-dialog-fullscreen')).toBeTrue();
+      expect(conditionDialog().hasAttribute('closedby')).toBeFalse();
 
       const rows = fixture.debugElement
         .queryAll(By.css('dialog.csp-condition-dialog tbody tr'))
@@ -481,6 +503,40 @@ describe('ComparisonSourcePickerComponent', () => {
       } finally {
         delete (navigator as { clipboard?: unknown }).clipboard;
       }
+    });
+
+    it('downloads the detail as Markdown, named after the source', () => {
+      const index = buildIndex({
+        entries: [
+          ...buildIndex().entries,
+          buildIndexEntry({
+            key: 'run:46',
+            sourceId: 46,
+            conditionOrdinal: 2,
+            conditionLabel: 'Condition B',
+            signature: 'sig-b',
+            differencesFromLargest: [{
+              name: 'serviceTier',
+              kind: 'MustMatch',
+              description: 'Service tier differs from the largest condition',
+              variants: [{ value: 'priority', runIds: [46] }, { value: 'standard', runIds: [1, 2] }]
+            }]
+          })
+        ]
+      });
+      render({ runs: [...runs(3), buildRun({ id: 46 })], comparabilityIndex: index });
+      spyOn(conditionDialog(), 'showModal');
+      // The run table sorts by id descending by default, so run 46 renders — and opens — first.
+      detailButtons()[0].click();
+      fixture.detectChanges();
+      const saved = captureSaves();
+
+      component.downloadConditionDetail();
+
+      expect(saved.blobs.length).toBe(1);
+      expect(saved.blobs[0].type).toContain('text/markdown');
+      expect(saved.names[0]).toMatch(/^comparability_run-46_\d{8}_\d{6}\.md$/);
+      expect(component.conditionCopyState).toContain('Saved as');
     });
 
     it('closes on Escape and returns focus to the control that opened it', async () => {

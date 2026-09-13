@@ -151,22 +151,24 @@
                   <td>{{ run.testedModelDisplayNameUsed }}</td>
                   <td>{{ runStatus(run) }}</td>
                   <td class="col-center">
-                    <span [class]="conditionBadgeClass('run:' + run.id)">{{ conditionLabel('run:' + run.id) }}</span>
-                    @if (hasConditionDetail('run:' + run.id)) {
-                      <button type="button" class="action-btn csp-condition-detail"
-                              [attr.aria-label]="'Comparability detail for run ' + run.id"
-                              [attr.interestfor]="conditionTipId('run:' + run.id)"
-                              [attr.style]="'anchor-name: --' + conditionTipId('run:' + run.id)"
-                              (click)="openConditionDetail('run:' + run.id, $event)">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                          <circle cx="12" cy="12" r="10"></circle>
-                          <line x1="12" y1="16" x2="12" y2="12"></line>
-                          <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                        </svg>
-                      </button>
-                      <div popover="hint" class="gh-tooltip" [id]="conditionTipId('run:' + run.id)"
-                           [attr.style]="'position-anchor: --' + conditionTipId('run:' + run.id)">Show comparability detail</div>
-                    }
+                    <span class="csp-condition-cell">
+                      <span [class]="conditionBadgeClass('run:' + run.id)">{{ conditionLabel('run:' + run.id) }}</span>
+                      @if (hasConditionDetail('run:' + run.id)) {
+                        <button type="button" class="action-btn csp-condition-detail"
+                                [attr.aria-label]="'Comparability detail for run ' + run.id"
+                                [attr.interestfor]="conditionTipId('run:' + run.id)"
+                                [attr.style]="'anchor-name: --' + conditionTipId('run:' + run.id)"
+                                (click)="openConditionDetail('run:' + run.id, $event)">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="16" x2="12" y2="12"></line>
+                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                          </svg>
+                        </button>
+                        <div popover="hint" class="gh-tooltip" [id]="conditionTipId('run:' + run.id)"
+                             [attr.style]="'position-anchor: --' + conditionTipId('run:' + run.id)">Show comparability detail</div>
+                      }
+                    </span>
                   </td>
                   <td class="col-center">{{ formatIndex(run.qualityIndex ?? run.finalScore) }}</td>
                   <td>{{ formatDate(run.startedAtUtc) }}</td>
@@ -293,22 +295,24 @@
                     </span>
                   </td>
                   <td class="col-center">
-                    <span [class]="conditionBadgeClass('group:' + group.id)">{{ conditionLabel('group:' + group.id) }}</span>
-                    @if (hasConditionDetail('group:' + group.id)) {
-                      <button type="button" class="action-btn csp-condition-detail"
-                              [attr.aria-label]="'Comparability detail for group ' + group.name"
-                              [attr.interestfor]="conditionTipId('group:' + group.id)"
-                              [attr.style]="'anchor-name: --' + conditionTipId('group:' + group.id)"
-                              (click)="openConditionDetail('group:' + group.id, $event)">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                          <circle cx="12" cy="12" r="10"></circle>
-                          <line x1="12" y1="16" x2="12" y2="12"></line>
-                          <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                        </svg>
-                      </button>
-                      <div popover="hint" class="gh-tooltip" [id]="conditionTipId('group:' + group.id)"
-                           [attr.style]="'position-anchor: --' + conditionTipId('group:' + group.id)">Show comparability detail</div>
-                    }
+                    <span class="csp-condition-cell">
+                      <span [class]="conditionBadgeClass('group:' + group.id)">{{ conditionLabel('group:' + group.id) }}</span>
+                      @if (hasConditionDetail('group:' + group.id)) {
+                        <button type="button" class="action-btn csp-condition-detail"
+                                [attr.aria-label]="'Comparability detail for group ' + group.name"
+                                [attr.interestfor]="conditionTipId('group:' + group.id)"
+                                [attr.style]="'anchor-name: --' + conditionTipId('group:' + group.id)"
+                                (click)="openConditionDetail('group:' + group.id, $event)">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="16" x2="12" y2="12"></line>
+                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                          </svg>
+                        </button>
+                        <div popover="hint" class="gh-tooltip" [id]="conditionTipId('group:' + group.id)"
+                             [attr.style]="'position-anchor: --' + conditionTipId('group:' + group.id)">Show comparability detail</div>
+                      }
+                    </span>
                   </td>
                   <td class="col-center">{{ group.runCount }}</td>
                   <td>{{ formatDate(group.createdAtUtc) }}</td>
@@ -586,12 +590,12 @@
   options blobs and 64-character digests — a tooltip cannot be scrolled, selected or copied from,
   and the detail is only useful if it can be pasted beside the figure it explains.
 
-  Same containment, same light-dismiss arrangement and the same Safari fallback as the legend
-  above; nothing here is configured, so a mis-click costs a reopen.
+  Full-screen, like the wizard it is nested in: its own backdrop is only the 8px ring around it,
+  too thin to be an honest click target, so it carries no `closedby` and no light-dismiss handler.
+  Escape and the dialog's own close controls still work on a showModal() dialog without either.
 -->
-<dialog #conditionDetailDialog class="gh-dialog csp-condition-dialog" closedby="any"
+<dialog #conditionDetailDialog class="gh-dialog gh-dialog-fullscreen csp-condition-dialog"
         aria-labelledby="csp-condition-title"
-        (click)="onConditionDialogClick($event)"
         (cancel)="onConditionDialogClose($event)"
         (close)="onConditionDialogClose($event)">
   <div class="csp-legend-header">
@@ -767,6 +771,7 @@
     <p class="csp-condition-copy-state" role="status">{{ conditionCopyState }}</p>
     <button type="button" class="btn-gh btn-gh-cancel"
             (click)="conditionDetailDialog.close()">Close</button>
+    <button type="button" class="btn-gh" (click)="downloadConditionDetail()">Download as Markdown</button>
     <button type="button" class="btn-gh" (click)="copyConditionDetail()">Copy as Markdown</button>
   </div>
 </dialog>

@@ -1,4 +1,5 @@
 import { Chart } from 'chart.js';
+import ChartDataLabels from 'chartjs-plugin-datalabels';
 import {
   ACCENT,
   CATEGORICAL_PALETTE_DARK,
@@ -41,13 +42,18 @@ interface ScaleProbe {
   min?: number;
   max?: number;
   beginAtZero?: boolean;
-  title?: { text?: string };
+  grace?: string;
+  title?: { text?: string | string[] };
 }
 
 function scaleOf(config: unknown, axis: 'x' | 'y'): ScaleProbe {
   const probe = config as { options?: { scales?: Record<string, ScaleProbe> } };
   return probe.options?.scales?.[axis] ?? {};
 }
+
+/** An axis title's text, always as an array: a single-line title comes back as its one element. */
+const titleLines = (scale: ScaleProbe): (string | undefined)[] =>
+  Array.isArray(scale.title?.text) ? scale.title.text : [scale.title?.text];
 
 /** Datasets and data points are read structurally; chart.js types are far wider than the assertion. */
 function datasetsOf(config: unknown): Record<string, unknown>[] {
@@ -232,13 +238,13 @@ describe('model-comparison-charts', () => {
       const y = scaleOf(spec.config, 'y');
 
       expect(x.type).toBe('logarithmic');
-      expect(x.title?.text).toContain('Model time per question, mean');
-      expect(x.title?.text).toContain('logarithmic');
+      expect(titleLines(x)[0]).toContain('Model time per question, mean');
+      expect(titleLines(x)[0]).toContain('logarithmic');
       expect(x.title?.text).toContain('lower is better');
       expect(y.type).toBe('linear');
       expect(y.min).toBe(0);
       expect(y.max).toBe(100);
-      expect(y.title?.text).not.toContain('logarithmic');
+      expect(titleLines(y)[0]).not.toContain('logarithmic');
     });
 
     it('S1 puts TTFT on a logarithmic x axis and says so in the axis title, when TTFT is selected', () => {
@@ -246,8 +252,8 @@ describe('model-comparison-charts', () => {
       const x = scaleOf(spec.config, 'x');
 
       expect(x.type).toBe('logarithmic');
-      expect(x.title?.text).toContain('Time to first token');
-      expect(x.title?.text).toContain('logarithmic');
+      expect(titleLines(x)[0]).toContain('Time to first token');
+      expect(titleLines(x)[0]).toContain('logarithmic');
     });
 
     it('S1 switches to Speed Index, linear 0-100, when that measure is selected', () => {
@@ -264,7 +270,7 @@ describe('model-comparison-charts', () => {
     it('S2 puts cost on a logarithmic x axis and keeps quality linear', () => {
       const spec = buildQualityCostScatter(PROFILE_FIXTURE, BASE_FIGURE_OPTIONS);
       expect(scaleOf(spec.config, 'x').type).toBe('logarithmic');
-      expect(scaleOf(spec.config, 'x').title?.text).toContain('logarithmic');
+      expect(titleLines(scaleOf(spec.config, 'x'))[0]).toContain('logarithmic');
       expect(scaleOf(spec.config, 'y').type).toBe('linear');
     });
 
@@ -272,9 +278,9 @@ describe('model-comparison-charts', () => {
       const spec = buildSpeedCostScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, speedMeasure: 'totalModelTime' });
       expect(scaleOf(spec.config, 'x').type).toBe('logarithmic');
       expect(scaleOf(spec.config, 'y').type).toBe('logarithmic');
-      expect(scaleOf(spec.config, 'x').title?.text).toContain('Candidate model time for the whole suite');
-      expect(scaleOf(spec.config, 'x').title?.text).toContain('logarithmic');
-      expect(scaleOf(spec.config, 'y').title?.text).toContain('logarithmic');
+      expect(titleLines(scaleOf(spec.config, 'x'))[0]).toContain('Candidate model time for the whole suite');
+      expect(titleLines(scaleOf(spec.config, 'x'))[0]).toContain('logarithmic');
+      expect(titleLines(scaleOf(spec.config, 'y'))[0]).toContain('logarithmic');
     });
 
     it('keeps the axes ascending and states the preferred corner instead of reversing them', () => {
@@ -428,29 +434,31 @@ describe('model-comparison-charts', () => {
       const mean = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ speedMeasure: 'meanModelTime' }));
       const total = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ speedMeasure: 'totalModelTime' }));
 
-      expect(scaleOf(index.speed.config, 'y').title?.text).toContain('Speed Index');
+      expect(titleLines(scaleOf(index.speed.config, 'y'))[0]).toContain('Speed Index');
       expect(scaleOf(index.speed.config, 'y').max).toBe(100);
       expect(pointsOf(index.speed.config)[0]['y']).toBe(100);
 
-      expect(scaleOf(ttft.speed.config, 'y').title?.text).toContain('Time to first token');
+      expect(titleLines(scaleOf(ttft.speed.config, 'y'))[0]).toContain('Time to first token');
       expect(scaleOf(ttft.speed.config, 'y').title?.text).toContain('lower is better');
       expect(scaleOf(ttft.speed.config, 'y').max).toBeUndefined();
       const ttftPoint = pointsOf(ttft.speed.config)[0];
       expect(ttftPoint['y']).toBe(500);
       expect(ttftPoint['yErrHigh']).toBe(1300);
 
-      expect(scaleOf(mean.speed.config, 'y').title?.text).toBe(
-        'Model time per question, mean (ms) — lower is better',
-      );
+      expect(scaleOf(mean.speed.config, 'y').title?.text).toEqual([
+        'Model time per question, mean (ms)',
+        'lower is better',
+      ]);
       const meanPoint = pointsOf(mean.speed.config)[0];
       expect(meanPoint['y']).toBe(PROFILE_FIXTURE[0].modelTimeMeanMs);
       expect(meanPoint['yErrLow']).toBeUndefined();
       expect(meanPoint['yErrHigh']).toBeUndefined();
       expect(mean.speed.notices.join(' ')).toContain('no per-answer dispersion');
 
-      expect(scaleOf(total.speed.config, 'y').title?.text).toBe(
-        'Candidate model time for the whole suite (ms) — lower is better',
-      );
+      expect(scaleOf(total.speed.config, 'y').title?.text).toEqual([
+        'Candidate model time for the whole suite (ms)',
+        'lower is better',
+      ]);
       const totalPoint = pointsOf(total.speed.config)[0];
       expect(totalPoint['y']).toBe(PROFILE_FIXTURE[0].totalModelTimeMs);
       expect(totalPoint['yErrLow']).toBe(PROFILE_FIXTURE[0].totalModelTimeSdMs!);
@@ -461,12 +469,12 @@ describe('model-comparison-charts', () => {
       const suite = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ costMeasure: 'candidateSuite' }));
       const total = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ costMeasure: 'totalRun' }));
 
-      expect(scaleOf(suite.cost.config, 'y').title?.text).toContain('whole suite');
+      expect(titleLines(scaleOf(suite.cost.config, 'y'))[0]).toContain('whole suite');
       expect(pointsOf(suite.cost.config)[0]['y'] as number)
         .toBeCloseTo(suiteCostUsd(PROFILE_FIXTURE[0], CONTEXT), 10);
       expect(suiteCostUsd(PROFILE_FIXTURE[0], CONTEXT)).toBeCloseTo(0.3, 10);
 
-      expect(scaleOf(total.cost.config, 'y').title?.text).toContain('Total run cost');
+      expect(titleLines(scaleOf(total.cost.config, 'y'))[0]).toContain('Total run cost');
       expect(pointsOf(total.cost.config)[0]['y']).toBe(0.4);
     });
 
@@ -529,6 +537,46 @@ describe('model-comparison-charts', () => {
         expect(panel.subtitle).toContain(CONTEXT.pricingBasisLabel);
       }
     });
+
+    it('gives only the cost panel scriptable value labels, past the SD whisker with a grace margin', () => {
+      const figure = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ costMeasure: 'candidateSuite' }));
+
+      expect(figure.cost.plugins).toContain(ChartDataLabels);
+      expect(figure.quality.plugins).not.toContain(ChartDataLabels);
+      expect(figure.speed.plugins).not.toContain(ChartDataLabels);
+
+      const costDatalabels = figure.cost.config.options?.plugins?.datalabels as {
+        display?: (ctx: { dataIndex: number }) => boolean;
+      };
+      const qualityDatalabels = figure.quality.config.options?.plugins?.datalabels as { display?: unknown };
+      const speedDatalabels = figure.speed.config.options?.plugins?.datalabels as { display?: unknown };
+
+      expect(typeof costDatalabels.display).toBe('function');
+      expect(costDatalabels.display?.({ dataIndex: 0 })).toBeTrue();
+      expect(qualityDatalabels.display).toBeFalse();
+      expect(speedDatalabels.display).toBeFalse();
+
+      expect(scaleOf(figure.cost.config, 'y').grace).toBe('12%');
+      // Grace extends both ends of the scale; an explicit min keeps the zero baseline a bar requires.
+      expect(scaleOf(figure.cost.config, 'y').min).toBe(0);
+    });
+
+    // `buildPanel` takes a nullable value array and its label guard is written for it; the cost
+    // DTO types the amount as a number, so the unmeasured entry is forced past the type here.
+    it('does not label a cost bar for an entry the panel carries no cost value for', () => {
+      const unmeasured = makeEntry({ key: 'no-cost', totalRunCostUsd: null as unknown as number });
+      const entries = [PROFILE_FIXTURE[0], unmeasured];
+      const figure = buildSmallMultiples(entries, {
+        ...smallMultiplesOptions({ costMeasure: 'totalRun' }),
+        glyphs: buildIdentityGlyphs(entries),
+      });
+      const costDatalabels = figure.cost.config.options?.plugins?.datalabels as {
+        display?: (ctx: { dataIndex: number }) => boolean;
+      };
+
+      expect(costDatalabels.display?.({ dataIndex: 0 })).toBeTrue();
+      expect(costDatalabels.display?.({ dataIndex: 1 })).toBeFalse();
+    });
   });
 
   describe('P2 profile normalization', () => {
@@ -559,8 +607,8 @@ describe('model-comparison-charts', () => {
       expect(cost.lowerIsBetter).toBeTrue();
       expect(cost.min).toBeCloseTo(0.1, 10);
       expect(cost.max).toBeCloseTo(0.3, 10);
-      expect(cost.minLabel).toBe('$0.100');
-      expect(cost.maxLabel).toBe('$0.300');
+      expect(cost.minLabel).toBe('$0.1000');
+      expect(cost.maxLabel).toBe('$0.3000');
     });
 
     it('inverts the speed axis too when the measure is a latency', () => {
@@ -872,13 +920,14 @@ describe('model-comparison-charts', () => {
     it('defaults the speed measure to mean model time, everywhere the measure is read', () => {
       const figures = buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT });
 
-      expect(scaleOf(figures.smallMultiples.speed.config, 'y').title?.text).toBe(
-        'Model time per question, mean (ms) — lower is better',
-      );
-      expect(scaleOf(figures.qualitySpeed.config, 'x').title?.text).toContain(
+      expect(scaleOf(figures.smallMultiples.speed.config, 'y').title?.text).toEqual([
+        'Model time per question, mean (ms)',
+        'lower is better',
+      ]);
+      expect(titleLines(scaleOf(figures.qualitySpeed.config, 'x'))[0]).toContain(
         'Model time per question, mean',
       );
-      expect(scaleOf(figures.speedCost.config, 'x').title?.text).toContain(
+      expect(titleLines(scaleOf(figures.speedCost.config, 'x'))[0]).toContain(
         'Model time per question, mean',
       );
       expect(figures.profile.config.data.labels).toContain('Speed (mean model time)');

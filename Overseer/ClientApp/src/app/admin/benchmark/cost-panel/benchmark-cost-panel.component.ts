@@ -117,17 +117,15 @@ export class BenchmarkCostPanelComponent {
   }
 
   /**
-   * A dollar amount at the precision the figure deserves: two decimals at or above a dollar, four
-   * below, so a cancelled run costing $0.0007 does not collapse to `$0.00`. The same rule as
-   * `AdminBenchmarkComponent.formatCostAmount` — restated rather than shared, because importing
-   * from the host component that imports this one would be a cycle.
+   * A dollar amount at four decimals fixed, so a sub-cent cost like $0.0007 renders
+   * as $0.0007, not $0.00, and zero renders as $0.0000.
    */
   formatAmount(amount: number | null | undefined): string {
     if (!this.isFigure(amount)) {
       return '-';
     }
     const numPipe = new DecimalPipe('en-US');
-    const digits = Math.abs(amount) >= 1 ? '1.2-2' : '1.2-4';
+    const digits = '1.4-4';
     return `$${numPipe.transform(amount, digits)}`;
   }
 

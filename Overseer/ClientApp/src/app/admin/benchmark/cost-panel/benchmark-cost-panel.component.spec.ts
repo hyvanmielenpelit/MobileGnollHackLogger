@@ -117,7 +117,7 @@ describe('BenchmarkCostPanelComponent', () => {
           '.gh-cost-role:not(.gh-cost-role--subtotal) .gh-cost-role__amount'
         )
       ).map(el => (el.textContent ?? '').trim());
-      expect(amounts[zeroRow]).toBe('$0.00');
+      expect(amounts[zeroRow]).toBe('$0.0000');
     });
 
     it('should render no role list at all when every role is null', () => {
@@ -171,7 +171,7 @@ describe('BenchmarkCostPanelComponent', () => {
       const subtotal = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('.gh-cost-role--subtotal');
       expect(subtotal).not.toBeNull();
       expect(subtotal!.querySelector('.gh-cost-role__name')!.textContent!.trim()).toBe('Grading subtotal');
-      expect(subtotal!.querySelector('.gh-cost-role__amount')!.textContent!.trim()).toBe('$2.75');
+      expect(subtotal!.querySelector('.gh-cost-role__amount')!.textContent!.trim()).toBe('$2.7500');
     });
 
     it('should carry no bar and no share', () => {
@@ -258,9 +258,9 @@ describe('BenchmarkCostPanelComponent', () => {
   });
 
   describe('formatAmount', () => {
-    it('should use two decimals at or above a dollar and four below', () => {
-      expect(component.formatAmount(2.5312)).toBe('$2.53');
-      expect(component.formatAmount(1)).toBe('$1.00');
+    it('should use four decimals at every magnitude', () => {
+      expect(component.formatAmount(2.5312)).toBe('$2.5312');
+      expect(component.formatAmount(1)).toBe('$1.0000');
       expect(component.formatAmount(0.9912)).toBe('$0.9912');
       expect(component.formatAmount(0.0004)).toBe('$0.0004');
     });

@@ -295,7 +295,7 @@
               <line x1="12" y1="8" x2="12.01" y2="8"></line>
             </svg>
             <div class="alert-content">
-              <p class="alert-heading">Every plotted entry is a single run — <span class="mc-n1">n = 1</span></p>
+              <p class="alert-heading">Every plotted entry is a single run — <span class="mc-badge mc-n1">n = 1</span></p>
               <div class="alert-body">
                 No interval here covers reproducibility: each quality interval is item sampling alone, which
                 does not shrink with more runs, and no cost or speed spread across runs exists at all. Read
@@ -476,10 +476,22 @@
               <option value="json">JSON</option>
               <option value="html">HTML</option>
               <option value="png">PNG</option>
-              <option value="webp">WebP (quality 85)</option>
+              <option value="webp">WebP</option>
             </select>
+            <!-- Quality after the format rather than before it, so choosing WebP never shifts the
+                 control the reader has just used. -->
+            @if (tableExportFormat === 'webp') {
+              <label class="visually-hidden" for="mc-table-export-webp-quality">WebP quality</label>
+              <select id="mc-table-export-webp-quality" class="gh-input mc-export-quality"
+                      [ngModel]="tableWebpQuality" [ngModelOptions]="{ standalone: true }"
+                      (ngModelChange)="tableWebpQuality = $event">
+                @for (q of webpQualityOptions; track q) {
+                  <option [ngValue]="q">{{ q }}</option>
+                }
+              </select>
+            }
             <button type="button" class="btn-gh btn-gh-small" [disabled]="!canExportTable"
-                    (click)="downloadTable()">
+                    (click)="openTableColumnDialog($event)">
               <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                 <polyline points="14 2 14 8 20 8"></polyline>
@@ -499,14 +511,15 @@
           @if (entries.length === 0) {
             <p class="text-muted">Nothing to compare yet.</p>
           } @else {
-            <div class="gh-datatable-scroll">
+            <div class="gh-datatable-scroll mc-table-scroll">
               <app-table-pager [state]="entryTable" [rows]="entries" noun="entries"
                                (changed)="onTableChanged()"></app-table-pager>
               <table class="gh-table gh-datatable mc-table">
                 <caption class="visually-hidden">
                   Cross-model comparison entries: model, runs behind the point, comparability state,
-                  Intelligence Index, model time per question, suite total model time, time to first
-                  token, Speed Index, candidate cost, and the comparability keys each entry differs on.
+                  Intelligence Index, Speed Index, the timings behind it — model time per question,
+                  suite total and time to first token — candidate cost, and the comparability keys
+                  each entry differs on.
                 </caption>
                 <thead>
                   <tr>
@@ -514,10 +527,8 @@
                     <th app-sort-header [state]="entryTable" column="runCount" label="R" class="col-center" (changed)="onTableChanged()"></th>
                     <th app-sort-header [state]="entryTable" column="state" label="State" (changed)="onTableChanged()"></th>
                     <th app-sort-header [state]="entryTable" column="intelligenceIndex" label="Intelligence Index" (changed)="onTableChanged()"></th>
-                    <th app-sort-header [state]="entryTable" column="modelTimeMeanMs" label="Model time / question" (changed)="onTableChanged()"></th>
-                    <th app-sort-header [state]="entryTable" column="totalModelTimeMs" label="Suite total" (changed)="onTableChanged()"></th>
-                    <th app-sort-header [state]="entryTable" column="ttftP50Ms" label="TTFT P50 / P90" (changed)="onTableChanged()"></th>
                     <th app-sort-header [state]="entryTable" column="speedIndex" label="Speed Index" (changed)="onTableChanged()"></th>
+                    <th app-sort-header [state]="entryTable" column="modelTimeMeanMs" label="Timings" (changed)="onTableChanged()"></th>
                     <th app-sort-header [state]="entryTable" column="costPerQuestion" label="Candidate $ / question" (changed)="onTableChanged()"></th>
                     <th scope="col">Notes</th>
                   </tr>
@@ -544,8 +555,6 @@
                     <td></td>
                     <td></td>
                     <td></td>
-                    <td></td>
-                    <td></td>
                     <td>
                       @if (entryTable.hasActiveFilters) {
                         <button type="button" class="gh-filter-clear"
@@ -556,7 +565,7 @@
                 </thead>
                 <tbody>
                   @if (entryTable.noMatches(entries)) {
-                    <tr><td colspan="10" class="text-muted">No entries match these filters.</td></tr>
+                    <tr><td colspan="8" class="text-muted">No entries match these filters.</td></tr>
                   }
                   @for (entry of entryTable.view(entries); track entry.key) {
                     <tr [class.mc-row-highlighted]="highlightedKey === entry.key"
@@ -566,7 +575,7 @@
                           <span [class]="'mc-glyph mc-glyph-' + g.shape"
                                 [style.background-color]="g.hue" aria-hidden="true"></span>
                         }
-                        <button type="button" class="mc-name-btn"
+                        <button type="button" class="mc-name-btn mc-nowrap"
                                 [attr.aria-pressed]="isEmphasised(entry.key)"
                                 [attr.aria-label]="'Emphasise ' + entry.label + ' in every figure'"
                                 (click)="toggleEmphasis(entry.key)"
@@ -575,80 +584,108 @@
                         <span class="mc-source">{{ entry.sourceKind }} {{ entry.sourceId }}</span>
                       </th>
                       <td class="col-center">
-                        {{ entry.runCount }}
-                        @if (entry.runCount === 1) {
-                          <span class="mc-n1">n = 1</span>
-                        }
-                      </td>
-                      <td>
-                        <!-- Text plus icon, never colour alone: the badge names its state in words. -->
-                        <span [class]="'mc-state ' + stateClass(entry)"
-                              [attr.interestfor]="tipId('state', entry.key)"
-                              [attr.style]="'anchor-name: --' + tipId('state', entry.key)">
-                          @if (entry.excluded) {
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                              <circle cx="12" cy="12" r="10"></circle>
-                              <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
-                            </svg>
-                          } @else if (entry.state === 'Degraded') {
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                              <line x1="12" y1="9" x2="12" y2="13"></line>
-                              <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                            </svg>
-                          } @else {
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                              <polyline points="20 6 9 17 4 12"></polyline>
-                            </svg>
+                        <div class="mc-cell-stack mc-cell-stack-center">
+                          {{ entry.runCount }}
+                          @if (entry.runCount === 1) {
+                            <span class="mc-badge mc-n1">n = 1</span>
                           }
-                          {{ stateLabel(entry) }}
-                        </span>
-                        <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('state', entry.key)"
-                             [attr.style]="'position-anchor: --' + tipId('state', entry.key)">{{ entry.explanation }}</div>
-                        @if (degradedAxes(entry).length > 0) {
-                          <span class="mc-degraded-axes">Degraded: {{ degradedAxes(entry).join(', ') }}</span>
-                        }
+                        </div>
                       </td>
                       <td>
-                        {{ formatIndex(entry.quality?.pointEstimate) }}
-                        @if (entry.quality?.intervalHalfWidth != null) {
-                          <span class="mc-interval">± {{ formatIndex(entry.quality?.intervalHalfWidth) }}</span>
-                          <span class="mc-interval-basis">{{ entry.quality?.intervalBasis }}</span>
-                        } @else if (!entry.excluded) {
-                          <span class="mc-interval-basis">No interval available</span>
-                        }
+                        <div class="mc-cell-stack">
+                          <!-- Text plus icon, never colour alone: the badge names its state in words. -->
+                          <span [class]="'mc-state ' + stateClass(entry)"
+                                [attr.interestfor]="tipId('state', entry.key)"
+                                [attr.style]="'anchor-name: --' + tipId('state', entry.key)">
+                            @if (entry.excluded) {
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
+                              </svg>
+                            } @else if (entry.state === 'Degraded') {
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                <line x1="12" y1="9" x2="12" y2="13"></line>
+                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                              </svg>
+                            } @else {
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                              </svg>
+                            }
+                            {{ stateLabel(entry) }}
+                          </span>
+                          <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('state', entry.key)"
+                               [attr.style]="'position-anchor: --' + tipId('state', entry.key)">{{ entry.explanation }}</div>
+                          @if (degradedAxes(entry).length > 0) {
+                            <span class="mc-degraded-axes">Degraded: {{ degradedAxes(entry).join(', ') }}</span>
+                          }
+                        </div>
                       </td>
-                      <td>{{ formatMs(entry.speed?.modelTimeMeanMs) }}</td>
                       <td>
-                        {{ formatMs(entry.speed?.totalModelTimePerRunMeanMs) }}
-                        @if (entry.speed?.totalModelTimeSdMs != null) {
-                          <span class="mc-interval"> ± {{ formatMs(entry.speed?.totalModelTimeSdMs) }}</span>
-                        }
+                        <div class="mc-cell-stack">
+                          <span class="mc-nowrap">
+                            {{ formatIndex(entry.quality?.pointEstimate) }}
+                            @if (entry.quality?.intervalHalfWidth != null) {
+                              <span class="mc-interval">± {{ formatIndex(entry.quality?.intervalHalfWidth) }}</span>
+                            }
+                          </span>
+                          @if (entry.quality?.intervalHalfWidth != null) {
+                            <!-- The basis runs to a sentence, so the cell shows one clipped line and the
+                                 whole of it in the popover. The exported table carries it in full. -->
+                            <button type="button" class="mc-basis-btn"
+                                    [attr.interestfor]="tipId('basis', entry.key)"
+                                    [attr.style]="'anchor-name: --' + tipId('basis', entry.key)">{{ entry.quality?.intervalBasis }}</button>
+                            <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('basis', entry.key)"
+                                 [attr.style]="'position-anchor: --' + tipId('basis', entry.key)">{{ entry.quality?.intervalBasis }}</div>
+                          } @else if (!entry.excluded) {
+                            <span class="mc-interval-basis">No interval available</span>
+                          }
+                        </div>
                       </td>
                       <td>
-                        {{ formatMs(entry.speed?.ttftP50Ms) }} / {{ formatMs(entry.speed?.ttftP90Ms) }}
+                        <div class="mc-cell-stack">
+                          <span class="mc-nowrap">{{ formatIndex(entry.table?.meanSpeedIndex) }}</span>
+                          @if (entry.table?.speedIndexSaturated) {
+                            <span class="mc-badge mc-saturated"
+                                  [attr.interestfor]="tipId('sat', entry.key)"
+                                  [attr.style]="'anchor-name: --' + tipId('sat', entry.key)">Saturated</span>
+                            <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('sat', entry.key)"
+                                 [attr.style]="'position-anchor: --' + tipId('sat', entry.key)">
+                              At least half the scored answers finished inside their difficulty-scaled target, so
+                              the index cannot discriminate at this speed. Read time to first token instead.
+                            </div>
+                          }
+                        </div>
                       </td>
                       <td>
-                        {{ formatIndex(entry.table?.meanSpeedIndex) }}
-                        @if (entry.table?.speedIndexSaturated) {
-                          <span class="mc-saturated"
-                                [attr.interestfor]="tipId('sat', entry.key)"
-                                [attr.style]="'anchor-name: --' + tipId('sat', entry.key)">Saturated</span>
-                          <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('sat', entry.key)"
-                               [attr.style]="'position-anchor: --' + tipId('sat', entry.key)">
-                            At least half the scored answers finished inside their difficulty-scaled target, so
-                            the index cannot discriminate at this speed. Read time to first token instead.
+                        <!-- Three timings in one column, each named beside its value: a column apiece
+                             costs more width than three short numbers are worth. -->
+                        <dl class="mc-timings">
+                          <div>
+                            <dt>Model time / question</dt>
+                            <dd>{{ formatMs(entry.speed?.modelTimeMeanMs) }}</dd>
                           </div>
-                        }
+                          <div>
+                            <dt>Suite total</dt>
+                            <dd>{{ formatMs(entry.speed?.totalModelTimePerRunMeanMs) }}@if (entry.speed?.totalModelTimeSdMs != null) {<span class="mc-interval">± {{ formatMs(entry.speed?.totalModelTimeSdMs) }}</span>}</dd>
+                          </div>
+                          <div>
+                            <dt>TTFT P50 / P90</dt>
+                            <dd>{{ formatMs(entry.speed?.ttftP50Ms) }} / {{ formatMs(entry.speed?.ttftP90Ms) }}</dd>
+                          </div>
+                        </dl>
                       </td>
                       <td>
-                        {{ formatUsd(entry.cost?.candidateCostPerQuestionUsd) }}
-                        @if (entry.cost && !entry.cost.pricingResolved) {
-                          <span class="mc-unpriced">Unpriced</span>
-                        }
-                        @if (entry.cost?.scheduledChangeEffectiveFrom) {
-                          <span class="mc-scheduled">Price change {{ entry.cost?.scheduledChangeEffectiveFrom }}</span>
-                        }
+                        <div class="mc-cell-stack">
+                          <span class="mc-nowrap">{{ formatUsd(entry.cost?.candidateCostPerQuestionUsd) }}</span>
+                          @if (entry.cost && !entry.cost.pricingResolved) {
+                            <span class="mc-badge mc-unpriced">Unpriced</span>
+                          }
+                          @if (entry.cost?.scheduledChangeEffectiveFrom) {
+                            <span class="mc-badge mc-scheduled">Price change {{ entry.cost?.scheduledChangeEffectiveFrom }}</span>
+                          }
+                        </div>
                       </td>
                       <td class="mc-notes">
                         @if (entry.excludingKeys.length > 0) {
@@ -690,6 +727,72 @@
             }
           </ul>
         }
+
+        <!--
+          The download column chooser.
+
+          Nested inside the wizard's own modal dialog, which is legitimate: showModal() promotes this
+          element to the top layer, where the wizard's `overflow: hidden` and the step panel's
+          `overflow-y: auto` do not clip it, and Escape closes the topmost dialog only.
+
+          No `closedby="any"`: its backdrop over a full-screen wizard is a thin ring rather than an
+          honest click target, and a mis-click would discard a column selection the reader has just
+          made. The wizard's other nested dialogs avoid light dismiss for the same reason.
+        -->
+        <dialog #tableColumnsDialog class="gh-dialog dialog-wide mc-columns-dialog"
+                aria-labelledby="mc-columns-title"
+                (cancel)="onTableColumnsDialogClose($event)"
+                (close)="onTableColumnsDialogClose($event)">
+          <div class="dialog-header">
+            <div class="dialog-title-group">
+              <h3 id="mc-columns-title">Columns to download</h3>
+            </div>
+            <button type="button" class="btn-icon-action" aria-label="Close the column chooser"
+                    (click)="tableColumnsDialog.close()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+                   style="width: 20px; height: 20px;">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+
+          <p class="section-note">
+            Columns with no value on any exported row are unticked. The order of the file follows the
+            table, not the order you tick.
+          </p>
+
+          <div class="mc-columns-actions">
+            <button type="button" class="gh-filter-clear"
+                    (click)="selectPopulatedTableColumns()">Only columns with values</button>
+            <button type="button" class="gh-filter-clear"
+                    (click)="selectAllTableColumns()">All columns</button>
+          </div>
+
+          <div class="mc-columns-grid" role="group" aria-labelledby="mc-columns-title">
+            @for (column of tableColumns; track column.key) {
+              <label class="checkbox-label">
+                <input type="checkbox" [checked]="isTableColumnSelected(column.key)"
+                       (change)="toggleTableColumn(column.key)">
+                {{ column.header }}
+                @if (tableColumnEmpty.has(column.key)) {
+                  <span class="mc-column-empty">empty</span>
+                }
+              </label>
+            }
+          </div>
+
+          <div class="dialog-actions">
+            <p class="mc-columns-count" role="status">
+              {{ tableColumnSelectedCount }} of {{ tableColumns.length }} columns
+            </p>
+            <button type="button" class="btn-gh btn-gh-cancel"
+                    (click)="tableColumnsDialog.close()">Cancel</button>
+            <button type="button" class="btn-gh" [disabled]="tableColumnSelectedCount === 0"
+                    (click)="confirmTableDownload()">Download</button>
+          </div>
+        </dialog>
       </div>
     }
 
@@ -763,8 +866,20 @@
                         [ngModel]="exportFormat" [ngModelOptions]="{ standalone: true }"
                         (ngModelChange)="onExportFormatChange($event)">
                   <option value="png">PNG</option>
-                  <option value="webp">WebP (quality 85)</option>
+                  <option value="webp">WebP</option>
                 </select>
+                <!-- Quality after the format rather than before it, so choosing WebP never shifts
+                     the control the reader has just used. -->
+                @if (exportFormat === 'webp') {
+                  <label class="visually-hidden" for="mc-export-webp-quality">WebP quality</label>
+                  <select id="mc-export-webp-quality" class="gh-input mc-export-quality"
+                          [ngModel]="figureWebpQuality" [ngModelOptions]="{ standalone: true }"
+                          (ngModelChange)="figureWebpQuality = $event">
+                    @for (q of webpQualityOptions; track q) {
+                      <option [ngValue]="q">{{ q }}</option>
+                    }
+                  </select>
+                }
                 <button type="button" class="btn-gh btn-gh-small" [disabled]="!canExport"
                         (click)="downloadAllFigures()">Download all figures</button>
               </div>

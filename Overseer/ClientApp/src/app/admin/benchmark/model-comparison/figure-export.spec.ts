@@ -1,14 +1,18 @@
 import {
+  DEFAULT_WEBP_QUALITY,
   FIGURE_EXPORT_LAYOUT_WIDTH,
   FIGURE_EXPORT_MIN_DIMENSION,
   FIGURE_EXPORT_PRESETS,
   FIGURE_EXPORT_SCALE,
   FigureExportResolution,
+  WEBP_QUALITY_OPTIONS,
+  WebpQuality,
   composeFigureImage,
   copyImageToClipboard,
   encodeFigureImage,
   figureExportFilename,
-  resolveFigureLayout
+  resolveFigureLayout,
+  webpEncoderQuality
 } from './figure-export';
 
 describe('figure-export', () => {
@@ -211,6 +215,68 @@ describe('figure-export', () => {
 
     expect(result.format).toBe('webp');
     expect(result.fellBackToPng).toBeFalse();
+  });
+
+  describe('WebP quality encoding', () => {
+    it('passes quality divided by 100 to toBlob for WebP', async () => {
+      const canvas = sourceCanvas(120, 80);
+      const blobSpy = spyOn(canvas, 'toBlob').and.callFake((callback: BlobCallback) => {
+        callback(new Blob(['fake'], { type: 'image/webp' }));
+      });
+
+      await encodeFigureImage(canvas, 'webp', 85);
+
+      expect(blobSpy).toHaveBeenCalledWith(
+        jasmine.any(Function),
+        'image/webp',
+        0.85
+      );
+    });
+
+    it('passes 1.0 to toBlob for WebP quality 100', async () => {
+      const canvas = sourceCanvas(120, 80);
+      const blobSpy = spyOn(canvas, 'toBlob').and.callFake((callback: BlobCallback) => {
+        callback(new Blob(['fake'], { type: 'image/webp' }));
+      });
+
+      await encodeFigureImage(canvas, 'webp', 100);
+
+      expect(blobSpy).toHaveBeenCalledWith(
+        jasmine.any(Function),
+        'image/webp',
+        1.0
+      );
+    });
+
+    it('passes undefined to toBlob for PNG regardless of quality parameter', async () => {
+      const canvas = sourceCanvas(120, 80);
+      const blobSpy = spyOn(canvas, 'toBlob').and.callFake((callback: BlobCallback) => {
+        callback(new Blob(['fake'], { type: 'image/png' }));
+      });
+
+      await encodeFigureImage(canvas, 'png', 85);
+
+      expect(blobSpy).toHaveBeenCalledWith(
+        jasmine.any(Function),
+        'image/png',
+        undefined
+      );
+    });
+
+    it('uses DEFAULT_WEBP_QUALITY when no quality is provided', async () => {
+      const canvas = sourceCanvas(120, 80);
+      const blobSpy = spyOn(canvas, 'toBlob').and.callFake((callback: BlobCallback) => {
+        callback(new Blob(['fake'], { type: 'image/webp' }));
+      });
+
+      await encodeFigureImage(canvas, 'webp');
+
+      expect(blobSpy).toHaveBeenCalledWith(
+        jasmine.any(Function),
+        'image/webp',
+        webpEncoderQuality(DEFAULT_WEBP_QUALITY)
+      );
+    });
   });
 
   it('names the file after the figure and a sortable timestamp', () => {

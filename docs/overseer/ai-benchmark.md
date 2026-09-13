@@ -2330,6 +2330,66 @@ below is carried by a file no fingerprint covers.
   "✓ " prefix until the tab is revisited. Blocked playback is reported in the dialog rather than
   swallowed.
 
+### Cross-Model Comparison UI Polish (2026-09-13) — No Version Bump
+
+*Prompted by the wizard's own use on runs 46–48.* Nothing here grades anything:
+`BenchmarkAssessmentPrompt.HarnessVersion` stays at **28**, `ScoringMethodVersion` at **10**, and
+`CandidateSystemPromptSha256` and `ToolGuidesSha256` do not move. Six presentation changes to the
+*Cross-model comparison* wizard and, for the cost rule, to the admin benchmark views around it.
+
+- **The condition-detail dialog is full screen.** `#conditionDetailDialog` carries
+  `.gh-dialog-fullscreen` rather than sizing itself, which is what the wizard and the Suite Health
+  dialog already use, so the key table's *meaning* column widens from 40ch to 52ch and a source that
+  differs on many keys needs less scrolling. Light dismiss goes with it: a full-screen dialog's
+  backdrop shows only as an 8px ring, which is too thin to be an honest click target, so `closedby`
+  is absent and Escape and the dialog's own controls are the ways out.
+- **The dialog saves as well as copies.** *Download as Markdown* sits beside *Copy as Markdown* and
+  writes the same text to `comparability_<source>_<yyyyMMdd_HHmmss>.md`, for a reader who wants the
+  comparability record in the same folder as the exported table and figures rather than on a
+  clipboard that the next copy overwrites.
+- **The condition badge and its info button are one flex unit.** `.csp-condition-cell` centres them
+  on each other on one line and, where the column is too narrow for both, gives the wrapped button a
+  vertical gap instead of the horizontal offset the old `margin-left` left behind.
+- **Costs print four decimals everywhere in the admin benchmark area** — run cards, the cost panel,
+  multi-run cost statistics, the comparison table, the figures' axis ticks and their end labels. The
+  three formatters that split at a dollar (`formatCostAmount`, `formatAmount`, `formatCost`) now pass
+  a fixed `'1.4-4'`, and `formatUsd`/`formatUsdText` a fixed `toFixed(4)`. Zero prints `$0.0000`;
+  thousands separators stay where a `DecimalPipe` already produced them. A sub-cent candidate and a
+  multi-dollar one line up on the decimal point, which is the comparison the whole area exists for.
+- **The cost panel's bars carry value labels.** Only the cost panel: the label is drawn past the SD
+  whisker by a scriptable `offset` that measures the whisker in pixels from the value scale, and the
+  scale takes `grace: '12%'` so the tallest bar's label is not clipped. `grace` is ignored where a
+  scale has an explicit `max`, which the quality and speed panels do have — they keep
+  `datalabels.display: false`. `renderPlotOffscreen` forwards the same plugins and shallow-copies the
+  options, so an exported figure carries the labels the screen does.
+- **Every axis title is two lines**: what the axis measures, then *lower is better*, *higher is
+  better*, or — on the profile figure — *up is better on every axis*. Chart.js draws one line per
+  element of a `string[]` title, so the direction is no longer an em-dash suffix that a narrow figure
+  truncates first.
+- **WebP exports choose a quality.** The format option reads exactly *WebP*, and a quality select
+  (75, 80, 85, 90, 95 or 100, default **100**) appears beside it only while WebP is chosen. The
+  figures and the table hold the setting separately, as they already hold their formats separately.
+  `canvas.toBlob` has no lossless flag; 100 passes `1.0`, which Chromium encodes losslessly and other
+  engines encode at their highest lossy quality, so the label claims neither. The repository's
+  quality-85 convention governs **shipped image assets**, not an admin's one-off export of a figure
+  they are about to paste into a report.
+- **Download table asks which columns to write.** A native `<dialog>` lists all 26 columns with every
+  column that holds no value on any exported row pre-unticked and marked *empty* — for a fully
+  comparable, unscheduled set that is *Scheduled price change*, *Differs on*, *Speed degraded by* and
+  *Cost degraded by*. *All columns* and *Only columns with values* set the whole grid; the Download
+  button refuses an empty selection; the choice is remembered for the wizard's lifetime. The file
+  keeps `COMPARISON_TABLE_COLUMNS` order whatever order the boxes were ticked in, and the status line
+  ends `…, N of 26 columns.` The chooser stops `cancel` and `close` from propagating, or the wizard
+  dialog containing it would close too.
+- **The comparison table stops wrapping mid-value.** Eight columns rather than ten: *Model · R ·
+  State · Intelligence Index · Speed Index · Timings · Candidate $ / question · Notes*, where
+  *Timings* is one `<dl>` stacking model time per question, the suite total and TTFT P50/P90. Every
+  multi-part cell is a flex column, so a badge that wraps below its value gets a 4px gap and no left
+  offset; numbers carry `nowrap`; the interval basis is clipped to one line with its full text in the
+  tooltip and, unchanged, in the export. Sorting on screen by suite total and by TTFT P50 is gone
+  with their columns — sorting by *Timings* sorts on model time per question. **The exported table
+  still carries all 26 columns**, so nothing is lost from the artefact, only from the screen.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.

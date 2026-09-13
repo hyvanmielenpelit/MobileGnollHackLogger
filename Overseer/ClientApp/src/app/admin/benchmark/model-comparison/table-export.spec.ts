@@ -8,6 +8,7 @@ import {
   buildComparisonTableModel,
   composeTableImage,
   formatUsdText,
+  populatedColumnKeys,
   tableExportFilename,
   toCsv,
   toHtml,
@@ -178,9 +179,11 @@ describe('table-export', () => {
     const [row] = model().rows;
 
     expect(row.cells['costPerQuestion'].raw).toBe(0.0432);
-    // Two decimals at or above a cent, four below, exactly as the on-screen table prints it.
-    expect(row.cells['costPerQuestion'].text).toBe('$0.04');
+    // Four decimal places always, exactly as the on-screen table prints it.
+    expect(row.cells['costPerQuestion'].text).toBe('$0.0432');
     expect(formatUsdText(0.0043)).toBe('$0.0043');
+    expect(formatUsdText(0)).toBe('$0.0000');
+    expect(formatUsdText(2.035)).toBe('$2.0350');
     expect(row.cells['ttftP90Ms'].raw).toBe(12500);
     // Ten seconds and over reads in seconds, exactly as the on-screen table prints it.
     expect(row.cells['ttftP90Ms'].text).toBe('12.5 s');
@@ -210,6 +213,32 @@ describe('table-export', () => {
     expect(row.cells['pricingResolved'].raw).toBeNull();
     expect(row.cells['state'].text).toBe('Excluded');
     expect(row.cells['differsOn'].text).toBe('ScoringMethodVersion');
+  });
+
+  it('narrows to a column subset in declared order, never the order the caller asked for', () => {
+    const built = buildComparisonTableModel([buildEntry()], provenance(), ['runCount', 'label']);
+
+    expect(built.columns.map(column => column.key)).toEqual(['label', 'runCount']);
+    const raw = toCsv(built);
+    const headerLine = (raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw).split('\r\n')[0];
+    expect(headerLine).toBe('Model,R');
+    expect(headerLine.split(',').length).toBe(2);
+  });
+
+  it('reports the keys of the columns holding at least one non-absent cell', () => {
+    const [row] = model().rows;
+
+    expect(row.cells['scheduledChange'].raw).toBeNull();
+    expect(row.cells['differsOn'].raw).toBeNull();
+    expect(row.cells['speedIndexSaturated'].raw).toBeFalse();
+
+    const keys = populatedColumnKeys(model());
+
+    // A fully comparable, unscheduled entry leaves these two absent on every row.
+    expect(keys).not.toContain('scheduledChange');
+    expect(keys).not.toContain('differsOn');
+    // A false boolean is not absent, so it stays populated.
+    expect(keys).toContain('speedIndexSaturated');
   });
 
   // -------------------------------------------------------------------------------------------

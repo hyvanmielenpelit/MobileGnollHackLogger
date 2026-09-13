@@ -1554,17 +1554,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   /**
-   * U3. A dollar amount at the precision the figure deserves.
-   *
-   * `'1.2-4'` everywhere rendered a $2.5311 run as `$2.5311` while the Markdown report read $2.53,
-   * and two different-looking numbers for one run is a defect whichever of them is "right". Four
-   * decimals exist for the sub-cent case — a cancelled run costing $0.0007 must not collapse to
-   * `$0.00` — so the rule is precision by magnitude: two decimals at or above a dollar, four below.
+   * U3. A dollar amount at four decimals fixed, so a sub-cent cost like $0.0007 renders
+   * as $0.0007, not $0.00, and zero renders as $0.0000.
    */
   formatCostAmount(amount: number | null | undefined): string {
     if (amount == null || !Number.isFinite(amount)) return '-';
     const numPipe = new DecimalPipe('en-US');
-    const digits = Math.abs(amount) >= 1 ? '1.2-2' : '1.2-4';
+    const digits = '1.4-4';
     return `$${numPipe.transform(amount, digits)}`;
   }
 

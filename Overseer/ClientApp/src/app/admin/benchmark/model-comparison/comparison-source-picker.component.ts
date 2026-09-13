@@ -14,6 +14,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
 import { copyToClipboard } from '../../../utils/clipboard.util';
+import { saveFigureBlob } from './figure-export';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { exactFilter, TableState } from '../../../shared/data-table/table-state';
 import { SortHeaderComponent } from '../../../shared/data-table/sort-header.component';
@@ -592,6 +593,26 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
     this.setConditionCopyState(copied ? 'Comparability detail copied.' : COPY_FAILED);
   }
 
+  /** Saves the same Markdown the copy button puts on the clipboard, named after the source. */
+  downloadConditionDetail(): void {
+    const detail = this.conditionDetail;
+    const text = this.conditionDetailMarkdown();
+    if (detail == null || text === '') {
+      return;
+    }
+    const safe = detail.sourceLabel.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').toLowerCase();
+    const filename = `comparability_${safe || 'source'}_${this.timestamp()}.md`;
+    saveFigureBlob(new Blob([text], { type: 'text/markdown;charset=utf-8' }), filename);
+    this.setConditionCopyState(`Saved as ${filename}.`);
+  }
+
+  /** `yyyyMMdd_HHmmss`, local time — the same stamp `figureExportFilename` writes in `figure-export.ts`. */
+  private timestamp(now: Date = new Date()): string {
+    const pad = (value: number): string => String(value).padStart(2, '0');
+    return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_`
+      + `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  }
+
   /** Copies one abbreviated value in full, never the twelve characters the row shows. */
   async copyConditionValue(row: ConditionDetailRow, value: string): Promise<void> {
     const copied = await copyToClipboard(value);
@@ -613,23 +634,6 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
     if (this.conditionCopyTimer != null) {
       clearTimeout(this.conditionCopyTimer);
       this.conditionCopyTimer = null;
-    }
-  }
-
-  /** Light dismiss where `closedby` is unsupported, exactly as the legend does it. */
-  onConditionDialogClick(event: MouseEvent): void {
-    if ('closedBy' in HTMLDialogElement.prototype) {
-      return;
-    }
-    const dialog = event.currentTarget as HTMLDialogElement;
-    if (event.target !== dialog) {
-      return;
-    }
-    const rect = dialog.getBoundingClientRect();
-    const inside = rect.top <= event.clientY && event.clientY <= rect.top + rect.height
-      && rect.left <= event.clientX && event.clientX <= rect.left + rect.width;
-    if (!inside) {
-      dialog.close();
     }
   }
 

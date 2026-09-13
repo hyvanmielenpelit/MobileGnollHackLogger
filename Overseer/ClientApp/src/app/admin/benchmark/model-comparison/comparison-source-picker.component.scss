@@ -630,49 +630,28 @@
   }
 }
 
+/* Centres the badge and the info button as a unit, and gives the wrapped case a vertical gap
+   without the horizontal offset a margin would leave on the one-line case. */
+.csp-condition-cell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
 .csp-condition-detail {
+  margin-left: 0;
   width: 22px;
   height: 22px;
-  margin-left: 4px;
 }
 
 /* --- The condition detail dialog --- */
 
-/* Sizing and the header / body / actions column only; the glass frame, the `::backdrop` and the
-   type are `.gh-dialog`'s and are not redefined. Wider than the legend because each row carries
-   two machine values side by side. The transition notes on `.csp-legend-dialog` above apply here
-   unchanged — `display` alone is gated on the open state, and `display` and `overlay` are both in
-   the transition list with `allow-discrete`. */
+/* The glass frame, the sizing, the `::backdrop` and the open/close transition are all
+   `.gh-dialog-fullscreen`'s and are not redefined here. */
 .csp-condition-dialog {
-  width: min(96vw, 1100px);
-  max-width: min(96vw, 1100px);
-  max-height: min(86dvh, 820px);
   padding: 0;
-  overflow: hidden;
-  flex-direction: column;
-
-  &[open],
-  &:modal {
-    display: flex;
-  }
-
-  opacity: 0;
-  transform: scale(0.985);
-  transition:
-    opacity 0.16s ease,
-    transform 0.16s ease,
-    display 0.16s allow-discrete,
-    overlay 0.16s allow-discrete;
-
-  &[open] {
-    opacity: 1;
-    transform: none;
-
-    @starting-style {
-      opacity: 0;
-      transform: scale(0.985);
-    }
-  }
 
   /* `.dialog-actions` supplies the row and the divider; the padding is this dialog's, since its
      body owns the horizontal rhythm. */
@@ -680,19 +659,6 @@
     flex-shrink: 0;
     margin-top: 0;
     padding: 15px 20px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .csp-condition-dialog {
-    transform: none;
-    transition-duration: 0.01s;
-
-    &[open] {
-      @starting-style {
-        transform: none;
-      }
-    }
   }
 }
 
@@ -737,7 +703,7 @@
 
   .csp-condition-meaning {
     min-width: 200px;
-    max-width: 40ch;
+    max-width: 52ch;
     font-size: 12px;
     line-height: 1.5;
     color: #a1a1aa;

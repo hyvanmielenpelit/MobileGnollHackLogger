@@ -1159,14 +1159,13 @@ export class MultiRunComponent implements OnInit, OnChanges {
   }
 
   /**
-   * Money at the precision the figure warrants: two decimals at or above a dollar, where a third
-   * would be noise, and four below it, where a sub-cent run would otherwise round to $0.00.
-   * Matches `formatRunEstimatedCost` on the run cards.
+   * Money at four decimals fixed, so a sub-cent cost like $0.0007 renders as $0.0007, not $0.00,
+   * and zero renders as $0.0000. Matches `formatRunEstimatedCost` on the run cards.
    */
   formatCost(value: number | null | undefined): string {
     if (value == null) return '—';
     const pipe = new DecimalPipe('en-US');
-    return `$${pipe.transform(value, value >= 1 ? '1.2-2' : '1.2-4')}`;
+    return `$${pipe.transform(value, '1.4-4')}`;
   }
 
   /** The first eight hex characters of an instrument hash, as the run list shows them. */

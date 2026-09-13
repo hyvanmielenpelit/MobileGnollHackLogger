@@ -25,6 +25,15 @@ import type { ChartConfiguration, ChartType, Plugin } from 'chart.js';
 
 export type FigureExportFormat = 'png' | 'webp';
 
+export type WebpQuality = 75 | 80 | 85 | 90 | 95 | 100;
+export const WEBP_QUALITY_OPTIONS: readonly WebpQuality[] = [75, 80, 85, 90, 95, 100];
+export const DEFAULT_WEBP_QUALITY: WebpQuality = 100;
+
+/** What `toBlob` is given: the percentage as a fraction. 1.0 is what Chromium encodes losslessly. */
+export function webpEncoderQuality(quality: WebpQuality): number {
+  return quality / 100;
+}
+
 /** One offered export size. */
 export interface FigureExportResolution {
   /** `'onscreen' | 'hd' | … | 'custom'`. */
@@ -88,6 +97,7 @@ export interface FigureExportRequest {
   readonly format: FigureExportFormat;
   /** From {@link resolveFigureLayout}. Absent composes at the on-screen size and density. */
   readonly layout?: FigureExportLayout | null;
+  readonly webpQuality?: WebpQuality;
 }
 
 /** What `encodeFigureImage` produced, including the format actually written. */
@@ -101,9 +111,6 @@ export interface FigureExportResult {
 
 /** The `'onscreen'` density. Reading the on-screen canvas at 1x would export it blurred. */
 export const FIGURE_EXPORT_SCALE = 2;
-
-/** WebP quality, fixed at this repository's image convention of 85. */
-export const FIGURE_EXPORT_WEBP_QUALITY = 0.85;
 
 /** Layout constants, in CSS pixels before the density transform is applied. */
 const PADDING = 20;
@@ -344,10 +351,11 @@ export async function renderPlotOffscreen(
  */
 export function encodeFigureImage(
   canvas: HTMLCanvasElement,
-  format: FigureExportFormat
+  format: FigureExportFormat,
+  quality: WebpQuality = DEFAULT_WEBP_QUALITY
 ): Promise<FigureExportResult> {
   const mime = format === 'webp' ? 'image/webp' : 'image/png';
-  const quality = format === 'webp' ? FIGURE_EXPORT_WEBP_QUALITY : undefined;
+  const encoderQuality = format === 'webp' ? webpEncoderQuality(quality) : undefined;
 
   return new Promise<FigureExportResult>((resolve, reject) => {
     canvas.toBlob(
@@ -360,7 +368,7 @@ export function encodeFigureImage(
         resolve({ blob, format: encoded, fellBackToPng: format === 'webp' && encoded !== 'webp' });
       },
       mime,
-      quality
+      encoderQuality
     );
   });
 }
