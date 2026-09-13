@@ -1435,9 +1435,42 @@ describe('ModelComparisonComponent', () => {
     component.onFigurePreviewClosed();
   });
 
+  let restoreDevicePixelRatio: (() => void) | null = null;
+
+  /**
+   * Redefines the display's density and rebuilds the component against it.
+   *
+   * The density control opens on `window.devicePixelRatio`, read once in a field initialiser, so
+   * the value has to be in place before the instance exists — and the outer `beforeEach` has
+   * already built one against whatever display the test machine has. Every assertion below that
+   * names a percentage either comes through here or sets the density explicitly, or it would pass
+   * on one machine and fail on another.
+   */
+  function withDisplayDensity(ratio: number): void {
+    const original = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio');
+    restoreDevicePixelRatio = () => {
+      if (original) {
+        Object.defineProperty(window, 'devicePixelRatio', original);
+      } else {
+        delete (window as unknown as Record<string, unknown>)['devicePixelRatio'];
+      }
+    };
+    Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: ratio });
+    fixture = TestBed.createComponent(ModelComparisonComponent);
+    component = fixture.componentInstance;
+  }
+
+  afterEach(() => {
+    restoreDevicePixelRatio?.();
+    restoreDevicePixelRatio = null;
+  });
+
   it('shows the two custom size inputs only for Custom, and names what will be written', () => {
     render(buildDto(comparableSet(3)), 4);
     openPreview();
+    // The control opens on the test machine's own display, which the pixel counts below are not
+    // about; every one of them is the composition at 100 %.
+    component.onExportDensityChange(1);
     expect(fixture.debugElement.query(By.css('#mc-export-width'))).toBeNull();
     expect(textOf('.mc-export-dimensions')).toContain('on-screen size');
 
@@ -1461,6 +1494,7 @@ describe('ModelComparisonComponent', () => {
   it('refuses an out-of-range custom size in words, and will not export under one', () => {
     render(buildDto(comparableSet(3)), 4);
     openPreview();
+    component.onExportDensityChange(1);
     component.onExportResolutionChange('custom');
     component.customExportHeight = 10;
     refresh();
@@ -1474,6 +1508,147 @@ describe('ModelComparisonComponent', () => {
     refresh();
     expect(component.customResolutionError).toBe('');
     expect(component.canExport).toBeTrue();
+  });
+
+  it('opens the density on the reader’s own display, and says which option that is', () => {
+    withDisplayDensity(2);
+    render(buildDto(comparableSet(3)), 4);
+    openPreview();
+
+    expect(component.exportDensitySelection).toBe(2);
+    expect(component.exportDensity).toBe(2);
+    expect(component.isCustomDensity).toBeFalse();
+    expect(textOf('#mc-export-density')).toContain('200% (this display)');
+    // Only the reader's own step is marked, or the note would name nothing.
+    expect(textOf('#mc-export-density')).not.toContain('100% (this display)');
+  });
+
+  it('holds a display density no step matches in the custom field, prefilled', () => {
+    // 110 % browser zoom on a 200 % display.
+    withDisplayDensity(2.2);
+    render(buildDto(comparableSet(3)), 4);
+    openPreview();
+
+    expect(component.exportDensitySelection).toBe('custom');
+    expect(component.customExportDensityPercent).toBe(220);
+    expect(component.exportDensity).toBe(2.2);
+    expect(fixture.debugElement.query(By.css('#mc-export-density-custom'))).toBeTruthy();
+    expect(component.exportSizeError).toBe('');
+  });
+
+  it('offers every Windows display scaling step, and Custom below them', () => {
+    withDisplayDensity(1);
+    render(buildDto(comparableSet(3)), 4);
+    openPreview();
+
+    const options = fixture.debugElement
+      .queryAll(By.css('#mc-export-density option'))
+      .map(option => ((option.nativeElement as HTMLOptionElement).textContent ?? '').trim());
+    expect(options).toEqual([
+      '100% (this display)', '125%', '150%', '175%', '200%', '250%', '300%', '350%', '400%',
+      'Custom…'
+    ]);
+  });
+
+  it('multiplies the written size by the density in the read-out and the header summary', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openPreview();
+    component.onExportResolutionChange('fullhd');
+
+    component.onExportDensityChange(2);
+    refresh();
+    const doubled = textOf('.mc-export-dimensions');
+    expect(doubled).toContain('3840 × 2160 px');
+    expect(doubled).toContain('1920 × 1080 at 200%');
+    expect(doubled).toContain('4× density');
+    expect(textOf('.mc-export-summary')).toContain('200%');
+
+    // At 100 % the requested size and the written one are one number, printed once.
+    component.onExportDensityChange(1);
+    refresh();
+    const plain = textOf('.mc-export-dimensions');
+    expect(plain).toContain('1920 × 1080 px at 100%');
+    expect(plain).toContain('2× density');
+    expect(plain).not.toContain('(1920 × 1080 at');
+  });
+
+  it('names the density on the on-screen size, and no fixed factor', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openPreview();
+    component.onExportDensityChange(1.5);
+    refresh();
+
+    const readout = textOf('.mc-export-dimensions');
+    expect(readout).toContain('on-screen size at 150%');
+    expect(readout).not.toContain('Twice');
+    expect(component.exportResolution.label).toBe('On-screen');
+  });
+
+  it('refuses a custom density outside its bounds, and will not export under one', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openPreview();
+    component.onExportDensityChange('custom');
+    component.onCustomDensityChange(900);
+    refresh();
+
+    expect(component.customDensityError).toContain(`${component.maxExportDensityPercent}`);
+    expect(component.exportSizeError).toBe(component.customDensityError);
+    expect(component.canExport).toBeFalse();
+    expect(textOf('.mc-preview-controls .mc-export-error')).toContain('800');
+
+    component.onCustomDensityChange(150);
+    refresh();
+    expect(component.customDensityError).toBe('');
+    expect(component.exportDensity).toBe(1.5);
+    expect(component.canExport).toBeTrue();
+  });
+
+  it('refuses a bitmap the browser could not allocate, and disables the footer under it', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openPreview();
+    component.onExportResolutionChange('custom');
+    component.onCustomWidthChange(8000);
+    component.onCustomHeightChange(8000);
+    component.onExportDensityChange(3);
+    refresh();
+
+    expect(component.exportSizeError).toContain('24000 × 24000');
+    expect(component.exportSizeError).toContain('16384');
+    expect(component.canExport).toBeFalse();
+    const footer = fixture.debugElement
+      .queryAll(By.css('.mc-preview-foot button'))
+      .map(button => button.nativeElement as HTMLButtonElement);
+    expect(footer.length).toBe(3);
+    expect(footer.every(button => button.disabled)).toBeTrue();
+
+    component.onExportDensityChange(2);
+    refresh();
+    expect(component.exportSizeError).toBe('');
+    expect(component.canExport).toBeTrue();
+  });
+
+  it('copies the live figure at the chosen density, and restores the chart afterwards', async () => {
+    render(buildDto(comparableSet(3)), 4);
+    withClipboard({ write: () => Promise.resolve() });
+    const card = component.panelCards[0];
+    const canvas = (component as unknown as {
+      canvasFor(card: ComparisonFigureCard): HTMLCanvasElement | null;
+    }).canvasFor(card)!;
+    const chart = (component as unknown as {
+      chartFor(canvas: HTMLCanvasElement): { options: { devicePixelRatio?: number }; resize(): void } | null;
+    }).chartFor(canvas)!;
+    expect(chart).withContext('the live chart the copy path re-renders').toBeTruthy();
+
+    const previous = chart.options.devicePixelRatio;
+    const seen: (number | undefined)[] = [];
+    spyOn(chart, 'resize').and.callFake(() => seen.push(chart.options.devicePixelRatio));
+
+    component.onExportDensityChange(3);
+    await component.copyFigure(card);
+
+    // Up for the encode, back down in the `finally`: a copy must not strand the on-screen figure.
+    expect(seen[0]).toBe(3);
+    expect(chart.options.devicePixelRatio).toBe(previous);
   });
 
   it('derives the other custom side from the locked ratio', () => {
@@ -1608,6 +1783,8 @@ describe('ModelComparisonComponent', () => {
     spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
     openPreview();
 
+    // A density above the stage's own only raises the cap on the preview; the stage still decides.
+    component.onExportDensityChange(2);
     component.onExportResolutionChange('fullhd');
     await composePreview();
 
@@ -1623,6 +1800,7 @@ describe('ModelComparisonComponent', () => {
     spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
     openPreview();
 
+    component.onExportDensityChange(1);
     component.onExportResolutionChange('a4p');
     await composePreview();
 
@@ -1650,9 +1828,11 @@ describe('ModelComparisonComponent', () => {
   it('summarises the export size and format in the Figures header', () => {
     render(buildDto(comparableSet(3)), 4);
 
+    component.onExportDensityChange(1);
     component.onExportResolutionChange('fullhd');
     refresh();
     expect(textOf('.mc-export-summary')).toContain('Full HD — 1920 × 1080');
+    expect(textOf('.mc-export-summary')).toContain('100%');
     expect(textOf('.mc-export-summary')).toContain('PNG');
 
     component.onExportFormatChange('webp');

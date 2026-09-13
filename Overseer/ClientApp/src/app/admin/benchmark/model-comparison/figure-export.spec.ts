@@ -3,12 +3,13 @@ import { unzipSync } from 'fflate';
 
 import {
   DEFAULT_WEBP_QUALITY,
+  FIGURE_EXPORT_DENSITY_PRESETS,
   FIGURE_EXPORT_LAYOUT_HEIGHT,
   FIGURE_EXPORT_LAYOUT_WIDTH,
+  FIGURE_EXPORT_MAX_BITMAP_DIMENSION,
   FIGURE_EXPORT_MIN_DIMENSION,
   FIGURE_EXPORT_PRESETS,
   FIGURE_EXPORT_PRESET_GROUPS,
-  FIGURE_EXPORT_SCALE,
   FigureExportLayout,
   FigureExportResolution,
   WEBP_QUALITY_OPTIONS,
@@ -17,6 +18,9 @@ import {
   buildFigureArchive,
   composeFigureImage,
   copyImageToClipboard,
+  densityPercentLabel,
+  densityPresetFor,
+  displayDensity,
   encodeFigureImage,
   figureArchiveFilename,
   figureExportFilename,
@@ -79,11 +83,11 @@ describe('figure-export', () => {
   );
 
   it('composes at twice the source density over an opaque ground', () => {
-    const composed = composeFigureImage(request());
+    const composed = composeFigureImage(request({ density: 2 }));
 
     // Wider and taller than the plot: padding, the title block and the caveats below it.
-    expect(composed.width).toBeGreaterThan(400 * FIGURE_EXPORT_SCALE);
-    expect(composed.height).toBeGreaterThan(240 * FIGURE_EXPORT_SCALE);
+    expect(composed.width).toBeGreaterThan(400 * 2);
+    expect(composed.height).toBeGreaterThan(240 * 2);
 
     // Opaque, or a PNG of a transparent Chart.js canvas renders dark-on-dark in a document.
     const pixel = composed.getContext('2d')!.getImageData(0, 0, 1, 1).data;
@@ -124,7 +128,7 @@ describe('figure-export', () => {
   describe('resolveFigureLayout', () => {
     it('returns exactly the requested pixel size for every preset', () => {
       for (const resolution of explicitPresets) {
-        const { layout, refusal } = resolveFigureLayout(chromeOf(), resolution, onScreen);
+        const { layout, refusal } = resolveFigureLayout(chromeOf(), resolution, onScreen, 1);
 
         expect(refusal).withContext(resolution.id).toBeNull();
         expect(layout!.pixelWidth).withContext(resolution.id).toBe(resolution.widthPx!);
@@ -135,7 +139,7 @@ describe('figure-export', () => {
     it('lays every explicit size out at least 960 wide and 540 tall, in the target’s ratio', () => {
       const epsilon = 1e-9;
       for (const resolution of explicitPresets) {
-        const { layout } = resolveFigureLayout(chromeOf(), resolution, onScreen);
+        const { layout } = resolveFigureLayout(chromeOf(), resolution, onScreen, 1);
 
         expect(layout!.layoutWidth)
           .withContext(resolution.id)
@@ -159,7 +163,7 @@ describe('figure-export', () => {
     });
 
     it('composes an explicit size to exactly the requested bitmap', () => {
-      const { layout } = resolveFigureLayout(chromeOf(), preset('fullhd'), onScreen);
+      const { layout } = resolveFigureLayout(chromeOf(), preset('fullhd'), onScreen, 1);
 
       const composed = composeFigureImage(request({ layout }));
 
@@ -168,12 +172,12 @@ describe('figure-export', () => {
     });
 
     it('reproduces the on-screen composition exactly', () => {
-      const composed = composeFigureImage(request());
+      const composed = composeFigureImage(request({ density: 2 }));
 
-      const { layout, refusal } = resolveFigureLayout(chromeOf(), preset('onscreen'), onScreen);
+      const { layout, refusal } = resolveFigureLayout(chromeOf(), preset('onscreen'), onScreen, 2);
 
       expect(refusal).toBeNull();
-      expect(layout!.density).toBe(FIGURE_EXPORT_SCALE);
+      expect(layout!.density).toBe(2);
       // A 400 px plot in a 360 px minimum column, plus 20 px of padding on both sides, at 2x.
       expect(layout!.pixelWidth).toBe(880);
       expect(layout!.pixelWidth).toBe(composed.width);
@@ -187,7 +191,7 @@ describe('figure-export', () => {
           .repeat(6);
       const chrome = chromeOf({ notices: [1, 2, 3, 4, 5, 6].map(notice) });
 
-      const { layout, refusal } = resolveFigureLayout(chrome, preset('hd'), onScreen);
+      const { layout, refusal } = resolveFigureLayout(chrome, preset('hd'), onScreen, 1);
 
       expect(layout).toBeNull();
       expect(refusal).toContain('Quality, speed and cost');
@@ -201,7 +205,8 @@ describe('figure-export', () => {
       const retry = resolveFigureLayout(
         chrome,
         { id: 'custom', label: 'Custom', group: 'Custom', widthPx: 1280, heightPx: minimumHeight },
-        onScreen
+        onScreen,
+        1
       );
       expect(retry.refusal).toBeNull();
       expect(retry.layout!.pixelHeight).toBe(minimumHeight);
@@ -221,6 +226,68 @@ describe('figure-export', () => {
       }
     });
 
+    it('multiplies the bitmap by the density and leaves the composition alone', () => {
+      for (const resolution of explicitPresets) {
+        const base = resolveFigureLayout(chromeOf(), resolution, onScreen, 1).layout!;
+
+        for (const density of FIGURE_EXPORT_DENSITY_PRESETS) {
+          const context = `${resolution.id} at ${density}`;
+          const { layout, refusal } = resolveFigureLayout(chromeOf(), resolution, onScreen, density);
+
+          expect(refusal).withContext(context).toBeNull();
+          expect(layout!.pixelWidth).withContext(context).toBe(Math.round(resolution.widthPx! * density));
+          expect(layout!.pixelHeight).withContext(context).toBe(Math.round(resolution.heightPx! * density));
+
+          // The composition is what the type size is measured in, so none of it may move.
+          expect(layout!.layoutWidth).withContext(context).toBe(base.layoutWidth);
+          expect(layout!.layoutHeight).withContext(context).toBe(base.layoutHeight);
+          expect(layout!.plotWidth).withContext(context).toBe(base.plotWidth);
+          expect(layout!.plotHeight).withContext(context).toBe(base.plotHeight);
+          expect(layout!.density).withContext(context).toBeCloseTo(base.density * density, 9);
+        }
+      }
+    });
+
+    it('composes Full HD at 200 % to a 3840 × 2160 bitmap of the same figure', () => {
+      const { layout } = resolveFigureLayout(chromeOf(), preset('fullhd'), onScreen, 2);
+
+      const composed = composeFigureImage(request({ layout }));
+
+      expect(composed.width).toBe(3840);
+      expect(composed.height).toBe(2160);
+      expect(layout!.layoutWidth).toBe(960);
+      expect(layout!.density).toBe(4);
+    });
+
+    it('writes the on-screen size at the chosen density', () => {
+      const { layout, refusal } = resolveFigureLayout(chromeOf(), preset('onscreen'), onScreen, 1.5);
+
+      expect(refusal).toBeNull();
+      expect(layout!.density).toBe(1.5);
+      // The same 440 layout px the 2x case resolves to, at one and a half device pixels each.
+      expect(layout!.pixelWidth).toBe(660);
+    });
+
+    it('refuses a bitmap the browser could not allocate, naming both sides and the cap', () => {
+      const custom: FigureExportResolution = {
+        id: 'custom',
+        label: 'Custom',
+        group: 'Custom',
+        widthPx: 8000,
+        heightPx: 8000
+      };
+
+      const refused = resolveFigureLayout(chromeOf(), custom, onScreen, 3);
+      expect(refused.layout).toBeNull();
+      expect(refused.refusal).toContain('24000 × 24000');
+      expect(refused.refusal).toContain(String(FIGURE_EXPORT_MAX_BITMAP_DIMENSION));
+
+      // 16 000 px a side is under the cap, so the same size at 200 % is written rather than refused.
+      const accepted = resolveFigureLayout(chromeOf(), custom, onScreen, 2);
+      expect(accepted.refusal).toBeNull();
+      expect(accepted.layout!.pixelWidth).toBe(16000);
+    });
+
     it('rejects a custom size below the minimum dimension', () => {
       const custom: FigureExportResolution = {
         id: 'custom',
@@ -230,7 +297,7 @@ describe('figure-export', () => {
         heightPx: 720
       };
 
-      const { layout, refusal } = resolveFigureLayout(chromeOf(), custom, onScreen);
+      const { layout, refusal } = resolveFigureLayout(chromeOf(), custom, onScreen, 1);
 
       expect(layout).toBeNull();
       expect(refusal).toContain(String(FIGURE_EXPORT_MIN_DIMENSION));
@@ -306,10 +373,39 @@ describe('figure-export', () => {
     });
   });
 
+  describe('pixel density', () => {
+    it('reads the display’s own density, clamped into the custom bounds', () => {
+      expect(displayDensity({ devicePixelRatio: 2 })).toBe(2);
+      // A browser zoom lands between the listed steps, which is what Custom exists to hold.
+      expect(displayDensity({ devicePixelRatio: 2.2 })).toBe(2.2);
+      expect(displayDensity({ devicePixelRatio: 0.1 })).toBe(0.5);
+      expect(displayDensity({ devicePixelRatio: 12 })).toBe(8);
+    });
+
+    it('falls back to 1 where there is no window to read a ratio from', () => {
+      expect(displayDensity(null)).toBe(1);
+      expect(displayDensity({})).toBe(1);
+      expect(displayDensity({ devicePixelRatio: 0 })).toBe(1);
+    });
+
+    it('snaps a density onto a listed preset, or leaves it to Custom', () => {
+      expect(densityPresetFor(2)).toBe(2);
+      expect(densityPresetFor(2.004)).toBe(2);
+      expect(densityPresetFor(2.2)).toBeNull();
+      expect(densityPresetFor(Number.NaN)).toBeNull();
+    });
+
+    it('names a factor by its percentage', () => {
+      expect(densityPercentLabel(1.75)).toBe('175%');
+      expect(densityPercentLabel(1)).toBe('100%');
+      expect(densityPercentLabel(2.2)).toBe('220%');
+    });
+  });
+
   describe('previewLayoutFor', () => {
     /** The export layout a preview is fitted from. */
     function target(id: string): FigureExportLayout {
-      return resolveFigureLayout(chromeOf(), preset(id), onScreen).layout!;
+      return resolveFigureLayout(chromeOf(), preset(id), onScreen, 1).layout!;
     }
 
     it('keeps the export’s composition and changes only its density', () => {

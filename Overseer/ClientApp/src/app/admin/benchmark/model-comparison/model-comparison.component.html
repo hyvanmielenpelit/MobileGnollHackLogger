@@ -1478,6 +1478,27 @@
           </label>
         }
 
+        <!-- One density for every size, defaulting to the display's own: the read-out below is
+             what keeps that single rule honest about what an explicit size will write. -->
+        <label for="mc-export-density">Pixel density</label>
+        <select id="mc-export-density" class="gh-input mc-export-quality"
+                aria-describedby="mc-export-resolution-error"
+                [ngModel]="exportDensitySelection" [ngModelOptions]="{ standalone: true }"
+                (ngModelChange)="onExportDensityChange($event)">
+          @for (d of exportDensityPresets; track d) {
+            <option [ngValue]="d">{{ densityOptionLabel(d) }}</option>
+          }
+          <option [ngValue]="'custom'">Custom…</option>
+        </select>
+        @if (isCustomDensity) {
+          <label for="mc-export-density-custom">Density in percent</label>
+          <input id="mc-export-density-custom" type="number" class="gh-input mc-export-dimension"
+                 [min]="minExportDensityPercent" [max]="maxExportDensityPercent" step="5"
+                 aria-describedby="mc-export-resolution-error"
+                 [ngModel]="customExportDensityPercent" [ngModelOptions]="{ standalone: true }"
+                 (ngModelChange)="onCustomDensityChange($event)">
+        }
+
         <label for="mc-export-format">Format</label>
         <select id="mc-export-format" class="gh-input mc-export-format"
                 [ngModel]="exportFormat" [ngModelOptions]="{ standalone: true }"
@@ -1499,8 +1520,8 @@
         }
 
         <p class="mc-export-dimensions">{{ exportDimensionsLabel }}@if (exportAspectLabel) { · {{ exportAspectLabel }}}</p>
-        @if (customResolutionError) {
-          <p class="mc-export-error" id="mc-export-resolution-error" role="alert">{{ customResolutionError }}</p>
+        @if (exportSizeError) {
+          <p class="mc-export-error" id="mc-export-resolution-error" role="alert">{{ exportSizeError }}</p>
         }
         @if (previewRefusal) {
           <p class="mc-export-error" role="alert">{{ previewRefusal }}</p>

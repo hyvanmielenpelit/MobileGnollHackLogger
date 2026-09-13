@@ -19,6 +19,8 @@
  *    density maps that box onto the bitmap on both axes. A 4K export and a Full HD export are
  *    therefore the same figure at two densities, while a 21:9 or a portrait target is the same
  *    typography over a wider or a taller composition: the type size never moves with the pixels.
+ *    The pixel density chosen alongside the size multiplies the bitmap of whichever size was
+ *    picked and never the composition, so the same figure comes out sharper rather than larger.
  */
 
 import { Chart } from 'chart.js';
@@ -35,12 +37,66 @@ export function webpEncoderQuality(quality: WebpQuality): number {
   return quality / 100;
 }
 
+/** The multiplier applied to a size's bitmap, as a factor: 2 is 200 %. */
+export type FigureExportDensity = number;
+
+/**
+ * Every Windows display scaling step, ascending. `'custom'` is not among them: the view builds it.
+ *
+ * A browser at a zoom other than 100 % reports densities no fixed list contains — 220 % at 110 %
+ * zoom on a 200 % display — which is what the custom percentage beside this list exists for.
+ */
+export const FIGURE_EXPORT_DENSITY_PRESETS: readonly FigureExportDensity[] =
+  [1, 1.25, 1.5, 1.75, 2, 2.5, 3, 3.5, 4];
+
+/** Bounds on a custom density, as percentages. */
+export const FIGURE_EXPORT_MIN_DENSITY_PERCENT = 50;
+export const FIGURE_EXPORT_MAX_DENSITY_PERCENT = 800;
+
+/** How near a listed preset a density has to be for the control to show that preset. */
+const DENSITY_PRESET_TOLERANCE = 0.005;
+
+/** `'150%'` — the percentage the control shows for one factor. */
+export function densityPercentLabel(density: FigureExportDensity): string {
+  return `${Math.round(density * 100)}%`;
+}
+
+/**
+ * The display's own density, clamped into the custom bounds and rounded to a whole percent.
+ *
+ * 1 where there is no window, so a server render or a headless test gets a defined value rather
+ * than a NaN that would propagate into every pixel count downstream.
+ */
+export function displayDensity(
+  win: { devicePixelRatio?: number } | null | undefined = globalThis.window
+): FigureExportDensity {
+  const ratio = win?.devicePixelRatio;
+  if (typeof ratio !== 'number' || !Number.isFinite(ratio) || ratio <= 0) {
+    return 1;
+  }
+  const percent = Math.min(
+    FIGURE_EXPORT_MAX_DENSITY_PERCENT,
+    Math.max(FIGURE_EXPORT_MIN_DENSITY_PERCENT, Math.round(ratio * 100))
+  );
+  return percent / 100;
+}
+
+/** The listed preset within {@link DENSITY_PRESET_TOLERANCE} of `density`, or null for Custom. */
+export function densityPresetFor(density: FigureExportDensity): FigureExportDensity | null {
+  if (!Number.isFinite(density)) {
+    return null;
+  }
+  return FIGURE_EXPORT_DENSITY_PRESETS.find(
+    preset => Math.abs(preset - density) <= DENSITY_PRESET_TOLERANCE
+  ) ?? null;
+}
+
 /** One offered export size. */
 export interface FigureExportResolution {
   /** `'onscreen' | 'hd' | … | 'custom'`. */
   readonly id: string;
   readonly label: string;
-  /** Null for `'onscreen'`, which follows the live canvas. */
+  /** Null for `'onscreen'`, which follows the live canvas at the chosen pixel density. */
   readonly widthPx: number | null;
   readonly heightPx: number | null;
   /** The aspect ratio the size belongs to, as the picker's `<optgroup>` names it. */
@@ -56,7 +112,7 @@ export interface FigureExportResolution {
  * distinction behind arithmetic.
  */
 export const FIGURE_EXPORT_PRESETS: readonly FigureExportResolution[] = [
-  { id: 'onscreen', label: 'On-screen (2×)', widthPx: null, heightPx: null, group: 'On-screen' },
+  { id: 'onscreen', label: 'On-screen', widthPx: null, heightPx: null, group: 'On-screen' },
 
   { id: 'hd', label: 'HD — 1280 × 720', widthPx: 1280, heightPx: 720, group: '16:9' },
   { id: 'fullhd', label: 'Full HD — 1920 × 1080', widthPx: 1920, heightPx: 1080, group: '16:9' },
@@ -137,6 +193,36 @@ export const FIGURE_EXPORT_LAYOUT_HEIGHT = 540;
 export const FIGURE_EXPORT_MIN_DIMENSION = 320;
 export const FIGURE_EXPORT_MAX_DIMENSION = 8000;
 
+/** The longest side of a written bitmap; a 2D context past this comes back null in Chromium. */
+export const FIGURE_EXPORT_MAX_BITMAP_DIMENSION = 16384;
+
+/**
+ * Non-null when `width × height` at `density` exceeds the bitmap cap on either side.
+ *
+ * Refused here rather than at the encoder: past the cap `getContext('2d')` returns null and
+ * `toBlob` yields nothing, which reaches the reader as a bare "could not be exported" with no
+ * reason and no way to tell which of the two controls to lower.
+ */
+export function bitmapRefusal(
+  width: number,
+  height: number,
+  density: FigureExportDensity
+): string | null {
+  const pixelWidth = Math.round(width * density);
+  const pixelHeight = Math.round(height * density);
+  if (
+    pixelWidth <= FIGURE_EXPORT_MAX_BITMAP_DIMENSION &&
+    pixelHeight <= FIGURE_EXPORT_MAX_BITMAP_DIMENSION
+  ) {
+    return null;
+  }
+  return (
+    `At ${densityPercentLabel(density)} a ${Math.round(width)} × ${Math.round(height)} px export ` +
+    `would be ${pixelWidth} × ${pixelHeight} px; each side of the written image must be at most ` +
+    `${FIGURE_EXPORT_MAX_BITMAP_DIMENSION} px. Choose a lower density or a smaller size.`
+  );
+}
+
 /** The smallest plot box a figure may be composed with, in layout px. */
 export const FIGURE_EXPORT_MIN_PLOT_HEIGHT = 160;
 
@@ -176,6 +262,8 @@ export interface FigureExportRequest {
   readonly format: FigureExportFormat;
   /** From {@link resolveFigureLayout}. Absent composes at the on-screen size and density. */
   readonly layout?: FigureExportLayout | null;
+  /** Read only where there is no `layout`: the density the live canvas is composed at. */
+  readonly density?: FigureExportDensity;
   readonly webpQuality?: WebpQuality;
 }
 
@@ -187,9 +275,6 @@ export interface FigureExportResult {
   /** True when a WebP request was silently answered with a PNG. */
   readonly fellBackToPng: boolean;
 }
-
-/** The `'onscreen'` density. Reading the on-screen canvas at 1x would export it blurred. */
-export const FIGURE_EXPORT_SCALE = 2;
 
 /** Layout constants, in CSS pixels before the density transform is applied. */
 const PADDING = 20;
@@ -242,15 +327,22 @@ export function layoutBoxFor(pixelWidth: number, pixelHeight: number):
  *
  * `refusal` is non-null when the requested height leaves less than
  * {@link FIGURE_EXPORT_MIN_PLOT_HEIGHT} for the plot once the chrome is measured; it names the
- * figure and the minimum height that would work for it. A refused figure returns `layout: null`.
+ * figure and the minimum height that would work for it, or when the bitmap `density` asks for
+ * exceeds {@link FIGURE_EXPORT_MAX_BITMAP_DIMENSION}. A refused figure returns `layout: null`.
+ *
+ * `density` multiplies the bitmap and leaves the composition box alone, so it is required rather
+ * than defaulted: a call site that omitted it would silently keep a factor of its own.
  */
 export function resolveFigureLayout(
   request: Omit<FigureExportRequest, 'canvas' | 'format'>,
   resolution: FigureExportResolution,
-  onScreen: { width: number; height: number }
+  onScreen: { width: number; height: number },
+  density: FigureExportDensity
 ): { layout: FigureExportLayout | null; refusal: string | null } {
   if (resolution.widthPx === null && resolution.heightPx === null) {
-    return { layout: onScreenLayout(request, onScreen), refusal: null };
+    const layout = onScreenLayout(request, onScreen, density);
+    const refusal = bitmapRefusal(layout.layoutWidth, layout.layoutHeight, density);
+    return refusal ? { layout: null, refusal } : { layout, refusal: null };
   }
 
   const requestedWidth = resolution.widthPx;
@@ -261,13 +353,21 @@ export function resolveFigureLayout(
 
   const pixelWidth = Math.round(requestedWidth);
   const pixelHeight = Math.round(requestedHeight);
-  const { layoutWidth, layoutHeight, density } = layoutBoxFor(pixelWidth, pixelHeight);
+  const oversized = bitmapRefusal(pixelWidth, pixelHeight, density);
+  if (oversized) {
+    return { layout: null, refusal: oversized };
+  }
+
+  const box = layoutBoxFor(pixelWidth, pixelHeight);
+  const { layoutWidth, layoutHeight } = box;
   const plotWidth = layoutWidth - PADDING * 2;
 
   const chrome = measureFigureChrome(request, plotWidth);
   const plotHeight = layoutHeight - chrome.height;
   if (plotHeight < FIGURE_EXPORT_MIN_PLOT_HEIGHT) {
-    const minimumHeight = Math.ceil((chrome.height + FIGURE_EXPORT_MIN_PLOT_HEIGHT) * density);
+    // In the requested size's own units, which is what the reader typed: the density multiplies
+    // whatever height they choose, so naming a written figure here would not answer their question.
+    const minimumHeight = Math.ceil((chrome.height + FIGURE_EXPORT_MIN_PLOT_HEIGHT) * box.density);
     return {
       layout: null,
       refusal:
@@ -278,7 +378,15 @@ export function resolveFigureLayout(
   }
 
   return {
-    layout: { layoutWidth, layoutHeight, plotWidth, plotHeight, density, pixelWidth, pixelHeight },
+    layout: {
+      layoutWidth,
+      layoutHeight,
+      plotWidth,
+      plotHeight,
+      density: box.density * density,
+      pixelWidth: Math.round(pixelWidth * density),
+      pixelHeight: Math.round(pixelHeight * density)
+    },
     refusal: null
   };
 }
@@ -329,7 +437,7 @@ export function previewLayoutFor(
  * With a `layout`, the composition is laid out at `layout.layoutWidth`, scaled by `layout.density`
  * and given a plot box of exactly `layout.plotHeight`; the bitmap takes the layout's pixel
  * dimensions verbatim, which is what makes a requested resolution exact. Without one, the
- * composition follows the source canvas at {@link FIGURE_EXPORT_SCALE}.
+ * composition follows the source canvas at `request.density`, or 1.
  *
  * The source canvas is drawn at its layout size and scaled up by the context transform rather than
  * copied pixel for pixel, so a chart rendered at a higher device pixel ratio lands sharp; the caller
@@ -345,7 +453,7 @@ export function composeFigureImage(request: FigureExportRequest): HTMLCanvasElem
     : Math.max(chartWidth, MIN_CONTENT_WIDTH);
   const plotWidth = layout ? contentWidth : chartWidth;
   const plotHeight = layout ? layout.plotHeight : chartHeight;
-  const density = layout ? layout.density : FIGURE_EXPORT_SCALE;
+  const density = layout ? layout.density : (request.density ?? 1);
 
   const chrome = measureFigureChrome(request, contentWidth);
   const width = contentWidth + PADDING * 2;
@@ -678,10 +786,11 @@ function measureFigureChrome(source: FigureChromeSource, contentWidth: number): 
   return { titleLines, subtitleLines, captionLines, noticeLines, footerLines, height };
 }
 
-/** The box the live canvas is already laid out in, at {@link FIGURE_EXPORT_SCALE}. */
+/** The box the live canvas is already laid out in, written at the chosen density. */
 function onScreenLayout(
   request: FigureChromeSource,
-  onScreen: { width: number; height: number }
+  onScreen: { width: number; height: number },
+  density: FigureExportDensity
 ): FigureExportLayout {
   const plotWidth = Math.max(onScreen.width, MIN_CONTENT_WIDTH);
   const layoutWidth = plotWidth + PADDING * 2;
@@ -692,9 +801,9 @@ function onScreenLayout(
     layoutHeight,
     plotWidth,
     plotHeight,
-    density: FIGURE_EXPORT_SCALE,
-    pixelWidth: Math.round(layoutWidth * FIGURE_EXPORT_SCALE),
-    pixelHeight: Math.round(layoutHeight * FIGURE_EXPORT_SCALE)
+    density,
+    pixelWidth: Math.round(layoutWidth * density),
+    pixelHeight: Math.round(layoutHeight * density)
   };
 }
 

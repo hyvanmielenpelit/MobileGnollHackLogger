@@ -64,7 +64,10 @@ import {
 } from './model-comparison.models';
 import {
   DEFAULT_WEBP_QUALITY,
+  FIGURE_EXPORT_DENSITY_PRESETS,
+  FIGURE_EXPORT_MAX_DENSITY_PERCENT,
   FIGURE_EXPORT_MAX_DIMENSION,
+  FIGURE_EXPORT_MIN_DENSITY_PERCENT,
   FIGURE_EXPORT_MIN_DIMENSION,
   FIGURE_EXPORT_PRESETS,
   FIGURE_EXPORT_PRESET_GROUPS,
@@ -78,9 +81,13 @@ import {
   WEBP_QUALITY_OPTIONS,
   WebpQuality,
   aspectRatioLabel,
+  bitmapRefusal,
   buildFigureArchive,
   composeFigureImage,
   copyImageToClipboard,
+  densityPercentLabel,
+  densityPresetFor,
+  displayDensity,
   encodeFigureImage,
   figureArchiveFilename,
   figureExportFilename,
@@ -1023,9 +1030,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   // --- Export resolution ---
   //
-  // Presets plus a custom width and height. Every explicit size composes at one layout width and
-  // scales, so a 4K export and a Full HD export differ in pixels and not in relative type size;
-  // the on-screen preset keeps the previous behaviour of following the rendered figure at 2x.
+  // Presets plus a custom width and height, and a pixel density beside them. Every explicit size
+  // composes at one layout width and scales, so a 4K export and a Full HD export differ in pixels
+  // and not in relative type size; the density then multiplies the bitmap of whichever size was
+  // chosen, leaving the composition alone. The on-screen preset follows the rendered figure at
+  // that same density.
 
   readonly exportPresets = FIGURE_EXPORT_PRESETS;
 
@@ -1034,6 +1043,23 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   readonly minExportDimension = FIGURE_EXPORT_MIN_DIMENSION;
   readonly maxExportDimension = FIGURE_EXPORT_MAX_DIMENSION;
+
+  readonly exportDensityPresets = FIGURE_EXPORT_DENSITY_PRESETS;
+  readonly minExportDensityPercent = FIGURE_EXPORT_MIN_DENSITY_PERCENT;
+  readonly maxExportDensityPercent = FIGURE_EXPORT_MAX_DENSITY_PERCENT;
+
+  /**
+   * The display's density when the component initialised, which the matching option is labelled
+   * with and which the control opens on.
+   *
+   * Sampled once and then left alone: a reader who chose 300 % and dragged the window to another
+   * display keeps 300 %, and the labelled option is how they find their way back.
+   */
+  readonly displayDensity = displayDensity();
+
+  /** A listed factor, or `'custom'` for the percentage field beside it. */
+  exportDensitySelection: number | 'custom' = densityPresetFor(this.displayDensity) ?? 'custom';
+  customExportDensityPercent = Math.round(this.displayDensity * 100);
 
   exportResolutionId = 'onscreen';
   customExportWidth = 1920;
@@ -1064,6 +1090,30 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     };
   }
 
+  get isCustomDensity(): boolean {
+    return this.exportDensitySelection === 'custom';
+  }
+
+  /** The chosen factor: a listed preset, or the custom percentage clamped into its bounds. */
+  get exportDensity(): number {
+    if (this.exportDensitySelection !== 'custom') {
+      return this.exportDensitySelection;
+    }
+    return this.clampDensityPercent(this.customExportDensityPercent) / 100;
+  }
+
+  /** The percentage the read-outs name the current density by. */
+  get exportDensityLabel(): string {
+    return densityPercentLabel(this.exportDensity);
+  }
+
+  /** One option's text, with the one that matches the reader's own display marked as such. */
+  densityOptionLabel(preset: number): string {
+    return preset === this.displayDensity
+      ? `${densityPercentLabel(preset)} (this display)`
+      : densityPercentLabel(preset);
+  }
+
   /** The current size's shape, or empty for the on-screen size, which has no fixed one. */
   get exportAspectLabel(): string {
     const resolution = this.exportResolution;
@@ -1084,7 +1134,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     const format = this.exportFormat === 'webp'
       ? `WebP q${this.figureWebpQuality}`
       : 'PNG';
-    return `${this.exportResolution.label} · ${format}`;
+    return `${this.exportResolution.label} · ${this.exportDensityLabel} · ${format}`;
   }
 
   /** An out-of-range custom size, named. Empty while the current setting is usable. */
@@ -1103,20 +1153,76 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       `${this.maxExportDimension} px.`;
   }
 
+  /** An out-of-range custom density, named. Empty while the current setting is usable. */
+  get customDensityError(): string {
+    if (!this.isCustomDensity) {
+      return '';
+    }
+    const percent = this.customExportDensityPercent;
+    const usable = Number.isFinite(percent)
+      && percent >= this.minExportDensityPercent
+      && percent <= this.maxExportDensityPercent;
+    if (usable) {
+      return '';
+    }
+    return `The export density must be between ${this.minExportDensityPercent} and ` +
+      `${this.maxExportDensityPercent} %.`;
+  }
+
+  /**
+   * A written bitmap no browser can allocate, named. Empty while either input is out of range,
+   * which is the more specific complaint and is what the reader has to fix first.
+   */
+  get exportDensityError(): string {
+    if (this.customResolutionError !== '' || this.customDensityError !== '') {
+      return '';
+    }
+    const resolution = this.exportResolution;
+    if (resolution.widthPx === null || resolution.heightPx === null) {
+      return '';
+    }
+    return bitmapRefusal(resolution.widthPx, resolution.heightPx, this.exportDensity) ?? '';
+  }
+
+  /** The one message the size, the custom sides and the density all describe themselves by. */
+  get exportSizeError(): string {
+    return this.customResolutionError || this.customDensityError || this.exportDensityError;
+  }
+
   /** What the current setting will actually write, in the reader's own units. */
   get exportDimensionsLabel(): string {
     const resolution = this.exportResolution;
+    const percent = this.exportDensityLabel;
     if (resolution.widthPx === null || resolution.heightPx === null) {
-      return 'Twice each figure’s on-screen size — the width follows the panel it is rendered in.';
+      return `Each figure’s on-screen size at ${percent} — the width follows the panel it is ` +
+        'rendered in.';
     }
+    const density = this.exportDensity;
     const box = layoutBoxFor(resolution.widthPx, resolution.heightPx);
-    return `${resolution.widthPx} × ${resolution.heightPx} px — laid out at ` +
+    const written = `${Math.round(resolution.widthPx * density)} × ` +
+      `${Math.round(resolution.heightPx * density)} px`;
+    // At 100 % the requested size and the written one are the same number, and printing it twice
+    // would read as an error rather than as a multiplication.
+    const requested = density === 1
+      ? `at ${percent}`
+      : `(${resolution.widthPx} × ${resolution.heightPx} at ${percent})`;
+    return `${written} ${requested} — laid out at ` +
       `${Math.round(box.layoutWidth)} × ${Math.round(box.layoutHeight)}, ` +
-      `${this.formatDensity(box.density)}× density`;
+      `${this.formatDensity(box.density * density)}× density`;
   }
 
   onExportResolutionChange(value: string): void {
     this.exportResolutionId = value;
+    this.schedulePreview();
+  }
+
+  onExportDensityChange(value: number | 'custom'): void {
+    this.exportDensitySelection = value;
+    this.schedulePreview();
+  }
+
+  onCustomDensityChange(percent: number): void {
+    this.customExportDensityPercent = percent;
     this.schedulePreview();
   }
 
@@ -1168,7 +1274,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   get canExport(): boolean {
-    return !this.exporting && this.exportableCards.length > 0 && this.customResolutionError === '';
+    return !this.exporting && this.exportableCards.length > 0 && this.exportSizeError === '';
   }
 
   onExportFormatChange(value: FigureExportFormat): void {
@@ -1204,7 +1310,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.cdr.markForCheck();
 
     try {
-      const encoded = await this.encodeFromLiveCanvas(this.exportChrome(card), canvas, 'png');
+      const encoded = await this.encodeFromLiveCanvas(
+        this.exportChrome(card), canvas, this.exportDensity, 'png');
       const outcome = await copyImageToClipboard(encoded.blob);
       if (outcome === 'copied') {
         this.announce(`Copied ${card.title} to the clipboard.`, 'success');
@@ -1237,7 +1344,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     cards: readonly ComparisonFigureCard[],
     mode: 'file' | 'archive'
   ): Promise<void> {
-    if (this.exporting || cards.length === 0 || this.customResolutionError !== '') {
+    if (this.exporting || cards.length === 0 || this.exportSizeError !== '') {
       return;
     }
     const resolution = this.exportResolution;
@@ -1312,18 +1419,19 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }> {
     const chrome = this.exportChrome(card);
 
-    // The on-screen preset keeps the live-canvas path untouched: the composition follows the
-    // rendered figure, so there is no target box to refuse and no offscreen chart to build.
+    // The on-screen preset keeps the live-canvas path: the composition follows the rendered figure
+    // at the chosen density, so there is no target box to refuse and no offscreen chart to build.
     if (resolution.widthPx === null || resolution.heightPx === null) {
       return {
-        result: await this.encodeFromLiveCanvas(chrome, canvas),
+        result: await this.encodeFromLiveCanvas(chrome, canvas, this.exportDensity),
         refusal: null,
         liveFallback: false,
         pixels: ''
       };
     }
 
-    const { layout, refusal } = resolveFigureLayout(chrome, resolution, this.onScreenSizeOf(canvas));
+    const { layout, refusal } = resolveFigureLayout(
+      chrome, resolution, this.onScreenSizeOf(canvas), this.exportDensity);
     if (!layout) {
       return { result: null, refusal, liveFallback: false, pixels: '' };
     }
@@ -1334,7 +1442,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     );
     if (!plot) {
       return {
-        result: await this.encodeFromLiveCanvas(chrome, canvas),
+        result: await this.encodeFromLiveCanvas(chrome, canvas, this.exportDensity),
         refusal: null,
         liveFallback: true,
         pixels: ''
@@ -1351,7 +1459,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * Re-renders one live chart at twice its device pixels, composes it and encodes it.
+   * Re-renders one live chart at `density` device pixels, composes it and encodes it.
    *
    * The format is a parameter rather than the control's value because the clipboard path is fixed
    * at PNG: every engine that implements `ClipboardItem` rejects `image/webp` in one.
@@ -1362,16 +1470,17 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   private async encodeFromLiveCanvas(
     chrome: FigureExportChrome,
     canvas: HTMLCanvasElement,
+    density: number,
     format: FigureExportFormat = this.exportFormat
   ): Promise<FigureExportResult> {
     const chart = this.chartFor(canvas);
     const previousRatio = chart?.options?.devicePixelRatio;
     try {
       if (chart?.options) {
-        chart.options.devicePixelRatio = 2;
+        chart.options.devicePixelRatio = density;
         chart.resize();
       }
-      const composed = composeFigureImage({ ...chrome, canvas, format, layout: null });
+      const composed = composeFigureImage({ ...chrome, canvas, format, layout: null, density });
       // Quality is read only by the WebP encoder, so the clipboard's fixed PNG ignores it.
       return await encodeFigureImage(composed, format, this.figureWebpQuality);
     } finally {
@@ -1406,6 +1515,16 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       return this.minExportDimension;
     }
     return Math.min(this.maxExportDimension, Math.max(this.minExportDimension, Math.round(value)));
+  }
+
+  private clampDensityPercent(value: number): number {
+    if (!Number.isFinite(value)) {
+      return 100;
+    }
+    return Math.min(
+      this.maxExportDensityPercent,
+      Math.max(this.minExportDensityPercent, Math.round(value))
+    );
   }
 
   private isUsableDimension(value: number): boolean {
@@ -1700,7 +1819,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     try {
       const chrome = this.exportChrome(card);
       const onScreen = this.onScreenSizeOf(canvas);
-      const target = resolveFigureLayout(chrome, this.exportResolution, onScreen);
+      const target = resolveFigureLayout(
+        chrome, this.exportResolution, onScreen, this.exportDensity);
       if (!target.layout) {
         this.previewRefusal = target.refusal ?? '';
         this.blankPreview();

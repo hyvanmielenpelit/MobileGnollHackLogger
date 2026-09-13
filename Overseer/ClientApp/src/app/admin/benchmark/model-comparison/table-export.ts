@@ -28,7 +28,6 @@ import {
   FIGURE_BACKGROUND,
   FIGURE_BODY_COLOR,
   FIGURE_EXPORT_MAX_DIMENSION,
-  FIGURE_EXPORT_SCALE,
   FIGURE_FONT_STACK,
   FIGURE_MUTED_COLOR,
   FIGURE_RULE_COLOR,
@@ -642,6 +641,14 @@ interface TableImageColumn {
 }
 
 /**
+ * The density a table image is written at. Reading it at 1x would export the text blurred.
+ *
+ * The table's own constant rather than the figures': the figure export offers the reader a pixel
+ * density, and the table export has no such control.
+ */
+const TABLE_IMAGE_SCALE = 2;
+
+/**
  * Draws the whole table as an image on the figure ground.
  *
  * The same palette and the same font stack as the figure composer, so a table pasted beside
@@ -809,7 +816,7 @@ export async function encodeComparisonTable(
   options?: { webpQuality?: WebpQuality }
 ): Promise<TableExportResult> {
   if (format === 'png' || format === 'webp') {
-    const canvas = composeTableImage(model, { scale: FIGURE_EXPORT_SCALE });
+    const canvas = composeTableImage(model, { scale: TABLE_IMAGE_SCALE });
     const encoded = await encodeTableImage(canvas, format, options?.webpQuality);
     return { blob: encoded.blob, format: encoded.format, fellBackToPng: encoded.fellBackToPng };
   }
