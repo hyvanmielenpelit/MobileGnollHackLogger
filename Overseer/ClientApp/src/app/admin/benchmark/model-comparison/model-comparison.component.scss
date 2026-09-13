@@ -749,6 +749,12 @@
   .mc-field-hint {
     margin-left: 30px;
   }
+
+  /* Both the label and the hint carry no margin of their own, so the second pair needs its own
+     separation from the first one's hint. */
+  .mc-field-hint + .checkbox-label {
+    margin-top: 8px;
+  }
 }
 
 /* Reserved whether or not the rows overflow, so a filter that shortens the table does not shift it. */
@@ -1398,6 +1404,11 @@
   /* A checkbox and its text are one row; the column gap already separates it from the fields. */
   .checkbox-label {
     margin: 0;
+  }
+
+  /* A second heading in the column needs clearing off the error line that can precede it. */
+  .mc-preview-group-title {
+    margin-top: 8px;
   }
 }
 

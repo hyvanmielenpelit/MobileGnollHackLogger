@@ -24,6 +24,7 @@ import {
   directLabelPlugin,
   errorBarPlugin,
   glyphFor,
+  measureDirectLabelBlock,
   normalizeProfile,
   placeDirectLabels,
   segmentIntersectsRect,
@@ -35,7 +36,10 @@ import {
 } from './model-comparison-charts';
 import type {
   DirectLabelAnchor,
+  DirectLabelBlock,
   DirectLabelBox,
+  DirectLabelPluginOptions,
+  DirectLabelValue,
   ModelComparisonContext,
   ModelComparisonEntry,
   SmallMultiplesOptions,
@@ -987,12 +991,17 @@ describe('model-comparison-charts', () => {
       readonly args: readonly unknown[];
     }
 
+    function block(name: string | undefined, values: DirectLabelValue[] = [], hue = '#3987e5'): DirectLabelBlock {
+      return { name, values, hue };
+    }
+
     function runDirectPlugin(
-      labels: readonly string[],
+      blocks: readonly DirectLabelBlock[],
       marks: readonly { x: number; y: number }[],
-    ): { calls: DirectCall[]; fills: string[] } {
+    ): { calls: DirectCall[]; fills: string[]; rectFills: string[] } {
       const calls: DirectCall[] = [];
       const fills: string[] = [];
+      const rectFills: string[] = [];
       const record = (op: string) => (...args: unknown[]) => calls.push({ op, args });
       const ctx = {
         save: record('save'),
@@ -1001,7 +1010,10 @@ describe('model-comparison-charts', () => {
         moveTo: record('moveTo'),
         lineTo: record('lineTo'),
         stroke: record('stroke'),
-        fillRect: record('fillRect'),
+        fillRect: (...args: unknown[]) => {
+          rectFills.push(ctx.fillStyle);
+          calls.push({ op: 'fillRect', args });
+        },
         fillText: (...args: unknown[]) => {
           fills.push(ctx.fillStyle);
           calls.push({ op: 'fillText', args });
@@ -1028,14 +1040,17 @@ describe('model-comparison-charts', () => {
       directLabelPlugin.afterDatasetsDraw?.(
         chart as unknown as Chart,
         {} as never,
-        { labels, highlightedIndex: 1 } as never,
+        { blocks, highlightedIndex: 1 } as never,
         false as never,
       );
-      return { calls, fills };
+      return { calls, fills, rectFills };
     }
 
     it('writes one label per model dataset and none for the frontier', () => {
-      const { calls } = runDirectPlugin(['Model A', 'Model B'], [{ x: 100, y: 100 }, { x: 200, y: 180 }]);
+      const { calls } = runDirectPlugin(
+        [block('Model A'), block('Model B')],
+        [{ x: 100, y: 100 }, { x: 200, y: 180 }],
+      );
       const written = calls.filter((c) => c.op === 'fillText').map((c) => c.args[0]);
 
       expect(written.length).toBe(2);
@@ -1046,31 +1061,106 @@ describe('model-comparison-charts', () => {
     });
 
     it('gives the highlighted model the accent its mark already wears', () => {
-      const { fills } = runDirectPlugin(['Model A', 'Model B'], [{ x: 100, y: 100 }, { x: 200, y: 180 }]);
+      const { fills } = runDirectPlugin(
+        [block('Model A'), block('Model B')],
+        [{ x: 100, y: 100 }, { x: 200, y: 180 }],
+      );
 
       expect(fills).toContain(ACCENT);
       expect(fills).toContain(CHART_INK.secondary);
     });
 
-    it('draws nothing when the figure carries no labels', () => {
+    it('draws nothing when the figure carries no blocks', () => {
       const { calls } = runDirectPlugin([], [{ x: 100, y: 100 }]);
       expect(calls.length).toBe(0);
     });
 
-    it('registers the plugin and hides the legend only when the toggle is on', () => {
-      const off = buildQualitySpeedScatter(PROFILE_FIXTURE, BASE_FIGURE_OPTIONS);
-      const on = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, directLabels: true });
+    it('writes the name above its value lines, and a hue rule beside all three', () => {
+      const values = [
+        { label: 'Intelligence', text: '82.4' },
+        { label: 'Mean time', text: '15.20 s' },
+      ];
+      const { calls, rectFills } = runDirectPlugin([block('Model A', values, '#199e70')], [{ x: 100, y: 100 }]);
+      const written = calls.filter((c) => c.op === 'fillText').map((c) => c.args[0]);
 
+      expect(written).toEqual(['Model A', 'Intelligence', '82.4', 'Mean time', '15.20 s']);
+      // The backing plate, then the hue rule over its left edge.
+      expect(rectFills).toEqual([CHART_SURFACE, '#199e70']);
+    });
+
+    it('writes the values alone when the legend names the marks', () => {
+      const { calls, rectFills } = runDirectPlugin(
+        [block(undefined, [{ label: 'Intelligence', text: '82.4' }], '#d95926')],
+        [{ x: 100, y: 100 }],
+      );
+      const written = calls.filter((c) => c.op === 'fillText').map((c) => c.args[0]);
+
+      expect(written).toEqual(['Intelligence', '82.4']);
+      expect(rectFills).toEqual([CHART_SURFACE, '#d95926']);
+    });
+
+    it('measures a plate from its widest column pair, not from the name alone', () => {
+      // The fake context measures 6 px per character regardless of the font it is asked for.
+      const ctx = { font: '', measureText: (text: string) => ({ width: text.length * 6 }) };
+      const values = [
+        { label: 'Intelligence', text: '82.4' },
+        { label: 'Mean time', text: '15.20 s' },
+      ];
+      const wide = measureDirectLabelBlock(ctx as unknown as CanvasRenderingContext2D, {
+        name: 'Model ABCD',
+        values,
+        hue: '#3987e5',
+      });
+
+      // 2 px rule + 4 px gap + 2 × 3 px padding, then the columns: 12 chars, an 8 px gap, 7 chars.
+      expect(wide.labelColumn).toBe(72);
+      expect(wide.valueColumn).toBe(42);
+      expect(wide.width).toBe(12 + 72 + 8 + 42);
+      // 2 × 2 px padding, one 12 px name line and two 12 px value lines.
+      expect(wide.height).toBe(4 + 12 + 24);
+
+      const nameOnly = measureDirectLabelBlock(ctx as unknown as CanvasRenderingContext2D, {
+        name: 'Model ABCD',
+        values: [],
+        hue: '#3987e5',
+      });
+      expect(nameOnly.width).toBe(12 + 60);
+      expect(nameOnly.height).toBe(4 + 12);
+    });
+
+    it('carries names, values or both into the plugin as the two toggles ask', () => {
+      const pluginOptions = (spec: { config: { options?: { plugins?: unknown } } }) =>
+        (spec.config.options?.plugins as Record<string, DirectLabelPluginOptions>)[directLabelPlugin.id];
+
+      const off = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, inlineValues: false });
       expect(off.plugins).not.toContain(directLabelPlugin);
       expect(off.config.options?.plugins?.legend?.display).toBeTrue();
 
-      expect(on.plugins).toContain(directLabelPlugin);
-      expect(on.config.options?.plugins?.legend?.display).toBeFalse();
+      const named = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, directLabels: true });
+      expect(named.plugins).toContain(directLabelPlugin);
+      expect(named.config.options?.plugins?.legend?.display).toBeFalse();
+      expect(pluginOptions(named).blocks.map((b) => b.name)).toEqual(PROFILE_FIXTURE.map((e) => e.label));
+      expect(pluginOptions(named).blocks.every((b) => b.values.length === 0)).toBeTrue();
 
-      const options = (on.config.options?.plugins as unknown as Record<string, { labels: string[] }>)[
-        directLabelPlugin.id
-      ];
-      expect(options.labels).toEqual(PROFILE_FIXTURE.map((e) => e.label));
+      // Values are about the marks' numbers, not their names, so the legend stays.
+      const valued = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, inlineValues: true });
+      expect(valued.plugins).toContain(directLabelPlugin);
+      expect(valued.config.options?.plugins?.legend?.display).toBeTrue();
+      expect(pluginOptions(valued).blocks.map((b) => b.name)).toEqual([undefined, undefined, undefined]);
+      expect(pluginOptions(valued).blocks[0].values).toEqual([
+        { label: 'Mean time', text: '900 ms' },
+        { label: 'Intelligence', text: '90.0' },
+      ]);
+      expect(pluginOptions(valued).blocks[0].hue).toBe(glyphFor(BASE_FIGURE_OPTIONS.glyphs, 'A').hue);
+
+      const both = buildQualitySpeedScatter(PROFILE_FIXTURE, {
+        ...BASE_FIGURE_OPTIONS,
+        directLabels: true,
+        inlineValues: true,
+      });
+      expect(both.config.options?.plugins?.legend?.display).toBeFalse();
+      expect(pluginOptions(both).blocks[0].name).toBe('A');
+      expect(pluginOptions(both).blocks[0].values.length).toBe(2);
     });
   });
 

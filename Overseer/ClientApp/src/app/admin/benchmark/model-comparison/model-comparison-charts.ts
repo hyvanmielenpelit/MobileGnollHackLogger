@@ -654,6 +654,8 @@ export interface FigureOptions {
   readonly speedMeasure?: SpeedMeasure;
   /** Names every scatter mark on the canvas and hides the legend. Off unless the wizard asks. */
   readonly directLabels?: boolean;
+  /** Draws each scatter mark's two measured values on the canvas, beside it. Off unless the caller asks. */
+  readonly inlineValues?: boolean;
 }
 
 /** Effective hit radius is `radius + hitRadius`, so the target is 36 px across - well over the 24 px floor. */
@@ -751,6 +753,19 @@ const DIRECT_LABEL_LINE_HEIGHT = 12;
 
 /** How much of the surface the backing plate keeps, so a gridline behind the text stays subdued. */
 const DIRECT_LABEL_PLATE_ALPHA = 0.85;
+
+/** The value lines' font: a step under the name so the name stays the plate's headline. */
+const DIRECT_LABEL_VALUE_FONT = '10px "Lato", system-ui, sans-serif';
+
+/** Line box of one value line at {@link DIRECT_LABEL_VALUE_FONT}. */
+const DIRECT_LABEL_VALUE_LINE_HEIGHT = 12;
+
+/** Between the measure column and the value column. */
+const DIRECT_LABEL_COLUMN_GAP = 8;
+
+/** The hue rule along the plate's left edge, and the text inset it pushes. */
+const DIRECT_LABEL_RULE_WIDTH = 2;
+const DIRECT_LABEL_RULE_GAP = 4;
 
 /** One mark to label: its pixel position, and the plate size its text needs. */
 export interface DirectLabelAnchor {
@@ -1061,12 +1076,65 @@ export function placeDirectLabels(
   return placed;
 }
 
-/** What the plugin reads off the chart options: one label per model dataset, in dataset order. */
+/** One value line on a plate: the measure's short name and its formatted value. */
+export interface DirectLabelValue {
+  readonly label: string;
+  readonly text: string;
+}
+
+/** What one mark's plate carries. A block with neither a name nor values draws nothing. */
+export interface DirectLabelBlock {
+  /** The model's name; absent when the legend names the marks. */
+  readonly name?: string;
+  readonly values: readonly DirectLabelValue[];
+  /** The mark's glyph hue, drawn as the plate's left rule. */
+  readonly hue: string;
+}
+
+/** What the plugin reads off the chart options: one block per model dataset, in dataset order. */
 export interface DirectLabelPluginOptions {
   /** Indexed by dataset. Datasets past the list — the frontier — are never labelled. */
-  readonly labels: readonly string[];
-  /** The emphasised model, whose label wears the accent its mark already does. */
+  readonly blocks: readonly DirectLabelBlock[];
+  /** The emphasised model, whose plate wears the accent its mark already does. */
   readonly highlightedIndex?: number;
+}
+
+/**
+ * The plate one block needs: its outer size, and the two column widths its value lines align on.
+ *
+ * The columns are measured over the whole block rather than per line, which is what makes eight
+ * plates read as one table instead of eight captions. The context's font is set here, so a caller
+ * measuring a block need not know which font each line is drawn in.
+ */
+export function measureDirectLabelBlock(
+  ctx: CanvasRenderingContext2D,
+  block: DirectLabelBlock,
+): { width: number; height: number; labelColumn: number; valueColumn: number } {
+  ctx.font = DIRECT_LABEL_FONT;
+  const nameWidth = block.name ? ctx.measureText(block.name).width : 0;
+
+  ctx.font = DIRECT_LABEL_VALUE_FONT;
+  let labelColumn = 0;
+  let valueColumn = 0;
+  for (const value of block.values) {
+    labelColumn = Math.max(labelColumn, ctx.measureText(value.label).width);
+    valueColumn = Math.max(valueColumn, ctx.measureText(value.text).width);
+  }
+  const valuesWidth = block.values.length === 0 ? 0 : labelColumn + DIRECT_LABEL_COLUMN_GAP + valueColumn;
+
+  return {
+    width:
+      DIRECT_LABEL_RULE_WIDTH +
+      DIRECT_LABEL_RULE_GAP +
+      DIRECT_LABEL_PAD_X * 2 +
+      Math.max(nameWidth, valuesWidth),
+    height:
+      DIRECT_LABEL_PAD_Y * 2 +
+      (block.name ? DIRECT_LABEL_LINE_HEIGHT : 0) +
+      block.values.length * DIRECT_LABEL_VALUE_LINE_HEIGHT,
+    labelColumn,
+    valueColumn,
+  };
 }
 
 /** Draws a leader from the edge of the mark to the nearest edge of its label plate. */
@@ -1145,7 +1213,8 @@ function frontierPolylines(chart: Chart, frontierIndex: number): { x: number; y:
 }
 
 /**
- * Names every mark on the canvas, on a leader line, with the legend switched off.
+ * Names every mark on the canvas, on a leader line, with the legend switched off, and carries the
+ * mark's own values when the figure asks for them.
  *
  * It draws rather than delegating to `chartjs-plugin-datalabels`, which places a label at a fixed
  * offset with no knowledge of its neighbours — two models close together got two names on top of
@@ -1156,21 +1225,25 @@ export const directLabelPlugin: Plugin = {
   id: 'overseerDirectLabels',
   afterDatasetsDraw(chart, _args, pluginOptions): void {
     const options = pluginOptions as unknown as DirectLabelPluginOptions | undefined;
-    const labels = options?.labels ?? [];
+    const blocks = options?.blocks ?? [];
     const ctx = chart.ctx;
     const area = chart.chartArea;
-    if (!ctx || !area || labels.length === 0) {
+    if (!ctx || !area || blocks.length === 0) {
       return;
     }
 
     ctx.save();
-    ctx.font = DIRECT_LABEL_FONT;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
 
     const anchors: DirectLabelAnchor[] = [];
     const obstacleRects: LabelRect[] = [];
-    labels.forEach((label, datasetIndex) => {
+    // Keyed by dataset index, so two models sharing a label cannot collide in the placer's map.
+    const plates = new Map<string, { block: DirectLabelBlock; labelColumn: number; valueColumn: number }>();
+    blocks.forEach((block, datasetIndex) => {
+      if (!block.name && block.values.length === 0) {
+        return;
+      }
       const meta = chart.getDatasetMeta(datasetIndex);
       if (meta.hidden) {
         return;
@@ -1180,13 +1253,10 @@ export const directLabelPlugin: Plugin = {
       if (!element || !Number.isFinite(element.x) || !Number.isFinite(element.y)) {
         return;
       }
-      anchors.push({
-        key: label,
-        x: element.x,
-        y: element.y,
-        width: ctx.measureText(label).width + DIRECT_LABEL_PAD_X * 2,
-        height: DIRECT_LABEL_LINE_HEIGHT + DIRECT_LABEL_PAD_Y * 2,
-      });
+      const key = String(datasetIndex);
+      const metrics = measureDirectLabelBlock(ctx, block);
+      anchors.push({ key, x: element.x, y: element.y, width: metrics.width, height: metrics.height });
+      plates.set(key, { block, labelColumn: metrics.labelColumn, valueColumn: metrics.valueColumn });
       // The whiskers `errorBarPlugin` has already drawn, so a plate does not land on one.
       const raw = chart.data.datasets[datasetIndex]?.data[0];
       if (isErrorBarPoint(raw)) {
@@ -1196,9 +1266,9 @@ export const directLabelPlugin: Plugin = {
 
     const boxes = placeDirectLabels(anchors, area, POINT_HOVER_RADIUS, {
       rects: obstacleRects,
-      polylines: frontierPolylines(chart, labels.length),
+      polylines: frontierPolylines(chart, blocks.length),
     });
-    const highlighted = options?.highlightedIndex === undefined ? undefined : labels[options.highlightedIndex];
+    const highlighted = options?.highlightedIndex === undefined ? undefined : String(options.highlightedIndex);
 
     // Leaders first, so a plate covers the end of its own line rather than the line crossing it.
     ctx.strokeStyle = CHART_INK.muted;
@@ -1208,13 +1278,44 @@ export const directLabelPlugin: Plugin = {
     }
 
     for (const box of boxes) {
+      const plate = plates.get(box.key);
+      if (!plate) {
+        continue;
+      }
+      const accented = box.key === highlighted;
       // A backing plate, so a label crossing a gridline stays readable without an outline halo.
       ctx.globalAlpha = DIRECT_LABEL_PLATE_ALPHA;
       ctx.fillStyle = CHART_SURFACE;
       ctx.fillRect(box.x, box.y, box.width, box.height);
       ctx.globalAlpha = 1;
-      ctx.fillStyle = box.key === highlighted ? ACCENT : CHART_INK.secondary;
-      ctx.fillText(box.key, box.x + DIRECT_LABEL_PAD_X, box.y + box.height / 2);
+
+      // The hue rule ties the plate to its mark, which in legend mode is its only identity.
+      ctx.fillStyle = accented ? ACCENT : plate.block.hue;
+      ctx.fillRect(box.x, box.y, DIRECT_LABEL_RULE_WIDTH, box.height);
+
+      const textLeft = box.x + DIRECT_LABEL_RULE_WIDTH + DIRECT_LABEL_RULE_GAP + DIRECT_LABEL_PAD_X;
+      const textRight = box.x + box.width - DIRECT_LABEL_PAD_X;
+      let lineTop = box.y + DIRECT_LABEL_PAD_Y;
+
+      if (plate.block.name) {
+        ctx.font = DIRECT_LABEL_FONT;
+        ctx.textAlign = 'left';
+        ctx.fillStyle = accented ? ACCENT : CHART_INK.secondary;
+        ctx.fillText(plate.block.name, textLeft, lineTop + DIRECT_LABEL_LINE_HEIGHT / 2);
+        lineTop += DIRECT_LABEL_LINE_HEIGHT;
+      }
+
+      ctx.font = DIRECT_LABEL_VALUE_FONT;
+      for (const value of plate.block.values) {
+        const middle = lineTop + DIRECT_LABEL_VALUE_LINE_HEIGHT / 2;
+        ctx.textAlign = 'left';
+        ctx.fillStyle = CHART_INK.muted;
+        ctx.fillText(value.label, textLeft, middle);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = CHART_INK.secondary;
+        ctx.fillText(value.text, textRight, middle);
+        lineTop += DIRECT_LABEL_VALUE_LINE_HEIGHT;
+      }
     }
 
     ctx.restore();
@@ -1229,6 +1330,8 @@ interface ScatterAxisSpec {
   readonly title: string;
   /** The name a tooltip line is prefixed with: the measure without its unit parenthetical. */
   readonly tooltipLabel: string;
+  /** The measure name a value plate prints, short enough that two fit beside a mark. */
+  readonly shortLabel: string;
   readonly type: 'linear' | 'logarithmic';
   readonly better: BetterDirection;
   readonly min?: number;
@@ -1242,6 +1345,7 @@ interface ScatterAxisSpec {
 const QUALITY_AXIS: ScatterAxisSpec = {
   title: 'Intelligence Index (0-100)',
   tooltipLabel: 'Intelligence Index',
+  shortLabel: 'Intelligence',
   type: 'linear',
   better: 'higher',
   min: 0,
@@ -1257,6 +1361,7 @@ const QUALITY_AXIS: ScatterAxisSpec = {
 const TTFT_AXIS: ScatterAxisSpec = {
   title: 'Time to first token, P50 (ms, logarithmic scale)',
   tooltipLabel: 'Time to first token, P50',
+  shortLabel: 'TTFT P50',
   type: 'logarithmic',
   better: 'lower',
   format: formatMs,
@@ -1269,6 +1374,7 @@ const TTFT_AXIS: ScatterAxisSpec = {
 const COST_AXIS: ScatterAxisSpec = {
   title: 'Candidate cost per question (USD, logarithmic scale)',
   tooltipLabel: 'Candidate cost per question',
+  shortLabel: 'Cost / question',
   type: 'logarithmic',
   better: 'lower',
   format: formatUsd,
@@ -1280,6 +1386,7 @@ const COST_AXIS: ScatterAxisSpec = {
 const SPEED_INDEX_AXIS: ScatterAxisSpec = {
   title: 'Speed Index (0-100)',
   tooltipLabel: 'Speed Index',
+  shortLabel: 'Speed Index',
   type: 'linear',
   better: 'higher',
   min: 0,
@@ -1296,6 +1403,7 @@ const SPEED_INDEX_AXIS: ScatterAxisSpec = {
 const MEAN_MODEL_TIME_AXIS: ScatterAxisSpec = {
   title: 'Model time per question, mean (ms, logarithmic scale)',
   tooltipLabel: 'Model time per question, mean',
+  shortLabel: 'Mean time',
   type: 'logarithmic',
   better: 'lower',
   format: formatMs,
@@ -1309,6 +1417,7 @@ const MEAN_MODEL_TIME_AXIS: ScatterAxisSpec = {
 const TOTAL_MODEL_TIME_AXIS: ScatterAxisSpec = {
   title: 'Candidate model time for the whole suite (ms, logarithmic scale)',
   tooltipLabel: 'Candidate model time for the whole suite',
+  shortLabel: 'Suite time',
   type: 'logarithmic',
   better: 'lower',
   format: formatMs,
@@ -1342,6 +1451,35 @@ function scatterPoint(entry: ModelComparisonEntry, x: ScatterAxisSpec, y: Scatte
   };
 }
 
+/**
+ * What one mark's plate carries, from the two toggles the wizard offers.
+ *
+ * The value lines use the axis's own `format`, so the plate, the tick labels and the tooltip agree
+ * to the digit. An unmeasured coordinate — a speed measure a model has no figure for — yields no
+ * line at all rather than a printed NaN.
+ */
+function directLabelBlock(
+  entry: ModelComparisonEntry,
+  xAxis: ScatterAxisSpec,
+  yAxis: ScatterAxisSpec,
+  options: { glyphs: ReadonlyMap<string, IdentityGlyph>; named: boolean; valued: boolean },
+): DirectLabelBlock {
+  const values: DirectLabelValue[] = [];
+  if (options.valued) {
+    for (const axis of [xAxis, yAxis]) {
+      const value = axis.value(entry);
+      if (Number.isFinite(value)) {
+        values.push({ label: axis.shortLabel, text: axis.format(value) });
+      }
+    }
+  }
+  return {
+    name: options.named ? entry.label : undefined,
+    values,
+    hue: glyphFor(options.glyphs, entry.key).hue,
+  };
+}
+
 function buildScatter(
   id: string,
   title: string,
@@ -1353,6 +1491,9 @@ function buildScatter(
 ): ChartSpec<'scatter', ErrorBarPoint[]> {
   const { context, glyphs, reducedMotion, highlightedKey } = options;
   const directLabels = options.directLabels ?? false;
+  const inlineValues = options.inlineValues ?? false;
+  // One plugin carries both: names and values share a plate, and so share its placement.
+  const annotate = directLabels || inlineValues;
 
   const datasets = plotted.map((entry) => {
     const glyph = glyphFor(glyphs, entry.key);
@@ -1462,10 +1603,14 @@ function buildScatter(
         // Identity text on a scatter is the direct-label plugin's job, behind the wizard's own
         // toggle; the datalabels plugin is not registered on these figures at all.
         datalabels: { display: false },
-        ...(directLabels
+        ...(annotate
           ? {
               [directLabelPlugin.id]: {
-                labels: plotted.map((e) => e.label),
+                blocks: plotted.map((entry) => directLabelBlock(entry, xAxis, yAxis, {
+                  glyphs,
+                  named: directLabels,
+                  valued: inlineValues,
+                })),
                 highlightedIndex: highlightedIndex < 0 ? undefined : highlightedIndex,
               } satisfies DirectLabelPluginOptions,
             }
@@ -1486,7 +1631,7 @@ function buildScatter(
     preferredCorner,
     config,
     // After the error bars, so a leader line draws over a whisker rather than under it.
-    plugins: directLabels ? [errorBarPlugin, directLabelPlugin] : [errorBarPlugin],
+    plugins: annotate ? [errorBarPlugin, directLabelPlugin] : [errorBarPlugin],
   };
 }
 
@@ -2143,6 +2288,8 @@ export interface FigureSetOptions {
   readonly reducedMotion?: boolean;
   /** Names every scatter mark on the canvas and hides the legend. Off unless the wizard asks. */
   readonly directLabels?: boolean;
+  /** Draws each scatter mark's two measured values on the canvas, beside it. Off unless the caller asks. */
+  readonly inlineValues?: boolean;
   readonly highlightedKey?: string | null;
   readonly selectedKeys?: readonly string[];
   /**
@@ -2175,6 +2322,7 @@ export function buildComparisonFigures(
     selectedKeys: options.selectedKeys ?? [],
     speedMeasure,
     directLabels: options.directLabels ?? false,
+    inlineValues: options.inlineValues ?? false,
   };
   const smallMultiplesOptions: SmallMultiplesOptions = {
     ...figureOptions,

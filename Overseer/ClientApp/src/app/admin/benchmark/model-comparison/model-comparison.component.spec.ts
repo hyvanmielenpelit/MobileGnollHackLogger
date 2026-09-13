@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, DebugElement, inject } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideCharts } from 'ng2-charts';
@@ -9,6 +9,7 @@ import {
   ModelComparisonComponent
 } from './model-comparison.component';
 import { MAX_PLOTTED_ENTRIES, P1_STACK_BREAKPOINT_PX, directLabelPlugin } from './model-comparison-charts';
+import type { DirectLabelBlock, DirectLabelPluginOptions } from './model-comparison-charts';
 import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 import {
   BenchmarkComparabilityIndexDto,
@@ -374,33 +375,74 @@ describe('ModelComparisonComponent', () => {
     expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(6);
   });
 
+  /** The three scatters' legend `display`, which the names toggle is what changes. */
+  function scatterLegendDisplays(): unknown[] {
+    return component.scatterCards.map(card => (card.options?.plugins?.legend as { display?: unknown })?.display);
+  }
+
+  function scatterPluginIds(): string[][] {
+    return component.scatterCards.map(card => card.plugins.map(plugin => plugin.id));
+  }
+
+  /** The blocks one scatter hands the plugin, or undefined where it does not register it. */
+  function scatterBlocks(index = 0): DirectLabelBlock[] | undefined {
+    const plugins = component.scatterCards[index].options?.plugins as
+      Record<string, DirectLabelPluginOptions> | undefined;
+    return plugins?.[directLabelPlugin.id]?.blocks as DirectLabelBlock[] | undefined;
+  }
+
+  /** The nth checkbox above the three scatters: 0 names the marks, 1 draws their values. */
+  function scatterToggle(index: number): DebugElement {
+    return fixture.debugElement.queryAll(By.css('.mc-scatter-options input[type="checkbox"]'))[index];
+  }
+
+  function tick(toggle: DebugElement, on: boolean): void {
+    (toggle.nativeElement as HTMLInputElement).checked = on;
+    toggle.triggerEventHandler('change', { target: toggle.nativeElement });
+    fixture.detectChanges();
+  }
+
   it('swaps the scatter legends for direct labels when the toggle is ticked, and back', () => {
     render(buildDto(comparableSet(3)), 4);
 
-    const legendDisplays = (): unknown[] =>
-      component.scatterCards.map(card => (card.options?.plugins?.legend as { display?: unknown })?.display);
-    const pluginIds = (): string[][] =>
-      component.scatterCards.map(card => card.plugins.map(plugin => plugin.id));
+    // The values toggle is on by default, so the plugin is already registered; what the names
+    // toggle changes is the legend and whether a block carries a name.
+    expect(scatterLegendDisplays()).toEqual([true, true, true]);
+    expect(scatterPluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBeTrue();
+    expect(scatterBlocks()!.every(b => b.name === undefined)).toBeTrue();
 
-    expect(legendDisplays()).toEqual([true, true, true]);
-    expect(pluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBeFalse();
-
-    const toggle = fixture.debugElement.query(By.css('.mc-scatter-options input[type="checkbox"]'));
+    const toggle = scatterToggle(0);
     expect(toggle).withContext('the toggle sits above the three scatters').toBeTruthy();
-    (toggle.nativeElement as HTMLInputElement).checked = true;
-    toggle.triggerEventHandler('change', { target: toggle.nativeElement });
-    fixture.detectChanges();
+    tick(toggle, true);
 
     expect(component.scatterDirectLabels).toBeTrue();
-    expect(legendDisplays()).toEqual([false, false, false]);
-    expect(pluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBeTrue();
+    expect(scatterLegendDisplays()).toEqual([false, false, false]);
+    expect(scatterPluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBeTrue();
+    expect(scatterBlocks()!.every(b => typeof b.name === 'string')).toBeTrue();
 
-    (toggle.nativeElement as HTMLInputElement).checked = false;
-    toggle.triggerEventHandler('change', { target: toggle.nativeElement });
-    fixture.detectChanges();
+    tick(toggle, false);
 
-    expect(legendDisplays()).toEqual([true, true, true]);
-    expect(pluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBeFalse();
+    expect(scatterLegendDisplays()).toEqual([true, true, true]);
+    expect(scatterBlocks()!.every(b => b.name === undefined)).toBeTrue();
+  });
+
+  it('draws the marks\' values by default and drops the plugin when they are turned off', () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    expect(component.scatterInlineValues).toBeTrue();
+    expect(scatterPluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBeTrue();
+    const blocks = scatterBlocks()!;
+    expect(blocks.length).toBe(3);
+    expect(blocks[0].values.length).toBe(2);
+    expect(blocks[0].name).toBeUndefined();
+    expect(blocks[0].hue).toBeTruthy();
+
+    tick(scatterToggle(1), false);
+
+    expect(component.scatterInlineValues).toBeFalse();
+    // Neither toggle on: no plugin at all, and the legend still names the marks.
+    expect(scatterPluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBeFalse();
+    expect(scatterLegendDisplays()).toEqual([true, true, true]);
   });
 
   it('renders all six figures from three entries upward', () => {
@@ -846,14 +888,18 @@ describe('ModelComparisonComponent', () => {
     expect(fixture.debugElement.query(By.css('.mc-emphasis'))).toBeNull();
   });
 
-  it('describes the direct-label checkbox with the hint that sits under it', () => {
+  it('describes each scatter checkbox with the hint that sits under it', () => {
     render(buildDto(comparableSet(3)), 4);
 
-    const box = fixture.debugElement.query(By.css('.mc-scatter-options input[type="checkbox"]'))
-      .nativeElement as HTMLInputElement;
-    expect(box.getAttribute('aria-describedby')).toBe('mc-direct-labels-hint');
+    const names = scatterToggle(0).nativeElement as HTMLInputElement;
+    expect(names.getAttribute('aria-describedby')).toBe('mc-direct-labels-hint');
     expect((fixture.debugElement.query(By.css('#mc-direct-labels-hint'))
       .nativeElement as HTMLElement).textContent).toContain('leader line');
+
+    const values = scatterToggle(1).nativeElement as HTMLInputElement;
+    expect(values.getAttribute('aria-describedby')).toBe('mc-inline-values-hint');
+    expect((fixture.debugElement.query(By.css('#mc-inline-values-hint'))
+      .nativeElement as HTMLElement).textContent).toContain('hover overlay');
   });
   // -------------------------------------------------------------------------------------------
   // The wizard
@@ -1697,6 +1743,70 @@ describe('ModelComparisonComponent', () => {
     component.onFigurePreviewClosed();
     openPreview();
     expect(component.previewCardId).toBe(cards[0].id);
+  });
+
+  /**
+   * The two trade-off checkboxes inside the dialog's own controls, in template order.
+   *
+   * Classed rather than matched by type: the custom-size panel above them carries a checkbox of its
+   * own, and a bare `input[type="checkbox"]` would pick it up whenever that size is selected.
+   */
+  function dialogScatterToggles(): DebugElement[] {
+    return fixture.debugElement.queryAll(By.css('.mc-preview-controls .mc-preview-scatter-toggle'));
+  }
+
+  it('mirrors both trade-off toggles in the dialog and drives the page from them', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openPreview(component.scatterCards[0]);
+
+    expect(textOf('.mc-preview-group-title')).toContain('Trade-off charts');
+    const toggles = dialogScatterToggles();
+    expect(toggles.length).toBe(2);
+    expect((toggles[0].nativeElement as HTMLInputElement).checked).toBe(component.scatterDirectLabels);
+    expect((toggles[1].nativeElement as HTMLInputElement).checked).toBe(component.scatterInlineValues);
+
+    tick(toggles[0], true);
+    expect(component.scatterDirectLabels).toBeTrue();
+    // The page's own checkbox above the scatters reads the same field, so both stay in step.
+    expect((scatterToggle(0).nativeElement as HTMLInputElement).checked).toBeTrue();
+    expect(scatterLegendDisplays()).toEqual([false, false, false]);
+
+    tick(dialogScatterToggles()[1], false);
+    expect(component.scatterInlineValues).toBeFalse();
+    expect((scatterToggle(1).nativeElement as HTMLInputElement).checked).toBeFalse();
+    expect(scatterBlocks()!.every(b => b.values.length === 0)).toBeTrue();
+  });
+
+  it('re-composes the preview when a trade-off toggle is changed in the dialog', () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    // The clock is installed before the dialog is opened, so the composition the open itself
+    // schedules is a fake timer this test drains rather than a real one outliving it.
+    jasmine.clock().install();
+    try {
+      openPreview(component.scatterCards[0]);
+      const renderPreview = spyOn(
+        component as unknown as { renderPreview(): Promise<void> }, 'renderPreview'
+      ).and.returnValue(Promise.resolve());
+      jasmine.clock().tick(200);
+      renderPreview.calls.reset();
+
+      tick(dialogScatterToggles()[1], false);
+      expect(renderPreview).not.toHaveBeenCalled();
+      jasmine.clock().tick(200);
+      expect(renderPreview).toHaveBeenCalled();
+    } finally {
+      jasmine.clock().uninstall();
+    }
+  });
+
+  it('hides the trade-off group on a card the two toggles cannot change', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openPreview(component.panelCards[0]);
+
+    expect(component.previewIsScatter).toBeFalse();
+    expect(fixture.debugElement.query(By.css('.mc-preview-group-title'))).toBeNull();
+    expect(dialogScatterToggles().length).toBe(0);
   });
 
   it('refuses a size the figure does not fit, naming it, and leaves the stage blank', async () => {

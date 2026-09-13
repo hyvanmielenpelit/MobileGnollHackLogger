@@ -327,6 +327,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    */
   scatterDirectLabels = false;
 
+  /** Draws each scatter mark's two measured values beside it, so an exported figure states them. */
+  scatterInlineValues = true;
+
   /** The model under the pointer or the keyboard, highlighted in every panel and in the profile. */
   highlightedKey: string | null = null;
 
@@ -756,9 +759,20 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.rebuild();
   }
 
+  /**
+   * Both scatter toggles are offered above the charts and again in the preview dialog, so each one
+   * re-composes the preview as well as the page. `schedulePreview` is a no-op while it is closed.
+   */
   onScatterDirectLabelsChange(on: boolean): void {
     this.scatterDirectLabels = on;
     this.rebuild();
+    this.schedulePreview();
+  }
+
+  onScatterInlineValuesChange(on: boolean): void {
+    this.scatterInlineValues = on;
+    this.rebuild();
+    this.schedulePreview();
   }
 
   /** Hover and keyboard focus light the same model in all three panels and in the profile. */
@@ -1684,6 +1698,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return this.exportableCards.find(card => card.id === this.previewCardId) ?? null;
   }
 
+  /** The two trade-off toggles change nothing a reader can see on a panel or on the profile. */
+  get previewIsScatter(): boolean {
+    return this.previewCard?.type === 'scatter';
+  }
+
   /** The stage is a `role="img"`, so it carries the card's own summary rather than a bare noun. */
   get previewAriaLabel(): string {
     const card = this.previewCard;
@@ -2374,6 +2393,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       costMeasure: this.costMeasure,
       orientation: this.orientation,
       directLabels: this.scatterDirectLabels,
+      inlineValues: this.scatterInlineValues,
       reducedMotion: this.reducedMotion.matches,
       highlightedKey: this.highlightedKey,
       selectedKeys: this.emphasisKeys,

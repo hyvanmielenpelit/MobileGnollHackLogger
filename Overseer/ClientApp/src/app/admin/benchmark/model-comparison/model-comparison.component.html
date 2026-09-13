@@ -1163,6 +1163,15 @@
                 <p class="mc-field-hint" id="mc-direct-labels-hint">On, each mark carries its name on
                    a leader line and the legend is hidden. Off, the legend below each chart names
                    the marks.</p>
+                <label class="checkbox-label">
+                  <input type="checkbox" [checked]="scatterInlineValues"
+                         aria-describedby="mc-inline-values-hint"
+                         (change)="onScatterInlineValuesChange($any($event.target).checked)">
+                  Show values in the trade-off charts
+                </label>
+                <p class="mc-field-hint" id="mc-inline-values-hint">On, each mark carries its two
+                   measured values on the canvas, so an exported figure states them. Off, the values
+                   appear only in the hover overlay.</p>
               </div>
 
               <div class="mc-grid">
@@ -1525,6 +1534,24 @@
         }
         @if (previewRefusal) {
           <p class="mc-export-error" role="alert">{{ previewRefusal }}</p>
+        }
+
+        <!-- The same two handlers the page's own checkboxes call, so the dialog owns no second
+             copy of the state. Only for a scatter: on a panel or the profile they change nothing
+             the reader can see. -->
+        @if (previewIsScatter) {
+          <h4 class="mc-section-title mc-preview-group-title">Trade-off charts</h4>
+          <label class="checkbox-label">
+            <input type="checkbox" class="mc-preview-scatter-toggle" [checked]="scatterDirectLabels"
+                   (change)="onScatterDirectLabelsChange($any($event.target).checked)">
+            Label models inside the chart
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" class="mc-preview-scatter-toggle" [checked]="scatterInlineValues"
+                   (change)="onScatterInlineValuesChange($any($event.target).checked)">
+            Show values in the chart
+          </label>
+          <p class="mc-field-hint">Applies to all three trade-off charts, here and on the page.</p>
         }
       </aside>
 
