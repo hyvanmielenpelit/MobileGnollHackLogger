@@ -40,6 +40,9 @@
           <li [class.active]="isCurrentSession(s.id)" [class.is-pinned]="s.isPinned" (click)="navigateToSession(s.id)">
             <div class="session-info">
               <div class="session-title" title="{{ s.title }}">
+                @if (s.isConfidential) {
+                  <svg class="session-lock" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg><span class="visually-hidden">Confidential chat: </span>
+                }
                 {{ s.title }}
               </div>
               @if (s.lastMessageUtc) {
@@ -127,6 +130,15 @@
               <span class="chat-title" title="{{ currentTitle }}">{{ currentTitle }}</span>
               @if (!isEphemeralSession) {
                 <button class="rename-btn" (click)="startRename()" title="Rename Chat">✏️ </button>
+              }
+              <!-- Offered only for a saved Standard chat: the other two modes are already set -->
+              @if (currentSessionId && !isEphemeralSession && !isConfidentialSession) {
+                <button type="button" class="btn-gh btn-gh-small"
+                        (click)="openUpgradeConfidentialDialog()"
+                        interestfor="tip-make-confidential"
+                        [attr.style]="'anchor-name: --tip-make-confidential'">Make confidential</button>
+                <div popover="hint" id="tip-make-confidential" class="gh-tooltip"
+                     [attr.style]="'position-anchor: --tip-make-confidential'">Encrypt this chat from here on</div>
               }
             }
             @if (isRenamingTitle) {
@@ -539,7 +551,7 @@
                 Incognito
               </span>
               <span class="ephemeral-banner-text">
-                This chat is not being saved. Nothing in it is written to Overseer's database or file store, and closing it or letting it expire destroys the content for good.
+                This chat is not being saved. Nothing in it is written to Overseer's database or file store, and closing it or letting it expire destroys the content for good. It ends on its own after {{ ephemeralTimeoutMinutes }} minutes without activity.
               </span>
               <button type="button" class="disclosure-trigger"
                       [attr.aria-expanded]="isEphemeralDetailOpen"
@@ -563,17 +575,17 @@
               <ul id="ephemeral-detail" class="ephemeral-detail">
                 <li>The conversation is still sent to the AI provider to be answered. Incognito changes what Overseer keeps, not what is sent away for inference.</li>
                 <li>&ldquo;Not saved&rdquo; means not written to Overseer's database or its file store. Server memory can still be paged to disk by the operating system, captured in a crash dump, or read by anything with sufficient access to the server. This is not a legal or forensic guarantee.</li>
-                <li>The chat also ends on its own after a stretch of inactivity. When it ends, there is no trash and no recovery.</li>
+                <li>When it ends, there is no trash and no recovery.</li>
               </ul>
             }
           </div>
         }
-        @if (ephemeralNotice) {
+        @if (privacyNotice) {
           <div class="ephemeral-notice" role="status" aria-live="polite">
-            <span class="ephemeral-notice-text">{{ ephemeralNotice }}</span>
+            <span class="ephemeral-notice-text">{{ privacyNotice }}</span>
             <button type="button" class="action-btn"
                     (click)="dismissEphemeralNotice()"
-                    aria-label="Dismiss incognito chat notice"
+                    aria-label="Dismiss privacy notice"
                     interestfor="tip-dismiss-ephemeral-notice"
                     [attr.style]="'anchor-name: --tip-dismiss-ephemeral-notice'">
               <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -806,15 +818,19 @@
                   }
                 }
                 @if (privateBadge) {
-                  <span class="setting-badge ms-10"
-                        [class.badge-private-green]="privateBadge.state === 'green'"
-                        [class.badge-private-yellow]="privateBadge.state === 'yellow'"
-                        [class.badge-private-orange]="privateBadge.state === 'orange'"
-                        [class.badge-private-red]="privateBadge.state === 'red'"
-                        [title]="privateBadge.tooltip">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                  <button type="button" class="setting-badge ms-10"
+                          [class.badge-private-green]="privateBadge.state === 'green'"
+                          [class.badge-private-yellow]="privateBadge.state === 'yellow'"
+                          [class.badge-private-orange]="privateBadge.state === 'orange'"
+                          [class.badge-private-red]="privateBadge.state === 'red'"
+                          [attr.aria-label]="'Private, ' + privateBadge.label"
+                          interestfor="tip-private-badge"
+                          [attr.style]="'anchor-name: --tip-private-badge'">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                     {{ privateBadge.label }}
-                  </span>
+                  </button>
+                  <div popover="hint" id="tip-private-badge" class="gh-tooltip"
+                       [attr.style]="'position-anchor: --tip-private-badge'">{{ privateBadge.tooltip }}</div>
                 }
               </div>
             }
@@ -914,7 +930,7 @@
     <div class="margin-y-20 mt-10 mb-15">
       <label class="checkbox-label align-start">
         <input type="checkbox" [(ngModel)]="includePinnedInBulkDelete" name="includePinnedInBulkDelete" class="w-auto m-0" />
-        <span class="d-block">
+        <span>
           <span>Also move pinned chats to Trash</span>
         </span>
       </label>
@@ -1193,6 +1209,56 @@
   <div class="dialog-actions">
     <button type="button" class="btn-gh btn-gh-cancel" (click)="privacyDialog.close()">Done</button>
   </div>
+</dialog>
+
+<dialog #confidentialGateDialog class="gh-dialog privacy-dialog"
+        aria-labelledby="confidential-gate-title"
+        (cancel)="postponeGatedModelDecision()">
+  <h3 id="confidential-gate-title">Use this model for confidential chats?</h3>
+  @if (confidentialGate) {
+    <p>{{ confidentialGateModelName }}</p>
+    <p class="gate-reason">{{ confidentialGate.reason }}</p>
+  }
+  <div class="dialog-actions">
+    <button type="button" class="btn-gh btn-gh-cancel" (click)="postponeGatedModelDecision()" [disabled]="isSavingGateChoice">Decide later</button>
+    <button type="button" class="btn-gh btn-gh-delete" (click)="refuseGatedModel()" [disabled]="isSavingGateChoice">Not for confidential chats</button>
+    <button type="button" class="btn-gh" (click)="trustGatedModel()" [disabled]="isSavingGateChoice">
+      @if (isSavingGateChoice) {
+        <span class="gh-spinner-small"></span>
+        <span class="ms-10">Saving...</span>
+      } @else {
+        Use it
+      }
+    </button>
+  </div>
+  @if (gateSaveError) {
+    <div class="report-error-msg">
+      {{ gateSaveError }}
+    </div>
+  }
+</dialog>
+
+<dialog #upgradeConfidentialDialog class="gh-dialog privacy-dialog"
+        aria-labelledby="upgrade-confidential-title"
+        (cancel)="closeUpgradeConfidentialDialog()">
+  <h3 id="upgrade-confidential-title">Make this chat confidential?</h3>
+  <p>From the next message on, this chat is encrypted where it is stored, internet tools are off, no AI-made title is generated, and deleting it is final. Earlier turns stay as they were already stored. This cannot be undone.</p>
+  <div class="dialog-actions">
+    <button type="button" class="btn-gh btn-gh-cancel" (click)="closeUpgradeConfidentialDialog()" [disabled]="isUpgradingConfidential">Cancel</button>
+    <button type="button" class="btn-gh" (click)="confirmUpgradeToConfidential()" [disabled]="isUpgradingConfidential">
+      @if (isUpgradingConfidential) {
+        <span class="gh-spinner-small"></span>
+        <span class="ms-10">Applying...</span>
+      } @else {
+        Make confidential
+      }
+    </button>
+  </div>
+  @if (upgradeConfidentialError) {
+    <div class="report-error-msg">
+      {{ upgradeConfidentialError }}
+    </div>
+  }
 </dialog>
 
 <app-trash-modal #trashModal

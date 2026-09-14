@@ -149,5 +149,6 @@ public class TrashSessionDto
     public int DaysRemaining { get; set; }
     public bool IsPinned { get; set; }
     public bool IsGnollHackSession { get; set; }
+    public bool IsConfidential { get; set; }
     public int MessageCount { get; set; }
 }

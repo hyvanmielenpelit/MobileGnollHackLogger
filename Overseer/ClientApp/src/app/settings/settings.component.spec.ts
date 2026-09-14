@@ -5,7 +5,13 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { of, throwError, Subject } from 'rxjs';
 import { SettingsComponent, SettingsSection } from './settings.component';
-import { SettingsService, UserAiSettings, ConfidentialFloor, DlpFloor } from '../services/settings.service';
+import {
+  SettingsService,
+  UserAiSettings,
+  ConfidentialFloor,
+  DlpFloor,
+  ProvidedModelConfidentialStatus
+} from '../services/settings.service';
 import { ChatService } from '../services/chat.service';
 
 describe('SettingsComponent', () => {
@@ -1044,12 +1050,12 @@ describe('SettingsComponent', () => {
       fixture.detectChanges();
     }
 
-    it('renders seven nav links with the expected labels and routerLinks', () => {
+    it('renders eight nav links with the expected labels and routerLinks', () => {
       const compiled = fixture.nativeElement as HTMLElement;
       const links = compiled.querySelectorAll('.settings-nav-link');
-      const expectedLabels = ['General', 'AI Permissions', 'AI Performance', 'Confidentiality Mode', 'Outbound Masking', 'Chat Data', 'Version'];
+      const expectedLabels = ['General', 'AI Permissions', 'AI Performance', 'Confidentiality Mode', 'Provided Models for Confidential Chats', 'Outbound Masking', 'Chat Data', 'Version'];
 
-      expect(links.length).toBe(7);
+      expect(links.length).toBe(8);
       links.forEach((link, i) => {
         expect(link.querySelector('.settings-nav-label')?.textContent).toBe(expectedLabels[i]);
       });
@@ -1118,6 +1124,144 @@ describe('SettingsComponent', () => {
 
       emitSection('masking');
       expect(compiled.querySelector('.settings-body')?.classList.contains('section-open')).toBeTrue();
+    });
+  });
+
+  describe('Provided Models for Confidential Chats', () => {
+    let paramMapSubject: Subject<ParamMap>;
+
+    // One verified model still undecided, one self-declared model already accepted.
+    const providedModels: ProvidedModelConfidentialStatus[] = [
+      {
+        id: 7,
+        provider: 'Anthropic',
+        modelId: 'claude-house',
+        displayName: 'House Claude',
+        posture: 'ZeroRetention',
+        postureText: 'Zero data retention',
+        postureVerifiedUtc: '2026-03-04T10:00:00Z',
+        isOperatorVerified: true,
+        dataRegion: 'eu-west',
+        note: null,
+        userTrustsForConfidential: null,
+        decidedUtc: null
+      },
+      {
+        id: 9,
+        provider: 'Google',
+        modelId: 'gemini-house',
+        displayName: 'House Gemini',
+        posture: 'NoTraining',
+        postureText: 'No training on content',
+        postureVerifiedUtc: null,
+        isOperatorVerified: false,
+        dataRegion: null,
+        note: null,
+        userTrustsForConfidential: true,
+        decidedUtc: '2026-03-05T10:00:00Z'
+      }
+    ];
+
+    beforeEach(async () => {
+      TestBed.resetTestingModule();
+      paramMapSubject = new Subject<ParamMap>();
+
+      await TestBed.configureTestingModule({
+        imports: [SettingsComponent],
+        providers: [
+          provideRouter([]),
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          { provide: ActivatedRoute, useValue: { paramMap: paramMapSubject.asObservable() } }
+        ]
+      }).compileComponents();
+
+      settingsService = TestBed.inject(SettingsService);
+      spyOn(settingsService, 'getSettings').and.returnValue(of({ hasApiKey: true } as any));
+      spyOn(settingsService, 'getProvidedModelsForConfidential').and.returnValue(
+        of(providedModels.map(m => ({ ...m })))
+      );
+
+      fixture = TestBed.createComponent(SettingsComponent);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+    });
+
+    /** Enters the section the way the route does, which is what triggers the fetch. */
+    async function enterSection() {
+      paramMapSubject.next(convertToParamMap({ section: 'provided-models' }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    /* The rendered text of a row's chosen option. Angular prefixes a select's value with the
+       option's internal id, so the text is what identifies the selection. */
+    function chosenText(id: number): string {
+      const select = (fixture.nativeElement as HTMLElement).querySelector(`#provided-trust-${id}`) as HTMLSelectElement;
+      return select.options[select.selectedIndex]?.textContent?.trim() ?? '';
+    }
+
+    it('lists the provided models the service returns', async () => {
+      await enterSection();
+
+      const rows = (fixture.nativeElement as HTMLElement).querySelectorAll('table.gh-table tbody tr');
+
+      expect(rows.length).toBe(2);
+      expect(rows[0].querySelector('th')?.textContent?.trim()).toBe('House Claude');
+      expect(rows[0].textContent).toContain('Anthropic');
+      expect(rows[0].textContent).toContain('Zero data retention');
+      expect(rows[0].textContent).toContain('verified');
+      expect(rows[1].querySelector('th')?.textContent?.trim()).toBe('House Gemini');
+      expect(rows[1].textContent).toContain('self-declared');
+    });
+
+    it('offers each row the three decisions and shows the one on record', async () => {
+      await enterSection();
+
+      const select = (fixture.nativeElement as HTMLElement).querySelector('#provided-trust-7') as HTMLSelectElement;
+
+      expect(select.querySelectorAll('option').length).toBe(3);
+      expect(chosenText(7)).toBe('Not decided yet');
+      expect(chosenText(9)).toBe('Yes');
+    });
+
+    it('saves a changed decision with that row id and value, undecided included', async () => {
+      const trustSpy = spyOn(settingsService, 'setProvidedModelConfidentialTrust').and.returnValue(of({} as any));
+      await enterSection();
+
+      component.onProvidedModelTrustChange(component.providedModels[0], 'yes');
+      expect(trustSpy).toHaveBeenCalledWith(7, true);
+
+      component.onProvidedModelTrustChange(component.providedModels[0], 'no');
+      expect(trustSpy).toHaveBeenCalledWith(7, false);
+
+      component.onProvidedModelTrustChange(component.providedModels[1], 'undecided');
+      expect(trustSpy).toHaveBeenCalledWith(9, null);
+      expect(component.providedModelTrusts[9]).toBe('undecided');
+      expect(component.providedModels[1].userTrustsForConfidential).toBeNull();
+      expect(component.providedModels[1].decidedUtc).toBeNull();
+    });
+
+    it('leaves a row on its stored decision and shows the error when the save fails', async () => {
+      spyOn(settingsService, 'setProvidedModelConfidentialTrust').and.returnValue(
+        throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'Model not found.' } }))
+      );
+      await enterSection();
+
+      component.onProvidedModelTrustChange(component.providedModels[1], 'no');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.providedModelTrusts[9]).toBe('yes');
+      expect(component.providedModels[1].userTrustsForConfidential).toBeTrue();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const errors = compiled.querySelectorAll('[role="alert"]');
+      expect(errors.length).toBe(1);
+      expect(errors[0].textContent).toContain('Model not found.');
+      expect(chosenText(9)).toBe('Yes');
     });
   });
 });

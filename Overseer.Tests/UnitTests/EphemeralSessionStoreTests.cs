@@ -285,6 +285,41 @@ public class EphemeralSessionStoreTests
     }
 
     [Fact]
+    public void SupersedingSnapshotsRewritesOnlyTheFlaggedSystemRows()
+    {
+        using var store = Store();
+        var held = store.Create(Owner, Template());
+
+        held.AddMessage(id => new EphemeralMessage
+        {
+            Id = id, Role = "system", IsGameSnapshot = true, Content = "Game Context Snapshot:\nOld board"
+        });
+        held.AddMessage(id => new EphemeralMessage
+        {
+            Id = id, Role = "user", Content = "What should I do?"
+        });
+        held.AddMessage(id => new EphemeralMessage
+        {
+            Id = id, Role = "system", Content = "Full Message History (last messages shown):\nolder turns"
+        });
+
+        const string Marker = "[superseded]";
+        Assert.Equal(1, held.SupersedeSnapshots(Marker));
+
+        var messages = held.Messages;
+        Assert.Equal(Marker, messages[0].Content);
+        /* Cleared with the content. Left set, the next attach re-selects this row and the
+           marker text reaches snapshot detection as though it were a board. */
+        Assert.False(messages[0].IsGameSnapshot);
+
+        Assert.Equal("What should I do?", messages[1].Content);
+        Assert.StartsWith("Full Message History", messages[2].Content);
+
+        // A second call finds nothing left flagged.
+        Assert.Equal(0, held.SupersedeSnapshots(Marker));
+    }
+
+    [Fact]
     public void CreatingRequiresAnOwnerAndATemplate()
     {
         using var store = Store();

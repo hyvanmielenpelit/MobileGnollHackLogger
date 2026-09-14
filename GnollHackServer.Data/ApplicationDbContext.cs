@@ -30,6 +30,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<UserGroup> UserGroups { get; set; } = null!;
         public DbSet<SystemAiApiConfiguration> SystemAiApiConfigurations { get; set; } = null!;
         public DbSet<UserSystemAiApiConfiguration> UserSystemAiApiConfigurations { get; set; } = null!;
+        public DbSet<UserSystemModelConfidentialTrust> UserSystemModelConfidentialTrusts { get; set; } = null!;
         public DbSet<GroupSystemAiApiConfiguration> GroupSystemAiApiConfigurations { get; set; } = null!;
         public DbSet<SystemAiUsageLog> SystemAiUsageLogs { get; set; } = null!;
         public DbSet<SystemAiErrorLog> SystemAiErrorLogs { get; set; } = null!;
@@ -60,6 +61,26 @@ namespace MobileGnollHackLogger.Data
             modelBuilder.Entity<UserAiApiKey>()
                 .HasIndex(k => new { k.AspNetUserId, k.Provider })
                 .IsUnique();
+
+            /* One decision per user per model. The unique index is what makes the absence of a
+               row mean "undecided": a second row would let two answers coexist, and the gate
+               reads whichever one the query happened to return first. */
+            modelBuilder.Entity<UserSystemModelConfidentialTrust>()
+                .HasIndex(t => new { t.AspNetUserId, t.SystemAiApiConfigurationId })
+                .IsUnique();
+
+            modelBuilder.Entity<UserSystemModelConfidentialTrust>()
+                .HasOne(t => t.AspNetUser)
+                .WithMany()
+                .HasForeignKey(t => t.AspNetUserId)
+                .HasPrincipalKey(u => u.Id)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<UserSystemModelConfidentialTrust>()
+                .HasOne(t => t.SystemAiApiConfiguration)
+                .WithMany()
+                .HasForeignKey(t => t.SystemAiApiConfigurationId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<UserGroup>()
                 .HasKey(ug => new { ug.AspNetUserId, ug.GroupId });

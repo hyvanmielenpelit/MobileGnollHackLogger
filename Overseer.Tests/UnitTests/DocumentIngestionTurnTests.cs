@@ -167,6 +167,7 @@ public class DocumentIngestionTurnTests : IDisposable
         if (scanner == null) services.AddSingleton<IAntiMalwareScanner, NullAntiMalwareScanner>();
         else services.AddSingleton(scanner);
         services.AddSingleton<EndpointPolicy>();
+        services.AddSingleton<ConfidentialityPostureService>();
         services.AddSingleton<IContentKeyRing, ConfigurationContentKeyRing>();
         services.AddSingleton<ContentProtectionService>();
         services.AddSingleton(sp => new EphemeralSessionStore(

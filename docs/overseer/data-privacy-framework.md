@@ -309,6 +309,24 @@ previously superseded row on each attach, and hand marker text to `StripGameSnap
 rather than a row. It takes no flag, and is named here so nobody "completes" the change by
 touching it.
 
+**Attaching a snapshot obeys the session's mode.** `AttachSnapshot` takes the same
+`SessionRef` wire string, and the same `IsConfidential` / `IsEphemeral` create-time pair, that
+`Send` does — the two are the only ways a chat comes into existence from the window, and a
+snapshot-first game session used to be the one that could not be private. On a confidential
+session it encrypts both the new snapshot row and every superseded marker it rewrites; a marker
+written in clear would leave a session with plaintext rows the badge claims are enveloped. On an
+ephemeral reference it appends to the store and rewrites the store's own rows through
+`EphemeralSession.SupersedeSnapshots`, adding nothing to the `DbContext` and calling no
+`SaveChangesAsync` — the same rule as every other ephemeral write, and the reason
+`EphemeralMessage.IsGameSnapshot` is settable rather than init-only.
+
+**The game-client upload accepts an optional `IsConfidential`.** `SessionController.Create` then
+snapshots the confidential policy onto the session and envelopes what it writes: the three system
+rows — snapshot, message history, directory manifest — and the two context files it puts under
+`ConversationsDataLocation`, which carry the `.enc` suffix and the magic bytes the serving path
+already reads. The GnollHack client does not send the field yet; until it does, game-client
+sessions start Standard and the user upgrades them from the chat window.
+
 ---
 
 ### 3.10 The untrusted-content boundary
@@ -800,17 +818,39 @@ stricter of the two.**
 
 | Gate | Behaviour |
 |---|---|
-| `UserDecides` | The user marks which of their own keys are adequate. Unmarked keys are usable, and the badge reports what is actually known. **The default floor** |
-| `AskWhenUnclear` | As above, but a key whose posture is `Unknown`, or which the user has not yet decided on, prompts once. The answer persists on the key, so it asks once per key rather than once per turn |
+| `UserDecides` | The user marks which credentials are adequate. Unmarked ones are usable, and the badge reports what is actually known. **The default floor** |
+| `AskWhenUnclear` | As above, but a credential the user has not yet decided on prompts once. The answer persists, so it asks once per credential rather than once per turn |
 | `VerifiedPostureOnly` | Only an operator-verified `ZeroRetention` or stronger passes. A self-declared posture never passes, and the refusal names why |
 
-**An explicit "no" from the user refuses the key in every mode**, checked before the gate mode
-is consulted. False is a decision, not an absence: someone who has said a key is unsuitable for
-confidential work should not be asked again because the floor happens to be permissive.
+**An explicit "no" from the user refuses the credential in every mode**, checked before the gate
+mode is consulted. False is a decision, not an absence: someone who has said a credential is
+unsuitable for confidential work should not be asked again because the floor happens to be
+permissive. An explicit "yes" is equally a decision, and it ends the `AskWhenUnclear` question
+even when the posture stays `Unknown` — an unestablished posture is what the question is *about*,
+so re-asking after it has been answered would leave the prompt with no answer that ever settles
+it. `VerifiedPostureOnly` is unaffected: it is an administrator's floor and not the user's to
+answer.
 
 Refusals name their reason, because "not allowed" invites the user to try the same thing again.
 The self-declared case says specifically that Overseer cannot verify the claim — which is not
-distrust of the user, and should not read as it.
+distrust of the user, and should not read as it. The refusal also names where the answer is
+changed, and the two places differ: a user's own key under **API Keys**, an operator-provided
+model under **Settings › Provided Models for Confidential Chats**.
+
+**Where the gate runs.** `ChatService.StreamMessageAsync`, once the funding credential is
+resolved and before the user message is built or any provider is called — so a refused or
+prompted turn persists nothing and reaches no provider. `Refuse` reaches the client as an
+`error` event; `AskOnce` reaches it as a `confidential_gate` event carrying the reason, the
+provider, which kind of credential it is and the model's display name, and the window answers it
+in a modal dialog. The refused message returns to the composer, so the turn is resent rather than
+reconstructed.
+
+**A decision about an operator-provided model** is stored per user in the
+`UserSystemModelConfidentialTrust` table, not on a key row — a user can reach a system model
+through a group assignment and have no per-user configuration row at all, and the decision must
+not depend on how the model was provisioned. Absence of a row is the undecided state. The
+decisions are listed and edited under **Settings › Provided Models for Confidential Chats**, and
+account deletion removes them.
 
 ### 4.4 The badge
 
@@ -836,6 +876,31 @@ Two properties of this table are load-bearing and both are unit-tested:
 Orange is not a warning. It is an accurate report that nothing is known about the provider's
 retention while Overseer's own protections do hold. The tooltip enumerates precisely which
 controls are active and what the posture is: subtle by default, precise on demand.
+
+**When the badge is resolved.** The posture belongs to whichever credential funds a turn, and no
+request that merely *loads* a session — or that *starts* one — has chosen a credential yet. Such
+a response therefore reports orange, and the turn that resolves the credential follows it with a
+`private_badge` event the window applies in place. Red still wins over that, because an inactive
+control is a property of the session rather than of the credential.
+
+The consequence is that **every** turn re-establishes the badge from orange rather than carrying
+the previous turn's colour forward, and that is the wanted direction: a user may change model
+between turns, and a stale green held over a turn funded by an unestablished credential would
+claim more than is known. Understating for the second it takes the turn to resolve is the
+failure this framework chooses everywhere else too.
+
+A chat created as Confidential also learns its state from the creating turn's own response, which
+carries `isConfidential`, `isEphemeral`, the badge and the incognito deadline: before that, a
+newly created confidential chat showed no badge and suppressed no telemetry until the window was
+reloaded.
+
+The badge is a non-submitting `<button>` carrying the interest-triggered tooltip rather than a
+`title` attribute, so the styled tooltip appears on hover and on keyboard focus alike.
+
+**The sidebar and the trash list** mark a confidential chat with a small lock glyph before its
+title, with hidden text for a screen reader and no `title`. The trade-off is deliberate and worth
+stating: the glyph tells anyone looking at the screen which of the user's chats are confidential,
+without revealing anything about their contents.
 
 ### 4.5 Custom provider endpoints
 
@@ -961,6 +1026,10 @@ idempotent rather than an error, because a client may retry.
 **The upgrade is not retroactive**, and the response says that too — `retroactive: false` plus
 a sentence. Earlier turns stay as they were stored. A client that does not say so leaves the
 user with a reasonable and wrong belief about what just happened.
+
+The chat window offers the upgrade from the header of any persisted, non-confidential chat,
+behind a confirmation that quotes what changes and states that it cannot be undone. The success
+response carries the badge as well as the notice, so the window shows both without a reload.
 
 ### 5.2 The policy is snapshotted, not resolved per turn
 
@@ -1301,6 +1370,22 @@ not the exception. A read enforces the deadline itself rather than waiting for t
 sweeper, or the window would be a minute wider than it says. Account deletion calls
 `CloseAllForUser`.
 
+**The window says the number.** `GET /api/settings` serves `ephemeralTimeoutMinutes` from the
+store rather than re-reading configuration, so the banner names the interval actually enforced
+instead of describing it as "a stretch of inactivity"; and `Send` and `AttachSnapshot` return
+`ephemeralExpiresUtc`, from which the window arms a single notice about two minutes before the
+deadline. The warning is approximate and says "about": the server's window slides on every
+access, so a long reply can move the real deadline after the client armed its timer.
+
+**An expired incognito chat is announced, not reported as an error.** A send against a reference
+the store no longer holds comes back as a refusal naming the expiry, and the window says the
+content is gone and returns to a new chat rather than leaving the user looking at a failed turn
+in a conversation that no longer exists.
+
+**A snapshot can be attached to one.** See § 3.9: the attach path takes an ephemeral reference
+and writes only to the store, so a game session started from the embedded client can be incognito
+rather than only confidential.
+
 #### What `ZeroMemory` actually reaches, and what it does not
 
 Message content, tool-call arguments, results and errors are held as **UTF-8 bytes rather than
@@ -1493,6 +1578,11 @@ that turned out to be false, and it is encrypted with everything else.
 
 An **ephemeral** session has none of these columns, because it has no row. What it does leave in
 the clear is an access-journal entry (§8) naming its reference and nothing about its contents.
+
+**On the screen rather than in the database**, one more fact is visible: the sidebar and the
+trash list mark confidential chats with a lock glyph, so someone standing behind the user learns
+which of their chats are confidential. That is a deliberate trade for the reassurance of seeing
+the mode without opening each chat, and it reveals nothing about what any of them contain.
 
 ---
 

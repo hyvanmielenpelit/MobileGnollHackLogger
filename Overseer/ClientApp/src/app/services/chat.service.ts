@@ -1,12 +1,21 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpResponse } from '@angular/common/http';
 
+/* The privacy badge the chat window shows for a session. `state` is green, yellow, orange or
+   red; the tooltip enumerates the active controls and the provider's retention posture. */
+export interface PrivateBadge {
+  state: string;
+  label: string;
+  tooltip: string;
+}
+
 export interface ChatSession {
   id: number;
   title: string;
   lastMessageUtc: string;
   isGnollHackSession?: boolean;
   isPinned?: boolean;
+  isConfidential?: boolean;
 }
 
 export interface TrashSession {
@@ -19,6 +28,7 @@ export interface TrashSession {
   daysRemaining: number;
   isPinned: boolean;
   isGnollHackSession?: boolean;
+  isConfidential?: boolean;
   messageCount: number;
 }
 
@@ -123,9 +133,35 @@ export interface ChatContextUsage {
 }
 
 export interface ChatStreamEvent {
-  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'ttft' | 'duration' | 'context' | 'cost' | 'final';
+  type: 'chunk' | 'status' | 'debug' | 'error' | 'sessionId' | 'tool_start' | 'tool_result' | 'tool_error' | 'title_update' | 'thinking_chunk' | 'ttft' | 'duration' | 'context' | 'cost' | 'final' | 'confidential_gate' | 'private_badge';
   data: string;
   seqNo?: number;
+}
+
+/**
+ * What a turn reports about the session it ran in. The whole shape arrives on a turn that
+ * creates the chat; an existing chat repeats its own state, so every field but the reference
+ * is optional.
+ */
+export interface ChatSessionStateResponse {
+  /* A decimal id for a saved chat, `eph_<guid>` for an incognito one. */
+  sessionId: string;
+  isConfidential?: boolean;
+  isEphemeral?: boolean;
+  privateBadge?: PrivateBadge | null;
+  hasGameSnapshot?: boolean;
+  /* The current deadline of an incognito chat, which slides forward on every access. */
+  ephemeralExpiresUtc?: string | null;
+}
+
+/** What `PUT /api/chat/sessions/{id}/confidential` reports about a Standard chat it upgraded. */
+export interface ConfidentialUpgradeResponse {
+  isConfidential: boolean;
+  alreadyConfidential?: boolean;
+  /* False: turns already stored keep the form they were stored in. */
+  retroactive?: boolean;
+  notice?: string;
+  privateBadge?: PrivateBadge | null;
 }
 
 export interface ChatSessionsResponse {
@@ -147,8 +183,8 @@ export interface ChatSessionDetailResponse {
   isGnollHackSession?: boolean;
   hasGameSnapshot?: boolean;
   /* The privacy badge, or null/absent when Confidentiality Mode is off — which is every
-     session until Tier 2 lands. `state` is green, yellow, orange or red. */
-  privateBadge?: { state: string; label: string; tooltip: string } | null;
+     session until Tier 2 lands. */
+  privateBadge?: PrivateBadge | null;
   /** Whether the session is in Confidentiality Mode. One-way: it can be set, never cleared. */
   isConfidential?: boolean;
   /* Whether the session lives only in the server's memory: no session, message, tool-call or
@@ -255,7 +291,7 @@ export class ChatService {
      are properties of a chat's creation. isEphemeral without isConfidential is a 400, because
      incognito is a stricter form of Confidentiality Mode rather than an alternative to it. */
   sendMessage(sessionId: number | string | null, message: string, attachments?: ChatMessageAttachment[], userModelId?: number, systemModelId?: number, hasGreeted?: boolean, isConfidential?: boolean, isEphemeral?: boolean) {
-    return this.http.post<{sessionId: string}>('/api/chat/send', {
+    return this.http.post<ChatSessionStateResponse>('/api/chat/send', {
       sessionId: sessionId === null ? null : String(sessionId),
       message,
       attachments: attachments || [],
@@ -279,12 +315,23 @@ export class ChatService {
     return `/api/chat/sessions/${sessionRef}/attachments/${attachmentId}${inline ? '?inline=true' : ''}`;
   }
 
-  attachGameSnapshot(sessionId: number | string | null, snapshotText: string, sourceGnollHackVersion?: string | null) {
-    return this.http.post<{sessionId: number, hasGameSnapshot: boolean}>('/api/chat/sessions/attach-snapshot', {
-      sessionId,
+  /* The two privacy flags are read by the server only when sessionRef is null, on the same
+     terms as sendMessage: they describe a chat's creation. Attaching to an `eph_` reference
+     appends to the in-memory session and supersedes the snapshot it already held. */
+  attachGameSnapshot(sessionRef: string | null, snapshotText: string, sourceGnollHackVersion?: string | null, isConfidential = false, isEphemeral = false) {
+    return this.http.post<ChatSessionStateResponse>('/api/chat/sessions/attach-snapshot', {
+      sessionId: sessionRef,
       snapshotText,
-      sourceGnollHackVersion
+      sourceGnollHackVersion,
+      isConfidential,
+      isEphemeral
     });
+  }
+
+  /* One-way, and not retroactive: turns already written keep the form they were stored in.
+     A downgrade attempt is refused with a 409. */
+  upgradeSessionToConfidential(id: number) {
+    return this.http.put<ConfidentialUpgradeResponse>(`/api/chat/sessions/${id}/confidential`, { isConfidential: true });
   }
 
   getSubAgents() {

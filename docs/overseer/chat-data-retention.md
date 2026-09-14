@@ -181,6 +181,23 @@ When executed (either automatically by the background service or manually from t
 5. **Sweep Orphaned Disk Folders**:
    - Iterates through all subfolders in `ConversationsDataLocation`. If the numeric folder ID has no corresponding entry in `ChatSession`, the folder is deleted.
 
+### Account deletion
+
+`DeletePersonalData` reaches the data project only through `GnollHackServer.Data.Privacy.CryptoShred`,
+because `MobileGnollHackLogger` and `Overseer` reference `GnollHackServer.Data` and never each
+other, so `ChatRetentionService` is unreachable from the Razor page. Three helpers run there before
+anything is removed:
+
+| Helper | What it reaches |
+|---|---|
+| `NullAllSessionKeysForUserAsync` | Every session's wrapped content key, so a partial deletion leaves unreadable content rather than readable content |
+| `NullUserApiKeyMaterialAsync` | The user's stored provider credentials, protected by a different master key that session shredding does not touch |
+| `DeleteSystemModelTrustForUserAsync` | The user's decisions about which operator-provided models may fund their confidential chats |
+
+The third holds no key material, so its rows are deleted rather than nulled. It is called
+explicitly rather than left to the account's cascade, so account deletion reaches everything the
+user said about their own confidentiality whichever project runs it.
+
 ---
 
 ## 5. Storage Metrics & Telemetry

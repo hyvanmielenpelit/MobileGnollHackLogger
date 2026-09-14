@@ -241,18 +241,19 @@ public class ConfidentialityPostureServiceTests
     }
 
     [Fact]
-    public void Gate_AskWhenUnclear_AsksOnUnknownPostureAndOnAnUndecidedKey()
+    public void Gate_AskWhenUnclear_AsksWhileTheKeyIsUndecided_AndTheReasonFollowsThePosture()
     {
         var service = CreateService();
 
         var unknownPosture = service.EvaluateGate(
-            SelfDeclared(ProviderConfidentialityPosture.Unknown), true, ConfidentialityGateMode.AskWhenUnclear);
+            SelfDeclared(ProviderConfidentialityPosture.Unknown), null, ConfidentialityGateMode.AskWhenUnclear);
         Assert.Equal(ConfidentialityGateOutcome.AskOnce, unknownPosture.Outcome);
         Assert.Contains("Nothing is established", unknownPosture.Reason);
 
-        var undecided = service.EvaluateGate(
+        var selfDeclared = service.EvaluateGate(
             SelfDeclared(ProviderConfidentialityPosture.ZeroRetention), null, ConfidentialityGateMode.AskWhenUnclear);
-        Assert.Equal(ConfidentialityGateOutcome.AskOnce, undecided.Outcome);
+        Assert.Equal(ConfidentialityGateOutcome.AskOnce, selfDeclared.Outcome);
+        Assert.Contains("self-declared", selfDeclared.Reason);
     }
 
     [Fact]
@@ -261,10 +262,16 @@ public class ConfidentialityPostureServiceTests
         // Asked once per key, not once per turn: the answer persists on the key.
         var service = CreateService();
 
-        var result = service.EvaluateGate(
-            SelfDeclared(ProviderConfidentialityPosture.NoTraining), true, ConfidentialityGateMode.AskWhenUnclear);
+        Assert.Equal(ConfidentialityGateOutcome.Allow, service.EvaluateGate(
+            SelfDeclared(ProviderConfidentialityPosture.NoTraining), true,
+            ConfidentialityGateMode.AskWhenUnclear).Outcome);
 
-        Assert.Equal(ConfidentialityGateOutcome.Allow, result.Outcome);
+        /* Including the case the question is most often about. An unestablished posture is
+           what the user was asked to accept, so re-asking after they accepted it would leave
+           the prompt with no answer that ever ends it. */
+        Assert.Equal(ConfidentialityGateOutcome.Allow, service.EvaluateGate(
+            SelfDeclared(ProviderConfidentialityPosture.Unknown), true,
+            ConfidentialityGateMode.AskWhenUnclear).Outcome);
     }
 
     [Fact]

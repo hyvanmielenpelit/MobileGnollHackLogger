@@ -175,6 +175,7 @@ public class DeletePersonalDataModel : PageModel
                not reach it. */
         await GnollHackServer.Data.Privacy.CryptoShred.NullAllSessionKeysForUserAsync(_dbContext, userId);
         await GnollHackServer.Data.Privacy.CryptoShred.NullUserApiKeyMaterialAsync(_dbContext, userId);
+        await GnollHackServer.Data.Privacy.CryptoShred.DeleteSystemModelTrustForUserAsync(_dbContext, userId);
 
         // 4. Delete all chat sessions (cascades to messages, attachments, tool calls)
         _dbContext.ChatSession.RemoveRange(

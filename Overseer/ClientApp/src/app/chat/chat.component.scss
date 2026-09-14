@@ -83,6 +83,17 @@
   font-weight: bold;
 }
 
+/* The lock marking a confidential chat in the list. It never shrinks, so a long title still
+   truncates around it. */
+.session-lock {
+  inline-size: 12px;
+  block-size: 12px;
+  color: currentColor;
+  margin-right: 4px;
+  vertical-align: -1px;
+  flex: none;
+}
+
 .session-time {
   font-size: 11px;
   color: #888;
@@ -1489,9 +1500,28 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   font-weight: 500;
   user-select: none;
   white-space: nowrap;
-  
+
   svg {
     margin-right: 4px;
+  }
+}
+
+/* The Private badge is a button so its tooltip can be interest-triggered; it carries no action
+   of its own. :where() holds the reset at class specificity, so the state classes below still
+   decide the badge's own colours. */
+:where(button).setting-badge {
+  appearance: none;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  line-height: inherit;
+  text-align: inherit;
+  cursor: default;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color, #d4af37);
+    outline-offset: 2px;
   }
 }
 
@@ -1780,6 +1810,16 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
   margin: 10px 0 0;
   font-size: 0.76rem;
   color: #a8a8a8;
+}
+
+/* The gate's reason, shown as the server worded it rather than restated. */
+.gate-reason {
+  margin: 10px 0 0;
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid var(--border-glass, rgba(255, 255, 255, 0.15));
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: #d8d8d8;
 }
 
 /* Persistent state of an open incognito chat */

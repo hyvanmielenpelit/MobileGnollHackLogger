@@ -37,6 +37,7 @@ public class ChatService
     private readonly Overseer.Services.Privacy.AttachmentValidator _attachmentValidator;
     private readonly Overseer.Services.Privacy.IAntiMalwareScanner _malwareScanner;
     private readonly Overseer.Services.Privacy.EndpointPolicy _endpointPolicy;
+    private readonly Overseer.Services.Privacy.ConfidentialityPostureService _confidentialityPosture;
     private readonly Overseer.Services.Privacy.ContentProtectionService _contentProtection;
     private readonly Overseer.Services.Privacy.EphemeralSessionStore _ephemeralSessions;
     private readonly Overseer.Services.Privacy.Dlp.DlpScannerService _dlpScanner;
@@ -67,6 +68,7 @@ public class ChatService
         Overseer.Services.Privacy.AttachmentValidator attachmentValidator,
         Overseer.Services.Privacy.IAntiMalwareScanner malwareScanner,
         Overseer.Services.Privacy.EndpointPolicy endpointPolicy,
+        Overseer.Services.Privacy.ConfidentialityPostureService confidentialityPosture,
         Overseer.Services.Privacy.ContentProtectionService contentProtection,
         Overseer.Services.Privacy.EphemeralSessionStore ephemeralSessions,
         Overseer.Services.Privacy.Dlp.DlpScannerService dlpScanner,
@@ -95,6 +97,7 @@ public class ChatService
         _attachmentValidator = attachmentValidator;
         _malwareScanner = malwareScanner;
         _endpointPolicy = endpointPolicy;
+        _confidentialityPosture = confidentialityPosture;
         _contentProtection = contentProtection;
         _ephemeralSessions = ephemeralSessions;
         _dlpScanner = dlpScanner;
@@ -114,6 +117,16 @@ public class ChatService
     /// detection reads.
     /// </summary>
     public const string GameSnapshotPrefix = "Game Context Snapshot:";
+
+    /// <summary>
+    /// What an earlier snapshot's content becomes once a newer one supersedes it. One constant
+    /// because both stores rewrite it — the database rows in
+    /// <c>ChatController.AttachSnapshot</c> and the in-memory rows in
+    /// <c>EphemeralSession.SupersedeSnapshots</c> — and a transcript that used two wordings
+    /// would read as two different things having happened.
+    /// </summary>
+    public const string GameSnapshotSupersededMarker =
+        "[Game state snapshot superseded by the updated snapshot below]";
 
     /// <summary>
     /// Appended to every user turn after the first. The benchmark appends it to its candidate
@@ -458,17 +471,25 @@ public class ChatService
                 userModelId = null; // force first model because GnollHack doesn't support model selection
             }
 
+            /* Whichever of the two funds this turn, kept in scope for the confidentiality gate
+               below: the eligibility question is about the credential the request is actually
+               charged to, and each of the three resolution branches below settles a different
+               one. Exactly one of the pair is non-null once the model is resolved. */
+            SystemAiApiConfiguration? fundingSystemConfig = null;
+            UserAiApiKey? fundingProviderKey = null;
+
             if (systemModelId.HasValue)
             {
                 var systemAiConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
                 var (config, errorMessage) = await systemAiConfigService.GetAndCheckSystemConfigAsync(systemModelId.Value, userId, requiredRoleFilter: 1);
-                
+
                 if (config == null)
                 {
                     yield return new ChatEvent { Type = "error", Data = $"Error: {errorMessage}" };
                     yield break;
                 }
 
+                fundingSystemConfig = config;
                 parallelMode = _parallelExecutionResolver.Resolve(config, null);
                 userModelId = null;
                 provider = config.Provider;
@@ -546,6 +567,7 @@ public class ChatService
                             endpoint = _endpointPolicy.Resolve(config);
                         }
                         systemModelId = config.Id;
+                        fundingSystemConfig = config;
                         parallelMode = _parallelExecutionResolver.Resolve(config, null);
                     }
                 }
@@ -560,6 +582,7 @@ public class ChatService
             if (!systemModelId.HasValue)
             {
                 var providerKey = await dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == provider);
+                fundingProviderKey = providerKey;
                 parallelMode = _parallelExecutionResolver.Resolve(null, providerKey);
                 if (providerKey != null && !string.IsNullOrEmpty(providerKey.EncryptedApiKey) && !string.IsNullOrEmpty(providerKey.ApiKeyNonce) && !string.IsNullOrEmpty(providerKey.ApiKeyTag))
                 {
@@ -606,6 +629,84 @@ public class ChatService
             confidentialPolicy = session.IsConfidential
                 ? Overseer.Services.Privacy.ConfidentialPolicyResolver.ReadSnapshot(session)
                 : null;
+
+            /* The model eligibility gate, evaluated once the funding credential is known and
+               before anything is written or sent. Both exits below happen before the user
+               message is built, so a refused or asked turn persists nothing and reaches no
+               provider.
+
+               A system-provided model's decision lives in its own table rather than on a key
+               row, because a user can reach such a model through a group assignment and have
+               no per-user row at all. Feeding it to EvaluateGate as the trust value makes the
+               gate behave for a provided model exactly as for the user's own key: undecided
+               asks once, "no" refuses in every mode, "yes" passes AskWhenUnclear. */
+            if (isConfidentialSession && confidentialPolicy != null)
+            {
+                Overseer.Services.Privacy.PostureResolution posture;
+                bool? modelTrust;
+
+                if (systemModelId.HasValue)
+                {
+                    posture = _confidentialityPosture.ResolveForSystemConfiguration(fundingSystemConfig);
+                    modelTrust = await dbContext.UserSystemModelConfidentialTrusts
+                        .Where(t => t.AspNetUserId == userId && t.SystemAiApiConfigurationId == systemModelId.Value)
+                        .Select(t => (bool?)t.UserTrustsForConfidential)
+                        .FirstOrDefaultAsync(cancellationToken);
+                }
+                else
+                {
+                    posture = _confidentialityPosture.ResolveForUserKey(fundingProviderKey);
+                    modelTrust = fundingProviderKey?.UserTrustsForConfidential;
+                }
+
+                var gate = _confidentialityPosture.EvaluateGate(
+                    posture, modelTrust, confidentialPolicy.ModelGate, systemModelId.HasValue);
+
+                if (gate.Outcome == Overseer.Services.Privacy.ConfidentialityGateOutcome.Refuse)
+                {
+                    yield return new ChatEvent { Type = "error", Data = gate.Reason, SessionId = wireRef };
+                    yield break;
+                }
+
+                if (gate.Outcome == Overseer.Services.Privacy.ConfidentialityGateOutcome.AskOnce)
+                {
+                    /* The question, not an error: the client opens a dialog, records the
+                       answer against the key or the model, and resends the turn. The payload
+                       names the model in words and carries no key material and no hostname. */
+                    yield return new ChatEvent
+                    {
+                        Type = "confidential_gate",
+                        SessionId = wireRef,
+                        Data = JsonSerializer.Serialize(new
+                        {
+                            reason = gate.Reason,
+                            kind = systemModelId.HasValue ? "system_model" : "user_key",
+                            provider,
+                            systemConfigurationId = systemModelId,
+                            modelDisplayName
+                        })
+                    };
+                    yield break;
+                }
+
+                /* The badge the window shows from here on. A session load cannot compute it —
+                   it does not know which credential will fund the turn — so it renders orange
+                   until this event arrives. */
+                var badge = _confidentialityPosture.ResolveBadge(
+                    true, posture, confidentialPolicy.ToControlState());
+
+                yield return new ChatEvent
+                {
+                    Type = "private_badge",
+                    SessionId = wireRef,
+                    Data = JsonSerializer.Serialize(new
+                    {
+                        state = badge.State.ToString().ToLowerInvariant(),
+                        label = badge.Label,
+                        tooltip = badge.Tooltip
+                    })
+                };
+            }
 
             /* Envelope encryption protects data at rest, and an ephemeral session has no rest:
                nothing it holds reaches the database or the file store. Encrypting the store's

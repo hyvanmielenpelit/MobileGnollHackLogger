@@ -1,7 +1,7 @@
 import { Component, OnInit, OnDestroy, inject, ChangeDetectorRef, ViewChild, ElementRef, HostListener, NgZone, AfterViewInit, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ChatService, ChatSession, ChatMessage, ChatMessageToolCall, ChatContextUsage } from '../services/chat.service';
+import { ChatService, ChatSession, ChatMessage, ChatMessageToolCall, ChatContextUsage, ChatSessionStateResponse, PrivateBadge } from '../services/chat.service';
 import { AuthService } from '../services/auth.service';
 import { DebugService } from '../services/debug.service';
 import { Router, ActivatedRoute, RouterModule, NavigationEnd, NavigationStart } from '@angular/router';
@@ -16,7 +16,7 @@ import { ProviderBadgeComponent } from '../shared/provider-badge/provider-badge.
 import { AdminBenchmarkService } from '../services/admin-benchmark.service';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
 import * as signalR from '@microsoft/signalr';
-import { firstValueFrom, filter, Subscription, Subject, debounceTime, distinctUntilChanged } from 'rxjs';
+import { firstValueFrom, filter, Observable, Subscription, Subject, debounceTime, distinctUntilChanged } from 'rxjs';
 export interface ToolClientRequest {
     type: string;
     requestId: string;
@@ -209,6 +209,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   @ViewChild('logoutDialog') logoutDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('ephemeralCloseDialog') ephemeralCloseDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('privacyDialog') privacyDialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild('confidentialGateDialog') confidentialGateDialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild('upgradeConfidentialDialog') upgradeConfidentialDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('trashModal') trashModal!: TrashModalComponent;
   autoScrollEnabled = true;
   readonly STREAMING_SCROLL_OFFSET = 50;
@@ -879,13 +881,25 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
      is every session until Stage E of the privacy framework adds the mode. `state` is one of
      green, yellow, orange, red; the tooltip enumerates the active controls and the provider's
      retention posture. */
-  privateBadge: { state: string; label: string; tooltip: string } | null = null;
+  privateBadge: PrivateBadge | null = null;
 
-  /** Whether the open chat is in Confidentiality Mode. Drives the upgrade action's availability. */
+  /** Whether the open chat is in Confidentiality Mode. Set from the session on load, on the creating turn, and on upgrade. */
   isConfidentialSession = false;
 
   /** Whether the open chat is ephemeral: held in RAM, with no database row and no file on disk. */
   isEphemeralSession = false;
+
+  /* The open incognito chat's current deadline. The server's window slides forward on every
+     access, so this is replaced by every send and attach rather than being a fixed moment. */
+  ephemeralExpiresUtc: string | null = null;
+
+  /** The incognito idle window in minutes, as the settings serve it. */
+  ephemeralTimeoutMinutes = 60;
+
+  /** How long before the deadline the window warns, in milliseconds. */
+  private static readonly EPHEMERAL_WARNING_LEAD_MS = 120000;
+
+  private ephemeralExpiryTimeout: any = null;
 
   /* The two privacy choices for the *next* chat. Both are only meaningful while no chat is
      open, because a persisted chat's rows are already written and an ephemeral chat cannot
@@ -906,8 +920,31 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   isClosingEphemeral = false;
   ephemeralCloseError: string | null = null;
 
-  /** Announced politely when an ephemeral chat is destroyed or is about to be left behind. */
-  ephemeralNotice = '';
+  /** Announced politely when a chat's privacy changes, or when incognito content is at stake. */
+  privacyNotice = '';
+
+  /* What the server asks about the model funding a confidential turn, while the gate dialog is
+     open. The turn was not run and nothing was persisted. */
+  confidentialGate: {
+    reason: string;
+    kind: 'user_key' | 'system_model';
+    provider: string;
+    systemConfigurationId: number | null;
+    modelDisplayName: string | null;
+  } | null = null;
+
+  /* The turn the gate interrupted, held so the composer can be restored and the turn resent
+     once the model is trusted. */
+  private pendingGateTurn: {
+    message: string;
+    attachments: { file: File | null, base64: string, name: string, type: string }[];
+  } | null = null;
+
+  isSavingGateChoice = false;
+  gateSaveError: string | null = null;
+
+  isUpgradingConfidential = false;
+  upgradeConfidentialError: string | null = null;
 
   /* Where to go once the open ephemeral chat has been closed. Set by the navigation guard so
      the click that triggered the confirmation still lands after the chat is destroyed. */
@@ -1045,30 +1082,14 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         });
       });
 
-      this.chatService.attachGameSnapshot(this.currentSessionId, snapshotText).subscribe({
+      const privacy = this.outgoingPrivacyFlags;
+      this.chatService.attachGameSnapshot(
+        this.currentSessionId, snapshotText, undefined,
+        privacy.isConfidential, privacy.isEphemeral).subscribe({
         next: (res) => {
           this.isAttachingSnapshot = false;
           this.hasGameSnapshot = true;
-          const newSessionId = String(res.sessionId);
-          if (this.currentSessionId !== newSessionId) {
-            this.currentSessionId = newSessionId;
-            this.isEphemeralSession = ChatComponent.isEphemeralRef(newSessionId);
-            this.clientBridge.notifySessionChanged(newSessionId);
-
-            if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
-              this.hubConnection.invoke("JoinSession", this.currentSessionId).catch(console.error);
-            }
-            this.loadSessions(true);
-
-            if (!this.isEphemeralSession) {
-              const urlTree = this.router.createUrlTree([], {
-                relativeTo: this.route,
-                queryParams: { sessionId: this.currentSessionId },
-                queryParamsHandling: 'merge'
-              });
-              this.router.navigateByUrl(urlTree, { replaceUrl: true });
-            }
-          }
+          this.applyCreatedSessionState(res);
           this.cdr.detectChanges();
         },
         error: (err) => {
@@ -1137,6 +1158,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       clearTimeout(this.ephemeralNoticeTimeout);
       this.ephemeralNoticeTimeout = null;
     }
+    this.clearEphemeralExpiryWarning();
     if (this.hubConnection) {
       this.hubConnection.stop();
     }
@@ -1298,6 +1320,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.showContextWindowUsage = settings.showContextWindowUsage ?? true;
           this.showChatCost = settings.showChatCost ?? true;
           this.parallelBadgeEnabled = settings.parallelBadgeEnabled ?? true;
+
+          /* The incognito idle window, named in the banner. A server too old to send it leaves
+             the default in place rather than the banner naming no figure at all. */
+          const servedTimeout = Number(settings.ephemeralTimeoutMinutes);
+          this.ephemeralTimeoutMinutes = Number.isFinite(servedTimeout) && servedTimeout > 0
+            ? servedTimeout
+            : 60;
 
           const storedDefaultMode = (settings.defaultChatPrivacyMode ?? '').toLowerCase();
           this.defaultNewChatPrivacyMode =
@@ -1716,7 +1745,37 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.cdr.detectChanges();
         this.scrollToBottomClamped(false);
       }
+    } else if (evt.type === 'private_badge') {
+      try {
+        const d = JSON.parse(evt.data);
+        if (evtRef === this.currentSessionId) {
+          this.privateBadge = { state: d.state, label: d.label, tooltip: d.tooltip };
+          this.cdr.detectChanges();
+        }
+      } catch {
+        this.debugService.log('[Frontend] Failed to parse private_badge event.');
+      }
+    } else if (evt.type === 'confidential_gate') {
+      try {
+        const d = JSON.parse(evt.data);
+        this.openConfidentialGate({
+          reason: typeof d.reason === 'string' ? d.reason : '',
+          kind: d.kind === 'system_model' ? 'system_model' : 'user_key',
+          provider: typeof d.provider === 'string' ? d.provider : '',
+          systemConfigurationId: d.systemConfigurationId ?? null,
+          modelDisplayName: typeof d.modelDisplayName === 'string' ? d.modelDisplayName : null
+        });
+      } catch {
+        this.debugService.log('[Frontend] Failed to parse confidential_gate event.');
+      }
     } else if (evt.type === 'error') {
+      /* The incognito chat the turn named is gone from server memory, so there is nothing left
+         to display and nothing to confirm. */
+      if (this.isEphemeralSession && typeof evt.data === 'string'
+          && evt.data.startsWith('This incognito chat has been closed')) {
+        this.handleExpiredEphemeralSession();
+        return;
+      }
       this.flushPendingChunkBuffer();
       this.currentStatusText = `Error: ${evt.data}`;
       this.debugService.log(`[Backend Error] ${evt.data}`);
@@ -2262,6 +2321,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.isConfidentialSession = false;
     this.isEphemeralSession = false;
     this.isEphemeralDetailOpen = false;
+    this.ephemeralExpiresUtc = null;
+    this.clearEphemeralExpiryWarning();
     setSentryConfidentialSession(false);
     /* Before loadDraft() below, so an incognito default suppresses the on-disk draft exactly
        as an explicit incognito choice does. */
@@ -2358,6 +2419,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.isConfidentialSession = false;
     this.isEphemeralSession = false;
     this.isEphemeralDetailOpen = false;
+    this.ephemeralExpiresUtc = null;
+    this.clearEphemeralExpiryWarning();
     setSentryConfidentialSession(false);
     this.sessionTotalCost = null;
     this.autoScrollEnabled = true;
@@ -2435,6 +2498,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.privateBadge = s.privateBadge ?? null;
         this.isConfidentialSession = !!s.isConfidential;
         this.isEphemeralSession = s.isEphemeral === true || ChatComponent.isEphemeralRef(id);
+        this.ephemeralExpiresUtc = s.ephemeralExpiresUtc ?? null;
+        this.armEphemeralExpiryWarning();
         // Suppresses client telemetry while a confidential chat is on screen.
         setSentryConfidentialSession(this.isConfidentialSession);
         this.sessionTotalCost = s.totalEstimatedCost ?? null;
@@ -2850,6 +2915,79 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     };
   }
 
+  /**
+   * Adopts what a turn reports about the session it ran in. The reference decides whether the
+   * chat is ephemeral, and an ephemeral chat is confidential whatever the response says,
+   * because incognito is the stricter form of Confidentiality Mode.
+   */
+  private applyCreatedSessionState(res: ChatSessionStateResponse) {
+    const sessionRef = String(res.sessionId);
+    const isNewReference = this.currentSessionId !== sessionRef;
+
+    this.currentSessionId = sessionRef;
+    this.isEphemeralSession = ChatComponent.isEphemeralRef(sessionRef);
+    this.isConfidentialSession = res.isConfidential === true || this.isEphemeralSession;
+    this.privateBadge = res.privateBadge ?? null;
+    this.ephemeralExpiresUtc = res.ephemeralExpiresUtc ?? null;
+    // Suppresses client telemetry while a confidential chat is on screen.
+    setSentryConfidentialSession(this.isConfidentialSession);
+    this.armEphemeralExpiryWarning();
+
+    if (!isNewReference) return;
+
+    this.privacyDialog?.nativeElement?.close();
+    if (this.isEphemeralSession) {
+      this.privacyNotice = 'Incognito chat started. Nothing in it is being saved.';
+    }
+    this.clientBridge.notifySessionChanged(sessionRef);
+
+    if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
+      this.hubConnection.invoke("JoinSession", sessionRef).catch(console.error);
+    }
+    this.loadSessions(true);
+
+    /* An ephemeral reference is deliberately kept out of the URL: it would outlive the chat in
+       browser history and survive as a dead link, and the chat itself cannot be reopened from
+       it. */
+    if (!this.isEphemeralSession) {
+      const urlTree = this.router.createUrlTree([], {
+        relativeTo: this.route,
+        queryParams: { sessionId: sessionRef },
+        queryParamsHandling: 'merge'
+      });
+      this.router.navigateByUrl(urlTree, { replaceUrl: true });
+    }
+  }
+
+  /**
+   * Arms the single warning two minutes before the open incognito chat's deadline. The
+   * server's window slides forward on every access, so the deadline this reads is the one as
+   * of the last turn and the warning is approximate.
+   */
+  private armEphemeralExpiryWarning() {
+    this.clearEphemeralExpiryWarning();
+    if (!this.isEphemeralSession || !this.ephemeralExpiresUtc) return;
+
+    const expiresAt = Date.parse(this.ephemeralExpiresUtc);
+    if (isNaN(expiresAt)) return;
+    const delay = expiresAt - Date.now() - ChatComponent.EPHEMERAL_WARNING_LEAD_MS;
+    if (delay <= 0) return;
+
+    this.ephemeralExpiryTimeout = setTimeout(() => {
+      this.ephemeralExpiryTimeout = null;
+      if (!this.isEphemeralSession || !this.currentSessionId) return;
+      this.setEphemeralNotice('This incognito chat ends in about 2 minutes unless you send something.');
+      this.cdr.detectChanges();
+    }, delay);
+  }
+
+  private clearEphemeralExpiryWarning() {
+    if (this.ephemeralExpiryTimeout) {
+      clearTimeout(this.ephemeralExpiryTimeout);
+      this.ephemeralExpiryTimeout = null;
+    }
+  }
+
   toggleEphemeralDetail() {
     this.isEphemeralDetailOpen = !this.isEphemeralDetailOpen;
   }
@@ -2980,6 +3118,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   private finishEphemeralClose(ref: string) {
     this.isClosingEphemeral = false;
+    this.clearEphemeralExpiryWarning();
     if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
       this.hubConnection.invoke('LeaveSession', ref).catch(console.error);
     }
@@ -3017,13 +3156,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   private setEphemeralNotice(text: string) {
-    this.ephemeralNotice = text;
+    this.privacyNotice = text;
     if (this.ephemeralNoticeTimeout) {
       clearTimeout(this.ephemeralNoticeTimeout);
     }
     this.ephemeralNoticeTimeout = setTimeout(() => {
       this.ephemeralNoticeTimeout = null;
-      this.ephemeralNotice = '';
+      this.privacyNotice = '';
       this.cdr.detectChanges();
     }, 12000);
   }
@@ -3033,7 +3172,188 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       clearTimeout(this.ephemeralNoticeTimeout);
       this.ephemeralNoticeTimeout = null;
     }
-    this.ephemeralNotice = '';
+    this.privacyNotice = '';
+  }
+
+  /**
+   * Returns the window to a new chat after the server has told it the open incognito chat is
+   * gone. There is nothing left to confirm, so the local state is dropped before the
+   * navigation rather than raising the close confirmation over content that no longer exists.
+   */
+  private handleExpiredEphemeralSession() {
+    const ref = this.currentSessionId;
+    if (ref) {
+      this.sessionStateMap.delete(ref);
+    }
+    this.currentInput = '';
+    this.newSession();
+    this.setEphemeralNotice('This incognito chat has expired or was closed. Its content is gone.');
+    this.cdr.detectChanges();
+    this.performNavigateToNewSession();
+  }
+
+  /* Focus handling matches openPrivacyDialog: closing a modal hands focus back to the opener,
+     and interestfor treats focus as interest, so a pointer-driven close drops the restored
+     focus rather than popping the opener's hint unasked. */
+  private showPrivacyModal(dialog: HTMLDialogElement | undefined, tooltipId: string | null) {
+    if (!dialog) return;
+    const opener = document.activeElement;
+    dialog.addEventListener('close', () => {
+      if (!(opener instanceof HTMLElement) || document.activeElement !== opener) return;
+      if (opener.matches(':focus-visible')) return;
+      opener.blur();
+      const tip = tooltipId ? document.getElementById(tooltipId) : null;
+      if (tip?.matches(':popover-open')) {
+        try { tip.hidePopover(); } catch { /* already hidden */ }
+      }
+    }, { once: true });
+    dialog.showModal();
+  }
+
+  /**
+   * Takes the turn the confidentiality gate refused to run: the optimistic user message goes
+   * away, its text and attachments return to the composer, and the question is put to the
+   * user. Nothing was persisted and no provider was called.
+   */
+  private openConfidentialGate(gate: {
+    reason: string;
+    kind: 'user_key' | 'system_model';
+    provider: string;
+    systemConfigurationId: number | null;
+    modelDisplayName: string | null;
+  }) {
+    this.confidentialGate = gate;
+    this.gateSaveError = null;
+    this.isSavingGateChoice = false;
+
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      if (this.messages[i].role === 'user') {
+        this.messages.splice(i, 1);
+        break;
+      }
+    }
+
+    if (this.pendingGateTurn) {
+      this.currentInput = this.pendingGateTurn.message;
+      this.pendingAttachments = [...this.pendingGateTurn.attachments];
+    }
+
+    this.isStreaming = false;
+    this.isThinkingActive = false;
+    this.showSpinner = false;
+    this.streamingMessage = '';
+    this.streamingToolCalls = [];
+    this.hasRealContent = false;
+    this.currentStatusText = '';
+    this.resetAvatarState();
+    this.cdr.detectChanges();
+
+    this.showPrivacyModal(this.confidentialGateDialog?.nativeElement, null);
+  }
+
+  /** The gated model's name for the dialog, falling back to the provider when none was sent. */
+  get confidentialGateModelName(): string {
+    return this.confidentialGate?.modelDisplayName || this.confidentialGate?.provider || 'This model';
+  }
+
+  /** Records the model as acceptable for confidential chats and sends the held turn again. */
+  trustGatedModel() {
+    this.saveGatedModelTrust(true, () => {
+      this.confidentialGateDialog?.nativeElement?.close();
+      this.confidentialGate = null;
+      this.sendMessage();
+    });
+  }
+
+  /** Records the model as unacceptable for confidential chats and leaves the turn unsent. */
+  refuseGatedModel() {
+    this.saveGatedModelTrust(false, () => {
+      this.confidentialGateDialog?.nativeElement?.close();
+      this.confidentialGate = null;
+      this.currentStatusText = 'Choose another model for this chat.';
+      this.cdr.detectChanges();
+    });
+  }
+
+  /** Leaves the decision open, so the same question is asked again on the next attempt. */
+  postponeGatedModelDecision() {
+    this.confidentialGateDialog?.nativeElement?.close();
+    this.confidentialGate = null;
+    this.cdr.detectChanges();
+  }
+
+  private saveGatedModelTrust(trusted: boolean, onSaved: () => void) {
+    const gate = this.confidentialGate;
+    if (!gate || this.isSavingGateChoice) return;
+
+    this.isSavingGateChoice = true;
+    this.gateSaveError = null;
+    this.cdr.detectChanges();
+
+    const save$: Observable<unknown> = gate.kind === 'system_model' && gate.systemConfigurationId != null
+      ? this.settingsService.setProvidedModelConfidentialTrust(gate.systemConfigurationId, trusted)
+      : this.settingsService.saveApiKeyConfidentialTrust(gate.provider, trusted);
+
+    save$.subscribe({
+      next: () => {
+        this.isSavingGateChoice = false;
+        onSaved();
+      },
+      error: (err) => {
+        this.isSavingGateChoice = false;
+        this.gateSaveError = err?.error?.error || err?.error?.message
+          || 'Could not record your choice for this model.';
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  openUpgradeConfidentialDialog() {
+    this.upgradeConfidentialError = null;
+    this.isUpgradingConfidential = false;
+    this.showPrivacyModal(this.upgradeConfidentialDialog?.nativeElement, 'tip-make-confidential');
+  }
+
+  closeUpgradeConfidentialDialog() {
+    this.upgradeConfidentialDialog?.nativeElement?.close();
+    this.upgradeConfidentialError = null;
+    this.isUpgradingConfidential = false;
+    this.cdr.detectChanges();
+  }
+
+  /** Turns an open Standard chat confidential from its next message on. One-way. */
+  confirmUpgradeToConfidential() {
+    const ref = this.currentSessionId;
+    if (!ref || this.isEphemeralSession || this.isConfidentialSession) {
+      this.closeUpgradeConfidentialDialog();
+      return;
+    }
+
+    this.isUpgradingConfidential = true;
+    this.upgradeConfidentialError = null;
+    this.cdr.detectChanges();
+
+    this.chatService.upgradeSessionToConfidential(Number(ref)).subscribe({
+      next: (res) => {
+        this.isUpgradingConfidential = false;
+        this.isConfidentialSession = true;
+        this.privateBadge = res.privateBadge ?? null;
+        setSentryConfidentialSession(true);
+        if (res.notice) {
+          this.setEphemeralNotice(res.notice);
+        }
+        // Reloaded so the sidebar row picks up the lock glyph.
+        this.loadSessions(true);
+        this.upgradeConfidentialDialog?.nativeElement?.close();
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.isUpgradingConfidential = false;
+        this.upgradeConfidentialError = err?.error?.error || err?.error?.message
+          || 'Could not make this chat confidential.';
+        this.cdr.detectChanges();
+      }
+    });
   }
 
   stopRequest() {
@@ -3120,6 +3440,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       }
     }, 0);
     
+    /* Held so a confidentiality gate, which runs no turn at all, can put the composer back
+       exactly as it was and resend once the model is trusted. */
+    this.pendingGateTurn = { message, attachments: [...this.pendingAttachments] };
+
     this.clearDraft();
     this.currentInput = '';
     this.pendingAttachments = [];
@@ -3201,38 +3525,18 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.currentSessionId, message, attachmentsPayload, uId, sId, currentHasGreeted,
         privacy.isConfidential, privacy.isEphemeral));
       this.chatService.hasGreeted = true;
-      const newSessionId = String(res.sessionId);
-
-      if (this.currentSessionId !== newSessionId) {
-        this.currentSessionId = newSessionId;
-        this.isEphemeralSession = ChatComponent.isEphemeralRef(newSessionId);
-        if (this.isEphemeralSession) {
-          this.isConfidentialSession = true;
-          setSentryConfidentialSession(true);
-          this.privacyDialog?.nativeElement?.close();
-          this.ephemeralNotice = 'Incognito chat started. Nothing in it is being saved.';
-        }
-        this.clientBridge.notifySessionChanged(newSessionId);
-
-        if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
-          this.hubConnection.invoke("JoinSession", this.currentSessionId).catch(console.error);
-        }
-        this.loadSessions(true);
-
-        /* An ephemeral reference is deliberately kept out of the URL: it would outlive the
-           chat in browser history and survive as a dead link, and the chat itself cannot be
-           reopened from it. */
-        if (!this.isEphemeralSession) {
-          const urlTree = this.router.createUrlTree([], {
-            relativeTo: this.route,
-            queryParams: { sessionId: this.currentSessionId },
-            queryParamsHandling: 'merge'
-          });
-          this.router.navigateByUrl(urlTree, { replaceUrl: true });
-        }
-      }
+      this.applyCreatedSessionState(res);
     } catch (e: any) {
       console.error(e);
+
+      /* The server no longer holds the incognito chat: it expired or was closed elsewhere. Its
+         content is gone, so the window stops displaying it rather than reporting a failure
+         against a chat that no longer exists. */
+      if (this.isEphemeralSession && e?.status === 404) {
+        this.handleExpiredEphemeralSession();
+        return;
+      }
+
       let errorDisplay = e.message || 'Unknown error';
       if (e.name === 'HttpErrorResponse') {
          errorDisplay = `Network error: ${e.message} (Status: ${e.status} ${e.statusText})`;

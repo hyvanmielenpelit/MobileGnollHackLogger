@@ -159,7 +159,8 @@ public class ChatController : ControllerBase
                 s.EncryptedContentKey, s.ContentKeyNonce, s.ContentKeyTag, s.ContentKeyVersion),
             s.LastMessageUtc,
             s.IsGnollHackSession,
-            s.IsPinned
+            s.IsPinned,
+            s.IsConfidential
         }).ToList();
         swDb.Stop();
 
@@ -284,7 +285,12 @@ public class ChatController : ControllerBase
         if (session.IsConfidential)
         {
             // Already there. Idempotent rather than an error: the client may retry.
-            return Ok(new { isConfidential = true, alreadyConfidential = true });
+            return Ok(new
+            {
+                isConfidential = true,
+                alreadyConfidential = true,
+                privateBadge = BuildPrivateBadgePayload(session)
+            });
         }
 
         var settings = await _dbContext.UserAiSettings.FindAsync(userId);
@@ -305,7 +311,10 @@ public class ChatController : ControllerBase
                wrong belief about what just happened. */
             retroactive = false,
             notice = "Earlier turns in this chat stay as they were already stored. Confidentiality applies "
-                + "from here on."
+                + "from here on.",
+            /* Read after ApplyToSession, so the badge reflects the policy this session was just
+               upgraded under and the window can show it without reloading. */
+            privateBadge = BuildPrivateBadgePayload(session)
         });
     }
 
@@ -586,18 +595,7 @@ public class ChatController : ControllerBase
         bool hasGameSnapshot = await _dbContext.ChatMessage
             .AnyAsync(m => m.ChatSessionId == id && m.Role == "system" && m.IsGameSnapshot);
 
-        /* The privacy badge, from the policy this session was created or upgraded under.
-           The posture is still PostureResolution.Nothing here: it belongs to whichever key
-           funds a given turn, which a session-load request has not chosen yet, so the badge
-           reports orange until the turn resolves it. Red still wins over that, because an
-           inactive control is a property of the session rather than of the key. */
-        var sessionPolicy = session.IsConfidential
-            ? Overseer.Services.Privacy.ConfidentialPolicyResolver.ReadSnapshot(session)
-            : null;
-        var privateBadge = _confidentialityPostureService.ResolveBadge(
-            session.IsConfidential,
-            Overseer.Services.Privacy.PostureResolution.Nothing,
-            sessionPolicy?.ToControlState() ?? Overseer.Services.Privacy.ConfidentialControlState.NoneActive);
+        var privateBadgePayload = BuildPrivateBadgePayload(session);
 
         var payload = new
         {
@@ -612,9 +610,7 @@ public class ChatController : ControllerBase
             hasGameSnapshot,
             session.IsConfidential,
             IsEphemeral = false,
-            PrivateBadge = privateBadge.State == Overseer.Services.Privacy.PrivateBadgeState.None
-                ? null
-                : new { State = privateBadge.State.ToString().ToLowerInvariant(), privateBadge.Label, privateBadge.Tooltip },
+            PrivateBadge = privateBadgePayload,
             Messages = formattedMessages,
             HasOngoingGeneration = hasOngoing,
             OngoingGeneration = ongoingData,
@@ -643,6 +639,33 @@ public class ChatController : ControllerBase
     /// encrypted, since it has no rest to protect. What has to match exactly is the wire shape,
     /// so the client renders one kind of transcript.
     /// </remarks>
+    /// <summary>
+    /// The privacy badge for a session, in the wire shape the client reads, or null when the
+    /// session makes no privacy claim.
+    /// </summary>
+    /// <remarks>
+    /// The posture is <see cref="Overseer.Services.Privacy.PostureResolution.Nothing"/> here:
+    /// it belongs to whichever key funds a given turn, and no request that reads a session has
+    /// chosen one yet, so the badge reports orange until a turn resolves it and sends a
+    /// <c>private_badge</c> event. Red still wins over that, because an inactive control is a
+    /// property of the session rather than of the key.
+    /// </remarks>
+    private object? BuildPrivateBadgePayload(ChatSession session)
+    {
+        var sessionPolicy = session.IsConfidential
+            ? Overseer.Services.Privacy.ConfidentialPolicyResolver.ReadSnapshot(session)
+            : null;
+
+        var badge = _confidentialityPostureService.ResolveBadge(
+            session.IsConfidential,
+            Overseer.Services.Privacy.PostureResolution.Nothing,
+            sessionPolicy?.ToControlState() ?? Overseer.Services.Privacy.ConfidentialControlState.NoneActive);
+
+        return badge.State == Overseer.Services.Privacy.PrivateBadgeState.None
+            ? null
+            : new { State = badge.State.ToString().ToLowerInvariant(), badge.Label, badge.Tooltip };
+    }
+
     private object BuildEphemeralSessionPayload(Overseer.Services.Privacy.EphemeralSession held)
     {
         bool isAdmin = _configuration.IsAdmin(User.Identity?.Name);
@@ -727,14 +750,6 @@ public class ChatController : ControllerBase
             }
         }
 
-        var sessionPolicy = session.IsConfidential
-            ? Overseer.Services.Privacy.ConfidentialPolicyResolver.ReadSnapshot(session)
-            : null;
-        var privateBadge = _confidentialityPostureService.ResolveBadge(
-            session.IsConfidential,
-            Overseer.Services.Privacy.PostureResolution.Nothing,
-            sessionPolicy?.ToControlState() ?? Overseer.Services.Privacy.ConfidentialControlState.NoneActive);
-
         return new
         {
             Id = 0L,
@@ -746,9 +761,7 @@ public class ChatController : ControllerBase
             session.IsConfidential,
             IsEphemeral = true,
             EphemeralExpiresUtc = held.LastAccessUtc + _ephemeralSessions.Timeout,
-            PrivateBadge = privateBadge.State == Overseer.Services.Privacy.PrivateBadgeState.None
-                ? null
-                : new { State = privateBadge.State.ToString().ToLowerInvariant(), privateBadge.Label, privateBadge.Tooltip },
+            PrivateBadge = BuildPrivateBadgePayload(session),
             Messages = messages,
             HasOngoingGeneration = hasOngoing,
             OngoingGeneration = ongoingData,
@@ -930,6 +943,7 @@ public class ChatController : ControllerBase
                 DeletionReason = s.DeletionReason,
                 IsPinned = s.IsPinned,
                 IsGnollHackSession = s.IsGnollHackSession,
+                IsConfidential = s.IsConfidential,
                 DaysRemaining = Math.Max(0, 30 - (int)EF.Functions.DateDiffDay(s.DeletedUtc ?? DateTime.UtcNow, DateTime.UtcNow)),
                 MessageCount = _dbContext.ChatMessage.Count(m => m.ChatSessionId == s.Id && m.Role != "system" && !m.IsHidden)
             })
@@ -1121,37 +1135,132 @@ public class ChatController : ControllerBase
             return BadRequest(new { error = "Snapshot text must not be empty." });
         }
 
+        if (request.IsEphemeral && !request.IsConfidential && string.IsNullOrEmpty(request.SessionId))
+        {
+            /* The same refusal Send gives, for the same reason: incognito is a stricter form of
+               Confidentiality Mode, so a client asking for one without the other has
+               misunderstood the pair, and quietly turning confidentiality on would hide that
+               from whoever has to debug it. */
+            return BadRequest(new { error = "An incognito session is always confidential." });
+        }
+
         string snapshotText = request.SnapshotText;
         if (snapshotText.Length > 60200)
         {
             snapshotText = snapshotText.Substring(0, 60200);
         }
 
-        long sessionId;
-        if (request.SessionId.HasValue && request.SessionId.Value > 0)
+        string normalized = DumpHtmlSanitizer.NormalizeFlattenedText(snapshotText);
+        string snapshotContent = ChatService.GameSnapshotPrefix + "\n" + normalized;
+
+        Overseer.Services.Privacy.SessionRef sessionRef;
+        if (!string.IsNullOrEmpty(request.SessionId))
         {
-            sessionId = request.SessionId.Value;
-            var session = await _dbContext.ChatSession.FindAsync(sessionId);
-            if (session == null || session.AspNetUserId != userId)
+            if (!Overseer.Services.Privacy.SessionRef.TryParse(request.SessionId, out sessionRef))
                 return NotFound(new { error = "Session not found." });
+        }
+        else if (request.IsEphemeral)
+        {
+            /* The same ChatSession shape and the same policy snapshot Send builds for an
+               incognito chat, so everything downstream reads one kind of session. */
+            var template = new ChatSession
+            {
+                AspNetUserId = userId,
+                Title = "Incognito chat",
+                CreatedUtc = DateTime.UtcNow,
+                LastMessageUtc = DateTime.UtcNow,
+                IsConfidential = true,
+                IsGnollHackSession = true,
+                ClientSettings = "{\"BoolData\":{\"isGameOn\":true}}"
+            };
+
+            var ephemeralSettings = await _dbContext.UserAiSettings.FindAsync(userId);
+            Overseer.Services.Privacy.ConfidentialPolicyResolver.ApplyToSession(
+                template, _confidentialPolicyResolver.Resolve(ephemeralSettings));
+
+            // Neither retention scalar means anything here: nothing is stored, so nothing
+            // expires on a schedule. The sliding timeout in the store is the only lifetime.
+            template.EffectiveRetentionDays = 0;
+            template.ImmediatePurgeOnDelete = true;
+
+            sessionRef = _ephemeralSessions.Create(userId, template).Ref;
         }
         else
         {
-            var session = new ChatSession
+            var created = new ChatSession
             {
                 AspNetUserId = userId,
                 Title = "GnollHack Session",
                 CreatedUtc = DateTime.UtcNow,
                 LastMessageUtc = DateTime.UtcNow,
                 IsGnollHackSession = true,
+                IsConfidential = request.IsConfidential,
                 ClientSettings = "{\"BoolData\":{\"isGameOn\":true}}"
             };
-            _dbContext.ChatSession.Add(session);
+
+            /* Snapshotted at creation with the two retention scalars, exactly as Send does, so
+               a later change to the user's defaults cannot retroactively weaken what was
+               promised about this session. */
+            if (request.IsConfidential)
+            {
+                var confidentialSettings = await _dbContext.UserAiSettings.FindAsync(userId);
+                Overseer.Services.Privacy.ConfidentialPolicyResolver.ApplyToSession(
+                    created, _confidentialPolicyResolver.Resolve(confidentialSettings));
+            }
+
+            _dbContext.ChatSession.Add(created);
             await _dbContext.SaveChangesAsync();
-            sessionId = session.Id;
+            sessionRef = Overseer.Services.Privacy.SessionRef.Persistent(created.Id);
 
             await _chatRetentionService.EnforceUserSessionQuotaAsync(userId);
         }
+
+        if (sessionRef.IsEphemeral)
+        {
+            var held = _ephemeralSessions.Get(sessionRef, userId);
+            if (held == null) return NotFound(new { error = "Session not found." });
+
+            held.SupersedeSnapshots(ChatService.GameSnapshotSupersededMarker);
+
+            /* Appended to the store; nothing is added to the DbContext and SaveChangesAsync is
+               not called on this path. The buffers are plaintext by design — an ephemeral
+               session has no rest to protect, and a DEK would sit in the same memory as the
+               plaintext it protects. */
+            var ephemeralMsg = new ChatMessage
+            {
+                Role = "system",
+                Content = snapshotContent,
+                IsGameSnapshot = true,
+                TimestampUtc = DateTime.UtcNow
+            };
+            held.AddMessage(id => Overseer.Services.Privacy.EphemeralMessage.From(id, ephemeralMsg));
+
+            return Ok(new
+            {
+                sessionId = sessionRef.ToWireString(),
+                hasGameSnapshot = true,
+                isConfidential = held.Session.IsConfidential,
+                isEphemeral = true,
+                privateBadge = BuildPrivateBadgePayload(held.Session),
+                ephemeralExpiresUtc = ResolveEphemeralDeadline(sessionRef, userId)
+            });
+        }
+
+        long sessionId = sessionRef.PersistentId;
+        var session = await _dbContext.ChatSession.FindAsync(sessionId);
+        if (session == null || session.AspNetUserId != userId)
+            return NotFound(new { error = "Session not found." });
+
+        /* The DEK is created before the first confidential write and persisted by the same
+           SaveChangesAsync that stores the content it protects. The session must be the tracked
+           entity for the wrapped key to persist with it, and its Id must already be assigned:
+           the id is the envelope's associated data, so wrapping a key onto an unsaved session
+           would produce rows nothing can decrypt. */
+        if (session.IsConfidential)
+            _contentProtection.EnsureSessionKey(session);
+
+        string? Protect(string? value)
+            => session.IsConfidential ? _contentProtection.Encrypt(session, value) : value;
 
         // Rewrite any existing snapshot system message's content to the supersession marker.
         var existingSnapshots = await _dbContext.ChatMessage
@@ -1160,7 +1269,7 @@ public class ChatController : ControllerBase
 
         foreach (var existing in existingSnapshots)
         {
-            existing.Content = "[Game state snapshot superseded by the updated snapshot below]";
+            existing.Content = Protect(ChatService.GameSnapshotSupersededMarker);
             // The flag is the row's current state, not the fact that it once held a snapshot.
             // Leaving it set would re-select these rows on the next attach and hand the marker
             // text to StripGameSnapshotPrefix.
@@ -1168,19 +1277,26 @@ public class ChatController : ControllerBase
         }
 
         // Insert the new system message
-        string normalized = DumpHtmlSanitizer.NormalizeFlattenedText(snapshotText);
         var systemMsg = new ChatMessage
         {
             ChatSessionId = sessionId,
             Role = "system",
-            Content = ChatService.GameSnapshotPrefix + "\n" + normalized,
+            Content = Protect(snapshotContent),
             IsGameSnapshot = true,
             TimestampUtc = DateTime.UtcNow
         };
         _dbContext.ChatMessage.Add(systemMsg);
         await _dbContext.SaveChangesAsync();
 
-        return Ok(new { sessionId, hasGameSnapshot = true });
+        return Ok(new
+        {
+            sessionId = sessionRef.ToWireString(),
+            hasGameSnapshot = true,
+            isConfidential = session.IsConfidential,
+            isEphemeral = false,
+            privateBadge = BuildPrivateBadgePayload(session),
+            ephemeralExpiresUtc = (DateTime?)null
+        });
     }
 
     [HttpPost("send")]
@@ -1321,8 +1437,46 @@ public class ChatController : ControllerBase
         });
 
         /* A string in both cases. A persisted session still serialises as its decimal id, so
-           the field means what it always did for the sessions that already existed. */
-        return Ok(new { sessionId = sessionRef.ToWireString() });
+           the field means what it always did for the sessions that already existed.
+
+           The privacy state rides along because the creating turn is the only moment the
+           client learns it without a second request: a chat started as Confidential otherwise
+           shows no badge and suppresses no telemetry until the window is reloaded. Clients
+           reading only sessionId are unaffected. */
+        var sentSession = await ResolveSessionForPrivacyStateAsync(sessionRef, userId);
+
+        return Ok(new
+        {
+            sessionId = sessionRef.ToWireString(),
+            isConfidential = sentSession?.IsConfidential ?? false,
+            isEphemeral = sessionRef.IsEphemeral,
+            privateBadge = sentSession == null ? null : BuildPrivateBadgePayload(sentSession),
+            ephemeralExpiresUtc = ResolveEphemeralDeadline(sessionRef, userId)
+        });
+    }
+
+    /// <summary>
+    /// The <see cref="ChatSession"/> behind a reference — the row for a persisted one, the
+    /// store's detached template for an ephemeral one — for reporting privacy state back to the
+    /// client. Null when the reference no longer resolves.
+    /// </summary>
+    private async Task<ChatSession?> ResolveSessionForPrivacyStateAsync(
+        Overseer.Services.Privacy.SessionRef sessionRef, string userId)
+        => sessionRef.IsEphemeral
+            ? _ephemeralSessions.Get(sessionRef, userId)?.Session
+            : await _dbContext.ChatSession.FindAsync(sessionRef.PersistentId);
+
+    /// <summary>
+    /// When an incognito session goes idle-expired, or null for a persisted one. The window
+    /// slides on every access, so this is the deadline as of now rather than a fixed one.
+    /// </summary>
+    private DateTime? ResolveEphemeralDeadline(
+        Overseer.Services.Privacy.SessionRef sessionRef, string userId)
+    {
+        if (!sessionRef.IsEphemeral) return null;
+
+        var held = _ephemeralSessions.Get(sessionRef, userId);
+        return held == null ? null : held.LastAccessUtc + _ephemeralSessions.Timeout;
     }
 
     [HttpPost("report")]
@@ -1649,7 +1803,25 @@ public class SendMessageRequest
 
 public class AttachGameSnapshotRequest
 {
-    public long? SessionId { get; set; }
+    /// <summary>
+    /// The session to attach to, in <see cref="Overseer.Services.Privacy.SessionRef"/> wire
+    /// form, or null to start a new one.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonConverter(typeof(Overseer.Services.Privacy.SessionRef.LenientJsonConverter))]
+    public string? SessionId { get; set; }
+
     public string SnapshotText { get; set; } = string.Empty;
     public string? SourceGnollHackVersion { get; set; }
+
+    /// <summary>
+    /// Creates the session in Confidentiality Mode. Meaningful only when no session id is
+    /// supplied — an existing session keeps the mode it already has.
+    /// </summary>
+    public bool IsConfidential { get; set; }
+
+    /// <summary>
+    /// Creates the session in RAM only. Implies <see cref="IsConfidential"/>, and like it is
+    /// meaningful only when no session id is supplied.
+    /// </summary>
+    public bool IsEphemeral { get; set; }
 }

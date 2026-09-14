@@ -556,10 +556,16 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
 /* Explains why a control is disabled, so it is set apart from .form-hint, which describes
    what the setting does. Gold rather than grey because it comes from the administrator. */
 .confidential-floor-note {
+  display: block;
   font-size: 0.85em;
   font-weight: normal;
   font-style: italic;
   color: var(--primary-color, #d4af37);
+}
+
+/* Each consequence of a weakened confidentiality promise stands on its own line. */
+.confidential-consequence .alert-body > span {
+  display: block;
 }
 
 .confidential-input-wrapper {
@@ -598,6 +604,7 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
 /* Explains why a switch is disabled. Gold rather than grey because it comes from the administrator,
    matching the confidentiality controls. */
 .dlp-floor-note {
+  display: block;
   font-size: 0.85em;
   font-weight: normal;
   font-style: italic;

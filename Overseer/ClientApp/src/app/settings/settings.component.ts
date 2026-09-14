@@ -11,6 +11,7 @@ import {
   ChatPrivacyMode,
   DlpFloor,
   DlpSettings,
+  ProvidedModelConfidentialStatus,
   CONFIDENTIAL_MODEL_GATE_OPTIONS,
   CONFIDENTIAL_PERSISTENCE_OPTIONS,
   CONFIDENTIAL_RETENTION_DEFAULT_DAYS,
@@ -41,7 +42,10 @@ export interface DlpClassOption {
 }
 
 /** The settings sections a URL segment can name. */
-export type SettingsSection = 'general' | 'permissions' | 'performance' | 'confidentiality' | 'masking' | 'chats' | 'version';
+export type SettingsSection = 'general' | 'permissions' | 'performance' | 'confidentiality' | 'provided-models' | 'masking' | 'chats' | 'version';
+
+/** The three states of a per-model confidential-trust decision, as the `<select>` carries them. */
+export type ProvidedModelTrustChoice = 'yes' | 'no' | 'undecided';
 
 /** The administrator's floor drops the `dlpMask` prefix, so each switch carries its floor's name. */
 const DLP_FLOOR_KEYS: Record<DlpMaskClass, keyof DlpFloor> = {
@@ -78,6 +82,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     { id: 'permissions', label: 'AI Permissions', hint: 'What the AI may reach' },
     { id: 'performance', label: 'AI Performance', hint: 'Tool limits and timeouts' },
     { id: 'confidentiality', label: 'Confidentiality Mode', hint: 'Default for new chats, and how confidential chats are kept' },
+    { id: 'provided-models', label: 'Provided Models for Confidential Chats', hint: 'Your decision on each system-provided model, asked once when the trust requirement needs it' },
     { id: 'masking', label: 'Outbound Masking', hint: 'Secrets replaced before sending' },
     { id: 'chats', label: 'Chat Data', hint: 'Active, pinned and trashed chats' },
     { id: 'version', label: 'Version', hint: 'Overseer version and release notes' }
@@ -171,6 +176,17 @@ export class SettingsComponent implements OnInit, OnDestroy {
   ];
 
   confidentialFloor: ConfidentialFloor | null = null;
+
+  /* The operator-provided models and the decision recorded for each. Their own endpoint rather
+     than part of the settings payload, so the list is fetched only while its section is open. */
+  providedModels: ProvidedModelConfidentialStatus[] = [];
+  providedModelTrusts: Record<number, ProvidedModelTrustChoice> = {};
+  providedModelTrustErrors: Record<number, string> = {};
+  isLoadingProvidedModels = false;
+  providedModelsError = '';
+
+  /** The model whose decision is being saved, or null while none is. */
+  savingProvidedModelId: number | null = null;
 
   // Starts acknowledged so the first-use notice cannot flash before the server's answer arrives.
   confidentialNoticeAcknowledged = true;
@@ -502,6 +518,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.routeParamSubscription = this.route.paramMap.subscribe((params: ParamMap) => {
       const section = params.get('section') as SettingsSection | null;
       this.activeSection = this.sections.some(s => s.id === section) ? (section as SettingsSection) : null;
+      if (this.activeSection === 'provided-models') {
+        this.loadProvidedModels();
+      }
     });
 
     ensureOverlayPolyfills();
@@ -827,6 +846,78 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.cdr.detectChanges();
       }
     });
+  }
+
+  /** Fetches the provided models and the decision held for each, as the section is opened. */
+  loadProvidedModels() {
+    this.isLoadingProvidedModels = true;
+    this.providedModelsError = '';
+    this.settingsService.getProvidedModelsForConfidential().subscribe({
+      next: (models) => {
+        this.providedModels = models ?? [];
+        this.providedModelTrusts = {};
+        this.providedModelTrustErrors = {};
+        for (const m of this.providedModels) {
+          this.providedModelTrusts[m.id] = m.userTrustsForConfidential === true
+            ? 'yes'
+            : m.userTrustsForConfidential === false ? 'no' : 'undecided';
+        }
+        this.isLoadingProvidedModels = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.isLoadingProvidedModels = false;
+        this.providedModelsError = 'The provided models could not be loaded. Please try again.';
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /* Saves as soon as the row changes, like the rest of the page. A refused save puts the row back
+     to the choice the server still holds, so the table never shows an unsaved decision as made. */
+  onProvidedModelTrustChange(model: ProvidedModelConfidentialStatus, choice: ProvidedModelTrustChoice) {
+    const previous = this.providedModelTrusts[model.id] ?? 'undecided';
+    this.providedModelTrusts[model.id] = choice;
+    this.savingProvidedModelId = model.id;
+    this.providedModelTrustErrors[model.id] = '';
+    this.cdr.detectChanges();
+
+    const trusted = choice === 'yes' ? true : choice === 'no' ? false : null;
+    this.settingsService.setProvidedModelConfidentialTrust(model.id, trusted).subscribe({
+      next: () => {
+        model.userTrustsForConfidential = trusted;
+        model.decidedUtc = trusted === null ? null : new Date().toISOString();
+        this.savingProvidedModelId = null;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.providedModelTrusts[model.id] = previous;
+        this.providedModelTrustErrors[model.id] = err?.error?.error || 'Could not save the decision. Please try again.';
+        this.savingProvidedModelId = null;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /** Whether an operator dated the posture check, and when, or that nobody has. */
+  providedModelVerification(model: ProvidedModelConfidentialStatus): string {
+    if (!model.isOperatorVerified) {
+      return 'self-declared';
+    }
+    const stamp = this.formatStamp(model.postureVerifiedUtc);
+    return stamp ? `verified ${stamp}` : 'verified';
+  }
+
+  /** The date a decision was recorded, blank while the model is undecided. */
+  providedModelDecidedOn(model: ProvidedModelConfidentialStatus): string {
+    return this.providedModelTrusts[model.id] === 'undecided' ? '' : this.formatStamp(model.decidedUtc);
+  }
+
+  /** Local calendar date for a stored UTC timestamp, or '' when nothing has been recorded. */
+  formatStamp(iso: string | null | undefined): string {
+    if (!iso) return '';
+    const parsed = new Date(iso);
+    return isNaN(parsed.getTime()) ? '' : parsed.toLocaleDateString();
   }
 
   onNumberInputChange() {

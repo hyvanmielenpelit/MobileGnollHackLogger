@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
+using Overseer.Services.Privacy;
 using System.Text.Json;
 using ParallelExecutionMode = MobileGnollHackLogger.Data.ParallelExecutionMode;
 
@@ -9,11 +10,16 @@ public class SettingsService
 {
     private readonly ApplicationDbContext _dbContext;
     private readonly CryptoService _cryptoService;
+    private readonly Overseer.Services.Privacy.ConfidentialityPostureService _confidentialityPosture;
 
-    public SettingsService(ApplicationDbContext dbContext, CryptoService cryptoService)
+    public SettingsService(
+        ApplicationDbContext dbContext,
+        CryptoService cryptoService,
+        Overseer.Services.Privacy.ConfidentialityPostureService confidentialityPosture)
     {
         _dbContext = dbContext;
         _cryptoService = cryptoService;
+        _confidentialityPosture = confidentialityPosture;
     }
 
     public async Task<UserAiSettings?> GetSettingsAsync(string userId)
@@ -578,6 +584,119 @@ public class SettingsService
         await _dbContext.UserSystemAiApiConfigurations
             .Where(u => u.AspNetUserId == userId && u.OrderIndex != null)
             .ExecuteUpdateAsync(s => s.SetProperty(u => u.OrderIndex, (int?)null));
+    }
+
+    /// <summary>
+    /// One operator-provided model the user can select for chat, with what is established about
+    /// its retention and what the user has decided about it.
+    /// </summary>
+    /// <param name="UserTrustsForConfidential">Null when no decision has been recorded.</param>
+    public sealed record ProvidedModelConfidentialStatus(
+        long Id,
+        string Provider,
+        string ModelId,
+        string DisplayName,
+        string Posture,
+        string PostureText,
+        DateTime? PostureVerifiedUtc,
+        bool IsOperatorVerified,
+        string? DataRegion,
+        string? Note,
+        bool? UserTrustsForConfidential,
+        DateTime? DecidedUtc);
+
+    /// <summary>
+    /// Every enabled system configuration the user can select for chat, with its resolved
+    /// posture and the user's own decision about it.
+    /// </summary>
+    /// <remarks>
+    /// The same set the model picker offers, filtered to the chat role, so a user is never
+    /// asked to decide about a model they cannot choose and never meets an undecided model
+    /// that is missing from this list.
+    /// </remarks>
+    public async Task<List<ProvidedModelConfidentialStatus>> GetProvidedModelsForConfidentialAsync(string userId)
+    {
+        var configs = await GetResolvedSystemModelsAsync(userId, roleFilter: 1);
+        if (configs.Count == 0)
+            return new List<ProvidedModelConfidentialStatus>();
+
+        var configIds = configs.Select(c => c.Config.Id).ToList();
+        var decisions = await _dbContext.UserSystemModelConfidentialTrusts
+            .Where(t => t.AspNetUserId == userId && configIds.Contains(t.SystemAiApiConfigurationId))
+            .AsNoTracking()
+            .ToDictionaryAsync(t => t.SystemAiApiConfigurationId);
+
+        return configs.Select(c =>
+        {
+            var posture = _confidentialityPosture.ResolveForSystemConfiguration(c.Config);
+            decisions.TryGetValue(c.Config.Id, out var decision);
+
+            return new ProvidedModelConfidentialStatus(
+                c.Config.Id,
+                c.Config.Provider,
+                c.Config.ModelId,
+                string.IsNullOrEmpty(c.Config.DisplayName) ? c.Config.ModelId : c.Config.DisplayName,
+                posture.Posture.ToString(),
+                posture.Posture.ToDisplayText(),
+                posture.EstablishedUtc,
+                posture.IsOperatorVerified,
+                posture.DataRegion,
+                posture.Note,
+                decision?.UserTrustsForConfidential,
+                decision?.DecidedUtc);
+        }).ToList();
+    }
+
+    /// <summary>
+    /// Records the user's judgement on whether an operator-provided model may fund their
+    /// confidential sessions.
+    /// </summary>
+    /// <param name="trusted">
+    /// True or false is a decision and is remembered, so the AskWhenUnclear gate asks once per
+    /// model rather than once per turn. Null deletes the row and returns the model to
+    /// undecided.
+    /// </param>
+    /// <returns>False when the configuration is not one this user can select for chat.</returns>
+    public async Task<bool> SaveSystemModelConfidentialTrustAsync(
+        string userId, long systemConfigurationId, bool? trusted)
+    {
+        /* Checked against the user's own selectable set rather than against the configuration
+           table: a model the user cannot choose is not theirs to decide about, and accepting a
+           decision for one would let any authenticated user enumerate every system
+           configuration by which ids come back 200. */
+        var configs = await GetResolvedSystemModelsAsync(userId, roleFilter: 1);
+        if (!configs.Any(c => c.Config.Id == systemConfigurationId))
+            return false;
+
+        var row = await _dbContext.UserSystemModelConfidentialTrusts
+            .FirstOrDefaultAsync(t => t.AspNetUserId == userId && t.SystemAiApiConfigurationId == systemConfigurationId);
+
+        if (trusted == null)
+        {
+            if (row != null)
+            {
+                _dbContext.UserSystemModelConfidentialTrusts.Remove(row);
+                await _dbContext.SaveChangesAsync();
+            }
+
+            return true;
+        }
+
+        if (row == null)
+        {
+            row = new UserSystemModelConfidentialTrust
+            {
+                AspNetUserId = userId,
+                SystemAiApiConfigurationId = systemConfigurationId
+            };
+            _dbContext.UserSystemModelConfidentialTrusts.Add(row);
+        }
+
+        row.UserTrustsForConfidential = trusted.Value;
+        row.DecidedUtc = DateTime.UtcNow;
+
+        await _dbContext.SaveChangesAsync();
+        return true;
     }
 
     public async Task<string?> GetDecryptedSystemApiKeyAsync(long configId)

@@ -205,6 +205,16 @@
   min-width: 0;
 }
 
+// flex: none so a long title still truncates around it.
+.session-lock {
+  inline-size: 12px;
+  block-size: 12px;
+  color: currentColor;
+  margin-right: 4px;
+  vertical-align: -1px;
+  flex: none;
+}
+
 .trash-item-body {
   display: flex;
   justify-content: space-between;

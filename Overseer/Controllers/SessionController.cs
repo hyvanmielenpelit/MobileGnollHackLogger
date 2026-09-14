@@ -18,8 +18,10 @@ public class SessionController : ControllerBase
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly OngoingChatManager _ongoingChatManager;
     private readonly ChatRetentionService _chatRetentionService;
+    private readonly Overseer.Services.Privacy.ConfidentialPolicyResolver _confidentialPolicyResolver;
+    private readonly Overseer.Services.Privacy.ContentProtectionService _contentProtection;
 
-    public SessionController(SignInManager<ApplicationUser> signInManager, ApplicationDbContext dbContext, IMemoryCache cache, IConfiguration configuration, IServiceScopeFactory scopeFactory, OngoingChatManager ongoingChatManager, ChatRetentionService chatRetentionService)
+    public SessionController(SignInManager<ApplicationUser> signInManager, ApplicationDbContext dbContext, IMemoryCache cache, IConfiguration configuration, IServiceScopeFactory scopeFactory, OngoingChatManager ongoingChatManager, ChatRetentionService chatRetentionService, Overseer.Services.Privacy.ConfidentialPolicyResolver confidentialPolicyResolver, Overseer.Services.Privacy.ContentProtectionService contentProtection)
     {
         _signInManager = signInManager;
         _dbContext = dbContext;
@@ -28,6 +30,8 @@ public class SessionController : ControllerBase
         _scopeFactory = scopeFactory;
         _ongoingChatManager = ongoingChatManager;
         _chatRetentionService = chatRetentionService;
+        _confidentialPolicyResolver = confidentialPolicyResolver;
+        _contentProtection = contentProtection;
     }
 
     [HttpPost("create")]
@@ -64,10 +68,31 @@ public class SessionController : ControllerBase
             CreatedUtc = DateTime.UtcNow,
             LastMessageUtc = DateTime.UtcNow,
             ClientSettings = request.OverseerSettings,
-            IsGnollHackSession = request.IsGnollHackSession
+            IsGnollHackSession = request.IsGnollHackSession,
+            IsConfidential = request.IsConfidential
         };
+
+        /* Snapshotted at creation with the two retention scalars, as every other creation path
+           does, so a later change to the user's defaults or the administrator's floor cannot
+           retroactively weaken what was promised about this session. */
+        if (request.IsConfidential)
+        {
+            var confidentialSettings = await _dbContext.UserAiSettings.FindAsync(user.Id);
+            Overseer.Services.Privacy.ConfidentialPolicyResolver.ApplyToSession(
+                session, _confidentialPolicyResolver.Resolve(confidentialSettings));
+        }
+
         _dbContext.ChatSession.Add(session);
         await _dbContext.SaveChangesAsync();
+
+        /* The DEK is created after the session has its identity value, because the id is the
+           envelope's associated data: a key wrapped onto an unsaved session produces rows
+           nothing can decrypt. */
+        if (session.IsConfidential)
+            _contentProtection.EnsureSessionKey(session);
+
+        string? Protect(string? value)
+            => session.IsConfidential ? _contentProtection.Encrypt(session, value) : value;
 
         await _chatRetentionService.EnforceUserSessionQuotaAsync(user.Id);
 
@@ -78,7 +103,7 @@ public class SessionController : ControllerBase
             {
                 ChatSessionId = session.Id,
                 Role = "system",
-                Content = Overseer.Services.ChatService.GameSnapshotPrefix + "\n" + sanitized,
+                Content = Protect(Overseer.Services.ChatService.GameSnapshotPrefix + "\n" + sanitized),
                 IsGameSnapshot = true,
                 TimestampUtc = DateTime.UtcNow
             };
@@ -94,13 +119,35 @@ public class SessionController : ControllerBase
             if (!Directory.Exists(sessionDir))
                 Directory.CreateDirectory(sessionDir);
 
+            /* A context file lands on disk enveloped in a confidential session, under a name
+               carrying the .enc suffix. The suffix makes the file's state visible; the magic
+               bytes are what the reader trusts, which is what lets an upgraded session hold
+               both kinds. */
+            async Task WriteContextFileAsync(string fileName, string text, ChatMessage owner)
+            {
+                string relPath = Path.Combine(session.Id.ToString(), fileName);
+                byte[] bytes = System.Text.Encoding.UTF8.GetBytes(text);
+
+                if (session.IsConfidential)
+                {
+                    relPath += Overseer.Services.Privacy.ContentProtectionService.EncryptedFileSuffix;
+                    bytes = _contentProtection.EncryptFile(session, bytes);
+                }
+
+                await System.IO.File.WriteAllBytesAsync(Path.Combine(baseDir, relPath), bytes);
+
+                // Registered as an attachment so it is deleted with the session.
+                _dbContext.ChatMessageAttachment.Add(new ChatMessageAttachment
+                {
+                    ChatMessage = owner,
+                    FileName = Protect(fileName),
+                    ContentType = "text/plain",
+                    RelativePath = relPath
+                });
+            }
+
             if (!string.IsNullOrWhiteSpace(request.MessageHistory))
             {
-                // Save full history to disk (can be very large)
-                await System.IO.File.WriteAllTextAsync(
-                    Path.Combine(sessionDir, "message_history.txt"),
-                    request.MessageHistory);
-
                 // Insert a truncated summary as a system message so the AI knows it's available
                 var preview = request.MessageHistory.Length > 2000
                     ? request.MessageHistory.Substring(0, 2000) + "\n\n[... truncated — full history available in session files ...]"
@@ -110,45 +157,29 @@ public class SessionController : ControllerBase
                 {
                     ChatSessionId = session.Id,
                     Role = "system",
-                    Content = Overseer.Services.ChatService.MessageHistoryPrefix
-                        + " (last messages shown):\n" + preview,
+                    Content = Protect(Overseer.Services.ChatService.MessageHistoryPrefix
+                        + " (last messages shown):\n" + preview),
                     IsMessageHistory = true,
                     TimestampUtc = DateTime.UtcNow
                 };
                 _dbContext.ChatMessage.Add(msg);
-                
-                // IMPORTANT: Register as an attachment so it gets deleted when the session is deleted
-                _dbContext.ChatMessageAttachment.Add(new ChatMessageAttachment
-                {
-                    ChatMessage = msg,
-                    FileName = "message_history.txt",
-                    ContentType = "text/plain",
-                    RelativePath = Path.Combine(session.Id.ToString(), "message_history.txt")
-                });
+
+                // Saved to disk in full, because the history can be very large.
+                await WriteContextFileAsync("message_history.txt", request.MessageHistory, msg);
             }
 
             if (!string.IsNullOrWhiteSpace(request.DirectoryManifest))
             {
-                await System.IO.File.WriteAllTextAsync(
-                    Path.Combine(sessionDir, "directory_manifest.txt"),
-                    request.DirectoryManifest);
-
                 var msg = new ChatMessage
                 {
                     ChatSessionId = session.Id,
                     Role = "system",
-                    Content = "Game Directory Manifest:\n" + request.DirectoryManifest,
+                    Content = Protect("Game Directory Manifest:\n" + request.DirectoryManifest),
                     TimestampUtc = DateTime.UtcNow
                 };
                 _dbContext.ChatMessage.Add(msg);
 
-                _dbContext.ChatMessageAttachment.Add(new ChatMessageAttachment
-                {
-                    ChatMessage = msg,
-                    FileName = "directory_manifest.txt",
-                    ContentType = "text/plain",
-                    RelativePath = Path.Combine(session.Id.ToString(), "directory_manifest.txt")
-                });
+                await WriteContextFileAsync("directory_manifest.txt", request.DirectoryManifest, msg);
             }
 
 
@@ -211,4 +242,16 @@ public class CreateSessionRequest
     public string? OverseerSettings { get; set; }
     public string? Title { get; set; }                 // NEW: Contextual title for the session
     public bool IsGnollHackSession { get; set; }
+
+    /// <summary>
+    /// Creates the session in Confidentiality Mode: its content is stored enveloped, internet
+    /// tools are off, no AI-made title is generated, and it is excluded from search.
+    /// </summary>
+    /// <remarks>
+    /// The server accepts this so the game client can adopt it without a server change; a
+    /// client that omits it creates a Standard session, which the user can upgrade from the
+    /// chat window. There is no incognito option here: the client needs a session id back, and
+    /// an incognito session has no row to give one.
+    /// </remarks>
+    public bool IsConfidential { get; set; }
 }

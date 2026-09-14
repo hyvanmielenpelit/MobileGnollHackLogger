@@ -148,6 +148,7 @@ public class EphemeralTurnTests : IDisposable
         services.AddSingleton<AttachmentValidator>();
         services.AddSingleton<IAntiMalwareScanner, NullAntiMalwareScanner>();
         services.AddSingleton<EndpointPolicy>();
+        services.AddSingleton<ConfidentialityPostureService>();
         services.AddSingleton<IContentKeyRing, ConfigurationContentKeyRing>();
         services.AddSingleton<ContentProtectionService>();
         services.AddSingleton<Overseer.Services.Privacy.Dlp.DlpScannerService>();

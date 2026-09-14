@@ -827,6 +827,7 @@ public class DelegateToSubAgentToolTests
         services.AddSingleton<IHttpClientFactory>(new MockHttpClientFactory());
         services.AddSingleton<IConfiguration>(config);
         services.AddSingleton<Overseer.Services.Privacy.EndpointPolicy>();
+        services.AddSingleton<Overseer.Services.Privacy.ConfidentialityPostureService>();
         services.AddSingleton<AgentLoopRunner>();
 
         var sp = services.BuildServiceProvider();

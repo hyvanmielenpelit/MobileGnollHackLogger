@@ -49,6 +49,7 @@ public class GameSnapshotDetectionTests
         services.AddSingleton<Overseer.Services.Privacy.IAntiMalwareScanner,
             Overseer.Services.Privacy.NullAntiMalwareScanner>();
         services.AddSingleton<Overseer.Services.Privacy.EndpointPolicy>();
+        services.AddSingleton<Overseer.Services.Privacy.ConfidentialityPostureService>();
         services.AddSingleton<Overseer.Services.Privacy.IContentKeyRing,
             Overseer.Services.Privacy.ConfigurationContentKeyRing>();
         services.AddSingleton<Overseer.Services.Privacy.ContentProtectionService>();

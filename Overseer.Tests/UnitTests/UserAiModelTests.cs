@@ -32,7 +32,8 @@ public class UserAiModelTests
             .AddInMemoryCollection(inMemorySettings)
             .Build();
         var cryptoService = new CryptoService(config);
-        var service = new SettingsService(db, cryptoService);
+        var service = new SettingsService(
+            db, cryptoService, new Overseer.Services.Privacy.ConfidentialityPostureService(config));
 
         return (service, db);
     }
@@ -146,6 +147,8 @@ public class UserAiModelTests
             service, null!, null!, null!, null!, null!, endpointPolicy, policyResolver,
             new Overseer.Services.Privacy.Dlp.DlpScannerService(new ConfigurationBuilder().Build()),
             new Overseer.Services.Privacy.AttachmentValidator(new ConfigurationBuilder().Build()),
+            new Overseer.Services.Privacy.EphemeralSessionStore(
+                new ConfigurationBuilder().Build(), null, startSweeper: false),
             Array.Empty<Overseer.Services.Providers.IAiProvider>());
         var user = new ClaimsPrincipal(new ClaimsIdentity(new[]
         {

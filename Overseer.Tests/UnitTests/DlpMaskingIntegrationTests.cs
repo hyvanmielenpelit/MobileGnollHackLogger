@@ -156,6 +156,7 @@ public class DlpMaskingIntegrationTests : IDisposable
         services.AddSingleton<AttachmentValidator>();
         services.AddSingleton<IAntiMalwareScanner, NullAntiMalwareScanner>();
         services.AddSingleton<EndpointPolicy>();
+        services.AddSingleton<ConfidentialityPostureService>();
         services.AddSingleton<IContentKeyRing, ConfigurationContentKeyRing>();
         services.AddSingleton<ContentProtectionService>();
         services.AddSingleton(sp => new EphemeralSessionStore(

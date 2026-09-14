@@ -29,6 +29,7 @@ public class SettingsController : ControllerBase
     private readonly Overseer.Services.Privacy.ConfidentialPolicyResolver _confidentialPolicyResolver;
     private readonly Overseer.Services.Privacy.Dlp.DlpScannerService _dlpScanner;
     private readonly Overseer.Services.Privacy.AttachmentValidator _attachmentValidator;
+    private readonly Overseer.Services.Privacy.EphemeralSessionStore _ephemeralSessions;
     private readonly IEnumerable<IAiProvider> _aiProviders;
     private readonly ModelPricingService? _modelPricingService;
 
@@ -43,6 +44,7 @@ public class SettingsController : ControllerBase
         Overseer.Services.Privacy.ConfidentialPolicyResolver confidentialPolicyResolver,
         Overseer.Services.Privacy.Dlp.DlpScannerService dlpScanner,
         Overseer.Services.Privacy.AttachmentValidator attachmentValidator,
+        Overseer.Services.Privacy.EphemeralSessionStore ephemeralSessions,
         IEnumerable<IAiProvider> aiProviders,
         ModelPricingService? modelPricingService = null)
     {
@@ -56,6 +58,7 @@ public class SettingsController : ControllerBase
         _confidentialPolicyResolver = confidentialPolicyResolver;
         _dlpScanner = dlpScanner;
         _attachmentValidator = attachmentValidator;
+        _ephemeralSessions = ephemeralSessions;
         _aiProviders = aiProviders;
         _modelPricingService = modelPricingService;
     }
@@ -112,6 +115,10 @@ public class SettingsController : ControllerBase
                which is a promise rather than a mechanism: the two drifting apart gives a user a
                file dialog offering exactly what the server then refuses. */
             attachmentAcceptExtensions = _attachmentValidator.AllowedExtensions,
+            /* The incognito idle window, so the banner can name it instead of describing it as
+               "a stretch of inactivity". Served from the store rather than re-read from
+               configuration, so the number shown is the one actually enforced. */
+            ephemeralTimeoutMinutes = (int)_ephemeralSessions.Timeout.TotalMinutes,
             spoilerFreeMode = settings?.SpoilerFreeMode ?? true,
             showSourceCodeReferences = settings?.ShowSourceCodeReferences ?? false,
             maxResultLength = settings?.MaxResultLength,
@@ -456,6 +463,65 @@ public class SettingsController : ControllerBase
             return BadRequest(providerError);
 
         await _settingsService.SaveApiKeyConfidentialTrustAsync(userId, matchedProvider, request.Trusted);
+        return Ok();
+    }
+
+    /// <summary>
+    /// The operator-provided models this user can select for chat, with what is established
+    /// about each one's retention and the user's own decision about it.
+    /// </summary>
+    /// <remarks>
+    /// A route of its own rather than a block inside <see cref="GetSettings"/>: the list is
+    /// read only while the settings section is open, and folding it into the settings payload
+    /// would put a two-query join on every page load of the chat window.
+    /// </remarks>
+    [HttpGet("provided-models")]
+    public async Task<IActionResult> GetProvidedModelsForConfidential()
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        var models = await _settingsService.GetProvidedModelsForConfidentialAsync(userId);
+
+        return Ok(models.Select(m => new
+        {
+            id = m.Id,
+            provider = m.Provider,
+            modelId = m.ModelId,
+            displayName = m.DisplayName,
+            posture = m.Posture,
+            postureText = m.PostureText,
+            postureVerifiedUtc = m.PostureVerifiedUtc,
+            isOperatorVerified = m.IsOperatorVerified,
+            dataRegion = m.DataRegion,
+            note = m.Note,
+            userTrustsForConfidential = m.UserTrustsForConfidential,
+            decidedUtc = m.DecidedUtc
+        }));
+    }
+
+    /// <summary>
+    /// Records whether the user considers one operator-provided model suitable for confidential
+    /// sessions.
+    /// </summary>
+    /// <remarks>
+    /// The counterpart of <see cref="SetApiKeyConfidentialTrust"/> for a model the user does not
+    /// pay for. Null returns the model to undecided, which is what the AskWhenUnclear gate
+    /// prompts about; false is a decision and refuses the model in every gate mode.
+    ///
+    /// A configuration the user cannot select is a <c>404</c> rather than a <c>403</c>: the two
+    /// answers would otherwise tell an authenticated user which system configuration ids exist.
+    /// </remarks>
+    [HttpPut("provided-models/{id:long}/confidential-trust")]
+    public async Task<IActionResult> SetProvidedModelConfidentialTrust(
+        long id, [FromBody] SetApiKeyConfidentialTrustRequest request)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        bool saved = await _settingsService.SaveSystemModelConfidentialTrustAsync(userId, id, request.Trusted);
+        if (!saved) return NotFound(new { error = "Model not found." });
+
         return Ok();
     }
 

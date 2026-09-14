@@ -28,7 +28,15 @@ public sealed class EphemeralMessage
     public long Id { get; init; }
     public string Role { get; init; } = "";
     public bool IsHidden { get; init; }
-    public bool IsGameSnapshot { get; init; }
+
+    /// <summary>
+    /// Whether this row currently carries a game state snapshot. Settable because a later
+    /// attach supersedes an earlier snapshot in place: the flag describes the row's present
+    /// content, and leaving it set on a superseded row would re-select it on the next attach
+    /// and hand the marker text to snapshot detection.
+    /// </summary>
+    public bool IsGameSnapshot { get; set; }
+
     public bool IsMessageHistory { get; init; }
     public DateTime TimestampUtc { get; init; } = DateTime.UtcNow;
 
@@ -345,6 +353,34 @@ public sealed class EphemeralSession
             _messages.Add(message);
             LastAccessUtc = DateTime.UtcNow;
             return id;
+        }
+    }
+
+    /// <summary>
+    /// Rewrites every system message still flagged as a snapshot to <paramref name="marker"/>
+    /// and clears the flag, so only the newest snapshot describes the game.
+    /// </summary>
+    /// <remarks>
+    /// The in-memory twin of the loop <c>ChatController.AttachSnapshot</c> runs over the
+    /// database rows. Under the same lock as every other mutation, because a turn may be
+    /// reading the message list while the attach request rewrites it.
+    /// </remarks>
+    public int SupersedeSnapshots(string marker)
+    {
+        lock (_gate)
+        {
+            int superseded = 0;
+            foreach (var m in _messages)
+            {
+                if (m.Role != "system" || !m.IsGameSnapshot) continue;
+
+                m.Content = marker;
+                m.IsGameSnapshot = false;
+                superseded++;
+            }
+
+            LastAccessUtc = DateTime.UtcNow;
+            return superseded;
         }
     }
 

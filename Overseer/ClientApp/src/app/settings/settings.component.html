@@ -6,7 +6,7 @@
         <div class="save-status" role="status" aria-live="polite">
           @if (saveState === 'saving') {
             <span class="gh-spinner-small" aria-hidden="true"></span>
-            <span class="sr-only">Saving...</span>
+            <span class="visually-hidden">Saving...</span>
           }
           @if (saveState === 'saved') {
             <svg class="icon-status icon-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 16px; height: 16px;">
@@ -59,9 +59,9 @@
       <div class="margin-y-20">
         <label class="checkbox-label align-start">
           <input type="checkbox" [(ngModel)]="spoilerFreeMode" (ngModelChange)="onSettingChange()" name="spoilerFreeMode" class="w-auto m-0" aria-describedby="spoilerFreeHint" />
-          <span class="d-block">
+          <span>
             <span>Spoiler-Free Mode</span>
-            <span id="spoilerFreeHint" class="form-hint mt-5 d-block">Limit hints to avoid spoiling secrets</span>
+            <span id="spoilerFreeHint" class="form-hint mt-5">Limit hints to avoid spoiling secrets</span>
           </span>
         </label>
       </div>
@@ -69,9 +69,9 @@
       <div class="margin-y-20">
         <label class="checkbox-label align-start">
           <input type="checkbox" [(ngModel)]="showSourceCodeReferences" (ngModelChange)="onSettingChange()" name="showSourceCodeReferences" class="w-auto m-0" aria-describedby="sourceCodeRefsHint" />
-          <span class="d-block">
+          <span>
             <span>Show Source Code References</span>
-            <span id="sourceCodeRefsHint" class="form-hint mt-5 d-block">Allow AI to cite source file names and line numbers in replies (overridden by Developer Mode)</span>
+            <span id="sourceCodeRefsHint" class="form-hint mt-5">Allow AI to cite source file names and line numbers in replies (overridden by Developer Mode)</span>
           </span>
         </label>
       </div>
@@ -79,9 +79,9 @@
       <div class="margin-y-20">
         <label class="checkbox-label align-start">
           <input type="checkbox" [(ngModel)]="showContextWindowUsage" (ngModelChange)="onSettingChange()" name="showContextWindowUsage" class="w-auto m-0" aria-describedby="contextWindowUsageHint" />
-          <span class="d-block">
+          <span>
             <span>Show Context Window Usage</span>
-            <span id="contextWindowUsageHint" class="form-hint mt-5 d-block">Display how much of the model's context window the current chat occupies, above the prompt box.</span>
+            <span id="contextWindowUsageHint" class="form-hint mt-5">Display how much of the model's context window the current chat occupies, above the prompt box.</span>
           </span>
         </label>
       </div>
@@ -89,9 +89,9 @@
       <div class="margin-y-20">
         <label class="checkbox-label align-start">
           <input type="checkbox" [(ngModel)]="showChatCost" (ngModelChange)="onSettingChange()" name="showChatCost" class="w-auto m-0" aria-describedby="chatCostHint" />
-          <span class="d-block">
+          <span>
             <span>Show chat cost</span>
-            <span id="chatCostHint" class="form-hint mt-5 d-block">Display the estimated cost of the chat above the prompt box, and of each response in its bottom-left corner.</span>
+            <span id="chatCostHint" class="form-hint mt-5">Display the estimated cost of the chat above the prompt box, and of each response in its bottom-left corner.</span>
           </span>
         </label>
       </div>
@@ -100,17 +100,17 @@
         <div class="margin-y-20">
           <label class="checkbox-label align-start">
             <input type="checkbox" [(ngModel)]="showParallelBadge" (ngModelChange)="onSettingChange()" name="showParallelBadge" class="w-auto m-0" aria-describedby="parallelBadgeHint" />
-            <span class="d-block">
+            <span>
               <span>Show parallel-execution badge in the model selector</span>
-              <span id="parallelBadgeHint" class="form-hint mt-5 d-block">Display 'Sequential' or 'On request' badges in model dropdowns when parallel execution is restricted for an API key.</span>
+              <span id="parallelBadgeHint" class="form-hint mt-5">Display 'Sequential' or 'On request' badges in model dropdowns when parallel execution is restricted for an API key.</span>
             </span>
           </label>
         </div>
       }
 
       <div class="margin-y-20 form-group-stacked">
-        <label class="block fw-bold">Show Thinking and Tool Use</label>
-        <span class="form-hint mt-5 d-block mb-10">Control what is shown while the AI is executing tools or thinking in the background.</span>
+        <label>Show Thinking and Tool Use</label>
+        <span class="form-hint mt-5 mb-10">Control what is shown while the AI is executing tools or thinking in the background.</span>
         <select class="form-input form-select" [(ngModel)]="showThoughtsAndTools" (ngModelChange)="onSettingChange()" name="showThoughtsAndTools">
           <option [ngValue]="0">Minimal</option>
           <option [ngValue]="1">Blocks</option>
@@ -125,9 +125,9 @@
         <div class="margin-y-20 mt-5">
           <label class="checkbox-label align-start">
             <input type="checkbox" [(ngModel)]="enableWebSearch" (ngModelChange)="onSettingChange()" name="enableWebSearch" class="w-auto m-0" aria-describedby="webSearchHint" />
-            <span class="d-block">
+            <span>
               <span>Enable Web Search <span class="tier-badge tier-1">Tier 1</span></span>
-              <span id="webSearchHint" class="form-hint mt-5 d-block">Allow the AI to search the public internet for external information. Lowest risk.</span>
+              <span id="webSearchHint" class="form-hint mt-5">Allow the AI to search the public internet for external information. Lowest risk.</span>
             </span>
           </label>
         </div>
@@ -135,9 +135,9 @@
         <div class="margin-y-20">
           <label class="checkbox-label align-start">
             <input type="checkbox" [(ngModel)]="enableToolUse" (ngModelChange)="onSettingChange()" name="enableToolUse" class="w-auto m-0" aria-describedby="toolUseHint" />
-            <span class="d-block">
+            <span>
               <span>Enable Server Tools <span class="tier-badge tier-2">Tier 2</span></span>
-              <span id="toolUseHint" class="form-hint mt-5 d-block">Allow the AI to use internal Overseer server tools (e.g., GnollHack Wiki search). No game client access.</span>
+              <span id="toolUseHint" class="form-hint mt-5">Allow the AI to use internal Overseer server tools (e.g., GnollHack Wiki search). No game client access.</span>
             </span>
           </label>
         </div>
@@ -145,9 +145,9 @@
         <div class="margin-y-20">
           <label class="checkbox-label align-start">
             <input type="checkbox" [(ngModel)]="enableSubAgents" (ngModelChange)="onSettingChange()" name="enableSubAgents" class="w-auto m-0" aria-describedby="subAgentsHint" />
-            <span class="d-block">
+            <span>
               <span>Enable Subagent Use <span class="tier-badge tier-2">Tier 2</span></span>
-              <span id="subAgentsHint" class="form-hint mt-5 d-block">Allow the AI coordinator to delegate complex research and analysis tasks to autonomous specialist subagents.</span>
+              <span id="subAgentsHint" class="form-hint mt-5">Allow the AI coordinator to delegate complex research and analysis tasks to autonomous specialist subagents.</span>
             </span>
           </label>
         </div>
@@ -155,9 +155,9 @@
         <div class="margin-y-20">
           <label class="checkbox-label align-start">
             <input type="checkbox" [(ngModel)]="enableClientTools" (ngModelChange)="onClientToolsChange()" name="enableClientTools" class="w-auto m-0" aria-describedby="clientToolsHint" />
-            <span class="d-block">
+            <span>
               <span>Enable Client Data Access <span class="tier-badge tier-3">Tier 3</span></span>
-              <span id="clientToolsHint" class="form-hint mt-5 d-block">Allow the AI to read your live game state, inventory, and device logs.</span>
+              <span id="clientToolsHint" class="form-hint mt-5">Allow the AI to read your live game state, inventory, and device logs.</span>
             </span>
           </label>
         </div>
@@ -165,9 +165,9 @@
         <div class="margin-y-20 mb-5">
           <label class="checkbox-label align-start">
             <input type="checkbox" [(ngModel)]="enableGameActions" (ngModelChange)="onSettingChange()" name="enableGameActions" class="w-auto m-0" aria-describedby="gameActionsHint" [disabled]="!enableClientTools" />
-            <span class="d-block">
+            <span>
               <span>Enable Game Actions <span class="tier-badge tier-4">Tier 4</span></span>
-              <span id="gameActionsHint" class="form-hint mt-5 d-block">Allow the AI to execute commands in your game (e.g., movement, attacks). Requires Tier 3. Highest risk.</span>
+              <span id="gameActionsHint" class="form-hint mt-5">Allow the AI to execute commands in your game (e.g., movement, attacks). Requires Tier 3. Highest risk.</span>
             </span>
           </label>
         </div>
@@ -176,8 +176,8 @@
       @case ('performance') {
 
         <div class="margin-y-20 mt-5 form-group-stacked">
-          <label class="block fw-bold">Max Result Length</label>
-          <span class="form-hint mt-5 d-block mb-10">Maximum length of text the AI will process per tool result (truncated if longer).</span>
+          <label>Max Result Length</label>
+          <span class="form-hint mt-5 mb-10">Maximum length of text the AI will process per tool result (truncated if longer).</span>
 
           <button type="button" class="form-input form-select popover-trigger-btn popover-anchor-len" popovertarget="maxResultLengthPopover">
             <span class="opt-label">{{ getSelectedOptionDisplay('maxResultLength').label }}</span>
@@ -199,17 +199,17 @@
           @if (maxResultLengthSelect === 'custom') {
             <div class="mt-10 custom-input-wrapper">
               <input type="number" [(ngModel)]="maxResultLength" (ngModelChange)="onNumberInputChange()" (blur)="onNumberInputBlur('maxResultLength')" name="maxResultLength" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.maxResultLength?.min)" [max]="$safeNavigationMigration(performanceLimits?.maxResultLength?.max)" placeholder="Custom value" />
-              <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxResultLength?.min}}–{{performanceLimits?.maxResultLength?.max}}</span>
+              <span class="form-hint mt-5">Allowed range: {{performanceLimits?.maxResultLength?.min}}–{{performanceLimits?.maxResultLength?.max}}</span>
               @if (validationErrors['maxResultLength']) {
-                <span class="form-hint form-error d-block mt-5">{{ validationErrors['maxResultLength'] }}</span>
+                <span class="form-hint form-error mt-5">{{ validationErrors['maxResultLength'] }}</span>
               }
             </div>
           }
         </div>
 
         <div class="margin-y-20 mt-15 form-group-stacked">
-          <label class="block fw-bold">Max Calls Per Session</label>
-          <span class="form-hint mt-5 d-block mb-10">Maximum number of tool calls the AI may make across this chat session. The counter resets four hours after the first call. A single hard, source-digging question can use 40 or more.</span>
+          <label>Max Calls Per Session</label>
+          <span class="form-hint mt-5 mb-10">Maximum number of tool calls the AI may make across this chat session. The counter resets four hours after the first call. A single hard, source-digging question can use 40 or more.</span>
 
           <button type="button" class="form-input form-select popover-trigger-btn popover-anchor-calls" popovertarget="maxCallsPerSessionPopover">
             <span class="opt-label">{{ getSelectedOptionDisplay('maxCallsPerSession').label }}</span>
@@ -231,17 +231,17 @@
           @if (maxCallsPerSessionSelect === 'custom') {
             <div class="mt-10 custom-input-wrapper">
               <input type="number" [(ngModel)]="maxCallsPerSession" (ngModelChange)="onNumberInputChange()" (blur)="onNumberInputBlur('maxCallsPerSession')" name="maxCallsPerSession" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.maxCallsPerSession?.min)" [max]="$safeNavigationMigration(performanceLimits?.maxCallsPerSession?.max)" placeholder="Custom value" />
-              <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxCallsPerSession?.min}} - {{performanceLimits?.maxCallsPerSession?.max}}</span>
+              <span class="form-hint mt-5">Allowed range: {{performanceLimits?.maxCallsPerSession?.min}} - {{performanceLimits?.maxCallsPerSession?.max}}</span>
               @if (validationErrors['maxCallsPerSession']) {
-                <span class="form-hint form-error d-block mt-5">{{ validationErrors['maxCallsPerSession'] }}</span>
+                <span class="form-hint form-error mt-5">{{ validationErrors['maxCallsPerSession'] }}</span>
               }
             </div>
           }
         </div>
 
         <div class="margin-y-20 mt-15 form-group-stacked">
-          <label class="block fw-bold">Max Tool Iterations</label>
-          <span class="form-hint mt-5 d-block mb-10">Maximum number of consecutive tool calls the AI can make before stopping.</span>
+          <label>Max Tool Iterations</label>
+          <span class="form-hint mt-5 mb-10">Maximum number of consecutive tool calls the AI can make before stopping.</span>
 
           <button type="button" class="form-input form-select popover-trigger-btn popover-anchor-iters" popovertarget="maxToolIterationsPopover">
             <span class="opt-label">{{ getSelectedOptionDisplay('maxToolIterations').label }}</span>
@@ -263,17 +263,17 @@
           @if (maxToolIterationsSelect === 'custom') {
             <div class="mt-10 custom-input-wrapper">
               <input type="number" [(ngModel)]="maxToolIterations" (ngModelChange)="onNumberInputChange()" (blur)="onNumberInputBlur('maxToolIterations')" name="maxToolIterations" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.maxToolIterations?.min)" [max]="$safeNavigationMigration(performanceLimits?.maxToolIterations?.max)" placeholder="Custom value" />
-              <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxToolIterations?.min}} - {{performanceLimits?.maxToolIterations?.max}}</span>
+              <span class="form-hint mt-5">Allowed range: {{performanceLimits?.maxToolIterations?.min}} - {{performanceLimits?.maxToolIterations?.max}}</span>
               @if (validationErrors['maxToolIterations']) {
-                <span class="form-hint form-error d-block mt-5">{{ validationErrors['maxToolIterations'] }}</span>
+                <span class="form-hint form-error mt-5">{{ validationErrors['maxToolIterations'] }}</span>
               }
             </div>
           }
         </div>
 
         <div class="margin-y-20 mt-15 form-group-stacked">
-          <label class="block fw-bold">Max Parallel Tool Calls</label>
-          <span class="form-hint mt-5 d-block mb-10">Maximum number of tool calls executed concurrently in a single turn.</span>
+          <label>Max Parallel Tool Calls</label>
+          <span class="form-hint mt-5 mb-10">Maximum number of tool calls executed concurrently in a single turn.</span>
 
           <button type="button" class="form-input form-select popover-trigger-btn popover-anchor-parallel" popovertarget="maxParallelToolCallsPopover">
             <span class="opt-label">{{ getSelectedOptionDisplay('maxParallelToolCalls').label }}</span>
@@ -295,23 +295,23 @@
           @if (maxParallelToolCallsSelect === 'custom') {
             <div class="mt-10 custom-input-wrapper">
               <input type="number" [(ngModel)]="maxParallelToolCalls" (ngModelChange)="onNumberInputChange()" (blur)="onNumberInputBlur('maxParallelToolCalls')" name="maxParallelToolCalls" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.maxParallelToolCalls?.min)" [max]="$safeNavigationMigration(performanceLimits?.maxParallelToolCalls?.max)" placeholder="Custom value" />
-              <span class="form-hint mt-5 d-block">Allowed range: {{performanceLimits?.maxParallelToolCalls?.min}} - {{performanceLimits?.maxParallelToolCalls?.max}}</span>
+              <span class="form-hint mt-5">Allowed range: {{performanceLimits?.maxParallelToolCalls?.min}} - {{performanceLimits?.maxParallelToolCalls?.max}}</span>
               @if (validationErrors['maxParallelToolCalls']) {
-                <span class="form-hint form-error d-block mt-5">{{ validationErrors['maxParallelToolCalls'] }}</span>
+                <span class="form-hint form-error mt-5">{{ validationErrors['maxParallelToolCalls'] }}</span>
               }
             </div>
           }
         </div>
 
         <div class="margin-y-20 mt-15 form-group-stacked">
-          <label for="requestTimeout" class="block fw-bold">API Request Timeout</label>
-          <span class="form-hint mt-5 d-block mb-10">Maximum time to wait for a chat message response before aborting.</span>
+          <label for="requestTimeout">API Request Timeout</label>
+          <span class="form-hint mt-5 mb-10">Maximum time to wait for a chat message response before aborting.</span>
 
           <div class="custom-input-wrapper" style="animation: none;">
             <input type="number" id="requestTimeout" [(ngModel)]="requestTimeout" (ngModelChange)="onNumberInputChange()" (blur)="onNumberInputBlur('requestTimeout')" name="requestTimeout" class="form-input w-100" [min]="$safeNavigationMigration(performanceLimits?.requestTimeout?.min)" [max]="$safeNavigationMigration(performanceLimits?.requestTimeout?.max)" [placeholder]="'Default (' + $safeNavigationMigration(performanceLimits?.requestTimeout?.defaultValue) + 's)'" />
-            <span class="form-hint mt-5 d-block" style="margin-left: 0;">Allowed range: {{performanceLimits?.requestTimeout?.min}} - {{performanceLimits?.requestTimeout?.max}} seconds</span>
+            <span class="form-hint mt-5" style="margin-left: 0;">Allowed range: {{performanceLimits?.requestTimeout?.min}} - {{performanceLimits?.requestTimeout?.max}} seconds</span>
             @if (validationErrors['requestTimeout']) {
-              <span class="form-hint form-error d-block mt-5">{{ validationErrors['requestTimeout'] }}</span>
+              <span class="form-hint form-error mt-5">{{ validationErrors['requestTimeout'] }}</span>
             }
           </div>
         </div>
@@ -385,8 +385,8 @@
           <legend>New chats</legend>
 
           <div class="form-group-stacked">
-            <label for="defaultChatPrivacyMode" class="block fw-bold">Default for New Chats</label>
-            <span id="defaultChatPrivacyModeHint" class="form-hint mt-5 d-block mb-10">The privacy mode a new chat starts in. You can still change it on the chat page before the first message. {{ selectedChatPrivacyModeHint }}</span>
+            <label for="defaultChatPrivacyMode">Default for New Chats</label>
+            <span id="defaultChatPrivacyModeHint" class="form-hint mt-5 mb-10">The privacy mode a new chat starts in. You can still change it on the chat page before the first message. {{ selectedChatPrivacyModeHint }}</span>
             <select id="defaultChatPrivacyMode" class="form-input form-select" [(ngModel)]="defaultChatPrivacyMode" (ngModelChange)="onSettingChange()" name="defaultChatPrivacyMode" aria-describedby="defaultChatPrivacyModeHint">
               @for (o of chatPrivacyModeOptions; track o.value) {
                 <option [ngValue]="o.value">{{ o.label }}</option>
@@ -400,26 +400,26 @@
           <p id="confidentialPromiseHint" class="gh-fieldset-hint">These two settings decide whether a confidential chat keeps its promise.</p>
 
           <div class="form-group-stacked">
-            <label for="confidentialPersistence" class="block fw-bold">Storage</label>
-            <span id="confidentialPersistenceHint" class="form-hint mt-5 d-block mb-10">How a chat you mark confidential is kept. {{ selectedPersistenceHint }}</span>
+            <label for="confidentialPersistence">Storage</label>
+            <span id="confidentialPersistenceHint" class="form-hint mt-5 mb-10">How a chat you mark confidential is kept. {{ selectedPersistenceHint }}</span>
             <select id="confidentialPersistence" class="form-input form-select" [(ngModel)]="confidentialPersistence" (ngModelChange)="onSettingChange()" name="confidentialPersistence" [disabled]="persistenceFixedByAdmin" [attr.aria-describedby]="persistenceFixedByAdmin ? 'confidentialPersistenceHint confidentialPersistenceFloor' : 'confidentialPersistenceHint'">
               @for (o of persistenceOptions; track o.value) {
                 <option [ngValue]="o.value">{{ o.label }}</option>
               }
             </select>
             @if (persistenceFixedByAdmin) {
-              <span id="confidentialPersistenceFloor" class="confidential-floor-note mt-5 d-block">An administrator has fixed this setting.</span>
+              <span id="confidentialPersistenceFloor" class="confidential-floor-note mt-5">An administrator has fixed this setting.</span>
             }
           </div>
 
           <div>
             <label class="checkbox-label align-start">
               <input type="checkbox" [(ngModel)]="confidentialDisableToolEgress" (ngModelChange)="onSettingChange()" name="confidentialDisableToolEgress" class="w-auto m-0" [disabled]="toolEgressFixedByAdmin" [attr.aria-describedby]="toolEgressFixedByAdmin ? 'confidentialEgressHint confidentialEgressFloor' : 'confidentialEgressHint'" />
-              <span class="d-block">
+              <span>
                 <span>Block tools that reach the internet</span>
-                <span id="confidentialEgressHint" class="form-hint mt-5 d-block">No tool may contact a third-party network during a confidential chat. The provider&apos;s own web search is off as well.</span>
+                <span id="confidentialEgressHint" class="form-hint mt-5">No tool may contact a third-party network during a confidential chat. The provider&apos;s own web search is off as well.</span>
                 @if (toolEgressFixedByAdmin) {
-                  <span id="confidentialEgressFloor" class="confidential-floor-note mt-5 d-block">An administrator has fixed this setting.</span>
+                  <span id="confidentialEgressFloor" class="confidential-floor-note mt-5">An administrator has fixed this setting.</span>
                 }
               </span>
             </label>
@@ -436,12 +436,12 @@
                 <p class="alert-heading">With these choices the promise is not kept</p>
                 <div class="alert-body">
                   @if (effectiveConfidentialPersistence === 'Plaintext') {
-                    <span class="d-block">Storage is readable, so a confidential chat sits in the database exactly as a normal one does.</span>
+                    <span>Storage is readable, so a confidential chat sits in the database exactly as a normal one does.</span>
                   }
                   @if (!effectiveConfidentialDisableToolEgress) {
-                    <span class="d-block">Tools that reach a third-party network stay available, so chat content can leave Overseer mid-conversation.</span>
+                    <span>Tools that reach a third-party network stay available, so chat content can leave Overseer mid-conversation.</span>
                   }
-                  <span class="d-block mt-5">Chats you mark confidential show a red badge while this is the case.</span>
+                  <span class="mt-5">Chats you mark confidential show a red badge while this is the case.</span>
                 </div>
               </div>
             </div>
@@ -452,17 +452,17 @@
           <legend>Deletion</legend>
 
           <div class="form-group-stacked">
-            <label for="confidentialRetentionDays" class="block fw-bold">Delete After</label>
-            <span id="confidentialRetentionHint" class="form-hint mt-5 d-block mb-10">Days of inactivity before a confidential chat is deleted. Normal chats: 90 days.</span>
+            <label for="confidentialRetentionDays">Delete After</label>
+            <span id="confidentialRetentionHint" class="form-hint mt-5 mb-10">Days of inactivity before a confidential chat is deleted. Normal chats: 90 days.</span>
 
             <div class="custom-input-wrapper confidential-input-wrapper">
               <input type="number" id="confidentialRetentionDays" [(ngModel)]="confidentialRetentionDays" (ngModelChange)="onNumberInputChange()" (blur)="onNumberInputBlur()" name="confidentialRetentionDays" class="form-input w-100" [min]="retentionMinDays" [max]="maxConfidentialRetentionDays" [disabled]="retentionFixedByAdmin" [attr.aria-describedby]="retentionFixedByAdmin ? 'confidentialRetentionHint confidentialRetentionRange confidentialRetentionFloor' : 'confidentialRetentionHint confidentialRetentionRange'" />
-              <span id="confidentialRetentionRange" class="form-hint mt-5 d-block">Allowed range: {{ retentionMinDays }} - {{ maxConfidentialRetentionDays }} days</span>
+              <span id="confidentialRetentionRange" class="form-hint mt-5">Allowed range: {{ retentionMinDays }} - {{ maxConfidentialRetentionDays }} days</span>
               @if (retentionFixedByAdmin) {
-                <span id="confidentialRetentionFloor" class="confidential-floor-note mt-5 d-block">An administrator has fixed this setting.</span>
+                <span id="confidentialRetentionFloor" class="confidential-floor-note mt-5">An administrator has fixed this setting.</span>
               }
               @if (validationErrors['confidentialRetentionDays']) {
-                <span class="form-hint form-error d-block mt-5">{{ validationErrors['confidentialRetentionDays'] }}</span>
+                <span class="form-hint form-error mt-5">{{ validationErrors['confidentialRetentionDays'] }}</span>
               }
             </div>
           </div>
@@ -470,11 +470,11 @@
           <div>
             <label class="checkbox-label align-start">
               <input type="checkbox" [(ngModel)]="confidentialImmediatePurge" (ngModelChange)="onSettingChange()" name="confidentialImmediatePurge" class="w-auto m-0" [disabled]="immediatePurgeFixedByAdmin" [attr.aria-describedby]="immediatePurgeFixedByAdmin ? 'confidentialPurgeHint confidentialPurgeFloor' : 'confidentialPurgeHint'" />
-              <span class="d-block">
+              <span>
                 <span>Purge immediately on delete</span>
-                <span id="confidentialPurgeHint" class="form-hint mt-5 d-block">Deleting destroys the chat at once. It skips the 30-day Trash and cannot be undone.</span>
+                <span id="confidentialPurgeHint" class="form-hint mt-5">Deleting destroys the chat at once. It skips the 30-day Trash and cannot be undone.</span>
                 @if (immediatePurgeFixedByAdmin) {
-                  <span id="confidentialPurgeFloor" class="confidential-floor-note mt-5 d-block">An administrator has fixed this setting.</span>
+                  <span id="confidentialPurgeFloor" class="confidential-floor-note mt-5">An administrator has fixed this setting.</span>
                 }
               </span>
             </label>
@@ -488,11 +488,11 @@
           <div>
             <label class="checkbox-label align-start">
               <input type="checkbox" [(ngModel)]="confidentialDisableTitleGeneration" (ngModelChange)="onSettingChange()" name="confidentialDisableTitleGeneration" class="w-auto m-0" [disabled]="titleGenerationFixedByAdmin" [attr.aria-describedby]="titleGenerationFixedByAdmin ? 'confidentialTitleHint confidentialTitleFloor' : 'confidentialTitleHint'" />
-              <span class="d-block">
+              <span>
                 <span>Skip the AI-generated chat title</span>
-                <span id="confidentialTitleHint" class="form-hint mt-5 d-block">Titling sends your first message to a separate model, often at another provider. A skipped chat gets a plain title.</span>
+                <span id="confidentialTitleHint" class="form-hint mt-5">Titling sends your first message to a separate model, often at another provider. A skipped chat gets a plain title.</span>
                 @if (titleGenerationFixedByAdmin) {
-                  <span id="confidentialTitleFloor" class="confidential-floor-note mt-5 d-block">An administrator has fixed this setting.</span>
+                  <span id="confidentialTitleFloor" class="confidential-floor-note mt-5">An administrator has fixed this setting.</span>
                 }
               </span>
             </label>
@@ -501,29 +501,95 @@
           <div>
             <label class="checkbox-label align-start">
               <input type="checkbox" [(ngModel)]="confidentialDisablePromptCache" (ngModelChange)="onSettingChange()" name="confidentialDisablePromptCache" class="w-auto m-0" [disabled]="promptCacheFixedByAdmin" [attr.aria-describedby]="promptCacheFixedByAdmin ? 'confidentialCacheHint confidentialCacheFloor' : 'confidentialCacheHint'" />
-              <span class="d-block">
+              <span>
                 <span>Turn off provider prompt caching</span>
-                <span id="confidentialCacheHint" class="form-hint mt-5 d-block">The provider keeps no prompt prefix between turns. Later turns cost more and start more slowly.</span>
+                <span id="confidentialCacheHint" class="form-hint mt-5">The provider keeps no prompt prefix between turns. Later turns cost more and start more slowly.</span>
                 @if (promptCacheFixedByAdmin) {
-                  <span id="confidentialCacheFloor" class="confidential-floor-note mt-5 d-block">An administrator has fixed this setting.</span>
+                  <span id="confidentialCacheFloor" class="confidential-floor-note mt-5">An administrator has fixed this setting.</span>
                 }
               </span>
             </label>
           </div>
 
           <div class="form-group-stacked">
-            <label for="confidentialModelGate" class="block fw-bold">Model Trust Requirement</label>
-            <span id="confidentialModelGateHint" class="form-hint mt-5 d-block mb-10">How sure Overseer must be about a key&apos;s retention terms before it runs a confidential turn. {{ selectedModelGateHint }}</span>
+            <label for="confidentialModelGate">Model Trust Requirement</label>
+            <span id="confidentialModelGateHint" class="form-hint mt-5 mb-10">How sure Overseer must be about a key&apos;s retention terms before it runs a confidential turn. {{ selectedModelGateHint }}</span>
             <select id="confidentialModelGate" class="form-input form-select" [(ngModel)]="confidentialModelGate" (ngModelChange)="onSettingChange()" name="confidentialModelGate" [disabled]="modelGateFixedByAdmin" [attr.aria-describedby]="modelGateFixedByAdmin ? 'confidentialModelGateHint confidentialModelGateFloor' : 'confidentialModelGateHint'">
               @for (o of modelGateOptions; track o.value) {
                 <option [ngValue]="o.value">{{ o.label }}</option>
               }
             </select>
             @if (modelGateFixedByAdmin) {
-              <span id="confidentialModelGateFloor" class="confidential-floor-note mt-5 d-block">An administrator has fixed this setting.</span>
+              <span id="confidentialModelGateFloor" class="confidential-floor-note mt-5">An administrator has fixed this setting.</span>
             }
           </div>
         </fieldset>
+
+      }
+      @case ('provided-models') {
+
+        <p class="form-hint mt-5">Your own keys are decided under API Keys.</p>
+
+        @if (isLoadingProvidedModels) {
+          <p class="form-hint mt-10" role="status">Loading provided models...</p>
+        }
+
+        @if (providedModelsError) {
+          <p class="form-hint form-error mt-10" role="alert">{{ providedModelsError }}</p>
+        }
+
+        @if (!isLoadingProvidedModels && !providedModelsError && providedModels.length === 0) {
+          <p class="form-hint mt-10">No models are provided for you, so there is nothing to decide here.</p>
+        }
+
+        @if (providedModels.length > 0) {
+          <div class="gh-datatable-scroll mt-10">
+            <table class="gh-table">
+              <caption class="visually-hidden">System-provided models, and your decision on each for confidential chats</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Model</th>
+                  <th scope="col">Provider</th>
+                  <th scope="col">Retention posture</th>
+                  <th scope="col">Your decision</th>
+                  <th scope="col">Decided</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (m of providedModels; track m.id) {
+                  <tr>
+                    <th scope="row">{{ m.displayName }}</th>
+                    <td>{{ m.provider }}</td>
+                    <td>
+                      {{ m.postureText }}
+                      <span class="form-hint mt-5">{{ providedModelVerification(m) }}</span>
+                    </td>
+                    <td>
+                      <label class="visually-hidden" [for]="'provided-trust-' + m.id">Use {{ m.displayName }} for confidential chats</label>
+                      <select [id]="'provided-trust-' + m.id" class="gh-input"
+                              [ngModel]="providedModelTrusts[m.id] ?? 'undecided'"
+                              (ngModelChange)="onProvidedModelTrustChange(m, $event)"
+                              [ngModelOptions]="{ standalone: true }"
+                              [disabled]="savingProvidedModelId === m.id">
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                        <option value="undecided">Not decided yet</option>
+                      </select>
+                      @if (savingProvidedModelId === m.id) {
+                        <span class="gh-spinner-small mt-5" aria-hidden="true"></span>
+                        <span class="visually-hidden" role="status">Saving the decision</span>
+                      }
+                      @if (providedModelTrustErrors[m.id]) {
+                        <span class="form-hint form-error mt-5" role="alert">{{ providedModelTrustErrors[m.id] }}</span>
+                      }
+                    </td>
+                    <td>{{ providedModelDecidedOn(m) }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
 
       }
       @case ('masking') {
@@ -573,11 +639,11 @@
             <div>
               <label class="checkbox-label align-start">
                 <input type="checkbox" [(ngModel)]="dlp[c.key]" (ngModelChange)="onDlpChange()" [attr.name]="c.key" class="w-auto m-0" [disabled]="isDlpFixedByAdmin(c.key)" [attr.aria-describedby]="isDlpFixedByAdmin(c.key) ? c.key + 'Hint ' + c.key + 'Floor' : c.key + 'Hint'" />
-                <span class="d-block">
+                <span>
                   <span>{{ c.label }}</span>
-                  <span [id]="c.key + 'Hint'" class="form-hint mt-5 d-block">{{ c.hint }}</span>
+                  <span [id]="c.key + 'Hint'" class="form-hint mt-5">{{ c.hint }}</span>
                   @if (isDlpFixedByAdmin(c.key)) {
-                    <span [id]="c.key + 'Floor'" class="dlp-floor-note mt-5 d-block">An administrator requires this class to be masked.</span>
+                    <span [id]="c.key + 'Floor'" class="dlp-floor-note mt-5">An administrator requires this class to be masked.</span>
                   }
                 </span>
               </label>
@@ -593,11 +659,11 @@
             <div>
               <label class="checkbox-label align-start">
                 <input type="checkbox" [(ngModel)]="dlp[c.key]" (ngModelChange)="onDlpChange()" [attr.name]="c.key" class="w-auto m-0" [disabled]="isDlpFixedByAdmin(c.key)" [attr.aria-describedby]="isDlpFixedByAdmin(c.key) ? c.key + 'Hint ' + c.key + 'Floor' : c.key + 'Hint'" />
-                <span class="d-block">
+                <span>
                   <span>{{ c.label }}</span>
-                  <span [id]="c.key + 'Hint'" class="form-hint mt-5 d-block">{{ c.hint }}</span>
+                  <span [id]="c.key + 'Hint'" class="form-hint mt-5">{{ c.hint }}</span>
                   @if (isDlpFixedByAdmin(c.key)) {
-                    <span [id]="c.key + 'Floor'" class="dlp-floor-note mt-5 d-block">An administrator requires this class to be masked.</span>
+                    <span [id]="c.key + 'Floor'" class="dlp-floor-note mt-5">An administrator requires this class to be masked.</span>
                   }
                 </span>
               </label>
@@ -623,7 +689,7 @@
               <span class="metric-badge trash">{{ trashCount }}</span>
             </div>
           </div>
-          <span class="form-hint mt-10 d-block">Manage and clean up your active and deleted chat conversations in bulk.</span>
+          <span class="form-hint mt-10">Manage and clean up your active and deleted chat conversations in bulk.</span>
         </div>
 
         <div class="chat-management-actions mt-15 mb-5">
@@ -707,7 +773,7 @@
     <div class="margin-y-20 mt-10 mb-15">
       <label class="checkbox-label align-start">
         <input type="checkbox" [(ngModel)]="includePinnedInBulkDelete" name="settingsIncludePinnedInBulkDelete" class="w-auto m-0" />
-        <span class="d-block">
+        <span>
           <span>Also move pinned chats to Trash</span>
         </span>
       </label>

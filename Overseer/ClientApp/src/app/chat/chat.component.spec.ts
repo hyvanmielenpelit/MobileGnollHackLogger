@@ -108,7 +108,7 @@ All done!`;
   });
 });
 
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
@@ -118,6 +118,7 @@ import { ChatService, ChatSessionDetailResponse } from '../services/chat.service
 import { SettingsService, UserAiSettings, UserAiModel } from '../services/settings.service';
 import { AuthService } from '../services/auth.service';
 import { ClientBridgeService } from '../services/client-bridge.service';
+import { isSentryConfidentialSessionActive, setSentryConfidentialSession } from '../utils/sentry-filter.util';
 
 // ChatComponent.ngOnInit opens a real SignalR connection to /chathub, which under Karma
 // is live network I/O the test web server answers with 404 and which outlives the spec
@@ -1825,7 +1826,7 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
       expect(component.currentSessionId).toBeNull();
       expect(component.messages.length).toBe(0);
       expect(component.newChatEphemeral).toBeFalse();
-      expect(component.ephemeralNotice).toContain('cannot be recovered');
+      expect(component.privacyNotice).toContain('cannot be recovered');
       expect(dialog.close).toHaveBeenCalled();
       expect(navSpy).not.toHaveBeenCalled();
       expect((component as any).performNavigateToNewSession).toHaveBeenCalled();
@@ -1927,7 +1928,7 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
 
     it('should warn without blocking when the route is left', () => {
       expect(component.canDeactivate()).toBeTrue();
-      expect(component.ephemeralNotice).toContain('stays in memory');
+      expect(component.privacyNotice).toContain('stays in memory');
       expect(component.isEphemeralSession).toBeTrue();
     });
 
@@ -1943,6 +1944,353 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
       component.dismissEphemeralNotice();
       fixture.detectChanges();
       expect((fixture.nativeElement as HTMLElement).querySelector('.ephemeral-notice')).toBeFalsy();
+    });
+  });
+});
+
+describe('ChatComponent confidential chats', () => {
+  let component: ChatComponent;
+  let fixture: ComponentFixture<ChatComponent>;
+  let chatService: ChatService;
+  let settingsService: SettingsService;
+  let clientBridge: ClientBridgeService;
+
+  /** Drives one snapshot attachment: the bridge request is answered with `text`. */
+  async function attachSnapshot(text: string): Promise<void> {
+    const attaching = component.attachGameSnapshotFromClient();
+    const requestId = Array.from(component.localToolRequests.keys())[0];
+    component.onGnollHackToolResponse({
+      type: 'tool_response',
+      requestId,
+      success: true,
+      content: text,
+      errorMessage: null
+    });
+    await attaching;
+  }
+
+  /** Runs one turn far enough for the gate event to interrupt it. */
+  async function sendAndGate(gate: Record<string, unknown>): Promise<void> {
+    await component.sendMessage();
+    component.processChatEvent({
+      type: 'confidential_gate',
+      sessionId: component.currentSessionId,
+      data: JSON.stringify(gate)
+    });
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ChatComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting()
+      ]
+    }).compileComponents();
+
+    stubSignalRConnection();
+    fixture = TestBed.createComponent(ChatComponent);
+    component = fixture.componentInstance;
+    chatService = TestBed.inject(ChatService);
+    settingsService = TestBed.inject(SettingsService);
+    clientBridge = TestBed.inject(ClientBridgeService);
+    (component as any).hubConnection = null;
+    (component as any).hubStartPromise = null;
+  });
+
+  afterEach(() => {
+    setSentryConfidentialSession(false);
+  });
+
+  describe('the creating turn', () => {
+    beforeEach(() => {
+      spyOn(settingsService, 'getSettings').and.returnValue(of({} as UserAiSettings));
+      spyOn(component, 'loadSessions');
+      spyOn(component.router, 'navigateByUrl');
+      fixture.detectChanges();
+    });
+
+    it('should adopt the confidential state a saved chat is created in', async () => {
+      spyOn(chatService, 'sendMessage').and.returnValue(of({
+        sessionId: '91',
+        isConfidential: true,
+        isEphemeral: false,
+        privateBadge: { state: 'green', label: 'Confidential', tooltip: 'Encrypted where it is stored.' }
+      } as any));
+      component.setNewChatPrivacyMode('confidential');
+      component.currentInput = 'Keep this one close.';
+
+      await component.sendMessage();
+
+      expect(component.currentSessionId).toBe('91');
+      expect(component.isConfidentialSession).toBeTrue();
+      expect(component.isEphemeralSession).toBeFalse();
+      expect(component.privateBadge!.state).toBe('green');
+      expect(isSentryConfidentialSessionActive()).toBeTrue();
+    });
+
+    it('should start a chat from a snapshot with the chosen privacy flags', async () => {
+      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
+      spyOn(clientBridge, 'postMessage');
+      const attachSpy = spyOn(chatService, 'attachGameSnapshot').and.returnValue(of({
+        sessionId: '55',
+        hasGameSnapshot: true,
+        isConfidential: true,
+        privateBadge: { state: 'yellow', label: 'Confidential', tooltip: 'Protected, with caveats.' }
+      } as any));
+      component.setNewChatPrivacyMode('confidential');
+
+      await attachSnapshot('the board');
+
+      expect(attachSpy).toHaveBeenCalledWith(null, 'the board', undefined, true, false);
+      expect(component.currentSessionId).toBe('55');
+      expect(component.isConfidentialSession).toBeTrue();
+      expect(component.privateBadge!.state).toBe('yellow');
+      expect(component.hasGameSnapshot).toBeTrue();
+    });
+
+    it('should attach to an open incognito chat under its own reference', async () => {
+      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
+      spyOn(clientBridge, 'postMessage');
+      const attachSpy = spyOn(chatService, 'attachGameSnapshot').and.returnValue(of({
+        sessionId: 'eph_abc',
+        hasGameSnapshot: true,
+        isConfidential: true,
+        isEphemeral: true
+      } as any));
+      component.currentSessionId = 'eph_abc';
+      component.isEphemeralSession = true;
+      component.isConfidentialSession = true;
+
+      await attachSnapshot('the board');
+
+      expect(attachSpy).toHaveBeenCalledWith('eph_abc', 'the board', undefined, true, true);
+      expect(component.currentSessionId).toBe('eph_abc');
+      expect(component.isEphemeralSession).toBeTrue();
+    });
+  });
+
+  describe('the privacy badge event', () => {
+    it('should replace the badge of the open chat', () => {
+      component.currentSessionId = '91';
+      component.privateBadge = { state: 'orange', label: 'Confidential', tooltip: 'Retention not established.' };
+
+      component.processChatEvent({
+        type: 'private_badge',
+        sessionId: '91',
+        data: JSON.stringify({ state: 'green', label: 'Confidential', tooltip: 'Encrypted where it is stored.' })
+      });
+
+      expect(component.privateBadge!.state).toBe('green');
+      expect(component.privateBadge!.tooltip).toBe('Encrypted where it is stored.');
+    });
+  });
+
+  describe('the confidentiality gate', () => {
+    const gatePayload = {
+      reason: 'No retention agreement is on file for this key.',
+      kind: 'user_key',
+      provider: 'OpenAI',
+      systemConfigurationId: null,
+      modelDisplayName: 'GPT-5'
+    };
+
+    beforeEach(() => {
+      spyOn(settingsService, 'getSettings').and.returnValue(of({} as UserAiSettings));
+      spyOn(component, 'loadSessions');
+      spyOn(component.router, 'navigateByUrl');
+      spyOn(chatService, 'sendMessage').and.returnValue(of({ sessionId: '91', isConfidential: true } as any));
+      fixture.detectChanges();
+    });
+
+    it('should take the turn back and ask about the model', async () => {
+      component.currentInput = 'Something private.';
+
+      await sendAndGate(gatePayload);
+
+      expect(component.messages.length).toBe(0);
+      expect(component.currentInput).toBe('Something private.');
+      expect(component.isStreaming).toBeFalse();
+      expect(component.confidentialGate!.reason).toBe(gatePayload.reason);
+
+      const dialog = (fixture.nativeElement as HTMLElement)
+        .querySelector('dialog[aria-labelledby="confidential-gate-title"]') as HTMLDialogElement;
+      expect(dialog.open).toBeTrue();
+      expect(dialog.textContent).toContain('GPT-5');
+      expect(dialog.textContent).toContain(gatePayload.reason);
+      dialog.close();
+    });
+
+    it('should record the model as accepted and send the held turn again', async () => {
+      const trustSpy = spyOn(settingsService, 'saveApiKeyConfidentialTrust').and.returnValue(of({}));
+      component.currentInput = 'Something private.';
+
+      await sendAndGate(gatePayload);
+      const resendSpy = spyOn(component, 'sendMessage');
+      component.trustGatedModel();
+
+      expect(trustSpy).toHaveBeenCalledWith('OpenAI', true);
+      expect(resendSpy).toHaveBeenCalled();
+      expect(component.confidentialGate).toBeNull();
+    });
+
+    it('should record the model as refused and leave the turn unsent', async () => {
+      const trustSpy = spyOn(settingsService, 'saveApiKeyConfidentialTrust').and.returnValue(of({}));
+      component.currentInput = 'Something private.';
+
+      await sendAndGate(gatePayload);
+      const resendSpy = spyOn(component, 'sendMessage');
+      component.refuseGatedModel();
+
+      expect(trustSpy).toHaveBeenCalledWith('OpenAI', false);
+      expect(resendSpy).not.toHaveBeenCalled();
+      expect(component.currentStatusText).toBe('Choose another model for this chat.');
+      expect(component.currentInput).toBe('Something private.');
+    });
+  });
+
+  describe('an incognito chat the server no longer holds', () => {
+    it('should return to a new chat and say the content is gone', async () => {
+      spyOn(settingsService, 'getSettings').and.returnValue(of({} as UserAiSettings));
+      spyOn(component, 'loadSessions');
+      spyOn(chatService, 'sendMessage').and.returnValue(throwError(() => ({ status: 404 })));
+      const navSpy = spyOn(component as any, 'performNavigateToNewSession');
+      component.currentSessionId = 'eph_abc';
+      component.isEphemeralSession = true;
+      component.isConfidentialSession = true;
+      component.currentInput = 'Still there?';
+
+      await component.sendMessage();
+
+      expect(component.currentSessionId).toBeNull();
+      expect(component.isEphemeralSession).toBeFalse();
+      expect(component.messages.length).toBe(0);
+      expect(component.privacyNotice).toContain('has expired or was closed');
+      expect(navSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('upgrading a Standard chat', () => {
+    it('should offer the action only for a saved Standard chat', () => {
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      const action = () => compiled.querySelector('button[interestfor="tip-make-confidential"]');
+
+      component.currentSessionId = '91';
+      fixture.detectChanges();
+      expect(action()).toBeTruthy();
+
+      component.isConfidentialSession = true;
+      fixture.detectChanges();
+      expect(action()).toBeFalsy();
+
+      component.isConfidentialSession = false;
+      component.isEphemeralSession = true;
+      fixture.detectChanges();
+      expect(action()).toBeFalsy();
+
+      component.isEphemeralSession = false;
+      component.currentSessionId = null;
+      fixture.detectChanges();
+      expect(action()).toBeFalsy();
+    });
+
+    it('should adopt the upgraded state and announce the server notice', () => {
+      fixture.detectChanges();
+      spyOn(component, 'loadSessions');
+      const upgradeSpy = spyOn(chatService, 'upgradeSessionToConfidential').and.returnValue(of({
+        isConfidential: true,
+        retroactive: false,
+        notice: 'From the next message on, this chat is confidential.',
+        privateBadge: { state: 'green', label: 'Confidential', tooltip: 'Encrypted where it is stored.' }
+      } as any));
+      component.currentSessionId = '91';
+
+      component.confirmUpgradeToConfidential();
+
+      expect(upgradeSpy).toHaveBeenCalledWith(91);
+      expect(component.isConfidentialSession).toBeTrue();
+      expect(component.privateBadge!.state).toBe('green');
+      expect(component.privacyNotice).toContain('From the next message on');
+      expect(isSentryConfidentialSessionActive()).toBeTrue();
+      component.dismissEphemeralNotice();
+    });
+
+    it('should report a refused upgrade inside the dialog', () => {
+      fixture.detectChanges();
+      spyOn(chatService, 'upgradeSessionToConfidential')
+        .and.returnValue(throwError(() => ({ status: 409, error: { error: 'A confidential chat cannot be made standard.' } })));
+      component.currentSessionId = '91';
+
+      component.confirmUpgradeToConfidential();
+
+      expect(component.upgradeConfidentialError).toBe('A confidential chat cannot be made standard.');
+      expect(component.isConfidentialSession).toBeFalse();
+    });
+  });
+
+  describe('the incognito deadline', () => {
+    it('should name the idle window in the banner', () => {
+      fixture.detectChanges();
+      component.currentSessionId = 'eph_abc';
+      component.isEphemeralSession = true;
+      component.ephemeralTimeoutMinutes = 45;
+      fixture.detectChanges();
+
+      const banner = (fixture.nativeElement as HTMLElement).querySelector('.ephemeral-banner');
+      expect(banner!.textContent).toContain('after 45 minutes without activity');
+    });
+
+    it('should warn about two minutes before the deadline', fakeAsync(() => {
+      spyOn(component.cdr, 'detectChanges');
+      component.currentSessionId = 'eph_abc';
+      component.isEphemeralSession = true;
+      component.ephemeralExpiresUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+      (component as any).armEphemeralExpiryWarning();
+
+      tick(7 * 60 * 1000);
+      expect(component.privacyNotice).toBe('');
+
+      tick(60 * 1000);
+      expect(component.privacyNotice).toContain('about 2 minutes');
+
+      component.dismissEphemeralNotice();
+    }));
+  });
+
+  describe('the markers in the window', () => {
+    it('should mark a confidential chat in the sidebar list', () => {
+      fixture.detectChanges();
+      component.loadingSessions = false;
+      component.sessions = [
+        { id: 7, title: 'Locked chat', lastMessageUtc: '2026-09-09T10:00:00Z', isConfidential: true },
+        { id: 8, title: 'Ordinary chat', lastMessageUtc: '2026-09-09T10:00:00Z' }
+      ];
+      fixture.detectChanges();
+
+      const titles = (fixture.nativeElement as HTMLElement).querySelectorAll('.session-title');
+      expect(titles[0].querySelector('.session-lock')).toBeTruthy();
+      expect(titles[0].textContent).toContain('Confidential chat:');
+      expect(titles[1].querySelector('.session-lock')).toBeFalsy();
+    });
+
+    it('should render the Private badge as a button with an interest-triggered tooltip', () => {
+      fixture.detectChanges();
+      component.privateBadge = { state: 'green', label: 'Confidential', tooltip: 'Encrypted where it is stored.' };
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const badge = compiled.querySelector('button.setting-badge[interestfor="tip-private-badge"]') as HTMLButtonElement;
+      expect(badge).toBeTruthy();
+      expect(badge.getAttribute('title')).toBeNull();
+      expect(badge.getAttribute('aria-label')).toBe('Private, Confidential');
+      expect(badge.classList).toContain('badge-private-green');
+
+      const tip = compiled.querySelector('#tip-private-badge');
+      expect(tip!.getAttribute('popover')).toBe('hint');
+      expect(tip!.textContent).toContain('Encrypted where it is stored.');
     });
   });
 });

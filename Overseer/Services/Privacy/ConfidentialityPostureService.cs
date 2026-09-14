@@ -274,10 +274,16 @@ public class ConfidentialityPostureService
     /// Only meaningful for the user's own keys; pass null for a system configuration.
     /// </param>
     /// <param name="effectiveGate">From <see cref="EffectiveGate(System.Nullable{ConfidentialityGateMode})"/>.</param>
+    /// <param name="isSystemProvidedModel">
+    /// Selects where the refusal sends the user to change their answer. A decision about an
+    /// operator-provided model is stored per user in <c>UserSystemModelConfidentialTrust</c> and
+    /// edited in its own settings section, not under API keys.
+    /// </param>
     public ConfidentialityGateResult EvaluateGate(
         PostureResolution posture,
         bool? userTrustsForConfidential,
-        ConfidentialityGateMode effectiveGate)
+        ConfidentialityGateMode effectiveGate,
+        bool isSystemProvidedModel = false)
     {
         /* An explicit "no" is a decision, not an absence, and it is checked first in every
            mode: a user who has said this key is not adequate for confidential work should not
@@ -286,7 +292,10 @@ public class ConfidentialityPostureService
         {
             return new ConfidentialityGateResult(
                 ConfidentialityGateOutcome.Refuse,
-                "You marked this key as not suitable for confidential chats. Change that in API keys to use it here.");
+                isSystemProvidedModel
+                    ? "You marked this model as not suitable for confidential chats. Change that under "
+                      + "Settings, Provided Models for Confidential Chats, to use it here."
+                    : "You marked this key as not suitable for confidential chats. Change that in API keys to use it here.");
         }
 
         switch (effectiveGate)
@@ -307,10 +316,13 @@ public class ConfidentialityPostureService
                           + "Nothing is established about this model's data retention.");
 
             case ConfidentialityGateMode.AskWhenUnclear:
-                /* Asked once per key, not once per turn: the answer persists on the key. The
-                   trigger is an unestablished posture or an undecided key -- either is a
-                   question the user has not yet been given the chance to answer. */
-                if (posture.Posture == ProviderConfidentialityPosture.Unknown || userTrustsForConfidential == null)
+                /* Asked once per credential, not once per turn: the answer persists, on the key
+                   row or in the per-user trust table, and an answer that exists is the end of
+                   the question. The trigger is therefore the absence of a decision alone -- an
+                   unestablished posture is what the question is *about*, so asking again after
+                   it has been answered would make the prompt unanswerable. Which question is
+                   asked still depends on the posture. */
+                if (userTrustsForConfidential == null)
                 {
                     return new ConfidentialityGateResult(
                         ConfidentialityGateOutcome.AskOnce,

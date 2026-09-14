@@ -94,4 +94,25 @@ public static class CryptoShred
                 .SetProperty(x => x.ApiKeyNonce, (string?)null)
                 .SetProperty(x => x.ApiKeyTag, (string?)null), cancellationToken);
     }
+
+    /// <summary>
+    /// Deletes a user's decisions about which operator-provided models may fund their
+    /// confidential chats.
+    /// </summary>
+    /// <remarks>
+    /// No key material, so nothing to null: the rows are the record and they go. Deleted here
+    /// alongside the credentials rather than left to the account's cascade, because account
+    /// deletion has to reach everything this user said about their own confidentiality
+    /// whichever project runs it.
+    /// </remarks>
+    public static async Task<int> DeleteSystemModelTrustForUserAsync(
+        ApplicationDbContext dbContext, string userId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(userId))
+            return 0;
+
+        return await dbContext.UserSystemModelConfidentialTrusts
+            .Where(t => t.AspNetUserId == userId)
+            .ExecuteDeleteAsync(cancellationToken);
+    }
 }

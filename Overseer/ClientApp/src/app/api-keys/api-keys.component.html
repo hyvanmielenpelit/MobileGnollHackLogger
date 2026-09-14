@@ -43,7 +43,7 @@
             }
             @if (!keyStatuses[provider]) {
               <div class="api-key-grid">
-                <label class="sr-only" [for]="'key-' + provider">API Key</label>
+                <label class="visually-hidden" [for]="'key-' + provider">API Key</label>
                 <input type="password" [id]="'key-' + provider" [(ngModel)]="newKeys[provider]" placeholder="Enter API Key" class="gh-input m-0">
                 <button class="btn-gh btn-action" (click)="saveKey(provider)" [disabled]="!newKeys[provider] || savingProvider === provider">
                   @if (savingProvider === provider) {
@@ -107,6 +107,9 @@
                       <strong>No</strong> keeps this key out of every confidential chat.
                       <strong>Not decided yet</strong> leaves it usable; whether Overseer asks you first depends on
                       Model Trust Requirement under Settings &rsaquo; Confidentiality.
+                    </p>
+                    <p class="posture-hint">
+                      System-provided models are decided under Settings &rsaquo; Provided Models for Confidential Chats.
                     </p>
                     @if (savingTrustProvider === provider || (keyTrusts[provider] !== 'undecided' && formatStamp(keyTrustDecidedUtc[provider]))) {
                       <div class="posture-actions">

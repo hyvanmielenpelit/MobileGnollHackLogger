@@ -116,6 +116,8 @@ export interface UserAiSettings {
   confidentialFloor?: ConfidentialFloor | null;
   confidentialFirstUseNoticeAcknowledged?: boolean;
   defaultChatPrivacyMode?: ChatPrivacyMode;
+  /** How long an incognito session survives without activity, in minutes. Server-owned. */
+  ephemeralTimeoutMinutes?: number;
 
   /* The RESOLVED masking policy, not the raw preferences: a class the administrator forces on
      reads back as on, so a switch shows what actually happens rather than what the user last
@@ -402,6 +404,27 @@ export interface ApiKeyStatus {
   confidentialTrustDecidedUtc?: string | null;
 }
 
+/**
+ * One operator-provided model this user may select for chat, with what has been established about
+ * its retention and the user's own decision about it. Unlike a personal key, the posture here is
+ * the operator's: `isOperatorVerified` says whether one of them dated the check.
+ */
+export interface ProvidedModelConfidentialStatus {
+  id: number;
+  provider: string;
+  modelId: string;
+  displayName: string;
+  posture: string;
+  postureText: string;
+  postureVerifiedUtc: string | null;
+  isOperatorVerified: boolean;
+  dataRegion: string | null;
+  note: string | null;
+  /** `true` accepts the model for confidential chats, `false` refuses it, `null` is undecided. */
+  userTrustsForConfidential: boolean | null;
+  decidedUtc: string | null;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -499,6 +522,22 @@ export class SettingsService {
   /** `trusted` is true to accept the key for confidential chats, false to refuse it, null for undecided. */
   saveApiKeyConfidentialTrust(provider: string, trusted: boolean | null) {
     return this.http.put(`/api/settings/apikeys/${provider}/confidential-trust`, { trusted });
+  }
+
+  /** The system models this user can select for chat, each with its posture and their decision. */
+  getProvidedModelsForConfidential() {
+    return this.http.get<ProvidedModelConfidentialStatus[]>('/api/settings/provided-models', {
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
+  }
+
+  /** `trusted` is true to accept the model for confidential chats, false to refuse it, null for undecided. */
+  setProvidedModelConfidentialTrust(id: number, trusted: boolean | null) {
+    return this.http.put(`/api/settings/provided-models/${id}/confidential-trust`, { trusted });
   }
 
   deleteApiKeyForProvider(provider: string) {
