@@ -342,6 +342,37 @@
   }
 }
 
+/* A hint in three parts: a lead line, the modes as terms, and a qualifying note. */
+.mode-hint {
+  .mode-hint-lead {
+    margin: 0;
+  }
+
+  .mode-hint-modes {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 14px;
+    row-gap: 6px;
+    margin: 10px 0 0;
+
+    dt {
+      font-weight: 600;
+      color: var(--gh-text-secondary, #b8b8b8);
+    }
+
+    dd {
+      margin: 0;
+    }
+  }
+
+  .mode-hint-note {
+    margin: 10px 0 0;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    color: var(--gh-text-muted, #8e8e93);
+  }
+}
+
 /* One line when empty, grows with the JSON, scrolls past the cap.
    Where field-sizing is unsupported the box stays one row and scrolls. */
 .custom-headers-input {

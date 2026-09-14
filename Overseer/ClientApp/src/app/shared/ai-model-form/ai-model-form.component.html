@@ -411,15 +411,29 @@
               <option [ngValue]="1">On request</option>
               <option [ngValue]="0">Sequential only</option>
             </select>
-            <div id="parallelExecutionModeHint" class="form-hint mt-5">
-              Whether the model may ask for several tool calls in one turn on this key.
-              <strong>Allowed</strong> leaves the default batching guidance in place.
-              <strong>On request</strong> tells the model to stay sequential unless the user asks for
-              parallel lookups, which conserves quota. <strong>Sequential only</strong> also turns off
-              parallel tool calls on the provider request and limits the model to one subagent at a
-              time, which protects a rate-limited key. This is not the same as
-              <strong>Max Parallel Tool Calls</strong> in user settings, which bounds how many the
-              server runs at once.
+            <div id="parallelExecutionModeHint" class="form-hint mt-5 mode-hint">
+              <p class="mode-hint-lead">
+                Whether the model may ask for several tool calls in one turn on this key.
+              </p>
+
+              <dl class="mode-hint-modes">
+                <dt>Allowed</dt>
+                <dd>The default batching guidance applies unchanged.</dd>
+
+                <dt>On request</dt>
+                <dd>Sequential unless the user asks for parallel lookups, which conserves quota.</dd>
+
+                <dt>Sequential only</dt>
+                <dd>
+                  Parallel tool calls are switched off on the provider request and the model is held
+                  to one subagent at a time, which protects a rate-limited key.
+                </dd>
+              </dl>
+
+              <p class="mode-hint-note">
+                Not the same as <strong>Max Parallel Tool Calls</strong> in user settings, which
+                bounds how many the server runs at once.
+              </p>
             </div>
           </div>
         </fieldset>
