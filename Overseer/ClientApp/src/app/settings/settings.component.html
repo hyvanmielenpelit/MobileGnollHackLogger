@@ -350,9 +350,9 @@
               <p class="alert-heading">What Confidentiality Mode covers</p>
               <div class="alert-body">
                 <ul class="confidential-scope-list">
-                  <li><strong>Covered:</strong> your own personal data.</li>
-                  <li><strong>Not covered:</strong> documents about other people. They get the same technical protection, but Overseer cannot honour an access or erasure request from someone who has no account.</li>
-                  <li><strong>Not supported:</strong> health, financial and other regulated records. Overseer has no BAA or similar agreement with any AI provider.</li>
+                  <li><strong>Covered:</strong> Your own personal data.</li>
+                  <li><strong>Not covered:</strong> Documents about other people. They get the same technical protection, but Overseer cannot honour an access or erasure request from someone who has no account.</li>
+                  <li><strong>Not supported:</strong> Health, financial and other regulated records. Overseer has no BAA or similar agreement with any AI provider.</li>
                 </ul>
               </div>
               @if (confidentialNoticeError) {
@@ -373,9 +373,9 @@
             <summary>What Confidentiality Mode covers</summary>
             <div class="gh-disclosure-body">
               <ul class="confidential-scope-list">
-                <li><strong>Covered:</strong> your own personal data.</li>
-                <li><strong>Not covered:</strong> documents about other people. They get the same technical protection, but Overseer cannot honour an access or erasure request from someone who has no account.</li>
-                <li><strong>Not supported:</strong> health, financial and other regulated records. Overseer has no BAA or similar agreement with any AI provider.</li>
+                <li><strong>Covered:</strong> Your own personal data.</li>
+                <li><strong>Not covered:</strong> Documents about other people. They get the same technical protection, but Overseer cannot honour an access or erasure request from someone who has no account.</li>
+                <li><strong>Not supported:</strong> Health, financial and other regulated records. Overseer has no BAA or similar agreement with any AI provider.</li>
               </ul>
             </div>
           </details>
@@ -548,16 +548,26 @@
           </div>
         </div>
 
-        <p class="dlp-how-heading">How it works</p>
-        <ol class="dlp-steps">
-          <li>Overseer recognises a value of a class you have switched on.</li>
-          <li>It replaces the value with a placeholder before the prompt leaves the server.</li>
-          <li>It puts your own value back in the reply. You keep seeing your value; the provider only ever receives the placeholder.</li>
-        </ol>
+        <div class="alert alert-info dlp-how" role="note" aria-labelledby="dlpHowHeading">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          <div class="alert-content">
+            <p id="dlpHowHeading" class="alert-heading">How it works</p>
+            <div class="alert-body">
+              <ol class="dlp-steps">
+                <li>Overseer recognises a value of a class you have switched on.</li>
+                <li>It replaces the value with a placeholder before the prompt leaves the server.</li>
+                <li>It puts your own value back in the reply. You keep seeing your value; the provider only ever receives the placeholder.</li>
+              </ol>
+            </div>
+          </div>
+        </div>
 
-        <fieldset class="gh-fieldset settings-fieldset" aria-describedby="dlpSecretHint">
+        <fieldset class="gh-fieldset settings-fieldset">
           <legend>Credentials and payment data</legend>
-          <p id="dlpSecretHint" class="gh-fieldset-hint">On by default.</p>
 
           @for (c of dlpSecretClasses; track c.key) {
             <div>
@@ -577,7 +587,7 @@
 
         <fieldset class="gh-fieldset settings-fieldset" aria-describedby="dlpContactHint">
           <legend>Contact details</legend>
-          <p id="dlpContactHint" class="gh-fieldset-hint dlp-default-note">Off by default: masking these measurably degrades answers, and they are usually data you meant to send. Switch either on if you would rather it never reached a provider.</p>
+          <p id="dlpContactHint" class="gh-fieldset-hint dlp-default-note">Masking these measurably degrades answers, and they are usually data you meant to send. Switch either on if you would rather it never reached a provider.</p>
 
           @for (c of dlpContactClasses; track c.key) {
             <div>

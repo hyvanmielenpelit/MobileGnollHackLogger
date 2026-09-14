@@ -576,18 +576,18 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
   margin: 12px 0 16px 0;
 }
 
-.dlp-how-heading {
-  margin: 0 0 6px 0;
-  font-weight: 600;
+/* The mechanism sits between the limit above it and the first fieldset below; the fieldset's own
+   margin-block supplies the gap underneath. */
+.dlp-how {
+  margin: 0;
 }
 
 .dlp-steps {
-  margin: 0 0 4px 0;
+  margin: 0;
   padding-left: 1.4em;
   display: grid;
   gap: 4px;
   line-height: 1.5;
-  color: #aaa;
 }
 
 /* A marker class the copy test queries; the spacing comes from .gh-fieldset-hint. */

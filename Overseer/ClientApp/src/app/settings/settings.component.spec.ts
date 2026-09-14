@@ -858,6 +858,19 @@ describe('SettingsComponent', () => {
       expect(limit!.textContent).toContain('A secret with no recognisable shape passes straight through');
     });
 
+    it('should present how masking works as its own callout with three steps', async () => {
+      createWith({ dlpFloor: noFloor });
+      showSection('masking');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const how = (fixture.nativeElement as HTMLElement).querySelector('.dlp-how');
+      expect(how).toBeTruthy();
+      expect(how!.querySelector('.alert-heading')!.textContent).toContain('How it works');
+      expect(how!.querySelectorAll('.dlp-steps li').length).toBe(3);
+      expect(how!.textContent).toContain('the provider only ever receives the placeholder');
+    });
+
     it('should say that masking applies to every chat, not only a confidential one', async () => {
       createWith({ dlpFloor: noFloor });
       showSection('masking');
