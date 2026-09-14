@@ -1053,7 +1053,7 @@ describe('SettingsComponent', () => {
     it('renders eight nav links with the expected labels and routerLinks', () => {
       const compiled = fixture.nativeElement as HTMLElement;
       const links = compiled.querySelectorAll('.settings-nav-link');
-      const expectedLabels = ['General', 'AI Permissions', 'AI Performance', 'Confidentiality Mode', 'Provided Models for Confidential Chats', 'Outbound Masking', 'Chat Data', 'Version'];
+      const expectedLabels = ['General', 'AI Permissions', 'AI Performance', 'Confidentiality Mode', 'Provided Models', 'Outbound Masking', 'Chat Data', 'Version'];
 
       expect(links.length).toBe(8);
       links.forEach((link, i) => {
@@ -1088,6 +1088,13 @@ describe('SettingsComponent', () => {
       emitSection('version');
       expect(component.activeSection).toBe('version');
       expect(component.contentSectionLabel).toBe('Version');
+    });
+
+    it('shows the full title in the content header for Provided Models', () => {
+      emitSection('provided-models');
+      expect(component.contentSectionLabel).toBe('Provided Models for Confidential Chats');
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('.settings-section-title')?.textContent).toBe('Provided Models for Confidential Chats');
     });
 
     it('renders no sparkle badge on the Release Notes button', () => {

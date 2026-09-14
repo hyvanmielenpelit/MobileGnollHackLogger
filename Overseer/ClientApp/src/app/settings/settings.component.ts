@@ -76,13 +76,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   appVersion = '';
 
-  /** The sections offered by the nav, in display order. */
-  readonly sections: ReadonlyArray<{ id: SettingsSection; label: string; hint: string }> = [
+  /** The sections offered by the nav, in display order. `label` is the nav text; `title`, when present, is the full heading the content column shows. */
+  readonly sections: ReadonlyArray<{ id: SettingsSection; label: string; hint: string; title?: string }> = [
     { id: 'general', label: 'General', hint: 'Display and hints' },
     { id: 'permissions', label: 'AI Permissions', hint: 'What the AI may reach' },
     { id: 'performance', label: 'AI Performance', hint: 'Tool limits and timeouts' },
     { id: 'confidentiality', label: 'Confidentiality Mode', hint: 'Default for new chats, and how confidential chats are kept' },
-    { id: 'provided-models', label: 'Provided Models for Confidential Chats', hint: 'Your decision on each system-provided model, asked once when the trust requirement needs it' },
+    { id: 'provided-models', label: 'Provided Models', title: 'Provided Models for Confidential Chats', hint: 'Your decision on each system-provided model, asked once when the trust requirement needs it' },
     { id: 'masking', label: 'Outbound Masking', hint: 'Secrets replaced before sending' },
     { id: 'chats', label: 'Chat Data', hint: 'Active, pinned and trashed chats' },
     { id: 'version', label: 'Version', hint: 'Overseer version and release notes' }
@@ -97,9 +97,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
     return this.activeSection ?? 'general';
   }
 
-  /** The label the content header shows for the section. */
+  /** The heading the content column shows: the section's full title, else its nav label. */
   get contentSectionLabel(): string {
-    return this.sections.find(s => s.id === this.contentSection)!.label;
+    const section = this.sections.find(s => s.id === this.contentSection)!;
+    return section.title ?? section.label;
   }
 
   @ViewChild('successToast') successToast!: ElementRef<HTMLElement>;
