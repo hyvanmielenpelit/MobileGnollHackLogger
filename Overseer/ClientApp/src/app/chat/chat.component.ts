@@ -2874,7 +2874,23 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   openPrivacyDialog() {
-    this.privacyDialog?.nativeElement?.showModal();
+    const dialog = this.privacyDialog?.nativeElement;
+    if (!dialog) return;
+    const opener = document.activeElement;
+    // Closing a modal hands focus back to the opener, and interestfor treats focus as interest,
+    // so the button's hint would pop up unasked. When the dialog was closed with the pointer
+    // there is no focus ring to preserve, so the restored focus is dropped instead; keyboard
+    // users keep both the focus and the hint.
+    dialog.addEventListener('close', () => {
+      if (!(opener instanceof HTMLElement) || document.activeElement !== opener) return;
+      if (opener.matches(':focus-visible')) return;
+      opener.blur();
+      const tip = document.getElementById('tip-privacy-mode');
+      if (tip?.matches(':popover-open')) {
+        try { tip.hidePopover(); } catch { /* already hidden */ }
+      }
+    }, { once: true });
+    dialog.showModal();
   }
 
   /* Backdrop click closes the dialog where closedby="any" is not supported. */
