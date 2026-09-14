@@ -39,11 +39,12 @@ public class SettingsService
         bool? disableTitleGeneration,
         bool? disablePromptCache,
         bool? immediatePurge,
-        string? modelGate)
+        string? modelGate,
+        string? defaultChatPrivacyMode)
     {
         if (persistence == null && retentionDays == null && disableToolEgress == null
             && disableTitleGeneration == null && disablePromptCache == null
-            && immediatePurge == null && modelGate == null)
+            && immediatePurge == null && modelGate == null && defaultChatPrivacyMode == null)
         {
             return;
         }
@@ -83,6 +84,13 @@ public class SettingsService
             && Enum.TryParse<Overseer.Services.Privacy.ConfidentialityGateMode>(modelGate, ignoreCase: true, out var parsedGate))
         {
             settings.ConfidentialModelGate = parsedGate.ToString();
+        }
+
+        /* Unrecognised names are ignored rather than stored, as for persistence above. */
+        if (defaultChatPrivacyMode != null
+            && Overseer.Services.Privacy.ChatPrivacyModes.Parse(defaultChatPrivacyMode) is { } parsedMode)
+        {
+            settings.DefaultChatPrivacyMode = parsedMode.ToString();
         }
 
         await _dbContext.SaveChangesAsync();

@@ -494,7 +494,7 @@ describe('SettingsComponent', () => {
       expect(component.confidentialPromiseWeakened).toBeTrue();
     });
 
-    it('should forward the seven confidentiality fields as the seventeenth saveSettings argument', fakeAsync(() => {
+    it('should forward the eight confidentiality fields as the seventeenth saveSettings argument', fakeAsync(() => {
       createWith({
         confidentialPersistence: 'Encrypted',
         confidentialRetentionDays: 14,
@@ -519,9 +519,28 @@ describe('SettingsComponent', () => {
         confidentialDisableTitleGeneration: false,
         confidentialDisablePromptCache: false,
         confidentialImmediatePurge: false,
-        confidentialModelGate: 'AskWhenUnclear'
+        confidentialModelGate: 'AskWhenUnclear',
+        defaultChatPrivacyMode: 'Standard'
       });
     }));
+
+    it('should populate the default privacy mode for new chats from getSettings', () => {
+      createWith({ confidentialFloor: null, defaultChatPrivacyMode: 'Incognito' });
+
+      expect(component.defaultChatPrivacyMode).toBe('Incognito');
+    });
+
+    it('should leave the default privacy mode at Standard when the server sends none', () => {
+      createWith({ confidentialFloor: null });
+
+      expect(component.defaultChatPrivacyMode).toBe('Standard');
+    });
+
+    it('should carry the default privacy mode in the confidentiality payload', () => {
+      createWith({ confidentialFloor: null, defaultChatPrivacyMode: 'Confidential' });
+
+      expect(component.confidentialPayload.defaultChatPrivacyMode).toBe('Confidential');
+    });
 
     it('should send the floor-clamped value rather than a weaker one the user still holds', fakeAsync(() => {
       createWith({ confidentialFloor: defaultFloor });
@@ -942,6 +961,25 @@ describe('SettingsComponent', () => {
       const compiled = fixture.nativeElement as HTMLElement;
       const current = compiled.querySelector('.settings-nav-link[aria-current="page"]');
       expect(current?.querySelector('.settings-nav-label')?.textContent).toBe('General');
+    });
+
+    it('groups the version and Release Notes button in a fieldset legended Version', () => {
+      emitSection(null);
+      const compiled = fixture.nativeElement as HTMLElement;
+      const fieldset = compiled.querySelector('fieldset.version-fieldset');
+
+      expect(fieldset).toBeTruthy();
+      expect(fieldset!.querySelector(':scope > legend')?.textContent?.trim()).toBe('Version');
+      expect(fieldset!.querySelector('.version-notes-btn')?.textContent?.trim()).toContain('Release Notes');
+    });
+
+    it('renders the default-for-new-chats select first in the Confidentiality section', () => {
+      emitSection('confidentiality');
+      const compiled = fixture.nativeElement as HTMLElement;
+      const select = compiled.querySelector('#defaultChatPrivacyMode');
+
+      expect(select).toBeTruthy();
+      expect(select!.querySelectorAll('option').length).toBe(3);
     });
 
     it('a paramMap emitting confidentiality sets activeSection and renders the Storage select', () => {

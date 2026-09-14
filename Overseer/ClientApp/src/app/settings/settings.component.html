@@ -119,21 +119,24 @@
         </select>
       </div>
 
-      <div class="margin-y-20 mt-5" style="display: flex; align-items: center; justify-content: space-between;">
-        @if (appVersion) {
-          <p style="margin: 0; font-weight: bold;">Overseer {{ appVersion }}</p>
-        } @else {
-          <p style="margin: 0; color: #aaa;">Loading...</p>
-        }
-        <button type="button" class="btn-gh" (click)="openChangelog()" style="display: flex; align-items: center; gap: 8px;">
-          Release Notes
-          @if (showChangelogBadge) {
-            <svg class="sparkle-icon" viewBox="0 0 24 24" fill="#FACC15" style="filter: drop-shadow(0 0 3px rgba(250,204,21,0.6)); width: 16px; height: 16px;">
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-            </svg>
+      <fieldset class="gh-fieldset version-fieldset margin-y-20">
+        <legend>Version</legend>
+        <div class="version-row">
+          @if (appVersion) {
+            <p class="version-label">Overseer {{ appVersion }}</p>
+          } @else {
+            <p class="version-label version-loading">Loading...</p>
           }
-        </button>
-      </div>
+          <button type="button" class="btn-gh version-notes-btn" (click)="openChangelog()">
+            Release Notes
+            @if (showChangelogBadge) {
+              <svg class="sparkle-icon" viewBox="0 0 24 24" fill="#FACC15" style="filter: drop-shadow(0 0 3px rgba(250,204,21,0.6)); width: 16px; height: 16px;">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+              </svg>
+            }
+          </button>
+        </div>
+      </fieldset>
 
       }
       @case ('permissions') {
@@ -341,6 +344,16 @@
           and anything already sent to a provider cannot be recalled. These settings apply to every chat you
           mark confidential from here on.
         </p>
+
+        <div class="margin-y-20 mt-15 form-group-stacked">
+          <label for="defaultChatPrivacyMode" class="block fw-bold">Default for New Chats</label>
+          <span id="defaultChatPrivacyModeHint" class="form-hint mt-5 d-block mb-10">The privacy mode a new chat starts in. You can still change it on the chat page before sending the first message. {{ selectedChatPrivacyModeHint }}</span>
+          <select id="defaultChatPrivacyMode" class="form-input form-select" [(ngModel)]="defaultChatPrivacyMode" (ngModelChange)="onSettingChange()" name="defaultChatPrivacyMode" aria-describedby="defaultChatPrivacyModeHint">
+            @for (o of chatPrivacyModeOptions; track o.value) {
+              <option [ngValue]="o.value">{{ o.label }}</option>
+            }
+          </select>
+        </div>
 
         @if (!confidentialNoticeAcknowledged) {
           <div class="alert alert-info confidential-notice">

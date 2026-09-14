@@ -1307,6 +1307,21 @@ attachments entirely when `ConversationsDataLocation` is unset. An ephemeral ses
 file, so gating on it would silently drop every incognito attachment on a deployment with no
 storage location configured.
 
+### 5.9 Default privacy mode for new chats
+
+`UserAiSettings.DefaultChatPrivacyMode` holds the mode a **new** chat starts in — `Standard`,
+`Confidential` or `Incognito`, with null meaning Standard. It is a client-side starting point
+and nothing more: `ChatComponent` reads it when a chat begins and pre-selects that mode in the
+composer's privacy selector, where the user can still change it before the first message is
+sent. The server stores the preference and **never** derives a session's mode from it — a
+create request carrying no privacy flags is a Standard chat, whatever the preference says.
+
+That division is what keeps the setting safe. The mode is still chosen per chat at creation, so
+the snapshot rule of § 5.2 is untouched: the policy a session runs under is still fixed from the
+flags on its create request and frozen there. And because the preference is read only when a new
+chat begins, changing it cannot reach a chat that already exists — it can neither strengthen nor
+weaken a promise already made.
+
 ## 6. What this does not solve
 
 Stated plainly, because a privacy framework that overstates itself is worse than none.

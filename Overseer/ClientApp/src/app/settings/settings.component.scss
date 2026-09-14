@@ -595,3 +595,28 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
     }
   }
 }
+
+/* The box and its legend come from `.gh-fieldset`; this holds the row layout and nothing else. */
+.version-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.version-label {
+  margin: 0;
+  font-weight: bold;
+}
+
+.version-loading {
+  font-weight: normal;
+  color: #aaa;
+}
+
+.version-notes-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

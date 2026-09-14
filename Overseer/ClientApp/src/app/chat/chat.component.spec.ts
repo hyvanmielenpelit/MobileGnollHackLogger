@@ -1588,6 +1588,72 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
         .toContain('Incognito');
     });
 
+    /** Serves a settings response carrying the user's default mode, as loadSettings reads it. */
+    function serveDefaultMode(defaultChatPrivacyMode?: string): void {
+      const settings = {
+        hasApiKey: true,
+        hasModel: true,
+        spoilerFreeMode: false,
+        defaultChatPrivacyMode
+      } as UserAiSettings;
+      const responder = of(new HttpResponse({ body: settings }));
+      const existing = settingsService.getSettingsResponse as jasmine.Spy;
+      if (existing.and) {
+        existing.and.returnValue(responder);
+      } else {
+        spyOn(settingsService, 'getSettingsResponse').and.returnValue(responder);
+        spyOn(settingsService, 'getUserModels').and.returnValue(of([] as UserAiModel[]));
+      }
+    }
+
+    it('should start a new chat in the mode the settings name as the default', () => {
+      serveDefaultMode('Incognito');
+
+      component.loadSettings(false);
+
+      expect(component.defaultNewChatPrivacyMode).toBe('incognito');
+      expect(component.newChatPrivacyMode).toBe('incognito');
+    });
+
+    it('should leave the default at Standard when the server names no mode', () => {
+      serveDefaultMode(undefined);
+
+      component.loadSettings(false);
+
+      expect(component.defaultNewChatPrivacyMode).toBe('standard');
+      expect(component.newChatPrivacyMode).toBe('standard');
+    });
+
+    it('should keep a mode the user picked when the settings are reloaded', () => {
+      serveDefaultMode('Incognito');
+      component.setNewChatPrivacyMode('standard');
+
+      component.loadSettings(false);
+
+      expect(component.newChatPrivacyMode).toBe('standard');
+    });
+
+    it('should return to the default when a new chat is started', () => {
+      serveDefaultMode('Incognito');
+      component.loadSettings(false);
+      component.setNewChatPrivacyMode('standard');
+      expect(component.newChatPrivacyMode).toBe('standard');
+
+      component.newSession();
+
+      expect(component.newChatPrivacyMode).toBe('incognito');
+    });
+
+    it('should carry the current mode as a class on the button', () => {
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('.privacy-mode-btn')!.classList).toContain('mode-standard');
+
+      component.setNewChatPrivacyMode('incognito');
+      fixture.detectChanges();
+      expect(compiled.querySelector('.privacy-mode-btn')!.classList).toContain('mode-incognito');
+    });
+
     it('should open the dialog modally', () => {
       fixture.detectChanges();
       component.openPrivacyDialog();

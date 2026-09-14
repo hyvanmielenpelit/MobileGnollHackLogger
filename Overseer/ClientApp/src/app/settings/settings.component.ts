@@ -8,6 +8,7 @@ import {
   ConfidentialModelGate,
   ConfidentialPersistence,
   ConfidentialUserSettings,
+  ChatPrivacyMode,
   DlpFloor,
   DlpSettings,
   CONFIDENTIAL_MODEL_GATE_OPTIONS,
@@ -76,7 +77,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     { id: 'general', label: 'General', hint: 'Display, hints and version' },
     { id: 'permissions', label: 'AI Permissions', hint: 'What the AI may reach' },
     { id: 'performance', label: 'AI Performance', hint: 'Tool limits and timeouts' },
-    { id: 'confidentiality', label: 'Confidentiality Mode', hint: 'How confidential chats are kept' },
+    { id: 'confidentiality', label: 'Confidentiality Mode', hint: 'Default for new chats, and how confidential chats are kept' },
     { id: 'masking', label: 'Outbound Masking', hint: 'Secrets replaced before sending' },
     { id: 'chats', label: 'Chat Data', hint: 'Active, pinned and trashed chats' }
   ];
@@ -152,6 +153,24 @@ export class SettingsComponent implements OnInit, OnDestroy {
   confidentialDisablePromptCache = true;
   confidentialImmediatePurge = true;
   confidentialModelGate: ConfidentialModelGate = 'UserDecides';
+
+  /* The mode a new chat starts in. A starting point the chat page applies when a chat begins;
+     the mode is still chosen per chat and this cannot reach one that already exists. */
+  defaultChatPrivacyMode: ChatPrivacyMode = 'Standard';
+
+  readonly chatPrivacyModeOptions: ReadonlyArray<{ value: ChatPrivacyMode; label: string; hint: string }> = [
+    { value: 'Standard', label: 'Standard', hint: 'Saved like any other chat.' },
+    {
+      value: 'Confidential',
+      label: 'Confidential',
+      hint: 'Encrypted where it is stored, internet tools off, no AI-made title.'
+    },
+    {
+      value: 'Incognito',
+      label: 'Incognito',
+      hint: 'Nothing is saved; the chat lives in memory until closed.'
+    }
+  ];
 
   confidentialFloor: ConfidentialFloor | null = null;
 
@@ -333,6 +352,12 @@ export class SettingsComponent implements OnInit, OnDestroy {
     return match ? match.hint : '';
   }
 
+  /** The helper line for the mode a new chat would start in. */
+  get selectedChatPrivacyModeHint(): string {
+    const match = this.chatPrivacyModeOptions.find(o => o.value === this.defaultChatPrivacyMode);
+    return match ? match.hint : '';
+  }
+
   /** The helper line for whichever model gate currently applies. */
   get selectedModelGateHint(): string {
     const match = CONFIDENTIAL_MODEL_GATE_OPTIONS.find(o => o.value === this.effectiveConfidentialModelGate);
@@ -344,7 +369,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     return this.effectiveConfidentialPersistence === 'Plaintext' || !this.effectiveConfidentialDisableToolEgress;
   }
 
-  /** The seven confidentiality fields in the shape `PUT /api/settings` accepts. */
+  /** The eight confidentiality fields in the shape `PUT /api/settings` accepts. */
   get confidentialPayload(): ConfidentialUserSettings {
     return {
       confidentialPersistence: this.effectiveConfidentialPersistence,
@@ -353,7 +378,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
       confidentialDisableTitleGeneration: this.effectiveConfidentialDisableTitleGeneration,
       confidentialDisablePromptCache: this.effectiveConfidentialDisablePromptCache,
       confidentialImmediatePurge: this.effectiveConfidentialImmediatePurge,
-      confidentialModelGate: this.effectiveConfidentialModelGate
+      confidentialModelGate: this.effectiveConfidentialModelGate,
+      defaultChatPrivacyMode: this.defaultChatPrivacyMode
     };
   }
 
@@ -632,6 +658,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
           }
           if (s.confidentialFirstUseNoticeAcknowledged !== undefined) {
             this.confidentialNoticeAcknowledged = s.confidentialFirstUseNoticeAcknowledged;
+          }
+          if (s.defaultChatPrivacyMode !== undefined) {
+            this.defaultChatPrivacyMode = s.defaultChatPrivacyMode;
           }
           if (s.dlpFloor !== undefined) {
             this.dlpFloor = s.dlpFloor ?? null;

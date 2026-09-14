@@ -896,6 +896,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   newChatConfidential = false;
   newChatEphemeral = false;
 
+  /** The mode a new chat starts in, from the user's settings. */
+  defaultNewChatPrivacyMode: 'standard' | 'confidential' | 'incognito' = 'standard';
+
+  /* True once the user has picked a mode for the chat about to be created, so a settings
+     reload -- returning from the settings page, for instance -- cannot overwrite it. */
+  private newChatPrivacyChosen = false;
+
   /** Whether the "what incognito does and does not do" detail is expanded in the banner. */
   isEphemeralDetailOpen = false;
 
@@ -1295,6 +1302,17 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.showContextWindowUsage = settings.showContextWindowUsage ?? true;
           this.showChatCost = settings.showChatCost ?? true;
           this.parallelBadgeEnabled = settings.parallelBadgeEnabled ?? true;
+
+          const storedDefaultMode = (settings.defaultChatPrivacyMode ?? '').toLowerCase();
+          this.defaultNewChatPrivacyMode =
+            storedDefaultMode === 'confidential' || storedDefaultMode === 'incognito'
+              ? storedDefaultMode
+              : 'standard';
+          /* Only while no chat is open, and only until the user picks a mode themselves: an
+             existing chat's mode was fixed at creation and cannot be changed. */
+          if (this.isNewChat && !this.newChatPrivacyChosen) {
+            this.applyPrivacyMode(this.defaultNewChatPrivacyMode);
+          }
           this.debugService.log(`[Overseer] showThoughtsAndTools loaded: ${this.showThoughtsAndTools} (type: ${typeof this.showThoughtsAndTools})`);
 
           const tModels0 = performance.now();
@@ -2278,6 +2296,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.isEphemeralSession = false;
     this.isEphemeralDetailOpen = false;
     setSentryConfidentialSession(false);
+    /* Before loadDraft() below, so an incognito default suppresses the on-disk draft exactly
+       as an explicit incognito choice does. */
+    this.newChatPrivacyChosen = false;
+    this.applyPrivacyMode(this.defaultNewChatPrivacyMode);
     this.sessionTotalCost = null;
     this.clientBridge.notifySessionChanged(null);
     this.lastSeenSeqNo = -1;
@@ -2873,6 +2895,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   setNewChatPrivacyMode(mode: 'standard' | 'confidential' | 'incognito') {
+    this.newChatPrivacyChosen = true;
+    this.applyPrivacyMode(mode);
+  }
+
+  /** Sets the mode without recording it as the user's own choice. */
+  private applyPrivacyMode(mode: 'standard' | 'confidential' | 'incognito') {
     if (mode === 'incognito') { this.onNewChatEphemeralChange(true); return; }
     this.onNewChatEphemeralChange(false);
     this.onNewChatConfidentialChange(mode === 'confidential');
@@ -2978,10 +3006,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     const target = this.pendingEphemeralNavigation;
     this.pendingEphemeralNavigation = null;
 
-    // Both toggles return to off: a privacy mode is chosen per chat, never inherited.
-    this.newChatEphemeral = false;
-    this.newChatConfidential = false;
     this.currentInput = '';
+    // A privacy mode is chosen per chat, never inherited: newSession() returns to the default.
     this.newSession();
     this.setEphemeralNotice('Incognito chat closed. Its content was destroyed and cannot be recovered.');
     this.cdr.detectChanges();

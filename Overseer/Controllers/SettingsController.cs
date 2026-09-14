@@ -178,6 +178,9 @@ public class SettingsController : ControllerBase
             confidentialModelGate = settings?.ConfidentialModelGate
                 ?? Overseer.Services.Privacy.ConfidentialityGateMode.UserDecides.ToString(),
             confidentialFirstUseNoticeAcknowledged = settings?.ConfidentialFirstUseNoticeAcknowledged ?? false,
+            defaultChatPrivacyMode = Overseer.Services.Privacy.ChatPrivacyModes
+                .Parse(settings?.DefaultChatPrivacyMode)?.ToString()
+                ?? Overseer.Services.Privacy.ChatPrivacyMode.Standard.ToString(),
             confidentialFloor = new
             {
                 persistence = _confidentialPolicyResolver.Floor.Persistence.ToString(),
@@ -313,8 +316,9 @@ public class SettingsController : ControllerBase
             request.ConfidentialDisableTitleGeneration,
             request.ConfidentialDisablePromptCache,
             request.ConfidentialImmediatePurge,
-            request.ConfidentialModelGate);
-        
+            request.ConfidentialModelGate,
+            request.DefaultChatPrivacyMode);
+
         return Ok();
     }
 
@@ -1157,6 +1161,9 @@ public class UpdateSettingsRequest
     public bool? ConfidentialDisablePromptCache { get; set; }
     public bool? ConfidentialImmediatePurge { get; set; }
     public string? ConfidentialModelGate { get; set; }
+
+    /// <summary>"Standard", "Confidential" or "Incognito"; an unrecognised name is ignored.</summary>
+    public string? DefaultChatPrivacyMode { get; set; }
 }
 
 public class SetApiKeyParallelModeRequest

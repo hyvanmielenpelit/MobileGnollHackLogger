@@ -16,6 +16,9 @@ export type ConfidentialPersistence = 'Encrypted' | 'Ephemeral' | 'Plaintext';
 /** How strictly the funding key's retention posture must be established before a confidential turn runs. */
 export type ConfidentialModelGate = 'UserDecides' | 'AskWhenUnclear' | 'VerifiedPostureOnly';
 
+/** The privacy mode a new chat starts in. The server spells the names exactly this way. */
+export type ChatPrivacyMode = 'Standard' | 'Confidential' | 'Incognito';
+
 /** The administrator's floor. Read-only: the effective value of each setting is the stricter of this and the user's. */
 export interface ConfidentialFloor {
   persistence: ConfidentialPersistence;
@@ -56,7 +59,7 @@ export interface DlpFloor {
   phoneNumbers: boolean;
 }
 
-/** The seven user-owned confidentiality controls, as `PUT /api/settings` accepts them. */
+/** The eight user-owned confidentiality controls, as `PUT /api/settings` accepts them. */
 export interface ConfidentialUserSettings {
   confidentialPersistence: ConfidentialPersistence;
   confidentialRetentionDays: number;
@@ -65,6 +68,7 @@ export interface ConfidentialUserSettings {
   confidentialDisablePromptCache: boolean;
   confidentialImmediatePurge: boolean;
   confidentialModelGate: ConfidentialModelGate;
+  defaultChatPrivacyMode: ChatPrivacyMode;
 }
 
 export interface UserAiSettings {
@@ -107,6 +111,7 @@ export interface UserAiSettings {
   confidentialModelGate?: ConfidentialModelGate;
   confidentialFloor?: ConfidentialFloor | null;
   confidentialFirstUseNoticeAcknowledged?: boolean;
+  defaultChatPrivacyMode?: ChatPrivacyMode;
 
   /* The RESOLVED masking policy, not the raw preferences: a class the administrator forces on
      reads back as on, so a switch shows what actually happens rather than what the user last

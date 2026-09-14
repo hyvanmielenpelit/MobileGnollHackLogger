@@ -1569,12 +1569,27 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   color: #ffcc80;
 }
 
+/* Each privacy mode carries one fixed colour across the composer button, the dialog's option
+   cards and the open-chat banner badge. Confidential reuses the green of the "promise holds"
+   badge, and Incognito is the dark chip Chrome's own incognito windows use. Colour never
+   carries the meaning alone: the label and the glyph still name the mode, and hover and focus
+   stay gold as on every other control. */
+$privacy-standard-ink: #9cc3e6;
+$privacy-standard-border: rgba(120, 170, 220, 0.5);
+$privacy-standard-fill: rgba(120, 170, 220, 0.10);
+$privacy-confidential-ink: #7ddb95;
+$privacy-confidential-border: rgba(40, 167, 69, 0.55);
+$privacy-confidential-fill: rgba(40, 167, 69, 0.12);
+$privacy-incognito-ink: #c4b5e8;
+$privacy-incognito-border: rgba(160, 140, 220, 0.55);
+$privacy-incognito-fill: rgba(0, 0, 0, 0.72);
+
 /* Incognito is not a point on the green-to-red privacy scale: it is a different kind of
    chat, so it is drawn as an unlit chip rather than as a stronger green. */
 .badge-ephemeral {
-  background: rgba(0, 0, 0, 0.72);
-  border: 1px solid var(--primary-color, #d4af37);
-  color: var(--primary-color, #d4af37);
+  background: $privacy-incognito-fill;
+  border: 1px solid $privacy-incognito-border;
+  color: $privacy-incognito-ink;
   font-weight: 600;
 }
 
@@ -1628,17 +1643,32 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   font-family: inherit;
   cursor: pointer;
 
-  &:hover {
-    border-color: var(--primary-color, #d4af37);
-    color: var(--primary-color, #d4af37);
-  }
-
   &:focus-visible {
     outline: 2px solid var(--primary-color, #d4af37);
     outline-offset: 2px;
   }
 
-  &.is-set {
+  &.mode-standard {
+    color: $privacy-standard-ink;
+    border-color: $privacy-standard-border;
+    background: $privacy-standard-fill;
+  }
+
+  &.mode-confidential {
+    color: $privacy-confidential-ink;
+    border-color: $privacy-confidential-border;
+    background: $privacy-confidential-fill;
+  }
+
+  &.mode-incognito {
+    color: $privacy-incognito-ink;
+    border-color: $privacy-incognito-border;
+    background: $privacy-incognito-fill;
+  }
+
+  /* After the modifiers, so the gold of hover and focus wins over the mode's own colour. */
+  &:hover,
+  &:focus-visible {
     border-color: var(--primary-color, #d4af37);
     color: var(--primary-color, #d4af37);
   }
@@ -1696,10 +1726,37 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   }
 }
 
+/* The selected card keeps its gold outline; the mode colour marks which mode a card is. */
+.privacy-option {
+  &.mode-standard {
+    border-inline-start: 3px solid $privacy-standard-border;
+
+    .privacy-option-title { color: $privacy-standard-ink; }
+  }
+
+  &.mode-confidential {
+    border-inline-start: 3px solid $privacy-confidential-border;
+
+    .privacy-option-title { color: $privacy-confidential-ink; }
+  }
+
+  &.mode-incognito {
+    border-inline-start: 3px solid $privacy-incognito-border;
+
+    .privacy-option-title { color: $privacy-incognito-ink; }
+  }
+}
+
 .privacy-option-title {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
   color: #f0f0f0;
+}
+
+.privacy-option-icon {
+  flex-shrink: 0;
 }
 
 .privacy-option-note {

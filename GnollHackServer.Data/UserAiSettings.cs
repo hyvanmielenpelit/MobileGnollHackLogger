@@ -80,6 +80,14 @@ public class UserAiSettings
     /// <summary>Whether the user has seen the notice naming the supported data ceiling.</summary>
     public bool ConfidentialFirstUseNoticeAcknowledged { get; set; } = false;
 
+    /// <summary>
+    /// The privacy mode a new chat starts in: "Standard", "Confidential" or "Incognito".
+    /// Null = Standard. A client-side starting point only; the server never infers a
+    /// session's mode from it.
+    /// </summary>
+    [MaxLength(32)]
+    public string? DefaultChatPrivacyMode { get; set; }
+
     /* Outbound DLP masking, one switch per class of secret. Null means the user has expressed
        no preference and the built-in default applies; the administrator's floor in
        PrivacySettings:DlpFloor can force a class ON but never off, so a value here can add
