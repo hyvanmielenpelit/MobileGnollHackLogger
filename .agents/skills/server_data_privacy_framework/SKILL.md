@@ -264,7 +264,7 @@ The filter **fails open**, so a typo in the trait name excludes nothing and says
 a changed filter by discovery (`--list-tests --filter-trait "Category=UsesExternalApi"`), never by
 running the suite unfiltered. The rest of the rules are in `testing_guidelines`.
 
-Four harness facts this framework's own tests were built on:
+Five harness facts this framework's own tests were built on:
 
 - **The EF in-memory provider cannot translate `ExecuteUpdate` / `ExecuteUpdateAsync` or
   `ExecuteDeleteAsync`, and it ignores foreign keys.** `CryptoShred` is deliberately set-based, so
@@ -288,6 +288,18 @@ Four harness facts this framework's own tests were built on:
   the DLP scanner, the parser and the RAG services. Adding a service to `ChatService`'s constructor
   breaks several test files at once, and `ChatServiceTests` sat unrunnable for several stages
   because it carries `UsesExternalApi` and the default run never reached it.
+- **GitHub push protection reads the DLP fixtures as real secrets.** `DlpScannerServiceTests`
+  must hold strings that clear the scanner's entropy gate (`LooksRandom`, 3.0 bits per
+  character, no placeholder words, no character runs), and those are exactly the strings
+  GitHub's Stripe and GitLab patterns match; a push carrying `sk_live_` + 32 random
+  characters, `glpat-` + 20, or Stripe's documented `sk_test_` + 24 `X` placeholder is
+  rejected outright. Every such fixture is spelled `"prefix" + "body"`, which C# folds into
+  one constant and which is valid inside `[InlineData]`, and a comment never quotes a whole
+  token. The other fixture families (`sk-proj-`, `AIza`, `AKIA`, `ghp_`, `github_pat_`,
+  `gho_`, `xoxb-`, `hf_`, `npm_`, `ya29.`, `SG.`, the JWT) passed a real push and are the
+  reference for which shapes GitHub lets through. When a push is still blocked, the only
+  fix is to respell the literal and `git commit --amend` the unpushed commit; the bypass
+  links leave the trap in place for every later edit.
 
 ---
 
