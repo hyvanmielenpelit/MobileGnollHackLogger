@@ -85,10 +85,30 @@
   gap: 10px;
 }
 
-.parallel-mode-section {
+.advanced-settings {
   margin-top: 15px;
-  padding-top: 15px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+
+  > summary {
+    flex-wrap: wrap;
+  }
+}
+
+.advanced-summary-status {
+  margin-left: auto;
+  font-size: 0.8rem;
+  font-weight: normal;
+  color: var(--text-muted, #888);
+}
+
+/* A size override only; the round frame and hover glow come from the global .btn-info. */
+.btn-info-small {
+  width: 24px;
+  height: 24px;
+  font-size: 0.9em;
+}
+
+.parallel-mode-section {
+  margin-top: 12px;
 }
 
 .parallel-mode-row {
@@ -120,15 +140,6 @@
 
 .posture-section {
   margin-top: 15px;
-  padding-top: 15px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.posture-heading-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
 }
 
 .posture-heading {
@@ -157,6 +168,7 @@
   margin-top: 18px;
   padding-top: 15px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex-wrap: wrap;
 }
 
 .posture-label {
@@ -190,6 +202,148 @@
 .posture-stamp {
   font-size: 0.8rem;
   color: var(--text-muted, #888);
+}
+
+.posture-saved {
+  font-size: 0.8rem;
+  color: var(--color-success, #6c6);
+}
+
+/* --- About the advanced settings dialog ---------------------------------------------
+   A column so the title and the footer stay put while only the prose scrolls; without the
+   height cap the dialog outgrows a laptop viewport and the Close button leaves the screen. */
+.advanced-info-dialog {
+  display: flex;
+  flex-direction: column;
+  max-block-size: calc(100dvh - 64px);
+}
+
+.advanced-info-body {
+  /* min-block-size overrides the auto minimum a flex item gets, without which the body
+     refuses to shrink and the dialog overflows instead of scrolling. */
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+  /* The gutter keeps the scrollbar off the text; the negative margin keeps the text aligned
+     with the title above it. */
+  padding-inline-end: 6px;
+  margin-inline-end: -6px;
+  container-type: inline-size;
+
+  /* :where() keeps this at element-level weight, so .info-lead below simply overrides it. */
+  :where(p) {
+    margin: 10px 0 0 0;
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: #d8d8d8;
+    text-wrap: pretty;
+  }
+}
+
+.info-section + .info-section {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border-glass);
+}
+
+.info-section-heading {
+  margin: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: "Cinzel", serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--title-color);
+}
+
+/* The one line that says whether this section is worth reading at all. */
+.info-lead {
+  font-size: 0.95rem;
+  color: var(--font-color, #fff);
+}
+
+.info-subheading {
+  margin: 22px 0 0 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--primary-color);
+}
+
+.info-callout {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-glass);
+  border-inline-start: 3px solid var(--color-warning);
+  border-radius: 6px;
+  background: rgba(255, 193, 7, 0.06);
+
+  p:first-child {
+    margin-top: 0;
+  }
+}
+
+.info-list {
+  margin: 12px 0 0 0;
+  display: grid;
+  gap: 12px;
+}
+
+.info-item {
+  display: grid;
+  /* Capped rather than max-content: a term carrying a badge would otherwise widen the column
+     until the description beside it has nowhere to go. */
+  grid-template-columns: minmax(7.5rem, 13rem) 1fr;
+  gap: 2px 18px;
+  align-items: baseline;
+
+  dt {
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--font-color, #fff);
+  }
+
+  dd {
+    margin: 0;
+    font-size: 0.85rem;
+    line-height: 1.55;
+    color: var(--text-muted, #a6a6a6);
+    text-wrap: pretty;
+  }
+}
+
+/* Narrow enough that a term and its description no longer share a line honestly. */
+@container (max-width: 480px) {
+  .info-item {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+}
+
+.info-tag {
+  padding: 1px 7px;
+  border: 1px solid var(--border-glass);
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--primary-color);
+}
+
+/* The ladder shows the badge the user will actually meet in chat, so it borrows the global
+   posture-badge colours rather than restating them. */
+.info-item .posture-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .posture-error {

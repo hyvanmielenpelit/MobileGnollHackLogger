@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, ChangeDetectionStrategy, ViewChild, ElementRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, ChangeDetectionStrategy, ViewChild, ElementRef } from '@angular/core';
 
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -12,6 +12,12 @@ import {
 /** The three states of the per-key confidential-trust decision, as the `<select>` carries them. */
 export type ConfidentialTrustChoice = 'yes' | 'no' | 'undecided';
 
+/** The postures a personal key may declare. The endpoint-dependent two are not among them. */
+const USER_KEY_POSTURES = CONFIDENTIALITY_POSTURES.filter(p => p.userKeySelectable);
+
+/** How long the posture "Saved" confirmation stays on screen, in milliseconds. */
+const POSTURE_SAVED_MS = 3000;
+
 @Component({
     selector: 'app-api-keys',
     imports: [FormsModule, RouterModule],
@@ -19,16 +25,19 @@ export type ConfidentialTrustChoice = 'yes' | 'no' | 'undecided';
     changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './api-keys.component.scss'
 })
-export class ApiKeysComponent implements OnInit {
+export class ApiKeysComponent implements OnInit, OnDestroy {
   settingsService = inject(SettingsService);
   @ViewChild('deleteConfirmDialog') deleteConfirmDialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild('advancedInfoDialog') advancedInfoDialog?: ElementRef<HTMLDialogElement>;
 
   providers = ['Anthropic', 'Google', 'OpenAI'];
   keyStatuses: Record<string, boolean> = {};
   keyParallelModes: Record<string, number> = {};
   newKeys: Record<string, string> = {};
 
-  readonly postures = CONFIDENTIALITY_POSTURES;
+  // Rebuilt only when a saved posture changes, so the <select> is not handed a fresh array on
+  // every change-detection pass, which would re-render its options and drop the selection.
+  private postureOptionLists: Record<string, typeof CONFIDENTIALITY_POSTURES> = {};
 
   // Editable posture state, plus the last saved values it is compared against.
   keyPostures: Record<string, string> = {};
@@ -49,8 +58,18 @@ export class ApiKeysComponent implements OnInit {
   trustErrors: Record<string, string> = {};
   deletingProvider: string | null = null;
 
+  /** The provider whose posture save is currently being confirmed, or '' when none is. */
+  postureSavedProvider = '';
+  private postureSavedTimer?: ReturnType<typeof setTimeout>;
+
   ngOnInit() {
     this.loadStatuses();
+  }
+
+  ngOnDestroy() {
+    if (this.postureSavedTimer) {
+      clearTimeout(this.postureSavedTimer);
+    }
   }
 
   loadStatuses() {
@@ -89,11 +108,61 @@ export class ApiKeysComponent implements OnInit {
       ? 'yes'
       : status.userTrustsForConfidential === false ? 'no' : 'undecided';
     this.keyTrustDecidedUtc[status.provider] = status.confidentialTrustDecidedUtc ?? null;
+    this.refreshPostureOptions(status.provider);
+  }
+
+  /**
+   * The posture choices for one key: the four a personal key can describe, plus the saved value
+   * when a legacy row holds one of the other two, so it still displays and can be changed away
+   * from.
+   */
+  private refreshPostureOptions(provider: string) {
+    const saved = this.savedPostures[provider] || 'Unknown';
+    const legacy = CONFIDENTIALITY_POSTURES.find(p => p.value === saved && !p.userKeySelectable);
+    this.postureOptionLists[provider] = legacy ? [...USER_KEY_POSTURES, legacy] : USER_KEY_POSTURES;
+  }
+
+  postureOptions(provider: string): typeof CONFIDENTIALITY_POSTURES {
+    return this.postureOptionLists[provider] ?? USER_KEY_POSTURES;
   }
 
   /** The posture as last saved, so the badge names a stored claim rather than a pending edit. */
   savedPostureLabel(provider: string): string {
     return confidentialityPostureLabel(this.savedPostures[provider] || 'Unknown');
+  }
+
+  /** The badge text beside the posture select. An undeclared posture is an absence, not a claim. */
+  savedPostureBadge(provider: string): string {
+    const saved = this.savedPostures[provider] || 'Unknown';
+    return saved === 'Unknown' ? 'Not recorded' : 'Self-declared: ' + confidentialityPostureLabel(saved);
+  }
+
+  /**
+   * The parts of this card's advanced settings that are not at their default, for the collapsed
+   * summary line. Empty when everything is default.
+   */
+  advancedSummary(provider: string): string {
+    const parts: string[] = [];
+
+    const mode = this.keyParallelModes[provider] ?? 2;
+    if (mode === 1) {
+      parts.push('On request');
+    } else if (mode === 0) {
+      parts.push('Sequential only');
+    }
+
+    const trust = this.keyTrusts[provider] ?? 'undecided';
+    if (trust === 'no') {
+      parts.push('Not for confidential chats');
+    } else if (trust === 'yes') {
+      parts.push('Allowed for confidential chats');
+    }
+
+    if ((this.savedPostures[provider] || 'Unknown') !== 'Unknown') {
+      parts.push(this.savedPostureLabel(provider));
+    }
+
+    return parts.join(' · ');
   }
 
   isPostureDirty(provider: string): boolean {
@@ -115,6 +184,8 @@ export class ApiKeysComponent implements OnInit {
         this.keyPostureNotes[provider] = note;
         // The server clears the declaration stamp along with the posture itself.
         this.keyPostureDeclaredUtc[provider] = posture === 'Unknown' ? null : new Date().toISOString();
+        this.refreshPostureOptions(provider);
+        this.flagPostureSaved(provider);
         this.savingPostureProvider = '';
       },
       error: (err) => {
@@ -122,6 +193,26 @@ export class ApiKeysComponent implements OnInit {
         this.savingPostureProvider = '';
       }
     });
+  }
+
+  /** Shows the transient "Saved" confirmation for one provider, replacing any pending one. */
+  private flagPostureSaved(provider: string) {
+    if (this.postureSavedTimer) {
+      clearTimeout(this.postureSavedTimer);
+    }
+    this.postureSavedProvider = provider;
+    this.postureSavedTimer = setTimeout(() => {
+      this.postureSavedProvider = '';
+      this.postureSavedTimer = undefined;
+    }, POSTURE_SAVED_MS);
+  }
+
+  openAdvancedInfo() {
+    this.advancedInfoDialog?.nativeElement.showModal();
+  }
+
+  closeAdvancedInfo() {
+    this.advancedInfoDialog?.nativeElement.close();
   }
 
   onTrustChange(provider: string, choice: ConfidentialTrustChoice) {

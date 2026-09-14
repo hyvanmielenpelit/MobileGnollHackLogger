@@ -207,14 +207,19 @@ export interface UserAiModel {
 export type ConfidentialityPosture =
   'Unknown' | 'Standard' | 'NoTraining' | 'ZeroRetention' | 'PrivateCloud' | 'SelfHosted';
 
-/** The selectable postures in ladder order, with the text the UI shows for each. */
-export const CONFIDENTIALITY_POSTURES: ReadonlyArray<{ value: ConfidentialityPosture; label: string }> = [
-  { value: 'Unknown', label: 'Not established' },
-  { value: 'Standard', label: 'Standard provider terms' },
-  { value: 'NoTraining', label: 'No training on content' },
-  { value: 'ZeroRetention', label: 'Zero data retention' },
-  { value: 'PrivateCloud', label: 'Private cloud deployment' },
-  { value: 'SelfHosted', label: 'Self-hosted inference' }
+/**
+ * The selectable postures in ladder order, with the text the UI shows for each.
+ * `userKeySelectable` is false for the two postures a personal key cannot describe: a user's own
+ * key always reaches the provider's official endpoint, so it is never a private cloud or a
+ * self-hosted model server.
+ */
+export const CONFIDENTIALITY_POSTURES: ReadonlyArray<{ value: ConfidentialityPosture; label: string; userKeySelectable: boolean }> = [
+  { value: 'Unknown', label: 'Not established', userKeySelectable: true },
+  { value: 'Standard', label: 'Standard provider terms', userKeySelectable: true },
+  { value: 'NoTraining', label: 'No training on content', userKeySelectable: true },
+  { value: 'ZeroRetention', label: 'Zero data retention', userKeySelectable: true },
+  { value: 'PrivateCloud', label: 'Private cloud deployment', userKeySelectable: false },
+  { value: 'SelfHosted', label: 'Self-hosted inference', userKeySelectable: false }
 ];
 
 /** Ladder position. A legacy null row is Unknown, the weakest rung. */

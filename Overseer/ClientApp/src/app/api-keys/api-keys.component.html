@@ -53,101 +53,122 @@
                 </button>
               </div>
             }
-            <div class="parallel-mode-section">
-              <div class="parallel-mode-row">
-                <label [for]="'parallel-' + provider" class="parallel-mode-label">Parallel execution</label>
-                <select [id]="'parallel-' + provider" class="gh-input parallel-select"
-                        [ngModel]="keyParallelModes[provider] ?? 2"
-                        (ngModelChange)="onParallelModeChange(provider, $event)"
-                        [disabled]="savingParallelProvider === provider">
-                  <option [ngValue]="2">Allowed</option>
-                  <option [ngValue]="1">On request</option>
-                  <option [ngValue]="0">Sequential only</option>
-                </select>
-              </div>
-              <p class="parallel-mode-hint">
-                Controls whether Overseer may run tool calls and subagents at the same time on this key. Choose 'Sequential only' for free or low-tier keys that hit rate limits. 'On request' is a request to the model, not a hard limit.
-              </p>
-            </div>
-            @if (keyStatuses[provider]) {
-              <section class="posture-section" [attr.aria-labelledby]="'posture-heading-' + provider">
-                <div class="posture-heading-row">
-                  <h4 class="posture-heading" [id]="'posture-heading-' + provider">Provider trust</h4>
-                  <span class="posture-badge posture-badge-declared">Self-declared: {{ savedPostureLabel(provider) }}</span>
-                </div>
-                <p class="posture-hint">
-                  Record here what you have agreed with your own {{ provider }} account. Only you can see that
-                  agreement, so Overseer cannot verify what you enter: a self-declared posture is shown as
-                  unverified everywhere it appears and never produces a green privacy badge in chat.
-                </p>
-
-                <div class="posture-row">
-                  <label [for]="'posture-' + provider" class="posture-label">Confidentiality posture</label>
-                  <select [id]="'posture-' + provider" class="gh-input posture-select"
-                          [(ngModel)]="keyPostures[provider]"
-                          [disabled]="savingPostureProvider === provider">
-                    @for (p of postures; track p.value) {
-                      <option [value]="p.value">{{ p.label }}</option>
-                    }
-                  </select>
-                </div>
-
-                <div class="posture-row">
-                  <label [for]="'posture-note-' + provider" class="posture-label">Note (optional)</label>
-                  <input type="text" [id]="'posture-note-' + provider" class="gh-input posture-note" maxlength="1024"
-                         [(ngModel)]="keyPostureNotes[provider]"
-                         [disabled]="savingPostureProvider === provider"
-                         placeholder="e.g. Team plan, no training per DPA">
-                </div>
-
-                <div class="posture-actions">
-                  <button type="button" class="btn-gh"
-                          (click)="savePosture(provider)"
-                          [disabled]="!isPostureDirty(provider) || savingPostureProvider === provider">
-                    @if (savingPostureProvider === provider) {
-                      <span class="sidebar-spinner small-spinner"></span>
-                    }
-                    Save Posture
-                  </button>
-                  @if (formatStamp(keyPostureDeclaredUtc[provider])) {
-                    <span class="posture-stamp">Declared {{ formatStamp(keyPostureDeclaredUtc[provider]) }}</span>
-                  }
-                </div>
-                @if (postureErrors[provider]) {
-                  <p class="posture-error" role="alert">{{ postureErrors[provider] }}</p>
+            <details class="gh-disclosure advanced-settings">
+              <summary>
+                <span>Advanced settings</span>
+                @if (advancedSummary(provider)) {
+                  <span class="advanced-summary-status">{{ advancedSummary(provider) }}</span>
                 }
-
-                <div class="posture-row posture-row-divided">
-                  <label [for]="'trust-' + provider" class="posture-label">Use this key for confidential chats</label>
-                  <select [id]="'trust-' + provider" class="gh-input posture-select"
-                          [ngModel]="keyTrusts[provider] ?? 'undecided'"
-                          (ngModelChange)="onTrustChange(provider, $event)"
-                          [disabled]="savingTrustProvider === provider">
-                    <option value="yes">Yes &mdash; allow this key</option>
-                    <option value="no">No &mdash; refuse this key</option>
-                    <option value="undecided">Not decided yet</option>
-                  </select>
-                </div>
-                <p class="posture-hint">
-                  <strong>No</strong> is a decision: Overseer keeps this key out of chats you mark confidential.
-                  <strong>Not decided yet</strong> is not a refusal &mdash; it only records that the question is
-                  still unanswered.
-                </p>
-                @if (savingTrustProvider === provider || (keyTrusts[provider] !== 'undecided' && formatStamp(keyTrustDecidedUtc[provider]))) {
-                  <div class="posture-actions">
-                    @if (savingTrustProvider === provider) {
-                      <span class="sidebar-spinner small-spinner"></span>
-                    }
-                    @if (keyTrusts[provider] !== 'undecided' && formatStamp(keyTrustDecidedUtc[provider])) {
-                      <span class="posture-stamp">Decided {{ formatStamp(keyTrustDecidedUtc[provider]) }}</span>
-                    }
+                <button type="button" class="btn-info btn-info-small"
+                        (click)="openAdvancedInfo(); $event.preventDefault()"
+                        aria-label="About the advanced settings">
+                  <span class="info-icon">i</span>
+                </button>
+              </summary>
+              <div class="gh-disclosure-body">
+                <div class="parallel-mode-section">
+                  <div class="parallel-mode-row">
+                    <label [for]="'parallel-' + provider" class="parallel-mode-label">Parallel execution</label>
+                    <select [id]="'parallel-' + provider" class="gh-input parallel-select"
+                            [ngModel]="keyParallelModes[provider] ?? 2"
+                            (ngModelChange)="onParallelModeChange(provider, $event)"
+                            [disabled]="savingParallelProvider === provider">
+                      <option [ngValue]="2">Allowed (default)</option>
+                      <option [ngValue]="1">On request</option>
+                      <option [ngValue]="0">Sequential only</option>
+                    </select>
                   </div>
+                  <p class="parallel-mode-hint">
+                    Leave this on Allowed. Choose Sequential only for a free or low-tier key that keeps hitting
+                    rate limits; chats get slower but stop failing. On request asks the model to stay sequential
+                    unless you ask for parallel lookups. It is a request, not a limit.
+                  </p>
+                </div>
+                @if (keyStatuses[provider]) {
+                  <section class="posture-section" [attr.aria-labelledby]="'posture-heading-' + provider">
+                    <h4 class="posture-heading" [id]="'posture-heading-' + provider">Confidential chats</h4>
+                    <p class="posture-hint">
+                      These settings only matter in chats you mark confidential. If you never use Confidentiality
+                      Mode, leave them as they are.
+                    </p>
+
+                    <div class="posture-row">
+                      <label [for]="'trust-' + provider" class="posture-label">Use this key for confidential chats</label>
+                      <select [id]="'trust-' + provider" class="gh-input posture-select"
+                              [ngModel]="keyTrusts[provider] ?? 'undecided'"
+                              (ngModelChange)="onTrustChange(provider, $event)"
+                              [disabled]="savingTrustProvider === provider">
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                        <option value="undecided">Not decided yet</option>
+                      </select>
+                    </div>
+                    <p class="posture-hint">
+                      <strong>No</strong> keeps this key out of every confidential chat.
+                      <strong>Not decided yet</strong> leaves it usable; whether Overseer asks you first depends on
+                      Model Trust Requirement under Settings &rsaquo; Confidentiality.
+                    </p>
+                    @if (savingTrustProvider === provider || (keyTrusts[provider] !== 'undecided' && formatStamp(keyTrustDecidedUtc[provider]))) {
+                      <div class="posture-actions">
+                        @if (savingTrustProvider === provider) {
+                          <span class="sidebar-spinner small-spinner"></span>
+                        }
+                        @if (keyTrusts[provider] !== 'undecided' && formatStamp(keyTrustDecidedUtc[provider])) {
+                          <span class="posture-stamp">Decided {{ formatStamp(keyTrustDecidedUtc[provider]) }}</span>
+                        }
+                      </div>
+                    }
+                    @if (trustErrors[provider]) {
+                      <p class="posture-error" role="alert">{{ trustErrors[provider] }}</p>
+                    }
+
+                    <div class="posture-row posture-row-divided">
+                      <label [for]="'posture-' + provider" class="posture-label">What your provider agreed</label>
+                      <select [id]="'posture-' + provider" class="gh-input posture-select"
+                              [(ngModel)]="keyPostures[provider]"
+                              [disabled]="savingPostureProvider === provider">
+                        @for (p of postureOptions(provider); track p.value) {
+                          <option [value]="p.value">{{ p.label }}</option>
+                        }
+                      </select>
+                      <span class="posture-badge posture-badge-declared">{{ savedPostureBadge(provider) }}</span>
+                    </div>
+                    <p class="posture-hint">
+                      Sets the colour of the Private badge in confidential chats. Overseer cannot see your
+                      agreement, so this counts as self-declared: yellow at best, never green.
+                    </p>
+
+                    <div class="posture-row">
+                      <label [for]="'posture-note-' + provider" class="posture-label">Note (optional)</label>
+                      <input type="text" [id]="'posture-note-' + provider" class="gh-input posture-note" maxlength="1024"
+                             [(ngModel)]="keyPostureNotes[provider]"
+                             [disabled]="savingPostureProvider === provider"
+                             placeholder="e.g. Team plan, no training per DPA">
+                    </div>
+
+                    <div class="posture-actions" aria-live="polite">
+                      <button type="button" class="btn-gh"
+                              (click)="savePosture(provider)"
+                              [disabled]="!isPostureDirty(provider) || savingPostureProvider === provider">
+                        @if (savingPostureProvider === provider) {
+                          <span class="sidebar-spinner small-spinner"></span>
+                        }
+                        Save Posture
+                      </button>
+                      @if (formatStamp(keyPostureDeclaredUtc[provider])) {
+                        <span class="posture-stamp">Declared {{ formatStamp(keyPostureDeclaredUtc[provider]) }}</span>
+                      }
+                      @if (postureSavedProvider === provider) {
+                        <span class="posture-saved" role="status">Saved</span>
+                      }
+                    </div>
+                    @if (postureErrors[provider]) {
+                      <p class="posture-error" role="alert">{{ postureErrors[provider] }}</p>
+                    }
+                  </section>
                 }
-                @if (trustErrors[provider]) {
-                  <p class="posture-error" role="alert">{{ trustErrors[provider] }}</p>
-                }
-              </section>
-            }
+              </div>
+            </details>
           </div>
           <!-- API Key Info Dialog -->
           <dialog #apiKeyInfoDialog class="gh-dialog">
@@ -194,6 +215,95 @@
     </div>
   }
   </div>
+
+  <!-- Advanced Settings Info Dialog, shared by every provider card -->
+  <dialog #advancedInfoDialog class="gh-dialog dialog-wide advanced-info-dialog" (cancel)="closeAdvancedInfo()">
+    <h3>About the advanced settings</h3>
+
+    <div class="advanced-info-body">
+      <section class="info-section">
+        <h4 class="info-section-heading">Parallel execution</h4>
+        <p class="info-lead">How much Overseer may ask this key to do at once.</p>
+        <p>
+          Overseer can run several tool calls and subagents at the same time on one key. Keep this on
+          <strong>Allowed</strong> unless the provider rate-limits you, which mostly happens on free
+          or low-tier plans.
+        </p>
+        <dl class="info-list">
+          <div class="info-item">
+            <dt>Allowed<span class="info-tag">Default</span></dt>
+            <dd>Fastest, and the right choice for almost everyone.</dd>
+          </div>
+          <div class="info-item">
+            <dt>On request</dt>
+            <dd>Asks the model to hold back. It is a request, not a limit.</dd>
+          </div>
+          <div class="info-item">
+            <dt>Sequential only</dt>
+            <dd>One call at a time. The fix for a key that keeps hitting rate limits: chats get slower, but they stop failing.</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="info-section">
+        <h4 class="info-section-heading">Confidential chats</h4>
+        <p class="info-lead">These settings apply only in chats you mark confidential. Nothing here affects a normal chat.</p>
+        <p>
+          They decide two things: whether Overseer will use this key in a confidential chat at all,
+          and what colour the <strong>Private</strong> badge shows there.
+        </p>
+
+        <div class="info-callout">
+          <p>
+            <strong>Overseer cannot check what you agreed.</strong> Only you can see your agreement with
+            the provider, so whatever you record here is self-declared. It shows as unverified, and the
+            badge is yellow at best &mdash; never green. Green needs a model an administrator has verified.
+          </p>
+        </div>
+
+        <h5 class="info-subheading">Using this key</h5>
+        <dl class="info-list">
+          <div class="info-item">
+            <dt>Yes</dt>
+            <dd>You consider this key suitable for confidential chats.</dd>
+          </div>
+          <div class="info-item">
+            <dt>No</dt>
+            <dd>A decision, not a blank: the key is never used in a confidential chat, whatever your other settings say.</dd>
+          </div>
+          <div class="info-item">
+            <dt>Not decided yet</dt>
+            <dd>Leaves the key usable. Under Settings &rsaquo; Confidentiality &rsaquo; Model Trust Requirement,
+                <em>Ask when unclear</em> makes Overseer ask you once per key before using it; the other choices do not ask.</dd>
+          </div>
+        </dl>
+
+        <h5 class="info-subheading">What your provider agreed</h5>
+        <dl class="info-list">
+          <div class="info-item">
+            <dt>Not established<span class="posture-badge posture-weak">Orange badge</span></dt>
+            <dd>You have not looked. Overseer's own protections still apply.</dd>
+          </div>
+          <div class="info-item">
+            <dt>Standard provider terms<span class="posture-badge posture-weak">Orange badge</span></dt>
+            <dd>Ordinary consumer or pay-as-you-go terms.</dd>
+          </div>
+          <div class="info-item">
+            <dt>No training on content<span class="posture-badge posture-moderate">Yellow badge</span></dt>
+            <dd>The provider promised not to train on your content. It may still keep it for a while.</dd>
+          </div>
+          <div class="info-item">
+            <dt>Zero data retention<span class="posture-badge posture-moderate">Yellow badge</span></dt>
+            <dd>The provider promised not to keep your content after answering. Still yellow on a personal key, because it is self-declared.</dd>
+          </div>
+        </dl>
+      </section>
+    </div>
+
+    <form method="dialog" class="dialog-actions">
+      <button class="btn-gh btn-gh-cancel" (click)="closeAdvancedInfo()">Close</button>
+    </form>
+  </dialog>
 
   <!-- Delete API Key Confirmation Dialog -->
   <dialog #deleteConfirmDialog class="gh-dialog" (cancel)="closeDeleteConfirmDialog()">

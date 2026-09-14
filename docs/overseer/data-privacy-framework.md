@@ -782,6 +782,11 @@ a posture stops meaning anything, so the API refuses instead.
   describing an agreement only they can see. `ResolveForUserKey` therefore returns
   `IsOperatorVerified: false` unconditionally.
 
+The API Keys page offers a personal key only the first four rungs of the ladder. `PrivacySettings:CustomEndpoints:AllowUserSuppliedBaseUrl`
+is false and `EndpointPolicy.Resolve(UserAiApiKey)` returns the official endpoint whatever the row
+holds, so `PrivateCloud` and `SelfHosted` cannot describe a personal key. The API still accepts the
+full enum, and a legacy row keeps — and keeps displaying — whatever it already holds.
+
 This is not fastidiousness. Gating a privacy claim on a self-asserted trust level would let
 anyone tick "ZeroRetention" and unlock a claim the product cannot make. An `Unknown` posture
 also cannot be "verified" into anything — there is nothing to verify — so a stray verification
