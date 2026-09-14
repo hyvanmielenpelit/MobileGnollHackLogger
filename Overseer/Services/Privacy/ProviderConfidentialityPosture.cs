@@ -84,4 +84,15 @@ public static class ProviderConfidentialityPostureExtensions
         ProviderConfidentialityPosture.SelfHosted => "Self-hosted inference",
         _ => "Not established"
     };
+
+    /// <summary>One plain sentence a non-technical user can read, for the badge details dialog.</summary>
+    public static string ToPlainDescription(this ProviderConfidentialityPosture posture) => posture switch
+    {
+        ProviderConfidentialityPosture.Standard => "Ordinary provider terms. The provider may keep messages for a time, for example for abuse monitoring.",
+        ProviderConfidentialityPosture.NoTraining => "The provider has undertaken not to train its models on your messages. It may still keep them for a time.",
+        ProviderConfidentialityPosture.ZeroRetention => "The provider does not keep your messages after it has answered.",
+        ProviderConfidentialityPosture.PrivateCloud => "The model runs in a dedicated deployment, in a named region, under the operator's own agreement.",
+        ProviderConfidentialityPosture.SelfHosted => "The model runs on hardware the operator controls. Nothing leaves it.",
+        _ => "Nothing is known about how this provider handles your messages."
+    };
 }

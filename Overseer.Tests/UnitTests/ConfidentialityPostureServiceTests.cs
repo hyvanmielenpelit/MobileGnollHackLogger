@@ -350,7 +350,8 @@ public class ConfidentialityPostureServiceTests
 
             Assert.Equal(PrivateBadgeState.Green, badge.State);
             Assert.Equal("Private", badge.Label);
-            Assert.Contains("verified by an administrator", badge.Tooltip, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("Fully protected", badge.Headline);
+            Assert.Equal(PostureVerification.Verified, badge.Posture!.Verification);
         }
     }
 
@@ -378,12 +379,12 @@ public class ConfidentialityPostureServiceTests
         var selfDeclaredStrong = service.ResolveBadge(
             true, SelfDeclared(ProviderConfidentialityPosture.ZeroRetention), ConfidentialControlState.AllActive);
         Assert.Equal(PrivateBadgeState.Yellow, selfDeclaredStrong.State);
-        Assert.Contains("Self-declared", selfDeclaredStrong.Tooltip);
+        Assert.Equal(PostureVerification.SelfDeclared, selfDeclaredStrong.Posture!.Verification);
 
         var verifiedNoTraining = service.ResolveBadge(
             true, Verified(ProviderConfidentialityPosture.NoTraining), ConfidentialControlState.AllActive);
         Assert.Equal(PrivateBadgeState.Yellow, verifiedNoTraining.State);
-        Assert.Contains("weaker than zero retention", verifiedNoTraining.Tooltip);
+        Assert.Contains("may still keep", verifiedNoTraining.Explanation);
     }
 
     [Theory]
@@ -397,7 +398,16 @@ public class ConfidentialityPostureServiceTests
 
         Assert.Equal(PrivateBadgeState.Orange, badge.State);
         // Orange is accurate, not a failure: Overseer's own controls do hold.
-        Assert.Contains("Overseer's own protections do hold", badge.Tooltip);
+        Assert.Equal("Protected by Overseer only", badge.Headline);
+
+        /* Orange covers two different provider stories, and the dialog names them apart:
+           nothing was ever declared, or the user declared ordinary terms on their own key,
+           which establishes nothing about retention either. Neither is ever "verified". */
+        Assert.Equal(
+            posture == ProviderConfidentialityPosture.Unknown
+                ? PostureVerification.NotEstablished
+                : PostureVerification.SelfDeclared,
+            badge.Posture!.Verification);
     }
 
     [Fact]
@@ -413,7 +423,9 @@ public class ConfidentialityPostureServiceTests
         var unencrypted = ConfidentialControlState.AllActive with { ContentEncrypted = false };
         var badge = service.ResolveBadge(true, strongest, unencrypted);
         Assert.Equal(PrivateBadgeState.Red, badge.State);
-        Assert.Contains("message content is not encrypted", badge.Tooltip);
+        Assert.Equal("Not fully protected", badge.Headline);
+        Assert.False(badge.Controls.Single(c => c.Key == "contentEncrypted").Active);
+        Assert.Contains("message content is not encrypted", badge.Explanation);
 
         var egressOpen = ConfidentialControlState.AllActive with { ExternalEgressBlocked = false };
         Assert.Equal(PrivateBadgeState.Red, service.ResolveBadge(true, strongest, egressOpen).State);
@@ -431,21 +443,29 @@ public class ConfidentialityPostureServiceTests
     }
 
     [Fact]
-    public void Badge_TooltipEnumeratesTheActiveControls()
+    public void Badge_ControlsListEveryControlWithItsState()
     {
+        /* The dialog lists the controls in this order, and the order is asserted rather than
+           the set: a control that moved between the badge and the dialog would be read as a
+           different control by anyone comparing the two. */
         var service = CreateService();
 
         var badge = service.ResolveBadge(
             true, Verified(ProviderConfidentialityPosture.ZeroRetention), ConfidentialControlState.AllActive);
 
-        foreach (var control in ConfidentialControlState.AllActive.ActiveControls)
-        {
-            Assert.Contains(control, badge.Tooltip);
-        }
+        Assert.Equal(5, badge.Controls.Count);
+        Assert.All(badge.Controls, c => Assert.True(c.Active));
+        Assert.Equal(
+            new[]
+            {
+                "contentEncrypted", "externalEgressBlocked", "titleGenerationSuppressed",
+                "promptCacheDisabled", "excludedFromSearch"
+            },
+            badge.Controls.Select(c => c.Key));
     }
 
     [Fact]
-    public void Badge_TooltipCarriesTheDataRegionWhenOneIsKnown()
+    public void Badge_PostureCarriesTheDataRegionWhenOneIsKnown()
     {
         var service = CreateService();
 
@@ -456,7 +476,7 @@ public class ConfidentialityPostureServiceTests
 
         var badge = service.ResolveBadge(true, posture, ConfidentialControlState.AllActive);
 
-        Assert.Contains("eu-north-1", badge.Tooltip);
+        Assert.Equal("eu-north-1", badge.Posture!.Region);
     }
 
     [Fact]
@@ -469,5 +489,31 @@ public class ConfidentialityPostureServiceTests
         Assert.False(ConfidentialControlState.NoneActive.AllControlsActive);
         Assert.Equal(5, ConfidentialControlState.NoneActive.InactiveControls.Count);
         Assert.Empty(ConfidentialControlState.NoneActive.ActiveControls);
+    }
+
+    [Fact]
+    public void ControlState_DescribesEveryControlWhetherOnOrOff()
+    {
+        /* Describe() is what the details dialog renders, so it reports all five in both
+           directions -- unlike ActiveControls and InactiveControls, which each report one
+           side and would leave the dialog with nothing to show for the other. */
+        var mixed = ConfidentialControlState.AllActive with { PromptCacheDisabled = false };
+
+        foreach (var state in new[] { ConfidentialControlState.AllActive, ConfidentialControlState.NoneActive, mixed })
+        {
+            var described = state.Describe();
+
+            Assert.Equal(5, described.Count);
+            Assert.All(described, d =>
+            {
+                Assert.False(string.IsNullOrWhiteSpace(d.Title));
+                Assert.False(string.IsNullOrWhiteSpace(d.Description));
+            });
+        }
+
+        Assert.All(ConfidentialControlState.AllActive.Describe(), d => Assert.True(d.Active));
+        Assert.All(ConfidentialControlState.NoneActive.Describe(), d => Assert.False(d.Active));
+        Assert.False(mixed.Describe().Single(d => d.Key == "promptCacheDisabled").Active);
+        Assert.True(mixed.Describe().Single(d => d.Key == "contentEncrypted").Active);
     }
 }

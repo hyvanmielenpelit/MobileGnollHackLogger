@@ -211,6 +211,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   @ViewChild('privacyDialog') privacyDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('confidentialGateDialog') confidentialGateDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('upgradeConfidentialDialog') upgradeConfidentialDialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild('privateBadgeDialog') privateBadgeDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('trashModal') trashModal!: TrashModalComponent;
   autoScrollEnabled = true;
   readonly STREAMING_SCROLL_OFFSET = 50;
@@ -1748,9 +1749,16 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     } else if (evt.type === 'private_badge') {
       try {
         const d = JSON.parse(evt.data);
-        if (evtRef === this.currentSessionId) {
-          this.privateBadge = { state: d.state, label: d.label, tooltip: d.tooltip };
+        /* The server authors every sentence the badge and its dialog show, so the payload is
+           adopted whole rather than field by field. The shape check is what stops a payload
+           from an older server -- which carried a prose tooltip and no controls -- reaching
+           the dialog template as a half-filled object. */
+        if (evtRef === this.currentSessionId
+          && typeof d?.state === 'string' && Array.isArray(d?.controls)) {
+          this.privateBadge = d as PrivateBadge;
           this.cdr.detectChanges();
+        } else if (evtRef === this.currentSessionId) {
+          this.debugService.log('[Frontend] Ignored a private_badge event of an unexpected shape.');
         }
       } catch {
         this.debugService.log('[Frontend] Failed to parse private_badge event.');
@@ -2936,6 +2944,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     if (!isNewReference) return;
 
     this.privacyDialog?.nativeElement?.close();
+    this.privateBadgeDialog?.nativeElement?.close();
     if (this.isEphemeralSession) {
       this.privacyNotice = 'Incognito chat started. Nothing in it is being saved.';
     }
@@ -3031,9 +3040,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     dialog.showModal();
   }
 
-  /* Backdrop click closes the dialog where closedby="any" is not supported. */
-  onPrivacyDialogClick(event: MouseEvent) {
-    const dialog = this.privacyDialog?.nativeElement;
+  /* Backdrop click closes the dialog where closedby="any" is not supported. Called by every
+     privacy dialog; the one it names by default is the privacy-mode chooser. */
+  onPrivacyDialogClick(event: MouseEvent, target?: HTMLDialogElement) {
+    const dialog = target ?? this.privacyDialog?.nativeElement;
     if (!dialog) return;
     const rect = dialog.getBoundingClientRect();
     const isInDialog = (rect.top <= event.clientY && event.clientY <= rect.top + rect.height
@@ -3306,6 +3316,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.cdr.detectChanges();
       }
     });
+  }
+
+  /** Opens the Private badge's details dialog, which explains this chat's privacy state. */
+  openPrivateBadgeDialog() {
+    this.showPrivacyModal(this.privateBadgeDialog?.nativeElement, 'tip-private-badge');
   }
 
   openUpgradeConfidentialDialog() {

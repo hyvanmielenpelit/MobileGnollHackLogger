@@ -699,12 +699,7 @@ public class ChatService
                 {
                     Type = "private_badge",
                     SessionId = wireRef,
-                    Data = JsonSerializer.Serialize(new
-                    {
-                        state = badge.State.ToString().ToLowerInvariant(),
-                        label = badge.Label,
-                        tooltip = badge.Tooltip
-                    })
+                    Data = JsonSerializer.Serialize(badge.ToDto())
                 };
             }
 

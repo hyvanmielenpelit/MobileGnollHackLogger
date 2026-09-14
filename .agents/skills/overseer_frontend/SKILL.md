@@ -193,6 +193,8 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `#logoutDialog`: Logout
   - `#privacyDialog`: Privacy for this chat (Standard / Confidential / Incognito), opened from
     the composer's privacy button; offered only while no chat is open.
+  - `#privateBadgeDialog`: Privacy details for the open chat — opened by the Private badge in
+    the composer's indicator strip.
 
 - **Admin Alerts Component (`admin-alerts.component.html`)**
   - `#popoverContainer`: System alert popover banner displaying missing configuration warnings from `AdminAlertService` (`/api/admin/system-alerts`) to admin users.

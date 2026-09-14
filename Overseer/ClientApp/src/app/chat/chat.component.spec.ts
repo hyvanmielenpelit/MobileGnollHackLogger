@@ -114,7 +114,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { HttpResponse } from '@angular/common/http';
 import { of, Subject, throwError } from 'rxjs';
-import { ChatService, ChatSessionDetailResponse } from '../services/chat.service';
+import { ChatService, ChatSessionDetailResponse, PrivateBadge, PrivateBadgeState } from '../services/chat.service';
 import { SettingsService, UserAiSettings, UserAiModel } from '../services/settings.service';
 import { AuthService } from '../services/auth.service';
 import { ClientBridgeService } from '../services/client-bridge.service';
@@ -125,6 +125,34 @@ import { isSentryConfidentialSessionActive, setSentryConfidentialSession } from 
 // that started it. Every fixture stubs it out.
 function stubSignalRConnection(): void {
   spyOn(ChatComponent.prototype, 'setupSignalR');
+}
+
+/* One full badge, in the shape the server sends. The server authors every sentence, so a
+   fixture that spelled only the fields a test reads would let the dialog template go
+   untested against the payload it actually receives. */
+function makeBadge(state: PrivateBadgeState, overrides: Partial<PrivateBadge> = {}): PrivateBadge {
+  return {
+    state,
+    label: 'Private',
+    headline: 'Fully protected',
+    summary: 'Fully protected, on a verified model.',
+    explanation: 'Every protection Overseer offers is on.',
+    posture: {
+      text: 'Zero data retention',
+      description: 'The provider does not keep your messages after it has answered.',
+      verification: 'verified',
+      verificationText: 'An administrator, who recorded the agreement.',
+      region: null
+    },
+    controls: [
+      { key: 'contentEncrypted', title: 'Encrypted where it is stored', description: "Messages, titles and tool results are encrypted in Overseer's database.", active: true },
+      { key: 'externalEgressBlocked', title: 'Internet tools off', description: 'No tool in this chat can send anything to a third-party service.', active: true },
+      { key: 'titleGenerationSuppressed', title: 'No AI-made title', description: 'The chat title is never generated from your first message.', active: true },
+      { key: 'promptCacheDisabled', title: 'Provider prompt cache off', description: "The AI provider's prompt cache is not keyed on this chat's content.", active: true },
+      { key: 'excludedFromSearch', title: 'Excluded from search', description: 'This chat never appears in server-side search results.', active: true }
+    ],
+    ...overrides
+  };
 }
 
 describe('ChatComponent session loading and exclusivity', () => {
@@ -2016,7 +2044,7 @@ describe('ChatComponent confidential chats', () => {
         sessionId: '91',
         isConfidential: true,
         isEphemeral: false,
-        privateBadge: { state: 'green', label: 'Confidential', tooltip: 'Encrypted where it is stored.' }
+        privateBadge: makeBadge('green')
       } as any));
       component.setNewChatPrivacyMode('confidential');
       component.currentInput = 'Keep this one close.';
@@ -2037,7 +2065,7 @@ describe('ChatComponent confidential chats', () => {
         sessionId: '55',
         hasGameSnapshot: true,
         isConfidential: true,
-        privateBadge: { state: 'yellow', label: 'Confidential', tooltip: 'Protected, with caveats.' }
+        privateBadge: makeBadge('yellow')
       } as any));
       component.setNewChatPrivacyMode('confidential');
 
@@ -2074,16 +2102,31 @@ describe('ChatComponent confidential chats', () => {
   describe('the privacy badge event', () => {
     it('should replace the badge of the open chat', () => {
       component.currentSessionId = '91';
-      component.privateBadge = { state: 'orange', label: 'Confidential', tooltip: 'Retention not established.' };
+      component.privateBadge = makeBadge('orange', { headline: 'Protected by Overseer only' });
 
       component.processChatEvent({
         type: 'private_badge',
         sessionId: '91',
-        data: JSON.stringify({ state: 'green', label: 'Confidential', tooltip: 'Encrypted where it is stored.' })
+        data: JSON.stringify(makeBadge('green'))
       });
 
       expect(component.privateBadge!.state).toBe('green');
-      expect(component.privateBadge!.tooltip).toBe('Encrypted where it is stored.');
+      expect(component.privateBadge!.headline).toBe('Fully protected');
+    });
+
+    it('should ignore a payload that is not the structured badge', () => {
+      /* An older server sent a prose tooltip and no controls. Adopting that would reach the
+         dialog template as a half-filled object, so the badge already on screen stands. */
+      component.currentSessionId = '91';
+      component.privateBadge = makeBadge('green');
+
+      component.processChatEvent({
+        type: 'private_badge',
+        sessionId: '91',
+        data: JSON.stringify({ state: 'red', label: 'Private', tooltip: 'Not keeping its promise.' })
+      });
+
+      expect(component.privateBadge!.state).toBe('green');
     });
   });
 
@@ -2203,7 +2246,7 @@ describe('ChatComponent confidential chats', () => {
         isConfidential: true,
         retroactive: false,
         notice: 'From the next message on, this chat is confidential.',
-        privateBadge: { state: 'green', label: 'Confidential', tooltip: 'Encrypted where it is stored.' }
+        privateBadge: makeBadge('green')
       } as any));
       component.currentSessionId = '91';
 
@@ -2278,19 +2321,86 @@ describe('ChatComponent confidential chats', () => {
 
     it('should render the Private badge as a button with an interest-triggered tooltip', () => {
       fixture.detectChanges();
-      component.privateBadge = { state: 'green', label: 'Confidential', tooltip: 'Encrypted where it is stored.' };
+      component.privateBadge = makeBadge('green');
       fixture.detectChanges();
 
       const compiled = fixture.nativeElement as HTMLElement;
       const badge = compiled.querySelector('button.setting-badge[interestfor="tip-private-badge"]') as HTMLButtonElement;
       expect(badge).toBeTruthy();
       expect(badge.getAttribute('title')).toBeNull();
-      expect(badge.getAttribute('aria-label')).toBe('Private, Confidential');
+      // Names the state and says the control opens something; the old one read "Private, Private".
+      expect(badge.getAttribute('aria-label')).toBe(
+        'Private chat: Fully protected, on a verified model. Show details.');
       expect(badge.classList).toContain('badge-private-green');
+      expect(badge.querySelector('.private-badge-label')!.textContent).toContain('Private');
 
       const tip = compiled.querySelector('#tip-private-badge');
       expect(tip!.getAttribute('popover')).toBe('hint');
-      expect(tip!.textContent).toContain('Encrypted where it is stored.');
+      expect(tip!.textContent).toContain('Fully protected, on a verified model.');
+    });
+  });
+
+  describe('the privacy badge details dialog', () => {
+    /** Renders the badge, then opens its dialog without a real showModal(). */
+    function openDialog(badge: PrivateBadge): { dialog: HTMLDialogElement; showModal: jasmine.Spy } {
+      fixture.detectChanges();
+      component.privateBadge = badge;
+      fixture.detectChanges();
+
+      const dialog = component.privateBadgeDialog!.nativeElement;
+      const showModal = spyOn(dialog, 'showModal');
+      (fixture.nativeElement as HTMLElement)
+        .querySelector<HTMLButtonElement>('button.private-badge')!.click();
+      fixture.detectChanges();
+      return { dialog, showModal };
+    }
+
+    it('should open the dialog when the badge is clicked', () => {
+      const { showModal } = openDialog(makeBadge('green'));
+
+      expect(showModal).toHaveBeenCalled();
+    });
+
+    it('should list every control with its own state', () => {
+      const badge = makeBadge('red', {
+        headline: 'Not fully protected',
+        controls: makeBadge('red').controls.map(c =>
+          c.key === 'contentEncrypted' ? { ...c, active: false } : c)
+      });
+      const { dialog } = openDialog(badge);
+
+      const rows = dialog.querySelectorAll('.pb-control');
+      expect(rows.length).toBe(5);
+      expect(rows[0].classList).toContain('is-off');
+      expect(rows[0].textContent).toContain('Encrypted where it is stored');
+      expect(rows[1].classList).not.toContain('is-off');
+      expect(dialog.querySelectorAll('.pb-control.is-off').length).toBe(1);
+    });
+
+    it('should offer the Settings link only when a protection is off', () => {
+      const { dialog } = openDialog(makeBadge('red', { headline: 'Not fully protected' }));
+      expect(dialog.querySelector('.pb-fix a')).toBeTruthy();
+
+      for (const state of ['green', 'yellow', 'orange'] as PrivateBadgeState[]) {
+        component.privateBadge = makeBadge(state);
+        fixture.detectChanges();
+        expect(dialog.querySelector('.pb-fix')).withContext(state).toBeFalsy();
+      }
+    });
+
+    it('should show the region row only when a region is recorded', () => {
+      const { dialog } = openDialog(makeBadge('green'));
+      expect(dialog.querySelector('.pb-posture')!.textContent).not.toContain('Region');
+
+      const withRegion = makeBadge('green');
+      component.privateBadge = {
+        ...withRegion,
+        posture: { ...withRegion.posture, region: 'eu-north-1' }
+      };
+      fixture.detectChanges();
+
+      expect(dialog.querySelector('.pb-posture')!.textContent).toContain('Region');
+      expect(dialog.querySelector('.pb-posture')!.textContent).toContain('eu-north-1');
     });
   });
 });

@@ -876,8 +876,9 @@ Two properties of this table are load-bearing and both are unit-tested:
    in a refactor.
 
 Orange is not a warning. It is an accurate report that nothing is known about the provider's
-retention while Overseer's own protections do hold. The tooltip enumerates precisely which
-controls are active and what the posture is: subtle by default, precise on demand.
+retention while Overseer's own protections do hold. The badge's hover hint is a one-line
+summary; clicking the badge opens a details dialog that lists the provider posture, how it was
+established, and every control with its on/off state: subtle by default, precise on demand.
 
 **When the badge is resolved.** The posture belongs to whichever credential funds a turn, and no
 request that merely *loads* a session — or that *starts* one — has chosen a credential yet. Such
@@ -896,8 +897,12 @@ carries `isConfidential`, `isEphemeral`, the badge and the incognito deadline: b
 newly created confidential chat showed no badge and suppressed no telemetry until the window was
 reloaded.
 
-The badge is a non-submitting `<button>` carrying the interest-triggered tooltip rather than a
-`title` attribute, so the styled tooltip appears on hover and on keyboard focus alike.
+The badge is a `<button>` that opens the details dialog; its hover hint is interest-triggered
+rather than a `title`, so it appears on keyboard focus too. Below 600px the badge is the lock
+glyph alone, with the hint and an `aria-label` carrying the words.
+
+Every sentence the dialog shows is authored on the server in
+`ConfidentialityPostureService.ResolveBadge`, so the honesty rules have one home.
 
 **The sidebar and the trash list** mark a confidential chat with a small lock glyph before its
 title, with hidden text for a screen reader and no `title`. The trade-off is deliberate and worth

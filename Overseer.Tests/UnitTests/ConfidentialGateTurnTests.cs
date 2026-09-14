@@ -392,7 +392,16 @@ public class ConfidentialGateTurnTests : IDisposable
         // orange: a self-declared or unknown posture can never produce green.
         Assert.Equal("orange", payload.RootElement.GetProperty("state").GetString());
         Assert.Equal("Private", payload.RootElement.GetProperty("label").GetString());
-        Assert.False(string.IsNullOrWhiteSpace(payload.RootElement.GetProperty("tooltip").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(payload.RootElement.GetProperty("summary").GetString()));
+
+        /* The event is serialised with default JsonSerializer options while the REST paths go
+           through MVC's camelCase policy, so this also checks the DTO's own property names
+           reach the client -- a member missing its attribute would show up here as a
+           PascalCase key the client reads as undefined. */
+        Assert.Equal(5, payload.RootElement.GetProperty("controls").GetArrayLength());
+        Assert.Equal(
+            "notEstablished",
+            payload.RootElement.GetProperty("posture").GetProperty("verification").GetString());
     }
 
     [Fact]

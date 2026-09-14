@@ -1,12 +1,30 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpResponse } from '@angular/common/http';
 
-/* The privacy badge the chat window shows for a session. `state` is green, yellow, orange or
-   red; the tooltip enumerates the active controls and the provider's retention posture. */
+/* The privacy badge the chat window shows for a session, and everything its details dialog
+   says. `state` is green, yellow, orange or red. The server authors every sentence here; the
+   client only lays them out. */
+export type PrivateBadgeState = 'green' | 'yellow' | 'orange' | 'red';
+export type PostureVerification = 'verified' | 'selfDeclared' | 'notEstablished';
+
+export interface PrivateBadgeControl { key: string; title: string; description: string; active: boolean; }
+
+export interface PrivateBadgePosture {
+  text: string;
+  description: string;
+  verification: PostureVerification;
+  verificationText: string;
+  region: string | null;
+}
+
 export interface PrivateBadge {
-  state: string;
+  state: PrivateBadgeState;
   label: string;
-  tooltip: string;
+  headline: string;
+  summary: string;
+  explanation: string;
+  posture: PrivateBadgePosture;
+  controls: PrivateBadgeControl[];
 }
 
 export interface ChatSession {

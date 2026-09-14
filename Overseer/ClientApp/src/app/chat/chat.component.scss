@@ -1586,6 +1586,23 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   color: #f28b95;
 }
 
+/* Its own wrapper rather than .setting-indicator, which is hidden below 992px. */
+.private-badge-indicator {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* The :where(button).setting-badge reset sets cursor: default, because a badge that only
+   carried a tooltip had no action. This one opens its details dialog, so it overrides the
+   cursor for itself and leaves the reset alone for the badges that still carry nothing. */
+.private-badge {
+  cursor: pointer;
+
+  &:hover {
+    filter: brightness(1.15);
+  }
+}
+
 /* Amber rather than red: an answer built from excerpts is qualified, not faulty. */
 .badge-excerpt {
   background: rgba(255, 167, 38, 0.15);
@@ -1713,6 +1730,20 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
       display: none;
     }
   }
+
+  /* The lock alone. The hint and the aria-label still carry the words, which is what makes an
+     icon-only control legible. The svg margin has to go or the glyph sits off-centre. */
+  .private-badge {
+    padding: 3px 6px;
+
+    .private-badge-label {
+      display: none;
+    }
+
+    svg {
+      margin-right: 0;
+    }
+  }
 }
 
 .privacy-dialog {
@@ -1804,6 +1835,138 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
   font-size: 0.78rem;
   line-height: 1.4;
   color: #d8d8d8;
+}
+
+/* The Private badge's details dialog. It reuses .privacy-dialog for its sizing and scrolling,
+   and the four badge state colours for its pill, so the pill and the badge that opened it are
+   the same colour without a second set of literals to keep in step. */
+.private-badge-dialog {
+  h3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .dialog-actions {
+    margin-top: 16px;
+  }
+}
+
+.pb-state {
+  display: inline-block;
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.pb-state-green { @extend .badge-private-green; }
+.pb-state-yellow { @extend .badge-private-yellow; }
+.pb-state-orange { @extend .badge-private-orange; }
+.pb-state-red { @extend .badge-private-red; }
+
+.pb-explanation {
+  margin: 10px 0 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: #e0e0e0;
+}
+
+.pb-fix {
+  margin: 10px 0 0;
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid rgba(220, 53, 69, 0.5);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #d8d8d8;
+}
+
+.pb-section-title {
+  margin: 18px 0 6px;
+  font-family: "Cinzel", serif;
+  font-size: 0.85rem;
+  color: var(--title-color);
+}
+
+.pb-controls {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pb-control {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #7ddb95;
+
+  /* A control that is off is the one thing in this dialog that reports a problem, so it takes
+     the red of the badge state that reports the same thing. */
+  &.is-off {
+    color: #f28b95;
+  }
+}
+
+.pb-control-glyph {
+  flex: 0 0 16px;
+  margin-top: 2px;
+}
+
+.pb-control-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.pb-control-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.pb-control-desc {
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: #c5c5c5;
+}
+
+.pb-posture {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+
+  dt {
+    color: #a8a8a8;
+    font-weight: 500;
+  }
+
+  dd {
+    margin: 0;
+    color: #e0e0e0;
+  }
+}
+
+@media (max-width: 480px) {
+  .pb-posture {
+    grid-template-columns: 1fr;
+    gap: 2px;
+
+    dd {
+      margin-bottom: 6px;
+    }
+  }
+}
+
+.pb-posture-desc {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: #c5c5c5;
 }
 
 .privacy-decided-note {

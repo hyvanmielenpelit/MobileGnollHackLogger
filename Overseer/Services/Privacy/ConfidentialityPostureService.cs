@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Configuration;
 using MobileGnollHackLogger.Data;
 
@@ -129,7 +130,30 @@ public sealed record ConfidentialControlState
             return active;
         }
     }
+
+    /// <summary>Every control, on or off, with the words the details dialog shows for it.</summary>
+    /// <remarks>
+    /// The order is the order the dialog lists them, and it is the order
+    /// <see cref="ActiveControls"/> and <see cref="InactiveControls"/> use; keep the three in
+    /// step so a control never changes position between the badge and the dialog.
+    /// </remarks>
+    public IReadOnlyList<ConfidentialControlDescriptor> Describe() =>
+    [
+        new("contentEncrypted", "Encrypted where it is stored",
+            "Messages, titles and tool results are encrypted in Overseer's database.", ContentEncrypted),
+        new("externalEgressBlocked", "Internet tools off",
+            "No tool in this chat can send anything to a third-party service.", ExternalEgressBlocked),
+        new("titleGenerationSuppressed", "No AI-made title",
+            "The chat title is never generated from your first message.", TitleGenerationSuppressed),
+        new("promptCacheDisabled", "Provider prompt cache off",
+            "The AI provider's prompt cache is not keyed on this chat's content.", PromptCacheDisabled),
+        new("excludedFromSearch", "Excluded from search",
+            "This chat never appears in server-side search results.", ExcludedFromSearch)
+    ];
 }
+
+/// <summary>One control of the confidential promise, as the badge details dialog names it.</summary>
+public sealed record ConfidentialControlDescriptor(string Key, string Title, string Description, bool Active);
 
 /// <summary>
 /// The posture of one key, and whether an operator stood behind it.
@@ -155,11 +179,104 @@ public sealed record PostureResolution(
     public bool IsSelfDeclared => !IsOperatorVerified && Posture != ProviderConfidentialityPosture.Unknown;
 }
 
-/// <summary>The badge to show, and the text explaining it.</summary>
-public sealed record ConfidentialityBadge(PrivateBadgeState State, string Label, string Tooltip)
+/// <summary>How the provider posture was established, as the details dialog names it.</summary>
+public enum PostureVerification
 {
-    public static readonly ConfidentialityBadge NoBadge = new(PrivateBadgeState.None, string.Empty, string.Empty);
+    /// <summary>An operator dated the agreement. The only form that can carry a green badge.</summary>
+    Verified,
+
+    /// <summary>The user asserted it on their own key, and Overseer cannot check it.</summary>
+    SelfDeclared,
+
+    /// <summary>Nothing is established, which is what a legacy or unmarked key means.</summary>
+    NotEstablished
 }
+
+/// <summary>The provider half of the badge details.</summary>
+/// <param name="Text">The short phrase, from <c>ToDisplayText()</c>.</param>
+/// <param name="Description">The plain sentence, from <c>ToPlainDescription()</c>.</param>
+/// <param name="VerificationText">The sentence naming who established the posture.</param>
+/// <param name="Region">The data region, when one is recorded; its own field rather than a
+/// parenthesis inside <paramref name="Text"/>, because the dialog gives it its own row.</param>
+public sealed record BadgePosture(
+    string Text,
+    string Description,
+    PostureVerification Verification,
+    string VerificationText,
+    string? Region);
+
+/// <summary>The badge to show, and everything its details dialog says about it.</summary>
+/// <remarks>
+/// Structured rather than one prose string: the server is still the single author of every
+/// sentence here, and the client only lays them out. A client that had to parse prose to
+/// build the dialog would be one refactor away from making a privacy claim of its own.
+/// </remarks>
+public sealed record ConfidentialityBadge(
+    PrivateBadgeState State,
+    string Label,
+    string Headline,
+    string Summary,
+    string Explanation,
+    BadgePosture? Posture,
+    IReadOnlyList<ConfidentialControlDescriptor> Controls)
+{
+    public static readonly ConfidentialityBadge NoBadge =
+        new(PrivateBadgeState.None, string.Empty, string.Empty, string.Empty, string.Empty, null, []);
+
+    /// <summary>The wire shape both the REST responses and the <c>private_badge</c> event carry.</summary>
+    public PrivateBadgeDto ToDto() => new(
+        State.ToString().ToLowerInvariant(),
+        Label,
+        Headline,
+        Summary,
+        Explanation,
+        Posture == null
+            ? null
+            : new PrivateBadgePostureDto(
+                Posture.Text,
+                Posture.Description,
+                Posture.Verification switch
+                {
+                    PostureVerification.Verified => "verified",
+                    PostureVerification.SelfDeclared => "selfDeclared",
+                    _ => "notEstablished"
+                },
+                Posture.VerificationText,
+                Posture.Region),
+        [.. Controls.Select(c => new PrivateBadgeControlDto(c.Key, c.Title, c.Description, c.Active))]);
+}
+
+/// <summary>The badge as the client reads it.</summary>
+/// <remarks>
+/// Every member carries an explicit <see cref="JsonPropertyNameAttribute"/> because the two
+/// paths that emit this shape serialise differently: the controller through MVC's camelCase
+/// policy, <c>ChatService</c> through <c>JsonSerializer.Serialize</c> with default options. A
+/// member without one would arrive PascalCase from the event and camelCase from REST, and the
+/// client would read <c>undefined</c> on exactly one of the two paths.
+/// </remarks>
+public sealed record PrivateBadgeDto(
+    [property: JsonPropertyName("state")] string State,
+    [property: JsonPropertyName("label")] string Label,
+    [property: JsonPropertyName("headline")] string Headline,
+    [property: JsonPropertyName("summary")] string Summary,
+    [property: JsonPropertyName("explanation")] string Explanation,
+    [property: JsonPropertyName("posture")] PrivateBadgePostureDto? Posture,
+    [property: JsonPropertyName("controls")] IReadOnlyList<PrivateBadgeControlDto> Controls);
+
+/// <inheritdoc cref="BadgePosture"/>
+public sealed record PrivateBadgePostureDto(
+    [property: JsonPropertyName("text")] string Text,
+    [property: JsonPropertyName("description")] string Description,
+    [property: JsonPropertyName("verification")] string Verification,
+    [property: JsonPropertyName("verificationText")] string VerificationText,
+    [property: JsonPropertyName("region")] string? Region);
+
+/// <inheritdoc cref="ConfidentialControlDescriptor"/>
+public sealed record PrivateBadgeControlDto(
+    [property: JsonPropertyName("key")] string Key,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("description")] string Description,
+    [property: JsonPropertyName("active")] bool Active);
 
 /// <summary>The gate's decision and the sentence to show when it is not <c>Allow</c>.</summary>
 public sealed record ConfidentialityGateResult(ConfidentialityGateOutcome Outcome, string Reason)
@@ -352,17 +469,24 @@ public class ConfidentialityPostureService
         /* Red first, and it outranks any posture. A strong verified agreement is worth nothing
            to a session whose content is being written in clear, and the storage settings are
            user-adjustable, so this state is reachable by configuration rather than by bug. */
+        var badgePosture = DescribePosture(posture);
+        var describedControls = controls.Describe();
+
         if (!controls.AllControlsActive)
         {
+            var inactive = controls.InactiveControls;
+
             return new ConfidentialityBadge(
                 PrivateBadgeState.Red,
                 "Private",
-                "This chat is in Confidentiality Mode but is not keeping its full promise: "
-                    + string.Join("; ", controls.InactiveControls)
-                    + ". Provider posture: " + DescribePosture(posture) + ".");
+                "Not fully protected",
+                "Not fully protected: a setting is off.",
+                $"This chat is marked confidential, but {inactive.Count} of Overseer's 5 protections "
+                    + (inactive.Count == 1 ? "is" : "are") + " off: "
+                    + string.Join("; ", inactive) + ".",
+                badgePosture,
+                describedControls);
         }
-
-        string activeControls = "Active: " + string.Join("; ", controls.ActiveControls) + ".";
 
         /* Invariant 1, and the only place it is enforced: green requires operator verification.
            A self-declared ZeroRetention lands in yellow no matter how it was entered. */
@@ -371,7 +495,12 @@ public class ConfidentialityPostureService
             return new ConfidentialityBadge(
                 PrivateBadgeState.Green,
                 "Private",
-                $"{DescribePosture(posture)}, verified by an administrator. {activeControls}");
+                "Fully protected",
+                "Fully protected, on a verified model.",
+                "Every protection Overseer offers is on, and the AI model runs under an agreement "
+                    + "an administrator has verified.",
+                badgePosture,
+                describedControls);
         }
 
         if (posture.Posture.IsAtLeast(ProviderConfidentialityPosture.NoTraining))
@@ -379,26 +508,52 @@ public class ConfidentialityPostureService
             return new ConfidentialityBadge(
                 PrivateBadgeState.Yellow,
                 "Private",
-                $"{DescribePosture(posture)}. "
+                "Protected, with a caveat",
+                "Protected, with a caveat about the provider.",
+                "Every protection Overseer offers is on. "
                     + (posture.IsOperatorVerified
-                        ? "Verified by an administrator, but weaker than zero retention. "
-                        : "Self-declared, so Overseer cannot confirm it. ")
-                    + activeControls);
+                        ? "The provider has agreed not to train on your messages, but may still keep "
+                          + "them for a time, which is weaker than zero retention."
+                        : "The provider's data handling is as you declared it on your own key, and "
+                          + "Overseer cannot verify that."),
+                badgePosture,
+                describedControls);
         }
 
         return new ConfidentialityBadge(
             PrivateBadgeState.Orange,
             "Private",
-            "Nothing is established about this model's data retention, so no claim is made about "
-                + "what the provider keeps. Overseer's own protections do hold. " + activeControls);
+            "Protected by Overseer only",
+            "Protected by Overseer. Provider data handling unknown.",
+            "Every protection Overseer offers is on. Nothing is known about what the AI provider "
+                + "keeps, so no promise is made about that.",
+            badgePosture,
+            describedControls);
     }
 
-    private static string DescribePosture(PostureResolution posture)
+    /// <summary>
+    /// The provider half of the badge. <see cref="PostureVerification.Verified"/> is derived
+    /// from <c>IsOperatorVerified</c>, the same flag the green rule uses, so the dialog cannot
+    /// say "verified" about a posture that could not earn a green badge.
+    /// </summary>
+    private static BadgePosture DescribePosture(PostureResolution posture)
     {
-        string text = posture.Posture.ToDisplayText();
-        if (!string.IsNullOrWhiteSpace(posture.DataRegion))
-            text += $" ({posture.DataRegion})";
+        var verification = posture.IsOperatorVerified
+            ? PostureVerification.Verified
+            : posture.IsSelfDeclared
+                ? PostureVerification.SelfDeclared
+                : PostureVerification.NotEstablished;
 
-        return text;
+        return new BadgePosture(
+            posture.Posture.ToDisplayText(),
+            posture.Posture.ToPlainDescription(),
+            verification,
+            verification switch
+            {
+                PostureVerification.Verified => "An administrator, who recorded the agreement.",
+                PostureVerification.SelfDeclared => "You, on your own API key. Overseer cannot check it.",
+                _ => "Nobody. Overseer makes no claim about what this provider keeps."
+            },
+            string.IsNullOrWhiteSpace(posture.DataRegion) ? null : posture.DataRegion);
     }
 }

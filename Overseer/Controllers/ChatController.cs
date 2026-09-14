@@ -650,7 +650,7 @@ public class ChatController : ControllerBase
     /// <c>private_badge</c> event. Red still wins over that, because an inactive control is a
     /// property of the session rather than of the key.
     /// </remarks>
-    private object? BuildPrivateBadgePayload(ChatSession session)
+    private Overseer.Services.Privacy.PrivateBadgeDto? BuildPrivateBadgePayload(ChatSession session)
     {
         var sessionPolicy = session.IsConfidential
             ? Overseer.Services.Privacy.ConfidentialPolicyResolver.ReadSnapshot(session)
@@ -663,7 +663,7 @@ public class ChatController : ControllerBase
 
         return badge.State == Overseer.Services.Privacy.PrivateBadgeState.None
             ? null
-            : new { State = badge.State.ToString().ToLowerInvariant(), badge.Label, badge.Tooltip };
+            : badge.ToDto();
     }
 
     private object BuildEphemeralSessionPayload(Overseer.Services.Privacy.EphemeralSession held)
