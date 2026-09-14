@@ -19,6 +19,17 @@ export interface GroupDto {
   displayName: string;
 }
 
+/**
+ * What the server's custom-endpoint policy permits. An empty host allowlist is fail-closed,
+ * so `customEndpointsEnabled` false means every base URL would be refused on save.
+ */
+export interface EndpointPolicySummaryDto {
+  customEndpointsEnabled: boolean;
+  allowedHostPatterns: string[];
+  allowedHeaderNames: string[];
+  allowLoopback: boolean;
+}
+
 export interface ModelPricingDto {
   inputPerMillion: number;
   outputPerMillion: number;
@@ -468,6 +479,10 @@ export class AdminService {
 
   resetGovernorCooldown(credentialKey?: string): Observable<void> {
     return this.http.post<void>('/api/Admin/governor/reset-cooldown', { credentialKey });
+  }
+
+  getEndpointPolicy(): Observable<EndpointPolicySummaryDto> {
+    return this.http.get<EndpointPolicySummaryDto>('/api/admin/endpoint-policy');
   }
 
   getAiTelemetrySummary(startDate?: string, endDate?: string): Observable<AiTelemetrySummaryDto> {

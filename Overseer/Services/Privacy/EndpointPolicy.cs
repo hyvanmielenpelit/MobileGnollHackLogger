@@ -21,6 +21,22 @@ public sealed record EndpointValidationResult(bool IsValid, string? Error)
 }
 
 /// <summary>
+/// The operator's custom-endpoint configuration, as an administrator needs to read it.
+/// </summary>
+/// <remarks>
+/// The patterns and header names are already quoted back to an administrator in every refusal
+/// message, so naming them before the save rather than after it discloses nothing new. It is
+/// what lets the admin form say a custom endpoint cannot be configured on this server instead
+/// of offering three inputs whose every value is refused.
+/// </remarks>
+/// <param name="CustomEndpointsEnabled">False when no host is allowlisted, which refuses every base URL.</param>
+public sealed record EndpointPolicySummary(
+    bool CustomEndpointsEnabled,
+    IReadOnlyList<string> AllowedHostPatterns,
+    IReadOnlyList<string> AllowedHeaderNames,
+    bool AllowLoopback);
+
+/// <summary>
 /// The guard between a configured endpoint and the server's outbound requests.
 /// </summary>
 /// <remarks>
@@ -97,6 +113,17 @@ public class EndpointPolicy
     /// </summary>
     public IReadOnlyList<string> AllowedLiteralHosts
         => _allowedHostPatterns.Where(p => !p.Contains('*')).Select(p => p.Trim()).ToList();
+
+    /// <summary>
+    /// What an administrator may configure here, for the admin model form. An empty host
+    /// allowlist reports <c>CustomEndpointsEnabled</c> false, which is the fail-closed default.
+    /// </summary>
+    public EndpointPolicySummary Summary()
+        => new(
+            _allowedHostPatterns.Length > 0,
+            _allowedHostPatterns.Select(p => p.Trim()).ToList(),
+            _allowedHeaderNames.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList(),
+            _allowLoopback);
 
     /// <summary>
     /// Full validation, including a DNS lookup. Run when an administrator saves a

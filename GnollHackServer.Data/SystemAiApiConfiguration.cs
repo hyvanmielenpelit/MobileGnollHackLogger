@@ -100,9 +100,10 @@ public class SystemAiApiConfiguration : IRateLimitedEntity
     public string? DataRegion { get; set; }
 
     /// <summary>
-    /// Scheme and authority of a custom endpoint — Azure OpenAI, a gateway, or a self-hosted
-    /// model server. Null or empty means the provider's official public endpoint, so every
-    /// existing configuration keeps working untouched.
+    /// Scheme, authority and optional path prefix of a custom endpoint — Azure OpenAI, a
+    /// gateway, or a self-hosted model server. The provider appends its own path to whatever is
+    /// here, so <c>https://gw.example.com/openai</c> works. Null or empty means the provider's
+    /// official public endpoint, so every existing configuration keeps working untouched.
     /// </summary>
     /// <remarks>
     /// Never used directly. It decides where the server sends an authenticated outbound

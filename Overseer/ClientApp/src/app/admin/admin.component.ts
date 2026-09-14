@@ -536,11 +536,20 @@ export class AdminComponent implements OnInit, OnDestroy {
   closeConfig() {
     this.configDialog.nativeElement.close();
     this.editingConfig = null;
+    this.configSaveError = null;
   }
+
+  /**
+   * The server's own refusal text from the last save. The endpoint and posture rules name the
+   * setting or the field they refused, so it is shown in the dialog beside the fields it is
+   * about rather than lost in a browser alert.
+   */
+  configSaveError: string | null = null;
 
   onConfigSave(formData: AiModelFormResult) {
     this.savingConfig = true;
-    
+    this.configSaveError = null;
+
     // Merge form data with existing config (for things like orderIndex)
     const payload = {
       ...(this.editingConfig || {}),
@@ -560,7 +569,7 @@ export class AdminComponent implements OnInit, OnDestroy {
         },
         error: (err) => {
           this.savingConfig = false;
-          alert(err.error?.message || 'Error creating config');
+          this.configSaveError = this.describeConfigSaveError(err);
         }
       });
     } else {
@@ -572,10 +581,18 @@ export class AdminComponent implements OnInit, OnDestroy {
         },
         error: (err) => {
           this.savingConfig = false;
-          alert(err.error?.message || 'Error updating config');
+          this.configSaveError = this.describeConfigSaveError(err);
         }
       });
     }
+  }
+
+  /** `BadRequest(string)` arrives as a plain string body, so `err.error` is the message itself. */
+  private describeConfigSaveError(err: any): string {
+    if (typeof err?.error === 'string' && err.error.trim()) {
+      return err.error;
+    }
+    return err?.error?.message || 'The configuration could not be saved.';
   }
 
   deleteConfig(config: SystemAiConfigDto) {

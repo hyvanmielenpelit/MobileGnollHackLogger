@@ -4,11 +4,21 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { of } from 'rxjs';
 import { AiModelFormComponent, AiModelFormResult } from './ai-model-form.component';
 import { SettingsService, ApiModelDto } from '../../services/settings.service';
+import { AdminService, EndpointPolicySummaryDto } from '../../services/admin.service';
 
 describe('AiModelFormComponent', () => {
   let component: AiModelFormComponent;
   let fixture: ComponentFixture<AiModelFormComponent>;
   let settingsService: SettingsService;
+  let adminService: AdminService;
+
+  /** The permissive default, so an existing test's endpoint fields stay enabled. */
+  const openPolicy: EndpointPolicySummaryDto = {
+    customEndpointsEnabled: true,
+    allowedHostPatterns: ['gateway.example.com', '*.openai.azure.com'],
+    allowedHeaderNames: ['X-Gateway-Tenant'],
+    allowLoopback: false
+  };
 
   const mockModels: ApiModelDto[] = [
     {
@@ -80,6 +90,9 @@ describe('AiModelFormComponent', () => {
 
     settingsService = TestBed.inject(SettingsService);
     spyOn(settingsService, 'getAvailableModels').and.returnValue(of(mockModels));
+
+    adminService = TestBed.inject(AdminService);
+    spyOn(adminService, 'getEndpointPolicy').and.returnValue(of(openPolicy));
 
     fixture = TestBed.createComponent(AiModelFormComponent);
     component = fixture.componentInstance;
@@ -684,14 +697,14 @@ describe('AiModelFormComponent', () => {
       expect(details.querySelector('fieldset.pricing-fieldset')).toBeTruthy();
     });
 
-    it('should hold Pricing, Tool Calling, Provider Trust and Custom Endpoint in admin mode, but not the status checkboxes', () => {
+    it('should hold Pricing, Tool Calling, Provider Agreement and Custom Endpoint in admin mode, but not the status checkboxes', () => {
       component.isAdmin = true;
       component.apiKey = 'dummy';
       fixture.detectChanges();
 
       const details = advanced();
       const legends = Array.from(details.querySelectorAll('legend')).map(l => l.textContent?.trim());
-      expect(legends).toEqual(['Pricing', 'Tool Calling', 'Provider Trust', 'Custom Endpoint']);
+      expect(legends).toEqual(['Pricing', 'Tool Calling', 'Provider Agreement', 'Custom Endpoint']);
 
       const parallel = details.querySelector('#parallelExecutionModeSelect');
       expect(parallel).toBeTruthy();
@@ -701,7 +714,7 @@ describe('AiModelFormComponent', () => {
       expect(details.querySelector('#parallelExecutionModeHint')?.classList).toContain('form-hint');
 
       const trustFieldset = Array.from(details.querySelectorAll('fieldset'))
-        .find(f => f.querySelector('legend')?.textContent?.trim() === 'Provider Trust')!;
+        .find(f => f.querySelector('legend')?.textContent?.trim() === 'Provider Agreement')!;
       expect(parallel!.compareDocumentPosition(trustFieldset) & Node.DOCUMENT_POSITION_FOLLOWING)
         .toBeTruthy();
 
@@ -717,7 +730,7 @@ describe('AiModelFormComponent', () => {
       expect(fixture.nativeElement.querySelector('#parallelExecutionModeSelect')).toBeNull();
       const legends = Array.from(fixture.nativeElement.querySelectorAll('legend'))
         .map((l: any) => l.textContent?.trim());
-      expect(legends).not.toContain('Provider Trust');
+      expect(legends).not.toContain('Provider Agreement');
       expect(legends).not.toContain('Custom Endpoint');
     });
 
@@ -841,6 +854,121 @@ describe('AiModelFormComponent', () => {
 
       expect(savedResult).toBeDefined();
       expect(savedResult!.customHeadersJson).toBe('{"X-A":"1"}');
+    });
+
+    it('should check the key against the endpoint typed into the form, not the public API', () => {
+      component.isAdmin = true;
+      component.apiKey = 'dummy';
+      fixture.detectChanges();
+
+      component.baseUrl = ' https://gateway.example.com/openai ';
+      component.customHeadersJson = '{"X-Gateway-Tenant":"acme"}';
+      component.apiVersion = '2026-05-01';
+      (settingsService.getAvailableModels as jasmine.Spy).calls.reset();
+
+      component.onCheckModels();
+
+      const args = (settingsService.getAvailableModels as jasmine.Spy).calls.mostRecent().args;
+      expect(args[3]).toEqual({
+        baseUrl: 'https://gateway.example.com/openai',
+        customHeadersJson: '{"X-Gateway-Tenant":"acme"}',
+        apiVersion: '2026-05-01'
+      });
+    });
+
+    it('should not treat a verification date with no posture as verified', () => {
+      component.isAdmin = true;
+      component.apiKey = 'dummy';
+      fixture.detectChanges();
+
+      component.postureVerifiedUtc = '2026-09-14';
+      component.confidentialityPosture = '';
+      fixture.detectChanges();
+
+      expect(component.isPostureVerified).toBe(false);
+      expect(component.hasEmptyVerifiedPosture).toBe(true);
+
+      const badge = fixture.nativeElement.querySelector('#postureSelect')!
+        .closest('fieldset')!.querySelector('.status-badge') as HTMLElement;
+      expect(badge.classList).not.toContain('badge-success');
+      expect(badge.textContent!.trim()).toBe('Recorded, unverified: Not established');
+
+      component.confidentialityPosture = 'ZeroRetention';
+      fixture.detectChanges();
+
+      expect(component.isPostureVerified).toBe(true);
+      expect(badge.classList).toContain('badge-success');
+      expect(badge.textContent!.trim()).toBe('Verified 2026-09-14: Zero data retention');
+    });
+
+    it('should render the selected posture hint under the select', () => {
+      component.isAdmin = true;
+      component.apiKey = 'dummy';
+      fixture.detectChanges();
+
+      const select = fixture.nativeElement.querySelector('#postureSelect') as HTMLSelectElement;
+      expect(select.getAttribute('aria-describedby')).toBe('postureHint');
+
+      const hint = () => fixture.nativeElement.querySelector('#postureHint')!.textContent!.trim();
+      expect(hint()).toBe('Nothing has been checked. The honest default.');
+
+      component.confidentialityPosture = 'NoTraining';
+      fixture.detectChanges();
+
+      expect(hint())
+        .toBe('The provider has undertaken not to train on content. It may still retain it.');
+    });
+
+    it('should disable the endpoint fields and say so when no host is allowlisted', async () => {
+      (adminService.getEndpointPolicy as jasmine.Spy).and.returnValue(of({
+        customEndpointsEnabled: false,
+        allowedHostPatterns: [],
+        allowedHeaderNames: [],
+        allowLoopback: false
+      } as EndpointPolicySummaryDto));
+
+      component.isAdmin = true;
+      component.apiKey = 'dummy';
+      fixture.detectChanges();
+
+      expect(component.customEndpointsEnabled).toBe(false);
+
+      // ngModel applies a disabled binding on the microtask after the render.
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      for (const id of ['#baseUrlInput', '#apiVersionInput', '#customHeadersInput']) {
+        const input = fixture.nativeElement.querySelector(id) as HTMLInputElement;
+        expect(input).toBeTruthy();
+        expect(input.disabled).withContext(id).toBe(true);
+      }
+
+      const fieldset = fixture.nativeElement.querySelector('.endpoint-fieldset') as HTMLElement;
+      expect(fieldset.textContent).toContain('Custom endpoints are switched off on this server');
+    });
+
+    it('should list the allowed hosts and header names when custom endpoints are enabled', () => {
+      component.isAdmin = true;
+      component.apiKey = 'dummy';
+      fixture.detectChanges();
+
+      const fieldset = fixture.nativeElement.querySelector('.endpoint-fieldset') as HTMLElement;
+      expect(fieldset.textContent).toContain('gateway.example.com, *.openai.azure.com');
+      expect(fieldset.textContent).toContain('X-Gateway-Tenant');
+      expect((fixture.nativeElement.querySelector('#baseUrlInput') as HTMLInputElement).disabled)
+        .toBe(false);
+    });
+
+    it('should show a server refusal inside the dialog', () => {
+      component.isAdmin = true;
+      component.apiKey = 'dummy';
+      component.serverError = "The host 'gw.example.com' is not in PrivacySettings:CustomEndpoints:AllowedHostPatterns.";
+      fixture.detectChanges();
+
+      const errors = Array.from(fixture.nativeElement.querySelectorAll('.error-message'))
+        .map((e: any) => e.textContent as string);
+      expect(errors.some(t => t.includes('AllowedHostPatterns'))).toBe(true);
+      expect(errors.some(t => t.includes('The configuration was not saved'))).toBe(true);
     });
   });
 });

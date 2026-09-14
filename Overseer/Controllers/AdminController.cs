@@ -302,6 +302,22 @@ public class AdminController : ControllerBase
         return Ok(configs);
     }
 
+    /// <summary>
+    /// What the custom-endpoint policy permits on this server, for the admin model form.
+    /// </summary>
+    [HttpGet("endpoint-policy")]
+    public IActionResult GetEndpointPolicy()
+    {
+        var summary = _endpointPolicy.Summary();
+        return Ok(new EndpointPolicySummaryDto
+        {
+            CustomEndpointsEnabled = summary.CustomEndpointsEnabled,
+            AllowedHostPatterns = summary.AllowedHostPatterns.ToList(),
+            AllowedHeaderNames = summary.AllowedHeaderNames.ToList(),
+            AllowLoopback = summary.AllowLoopback
+        });
+    }
+
     [HttpPost("systemconfigs")]
     public async Task<IActionResult> CreateSystemConfig([FromBody] CreateSystemAiApiConfigurationRequest request)
     {

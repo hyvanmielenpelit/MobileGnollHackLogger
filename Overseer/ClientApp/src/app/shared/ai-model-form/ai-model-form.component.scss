@@ -373,6 +373,20 @@
   }
 }
 
+/* The selected rung's one-line explanation, kept close to the select it describes. */
+.posture-hint {
+  margin-top: 4px;
+  color: var(--gh-text-muted, #8e8e93);
+}
+
+/* Fields the server will refuse whatever is typed, because no host is allowlisted. Dimmed but
+   readable rather than hidden, so a value saved before the host was withdrawn can still be
+   seen and cleared. */
+.endpoint-fieldset .gh-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 /* One line when empty, grows with the JSON, scrolls past the cap.
    Where field-sizing is unsupported the box stays one row and scrolls. */
 .custom-headers-input {

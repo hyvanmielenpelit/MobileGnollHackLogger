@@ -213,13 +213,36 @@ export type ConfidentialityPosture =
  * key always reaches the provider's official endpoint, so it is never a private cloud or a
  * self-hosted model server.
  */
-export const CONFIDENTIALITY_POSTURES: ReadonlyArray<{ value: ConfidentialityPosture; label: string; userKeySelectable: boolean }> = [
-  { value: 'Unknown', label: 'Not established', userKeySelectable: true },
-  { value: 'Standard', label: 'Standard provider terms', userKeySelectable: true },
-  { value: 'NoTraining', label: 'No training on content', userKeySelectable: true },
-  { value: 'ZeroRetention', label: 'Zero data retention', userKeySelectable: true },
-  { value: 'PrivateCloud', label: 'Private cloud deployment', userKeySelectable: false },
-  { value: 'SelfHosted', label: 'Self-hosted inference', userKeySelectable: false }
+/**
+ * The ladder, weakest first. `hint` is one line saying what separates a rung from the one
+ * below it, which is the decision an administrator has to get right; only the admin model form
+ * renders it, and the API Keys page keeps showing labels alone.
+ */
+export const CONFIDENTIALITY_POSTURES: ReadonlyArray<{ value: ConfidentialityPosture; label: string; userKeySelectable: boolean; hint: string }> = [
+  {
+    value: 'Unknown', label: 'Not established', userKeySelectable: true,
+    hint: 'Nothing has been checked. The honest default.'
+  },
+  {
+    value: 'Standard', label: 'Standard provider terms', userKeySelectable: true,
+    hint: 'Ordinary pay-as-you-go terms. The provider may retain content for abuse monitoring.'
+  },
+  {
+    value: 'NoTraining', label: 'No training on content', userKeySelectable: true,
+    hint: 'The provider has undertaken not to train on content. It may still retain it.'
+  },
+  {
+    value: 'ZeroRetention', label: 'Zero data retention', userKeySelectable: true,
+    hint: 'Content is not stored once the response is served. The weakest posture the confidential promise can rest on.'
+  },
+  {
+    value: 'PrivateCloud', label: 'Private cloud deployment', userKeySelectable: false,
+    hint: 'A dedicated deployment in a named region under the operator\'s own agreement.'
+  },
+  {
+    value: 'SelfHosted', label: 'Self-hosted inference', userKeySelectable: false,
+    hint: 'Inference runs on hardware the operator controls. Nothing leaves it.'
+  }
 ];
 
 /** Ladder position. A legacy null row is Unknown, the weakest rung. */
@@ -516,7 +539,24 @@ export class SettingsService {
     return this.http.put('/api/settings/systemmodels/reorder/reset', {});
   }
 
-  getAvailableModels(provider: string, apiKey: string, systemConfigId?: number) {
-    return this.http.post<ApiModelDto[]>('/api/settings/models', { provider, apiKey, systemConfigId });
+  /**
+   * `endpoint` is admin only. Passing it makes the listing interrogate the endpoint currently
+   * in the form rather than the one saved on the configuration, so an empty base URL there
+   * means the provider's official endpoint rather than "use whatever was saved".
+   */
+  getAvailableModels(
+    provider: string,
+    apiKey: string,
+    systemConfigId?: number,
+    endpoint?: { baseUrl: string | null; customHeadersJson: string | null; apiVersion: string | null }
+  ) {
+    const body: any = { provider, apiKey, systemConfigId };
+    if (endpoint) {
+      body.baseUrl = endpoint.baseUrl;
+      body.customHeadersJson = endpoint.customHeadersJson;
+      body.apiVersion = endpoint.apiVersion;
+      body.useRequestEndpoint = true;
+    }
+    return this.http.post<ApiModelDto[]>('/api/settings/models', body);
   }
 }

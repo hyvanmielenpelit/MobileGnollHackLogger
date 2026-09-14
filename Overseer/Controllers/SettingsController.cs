@@ -900,17 +900,14 @@ public class SettingsController : ControllerBase
             return BadRequest(new { message = "API Key is required to fetch models." });
         }
 
-        /* The endpoint the listing must interrogate. Order matters: a saved system
-           configuration's own endpoint wins, then one typed into the admin form (so an
-           administrator can validate a key before saving), then the user's key -- which
+        /* The endpoint the listing must interrogate, in three branches. The endpoint typed into
+           the admin form wins, so an administrator validates the key against the endpoint being
+           edited rather than against the one last saved -- and an empty base URL there means the
+           official endpoint, not "fall through to the saved one". Then a saved system
+           configuration's own endpoint, for any other admin caller. Then the user's key, which
            resolves to the official endpoint while user-supplied base URLs are off. */
         AiEndpointDescriptor endpoint = AiEndpointDescriptor.Official;
-        if (request.SystemConfigId.HasValue && isAdmin)
-        {
-            var config = await _settingsService.GetSystemConfigurationAsync(request.SystemConfigId.Value);
-            endpoint = _endpointPolicy.Resolve(config);
-        }
-        else if (!string.IsNullOrWhiteSpace(request.BaseUrl))
+        if (request.UseRequestEndpoint || !string.IsNullOrWhiteSpace(request.BaseUrl))
         {
             if (!isAdmin)
                 return Forbid();
@@ -921,6 +918,11 @@ public class SettingsController : ControllerBase
                 return BadRequest(new { message = endpointCheck.Error });
 
             endpoint = _endpointPolicy.Resolve(request.BaseUrl, request.CustomHeadersJson, request.ApiVersion);
+        }
+        else if (request.SystemConfigId.HasValue && isAdmin)
+        {
+            var config = await _settingsService.GetSystemConfigurationAsync(request.SystemConfigId.Value);
+            endpoint = _endpointPolicy.Resolve(config);
         }
         else
         {
@@ -1260,6 +1262,12 @@ public class GetModelsRequest
     public string? BaseUrl { get; set; }
     public string? CustomHeadersJson { get; set; }
     public string? ApiVersion { get; set; }
+
+    /* Set by the admin form so the three fields above outrank the saved configuration. Without
+       it an edited base URL is not exercised until it has been saved, and the empty fields of a
+       form editing a configuration whose endpoint has just been cleared cannot be told apart
+       from a caller that simply did not send them. */
+    public bool UseRequestEndpoint { get; set; }
 }
 
 public class UpdateTitleModelRequest

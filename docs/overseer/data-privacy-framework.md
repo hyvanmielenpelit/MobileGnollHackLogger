@@ -862,7 +862,7 @@ Everything is fail-closed:
 | Scheme | `https`, except loopback when `AllowLoopback` is on. Plain HTTP sends the key in clear |
 | Host | Must match `AllowedHostPatterns` — exact, or a `*.suffix` wildcard. A bare `*` is not a wildcard; there is no allow-everything pattern |
 | Address | Resolved addresses in loopback, private, link-local, CGNAT or IPv6 unique-local ranges are refused |
-| URL shape | No query, fragment or embedded credentials — the provider appends its own query |
+| URL shape | No query, fragment or embedded credentials — the provider appends its own query. A **path prefix is allowed and preserved**: `https://gw.example.com/openai` keeps `/openai` and the provider path is appended to it |
 | Headers | An **empty header allowlist means no custom headers are accepted.** Names must be allowlisted, values may not contain a line break |
 | Headers, absolutely | `Authorization`, `x-api-key`, `api-key`, `Host`, `Cookie`, `Content-Length` and the hop-by-hop set are refused **even if an operator allowlists them** |
 
@@ -919,6 +919,13 @@ deployment healthy without ever having contacted it. All three now route through
 descriptor, and an endpoint exposing no listing route reports **"not verifiable"**, stating
 explicitly that the key has *not* been validated. It never reports verified by testing
 somewhere else.
+
+The admin model form sends **the endpoint it is editing** — base URL, custom headers and API
+version — with its listing request, under `UseRequestEndpoint`, so a key is checked against the
+endpoint it is about to be saved with rather than against the one last saved or the public API.
+The fields are validated by the same policy before use and a non-administrator sending them is
+refused. Where the flag is absent, the order is unchanged: a saved system configuration's
+endpoint, then the caller's own key.
 
 **What is not covered:** a full Vertex AI path (`/v1/projects/…/locations/…/publishers/…`) is a
 different URL *shape*, not a different base, and needs its own provider. And Overseer speaks

@@ -7,6 +7,7 @@ import {
   CONFIDENTIALITY_POSTURES,
   confidentialityPostureLabel
 } from '../../services/settings.service';
+import { AdminService, EndpointPolicySummaryDto } from '../../services/admin.service';
 
 export type DisplayNameMode = 'model_name' | 'model_id' | 'custom';
 
@@ -52,6 +53,7 @@ export interface AiModelFormResult {
 })
 export class AiModelFormComponent implements OnInit {
   private settingsService = inject(SettingsService);
+  private adminService = inject(AdminService);
 
   @Input() mode: 'add' | 'edit' = 'add';
   @Input() isAdmin: boolean = false;
@@ -59,6 +61,8 @@ export class AiModelFormComponent implements OnInit {
   @Input() initialProvider?: string;
   @Input() initialData?: any;
   @Input() saving: boolean = false;
+  /** The server's refusal text from the last save attempt. The host clears it on the next one. */
+  @Input() serverError: string | null = null;
 
   @Output() save = new EventEmitter<AiModelFormResult>();
   @Output() cancel = new EventEmitter<void>();
@@ -115,6 +119,9 @@ export class AiModelFormComponent implements OnInit {
   /** Azure OpenAI only. Its presence also selects Azure's api-key header over a bearer token. */
   apiVersion: string | null = null;
 
+  /** What the server allows here, so the form can say so before a save is refused. Null until loaded. */
+  endpointPolicy: EndpointPolicySummaryDto | null = null;
+
   /** Advanced starts open only when something inside it is non-default; the user's toggle wins after that. */
   advancedOpen = false;
 
@@ -122,13 +129,57 @@ export class AiModelFormComponent implements OnInit {
     return confidentialityPostureLabel(this.confidentialityPosture);
   }
 
+  /** What separates the selected rung from the one below it. */
+  get selectedPostureHint(): string {
+    const match = this.postures.find(p => p.value === this.confidentialityPosture);
+    return (match ?? this.postures[0]).hint;
+  }
+
+  /**
+   * The same test the server applies: a date alone is not verification.
+   * `ConfidentialityPostureService` treats a row as operator-verified only when the date is set
+   * **and** the posture is something other than Unknown, so a badge on the date alone would
+   * promise what the server does not grant.
+   */
   get isPostureVerified(): boolean {
-    return !!this.postureVerifiedUtc;
+    return !!this.postureVerifiedUtc
+      && !!this.confidentialityPosture
+      && this.confidentialityPosture !== 'Unknown';
   }
 
   /** A verification date on an unestablished posture confirms nothing, so the form says so. */
   get hasEmptyVerifiedPosture(): boolean {
-    return this.isPostureVerified && (!this.confidentialityPosture || this.confidentialityPosture === 'Unknown');
+    return !!this.postureVerifiedUtc
+      && (!this.confidentialityPosture || this.confidentialityPosture === 'Unknown');
+  }
+
+  /** Nothing recorded is not a warning, so the badge says so plainly rather than "Unverified". */
+  get hasRecordedPosture(): boolean {
+    return !!this.confidentialityPosture && this.confidentialityPosture !== 'Unknown';
+  }
+
+  get postureBadgeText(): string {
+    if (!this.hasRecordedPosture && !this.postureVerifiedUtc) {
+      return 'Not recorded';
+    }
+    return this.isPostureVerified
+      ? `Verified ${this.postureVerifiedUtc}: ${this.postureLabel}`
+      : `Recorded, unverified: ${this.postureLabel}`;
+  }
+
+  /** Unknown while the policy has not loaded, so a failed call leaves the form as it was. */
+  get customEndpointsEnabled(): boolean {
+    return this.endpointPolicy === null || this.endpointPolicy.customEndpointsEnabled;
+  }
+
+  get allowedHostPatternsText(): string {
+    const patterns = this.endpointPolicy?.allowedHostPatterns ?? [];
+    return patterns.length > 0 ? patterns.join(', ') : 'none';
+  }
+
+  get allowedHeaderNamesText(): string {
+    const names = this.endpointPolicy?.allowedHeaderNames ?? [];
+    return names.length > 0 ? names.join(', ') : 'none';
   }
 
   get modelRole(): number {
@@ -266,6 +317,13 @@ export class AiModelFormComponent implements OnInit {
   }
 
   ngOnInit() {
+    if (this.isAdmin) {
+      this.adminService.getEndpointPolicy().subscribe({
+        next: (policy) => { this.endpointPolicy = policy; },
+        error: () => { /* Left null: the endpoint fields behave as they did before this was reported. */ }
+      });
+    }
+
     if (this.initialProvider) {
       this.provider = this.initialProvider;
     } else if (this.providers.length > 0) {
@@ -413,7 +471,19 @@ export class AiModelFormComponent implements OnInit {
     const keyToSend = this.isAdmin ? this.apiKey : '';
     const systemConfigId = this.isAdmin ? this.initialData?.id : undefined;
 
-    this.settingsService.getAvailableModels(this.provider, keyToSend, systemConfigId).subscribe({
+    /* The endpoint as it stands in the form, so the check interrogates what is about to be
+       saved. Without this a created configuration is checked against the provider's public API,
+       which is exactly the outcome the listing is supposed to rule out: a key that works there
+       says nothing about a gateway. */
+    const endpoint = this.isAdmin
+      ? {
+          baseUrl: (this.baseUrl || '').trim() || null,
+          customHeadersJson: (this.customHeadersJson || '').trim() || null,
+          apiVersion: (this.apiVersion || '').trim() || null
+        }
+      : undefined;
+
+    this.settingsService.getAvailableModels(this.provider, keyToSend, systemConfigId, endpoint).subscribe({
       next: (models) => {
         this.availableModels = models;
         this.loadingModels = false;

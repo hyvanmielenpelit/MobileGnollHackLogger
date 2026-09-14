@@ -370,3 +370,16 @@ public class ResetCooldownRequest
 {
     public string? CredentialKey { get; set; }
 }
+
+/// <summary>
+/// What the server's custom-endpoint policy permits, so the admin model form can state it
+/// rather than let every save be refused by a rule the form never mentioned.
+/// </summary>
+public class EndpointPolicySummaryDto
+{
+    /// <summary>False when no host is allowlisted, which refuses every base URL.</summary>
+    public bool CustomEndpointsEnabled { get; set; }
+    public List<string> AllowedHostPatterns { get; set; } = new();
+    public List<string> AllowedHeaderNames { get; set; } = new();
+    public bool AllowLoopback { get; set; }
+}

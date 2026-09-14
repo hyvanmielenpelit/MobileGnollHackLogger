@@ -440,16 +440,17 @@
 
         <!-- Admin only: what has been agreed with the provider account behind this key -->
         <fieldset class="form-fieldset">
-          <legend>Provider Trust</legend>
+          <legend>Provider Agreement</legend>
 
           <p class="form-hint">
-            Record only what has actually been agreed with this provider account, and where inference runs.
+            What the account behind this key has agreed with the provider, and where its inference runs.
             Nothing here is inferred from the model.
           </p>
 
           <div class="form-group flex-col mt-10">
-            <label for="postureSelect">Confidentiality Posture</label>
-            <select id="postureSelect" class="gh-input w-100" [(ngModel)]="confidentialityPosture">
+            <label for="postureSelect">Retention Posture</label>
+            <select id="postureSelect" class="gh-input w-100" [(ngModel)]="confidentialityPosture"
+                    aria-describedby="postureHint">
               <option value="">Not established</option>
               @for (p of postures; track p.value) {
                 @if (p.value !== 'Unknown') {
@@ -457,13 +458,14 @@
                 }
               }
             </select>
+            <div id="postureHint" class="form-hint mt-5 posture-hint">{{ selectedPostureHint }}</div>
           </div>
 
           <div class="form-group flex-col mt-10">
-            <label for="postureNoteInput">Note</label>
+            <label for="postureNoteInput">Agreement Note</label>
             <input id="postureNoteInput" type="text" class="gh-input w-100" maxlength="1024"
                    [(ngModel)]="confidentialityNote"
-                   placeholder="What the agreement says, in one line">
+                   placeholder="What the agreement covers, and what it does not">
           </div>
 
           <div class="token-row mt-10">
@@ -474,34 +476,29 @@
                      placeholder="DPA number, contract id or ticket">
             </div>
             <div class="form-group flex-col">
-              <label for="postureDataRegionInput">Data Region</label>
+              <label for="postureDataRegionInput">Inference Region</label>
               <input id="postureDataRegionInput" type="text" class="gh-input w-100" maxlength="64"
                      [(ngModel)]="dataRegion"
-                     placeholder="Where inference runs, e.g. eu-west-1">
+                     placeholder="e.g. eu-west-1">
             </div>
           </div>
 
           <div class="form-group flex-col mt-10">
-            <label for="postureVerifiedInput">Verification Date</label>
+            <label for="postureVerifiedInput">Verified On</label>
             <input id="postureVerifiedInput" type="date" class="gh-input w-100"
                    [(ngModel)]="postureVerifiedUtc"
                    aria-describedby="postureVerifiedHint">
             <div id="postureVerifiedHint" class="form-hint mt-5">
-              A date here means an operator checked this posture against the agreement on that day, and it is
-              the only thing that makes the posture verified. Leave it empty and the posture stays unverified
-              &mdash; it will not earn a green privacy badge in chat.
+              The day an operator checked this posture against the agreement. Without it the posture is
+              recorded but unverified, and an unverified posture never earns the green Private badge in chat.
             </div>
           </div>
 
           <div class="mt-10">
             <span class="status-badge"
                   [class.badge-success]="isPostureVerified"
-                  [class.badge-warning]="!isPostureVerified">
-              @if (isPostureVerified) {
-                Verified {{ postureVerifiedUtc }}: {{ postureLabel }}
-              } @else {
-                Unverified: {{ postureLabel }}
-              }
+                  [class.badge-warning]="!isPostureVerified && (hasRecordedPosture || hasEmptyVerifiedPosture)">
+              {{ postureBadgeText }}
             </span>
           </div>
 
@@ -516,24 +513,34 @@
         <!-- Admin only: where this model's requests actually go. Never exposed to users -- a base
              URL decides where the server sends an authenticated request, which is the server
              operator's decision and not the account holder's. -->
-        <fieldset class="form-fieldset">
+        <fieldset class="form-fieldset endpoint-fieldset">
           <legend>Custom Endpoint</legend>
 
-          <p class="form-hint">
-            Leave the base URL empty to use the provider's official public endpoint, which is what every
-            existing configuration does. A custom endpoint must use https and its host must be allowlisted in
-            <code>PrivacySettings:CustomEndpoints:AllowedHostPatterns</code>; the server refuses anything else
-            rather than quietly falling back.
-          </p>
+          @if (customEndpointsEnabled) {
+            <p class="form-hint">
+              Leave the base URL empty for the provider's official endpoint, which is what every existing
+              configuration does. Allowed hosts: {{ allowedHostPatternsText }}. Allowed header names:
+              {{ allowedHeaderNamesText }}. Loopback: {{ endpointPolicy?.allowLoopback ? 'on' : 'off' }}.
+              Anything else is refused on save rather than silently falling back.
+            </p>
+          } @else {
+            <p class="form-hint">
+              <strong>Custom endpoints are switched off on this server:</strong> no host is allowlisted in
+              <code>PrivacySettings:CustomEndpoints:AllowedHostPatterns</code>. Requests use the provider's
+              official endpoint.
+            </p>
+          }
 
           <div class="form-group flex-col mt-10">
             <label for="baseUrlInput">Base URL</label>
             <input id="baseUrlInput" type="url" class="gh-input w-100" maxlength="2048"
                    [(ngModel)]="baseUrl"
+                   [disabled]="!customEndpointsEnabled"
                    aria-describedby="baseUrlHint"
                    placeholder="https://acme.openai.azure.com">
             <div id="baseUrlHint" class="form-hint mt-5">
-              Scheme and host only, with no path query or fragment &mdash; the provider appends its own.
+              Scheme, host and an optional path prefix, e.g. <code>https://gateway.example.com/openai</code>.
+              No query string or fragment: the provider appends its own path and query.
             </div>
           </div>
 
@@ -541,11 +548,13 @@
             <label for="apiVersionInput">API Version</label>
             <input id="apiVersionInput" type="text" class="gh-input w-100" maxlength="64"
                    [(ngModel)]="apiVersion"
+                   [disabled]="!customEndpointsEnabled"
                    aria-describedby="apiVersionHint"
                    placeholder="2026-05-01">
             <div id="apiVersionHint" class="form-hint mt-5">
-              Azure OpenAI only. Setting it also selects Azure's <code>api-key</code> header instead of a
-              bearer token; leave it empty for any other endpoint.
+              For Azure OpenAI. When set, requests authenticate with an <code>api-key</code> header and carry
+              <code>?api-version=</code> instead of a bearer token. Leave it empty for any other endpoint,
+              including OpenAI-compatible gateways.
             </div>
           </div>
 
@@ -554,20 +563,20 @@
             <textarea id="customHeadersInput" class="gh-input w-100 custom-headers-input" rows="1"
                       maxlength="4096"
                       [(ngModel)]="customHeadersJson"
+                      [disabled]="!customEndpointsEnabled"
                       aria-describedby="customHeadersHint"
                       placeholder='{"X-Gateway-Tenant":"acme"}'></textarea>
             <div id="customHeadersHint" class="form-hint mt-5">
-              A JSON object. Each name must be allowlisted, and credential, <code>Host</code> and
-              hop-by-hop headers are always refused &mdash; the provider owns those.
+              A JSON object. Names must be on the allowlist above; credential, <code>Host</code> and
+              hop-by-hop headers are always refused.
             </div>
           </div>
 
           @if (baseUrl) {
             <div class="form-hint mt-10">
-              <strong>Model listing may not work against a custom endpoint.</strong>
-              Many gateways expose no listing route; enter the model id by hand if so. Overseer will not
-              validate the key against the public API instead, because a key that works there says nothing
-              about this endpoint.
+              <strong>Check Models queries this endpoint, not the public API.</strong>
+              Many gateways expose no listing route; if the check fails with 404, enter the model id by hand.
+              The key is then unverified.
             </div>
           }
         </fieldset>
@@ -575,6 +584,13 @@
     </details>
 
   </div>
+
+  @if (serverError) {
+    <div class="error-message">
+      <strong>The configuration was not saved:</strong>
+      <span>{{ serverError }}</span>
+    </div>
+  }
 
   <div class="dialog-actions">
     <button class="btn-gh btn-gh-cancel" (click)="onCancel()" [disabled]="saving">Cancel</button>

@@ -875,6 +875,7 @@
       [initialProvider]="editingConfig.provider"
       [initialData]="editingConfig"
       [saving]="savingConfig"
+      [serverError]="configSaveError"
       (save)="onConfigSave($event)"
       (cancel)="closeConfig()">
     </app-ai-model-form>

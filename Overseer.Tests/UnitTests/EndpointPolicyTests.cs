@@ -422,6 +422,36 @@ public class EndpointPolicyTests
     }
 
     [Fact]
+    public void Summary_ReportsDisabledWhenNoHostIsAllowlisted()
+    {
+        /* What the admin form reads to say the section is switched off, rather than offering
+           three inputs whose every value the save would refuse. */
+        var summary = CreatePolicy().Summary();
+
+        Assert.False(summary.CustomEndpointsEnabled);
+        Assert.Empty(summary.AllowedHostPatterns);
+        Assert.Empty(summary.AllowedHeaderNames);
+        Assert.False(summary.AllowLoopback);
+    }
+
+    [Fact]
+    public void Summary_ReportsTheConfiguredLists()
+    {
+        var policy = CreatePolicy(
+            hostPatterns: new[] { " gateway.example.com ", "*.openai.azure.com" },
+            headerNames: new[] { "X-Gateway-Tenant" },
+            allowLoopback: true);
+
+        var summary = policy.Summary();
+
+        Assert.True(summary.CustomEndpointsEnabled);
+        // Wildcards are kept: unlike the Sentry suppression set, the admin needs to read them.
+        Assert.Equal(new[] { "gateway.example.com", "*.openai.azure.com" }, summary.AllowedHostPatterns);
+        Assert.Equal(new[] { "X-Gateway-Tenant" }, summary.AllowedHeaderNames);
+        Assert.True(summary.AllowLoopback);
+    }
+
+    [Fact]
     public void AllowedLiteralHosts_ExcludesWildcardPatterns()
     {
         // These feed the Sentry suppression set, where a wildcard has no host to name.
