@@ -553,6 +553,92 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
   }
 }
 
+/* System Models. The intro is text beside an info button; the button keeps its global 32px
+   frame and sits on the first line of the text. */
+.system-models-intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 5px;
+}
+
+.system-models-intro-text {
+  flex: 1;
+  min-width: 0;
+
+  .form-hint { line-height: 1.5; margin: 0; }
+  .form-hint + .form-hint { margin-top: 8px; }
+}
+
+.system-models-info-btn { flex-shrink: 0; }
+
+/* The explainer is long, so the body scrolls inside a dialog capped to the viewport; the
+   header and Close stay put. */
+.system-models-info-dialog {
+  max-height: calc(100dvh - 24px);
+  padding: 0;
+  overflow: hidden;
+}
+
+.system-models-info-dialog[open],
+.system-models-info-dialog:modal {
+  display: flex;
+  flex-direction: column;
+}
+
+.system-models-info-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 30px;
+  border-bottom: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+
+  h3 { margin: 0; }
+}
+
+.system-models-info-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 30px;
+  line-height: 1.5;
+
+  section + section { margin-top: 18px; }
+
+  h4 {
+    margin: 0 0 6px 0;
+    font-size: 1em;
+    font-weight: 600;
+    color: var(--title-color, #e0ba6d);
+  }
+
+  p { margin: 0 0 8px 0; }
+  ul { margin: 0 0 8px 0; padding-left: 1.2em; }
+  ul ul { margin: 4px 0 0 0; }
+  li + li { margin-top: 4px; }
+}
+
+.system-models-ladder {
+  margin: 8px 0 10px 0;
+  font-size: 0.95em;
+
+  th[scope="row"] { white-space: nowrap; }
+}
+
+.system-models-info-dialog .dialog-actions {
+  padding: 12px 30px 15px;
+  border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  margin: 0;
+}
+
+@media (max-width: 600px) {
+  .system-models-info-header,
+  .system-models-info-body,
+  .system-models-info-dialog .dialog-actions { padding-left: 16px; padding-right: 16px; }
+
+  .system-models-ladder th[scope="row"] { white-space: normal; }
+}
+
 /* Explains why a control is disabled, so it is set apart from .form-hint, which describes
    what the setting does. Gold rather than grey because it comes from the administrator. */
 .confidential-floor-note {

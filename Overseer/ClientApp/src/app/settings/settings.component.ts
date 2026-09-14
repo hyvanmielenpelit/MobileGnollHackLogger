@@ -17,6 +17,7 @@ import {
   CONFIDENTIAL_RETENTION_DEFAULT_DAYS,
   CONFIDENTIAL_RETENTION_MAX_DAYS,
   CONFIDENTIAL_RETENTION_MIN_DAYS,
+  CONFIDENTIALITY_POSTURES,
   confidentialModelGateRank,
   confidentialPersistenceRank,
   stricterConfidentialModelGate,
@@ -82,7 +83,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     { id: 'permissions', label: 'AI Permissions', hint: 'What the AI may reach' },
     { id: 'performance', label: 'AI Performance', hint: 'Tool limits and timeouts' },
     { id: 'confidentiality', label: 'Confidentiality Mode', hint: 'Default for new chats, and how confidential chats are kept' },
-    { id: 'provided-models', label: 'Provided Models', title: 'Provided Models for Confidential Chats', hint: 'Your decision on each system-provided model, asked once when the trust requirement needs it' },
+    { id: 'provided-models', label: 'System Model Confidentiality', title: 'System Models for Confidential Chats', hint: 'Models provided for you, and your decision on each for confidential chats' },
     { id: 'masking', label: 'Outbound Masking', hint: 'Secrets replaced before sending' },
     { id: 'chats', label: 'Chat Data', hint: 'Active, pinned and trashed chats' },
     { id: 'version', label: 'Version', hint: 'Overseer version and release notes' }
@@ -107,7 +108,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
   @ViewChild('changelogDialog') changelogDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('settingsBulkDeleteDialog') settingsBulkDeleteDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('settingsUnpinAllDialog') settingsUnpinAllDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('systemModelsInfoDialog') systemModelsInfoDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('settingsTrashModal') settingsTrashModal!: TrashModalComponent;
+
+  /** The posture ladder, weakest first, as the "How this works" dialog lists it. */
+  readonly postureLadder = CONFIDENTIALITY_POSTURES;
 
   activeSessionCount: number = 0;
   pinnedSessionCount: number = 0;
@@ -900,8 +905,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Whether an operator dated the posture check, and when, or that nobody has. */
+  /** Whether an operator dated the posture check, and when; or that the posture was entered but not checked; or that nothing was entered at all. */
   providedModelVerification(model: ProvidedModelConfidentialStatus): string {
+    if (model.posture === 'Unknown') {
+      return 'nothing recorded';
+    }
     if (!model.isOperatorVerified) {
       return 'self-declared';
     }
@@ -1111,6 +1119,14 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.closeSettingsUnpinAllDialog();
       }
     });
+  }
+
+  openSystemModelsInfoDialog() {
+    this.systemModelsInfoDialog?.nativeElement?.showModal();
+  }
+
+  closeSystemModelsInfoDialog() {
+    this.systemModelsInfoDialog?.nativeElement?.close();
   }
 
   openSettingsTrashDialog() {

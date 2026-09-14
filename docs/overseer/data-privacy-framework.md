@@ -835,7 +835,7 @@ Refusals name their reason, because "not allowed" invites the user to try the sa
 The self-declared case says specifically that Overseer cannot verify the claim — which is not
 distrust of the user, and should not read as it. The refusal also names where the answer is
 changed, and the two places differ: a user's own key under **API Keys**, an operator-provided
-model under **Settings › Provided Models**.
+model under **Settings › System Model Confidentiality**.
 
 **Where the gate runs.** `ChatService.StreamMessageAsync`, once the funding credential is
 resolved and before the user message is built or any provider is called — so a refused or
@@ -849,8 +849,10 @@ reconstructed.
 `UserSystemModelConfidentialTrust` table, not on a key row — a user can reach a system model
 through a group assignment and have no per-user configuration row at all, and the decision must
 not depend on how the model was provisioned. Absence of a row is the undecided state. The
-decisions are listed and edited under **Settings › Provided Models**, and
-account deletion removes them.
+decisions are listed and edited under **Settings › System Model Confidentiality**, and
+account deletion removes them. That section carries a plain-language summary and a "How this
+works" dialog explaining the posture ladder, verification, and what the decision does, so a user
+is never asked to decide on a term the product has not defined for them.
 
 ### 4.4 The badge
 

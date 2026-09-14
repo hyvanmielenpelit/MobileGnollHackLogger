@@ -10,7 +10,8 @@ import {
   UserAiSettings,
   ConfidentialFloor,
   DlpFloor,
-  ProvidedModelConfidentialStatus
+  ProvidedModelConfidentialStatus,
+  CONFIDENTIALITY_POSTURES
 } from '../services/settings.service';
 import { ChatService } from '../services/chat.service';
 
@@ -1053,7 +1054,7 @@ describe('SettingsComponent', () => {
     it('renders eight nav links with the expected labels and routerLinks', () => {
       const compiled = fixture.nativeElement as HTMLElement;
       const links = compiled.querySelectorAll('.settings-nav-link');
-      const expectedLabels = ['General', 'AI Permissions', 'AI Performance', 'Confidentiality Mode', 'Provided Models', 'Outbound Masking', 'Chat Data', 'Version'];
+      const expectedLabels = ['General', 'AI Permissions', 'AI Performance', 'Confidentiality Mode', 'System Model Confidentiality', 'Outbound Masking', 'Chat Data', 'Version'];
 
       expect(links.length).toBe(8);
       links.forEach((link, i) => {
@@ -1090,11 +1091,11 @@ describe('SettingsComponent', () => {
       expect(component.contentSectionLabel).toBe('Version');
     });
 
-    it('shows the full title in the content header for Provided Models', () => {
+    it('shows the full title in the content header for System Model Confidentiality', () => {
       emitSection('provided-models');
-      expect(component.contentSectionLabel).toBe('Provided Models for Confidential Chats');
+      expect(component.contentSectionLabel).toBe('System Models for Confidential Chats');
       const compiled = fixture.nativeElement as HTMLElement;
-      expect(compiled.querySelector('.settings-section-title')?.textContent).toBe('Provided Models for Confidential Chats');
+      expect(compiled.querySelector('.settings-section-title')?.textContent).toBe('System Models for Confidential Chats');
     });
 
     it('renders no sparkle badge on the Release Notes button', () => {
@@ -1134,7 +1135,7 @@ describe('SettingsComponent', () => {
     });
   });
 
-  describe('Provided Models for Confidential Chats', () => {
+  describe('System Models for Confidential Chats', () => {
     let paramMapSubject: Subject<ParamMap>;
 
     // One verified model still undecided, one self-declared model already accepted.
@@ -1212,7 +1213,9 @@ describe('SettingsComponent', () => {
     it('lists the provided models the service returns', async () => {
       await enterSection();
 
-      const rows = (fixture.nativeElement as HTMLElement).querySelectorAll('table.gh-table tbody tr');
+      /* Scoped to the section's own table: the explainer dialog carries a .gh-table of its own. */
+      const rows = (fixture.nativeElement as HTMLElement)
+        .querySelectorAll('.gh-datatable-scroll table.gh-table tbody tr');
 
       expect(rows.length).toBe(2);
       expect(rows[0].querySelector('th')?.textContent?.trim()).toBe('House Claude');
@@ -1269,6 +1272,85 @@ describe('SettingsComponent', () => {
       expect(errors.length).toBe(1);
       expect(errors[0].textContent).toContain('Model not found.');
       expect(chosenText(9)).toBe('Yes');
+    });
+
+    it('shows "nothing recorded" for a model whose posture is Not established', async () => {
+      /* A local third row, so the row indexes the other tests assert on do not move. */
+      const withUnknown: ProvidedModelConfidentialStatus[] = [
+        ...providedModels.map(m => ({ ...m })),
+        {
+          id: 11,
+          provider: 'OpenAI',
+          modelId: 'house-gpt',
+          displayName: 'House GPT',
+          posture: 'Unknown',
+          postureText: 'Not established',
+          postureVerifiedUtc: null,
+          isOperatorVerified: false,
+          dataRegion: null,
+          note: null,
+          userTrustsForConfidential: null,
+          decidedUtc: null
+        }
+      ];
+      (settingsService.getProvidedModelsForConfidential as jasmine.Spy).and.returnValue(of(withUnknown));
+      await enterSection();
+
+      const rows = (fixture.nativeElement as HTMLElement)
+        .querySelectorAll('.gh-datatable-scroll table.gh-table tbody tr');
+
+      expect(rows.length).toBe(3);
+      expect(rows[2].textContent).toContain('nothing recorded');
+      expect(rows[2].textContent).not.toContain('self-declared');
+    });
+
+    it('renders the summary and the info button in the System Models section', async () => {
+      await enterSection();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const intro = compiled.querySelector('.system-models-intro');
+
+      expect(intro).toBeTruthy();
+      expect(intro!.textContent).toContain('without an API key of your own');
+      expect(intro!.textContent).toContain('decided under API Keys');
+      expect(compiled.querySelector('.system-models-info-btn')?.getAttribute('aria-label'))
+        .toBe('How this works: system models and confidential chats');
+    });
+
+    it('opens and closes the "How this works" dialog', async () => {
+      await enterSection();
+
+      const showModal = jasmine.createSpy('showModal');
+      const close = jasmine.createSpy('close');
+      component.systemModelsInfoDialog = { nativeElement: { showModal, close } } as any;
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      (compiled.querySelector('.system-models-info-btn') as HTMLButtonElement).click();
+      expect(showModal).toHaveBeenCalled();
+
+      component.closeSystemModelsInfoDialog();
+      expect(close).toHaveBeenCalled();
+
+      const dialog = compiled.querySelector('.system-models-info-dialog')!;
+      const titleId = dialog.getAttribute('aria-labelledby')!;
+      expect(dialog.querySelector(`h3#${titleId}`)?.textContent?.trim())
+        .toBe('System models and confidential chats');
+
+      const headings = Array.from(dialog.querySelectorAll('h4')).map(h => h.textContent?.trim());
+      expect(headings.length).toBeGreaterThanOrEqual(6);
+      expect(headings).toContain('What "retention posture" means');
+      expect(headings).toContain('What should I decide?');
+    });
+
+    it('lists the posture ladder in the dialog from CONFIDENTIALITY_POSTURES', async () => {
+      await enterSection();
+
+      const rows = (fixture.nativeElement as HTMLElement)
+        .querySelectorAll('.system-models-ladder tbody tr');
+
+      expect(rows.length).toBe(CONFIDENTIALITY_POSTURES.length);
+      expect(rows[0].querySelector('th')?.textContent?.trim()).toBe('Not established');
+      expect(rows[rows.length - 1].querySelector('th')?.textContent?.trim()).toBe('Self-hosted inference');
     });
   });
 });

@@ -294,7 +294,7 @@ public class ConfidentialityPostureService
                 ConfidentialityGateOutcome.Refuse,
                 isSystemProvidedModel
                     ? "You marked this model as not suitable for confidential chats. Change that under "
-                      + "Settings, Provided Models for Confidential Chats, to use it here."
+                      + "Settings, System Model Confidentiality, to use it here."
                     : "You marked this key as not suitable for confidential chats. Change that in API keys to use it here.");
         }
 

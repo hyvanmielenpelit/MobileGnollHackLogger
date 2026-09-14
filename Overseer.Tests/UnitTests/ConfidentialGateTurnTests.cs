@@ -408,7 +408,7 @@ public class ConfidentialGateTurnTests : IDisposable
         var events = await RunTurnAsync(container, held.Ref, userId, systemModelId: configId);
 
         var error = Assert.Single(events, e => e.Type == "error");
-        Assert.Contains("Provided Models for Confidential Chats", error.Data);
+        Assert.Contains("System Model Confidentiality", error.Data);
         Assert.DoesNotContain("API keys", error.Data);
         Assert.Equal(0, http.Handler.Calls);
     }

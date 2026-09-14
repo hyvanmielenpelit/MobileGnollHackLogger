@@ -528,7 +528,21 @@
       }
       @case ('provided-models') {
 
-        <p class="form-hint mt-5">Your own keys are decided under API Keys.</p>
+        <div class="system-models-intro">
+          <div class="system-models-intro-text">
+            <p class="form-hint">
+              These models are provided for you by whoever runs this Overseer, so you can use them
+              without an API key of your own. For each one, this page shows what is known about how
+              the provider keeps your data and records whether you want to use it in confidential
+              chats. Ordinary chats are not affected.
+            </p>
+            <p class="form-hint">Models you use with your own key are decided under API Keys.</p>
+          </div>
+          <button type="button" class="btn-info system-models-info-btn" (click)="openSystemModelsInfoDialog()"
+                  aria-label="How this works: system models and confidential chats" title="How this works">
+            <span class="info-icon" aria-hidden="true">i</span>
+          </button>
+        </div>
 
         @if (isLoadingProvidedModels) {
           <p class="form-hint mt-10" role="status">Loading provided models...</p>
@@ -804,6 +818,110 @@
         Unpin All
       }
     </button>
+  </div>
+</dialog>
+
+<!-- System Models "How this works" Dialog -->
+<dialog #systemModelsInfoDialog class="gh-dialog dialog-wide system-models-info-dialog" closedby="any"
+        aria-labelledby="system-models-info-title" (cancel)="closeSystemModelsInfoDialog()">
+  <div class="system-models-info-header">
+    <h3 id="system-models-info-title">System models and confidential chats</h3>
+    <button type="button" class="btn-icon-action" aria-label="Close dialog" title="Close" (click)="closeSystemModelsInfoDialog()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 18px; height: 18px;">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+  </div>
+  <div class="system-models-info-body">
+
+    <section>
+      <h4>What this page is for</h4>
+      <p>Some AI models are provided for you by the people who run this Overseer, so you can use them without an API key of your own. These are the <strong>system models</strong>. This page lists the ones you can pick in chat, shows what is known about how each provider handles your data, and records your own decision about whether to use each one in a <strong>confidential chat</strong>.</p>
+      <p>Models you use with your own API key are decided in the same way under API Keys. Ordinary, non-confidential chats are not affected by anything on this page.</p>
+    </section>
+
+    <section>
+      <h4>Why it is needed</h4>
+      <p>A confidential chat protects what Overseer itself keeps and sends: the chat is encrypted where it is stored, or never stored at all; internet tools are off; and the secrets you have chosen are masked before anything leaves the server.</p>
+      <p>But every message still has to reach the AI provider to get an answer. What the provider does with it after that, how long it keeps it and whether it may train on it, is set by the agreement behind the account, not by anything Overseer can enforce. So Overseer records what has been agreed, shows it to you here, and asks you to decide whether that is good enough for your confidential chats.</p>
+    </section>
+
+    <section>
+      <h4>What "retention posture" means</h4>
+      <p>The retention posture is what has been agreed with the provider about keeping your content. It is a statement about a contract, not a technical protection: nothing Overseer does can make a provider forget something faster than its terms say. From weakest to strongest:</p>
+      <table class="gh-table system-models-ladder">
+        <caption class="visually-hidden">The retention posture ladder, weakest first</caption>
+        <thead>
+          <tr>
+            <th scope="col">Posture</th>
+            <th scope="col">Meaning</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (p of postureLadder; track p.value) {
+            <tr>
+              <th scope="row">{{ p.label }}</th>
+              <td>{{ p.hint }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+      <p><strong>Zero data retention</strong> is the weakest posture the full confidentiality promise can rest on. Anything below it means the provider may keep your content for some time.</p>
+    </section>
+
+    <section>
+      <h4>What "Not established" means</h4>
+      <p>Nobody has recorded anything about this provider's retention. It does not mean the provider keeps your data, and it does not mean it does not. It means no claim is being made either way. This is the honest default for every model until an administrator records something, and the sub-label below it reads <em>nothing recorded</em>.</p>
+    </section>
+
+    <section>
+      <h4>What "self-declared" and "verified" mean</h4>
+      <ul>
+        <li><strong>Verified</strong>, with a date, means an administrator checked the posture against the actual agreement with the provider and dated that check. It is still a statement about a contract, but one somebody has confirmed.</li>
+        <li><strong>Self-declared</strong> means a posture was written down but nobody has confirmed it against an agreement. Overseer cannot verify it, so a self-declared posture never counts as verified, however strong it sounds.</li>
+        <li><strong>Nothing recorded</strong> means the posture is Not established: there is nothing to verify or declare.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h4>What your decision does</h4>
+      <ul>
+        <li><strong>Yes</strong> records that this model may be used in your confidential chats. Overseer will not ask you about it again.</li>
+        <li><strong>No</strong> records that it may not. Overseer refuses to run a confidential turn on this model and tells you why. You can change your mind here at any time.</li>
+        <li><strong>Not decided yet</strong> records nothing. What happens then depends on your <strong>Model Trust Requirement</strong> under Confidentiality Mode:
+          <ul>
+            <li><em>I decide</em>: the model is used, and the privacy badge on the chat reports what is actually known.</li>
+            <li><em>Ask when unclear</em>: the first confidential turn on the model asks you once, and your answer is saved here.</li>
+            <li><em>Verified posture only</em>: only a model an administrator has verified as zero data retention or stronger is used, whatever you decide here.</li>
+          </ul>
+        </li>
+      </ul>
+      <p>Your decision changes nothing about the provider or the agreement. It only records what you are willing to use. The decisions are yours alone, are not shared with other users, and are removed if your account is deleted.</p>
+    </section>
+
+    <section>
+      <h4>What should I decide?</h4>
+      <ul>
+        <li>If the posture is <strong>verified</strong> and at least <strong>zero data retention</strong>: <em>Yes</em> is the case the full confidential promise was designed for.</li>
+        <li>If it is <strong>no training on content</strong>, or a stronger posture that is only <strong>self-declared</strong>: <em>Yes</em> is reasonable if you accept that the provider may keep the content, or that nobody has confirmed the claim.</li>
+        <li>If it is <strong>Not established</strong> or <strong>standard provider terms</strong>: choose <em>Yes</em> only for content you would be comfortable sending under the provider's ordinary terms. Choose <em>No</em> if you would not.</li>
+        <li>Not sure? Leave it undecided and set the Model Trust Requirement to <em>Ask when unclear</em>. Overseer will ask when it matters, and only once per model.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h4>What stays the same whatever you choose</h4>
+      <ul>
+        <li>Overseer's own protections still apply in a confidential chat: encrypted or unstored, no internet tools, chosen secrets masked.</li>
+        <li>Your messages still reach the provider. Confidentiality Mode is about what Overseer keeps and sends; it is not a promise that the provider forgets.</li>
+        <li>The privacy badge on a confidential chat shows the colour that matches what is actually known. A self-declared or unverified posture never shows green.</li>
+      </ul>
+    </section>
+
+  </div>
+  <div class="dialog-actions">
+    <button type="button" class="btn-gh" (click)="closeSystemModelsInfoDialog()">Close</button>
   </div>
 </dialog>
 
