@@ -200,7 +200,9 @@ public class SettingsController : ControllerBase
             dlpMaskApiKeys = dlpPolicy.ApiKeys,
             dlpMaskPrivateKeys = dlpPolicy.PrivateKeys,
             dlpMaskTokens = dlpPolicy.Tokens,
+            dlpMaskPasswords = dlpPolicy.Passwords,
             dlpMaskCreditCards = dlpPolicy.CreditCards,
+            dlpMaskIbans = dlpPolicy.Ibans,
             dlpMaskSsns = dlpPolicy.Ssns,
             dlpMaskEmails = dlpPolicy.Emails,
             dlpMaskPhoneNumbers = dlpPolicy.PhoneNumbers,
@@ -209,7 +211,9 @@ public class SettingsController : ControllerBase
                 apiKeys = _dlpScanner.Floor.ApiKeys,
                 privateKeys = _dlpScanner.Floor.PrivateKeys,
                 tokens = _dlpScanner.Floor.Tokens,
+                passwords = _dlpScanner.Floor.Passwords,
                 creditCards = _dlpScanner.Floor.CreditCards,
+                ibans = _dlpScanner.Floor.Ibans,
                 ssns = _dlpScanner.Floor.Ssns,
                 emails = _dlpScanner.Floor.Emails,
                 phoneNumbers = _dlpScanner.Floor.PhoneNumbers
@@ -234,7 +238,9 @@ public class SettingsController : ControllerBase
             request.DlpMaskApiKeys,
             request.DlpMaskPrivateKeys,
             request.DlpMaskTokens,
+            request.DlpMaskPasswords,
             request.DlpMaskCreditCards,
+            request.DlpMaskIbans,
             request.DlpMaskSsns,
             request.DlpMaskEmails,
             request.DlpMaskPhoneNumbers);
@@ -1122,7 +1128,9 @@ public class UpdateDlpSettingsRequest
     public bool? DlpMaskApiKeys { get; set; }
     public bool? DlpMaskPrivateKeys { get; set; }
     public bool? DlpMaskTokens { get; set; }
+    public bool? DlpMaskPasswords { get; set; }
     public bool? DlpMaskCreditCards { get; set; }
+    public bool? DlpMaskIbans { get; set; }
     public bool? DlpMaskSsns { get; set; }
     public bool? DlpMaskEmails { get; set; }
     public bool? DlpMaskPhoneNumbers { get; set; }

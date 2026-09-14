@@ -9,7 +9,12 @@ namespace Overseer.Services.Privacy.Dlp;
 /// <summary>One kind of sensitive value. Each is an individual switch.</summary>
 public enum DlpClass
 {
-    /// <summary>Provider and cloud API keys: <c>sk-</c>, <c>AIzaSy</c>, <c>AKIA</c>, <c>ghp_</c>, <c>github_pat_</c>.</summary>
+    /// <summary>
+    /// Provider and cloud API keys: <c>sk-</c>, <c>AIzaSy</c>, <c>AKIA</c>, <c>ghp_</c>,
+    /// <c>github_pat_</c>, <c>gho_</c>/<c>ghu_</c>/<c>ghs_</c>/<c>ghr_</c>, <c>xox[abp]-</c>,
+    /// <c>sk_live_</c>/<c>rk_live_</c> and their test forms, <c>glpat-</c>, <c>hf_</c>,
+    /// <c>npm_</c>, <c>ya29.</c>, <c>SG.</c>.
+    /// </summary>
     ApiKey,
 
     /// <summary>PEM and PGP private-key blocks, header through footer.</summary>
@@ -18,8 +23,14 @@ public enum DlpClass
     /// <summary>Bearer tokens and JWTs.</summary>
     Token,
 
+    /// <summary>Passwords after a configuration keyword or in a URL's userinfo.</summary>
+    Password,
+
     /// <summary>Payment card numbers, Luhn-validated.</summary>
     CreditCard,
+
+    /// <summary>International bank account numbers, mod-97 validated.</summary>
+    Iban,
 
     /// <summary>US social security numbers, with area/group/serial validation.</summary>
     Ssn,
@@ -46,7 +57,15 @@ public sealed record DlpPolicy
 
     public bool Tokens { get; init; } = true;
 
+    /* On by default, and the only credential class with no randomness gate behind it: a
+       password has no shape of its own, so the keyword or the URL around it is the whole of
+       the evidence. That makes it the class most likely to mask a value the user meant to
+       send, and the one they are most likely to switch off. */
+    public bool Passwords { get; init; } = true;
+
     public bool CreditCards { get; init; } = true;
+
+    public bool Ibans { get; init; } = true;
 
     public bool Ssns { get; init; } = true;
 
@@ -66,7 +85,9 @@ public sealed record DlpPolicy
         ApiKeys = false,
         PrivateKeys = false,
         Tokens = false,
+        Passwords = false,
         CreditCards = false,
+        Ibans = false,
         Ssns = false,
         Emails = false,
         PhoneNumbers = false
@@ -78,7 +99,9 @@ public sealed record DlpPolicy
         DlpClass.ApiKey => ApiKeys,
         DlpClass.PrivateKey => PrivateKeys,
         DlpClass.Token => Tokens,
+        DlpClass.Password => Passwords,
         DlpClass.CreditCard => CreditCards,
+        DlpClass.Iban => Ibans,
         DlpClass.Ssn => Ssns,
         DlpClass.Email => Emails,
         DlpClass.Phone => PhoneNumbers,
@@ -87,7 +110,8 @@ public sealed record DlpPolicy
 
     /// <summary>False when nothing at all is masked, which lets every caller skip the scan.</summary>
     public bool AnyEnabled
-        => ApiKeys || PrivateKeys || Tokens || CreditCards || Ssns || Emails || PhoneNumbers;
+        => ApiKeys || PrivateKeys || Tokens || Passwords || CreditCards || Ibans || Ssns
+           || Emails || PhoneNumbers;
 }
 
 /// <summary>One detected value: where it is, and what it is.</summary>
@@ -155,7 +179,9 @@ public sealed class DlpScannerService
             ApiKeys = ReadFlag(section, "ApiKeys"),
             PrivateKeys = ReadFlag(section, "PrivateKeys"),
             Tokens = ReadFlag(section, "Tokens"),
+            Passwords = ReadFlag(section, "Passwords"),
             CreditCards = ReadFlag(section, "CreditCards"),
+            Ibans = ReadFlag(section, "Ibans"),
             Ssns = ReadFlag(section, "Ssns"),
             Emails = ReadFlag(section, "Emails"),
             PhoneNumbers = ReadFlag(section, "PhoneNumbers")
@@ -182,7 +208,9 @@ public sealed class DlpScannerService
         ApiKeys = Stricter(settings?.DlpMaskApiKeys, DlpPolicy.Defaults.ApiKeys, _floor.ApiKeys),
         PrivateKeys = Stricter(settings?.DlpMaskPrivateKeys, DlpPolicy.Defaults.PrivateKeys, _floor.PrivateKeys),
         Tokens = Stricter(settings?.DlpMaskTokens, DlpPolicy.Defaults.Tokens, _floor.Tokens),
+        Passwords = Stricter(settings?.DlpMaskPasswords, DlpPolicy.Defaults.Passwords, _floor.Passwords),
         CreditCards = Stricter(settings?.DlpMaskCreditCards, DlpPolicy.Defaults.CreditCards, _floor.CreditCards),
+        Ibans = Stricter(settings?.DlpMaskIbans, DlpPolicy.Defaults.Ibans, _floor.Ibans),
         Ssns = Stricter(settings?.DlpMaskSsns, DlpPolicy.Defaults.Ssns, _floor.Ssns),
         Emails = Stricter(settings?.DlpMaskEmails, DlpPolicy.Defaults.Emails, _floor.Emails),
         PhoneNumbers = Stricter(settings?.DlpMaskPhoneNumbers, DlpPolicy.Defaults.PhoneNumbers, _floor.PhoneNumbers)
@@ -326,6 +354,60 @@ public sealed class DlpScannerService
         return digits is >= 13 and <= 19 && sum % 10 == 0;
     }
 
+    /// <summary>
+    /// The IBAN mod-97 check over a candidate account number, ignoring space separators.
+    /// </summary>
+    /// <remarks>
+    /// The remainder is folded character by character rather than assembled into one very large
+    /// integer, which a 34-character IBAN would need a BigInteger for.
+    /// </remarks>
+    public static bool IsIbanValid(string candidate)
+    {
+        Span<char> compact = stackalloc char[34];
+        int length = 0;
+
+        foreach (char c in candidate)
+        {
+            if (c == ' ')
+                continue;
+
+            if (length == compact.Length)
+                return false;
+
+            compact[length++] = c;
+        }
+
+        if (length is < 15 or > 34)
+            return false;
+
+        // Two letters for the country, then two check digits: anything else is not an IBAN.
+        if (compact[0] is < 'A' or > 'Z' || compact[1] is < 'A' or > 'Z'
+            || compact[2] is < '0' or > '9' || compact[3] is < '0' or > '9')
+        {
+            return false;
+        }
+
+        int remainder = 0;
+
+        for (int i = 0; i < length; i++)
+        {
+            // The check is defined over the rotation that moves the first four characters last.
+            char c = compact[(i + 4) % length];
+
+            int value;
+            if (c is >= '0' and <= '9')
+                value = c - '0';
+            else if (c is >= 'A' and <= 'Z')
+                value = c - 'A' + 10;
+            else
+                return false;
+
+            remainder = value < 10 ? (remainder * 10 + value) % 97 : (remainder * 100 + value) % 97;
+        }
+
+        return remainder == 1;
+    }
+
     private static bool Stricter(bool? user, bool builtIn, bool floor) => (user ?? builtIn) || floor;
 
     private static bool ReadFlag(IConfigurationSection section, string key)
@@ -393,6 +475,40 @@ public sealed class DlpScannerService
         return false;
     }
 
+    /* An IBAN has no literal prefix to test for, so the marker is the cheapest thing that is
+       still a shape: two ASCII uppercase letters followed by two digits. A linear scan costs
+       less than the ContainsDigit-plus-regex pair it replaces. */
+    private static bool ContainsCountryCodeAndCheckDigits(string text)
+    {
+        for (int i = 0; i + 3 < text.Length; i++)
+        {
+            if (text[i] is >= 'A' and <= 'Z' && text[i + 1] is >= 'A' and <= 'Z'
+                && text[i + 2] is >= '0' and <= '9' && text[i + 3] is >= '0' and <= '9')
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool ContainsAny(string text, string[] markers, StringComparison comparison)
+    {
+        foreach (string marker in markers)
+        {
+            if (text.Contains(marker, comparison))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static readonly string[] StripeKeyMarkers = { "k_live_", "k_test_" };
+
+    private static readonly string[] GitHubOtherTokenMarkers = { "gho_", "ghu_", "ghs_", "ghr_" };
+
+    private static readonly string[] PasswordKeywordMarkers = { "password", "passwd", "pwd", "secret" };
+
     /// <param name="HasMarker">The cheap substring test that decides whether the regex runs at all.</param>
     /// <param name="RequireRandomness">Whether the match must clear the entropy and placeholder gates.</param>
     /// <param name="Validate">An extra check on the matched value, such as Luhn.</param>
@@ -444,6 +560,51 @@ public sealed class DlpScannerService
             static t => t.Contains("github_pat_", StringComparison.Ordinal),
             RequireRandomness: true),
 
+        // The other four GitHub token kinds: OAuth, user-to-server, server-to-server, refresh.
+        // 'p' is excluded because ghp_ has its own entry above.
+        new(DlpClass.ApiKey,
+            new Regex(@"(?<![A-Za-z0-9])gh[ousr]_[A-Za-z0-9]{30,}", Standard),
+            static t => ContainsAny(t, GitHubOtherTokenMarkers, StringComparison.Ordinal),
+            RequireRandomness: true),
+
+        new(DlpClass.ApiKey,
+            new Regex(@"(?<![A-Za-z0-9])xox[abp]-[A-Za-z0-9\-]{20,}", Standard),
+            static t => t.Contains("xox", StringComparison.Ordinal),
+            RequireRandomness: true),
+
+        /* Stripe secret and restricted keys. The test forms are included on purpose: a leaked
+           test key is still a credential, and the placeholder gate already lets Stripe's own
+           documentation sample (sk_test_ followed by a run of X characters) through. */
+        new(DlpClass.ApiKey,
+            new Regex(@"(?<![A-Za-z0-9])[sr]k_(?:live|test)_[A-Za-z0-9]{20,}", Standard),
+            static t => ContainsAny(t, StripeKeyMarkers, StringComparison.Ordinal),
+            RequireRandomness: true),
+
+        new(DlpClass.ApiKey,
+            new Regex(@"(?<![A-Za-z0-9])glpat-[A-Za-z0-9_\-]{20,}", Standard),
+            static t => t.Contains("glpat-", StringComparison.Ordinal),
+            RequireRandomness: true),
+
+        new(DlpClass.ApiKey,
+            new Regex(@"(?<![A-Za-z0-9])hf_[A-Za-z0-9]{30,}", Standard),
+            static t => t.Contains("hf_", StringComparison.Ordinal),
+            RequireRandomness: true),
+
+        new(DlpClass.ApiKey,
+            new Regex(@"(?<![A-Za-z0-9])npm_[A-Za-z0-9]{30,}", Standard),
+            static t => t.Contains("npm_", StringComparison.Ordinal),
+            RequireRandomness: true),
+
+        new(DlpClass.ApiKey,
+            new Regex(@"(?<![A-Za-z0-9])ya29\.[A-Za-z0-9_\-]{30,}", Standard),
+            static t => t.Contains("ya29.", StringComparison.Ordinal),
+            RequireRandomness: true),
+
+        new(DlpClass.ApiKey,
+            new Regex(@"(?<![A-Za-z0-9])SG\.[A-Za-z0-9_\-]{16,}\.[A-Za-z0-9_\-]{16,}", Standard),
+            static t => t.Contains("SG.", StringComparison.Ordinal),
+            RequireRandomness: true),
+
         /* The whole block, header through footer, so the token replaces the key rather than
            just its first line. An unterminated block matches to the end of input: a truncated
            private key is still a leaked private key. */
@@ -475,6 +636,32 @@ public sealed class DlpScannerService
             static t => t.Contains("Bearer", StringComparison.OrdinalIgnoreCase),
             RequireRandomness: true),
 
+        /* A password has no shape of its own, so the keyword is the whole of the evidence and
+           stays in the text for the same reason "Bearer" does: without it the model cannot see
+           that it is looking at a credential line at all. Only the value is replaced.
+
+           There is no entropy gate here — a password that is not random is still a password —
+           so the placeholder-word list is the only thing between this pattern and a how-to
+           question. These two entries sit after the key and token ones so that
+           "secret=sk-proj-..." is reported as a key: the spans are identical and the pattern
+           order breaks the tie. */
+        new(DlpClass.Password,
+            new Regex(
+                @"(?<![A-Za-z0-9_])(?:password|passwd|pwd|secret|client_secret|api_secret)"
+                + @"[ \t]*[=:][ \t]*(?<secret>[^\s;,'""`]{8,})",
+                Standard | RegexOptions.IgnoreCase),
+            static t => ContainsAny(t, PasswordKeywordMarkers, StringComparison.OrdinalIgnoreCase),
+            Validate: static v => !LooksLikePlaceholder(v)),
+
+        // Only the password segment of scheme://user:password@host. The scheme, the user and the
+        // host stay readable, which is what makes the rest of the address worth sending at all.
+        new(DlpClass.Password,
+            new Regex(
+                @"(?<![A-Za-z0-9])[A-Za-z][A-Za-z0-9+.\-]*://[^\s/:@]+:(?<secret>[^\s/@]{4,})@",
+                Standard),
+            static t => t.Contains("://", StringComparison.Ordinal),
+            Validate: static v => !LooksLikePlaceholder(v)),
+
         /* 13 to 19 digits with single spaces or hyphens tolerated as group separators, and a
            non-alphanumeric boundary at each end so a longer identifier is not chopped into a
            card-shaped piece. Luhn then rejects the overwhelming majority of digit runs that
@@ -483,6 +670,17 @@ public sealed class DlpScannerService
             new Regex(@"(?<![0-9A-Za-z_])[0-9](?:[ \-]?[0-9]){12,18}(?![0-9A-Za-z_])", Standard),
             static t => ContainsDigit(t),
             Validate: IsLuhnValid),
+
+        /* Country code, two check digits, then 11 to 30 alphanumerics, with the four-character
+           grouping banks print tolerated. Mod-97 is a far stronger filter than Luhn, so the
+           class needs no entropy gate. An IBAN always begins with a letter and a card number
+           always with a digit, so the two patterns cannot claim the same span. */
+        new(DlpClass.Iban,
+            new Regex(
+                @"(?<![A-Za-z0-9])[A-Z]{2}[0-9]{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,4})?(?![A-Za-z0-9])",
+                Standard),
+            static t => ContainsCountryCodeAndCheckDigits(t),
+            Validate: IsIbanValid),
 
         /* Real SSN validation rather than \d{3}-\d{2}-\d{4}: the area may not be 000, 666 or
            900-999, the group may not be 00, and the serial may not be 0000. Without those the

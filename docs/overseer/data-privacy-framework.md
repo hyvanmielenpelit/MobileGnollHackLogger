@@ -405,16 +405,32 @@ switches and concludes they matter only inside a confidential chat has been misl
 
 > **The residual, stated first because it is the part that matters.** Masking **reduces
 > accidental credential egress. It is not a guarantee.** A secret with no recognisable shape —
-> a password, an internal hostname, a customer name, a bespoke token format — passes straight
-> through, and nothing here detects it. What this buys is that the common accidents (a key
-> pasted into a question, a key inside an uploaded config file, a key in a file a tool read)
+> a bare password, an internal hostname, a customer name, a bespoke token format — passes
+> straight through, and nothing here detects it. What this buys is that the common accidents (a
+> key pasted into a question, a key inside an uploaded config file, a key in a file a tool read)
 > stop being silent.
+
+The settings page states the same limit under the heading **"A safety net, not a guarantee"**,
+above the description of how masking works, so the residual is read before the mechanism.
 
 #### The classes, and why two of them are off
 
 On by default: provider and cloud API keys (`sk-`, `sk-proj-`, `sk-ant-`, `AIzaSy`, `AKIA`,
-GitHub `ghp_` / `github_pat_`), PEM and PGP private-key blocks, bearer tokens and JWTs,
-Luhn-validated card numbers, and US Social Security numbers with area/group/serial validation.
+GitHub `ghp_` / `github_pat_` / `gho_` / `ghu_` / `ghs_` / `ghr_`, Slack `xox[abp]-`, Stripe
+`sk_live_` / `rk_live_` and their `_test_` forms, GitLab `glpat-`, Hugging Face `hf_`, npm
+`npm_`, Google OAuth `ya29.`, SendGrid `SG.`), PEM and PGP private-key blocks, bearer tokens and
+JWTs, **passwords after a configuration keyword** (`password=`, `pwd=`, `secret:`,
+`client_secret:`) **or in a URL's userinfo** (`scheme://user:password@host`), Luhn-validated
+card numbers, **mod-97-validated IBANs**, and US Social Security numbers with
+area/group/serial validation.
+
+**The SSN class recognises the US nine-digit format only.** Per-country national ID formats —
+Finnish HETU, Swedish personnummer, UK NINo, German Steuer-ID and the rest — were considered and
+deliberately not added: there is no global shape, each country is its own pattern with its own
+false positives, and a user base of developers and players does not paste one. The settings page
+says so in the class's own hint rather than letting the label imply coverage it does not have.
+If one country later proves common, it belongs as one more shape under a renamed
+"Government ID numbers" switch, not as a switch per country.
 
 **Off by default: e-mail addresses and phone numbers.** Masking those measurably degrades
 answers, for a class of data the user usually intended to send — "draft a reply to
@@ -431,9 +447,9 @@ floor already fixes is shown as fixed rather than accepting a setting that has n
 
 #### Detection
 
-A **cheap substring pre-filter** runs first: most messages contain no secret, and running eight
-regexes over every 50 KB prompt is waste. Only the patterns whose marker is present ever run.
-Every pattern is pre-compiled.
+A **cheap substring pre-filter** runs first: most messages contain no secret, and running two
+dozen regexes over every 50 KB prompt is waste. Only the patterns whose marker is present ever
+run. Every pattern is pre-compiled.
 
 **Two gates** cover the prefixed key and token classes, because one is not enough. A real key
 is random, so its Shannon entropy is high, and the threshold of 3.0 bits per character rejects
@@ -444,6 +460,18 @@ into a confused one. So a second gate rejects a match containing a run of five i
 characters or one of a short list of placeholder words. A real 40-character random key trips
 either check about once in a million times; both thresholds trade a negligible false-negative
 risk against a large false-positive one.
+
+Two classes clear their false positives with a **checksum instead of an entropy gate**: cards
+with Luhn, IBANs with mod-97. Mod-97 is the stronger of the two by a wide margin, which is what
+makes a class whose pattern is "two letters, two digits, then alphanumerics" safe to have on by
+default at all.
+
+**The password class is the only credential class with no randomness gate**, because a password
+that is not random is still a password. Its entire evidence is the keyword or the URL shape
+around the value, plus a minimum length of eight and the same placeholder-word list. That makes
+it the class most likely to mask something the user meant to send — `password=changeme` in a
+how-to question **is** masked — and therefore the one a user is most likely to switch off, which
+is why it is an individual switch rather than part of the API-key one.
 
 Redaction tokens are also **actively excluded** from every match rather than merely failing to
 match the current patterns, so idempotence is a structural property and not a coincidence that

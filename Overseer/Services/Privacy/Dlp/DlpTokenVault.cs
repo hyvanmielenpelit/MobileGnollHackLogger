@@ -23,7 +23,9 @@ public sealed class DlpTokenVault
         [DlpClass.ApiKey] = "API_KEY",
         [DlpClass.PrivateKey] = "PRIVATE_KEY",
         [DlpClass.Token] = "TOKEN",
+        [DlpClass.Password] = "PASSWORD",
         [DlpClass.CreditCard] = "CARD",
+        [DlpClass.Iban] = "IBAN",
         [DlpClass.Ssn] = "SSN",
         [DlpClass.Email] = "EMAIL",
         [DlpClass.Phone] = "PHONE"
@@ -34,7 +36,9 @@ public sealed class DlpTokenVault
         [DlpClass.ApiKey] = "provider or cloud API key",
         [DlpClass.PrivateKey] = "private key block",
         [DlpClass.Token] = "bearer token or JWT",
+        [DlpClass.Password] = "password",
         [DlpClass.CreditCard] = "payment card number",
+        [DlpClass.Iban] = "bank account number",
         [DlpClass.Ssn] = "US social security number",
         [DlpClass.Email] = "email address",
         [DlpClass.Phone] = "phone number"

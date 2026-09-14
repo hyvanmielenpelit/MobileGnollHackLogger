@@ -107,8 +107,18 @@ public class UserAiSettings
     /// <summary>Bearer tokens and JWTs. Default on.</summary>
     public bool? DlpMaskTokens { get; set; }
 
+    /// <summary>
+    /// Passwords after a configuration keyword, and the password part of a URL. Default on.
+    /// The only credential class with no randomness gate, so also the likeliest to be switched
+    /// off.
+    /// </summary>
+    public bool? DlpMaskPasswords { get; set; }
+
     /// <summary>Card numbers that pass a Luhn check. Default on.</summary>
     public bool? DlpMaskCreditCards { get; set; }
+
+    /// <summary>Bank account numbers that pass the IBAN mod-97 check. Default on.</summary>
+    public bool? DlpMaskIbans { get; set; }
 
     /// <summary>US Social Security numbers. Default on.</summary>
     public bool? DlpMaskSsns { get; set; }

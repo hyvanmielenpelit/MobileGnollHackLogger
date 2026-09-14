@@ -23,6 +23,17 @@ public class DlpScannerServiceTests
     private const string AwsKey = "AKIA3QK7Z9MTVB2XR6LD";
     private const string GitHubClassicToken = "ghp_9fK2mQx7ZtVb4NpLc8RwYs1AeHjD6TgUvXn0";
     private const string GitHubFineGrainedToken = "github_pat_11AbCd3EfGh4IjKl5MnOp_qRsTuVwXyZ7AbCd8EfGh9IjKl0MnOpQ";
+    private const string GitHubOAuthToken = "gho_4NpLc8RwYs1AeHjD6TgUvXn0BiOoMzQrEyPk";
+    private const string SlackBotToken = "xoxb-2QK7Z9MTVB2-4NpLc8RwYs1-AeHjD6TgUvXn0BiOoMzQrEyPk";
+    /* Prefix and body are separate literals: GitHub push protection scans source text for
+       token shapes, and the concatenation keeps the scanned value identical. */
+    private const string StripeLiveKey = "sk_live_" + "9fK2mQx7ZtVb4NpLc8RwYs1AeHjD6TgU";
+    private const string StripeTestKey = "rk_test_" + "3QK7Z9MTVB2XR6LDc8RwYs1AeHjD6TgU";
+    private const string GitLabToken = "glpat-" + "9fK2mQx7ZtVb4NpLc8Rw";
+    private const string HuggingFaceToken = "hf_9fK2mQx7ZtVb4NpLc8RwYs1AeHjD6TgUvX";
+    private const string NpmToken = "npm_9fK2mQx7ZtVb4NpLc8RwYs1AeHjD6TgUvX";
+    private const string GoogleOAuthToken = "ya29.a0AfH6SMBq7Z9MTVb4NpLc8RwYs1AeHjD6TgUvXn0BiOo";
+    private const string SendGridKey = "SG.9fK2mQx7ZtVb4NpLc.8RwYs1AeHjD6TgUvXn0BiOoMzQrEyPkSl3W";
 
     private const string Jwt =
         "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
@@ -48,7 +59,9 @@ public class DlpScannerServiceTests
         ApiKeys = dlpClass == DlpClass.ApiKey,
         PrivateKeys = dlpClass == DlpClass.PrivateKey,
         Tokens = dlpClass == DlpClass.Token,
+        Passwords = dlpClass == DlpClass.Password,
         CreditCards = dlpClass == DlpClass.CreditCard,
+        Ibans = dlpClass == DlpClass.Iban,
         Ssns = dlpClass == DlpClass.Ssn,
         Emails = dlpClass == DlpClass.Email,
         PhoneNumbers = dlpClass == DlpClass.Phone
@@ -64,7 +77,9 @@ public class DlpScannerServiceTests
         Assert.True(policy.ApiKeys);
         Assert.True(policy.PrivateKeys);
         Assert.True(policy.Tokens);
+        Assert.True(policy.Passwords);
         Assert.True(policy.CreditCards);
+        Assert.True(policy.Ibans);
         Assert.True(policy.Ssns);
 
         /* Off by default because masking them measurably degrades answers for data the user
@@ -138,7 +153,9 @@ public class DlpScannerServiceTests
             { "PrivacySettings:DlpFloor:ApiKeys", "true" },
             { "PrivacySettings:DlpFloor:PrivateKeys", "true" },
             { "PrivacySettings:DlpFloor:Tokens", "true" },
+            { "PrivacySettings:DlpFloor:Passwords", "true" },
             { "PrivacySettings:DlpFloor:CreditCards", "true" },
+            { "PrivacySettings:DlpFloor:Ibans", "true" },
             { "PrivacySettings:DlpFloor:Ssns", "true" },
             { "PrivacySettings:DlpFloor:Emails", "true" },
             { "PrivacySettings:DlpFloor:PhoneNumbers", "true" }
@@ -149,7 +166,9 @@ public class DlpScannerServiceTests
             DlpMaskApiKeys = false,
             DlpMaskPrivateKeys = false,
             DlpMaskTokens = false,
+            DlpMaskPasswords = false,
             DlpMaskCreditCards = false,
+            DlpMaskIbans = false,
             DlpMaskSsns = false,
             DlpMaskEmails = false,
             DlpMaskPhoneNumbers = false
@@ -167,7 +186,9 @@ public class DlpScannerServiceTests
             DlpMaskApiKeys = false,
             DlpMaskPrivateKeys = false,
             DlpMaskTokens = false,
+            DlpMaskPasswords = false,
             DlpMaskCreditCards = false,
+            DlpMaskIbans = false,
             DlpMaskSsns = false,
             DlpMaskEmails = false,
             DlpMaskPhoneNumbers = false
@@ -205,6 +226,15 @@ public class DlpScannerServiceTests
     [InlineData(AwsKey)]
     [InlineData(GitHubClassicToken)]
     [InlineData(GitHubFineGrainedToken)]
+    [InlineData(GitHubOAuthToken)]
+    [InlineData(SlackBotToken)]
+    [InlineData(StripeLiveKey)]
+    [InlineData(StripeTestKey)]
+    [InlineData(GitLabToken)]
+    [InlineData(HuggingFaceToken)]
+    [InlineData(NpmToken)]
+    [InlineData(GoogleOAuthToken)]
+    [InlineData(SendGridKey)]
     public void EachApiKeyShapeIsDetectedWhole(string key)
     {
         var finding = Assert.Single(ScanWithDefaults($"my key is {key} please check"));
@@ -228,6 +258,14 @@ public class DlpScannerServiceTests
     [InlineData("use sk-XXXXXXXXXXXXXXXXXXXXXXXX in your configuration file")]
     [InlineData("set the key to AIzaSyYOUR_API_KEY_HERE_XXXXXXXXXXX and restart")]
     [InlineData("the documented sample is AKIAIOSFODNN7EXAMPLE")]
+    [InlineData("Stripe writes it sk_test_" + "XXXXXXXXXXXXXXXXXXXXXXXX in the docs")]
+    [InlineData("set the bot token to xoxb-YOUR-SLACK-BOT-TOKEN-HERE-GOES")]
+    [InlineData("export the variable as glpat-YOUR_GITLAB_TOKEN_HERE")]
+    [InlineData("the sample value is gho_EXAMPLEEXAMPLEEXAMPLEEXAMPLEEXAM")]
+    [InlineData("put hf_YOURHUGGINGFACETOKENVALUEGOESHERE in the file")]
+    [InlineData("the template says npm_INSERTYOURNPMTOKENVALUEHEREPLEASE")]
+    [InlineData("a refreshed ya29.PLACEHOLDER_GOOGLE_OAUTH_TOKEN_VALUE")]
+    [InlineData("SG.EXAMPLE_KEY_ID_X.EXAMPLE_KEY_SECRET_VALUE is the sample")]
     public void APlaceholderKeyIsNotMasked(string text)
     {
         /* Documentation and configuration templates are full of key-shaped strings. Masking
@@ -440,6 +478,108 @@ public class DlpScannerServiceTests
         Assert.Equal("ada@example.com", finding.Value);
     }
 
+    // ── Bank account numbers ────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("GB82 WEST 1234 5698 7654 32")]
+    [InlineData("GB82WEST12345698765432")]
+    public void AValidIbanIsDetectedWithOrWithoutSpaces(string iban)
+    {
+        // The published example IBAN, which is what every implementation is checked against.
+        var finding = Assert.Single(ScanWithDefaults($"pay into {iban} today"));
+
+        Assert.Equal(DlpClass.Iban, finding.Class);
+        Assert.Equal(iban, finding.Value);
+    }
+
+    [Fact]
+    public void AnIbanWithABadChecksumIsNotReported()
+    {
+        /* Mod-97 is the whole of the false-positive defence here: without it the pattern masks
+           order references, part numbers and anything else written as letters then digits. */
+        Assert.Empty(ScanWithDefaults("pay into GB82 WEST 1234 5698 7654 33 today"));
+        Assert.False(DlpScannerService.IsIbanValid("GB82WEST12345698765433"));
+        Assert.True(DlpScannerService.IsIbanValid("GB82WEST12345698765432"));
+    }
+
+    [Fact]
+    public void AnIbanIsNotReportedAsACardNumber()
+    {
+        /* An IBAN always begins with a letter and a card number always with a digit, so the two
+           patterns cannot claim the same span. This pins that, because a card finding would
+           mask only the digit tail and leave the country code in the prompt. */
+        var findings = ScanWithDefaults("IBAN GB82WEST12345698765432 and card 4111111111111111");
+
+        Assert.Equal(new[] { DlpClass.Iban, DlpClass.CreditCard }, findings.Select(f => f.Class));
+        Assert.Equal("GB82WEST12345698765432", findings[0].Value);
+    }
+
+    [Fact]
+    public void AnIbanOutsideTheLengthRangeIsNotAnIban()
+    {
+        Assert.False(DlpScannerService.IsIbanValid("GB82WEST1234"));
+        Assert.False(DlpScannerService.IsIbanValid("GB82WEST123456987654321234567890123456"));
+        Assert.False(DlpScannerService.IsIbanValid("1234WEST12345698765432"));
+    }
+
+    // ── Passwords ───────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("Server=db;Password=Tr0ub4dor&3;", "Tr0ub4dor&3")]
+    [InlineData("pwd=S3cretValue99", "S3cretValue99")]
+    [InlineData("client_secret: 4NpLc8RwYs1AeHjD", "4NpLc8RwYs1AeHjD")]
+    public void APasswordAfterAKeywordMasksOnlyTheValue(string text, string expected)
+    {
+        var finding = Assert.Single(CreateScanner().Scan(text, Only(DlpClass.Password)));
+
+        Assert.Equal(DlpClass.Password, finding.Class);
+        // The keyword stays in the text: without it the model cannot see it is reading a
+        // credential line at all, which is the same reason "Bearer" is kept.
+        Assert.Equal(expected, finding.Value);
+    }
+
+    [Fact]
+    public void AUrlPasswordMasksOnlyThePasswordSegment()
+    {
+        var finding = Assert.Single(
+            CreateScanner().Scan("try https://alice:s3cretpass@example.org/ now", Only(DlpClass.Password)));
+
+        Assert.Equal(DlpClass.Password, finding.Class);
+        Assert.Equal("s3cretpass", finding.Value);
+    }
+
+    [Fact]
+    public void APlaceholderPasswordIsNotMasked()
+    {
+        /* The placeholder-word gate is the only thing standing between this class and a how-to
+           question, because a password has no entropy floor to clear.
+
+           Known false positive, accepted: "password=changeme" and "password=hunter2" ARE
+           masked. Neither word is on the gate's list, and adding common weak passwords to it
+           would be a list with no end. The class is an individual switch for exactly this
+           reason. */
+        Assert.Empty(CreateScanner().Scan("set password=YOUR_PASSWORD_HERE", Only(DlpClass.Password)));
+        Assert.Empty(CreateScanner().Scan("use https://alice:EXAMPLEPASS@example.org/", Only(DlpClass.Password)));
+    }
+
+    [Fact]
+    public void AShortPasswordIsBelowTheKeywordPatternsMinimum()
+    {
+        // Eight characters: below it the pattern would fire on "pwd: yes" and worse.
+        Assert.Empty(CreateScanner().Scan("password=abc123", Only(DlpClass.Password)));
+    }
+
+    [Fact]
+    public void AKeyShapedValueAfterASecretKeywordIsReportedAsAKey()
+    {
+        /* The two patterns claim the same span, so the pattern order is what decides. A key is
+           the more specific answer and gives the user the more useful placeholder. */
+        var finding = Assert.Single(ScanWithDefaults($"secret={SkKey}"));
+
+        Assert.Equal(DlpClass.ApiKey, finding.Class);
+        Assert.Equal(SkKey, finding.Value);
+    }
+
     [Theory]
     [InlineData("call 555-123-4567 now", "555-123-4567")]
     [InlineData("call +358 40 123 4567 now", "+358 40 123 4567")]
@@ -479,7 +619,9 @@ public class DlpScannerServiceTests
     [InlineData("[REDACTED_API_KEY_1]")]
     [InlineData("[REDACTED_PRIVATE_KEY_1]")]
     [InlineData("[REDACTED_TOKEN_12]")]
+    [InlineData("[REDACTED_PASSWORD_1]")]
     [InlineData("[REDACTED_CARD_1]")]
+    [InlineData("[REDACTED_IBAN_1]")]
     [InlineData("[REDACTED_SSN_1]")]
     [InlineData("[REDACTED_EMAIL_1]")]
     [InlineData("[REDACTED_PHONE_1]")]

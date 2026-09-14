@@ -39,6 +39,10 @@ public class DlpMaskingIntegrationTests : IDisposable
     private const string Secret = "sk-proj-7Qf2xVn8LpR4tKw9BzYm3JdG6ScHaEuT1oNvXbAiQrZk5W";
     private const string OtherSecret = "AKIA2QF7XV9NLPR4TKW8";
 
+    // The published example IBAN, and a password with no shape of its own to be recognised by.
+    private const string Iban = "GB82WEST12345698765432";
+    private const string Password = "Tr0ub4dor&3";
+
     private readonly string _dataDirectory =
         Path.Combine(Path.GetTempPath(), "overseer-dlp-" + Guid.NewGuid().ToString("N"));
 
@@ -250,6 +254,36 @@ public class DlpMaskingIntegrationTests : IDisposable
 
         Assert.DoesNotContain(Secret, stub.LastRequestJson);
         Assert.Contains("[REDACTED_API_KEY_1]", stub.LastRequestJson);
+    }
+
+    [Fact]
+    public async Task AnIbanInTheUsersMessageNeverReachesTheProvider()
+    {
+        using var container = BuildContainer(Guid.NewGuid().ToString());
+        string userId = await SeedUserAsync(container);
+        long sessionId = await SeedSessionAsync(container, userId);
+        var stub = container.GetRequiredService<StubAiProvider>();
+
+        await RunTurnAsync(container, sessionId, userId, $"Which bank is {Iban}?");
+
+        Assert.DoesNotContain(Iban, stub.LastRequestJson);
+        Assert.Contains("[REDACTED_IBAN_1]", stub.LastRequestJson);
+    }
+
+    [Fact]
+    public async Task APasswordInAConnectionStringNeverReachesTheProvider()
+    {
+        using var container = BuildContainer(Guid.NewGuid().ToString());
+        string userId = await SeedUserAsync(container);
+        long sessionId = await SeedSessionAsync(container, userId);
+        var stub = container.GetRequiredService<StubAiProvider>();
+
+        await RunTurnAsync(container, sessionId, userId, $"Why does Server=db;Password={Password}; fail?");
+
+        Assert.DoesNotContain(Password, stub.LastRequestJson);
+        Assert.Contains("[REDACTED_PASSWORD_1]", stub.LastRequestJson);
+        // The keyword stays, or the model cannot see it is reading a connection string.
+        Assert.Contains("Password=", stub.LastRequestJson);
     }
 
     [Fact]

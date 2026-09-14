@@ -48,7 +48,9 @@ const DLP_FLOOR_KEYS: Record<DlpMaskClass, keyof DlpFloor> = {
   dlpMaskApiKeys: 'apiKeys',
   dlpMaskPrivateKeys: 'privateKeys',
   dlpMaskTokens: 'tokens',
+  dlpMaskPasswords: 'passwords',
   dlpMaskCreditCards: 'creditCards',
+  dlpMaskIbans: 'ibans',
   dlpMaskSsns: 'ssns',
   dlpMaskEmails: 'emails',
   dlpMaskPhoneNumbers: 'phoneNumbers'
@@ -180,27 +182,37 @@ export class SettingsComponent implements OnInit, OnDestroy {
     {
       key: 'dlpMaskApiKeys',
       label: 'Provider and cloud API keys',
-      hint: 'Keys in the shapes issued by AI providers and the major cloud platforms.'
+      hint: 'Keys in the shapes issued by AI providers, cloud platforms and developer services.'
     },
     {
       key: 'dlpMaskPrivateKeys',
       label: 'Private-key blocks (PEM, PGP)',
-      hint: 'A whole PEM or PGP private-key block, from its opening line to its closing one.'
+      hint: 'The whole block, from its BEGIN line to its END line.'
     },
     {
       key: 'dlpMaskTokens',
       label: 'Bearer tokens and JWTs',
-      hint: 'Authorization header values, bearer tokens and JSON Web Tokens.'
+      hint: 'Authorization header values and JSON Web Tokens.'
+    },
+    {
+      key: 'dlpMaskPasswords',
+      label: 'Passwords in configuration and URLs',
+      hint: 'A value after password=, pwd= or secret:, and the password part of a user:password@host address.'
     },
     {
       key: 'dlpMaskCreditCards',
-      label: 'Credit-card numbers',
-      hint: 'Digit runs in payment-card shapes, including those written with spaces or hyphens.'
+      label: 'Payment-card numbers',
+      hint: 'Card numbers with or without spaces or hyphens, checksum-verified.'
+    },
+    {
+      key: 'dlpMaskIbans',
+      label: 'Bank account numbers (IBAN)',
+      hint: 'International bank account numbers, checksum-verified.'
     },
     {
       key: 'dlpMaskSsns',
       label: 'US Social Security numbers',
-      hint: 'Nine-digit numbers written in US Social Security format.'
+      hint: 'The US nine-digit format only. ID numbers from other countries are not recognised.'
     }
   ];
 
@@ -213,7 +225,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     {
       key: 'dlpMaskPhoneNumbers',
       label: 'Phone numbers',
-      hint: 'Numbers in international and national telephone formats.'
+      hint: 'Numbers in international and North American formats.'
     }
   ];
 
@@ -225,7 +237,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
     dlpMaskApiKeys: true,
     dlpMaskPrivateKeys: true,
     dlpMaskTokens: true,
+    dlpMaskPasswords: true,
     dlpMaskCreditCards: true,
+    dlpMaskIbans: true,
     dlpMaskSsns: true,
     dlpMaskEmails: false,
     dlpMaskPhoneNumbers: false
@@ -389,13 +403,15 @@ export class SettingsComponent implements OnInit, OnDestroy {
     return this.dlp[key] || this.isDlpFixedByAdmin(key);
   }
 
-  /** The seven masking classes in the shape `POST /api/settings/dlp` accepts. */
+  /** The nine masking classes in the shape `POST /api/settings/dlp` accepts. */
   get dlpPayload(): DlpSettings {
     return {
       dlpMaskApiKeys: this.effectiveDlp('dlpMaskApiKeys'),
       dlpMaskPrivateKeys: this.effectiveDlp('dlpMaskPrivateKeys'),
       dlpMaskTokens: this.effectiveDlp('dlpMaskTokens'),
+      dlpMaskPasswords: this.effectiveDlp('dlpMaskPasswords'),
       dlpMaskCreditCards: this.effectiveDlp('dlpMaskCreditCards'),
+      dlpMaskIbans: this.effectiveDlp('dlpMaskIbans'),
       dlpMaskSsns: this.effectiveDlp('dlpMaskSsns'),
       dlpMaskEmails: this.effectiveDlp('dlpMaskEmails'),
       dlpMaskPhoneNumbers: this.effectiveDlp('dlpMaskPhoneNumbers')

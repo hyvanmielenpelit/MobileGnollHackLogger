@@ -1146,6 +1146,67 @@ label.checkbox-label,
   }
 }
 
+/* One-sentence purpose line directly under a fieldset legend. Referenced from the fieldset with
+   aria-describedby, so it names the group rather than any one control inside it. */
+.gh-fieldset-hint {
+  margin: 0;
+  font-size: 0.9em;
+  line-height: 1.45;
+  color: #aaa;
+}
+
+/* Themed native disclosure. The summary is the only interactive part; the marker is drawn with a
+   rotated chevron so it matches the settings nav. */
+.gh-disclosure {
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.15);
+
+  > summary {
+    cursor: pointer;
+    padding: 10px 14px;
+    font-weight: 600;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    &::-webkit-details-marker {
+      display: none;
+    }
+
+    &::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-right: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      transform: rotate(-45deg);
+      transition: transform 0.15s ease;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+    }
+  }
+
+  &[open] > summary::before {
+    transform: rotate(45deg);
+  }
+
+  .gh-disclosure-body {
+    padding: 0 14px 12px;
+    line-height: 1.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gh-disclosure > summary::before {
+    transition: none;
+  }
+}
+
 /* --- Status Badge --- */
 .status-badge {
   font-size: 0.75rem;

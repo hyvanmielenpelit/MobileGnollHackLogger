@@ -622,6 +622,55 @@ describe('SettingsComponent', () => {
       expect(compiled.querySelector('input[name="confidentialImmediatePurge"]')).toBeTruthy();
       expect(compiled.querySelector('#confidentialModelGate')).toBeTruthy();
       expect(compiled.querySelector('.confidential-notice')).toBeNull();
+
+      // Acknowledging hides the notice but not what it said: the recap keeps it reachable.
+      const recap = compiled.querySelector('.confidential-notice-recap');
+      expect(recap).toBeTruthy();
+      expect(recap!.querySelector('summary')!.textContent).toContain('What Confidentiality Mode covers');
+      expect(recap!.textContent).toContain('Not supported:');
+    });
+
+    it('should group the confidentiality controls into four named fieldsets', async () => {
+      createWith({ confidentialFloor: defaultFloor });
+      showSection('confidentiality');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const legends = Array.from(
+        (fixture.nativeElement as HTMLElement).querySelectorAll('fieldset.gh-fieldset > legend')
+      ).map(l => l.textContent?.trim());
+
+      expect(legends).toEqual(['New chats', 'The promise', 'Deletion', 'Provider precautions']);
+    });
+
+    it('should state the one-way rule as its own callout', async () => {
+      createWith({ confidentialFloor: defaultFloor });
+      showSection('confidentiality');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const oneway = (fixture.nativeElement as HTMLElement).querySelector('.confidential-oneway');
+      expect(oneway).toBeTruthy();
+      expect(oneway!.querySelector('.alert-heading')!.textContent).toContain('Upgrading is one-way');
+      expect(oneway!.textContent).toContain('can never go back');
+    });
+
+    it('should split the unacknowledged notice into covered, not covered and not supported', async () => {
+      createWith({ confidentialFirstUseNoticeAcknowledged: false, confidentialFloor: defaultFloor });
+      showSection('confidentiality');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const notice = compiled.querySelector('.confidential-notice');
+
+      expect(notice).toBeTruthy();
+      expect(compiled.querySelector('.confidential-notice-recap')).toBeNull();
+
+      const leads = Array.from(notice!.querySelectorAll('.confidential-scope-list strong'))
+        .map(s => s.textContent?.trim());
+
+      expect(leads).toEqual(['Covered:', 'Not covered:', 'Not supported:']);
     });
 
     it('should disable a control the floor has fixed and explain why', async () => {
@@ -646,7 +695,9 @@ describe('SettingsComponent', () => {
       apiKeys: false,
       privateKeys: false,
       tokens: false,
+      passwords: false,
       creditCards: false,
+      ibans: false,
       ssns: false,
       emails: false,
       phoneNumbers: false
@@ -664,13 +715,15 @@ describe('SettingsComponent', () => {
       fixture.detectChanges();
     }
 
-    it('should default the five secret classes on and e-mail and phone off', () => {
+    it('should default the seven secret classes on and e-mail and phone off', () => {
       createWith({});
 
       expect(component.dlp.dlpMaskApiKeys).toBeTrue();
       expect(component.dlp.dlpMaskPrivateKeys).toBeTrue();
       expect(component.dlp.dlpMaskTokens).toBeTrue();
+      expect(component.dlp.dlpMaskPasswords).toBeTrue();
       expect(component.dlp.dlpMaskCreditCards).toBeTrue();
+      expect(component.dlp.dlpMaskIbans).toBeTrue();
       expect(component.dlp.dlpMaskSsns).toBeTrue();
       expect(component.dlp.dlpMaskEmails).toBeFalse();
       expect(component.dlp.dlpMaskPhoneNumbers).toBeFalse();
@@ -682,7 +735,9 @@ describe('SettingsComponent', () => {
         dlpMaskApiKeys: false,
         dlpMaskPrivateKeys: false,
         dlpMaskTokens: true,
+        dlpMaskPasswords: false,
         dlpMaskCreditCards: false,
+        dlpMaskIbans: true,
         dlpMaskSsns: false,
         dlpMaskEmails: true,
         dlpMaskPhoneNumbers: true,
@@ -692,7 +747,9 @@ describe('SettingsComponent', () => {
       expect(component.dlp.dlpMaskApiKeys).toBeFalse();
       expect(component.dlp.dlpMaskPrivateKeys).toBeFalse();
       expect(component.dlp.dlpMaskTokens).toBeTrue();
+      expect(component.dlp.dlpMaskPasswords).toBeFalse();
       expect(component.dlp.dlpMaskCreditCards).toBeFalse();
+      expect(component.dlp.dlpMaskIbans).toBeTrue();
       expect(component.dlp.dlpMaskSsns).toBeFalse();
       expect(component.dlp.dlpMaskEmails).toBeTrue();
       expect(component.dlp.dlpMaskPhoneNumbers).toBeTrue();
@@ -710,7 +767,7 @@ describe('SettingsComponent', () => {
       expect(component.isDlpFixedByAdmin('dlpMaskPhoneNumbers')).toBeFalse();
     });
 
-    it('should render all seven switches', async () => {
+    it('should render all nine switches', async () => {
       createWith({ dlpFloor: noFloor });
       showSection('masking');
       await fixture.whenStable();
@@ -720,11 +777,36 @@ describe('SettingsComponent', () => {
       expect(compiled.querySelector('input[name="dlpMaskApiKeys"]')).toBeTruthy();
       expect(compiled.querySelector('input[name="dlpMaskPrivateKeys"]')).toBeTruthy();
       expect(compiled.querySelector('input[name="dlpMaskTokens"]')).toBeTruthy();
+      expect(compiled.querySelector('input[name="dlpMaskPasswords"]')).toBeTruthy();
       expect(compiled.querySelector('input[name="dlpMaskCreditCards"]')).toBeTruthy();
+      expect(compiled.querySelector('input[name="dlpMaskIbans"]')).toBeTruthy();
       expect(compiled.querySelector('input[name="dlpMaskSsns"]')).toBeTruthy();
       expect(compiled.querySelector('input[name="dlpMaskEmails"]')).toBeTruthy();
       expect(compiled.querySelector('input[name="dlpMaskPhoneNumbers"]')).toBeTruthy();
       expect(compiled.querySelectorAll('.dlp-floor-note').length).toBe(0);
+    });
+
+    it('should group the masking switches into two named fieldsets', async () => {
+      createWith({ dlpFloor: noFloor });
+      showSection('masking');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const legends = Array.from(
+        (fixture.nativeElement as HTMLElement).querySelectorAll('fieldset.gh-fieldset > legend')
+      ).map(l => l.textContent?.trim());
+
+      expect(legends).toEqual(['Credentials and payment data', 'Contact details']);
+    });
+
+    it('should say that only the US format of an ID number is recognised', async () => {
+      createWith({ dlpFloor: noFloor });
+      showSection('masking');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const hint = (fixture.nativeElement as HTMLElement).querySelector('#dlpMaskSsnsHint');
+      expect(hint!.textContent).toContain('ID numbers from other countries are not recognised');
     });
 
     it('should reflect the defaults in the rendered checkboxes', async () => {
@@ -770,6 +852,8 @@ describe('SettingsComponent', () => {
 
       const limit = (fixture.nativeElement as HTMLElement).querySelector('.dlp-limit');
       expect(limit).toBeTruthy();
+      // The limit carries a real heading, so it does not read as one more grey hint.
+      expect(limit!.querySelector('.alert-heading')!.textContent).toContain('A safety net, not a guarantee');
       expect(limit!.textContent).toContain('it does not guarantee it');
       expect(limit!.textContent).toContain('A secret with no recognisable shape passes straight through');
     });
@@ -808,7 +892,7 @@ describe('SettingsComponent', () => {
       expect(dlpSpy).not.toHaveBeenCalled();
     }));
 
-    it('should post all seven classes to the DLP endpoint as soon as one is switched', fakeAsync(() => {
+    it('should post all nine classes to the DLP endpoint as soon as one is switched', fakeAsync(() => {
       createWith({ dlpFloor: noFloor });
       const dlpSpy = spyOn(settingsService, 'saveDlpSettings').and.returnValue(of({} as any));
 
@@ -821,7 +905,9 @@ describe('SettingsComponent', () => {
         dlpMaskApiKeys: true,
         dlpMaskPrivateKeys: true,
         dlpMaskTokens: true,
+        dlpMaskPasswords: true,
         dlpMaskCreditCards: true,
+        dlpMaskIbans: true,
         dlpMaskSsns: true,
         dlpMaskEmails: true,
         dlpMaskPhoneNumbers: false

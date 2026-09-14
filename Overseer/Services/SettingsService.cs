@@ -132,14 +132,16 @@ public class SettingsService
         bool? maskApiKeys,
         bool? maskPrivateKeys,
         bool? maskTokens,
+        bool? maskPasswords,
         bool? maskCreditCards,
+        bool? maskIbans,
         bool? maskSsns,
         bool? maskEmails,
         bool? maskPhoneNumbers)
     {
         if (maskApiKeys == null && maskPrivateKeys == null && maskTokens == null
-            && maskCreditCards == null && maskSsns == null && maskEmails == null
-            && maskPhoneNumbers == null)
+            && maskPasswords == null && maskCreditCards == null && maskIbans == null
+            && maskSsns == null && maskEmails == null && maskPhoneNumbers == null)
         {
             return;
         }
@@ -154,7 +156,9 @@ public class SettingsService
         if (maskApiKeys.HasValue) settings.DlpMaskApiKeys = maskApiKeys.Value;
         if (maskPrivateKeys.HasValue) settings.DlpMaskPrivateKeys = maskPrivateKeys.Value;
         if (maskTokens.HasValue) settings.DlpMaskTokens = maskTokens.Value;
+        if (maskPasswords.HasValue) settings.DlpMaskPasswords = maskPasswords.Value;
         if (maskCreditCards.HasValue) settings.DlpMaskCreditCards = maskCreditCards.Value;
+        if (maskIbans.HasValue) settings.DlpMaskIbans = maskIbans.Value;
         if (maskSsns.HasValue) settings.DlpMaskSsns = maskSsns.Value;
         if (maskEmails.HasValue) settings.DlpMaskEmails = maskEmails.Value;
         if (maskPhoneNumbers.HasValue) settings.DlpMaskPhoneNumbers = maskPhoneNumbers.Value;

@@ -71,6 +71,9 @@ Harness-neutral, and the floor for any Overseer frontend work.
   unavailable to the benchmark view that needed it.
 - **Use the design tokens** — `var(--primary-color)`, `var(--gold-glow)`,
   `var(--border-glass)`, `var(--nav-color)` — not the literal hex values they hold.
+- **`.gh-fieldset`** groups related controls in a themed `<fieldset>`/`<legend>`, with
+  `.gh-fieldset-hint` for a one-sentence purpose line under the legend; **`.gh-disclosure`** is
+  the themed native `<details>`, with `.gh-disclosure-body` for its content. Both are global.
 
 When creating UI elements in the Overseer frontend, adhere to the following standards:
 

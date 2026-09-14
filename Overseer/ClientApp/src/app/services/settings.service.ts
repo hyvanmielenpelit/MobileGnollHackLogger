@@ -38,7 +38,9 @@ export interface DlpSettings {
   dlpMaskApiKeys: boolean;
   dlpMaskPrivateKeys: boolean;
   dlpMaskTokens: boolean;
+  dlpMaskPasswords: boolean;
   dlpMaskCreditCards: boolean;
+  dlpMaskIbans: boolean;
   dlpMaskSsns: boolean;
   dlpMaskEmails: boolean;
   dlpMaskPhoneNumbers: boolean;
@@ -53,7 +55,9 @@ export interface DlpFloor {
   apiKeys: boolean;
   privateKeys: boolean;
   tokens: boolean;
+  passwords: boolean;
   creditCards: boolean;
+  ibans: boolean;
   ssns: boolean;
   emails: boolean;
   phoneNumbers: boolean;
@@ -119,7 +123,9 @@ export interface UserAiSettings {
   dlpMaskApiKeys?: boolean;
   dlpMaskPrivateKeys?: boolean;
   dlpMaskTokens?: boolean;
+  dlpMaskPasswords?: boolean;
   dlpMaskCreditCards?: boolean;
+  dlpMaskIbans?: boolean;
   dlpMaskSsns?: boolean;
   dlpMaskEmails?: boolean;
   dlpMaskPhoneNumbers?: boolean;
