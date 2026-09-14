@@ -23,7 +23,7 @@ import {
 import { SystemService } from '../services/system.service';
 import { ChangelogService } from '../services/changelog.service';
 import { ChatService } from '../services/chat.service';
-import { RouterModule } from '@angular/router';
+import { RouterModule, ActivatedRoute, ParamMap } from '@angular/router';
 import { ChangelogComponent } from '../changelog/changelog.component';
 import { TrashModalComponent } from '../shared/trash-modal/trash-modal.component';
 import { Subject, BehaviorSubject, Subscription, of, timer, firstValueFrom, EMPTY } from 'rxjs';
@@ -39,6 +39,9 @@ export interface DlpClassOption {
   label: string;
   hint: string;
 }
+
+/** The settings sections a URL segment can name. */
+export type SettingsSection = 'general' | 'permissions' | 'performance' | 'confidentiality' | 'masking' | 'chats';
 
 /** The administrator's floor drops the `dlpMask` prefix, so each switch carries its floor's name. */
 const DLP_FLOOR_KEYS: Record<DlpMaskClass, keyof DlpFloor> = {
@@ -64,9 +67,34 @@ export class SettingsComponent implements OnInit, OnDestroy {
   changelogService = inject(ChangelogService);
   chatService = inject(ChatService);
   cdr = inject(ChangeDetectorRef);
-  
+  route = inject(ActivatedRoute);
+
   appVersion = '';
-  
+
+  /** The sections offered by the nav, in display order. */
+  readonly sections: ReadonlyArray<{ id: SettingsSection; label: string; hint: string }> = [
+    { id: 'general', label: 'General', hint: 'Display, hints and version' },
+    { id: 'permissions', label: 'AI Permissions', hint: 'What the AI may reach' },
+    { id: 'performance', label: 'AI Performance', hint: 'Tool limits and timeouts' },
+    { id: 'confidentiality', label: 'Confidentiality Mode', hint: 'How confidential chats are kept' },
+    { id: 'masking', label: 'Outbound Masking', hint: 'Secrets replaced before sending' },
+    { id: 'chats', label: 'Chat Data', hint: 'Active, pinned and trashed chats' }
+  ];
+
+  /** The section named in the URL, or null on the bare /settings index. */
+  activeSection: SettingsSection | null = null;
+  private routeParamSubscription!: Subscription;
+
+  /** What the content column shows: the URL's section, or General when the URL names none. */
+  get contentSection(): SettingsSection {
+    return this.activeSection ?? 'general';
+  }
+
+  /** The label the content header shows for the section. */
+  get contentSectionLabel(): string {
+    return this.sections.find(s => s.id === this.contentSection)!.label;
+  }
+
   @ViewChild('successToast') successToast!: ElementRef<HTMLElement>;
   @ViewChild('changelogDialog') changelogDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('settingsBulkDeleteDialog') settingsBulkDeleteDialog!: ElementRef<HTMLDialogElement>;
@@ -433,8 +461,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit() {
+    this.routeParamSubscription = this.route.paramMap.subscribe((params: ParamMap) => {
+      const section = params.get('section') as SettingsSection | null;
+      this.activeSection = this.sections.some(s => s.id === section) ? (section as SettingsSection) : null;
+    });
+
     this.checkChangelogBadge();
-    
+
     this.changelogBadgeResetHandler = () => this.checkChangelogBadge();
     window.addEventListener('changelog_badge_reset', this.changelogBadgeResetHandler);
 
@@ -1026,6 +1059,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
     }
     if (this.dlpSaveSubscription) {
       this.dlpSaveSubscription.unsubscribe();
+    }
+    if (this.routeParamSubscription) {
+      this.routeParamSubscription.unsubscribe();
     }
   }
 }

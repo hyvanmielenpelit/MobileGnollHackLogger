@@ -1,10 +1,10 @@
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, ActivatedRoute, ParamMap, convertToParamMap } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { of, throwError, Subject } from 'rxjs';
-import { SettingsComponent } from './settings.component';
+import { SettingsComponent, SettingsSection } from './settings.component';
 import { SettingsService, UserAiSettings, ConfidentialFloor, DlpFloor } from '../services/settings.service';
 import { ChatService } from '../services/chat.service';
 
@@ -12,6 +12,12 @@ describe('SettingsComponent', () => {
   let component: SettingsComponent;
   let fixture: ComponentFixture<SettingsComponent>;
   let settingsService: SettingsService;
+
+  /** Activates a section directly, as the route param would, and re-renders. */
+  function showSection(section: SettingsSection) {
+    component.activeSection = section;
+    fixture.detectChanges();
+  }
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -584,6 +590,7 @@ describe('SettingsComponent', () => {
 
     it('should render the seven confidentiality controls and hide the acknowledged notice', async () => {
       createWith({ confidentialFloor: defaultFloor });
+      showSection('confidentiality');
       await fixture.whenStable();
       fixture.detectChanges();
 
@@ -600,6 +607,7 @@ describe('SettingsComponent', () => {
 
     it('should disable a control the floor has fixed and explain why', async () => {
       createWith({ confidentialFloor: strictestFloor });
+      showSection('confidentiality');
       await fixture.whenStable();
       fixture.detectChanges();
 
@@ -685,6 +693,7 @@ describe('SettingsComponent', () => {
 
     it('should render all seven switches', async () => {
       createWith({ dlpFloor: noFloor });
+      showSection('masking');
       await fixture.whenStable();
       fixture.detectChanges();
 
@@ -701,6 +710,7 @@ describe('SettingsComponent', () => {
 
     it('should reflect the defaults in the rendered checkboxes', async () => {
       createWith({ dlpFloor: noFloor });
+      showSection('masking');
       await fixture.whenStable();
       fixture.detectChanges();
 
@@ -716,6 +726,7 @@ describe('SettingsComponent', () => {
 
     it('should render a forced class as on and disabled, with the operator note', async () => {
       createWith({ dlpMaskPhoneNumbers: false, dlpFloor: { ...noFloor, phoneNumbers: true } });
+      showSection('masking');
       await fixture.whenStable();
       fixture.detectChanges();
 
@@ -734,6 +745,7 @@ describe('SettingsComponent', () => {
 
     it('should state plainly that masking is not a guarantee', async () => {
       createWith({ dlpFloor: noFloor });
+      showSection('masking');
       await fixture.whenStable();
       fixture.detectChanges();
 
@@ -745,6 +757,7 @@ describe('SettingsComponent', () => {
 
     it('should say that masking applies to every chat, not only a confidential one', async () => {
       createWith({ dlpFloor: noFloor });
+      showSection('masking');
       await fixture.whenStable();
       fixture.detectChanges();
 
@@ -758,6 +771,7 @@ describe('SettingsComponent', () => {
 
     it('should explain why e-mail addresses and phone numbers start off', async () => {
       createWith({ dlpFloor: noFloor });
+      showSection('masking');
       await fixture.whenStable();
       fixture.detectChanges();
 
@@ -879,6 +893,76 @@ describe('SettingsComponent', () => {
       const result = await canDeactivatePromise;
       expect(result).toBeTrue();
       expect(resolved).toBeTrue();
+    });
+  });
+
+  describe('Sections', () => {
+    let paramMapSubject: Subject<ParamMap>;
+
+    beforeEach(async () => {
+      TestBed.resetTestingModule();
+      paramMapSubject = new Subject<ParamMap>();
+
+      await TestBed.configureTestingModule({
+        imports: [SettingsComponent],
+        providers: [
+          provideRouter([]),
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          { provide: ActivatedRoute, useValue: { paramMap: paramMapSubject.asObservable() } }
+        ]
+      }).compileComponents();
+
+      settingsService = TestBed.inject(SettingsService);
+      spyOn(settingsService, 'getSettings').and.returnValue(of({ hasApiKey: true } as any));
+
+      fixture = TestBed.createComponent(SettingsComponent);
+      component = fixture.componentInstance;
+      fixture.detectChanges();
+    });
+
+    function emitSection(section: string | null) {
+      paramMapSubject.next(convertToParamMap(section ? { section } : {}));
+      fixture.detectChanges();
+    }
+
+    it('renders six nav links with the expected labels and routerLinks', () => {
+      const compiled = fixture.nativeElement as HTMLElement;
+      const links = compiled.querySelectorAll('.settings-nav-link');
+      const expectedLabels = ['General', 'AI Permissions', 'AI Performance', 'Confidentiality Mode', 'Outbound Masking', 'Chat Data'];
+
+      expect(links.length).toBe(6);
+      links.forEach((link, i) => {
+        expect(link.querySelector('.settings-nav-label')?.textContent).toBe(expectedLabels[i]);
+      });
+    });
+
+    it('marks aria-current="page" on General when the URL names no section', () => {
+      emitSection(null);
+      const compiled = fixture.nativeElement as HTMLElement;
+      const current = compiled.querySelector('.settings-nav-link[aria-current="page"]');
+      expect(current?.querySelector('.settings-nav-label')?.textContent).toBe('General');
+    });
+
+    it('a paramMap emitting confidentiality sets activeSection and renders the Storage select', () => {
+      emitSection('confidentiality');
+      expect(component.activeSection).toBe('confidentiality');
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('#confidentialPersistence')).toBeTruthy();
+    });
+
+    it('falls back to null / General for an unknown section value', () => {
+      emitSection('nonsense');
+      expect(component.activeSection).toBeNull();
+      expect(component.contentSection).toBe('general');
+    });
+
+    it('.settings-body carries section-open only when a section is named', () => {
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('.settings-body')?.classList.contains('section-open')).toBeFalse();
+
+      emitSection('masking');
+      expect(compiled.querySelector('.settings-body')?.classList.contains('section-open')).toBeTrue();
     });
   });
 });

@@ -1468,9 +1468,11 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
 /* Input Area Top */
 .input-area-top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   margin-bottom: 5px;
+  min-width: 0;
 
   .custom-model-selector {
     margin-bottom: 0;
@@ -1576,9 +1578,9 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   font-weight: 600;
 }
 
-/* Text disclosure trigger, shared by the privacy panel and the banner's detail list. Not a
-   .btn-gh: both sit inside a dense strip where the decorative plate would dominate the copy
-   it is there to reveal. */
+/* Text disclosure trigger for the incognito banner's detail list. Not a .btn-gh: it sits
+   inside a dense strip where the decorative plate would dominate the copy it is there to
+   reveal. */
 .disclosure-trigger {
   display: inline-flex;
   align-items: center;
@@ -1610,27 +1612,88 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   }
 }
 
-/* Privacy choice for the chat about to be created */
-.privacy-panel {
-  margin-bottom: 6px;
+/* Privacy choice for the chat about to be created; sits on the model-selector row. */
+.privacy-mode-btn {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
+  border-radius: 4px;
+  color: #e8e8e8;
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
 
-  &.is-set .privacy-trigger {
+  &:hover {
+    border-color: var(--primary-color, #d4af37);
+    color: var(--primary-color, #d4af37);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color, #d4af37);
+    outline-offset: 2px;
+  }
+
+  &.is-set {
     border-color: var(--primary-color, #d4af37);
     color: var(--primary-color, #d4af37);
   }
 }
 
-.privacy-panel-body {
-  margin-top: 8px;
-  padding: 12px 14px;
-  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.45);
+@media (max-width: 600px) {
+  .privacy-mode-btn {
+    padding: 4px 6px;
+
+    .privacy-mode-label {
+      display: none;
+    }
+  }
+}
+
+.privacy-dialog {
+  max-width: 440px;
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+}
+
+.privacy-options {
+  border: 0;
+  padding: 0;
+  margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-height: 40vh;
-  overflow-y: auto;
+  gap: 8px;
+}
+
+/* .is-selected repeats what :has() matches, so the highlight also holds without :has(). */
+.privacy-option {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
+  border-radius: 6px;
+  cursor: pointer;
+
+  input {
+    margin-top: 3px;
+    accent-color: var(--primary-color, #d4af37);
+  }
+
+  &.is-selected,
+  &:has(input:checked) {
+    border-color: var(--primary-color, #d4af37);
+    background: rgba(212, 175, 55, 0.08);
+  }
+
+  &:has(input:focus-visible) {
+    outline: 2px solid var(--primary-color, #d4af37);
+    outline-offset: 2px;
+  }
 }
 
 .privacy-option-title {
@@ -1643,32 +1706,21 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   display: block;
   margin-top: 2px;
   font-size: 0.8rem;
-  line-height: 1.45;
+  line-height: 1.4;
   color: #c5c5c5;
 }
 
-.privacy-honesty-title {
-  margin: 0;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #f0f0f0;
-}
-
-.privacy-honesty-list {
-  margin: 0;
-  padding-inline-start: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 0.8rem;
-  line-height: 1.45;
+.privacy-limits {
+  margin: 10px 0 0;
+  padding-inline-start: 18px;
+  font-size: 0.78rem;
+  line-height: 1.4;
   color: #d8d8d8;
 }
 
 .privacy-decided-note {
-  margin: 0;
+  margin: 10px 0 0;
   font-size: 0.76rem;
-  line-height: 1.4;
   color: #a8a8a8;
 }
 

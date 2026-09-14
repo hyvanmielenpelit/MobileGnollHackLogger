@@ -1515,28 +1515,87 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
       expect((component as any).outgoingPrivacyFlags).toEqual({ isConfidential: true, isEphemeral: false });
     });
 
-    it('should render the panel only while no chat is open', () => {
+    it('should render the button only while no chat is open', () => {
       fixture.detectChanges();
       let compiled = fixture.nativeElement as HTMLElement;
-      expect(compiled.querySelector('.privacy-panel')).toBeTruthy();
+      expect(compiled.querySelector('.privacy-mode-btn')).toBeTruthy();
 
       component.currentSessionId = '42';
       fixture.detectChanges();
       compiled = fixture.nativeElement as HTMLElement;
-      expect(compiled.querySelector('.privacy-panel')).toBeFalsy();
+      expect(compiled.querySelector('.privacy-mode-btn')).toBeFalsy();
     });
 
-    it('should state both limits of incognito in the panel where the mode is chosen', () => {
-      component.isPrivacyPanelOpen = true;
+    it('should state both limits of incognito in the dialog where the mode is chosen', () => {
+      component.setNewChatPrivacyMode('incognito');
       fixture.detectChanges();
 
-      const body = (fixture.nativeElement as HTMLElement).querySelector('.privacy-panel-body');
-      expect(body).toBeTruthy();
-      const text = body!.textContent || '';
+      const dialog = (fixture.nativeElement as HTMLElement).querySelector('dialog.privacy-dialog');
+      expect(dialog).toBeTruthy();
+      const text = dialog!.textContent || '';
       expect(text).toContain('still sent to the AI provider');
       expect(text).toContain('paged to disk');
       expect(text).toContain('not a legal or forensic guarantee');
       expect(text).toContain('cannot be turned incognito afterwards');
+    });
+
+    it('should report the mode the two flags describe', () => {
+      expect(component.newChatPrivacyMode).toBe('standard');
+
+      component.onNewChatConfidentialChange(true);
+      expect(component.newChatPrivacyMode).toBe('confidential');
+
+      component.onNewChatEphemeralChange(true);
+      expect(component.newChatPrivacyMode).toBe('incognito');
+    });
+
+    it('should set confidential without incognito when Confidential is chosen', () => {
+      component.setNewChatPrivacyMode('confidential');
+
+      expect(component.newChatConfidential).toBeTrue();
+      expect(component.newChatEphemeral).toBeFalse();
+      expect(component.newChatPrivacyMode).toBe('confidential');
+    });
+
+    it('should clear both flags when Standard is chosen after incognito', () => {
+      component.setNewChatPrivacyMode('incognito');
+      component.setNewChatPrivacyMode('standard');
+
+      expect(component.newChatConfidential).toBeFalse();
+      expect(component.newChatEphemeral).toBeFalse();
+      expect(component.newChatPrivacyMode).toBe('standard');
+    });
+
+    it('should withhold the incognito limits until Incognito is selected', () => {
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('.privacy-limits')).toBeFalsy();
+
+      component.setNewChatPrivacyMode('incognito');
+      fixture.detectChanges();
+      expect(compiled.querySelector('.privacy-limits')).toBeTruthy();
+    });
+
+    it('should name the current mode in the button label', () => {
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('.privacy-mode-btn')!.getAttribute('aria-label'))
+        .toContain('Standard');
+
+      component.setNewChatPrivacyMode('incognito');
+      fixture.detectChanges();
+      expect(compiled.querySelector('.privacy-mode-btn')!.getAttribute('aria-label'))
+        .toContain('Incognito');
+    });
+
+    it('should open the dialog modally', () => {
+      fixture.detectChanges();
+      component.openPrivacyDialog();
+
+      const dialog = (fixture.nativeElement as HTMLElement)
+        .querySelector('dialog.privacy-dialog') as HTMLDialogElement;
+      expect(dialog.open).toBeTrue();
+      dialog.close();
     });
   });
 

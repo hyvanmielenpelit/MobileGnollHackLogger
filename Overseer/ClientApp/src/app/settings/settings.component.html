@@ -28,9 +28,33 @@
     </div>
     <a routerLink="/chat" queryParamsHandling="preserve" class="nav-back-link">&larr; Back</a>
   </div>
-  <div class="settings-form">
-    <div class="form-content">
+  <div class="settings-body" [class.section-open]="activeSection !== null">
+    <nav class="settings-nav" aria-label="Settings sections">
+      <ul class="settings-nav-list">
+        @for (s of sections; track s.id) {
+          <li>
+            <a class="settings-nav-link" [routerLink]="['/settings', s.id]" queryParamsHandling="preserve" [attr.aria-current]="contentSection === s.id ? 'page' : null">
+              <span class="settings-nav-text">
+                <span class="settings-nav-label">{{ s.label }}</span>
+                <span class="settings-nav-hint">{{ s.hint }}</span>
+              </span>
+              <svg class="settings-nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="9 18 15 12 9 6"></polyline>
+              </svg>
+            </a>
+          </li>
+        }
+      </ul>
+    </nav>
 
+    <div class="settings-form">
+      <div class="settings-section-header">
+        <a class="settings-section-back" routerLink="/settings" queryParamsHandling="preserve">&larr; Settings</a>
+        <h3 class="settings-section-title">{{ contentSectionLabel }}</h3>
+      </div>
+      <div class="form-content">
+      @switch (contentSection) {
+      @case ('general') {
 
       <div class="margin-y-20">
         <label class="checkbox-label align-start">
@@ -95,8 +119,24 @@
         </select>
       </div>
 
-      <fieldset class="permissions-fieldset">
-        <legend>AI Permissions</legend>
+      <div class="margin-y-20 mt-5" style="display: flex; align-items: center; justify-content: space-between;">
+        @if (appVersion) {
+          <p style="margin: 0; font-weight: bold;">Overseer {{ appVersion }}</p>
+        } @else {
+          <p style="margin: 0; color: #aaa;">Loading...</p>
+        }
+        <button type="button" class="btn-gh" (click)="openChangelog()" style="display: flex; align-items: center; gap: 8px;">
+          Release Notes
+          @if (showChangelogBadge) {
+            <svg class="sparkle-icon" viewBox="0 0 24 24" fill="#FACC15" style="filter: drop-shadow(0 0 3px rgba(250,204,21,0.6)); width: 16px; height: 16px;">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+          }
+        </button>
+      </div>
+
+      }
+      @case ('permissions') {
 
         <div class="margin-y-20 mt-5">
           <label class="checkbox-label align-start">
@@ -148,10 +188,8 @@
           </label>
         </div>
 
-      </fieldset>
-
-      <fieldset class="permissions-fieldset mt-20">
-        <legend>AI Performance Settings</legend>
+      }
+      @case ('performance') {
 
         <div class="margin-y-20 mt-5 form-group-stacked">
           <label class="block fw-bold">Max Result Length</label>
@@ -293,10 +331,9 @@
             }
           </div>
         </div>
-      </fieldset>
 
-      <fieldset class="permissions-fieldset mt-20">
-        <legend>Confidentiality Mode</legend>
+      }
+      @case ('confidentiality') {
 
         <p class="form-hint confidential-intro mt-5">
           Confidentiality Mode is chosen per chat. A normal chat can be upgraded to confidential, but a
@@ -451,10 +488,9 @@
             <span id="confidentialModelGateFloor" class="confidential-floor-note mt-5 d-block">An administrator has fixed this setting.</span>
           }
         </div>
-      </fieldset>
 
-      <fieldset class="permissions-fieldset mt-20">
-        <legend>Outbound Masking</legend>
+      }
+      @case ('masking') {
 
         <p class="form-hint dlp-intro mt-5">
           Masking is not part of Confidentiality Mode and is not chosen per chat. A class you switch on here is
@@ -507,10 +543,9 @@
             </label>
           </div>
         }
-      </fieldset>
 
-      <fieldset class="permissions-fieldset mt-20">
-        <legend>Chat Data Management</legend>
+      }
+      @case ('chats') {
 
         <div class="margin-y-20 mt-5">
           <div class="chat-metrics-bar">
@@ -558,28 +593,10 @@
             <span>Manage Trash</span>
           </button>
         </div>
-      </fieldset>
 
-      <fieldset class="permissions-fieldset mt-20">
-        <legend>Version</legend>
-
-        <div class="margin-y-20 mt-5" style="display: flex; align-items: center; justify-content: space-between;">
-          @if (appVersion) {
-            <p style="margin: 0; font-weight: bold;">Overseer {{ appVersion }}</p>
-          } @else {
-            <p style="margin: 0; color: #aaa;">Loading...</p>
-          }
-          <button type="button" class="btn-gh" (click)="openChangelog()" style="display: flex; align-items: center; gap: 8px;">
-            Release Notes
-            @if (showChangelogBadge) {
-              <svg class="sparkle-icon" viewBox="0 0 24 24" fill="#FACC15" style="filter: drop-shadow(0 0 3px rgba(250,204,21,0.6)); width: 16px; height: 16px;">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-              </svg>
-            }
-          </button>
-        </div>
-      </fieldset>
-
+      }
+      }
+      </div>
     </div>
   </div>
 

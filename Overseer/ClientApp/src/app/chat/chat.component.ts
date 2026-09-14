@@ -211,6 +211,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   @ViewChild('renameInput') renameInput!: ElementRef<HTMLInputElement>;
   @ViewChild('logoutDialog') logoutDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('ephemeralCloseDialog') ephemeralCloseDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('privacyDialog') privacyDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('trashModal') trashModal!: TrashModalComponent;
   autoScrollEnabled = true;
   readonly STREAMING_SCROLL_OFFSET = 50;
@@ -894,9 +895,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
      be created retroactively. */
   newChatConfidential = false;
   newChatEphemeral = false;
-
-  /** Whether the privacy panel above the composer is expanded. */
-  isPrivacyPanelOpen = false;
 
   /** Whether the "what incognito does and does not do" detail is expanded in the banner. */
   isEphemeralDetailOpen = false;
@@ -2863,12 +2861,37 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     };
   }
 
-  togglePrivacyPanel() {
-    this.isPrivacyPanelOpen = !this.isPrivacyPanelOpen;
-  }
-
   toggleEphemeralDetail() {
     this.isEphemeralDetailOpen = !this.isEphemeralDetailOpen;
+  }
+
+  /** The single privacy choice for the next chat, derived from the two flags the server takes. */
+  get newChatPrivacyMode(): 'standard' | 'confidential' | 'incognito' {
+    if (this.newChatEphemeral) return 'incognito';
+    if (this.newChatConfidential) return 'confidential';
+    return 'standard';
+  }
+
+  setNewChatPrivacyMode(mode: 'standard' | 'confidential' | 'incognito') {
+    if (mode === 'incognito') { this.onNewChatEphemeralChange(true); return; }
+    this.onNewChatEphemeralChange(false);
+    this.onNewChatConfidentialChange(mode === 'confidential');
+  }
+
+  openPrivacyDialog() {
+    this.privacyDialog?.nativeElement?.showModal();
+  }
+
+  /* Backdrop click closes the dialog where closedby="any" is not supported. */
+  onPrivacyDialogClick(event: MouseEvent) {
+    const dialog = this.privacyDialog?.nativeElement;
+    if (!dialog) return;
+    const rect = dialog.getBoundingClientRect();
+    const isInDialog = (rect.top <= event.clientY && event.clientY <= rect.top + rect.height
+      && rect.left <= event.clientX && event.clientX <= rect.left + rect.width);
+    if (!isInDialog) {
+      dialog.close();
+    }
   }
 
   onNewChatConfidentialChange(enabled: boolean) {
@@ -3177,7 +3200,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         if (this.isEphemeralSession) {
           this.isConfidentialSession = true;
           setSentryConfidentialSession(true);
-          this.isPrivacyPanelOpen = false;
+          this.privacyDialog?.nativeElement?.close();
           this.ephemeralNotice = 'Incognito chat started. Nothing in it is being saved.';
         }
         this.clientBridge.notifySessionChanged(newSessionId);

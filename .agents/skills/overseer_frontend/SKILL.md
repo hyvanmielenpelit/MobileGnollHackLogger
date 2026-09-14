@@ -156,7 +156,9 @@ The Overseer project is an ASP.NET Core backend serving an Angular frontend.
 ### Pages (Routes)
 The Angular application's routes are defined in `app.routes.ts`. The primary pages include:
 - `/chat` (`chat.component`): The main chat interface.
-- `/settings` (`settings.component`): User preferences.
+- `/settings` and `/settings/:section` (`settings.component`): User preferences, sectioned.
+  `:section` is one of `general`, `permissions`, `performance`, `confidentiality`, `masking`,
+  `chats`; a bare `/settings` or an unknown section shows General.
 - `/api-keys` (`api-keys.component`): Management of user API keys.
 - `/models` (`models.component`): AI Model selection and configuration.
 - `/admin` (`admin.component`): System administration (groups, configs, rate limits).
@@ -186,6 +188,8 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `#imagePreviewDialog`: Image Preview
   - `#reportConfirmDialog`: Report Confirm
   - `#logoutDialog`: Logout
+  - `#privacyDialog`: Privacy for this chat (Standard / Confidential / Incognito), opened from
+    the composer's privacy button; offered only while no chat is open.
 
 - **Admin Alerts Component (`admin-alerts.component.html`)**
   - `#popoverContainer`: System alert popover banner displaying missing configuration warnings from `AdminAlertService` (`/api/admin/system-alerts`) to admin users.

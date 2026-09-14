@@ -589,50 +589,6 @@
                  [attr.style]="'position-anchor: --tip-dismiss-ephemeral-notice'">Dismiss notice</div>
           </div>
         }
-        <!-- Privacy mode for the chat about to be created. Not offered later: see the panel copy. -->
-        @if (isNewChat) {
-          <div class="privacy-panel" [class.is-set]="newChatConfidential || newChatEphemeral">
-            <button type="button" class="disclosure-trigger privacy-trigger"
-                    [attr.aria-expanded]="isPrivacyPanelOpen"
-                    aria-controls="privacy-panel-body"
-                    (click)="togglePrivacyPanel()">
-              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-              </svg>
-              Privacy: {{ privacyModeLabel }}
-              <svg class="disclosure-chevron" [class.is-open]="isPrivacyPanelOpen" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-            </button>
-            @if (isPrivacyPanelOpen) {
-              <div class="privacy-panel-body" id="privacy-panel-body">
-                <label class="checkbox-label align-start">
-                  <input type="checkbox" name="newChatConfidential" class="w-auto m-0"
-                         [ngModel]="newChatConfidential"
-                         (ngModelChange)="onNewChatConfidentialChange($event)" />
-                  <span class="d-block">
-                    <span class="privacy-option-title">Confidentiality Mode</span>
-                    <span class="privacy-option-note">Encrypts this chat where it is stored, keeps it out of search, blocks tools that reach the internet, skips the generated title, and purges it immediately when you delete it.</span>
-                  </span>
-                </label>
-                <label class="checkbox-label align-start">
-                  <input type="checkbox" name="newChatEphemeral" class="w-auto m-0"
-                         [ngModel]="newChatEphemeral"
-                         (ngModelChange)="onNewChatEphemeralChange($event)" />
-                  <span class="d-block">
-                    <span class="privacy-option-title">Incognito &mdash; stricter: nothing is saved at all</span>
-                    <span class="privacy-option-note">Turning this on turns Confidentiality Mode on with it. The chat is held in server memory only: no chat, message, tool call or attachment row is written, and no file reaches disk. It ends after a stretch of inactivity, or when you close it &mdash; and then the content is gone. There is no trash and no recovery.</span>
-                  </span>
-                </label>
-                <p class="privacy-honesty-title">Two things incognito does not do:</p>
-                <ul class="privacy-honesty-list">
-                  <li>The conversation is still sent to the AI provider to be answered. Incognito changes what Overseer keeps, not what is sent away for inference.</li>
-                  <li>&ldquo;Not saved&rdquo; means not written to Overseer's database or its file store. Server memory can still be paged to disk by the operating system, captured in a crash dump, or read by anything with sufficient access to the server. This is not a legal or forensic guarantee.</li>
-                </ul>
-                <p class="privacy-decided-note">Both are decided now, for this chat. An existing chat's messages are already written, so it cannot be turned incognito afterwards.</p>
-              </div>
-            }
-          </div>
-        }
         <!-- Context window consumption and total chat cost -->
         @if ((showChatCost && totalChatCost != null) || (contextUsage && showContextWindowUsage)) {
           <div class="chat-telemetry-bar">
@@ -868,6 +824,30 @@
                   </span>
                 }
               </div>
+            }
+            <!-- Privacy mode for the chat about to be created; not offered once a chat exists. -->
+            @if (isNewChat) {
+              <button type="button" class="privacy-mode-btn"
+                      [class.is-set]="newChatConfidential || newChatEphemeral"
+                      [attr.aria-label]="'Privacy mode for this chat: ' + privacyModeLabel"
+                      interestfor="tip-privacy-mode"
+                      [attr.style]="'anchor-name: --tip-privacy-mode'"
+                      (click)="openPrivacyDialog()">
+                @switch (newChatPrivacyMode) {
+                  @case ('incognito') {
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                  }
+                  @case ('confidential') {
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                  }
+                  @default {
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>
+                  }
+                }
+                <span class="privacy-mode-label">{{ privacyModeLabel }}</span>
+              </button>
+              <div popover="hint" id="tip-privacy-mode" class="gh-tooltip"
+                   [attr.style]="'position-anchor: --tip-privacy-mode'">Privacy for this chat</div>
             }
           </div>
           <div class="modern-input-container">
@@ -1168,6 +1148,58 @@
         {{ isCapturingBoard ? (captureBoardMode === 'attached' ? 'Saving...' : 'Capturing...') : (captureBoardMode === 'attached' ? 'Save Attached Snapshot' : 'Capture Live Board') }}
       </button>
     }
+  </div>
+</dialog>
+
+<dialog #privacyDialog class="gh-dialog privacy-dialog" closedby="any"
+        aria-labelledby="privacy-dialog-title"
+        (click)="onPrivacyDialogClick($event)">
+  <h3 id="privacy-dialog-title">Privacy for this chat</h3>
+  <fieldset class="privacy-options">
+    <legend class="visually-hidden">Privacy mode</legend>
+
+    <label class="privacy-option" [class.is-selected]="newChatPrivacyMode === 'standard'">
+      <input type="radio" name="newChatPrivacyMode" value="standard"
+             [checked]="newChatPrivacyMode === 'standard'"
+             (change)="setNewChatPrivacyMode('standard')" />
+      <span class="privacy-option-body">
+        <span class="privacy-option-title">Standard</span>
+        <span class="privacy-option-note">Saved like any other chat.</span>
+      </span>
+    </label>
+
+    <label class="privacy-option" [class.is-selected]="newChatPrivacyMode === 'confidential'">
+      <input type="radio" name="newChatPrivacyMode" value="confidential"
+             [checked]="newChatPrivacyMode === 'confidential'"
+             (change)="setNewChatPrivacyMode('confidential')" />
+      <span class="privacy-option-body">
+        <span class="privacy-option-title">Confidential</span>
+        <span class="privacy-option-note">Encrypted where it is stored. Internet tools off. No AI-made title. Deleting it is final.</span>
+      </span>
+    </label>
+
+    <label class="privacy-option" [class.is-selected]="newChatPrivacyMode === 'incognito'">
+      <input type="radio" name="newChatPrivacyMode" value="incognito"
+             [checked]="newChatPrivacyMode === 'incognito'"
+             (change)="setNewChatPrivacyMode('incognito')" />
+      <span class="privacy-option-body">
+        <span class="privacy-option-title">Incognito</span>
+        <span class="privacy-option-note">Nothing is saved. Held in memory until you close it or it goes idle, then gone. No trash, no recovery.</span>
+      </span>
+    </label>
+  </fieldset>
+
+  @if (newChatEphemeral) {
+    <ul class="privacy-limits">
+      <li>The chat is still sent to the AI provider to be answered.</li>
+      <li>&ldquo;Not saved&rdquo; means not written to Overseer&rsquo;s database or files. Server memory can still be paged to disk or captured in a crash dump, so this is not a legal or forensic guarantee.</li>
+    </ul>
+  }
+
+  <p class="privacy-decided-note">Chosen now, for this chat only. A chat cannot be turned incognito afterwards.</p>
+
+  <div class="dialog-actions">
+    <button type="button" class="btn-gh btn-gh-cancel" (click)="privacyDialog.close()">Done</button>
   </div>
 </dialog>
 

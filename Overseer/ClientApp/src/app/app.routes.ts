@@ -11,6 +11,22 @@ import { AuthService } from './services/auth.service';
 import { Router } from '@angular/router';
 import { map, catchError, of } from 'rxjs';
 
+const settingsCanActivate = [(route: any, state: any) => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+  return auth.checkAuth().pipe(
+    map(user => {
+      if (user) return true;
+      return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
+    }),
+    catchError(() => of(router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } })))
+  );
+}];
+
+const settingsCanDeactivate = [(component: SettingsComponent) => {
+  return component.canDeactivate ? component.canDeactivate() : true;
+}];
+
 export const routes: Routes = [
   { path: 'login', component: LoginComponent },
   {
@@ -59,23 +75,17 @@ export const routes: Routes = [
       );
     }]
   },
-  { 
-    path: 'settings', 
+  {
+    path: 'settings',
     component: SettingsComponent,
-    canActivate: [(route: any, state: any) => {
-      const auth = inject(AuthService);
-      const router = inject(Router);
-      return auth.checkAuth().pipe(
-        map(user => {
-          if (user) return true;
-          return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
-        }),
-        catchError(() => of(router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } })))
-      );
-    }],
-    canDeactivate: [(component: SettingsComponent) => {
-      return component.canDeactivate ? component.canDeactivate() : true;
-    }]
+    canActivate: settingsCanActivate,
+    canDeactivate: settingsCanDeactivate
+  },
+  {
+    path: 'settings/:section',
+    component: SettingsComponent,
+    canActivate: settingsCanActivate,
+    canDeactivate: settingsCanDeactivate
   },
   { 
     path: 'api-keys', 
