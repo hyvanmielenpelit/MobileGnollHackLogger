@@ -596,7 +596,7 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
   }
 }
 
-/* The box and its legend come from `.gh-fieldset`; this holds the row layout and nothing else. */
+/* Version label on the left, Release Notes button on the right; wraps when narrow. */
 .version-row {
   display: flex;
   align-items: center;

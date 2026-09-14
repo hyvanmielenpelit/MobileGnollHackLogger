@@ -70,10 +70,6 @@ Do **not** create changelog items for:
 
 These are implementation details that don't affect the end user.
 
-## Sidebar Star Badge
-
-The changelog link in the chat sidebar displays a yellow star animation when a new **major or minor** version is detected (e.g., 1.0.x → 1.1.0 or 1.x → 2.0.0). **Patch-only releases** (e.g., 1.0.2 → 1.0.3) do **not** trigger the star. The star disappears once the user opens the changelog page.
-
 ## Adding a New Release
 
 1. Open `Overseer/Data/release-notes.json`.

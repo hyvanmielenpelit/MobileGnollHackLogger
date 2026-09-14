@@ -119,25 +119,6 @@
         </select>
       </div>
 
-      <fieldset class="gh-fieldset version-fieldset margin-y-20">
-        <legend>Version</legend>
-        <div class="version-row">
-          @if (appVersion) {
-            <p class="version-label">Overseer {{ appVersion }}</p>
-          } @else {
-            <p class="version-label version-loading">Loading...</p>
-          }
-          <button type="button" class="btn-gh version-notes-btn" (click)="openChangelog()">
-            Release Notes
-            @if (showChangelogBadge) {
-              <svg class="sparkle-icon" viewBox="0 0 24 24" fill="#FACC15" style="filter: drop-shadow(0 0 3px rgba(250,204,21,0.6)); width: 16px; height: 16px;">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-              </svg>
-            }
-          </button>
-        </div>
-      </fieldset>
-
       }
       @case ('permissions') {
 
@@ -608,6 +589,18 @@
         </div>
 
       }
+      @case ('version') {
+
+        <div class="version-row margin-y-20">
+          @if (appVersion) {
+            <p class="version-label">Overseer {{ appVersion }}</p>
+          } @else {
+            <p class="version-label version-loading">Loading...</p>
+          }
+          <button type="button" class="btn-gh version-notes-btn" (click)="openChangelog()">Release Notes</button>
+        </div>
+
+      }
       }
       </div>
     </div>
@@ -623,7 +616,7 @@
 </div>
 
 <!-- Changelog Dialog -->
-<dialog #changelogDialog class="gh-dialog changelog-dialog" closedby="any" (click)="onChangelogDialogClick($event)" (close)="onChangelogDialogClose()">
+<dialog #changelogDialog class="gh-dialog changelog-dialog" closedby="any" (click)="onChangelogDialogClick($event)">
   <div class="changelog-dialog-header">
     <h3 style="margin: 0; color: var(--title-color, #e0ba6d);">Release Notes</h3>
     <button type="button" class="btn-icon-action" aria-label="Close dialog" (click)="closeChangelogDialog($event)" title="Close">

@@ -945,12 +945,12 @@ describe('SettingsComponent', () => {
       fixture.detectChanges();
     }
 
-    it('renders six nav links with the expected labels and routerLinks', () => {
+    it('renders seven nav links with the expected labels and routerLinks', () => {
       const compiled = fixture.nativeElement as HTMLElement;
       const links = compiled.querySelectorAll('.settings-nav-link');
-      const expectedLabels = ['General', 'AI Permissions', 'AI Performance', 'Confidentiality Mode', 'Outbound Masking', 'Chat Data'];
+      const expectedLabels = ['General', 'AI Permissions', 'AI Performance', 'Confidentiality Mode', 'Outbound Masking', 'Chat Data', 'Version'];
 
-      expect(links.length).toBe(6);
+      expect(links.length).toBe(7);
       links.forEach((link, i) => {
         expect(link.querySelector('.settings-nav-label')?.textContent).toBe(expectedLabels[i]);
       });
@@ -963,14 +963,32 @@ describe('SettingsComponent', () => {
       expect(current?.querySelector('.settings-nav-label')?.textContent).toBe('General');
     });
 
-    it('groups the version and Release Notes button in a fieldset legended Version', () => {
+    it('renders the version row and Release Notes button in the Version section', () => {
+      emitSection('version');
+      const compiled = fixture.nativeElement as HTMLElement;
+      const row = compiled.querySelector('.version-row');
+
+      expect(row).toBeTruthy();
+      expect(row!.querySelector('.version-notes-btn')?.textContent?.trim()).toContain('Release Notes');
+      expect(compiled.querySelector('fieldset.version-fieldset')).toBeNull();
+    });
+
+    it('does not render the version row in the General section', () => {
       emitSection(null);
       const compiled = fixture.nativeElement as HTMLElement;
-      const fieldset = compiled.querySelector('fieldset.version-fieldset');
+      expect(compiled.querySelector('.version-row')).toBeNull();
+    });
 
-      expect(fieldset).toBeTruthy();
-      expect(fieldset!.querySelector(':scope > legend')?.textContent?.trim()).toBe('Version');
-      expect(fieldset!.querySelector('.version-notes-btn')?.textContent?.trim()).toContain('Release Notes');
+    it('a paramMap emitting version sets activeSection and the header label', () => {
+      emitSection('version');
+      expect(component.activeSection).toBe('version');
+      expect(component.contentSectionLabel).toBe('Version');
+    });
+
+    it('renders no sparkle badge on the Release Notes button', () => {
+      emitSection('version');
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('.version-notes-btn .sparkle-icon')).toBeNull();
     });
 
     it('renders the default-for-new-chats select first in the Confidentiality section', () => {

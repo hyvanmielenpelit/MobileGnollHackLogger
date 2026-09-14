@@ -8,7 +8,6 @@ import { Router, ActivatedRoute, RouterModule, NavigationEnd, NavigationStart } 
 import { MarkdownPipe } from './markdown.pipe';
 import { RelativeTimePipe } from './relative-time.pipe';
 import { SettingsService } from '../services/settings.service';
-import { ChangelogService } from '../services/changelog.service';
 import { ClientBridgeService } from '../services/client-bridge.service';
 import { setSentryConfidentialSession } from '../utils/sentry-filter.util';
 import { AdminAlertsComponent } from './admin-alerts.component';
@@ -192,9 +191,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
   chatService = inject(ChatService);
   settingsService = inject(SettingsService);
-  changelogService = inject(ChangelogService);
   
-  showChangelogAnimation = false;
   showChatCost = true;
   liveCost: number | null = null;
   liveIsOperatorCost: boolean = false;
@@ -1135,7 +1132,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     window.removeEventListener('online', this.onlineHandler);
     window.removeEventListener('offline', this.offlineHandler);
     window.removeEventListener('beforeunload', this.beforeUnloadHandler);
-    window.removeEventListener('changelog_badge_reset', this.changelogBadgeResetHandler);
     this.navigationStartSub?.unsubscribe();
     if (this.ephemeralNoticeTimeout) {
       clearTimeout(this.ephemeralNoticeTimeout);
@@ -1416,7 +1412,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           this.debugService.log(`[Overseer] Re-entered chat window from ${previousUrl}. Refetching settings and models.`);
           this.loadSettings(false);
           this.loadSessions(true);
-          this.checkChangelogAnimation();
           
           // Re-join SignalR group in case connection was silently reset during navigation
           if (this.currentSessionId && this.hubConnection?.state === signalR.HubConnectionState.Connected) {
@@ -1481,34 +1476,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       window.visualViewport.addEventListener('resize', this.onVisualViewportResize);
       this.onVisualViewportResize(); // set initial value
     }
-
-    // Listen for custom events to reset the changelog badge
-    this.changelogBadgeResetHandler = () => this.checkChangelogAnimation();
-    window.addEventListener('changelog_badge_reset', this.changelogBadgeResetHandler);
-    
-    this.checkChangelogAnimation();
-  }
-
-  private changelogBadgeResetHandler!: () => void;
-
-  private checkChangelogAnimation() {
-    const t0 = performance.now();
-    this.changelogService.getReleaseNotes().subscribe({
-      next: (response) => {
-        const duration = performance.now() - t0;
-        this.perfLog('Changelog', `getReleaseNotes received in ${duration.toFixed(1)}ms (${response?.notes?.length ?? 0} notes)`);
-        if (response.notes && response.notes.length > 0) {
-          const latestVersion = response.notes[0].version;
-          this.showChangelogAnimation = this.changelogService.hasNewMajorOrMinorVersion(latestVersion);
-          this.cdr.detectChanges();
-        }
-      },
-      error: (err) => {
-        const duration = performance.now() - t0;
-        this.perfLog('Changelog', `getReleaseNotes failed after ${duration.toFixed(1)}ms: ${err?.message ?? err}`);
-        console.error('Failed to check release notes for animation', err);
-      }
-    });
   }
 
   private flushPendingChunkBuffer() {

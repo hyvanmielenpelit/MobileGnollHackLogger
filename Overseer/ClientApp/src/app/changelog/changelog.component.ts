@@ -37,10 +37,6 @@ export class ChangelogComponent implements OnInit {
         this.pageSize = data.pageSize || 10;
         this.notes = data.notes;
         this.loading = false;
-        if (this.notes && this.notes.length > 0) {
-          // Stop animation once the user opens the page for the newest version
-          this.changelogService.markAsSeen(this.notes[0].version);
-        }
         this.cdr.detectChanges();
       },
       error: (err) => {

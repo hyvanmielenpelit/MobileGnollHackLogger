@@ -22,7 +22,6 @@ import {
   stricterConfidentialPersistence
 } from '../services/settings.service';
 import { SystemService } from '../services/system.service';
-import { ChangelogService } from '../services/changelog.service';
 import { ChatService } from '../services/chat.service';
 import { RouterModule, ActivatedRoute, ParamMap } from '@angular/router';
 import { ChangelogComponent } from '../changelog/changelog.component';
@@ -42,7 +41,7 @@ export interface DlpClassOption {
 }
 
 /** The settings sections a URL segment can name. */
-export type SettingsSection = 'general' | 'permissions' | 'performance' | 'confidentiality' | 'masking' | 'chats';
+export type SettingsSection = 'general' | 'permissions' | 'performance' | 'confidentiality' | 'masking' | 'chats' | 'version';
 
 /** The administrator's floor drops the `dlpMask` prefix, so each switch carries its floor's name. */
 const DLP_FLOOR_KEYS: Record<DlpMaskClass, keyof DlpFloor> = {
@@ -65,7 +64,6 @@ const DLP_FLOOR_KEYS: Record<DlpMaskClass, keyof DlpFloor> = {
 export class SettingsComponent implements OnInit, OnDestroy {
   settingsService = inject(SettingsService);
   systemService = inject(SystemService);
-  changelogService = inject(ChangelogService);
   chatService = inject(ChatService);
   cdr = inject(ChangeDetectorRef);
   route = inject(ActivatedRoute);
@@ -74,12 +72,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   /** The sections offered by the nav, in display order. */
   readonly sections: ReadonlyArray<{ id: SettingsSection; label: string; hint: string }> = [
-    { id: 'general', label: 'General', hint: 'Display, hints and version' },
+    { id: 'general', label: 'General', hint: 'Display and hints' },
     { id: 'permissions', label: 'AI Permissions', hint: 'What the AI may reach' },
     { id: 'performance', label: 'AI Performance', hint: 'Tool limits and timeouts' },
     { id: 'confidentiality', label: 'Confidentiality Mode', hint: 'Default for new chats, and how confidential chats are kept' },
     { id: 'masking', label: 'Outbound Masking', hint: 'Secrets replaced before sending' },
-    { id: 'chats', label: 'Chat Data', hint: 'Active, pinned and trashed chats' }
+    { id: 'chats', label: 'Chat Data', hint: 'Active, pinned and trashed chats' },
+    { id: 'version', label: 'Version', hint: 'Overseer version and release notes' }
   ];
 
   /** The section named in the URL, or null on the bare /settings index. */
@@ -112,9 +111,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
   isBulkDeleting = false;
   isUnpinningAll = false;
   toastMessage = '';
-
-  showChangelogBadge = false;
-  private changelogBadgeResetHandler!: () => void;
 
   spoilerFreeMode = true;
   showSourceCodeReferences = false;
@@ -491,11 +487,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
       const section = params.get('section') as SettingsSection | null;
       this.activeSection = this.sections.some(s => s.id === section) ? (section as SettingsSection) : null;
     });
-
-    this.checkChangelogBadge();
-
-    this.changelogBadgeResetHandler = () => this.checkChangelogBadge();
-    window.addEventListener('changelog_badge_reset', this.changelogBadgeResetHandler);
 
     ensureOverlayPolyfills();
 
@@ -1033,19 +1024,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.cdr.detectChanges();
   }
 
-  checkChangelogBadge() {
-    this.changelogService.getReleaseNotes().subscribe({
-      next: (response) => {
-        if (response.notes && response.notes.length > 0) {
-          const latestVersion = response.notes[0].version;
-          this.showChangelogBadge = this.changelogService.hasNewMajorOrMinorVersion(latestVersion);
-          this.cdr.detectChanges();
-        }
-      },
-      error: (err) => console.error('Failed to check release notes for animation', err)
-    });
-  }
-
   openChangelog() {
     if (this.changelogDialog?.nativeElement) {
       this.changelogDialog.nativeElement.showModal();
@@ -1058,10 +1036,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
     if (this.changelogDialog?.nativeElement) {
       this.changelogDialog.nativeElement.close();
     }
-  }
-
-  onChangelogDialogClose() {
-    this.checkChangelogBadge();
   }
 
   onChangelogDialogClick(event: MouseEvent) {
@@ -1082,7 +1056,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
-    window.removeEventListener('changelog_badge_reset', this.changelogBadgeResetHandler);
     if (this.saveSubscription) {
       this.saveSubscription.unsubscribe();
     }

@@ -338,12 +338,6 @@ export class AdminComponent implements OnInit, OnDestroy {
     }
   }
 
-  testChangelogAnimation() {
-    localStorage.setItem('overseer_last_seen_changelog', '0.0.0');
-    window.dispatchEvent(new Event('changelog_badge_reset'));
-    this.showAdminToast('Update badge reset successfully!', 'success', 'Badge Reset');
-  }
-
   triggerFrontendSentryError() {
     this.showAdminToast('Triggering frontend exception...', 'info', 'Sentry Test');
     throw new Error('Sentry Frontend Crash Test triggered by Admin');
