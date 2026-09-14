@@ -1597,12 +1597,15 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
 
     it('should withhold the incognito limits until Incognito is selected', () => {
       fixture.detectChanges();
-      const compiled = fixture.nativeElement as HTMLElement;
-      expect(compiled.querySelector('.privacy-limits')).toBeFalsy();
+      /* Scoped to the choice dialog: the banner's details dialog states the same limits and is
+         always in the DOM, so a document-wide query would answer about the wrong dialog. */
+      const choiceDialog = (fixture.nativeElement as HTMLElement)
+        .querySelector('dialog[aria-labelledby="privacy-dialog-title"]')!;
+      expect(choiceDialog.querySelector('.privacy-limits')).toBeFalsy();
 
       component.setNewChatPrivacyMode('incognito');
       fixture.detectChanges();
-      expect(compiled.querySelector('.privacy-limits')).toBeTruthy();
+      expect(choiceDialog.querySelector('.privacy-limits')).toBeTruthy();
     });
 
     it('should name the current mode in the button label', () => {
@@ -1718,6 +1721,19 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
       expect(navSpy).not.toHaveBeenCalled();
     });
 
+    it('should leave the notice strip empty, because the banner already says it', async () => {
+      spyOn(chatService, 'sendMessage').and.returnValue(of({ sessionId: 'eph_abc' } as any));
+      spyOn(component.router, 'navigateByUrl');
+      component.onNewChatEphemeralChange(true);
+      component.currentInput = 'Nothing on the record, please.';
+
+      await component.sendMessage();
+      fixture.detectChanges();
+
+      expect(component.privacyNotice).toBe('');
+      expect((fixture.nativeElement as HTMLElement).querySelector('.ephemeral-notice')).toBeFalsy();
+    });
+
     it('should navigate to the session reference of an ordinary chat', async () => {
       spyOn(chatService, 'sendMessage').and.returnValue(of({ sessionId: '77' } as any));
       const navSpy = spyOn(component.router, 'navigateByUrl');
@@ -1787,15 +1803,23 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
       expect((fixture.nativeElement as HTMLElement).querySelector('.ephemeral-banner')).toBeFalsy();
     });
 
-    it('should expand to the two limits of the mode', () => {
+    it('should open the details dialog from the banner', () => {
       component.currentSessionId = 'eph_abc';
       component.isEphemeralSession = true;
-      component.isEphemeralDetailOpen = true;
       fixture.detectChanges();
 
-      const detail = (fixture.nativeElement as HTMLElement).querySelector('#ephemeral-detail');
-      expect(detail).toBeTruthy();
-      const text = detail!.textContent || '';
+      const dialog = component.ephemeralInfoDialog!.nativeElement;
+      const showModal = spyOn(dialog, 'showModal');
+      (fixture.nativeElement as HTMLElement)
+        .querySelector<HTMLButtonElement>('button.ephemeral-info-trigger')!.click();
+
+      expect(showModal).toHaveBeenCalled();
+    });
+
+    it('should state the limits of the mode in the details dialog', () => {
+      fixture.detectChanges();
+
+      const text = component.ephemeralInfoDialog!.nativeElement.textContent || '';
       expect(text).toContain('still sent to the AI provider');
       expect(text).toContain('crash dump');
       expect(text).toContain('no trash and no recovery');

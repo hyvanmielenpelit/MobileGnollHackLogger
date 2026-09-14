@@ -212,6 +212,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   @ViewChild('confidentialGateDialog') confidentialGateDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('upgradeConfidentialDialog') upgradeConfidentialDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('privateBadgeDialog') privateBadgeDialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild('ephemeralInfoDialog') ephemeralInfoDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('trashModal') trashModal!: TrashModalComponent;
   autoScrollEnabled = true;
   readonly STREAMING_SCROLL_OFFSET = 50;
@@ -914,9 +915,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   /* True once the user has picked a mode for the chat about to be created, so a settings
      reload -- returning from the settings page, for instance -- cannot overwrite it. */
   private newChatPrivacyChosen = false;
-
-  /** Whether the "what incognito does and does not do" detail is expanded in the banner. */
-  isEphemeralDetailOpen = false;
 
   isClosingEphemeral = false;
   ephemeralCloseError: string | null = null;
@@ -2328,7 +2326,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.privateBadge = null;
     this.isConfidentialSession = false;
     this.isEphemeralSession = false;
-    this.isEphemeralDetailOpen = false;
     this.ephemeralExpiresUtc = null;
     this.clearEphemeralExpiryWarning();
     setSentryConfidentialSession(false);
@@ -2426,7 +2423,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.privateBadge = null;
     this.isConfidentialSession = false;
     this.isEphemeralSession = false;
-    this.isEphemeralDetailOpen = false;
     this.ephemeralExpiresUtc = null;
     this.clearEphemeralExpiryWarning();
     setSentryConfidentialSession(false);
@@ -2945,9 +2941,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.privacyDialog?.nativeElement?.close();
     this.privateBadgeDialog?.nativeElement?.close();
-    if (this.isEphemeralSession) {
-      this.privacyNotice = 'Incognito chat started. Nothing in it is being saved.';
-    }
+    this.ephemeralInfoDialog?.nativeElement?.close();
     this.clientBridge.notifySessionChanged(sessionRef);
 
     if (this.hubConnection?.state === signalR.HubConnectionState.Connected) {
@@ -2995,10 +2989,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       clearTimeout(this.ephemeralExpiryTimeout);
       this.ephemeralExpiryTimeout = null;
     }
-  }
-
-  toggleEphemeralDetail() {
-    this.isEphemeralDetailOpen = !this.isEphemeralDetailOpen;
   }
 
   /** The single privacy choice for the next chat, derived from the two flags the server takes. */
@@ -3321,6 +3311,14 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   /** Opens the Private badge's details dialog, which explains this chat's privacy state. */
   openPrivateBadgeDialog() {
     this.showPrivacyModal(this.privateBadgeDialog?.nativeElement, 'tip-private-badge');
+  }
+
+  /**
+   * Opens the incognito banner's details dialog. The trigger is a labelled text button with no
+   * tooltip, so there is none to hide on close.
+   */
+  openEphemeralInfoDialog() {
+    this.showPrivacyModal(this.ephemeralInfoDialog?.nativeElement, null);
   }
 
   openUpgradeConfidentialDialog() {

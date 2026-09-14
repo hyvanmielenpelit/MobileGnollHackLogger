@@ -195,6 +195,8 @@ To find specific popups, look in the corresponding component's `.html` template:
     the composer's privacy button; offered only while no chat is open.
   - `#privateBadgeDialog`: Privacy details for the open chat — opened by the Private badge in
     the composer's indicator strip.
+  - `#ephemeralInfoDialog`: What Incognito means for the open chat — opened by the
+    banner's "What this means" button.
 
 - **Admin Alerts Component (`admin-alerts.component.html`)**
   - `#popoverContainer`: System alert popover banner displaying missing configuration warnings from `AdminAlertService` (`/api/admin/system-alerts`) to admin users.

@@ -1634,10 +1634,9 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
   font-weight: 600;
 }
 
-/* Text disclosure trigger for the incognito banner's detail list. Not a .btn-gh: it sits
-   inside a dense strip where the decorative plate would dominate the copy it is there to
-   reveal. */
-.disclosure-trigger {
+/* Text trigger for the incognito banner's details dialog. Not a .btn-gh: it sits inside a
+   dense strip where the decorative plate would dominate the copy it sits beside. */
+.ephemeral-info-trigger {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1657,14 +1656,6 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
   &:focus-visible {
     outline: 2px solid var(--primary-color, #d4af37);
     outline-offset: 2px;
-  }
-}
-
-.disclosure-chevron {
-  transition: transform 0.15s ease;
-
-  &.is-open {
-    transform: rotate(180deg);
   }
 }
 
@@ -1837,10 +1828,12 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
   color: #d8d8d8;
 }
 
-/* The Private badge's details dialog. It reuses .privacy-dialog for its sizing and scrolling,
-   and the four badge state colours for its pill, so the pill and the badge that opened it are
-   the same colour without a second set of literals to keep in step. */
-.private-badge-dialog {
+/* The two "what this privacy state means" dialogs: the Private badge's, and Incognito's. Both
+   reuse .privacy-dialog for their sizing and scrolling. The Private badge's also takes the four
+   badge state colours for its pill, so the pill and the badge that opened it are the same colour
+   without a second set of literals to keep in step. */
+.private-badge-dialog,
+.ephemeral-info-dialog {
   h3 {
     display: flex;
     align-items: center;
@@ -2014,17 +2007,6 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
   margin-inline-start: auto;
 }
 
-.ephemeral-detail {
-  margin: 10px 0 0;
-  padding-inline-start: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 0.78rem;
-  line-height: 1.45;
-  color: #d0d0d0;
-}
-
 .ephemeral-notice {
   display: flex;
   align-items: center;
@@ -2095,12 +2077,6 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
 .excerpt-notice-removed {
   color: #f5c4a0;
   font-weight: 600;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .disclosure-chevron {
-    transition: none;
-  }
 }
 
 /* Custom Model Selector */
