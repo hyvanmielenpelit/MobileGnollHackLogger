@@ -1486,6 +1486,11 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   }
 }
 
+.setting-indicator {
+  display: inline-flex;
+  align-items: center;
+}
+
 .setting-badge {
   display: inline-flex;
   align-items: center;
@@ -1627,21 +1632,28 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
   }
 }
 
-/* Privacy choice for the chat about to be created; sits on the model-selector row. */
+/* Privacy choice for the chat about to be created; sized like a setting badge, on the model-selector row. */
 .privacy-mode-btn {
   margin-inline-start: auto;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 28px;
-  padding: 4px 8px;
+  gap: 4px;
+  padding: 3px 8px;
   background: rgba(0, 0, 0, 0.6);
   border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
   border-radius: 4px;
   color: #e8e8e8;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
+  font-weight: 500;
   font-family: inherit;
+  white-space: nowrap;
   cursor: pointer;
+
+  .btn-icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+  }
 
   &:focus-visible {
     outline: 2px solid var(--primary-color, #d4af37);
@@ -1676,7 +1688,7 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
 
 @media (max-width: 600px) {
   .privacy-mode-btn {
-    padding: 4px 6px;
+    padding: 3px 6px;
 
     .privacy-mode-label {
       display: none;
@@ -2032,7 +2044,6 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
 }
 
 .model-selector-wrapper {
-  align-self: flex-start;
   margin-left: 0;
   margin-bottom: 5px;
 }
