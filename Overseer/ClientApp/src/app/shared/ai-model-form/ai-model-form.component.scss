@@ -301,3 +301,55 @@
 }
 
 
+.advanced-section {
+  margin-top: 15px;
+
+  > summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--gh-gold, #f39c12);
+    letter-spacing: 0.5px;
+    padding: 6px 0;
+    list-style: none;
+
+    &::-webkit-details-marker { display: none; }
+
+    &::before {
+      /* CSS-drawn chevron; rotates to point down when the section is open. */
+      content: '';
+      display: inline-block;
+      width: 0.45em;
+      height: 0.45em;
+      margin-right: 8px;
+      border-right: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      transform: rotate(-45deg);
+      transition: transform 0.15s ease;
+    }
+
+    &:hover { filter: brightness(1.15); }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 4px;
+      border-radius: 4px;
+    }
+  }
+
+  &[open] > summary::before {
+    transform: rotate(45deg);
+  }
+}
+
+/* One line when empty, grows with the JSON, scrolls past the cap.
+   Where field-sizing is unsupported the box stays one row and scrolls. */
+.custom-headers-input {
+  field-sizing: content;
+  height: auto;
+  width: 100%;
+  min-block-size: 1lh;
+  max-block-size: 8lh;
+  resize: vertical;
+  font-family: var(--font-monospace, monospace);
+}

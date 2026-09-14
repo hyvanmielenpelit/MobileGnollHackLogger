@@ -667,4 +667,180 @@ describe('AiModelFormComponent', () => {
       expect(component.cachedInputPricePerMillion).toBe(2.5);
     });
   });
+
+  describe('Advanced section', () => {
+    const advanced = (): HTMLDetailsElement =>
+      fixture.nativeElement.querySelector('details.advanced-section');
+
+    it('should be collapsed and hold the Pricing fieldset in non-admin add mode', () => {
+      component.isAdmin = false;
+      fixture.detectChanges();
+
+      const details = advanced();
+      expect(details).toBeTruthy();
+      expect(details.open).toBe(false);
+      expect(component.advancedOpen).toBe(false);
+      expect(details.querySelector('summary')?.textContent?.trim()).toBe('Advanced');
+      expect(details.querySelector('fieldset.pricing-fieldset')).toBeTruthy();
+    });
+
+    it('should hold Pricing, Tool Calling, Provider Trust and Custom Endpoint in admin mode, but not the status checkboxes', () => {
+      component.isAdmin = true;
+      component.apiKey = 'dummy';
+      fixture.detectChanges();
+
+      const details = advanced();
+      const legends = Array.from(details.querySelectorAll('legend')).map(l => l.textContent?.trim());
+      expect(legends).toEqual(['Pricing', 'Tool Calling', 'Provider Trust', 'Custom Endpoint']);
+
+      const parallel = details.querySelector('#parallelExecutionModeSelect');
+      expect(parallel).toBeTruthy();
+      expect(parallel!.closest('fieldset')?.querySelector('legend')?.textContent?.trim())
+        .toBe('Tool Calling');
+      expect(parallel!.getAttribute('aria-describedby')).toBe('parallelExecutionModeHint');
+      expect(details.querySelector('#parallelExecutionModeHint')?.classList).toContain('form-hint');
+
+      const trustFieldset = Array.from(details.querySelectorAll('fieldset'))
+        .find(f => f.querySelector('legend')?.textContent?.trim() === 'Provider Trust')!;
+      expect(parallel!.compareDocumentPosition(trustFieldset) & Node.DOCUMENT_POSITION_FOLLOWING)
+        .toBeTruthy();
+
+      // Enabled / System Wide and Model Role stay outside Advanced.
+      expect(details.querySelector('.checkbox-row')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.checkbox-row')).toBeTruthy();
+    });
+
+    it('should not render the admin-only advanced blocks for a non-admin', () => {
+      component.isAdmin = false;
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('#parallelExecutionModeSelect')).toBeNull();
+      const legends = Array.from(fixture.nativeElement.querySelectorAll('legend'))
+        .map((l: any) => l.textContent?.trim());
+      expect(legends).not.toContain('Provider Trust');
+      expect(legends).not.toContain('Custom Endpoint');
+    });
+
+    it('should open when an advanced value is non-default', () => {
+      component.mode = 'edit';
+      component.isAdmin = true;
+      component.initialData = {
+        id: 1,
+        provider: 'OpenAI',
+        modelId: 'gpt-4o',
+        displayName: 'GPT-4o',
+        displayNameMode: 'model_name',
+        hasApiKey: false,
+        pricingMode: 'default',
+        parallelExecutionMode: 2,
+        baseUrl: 'https://gw.example'
+      };
+      fixture.detectChanges();
+
+      expect(component.advancedOpen).toBe(true);
+      expect(advanced().open).toBe(true);
+    });
+
+    it('should open for a non-admin whose pricing is custom', () => {
+      component.mode = 'edit';
+      component.isAdmin = false;
+      component.initialData = {
+        provider: 'OpenAI',
+        modelId: 'gpt-4o',
+        displayName: 'GPT-4o',
+        displayNameMode: 'model_name',
+        pricingMode: 'custom'
+      };
+      fixture.detectChanges();
+
+      expect(component.advancedOpen).toBe(true);
+      expect(advanced().open).toBe(true);
+    });
+
+    it('should stay closed when every advanced value is at its default', () => {
+      component.mode = 'edit';
+      component.isAdmin = true;
+      component.initialData = {
+        id: 1,
+        provider: 'OpenAI',
+        modelId: 'gpt-4o',
+        displayName: 'GPT-4o',
+        displayNameMode: 'model_name',
+        hasApiKey: false,
+        pricingMode: 'default',
+        parallelExecutionMode: 2
+      };
+      fixture.detectChanges();
+
+      expect(component.advancedOpen).toBe(false);
+      expect(advanced().open).toBe(false);
+    });
+
+    it('should keep the section open after the user toggles it', () => {
+      component.mode = 'edit';
+      component.isAdmin = true;
+      component.initialData = {
+        id: 1,
+        provider: 'OpenAI',
+        modelId: 'gpt-4o',
+        displayName: 'GPT-4o',
+        displayNameMode: 'model_name',
+        hasApiKey: false,
+        pricingMode: 'default',
+        parallelExecutionMode: 2
+      };
+      fixture.detectChanges();
+      expect(component.advancedOpen).toBe(false);
+
+      const details = advanced();
+      details.open = true;
+      details.dispatchEvent(new Event('toggle'));
+
+      expect(component.advancedOpen).toBe(true);
+
+      fixture.detectChanges();
+      expect(advanced().open).toBe(true);
+    });
+
+    it('should render Custom Headers as a textarea on a row of its own', () => {
+      component.isAdmin = true;
+      component.apiKey = 'dummy';
+      fixture.detectChanges();
+
+      const headers = fixture.nativeElement.querySelector('#customHeadersInput') as HTMLTextAreaElement;
+      expect(headers).toBeTruthy();
+      expect(headers.tagName).toBe('TEXTAREA');
+      expect(headers.rows).toBe(1);
+      expect(headers.maxLength).toBe(4096);
+
+      const group = headers.closest('.form-group')!;
+      expect(group.querySelector('#apiVersionInput')).toBeNull();
+      expect(fixture.nativeElement.querySelector('#apiVersionInput')).toBeTruthy();
+    });
+
+    it('should round-trip the Custom Headers value into the saved result', async () => {
+      component.isAdmin = true;
+      component.apiKey = 'dummy';
+      fixture.detectChanges();
+      component.fetchModels();
+      component.pickerModelSelect = 'gpt-4o';
+      component.onPickerModelSelect();
+
+      component.customHeadersJson = '{"X-A":"1"}';
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      const headers = fixture.nativeElement.querySelector('#customHeadersInput') as HTMLTextAreaElement;
+      expect(headers.value).toBe('{"X-A":"1"}');
+
+      let savedResult: AiModelFormResult | undefined;
+      component.save.subscribe((result) => {
+        savedResult = result;
+      });
+      component.onSave();
+
+      expect(savedResult).toBeDefined();
+      expect(savedResult!.customHeadersJson).toBe('{"X-A":"1"}');
+    });
+  });
 });

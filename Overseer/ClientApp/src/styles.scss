@@ -406,6 +406,9 @@ a:hover {
   padding: 8px;
   border-radius: 4px;
   box-sizing: border-box;
+  /* Native parts (date picker icon and popup, select popup, number spinners) follow the
+     element's colour scheme; the page declares none, so without this they render light. */
+  color-scheme: dark;
 }
 .gh-input:focus {
   outline: none;

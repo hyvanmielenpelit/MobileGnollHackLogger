@@ -115,6 +115,9 @@ export class AiModelFormComponent implements OnInit {
   /** Azure OpenAI only. Its presence also selects Azure's api-key header over a bearer token. */
   apiVersion: string | null = null;
 
+  /** Advanced starts open only when something inside it is non-default; the user's toggle wins after that. */
+  advancedOpen = false;
+
   get postureLabel(): string {
     return confidentialityPostureLabel(this.confidentialityPosture);
   }
@@ -329,6 +332,26 @@ export class AiModelFormComponent implements OnInit {
         this.fetchModels();
       }
     }
+
+    this.advancedOpen = this.hasNonDefaultAdvancedValues();
+  }
+
+  /** Whether anything inside the Advanced section departs from its default. Read once, in ngOnInit. */
+  hasNonDefaultAdvancedValues(): boolean {
+    const filled = (v: string | null | undefined) => !!v && v.trim().length > 0;
+    if (this.pricingMode !== 'default') return true;
+    // The non-admin form never loads the fields below, and leaves parallelExecutionMode at its default.
+    if (!this.isAdmin) return false;
+    return this.parallelExecutionMode !== 2
+      || (!!this.confidentialityPosture && this.confidentialityPosture !== 'Unknown')
+      || filled(this.confidentialityNote) || filled(this.postureAgreementRef)
+      || filled(this.dataRegion) || filled(this.postureVerifiedUtc)
+      || filled(this.baseUrl) || filled(this.apiVersion) || filled(this.customHeadersJson);
+  }
+
+  /** Keeps the bound value in step with the element so a later render cannot undo the user's click. */
+  onAdvancedToggle(event: Event): void {
+    this.advancedOpen = (event.target as HTMLDetailsElement).open;
   }
 
   onProviderChange() {
