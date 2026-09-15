@@ -542,35 +542,6 @@
         }
       </div>
       <div class="input-area-container">
-        <!-- Persistent state of an open incognito chat, with its close action -->
-        @if (isEphemeralSession) {
-          <div class="ephemeral-banner">
-            <div class="ephemeral-banner-main">
-              <span class="setting-badge badge-ephemeral">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.06 13c-1.86 0-3.42 1.33-3.82 3.1-.95-.41-1.82-.3-2.48-.01-.39-1.77-1.96-3.09-3.82-3.09-2.17 0-3.94 1.77-3.94 3.94S4.77 20.88 6.94 20.88c2.06 0 3.74-1.59 3.9-3.6.3-.2 1.15-.63 2.32 0 .16 2.01 1.85 3.6 3.9 3.6 2.17 0 3.94-1.77 3.94-3.94S19.23 13 17.06 13zM6.94 19.86c-1.61 0-2.92-1.31-2.92-2.92s1.31-2.92 2.92-2.92 2.92 1.31 2.92 2.92-1.31 2.92-2.92 2.92zm10.12 0c-1.61 0-2.92-1.31-2.92-2.92s1.31-2.92 2.92-2.92 2.92 1.31 2.92 2.92-1.31 2.92-2.92 2.92zM22 10.5H2V12h20v-1.5zm-6.47-7.87c-.22-.49-.78-.75-1.31-.58L12 2.79l-2.23-.74-.03-.01c-.53-.15-1.1.11-1.3.58l-2.5 6.5h12.1l-2.51-6.49z"/></svg>
-                Incognito
-              </span>
-              <span class="ephemeral-banner-text">
-                This chat is not being saved. It ends on its own after {{ ephemeralTimeoutMinutes }} minutes without activity.
-              </span>
-              <button type="button" class="ephemeral-info-trigger"
-                      (click)="openEphemeralInfoDialog()">
-                What this means
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-              </button>
-              <button type="button" class="btn-gh btn-gh-delete btn-gh-small ephemeral-close-btn"
-                      (click)="requestCloseEphemeralSession()">
-                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                  <line x1="10" y1="11" x2="10" y2="17"></line>
-                  <line x1="14" y1="11" x2="14" y2="17"></line>
-                </svg>
-                Close and destroy
-              </button>
-            </div>
-          </div>
-        }
         @if (privacyNotice) {
           <div class="ephemeral-notice" role="status" aria-live="polite">
             <span class="ephemeral-notice-text">{{ privacyNotice }}</span>
@@ -590,7 +561,7 @@
           <div class="chat-telemetry-bar">
           @if (showChatCost && totalChatCost != null) {
             <div class="chat-cost-indicator">
-              <span class="cost-label">Chat cost</span>
+              <span class="cost-label">Total</span>
               <span class="cost-value" [title]="chatCostTooltip">{{ formattedChatCost }}</span>
               @if (isChatCostPartial) {
                 <span class="cost-partial-badge" [title]="chatCostTooltip">PARTIAL</span>
@@ -830,6 +801,41 @@
                      [attr.style]="'position-anchor: --tip-private-badge'">{{ privateBadge.summary }}</div>
               </div>
             }
+            <!-- Beside the Private badge for the same reason it sits there: a phone user must see
+                 the chat's privacy state. The tooltip carries the not-saved sentence; the dialog
+                 the rest. -->
+            @if (isEphemeralSession) {
+              <div class="incognito-badge-indicator">
+                <button type="button" class="setting-badge badge-ephemeral incognito-badge ms-10"
+                        [attr.aria-label]="'Incognito chat: not being saved, ends after ' + ephemeralTimeoutMinutes + ' minutes without activity. Show details.'"
+                        interestfor="tip-incognito-badge"
+                        [attr.style]="'anchor-name: --tip-incognito-badge'"
+                        (click)="openEphemeralInfoDialog()">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.06 13c-1.86 0-3.42 1.33-3.82 3.1-.95-.41-1.82-.3-2.48-.01-.39-1.77-1.96-3.09-3.82-3.09-2.17 0-3.94 1.77-3.94 3.94S4.77 20.88 6.94 20.88c2.06 0 3.74-1.59 3.9-3.6.3-.2 1.15-.63 2.32 0 .16 2.01 1.85 3.6 3.9 3.6 2.17 0 3.94-1.77 3.94-3.94S19.23 13 17.06 13zM6.94 19.86c-1.61 0-2.92-1.31-2.92-2.92s1.31-2.92 2.92-2.92 2.92 1.31 2.92 2.92-1.31 2.92-2.92 2.92zm10.12 0c-1.61 0-2.92-1.31-2.92-2.92s1.31-2.92 2.92-2.92 2.92 1.31 2.92 2.92-1.31 2.92-2.92 2.92zM22 10.5H2V12h20v-1.5zm-6.47-7.87c-.22-.49-.78-.75-1.31-.58L12 2.79l-2.23-.74-.03-.01c-.53-.15-1.1.11-1.3.58l-2.5 6.5h12.1l-2.51-6.49z"/></svg>
+                  Incognito
+                </button>
+                <div popover="hint" id="tip-incognito-badge" class="gh-tooltip gh-tooltip-multiline"
+                     [attr.style]="'position-anchor: --tip-incognito-badge'">
+                  This chat is not being saved. It ends on its own after {{ ephemeralTimeoutMinutes }} minutes without activity.
+                </div>
+              </div>
+              <button type="button" class="action-btn action-btn-danger ephemeral-delete-btn"
+                      [attr.interestfor]="isCompactComposer ? 'tip-delete-chat' : null"
+                      [attr.style]="'anchor-name: --tip-delete-chat'"
+                      (click)="requestCloseEphemeralSession()">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  <line x1="10" y1="11" x2="10" y2="17"></line>
+                  <line x1="14" y1="11" x2="14" y2="17"></line>
+                </svg>
+                <span class="ephemeral-delete-label" [class.visually-hidden]="isCompactComposer">Delete chat</span>
+              </button>
+              @if (isCompactComposer) {
+                <div popover="hint" id="tip-delete-chat" class="gh-tooltip"
+                     [attr.style]="'position-anchor: --tip-delete-chat'">Delete chat</div>
+              }
+            }
             <!-- Privacy mode for the chat about to be created; not offered once a chat exists. -->
             @if (isNewChat) {
               <button type="button" [class]="'privacy-mode-btn mode-' + newChatPrivacyMode"
@@ -1023,15 +1029,15 @@
 </dialog>
 
 <dialog #ephemeralCloseDialog class="gh-dialog ephemeral-close-dialog" (cancel)="closeEphemeralCloseDialog()">
-  <h3>Close Incognito Chat</h3>
-  <p>This chat was never saved. Closing it destroys everything in it &mdash; every message, every tool result, every attachment &mdash; immediately and irrecoverably. There is no trash and nothing to restore from.</p>
+  <h3>Delete Incognito Chat</h3>
+  <p>This chat was never saved. Deleting it destroys everything in it &mdash; every message, every tool result, every attachment &mdash; immediately and irrecoverably. There is no trash and nothing to restore from.</p>
   <p class="ephemeral-dialog-note">What was already sent to the AI provider to be answered is outside Overseer and is not affected by this.</p>
   <div class="dialog-actions">
     <button type="button" class="btn-gh btn-gh-cancel" (click)="closeEphemeralCloseDialog()" [disabled]="isClosingEphemeral">Keep Chatting</button>
     <button type="button" class="btn-gh btn-gh-delete" (click)="confirmCloseEphemeralSession()" [disabled]="isClosingEphemeral">
       @if (isClosingEphemeral) {
         <span class="gh-spinner-small"></span>
-        <span class="ms-10">Closing...</span>
+        <span class="ms-10">Deleting...</span>
       } @else {
         <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <polyline points="3 6 5 6 21 6"></polyline>
@@ -1039,7 +1045,7 @@
           <line x1="10" y1="11" x2="10" y2="17"></line>
           <line x1="14" y1="11" x2="14" y2="17"></line>
         </svg>
-        <span>Close and Destroy</span>
+        <span>Delete chat</span>
       }
     </button>
   </div>
@@ -1355,7 +1361,7 @@
   <h4 class="pb-section-title">When it ends</h4>
   <ul class="privacy-limits">
     <li>After {{ ephemeralTimeoutMinutes }} minutes without activity, on its own.</li>
-    <li>When you press &ldquo;Close and destroy&rdquo;.</li>
+    <li>When you press &ldquo;Delete chat&rdquo;.</li>
     <li>When it ends, there is no trash and no recovery.</li>
   </ul>
 

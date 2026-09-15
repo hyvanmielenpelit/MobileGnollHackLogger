@@ -551,13 +551,14 @@
 .chat-telemetry-bar {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
+  align-items: center;
+  gap: 12px;
   inline-size: 100%;
 }
 
 .chat-cost-indicator {
-  margin-inline-end: auto;
-  align-self: center;
+  flex: 1 1 auto;
+  min-inline-size: 0;
   padding: 6px 0 6px 20px;
   font-size: 11px;
   color: var(--nav-color);
@@ -584,9 +585,9 @@
 }
 
 .context-window-indicator {
-  align-self: flex-end;
-  inline-size: min(320px, 100%);
-  padding: 6px 20px 0;
+  flex: 0 1 auto;
+  inline-size: min(260px, 100%);
+  padding: 6px 20px;
   font-size: 11px;
   color: var(--nav-color);
 
@@ -1592,10 +1593,41 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   align-items: center;
 }
 
+.incognito-badge-indicator {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* The only destructive control on the row, so it is red at rest and not just on hover; the
+   label gives way to a tooltip below the composer breakpoint the component mirrors. */
+.ephemeral-delete-btn {
+  margin-inline-start: auto;
+  width: auto;
+  padding-inline: 10px;
+  gap: 6px;
+  flex-shrink: 0;
+  color: #ff7b7b;
+  border-color: rgba(220, 53, 69, 0.55);
+  background: rgba(220, 53, 69, 0.10);
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-family: inherit;
+  white-space: nowrap;
+
+  /* The rest state above ties with .action-btn-danger:hover on specificity and wins on order,
+     so the brighter red that variant would have applied is restated here. */
+  &:hover {
+    background: rgba(220, 53, 69, 0.15);
+    border-color: #ff4d4d;
+    color: #ff4d4d;
+  }
+}
+
 /* The :where(button).setting-badge reset sets cursor: default, because a badge that only
-   carried a tooltip had no action. This one opens its details dialog, so it overrides the
-   cursor for itself and leaves the reset alone for the badges that still carry nothing. */
-.private-badge {
+   carried a tooltip had no action. These two open their details dialogs, so they override the
+   cursor for themselves and leave the reset alone for the badges that still carry nothing. */
+.private-badge,
+.incognito-badge {
   cursor: pointer;
 
   &:hover {
@@ -1632,31 +1664,6 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
   border: 1px solid $privacy-incognito-border;
   color: $privacy-incognito-ink;
   font-weight: 600;
-}
-
-/* Text trigger for the incognito banner's details dialog. Not a .btn-gh: it sits inside a
-   dense strip where the decorative plate would dominate the copy it sits beside. */
-.ephemeral-info-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
-  border-radius: 4px;
-  padding: 4px 10px;
-  color: #e8e8e8;
-  font-size: 0.78rem;
-  cursor: pointer;
-
-  &:hover {
-    border-color: var(--primary-color, #d4af37);
-    color: var(--primary-color, #d4af37);
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--primary-color, #d4af37);
-    outline-offset: 2px;
-  }
 }
 
 /* Privacy choice for the chat about to be created; sized like a setting badge, on the model-selector row. */
@@ -1734,6 +1741,15 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
     svg {
       margin-right: 0;
     }
+  }
+
+  /* Icon only; the label stays in the DOM as the accessible name, visually hidden by the
+     binding isCompactComposer drives in chat.component.ts, which mirrors this breakpoint and
+     wires the tooltip that stands in for the label. */
+  .ephemeral-delete-btn {
+    width: 32px;
+    padding-inline: 0;
+    gap: 0;
   }
 }
 
@@ -1976,35 +1992,6 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
   font-size: 0.85rem;
   line-height: 1.45;
   color: #d8d8d8;
-}
-
-/* Persistent state of an open incognito chat */
-.ephemeral-banner {
-  margin-bottom: 8px;
-  padding: 8px 12px;
-  border: 1px solid var(--primary-color, #d4af37);
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.6);
-}
-
-.ephemeral-banner-main {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.ephemeral-banner-text {
-  flex: 1 1 240px;
-  min-width: 200px;
-  font-size: 0.8rem;
-  line-height: 1.45;
-  color: #ececec;
-}
-
-.ephemeral-close-btn {
-  flex-shrink: 0;
-  margin-inline-start: auto;
 }
 
 .ephemeral-notice {

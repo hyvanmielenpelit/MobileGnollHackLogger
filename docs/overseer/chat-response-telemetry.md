@@ -154,7 +154,7 @@ matter.
    The same `.msg-cost-footer`, on the streaming message box, driven by `liveCost` /
    `liveIsOperatorCost` once the `cost` event arrives.
 3. **Chat Total**:
-   `Chat cost 1.85¢` in the telemetry bar above the prompt box, sharing the row with the
+   `Total 1.85¢` in the telemetry bar above the prompt box, sharing the row with the
    context window indicator. The value is `ChatSession.TotalEstimatedCost` plus the in-flight
    turn, falling back to the sum of loaded per-message costs for a chat saved before that column
    existed. A **PARTIAL** badge marks a chat in which some assistant turn ran unpriced, with a

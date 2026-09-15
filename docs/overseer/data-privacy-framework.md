@@ -1378,7 +1378,8 @@ sweeper, or the window would be a minute wider than it says. Account deletion ca
 `CloseAllForUser`.
 
 **The window says the number.** `GET /api/settings` serves `ephemeralTimeoutMinutes` from the
-store rather than re-reading configuration, so the banner names the interval actually enforced
+store rather than re-reading configuration, so the Incognito badge's tooltip names the interval
+actually enforced
 instead of describing it as "a stretch of inactivity"; and `Send` and `AttachSnapshot` return
 `ephemeralExpiresUtc`, from which the window arms a single notice about two minutes before the
 deadline. The warning is approximate and says "about": the server's window slides on every

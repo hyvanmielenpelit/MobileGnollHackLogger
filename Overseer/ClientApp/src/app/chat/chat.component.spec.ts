@@ -523,6 +523,16 @@ describe('ChatComponent session loading and exclusivity', () => {
       expect(value?.textContent?.trim()).toBe('1.85¢');
     });
 
+    it('should label the chat total as Total', () => {
+      component.messages = [{ role: 'assistant', content: 'test', estimatedCost: 0.01 } as any];
+      component.sessionTotalCost = 0.0185;
+      component.showChatCost = true;
+      fixture.detectChanges();
+      const label = (fixture.nativeElement as HTMLElement)
+        .querySelector('.chat-cost-indicator .cost-label');
+      expect(label?.textContent?.trim()).toBe('Total');
+    });
+
     it('should fall back to the loaded-message sum when no session total was persisted', () => {
       component.messages = [
         { role: 'assistant', content: 'a', estimatedCost: 0.01 } as any,
@@ -1781,29 +1791,32 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
     });
   });
 
-  describe('the persistent banner', () => {
-    it('should show the not-saved state and the close action while an ephemeral chat is open', () => {
+  describe('the badge row', () => {
+    it('should show the not-saved state and the delete action while an ephemeral chat is open', () => {
       component.currentSessionId = 'eph_abc';
       component.isEphemeralSession = true;
       fixture.detectChanges();
 
       const compiled = fixture.nativeElement as HTMLElement;
-      const banner = compiled.querySelector('.ephemeral-banner');
-      expect(banner).toBeTruthy();
-      expect(banner!.textContent).toContain('not being saved');
-      expect(compiled.querySelector('.ephemeral-close-btn')).toBeTruthy();
-      expect(compiled.querySelector('.badge-ephemeral')).toBeTruthy();
+      expect(compiled.querySelector('.incognito-badge')).toBeTruthy();
+      expect(compiled.querySelector('#tip-incognito-badge')!.textContent).toContain('not being saved');
+      const deleteBtn = compiled.querySelector('.ephemeral-delete-btn');
+      expect(deleteBtn).toBeTruthy();
+      expect(deleteBtn!.textContent).toContain('Delete chat');
+      expect(compiled.querySelector('.ephemeral-banner')).toBeFalsy();
     });
 
-    it('should not show the banner for an ordinary chat', () => {
+    it('should not show either control for an ordinary chat', () => {
       component.currentSessionId = '42';
       component.isEphemeralSession = false;
       fixture.detectChanges();
 
-      expect((fixture.nativeElement as HTMLElement).querySelector('.ephemeral-banner')).toBeFalsy();
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('.incognito-badge')).toBeFalsy();
+      expect(compiled.querySelector('.ephemeral-delete-btn')).toBeFalsy();
     });
 
-    it('should open the details dialog from the banner', () => {
+    it('should open the details dialog from the Incognito badge', () => {
       component.currentSessionId = 'eph_abc';
       component.isEphemeralSession = true;
       fixture.detectChanges();
@@ -1811,9 +1824,75 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
       const dialog = component.ephemeralInfoDialog!.nativeElement;
       const showModal = spyOn(dialog, 'showModal');
       (fixture.nativeElement as HTMLElement)
-        .querySelector<HTMLButtonElement>('button.ephemeral-info-trigger')!.click();
+        .querySelector<HTMLButtonElement>('button.incognito-badge')!.click();
 
       expect(showModal).toHaveBeenCalled();
+    });
+
+    it('should open the delete confirmation from the Delete chat button', () => {
+      component.currentSessionId = 'eph_abc';
+      component.isEphemeralSession = true;
+      fixture.detectChanges();
+      const dialog = stubCloseDialog();
+
+      (fixture.nativeElement as HTMLElement)
+        .querySelector<HTMLButtonElement>('.ephemeral-delete-btn')!.click();
+
+      expect(dialog.showModal).toHaveBeenCalled();
+    });
+
+    it('should name the confirmation after the button that opens it', () => {
+      fixture.detectChanges();
+
+      const text = (fixture.nativeElement as HTMLElement)
+        .querySelector('.ephemeral-close-dialog')!.textContent || '';
+      expect(text).toContain('Delete Incognito Chat');
+      expect(text).toContain('Delete chat');
+      expect(text).not.toContain('Close and Destroy');
+    });
+
+    it('should wire the Delete chat tooltip only in compact mode', () => {
+      component.currentSessionId = 'eph_abc';
+      component.isEphemeralSession = true;
+      fixture.detectChanges();
+      component.isCompactComposer = false;
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const deleteBtn = compiled.querySelector('.ephemeral-delete-btn')!;
+      expect(deleteBtn.hasAttribute('interestfor')).toBeFalse();
+      expect(compiled.querySelector('#tip-delete-chat')).toBeFalsy();
+
+      component.isCompactComposer = true;
+      fixture.detectChanges();
+
+      expect(deleteBtn.getAttribute('interestfor')).toBe('tip-delete-chat');
+      expect(compiled.querySelector('#tip-delete-chat')!.textContent).toContain('Delete chat');
+    });
+
+    it('should tear down the media query listener', () => {
+      const addEventListener = jasmine.createSpy('addEventListener');
+      const removeEventListener = jasmine.createSpy('removeEventListener');
+      spyOn(window, 'matchMedia').and.returnValue({
+        matches: true,
+        media: '(max-width: 600px)',
+        onchange: null,
+        addEventListener,
+        removeEventListener,
+        addListener: () => { },
+        removeListener: () => { },
+        dispatchEvent: () => false
+      } as unknown as MediaQueryList);
+
+      fixture.detectChanges();
+
+      expect(component.isCompactComposer).toBeTrue();
+      expect(addEventListener).toHaveBeenCalledWith('change', jasmine.any(Function));
+      const handler = addEventListener.calls.mostRecent().args[1];
+
+      component.ngOnDestroy();
+
+      expect(removeEventListener).toHaveBeenCalledWith('change', handler);
     });
 
     it('should state the limits of the mode in the details dialog', () => {
@@ -2298,15 +2377,15 @@ describe('ChatComponent confidential chats', () => {
   });
 
   describe('the incognito deadline', () => {
-    it('should name the idle window in the banner', () => {
+    it('should name the idle window in the badge tooltip', () => {
       fixture.detectChanges();
       component.currentSessionId = 'eph_abc';
       component.isEphemeralSession = true;
       component.ephemeralTimeoutMinutes = 45;
       fixture.detectChanges();
 
-      const banner = (fixture.nativeElement as HTMLElement).querySelector('.ephemeral-banner');
-      expect(banner!.textContent).toContain('after 45 minutes without activity');
+      const tip = (fixture.nativeElement as HTMLElement).querySelector('#tip-incognito-badge');
+      expect(tip!.textContent).toContain('after 45 minutes without activity');
     });
 
     it('should warn about two minutes before the deadline', fakeAsync(() => {
