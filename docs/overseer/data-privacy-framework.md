@@ -898,7 +898,7 @@ newly created confidential chat showed no badge and suppressed no telemetry unti
 reloaded.
 
 The badge is a `<button>` that opens the details dialog; its hover hint is interest-triggered
-rather than a `title`, so it appears on keyboard focus too. Below 600px the badge is the lock
+rather than a `title`, so it appears on keyboard focus too. Below 992px the badge is the lock
 glyph alone, with the hint and an `aria-label` carrying the words.
 
 Every sentence the dialog shows is authored on the server in

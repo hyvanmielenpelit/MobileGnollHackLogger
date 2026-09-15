@@ -1802,7 +1802,7 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
       expect(compiled.querySelector('#tip-incognito-badge')!.textContent).toContain('not being saved');
       const deleteBtn = compiled.querySelector('.ephemeral-delete-btn');
       expect(deleteBtn).toBeTruthy();
-      expect(deleteBtn!.textContent).toContain('Delete chat');
+      expect(deleteBtn!.getAttribute('aria-label')).toBe('Delete chat');
       expect(compiled.querySelector('.ephemeral-banner')).toBeFalsy();
     });
 
@@ -1851,48 +1851,37 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
       expect(text).not.toContain('Close and Destroy');
     });
 
-    it('should wire the Delete chat tooltip only in compact mode', () => {
+    it('should always wire the Delete chat tooltip, because the button has no label', () => {
       component.currentSessionId = 'eph_abc';
       component.isEphemeralSession = true;
       fixture.detectChanges();
-      component.isCompactComposer = false;
-      fixture.detectChanges();
 
       const compiled = fixture.nativeElement as HTMLElement;
-      const deleteBtn = compiled.querySelector('.ephemeral-delete-btn')!;
-      expect(deleteBtn.hasAttribute('interestfor')).toBeFalse();
-      expect(compiled.querySelector('#tip-delete-chat')).toBeFalsy();
-
-      component.isCompactComposer = true;
-      fixture.detectChanges();
-
-      expect(deleteBtn.getAttribute('interestfor')).toBe('tip-delete-chat');
+      expect(compiled.querySelector('.ephemeral-delete-btn')!.getAttribute('interestfor'))
+        .toBe('tip-delete-chat');
       expect(compiled.querySelector('#tip-delete-chat')!.textContent).toContain('Delete chat');
     });
 
-    it('should tear down the media query listener', () => {
-      const addEventListener = jasmine.createSpy('addEventListener');
-      const removeEventListener = jasmine.createSpy('removeEventListener');
-      spyOn(window, 'matchMedia').and.returnValue({
-        matches: true,
-        media: '(max-width: 600px)',
-        onchange: null,
-        addEventListener,
-        removeEventListener,
-        addListener: () => { },
-        removeListener: () => { },
-        dispatchEvent: () => false
-      } as unknown as MediaQueryList);
-
+    it('should keep the Incognito label in its own element so the collapse rule can hide it', () => {
+      component.currentSessionId = 'eph_abc';
+      component.isEphemeralSession = true;
       fixture.detectChanges();
 
-      expect(component.isCompactComposer).toBeTrue();
-      expect(addEventListener).toHaveBeenCalledWith('change', jasmine.any(Function));
-      const handler = addEventListener.calls.mostRecent().args[1];
+      const label = (fixture.nativeElement as HTMLElement)
+        .querySelector('.incognito-badge .incognito-badge-label');
+      expect(label).toBeTruthy();
+      expect(label!.textContent!.trim()).toBe('Incognito');
+    });
 
-      component.ngOnDestroy();
+    it('should not double the row gap with a margin utility', () => {
+      component.currentSessionId = 'eph_abc';
+      component.isEphemeralSession = true;
+      component.privateBadge = makeBadge('green');
+      fixture.detectChanges();
 
-      expect(removeEventListener).toHaveBeenCalledWith('change', handler);
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('.private-badge')!.classList).not.toContain('ms-10');
+      expect(compiled.querySelector('.incognito-badge')!.classList).not.toContain('ms-10');
     });
 
     it('should state the limits of the mode in the details dialog', () => {
@@ -1902,6 +1891,24 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
       expect(text).toContain('still sent to the AI provider');
       expect(text).toContain('crash dump');
       expect(text).toContain('no trash and no recovery');
+    });
+
+    it('should name the chat type and its deadline before anything else', () => {
+      component.ephemeralTimeoutMinutes = 45;
+      fixture.detectChanges();
+
+      const lead = component.ephemeralInfoDialog!.nativeElement
+        .querySelector('.pb-explanation')!.textContent || '';
+      expect(lead).toContain('Incognito');
+      expect(lead).toContain('nothing in it is saved');
+      expect(lead).toContain('45 minutes');
+    });
+
+    it('should not point at a button label that is no longer shown', () => {
+      fixture.detectChanges();
+
+      const text = component.ephemeralInfoDialog!.nativeElement.textContent || '';
+      expect(text).not.toContain('press \u201cDelete chat\u201d');
     });
 
     it('should hide the rename control, which would have nothing to rename', () => {

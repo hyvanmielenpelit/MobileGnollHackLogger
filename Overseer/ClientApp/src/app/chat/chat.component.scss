@@ -1598,21 +1598,24 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   align-items: center;
 }
 
-/* The only destructive control on the row, so it is red at rest and not just on hover; the
-   label gives way to a tooltip below the composer breakpoint the component mirrors. */
+/* Sized as the collapsed Private badge beside it rather than as a 32px row action, because it
+   sits in a row of chips. The only destructive control there, so it is red at rest and not
+   just on hover. */
 .ephemeral-delete-btn {
   margin-inline-start: auto;
   width: auto;
-  padding-inline: 10px;
-  gap: 6px;
+  height: auto;
+  padding: 3px 6px;
+  border-radius: 4px;
   flex-shrink: 0;
   color: #ff7b7b;
   border-color: rgba(220, 53, 69, 0.55);
   background: rgba(220, 53, 69, 0.10);
-  font-size: 0.75rem;
-  font-weight: 500;
-  font-family: inherit;
-  white-space: nowrap;
+
+  svg {
+    width: 14px;
+    height: 14px;
+  }
 
   /* The rest state above ties with .action-btn-danger:hover on specificity and wins on order,
      so the brighter red that variant would have applied is restated here. */
@@ -1720,7 +1723,9 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
   }
 }
 
-@media (max-width: 600px) {
+/* The same width at which .setting-indicator and the separator disappear, so the row changes
+   state once: full above it, model selector plus glyphs below. */
+@media (max-width: 992px) {
   .privacy-mode-btn {
     padding: 3px 6px;
 
@@ -1729,27 +1734,20 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
     }
   }
 
-  /* The lock alone. The hint and the aria-label still carry the words, which is what makes an
+  /* The glyph alone. The hint and the aria-label still carry the words, which is what makes an
      icon-only control legible. The svg margin has to go or the glyph sits off-centre. */
-  .private-badge {
+  .private-badge,
+  .incognito-badge {
     padding: 3px 6px;
 
-    .private-badge-label {
+    .private-badge-label,
+    .incognito-badge-label {
       display: none;
     }
 
     svg {
       margin-right: 0;
     }
-  }
-
-  /* Icon only; the label stays in the DOM as the accessible name, visually hidden by the
-     binding isCompactComposer drives in chat.component.ts, which mirrors this breakpoint and
-     wires the tooltip that stands in for the label. */
-  .ephemeral-delete-btn {
-    width: 32px;
-    padding-inline: 0;
-    gap: 0;
   }
 }
 

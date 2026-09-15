@@ -885,14 +885,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
      retention posture. */
   privateBadge: PrivateBadge | null = null;
 
-  /** True below the 600px composer breakpoint, where row labels give way to tooltips. */
-  isCompactComposer = false;
-  private compactComposerQuery: MediaQueryList | null = null;
-  private readonly onCompactComposerChange = (e: MediaQueryListEvent) => {
-    this.isCompactComposer = e.matches;
-    this.cdr.detectChanges();
-  };
-
   /** Whether the open chat is in Confidentiality Mode. Set from the session on load, on the creating turn, and on upgrade. */
   isConfidentialSession = false;
 
@@ -1166,8 +1158,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.ephemeralNoticeTimeout = null;
     }
     this.clearEphemeralExpiryWarning();
-    this.compactComposerQuery?.removeEventListener('change', this.onCompactComposerChange);
-    this.compactComposerQuery = null;
     if (this.hubConnection) {
       this.hubConnection.stop();
     }
@@ -1428,13 +1418,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     // Feature-detected and code-split: a browser with native popover, interestfor and
     // anchor positioning downloads nothing. Needed by the context-window tooltip.
     ensureOverlayPolyfills();
-    /* Mirrors the 600px breakpoint in chat.component.scss, where the indicator row trades its
-       labels for tooltips. interestfor is an attribute, so CSS alone cannot wire one. */
-    if (typeof window.matchMedia === 'function') {
-      this.compactComposerQuery = window.matchMedia('(max-width: 600px)');
-      this.isCompactComposer = this.compactComposerQuery.matches;
-      this.compactComposerQuery.addEventListener('change', this.onCompactComposerChange);
-    }
     setTimeout(() => this.preloadAvatarImages(), 2500);
     this.settingsService.showThoughtsAndToolsUpdated.subscribe(val => {
       this.showThoughtsAndTools = val;
