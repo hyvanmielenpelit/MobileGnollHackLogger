@@ -2351,6 +2351,7 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
   .capture-facts {
     display: grid;
     grid-template-columns: max-content 1fr;
+    align-items: baseline;
     gap: 6px 16px;
     margin: 0 0 15px;
     padding: 12px 16px;
@@ -2372,9 +2373,15 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
     }
 
     code {
+      display: inline-block;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85em;
+      line-height: 1.4;
+      padding: 2px 8px;
       background: var(--bg-input);
-      padding: 1px 6px;
+      border: 1px solid var(--border-glass);
       border-radius: 4px;
+      overflow-wrap: anywhere;
     }
 
     a {

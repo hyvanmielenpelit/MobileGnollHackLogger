@@ -318,6 +318,44 @@ describe('AdminBenchmarkComponent', () => {
     expect(contentEl.innerHTML).not.toContain('<script');
   });
 
+  it('labels the suite card buttons and the Reviewed badge without emoji or check-mark characters', () => {
+    component.activeSubTab = 'suites';
+    const boardSuite = {
+      createdAtUtc: '2026-09-01T00:00:00Z',
+      modifiedAtUtc: null,
+      description: '',
+      questionCount: 18,
+      assessedQuestionCount: 18,
+      difficultyFullyAssessed: true,
+      gameSnapshotId: 7,
+      gameSnapshotName: 'Low HP',
+      gameSnapshotCharCount: 12000,
+      hasGeneratedQuestions: true
+    };
+    component.suites = [
+      { ...boardSuite, id: 1, name: 'Reviewed Board Suite', reviewedQuestionCount: 18 },
+      { ...boardSuite, id: 2, name: 'Unreviewed Board Suite', reviewedQuestionCount: 3 }
+    ];
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    const buttons = Array.from(host.querySelectorAll<HTMLElement>('.suite-card-actions button'));
+    const labels = buttons.map(b => (b.textContent ?? '').trim());
+    for (const label of ['View Board', 'Generate Questions', 'Check Rubrics', 'Verify All']) {
+      expect(labels).withContext(label).toContain(label);
+    }
+
+    const reviewed = Array.from(host.querySelectorAll<HTMLElement>('.suite-card .badge-success'));
+    expect(reviewed.length).toBe(1);
+    expect(reviewed[0].textContent?.trim()).toBe('Reviewed');
+    expect(reviewed[0].querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+
+    const iconCharacters = /\p{Extended_Pictographic}|✓|✔/u;
+    for (const element of [...buttons, ...reviewed]) {
+      expect(iconCharacters.test(element.textContent ?? '')).withContext(element.textContent ?? '').toBeFalse();
+    }
+  });
+
   it('should render question expected criteria via CollapsibleMarkdownComponent in questions list', () => {
     component.activeSubTab = 'suites';
     component.currentSuiteForQuestions = {
