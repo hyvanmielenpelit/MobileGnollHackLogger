@@ -1148,7 +1148,8 @@ public class AdminController : ControllerBase
             {
                 CredentialKey = s.CredentialKey,
                 IsRateLimited = s.IsRateLimited,
-                RemainingCooldownSeconds = Math.Round(s.RemainingCooldownSeconds, 1)
+                RemainingCooldownSeconds = Math.Round(s.RemainingCooldownSeconds, 1),
+                InFlightCalls = s.InFlightCalls
             }).ToList()
         };
         return Ok(dto);
@@ -1185,8 +1186,9 @@ public class AdminController : ControllerBase
 
         var modelDtos = modelsData.Select(m =>
         {
-            long totalInput = m.InputTokens;
-            double hitRatio = totalInput > 0 ? (double)m.CacheReadTokens / totalInput : 0.0;
+            // InputTokens is the uncached remainder, so the whole prompt is the sum of all three.
+            long promptTotal = m.InputTokens + m.CacheReadTokens + m.CacheCreationTokens;
+            double hitRatio = promptTotal > 0 ? (double)m.CacheReadTokens / promptTotal : 0.0;
             return new AiModelUsageBreakdownDto
             {
                 Provider = m.Provider,
@@ -1206,8 +1208,9 @@ public class AdminController : ControllerBase
         long totalOut = modelDtos.Sum(m => m.OutputTokens);
         long totalRead = modelDtos.Sum(m => m.CacheReadTokens);
         long totalCreate = modelDtos.Sum(m => m.CacheCreationTokens);
-        double overallHitRatio = totalIn > 0 ? (double)totalRead / totalIn : 0.0;
-        int overallAvgDuration = modelDtos.Count > 0 ? (int)modelDtos.Average(m => m.AvgDurationMs) : 0;
+        long overallPromptTotal = totalIn + totalRead + totalCreate;
+        double overallHitRatio = overallPromptTotal > 0 ? (double)totalRead / overallPromptTotal : 0.0;
+        int overallAvgDuration = totalReqs > 0 ? (int)(modelDtos.Sum(m => (long)m.AvgDurationMs * m.Requests) / totalReqs) : 0;
 
         var chatReqs = await query.CountAsync(l => l.RoleContext == 1);
         var titleReqs = await query.CountAsync(l => l.RoleContext == 2);

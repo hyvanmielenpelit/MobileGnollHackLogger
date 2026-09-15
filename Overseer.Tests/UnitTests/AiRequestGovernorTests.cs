@@ -85,6 +85,32 @@ public class AiRequestGovernorTests
     }
 
     [Fact]
+    public async Task GetStatus_ReportsInFlightCallsAndCooldown()
+    {
+        var governor = CreateGovernor(maxConcurrent: 2);
+        string keyA = "openai:user:in_flight";
+        string keyB = "anthropic:user:cooling_down";
+
+        var permit = await governor.AcquirePermitAsync(keyA, TimeSpan.FromSeconds(1), CancellationToken.None);
+        governor.RecordRateLimit(keyB, TimeSpan.FromSeconds(30));
+
+        var status = governor.GetStatus();
+        var a = Assert.Single(status, s => s.CredentialKey == keyA);
+        var b = Assert.Single(status, s => s.CredentialKey == keyB);
+
+        Assert.Equal(1, a.InFlightCalls);
+        Assert.False(a.IsRateLimited);
+        Assert.Equal(0, b.InFlightCalls);
+        Assert.True(b.IsRateLimited);
+        Assert.True(b.RemainingCooldownSeconds > 0);
+
+        permit.Dispose();
+
+        a = Assert.Single(governor.GetStatus(), s => s.CredentialKey == keyA);
+        Assert.Equal(0, a.InFlightCalls);
+    }
+
+    [Fact]
     public void GetCredentialKey_FormatsPartitionsCorrectly()
     {
         var userKey = AiRequestGovernor.GetCredentialKey("openai", "user_abc", null);

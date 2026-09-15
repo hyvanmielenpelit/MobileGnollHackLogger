@@ -4,7 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { of, Subject, throwError } from 'rxjs';
 import { AdminComponent } from './admin.component';
-import { AdminService, UsersResponse, GroupDto, SystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult, MaintenanceRunLog } from '../services/admin.service';
+import { AdminService, UsersResponse, GroupDto, SystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult, MaintenanceRunLog, AiTelemetrySummaryDto, AiGovernorStatusDto, AiGovernorKeyStatusDto } from '../services/admin.service';
 import { createEmptyFilter } from './config-filter/config-filter.model';
 
 describe('AdminComponent', () => {
@@ -625,6 +625,168 @@ describe('AdminComponent', () => {
       expect(confirmSpy).not.toHaveBeenCalled();
       expect(purgeSpy).toHaveBeenCalledWith(jasmine.objectContaining({ dryRun: true }));
       expect(component.lastMaintenanceResult?.isDryRun).toBeTrue();
+    });
+  });
+
+  describe('AI telemetry tab', () => {
+    const summary = (overrides: Partial<AiTelemetrySummaryDto> = {}): AiTelemetrySummaryDto => ({
+      totalRequests: 10, totalChatRequests: 6, totalTitleRequests: 2, totalBenchmarkRequests: 2,
+      totalInputTokens: 0, totalOutputTokens: 0, totalCacheReadTokens: 0, totalCacheCreationTokens: 0,
+      cacheHitRatio: 0, avgDurationMs: 0, models: [], ...overrides
+    });
+
+    const governor = (keys: AiGovernorKeyStatusDto[] = []): AiGovernorStatusDto => ({
+      maxConcurrentCalls: 4, maxRetryAfterSeconds: 90, activeKeys: keys
+    });
+
+    const key = (credentialKey: string, remainingSeconds: number): AiGovernorKeyStatusDto => ({
+      credentialKey, isRateLimited: remainingSeconds > 0, remainingCooldownSeconds: remainingSeconds, inFlightCalls: 0
+    });
+
+    let governorSpy: jasmine.Spy;
+    let toastSpy: jasmine.Spy;
+
+    beforeEach(() => {
+      spyOn(adminService, 'getAiTelemetrySummary').and.returnValue(of(summary()));
+      governorSpy = spyOn(adminService, 'getGovernorStatus').and.returnValue(of(governor()));
+      toastSpy = spyOn(component, 'showAdminToast');
+    });
+
+    const openTab = () => {
+      fixture.detectChanges();
+      component.selectTab('telemetry');
+      fixture.detectChanges();
+    };
+
+    const clearAllButton = (): HTMLButtonElement =>
+      (Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[])
+        .find(b => (b.textContent ?? '').includes('Clear All Cooldowns'))!;
+
+    it('renders Clear All Cooldowns as a small image button, aria-disabled only when nothing is rate-limited', () => {
+      openTab();
+
+      let button = clearAllButton();
+      expect(button.matches('button.btn-gh.btn-gh-small[type="button"]')).toBeTrue();
+      expect(button.hasAttribute('title')).toBeFalse();
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+
+      component.governorStatus = governor([key('openai:user:u1', 30)]);
+      fixture.detectChanges();
+
+      button = clearAllButton();
+      expect(button.hasAttribute('aria-disabled')).toBeFalse();
+    });
+
+    it('makes no request from Clear All Cooldowns when nothing is rate-limited', () => {
+      const resetSpy = spyOn(adminService, 'resetGovernorCooldown').and.returnValue(of(undefined));
+      component.governorStatus = governor([key('openai:user:u1', 0)]);
+
+      component.resetGovernorCooldown();
+
+      expect(resetSpy).not.toHaveBeenCalled();
+      expect(toastSpy).not.toHaveBeenCalled();
+    });
+
+    it('clears all cooldowns and says so when a partition is rate-limited', () => {
+      const resetSpy = spyOn(adminService, 'resetGovernorCooldown').and.returnValue(of(undefined));
+      component.governorStatus = governor([key('openai:user:u1', 30)]);
+
+      component.resetGovernorCooldown();
+
+      expect(resetSpy).toHaveBeenCalledOnceWith(undefined);
+      expect(toastSpy.calls.mostRecent().args[0]).toBe('All rate-limit cooldowns cleared.');
+    });
+
+    it('raises exactly one toast for a successful refresh', () => {
+      component.refreshTelemetryTab(true);
+
+      expect(toastSpy).toHaveBeenCalledTimes(1);
+      expect(toastSpy.calls.mostRecent().args[1]).toBe('info');
+      expect(component.telemetryLoading).toBeFalse();
+      expect(component.governorLoading).toBeFalse();
+    });
+
+    it('raises one error toast when the governor call fails, and still shows the summary', () => {
+      spyOn(console, 'error');
+      governorSpy.and.returnValue(throwError(() => ({ message: 'boom' })));
+
+      component.refreshTelemetryTab(true);
+
+      expect(toastSpy).toHaveBeenCalledTimes(1);
+      expect(toastSpy.calls.mostRecent().args[0]).toContain('governor status: boom');
+      expect(toastSpy.calls.mostRecent().args[1]).toBe('error');
+      expect(component.telemetrySummary).not.toBeNull();
+      expect(component.governorLoading).toBeFalse();
+    });
+
+    it('counts a cooldown down locally and re-fetches once when it ends', () => {
+      jasmine.clock().install();
+      try {
+        governorSpy.and.returnValues(of(governor([key('openai:user:u1', 2)])), of(governor()));
+        component.refreshTelemetryTab();
+        expect(governorSpy).toHaveBeenCalledTimes(1);
+
+        jasmine.clock().tick(1000);
+        expect(component.governorStatus!.activeKeys[0].remainingCooldownSeconds).toBe(1);
+        expect(governorSpy).toHaveBeenCalledTimes(1);
+
+        jasmine.clock().tick(1000);
+        expect(governorSpy).toHaveBeenCalledTimes(2);
+        expect(component.rateLimitedKeyCount).toBe(0);
+
+        jasmine.clock().tick(5000);
+        expect(governorSpy).toHaveBeenCalledTimes(2);
+      } finally {
+        jasmine.clock().uninstall();
+      }
+    });
+
+    it('stops the countdown when another tab is selected', () => {
+      jasmine.clock().install();
+      try {
+        governorSpy.and.returnValue(of(governor([key('openai:user:u1', 5)])));
+        component.selectTab('telemetry');
+        component.selectTab('groups');
+
+        jasmine.clock().tick(3000);
+
+        expect(component.governorStatus!.activeKeys[0].remainingCooldownSeconds).toBe(5);
+      } finally {
+        jasmine.clock().uninstall();
+      }
+    });
+
+    it('renders the Other request line only when the named counts fall short of the total', () => {
+      openTab();
+      expect(fixture.nativeElement.querySelector('.telemetry-other-requests')).toBeNull();
+
+      component.telemetrySummary = summary({ totalRequests: 13 });
+      fixture.detectChanges();
+
+      const other: HTMLElement | null = fixture.nativeElement.querySelector('.telemetry-other-requests');
+      expect(other).not.toBeNull();
+      expect(other!.textContent).toContain('3');
+    });
+
+    it('keeps the partitions section with an empty-state line when no partition exists', () => {
+      openTab();
+
+      const section: HTMLElement | null = fixture.nativeElement.querySelector('.telemetry-partitions');
+      expect(section).not.toBeNull();
+      expect(section!.textContent).toContain('No partitions have been used since the last restart.');
+      expect(section!.querySelector('table')).toBeNull();
+    });
+
+    it('names each row reset button after its partition and pairs it with a hint tooltip', () => {
+      governorSpy.and.returnValue(of(governor([key('openai:system:7', 30)])));
+      openTab();
+
+      const button: HTMLButtonElement = fixture.nativeElement.querySelector('.telemetry-partitions button.action-btn');
+      expect(button.getAttribute('type')).toBe('button');
+      expect(button.getAttribute('aria-label')).toBe('Clear cooldown for openai:system:7');
+      expect(button.hasAttribute('title')).toBeFalse();
+      const tip: HTMLElement | null = fixture.nativeElement.querySelector('#' + button.getAttribute('interestfor'));
+      expect(tip?.getAttribute('popover')).toBe('hint');
     });
   });
 });

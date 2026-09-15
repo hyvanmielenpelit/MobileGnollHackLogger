@@ -244,6 +244,7 @@ export interface AiGovernorKeyStatusDto {
   credentialKey: string;
   isRateLimited: boolean;
   remainingCooldownSeconds: number;
+  inFlightCalls: number;
 }
 
 export interface AiGovernorStatusDto {

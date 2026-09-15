@@ -364,6 +364,7 @@ public class AiGovernorKeyStatusDto
     public string CredentialKey { get; set; } = string.Empty;
     public bool IsRateLimited { get; set; }
     public double RemainingCooldownSeconds { get; set; }
+    public int InFlightCalls { get; set; }
 }
 
 public class ResetCooldownRequest

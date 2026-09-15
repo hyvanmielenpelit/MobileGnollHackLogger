@@ -1444,6 +1444,38 @@ progress.telemetry-progress-bar {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  font-size: 0.85em;
+}
+
+.telemetry-value {
+  color: #eee;
+}
+
+.telemetry-stat-unit {
+  font-size: 0.5em;
+  color: #aaa;
+}
+
+.telemetry-cooldown {
+  color: #ffb74d;
+  font-weight: 600;
+}
+
+.telemetry-key {
+  font-family: var(--font-mono, monospace);
+}
+
+.num-cache-read {
+  color: #4db6ac;
+}
+
+.num-cache-create {
+  color: #ba68c8;
+}
+
+.telemetry-empty {
+  font-style: italic;
+  padding: 10px 0;
 }
 
 .badge-rate-limited {

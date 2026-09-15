@@ -847,8 +847,8 @@
           <div role="tabpanel" id="admin-panel-telemetry" aria-labelledby="admin-tab-telemetry" tabindex="0">
             <div class="tab-header-row d-flex justify-content-between align-items-center mb-15">
               <h3 class="m-0">AI Telemetry & Request Governor</h3>
-              <div class="d-flex gap-10 align-items-center">
-                <button class="btn-gh" (click)="loadTelemetry(true); loadGovernorStatus(true)" [disabled]="telemetryLoading || governorLoading">
+              <div class="d-flex align-items-center">
+                <button type="button" class="btn-gh" (click)="refreshTelemetryTab(true)" [disabled]="telemetryLoading || governorLoading">
                   @if (telemetryLoading || governorLoading) {
                     <span class="gh-spinner-small"></span>
                   }
@@ -884,7 +884,7 @@
             </div>
 
             <!-- Telemetry Summary Cards -->
-            <div class="telemetry-grid mb-25">
+            <div class="telemetry-grid">
               <!-- Cache Efficiency Card -->
               <div class="telemetry-card">
                 <div class="telemetry-card-title">Cache Hit Efficiency</div>
@@ -892,8 +892,9 @@
                   {{ (telemetrySummary?.cacheHitRatio || 0) * 100 | number:'1.1-1' }}%
                 </div>
                 <progress class="telemetry-progress-bar mt-10" aria-label="Cache Hit Efficiency" [value]="(telemetrySummary?.cacheHitRatio || 0) * 100" max="100"></progress>
-                <div class="text-muted mt-10" style="font-size: 0.85em;">
-                  Prompt Cache Read: {{ (telemetrySummary?.totalCacheReadTokens || 0) | number }} tokens
+                <div class="telemetry-details-list text-muted mt-10">
+                  <div>Share of prompt tokens read from cache</div>
+                  <div>Prompt Cache Read: {{ (telemetrySummary?.totalCacheReadTokens || 0) | number }} tokens</div>
                 </div>
               </div>
 
@@ -903,10 +904,10 @@
                 <div class="telemetry-stat-value">
                   {{ ((telemetrySummary?.totalInputTokens || 0) + (telemetrySummary?.totalOutputTokens || 0)) | number }}
                 </div>
-                <div class="telemetry-details-list mt-10" style="font-size: 0.85em;">
-                  <div>Input: <span class="text-light">{{ (telemetrySummary?.totalInputTokens || 0) | number }}</span></div>
-                  <div>Output: <span class="text-light">{{ (telemetrySummary?.totalOutputTokens || 0) | number }}</span></div>
-                  <div>Cache Created: <span class="text-light">{{ (telemetrySummary?.totalCacheCreationTokens || 0) | number }}</span></div>
+                <div class="telemetry-details-list mt-10">
+                  <div>Input: <span class="telemetry-value">{{ (telemetrySummary?.totalInputTokens || 0) | number }}</span></div>
+                  <div>Output: <span class="telemetry-value">{{ (telemetrySummary?.totalOutputTokens || 0) | number }}</span></div>
+                  <div>Cache Created: <span class="telemetry-value">{{ (telemetrySummary?.totalCacheCreationTokens || 0) | number }}</span></div>
                 </div>
               </div>
 
@@ -916,11 +917,14 @@
                 <div class="telemetry-stat-value highlight-blue">
                   {{ (telemetrySummary?.totalRequests || 0) | number }}
                 </div>
-                <div class="telemetry-details-list mt-10" style="font-size: 0.85em;">
-                  <div>Chat Turns: <span class="text-light">{{ (telemetrySummary?.totalChatRequests || 0) | number }}</span></div>
-                  <div>Title Generation: <span class="text-light">{{ (telemetrySummary?.totalTitleRequests || 0) | number }}</span></div>
-                  <div>Benchmark Runs: <span class="text-light">{{ (telemetrySummary?.totalBenchmarkRequests || 0) | number }}</span></div>
-                  <div>Avg Duration: <span class="text-light">{{ (telemetrySummary?.avgDurationMs || 0) | number }} ms</span></div>
+                <div class="telemetry-details-list mt-10">
+                  <div>Chat Turns: <span class="telemetry-value">{{ (telemetrySummary?.totalChatRequests || 0) | number }}</span></div>
+                  <div>Title Generation: <span class="telemetry-value">{{ (telemetrySummary?.totalTitleRequests || 0) | number }}</span></div>
+                  <div>Benchmark Runs: <span class="telemetry-value">{{ (telemetrySummary?.totalBenchmarkRequests || 0) | number }}</span></div>
+                  @if (telemetryOtherRequests > 0) {
+                    <div class="telemetry-other-requests">Other: <span class="telemetry-value">{{ telemetryOtherRequests | number }}</span></div>
+                  }
+                  <div>Avg Duration: <span class="telemetry-value">{{ (telemetrySummary?.avgDurationMs || 0) | number }} ms</span></div>
                 </div>
               </div>
 
@@ -928,13 +932,16 @@
               <div class="telemetry-card">
                 <div class="telemetry-card-title">Request Governor</div>
                 <div class="telemetry-stat-value highlight-teal">
-                  {{ governorStatus?.maxConcurrentCalls || 4 }} <span style="font-size: 0.5em; color: #aaa;">Max Concurrency</span>
+                  {{ governorStatus ? governorStatus.maxConcurrentCalls : '—' }} <span class="telemetry-stat-unit">Max Concurrency</span>
                 </div>
-                <div class="telemetry-details-list mt-10" style="font-size: 0.85em;">
-                  <div>Active Partitions: <span class="text-light">{{ governorStatus?.activeKeys?.length || 0 }}</span></div>
-                  <div>Max Retry-After: <span class="text-light">{{ governorStatus?.maxRetryAfterSeconds || 90 }}s</span></div>
+                <div class="telemetry-details-list mt-10">
+                  <div>Rate Limited: <span class="telemetry-value">{{ governorStatus ? rateLimitedKeyCount : '—' }}</span></div>
+                  <div>Partitions seen: <span class="telemetry-value">{{ governorStatus ? governorStatus.activeKeys.length : '—' }}</span></div>
+                  <div>Max Retry-After: <span class="telemetry-value">{{ governorStatus ? governorStatus.maxRetryAfterSeconds + 's' : '—' }}</span></div>
                   <div class="mt-5">
-                    <button class="btn-gh-small" (click)="resetGovernorCooldown()" title="Clear all active rate-limit cooldowns">
+                    <button type="button" class="btn-gh btn-gh-small"
+                            [attr.aria-disabled]="rateLimitedKeyCount === 0 ? 'true' : null"
+                            (click)="resetGovernorCooldown()">
                       Clear All Cooldowns
                     </button>
                   </div>
@@ -943,15 +950,20 @@
             </div>
 
             <!-- Governor Partitions Table -->
-            @if (governorStatus && governorStatus.activeKeys.length > 0) {
-              <div class="telemetry-section-card mb-25">
-                <h4 class="mb-15">Active Concurrency & Rate Limit Partitions</h4>
+            <div class="telemetry-section-card telemetry-partitions">
+              <h4>Rate Limit Partitions</h4>
+              @if (!governorStatus) {
+                <div class="text-muted telemetry-empty">{{ governorLoading ? 'Loading governor status…' : 'Governor status unavailable.' }}</div>
+              } @else if (governorStatus.activeKeys.length === 0) {
+                <div class="text-muted telemetry-empty">No partitions have been used since the last restart.</div>
+              } @else {
                 <div class="table-responsive mb-0">
                   <table class="modern-table">
                     <thead>
                       <tr>
                         <th>Credential Partition</th>
                         <th>Status</th>
+                        <th class="text-center">In Flight</th>
                         <th>Remaining Cooldown</th>
                         <th class="text-right">Action</th>
                       </tr>
@@ -959,7 +971,7 @@
                     <tbody>
                       @for (key of governorStatus.activeKeys; track key.credentialKey) {
                         <tr>
-                          <td style="font-family: monospace;">{{ key.credentialKey }}</td>
+                          <td class="telemetry-key">{{ key.credentialKey }}</td>
                           <td>
                             @if (key.isRateLimited) {
                               <span class="badge badge-rate-limited">Rate Limited (429)</span>
@@ -967,18 +979,25 @@
                               <span class="badge badge-active">Available</span>
                             }
                           </td>
+                          <td class="text-center num-col">{{ key.inFlightCalls }}</td>
                           <td>
                             @if (key.isRateLimited) {
-                              <span class="text-warning">{{ key.remainingCooldownSeconds }}s</span>
+                              <span class="telemetry-cooldown">{{ key.remainingCooldownSeconds | number:'1.1-1' }}s</span>
                             } @else {
                               <span class="text-muted">—</span>
                             }
                           </td>
                           <td class="text-right">
                             @if (key.isRateLimited) {
-                              <button class="action-btn" (click)="resetGovernorCooldown(key.credentialKey)" title="Reset Cooldown">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
+                              <button type="button" class="action-btn"
+                                      [attr.aria-label]="'Clear cooldown for ' + key.credentialKey"
+                                      [attr.interestfor]="'tip-gov-reset-' + $index"
+                                      [attr.style]="'anchor-name: --tip-gov-reset-' + $index"
+                                      (click)="resetGovernorCooldown(key.credentialKey)">
+                                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2v6h-6"></path><path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path><path d="M3 22v-6h6"></path><path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path></svg>
                               </button>
+                              <div popover="hint" class="gh-tooltip" [id]="'tip-gov-reset-' + $index"
+                                   [attr.style]="'position-anchor: --tip-gov-reset-' + $index">Clear cooldown</div>
                             }
                           </td>
                         </tr>
@@ -986,14 +1005,14 @@
                     </tbody>
                   </table>
                 </div>
-              </div>
-            }
+              }
+            </div>
 
             <!-- Per-Model Telemetry Breakdown -->
             <div class="telemetry-section-card">
               <h4 class="mb-15">Model Usage & Cache Performance Breakdown</h4>
               @if (!telemetrySummary || telemetrySummary.models.length === 0) {
-                <div class="text-muted italic py-10">No AI usage logged for the selected date range.</div>
+                <div class="text-muted telemetry-empty">No AI usage logged for the selected date range.</div>
               } @else {
                 <div class="table-responsive mb-0">
                   <table class="modern-table">
@@ -1020,12 +1039,10 @@
                           <td class="text-center num-col">{{ m.requests | number }}</td>
                           <td class="text-center num-col">{{ m.inputTokens | number }}</td>
                           <td class="text-center num-col">{{ m.outputTokens | number }}</td>
-                          <td class="text-center num-col" style="color: #4db6ac;">{{ m.cacheReadTokens | number }}</td>
-                          <td class="text-center num-col" style="color: #ba68c8;">{{ m.cacheCreationTokens | number }}</td>
+                          <td class="text-center num-col num-cache-read">{{ m.cacheReadTokens | number }}</td>
+                          <td class="text-center num-col num-cache-create">{{ m.cacheCreationTokens | number }}</td>
                           <td class="text-center num-col">
-                            <strong [style.color]="m.cacheHitRatio > 0.3 ? '#81c784' : '#e0ba6d'">
-                              {{ (m.cacheHitRatio * 100) | number:'1.1-1' }}%
-                            </strong>
+                            <strong>{{ (m.cacheHitRatio * 100) | number:'1.1-1' }}%</strong>
                           </td>
                           <td class="text-center num-col">{{ m.avgDurationMs | number }} ms</td>
                         </tr>
@@ -1038,8 +1055,8 @@
                         <td class="text-center num-col"><strong>{{ (telemetrySummary?.totalRequests || 0) | number }}</strong></td>
                         <td class="text-center num-col"><strong>{{ (telemetrySummary?.totalInputTokens || 0) | number }}</strong></td>
                         <td class="text-center num-col"><strong>{{ (telemetrySummary?.totalOutputTokens || 0) | number }}</strong></td>
-                        <td class="text-center num-col" style="color: #4db6ac;"><strong>{{ (telemetrySummary?.totalCacheReadTokens || 0) | number }}</strong></td>
-                        <td class="text-center num-col" style="color: #ba68c8;"><strong>{{ (telemetrySummary?.totalCacheCreationTokens || 0) | number }}</strong></td>
+                        <td class="text-center num-col num-cache-read"><strong>{{ (telemetrySummary?.totalCacheReadTokens || 0) | number }}</strong></td>
+                        <td class="text-center num-col num-cache-create"><strong>{{ (telemetrySummary?.totalCacheCreationTokens || 0) | number }}</strong></td>
                         <td class="text-center num-col"><strong>{{ ((telemetrySummary?.cacheHitRatio || 0) * 100) | number:'1.1-1' }}%</strong></td>
                         <td class="text-center num-col"><strong>{{ (telemetrySummary?.avgDurationMs || 0) | number }} ms</strong></td>
                       </tr>

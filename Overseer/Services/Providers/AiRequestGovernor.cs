@@ -14,7 +14,7 @@ public class AiRequestGovernor
     private readonly IConfiguration _configuration;
     private readonly ILogger<AiRequestGovernor> _logger;
 
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _semaphores = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Partition> _semaphores = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, DateTime> _rateLimitCooldownUntil = new(StringComparer.OrdinalIgnoreCase);
 
     public AiRequestGovernor(IConfiguration configuration, ILogger<AiRequestGovernor> logger)
@@ -36,20 +36,23 @@ public class AiRequestGovernor
     {
         int maxConcurrent = _configuration.GetValue<int>("AiRateLimitSettings:MaxConcurrentModelCalls", 4);
         if (maxConcurrent <= 0) maxConcurrent = 4;
-        return _semaphores.GetOrAdd(credentialKey, _ => new SemaphoreSlim(maxConcurrent, maxConcurrent));
+        return _semaphores.GetOrAdd(credentialKey, _ => new Partition(new SemaphoreSlim(maxConcurrent, maxConcurrent), maxConcurrent)).Semaphore;
     }
 
     public int MaxConcurrentCalls => Math.Max(1, _configuration.GetValue<int>("AiRateLimitSettings:MaxConcurrentModelCalls", 4));
     public int MaxRetryAfterSeconds => _configuration.GetValue<int>("AiRateLimitSettings:MaxRetryAfterSeconds", 90);
 
-    public List<(string CredentialKey, bool IsRateLimited, double RemainingCooldownSeconds)> GetStatus()
+    public List<(string CredentialKey, bool IsRateLimited, double RemainingCooldownSeconds, int InFlightCalls)> GetStatus()
     {
         var keys = _semaphores.Keys.Union(_rateLimitCooldownUntil.Keys, StringComparer.OrdinalIgnoreCase).ToList();
-        var result = new List<(string CredentialKey, bool IsRateLimited, double RemainingCooldownSeconds)>();
+        var result = new List<(string CredentialKey, bool IsRateLimited, double RemainingCooldownSeconds, int InFlightCalls)>();
         foreach (var key in keys)
         {
             bool isLimited = IsRateLimited(key, out var remaining);
-            result.Add((key, isLimited, remaining.TotalSeconds));
+            int inFlight = _semaphores.TryGetValue(key, out var partition)
+                ? Math.Max(0, partition.Capacity - partition.Semaphore.CurrentCount)
+                : 0;
+            result.Add((key, isLimited, remaining.TotalSeconds, inFlight));
         }
         return result;
     }
@@ -172,6 +175,9 @@ public class AiRequestGovernor
             _logger.LogDebug(ex, "[AiRequestGovernor] Error parsing rate limit headers for {CredentialKey}", credentialKey);
         }
     }
+
+    /// <summary>A partition's semaphore and the permit count it was created with.</summary>
+    private sealed record Partition(SemaphoreSlim Semaphore, int Capacity);
 
     private sealed class PermitReleaser : IDisposable
     {

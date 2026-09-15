@@ -14,8 +14,8 @@ import {
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
 import { TableState } from '../shared/data-table/table-state';
 import { TablePagerComponent } from '../shared/data-table/table-pager.component';
-import { Observable, Subject, Subscription } from 'rxjs';
-import { debounceTime } from 'rxjs/operators';
+import { Observable, Subject, Subscription, forkJoin, of } from 'rxjs';
+import { catchError, debounceTime } from 'rxjs/operators';
 
 /** The admin dashboard's top-level tabs, in display order. */
 export type AdminTabId =
@@ -103,6 +103,7 @@ export class AdminComponent implements OnInit, OnDestroy, AfterViewInit {
   private maintenanceRunLabel = '';
   private maintenanceRunStartedAt: Date | null = null;
   private maintenanceRunTimer?: ReturnType<typeof setInterval>;
+  private governorCountdownTimer?: ReturnType<typeof setInterval>;
 
   users: UserDto[] = [];
   groups: GroupDto[] = [];
@@ -393,6 +394,7 @@ export class AdminComponent implements OnInit, OnDestroy, AfterViewInit {
   ngOnDestroy() {
     this.filterSub?.unsubscribe();
     this.stopMaintenanceRunTimer();
+    this.stopGovernorCountdown();
   }
 
   /**
@@ -1419,6 +1421,9 @@ export class AdminComponent implements OnInit, OnDestroy, AfterViewInit {
 
   selectTab(tab: AdminTabId) {
     this.activeTab = tab;
+    if (tab !== 'telemetry') {
+      this.stopGovernorCountdown();
+    }
     if (tab === 'configs') {
       setTimeout(() => refreshAnchorPositioning(), 0);
     } else if (tab === 'database') {
@@ -1427,8 +1432,7 @@ export class AdminComponent implements OnInit, OnDestroy, AfterViewInit {
       if (!this.telemetryStartDate && !this.telemetryEndDate) {
         this.applyTelemetryPreset(this.telemetryTimeSpan, false);
       }
-      this.loadTelemetry();
-      this.loadGovernorStatus();
+      this.refreshTelemetryTab();
     }
   }
 
@@ -1479,11 +1483,64 @@ export class AdminComponent implements OnInit, OnDestroy, AfterViewInit {
     });
   }
 
+  /** Partitions currently in a rate-limit cooldown. */
+  get rateLimitedKeyCount(): number {
+    return this.governorStatus?.activeKeys.filter(k => k.isRateLimited).length ?? 0;
+  }
+
+  /** Requests in the summary that the named role lines do not account for. */
+  get telemetryOtherRequests(): number {
+    const s = this.telemetrySummary;
+    if (!s) {
+      return 0;
+    }
+    return Math.max(0, s.totalRequests - (s.totalChatRequests + s.totalTitleRequests + s.totalBenchmarkRequests));
+  }
+
+  /**
+   * Reloads the summary and the governor status together. Each request settles on its own, so
+   * one failure still shows the other's data; the feedback is a single toast either way.
+   */
+  refreshTelemetryTab(showFeedback = false) {
+    this.telemetryLoading = true;
+    this.governorLoading = true;
+    const failures: string[] = [];
+    const settle = <T>(request: Observable<T>, what: string) => request.pipe(
+      catchError(err => {
+        console.error(`Failed to load ${what}`, err);
+        failures.push(`${what}: ${err.error?.message || err.message}`);
+        return of(null);
+      })
+    );
+
+    forkJoin({
+      telemetry: settle(this.adminService.getAiTelemetrySummary(this.telemetryStartDate || undefined, this.telemetryEndDate || undefined), 'telemetry'),
+      governor: settle(this.adminService.getGovernorStatus(), 'governor status')
+    }).subscribe(({ telemetry, governor }) => {
+      if (telemetry) {
+        this.telemetrySummary = telemetry;
+      }
+      if (governor) {
+        this.setGovernorStatus(governor);
+      }
+      this.telemetryLoading = false;
+      this.governorLoading = false;
+      if (!showFeedback) {
+        return;
+      }
+      if (failures.length > 0) {
+        this.showAdminToast('Failed to load ' + failures.join('; '), 'error', 'Error');
+      } else {
+        this.showAdminToast('AI Telemetry refreshed.', 'info', 'Telemetry Refreshed');
+      }
+    });
+  }
+
   loadGovernorStatus(showFeedback = false) {
     this.governorLoading = true;
     this.adminService.getGovernorStatus().subscribe({
       next: (data) => {
-        this.governorStatus = data;
+        this.setGovernorStatus(data);
         this.governorLoading = false;
         if (showFeedback) {
           this.showAdminToast('Governor status refreshed.', 'info', 'Governor Refreshed');
@@ -1492,14 +1549,59 @@ export class AdminComponent implements OnInit, OnDestroy, AfterViewInit {
       error: (err) => {
         console.error('Failed to load governor status', err);
         this.governorLoading = false;
+        if (showFeedback) {
+          this.showAdminToast('Failed to load governor status: ' + (err.error?.message || err.message), 'error', 'Error');
+        }
       }
     });
   }
 
+  private setGovernorStatus(status: AiGovernorStatusDto) {
+    this.governorStatus = status;
+    this.startGovernorCountdown();
+  }
+
+  /**
+   * Counts the fetched cooldowns down locally once a second. When the last one reaches zero the
+   * status is re-fetched once, so the server's view replaces the local estimate.
+   */
+  private startGovernorCountdown() {
+    this.stopGovernorCountdown();
+    if (this.rateLimitedKeyCount === 0) {
+      return;
+    }
+    this.governorCountdownTimer = setInterval(() => {
+      for (const key of this.governorStatus?.activeKeys ?? []) {
+        if (!key.isRateLimited) {
+          continue;
+        }
+        key.remainingCooldownSeconds = Math.max(0, Math.round((key.remainingCooldownSeconds - 1) * 10) / 10);
+        if (key.remainingCooldownSeconds === 0) {
+          key.isRateLimited = false;
+        }
+      }
+      if (this.rateLimitedKeyCount === 0) {
+        this.stopGovernorCountdown();
+        this.loadGovernorStatus();
+      }
+    }, 1000);
+  }
+
+  private stopGovernorCountdown() {
+    if (this.governorCountdownTimer !== undefined) {
+      clearInterval(this.governorCountdownTimer);
+      this.governorCountdownTimer = undefined;
+    }
+  }
+
+  /** Without a key, clears every partition; refused while nothing is rate-limited (the button is aria-disabled). */
   resetGovernorCooldown(credentialKey?: string) {
+    if (!credentialKey && this.rateLimitedKeyCount === 0) {
+      return;
+    }
     this.adminService.resetGovernorCooldown(credentialKey).subscribe({
       next: () => {
-        this.showAdminToast('Governor cooldown reset successfully.', 'success', 'Cooldown Reset');
+        this.showAdminToast(credentialKey ? `Cooldown cleared for ${credentialKey}.` : 'All rate-limit cooldowns cleared.', 'success', 'Cooldown Reset');
         this.loadGovernorStatus();
       },
       error: (err) => {
