@@ -111,13 +111,14 @@ a:hover {
      stretched (background-size: 100% 100%), the ornament scales with the
      button, and the flat inner panel begins ~8.9% of the width in from each
      end (measured from the 855x160 source). A fixed padding can only
-     approximate that: 34px is right for the ~340-390px buttons this app
-     actually uses, and harmlessly generous on narrow ones, which centre their
-     label inside the 140px minimum anyway.
+     approximate that: 46px clears it on the ~340-390px buttons this app
+     actually uses, with room to spare for their longest labels, and is
+     harmlessly generous on narrow ones, which centre their label inside the
+     140px minimum anyway.
      The exact fix would be a 9-slice `border-image` so the ornaments keep a
      constant width instead of stretching; that changes every button in the
      app, so it is deliberately not done here. */
-  padding: 14px 34px;
+  padding: 14px 46px;
   cursor: pointer;
   transition: filter 0.2s;
   display: inline-flex;

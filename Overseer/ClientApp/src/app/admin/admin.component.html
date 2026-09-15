@@ -655,7 +655,7 @@
                     <div class="granular-card">
                       <h5>Purge Inactive Sessions</h5>
                       <p class="text-muted">Soft-deletes active, unpinned sessions with no activity past the threshold. Also expires sessions past their own TTL whatever the threshold, and permanently purges confidential sessions set to purge on delete.</p>
-                      <select id="maintenance-inactivity-days" class="gh-input mt-10" [(ngModel)]="inactivityDays" aria-label="Inactivity threshold" style="max-width: 160px; width: 100%;">
+                      <select id="maintenance-inactivity-days" class="gh-input mt-10" [(ngModel)]="inactivityDays" aria-label="Inactivity threshold" style="width: 100%;">
                         @for (d of dayOptions([90, 60, 30], storageMetrics.policy.inactivityTtlDays); track d) {
                           <option [ngValue]="d">Older than {{ d }}d</option>
                         }
@@ -668,7 +668,7 @@
                     <div class="granular-card">
                       <h5>Prune Aged Tool Results</h5>
                       <p class="text-muted">Truncates raw tool call JSON payloads without deleting user message transcripts.</p>
-                      <select id="maintenance-tool-call-days" class="gh-input mt-10" [(ngModel)]="toolCallPruneDays" aria-label="Chat tool payload age" style="max-width: 160px; width: 100%;">
+                      <select id="maintenance-tool-call-days" class="gh-input mt-10" [(ngModel)]="toolCallPruneDays" aria-label="Chat tool payload age" style="width: 100%;">
                         @for (d of dayOptions([30, 60, 90], storageMetrics.policy.pruneToolCallResultsDays); track d) {
                           <option [ngValue]="d">Older than {{ d }}d</option>
                         }
@@ -681,7 +681,7 @@
                     <div class="granular-card">
                       <h5>Prune Benchmark Tool Payloads</h5>
                       <p class="text-muted">Nulls the arguments and results of benchmark tool calls for runs older than the threshold. Names, statuses and timings are kept.</p>
-                      <select id="maintenance-benchmark-days" class="gh-input mt-10" [(ngModel)]="benchmarkToolCallPruneDays" aria-label="Benchmark run age" style="max-width: 160px; width: 100%;">
+                      <select id="maintenance-benchmark-days" class="gh-input mt-10" [(ngModel)]="benchmarkToolCallPruneDays" aria-label="Benchmark run age" style="width: 100%;">
                         @for (d of dayOptions([30, 60, 90, 180], storageMetrics.policy.pruneBenchmarkToolCallResultsDays); track d) {
                           <option [ngValue]="d">Older than {{ d }}d</option>
                         }
@@ -702,7 +702,7 @@
                     <div class="granular-card">
                       <h5>Prune Dismissed AI Errors</h5>
                       <p class="text-muted">Deletes AI error rows dismissed more than the threshold ago. Undismissed errors are never pruned.</p>
-                      <select id="maintenance-ai-error-days" class="gh-input mt-10" [(ngModel)]="aiErrorLogPruneDays" aria-label="Days since dismissal" style="max-width: 160px; width: 100%;">
+                      <select id="maintenance-ai-error-days" class="gh-input mt-10" [(ngModel)]="aiErrorLogPruneDays" aria-label="Days since dismissal" style="width: 100%;">
                         @for (d of dayOptions([30, 90, 180, 365], storageMetrics.policy.pruneDismissedAiErrorLogDays); track d) {
                           <option [ngValue]="d">Dismissed over {{ d }}d ago</option>
                         }
