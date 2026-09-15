@@ -51,6 +51,23 @@ public class BenchmarkSnapshotImporter
         return await ProcessAndPersistAsync(normalized, "SessionAttachment", meta, ct);
     }
 
+    /// <summary>The text a board stores for already-normalized snapshot text -- cut at
+    /// <see cref="DefaultMaxSnapshotChars"/> with a truncation marker -- and its lower-case hex
+    /// SHA-256. Anything that compares against a stored board's hash must hash through this.</summary>
+    public static (string Text, string Sha256) PrepareBoardText(string normalizedText)
+    {
+        string finalText = normalizedText;
+        if (finalText.Length > DefaultMaxSnapshotChars)
+        {
+            finalText = finalText.Substring(0, DefaultMaxSnapshotChars)
+                + "\n\n[SNAPSHOT TRUNCATED at "
+                + DefaultMaxSnapshotChars + " characters.]";
+        }
+
+        byte[] hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(finalText));
+        return (finalText, Convert.ToHexString(hashBytes).ToLowerInvariant());
+    }
+
     private async Task<(BenchmarkGameSnapshot Board, BenchmarkSuite Suite)> ProcessAndPersistAsync(
         string normalizedText, string captureMethod, BoardMetadata meta, CancellationToken ct)
     {
@@ -66,16 +83,7 @@ public class BenchmarkSnapshotImporter
             throw new ArgumentException("Board name must not be empty.", nameof(meta));
         }
 
-        string finalText = normalizedText;
-        if (finalText.Length > DefaultMaxSnapshotChars)
-        {
-            finalText = finalText.Substring(0, DefaultMaxSnapshotChars)
-                + "\n\n[SNAPSHOT TRUNCATED at "
-                + DefaultMaxSnapshotChars + " characters.]";
-        }
-
-        byte[] hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(finalText));
-        string sha256 = Convert.ToHexString(hashBytes).ToLowerInvariant();
+        var (finalText, sha256) = PrepareBoardText(normalizedText);
 
         string digestText;
         if (finalText.Length <= MaxDigestChars)

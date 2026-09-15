@@ -1352,6 +1352,33 @@ public class CaptureBenchmarkSnapshotResponse
     public BenchmarkSuiteDto Suite { get; set; } = default!;
 }
 
+/// <summary>What saving a chat's attached game snapshot as a board would store, and the boards
+/// already saved from that chat.</summary>
+public class AttachedSnapshotInfoDto
+{
+    public long SessionId { get; set; }
+    public bool HasSnapshot { get; set; }
+    /// <summary>Length of the text the save would store.</summary>
+    public int CharCount { get; set; }
+    /// <summary>SHA-256 of that text, comparable with BenchmarkGameSnapshot.Sha256.</summary>
+    public string? Sha256 { get; set; }
+    /// <summary>The snapshot message's timestamp.</summary>
+    public DateTime? CapturedAtUtc { get; set; }
+    public string? DetectedGnollHackVersion { get; set; }
+    public List<AttachedSnapshotExistingBoardDto> ExistingBoards { get; set; } = new();
+}
+
+public class AttachedSnapshotExistingBoardDto
+{
+    public long Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public long? SuiteId { get; set; }
+    public string? SuiteName { get; set; }
+    public DateTime? CapturedAtUtc { get; set; }
+    /// <summary>The board's SHA-256 equals the current snapshot's.</summary>
+    public bool IsIdentical { get; set; }
+}
+
 // --- Question Generation Job Models ---
 
 public class StartQuestionGenerationRequest

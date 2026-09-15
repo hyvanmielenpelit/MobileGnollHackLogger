@@ -121,6 +121,40 @@ public class BenchmarkSnapshotImporterTests
     }
 
     [Fact]
+    public void PrepareBoardText_LeavesShortTextUnchanged_AndHashesIt()
+    {
+        var (text, sha256) = BenchmarkSnapshotImporter.PrepareBoardText("Dungeon Level 1");
+
+        Assert.Equal("Dungeon Level 1", text);
+        Assert.Equal(64, sha256.Length);
+        Assert.Equal(sha256.ToLowerInvariant(), sha256);
+    }
+
+    [Fact]
+    public void PrepareBoardText_TruncatesLongTextWithTheMarker()
+    {
+        var (text, _) = BenchmarkSnapshotImporter.PrepareBoardText(new string('a', BenchmarkSnapshotImporter.DefaultMaxSnapshotChars + 10));
+
+        Assert.StartsWith(new string('a', BenchmarkSnapshotImporter.DefaultMaxSnapshotChars), text);
+        Assert.EndsWith("[SNAPSHOT TRUNCATED at 60000 characters.]", text);
+    }
+
+    [Fact]
+    public async Task PrepareBoardText_HashMatchesTheStoredBoard()
+    {
+        using var db = CreateDbContext();
+        var importer = new BenchmarkSnapshotImporter(db);
+
+        var (board, _) = await importer.FromSessionAttachmentAsync("HP: 12/60\nturn: 120", new BoardMetadata("hash_parity"), TestContext.Current.CancellationToken);
+        var (first, firstSha) = BenchmarkSnapshotImporter.PrepareBoardText("HP: 12/60\nturn: 120");
+        var (_, secondSha) = BenchmarkSnapshotImporter.PrepareBoardText("HP: 12/60\nturn: 120");
+
+        Assert.Equal(board.SanitizedText, first);
+        Assert.Equal(board.Sha256, firstSha);
+        Assert.Equal(firstSha, secondSha);
+    }
+
+    [Fact]
     public async Task PrefixedStoredText_SatisfiesIsGameSnapshotMessage()
     {
         using var db = CreateDbContext();

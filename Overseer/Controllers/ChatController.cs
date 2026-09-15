@@ -608,6 +608,7 @@ public class ChatController : ControllerBase
             // opaque authoritative figure.
             TotalEstimatedCost = isAdmin ? session.TotalEstimatedCost : session.TotalUserEstimatedCost,
             hasGameSnapshot,
+            GnollHackVersion = ClientSettingsReader.ReadGnollHackVersion(session.ClientSettings),
             session.IsConfidential,
             IsEphemeral = false,
             PrivateBadge = privateBadgePayload,
@@ -758,6 +759,7 @@ public class ChatController : ControllerBase
             session.IsGnollHackSession,
             TotalEstimatedCost = isAdmin ? session.TotalEstimatedCost : session.TotalUserEstimatedCost,
             hasGameSnapshot = held.Messages.Any(m => m.Role == "system" && m.IsGameSnapshot),
+            GnollHackVersion = ClientSettingsReader.ReadGnollHackVersion(session.ClientSettings),
             session.IsConfidential,
             IsEphemeral = true,
             EphemeralExpiresUtc = held.LastAccessUtc + _ephemeralSessions.Timeout,
@@ -1153,6 +1155,10 @@ public class ChatController : ControllerBase
         string normalized = DumpHtmlSanitizer.NormalizeFlattenedText(snapshotText);
         string snapshotContent = ChatService.GameSnapshotPrefix + "\n" + normalized;
 
+        // Written only into a session created here; an existing session's ClientSettings is the client's document.
+        string newSessionClientSettings = BuildAttachedSessionClientSettings(
+            ClientSettingsReader.CapGnollHackVersion(request.SourceGnollHackVersion));
+
         Overseer.Services.Privacy.SessionRef sessionRef;
         if (!string.IsNullOrEmpty(request.SessionId))
         {
@@ -1171,7 +1177,7 @@ public class ChatController : ControllerBase
                 LastMessageUtc = DateTime.UtcNow,
                 IsConfidential = true,
                 IsGnollHackSession = true,
-                ClientSettings = "{\"BoolData\":{\"isGameOn\":true}}"
+                ClientSettings = newSessionClientSettings
             };
 
             var ephemeralSettings = await _dbContext.UserAiSettings.FindAsync(userId);
@@ -1195,7 +1201,7 @@ public class ChatController : ControllerBase
                 LastMessageUtc = DateTime.UtcNow,
                 IsGnollHackSession = true,
                 IsConfidential = request.IsConfidential,
-                ClientSettings = "{\"BoolData\":{\"isGameOn\":true}}"
+                ClientSettings = newSessionClientSettings
             };
 
             /* Snapshotted at creation with the two retention scalars, exactly as Send does, so
@@ -1242,7 +1248,8 @@ public class ChatController : ControllerBase
                 isConfidential = held.Session.IsConfidential,
                 isEphemeral = true,
                 privateBadge = BuildPrivateBadgePayload(held.Session),
-                ephemeralExpiresUtc = ResolveEphemeralDeadline(sessionRef, userId)
+                ephemeralExpiresUtc = ResolveEphemeralDeadline(sessionRef, userId),
+                gnollHackVersion = ClientSettingsReader.ReadGnollHackVersion(held.Session.ClientSettings)
             });
         }
 
@@ -1295,7 +1302,22 @@ public class ChatController : ControllerBase
             isConfidential = session.IsConfidential,
             isEphemeral = false,
             privateBadge = BuildPrivateBadgePayload(session),
-            ephemeralExpiresUtc = (DateTime?)null
+            ephemeralExpiresUtc = (DateTime?)null,
+            gnollHackVersion = ClientSettingsReader.ReadGnollHackVersion(session.ClientSettings)
+        });
+    }
+
+    /* The game client's OverseerSettings shape, reduced to what a session created from the SPA
+       knows: a game is on, and the version the SPA learnt from its handoff session, if any. */
+    private static string BuildAttachedSessionClientSettings(string? gnollHackVersion)
+    {
+        if (gnollHackVersion == null)
+            return "{\"BoolData\":{\"isGameOn\":true}}";
+
+        return System.Text.Json.JsonSerializer.Serialize(new
+        {
+            BoolData = new { isGameOn = true },
+            StringData = new Dictionary<string, string> { [ClientSettingsReader.GnollHackVersionKey] = gnollHackVersion }
         });
     }
 

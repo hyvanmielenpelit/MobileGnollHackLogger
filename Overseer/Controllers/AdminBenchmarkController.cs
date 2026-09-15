@@ -1254,6 +1254,91 @@ public class AdminBenchmarkController : ControllerBase
 
     // --- Benchmark Game Snapshots API ---
 
+    private const string ConfidentialImportRefusal =
+        "A confidential chat cannot be imported as a benchmark board: the board's content "
+        + "becomes shared benchmark material. Attach the snapshot to a normal chat instead.";
+
+    private Task<ChatMessage?> LoadLatestSnapshotMessageAsync(long sessionId, CancellationToken ct)
+    {
+        return _dbContext.ChatMessage
+            .Where(m => m.ChatSessionId == sessionId && m.Role == "system" && m.IsGameSnapshot)
+            .OrderByDescending(m => m.TimestampUtc)
+            .FirstOrDefaultAsync(ct);
+    }
+
+    [HttpGet("snapshots/attached/{sessionId:long}")]
+    public async Task<IActionResult> GetAttachedSnapshotInfo(long sessionId, CancellationToken ct)
+    {
+        var session = await _dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == sessionId, ct);
+        if (session == null)
+        {
+            return NotFound(new { error = "Session not found." });
+        }
+
+        string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        if (session.AspNetUserId != userId)
+        {
+            return Forbid();
+        }
+
+        // Refused on the same terms as SaveAttachedSnapshot, so the dialog can say why up front.
+        if (session.IsConfidential)
+        {
+            return Conflict(new { error = ConfidentialImportRefusal });
+        }
+
+        var info = new AttachedSnapshotInfoDto { SessionId = sessionId };
+
+        var snapshotMessage = await LoadLatestSnapshotMessageAsync(sessionId, ct);
+        if (snapshotMessage == null || string.IsNullOrWhiteSpace(snapshotMessage.Content))
+        {
+            return Ok(info);
+        }
+
+        // The same normalization and truncation the save applies, so Sha256 is comparable with a stored board's.
+        string normalized = DumpHtmlSanitizer.NormalizeFlattenedText(
+            ChatService.StripGameSnapshotPrefix(snapshotMessage.Content));
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return Ok(info);
+        }
+
+        var (boardText, sha256) = BenchmarkSnapshotImporter.PrepareBoardText(normalized);
+        info.HasSnapshot = true;
+        info.CharCount = boardText.Length;
+        info.Sha256 = sha256;
+        info.CapturedAtUtc = snapshotMessage.TimestampUtc;
+        info.DetectedGnollHackVersion = ClientSettingsReader.ReadGnollHackVersion(session.ClientSettings);
+
+        var boards = await _dbContext.BenchmarkGameSnapshots
+            .Where(b => b.SourceChatSessionId == sessionId)
+            .OrderByDescending(b => b.CreatedAtUtc)
+            .Select(b => new { b.Id, b.Name, b.Sha256, b.CapturedAtUtc })
+            .ToListAsync(ct);
+
+        var boardIds = boards.Select(b => b.Id).ToList();
+        var suiteMap = await _dbContext.BenchmarkSuites
+            .Where(s => s.GameSnapshotId != null && boardIds.Contains(s.GameSnapshotId.Value))
+            .Select(s => new { s.GameSnapshotId, s.Id, s.Name })
+            .ToDictionaryAsync(s => s.GameSnapshotId!.Value, s => new { s.Id, s.Name }, ct);
+
+        foreach (var b in boards)
+        {
+            suiteMap.TryGetValue(b.Id, out var suite);
+            info.ExistingBoards.Add(new AttachedSnapshotExistingBoardDto
+            {
+                Id = b.Id,
+                Name = b.Name,
+                SuiteId = suite?.Id,
+                SuiteName = suite?.Name,
+                CapturedAtUtc = b.CapturedAtUtc,
+                IsIdentical = string.Equals(b.Sha256, sha256, StringComparison.OrdinalIgnoreCase)
+            });
+        }
+
+        return Ok(info);
+    }
+
     [HttpPost("snapshots/from-session")]
     public async Task<IActionResult> SaveAttachedSnapshot([FromBody] SaveAttachedSnapshotRequest request, CancellationToken ct)
     {
@@ -1280,17 +1365,10 @@ public class AdminBenchmarkController : ControllerBase
            BenchmarkGameSnapshot.SourceChatSessionId is the link it would leave behind. */
         if (session.IsConfidential)
         {
-            return Conflict(new
-            {
-                error = "A confidential chat cannot be imported as a benchmark board: the board's content "
-                    + "becomes shared benchmark material. Attach the snapshot to a normal chat instead."
-            });
+            return Conflict(new { error = ConfidentialImportRefusal });
         }
 
-        var snapshotMessage = await _dbContext.ChatMessage
-            .Where(m => m.ChatSessionId == session.Id && m.Role == "system" && m.IsGameSnapshot)
-            .OrderByDescending(m => m.TimestampUtc)
-            .FirstOrDefaultAsync(ct);
+        var snapshotMessage = await LoadLatestSnapshotMessageAsync(session.Id, ct);
 
         if (snapshotMessage == null || string.IsNullOrWhiteSpace(snapshotMessage.Content))
         {
@@ -1299,11 +1377,15 @@ public class AdminBenchmarkController : ControllerBase
 
         string strippedContent = ChatService.StripGameSnapshotPrefix(snapshotMessage.Content);
 
+        // An administrator's entry wins; otherwise the version the game client reported for this chat.
+        string? version = ClientSettingsReader.CapGnollHackVersion(request.SourceGnollHackVersion)
+            ?? ClientSettingsReader.ReadGnollHackVersion(session.ClientSettings);
+
         var meta = new BoardMetadata(
             request.Name.Trim(),
             request.Notes?.Trim(),
-            request.SourceGnollHackVersion?.Trim(),
-            DateTime.UtcNow,
+            version,
+            snapshotMessage.TimestampUtc,
             request.SessionId);
 
         try

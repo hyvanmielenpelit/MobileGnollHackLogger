@@ -1,26 +1,42 @@
-<dialog #viewerDialog class="gh-dialog benchmark-snapshot-viewer-dialog" (cancel)="close()">
-  <div class="gh-dialog-header">
-    <div class="header-title">
-      <h3>
-        <span class="board-icon">🎮</span>
+<dialog #viewerDialog class="gh-dialog benchmark-snapshot-viewer-dialog" [attr.aria-labelledby]="'snapshot-viewer-title-' + uid" (cancel)="close()">
+  <div class="dialog-header">
+    <div class="dialog-title-group">
+      <h3 [id]="'snapshot-viewer-title-' + uid">
+        <svg class="viewer-title-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
+          <line x1="8" y1="2" x2="8" y2="18"></line>
+          <line x1="16" y1="6" x2="16" y2="22"></line>
+        </svg>
         {{ snapshot?.name || 'Game Context Board' }}
       </h3>
       @if (snapshot?.suiteName) {
         <span class="bound-suite-pill">Suite: {{ snapshot?.suiteName }}</span>
       }
     </div>
-    <button type="button" class="btn-close" (click)="close()" aria-label="Close dialog">✕</button>
+    <button type="button" class="btn-icon-action" (click)="close()" aria-label="Close snapshot board">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
   </div>
 
-  <div class="gh-dialog-body">
+  <div class="viewer-body">
     @if (loading) {
-      <div class="snapshot-loading">
-        <div class="spinner"></div>
+      <div class="snapshot-loading" role="status">
+        <span class="gh-spinner-small" aria-hidden="true"></span>
         <span>Loading snapshot board...</span>
       </div>
     } @else if (error) {
-      <div class="snapshot-alert snapshot-alert-danger">
-        <strong>Error:</strong> {{ error }}
+      <div class="alert alert-danger" role="alert">
+        <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <div class="alert-content">
+          <span class="alert-body"><strong>Error:</strong> {{ error }}</span>
+        </div>
       </div>
     } @else if (snapshot) {
       <!-- Edit metadata form -->
@@ -28,7 +44,16 @@
         <div class="snapshot-edit-panel">
           <h4>Edit Board Metadata</h4>
           @if (editError) {
-            <div class="snapshot-alert snapshot-alert-danger">{{ editError }}</div>
+            <div class="alert alert-danger" role="alert">
+              <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+              <div class="alert-content">
+                <span class="alert-body">{{ editError }}</span>
+              </div>
+            </div>
           }
           <div class="form-group">
             <label for="editBoardName">Board Name *</label>
@@ -36,7 +61,7 @@
           </div>
           <div class="form-group">
             <label for="editBoardVersion">GnollHack Version</label>
-            <input id="editBoardVersion" type="text" class="gh-input" [(ngModel)]="editGnollHackVersion" placeholder="e.g. GnollHack 0.8.6" />
+            <input id="editBoardVersion" type="text" class="gh-input" [(ngModel)]="editGnollHackVersion" placeholder="e.g. 0.9.4" />
           </div>
           <div class="form-group">
             <label for="editBoardNotes">Notes</label>
@@ -46,7 +71,7 @@
             <label for="editBoardDigest">Board Digest (summary for difficulty assessor, max 2000 chars)</label>
             <textarea id="editBoardDigest" class="gh-input" [(ngModel)]="editDigestText" rows="3" maxlength="2000"></textarea>
           </div>
-          <div class="edit-actions">
+          <div class="dialog-actions">
             <button type="button" class="btn-gh btn-gh-cancel" (click)="cancelEdit()" [disabled]="savingEdit">Cancel</button>
             <button type="button" class="btn-gh" (click)="saveEdit()" [disabled]="savingEdit">
               {{ savingEdit ? 'Saving...' : 'Save Changes' }}
@@ -74,14 +99,30 @@
           </div>
           <div class="meta-item">
             <span class="meta-label">Source Chat:</span>
-            <span class="meta-value">{{ snapshot.sourceChatSessionId ? ('#' + snapshot.sourceChatSessionId) : '—' }}</span>
+            <span class="meta-value">{{ snapshot.sourceChatSessionId ? ('#' + snapshot.sourceChatSessionId) : 'None' }}</span>
           </div>
           <div class="meta-item meta-full-width">
             <span class="meta-label">SHA-256:</span>
-            <code class="sha-box">{{ snapshot.sha256 }}</code>
-            <button type="button" class="btn-copy-sha" (click)="copySha()" aria-label="Copy SHA-256">
-              {{ copiedSha ? '✓ Copied' : 'Copy' }}
-            </button>
+            <div class="sha-row">
+              <code class="sha-box">{{ snapshot.sha256 }}</code>
+              <button type="button" class="action-btn" (click)="copySha()" aria-label="Copy SHA-256"
+                      [attr.interestfor]="'snapshot-sha-tip-' + uid"
+                      [attr.style]="'anchor-name: --snapshot-sha-tip-' + uid">
+                @if (copiedSha) {
+                  <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                } @else {
+                  <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                }
+              </button>
+              <div popover="hint" class="gh-tooltip" [id]="'snapshot-sha-tip-' + uid"
+                   [attr.style]="'position-anchor: --snapshot-sha-tip-' + uid">Copy SHA-256</div>
+              <span class="visually-hidden copy-sha-status" aria-live="polite">{{ copiedSha ? 'Copied' : '' }}</span>
+            </div>
           </div>
           @if (snapshot.notes) {
             <div class="meta-item meta-full-width notes-box">
@@ -98,8 +139,15 @@
         </div>
 
         @if (hasTruncationMarker) {
-          <div class="snapshot-alert snapshot-alert-warning">
-            ⚠️ <strong>Notice:</strong> This game board was truncated at capture limit. Tail sections of the dump are omitted.
+          <div class="alert alert-warning">
+            <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <div class="alert-content">
+              <span class="alert-body"><strong>Notice:</strong> This game board was truncated at capture limit. Tail sections of the dump are omitted.</span>
+            </div>
           </div>
         }
 
@@ -108,12 +156,36 @@
           <div class="board-text-toolbar">
             <span class="toolbar-title">Sanitized Snapshot Text</span>
             <div class="toolbar-actions">
-              <button type="button" class="btn-gh" (click)="startEdit()">✏️ Edit Metadata</button>
-              <button type="button" class="btn-gh" (click)="copyText()">
-                {{ copied ? '✓ Copied!' : '📋 Copy Text' }}
+              <button type="button" class="btn-gh btn-gh-small" (click)="startEdit()">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+                </svg>
+                Edit Metadata
               </button>
-              <button type="button" class="btn-gh" (click)="downloadText()">⬇️ Download .snapshot.txt</button>
+              <button type="button" class="btn-gh btn-gh-small" (click)="copyText()">
+                @if (copied) {
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                } @else {
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                }
+                {{ copied ? 'Copied' : 'Copy Text' }}
+              </button>
+              <button type="button" class="btn-gh btn-gh-small" (click)="downloadText()">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                  <line x1="12" y1="18" x2="12" y2="12"></line>
+                  <polyline points="9 15 12 18 15 15"></polyline>
+                </svg>
+                Download .snapshot.txt
+              </button>
             </div>
+            <span class="visually-hidden copy-text-status" aria-live="polite">{{ copied ? 'Copied' : '' }}</span>
           </div>
           <div class="board-text-scroll">
             <pre class="board-pre">{{ snapshot.sanitizedText }}</pre>
@@ -123,7 +195,7 @@
     }
   </div>
 
-  <div class="gh-dialog-footer">
+  <div class="dialog-actions">
     <button type="button" class="btn-gh btn-gh-cancel" (click)="close()">Close</button>
   </div>
 </dialog>

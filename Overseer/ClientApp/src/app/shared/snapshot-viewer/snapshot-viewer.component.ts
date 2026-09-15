@@ -12,6 +12,10 @@ import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
   styleUrls: ['./snapshot-viewer.component.scss']
 })
 export class SnapshotViewerComponent {
+  private static nextUid = 0;
+  /* Keeps the title and tooltip ids unique when more than one viewer is on the page. */
+  readonly uid = ++SnapshotViewerComponent.nextUid;
+
   private benchmarkService = inject(AdminBenchmarkService);
   private cdr = inject(ChangeDetectorRef);
 

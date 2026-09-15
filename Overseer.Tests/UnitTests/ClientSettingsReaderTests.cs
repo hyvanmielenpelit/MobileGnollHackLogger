@@ -20,7 +20,7 @@ public class ClientSettingsReaderTests
             "enableClientTools": true
           },
           "IntData": { "overseerMode": 0 },
-          "StringData": { "version": "4.5.1" }
+          "StringData": { "version": "4.5.1", "GHVersion": "0.9.4", "PortVersion": "4.5" }
         }
         """;
 
@@ -96,6 +96,41 @@ public class ClientSettingsReaderTests
         Assert.True(ClientSettingsReader.ReadBool(RealisticSettings, "sendGameContext"));
         Assert.False(ClientSettingsReader.ReadBool(RealisticSettings, "verboseResponses"));
         Assert.Null(ClientSettingsReader.ReadBool(RealisticSettings, "overseerMode"));
+    }
+
+    [Fact]
+    public void ReadString_ReadsGHVersion_FromARealisticPayload()
+    {
+        Assert.Equal("0.9.4", ClientSettingsReader.ReadString(RealisticSettings, "GHVersion"));
+        Assert.Equal("0.9.4", ClientSettingsReader.ReadGnollHackVersion(RealisticSettings));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not json at all")]
+    [InlineData("[1, 2, 3]")]
+    [InlineData("{ \"BoolData\": { \"isGameOn\": true } }")]
+    [InlineData("{ \"StringData\": [] }")]
+    [InlineData("{ \"StringData\": { \"PortVersion\": \"4.5\" } }")]
+    [InlineData("{ \"StringData\": { \"GHVersion\": \"\" } }")]
+    [InlineData("{ \"StringData\": { \"GHVersion\": \"   \" } }")]
+    [InlineData("{ \"StringData\": { \"GHVersion\": 5 } }")]
+    [InlineData("{ \"StringData\": { \"GHVersion\": null } }")]
+    public void ReadString_ReturnsNull_WhenTheVersionIsAbsentOrUnusable(string? json)
+    {
+        Assert.Null(ClientSettingsReader.ReadString(json, "GHVersion"));
+        Assert.Null(ClientSettingsReader.ReadGnollHackVersion(json));
+    }
+
+    [Fact]
+    public void ReadGnollHackVersion_TrimsAndCapsToTheBoardColumn()
+    {
+        Assert.Equal("0.9.4", ClientSettingsReader.ReadGnollHackVersion("{ \"StringData\": { \"GHVersion\": \"  0.9.4 \" } }"));
+
+        string longVersion = new string('9', 80);
+        string? capped = ClientSettingsReader.ReadGnollHackVersion(
+            "{ \"StringData\": { \"GHVersion\": \"" + longVersion + "\" } }");
+        Assert.Equal(new string('9', ClientSettingsReader.MaxGnollHackVersionLength), capped);
     }
 }
 

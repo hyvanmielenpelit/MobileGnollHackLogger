@@ -170,6 +170,8 @@ export interface ChatSessionStateResponse {
   hasGameSnapshot?: boolean;
   /* The current deadline of an incognito chat, which slides forward on every access. */
   ephemeralExpiresUtc?: string | null;
+  /* The game version the client reported when the chat was created; absent for a chat opened outside the game. */
+  gnollHackVersion?: string | null;
 }
 
 /** What `PUT /api/chat/sessions/{id}/confidential` reports about a Standard chat it upgraded. */
@@ -200,6 +202,8 @@ export interface ChatSessionDetailResponse {
   title: string;
   isGnollHackSession?: boolean;
   hasGameSnapshot?: boolean;
+  /* The game version the client reported when the chat was created; absent for a chat opened outside the game. */
+  gnollHackVersion?: string | null;
   /* The privacy badge, or null/absent when Confidentiality Mode is off — which is every
      session until Tier 2 lands. */
   privateBadge?: PrivateBadge | null;

@@ -213,6 +213,98 @@ public class ChatAttachSnapshotTests
     }
 
     [Fact]
+    public async Task AttachSnapshot_WithVersion_CreatesSessionCarryingIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var controller = CreateController(db, "user-1");
+
+        var result = await controller.AttachSnapshot(new AttachGameSnapshotRequest
+        {
+            SnapshotText = "Dungeon Level 1",
+            SourceGnollHackVersion = " 0.9.4 "
+        });
+
+        dynamic val = Assert.IsType<OkObjectResult>(result).Value!;
+        Assert.Equal("0.9.4", (string)val.gnollHackVersion);
+
+        long sessionId = long.Parse((string)val.sessionId);
+        var session = await db.ChatSession.FindAsync([sessionId], ct);
+        Assert.NotNull(session);
+        Assert.True(ClientSettingsReader.ReadBool(session.ClientSettings, "isGameOn"));
+        Assert.Equal("0.9.4", ClientSettingsReader.ReadGnollHackVersion(session.ClientSettings));
+    }
+
+    [Fact]
+    public async Task AttachSnapshot_WithoutVersion_ReportsNone()
+    {
+        using var db = CreateInMemoryDbContext();
+        var controller = CreateController(db, "user-1");
+
+        var result = await controller.AttachSnapshot(new AttachGameSnapshotRequest { SnapshotText = "Dungeon Level 1" });
+
+        dynamic val = Assert.IsType<OkObjectResult>(result).Value!;
+        Assert.Null((string?)val.gnollHackVersion);
+    }
+
+    [Fact]
+    public async Task AttachSnapshot_ToExistingSession_LeavesItsClientSettingsUntouched()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var controller = CreateController(db, "user-1");
+
+        const string original = "{\"BoolData\":{\"isGameOn\":true},\"StringData\":{\"GHVersion\":\"0.9.3\"}}";
+        db.ChatSession.Add(new ChatSession
+        {
+            Id = 30,
+            AspNetUserId = "user-1",
+            Title = "Handoff chat",
+            ClientSettings = original,
+            CreatedUtc = DateTime.UtcNow,
+            LastMessageUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync(ct);
+
+        var result = await controller.AttachSnapshot(new AttachGameSnapshotRequest
+        {
+            SessionId = "30",
+            SnapshotText = "Dungeon Level 2",
+            SourceGnollHackVersion = "0.9.4"
+        });
+
+        dynamic val = Assert.IsType<OkObjectResult>(result).Value!;
+        Assert.Equal("0.9.3", (string)val.gnollHackVersion);
+
+        var session = await db.ChatSession.FindAsync([30L], ct);
+        Assert.NotNull(session);
+        Assert.Equal(original, session.ClientSettings);
+    }
+
+    [Fact]
+    public async Task GetSession_ReportsTheClientReportedVersion()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var controller = CreateController(db, "user-1");
+
+        db.ChatSession.Add(new ChatSession
+        {
+            Id = 40,
+            AspNetUserId = "user-1",
+            Title = "Handoff chat",
+            ClientSettings = "{\"BoolData\":{\"isGameOn\":true},\"StringData\":{\"GHVersion\":\"0.9.4\",\"PortVersion\":\"4.5\"}}",
+            CreatedUtc = DateTime.UtcNow,
+            LastMessageUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync(ct);
+
+        var loaded = Assert.IsType<OkObjectResult>(await controller.GetSession("40"));
+        dynamic loadedVal = loaded.Value!;
+        Assert.Equal("0.9.4", (string)loadedVal.GnollHackVersion);
+    }
+
+    [Fact]
     public async Task AttachSnapshot_EmptyText_ReturnsBadRequest()
     {
         using var db = CreateInMemoryDbContext();

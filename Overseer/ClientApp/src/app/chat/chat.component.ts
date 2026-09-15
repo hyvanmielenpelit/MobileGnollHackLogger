@@ -13,7 +13,7 @@ import { setSentryConfidentialSession } from '../utils/sentry-filter.util';
 import { AdminAlertsComponent } from './admin-alerts.component';
 import { TrashModalComponent } from '../shared/trash-modal/trash-modal.component';
 import { ProviderBadgeComponent } from '../shared/provider-badge/provider-badge.component';
-import { AdminBenchmarkService } from '../services/admin-benchmark.service';
+import { AdminBenchmarkService, AttachedSnapshotInfo } from '../services/admin-benchmark.service';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
 import * as signalR from '@microsoft/signalr';
 import { firstValueFrom, filter, Observable, Subscription, Subject, debounceTime, distinctUntilChanged } from 'rxjs';
@@ -246,6 +246,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   
   @ViewChild('sidebar') sidebarEl!: ElementRef<HTMLElement>;
   @ViewChild('captureBoardDialog') captureBoardDialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild('captureBoardDoneButton') captureBoardDoneButton?: ElementRef<HTMLButtonElement>;
   ngZone = inject(NgZone);
   authService = inject(AuthService);
   debugService = inject(DebugService);
@@ -964,7 +965,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     event.preventDefault();
     event.returnValue = '';
   };
-  showCaptureBoardModal = false;
+  captureBoardInfo: AttachedSnapshotInfo | null = null;
+  isLoadingCaptureInfo = false;
+  /* The version field holds what the game client reported, not something typed. */
+  captureBoardVersionDetected = false;
+  private captureInfoSub?: Subscription;
   captureBoardName = '';
   captureBoardNotes = '';
   captureBoardVersion = '';
@@ -991,32 +996,85 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     if (event) {
       event.preventDefault();
     }
+    const sessionRef = this.currentSessionId;
+    this.captureInfoSub?.unsubscribe();
     this.captureBoardError = null;
     this.captureBoardResult = null;
-    const now = new Date().toISOString().substring(0, 10);
-    this.captureBoardName = `Board ${now}`;
+    this.captureBoardInfo = null;
+    this.captureBoardName = this.suggestBoardName(this.currentTitle, new Date());
     this.captureBoardNotes = '';
     this.captureBoardVersion = '';
-    this.showCaptureBoardModal = true;
+    this.captureBoardVersionDetected = false;
+    this.isLoadingCaptureInfo = !!sessionRef;
     this.cdr.detectChanges();
     if (this.captureBoardDialog?.nativeElement) {
       ensureOverlayPolyfills();
       this.captureBoardDialog.nativeElement.showModal();
     }
+    if (!sessionRef) {
+      return;
+    }
+
+    /* A failure here leaves the form usable: the info informs the save, it does not gate it. */
+    this.captureInfoSub = this.adminBenchmarkService.getAttachedSnapshotInfo(sessionRef).subscribe({
+      next: (info) => {
+        this.isLoadingCaptureInfo = false;
+        this.captureBoardInfo = info;
+        const detected = info.detectedGnollHackVersion?.trim();
+        if (detected && !this.captureBoardVersion.trim()) {
+          this.captureBoardVersion = detected;
+          this.captureBoardVersionDetected = true;
+        }
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.isLoadingCaptureInfo = false;
+        this.captureBoardError = ChatComponent.describeRequestError(err, 'Could not read the attached snapshot.');
+        this.cdr.detectChanges();
+      }
+    });
   }
 
   closeCaptureBoardModal() {
+    this.captureInfoSub?.unsubscribe();
+    this.isLoadingCaptureInfo = false;
     this.captureBoardDialog?.nativeElement?.close();
-    this.showCaptureBoardModal = false;
     this.captureBoardError = null;
     this.cdr.detectChanges();
   }
 
+  /* Escape must not dismiss the dialog mid-save, or the result would land on a closed dialog. */
+  onCaptureBoardCancel(event: Event) {
+    event.preventDefault();
+    if (!this.isCapturingBoard) {
+      this.closeCaptureBoardModal();
+    }
+  }
+
+  get canSubmitCaptureBoard(): boolean {
+    return !this.isCapturingBoard
+      && !!this.captureBoardName.trim()
+      && this.captureBoardInfo?.hasSnapshot !== false;
+  }
+
+  /* GnollHack titles a handoff chat "GnollHack Gameplay (<character>)"; any other title gets the generic name. */
+  suggestBoardName(title: string | null | undefined, now: Date): string {
+    const date = now.toISOString().substring(0, 10);
+    const match = /^GnollHack Gameplay \((.+)\)$/.exec((title ?? '').trim());
+    const character = match ? match[1].replace(/\s+/g, ' ').trim().substring(0, 60).trim() : '';
+    return character ? `${character} ${date}` : `Board ${date}`;
+  }
+
+  private static describeRequestError(err: any, fallback: string): string {
+    return err?.error?.error || err?.error?.message || (typeof err?.error === 'string' ? err.error : null) || fallback;
+  }
+
   submitCaptureBoard() {
     /* An ephemeral chat has nothing to capture from: a board snapshot is a stored row, which
-       is exactly what this mode does not produce. */
+       is exactly what this mode does not produce. A confidential chat's content never becomes
+       shared benchmark material, and the server refuses it. */
     const sessionRef = this.currentSessionId;
-    if (!sessionRef || this.isEphemeralSession || !this.captureBoardName.trim()) {
+    if (!sessionRef || this.isEphemeralSession || this.isConfidentialSession || !this.canSubmitCaptureBoard) {
       return;
     }
     this.isCapturingBoard = true;
@@ -1047,10 +1105,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           requestedName
         };
         this.cdr.detectChanges();
+        // The Save button that held focus is gone; Done replaces it.
+        this.captureBoardDoneButton?.nativeElement.focus();
       },
       error: (err) => {
         this.isCapturingBoard = false;
-        this.captureBoardError = err?.error?.error || err?.error?.message || (typeof err?.error === 'string' ? err.error : null) || 'Failed to save the attached snapshot.';
+        this.captureBoardError = ChatComponent.describeRequestError(err, 'Failed to save the attached snapshot.');
         this.cdr.detectChanges();
       }
     });
@@ -1085,12 +1145,13 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
       const privacy = this.outgoingPrivacyFlags;
       this.chatService.attachGameSnapshot(
-        this.currentSessionId, snapshotText, undefined,
+        this.currentSessionId, snapshotText, this.clientBridge.getHostGnollHackVersion() ?? undefined,
         privacy.isConfidential, privacy.isEphemeral).subscribe({
         next: (res) => {
           this.isAttachingSnapshot = false;
           this.hasGameSnapshot = true;
           this.applyCreatedSessionState(res);
+          this.clientBridge.setHostGnollHackVersion(res.gnollHackVersion);
           this.cdr.detectChanges();
         },
         error: (err) => {
@@ -1151,6 +1212,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   ngOnDestroy() {
+    this.captureInfoSub?.unsubscribe();
     window.removeEventListener('online', this.onlineHandler);
     window.removeEventListener('offline', this.offlineHandler);
     window.removeEventListener('beforeunload', this.beforeUnloadHandler);
@@ -2514,6 +2576,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
         this.messages = s.messages || [];
         this.hasGameSnapshot = !!s.hasGameSnapshot;
+        this.clientBridge.setHostGnollHackVersion(s.gnollHackVersion);
         this.privateBadge = s.privateBadge ?? null;
         this.isConfidentialSession = !!s.isConfidential;
         this.isEphemeralSession = s.isEphemeral === true || ChatComponent.isEphemeralRef(id);

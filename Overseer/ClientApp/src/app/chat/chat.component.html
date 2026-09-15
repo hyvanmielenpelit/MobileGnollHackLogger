@@ -179,7 +179,7 @@
               </div>
             }
             @if (authService.user$ | async; as user) {
-              @if (user.isAdmin && currentSessionId && hasGameSnapshot && !isEphemeralSession) {
+              @if (user.isAdmin && currentSessionId && hasGameSnapshot && !isEphemeralSession && !isConfidentialSession) {
                 <!-- Save Attached Game Snapshot: server-side read, no client bridge needed -->
                 <button type="button" class="action-btn" (click)="openCaptureBoardModal()" aria-label="Save attached game snapshot of this chat for benchmarking" [attr.style]="'anchor-name: --tip-save-attached-snapshot'" interestfor="tip-save-attached-snapshot">
                   <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1071,74 +1071,160 @@
   </div>
 </dialog>
 
-<dialog #captureBoardDialog class="gh-dialog capture-board-dialog" (cancel)="closeCaptureBoardModal()">
-  <div class="gh-dialog-header">
-    <h3>Save Attached Game Snapshot</h3>
-    <button type="button" class="btn-close" (click)="closeCaptureBoardModal()" aria-label="Close">✕</button>
+<dialog #captureBoardDialog class="gh-dialog capture-board-dialog" aria-labelledby="capture-board-title" (cancel)="onCaptureBoardCancel($event)">
+  <div class="dialog-header">
+    <div class="dialog-title-group">
+      <h3 id="capture-board-title">Save Attached Game Snapshot</h3>
+    </div>
+    <button type="button" class="btn-icon-action" aria-label="Close save snapshot dialog" (click)="closeCaptureBoardModal()" [disabled]="isCapturingBoard">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
   </div>
-  <div class="gh-dialog-body">
-    @if (captureBoardResult) {
-      <div class="capture-success-box">
-        <div class="success-icon">✓</div>
-        <h4>Snapshot Saved Successfully!</h4>
-        @if (captureBoardResult.wasRenamed) {
-          <div class="renamed-board-notice">
-            Saved as "{{ captureBoardResult.boardName }}" — a board with that name already existed.
-          </div>
-        }
-        <div class="capture-details-grid">
-          <div><strong>Board:</strong> {{ captureBoardResult.boardName }}</div>
-          <div><strong>Size:</strong> {{ captureBoardResult.charCount | number }} characters</div>
-          <div><strong>SHA-256:</strong> <code>{{ captureBoardResult.shaPrefix }}…</code></div>
-          <div>
-            <strong>Bound Suite:</strong>
-            <a [routerLink]="['/admin']" [queryParams]="{tab: 'benchmark', subtab: 'suites', suiteId: captureBoardResult.suiteId}" (click)="closeCaptureBoardModal()">
-              {{ captureBoardResult.suiteName }}
-            </a>
+
+  @if (captureBoardResult) {
+    <div class="capture-success">
+      <svg class="capture-success-icon" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+      </svg>
+      <h4>Snapshot Saved</h4>
+      @if (captureBoardResult.wasRenamed) {
+        <div class="alert alert-warning alert-compact renamed-board-notice">
+          <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <div class="alert-content">
+            <span class="alert-body">Saved as "{{ captureBoardResult.boardName }}" because a board named "{{ captureBoardResult.requestedName }}" already existed.</span>
           </div>
         </div>
-        <p class="success-hint">
-          An empty question suite has been created and bound to this board. You can now generate questions for it in Benchmark Admin.
-        </p>
-      </div>
-    } @else {
-      <p class="dialog-description">
-        Save the attached game snapshot from this conversation as a benchmark board. This creates a new board snapshot and an empty benchmark suite bound to it.
-      </p>
-
-      @if (captureBoardError) {
-        <div class="alert alert-danger">{{ captureBoardError }}</div>
       }
+      <dl class="capture-facts">
+        <dt>Board</dt>
+        <dd>{{ captureBoardResult.boardName }}</dd>
+        <dt>Size</dt>
+        <dd>{{ captureBoardResult.charCount | number }} characters</dd>
+        <dt>SHA-256</dt>
+        <dd><code>{{ captureBoardResult.shaPrefix }}...</code></dd>
+        <dt>Bound suite</dt>
+        <dd>
+          <a [routerLink]="['/admin']" [queryParams]="{tab: 'benchmark', subtab: 'suites', suiteId: captureBoardResult.suiteId}" (click)="closeCaptureBoardModal()">{{ captureBoardResult.suiteName }}</a>
+        </dd>
+      </dl>
+      <p class="success-hint">
+        An empty question suite has been created and bound to this board. You can now generate questions for it in Benchmark Admin.
+      </p>
+    </div>
+  } @else {
+    <p class="capture-description">
+      Save the attached game snapshot from this conversation as a benchmark board. This creates a new board snapshot and an empty benchmark suite bound to it.
+    </p>
 
-      <div class="form-group">
-        <label for="captureBoardName">Board Name *</label>
-        <input id="captureBoardName" type="text" class="gh-input" [(ngModel)]="captureBoardName" placeholder="e.g. emergency_low_hp" [disabled]="isCapturingBoard" required />
+    @if (isLoadingCaptureInfo) {
+      <div class="capture-progress" role="status">
+        <span class="gh-spinner-small" aria-hidden="true"></span>
+        <span>Reading the attached snapshot...</span>
       </div>
-
-      <div class="form-group">
-        <label for="captureBoardVersion">GnollHack Version (optional)</label>
-        <input id="captureBoardVersion" type="text" class="gh-input" [(ngModel)]="captureBoardVersion" placeholder="e.g. GnollHack 0.8.6" [disabled]="isCapturingBoard" />
+    } @else if (captureBoardInfo && !captureBoardInfo.hasSnapshot) {
+      <div class="alert alert-warning">
+        <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+          <line x1="12" y1="9" x2="12" y2="13"></line>
+          <line x1="12" y1="17" x2="12.01" y2="17"></line>
+        </svg>
+        <div class="alert-content">
+          <span class="alert-body">This chat no longer has an attached game snapshot. Attach one with Attach Game Snapshot, then save it.</span>
+        </div>
       </div>
+    } @else if (captureBoardInfo) {
+      <dl class="capture-facts" aria-label="Attached snapshot">
+        <dt>Snapshot size</dt>
+        <dd>{{ captureBoardInfo.charCount | number }} characters</dd>
+        <dt>Captured</dt>
+        <dd>{{ captureBoardInfo.capturedAtUtc | date:'medium' }}</dd>
+        <dt>GnollHack version</dt>
+        <dd>{{ captureBoardInfo.detectedGnollHackVersion || 'not reported by the client' }}</dd>
+        <dt>SHA-256</dt>
+        <dd><code>{{ captureBoardInfo.sha256?.substring(0, 12) }}</code></dd>
+      </dl>
 
-      <div class="form-group">
-        <label for="captureBoardNotes">Notes (optional)</label>
-        <textarea id="captureBoardNotes" class="gh-input" [(ngModel)]="captureBoardNotes" rows="3" placeholder="Context facts: HP/maxHP, dungeon level, key items, adjacent monsters..." [disabled]="isCapturingBoard"></textarea>
-      </div>
-
-      @if (isCapturingBoard) {
-        <div class="capturing-progress">
-          <div class="spinner"></div>
-          <span>Saving attached game snapshot...</span>
+      @if (captureBoardInfo.existingBoards.length) {
+        <div class="alert alert-info alert-compact capture-existing">
+          <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          <div class="alert-content">
+            <ul class="capture-existing-list">
+              @for (board of captureBoardInfo.existingBoards; track board.id) {
+                <li>
+                  {{ board.isIdentical ? 'This exact snapshot is already saved as' : 'An earlier snapshot of this chat was saved as' }}
+                  @if (board.suiteId) {
+                    <a [routerLink]="['/admin']" [queryParams]="{tab: 'benchmark', subtab: 'suites', suiteId: board.suiteId}" (click)="closeCaptureBoardModal()"><strong>{{ board.name }}</strong></a>.
+                  } @else {
+                    <strong>{{ board.name }}</strong>.
+                  }
+                </li>
+              }
+            </ul>
+            <span class="alert-body">Saving again creates another board.</span>
+          </div>
         </div>
       }
     }
-  </div>
-  <div class="gh-dialog-footer">
+
+    @if (captureBoardError) {
+      <div class="alert alert-danger" role="alert">
+        <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <div class="alert-content">
+          <span class="alert-body">{{ captureBoardError }}</span>
+        </div>
+      </div>
+    }
+
+    <div class="form-group">
+      <label for="captureBoardName">Board Name *</label>
+      <input id="captureBoardName" type="text" class="gh-input" [(ngModel)]="captureBoardName" placeholder="e.g. emergency_low_hp" [disabled]="isCapturingBoard" required />
+    </div>
+
+    <div class="form-group">
+      <label for="captureBoardVersion">GnollHack Version (optional)</label>
+      <input id="captureBoardVersion" type="text" class="gh-input" [(ngModel)]="captureBoardVersion" placeholder="e.g. 0.9.4" [disabled]="isCapturingBoard" aria-describedby="captureBoardVersionHint" />
+      @if (!isLoadingCaptureInfo) {
+        <span id="captureBoardVersionHint" class="form-hint">
+          {{ captureBoardVersionDetected ? 'Detected from the GnollHack client; change it only if it is wrong.' : 'The client did not report a version; leave blank if unknown.' }}
+        </span>
+      }
+    </div>
+
+    <div class="form-group">
+      <label for="captureBoardNotes">Notes (optional)</label>
+      <textarea id="captureBoardNotes" class="gh-input" [(ngModel)]="captureBoardNotes" rows="3" placeholder="Context facts: HP/maxHP, dungeon level, key items, adjacent monsters..." [disabled]="isCapturingBoard"></textarea>
+    </div>
+
+    @if (isCapturingBoard) {
+      <div class="capture-progress" role="status">
+        <span class="gh-spinner-small" aria-hidden="true"></span>
+        <span>Saving attached game snapshot...</span>
+      </div>
+    }
+  }
+
+  <div class="dialog-actions">
     @if (captureBoardResult) {
-      <button type="button" class="btn-gh" (click)="closeCaptureBoardModal()">Done</button>
+      <button #captureBoardDoneButton type="button" class="btn-gh" (click)="closeCaptureBoardModal()">Done</button>
     } @else {
       <button type="button" class="btn-gh btn-gh-cancel" (click)="closeCaptureBoardModal()" [disabled]="isCapturingBoard">Cancel</button>
-      <button type="button" class="btn-gh" (click)="submitCaptureBoard()" [disabled]="isCapturingBoard || !captureBoardName.trim()">
+      <button type="button" class="btn-gh" (click)="submitCaptureBoard()" [disabled]="!canSubmitCaptureBoard">
         {{ isCapturingBoard ? 'Saving...' : 'Save Attached Snapshot' }}
       </button>
     }

@@ -174,6 +174,27 @@ describe('ClientBridgeService', () => {
     expect(service.isGameOn()).toBeTrue();
   });
 
+  it('should remember no GnollHack version until one is reported', () => {
+    expect(service.getHostGnollHackVersion()).toBeNull();
+  });
+
+  it('should store a reported GnollHack version trimmed', () => {
+    service.setHostGnollHackVersion('  0.9.4 ');
+    expect(service.getHostGnollHackVersion()).toBe('0.9.4');
+  });
+
+  /* A chat opened outside the game reports no version; the handoff's must survive it. */
+  it('should keep the remembered GnollHack version when a blank one arrives', () => {
+    service.setHostGnollHackVersion('0.9.4');
+
+    service.setHostGnollHackVersion(null);
+    service.setHostGnollHackVersion(undefined);
+    service.setHostGnollHackVersion('');
+    service.setHostGnollHackVersion('   ');
+
+    expect(service.getHostGnollHackVersion()).toBe('0.9.4');
+  });
+
   it('should format notifyUrlChanged correctly', () => {
     const postMessageSpy = spyOn(service, 'postMessage');
 

@@ -21,6 +21,23 @@ export class ClientBridgeService {
     return this.hostGameOn !== false;
   }
 
+  /* The GnollHack version the embedding host reported. Page-lifetime: learnt from the first
+     loaded session that reports one, so a later chat created in the SPA can carry it. */
+  private hostGnollHackVersion: string | null = null;
+
+  /* A blank value leaves the remembered version alone: a chat without one must not erase
+     what the handoff session established. */
+  setHostGnollHackVersion(value: string | null | undefined): void {
+    const trimmed = value?.trim();
+    if (trimmed) {
+      this.hostGnollHackVersion = trimmed;
+    }
+  }
+
+  getHostGnollHackVersion(): string | null {
+    return this.hostGnollHackVersion;
+  }
+
   getPlatform(): ClientBridgePlatform {
     if (typeof window === 'undefined') return null;
     if ((window as any).chrome?.webview?.postMessage) return 'webview2';

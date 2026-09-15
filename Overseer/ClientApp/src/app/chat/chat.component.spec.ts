@@ -118,6 +118,7 @@ import { ChatService, ChatSessionDetailResponse, PrivateBadge, PrivateBadgeState
 import { SettingsService, UserAiSettings, UserAiModel } from '../services/settings.service';
 import { AuthService } from '../services/auth.service';
 import { ClientBridgeService } from '../services/client-bridge.service';
+import { AdminBenchmarkService, AttachedSnapshotInfo } from '../services/admin-benchmark.service';
 import { isSentryConfidentialSessionActive, setSentryConfidentialSession } from '../utils/sentry-filter.util';
 
 // ChatComponent.ngOnInit opens a real SignalR connection to /chathub, which under Karma
@@ -1583,6 +1584,156 @@ describe('ChatComponent context window indicator', () => {
       expect(rejectedError.message).toBe('Game not running');
       expect(component.localToolRequests.has(reqId)).toBeFalse();
       expect(sendToolResultSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('the save attached snapshot dialog', () => {
+    let adminBenchmark: AdminBenchmarkService;
+    let clientBridge: ClientBridgeService;
+    let chatService: ChatService;
+
+    const info =(overrides: Partial<AttachedSnapshotInfo> = {}): AttachedSnapshotInfo => ({
+      sessionId: 42,
+      hasSnapshot: true,
+      charCount: 1234,
+      sha256: 'abcdef0123456789',
+      capturedAtUtc: '2026-09-14T18:30:00Z',
+      detectedGnollHackVersion: null,
+      existingBoards: [],
+      ...overrides
+    });
+
+    beforeEach(() => {
+      adminBenchmark = TestBed.inject(AdminBenchmarkService);
+      clientBridge = TestBed.inject(ClientBridgeService);
+      chatService = TestBed.inject(ChatService);
+      component.currentSessionId = '42';
+      fixture.detectChanges();
+    });
+
+    // A modal left open makes the rest of the Karma page inert.
+    afterEach(() => component.captureBoardDialog?.nativeElement?.close());
+
+    it('suggests a board name from a gameplay chat title', () => {
+      const now = new Date('2026-09-15T10:00:00Z');
+
+      expect(component.suggestBoardName('GnollHack Gameplay (Alice)', now)).toBe('Alice 2026-09-15');
+      expect(component.suggestBoardName('GnollHack Assistance', now)).toBe('Board 2026-09-15');
+      expect(component.suggestBoardName('New Chat', now)).toBe('Board 2026-09-15');
+      expect(component.suggestBoardName(`GnollHack Gameplay (${'A'.repeat(70)})`, now)).toBe(`${'A'.repeat(60)} 2026-09-15`);
+    });
+
+    it('prefills the version the client reported', () => {
+      spyOn(adminBenchmark, 'getAttachedSnapshotInfo').and.returnValue(of(info({ detectedGnollHackVersion: '0.9.4' })));
+
+      component.openCaptureBoardModal();
+
+      expect(adminBenchmark.getAttachedSnapshotInfo).toHaveBeenCalledWith('42');
+      expect(component.captureBoardVersion).toBe('0.9.4');
+      expect(component.captureBoardVersionDetected).toBeTrue();
+      expect(component.captureBoardInfo?.hasSnapshot).toBeTrue();
+      expect(component.isLoadingCaptureInfo).toBeFalse();
+    });
+
+    it('leaves the version empty when the client reported none', () => {
+      spyOn(adminBenchmark, 'getAttachedSnapshotInfo').and.returnValue(of(info()));
+
+      component.openCaptureBoardModal();
+
+      expect(component.captureBoardVersion).toBe('');
+      expect(component.captureBoardVersionDetected).toBeFalse();
+    });
+
+    it('shows an info failure and keeps the dialog open', () => {
+      spyOn(adminBenchmark, 'getAttachedSnapshotInfo').and.returnValue(
+        throwError(() => ({ error: { error: 'A confidential chat cannot be imported as a benchmark board.' } })));
+
+      component.openCaptureBoardModal();
+
+      expect(component.captureBoardError).toContain('confidential');
+      expect(component.captureBoardDialog?.nativeElement.open).toBeTrue();
+      expect(component.isLoadingCaptureInfo).toBeFalse();
+    });
+
+    it('disables saving when the chat no longer has a snapshot', () => {
+      spyOn(adminBenchmark, 'getAttachedSnapshotInfo').and.returnValue(of(info({ hasSnapshot: false })));
+
+      component.openCaptureBoardModal();
+
+      expect(component.canSubmitCaptureBoard).toBeFalse();
+    });
+
+    it('keeps the dialog open on Escape while a save is in flight', () => {
+      spyOn(adminBenchmark, 'getAttachedSnapshotInfo').and.returnValue(of(info()));
+      component.openCaptureBoardModal();
+      component.isCapturingBoard = true;
+
+      const event = new Event('cancel', { cancelable: true });
+      component.onCaptureBoardCancel(event);
+
+      expect(event.defaultPrevented).toBeTrue();
+      expect(component.captureBoardDialog?.nativeElement.open).toBeTrue();
+      component.isCapturingBoard = false;
+    });
+
+    it('does not save from a confidential chat', () => {
+      const saveSpy = spyOn(adminBenchmark, 'saveAttachedSnapshot');
+      component.isConfidentialSession = true;
+      component.captureBoardName = 'Board';
+
+      component.submitCaptureBoard();
+
+      expect(saveSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not offer the save button on a confidential chat', () => {
+      (TestBed.inject(AuthService) as any).userSubject.next({
+        userName: 'admin',
+        email: 'admin@example.com',
+        hasApiKey: true,
+        isAdmin: true
+      });
+      component.hasGameSnapshot = true;
+      component.isConfidentialSession = true;
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('button[aria-label="Save attached game snapshot of this chat for benchmarking"]')).toBeFalsy();
+    });
+
+    it('forwards the remembered version when attaching a snapshot', async () => {
+      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
+      clientBridge.setHostGnollHackVersion('0.9.4');
+      component.hasGameSnapshot = false;
+      spyOn(clientBridge, 'postMessage').and.callFake((message: any) => {
+        component.onGnollHackToolResponse({
+          type: 'tool_response',
+          requestId: message.requestId,
+          success: true,
+          content: 'Board text',
+          errorMessage: null
+        });
+      });
+      const attachSpy = spyOn(chatService, 'attachGameSnapshot').and.returnValue(
+        of({ sessionId: '42', hasGameSnapshot: true, gnollHackVersion: '0.9.4' }));
+
+      await component.attachGameSnapshotFromClient();
+
+      expect(attachSpy).toHaveBeenCalled();
+      expect(attachSpy.calls.mostRecent().args[2]).toBe('0.9.4');
+    });
+
+    it('remembers the version a loaded chat reports', async () => {
+      (component as any).hubStartPromise = null;
+      (component as any).hubConnection = null;
+      spyOn(chatService, 'getSession').and.returnValue(of(new HttpResponse<ChatSessionDetailResponse>({
+        body: { id: 7, title: 'GnollHack Gameplay (Alice)', messages: [], gnollHackVersion: '0.9.4' }
+      })));
+
+      await component.loadSession(7);
+      await new Promise(r => setTimeout(r, 0));
+
+      expect(clientBridge.getHostGnollHackVersion()).toBe('0.9.4');
     });
   });
 });
