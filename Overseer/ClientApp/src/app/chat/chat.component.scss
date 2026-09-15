@@ -640,8 +640,6 @@
 
 @media (max-width: 480px) {
   .chat-header-telemetry { column-gap: 10px; font-size: 10px; }
-  .chat-cost-indicator .cost-label,
-  .context-window-indicator .cw-label { display: none; }
   .context-window-indicator { min-inline-size: 120px; }
   .msg-cost-footer {
     inset-inline-start: 12px;
@@ -1224,8 +1222,18 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
     height: 32px;
   }
   
+  /* Once the sidebar collapses the header is too narrow to hold the title and the telemetry side
+     by side -- the title loses, down to a few characters -- so the telemetry takes the row below
+     it, full width, and the title gets the whole first row back. */
   .chat-header {
+    flex-wrap: wrap;
     padding: 10px;
+  }
+
+  .chat-header-telemetry {
+    flex-basis: 100%;
+    margin-inline-start: 0;
+    justify-content: space-between;
   }
   
   .sidebar-close-btn {
