@@ -305,13 +305,6 @@ export interface BenchmarkGameSnapshotDto {
   suiteName?: string | null;
 }
 
-export interface CaptureBenchmarkSnapshotRequest {
-  sessionId: string;
-  name: string;
-  notes?: string | null;
-  sourceGnollHackVersion?: string | null;
-}
-
 export interface SaveAttachedSnapshotRequest {
   sessionId: string;
   name: string;
@@ -1763,10 +1756,6 @@ export class AdminBenchmarkService {
   }
 
   // Game Snapshots
-  captureSnapshot(req: CaptureBenchmarkSnapshotRequest): Observable<CaptureBenchmarkSnapshotResponse> {
-    return this.http.post<CaptureBenchmarkSnapshotResponse>('/api/admin/benchmark/snapshots/capture', req);
-  }
-
   saveAttachedSnapshot(req: SaveAttachedSnapshotRequest): Observable<CaptureBenchmarkSnapshotResponse> {
     return this.http.post<CaptureBenchmarkSnapshotResponse>('/api/admin/benchmark/snapshots/from-session', req);
   }

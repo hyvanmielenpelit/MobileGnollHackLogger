@@ -1320,7 +1320,7 @@ describe('ChatComponent context window indicator', () => {
     });
   });
 
-  describe('Benchmark capture button visibility and snapshot attachment', () => {
+  describe('Header snapshot button visibility and snapshot attachment', () => {
     let authService: AuthService;
     let clientBridge: ClientBridgeService;
 
@@ -1329,7 +1329,9 @@ describe('ChatComponent context window indicator', () => {
       clientBridge = TestBed.inject(ClientBridgeService);
     });
 
-    it('should render both header capture buttons when isAdmin, currentSessionId, hasGameSnapshot and the embedded client are all true', () => {
+    /* The two are mutually exclusive: one needs an attached snapshot and the other needs there
+       to be none, so each case asserts the absence of the other button. */
+    it('should offer only the save button when isAdmin, currentSessionId, hasGameSnapshot and the embedded client are all true', () => {
       spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
       (authService as any).userSubject.next({
         userName: 'admin',
@@ -1343,14 +1345,14 @@ describe('ChatComponent context window indicator', () => {
       fixture.detectChanges();
 
       const compiled = fixture.nativeElement as HTMLElement;
-      const attachedBtn = compiled.querySelector('button[aria-label="Save attached game snapshot of this chat for benchmarking"]');
-      const liveBtn = compiled.querySelector('button[aria-label="Capture Live Game Board for Benchmarking"]');
+      const saveBtn = compiled.querySelector('button[aria-label="Save attached game snapshot of this chat for benchmarking"]');
+      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game board from GnollHack to this chat"]');
 
-      expect(attachedBtn).toBeTruthy();
-      expect(liveBtn).toBeTruthy();
+      expect(saveBtn).toBeTruthy();
+      expect(attachBtn).toBeFalsy();
     });
 
-    it('should omit both header capture buttons when hasGameSnapshot is false', () => {
+    it('should offer only the attach button when hasGameSnapshot is false', () => {
       spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
       (authService as any).userSubject.next({
         userName: 'admin',
@@ -1364,14 +1366,14 @@ describe('ChatComponent context window indicator', () => {
       fixture.detectChanges();
 
       const compiled = fixture.nativeElement as HTMLElement;
-      const attachedBtn = compiled.querySelector('button[aria-label="Save attached game snapshot of this chat for benchmarking"]');
-      const liveBtn = compiled.querySelector('button[aria-label="Capture Live Game Board for Benchmarking"]');
+      const saveBtn = compiled.querySelector('button[aria-label="Save attached game snapshot of this chat for benchmarking"]');
+      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game board from GnollHack to this chat"]');
 
-      expect(attachedBtn).toBeFalsy();
-      expect(liveBtn).toBeFalsy();
+      expect(saveBtn).toBeFalsy();
+      expect(attachBtn).toBeTruthy();
     });
 
-    it('should offer only the attached-snapshot button in an ordinary browser session', () => {
+    it('should offer the save button and no attach button in an ordinary browser session', () => {
       spyOn(clientBridge, 'isEmbedded').and.returnValue(false);
       (authService as any).userSubject.next({
         userName: 'admin',
@@ -1385,11 +1387,11 @@ describe('ChatComponent context window indicator', () => {
       fixture.detectChanges();
 
       const compiled = fixture.nativeElement as HTMLElement;
-      const attachedBtn = compiled.querySelector('button[aria-label="Save attached game snapshot of this chat for benchmarking"]');
-      const liveBtn = compiled.querySelector('button[aria-label="Capture Live Game Board for Benchmarking"]');
+      const saveBtn = compiled.querySelector('button[aria-label="Save attached game snapshot of this chat for benchmarking"]');
+      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game board from GnollHack to this chat"]');
 
-      expect(attachedBtn).toBeTruthy();
-      expect(liveBtn).toBeFalsy();
+      expect(saveBtn).toBeTruthy();
+      expect(attachBtn).toBeFalsy();
     });
 
     it('should no longer offer the live capture link in the sidebar', () => {
@@ -1410,7 +1412,7 @@ describe('ChatComponent context window indicator', () => {
       expect(sidebarLink).toBeFalsy();
     });
 
-    it('should omit benchmark buttons when user is not admin', () => {
+    it('should omit the save button when user is not admin', () => {
       (authService as any).userSubject.next({
         userName: 'player',
         email: 'player@example.com',
@@ -1422,14 +1424,32 @@ describe('ChatComponent context window indicator', () => {
       fixture.detectChanges();
 
       const compiled = fixture.nativeElement as HTMLElement;
-      const attachedBtn = compiled.querySelector('button[aria-label="Save attached game snapshot of this chat for benchmarking"]');
-      const liveBtn = compiled.querySelector('button[aria-label="Capture Live Game Board for Benchmarking"]');
+      const saveBtn = compiled.querySelector('button[aria-label="Save attached game snapshot of this chat for benchmarking"]');
 
-      expect(attachedBtn).toBeFalsy();
-      expect(liveBtn).toBeFalsy();
+      expect(saveBtn).toBeFalsy();
     });
 
-    it('should show composer attach-snapshot button only when embedded and !hasGameSnapshot', () => {
+    it('should offer the attach button to a non-admin embedded user', () => {
+      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
+      (authService as any).userSubject.next({
+        userName: 'player',
+        email: 'player@example.com',
+        hasApiKey: true,
+        isAdmin: false
+      });
+      component.currentSessionId = '42';
+      component.hasGameSnapshot = false;
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game board from GnollHack to this chat"]');
+      const saveBtn = compiled.querySelector('button[aria-label="Save attached game snapshot of this chat for benchmarking"]');
+
+      expect(attachBtn).toBeTruthy();
+      expect(saveBtn).toBeFalsy();
+    });
+
+    it('should show the header attach-snapshot button only when embedded and !hasGameSnapshot', () => {
       spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
       component.hasGameSnapshot = false;
       fixture.detectChanges();
@@ -1445,7 +1465,7 @@ describe('ChatComponent context window indicator', () => {
       expect(attachBtn).toBeFalsy();
     });
 
-    it('should hide composer attach-snapshot button when not embedded', () => {
+    it('should hide the header attach-snapshot button when not embedded', () => {
       spyOn(clientBridge, 'isEmbedded').and.returnValue(false);
       component.hasGameSnapshot = false;
       fixture.detectChanges();

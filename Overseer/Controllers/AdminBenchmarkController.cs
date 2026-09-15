@@ -17,7 +17,6 @@ using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Benchmarking;
-using Overseer.Services.Tools;
 using Microsoft.Extensions.DependencyInjection;
 
 [Route("api/admin/benchmark")]
@@ -34,7 +33,6 @@ public class AdminBenchmarkController : ControllerBase
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly Services.SourceCodeService _sourceCodeService;
     private readonly Services.NetHackWikiService _wikiService;
-    private readonly IClientToolBridge _clientToolBridge;
     private readonly BenchmarkSnapshotImporter _snapshotImporter;
     private readonly BenchmarkGenerationJobManager _generationJobManager;
     private readonly BenchmarkGenerationService _generationService;
@@ -57,7 +55,6 @@ public class AdminBenchmarkController : ControllerBase
         IServiceScopeFactory scopeFactory,
         Services.SourceCodeService sourceCodeService,
         Services.NetHackWikiService wikiService,
-        IClientToolBridge clientToolBridge,
         BenchmarkSnapshotImporter snapshotImporter,
         BenchmarkGenerationJobManager generationJobManager,
         BenchmarkGenerationService generationService,
@@ -79,7 +76,6 @@ public class AdminBenchmarkController : ControllerBase
         _scopeFactory = scopeFactory;
         _sourceCodeService = sourceCodeService;
         _wikiService = wikiService;
-        _clientToolBridge = clientToolBridge;
         _snapshotImporter = snapshotImporter;
         _generationJobManager = generationJobManager;
         _generationService = generationService;
@@ -1258,66 +1254,6 @@ public class AdminBenchmarkController : ControllerBase
 
     // --- Benchmark Game Snapshots API ---
 
-    [HttpPost("snapshots/capture")]
-    public async Task<IActionResult> CaptureSnapshot([FromBody] CaptureBenchmarkSnapshotRequest request, CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(request.Name))
-        {
-            return BadRequest(new { error = "Board name is required." });
-        }
-
-        var session = await _dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == request.SessionId, ct);
-        if (session == null)
-        {
-            return NotFound(new { error = "Session not found." });
-        }
-
-        string userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
-        if (session.AspNetUserId != userId)
-        {
-            return Forbid();
-        }
-
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        linkedCts.CancelAfter(TimeSpan.FromSeconds(45));
-
-        var emptyParams = JsonDocument.Parse("{}").RootElement;
-        var toolResult = await _clientToolBridge.SendToolRequestAsync(
-            Overseer.Services.Privacy.SessionRef.Persistent(session.Id), "refresh_snapshot", emptyParams, linkedCts.Token);
-        if (!toolResult.Success)
-        {
-            string msg = toolResult.ErrorMessage ?? toolResult.Content ?? "Client tool request failed.";
-            return Conflict(new { error = msg });
-        }
-
-        string snapshotText = toolResult.Content ?? string.Empty;
-        if (snapshotText.Length > 60200)
-        {
-            snapshotText = snapshotText.Substring(0, 60200);
-        }
-
-        var meta = new BoardMetadata(
-            request.Name.Trim(),
-            request.Notes?.Trim(),
-            request.SourceGnollHackVersion?.Trim(),
-            DateTime.UtcNow,
-            request.SessionId);
-
-        try
-        {
-            var (board, suite) = await _snapshotImporter.FromClientTextAsync(snapshotText, meta, ct);
-            return Ok(new CaptureBenchmarkSnapshotResponse
-            {
-                Board = ToSnapshotDto(board, suite.Id, suite.Name),
-                Suite = ToSuiteDto(suite)
-            });
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(new { error = ex.Message });
-        }
-    }
-
     [HttpPost("snapshots/from-session")]
     public async Task<IActionResult> SaveAttachedSnapshot([FromBody] SaveAttachedSnapshotRequest request, CancellationToken ct)
     {
@@ -1347,8 +1283,7 @@ public class AdminBenchmarkController : ControllerBase
             return Conflict(new
             {
                 error = "A confidential chat cannot be imported as a benchmark board: the board's content "
-                    + "becomes shared benchmark material. Attach the snapshot to a normal chat, or use "
-                    + "Capture Live Board."
+                    + "becomes shared benchmark material. Attach the snapshot to a normal chat instead."
             });
         }
 
@@ -1359,7 +1294,7 @@ public class AdminBenchmarkController : ControllerBase
 
         if (snapshotMessage == null || string.IsNullOrWhiteSpace(snapshotMessage.Content))
         {
-            return Conflict(new { error = "This chat has no attached game snapshot. Use Capture Live Board instead, or attach a snapshot first." });
+            return Conflict(new { error = "This chat has no attached game snapshot. Attach one first with Attach Game Snapshot." });
         }
 
         string strippedContent = ChatService.StripGameSnapshotPrefix(snapshotMessage.Content);

@@ -1322,14 +1322,6 @@ public class BenchmarkGameSnapshotDto
     public string? SuiteName { get; set; }
 }
 
-public class CaptureBenchmarkSnapshotRequest
-{
-    public long SessionId { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public string? Notes { get; set; }
-    public string? SourceGnollHackVersion { get; set; }
-}
-
 public class SaveAttachedSnapshotRequest
 {
     public long SessionId { get; set; }

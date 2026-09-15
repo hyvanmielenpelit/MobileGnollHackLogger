@@ -964,7 +964,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     event.preventDefault();
     event.returnValue = '';
   };
-  captureBoardMode: 'live' | 'attached' = 'live';
   showCaptureBoardModal = false;
   captureBoardName = '';
   captureBoardNotes = '';
@@ -988,11 +987,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }>();
   isAttachingSnapshot = false;
 
-  openCaptureBoardModal(event?: Event, mode: 'live' | 'attached' = 'live') {
+  openCaptureBoardModal(event?: Event) {
     if (event) {
       event.preventDefault();
     }
-    this.captureBoardMode = mode;
     this.captureBoardError = null;
     this.captureBoardResult = null;
     const now = new Date().toISOString().substring(0, 10);
@@ -1034,9 +1032,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       sourceGnollHackVersion: this.captureBoardVersion.trim() || undefined
     };
 
-    const call$ = this.captureBoardMode === 'attached'
-      ? this.adminBenchmarkService.saveAttachedSnapshot(req)
-      : this.adminBenchmarkService.captureSnapshot(req);
+    const call$ = this.adminBenchmarkService.saveAttachedSnapshot(req);
 
     call$.subscribe({
       next: (res) => {
@@ -1054,7 +1050,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       },
       error: (err) => {
         this.isCapturingBoard = false;
-        this.captureBoardError = err?.error?.error || err?.error?.message || (typeof err?.error === 'string' ? err.error : null) || 'Failed to capture benchmark board.';
+        this.captureBoardError = err?.error?.error || err?.error?.message || (typeof err?.error === 'string' ? err.error : null) || 'Failed to save the attached snapshot.';
         this.cdr.detectChanges();
       }
     });

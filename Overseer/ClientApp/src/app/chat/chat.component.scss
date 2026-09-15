@@ -1088,6 +1088,7 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
     justify-content: center;
     width: 24px;
     height: 24px;
+    flex-shrink: 0;
     border-radius: 4px;
     transition: background 0.2s, color 0.2s;
     
@@ -1173,12 +1174,28 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
     }
   }
 
+  /* An inline group inside the title container, so the buttons sit beside the pen rather than
+     at the far end of the header. The title is the only item that shrinks. */
   .chat-header-actions {
-    margin-left: auto;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
+    flex-shrink: 0;
     white-space: nowrap;
+
+    .action-btn {
+      margin-left: 0;
+
+      &:disabled {
+        cursor: not-allowed;
+      }
+
+      &:disabled:hover {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: var(--border-glass);
+        color: #ccc;
+      }
+    }
   }
 }
 

@@ -220,7 +220,7 @@ public class BenchmarkRubricGapAuthorTests
         // manager alone. The remaining dependencies are unreachable from it.
         var controller = new AdminBenchmarkController(
             db, null!, scoringProfileService, runManager, new BenchmarkDifficultyJobManager(), guard, scopeFactory,
-            null!, null!, null!, null!, null!, null!, null!, null!, jobs, null!,
+            null!, null!, null!, null!, null!, null!, null!, jobs, null!,
             null!, null!, null!)
         {
             ControllerContext = new ControllerContext
