@@ -61,3 +61,12 @@ plan -- `package.json` is the source of truth.
   ReDoS advisories; current builds ship only from the vendor's own registry, which this project does
   not use), `exceljs` (Node-first, 21 MB unpacked, nine transitive dependencies needing browser
   polyfills) and `xlsx-populate` (15 MB, `lodash` and `jszip`).
+
+### Held-back Upgrades
+`npm outdated` will keep listing these; do not force them.
+- **`typescript`** -- gated by the Angular compiler's peer range, not by us. Read it with
+  `npm view @angular/compiler-cli@<installed version> peerDependencies` and stay inside it.
+- **`jasmine-core` and `@types/jasmine` majors** -- `karma-jasmine` (whose Karma runner is
+  deprecated upstream) declares an older `jasmine-core` range. Move them together with a
+  Karma-to-Vitest migration, not on their own.
+- Never run `npm audit fix --force`: it applies breaking majors, including the ones above.
