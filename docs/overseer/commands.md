@@ -13,6 +13,7 @@ This guide provides a comprehensive reference of all command-line operations use
 | **Run Backend Unit & Integration Tests** | `Overseer.Tests/` | `dotnet test --filter-not-trait "Category=UsesExternalApi"` |
 | **Build Frontend (Production)** | `Overseer/ClientApp/` | `npm run build` |
 | **Build Backend** | `Overseer/` | `dotnet build` |
+| **Apply Migrations to a Server Database** | Root, then the server's MobileGnollHackLogger site folder | *(See § 5.1 — migration bundle)* |
 | **Release Application** | Root | *(See [release-checklist.md](release-checklist.md))* |
 
 ---
@@ -191,16 +192,44 @@ dotnet ef migrations add <MigrationName> -p GnollHackServer.Data -s MobileGnollH
 
 # Apply migrations directly to the local database
 dotnet ef database update -p GnollHackServer.Data -s MobileGnollHackLogger
-
-# Generate an idempotent SQL script for server deployment (covers all migrations)
-dotnet ef migrations script -i -p GnollHackServer.Data -s MobileGnollHackLogger -o migration.sql
-
-# Generate an idempotent SQL script from a specific migration to latest
-dotnet ef migrations script <FromMigration> -i -p GnollHackServer.Data -s MobileGnollHackLogger -o migration.sql
-
-# Generate an idempotent SQL script between two specific migrations
-dotnet ef migrations script <FromMigration> <ToMigration> -i -p GnollHackServer.Data -s MobileGnollHackLogger -o migration.sql
 ```
+
+### 5.1 Applying Migrations to a Server Database (Migration Bundle)
+
+Neither `Overseer/Program.cs` nor `MobileGnollHackLogger/Program.cs` calls `Migrate()`, so starting the site never upgrades its database. Server migrations are applied explicitly, with an EF Core **migration bundle**, **before the new build is started**. Take a database backup first (see [release-checklist.md](release-checklist.md) § 5 and § 7).
+
+**1. Build the bundle** on the development machine, from the repository root, from the same commit as the build being deployed:
+
+```bash
+dotnet ef migrations bundle -p GnollHackServer.Data -s MobileGnollHackLogger -r win-x64 --self-contained -o <path>\efbundle.exe
+```
+
+`--self-contained` includes the .NET runtime, so the server needs neither the SDK nor a runtime for it. Add `--force` to overwrite an existing file. A versioned name such as `efbundle_overseer_v<version>.exe` makes it clear which release a bundle belongs to.
+
+**2. Run it on the server from the MobileGnollHackLogger site folder:**
+
+```powershell
+Set-Location '<MobileGnollHackLogger site folder>'
+$conn = Read-Host 'Connection string'
+& '<path>\efbundle.exe' --connection $conn
+```
+
+- **Working directory**: there is no `IDesignTimeDbContextFactory`, so the bundle starts the `MobileGnollHackLogger` host to obtain the `DbContext`. That host's `Program.cs` throws unless `ConnectionStrings:SqlDatabaseConnection` and `ConnectionStrings:EmailConnection` are configured and `Content\ConfirmAccountEmail.html` and `Content\ForgotPasswordEmail.html` exist under the content root, which is the working directory. The site folder has all of them. A failure while the host starts happens before the database is touched.
+- **Connection string**: pass the *value* of `ConnectionStrings:SqlDatabaseConnection` for the database being upgraded. If you type it inline instead of using `Read-Host`, use PowerShell single quotes and **single** backslashes: copied from `appsettings.json`, the server name carries the JSON-escaped `\\`, which fails with *"Instance failure."* before connecting. `Read-Host` also keeps the value out of the PowerShell history.
+- **Rights**: no Windows elevation is needed. The SQL login needs `db_owner`, or `db_ddladmin` plus `db_datareader` and `db_datawriter`, on the database.
+- **What it does**: applies every migration missing from `__EFMigrationsHistory`, in order, one transaction per migration, printing `Applying migration '<id>'` for each and `Done.` at the end. It stops at the first failure; the migrations before it stay applied and recorded. Against an up-to-date database it applies nothing.
+- **Check**: once the new build is running, the Overseer admin Storage tab's *Schema* section should show *Pending: None*.
+
+### 5.2 Why Not an Idempotent SQL Script
+
+Do **not** apply this repository's migrations with `dotnet ef migrations script --idempotent` (`-i`):
+
+- EF Core 10 wraps each migration of an idempotent script in a single `GO` batch. SQL Server compiles a whole batch before executing any of it, so a migration that adds a column and then updates it in the same migration fails compilation with Msg 207 *"Invalid column name"* and is skipped entirely. Its `IF NOT EXISTS` guards do not help, because the batch never runs. Examples: `20260903075124_AddBenchmarkIntegrityAndTiming`, `20260903111808_AddBenchmarkSecondOpinionAssessor`, `20260909160427_AddChatMessageSnapshotFlags`.
+- SSMS continues past a failed batch. A later migration that then fails at run time after its `BEGIN TRANSACTION` leaves a transaction open; the following `COMMIT`s only close nested levels, and closing the window rolls everything after that point back.
+- On 2026-09-15 this happened on the test server (upgrade from `overseer/v1.0.28` to 1.1.0, 57 migrations): eight migrations failed compilation, `20260909093810_AddBenchmarkCorpusFingerprints` left a transaction open, and 29 of the 57 ended up applied. The remaining 28 were then applied with a bundle.
+- `dotnet ef database update` and bundles send each statement as its own command, which is why development machines never hit this.
+
+`dotnet ef migrations script` is still useful for **reading** the SQL a migration will run; just do not use its output to apply the migrations.
 
 ---
 

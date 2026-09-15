@@ -63,14 +63,25 @@ This command automatically:
 
 ## 5. Test Server Deployment & Validation
 
-1. **Deploy to Test Server**: Upload the published files from `Overseer/bin/Release/net10.0/publish/` to the test server.
-2. **Perform Testing**: Test the deployed version thoroughly on the test server.
-3. **Iterate if Changes Needed**:
+1. **Back Up and Migrate the Test Database** (migrations run before the new build is started):
+   - Build the migration bundle from the release commit (see [commands.md](commands.md) § 5.1).
+   - Stop the Overseer test site. The running old build may fail against the new schema (for example, a dropped column).
+   - Back up the test database, e.g. SSMS *Tasks › Back Up…*, or:
+     ```sql
+     BACKUP DATABASE [<database>] TO DISK = N'<path>\<database>_pre_v<version>.bak' WITH COPY_ONLY, INIT;
+     ```
+     `COPY_ONLY` leaves any scheduled backup chain untouched.
+   - Run the bundle from the MobileGnollHackLogger test site folder with `--connection` ([commands.md](commands.md) § 5.1). It must end with `Done.`; if it fails, stop and restore or repair the database before uploading anything.
+   - Do **not** use an idempotent SQL script ([commands.md](commands.md) § 5.2).
+2. **Deploy to Test Server**: Upload the published files from `Overseer/bin/Release/net10.0/publish/` to the test server, then start the site.
+3. **Perform Testing**: Test the deployed version thoroughly on the test server.
+4. **Iterate if Changes Needed**:
    - If bugs or adjustments are found, implement the fixes in code.
    - Update `Overseer/Data/release-notes.json` manually if the new changes require additional notes (refer to [changelog-guide.md](changelog-guide.md)).
+   - If a fix adds a migration, rebuild the bundle and run it against the test database again before re-uploading.
    - Re-publish the application: `dotnet publish Overseer -c Release`.
    - Re-upload to the test server and verify again.
-4. **Completion**: Once testing on the test server is completed successfully and no more changes are required, proceed to the next steps.
+5. **Completion**: Once testing on the test server is completed successfully and no more changes are required, proceed to the next steps.
 
 ---
 
@@ -95,6 +106,13 @@ cd ../..
 ## 7. Deploy to Production Server
 
 Deploy the verified changes directly from the test server to the production server. (No FTP upload from your local machine is required here).
+
+Migrations run before the new build is started:
+
+1. **Stop** the production Overseer site.
+2. **Back up** the production database (same command as § 5, with the production database name).
+3. **Migrate**: run the **same bundle that was validated on the test server** from the production MobileGnollHackLogger site folder, with the production connection string ([commands.md](commands.md) § 5.1). It must end with `Done.`
+4. **Deploy and start**: deploy the verified build, start the site, and confirm the admin Storage tab shows no pending migrations.
 
 ---
 
