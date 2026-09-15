@@ -548,23 +548,25 @@
 
 .input-area-container { border-block-start: 1px solid var(--border-glass); background: rgba(0,0,0,0.3); display: flex; flex-direction: column; }
 
-.chat-telemetry-bar {
+/* Total cost and context window, right-aligned in the chat header beside the title. Once the
+   title has no width left to give, the two widgets stack instead of squeezing the header. */
+.chat-header-telemetry {
+  margin-inline-start: auto;
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
-  gap: 12px;
-  inline-size: 100%;
+  column-gap: 14px;
+  row-gap: 3px;
+  font-size: 11px;
+  color: var(--nav-color);
 }
 
 .chat-cost-indicator {
-  flex: 1 1 auto;
-  min-inline-size: 0;
-  padding: 6px 0 6px 20px;
-  font-size: 11px;
-  color: var(--nav-color);
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: baseline;
+  white-space: nowrap;
 
   .cost-label { opacity: 0.75; }
   .cost-value {
@@ -584,16 +586,19 @@
   }
 }
 
+/* 180px is a floor, not the width. The label and the value each stay on one line, so a long value
+   -- "nearly full" appends a clause -- widens the widget rather than wrapping the text row or
+   spilling into the header padding. The title shrinks first, so the header itself never overflows. */
 .context-window-indicator {
-  flex: 0 1 auto;
-  inline-size: min(260px, 100%);
-  padding: 6px 20px;
-  font-size: 11px;
-  color: var(--nav-color);
+  min-inline-size: 180px;
+  inline-size: max-content;
 
   .cw-text { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
-  .cw-label { opacity: 0.75; }
+  .cw-label { opacity: 0.75; white-space: nowrap; }
   .cw-value {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     font-family: monospace;
     white-space: nowrap;
     cursor: help;
@@ -611,7 +616,12 @@
       border-radius: 2px;
     }
   }
-  .cw-warning { color: var(--color-warning); }
+  .cw-warning {
+    inline-size: 12px;
+    block-size: 12px;
+    flex-shrink: 0;
+    color: var(--color-warning);
+  }
 
   .cw-track {
     margin-block-start: 3px;
@@ -629,14 +639,10 @@
 }
 
 @media (max-width: 480px) {
-  .context-window-indicator {
-    padding-inline: 12px;
-    font-size: 10px;
-  }
-  .chat-cost-indicator {
-    padding-inline-start: 12px;
-    font-size: 10px;
-  }
+  .chat-header-telemetry { column-gap: 10px; font-size: 10px; }
+  .chat-cost-indicator .cost-label,
+  .context-window-indicator .cw-label { display: none; }
+  .context-window-indicator { min-inline-size: 120px; }
   .msg-cost-footer {
     inset-inline-start: 12px;
     font-size: 10px;
@@ -1035,8 +1041,11 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   border-block-end: 1px solid var(--border-glass);
   background: rgba(0, 0, 0, 0.3);
   
+  /* Zero basis, so the title claims only the space the other header items leave over and
+     ellipsises away silently. Anything that shrinks proportionally instead would take a few
+     pixels off the telemetry first, which is all it takes to wrap a row that exactly fits. */
   .chat-title-container {
-    flex-grow: 1;
+    flex: 1 1 0;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -1072,11 +1081,6 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
       background: rgba(255, 255, 255, 0.1);
       color: #fff;
     }
-  }
-  
-  .make-confidential-btn {
-    margin-inline-start: auto;
-    flex-shrink: 0;
   }
 
   .rename-container {
@@ -1489,6 +1493,12 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
     height: 24px;
     background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.2) 50%, transparent);
     margin: 0 4px;
+  }
+
+  /* Shares the right end of the row with .privacy-mode-btn, which shows only for a new chat. */
+  .make-confidential-btn {
+    margin-inline-start: auto;
+    flex-shrink: 0;
   }
 }
 

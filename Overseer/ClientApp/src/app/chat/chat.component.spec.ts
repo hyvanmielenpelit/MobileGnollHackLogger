@@ -533,6 +533,16 @@ describe('ChatComponent session loading and exclusivity', () => {
       expect(label?.textContent?.trim()).toBe('Total');
     });
 
+    it('should render the chat total in the header, not above the prompt box', () => {
+      component.messages = [{ role: 'assistant', content: 'test', estimatedCost: 0.01 } as any];
+      component.sessionTotalCost = 0.0185;
+      component.showChatCost = true;
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('.chat-header .chat-cost-indicator')).toBeTruthy();
+      expect(compiled.querySelector('.input-area-container .chat-cost-indicator')).toBeFalsy();
+    });
+
     it('should fall back to the loaded-message sum when no session total was persisted', () => {
       component.messages = [
         { role: 'assistant', content: 'a', estimatedCost: 0.01 } as any,
@@ -554,7 +564,7 @@ describe('ChatComponent session loading and exclusivity', () => {
       const compiled = fixture.nativeElement as HTMLElement;
       expect(component.totalChatCost).toBeNull();
       expect(compiled.querySelector('.chat-cost-indicator')).toBeFalsy();
-      expect(compiled.querySelector('.chat-telemetry-bar .context-window-indicator')).toBeTruthy();
+      expect(compiled.querySelector('.chat-header .context-window-indicator')).toBeTruthy();
     });
 
     it('should mark a partially priced chat with a PARTIAL badge', () => {
@@ -1217,6 +1227,27 @@ describe('ChatComponent context window indicator', () => {
       (component as any).clearStreamingState();
 
       expect(component.contextUsage).toBeNull();
+    });
+  });
+
+  describe('the near-full context warning', () => {
+    const usage = (usedTokens: number) => ({
+      promptTokens: usedTokens, outputTokens: 0, usedTokens, windowTokens: 200000
+    });
+
+    it('should mark the glyph only at 90% or more, and always name it in text', () => {
+      component.showContextWindowUsage = true;
+      const warning = () => (fixture.nativeElement as HTMLElement)
+        .querySelector('.chat-header .context-window-indicator .cw-warning');
+
+      component.contextUsage = usage(178000) as any;   // 89%
+      fixture.detectChanges();
+      expect(warning()).toBeFalsy();
+
+      component.contextUsage = usage(180000) as any;   // 90%
+      fixture.detectChanges();
+      expect(warning()).toBeTruthy();
+      expect(warning()!.getAttribute('aria-label')).toBe('nearly full');
     });
   });
 
@@ -2347,6 +2378,14 @@ describe('ChatComponent confidential chats', () => {
       component.currentSessionId = null;
       fixture.detectChanges();
       expect(action()).toBeFalsy();
+    });
+
+    it('should place the action in the prompt-box top row, not the header', () => {
+      component.currentSessionId = '91';
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      expect(compiled.querySelector('.input-area-top button[interestfor="tip-make-confidential"]')).toBeTruthy();
+      expect(compiled.querySelector('.chat-header button[interestfor="tip-make-confidential"]')).toBeFalsy();
     });
 
     it('should adopt the upgraded state and announce the server notice', () => {
