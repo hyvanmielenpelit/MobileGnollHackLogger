@@ -1188,12 +1188,39 @@
   line-height: 1.45;
 }
 
-.history-table {
+.gh-datatable.history-table {
   font-variant-numeric: tabular-nums;
 
   td {
     white-space: nowrap;
   }
+}
+
+.history-pager-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+
+  app-table-pager {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+.history-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85em;
+}
+
+.last-run-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 0;
 }
 
 .history-row-failed td {
@@ -1219,47 +1246,90 @@
   }
 }
 
-/* --- Maintenance Loading Dialog --- */
-.loading-dialog {
-  text-align: center;
-  max-width: 440px;
-
-  .loading-dialog-body {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
-    padding: 10px 0 10px 0;
-  }
-
-  .loading-dialog-spinner {
-    width: 42px;
-    height: 42px;
-    border: 3px solid rgba(255, 255, 255, 0.1);
-    border-top-color: var(--primary-color, #e0ba6d);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    box-shadow: 0 0 15px rgba(224, 186, 109, 0.2);
-  }
+/* --- Maintenance Run Dialog --- */
+.maintenance-run-dialog {
+  max-width: 720px;
 
   h3 {
-    margin: 0;
+    margin: 0 0 12px 0;
     font-size: 1.2rem;
     color: var(--title-color, #e0ba6d);
+
+    &:focus {
+      outline: none;
+    }
+    &:focus-visible {
+      outline: 2px solid var(--primary-color, #e0ba6d);
+      outline-offset: 3px;
+    }
   }
 
-  .loading-dialog-msg {
-    margin: 0;
+  .maintenance-run-msg {
+    margin: 0 0 12px 0;
     font-size: 0.9rem;
     color: #ccc;
     line-height: 1.4;
   }
 
-  .dialog-actions {
-    justify-content: center;
-    margin-top: 10px;
-    padding-top: 15px;
+  .maintenance-run-progress {
+    width: 100%;
+    accent-color: var(--primary-color, #e0ba6d);
   }
+
+  .maintenance-run-status {
+    margin: 8px 0 12px 0;
+    font-size: 0.9rem;
+    color: #ccc;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .maintenance-run-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 8px 0;
+  }
+
+  .maintenance-run-meta {
+    margin: 0 0 12px 0;
+    font-size: 0.9rem;
+    color: #a0a0a0;
+  }
+
+  .maintenance-run-log {
+    max-height: 40vh;
+    overflow: auto;
+    overscroll-behavior: contain;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color, #e0ba6d);
+      outline-offset: 2px;
+    }
+  }
+}
+
+/* The badge text carries the meaning; the colour only reinforces it. */
+.run-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--primary-color, #e0ba6d);
+  background: rgba(224, 186, 109, 0.12);
+  border: 1px solid rgba(224, 186, 109, 0.45);
+}
+
+.run-badge-failed {
+  color: #ff7b72;
+  background: rgba(255, 123, 114, 0.12);
+  border-color: rgba(255, 123, 114, 0.45);
+}
+
+.run-badge-dry {
+  color: #58a6ff;
+  background: rgba(88, 166, 255, 0.12);
+  border-color: rgba(88, 166, 255, 0.45);
 }
 
 /* Telemetry & Governor Dashboard Styles */

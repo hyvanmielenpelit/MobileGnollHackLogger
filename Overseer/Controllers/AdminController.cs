@@ -1299,43 +1299,68 @@ public class AdminController : ControllerBase
     }
 
     [HttpGet("maintenance/history")]
-    public async Task<IActionResult> GetMaintenanceHistory([FromQuery] int take = 20)
+    public async Task<IActionResult> GetMaintenanceHistory([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
-        take = Math.Clamp(take, 1, 100);
+        page = Math.Max(page, 1);
+        pageSize = Math.Clamp(pageSize, 1, 1000);
 
-        var rows = await _dbContext.MaintenanceRunLogs
-            .AsNoTracking()
+        var query = _dbContext.MaintenanceRunLogs.AsNoTracking();
+        var totalCount = await query.CountAsync();
+
+        var rows = await query
             .OrderByDescending(r => r.StartedUtc)
             .ThenByDescending(r => r.Id)
-            .Take(take)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(r => new MaintenanceRunLogDto
+            {
+                Id = r.Id,
+                StartedUtc = r.StartedUtc,
+                CompletedUtc = r.CompletedUtc,
+                Trigger = r.Trigger,
+                IsDryRun = r.IsDryRun,
+                Success = r.Success,
+                ElapsedMilliseconds = r.ElapsedMilliseconds,
+                SoftDeletedCount = r.SoftDeletedCount,
+                PurgedSessionCount = r.PurgedSessionCount,
+                PurgedMessageCount = r.PurgedMessageCount,
+                PurgedToolCallCount = r.PurgedToolCallCount,
+                PrunedToolResultCount = r.PrunedToolResultCount,
+                PrunedBenchmarkToolResultCount = r.PrunedBenchmarkToolResultCount,
+                PrunedAuditLogCount = r.PrunedAuditLogCount,
+                PrunedAiErrorLogCount = r.PrunedAiErrorLogCount,
+                DeletedDiskFolderCount = r.DeletedDiskFolderCount,
+                DeletedDiskFileCount = r.DeletedDiskFileCount,
+                SweptOrphanFolderCount = r.SweptOrphanFolderCount,
+                ReclaimedDiskBytes = r.ReclaimedDiskBytes,
+                ErrorMessage = r.ErrorMessage,
+                HasLog = r.LogText != null || r.ErrorMessage != null
+            })
             .ToListAsync();
 
-        var history = rows.Select(r => new MaintenanceRunLogDto
+        // SpecifyKind does not translate to SQL, so the kinds are fixed after materialisation.
+        foreach (var row in rows)
         {
-            Id = r.Id,
-            StartedUtc = DateTime.SpecifyKind(r.StartedUtc, DateTimeKind.Utc),
-            CompletedUtc = r.CompletedUtc.HasValue ? DateTime.SpecifyKind(r.CompletedUtc.Value, DateTimeKind.Utc) : null,
-            Trigger = r.Trigger,
-            IsDryRun = r.IsDryRun,
-            Success = r.Success,
-            ElapsedMilliseconds = r.ElapsedMilliseconds,
-            SoftDeletedCount = r.SoftDeletedCount,
-            PurgedSessionCount = r.PurgedSessionCount,
-            PurgedMessageCount = r.PurgedMessageCount,
-            PurgedToolCallCount = r.PurgedToolCallCount,
-            PrunedToolResultCount = r.PrunedToolResultCount,
-            PrunedBenchmarkToolResultCount = r.PrunedBenchmarkToolResultCount,
-            PrunedAuditLogCount = r.PrunedAuditLogCount,
-            PrunedAiErrorLogCount = r.PrunedAiErrorLogCount,
-            DeletedDiskFolderCount = r.DeletedDiskFolderCount,
-            DeletedDiskFileCount = r.DeletedDiskFileCount,
-            SweptOrphanFolderCount = r.SweptOrphanFolderCount,
-            ReclaimedDiskBytes = r.ReclaimedDiskBytes,
-            ErrorMessage = r.ErrorMessage,
-            LogText = r.LogText
-        }).ToList();
+            row.StartedUtc = DateTime.SpecifyKind(row.StartedUtc, DateTimeKind.Utc);
+            if (row.CompletedUtc.HasValue)
+            {
+                row.CompletedUtc = DateTime.SpecifyKind(row.CompletedUtc.Value, DateTimeKind.Utc);
+            }
+        }
 
-        return Ok(history);
+        return Ok(new MaintenanceHistoryPageDto { TotalCount = totalCount, Rows = rows });
+    }
+
+    [HttpGet("maintenance/history/{id:long}/log")]
+    public async Task<IActionResult> GetMaintenanceRunLog(long id)
+    {
+        var row = await _dbContext.MaintenanceRunLogs
+            .AsNoTracking()
+            .Where(r => r.Id == id)
+            .Select(r => new MaintenanceRunLogTextDto { ErrorMessage = r.ErrorMessage, LogText = r.LogText })
+            .FirstOrDefaultAsync();
+
+        return row == null ? NotFound() : Ok(row);
     }
 
     private static string DryRunPrefix(bool isDryRun) => isDryRun ? "[DRY RUN] " : "";

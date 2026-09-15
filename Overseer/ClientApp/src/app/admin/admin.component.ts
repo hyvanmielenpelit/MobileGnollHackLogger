@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, inject, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, OnDestroy, AfterViewInit, inject, ViewChild, ElementRef, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -12,6 +12,8 @@ import {
   ConfigFilter, createEmptyFilter, isFilterActive, matchesFilter, ROLE_OPTIONS
 } from './config-filter/config-filter.model';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
+import { TableState } from '../shared/data-table/table-state';
+import { TablePagerComponent } from '../shared/data-table/table-pager.component';
 import { Observable, Subject, Subscription } from 'rxjs';
 import { debounceTime } from 'rxjs/operators';
 
@@ -19,15 +21,22 @@ import { debounceTime } from 'rxjs/operators';
 export type AdminTabId =
   'users' | 'groups' | 'configs' | 'database' | 'devtools' | 'telemetry' | 'benchmark';
 
+/** Page sizes offered by the maintenance history pager; the first is the default. */
+export const MAINTENANCE_HISTORY_PAGE_SIZES: readonly number[] = [10, 50, 100, 500, 1000];
+
+/** The lifetime of one maintenance action in the run dialog. */
+export type MaintenanceRunPhase = 'running' | 'completed' | 'failed';
+
 @Component({
     selector: 'app-admin',
-    imports: [CommonModule, FormsModule, RouterModule, AiModelFormComponent, ConfigAnalyticsComponent, AdminBenchmarkComponent, ConfigFilterComponent, ProviderBadgeComponent],
+    imports: [CommonModule, FormsModule, RouterModule, AiModelFormComponent, ConfigAnalyticsComponent, AdminBenchmarkComponent, ConfigFilterComponent, ProviderBadgeComponent, TablePagerComponent],
     templateUrl: './admin.component.html',
     changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './admin.component.scss'
 })
-export class AdminComponent implements OnInit, OnDestroy {
+export class AdminComponent implements OnInit, OnDestroy, AfterViewInit {
   private adminService = inject(AdminService);
+  private cdr = inject(ChangeDetectorRef);
   
   activeTab: AdminTabId = 'users';
 
@@ -68,11 +77,32 @@ export class AdminComponent implements OnInit, OnDestroy {
   /** Day-count selects take the configured policy once, on the first metrics load. */
   private maintenanceDefaultsApplied = false;
   lastMaintenanceResult: MaintenanceResult | null = null;
+  /** The action name and client start time of `lastMaintenanceResult`, for the run dialog. */
+  private lastMaintenanceRunLabel = '';
+  lastMaintenanceRunStartedAt: Date | null = null;
+
+  /** The current page of maintenance runs; the server pages, filters nothing and sorts newest first. */
   maintenanceHistory: MaintenanceRunLog[] = [];
-  maintenanceHistoryTake = 20;
-  readonly maintenanceHistoryMaxTake = 100;
+  readonly maintenanceHistoryTable = new TableState<MaintenanceRunLog>(
+    'startedUtc', 'desc', { pageSizes: MAINTENANCE_HISTORY_PAGE_SIZES });
+  maintenanceHistoryTotal = 0;
   maintenanceHistoryLoading = false;
   expandedHistoryRunId: number | null = null;
+  historyLogLoadingId: number | null = null;
+  /** Discards a page response that a later page request has superseded. */
+  private maintenanceHistoryRequest = 0;
+  private static readonly MAINTENANCE_PAGE_SIZE_KEY = 'overseer.admin.maintenanceHistory.pageSize';
+
+  // Maintenance run dialog
+  maintenanceRunPhase: MaintenanceRunPhase = 'running';
+  maintenanceRunTitle = '';
+  maintenanceRunMessage = '';
+  /** The full pass lists its ordered steps while running. */
+  maintenanceRunShowsSteps = false;
+  maintenanceRunElapsedMs = 0;
+  private maintenanceRunLabel = '';
+  private maintenanceRunStartedAt: Date | null = null;
+  private maintenanceRunTimer?: ReturnType<typeof setInterval>;
 
   users: UserDto[] = [];
   groups: GroupDto[] = [];
@@ -238,13 +268,10 @@ export class AdminComponent implements OnInit, OnDestroy {
   
   @ViewChild('analyticsDialog') analyticsDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('adminToast') adminToast?: ElementRef<HTMLElement>;
-  @ViewChild('maintenanceLoadingDialog') maintenanceLoadingDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('maintenanceRunDialog') maintenanceRunDialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild('maintenanceRunHeading') maintenanceRunHeading?: ElementRef<HTMLElement>;
   analyticsConfigId: number = 0;
   analyticsConfigName: string = '';
-
-  // Maintenance Loading Modal State
-  maintenanceLoadingTitle = 'Executing Operation';
-  maintenanceLoadingMessage = 'Please wait while the server processes your request...';
 
   // Generic Confirm State
   confirmTitle?: string;
@@ -290,6 +317,7 @@ export class AdminComponent implements OnInit, OnDestroy {
   ngOnInit() {
     ensureOverlayPolyfills();
     this.restoreConfigFilter();
+    this.restoreMaintenanceHistoryPageSize();
     this.todayDate = this.formatLocalDate(new Date());
 
     this.filterSub = this.filterSubject.pipe(
@@ -364,6 +392,30 @@ export class AdminComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     this.filterSub?.unsubscribe();
+    this.stopMaintenanceRunTimer();
+  }
+
+  /**
+   * Light-dismiss for the maintenance run dialog where `closedby` is unsupported. A backdrop
+   * click reports the dialog itself as the target, so a hit outside its border box closes it.
+   * A running action is never light-dismissed, matching the `closedby` binding.
+   */
+  ngAfterViewInit(): void {
+    if ('closedBy' in HTMLDialogElement.prototype) {
+      return;
+    }
+    const dialog = this.maintenanceRunDialog?.nativeElement;
+    dialog?.addEventListener('click', (event: MouseEvent) => {
+      if (event.target !== dialog || this.maintenanceRunPhase === 'running') {
+        return;
+      }
+      const rect = dialog.getBoundingClientRect();
+      const inside = rect.top <= event.clientY && event.clientY <= rect.top + rect.height
+        && rect.left <= event.clientX && event.clientX <= rect.left + rect.width;
+      if (!inside) {
+        this.closeMaintenanceRunDialog();
+      }
+    });
   }
 
   openAnalytics(config: SystemAiConfigDto) {
@@ -774,22 +826,102 @@ export class AdminComponent implements OnInit, OnDestroy {
     this.closeConfirmDialog();
   }
 
-  // --- Maintenance Loading Modal ---
-  openLoadingModal(title: string, message: string) {
-    this.maintenanceLoadingTitle = title;
-    this.maintenanceLoadingMessage = message;
-    if (this.maintenanceLoadingDialog?.nativeElement && !this.maintenanceLoadingDialog.nativeElement.open) {
+  // --- Maintenance Run Dialog ---
+
+  /**
+   * Opens the run dialog in its running phase. `label` names the action in the result title;
+   * `title` is the heading while it runs.
+   */
+  openMaintenanceRunDialog(label: string, title: string, message: string, showsSteps = false) {
+    this.stopMaintenanceRunTimer();
+    this.maintenanceRunLabel = label;
+    this.maintenanceRunTitle = title;
+    this.maintenanceRunMessage = message;
+    this.maintenanceRunShowsSteps = showsSteps;
+    this.maintenanceRunPhase = 'running';
+    this.maintenanceRunElapsedMs = 0;
+    this.maintenanceRunStartedAt = new Date();
+    const started = Date.now();
+    this.maintenanceRunTimer = setInterval(() => {
+      this.maintenanceRunElapsedMs = Date.now() - started;
+    }, 100);
+    this.showMaintenanceRunDialog();
+  }
+
+  /** Switches the dialog to the result in place. A hidden dialog stays hidden. */
+  completeMaintenanceRun(result: MaintenanceResult) {
+    this.stopMaintenanceRunTimer();
+    this.lastMaintenanceResult = result;
+    this.lastMaintenanceRunLabel = this.maintenanceRunLabel;
+    this.lastMaintenanceRunStartedAt = this.maintenanceRunStartedAt;
+    this.showResultPhase();
+    this.focusMaintenanceRunHeading();
+  }
+
+  /** Records a request that never produced a result as a failed run, and shows it. */
+  failMaintenanceRun(message: string) {
+    this.completeMaintenanceRun({
+      success: false, isDryRun: this.maintenanceDryRun, softDeletedCount: 0, purgedSessionCount: 0,
+      purgedMessageCount: 0, purgedToolCallCount: 0, prunedToolResultCount: 0,
+      prunedBenchmarkToolResultCount: 0, deletedDiskFolderCount: 0, deletedDiskFileCount: 0,
+      reclaimedDiskBytes: 0, sweptOrphanFolderCount: 0, prunedAuditLogCount: 0, prunedAiErrorLogCount: 0,
+      elapsedMilliseconds: this.maintenanceRunElapsedMs, trigger: 'Manual', errorMessage: message, logs: []
+    });
+  }
+
+  /** Hides the dialog. A running request is not cancelled; its result still lands. */
+  closeMaintenanceRunDialog() {
+    this.stopMaintenanceRunTimer();
+    const dialog = this.maintenanceRunDialog?.nativeElement;
+    if (dialog?.open) {
       try {
-        this.maintenanceLoadingDialog.nativeElement.showModal();
+        dialog.close();
       } catch {}
     }
   }
 
-  closeLoadingModal() {
-    if (this.maintenanceLoadingDialog?.nativeElement?.open) {
+  onMaintenanceRunCancel(event: Event) {
+    event.preventDefault();
+    this.closeMaintenanceRunDialog();
+  }
+
+  viewLastMaintenanceResult() {
+    if (!this.lastMaintenanceResult) {
+      return;
+    }
+    this.maintenanceRunLabel = this.lastMaintenanceRunLabel;
+    this.showResultPhase();
+    this.showMaintenanceRunDialog();
+  }
+
+  private showResultPhase() {
+    const result = this.lastMaintenanceResult!;
+    this.maintenanceRunPhase = result.success ? 'completed' : 'failed';
+    this.maintenanceRunTitle = `${this.lastMaintenanceRunLabel}: ${result.success ? 'Completed' : 'Failed'}`;
+  }
+
+  private showMaintenanceRunDialog() {
+    const dialog = this.maintenanceRunDialog?.nativeElement;
+    if (dialog && !dialog.open) {
       try {
-        this.maintenanceLoadingDialog.nativeElement.close();
+        dialog.showModal();
       } catch {}
+    }
+  }
+
+  /** The Hide button disappears with the running phase, so focus moves to the heading instead. */
+  private focusMaintenanceRunHeading() {
+    if (!this.maintenanceRunDialog?.nativeElement.open) {
+      return;
+    }
+    this.cdr.detectChanges();
+    this.maintenanceRunHeading?.nativeElement.focus();
+  }
+
+  private stopMaintenanceRunTimer() {
+    if (this.maintenanceRunTimer !== undefined) {
+      clearInterval(this.maintenanceRunTimer);
+      this.maintenanceRunTimer = undefined;
     }
   }
 
@@ -1455,33 +1587,96 @@ export class AdminComponent implements OnInit, OnDestroy {
     return rows;
   }
 
-  loadMaintenanceHistory() {
+  /** Fetches the history page the table state points at. The previous rows stay until it arrives. */
+  loadMaintenanceHistory(resetToFirstPage = false) {
+    const state = this.maintenanceHistoryTable;
+    if (resetToFirstPage) {
+      state.page = 1;
+    }
+    const request = ++this.maintenanceHistoryRequest;
     this.maintenanceHistoryLoading = true;
-    this.adminService.getMaintenanceHistory(this.maintenanceHistoryTake).subscribe({
-      next: (rows) => {
-        this.maintenanceHistory = rows;
+    this.adminService.getMaintenanceHistory(state.page, state.pageSize).subscribe({
+      next: (res) => {
+        if (request !== this.maintenanceHistoryRequest) {
+          return;
+        }
+        // A prune can shrink the history under the current page; fetch the last page that exists.
+        const lastPage = Math.max(1, Math.ceil(res.totalCount / state.pageSize));
+        if (res.rows.length === 0 && state.page > lastPage) {
+          state.page = lastPage;
+          this.loadMaintenanceHistory();
+          return;
+        }
+        this.maintenanceHistory = res.rows;
+        this.maintenanceHistoryTotal = res.totalCount;
+        state.setRemoteTotal(res.totalCount);
+        this.expandedHistoryRunId = null;
+        this.historyLogLoadingId = null;
         this.maintenanceHistoryLoading = false;
       },
       error: (err) => {
+        if (request !== this.maintenanceHistoryRequest) {
+          return;
+        }
         console.error('Failed to load maintenance history', err);
         this.maintenanceHistoryLoading = false;
       }
     });
   }
 
-  loadMoreMaintenanceHistory() {
-    this.maintenanceHistoryTake = Math.min(this.maintenanceHistoryMaxTake, this.maintenanceHistoryTake + 20);
+  onMaintenanceHistoryPageChanged() {
+    this.persistMaintenanceHistoryPageSize();
     this.loadMaintenanceHistory();
   }
 
-  /** More rows may exist when the last load filled the page and the cap is not reached. */
-  canLoadMoreMaintenanceHistory(): boolean {
-    return this.maintenanceHistory.length >= this.maintenanceHistoryTake
-      && this.maintenanceHistoryTake < this.maintenanceHistoryMaxTake;
+  private persistMaintenanceHistoryPageSize() {
+    try {
+      localStorage.setItem(
+        AdminComponent.MAINTENANCE_PAGE_SIZE_KEY, String(this.maintenanceHistoryTable.pageSize));
+    } catch {
+      // Storage can throw in private-browsing modes; the size then lasts only for this visit.
+    }
   }
 
-  toggleHistoryLog(id: number) {
-    this.expandedHistoryRunId = this.expandedHistoryRunId === id ? null : id;
+  restoreMaintenanceHistoryPageSize() {
+    let stored: string | null;
+    try {
+      stored = localStorage.getItem(AdminComponent.MAINTENANCE_PAGE_SIZE_KEY);
+    } catch {
+      return;
+    }
+    const size = Number(stored);
+    if (stored && MAINTENANCE_HISTORY_PAGE_SIZES.includes(size)) {
+      this.maintenanceHistoryTable.pageSize = size;
+    }
+  }
+
+  /** Expands or collapses a run's log, fetching its text on the first expansion only. */
+  toggleHistoryLog(run: MaintenanceRunLog) {
+    if (this.expandedHistoryRunId === run.id) {
+      this.expandedHistoryRunId = null;
+      return;
+    }
+    this.expandedHistoryRunId = run.id;
+    if (!run.hasLog || run.logText !== undefined || this.historyLogLoadingId === run.id) {
+      return;
+    }
+    this.historyLogLoadingId = run.id;
+    this.adminService.getMaintenanceRunLog(run.id).subscribe({
+      next: (text) => {
+        run.logText = text.logText ?? null;
+        run.errorMessage = text.errorMessage ?? run.errorMessage ?? null;
+        if (this.historyLogLoadingId === run.id) {
+          this.historyLogLoadingId = null;
+        }
+      },
+      error: (err) => {
+        if (this.historyLogLoadingId === run.id) {
+          this.historyLogLoadingId = null;
+        }
+        this.showAdminToast('Failed to load the run log: ' + (err.error?.message || err.message), 'error', 'Error');
+      }
+    });
   }
 
   private applyMaintenanceDefaults(m: DatabaseStorageMetrics) {
@@ -1497,14 +1692,15 @@ export class AdminComponent implements OnInit, OnDestroy {
     if (p.pruneDismissedAiErrorLogDays > 0) this.aiErrorLogPruneDays = p.pruneDismissedAiErrorLogDays;
   }
 
-  loadStorageMetrics(showFeedback = false) {
+  /** `resetHistoryPage` returns the history to page 1, so a run that just finished is in view. */
+  loadStorageMetrics(showFeedback = false, resetHistoryPage = false) {
     this.storageLoading = true;
     this.adminService.getStorageMetrics().subscribe({
       next: (data) => {
         this.storageMetrics = data;
         this.applyMaintenanceDefaults(data);
         this.storageLoading = false;
-        this.loadMaintenanceHistory();
+        this.loadMaintenanceHistory(resetHistoryPage);
         if (showFeedback) {
           this.showAdminToast('Database storage metrics refreshed.', 'info', 'Metrics Refreshed');
         }
@@ -1523,11 +1719,13 @@ export class AdminComponent implements OnInit, OnDestroy {
     const execute = () => {
       this.maintenanceLoading = true;
       this.lastMaintenanceResult = null;
-      this.openLoadingModal(
+      this.openMaintenanceRunDialog(
+        this.maintenanceDryRun ? 'Maintenance Pass Preview' : 'Maintenance Pass',
         this.maintenanceDryRun ? 'Previewing Maintenance Pass' : 'Executing Maintenance Pass',
         this.maintenanceDryRun
           ? 'Computing dry-run maintenance metrics...'
-          : 'Running the full maintenance pass (sessions, trash, payloads, orphan folders, access journal and dismissed AI errors)...'
+          : 'Running the full maintenance pass (sessions, trash, payloads, orphan folders, access journal and dismissed AI errors)...',
+        true
       );
 
       this.adminService.runMaintenanceNow({
@@ -1536,9 +1734,8 @@ export class AdminComponent implements OnInit, OnDestroy {
         toolCallPruneDays: this.toolCallPruneDays
       }).subscribe({
         next: (res) => {
-          this.closeLoadingModal();
           this.maintenanceLoading = false;
-          this.lastMaintenanceResult = res;
+          this.completeMaintenanceRun(res);
           const mb = (res.reclaimedDiskBytes / 1024 / 1024).toFixed(2);
           const detail = res.isDryRun
             ? `Dry run identified ${res.softDeletedCount} inactive sessions, ${res.prunedToolResultCount} tool payloads.`
@@ -1548,13 +1745,14 @@ export class AdminComponent implements OnInit, OnDestroy {
             'success',
             res.isDryRun ? 'Dry Run Completed' : 'Full Maintenance Completed'
           );
-          this.loadStorageMetrics();
+          this.loadStorageMetrics(false, true);
         },
         error: (err) => {
-          this.closeLoadingModal();
           this.maintenanceLoading = false;
+          const reason = err.error?.message || err.message;
+          this.failMaintenanceRun(reason);
           this.showAdminToast(
-            'Failed to execute maintenance pass: ' + (err.error?.message || err.message),
+            'Failed to execute maintenance pass: ' + reason,
             'error',
             'Maintenance Error'
           );
@@ -1593,21 +1791,24 @@ export class AdminComponent implements OnInit, OnDestroy {
     const execute = () => {
       this.maintenanceLoading = true;
       this.lastMaintenanceResult = null;
-      this.openLoadingModal(dryRun ? `Previewing: ${action.title}` : action.title, action.loadingMessage);
+      this.openMaintenanceRunDialog(
+        dryRun ? `${action.title} (Preview)` : action.title,
+        dryRun ? `Previewing: ${action.title}` : action.title,
+        action.loadingMessage);
       action.call(dryRun).subscribe({
         next: (res) => {
-          this.closeLoadingModal();
           this.maintenanceLoading = false;
-          this.lastMaintenanceResult = res;
+          this.completeMaintenanceRun(res);
           const summary = res.logs.length > 0 ? res.logs[res.logs.length - 1] : `${action.title} completed.`;
           this.showAdminToast(summary, 'success', res.isDryRun ? 'Dry Run Completed' : action.title);
-          this.loadStorageMetrics();
+          this.loadStorageMetrics(false, true);
         },
         error: (err) => {
-          this.closeLoadingModal();
           this.maintenanceLoading = false;
+          const reason = err.error?.message || err.message;
+          this.failMaintenanceRun(reason);
           this.showAdminToast(
-            `${action.errorPrefix}: ` + (err.error?.message || err.message),
+            `${action.errorPrefix}: ` + reason,
             'error',
             'Maintenance Error'
           );
@@ -1716,13 +1917,14 @@ export class AdminComponent implements OnInit, OnDestroy {
 
   sendDiagnosticEmail() {
     this.maintenanceLoading = true;
-    this.openLoadingModal(
+    this.openMaintenanceRunDialog(
+      'Diagnostic Report',
       'Sending Diagnostic Report',
       'Generating storage metrics and dispatching diagnostic email...'
     );
     this.adminService.sendReportEmail().subscribe({
       next: (res) => {
-        this.closeLoadingModal();
+        this.closeMaintenanceRunDialog();
         this.maintenanceLoading = false;
         this.showAdminToast(
           res.message,
@@ -1731,7 +1933,7 @@ export class AdminComponent implements OnInit, OnDestroy {
         );
       },
       error: (err) => {
-        this.closeLoadingModal();
+        this.closeMaintenanceRunDialog();
         this.maintenanceLoading = false;
         this.showAdminToast(
           'Failed to send report email: ' + (err.error?.message || err.message),

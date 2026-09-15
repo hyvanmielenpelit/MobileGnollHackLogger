@@ -1,5 +1,7 @@
 /**
- * Filter / sort / page arithmetic shared by the benchmark tables.
+ * Filter / sort / page arithmetic shared by the benchmark tables. With a remote total set it
+ * drives a server-paged table instead: the rows it is given are already the current page, and
+ * only the page arithmetic applies.
  *
  * Deliberately free of any Angular dependency: it holds no injectables, touches no DOM and
  * emits no events, so it unit-tests as plain TypeScript and a component owns it as an
@@ -54,20 +56,41 @@ export const PAGE_SIZES = [10, 20, 50, 100] as const;
 /** The elision marker `pageNumbers()` puts between page runs. */
 export const PAGE_ELLIPSIS = '…';
 
+/** Optional construction settings for a `TableState`. */
+export interface TableStateOptions {
+  /** The page sizes the pager offers; the first is the initial size. Defaults to `PAGE_SIZES`. */
+  readonly pageSizes?: readonly number[];
+}
+
 export class TableState<T> {
   page = 1;
-  pageSize = 10;
+  pageSize: number;
   sortColumn: string;
   sortDirection: SortDirection;
   readonly filters: Record<string, string> = {};
-  readonly pageSizes = PAGE_SIZES;
+  readonly pageSizes: readonly number[];
+
+  /**
+   * The server's row count for a server-paged table, or null for a local one. While set, the
+   * rows handed to every method are the current page only: filters and sort are inert, and
+   * the page arithmetic counts this total instead of the rows.
+   */
+  remoteTotal: number | null = null;
 
   private readonly sortAccessors: Record<string, SortAccessor<T>> = {};
   private readonly filterDefinitions: Record<string, FilterDefinition<T>> = {};
 
-  constructor(defaultSortColumn: string, defaultSortDirection: SortDirection = 'desc') {
+  constructor(defaultSortColumn: string, defaultSortDirection: SortDirection = 'desc',
+              options: TableStateOptions = {}) {
     this.sortColumn = defaultSortColumn;
     this.sortDirection = defaultSortDirection;
+    this.pageSizes = options.pageSizes ?? PAGE_SIZES;
+    this.pageSize = this.pageSizes[0];
+  }
+
+  /** Switches to server paging with the given total, or back to local paging with null. */
+  setRemoteTotal(total: number | null): void {
+    this.remoteTotal = total === null ? null : Math.max(0, Math.trunc(total));
   }
 
   /**
@@ -99,6 +122,10 @@ export class TableState<T> {
    * in server order however often the view is re-read.
    */
   view(rows: readonly T[]): T[] {
+    if (this.remoteTotal !== null) {
+      this.clampPage(this.remoteTotal);
+      return rows.slice();
+    }
     const filtered = this.applyFilters(rows);
     const page = this.clampPage(filtered.length);
     const start = (page - 1) * this.pageSize;
@@ -110,11 +137,17 @@ export class TableState<T> {
    * not just the visible page, so they read this instead of `view`.
    */
   viewAll(rows: readonly T[]): T[] {
+    if (this.remoteTotal !== null) {
+      return rows.slice();
+    }
     return this.applySort(this.applyFilters(rows));
   }
 
-  /** How many rows survive the active filters. */
+  /** How many rows survive the active filters, or the server's total for a server-paged table. */
   filteredCount(rows: readonly T[]): number {
+    if (this.remoteTotal !== null) {
+      return this.remoteTotal;
+    }
     return this.applyFilters(rows).length;
   }
 
@@ -124,6 +157,9 @@ export class TableState<T> {
    * different messages.
    */
   noMatches(rows: readonly T[]): boolean {
+    if (this.remoteTotal !== null) {
+      return false;
+    }
     return rows.length > 0 && this.filteredCount(rows) === 0;
   }
 
@@ -224,6 +260,9 @@ export class TableState<T> {
   }
 
   get hasActiveFilters(): boolean {
+    if (this.remoteTotal !== null) {
+      return false;
+    }
     return this.activeFilterColumns().length > 0;
   }
 

@@ -2,9 +2,9 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { AdminComponent } from './admin.component';
-import { AdminService, UsersResponse, GroupDto, SystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult } from '../services/admin.service';
+import { AdminService, UsersResponse, GroupDto, SystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult, MaintenanceRunLog } from '../services/admin.service';
 import { createEmptyFilter } from './config-filter/config-filter.model';
 
 describe('AdminComponent', () => {
@@ -465,7 +465,107 @@ describe('AdminComponent', () => {
 
     beforeEach(() => {
       spyOn(adminService, 'getStorageMetrics').and.returnValue(of(metrics()));
-      spyOn(adminService, 'getMaintenanceHistory').and.returnValue(of([]));
+      spyOn(adminService, 'getMaintenanceHistory').and.returnValue(of({ totalCount: 0, rows: [] }));
+    });
+
+    const historyRun = (id: number, hasLog: boolean): MaintenanceRunLog => ({
+      id, startedUtc: '2026-09-15T03:00:00Z', trigger: 'Scheduled', isDryRun: false, success: true,
+      elapsedMilliseconds: 10, softDeletedCount: 0, purgedSessionCount: 0, purgedMessageCount: 0,
+      purgedToolCallCount: 0, prunedToolResultCount: 0, prunedBenchmarkToolResultCount: 0,
+      prunedAuditLogCount: 0, prunedAiErrorLogCount: 0, deletedDiskFolderCount: 0, deletedDiskFileCount: 0,
+      sweptOrphanFolderCount: 0, reclaimedDiskBytes: 0, errorMessage: null, hasLog
+    });
+
+    const runDialog = (): HTMLDialogElement =>
+      fixture.nativeElement.querySelector('dialog.maintenance-run-dialog');
+
+    it('opens the run dialog while running and switches it to the result in place', () => {
+      const response = new Subject<MaintenanceResult>();
+      spyOn(adminService, 'runMaintenanceNow').and.returnValue(response.asObservable());
+      fixture.detectChanges();
+
+      component.maintenanceDryRun = true;
+      component.runFullMaintenance();
+
+      expect(component.maintenanceRunPhase).toBe('running');
+      expect(runDialog().open).toBeTrue();
+
+      response.next(result(true));
+      response.complete();
+
+      expect(component.maintenanceRunPhase).toBe('completed');
+      expect(component.lastMaintenanceResult?.isDryRun).toBeTrue();
+      expect(runDialog().open).toBeTrue();
+      expect(document.activeElement).toBe(fixture.nativeElement.querySelector('#maintenanceRunTitle'));
+
+      component.closeMaintenanceRunDialog();
+      expect(runDialog().open).toBeFalse();
+    });
+
+    it('switches the run dialog to the failed phase when the request errors', () => {
+      spyOn(adminService, 'runMaintenanceNow').and.returnValue(throwError(() => ({ message: 'boom' })));
+
+      component.maintenanceDryRun = true;
+      component.runFullMaintenance();
+
+      expect(component.maintenanceRunPhase).toBe('failed');
+      expect(component.lastMaintenanceResult?.success).toBeFalse();
+      expect(component.lastMaintenanceResult?.errorMessage).toBe('boom');
+      component.closeMaintenanceRunDialog();
+    });
+
+    it('re-fetches the history page the pager chose and persists the page size', () => {
+      const storageKey = 'overseer.admin.maintenanceHistory.pageSize';
+      const historySpy = adminService.getMaintenanceHistory as jasmine.Spy;
+      historySpy.calls.reset();
+      const state = component.maintenanceHistoryTable;
+      state.setRemoteTotal(300);
+      state.setPageSize(50);
+      state.setPage(3, component.maintenanceHistory);
+
+      component.onMaintenanceHistoryPageChanged();
+
+      expect(historySpy.calls.first().args).toEqual([3, 50]);
+      expect(localStorage.getItem(storageKey)).toBe('50');
+      localStorage.removeItem(storageKey);
+    });
+
+    it('restores only a page size from the allowed list', () => {
+      const storageKey = 'overseer.admin.maintenanceHistory.pageSize';
+
+      localStorage.setItem(storageKey, '7');
+      component.restoreMaintenanceHistoryPageSize();
+      expect(component.maintenanceHistoryTable.pageSize).toBe(10);
+
+      localStorage.setItem(storageKey, '500');
+      component.restoreMaintenanceHistoryPageSize();
+      expect(component.maintenanceHistoryTable.pageSize).toBe(500);
+
+      localStorage.removeItem(storageKey);
+    });
+
+    it('fetches a run log once and caches it on the row', () => {
+      const logSpy = spyOn(adminService, 'getMaintenanceRunLog')
+        .and.returnValue(of({ logText: 'line 1', errorMessage: null }));
+      const run = historyRun(7, true);
+
+      component.toggleHistoryLog(run);
+      expect(component.expandedHistoryRunId).toBe(7);
+      expect(run.logText).toBe('line 1');
+
+      component.toggleHistoryLog(run);
+      expect(component.expandedHistoryRunId).toBeNull();
+      component.toggleHistoryLog(run);
+
+      expect(logSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('never fetches a log for a run that has none', () => {
+      const logSpy = spyOn(adminService, 'getMaintenanceRunLog');
+
+      component.toggleHistoryLog(historyRun(8, false));
+
+      expect(logSpy).not.toHaveBeenCalled();
     });
 
     it('sends a day count chosen in the template select as a number, not a string', async () => {

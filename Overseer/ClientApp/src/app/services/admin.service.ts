@@ -406,8 +406,26 @@ export interface MaintenanceRunLog {
   deletedDiskFileCount: number;
   sweptOrphanFolderCount: number;
   reclaimedDiskBytes: number;
-  errorMessage?: string;
-  logText?: string;
+  errorMessage?: string | null;
+  /** True when the run has log text or an error message to fetch with `getMaintenanceRunLog`. */
+  hasLog: boolean;
+  /**
+   * Not sent by the history list. Undefined until `getMaintenanceRunLog` has filled it in;
+   * null afterwards when the run has no log text.
+   */
+  logText?: string | null;
+}
+
+/** One page of maintenance runs, newest first, with the total across all pages. */
+export interface MaintenanceHistoryPage {
+  totalCount: number;
+  rows: MaintenanceRunLog[];
+}
+
+/** The text of one maintenance run. */
+export interface MaintenanceRunLogText {
+  errorMessage?: string | null;
+  logText?: string | null;
 }
 
 @Injectable({
@@ -582,9 +600,13 @@ export class AdminService {
     return this.http.post<MaintenanceResult>('/api/admin/maintenance/sweep-orphans', request || {});
   }
 
-  /** Newest first; the server clamps take to 1..100. */
-  getMaintenanceHistory(take = 20): Observable<MaintenanceRunLog[]> {
-    return this.http.get<MaintenanceRunLog[]>('/api/admin/maintenance/history', { params: { take } });
+  /** Newest first; the server clamps page to at least 1 and pageSize to 1..1000. */
+  getMaintenanceHistory(page: number, pageSize: number): Observable<MaintenanceHistoryPage> {
+    return this.http.get<MaintenanceHistoryPage>('/api/admin/maintenance/history', { params: { page, pageSize } });
+  }
+
+  getMaintenanceRunLog(id: number): Observable<MaintenanceRunLogText> {
+    return this.http.get<MaintenanceRunLogText>(`/api/admin/maintenance/history/${id}/log`);
   }
 
   sendReportEmail(): Observable<{ success: boolean; message: string }> {

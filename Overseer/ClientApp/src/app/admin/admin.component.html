@@ -731,43 +731,20 @@
                 </div>
               </fieldset>
 
-              <!-- Last Maintenance Result Console -->
+              <!-- Last Maintenance Result -->
               @if (lastMaintenanceResult) {
-                <fieldset class="permissions-fieldset mt-20">
-                  <legend>Maintenance Execution Results {{ lastMaintenanceResult.isDryRun ? '(Dry Run)' : '' }}</legend>
-                  <div class="result-console mt-10">
-                    <div class="result-summary mb-10">
-                      <strong>Status:</strong> {{ lastMaintenanceResult.success ? 'Success' : 'Failed' }} &bull;
-                      <strong>Trigger:</strong> {{ lastMaintenanceResult.trigger }} &bull;
-                      <strong>Elapsed:</strong> {{ lastMaintenanceResult.elapsedMilliseconds }} ms
-                    </div>
-                    @if (lastMaintenanceResult.errorMessage) {
-                      <div class="result-error mb-10">{{ lastMaintenanceResult.errorMessage }}</div>
-                    }
-                    @if (maintenanceResultCounts(lastMaintenanceResult); as counts) {
-                      @if (counts.length > 0) {
-                        <dl class="result-counts mb-10">
-                          @for (c of counts; track c.label) {
-                            <div><dt>{{ c.label }}</dt><dd>{{ c.value }}</dd></div>
-                          }
-                        </dl>
-                      } @else {
-                        <div class="mb-10">Nothing to remove.</div>
-                      }
-                    }
-                    <ul class="result-logs">
-                      @for (log of lastMaintenanceResult.logs; track log) {
-                        <li>{{ log }}</li>
-                      }
-                    </ul>
-                  </div>
-                </fieldset>
+                <p class="last-run-line mt-10" role="status">
+                  <strong>Last run:</strong> {{ lastMaintenanceResult.success ? 'Success' : 'Failed' }} &bull;
+                  {{ lastMaintenanceResult.trigger }} &bull; {{ lastMaintenanceResult.elapsedMilliseconds | number:'1.0-0' }} ms
+                  @if (lastMaintenanceResult.isDryRun) { &bull; Dry run }
+                  <button type="button" class="btn-gh btn-gh-small" (click)="viewLastMaintenanceResult()">View Details</button>
+                </p>
               }
 
               <!-- Maintenance History -->
               <fieldset class="permissions-fieldset mt-20">
-                <legend>Recent Maintenance Runs</legend>
-                @if (maintenanceHistory.length === 0) {
+                <legend>Recent Maintenance Runs ({{ maintenanceHistoryTotal | number:'1.0-0' }})</legend>
+                @if (maintenanceHistoryTotal === 0) {
                   <p class="text-muted">
                     @if (maintenanceHistoryLoading) {
                       <span class="gh-spinner-small"></span> Loading maintenance history...
@@ -776,8 +753,15 @@
                     }
                   </p>
                 } @else {
-                  <div class="table-responsive mt-10">
-                    <table class="admin-table modern-table history-table">
+                  <div class="history-pager-row mt-10">
+                    <app-table-pager [state]="maintenanceHistoryTable" [rows]="maintenanceHistory" noun="runs"
+                                     (changed)="onMaintenanceHistoryPageChanged()"></app-table-pager>
+                    @if (maintenanceHistoryLoading) {
+                      <span class="history-loading text-muted" aria-hidden="true"><span class="gh-spinner-small"></span> Loading…</span>
+                    }
+                  </div>
+                  <div class="gh-datatable-scroll mt-10" [attr.aria-busy]="maintenanceHistoryLoading ? 'true' : null">
+                    <table class="gh-table gh-datatable history-table">
                       <thead>
                         <tr>
                           <th>Started (UTC)</th>
@@ -805,9 +789,9 @@
                             <td style="text-align: right;">{{ run.prunedAuditLogCount | number:'1.0-0' }}</td>
                             <td style="text-align: right;">{{ (run.deletedDiskFolderCount + run.sweptOrphanFolderCount) | number:'1.0-0' }}</td>
                             <td>
-                              @if (run.logText || run.errorMessage) {
+                              @if (run.hasLog) {
                                 <button type="button" class="btn-gh btn-secondary history-log-toggle"
-                                        (click)="toggleHistoryLog(run.id)"
+                                        (click)="toggleHistoryLog(run)"
                                         [attr.aria-expanded]="expandedHistoryRunId === run.id"
                                         [attr.aria-controls]="'maintenance-run-log-' + run.id">
                                   {{ expandedHistoryRunId === run.id ? 'Hide' : 'Show' }}
@@ -818,11 +802,15 @@
                           @if (expandedHistoryRunId === run.id) {
                             <tr class="history-log-row" [id]="'maintenance-run-log-' + run.id">
                               <td colspan="10">
-                                @if (run.errorMessage) {
-                                  <div class="result-error mb-10">{{ run.errorMessage }}</div>
-                                }
-                                @if (run.logText) {
-                                  <pre>{{ run.logText }}</pre>
+                                @if (historyLogLoadingId === run.id) {
+                                  <span class="gh-spinner-small"></span> Loading log...
+                                } @else {
+                                  @if (run.errorMessage) {
+                                    <div class="result-error mb-10">{{ run.errorMessage }}</div>
+                                  }
+                                  @if (run.logText) {
+                                    <pre>{{ run.logText }}</pre>
+                                  }
                                 }
                               </td>
                             </tr>
@@ -831,11 +819,8 @@
                       </tbody>
                     </table>
                   </div>
-                  @if (canLoadMoreMaintenanceHistory()) {
-                    <button type="button" class="btn-gh btn-secondary mt-10" (click)="loadMoreMaintenanceHistory()" [disabled]="maintenanceHistoryLoading">
-                      Load More
-                    </button>
-                  }
+                  <app-table-pager class="mt-10" [state]="maintenanceHistoryTable" [rows]="maintenanceHistory" noun="runs"
+                                   [announce]="false" (changed)="onMaintenanceHistoryPageChanged()"></app-table-pager>
                 }
               </fieldset>
             }
@@ -1200,14 +1185,81 @@
   </div>
 </dialog>
 
-<dialog #maintenanceLoadingDialog class="gh-dialog loading-dialog" (cancel)="closeLoadingModal()" role="dialog" aria-modal="true" aria-labelledby="maintenanceLoadingTitle" aria-describedby="maintenanceLoadingMsg">
-  <div class="loading-dialog-body">
-    <div class="loading-dialog-spinner" aria-hidden="true"></div>
-    <h3 id="maintenanceLoadingTitle">{{ maintenanceLoadingTitle || 'Executing Operation' }}</h3>
-    <p id="maintenanceLoadingMsg" class="loading-dialog-msg" aria-live="polite">{{ maintenanceLoadingMessage || 'Please wait while the server processes your request...' }}</p>
-  </div>
-  <div class="dialog-actions">
-    <button type="button" class="btn-gh btn-gh-cancel" (click)="closeLoadingModal()">Dismiss</button>
+<dialog #maintenanceRunDialog class="gh-dialog dialog-wide maintenance-run-dialog"
+        aria-labelledby="maintenanceRunTitle"
+        [attr.closedby]="maintenanceRunPhase === 'running' ? null : 'any'"
+        (cancel)="onMaintenanceRunCancel($event)">
+  <div class="dialog-content flex-col">
+    <h3 id="maintenanceRunTitle" #maintenanceRunHeading tabindex="-1">{{ maintenanceRunTitle }}</h3>
+    @if (maintenanceRunPhase === 'running') {
+      <p class="maintenance-run-msg">{{ maintenanceRunMessage }}</p>
+      <progress class="maintenance-run-progress" aria-label="Maintenance in progress"></progress>
+      <!-- The counter ticks every 100 ms, so it stays outside the live region. -->
+      <p class="maintenance-run-status" role="status">
+        Running… <span aria-hidden="true">{{ maintenanceRunElapsedMs / 1000 | number:'1.1-1' }} s</span>
+      </p>
+      @if (maintenanceRunShowsSteps && storageMetrics) {
+        <ol class="pass-steps text-muted">
+          <li>Expires sessions inactive over {{ inactivityDays }}d, and sessions past their own TTL (confidential sessions set to purge are removed outright)</li>
+          <li>Finds trash older than the {{ storageMetrics.policy.softDeleteGracePeriodDays }}d grace period</li>
+          <li>Permanently purges it, with its disk folders</li>
+          <li>Prunes chat tool payloads over {{ toolCallPruneDays }}d</li>
+          <li>Prunes benchmark tool payloads for runs over {{ storageMetrics.policy.pruneBenchmarkToolCallResultsDays }}d</li>
+          <li>Sweeps orphaned disk folders</li>
+          <li>Deletes access journal rows over {{ daysLabel(storageMetrics.policy.auditLogRetentionDays) }}</li>
+          <li>Deletes dismissed AI errors over {{ daysLabel(storageMetrics.policy.pruneDismissedAiErrorLogDays) }} since dismissal</li>
+          <li>Deletes maintenance history over {{ daysLabel(storageMetrics.policy.maintenanceHistoryRetentionDays) }}</li>
+        </ol>
+      }
+    } @else if (lastMaintenanceResult) {
+      <div class="maintenance-run-result">
+        <p class="maintenance-run-badges">
+          <span class="run-badge" [class.run-badge-failed]="!lastMaintenanceResult.success">{{ lastMaintenanceResult.success ? 'Success' : 'Failed' }}</span>
+          @if (lastMaintenanceResult.isDryRun) {
+            <span class="run-badge run-badge-dry">Dry run</span>
+          }
+        </p>
+        <p class="maintenance-run-meta">
+          <strong>Trigger:</strong> {{ lastMaintenanceResult.trigger }} &bull;
+          <strong>Elapsed:</strong> {{ lastMaintenanceResult.elapsedMilliseconds | number:'1.0-0' }} ms
+          @if (lastMaintenanceRunStartedAt) {
+            &bull; <strong>Started:</strong> {{ lastMaintenanceRunStartedAt | date:'HH:mm:ss' }}
+          }
+        </p>
+        <div class="result-console">
+          @if (lastMaintenanceResult.errorMessage) {
+            <div class="result-error mb-10">{{ lastMaintenanceResult.errorMessage }}</div>
+          }
+          @if (maintenanceResultCounts(lastMaintenanceResult); as counts) {
+            @if (counts.length > 0) {
+              <dl class="result-counts mb-10">
+                @for (c of counts; track c.label) {
+                  <div><dt>{{ c.label }}</dt><dd>{{ c.value }}</dd></div>
+                }
+              </dl>
+            } @else {
+              <div class="mb-10">Nothing to remove.</div>
+            }
+          }
+          @if (lastMaintenanceResult.logs.length > 0) {
+            <div class="maintenance-run-log" tabindex="0" role="region" aria-label="Run log">
+              <ul class="result-logs">
+                @for (log of lastMaintenanceResult.logs; track $index) {
+                  <li>{{ log }}</li>
+                }
+              </ul>
+            </div>
+          }
+        </div>
+      </div>
+    }
+    <div class="dialog-actions mt-auto pt-20">
+      @if (maintenanceRunPhase === 'running') {
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeMaintenanceRunDialog()">Hide</button>
+      } @else {
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeMaintenanceRunDialog()">Close</button>
+      }
+    </div>
   </div>
 </dialog>
 

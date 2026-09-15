@@ -388,6 +388,81 @@ describe('TableState', () => {
     });
   });
 
+  describe('remote mode', () => {
+    /** One server page of rows: ids in the order the server sent them. */
+    const pageRows = [
+      row('#9', 'b', 'Failed', 10),
+      row('#8', 'a', 'Completed', 90),
+      row('#7', 'c', 'Completed', 50)
+    ];
+
+    it('returns the rows untouched, ignoring sort and filters', () => {
+      const state = stateFor('score', 'desc');
+      state.setFilter('status', 'Failed');
+      state.setRemoteTotal(47);
+
+      expect(state.view(pageRows).map(r => r.id)).toEqual(['#9', '#8', '#7']);
+      expect(state.viewAll(pageRows).map(r => r.id)).toEqual(['#9', '#8', '#7']);
+      expect(state.hasActiveFilters).toBeFalse();
+      expect(state.noMatches(pageRows)).toBeFalse();
+    });
+
+    it('derives the page arithmetic from the remote total', () => {
+      const state = stateFor();
+      state.setRemoteTotal(47);
+      state.setPage(2, pageRows);
+
+      expect(state.filteredCount(pageRows)).toBe(47);
+      expect(state.totalPages(pageRows)).toBe(5);
+      expect(state.rangeStart(pageRows)).toBe(11);
+      expect(state.rangeEnd(pageRows)).toBe(20);
+      expect(state.pageNumbers(pageRows)).toEqual([1, 2, 3, 4, 5]);
+      expect(state.hasPrevious(pageRows)).toBeTrue();
+      expect(state.hasNext(pageRows)).toBeTrue();
+
+      state.setPage(5, pageRows);
+      expect(state.rangeEnd(pageRows)).toBe(47);
+      expect(state.hasNext(pageRows)).toBeFalse();
+    });
+
+    it('clamps the page when the remote total shrinks', () => {
+      const state = stateFor();
+      state.setRemoteTotal(47);
+      state.setPage(5, pageRows);
+
+      state.setRemoteTotal(12);
+
+      expect(state.totalPages(pageRows)).toBe(2);
+      expect(state.page).toBe(2);
+    });
+
+    it('treats a negative total as zero', () => {
+      const state = stateFor();
+      state.setRemoteTotal(-3);
+
+      expect(state.remoteTotal).toBe(0);
+      expect(state.rangeStart(pageRows)).toBe(0);
+    });
+
+    it('returns to local behaviour when the remote total is cleared', () => {
+      const state = stateFor('score', 'desc');
+      state.setRemoteTotal(47);
+      state.setRemoteTotal(null);
+
+      expect(state.filteredCount(pageRows)).toBe(3);
+      expect(state.view(pageRows).map(r => r.id)).toEqual(['#8', '#7', '#9']);
+    });
+  });
+
+  describe('page-size option', () => {
+    it('honours a custom page-size list and starts at its first entry', () => {
+      const state = new TableState<Row>('score', 'desc', { pageSizes: [25, 250] });
+
+      expect(state.pageSizes).toEqual([25, 250]);
+      expect(state.pageSize).toBe(25);
+    });
+  });
+
   describe('ariaSort', () => {
     it('names the direction of the sorted column and nothing else', () => {
       const state = stateFor('score', 'desc');

@@ -252,7 +252,7 @@ public class MaintenanceResultDto
     public List<string> Logs { get; set; } = new();
 }
 
-/// <summary>A flat mirror of <c>MaintenanceRunLog</c>.</summary>
+/// <summary>A flat mirror of <c>MaintenanceRunLog</c> without its log text.</summary>
 public class MaintenanceRunLogDto
 {
     public long Id { get; set; }
@@ -274,6 +274,22 @@ public class MaintenanceRunLogDto
     public int DeletedDiskFileCount { get; set; }
     public int SweptOrphanFolderCount { get; set; }
     public long ReclaimedDiskBytes { get; set; }
+    public string? ErrorMessage { get; set; }
+
+    /// <summary>True when the run has log text or an error message to fetch from the log endpoint.</summary>
+    public bool HasLog { get; set; }
+}
+
+/// <summary>One page of maintenance runs, newest first.</summary>
+public class MaintenanceHistoryPageDto
+{
+    public int TotalCount { get; set; }
+    public List<MaintenanceRunLogDto> Rows { get; set; } = new();
+}
+
+/// <summary>The text of one maintenance run, fetched when its history row is expanded.</summary>
+public class MaintenanceRunLogTextDto
+{
     public string? ErrorMessage { get; set; }
     public string? LogText { get; set; }
 }
