@@ -52,6 +52,10 @@ All retention policies are configured under `"ChatRetentionSettings"` in `appset
   "InactivityTtlDays": 90,
   "SoftDeleteGracePeriodDays": 30,
   "PruneToolCallResultsDays": 30,
+  "PruneBenchmarkToolCallResultsDays": 90,
+  "AuditLogRetentionDays": 365,
+  "PruneDismissedAiErrorLogDays": 90,
+  "MaintenanceHistoryRetentionDays": 180,
   "MaintenanceRunHourUtc": 3,
   "DatabaseMaxSizeMbOverride": 0,
   "DatabaseWarningThresholdPercent": 75,
@@ -69,6 +73,10 @@ All retention policies are configured under `"ChatRetentionSettings"` in `appset
 | **Inactivity Soft-Delete** | `InactivityTtlDays` | `90` | Active unpinned sessions with no message activity for > 90 days are soft-deleted with `DeletionReason = "Inactivity"`. |
 | **Trash Grace Period** | `SoftDeleteGracePeriodDays` | `30` | Soft-deleted sessions remain recoverable in Trash for 30 days. After 30 days, they are permanently purged during daily maintenance. |
 | **Tool Payload Pruning** | `PruneToolCallResultsDays` | `30` | Large JSON payloads in `ChatMessageToolCall.Result` and `ArgsText` older than 30 days are set to `NULL` to reclaim table space. Message history and transcripts remain intact. |
+| **Benchmark Payload Pruning** | `PruneBenchmarkToolCallResultsDays` | `90` | `BenchmarkRunAnswerToolCall.Result` and `ArgsText` are set to `NULL` once the run's `StartedAtUtc` is older than this. Names, statuses and timings are kept. |
+| **Access Journal Retention** | `AuditLogRetentionDays` | `365` | `ChatAccessAuditLog` rows older than this are deleted. `0` disables pruning. The only setting that removes an audit row; the Admin **Prune Access Journal** button applies the same window on demand. |
+| **Dismissed AI Error Pruning** | `PruneDismissedAiErrorLogDays` | `90` | `SystemAiErrorLog` rows dismissed more than this many days ago are deleted. `0` disables pruning. **Undismissed errors are never pruned**: an alert nobody acknowledged is not expired silently, and the Database tab shows their count instead. |
+| **Maintenance History Retention** | `MaintenanceHistoryRetentionDays` | `180` | `MaintenanceRunLog` rows older than this are deleted. `0` disables pruning. |
 | **Daily Schedule** | `MaintenanceRunHourUtc` | `3` (03:00 UTC) | Automated maintenance pass runs daily at 03:00 UTC (and 60 seconds after server startup). |
 | **Size Limit Override** | `DatabaseMaxSizeMbOverride` | `0` (auto-detect) | Forces the capacity ceiling in MB, overriding detection. Use it to pre-configure a limit before an upgrade, or to budget Overseer to less than the engine allows on a shared instance. The panel labels an overridden ceiling as a *Budget* rather than a *Limit*. |
 | **Warning Threshold** | `DatabaseWarningThresholdPercent` | `75` (%) | Percentage of the resolved limit that triggers a Warning email report to `ReportEmailAddress` (throttled to 1 email/24h). |
@@ -162,24 +170,42 @@ both — and it has to, because in an encrypted session neither is searchable te
 - **Error Handling**: Wrapped in resilient try-catch logic with automatic 1-hour retry on unexpected database failures.
 
 ### 2. Full Maintenance Pass (`RunFullMaintenanceAsync`)
-When executed (either automatically by the background service or manually from the Admin dashboard), the maintenance engine carries out 5 distinct phases in sequence:
+When executed (either automatically by the background service or manually from the Admin dashboard), the maintenance engine carries out 9 phases in sequence, all in `ChatRetentionService`:
 
-1. **Soft-Delete Inactive Chats**:
-   - Queries `ChatSession` where `!IsDeleted && !IsPinned && LastMessageUtc < (Now - InactivityTtlDays)`.
+1. **Expire Inactive Chats** (`SoftDeleteInactiveSessionsAsync`):
+   - Queries `ChatSession` where `!IsDeleted && !IsPinned && LastMessageUtc < (Now - InactivityTtlDays) && EffectiveRetentionDays == null`.
    - Updates `IsDeleted = true`, `DeletedUtc = Now`, `DeletionReason = "Inactivity"`.
+   - Then expires sessions past their own `EffectiveRetentionDays`, **purging** those with `ImmediatePurgeOnDelete` (see § 3a).
 2. **Identify Expired Trash**:
    - Queries `ChatSession` where `IsDeleted && DeletedUtc < (Now - SoftDeleteGracePeriodDays)`.
-3. **Purge Expired Trash & Attachments**:
+3. **Purge Expired Trash & Attachments** (`PermanentlyPurgeSessionsAsync`):
+   - Records an erasure audit row per session, then crypto-shreds the session keys.
    - For each expired session ID, deletes the folder `<ConversationsDataLocation>/<SessionId>` from physical disk.
    - Executes bulk delete in relational dependency order:
      1. `ChatMessageAttachment`
      2. `ChatMessageToolCall`
      3. `ChatMessage`
      4. `ChatSession`
-4. **Prune Aged Tool Results**:
+4. **Prune Aged Tool Results** (`PruneAgedToolCallResultsAsync`):
    - Updates `ChatMessageToolCall` where message timestamp is older than `PruneToolCallResultsDays`, setting `Result = NULL` and `ArgsText = NULL`.
-5. **Sweep Orphaned Disk Folders**:
+5. **Prune Aged Benchmark Tool Payloads** (`PruneAgedBenchmarkToolCallPayloadsAsync`):
+   - Same, for `BenchmarkRunAnswerToolCall`, aged by the run's `StartedAtUtc` against `PruneBenchmarkToolCallResultsDays`.
+6. **Sweep Orphaned Disk Folders** (`SweepOrphanedDiskDirectoriesAsync`):
    - Iterates through all subfolders in `ConversationsDataLocation`. If the numeric folder ID has no corresponding entry in `ChatSession`, the folder is deleted.
+7. **Prune the Access Journal** (`PruneAccessJournalAsync`):
+   - Deletes `ChatAccessAuditLog` rows older than `AuditLogRetentionDays`. The predicate lives in `GnollHackServer.Data.Privacy.ChatAccessAudit`, whose `CountPrunableAsync` backs the dry run and the tab's preview, so the count and the deletion cannot disagree.
+8. **Prune Dismissed AI Errors** (`PruneDismissedAiErrorLogsAsync`):
+   - Deletes `SystemAiErrorLog` rows where `IsDismissed && DismissedAtUtc < (Now - PruneDismissedAiErrorLogDays)`. Undismissed rows are never touched.
+9. **Prune Maintenance History** (`PruneMaintenanceHistoryAsync`):
+   - Deletes `MaintenanceRunLog` rows older than `MaintenanceHistoryRetentionDays`.
+
+Every phase honours `DryRun`: it counts what it would change and changes nothing. A failure sets `Success = false` and `ErrorMessage` on the result, and the exception is rethrown to the caller.
+
+### 3. Maintenance History (`MaintenanceRunLog`)
+
+Every full pass and every granular Admin action writes one `MaintenanceRunLog` row through `ChatRetentionService.RecordRunAsync`: when it started and finished, its trigger (`Scheduled`, `Startup`, `Manual`, or `Manual:<Action>`), whether it was a dry run, whether it succeeded, every count in the result, the error message, and the log lines (truncated to 4,000 characters). Dry runs are recorded and flagged, so the history shows what an admin previewed as well as what ran. A failed history write is logged and never fails the maintenance it describes.
+
+`GET /api/admin/maintenance/history?take=20` returns the rows newest first, with `take` clamped to 1–100. The Database tab's *Last maintenance run* reads the latest successful non-dry row, so it survives a restart.
 
 ### Account deletion
 
@@ -206,15 +232,45 @@ The `DatabaseStorageMetricsService` queries live database DMVs and physical file
 
 ### Dynamic SQL Queries
 - **Database Allocation**: Queried from `sys.database_files` (`size * 8 / 1024.0` for allocated MB, `FILEPROPERTY(name, 'SpaceUsed')` for used MB).
-- **Table Allocations**: Queried from `sys.tables`, `sys.indexes`, `sys.partitions`, and `sys.allocation_units` for top tables (`ChatSession`, `ChatMessage`, `ChatMessageToolCall`, `ChatMessageAttachment`, `GameLog`, `RequestInfo`, `SystemAiUsageLog`, `Bones`).
-- **Disk Attachment Scanning**: Aggregates directory counts, file counts, and total byte size within `ConversationsDataLocation`.
+- **Transaction Log**: The same query over `sys.database_files WHERE type = 1`. The log is outside the Express cap but not outside the disk, and the bulk purges are what grow it.
+- **Table Allocations**: Queried from `sys.tables`, `sys.indexes`, `sys.partitions`, and `sys.allocation_units` over **every user table** (`is_ms_shipped = 0`), ordered by total size. The twelve largest are listed individually; the rest are summed into one *Other* figure, and an all-tables total is reported. Space figures include non-clustered indexes, reported separately as *Index (MB)*; the row count reads the heap or clustered index only.
+- **Disk Attachment Scanning**: Aggregates directory counts, file counts, and total byte size within `ConversationsDataLocation`. The result is cached for two minutes and invalidated by any purge or sweep.
+
+Each query, and each counter group below, has its own `try`/`catch`, so one failing query never blanks the rest of the panel.
+
+### Metric Groups
+- **Privacy framework**: confidential, own-TTL and immediate-purge session counts; the ephemeral session count from `EphemeralSessionStore`.
+- **Content key ring**: the active version, and per `ContentKeyVersion` the number of sessions naming it and whether the ring still holds it. A session naming a version not in the ring is unreadable; a rotation is complete when no session names a retired version.
+- **Access journal**: row count, oldest row, and rows past `AuditLogRetentionDays`.
+- **AI error log**: undismissed, dismissed, and prunable dismissed counts.
+- **Next-pass preview**: expired trash sessions and prunable chat and benchmark payloads, using the same predicates as the pass, plus the next scheduled run time.
+- **Schema**: applied migration count, last applied migration, and pending migrations. Overseer does not migrate at startup, so a database behind its binaries shows here first.
+- **Policy echo**: the effective `ChatRetentionSettings`, the report address, and whether an email sender is configured.
 
 ### Admin Dashboard UI
 The Admin **Database** tab exposes:
-- Real-time gauge and status badge (`Normal`, `Warning`, `Critical`).
-- Active, Pinned, Inactive, and Trash session counters.
-- Estimated reclaimable disk and database space.
-- Granular manual action buttons with interactive confirmation dialogs, centered loading modals, and toast notifications.
+- Real-time gauge and status badge (`Normal`, `Warning`, `Critical`), the transaction log, the last and next maintenance run.
+- Active, Pinned, Inactive, Trash, Confidential, Own-TTL, Immediate-purge and Ephemeral session counters.
+- Estimated reclaimable database space.
+- Read-only Retention Policy, Content Key Ring, Schema and Next Pass Preview panels.
+- Granular manual action buttons with interactive confirmation dialogs, centered loading modals, and toast notifications. **One Dry Run switch governs the full pass and every granular action**; a dry run skips the confirmation because it changes nothing.
+- A result console listing every non-zero count, the trigger, and any error, and a Recent Maintenance Runs table from `MaintenanceRunLog`.
+
+| Method | Route | Action |
+|---|---|---|
+| `GET` | `/api/admin/storage-metrics` | All metrics above |
+| `POST` | `/api/admin/maintenance/run-now` | Full pass |
+| `POST` | `/api/admin/maintenance/purge-trash-now` | Purge all trash, ignoring the grace period |
+| `POST` | `/api/admin/maintenance/purge-inactive` | Phase 1 with a chosen day count |
+| `POST` | `/api/admin/maintenance/prune-tool-results` | Phase 4 with a chosen day count |
+| `POST` | `/api/admin/maintenance/prune-benchmark-tool-results` | Phase 5 with a chosen day count |
+| `POST` | `/api/admin/maintenance/prune-audit-log` | Phase 7; a window of zero or less is refused with 400 |
+| `POST` | `/api/admin/maintenance/prune-ai-error-log` | Phase 8; a window of zero or less is refused with 400 |
+| `POST` | `/api/admin/maintenance/sweep-orphans` | Phase 6 |
+| `GET` | `/api/admin/maintenance/history` | Maintenance history, newest first |
+| `POST` | `/api/admin/maintenance/send-report-email` | On-demand storage report email |
+
+Every `POST` takes an optional `MaintenanceRequestDto` with `DryRun` and returns a `MaintenanceResultDto`. Granular day counts default to the configured setting; the full pass always uses the configured audit and AI error windows.
 
 ---
 
@@ -227,4 +283,10 @@ Unit tests in `Overseer.Tests/UnitTests/ChatRetentionServiceTests.cs` validate a
 - Restoring sessions under quota constraints.
 - Cascade deletion order and disk folder cleanup.
 - Tool call result pruning without altering chat transcripts.
-- Dry-run verification (no data modified when `DryRun = true`).
+- Dry-run verification (no data modified when `DryRun = true`), including the access journal count and the dismissed-AI-error selection.
+- The trigger, orphan sweep count and history row a full pass records.
+
+Three further files cover the rest:
+- `Overseer.Tests/UnitTests/ConfidentialRetentionTests.cs`: per-session TTL and immediate purge across the four deletion paths.
+- `Overseer.Tests/UnitTests/DatabaseStorageMetricsServiceTests.cs`: edition detection, caching, the failure path of every metric group, and the next-run computation.
+- `Overseer/ClientApp/src/app/admin/admin.component.spec.ts`: the day-count selects send numbers, and granular actions honour the shared dry-run switch.

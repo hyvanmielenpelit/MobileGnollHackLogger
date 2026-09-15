@@ -25,6 +25,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<UserAiModel> UserAiModels { get; set; } = null!;
         public DbSet<ChatMessageToolCall> ChatMessageToolCall { get; set; } = null!;
         public DbSet<ChatAccessAuditLog> ChatAccessAuditLogs { get; set; } = null!;
+        public DbSet<MaintenanceRunLog> MaintenanceRunLogs { get; set; } = null!;
 
         public DbSet<Group> Groups { get; set; } = null!;
         public DbSet<UserGroup> UserGroups { get; set; } = null!;
@@ -156,6 +157,10 @@ namespace MobileGnollHackLogger.Data
             // Retention sweeps by age alone.
             modelBuilder.Entity<ChatAccessAuditLog>()
                 .HasIndex(a => a.OccurredUtc);
+
+            // History is listed newest first and pruned by age.
+            modelBuilder.Entity<MaintenanceRunLog>()
+                .HasIndex(r => r.StartedUtc);
 
             modelBuilder.Entity<BenchmarkGameSnapshot>()
                 .HasIndex(s => s.Name)

@@ -257,6 +257,33 @@ export interface TableStorageMetric {
   rowCount: number;
   totalSpaceMb: number;
   usedSpaceMb: number;
+  /** Non-clustered index pages, in MB; included in usedSpaceMb. */
+  indexSpaceMb: number;
+}
+
+export interface KeyVersionUsage {
+  version: string;
+  sessionCount: number;
+  /** False means every session wrapped under this version is unreadable. */
+  inRing: boolean;
+  isActive: boolean;
+}
+
+/** The effective ChatRetentionSettings, echoed by the server. */
+export interface RetentionPolicy {
+  maxActiveSessionsPerUser: number;
+  maxPinnedSessionsPerUser: number;
+  inactivityTtlDays: number;
+  softDeleteGracePeriodDays: number;
+  pruneToolCallResultsDays: number;
+  pruneBenchmarkToolCallResultsDays: number;
+  auditLogRetentionDays: number;
+  pruneDismissedAiErrorLogDays: number;
+  maintenanceHistoryRetentionDays: number;
+  maintenanceRunHourUtc: number;
+  enableStorageWarningEmails: boolean;
+  reportEmailAddress?: string;
+  emailSenderConfigured: boolean;
 }
 
 export interface DatabaseStorageMetrics {
@@ -285,12 +312,55 @@ export interface DatabaseStorageMetrics {
   estimatedReclaimableMb: number;
   lastMaintenanceRunUtc?: string;
   statusLevel: 'Normal' | 'Warning' | 'Critical';
+
+  logAllocatedMb: number;
+  logUsedMb: number;
+
+  /** tableMetrics holds the largest tables; these summarise the rest. */
+  otherTablesTotalSpaceMb: number;
+  otherTablesCount: number;
+  allTablesTotalSpaceMb: number;
+
+  confidentialSessionCount: number;
+  ownTtlSessionCount: number;
+  immediatePurgeSessionCount: number;
+  ephemeralSessionCount: number;
+  activeContentKeyVersion?: string;
+  contentKeyVersions: KeyVersionUsage[];
+  sessionsWithUnknownKeyVersionCount: number;
+
+  auditLogRowCount: number;
+  auditLogOldestUtc?: string;
+  auditLogPrunableCount: number;
+
+  aiErrorLogUndismissedCount: number;
+  aiErrorLogDismissedCount: number;
+  aiErrorLogPrunableCount: number;
+
+  expiredTrashSessionCount: number;
+  prunableToolCallCount: number;
+  prunableBenchmarkToolCallCount: number;
+  nextScheduledMaintenanceUtc?: string;
+  serviceStartedUtc: string;
+
+  appliedMigrationCount: number;
+  lastAppliedMigration?: string;
+  pendingMigrations: string[];
+  /** False when migration state could not be read. */
+  schemaStatusAvailable: boolean;
+
+  policy: RetentionPolicy;
 }
 
 export interface MaintenanceRequest {
   dryRun?: boolean;
   inactivityDays?: number;
   toolCallPruneDays?: number;
+  benchmarkToolCallPruneDays?: number;
+  /** Granular prune only; the full pass reads the configured window. */
+  auditLogRetentionDays?: number;
+  /** Granular prune only; the full pass reads the configured window. */
+  aiErrorLogPruneDays?: number;
 }
 
 export interface MaintenanceResult {
@@ -301,11 +371,43 @@ export interface MaintenanceResult {
   purgedMessageCount: number;
   purgedToolCallCount: number;
   prunedToolResultCount: number;
+  prunedBenchmarkToolResultCount: number;
   deletedDiskFolderCount: number;
   deletedDiskFileCount: number;
   reclaimedDiskBytes: number;
+  sweptOrphanFolderCount: number;
+  prunedAuditLogCount: number;
+  prunedAiErrorLogCount: number;
   elapsedMilliseconds: number;
+  /** "Scheduled", "Startup", "Manual", or "Manual:<Action>". */
+  trigger: string;
+  errorMessage?: string;
   logs: string[];
+}
+
+/** One recorded maintenance run: a full pass or a granular action, dry runs included. */
+export interface MaintenanceRunLog {
+  id: number;
+  startedUtc: string;
+  completedUtc?: string;
+  trigger: string;
+  isDryRun: boolean;
+  success: boolean;
+  elapsedMilliseconds: number;
+  softDeletedCount: number;
+  purgedSessionCount: number;
+  purgedMessageCount: number;
+  purgedToolCallCount: number;
+  prunedToolResultCount: number;
+  prunedBenchmarkToolResultCount: number;
+  prunedAuditLogCount: number;
+  prunedAiErrorLogCount: number;
+  deletedDiskFolderCount: number;
+  deletedDiskFileCount: number;
+  sweptOrphanFolderCount: number;
+  reclaimedDiskBytes: number;
+  errorMessage?: string;
+  logText?: string;
 }
 
 @Injectable({
@@ -456,16 +558,33 @@ export class AdminService {
     return this.http.post<MaintenanceResult>('/api/admin/maintenance/purge-trash-now', request || {});
   }
 
-  purgeInactive(request?: MaintenanceRequest): Observable<{ success: boolean; isDryRun: boolean; softDeletedCount: number; message: string }> {
-    return this.http.post<{ success: boolean; isDryRun: boolean; softDeletedCount: number; message: string }>('/api/admin/maintenance/purge-inactive', request || {});
+  purgeInactive(request?: MaintenanceRequest): Observable<MaintenanceResult> {
+    return this.http.post<MaintenanceResult>('/api/admin/maintenance/purge-inactive', request || {});
   }
 
-  pruneToolResults(request?: MaintenanceRequest): Observable<{ success: boolean; isDryRun: boolean; prunedCount: number; message: string }> {
-    return this.http.post<{ success: boolean; isDryRun: boolean; prunedCount: number; message: string }>('/api/admin/maintenance/prune-tool-results', request || {});
+  pruneToolResults(request?: MaintenanceRequest): Observable<MaintenanceResult> {
+    return this.http.post<MaintenanceResult>('/api/admin/maintenance/prune-tool-results', request || {});
   }
 
-  sweepOrphans(request?: MaintenanceRequest): Observable<{ success: boolean; isDryRun: boolean; sweptCount: number; message: string }> {
-    return this.http.post<{ success: boolean; isDryRun: boolean; sweptCount: number; message: string }>('/api/admin/maintenance/sweep-orphans', request || {});
+  pruneBenchmarkToolResults(request?: MaintenanceRequest): Observable<MaintenanceResult> {
+    return this.http.post<MaintenanceResult>('/api/admin/maintenance/prune-benchmark-tool-results', request || {});
+  }
+
+  pruneAuditLog(request?: MaintenanceRequest): Observable<MaintenanceResult> {
+    return this.http.post<MaintenanceResult>('/api/admin/maintenance/prune-audit-log', request || {});
+  }
+
+  pruneAiErrorLog(request?: MaintenanceRequest): Observable<MaintenanceResult> {
+    return this.http.post<MaintenanceResult>('/api/admin/maintenance/prune-ai-error-log', request || {});
+  }
+
+  sweepOrphans(request?: MaintenanceRequest): Observable<MaintenanceResult> {
+    return this.http.post<MaintenanceResult>('/api/admin/maintenance/sweep-orphans', request || {});
+  }
+
+  /** Newest first; the server clamps take to 1..100. */
+  getMaintenanceHistory(take = 20): Observable<MaintenanceRunLog[]> {
+    return this.http.get<MaintenanceRunLog[]>('/api/admin/maintenance/history', { params: { take } });
   }
 
   sendReportEmail(): Observable<{ success: boolean; message: string }> {

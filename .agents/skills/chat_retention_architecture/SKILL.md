@@ -190,14 +190,19 @@ sequenceDiagram
     participant DB as SQL Server Database
     participant Disk as Physical Disk Storage
 
-    Engine->>Retention: RunFullMaintenanceAsync(DryRun=false)
-    Retention->>DB: Soft-delete unpinned sessions > 90d (Reason="Inactivity")
+    Engine->>Retention: RunFullMaintenanceAsync(DryRun=false, trigger)
+    Retention->>DB: Soft-delete unpinned sessions > 90d (Reason="Inactivity"), expire own-TTL sessions
     Retention->>DB: Query soft-deleted sessions > 30d (Trash Cutoff)
     Retention->>Disk: Recursively delete session folders on disk
     Retention->>DB: Execute bulk delete (Attachments -> ToolCalls -> Messages -> Sessions)
     Retention->>DB: Prune tool call Results/Args older than 30d to NULL
+    Retention->>DB: Prune benchmark tool call Results/Args for runs older than 90d
     Retention->>Disk: Sweep orphaned disk directories
+    Retention->>DB: Prune ChatAccessAuditLog rows older than AuditLogRetentionDays
+    Retention->>DB: Prune SystemAiErrorLog rows dismissed > 90d ago
+    Retention->>DB: Prune MaintenanceRunLog rows older than 180d
     Retention->>Storage: RecordMaintenanceRun()
+    Retention->>DB: RecordRunAsync() writes one MaintenanceRunLog row
     Engine->>Storage: CheckAndSendAlertEmailIfNeededAsync()
     alt Storage > Warning/Critical Threshold
         Storage-->>Admin: Dispatch Diagnostic Alert Email (Throttled 24h)
@@ -214,13 +219,19 @@ Administrators can inspect live database storage metrics and trigger granular or
 
 | Method | Route | Description |
 |---|---|---|
-| `GET` | `/api/admin/database/metrics` | Returns DMV storage allocation, table breakdown, session counts, and disk attachment statistics. |
-| `POST` | `/api/admin/database/maintenance` | Runs full maintenance pass with optional `DryRun`, `InactivityDays`, and `ToolCallPruneDays`. |
-| `POST` | `/api/admin/database/purge-trash` | Immediately purges all soft-deleted sessions across all users without waiting for the 30-day grace period. |
-| `POST` | `/api/admin/database/purge-inactive` | Soft-deletes unpinned active sessions older than specified days. |
-| `POST` | `/api/admin/database/prune-tool-results` | Prunes tool call result payloads older than specified days. |
-| `POST` | `/api/admin/database/sweep-orphans` | Scans and deletes unreferenced disk folders in `ConversationsDataLocation`. |
-| `POST` | `/api/admin/database/send-report` | Sends an on-demand HTML diagnostic storage email to `ReportEmailAddress`. |
+| `GET` | `/api/admin/storage-metrics` | Returns DMV storage allocation, the transaction log, the top-12 table breakdown, session, privacy, key-ring, audit, AI error, preview and schema counters, disk attachment statistics, and the effective policy. |
+| `POST` | `/api/admin/maintenance/run-now` | Runs full maintenance pass with optional `DryRun`, `InactivityDays`, `ToolCallPruneDays` and `BenchmarkToolCallPruneDays`. |
+| `POST` | `/api/admin/maintenance/purge-trash-now` | Immediately purges all soft-deleted sessions across all users without waiting for the 30-day grace period. |
+| `POST` | `/api/admin/maintenance/purge-inactive` | Soft-deletes unpinned active sessions older than specified days, and expires sessions past their own TTL. |
+| `POST` | `/api/admin/maintenance/prune-tool-results` | Prunes tool call result payloads older than specified days. |
+| `POST` | `/api/admin/maintenance/prune-benchmark-tool-results` | Prunes benchmark tool call payloads for runs older than specified days. |
+| `POST` | `/api/admin/maintenance/prune-audit-log` | Deletes access journal rows older than `AuditLogRetentionDays` (or the request's value); `<= 0` returns 400. |
+| `POST` | `/api/admin/maintenance/prune-ai-error-log` | Deletes AI error rows dismissed more than the window ago; `<= 0` returns 400. Undismissed rows are never touched. |
+| `POST` | `/api/admin/maintenance/sweep-orphans` | Scans and deletes unreferenced disk folders in `ConversationsDataLocation`. |
+| `GET` | `/api/admin/maintenance/history?take=20` | Recent `MaintenanceRunLog` rows, newest first; `take` clamped to 1..100. |
+| `POST` | `/api/admin/maintenance/send-report-email` | Sends an on-demand HTML diagnostic storage email to `ReportEmailAddress`. |
+
+Every `POST` except `send-report-email` honours `DryRun`, returns a `MaintenanceResultDto` carrying its `Trigger`, and writes a `MaintenanceRunLog` row. Granular day counts default to `ChatRetentionSettings`, never to controller literals.
 
 ---
 
@@ -232,6 +243,7 @@ Administrators can inspect live database storage metrics and trigger granular or
   - **Warning**: Allocated DB size >= `DatabaseWarningThresholdMb` (7,680 MB / 75%).
   - **Critical**: Allocated DB size >= `DatabaseCriticalThresholdMb` (8,704 MB / 85%).
 - **Email Throttling**: Alert emails are sent via `EmailSender` to `ReportEmailAddress` and throttled using `IMemoryCache` to a maximum of **one alert email per 24 hours** for each status level.
+- **Admin Database Tab Panels**: capacity (with transaction log, last and next run), retention counters (including confidential, own-TTL, immediate-purge and ephemeral), Retention Policy, Content Key Ring (a version not in the ring is flagged unreadable), Schema (pending migrations with the update command), table storage (top 12, index column, other and total rows), Next Pass Preview (including undismissed AI errors, which are never pruned), maintenance actions under one Dry Run switch, the result console, and Recent Maintenance Runs.
 
 ---
 
@@ -243,5 +255,6 @@ When modifying chat data models, retention services, or controllers, verify the 
 - [ ] **Dependency Order**: Verify deletions execute in `Attachment -> ToolCall -> Message -> Session` order to avoid FK constraint violations.
 - [ ] **Pinned Protection**: Ensure pinned sessions are never soft-deleted by quota enforcement or inactivity sweeps.
 - [ ] **Dry-Run Safety**: When `DryRun = true`, ensure zero records are updated or deleted, and zero disk files are removed.
+- [ ] **Shared Dry-Run Switch**: Ensure the granular actions honour the shared dry-run switch in the Admin Database tab, and that a dry run of the full pass reports every phase's count, including the access journal.
 - [ ] **Disk & DB Alignment**: Ensure session hard-deletion deletes both the disk directory and database records.
 - [ ] **Live UI Feedback**: Ensure admin maintenance actions trigger the dedicated loading modal and display the resulting metrics in `#adminToast`.

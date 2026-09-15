@@ -382,13 +382,25 @@
                     <span class="stat-label">Disk Attachments</span>
                     <span class="stat-value">{{ storageMetrics.diskAttachmentsSizeMb | number:'1.1-1' }} MB <span class="stat-sub">({{ storageMetrics.diskAttachmentsFileCount }} files)</span></span>
                   </div>
+                  <div class="stat-box">
+                    <span class="stat-label">Transaction Log</span>
+                    <span class="stat-value">{{ storageMetrics.logUsedMb | number:'1.1-1' }} MB <span class="stat-sub">used of {{ storageMetrics.logAllocatedMb | number:'1.1-1' }} MB</span></span>
+                  </div>
                 </div>
 
-                @if (storageMetrics.lastMaintenanceRunUtc) {
-                  <div class="text-muted mt-10" style="font-size: 0.85em;">
-                    Last maintenance run: {{ storageMetrics.lastMaintenanceRunUtc | date:'yyyy-MM-dd HH:mm:ss' }} UTC
-                  </div>
-                }
+                <div class="maintenance-schedule-line mt-10">
+                  <span>
+                    Last maintenance run:
+                    @if (storageMetrics.lastMaintenanceRunUtc) {
+                      {{ storageMetrics.lastMaintenanceRunUtc | date:'yyyy-MM-dd HH:mm:ss':'UTC' }} UTC
+                    } @else {
+                      none since service start at {{ storageMetrics.serviceStartedUtc | date:'yyyy-MM-dd HH:mm':'UTC' }} UTC
+                    }
+                  </span>
+                  @if (storageMetrics.nextScheduledMaintenanceUtc) {
+                    <span>Next scheduled pass: {{ storageMetrics.nextScheduledMaintenanceUtc | date:'yyyy-MM-dd HH:mm':'UTC' }} UTC</span>
+                  }
+                </div>
               </div>
 
               <!-- Retention Stats Grid -->
@@ -399,21 +411,130 @@
                 </div>
                 <div class="stat-card stat-card-warning">
                   <div class="stat-num">{{ storageMetrics.softDeletedSessionCount }}</div>
-                  <div class="stat-desc">Sessions in Trash <span *ngIf="storageMetrics.estimatedReclaimableMb > 0">(~{{ storageMetrics.estimatedReclaimableMb }} MB)</span></div>
+                  <div class="stat-desc">Sessions in Trash <span *ngIf="storageMetrics.estimatedReclaimableMb > 0">(~{{ storageMetrics.estimatedReclaimableMb }} MB, estimated)</span></div>
                 </div>
                 <div class="stat-card">
                   <div class="stat-num">{{ storageMetrics.inactiveSessionCount }}</div>
-                  <div class="stat-desc">Inactive Sessions (> 90d)</div>
+                  <div class="stat-desc">Inactive Sessions (> {{ storageMetrics.policy.inactivityTtlDays }}d)</div>
                 </div>
                 <div class="stat-card">
                   <div class="stat-num">{{ storageMetrics.pinnedSessionCount }}</div>
                   <div class="stat-desc">Pinned Sessions (Protected)</div>
                 </div>
+                <div class="stat-card">
+                  <div class="stat-num">{{ storageMetrics.confidentialSessionCount }}</div>
+                  <div class="stat-desc">Confidential Sessions</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-num">{{ storageMetrics.ownTtlSessionCount }}</div>
+                  <div class="stat-desc">Sessions with Own TTL</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-num">{{ storageMetrics.immediatePurgeSessionCount }}</div>
+                  <div class="stat-desc">Immediate Purge on Delete</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-num">{{ storageMetrics.ephemeralSessionCount }}</div>
+                  <div class="stat-desc">Ephemeral Sessions (in memory)</div>
+                </div>
               </div>
+
+              <!-- Retention Policy -->
+              <fieldset class="permissions-fieldset mt-20">
+                <legend>Retention Policy</legend>
+                <p class="text-muted fieldset-note">Read-only. Values come from <code>ChatRetentionSettings</code> in configuration and are what the next pass will use.</p>
+                <dl class="policy-list">
+                  <div><dt>Active sessions per user</dt><dd>{{ storageMetrics.policy.maxActiveSessionsPerUser }}</dd></div>
+                  <div><dt>Pinned sessions per user</dt><dd>{{ storageMetrics.policy.maxPinnedSessionsPerUser }}</dd></div>
+                  <div><dt>Inactivity TTL</dt><dd>{{ daysLabel(storageMetrics.policy.inactivityTtlDays) }}</dd></div>
+                  <div><dt>Trash grace period</dt><dd>{{ daysLabel(storageMetrics.policy.softDeleteGracePeriodDays) }}</dd></div>
+                  <div><dt>Chat tool payloads kept</dt><dd>{{ daysLabel(storageMetrics.policy.pruneToolCallResultsDays) }}</dd></div>
+                  <div><dt>Benchmark tool payloads kept</dt><dd>{{ daysLabel(storageMetrics.policy.pruneBenchmarkToolCallResultsDays) }}</dd></div>
+                  <div><dt>Access journal kept</dt><dd>{{ daysLabel(storageMetrics.policy.auditLogRetentionDays) }}</dd></div>
+                  <div><dt>Dismissed AI errors kept</dt><dd>{{ daysLabel(storageMetrics.policy.pruneDismissedAiErrorLogDays) }}</dd></div>
+                  <div><dt>Maintenance history kept</dt><dd>{{ daysLabel(storageMetrics.policy.maintenanceHistoryRetentionDays) }}</dd></div>
+                  <div><dt>Nightly pass</dt><dd>{{ storageMetrics.policy.maintenanceRunHourUtc }}:00 UTC</dd></div>
+                  <div><dt>Storage warning emails</dt><dd>{{ storageMetrics.policy.enableStorageWarningEmails ? 'Enabled' : 'Disabled' }}</dd></div>
+                  <div><dt>Report address</dt><dd>{{ storageMetrics.policy.reportEmailAddress || '—' }}</dd></div>
+                  <div><dt>Email sender configured</dt><dd>{{ storageMetrics.policy.emailSenderConfigured ? 'Yes' : 'No' }}</dd></div>
+                </dl>
+              </fieldset>
+
+              <!-- Content Key Ring -->
+              <fieldset class="permissions-fieldset mt-20">
+                <legend>Content Key Ring</legend>
+                <p class="text-muted fieldset-note">
+                  Active version: <strong>{{ storageMetrics.activeContentKeyVersion || 'not configured' }}</strong>.
+                  A rotation is complete when no session names a retired version.
+                </p>
+                @if (storageMetrics.sessionsWithUnknownKeyVersionCount > 0) {
+                  <p class="key-ring-warning" role="alert">
+                    {{ storageMetrics.sessionsWithUnknownKeyVersionCount }} session(s) name a key version that is not in the ring. Their content is unreadable until that version is restored to configuration.
+                  </p>
+                }
+                @if (storageMetrics.contentKeyVersions.length > 0) {
+                  <div class="table-responsive mt-10">
+                    <table class="admin-table modern-table">
+                      <thead>
+                        <tr>
+                          <th>Version</th>
+                          <th style="text-align: right;">Sessions</th>
+                          <th>In Ring</th>
+                          <th>Active</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (k of storageMetrics.contentKeyVersions; track k.version) {
+                          <tr [class.key-row-missing]="!k.inRing">
+                            <td><strong>{{ k.version }}</strong></td>
+                            <td style="text-align: right;">{{ k.sessionCount | number:'1.0-0' }}</td>
+                            <td>{{ k.inRing ? 'Yes' : 'No — unreadable' }}</td>
+                            <td>{{ k.isActive ? 'Yes' : '' }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                } @else {
+                  <p class="text-muted">No session holds a content key yet.</p>
+                }
+              </fieldset>
+
+              <!-- Schema -->
+              <fieldset class="permissions-fieldset mt-20">
+                <legend>Schema</legend>
+                @if (storageMetrics.schemaStatusAvailable) {
+                  <dl class="policy-list">
+                    <div><dt>Applied migrations</dt><dd>{{ storageMetrics.appliedMigrationCount }}</dd></div>
+                    <div><dt>Last applied</dt><dd><code>{{ storageMetrics.lastAppliedMigration || '—' }}</code></dd></div>
+                    <div>
+                      <dt>Pending</dt>
+                      <dd>
+                        @if (storageMetrics.pendingMigrations.length === 0) {
+                          None
+                        } @else {
+                          <span class="storage-badge badge-warning">{{ storageMetrics.pendingMigrations.length }} pending</span>
+                        }
+                      </dd>
+                    </div>
+                  </dl>
+                  @if (storageMetrics.pendingMigrations.length > 0) {
+                    <p class="mt-10">The database is behind this build. Queries touching the pending changes will fail until it is updated:</p>
+                    <ul class="pending-migrations">
+                      @for (m of storageMetrics.pendingMigrations; track m) {
+                        <li><code>{{ m }}</code></li>
+                      }
+                    </ul>
+                    <code class="command-block">dotnet ef database update -p GnollHackServer.Data -s MobileGnollHackLogger</code>
+                  }
+                } @else {
+                  <p class="text-muted">Migration status could not be read.</p>
+                }
+              </fieldset>
 
               <!-- Table Allocations Breakdown -->
               <fieldset class="permissions-fieldset mt-20">
-                <legend>Top Database Table Storage</legend>
+                <legend>Database Table Storage (top 12 by size)</legend>
                 <div class="table-responsive mt-10">
                   <table class="admin-table modern-table">
                     <thead>
@@ -422,6 +543,7 @@
                         <th style="text-align: right;">Row Count</th>
                         <th style="text-align: right;">Total Size (MB)</th>
                         <th style="text-align: right;">Used Data (MB)</th>
+                        <th style="text-align: right;">Index (MB)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -431,6 +553,25 @@
                           <td style="text-align: right;">{{ t.rowCount | number:'1.0-0' }}</td>
                           <td style="text-align: right;">{{ t.totalSpaceMb | number:'1.1-2' }} MB</td>
                           <td style="text-align: right;" class="text-muted">{{ t.usedSpaceMb | number:'1.1-2' }} MB</td>
+                          <td style="text-align: right;" class="text-muted">{{ t.indexSpaceMb | number:'1.1-2' }} MB</td>
+                        </tr>
+                      }
+                      @if (storageMetrics.otherTablesCount > 0) {
+                        <tr>
+                          <td><em>Other {{ storageMetrics.otherTablesCount }} tables</em></td>
+                          <td></td>
+                          <td style="text-align: right;">{{ storageMetrics.otherTablesTotalSpaceMb | number:'1.1-2' }} MB</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                      }
+                      @if (storageMetrics.tableMetrics.length > 0) {
+                        <tr class="table-total-row">
+                          <td><strong>All tables</strong></td>
+                          <td></td>
+                          <td style="text-align: right;"><strong>{{ storageMetrics.allTablesTotalSpaceMb | number:'1.1-2' }} MB</strong></td>
+                          <td></td>
+                          <td></td>
                         </tr>
                       }
                     </tbody>
@@ -438,19 +579,63 @@
                 </div>
               </fieldset>
 
+              <!-- Next Pass Preview -->
+              <fieldset class="permissions-fieldset mt-20">
+                <legend>Next Pass Preview</legend>
+                <p class="text-muted fieldset-note">What the next scheduled pass would remove at the configured windows. Orphaned disk folders are not previewed here; a dry run reports them.</p>
+                <div class="preview-grid">
+                  <div class="stat-box">
+                    <span class="stat-label">Expired trash sessions</span>
+                    <span class="stat-value">{{ storageMetrics.expiredTrashSessionCount | number:'1.0-0' }}</span>
+                  </div>
+                  <div class="stat-box">
+                    <span class="stat-label">Prunable chat tool payloads</span>
+                    <span class="stat-value">{{ storageMetrics.prunableToolCallCount | number:'1.0-0' }}</span>
+                  </div>
+                  <div class="stat-box">
+                    <span class="stat-label">Prunable benchmark payloads</span>
+                    <span class="stat-value">{{ storageMetrics.prunableBenchmarkToolCallCount | number:'1.0-0' }}</span>
+                  </div>
+                  <div class="stat-box">
+                    <span class="stat-label">Prunable audit rows</span>
+                    <span class="stat-value">{{ storageMetrics.auditLogPrunableCount | number:'1.0-0' }} <span class="stat-sub">of {{ storageMetrics.auditLogRowCount | number:'1.0-0' }}@if (storageMetrics.auditLogOldestUtc) {, oldest {{ storageMetrics.auditLogOldestUtc | date:'yyyy-MM-dd':'UTC' }}}</span></span>
+                  </div>
+                  <div class="stat-box">
+                    <span class="stat-label">Prunable dismissed AI errors</span>
+                    <span class="stat-value">{{ storageMetrics.aiErrorLogPrunableCount | number:'1.0-0' }} <span class="stat-sub">of {{ storageMetrics.aiErrorLogDismissedCount | number:'1.0-0' }} dismissed</span></span>
+                  </div>
+                  <div class="stat-box">
+                    <span class="stat-label">Undismissed AI errors</span>
+                    <span class="stat-value">{{ storageMetrics.aiErrorLogUndismissedCount | number:'1.0-0' }}</span>
+                    <span class="stat-sub">Never pruned; dismiss them on the Configs tab.</span>
+                  </div>
+                </div>
+              </fieldset>
+
               <!-- Database Management & Maintenance Actions -->
               <fieldset class="permissions-fieldset mt-20">
                 <legend>Database Maintenance Tasks</legend>
+                <label class="dry-run-label dry-run-bar">
+                  <input type="checkbox" [(ngModel)]="maintenanceDryRun">
+                  <span><strong>Dry Run (Preview Only)</strong> — applies to every button below: compute and log what would be removed without modifying data</span>
+                </label>
                 <div class="maintenance-actions-panel mt-10">
                   <!-- Full Maintenance Card -->
                   <div class="maintenance-action-card">
                     <div class="action-info">
                       <h4>Run Scheduled Maintenance Pass</h4>
-                      <p class="text-muted">Performs the full nightly maintenance pipeline: soft-deletes inactive sessions (>{{ inactivityDays }}d), permanently purges expired trash (>30d) and deletes disk folders, prunes aged tool call results (>{{ toolCallPruneDays }}d), and sweeps orphaned disk files.</p>
-                      <label class="dry-run-label">
-                        <input type="checkbox" [(ngModel)]="maintenanceDryRun">
-                        <span><strong>Dry Run (Preview Only)</strong> — compute and log what would be deleted without modifying data</span>
-                      </label>
+                      <p class="text-muted">Runs the full nightly pipeline, in order:</p>
+                      <ol class="pass-steps text-muted">
+                        <li>Expires sessions inactive over {{ inactivityDays }}d, and sessions past their own TTL (confidential sessions set to purge are removed outright)</li>
+                        <li>Finds trash older than the {{ storageMetrics.policy.softDeleteGracePeriodDays }}d grace period</li>
+                        <li>Permanently purges it, with its disk folders</li>
+                        <li>Prunes chat tool payloads over {{ toolCallPruneDays }}d</li>
+                        <li>Prunes benchmark tool payloads for runs over {{ storageMetrics.policy.pruneBenchmarkToolCallResultsDays }}d</li>
+                        <li>Sweeps orphaned disk folders</li>
+                        <li>Deletes access journal rows over {{ daysLabel(storageMetrics.policy.auditLogRetentionDays) }}</li>
+                        <li>Deletes dismissed AI errors over {{ daysLabel(storageMetrics.policy.pruneDismissedAiErrorLogDays) }} since dismissal</li>
+                        <li>Deletes maintenance history over {{ daysLabel(storageMetrics.policy.maintenanceHistoryRetentionDays) }}</li>
+                      </ol>
                     </div>
                     <button class="btn-gh btn-primary action-btn-large" (click)="runFullMaintenance()" [disabled]="maintenanceLoading">
                       Execute Maintenance Pass
@@ -461,7 +646,7 @@
                   <div class="granular-actions-grid mt-20">
                     <div class="granular-card">
                       <h5>Empty All Trash Now</h5>
-                      <p class="text-muted">Bypasses the 30-day grace period and immediately purges all soft-deleted sessions and their disk attachments across all users.</p>
+                      <p class="text-muted">Bypasses the {{ storageMetrics.policy.softDeleteGracePeriodDays }}-day grace period and immediately purges all soft-deleted sessions and their disk attachments across all users.</p>
                       <button class="btn-gh btn-danger mt-10" (click)="purgeAllTrash()" [disabled]="maintenanceLoading || storageMetrics.softDeletedSessionCount === 0">
                         Purge All Trash Now
                       </button>
@@ -469,11 +654,11 @@
 
                     <div class="granular-card">
                       <h5>Purge Inactive Sessions</h5>
-                      <p class="text-muted">Soft-deletes active, unpinned sessions with no activity past the threshold.</p>
-                      <select class="gh-input mt-10" [(ngModel)]="inactivityDays" style="max-width: 160px; width: 100%;">
-                        <option [value]="90">Older than 90d</option>
-                        <option [value]="60">Older than 60d</option>
-                        <option [value]="30">Older than 30d</option>
+                      <p class="text-muted">Soft-deletes active, unpinned sessions with no activity past the threshold. Also expires sessions past their own TTL whatever the threshold, and permanently purges confidential sessions set to purge on delete.</p>
+                      <select id="maintenance-inactivity-days" class="gh-input mt-10" [(ngModel)]="inactivityDays" aria-label="Inactivity threshold" style="max-width: 160px; width: 100%;">
+                        @for (d of dayOptions([90, 60, 30], storageMetrics.policy.inactivityTtlDays); track d) {
+                          <option [ngValue]="d">Older than {{ d }}d</option>
+                        }
                       </select>
                       <button class="btn-gh btn-secondary mt-10" (click)="purgeInactiveNow()" [disabled]="maintenanceLoading">
                         Soft-Delete Inactive
@@ -483,13 +668,47 @@
                     <div class="granular-card">
                       <h5>Prune Aged Tool Results</h5>
                       <p class="text-muted">Truncates raw tool call JSON payloads without deleting user message transcripts.</p>
-                      <select class="gh-input mt-10" [(ngModel)]="toolCallPruneDays" style="max-width: 160px; width: 100%;">
-                        <option [value]="30">Older than 30d</option>
-                        <option [value]="60">Older than 60d</option>
-                        <option [value]="90">Older than 90d</option>
+                      <select id="maintenance-tool-call-days" class="gh-input mt-10" [(ngModel)]="toolCallPruneDays" aria-label="Chat tool payload age" style="max-width: 160px; width: 100%;">
+                        @for (d of dayOptions([30, 60, 90], storageMetrics.policy.pruneToolCallResultsDays); track d) {
+                          <option [ngValue]="d">Older than {{ d }}d</option>
+                        }
                       </select>
                       <button class="btn-gh btn-secondary mt-10" (click)="pruneToolResultsNow()" [disabled]="maintenanceLoading">
                         Prune Tool Payloads
+                      </button>
+                    </div>
+
+                    <div class="granular-card">
+                      <h5>Prune Benchmark Tool Payloads</h5>
+                      <p class="text-muted">Nulls the arguments and results of benchmark tool calls for runs older than the threshold. Names, statuses and timings are kept.</p>
+                      <select id="maintenance-benchmark-days" class="gh-input mt-10" [(ngModel)]="benchmarkToolCallPruneDays" aria-label="Benchmark run age" style="max-width: 160px; width: 100%;">
+                        @for (d of dayOptions([30, 60, 90, 180], storageMetrics.policy.pruneBenchmarkToolCallResultsDays); track d) {
+                          <option [ngValue]="d">Older than {{ d }}d</option>
+                        }
+                      </select>
+                      <button class="btn-gh btn-secondary mt-10" (click)="pruneBenchmarkToolResultsNow()" [disabled]="maintenanceLoading">
+                        Prune Benchmark Payloads
+                      </button>
+                    </div>
+
+                    <div class="granular-card">
+                      <h5>Prune Access Journal</h5>
+                      <p class="text-muted">Deletes <code>ChatAccessAuditLog</code> rows older than the configured {{ daysLabel(storageMetrics.policy.auditLogRetentionDays) }}. The only action that removes audit rows.</p>
+                      <button class="btn-gh btn-danger mt-10" (click)="pruneAuditLogNow()" [disabled]="maintenanceLoading || storageMetrics.policy.auditLogRetentionDays <= 0">
+                        Prune Access Journal
+                      </button>
+                    </div>
+
+                    <div class="granular-card">
+                      <h5>Prune Dismissed AI Errors</h5>
+                      <p class="text-muted">Deletes AI error rows dismissed more than the threshold ago. Undismissed errors are never pruned.</p>
+                      <select id="maintenance-ai-error-days" class="gh-input mt-10" [(ngModel)]="aiErrorLogPruneDays" aria-label="Days since dismissal" style="max-width: 160px; width: 100%;">
+                        @for (d of dayOptions([30, 90, 180, 365], storageMetrics.policy.pruneDismissedAiErrorLogDays); track d) {
+                          <option [ngValue]="d">Dismissed over {{ d }}d ago</option>
+                        }
+                      </select>
+                      <button class="btn-gh btn-secondary mt-10" (click)="pruneAiErrorLogNow()" [disabled]="maintenanceLoading">
+                        Prune Dismissed Errors
                       </button>
                     </div>
 
@@ -519,10 +738,23 @@
                   <div class="result-console mt-10">
                     <div class="result-summary mb-10">
                       <strong>Status:</strong> {{ lastMaintenanceResult.success ? 'Success' : 'Failed' }} &bull;
-                      <strong>Elapsed:</strong> {{ lastMaintenanceResult.elapsedMilliseconds }} ms &bull;
-                      <strong>Sessions Purged:</strong> {{ lastMaintenanceResult.purgedSessionCount }} &bull;
-                      <strong>Disk Folders Removed:</strong> {{ lastMaintenanceResult.deletedDiskFolderCount }}
+                      <strong>Trigger:</strong> {{ lastMaintenanceResult.trigger }} &bull;
+                      <strong>Elapsed:</strong> {{ lastMaintenanceResult.elapsedMilliseconds }} ms
                     </div>
+                    @if (lastMaintenanceResult.errorMessage) {
+                      <div class="result-error mb-10">{{ lastMaintenanceResult.errorMessage }}</div>
+                    }
+                    @if (maintenanceResultCounts(lastMaintenanceResult); as counts) {
+                      @if (counts.length > 0) {
+                        <dl class="result-counts mb-10">
+                          @for (c of counts; track c.label) {
+                            <div><dt>{{ c.label }}</dt><dd>{{ c.value }}</dd></div>
+                          }
+                        </dl>
+                      } @else {
+                        <div class="mb-10">Nothing to remove.</div>
+                      }
+                    }
                     <ul class="result-logs">
                       @for (log of lastMaintenanceResult.logs; track log) {
                         <li>{{ log }}</li>
@@ -531,6 +763,81 @@
                   </div>
                 </fieldset>
               }
+
+              <!-- Maintenance History -->
+              <fieldset class="permissions-fieldset mt-20">
+                <legend>Recent Maintenance Runs</legend>
+                @if (maintenanceHistory.length === 0) {
+                  <p class="text-muted">
+                    @if (maintenanceHistoryLoading) {
+                      <span class="gh-spinner-small"></span> Loading maintenance history...
+                    } @else {
+                      No maintenance runs recorded yet.
+                    }
+                  </p>
+                } @else {
+                  <div class="table-responsive mt-10">
+                    <table class="admin-table modern-table history-table">
+                      <thead>
+                        <tr>
+                          <th>Started (UTC)</th>
+                          <th>Trigger</th>
+                          <th>Mode</th>
+                          <th>Status</th>
+                          <th style="text-align: right;">Elapsed</th>
+                          <th style="text-align: right;">Sessions Purged</th>
+                          <th style="text-align: right;">Payloads Pruned</th>
+                          <th style="text-align: right;">Audit Rows</th>
+                          <th style="text-align: right;">Folders Removed</th>
+                          <th>Log</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (run of maintenanceHistory; track run.id) {
+                          <tr [class.history-row-failed]="!run.success">
+                            <td>{{ run.startedUtc | date:'yyyy-MM-dd HH:mm:ss':'UTC' }}</td>
+                            <td>{{ run.trigger }}</td>
+                            <td>{{ run.isDryRun ? 'Dry run' : 'Live' }}</td>
+                            <td>{{ run.success ? 'Success' : 'Failed' }}</td>
+                            <td style="text-align: right;">{{ run.elapsedMilliseconds | number:'1.0-0' }} ms</td>
+                            <td style="text-align: right;">{{ run.purgedSessionCount | number:'1.0-0' }}</td>
+                            <td style="text-align: right;">{{ (run.prunedToolResultCount + run.prunedBenchmarkToolResultCount) | number:'1.0-0' }}</td>
+                            <td style="text-align: right;">{{ run.prunedAuditLogCount | number:'1.0-0' }}</td>
+                            <td style="text-align: right;">{{ (run.deletedDiskFolderCount + run.sweptOrphanFolderCount) | number:'1.0-0' }}</td>
+                            <td>
+                              @if (run.logText || run.errorMessage) {
+                                <button type="button" class="btn-gh btn-secondary history-log-toggle"
+                                        (click)="toggleHistoryLog(run.id)"
+                                        [attr.aria-expanded]="expandedHistoryRunId === run.id"
+                                        [attr.aria-controls]="'maintenance-run-log-' + run.id">
+                                  {{ expandedHistoryRunId === run.id ? 'Hide' : 'Show' }}
+                                </button>
+                              }
+                            </td>
+                          </tr>
+                          @if (expandedHistoryRunId === run.id) {
+                            <tr class="history-log-row" [id]="'maintenance-run-log-' + run.id">
+                              <td colspan="10">
+                                @if (run.errorMessage) {
+                                  <div class="result-error mb-10">{{ run.errorMessage }}</div>
+                                }
+                                @if (run.logText) {
+                                  <pre>{{ run.logText }}</pre>
+                                }
+                              </td>
+                            </tr>
+                          }
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                  @if (canLoadMoreMaintenanceHistory()) {
+                    <button type="button" class="btn-gh btn-secondary mt-10" (click)="loadMoreMaintenanceHistory()" [disabled]="maintenanceHistoryLoading">
+                      Load More
+                    </button>
+                  }
+                }
+              </fieldset>
             }
           </div>
         }

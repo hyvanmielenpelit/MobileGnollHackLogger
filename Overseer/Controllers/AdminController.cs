@@ -1259,47 +1259,181 @@ public class AdminController : ControllerBase
     [HttpPost("maintenance/run-now")]
     public async Task<IActionResult> RunMaintenanceNow([FromBody] MaintenanceRequestDto? request, [FromServices] ChatRetentionService retentionService)
     {
-        var result = await retentionService.RunFullMaintenanceAsync(request);
+        var result = await retentionService.RunFullMaintenanceAsync(request, MaintenanceTriggers.Manual);
         return Ok(result);
     }
+
+    /// <summary>
+    /// Runs one granular maintenance action and returns the same result shape as the full pass.
+    /// The run is recorded in the maintenance history whether it succeeds or not; a failure is
+    /// rethrown.
+    /// </summary>
+    private static async Task<IActionResult> RunGranularMaintenanceAsync(
+        ChatRetentionService retentionService,
+        string trigger,
+        bool isDryRun,
+        Func<MaintenanceResultDto, Task> action)
+    {
+        var startedUtc = DateTime.UtcNow;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var result = new MaintenanceResultDto { IsDryRun = isDryRun, Trigger = trigger };
+
+        try
+        {
+            await action(result);
+            result.Success = true;
+        }
+        catch (Exception ex)
+        {
+            result.ErrorMessage = ex.Message;
+            throw;
+        }
+        finally
+        {
+            sw.Stop();
+            result.ElapsedMilliseconds = sw.ElapsedMilliseconds;
+            await retentionService.RecordRunAsync(result, startedUtc);
+        }
+
+        return new OkObjectResult(result);
+    }
+
+    [HttpGet("maintenance/history")]
+    public async Task<IActionResult> GetMaintenanceHistory([FromQuery] int take = 20)
+    {
+        take = Math.Clamp(take, 1, 100);
+
+        var rows = await _dbContext.MaintenanceRunLogs
+            .AsNoTracking()
+            .OrderByDescending(r => r.StartedUtc)
+            .ThenByDescending(r => r.Id)
+            .Take(take)
+            .ToListAsync();
+
+        var history = rows.Select(r => new MaintenanceRunLogDto
+        {
+            Id = r.Id,
+            StartedUtc = DateTime.SpecifyKind(r.StartedUtc, DateTimeKind.Utc),
+            CompletedUtc = r.CompletedUtc.HasValue ? DateTime.SpecifyKind(r.CompletedUtc.Value, DateTimeKind.Utc) : null,
+            Trigger = r.Trigger,
+            IsDryRun = r.IsDryRun,
+            Success = r.Success,
+            ElapsedMilliseconds = r.ElapsedMilliseconds,
+            SoftDeletedCount = r.SoftDeletedCount,
+            PurgedSessionCount = r.PurgedSessionCount,
+            PurgedMessageCount = r.PurgedMessageCount,
+            PurgedToolCallCount = r.PurgedToolCallCount,
+            PrunedToolResultCount = r.PrunedToolResultCount,
+            PrunedBenchmarkToolResultCount = r.PrunedBenchmarkToolResultCount,
+            PrunedAuditLogCount = r.PrunedAuditLogCount,
+            PrunedAiErrorLogCount = r.PrunedAiErrorLogCount,
+            DeletedDiskFolderCount = r.DeletedDiskFolderCount,
+            DeletedDiskFileCount = r.DeletedDiskFileCount,
+            SweptOrphanFolderCount = r.SweptOrphanFolderCount,
+            ReclaimedDiskBytes = r.ReclaimedDiskBytes,
+            ErrorMessage = r.ErrorMessage,
+            LogText = r.LogText
+        }).ToList();
+
+        return Ok(history);
+    }
+
+    private static string DryRunPrefix(bool isDryRun) => isDryRun ? "[DRY RUN] " : "";
 
     [HttpPost("maintenance/purge-trash-now")]
     public async Task<IActionResult> PurgeTrashNow([FromBody] MaintenanceRequestDto? request, [FromServices] ChatRetentionService retentionService)
     {
         var isDryRun = request?.DryRun ?? false;
-        var trashIds = await _dbContext.ChatSession
-            .Where(s => s.IsDeleted)
-            .Select(s => s.Id)
-            .ToListAsync();
+        return await RunGranularMaintenanceAsync(retentionService, MaintenanceTriggers.PurgeTrash, isDryRun, async result =>
+        {
+            var trashIds = await _dbContext.ChatSession
+                .Where(s => s.IsDeleted)
+                .Select(s => s.Id)
+                .ToListAsync();
 
-        var result = await retentionService.PermanentlyPurgeSessionsAsync(trashIds, isDryRun);
-        return Ok(result);
+            var purgeResult = await retentionService.PermanentlyPurgeSessionsAsync(trashIds, isDryRun);
+            ChatRetentionService.ApplyPurgeCounts(result, purgeResult);
+        });
     }
 
     [HttpPost("maintenance/purge-inactive")]
     public async Task<IActionResult> PurgeInactive([FromBody] MaintenanceRequestDto? request, [FromServices] ChatRetentionService retentionService)
     {
         var isDryRun = request?.DryRun ?? false;
-        var days = request?.InactivityDays ?? 90;
-        var count = await retentionService.SoftDeleteInactiveSessionsAsync(days, isDryRun);
-        return Ok(new { success = true, isDryRun, softDeletedCount = count, message = $"Soft-deleted {count} inactive sessions older than {days} days." });
+        var days = request?.InactivityDays ?? retentionService.Settings.InactivityTtlDays;
+        return await RunGranularMaintenanceAsync(retentionService, MaintenanceTriggers.PurgeInactive, isDryRun, async result =>
+        {
+            result.SoftDeletedCount = await retentionService.SoftDeleteInactiveSessionsAsync(days, isDryRun);
+            result.Logs.Add($"{DryRunPrefix(isDryRun)}Expired {result.SoftDeletedCount} inactive sessions: older than {days} days, plus sessions past their own retention TTL (confidential sessions set to purge are removed outright).");
+        });
     }
 
     [HttpPost("maintenance/prune-tool-results")]
     public async Task<IActionResult> PruneToolResults([FromBody] MaintenanceRequestDto? request, [FromServices] ChatRetentionService retentionService)
     {
         var isDryRun = request?.DryRun ?? false;
-        var days = request?.ToolCallPruneDays ?? 30;
-        var count = await retentionService.PruneAgedToolCallResultsAsync(days, isDryRun);
-        return Ok(new { success = true, isDryRun, prunedCount = count, message = $"Pruned {count} tool call results older than {days} days." });
+        var days = request?.ToolCallPruneDays ?? retentionService.Settings.PruneToolCallResultsDays;
+        return await RunGranularMaintenanceAsync(retentionService, MaintenanceTriggers.PruneToolResults, isDryRun, async result =>
+        {
+            result.PrunedToolResultCount = await retentionService.PruneAgedToolCallResultsAsync(days, isDryRun);
+            result.Logs.Add($"{DryRunPrefix(isDryRun)}Pruned {result.PrunedToolResultCount} tool call results older than {days} days.");
+        });
+    }
+
+    [HttpPost("maintenance/prune-benchmark-tool-results")]
+    public async Task<IActionResult> PruneBenchmarkToolResults([FromBody] MaintenanceRequestDto? request, [FromServices] ChatRetentionService retentionService)
+    {
+        var isDryRun = request?.DryRun ?? false;
+        var days = request?.BenchmarkToolCallPruneDays ?? retentionService.Settings.PruneBenchmarkToolCallResultsDays;
+        return await RunGranularMaintenanceAsync(retentionService, MaintenanceTriggers.PruneBenchmarkToolResults, isDryRun, async result =>
+        {
+            result.PrunedBenchmarkToolResultCount = await retentionService.PruneAgedBenchmarkToolCallPayloadsAsync(days, isDryRun);
+            result.Logs.Add($"{DryRunPrefix(isDryRun)}Pruned {result.PrunedBenchmarkToolResultCount} benchmark tool call payloads for runs older than {days} days.");
+        });
+    }
+
+    [HttpPost("maintenance/prune-audit-log")]
+    public async Task<IActionResult> PruneAuditLog([FromBody] MaintenanceRequestDto? request, [FromServices] ChatRetentionService retentionService)
+    {
+        var isDryRun = request?.DryRun ?? false;
+        var days = request?.AuditLogRetentionDays ?? retentionService.Settings.AuditLogRetentionDays;
+
+        // An explicit request to prune with no window is a mistake, not a request to do nothing.
+        if (days <= 0)
+            return BadRequest(new { message = "Audit log retention must be a positive number of days." });
+
+        return await RunGranularMaintenanceAsync(retentionService, MaintenanceTriggers.PruneAuditLog, isDryRun, async result =>
+        {
+            result.PrunedAuditLogCount = await retentionService.PruneAccessJournalAsync(days, isDryRun);
+            result.Logs.Add($"{DryRunPrefix(isDryRun)}Pruned {result.PrunedAuditLogCount} access journal rows older than {days} days.");
+        });
+    }
+
+    [HttpPost("maintenance/prune-ai-error-log")]
+    public async Task<IActionResult> PruneAiErrorLog([FromBody] MaintenanceRequestDto? request, [FromServices] ChatRetentionService retentionService)
+    {
+        var isDryRun = request?.DryRun ?? false;
+        var days = request?.AiErrorLogPruneDays ?? retentionService.Settings.PruneDismissedAiErrorLogDays;
+
+        if (days <= 0)
+            return BadRequest(new { message = "The dismissed AI error window must be a positive number of days." });
+
+        return await RunGranularMaintenanceAsync(retentionService, MaintenanceTriggers.PruneAiErrorLog, isDryRun, async result =>
+        {
+            result.PrunedAiErrorLogCount = await retentionService.PruneDismissedAiErrorLogsAsync(days, isDryRun);
+            result.Logs.Add($"{DryRunPrefix(isDryRun)}Pruned {result.PrunedAiErrorLogCount} dismissed AI error rows dismissed over {days} days ago. Undismissed rows are never pruned.");
+        });
     }
 
     [HttpPost("maintenance/sweep-orphans")]
     public async Task<IActionResult> SweepOrphanedFolders([FromBody] MaintenanceRequestDto? request, [FromServices] ChatRetentionService retentionService)
     {
         var isDryRun = request?.DryRun ?? false;
-        var count = await retentionService.SweepOrphanedDiskDirectoriesAsync(isDryRun);
-        return Ok(new { success = true, isDryRun, sweptCount = count, message = $"Swept {count} orphaned disk folders." });
+        return await RunGranularMaintenanceAsync(retentionService, MaintenanceTriggers.SweepOrphans, isDryRun, async result =>
+        {
+            result.SweptOrphanFolderCount = await retentionService.SweepOrphanedDiskDirectoriesAsync(isDryRun);
+            result.Logs.Add($"{DryRunPrefix(isDryRun)}Swept {result.SweptOrphanFolderCount} orphaned disk folders.");
+        });
     }
 
     [HttpPost("maintenance/send-report-email")]

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
+using Overseer.Models;
 using Overseer.Services;
 using Xunit;
 
@@ -338,5 +339,107 @@ public class ChatRetentionServiceTests
         Assert.False(s2!.IsPinned);
         Assert.False(s3!.IsPinned);
         Assert.True(s4!.IsPinned);
+    }
+
+    /// <summary>
+    /// The dry run must report the audit rows the wet pass would delete. Selection is asserted
+    /// through the count: the deletion itself is set-based and untranslatable in memory.
+    /// </summary>
+    [Fact]
+    public async Task RunFullMaintenanceAsync_DryRun_ReportsAuditPrunableCountWithoutDeleting()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var config = CreateTestConfiguration(new Dictionary<string, string?>
+        {
+            { "ChatRetentionSettings:AuditLogRetentionDays", "365" }
+        });
+        var service = new ChatRetentionService(db, config, NullLogger<ChatRetentionService>.Instance);
+
+        db.ChatAccessAuditLogs.Add(new ChatAccessAuditLog { OccurredUtc = DateTime.UtcNow.AddDays(-400), Action = "Read" });
+        db.ChatAccessAuditLogs.Add(new ChatAccessAuditLog { OccurredUtc = DateTime.UtcNow.AddDays(-366), Action = "Read" });
+        db.ChatAccessAuditLogs.Add(new ChatAccessAuditLog { OccurredUtc = DateTime.UtcNow.AddDays(-10), Action = "Read" });
+        await db.SaveChangesAsync(ct);
+
+        var result = await service.RunFullMaintenanceAsync(new MaintenanceRequestDto { DryRun = true }, cancellationToken: ct);
+
+        Assert.True(result.Success);
+        Assert.True(result.IsDryRun);
+        Assert.Equal(2, result.PrunedAuditLogCount);
+        Assert.Equal(3, await db.ChatAccessAuditLogs.CountAsync(ct));
+    }
+
+    [Fact]
+    public async Task RunFullMaintenanceAsync_PopulatesSweptOrphanAndTriggerFields()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var baseDir = Path.Combine(Path.GetTempPath(), "OverseerTestConversations_" + Guid.NewGuid());
+        var orphanDir = Path.Combine(baseDir, "999");
+        Directory.CreateDirectory(orphanDir);
+
+        try
+        {
+            var config = CreateTestConfiguration(new Dictionary<string, string?>
+            {
+                { "ConversationsDataLocation", baseDir }
+            });
+            var service = new ChatRetentionService(db, config, NullLogger<ChatRetentionService>.Instance);
+
+            var result = await service.RunFullMaintenanceAsync(
+                new MaintenanceRequestDto { DryRun = true }, MaintenanceTriggers.Scheduled, ct);
+
+            Assert.True(result.Success);
+            Assert.Null(result.ErrorMessage);
+            Assert.Equal(MaintenanceTriggers.Scheduled, result.Trigger);
+            Assert.Equal(1, result.SweptOrphanFolderCount);
+            Assert.True(Directory.Exists(orphanDir), "A dry run must not delete the orphan folder.");
+
+            // Dry runs are recorded in the history too, flagged as such.
+            var recorded = Assert.Single(await db.MaintenanceRunLogs.ToListAsync(ct));
+            Assert.Equal(MaintenanceTriggers.Scheduled, recorded.Trigger);
+            Assert.True(recorded.IsDryRun);
+            Assert.True(recorded.Success);
+            Assert.Equal(1, recorded.SweptOrphanFolderCount);
+        }
+        finally
+        {
+            Directory.Delete(baseDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task PruneDismissedAiErrorLogsAsync_DryRun_CountsOnlyDismissedRowsPastTheWindow()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var service = new ChatRetentionService(db, CreateTestConfiguration(), NullLogger<ChatRetentionService>.Instance);
+
+        // Dismissed long ago: the only prunable row.
+        db.SystemAiErrorLogs.Add(new SystemAiErrorLog { SystemAiApiConfigurationId = 1, TimestampUtc = DateTime.UtcNow.AddDays(-120), IsDismissed = true, DismissedAtUtc = DateTime.UtcNow.AddDays(-100) });
+        // Dismissed recently.
+        db.SystemAiErrorLogs.Add(new SystemAiErrorLog { SystemAiApiConfigurationId = 1, TimestampUtc = DateTime.UtcNow.AddDays(-120), IsDismissed = true, DismissedAtUtc = DateTime.UtcNow.AddDays(-10) });
+        // Old but never dismissed: an unacknowledged alert, never pruned.
+        db.SystemAiErrorLogs.Add(new SystemAiErrorLog { SystemAiApiConfigurationId = 1, TimestampUtc = DateTime.UtcNow.AddDays(-200), IsDismissed = false });
+        await db.SaveChangesAsync(ct);
+
+        int count = await service.PruneDismissedAiErrorLogsAsync(90, isDryRun: true, ct);
+
+        Assert.Equal(1, count);
+        Assert.Equal(3, await db.SystemAiErrorLogs.CountAsync(ct));
+    }
+
+    [Fact]
+    public async Task PruneDismissedAiErrorLogsAsync_ZeroDays_ReturnsZero()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var service = new ChatRetentionService(db, CreateTestConfiguration(), NullLogger<ChatRetentionService>.Instance);
+
+        db.SystemAiErrorLogs.Add(new SystemAiErrorLog { SystemAiApiConfigurationId = 1, TimestampUtc = DateTime.UtcNow.AddDays(-400), IsDismissed = true, DismissedAtUtc = DateTime.UtcNow.AddDays(-400) });
+        await db.SaveChangesAsync(ct);
+
+        Assert.Equal(0, await service.PruneDismissedAiErrorLogsAsync(0, isDryRun: false, ct));
+        Assert.Equal(1, await db.SystemAiErrorLogs.CountAsync(ct));
     }
 }

@@ -4,7 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { of, throwError } from 'rxjs';
 import { AdminComponent } from './admin.component';
-import { AdminService, UsersResponse, GroupDto, SystemAiConfigDto } from '../services/admin.service';
+import { AdminService, UsersResponse, GroupDto, SystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult } from '../services/admin.service';
 import { createEmptyFilter } from './config-filter/config-filter.model';
 
 describe('AdminComponent', () => {
@@ -430,6 +430,76 @@ describe('AdminComponent', () => {
       expect(component.configFilter.roleMatchMode).toBe('any');
 
       localStorage.removeItem(storageKey);
+    });
+  });
+
+  describe('database maintenance', () => {
+    const metrics = (): DatabaseStorageMetrics => ({
+      allocatedDataSizeMb: 100, usedDataSizeMb: 80, freeSpaceWithinLimitMb: 10140, maxLimitMb: 10240,
+      usedPercentage: 1, tableMetrics: [], hasEngineSizeLimit: true, limitSource: 'Detected',
+      serverProductLabel: 'SQL Server 2022 Express', activeSessionCount: 0, softDeletedSessionCount: 0,
+      inactiveSessionCount: 0, pinnedSessionCount: 0, diskAttachmentsSizeBytes: 0, diskAttachmentsSizeMb: 0,
+      diskAttachmentsFolderCount: 0, diskAttachmentsFileCount: 0, estimatedReclaimableMb: 0, statusLevel: 'Normal',
+      logAllocatedMb: 8, logUsedMb: 1, otherTablesTotalSpaceMb: 0, otherTablesCount: 0, allTablesTotalSpaceMb: 0,
+      confidentialSessionCount: 0, ownTtlSessionCount: 0, immediatePurgeSessionCount: 0, ephemeralSessionCount: 0,
+      contentKeyVersions: [], sessionsWithUnknownKeyVersionCount: 0, auditLogRowCount: 0, auditLogPrunableCount: 0,
+      aiErrorLogUndismissedCount: 0, aiErrorLogDismissedCount: 0, aiErrorLogPrunableCount: 0,
+      expiredTrashSessionCount: 0, prunableToolCallCount: 0, prunableBenchmarkToolCallCount: 0,
+      serviceStartedUtc: '2026-09-15T00:00:00Z', appliedMigrationCount: 0, pendingMigrations: [],
+      schemaStatusAvailable: true,
+      policy: {
+        maxActiveSessionsPerUser: 50, maxPinnedSessionsPerUser: 5, inactivityTtlDays: 90,
+        softDeleteGracePeriodDays: 30, pruneToolCallResultsDays: 30, pruneBenchmarkToolCallResultsDays: 90,
+        auditLogRetentionDays: 365, pruneDismissedAiErrorLogDays: 90, maintenanceHistoryRetentionDays: 180,
+        maintenanceRunHourUtc: 3,
+        enableStorageWarningEmails: true, emailSenderConfigured: false
+      }
+    });
+
+    const result = (isDryRun: boolean): MaintenanceResult => ({
+      success: true, isDryRun, softDeletedCount: 0, purgedSessionCount: 0, purgedMessageCount: 0,
+      purgedToolCallCount: 0, prunedToolResultCount: 0, prunedBenchmarkToolResultCount: 0,
+      deletedDiskFolderCount: 0, deletedDiskFileCount: 0, reclaimedDiskBytes: 0, sweptOrphanFolderCount: 0,
+      prunedAuditLogCount: 0, prunedAiErrorLogCount: 0, elapsedMilliseconds: 1, trigger: 'Manual', logs: []
+    });
+
+    beforeEach(() => {
+      spyOn(adminService, 'getStorageMetrics').and.returnValue(of(metrics()));
+      spyOn(adminService, 'getMaintenanceHistory').and.returnValue(of([]));
+    });
+
+    it('sends a day count chosen in the template select as a number, not a string', async () => {
+      const runSpy = spyOn(adminService, 'runMaintenanceNow').and.returnValue(of(result(true)));
+      component.selectTab('database');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const select: HTMLSelectElement = fixture.nativeElement.querySelector('#maintenance-inactivity-days');
+      const index = Array.from(select.options).findIndex(o => (o.textContent ?? '').includes('60d'));
+      expect(index).toBeGreaterThanOrEqual(0);
+      select.selectedIndex = index;
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+
+      component.maintenanceDryRun = true;
+      component.runFullMaintenance();
+
+      const request = runSpy.calls.mostRecent().args[0]!;
+      expect(request.inactivityDays).toBe(60);
+      expect(typeof request.inactivityDays).toBe('number');
+    });
+
+    it('passes the dry-run switch to a granular action and skips the confirmation', () => {
+      const purgeSpy = spyOn(adminService, 'purgeInactive').and.returnValue(of(result(true)));
+      const confirmSpy = spyOn(component, 'openConfirmationModal');
+
+      component.maintenanceDryRun = true;
+      component.purgeInactiveNow();
+
+      expect(confirmSpy).not.toHaveBeenCalled();
+      expect(purgeSpy).toHaveBeenCalledWith(jasmine.objectContaining({ dryRun: true }));
+      expect(component.lastMaintenanceResult?.isDryRun).toBeTrue();
     });
   });
 });

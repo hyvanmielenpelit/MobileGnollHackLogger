@@ -26,6 +26,8 @@ public class ChatRetentionService
         _configuration.GetSection("ChatRetentionSettings").Bind(_settings);
     }
 
+    public ChatRetentionSettings Settings => _settings;
+
     /* Every deletion path partitions its set the same way: a session with
        ImmediatePurgeOnDelete is purged outright, the rest go to the trash as before.
 
@@ -333,6 +335,8 @@ public class ChatRetentionService
             await _dbContext.ChatSession
                 .Where(s => sessionIds.Contains(s.Id))
                 .ExecuteDeleteAsync(cancellationToken);
+
+            DatabaseStorageMetricsService.InvalidateDiskMetricsCache();
         }
 
         sw.Stop();
@@ -469,6 +473,118 @@ public class ChatRetentionService
         return count;
     }
 
+    /// <summary>
+    /// Deletes access journal rows older than <paramref name="retentionDays"/>, or only counts
+    /// them on a dry run. Returns the count either way.
+    /// </summary>
+    public async Task<int> PruneAccessJournalAsync(int retentionDays, bool isDryRun = false, CancellationToken cancellationToken = default)
+    {
+        int count = await GnollHackServer.Data.Privacy.ChatAccessAudit.CountPrunableAsync(
+            _dbContext, retentionDays, cancellationToken);
+
+        if (count > 0 && !isDryRun)
+        {
+            count = await GnollHackServer.Data.Privacy.ChatAccessAudit.PruneAsync(
+                _dbContext, retentionDays, cancellationToken);
+            _logger.LogInformation("Pruned {Count} access journal rows older than {Days} days", count, retentionDays);
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// Deletes dismissed AI error rows dismissed more than <paramref name="daysOld"/> days ago, or
+    /// only counts them on a dry run. Undismissed rows are never touched; zero or negative days
+    /// returns zero.
+    /// </summary>
+    public async Task<int> PruneDismissedAiErrorLogsAsync(int daysOld, bool isDryRun = false, CancellationToken cancellationToken = default)
+    {
+        if (daysOld <= 0)
+            return 0;
+
+        var cutoff = DateTime.UtcNow.AddDays(-daysOld);
+        var query = _dbContext.SystemAiErrorLogs
+            .Where(e => e.IsDismissed && e.DismissedAtUtc < cutoff);
+
+        int count = await query.CountAsync(cancellationToken);
+        if (count > 0 && !isDryRun)
+        {
+            await query.ExecuteDeleteAsync(cancellationToken);
+            _logger.LogInformation("Pruned {Count} dismissed AI error log rows dismissed over {Days} days ago", count, daysOld);
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// Deletes maintenance history rows started more than <paramref name="daysOld"/> days ago, or
+    /// only counts them on a dry run. Zero or negative days returns zero.
+    /// </summary>
+    public async Task<int> PruneMaintenanceHistoryAsync(int daysOld, bool isDryRun = false, CancellationToken cancellationToken = default)
+    {
+        if (daysOld <= 0)
+            return 0;
+
+        var cutoff = DateTime.UtcNow.AddDays(-daysOld);
+        var query = _dbContext.MaintenanceRunLogs.Where(r => r.StartedUtc < cutoff);
+
+        int count = await query.CountAsync(cancellationToken);
+        if (count > 0 && !isDryRun)
+        {
+            await query.ExecuteDeleteAsync(cancellationToken);
+            _logger.LogInformation("Pruned {Count} maintenance history rows older than {Days} days", count, daysOld);
+        }
+        return count;
+    }
+
+    private const int MaintenanceLogTextMaxLength = 4000;
+    private const int MaintenanceErrorMaxLength = 1024;
+    private const int MaintenanceTriggerMaxLength = 64;
+
+    /// <summary>
+    /// Writes one <see cref="MaintenanceRunLog"/> row for a run. Never throws: a failed history
+    /// write is logged and must not fail the maintenance it describes.
+    /// </summary>
+    public async Task RecordRunAsync(MaintenanceResultDto result, DateTime startedUtc)
+    {
+        var row = new MaintenanceRunLog
+        {
+            StartedUtc = startedUtc,
+            CompletedUtc = DateTime.UtcNow,
+            Trigger = Truncate(result.Trigger, MaintenanceTriggerMaxLength) ?? MaintenanceTriggers.Manual,
+            IsDryRun = result.IsDryRun,
+            Success = result.Success,
+            ElapsedMilliseconds = result.ElapsedMilliseconds,
+            SoftDeletedCount = result.SoftDeletedCount,
+            PurgedSessionCount = result.PurgedSessionCount,
+            PurgedMessageCount = result.PurgedMessageCount,
+            PurgedToolCallCount = result.PurgedToolCallCount,
+            PrunedToolResultCount = result.PrunedToolResultCount,
+            PrunedBenchmarkToolResultCount = result.PrunedBenchmarkToolResultCount,
+            PrunedAuditLogCount = result.PrunedAuditLogCount,
+            PrunedAiErrorLogCount = result.PrunedAiErrorLogCount,
+            DeletedDiskFolderCount = result.DeletedDiskFolderCount,
+            DeletedDiskFileCount = result.DeletedDiskFileCount,
+            SweptOrphanFolderCount = result.SweptOrphanFolderCount,
+            ReclaimedDiskBytes = result.ReclaimedDiskBytes,
+            ErrorMessage = Truncate(result.ErrorMessage, MaintenanceErrorMaxLength),
+            LogText = Truncate(result.Logs.Count > 0 ? string.Join("\n", result.Logs) : null, MaintenanceLogTextMaxLength)
+        };
+
+        try
+        {
+            _dbContext.MaintenanceRunLogs.Add(row);
+            // Not the caller's token: a cancelled run is still worth recording.
+            await _dbContext.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _dbContext.Entry(row).State = EntityState.Detached;
+            _logger.LogError(ex, "Failed to record maintenance run {Trigger} in MaintenanceRunLog", result.Trigger);
+        }
+    }
+
+    private static string? Truncate(string? value, int maxLength)
+        => value == null || value.Length <= maxLength ? value : value[..maxLength];
+
     public async Task<int> SweepOrphanedDiskDirectoriesAsync(bool isDryRun = false, CancellationToken cancellationToken = default)
     {
         var baseDir = _configuration["ConversationsDataLocation"];
@@ -509,78 +625,134 @@ public class ChatRetentionService
             _logger.LogError(ex, "Error sweeping orphaned disk directories in {BaseDir}", baseDir);
         }
 
+        if (sweptCount > 0 && !isDryRun)
+        {
+            DatabaseStorageMetricsService.InvalidateDiskMetricsCache();
+        }
+
         return sweptCount;
     }
 
-    public async Task<MaintenanceResultDto> RunFullMaintenanceAsync(MaintenanceRequestDto? request = null, CancellationToken cancellationToken = default)
+    /// <summary>Copies the counts of a <see cref="PermanentlyPurgeSessionsAsync"/> result into another result.</summary>
+    public static void ApplyPurgeCounts(MaintenanceResultDto target, MaintenanceResultDto purgeResult)
+    {
+        target.PurgedSessionCount = purgeResult.PurgedSessionCount;
+        target.PurgedMessageCount = purgeResult.PurgedMessageCount;
+        target.PurgedToolCallCount = purgeResult.PurgedToolCallCount;
+        target.DeletedDiskFolderCount = purgeResult.DeletedDiskFolderCount;
+        target.DeletedDiskFileCount = purgeResult.DeletedDiskFileCount;
+        target.ReclaimedDiskBytes = purgeResult.ReclaimedDiskBytes;
+        target.Logs.AddRange(purgeResult.Logs);
+    }
+
+    /// <summary>
+    /// Runs every maintenance step. A failure sets <see cref="MaintenanceResultDto.Success"/> to
+    /// false and <see cref="MaintenanceResultDto.ErrorMessage"/>, then rethrows.
+    /// </summary>
+    public async Task<MaintenanceResultDto> RunFullMaintenanceAsync(
+        MaintenanceRequestDto? request = null,
+        string trigger = MaintenanceTriggers.Manual,
+        CancellationToken cancellationToken = default)
     {
         var isDryRun = request?.DryRun ?? false;
         var inactivityDays = request?.InactivityDays ?? _settings.InactivityTtlDays;
         var toolCallDays = request?.ToolCallPruneDays ?? _settings.PruneToolCallResultsDays;
         var benchmarkToolCallDays = request?.BenchmarkToolCallPruneDays ?? _settings.PruneBenchmarkToolCallResultsDays;
 
+        var startedUtc = DateTime.UtcNow;
         var sw = Stopwatch.StartNew();
-        var result = new MaintenanceResultDto { IsDryRun = isDryRun };
+        var result = new MaintenanceResultDto { IsDryRun = isDryRun, Trigger = trigger };
 
-        // 1. Soft-delete inactive sessions
-        result.SoftDeletedCount = await SoftDeleteInactiveSessionsAsync(inactivityDays, isDryRun, cancellationToken);
-        result.Logs.Add($"Inactive sessions soft-deleted (> {inactivityDays}d): {result.SoftDeletedCount}");
-
-        // 2. Find expired trash sessions (> SoftDeleteGracePeriodDays)
-        var trashCutoff = DateTime.UtcNow.AddDays(-_settings.SoftDeleteGracePeriodDays);
-        var expiredTrashIds = await _dbContext.ChatSession
-            .Where(s => s.IsDeleted && s.DeletedUtc < trashCutoff)
-            .Select(s => s.Id)
-            .ToListAsync(cancellationToken);
-
-        // 3. Purge expired trash sessions
-        var purgeResult = await PermanentlyPurgeSessionsAsync(expiredTrashIds, isDryRun, cancellationToken);
-        result.PurgedSessionCount = purgeResult.PurgedSessionCount;
-        result.PurgedMessageCount = purgeResult.PurgedMessageCount;
-        result.PurgedToolCallCount = purgeResult.PurgedToolCallCount;
-        result.DeletedDiskFolderCount = purgeResult.DeletedDiskFolderCount;
-        result.DeletedDiskFileCount = purgeResult.DeletedDiskFileCount;
-        result.ReclaimedDiskBytes = purgeResult.ReclaimedDiskBytes;
-        result.Logs.AddRange(purgeResult.Logs);
-
-        // 4. Prune aged tool call results
-        result.PrunedToolResultCount = await PruneAgedToolCallResultsAsync(toolCallDays, isDryRun, cancellationToken);
-        result.Logs.Add($"Aged tool call payloads pruned (> {toolCallDays}d): {result.PrunedToolResultCount}");
-
-        // 5. Prune aged benchmark tool call payloads
-        result.PrunedBenchmarkToolResultCount = await PruneAgedBenchmarkToolCallPayloadsAsync(benchmarkToolCallDays, isDryRun, cancellationToken);
-        result.Logs.Add($"Aged benchmark tool call payloads pruned (> {benchmarkToolCallDays}d): {result.PrunedBenchmarkToolResultCount}");
-
-        // 6. Sweep orphaned disk folders
-        int orphanedSwept = await SweepOrphanedDiskDirectoriesAsync(isDryRun, cancellationToken);
-        result.Logs.Add($"Orphaned disk folders swept: {orphanedSwept}");
-
-        /* 7. Prune the access journal. This is the only operation anywhere that removes an audit
-              row, and it exists because a journal nobody prunes becomes the largest table in the
-              database. The default window is deliberately long -- an incident is usually noticed
-              months after it happened -- and it is stated in the framework document rather than
-              left implicit, because "append-only with a retention policy" is a weaker claim than
-              "append-only" and the difference should not be discovered by a reviewer. */
-        int auditRetentionDays = _settings.AuditLogRetentionDays;
-        if (!isDryRun && auditRetentionDays > 0)
+        try
         {
-            int prunedAudit = await GnollHackServer.Data.Privacy.ChatAccessAudit.PruneAsync(
-                _dbContext, auditRetentionDays, cancellationToken);
-            result.Logs.Add($"Access journal rows pruned (> {auditRetentionDays}d): {prunedAudit}");
+            // 1. Soft-delete inactive sessions
+            result.SoftDeletedCount = await SoftDeleteInactiveSessionsAsync(inactivityDays, isDryRun, cancellationToken);
+            result.Logs.Add($"Inactive sessions soft-deleted (> {inactivityDays}d): {result.SoftDeletedCount}");
+
+            // 2. Find expired trash sessions (> SoftDeleteGracePeriodDays)
+            var trashCutoff = DateTime.UtcNow.AddDays(-_settings.SoftDeleteGracePeriodDays);
+            var expiredTrashIds = await _dbContext.ChatSession
+                .Where(s => s.IsDeleted && s.DeletedUtc < trashCutoff)
+                .Select(s => s.Id)
+                .ToListAsync(cancellationToken);
+
+            // 3. Purge expired trash sessions
+            var purgeResult = await PermanentlyPurgeSessionsAsync(expiredTrashIds, isDryRun, cancellationToken);
+            ApplyPurgeCounts(result, purgeResult);
+
+            // 4. Prune aged tool call results
+            result.PrunedToolResultCount = await PruneAgedToolCallResultsAsync(toolCallDays, isDryRun, cancellationToken);
+            result.Logs.Add($"Aged tool call payloads pruned (> {toolCallDays}d): {result.PrunedToolResultCount}");
+
+            // 5. Prune aged benchmark tool call payloads
+            result.PrunedBenchmarkToolResultCount = await PruneAgedBenchmarkToolCallPayloadsAsync(benchmarkToolCallDays, isDryRun, cancellationToken);
+            result.Logs.Add($"Aged benchmark tool call payloads pruned (> {benchmarkToolCallDays}d): {result.PrunedBenchmarkToolResultCount}");
+
+            // 6. Sweep orphaned disk folders
+            result.SweptOrphanFolderCount = await SweepOrphanedDiskDirectoriesAsync(isDryRun, cancellationToken);
+            result.Logs.Add($"Orphaned disk folders swept: {result.SweptOrphanFolderCount}");
+
+            /* 7. Prune the access journal. This is the only operation anywhere that removes an audit
+                  row, and it exists because a journal nobody prunes becomes the largest table in the
+                  database. The default window is deliberately long -- an incident is usually noticed
+                  months after it happened -- and it is stated in the framework document rather than
+                  left implicit, because "append-only with a retention policy" is a weaker claim than
+                  "append-only" and the difference should not be discovered by a reviewer. */
+            int auditRetentionDays = _settings.AuditLogRetentionDays;
+            if (auditRetentionDays > 0)
+            {
+                result.PrunedAuditLogCount = await PruneAccessJournalAsync(auditRetentionDays, isDryRun, cancellationToken);
+                result.Logs.Add($"Access journal rows pruned (> {auditRetentionDays}d): {result.PrunedAuditLogCount}");
+            }
+            else
+            {
+                result.Logs.Add("Access journal retention is disabled; no rows were pruned.");
+            }
+
+            // 8. Prune dismissed AI error log rows; undismissed rows are never pruned
+            int aiErrorDays = _settings.PruneDismissedAiErrorLogDays;
+            if (aiErrorDays > 0)
+            {
+                result.PrunedAiErrorLogCount = await PruneDismissedAiErrorLogsAsync(aiErrorDays, isDryRun, cancellationToken);
+                result.Logs.Add($"Dismissed AI error log rows pruned (> {aiErrorDays}d since dismissal): {result.PrunedAiErrorLogCount}");
+            }
+            else
+            {
+                result.Logs.Add("Dismissed AI error log pruning is disabled; no rows were pruned.");
+            }
+
+            // 9. Prune maintenance history
+            int historyDays = _settings.MaintenanceHistoryRetentionDays;
+            if (historyDays > 0)
+            {
+                int prunedHistory = await PruneMaintenanceHistoryAsync(historyDays, isDryRun, cancellationToken);
+                result.Logs.Add($"Maintenance history rows pruned (> {historyDays}d): {prunedHistory}");
+            }
+            else
+            {
+                result.Logs.Add("Maintenance history retention is disabled; no rows were pruned.");
+            }
+
+            if (!isDryRun)
+            {
+                DatabaseStorageMetricsService.RecordMaintenanceRun();
+            }
+
+            result.Success = true;
         }
-        else if (auditRetentionDays <= 0)
+        catch (Exception ex)
         {
-            result.Logs.Add("Access journal retention is disabled; no rows were pruned.");
+            result.Success = false;
+            result.ErrorMessage = ex.Message;
+            throw;
+        }
+        finally
+        {
+            sw.Stop();
+            result.ElapsedMilliseconds = sw.ElapsedMilliseconds;
+            await RecordRunAsync(result, startedUtc);
         }
 
-        if (!isDryRun)
-        {
-            DatabaseStorageMetricsService.RecordMaintenanceRun();
-        }
-
-        sw.Stop();
-        result.ElapsedMilliseconds = sw.ElapsedMilliseconds;
-        result.Success = true;
         return result;
     }
 }

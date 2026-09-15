@@ -134,4 +134,66 @@ public class DatabaseStorageMetricsServiceTests
         Assert.Equal(51200, metrics.MaxLimitMb);
         Assert.Equal("Configured", metrics.LimitSource);
     }
+
+    /// <summary>
+    /// Every DMV and migration query fails on the in-memory provider. Each has its own guard, so
+    /// the new metric groups must come back at their defaults rather than blanking the panel.
+    /// </summary>
+    [Fact]
+    public async Task GetStorageMetricsAsync_OnFailure_LeavesNewGroupsAtDefaults()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        using var cache = (MemoryCache)CreateSizeLimitedCache();
+        var service = CreateService(db, cache);
+
+        var metrics = await service.GetStorageMetricsAsync(ct);
+
+        Assert.Equal(0, metrics.LogAllocatedMb);
+        Assert.Equal(0, metrics.LogUsedMb);
+        Assert.Empty(metrics.TableMetrics);
+        Assert.Equal(0, metrics.OtherTablesCount);
+        Assert.Equal(0, metrics.AllTablesTotalSpaceMb);
+        Assert.False(metrics.SchemaStatusAvailable);
+        Assert.Empty(metrics.PendingMigrations);
+        Assert.Null(metrics.LastAppliedMigration);
+
+        // No key ring or ephemeral store is registered in the test container.
+        Assert.Null(metrics.ActiveContentKeyVersion);
+        Assert.Empty(metrics.ContentKeyVersions);
+        Assert.Equal(0, metrics.EphemeralSessionCount);
+
+        Assert.Equal(0, metrics.AuditLogRowCount);
+        Assert.Null(metrics.AuditLogOldestUtc);
+        Assert.Equal(0, metrics.AiErrorLogUndismissedCount);
+        Assert.Equal(0, metrics.ExpiredTrashSessionCount);
+
+        Assert.NotNull(metrics.NextScheduledMaintenanceUtc);
+        Assert.Equal(90, metrics.Policy.InactivityTtlDays);
+        Assert.Equal(90, metrics.Policy.PruneDismissedAiErrorLogDays);
+        Assert.False(metrics.Policy.EmailSenderConfigured);
+    }
+
+    [Fact]
+    public void ComputeNextRunUtc_RollsToTomorrowWhenHourHasPassed()
+    {
+        var now = new DateTime(2026, 9, 15, 5, 0, 0, DateTimeKind.Utc);
+
+        Assert.Equal(new DateTime(2026, 9, 16, 3, 0, 0, DateTimeKind.Utc),
+            DatabaseStorageMetricsService.ComputeNextRunUtc(now, 3));
+
+        // Exactly on the hour counts as passed: the run for that instant is already under way.
+        var onTheHour = new DateTime(2026, 9, 15, 3, 0, 0, DateTimeKind.Utc);
+        Assert.Equal(new DateTime(2026, 9, 16, 3, 0, 0, DateTimeKind.Utc),
+            DatabaseStorageMetricsService.ComputeNextRunUtc(onTheHour, 3));
+    }
+
+    [Fact]
+    public void ComputeNextRunUtc_UsesTodayWhenHourAhead()
+    {
+        var now = new DateTime(2026, 9, 15, 1, 30, 0, DateTimeKind.Utc);
+
+        Assert.Equal(new DateTime(2026, 9, 15, 3, 0, 0, DateTimeKind.Utc),
+            DatabaseStorageMetricsService.ComputeNextRunUtc(now, 3));
+    }
 }

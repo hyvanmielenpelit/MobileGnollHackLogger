@@ -31,7 +31,7 @@ public class DatabaseMaintenanceBackgroundService : BackgroundService
         try
         {
             await Task.Delay(TimeSpan.FromSeconds(60), stoppingToken);
-            await RunMaintenancePassAsync(stoppingToken);
+            await RunMaintenancePassAsync(MaintenanceTriggers.Startup, stoppingToken);
         }
         catch (OperationCanceledException)
         {
@@ -47,18 +47,14 @@ public class DatabaseMaintenanceBackgroundService : BackgroundService
             try
             {
                 var now = DateTime.UtcNow;
-                var nextRun = now.Date.AddHours(_settings.MaintenanceRunHourUtc);
-                if (nextRun <= now)
-                {
-                    nextRun = nextRun.AddDays(1);
-                }
+                var nextRun = DatabaseStorageMetricsService.ComputeNextRunUtc(now, _settings.MaintenanceRunHourUtc);
 
                 var delay = nextRun - now;
                 _logger.LogInformation("Next database maintenance pass scheduled at {NextRun} UTC (in {Hours:N1} hours)", nextRun, delay.TotalHours);
 
                 await Task.Delay(delay, stoppingToken);
 
-                await RunMaintenancePassAsync(stoppingToken);
+                await RunMaintenancePassAsync(MaintenanceTriggers.Scheduled, stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -73,15 +69,15 @@ public class DatabaseMaintenanceBackgroundService : BackgroundService
         }
     }
 
-    private async Task RunMaintenancePassAsync(CancellationToken stoppingToken)
+    private async Task RunMaintenancePassAsync(string trigger, CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Starting scheduled daily database maintenance pass...");
-        
+        _logger.LogInformation("Starting {Trigger} database maintenance pass...", trigger);
+
         using var scope = _scopeFactory.CreateScope();
         var retentionService = scope.ServiceProvider.GetRequiredService<ChatRetentionService>();
         var metricsService = scope.ServiceProvider.GetRequiredService<DatabaseStorageMetricsService>();
 
-        var result = await retentionService.RunFullMaintenanceAsync(new MaintenanceRequestDto { DryRun = false }, stoppingToken);
+        var result = await retentionService.RunFullMaintenanceAsync(new MaintenanceRequestDto { DryRun = false }, trigger, stoppingToken);
         _logger.LogInformation("Daily maintenance completed in {Elapsed} ms. Purged {Sessions} sessions, {Messages} messages, deleted {Folders} disk folders.",
             result.ElapsedMilliseconds, result.PurgedSessionCount, result.PurgedMessageCount, result.DeletedDiskFolderCount);
 

@@ -116,6 +116,23 @@ public static class ChatAccessAudit
             .ExecuteDeleteAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Counts the rows <see cref="PruneAsync"/> would delete, or returns zero when
+    /// <paramref name="retentionDays"/> is zero or negative.
+    /// </summary>
+    public static async Task<int> CountPrunableAsync(
+        ApplicationDbContext dbContext,
+        int retentionDays,
+        CancellationToken cancellationToken = default)
+    {
+        if (retentionDays <= 0) return 0;
+
+        DateTime cutoff = DateTime.UtcNow.AddDays(-retentionDays);
+
+        return await dbContext.ChatAccessAuditLogs
+            .CountAsync(a => a.OccurredUtc < cutoff, cancellationToken);
+    }
+
     private static string? Clamp(string? value, int maxLength)
     {
         if (string.IsNullOrEmpty(value)) return value;

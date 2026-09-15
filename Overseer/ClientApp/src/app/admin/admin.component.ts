@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, inject, ViewChild, ElementRef, ChangeDete
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
-import { AdminService, UserDto, GroupDto, SystemAiConfigDto, UserSystemAiConfigDto, GroupSystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult, AiTelemetrySummaryDto, AiGovernorStatusDto } from '../services/admin.service';
+import { AdminService, UserDto, GroupDto, SystemAiConfigDto, UserSystemAiConfigDto, GroupSystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult, MaintenanceRunLog, AiTelemetrySummaryDto, AiGovernorStatusDto } from '../services/admin.service';
 import { AiModelFormComponent, AiModelFormResult } from '../shared/ai-model-form/ai-model-form.component';
 import { ProviderBadgeComponent } from '../shared/provider-badge/provider-badge.component';
 import { ConfigAnalyticsComponent } from './config-analytics/config-analytics.component';
@@ -12,7 +12,7 @@ import {
   ConfigFilter, createEmptyFilter, isFilterActive, matchesFilter, ROLE_OPTIONS
 } from './config-filter/config-filter.model';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
-import { Subject, Subscription } from 'rxjs';
+import { Observable, Subject, Subscription } from 'rxjs';
 import { debounceTime } from 'rxjs/operators';
 
 /** The admin dashboard's top-level tabs, in display order. */
@@ -58,10 +58,21 @@ export class AdminComponent implements OnInit, OnDestroy {
   storageMetrics: DatabaseStorageMetrics | null = null;
   storageLoading = false;
   maintenanceLoading = false;
+  /** Governs the full pass and every granular action. */
   maintenanceDryRun = false;
   inactivityDays = 90;
   toolCallPruneDays = 30;
+  benchmarkToolCallPruneDays = 90;
+  auditLogRetentionDays = 365;
+  aiErrorLogPruneDays = 90;
+  /** Day-count selects take the configured policy once, on the first metrics load. */
+  private maintenanceDefaultsApplied = false;
   lastMaintenanceResult: MaintenanceResult | null = null;
+  maintenanceHistory: MaintenanceRunLog[] = [];
+  maintenanceHistoryTake = 20;
+  readonly maintenanceHistoryMaxTake = 100;
+  maintenanceHistoryLoading = false;
+  expandedHistoryRunId: number | null = null;
 
   users: UserDto[] = [];
   groups: GroupDto[] = [];
@@ -1409,12 +1420,91 @@ export class AdminComponent implements OnInit, OnDestroy {
     return Math.min(100, Math.max(0, m.usedPercentage));
   }
 
+  /** "365 days", or "disabled" for a zero window. */
+  daysLabel(days: number): string {
+    return days > 0 ? `${days} days` : 'disabled';
+  }
+
+  /** The preset day counts plus the configured value, so the policy default is always selectable. */
+  dayOptions(presets: number[], configured: number): number[] {
+    const values = configured > 0 && !presets.includes(configured) ? [...presets, configured] : presets;
+    return [...values].sort((a, b) => a - b);
+  }
+
+  /** Every non-zero count in a result, labelled for the result console. */
+  maintenanceResultCounts(r: MaintenanceResult): { label: string; value: string }[] {
+    const counts: [string, number][] = [
+      ['Sessions expired', r.softDeletedCount],
+      ['Sessions purged', r.purgedSessionCount],
+      ['Messages purged', r.purgedMessageCount],
+      ['Tool calls purged', r.purgedToolCallCount],
+      ['Chat tool payloads pruned', r.prunedToolResultCount],
+      ['Benchmark payloads pruned', r.prunedBenchmarkToolResultCount],
+      ['Access journal rows pruned', r.prunedAuditLogCount],
+      ['Dismissed AI errors pruned', r.prunedAiErrorLogCount],
+      ['Disk folders removed', r.deletedDiskFolderCount],
+      ['Disk files removed', r.deletedDiskFileCount],
+      ['Orphan folders swept', r.sweptOrphanFolderCount]
+    ];
+    const rows = counts
+      .filter(([, value]) => value > 0)
+      .map(([label, value]) => ({ label, value: value.toLocaleString() }));
+    if (r.reclaimedDiskBytes > 0) {
+      rows.push({ label: 'Disk reclaimed', value: (r.reclaimedDiskBytes / 1024 / 1024).toFixed(2) + ' MB' });
+    }
+    return rows;
+  }
+
+  loadMaintenanceHistory() {
+    this.maintenanceHistoryLoading = true;
+    this.adminService.getMaintenanceHistory(this.maintenanceHistoryTake).subscribe({
+      next: (rows) => {
+        this.maintenanceHistory = rows;
+        this.maintenanceHistoryLoading = false;
+      },
+      error: (err) => {
+        console.error('Failed to load maintenance history', err);
+        this.maintenanceHistoryLoading = false;
+      }
+    });
+  }
+
+  loadMoreMaintenanceHistory() {
+    this.maintenanceHistoryTake = Math.min(this.maintenanceHistoryMaxTake, this.maintenanceHistoryTake + 20);
+    this.loadMaintenanceHistory();
+  }
+
+  /** More rows may exist when the last load filled the page and the cap is not reached. */
+  canLoadMoreMaintenanceHistory(): boolean {
+    return this.maintenanceHistory.length >= this.maintenanceHistoryTake
+      && this.maintenanceHistoryTake < this.maintenanceHistoryMaxTake;
+  }
+
+  toggleHistoryLog(id: number) {
+    this.expandedHistoryRunId = this.expandedHistoryRunId === id ? null : id;
+  }
+
+  private applyMaintenanceDefaults(m: DatabaseStorageMetrics) {
+    if (this.maintenanceDefaultsApplied || !m.policy) {
+      return;
+    }
+    this.maintenanceDefaultsApplied = true;
+    const p = m.policy;
+    if (p.inactivityTtlDays > 0) this.inactivityDays = p.inactivityTtlDays;
+    if (p.pruneToolCallResultsDays > 0) this.toolCallPruneDays = p.pruneToolCallResultsDays;
+    if (p.pruneBenchmarkToolCallResultsDays > 0) this.benchmarkToolCallPruneDays = p.pruneBenchmarkToolCallResultsDays;
+    if (p.auditLogRetentionDays > 0) this.auditLogRetentionDays = p.auditLogRetentionDays;
+    if (p.pruneDismissedAiErrorLogDays > 0) this.aiErrorLogPruneDays = p.pruneDismissedAiErrorLogDays;
+  }
+
   loadStorageMetrics(showFeedback = false) {
     this.storageLoading = true;
     this.adminService.getStorageMetrics().subscribe({
       next: (data) => {
         this.storageMetrics = data;
+        this.applyMaintenanceDefaults(data);
         this.storageLoading = false;
+        this.loadMaintenanceHistory();
         if (showFeedback) {
           this.showAdminToast('Database storage metrics refreshed.', 'info', 'Metrics Refreshed');
         }
@@ -1437,7 +1527,7 @@ export class AdminComponent implements OnInit, OnDestroy {
         this.maintenanceDryRun ? 'Previewing Maintenance Pass' : 'Executing Maintenance Pass',
         this.maintenanceDryRun
           ? 'Computing dry-run maintenance metrics...'
-          : 'Running full maintenance pass (purging expired trash, inactive sessions, and aged tool results)...'
+          : 'Running the full maintenance pass (sessions, trash, payloads, orphan folders, access journal and dismissed AI errors)...'
       );
 
       this.adminService.runMaintenanceNow({
@@ -1475,7 +1565,7 @@ export class AdminComponent implements OnInit, OnDestroy {
     if (!this.maintenanceDryRun) {
       this.openConfirmationModal(
         'Run Scheduled Maintenance Pass',
-        'Are you sure you want to run the full maintenance pass? Expired soft-deleted chats and aged tool calls will be permanently modified.',
+        'Are you sure you want to run the full maintenance pass? Expired trash, aged payloads, access journal rows past retention and old dismissed AI errors will be permanently removed.',
         execute,
         'Execute Maintenance',
         'btn-gh btn-primary'
@@ -1485,133 +1575,142 @@ export class AdminComponent implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * Runs one granular maintenance action under the shared dry-run switch. A dry run skips the
+   * confirmation, since it changes nothing; the result lands in the console either way.
+   */
+  private runGranularMaintenance(action: {
+    title: string;
+    /** Omit to run without confirmation even when not a dry run. */
+    confirmMessage?: string;
+    confirmButton?: string;
+    confirmClass?: string;
+    loadingMessage: string;
+    errorPrefix: string;
+    call: (dryRun: boolean) => Observable<MaintenanceResult>;
+  }) {
+    const dryRun = this.maintenanceDryRun;
+    const execute = () => {
+      this.maintenanceLoading = true;
+      this.lastMaintenanceResult = null;
+      this.openLoadingModal(dryRun ? `Previewing: ${action.title}` : action.title, action.loadingMessage);
+      action.call(dryRun).subscribe({
+        next: (res) => {
+          this.closeLoadingModal();
+          this.maintenanceLoading = false;
+          this.lastMaintenanceResult = res;
+          const summary = res.logs.length > 0 ? res.logs[res.logs.length - 1] : `${action.title} completed.`;
+          this.showAdminToast(summary, 'success', res.isDryRun ? 'Dry Run Completed' : action.title);
+          this.loadStorageMetrics();
+        },
+        error: (err) => {
+          this.closeLoadingModal();
+          this.maintenanceLoading = false;
+          this.showAdminToast(
+            `${action.errorPrefix}: ` + (err.error?.message || err.message),
+            'error',
+            'Maintenance Error'
+          );
+        }
+      });
+    };
+
+    if (dryRun || !action.confirmMessage) {
+      execute();
+    } else {
+      this.openConfirmationModal(
+        action.title,
+        action.confirmMessage,
+        execute,
+        action.confirmButton ?? 'Confirm',
+        action.confirmClass ?? 'btn-gh btn-secondary'
+      );
+    }
+  }
+
   purgeAllTrash() {
-    this.openConfirmationModal(
-      'Purge All Trash Now',
-      'Are you sure you want to immediately delete ALL soft-deleted sessions across all users? This action cannot be undone.',
-      () => {
-        this.maintenanceLoading = true;
-        this.openLoadingModal(
-          'Purging All Trash',
-          'Permanently deleting all soft-deleted sessions and associated disk folders across all users...'
-        );
-        this.adminService.purgeTrashNow({ dryRun: false }).subscribe({
-          next: (res) => {
-            this.closeLoadingModal();
-            this.maintenanceLoading = false;
-            this.lastMaintenanceResult = res;
-            const mb = (res.reclaimedDiskBytes / 1024 / 1024).toFixed(2);
-            this.showAdminToast(
-              `Purged ${res.purgedSessionCount} sessions and ${res.deletedDiskFolderCount} disk folders (${mb} MB reclaimed).`,
-              'success',
-              'Trash Purged'
-            );
-            this.loadStorageMetrics();
-          },
-          error: (err) => {
-            this.closeLoadingModal();
-            this.maintenanceLoading = false;
-            this.showAdminToast(
-              'Failed to purge trash: ' + (err.error?.message || err.message),
-              'error',
-              'Purge Error'
-            );
-          }
-        });
-      },
-      'Purge All Trash',
-      'btn-gh btn-gh-delete'
-    );
+    this.runGranularMaintenance({
+      title: 'Purge All Trash Now',
+      confirmMessage: 'Are you sure you want to immediately delete ALL soft-deleted sessions across all users? This action cannot be undone.',
+      confirmButton: 'Purge All Trash',
+      confirmClass: 'btn-gh btn-gh-delete',
+      loadingMessage: 'Permanently deleting all soft-deleted sessions and associated disk folders across all users...',
+      errorPrefix: 'Failed to purge trash',
+      call: (dryRun) => this.adminService.purgeTrashNow({ dryRun })
+    });
   }
 
   purgeInactiveNow() {
-    this.openConfirmationModal(
-      'Purge Inactive Sessions',
-      `Are you sure you want to soft-delete inactive sessions older than ${this.inactivityDays} days?`,
-      () => {
-        this.maintenanceLoading = true;
-        this.openLoadingModal(
-          'Purging Inactive Sessions',
-          `Soft-deleting inactive sessions older than ${this.inactivityDays} days...`
-        );
-        this.adminService.purgeInactive({ inactivityDays: this.inactivityDays, dryRun: false }).subscribe({
-          next: (res) => {
-            this.closeLoadingModal();
-            this.maintenanceLoading = false;
-            this.showAdminToast(res.message, 'success', 'Inactive Sessions Purged');
-            this.loadStorageMetrics();
-          },
-          error: (err) => {
-            this.closeLoadingModal();
-            this.maintenanceLoading = false;
-            this.showAdminToast(
-              'Failed to purge inactive sessions: ' + (err.error?.message || err.message),
-              'error',
-              'Purge Error'
-            );
-          }
-        });
-      },
-      'Soft-Delete Inactive',
-      'btn-gh btn-secondary'
-    );
+    const days = this.inactivityDays;
+    this.runGranularMaintenance({
+      title: 'Purge Inactive Sessions',
+      confirmMessage: `Are you sure you want to soft-delete unpinned sessions inactive for over ${days} days? ` +
+        'Sessions past their own retention TTL also expire, and confidential sessions set to purge on delete are permanently purged, not moved to the trash.',
+      confirmButton: 'Soft-Delete Inactive',
+      loadingMessage: `Expiring sessions inactive for over ${days} days...`,
+      errorPrefix: 'Failed to purge inactive sessions',
+      call: (dryRun) => this.adminService.purgeInactive({ inactivityDays: days, dryRun })
+    });
   }
 
   pruneToolResultsNow() {
-    this.openConfirmationModal(
-      'Prune Aged Tool Results',
-      `Are you sure you want to prune tool call result payloads older than ${this.toolCallPruneDays} days? Message transcripts will be preserved.`,
-      () => {
-        this.maintenanceLoading = true;
-        this.openLoadingModal(
-          'Pruning Tool Call Results',
-          `Truncating tool result payloads older than ${this.toolCallPruneDays} days...`
-        );
-        this.adminService.pruneToolResults({ toolCallPruneDays: this.toolCallPruneDays, dryRun: false }).subscribe({
-          next: (res) => {
-            this.closeLoadingModal();
-            this.maintenanceLoading = false;
-            this.showAdminToast(res.message, 'success', 'Tool Results Pruned');
-            this.loadStorageMetrics();
-          },
-          error: (err) => {
-            this.closeLoadingModal();
-            this.maintenanceLoading = false;
-            this.showAdminToast(
-              'Failed to prune tool results: ' + (err.error?.message || err.message),
-              'error',
-              'Pruning Error'
-            );
-          }
-        });
-      },
-      'Prune Tool Payloads',
-      'btn-gh btn-secondary'
-    );
+    const days = this.toolCallPruneDays;
+    this.runGranularMaintenance({
+      title: 'Prune Aged Tool Results',
+      confirmMessage: `Are you sure you want to prune tool call result payloads older than ${days} days? Message transcripts will be preserved.`,
+      confirmButton: 'Prune Tool Payloads',
+      loadingMessage: `Truncating tool result payloads older than ${days} days...`,
+      errorPrefix: 'Failed to prune tool results',
+      call: (dryRun) => this.adminService.pruneToolResults({ toolCallPruneDays: days, dryRun })
+    });
+  }
+
+  pruneBenchmarkToolResultsNow() {
+    const days = this.benchmarkToolCallPruneDays;
+    this.runGranularMaintenance({
+      title: 'Prune Benchmark Tool Payloads',
+      confirmMessage: `Are you sure you want to null the tool call arguments and results of benchmark runs older than ${days} days? ` +
+        'Tool-layer diagnostics for those runs will no longer be able to replay what each call saw.',
+      confirmButton: 'Prune Benchmark Payloads',
+      loadingMessage: `Pruning benchmark tool payloads for runs older than ${days} days...`,
+      errorPrefix: 'Failed to prune benchmark tool payloads',
+      call: (dryRun) => this.adminService.pruneBenchmarkToolResults({ benchmarkToolCallPruneDays: days, dryRun })
+    });
+  }
+
+  pruneAuditLogNow() {
+    const days = this.auditLogRetentionDays;
+    const prunable = this.storageMetrics?.auditLogPrunableCount ?? 0;
+    this.runGranularMaintenance({
+      title: 'Prune Access Journal',
+      confirmMessage: `Are you sure you want to permanently delete ${prunable.toLocaleString()} access journal row(s) older than ${days} days? ` +
+        'This is the only action that removes audit records, and it cannot be undone.',
+      confirmButton: 'Delete Audit Rows',
+      confirmClass: 'btn-gh btn-gh-delete',
+      loadingMessage: `Deleting access journal rows older than ${days} days...`,
+      errorPrefix: 'Failed to prune the access journal',
+      call: (dryRun) => this.adminService.pruneAuditLog({ auditLogRetentionDays: days, dryRun })
+    });
+  }
+
+  pruneAiErrorLogNow() {
+    const days = this.aiErrorLogPruneDays;
+    this.runGranularMaintenance({
+      title: 'Prune Dismissed AI Errors',
+      confirmMessage: `Are you sure you want to delete AI errors dismissed more than ${days} days ago? Undismissed errors are not affected.`,
+      confirmButton: 'Prune Dismissed Errors',
+      loadingMessage: `Deleting AI errors dismissed over ${days} days ago...`,
+      errorPrefix: 'Failed to prune dismissed AI errors',
+      call: (dryRun) => this.adminService.pruneAiErrorLog({ aiErrorLogPruneDays: days, dryRun })
+    });
   }
 
   sweepOrphanFoldersNow() {
-    this.maintenanceLoading = true;
-    this.openLoadingModal(
-      'Sweeping Orphan Folders',
-      'Scanning and removing unreferenced disk folders...'
-    );
-    this.adminService.sweepOrphans({ dryRun: false }).subscribe({
-      next: (res) => {
-        this.closeLoadingModal();
-        this.maintenanceLoading = false;
-        this.showAdminToast(res.message, 'success', 'Orphan Folders Swept');
-        this.loadStorageMetrics();
-      },
-      error: (err) => {
-        this.closeLoadingModal();
-        this.maintenanceLoading = false;
-        this.showAdminToast(
-          'Failed to sweep orphan folders: ' + (err.error?.message || err.message),
-          'error',
-          'Sweep Error'
-        );
-      }
+    this.runGranularMaintenance({
+      title: 'Sweep Orphan Folders',
+      loadingMessage: 'Scanning and removing unreferenced disk folders...',
+      errorPrefix: 'Failed to sweep orphan folders',
+      call: (dryRun) => this.adminService.sweepOrphans({ dryRun })
     });
   }
 
