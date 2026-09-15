@@ -502,6 +502,31 @@ describe('AdminComponent', () => {
       expect(runDialog().open).toBeFalse();
     });
 
+    it('shows the result summary in the run dialog and no separate last-run line in the tab', async () => {
+      const response = new Subject<MaintenanceResult>();
+      spyOn(adminService, 'runMaintenanceNow').and.returnValue(response.asObservable());
+      component.selectTab('database');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      component.maintenanceDryRun = true;
+      component.runFullMaintenance();
+      response.next(result(true));
+      response.complete();
+      fixture.detectChanges();
+
+      const summary: HTMLElement | null = runDialog().querySelector('.run-summary');
+      expect(summary).not.toBeNull();
+      expect(summary!.textContent).toContain('Success');
+      expect(summary!.textContent).toContain('Dry run');
+      expect(summary!.textContent).toContain('Manual');
+      expect(fixture.nativeElement.querySelector('#maintenance-inactivity-days')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('.last-run-line')).toBeNull();
+
+      component.closeMaintenanceRunDialog();
+    });
+
     it('switches the run dialog to the failed phase when the request errors', () => {
       spyOn(adminService, 'runMaintenanceNow').and.returnValue(throwError(() => ({ message: 'boom' })));
 

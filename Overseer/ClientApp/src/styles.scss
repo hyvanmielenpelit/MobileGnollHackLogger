@@ -1020,6 +1020,11 @@ input[type="number"] {
   }
 }
 
+/* .gh-dialog insets its own content; the wrapper's 20px is for .settings-dialog, which does not. */
+.gh-dialog .dialog-content {
+  padding: 0;
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;

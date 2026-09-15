@@ -885,15 +885,6 @@ export class AdminComponent implements OnInit, OnDestroy, AfterViewInit {
     this.closeMaintenanceRunDialog();
   }
 
-  viewLastMaintenanceResult() {
-    if (!this.lastMaintenanceResult) {
-      return;
-    }
-    this.maintenanceRunLabel = this.lastMaintenanceRunLabel;
-    this.showResultPhase();
-    this.showMaintenanceRunDialog();
-  }
-
   private showResultPhase() {
     const result = this.lastMaintenanceResult!;
     this.maintenanceRunPhase = result.success ? 'completed' : 'failed';

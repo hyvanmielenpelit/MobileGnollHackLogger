@@ -418,7 +418,6 @@
     flex-direction: column;
     flex: 1;
     min-height: 0;
-    padding: 20px 20px 0 20px;
   }
 
   .scrollable-content {
@@ -428,9 +427,8 @@
     padding-bottom: 20px;
     padding-right: 10px;
   }
-  
+
   .dialog-actions {
-    padding-bottom: 20px;
     margin-top: 0;
   }
 }
@@ -591,42 +589,6 @@
     input {
       width: 100%;
     }
-  }
-}
-
-.table-loading {
-  opacity: 0.5;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-}
-
-.dialog-stretch {
-  max-height: 90dvh;
-
-  &[open] {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .dialog-content {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-    padding: 20px 20px 0 20px;
-  }
-
-  .scrollable-content {
-    flex: 1;
-    overflow-y: auto;
-    min-height: 0;
-    padding-bottom: 20px;
-    padding-right: 10px;
-  }
-  
-  .dialog-actions {
-    padding-bottom: 20px;
-    margin-top: 0;
   }
 }
 
@@ -1043,32 +1005,10 @@
   }
 }
 
-.result-console {
-  background: #0d1117;
-  border: 1px solid #30363d;
-  border-radius: 6px;
-  padding: 15px;
-  font-family: Consolas, "Courier New", monospace;
-  font-size: 0.9em;
-  color: #c9d1d9;
-}
-
 .result-summary {
   padding-bottom: 8px;
   border-bottom: 1px solid #21262d;
   color: #58a6ff;
-}
-
-.result-logs {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-
-  li {
-    padding: 3px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-    &:last-child { border-bottom: none; }
-  }
 }
 
 .result-error {
@@ -1215,14 +1155,6 @@
   font-size: 0.85em;
 }
 
-.last-run-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  margin-bottom: 0;
-}
-
 .history-row-failed td {
   color: #ff7b72;
 }
@@ -1250,17 +1182,22 @@
 .maintenance-run-dialog {
   max-width: 720px;
 
-  h3 {
-    margin: 0 0 12px 0;
-    font-size: 1.2rem;
-    color: var(--title-color, #e0ba6d);
+  .run-dialog-header {
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border-glass);
 
-    &:focus {
-      outline: none;
-    }
-    &:focus-visible {
-      outline: 2px solid var(--primary-color, #e0ba6d);
-      outline-offset: 3px;
+    h3 {
+      margin: 0;
+      font-size: 1.2rem;
+
+      &:focus {
+        outline: none;
+      }
+      &:focus-visible {
+        outline: 2px solid var(--primary-color);
+        outline-offset: 3px;
+      }
     }
   }
 
@@ -1283,16 +1220,78 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .maintenance-run-badges {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin: 0 0 8px 0;
+  .run-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 12px 16px;
+    margin: 0 0 16px 0;
+    padding: 12px 14px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+
+    > div {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+    dt {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #999;
+    }
+    dd {
+      margin: 0;
+      color: #eee;
+      font-variant-numeric: tabular-nums;
+    }
   }
 
-  .maintenance-run-meta {
-    margin: 0 0 12px 0;
-    font-size: 0.9rem;
+  /* The chip text carries the meaning; the colour only reinforces it. */
+  .run-outcome {
+    display: inline-block;
+    padding: 1px 10px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-success, #2ecc71);
+    background: rgba(46, 204, 113, 0.12);
+    border: 1px solid rgba(46, 204, 113, 0.45);
+  }
+
+  .run-outcome-failed {
+    color: #ff7b72;
+    background: rgba(255, 123, 114, 0.12);
+    border-color: rgba(255, 123, 114, 0.45);
+  }
+
+  .run-error {
+    margin: 0 0 16px 0;
+    padding: 10px 12px;
+    border-left: 3px solid #ff7b72;
+    border-radius: 0 6px 6px 0;
+    background: rgba(255, 123, 114, 0.08);
+    color: #ff7b72;
+    word-break: break-word;
+  }
+
+  .run-section {
+    margin: 0 0 16px 0;
+
+    h4 {
+      margin: 0 0 8px 0;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--nav-color);
+    }
+  }
+
+  .run-empty {
+    margin: 0;
     color: #a0a0a0;
   }
 
@@ -1300,36 +1299,32 @@
     max-height: 40vh;
     overflow: auto;
     overscroll-behavior: contain;
+    padding: 10px 12px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-glass);
+    border-radius: 6px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: #c9d1d9;
 
     &:focus-visible {
-      outline: 2px solid var(--primary-color, #e0ba6d);
+      outline: 2px solid var(--primary-color);
       outline-offset: 2px;
     }
   }
-}
 
-/* The badge text carries the meaning; the colour only reinforces it. */
-.run-badge {
-  display: inline-block;
-  padding: 2px 10px;
-  border-radius: 999px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--primary-color, #e0ba6d);
-  background: rgba(224, 186, 109, 0.12);
-  border: 1px solid rgba(224, 186, 109, 0.45);
-}
+  .run-log-lines {
+    list-style: none;
+    margin: 0;
+    padding: 0;
 
-.run-badge-failed {
-  color: #ff7b72;
-  background: rgba(255, 123, 114, 0.12);
-  border-color: rgba(255, 123, 114, 0.45);
-}
-
-.run-badge-dry {
-  color: #58a6ff;
-  background: rgba(88, 166, 255, 0.12);
-  border-color: rgba(88, 166, 255, 0.45);
+    li {
+      padding: 2px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      &:last-child { border-bottom: none; }
+    }
+  }
 }
 
 /* Telemetry & Governor Dashboard Styles */
