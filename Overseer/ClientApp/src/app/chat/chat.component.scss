@@ -575,14 +575,30 @@
     color: inherit;
     cursor: help;
   }
+  /* Glyph only, sized as .cw-warning; the aria-label and the hint carry the words. The row
+     aligns on baseline, so the button centres itself against the value beside it. */
   .cost-partial-badge {
-    font-size: 9px;
-    letter-spacing: 0.5px;
-    padding: 1px 5px;
-    border-radius: 3px;
-    border: 1px solid var(--border-glass);
-    opacity: 0.8;
+    appearance: none;
+    background: none;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    display: inline-flex;
+    align-self: center;
+    line-height: 0;
+    color: var(--color-warning);
     cursor: help;
+
+    svg {
+      inline-size: 12px;
+      block-size: 12px;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
   }
 }
 

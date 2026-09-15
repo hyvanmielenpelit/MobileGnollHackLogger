@@ -537,6 +537,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     return tip;
   }
 
+  /** Read by both the glyph's aria-label and its hint, so the two never drift apart. */
+  get partialCostTooltip(): string {
+    return 'Incomplete total. Some responses in this chat ran on a model with no configured pricing, '
+      + 'so their cost could not be estimated and is not included in this figure.';
+  }
+
   /**
    * Determines the desired avatar state from the current flags
    * and requests a loop-boundary-aware transition if it differs

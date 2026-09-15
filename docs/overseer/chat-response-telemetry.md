@@ -154,12 +154,14 @@ matter.
    The same `.msg-cost-footer`, on the streaming message box, driven by `liveCost` /
    `liveIsOperatorCost` once the `cost` event arrives.
 3. **Chat Total**:
-   `Total 1.85¢` in the telemetry bar above the prompt box, sharing the row with the
-   context window indicator. The value is `ChatSession.TotalEstimatedCost` plus the in-flight
+   `Total 1.85¢` in the chat header, right-aligned beside the title and sharing that space with
+   the context window indicator. The value is `ChatSession.TotalEstimatedCost` plus the in-flight
    turn, falling back to the sum of loaded per-message costs for a chat saved before that column
-   existed. A **PARTIAL** badge marks a chat in which some assistant turn ran unpriced, with a
-   tooltip saying so. When no cost is known anywhere the whole indicator is hidden — there is no
-   "not available" text, and the context indicator stays right-aligned.
+   existed. When some assistant turn ran unpriced, a small amber warning glyph follows the figure;
+   its tooltip and accessible name say the total is incomplete because responses on a model with
+   no configured pricing are not included. An operator-funded turn whose price is withheld from
+   the viewer does not raise the glyph. When no cost is known anywhere the whole indicator is
+   hidden — there is no "not available" text, and the context indicator stays right-aligned.
 
 ---
 

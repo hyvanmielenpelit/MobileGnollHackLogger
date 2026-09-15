@@ -188,7 +188,14 @@
                 <span class="cost-label">Total</span>
                 <span class="cost-value" [title]="chatCostTooltip">{{ formattedChatCost }}</span>
                 @if (isChatCostPartial) {
-                  <span class="cost-partial-badge" [title]="chatCostTooltip">PARTIAL</span>
+                  <button type="button" class="cost-partial-badge"
+                          [attr.aria-label]="partialCostTooltip"
+                          interestfor="tip-partial-cost"
+                          [attr.style]="'anchor-name: --tip-partial-cost'">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                  </button>
+                  <div popover="hint" id="tip-partial-cost" class="gh-tooltip gh-tooltip-multiline"
+                       [attr.style]="'position-anchor: --tip-partial-cost'">{{ partialCostTooltip }}</div>
                 }
               </div>
             }

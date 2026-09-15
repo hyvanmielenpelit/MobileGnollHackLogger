@@ -567,7 +567,7 @@ describe('ChatComponent session loading and exclusivity', () => {
       expect(compiled.querySelector('.chat-header .context-window-indicator')).toBeTruthy();
     });
 
-    it('should mark a partially priced chat with a PARTIAL badge', () => {
+    it('should mark a partially priced chat with an icon-only partial-cost glyph beside the total', () => {
       component.messages = [
         { role: 'assistant', content: 'a', estimatedCost: 0.01 } as any,
         { role: 'assistant', content: 'b' } as any,
@@ -579,6 +579,15 @@ describe('ChatComponent session loading and exclusivity', () => {
       expect(component.isChatCostPartial).toBeTrue();
       expect(compiled.querySelector('.cost-partial-badge')).toBeTruthy();
       expect(component.chatCostTooltip).toContain('not included');
+
+      const badge = compiled.querySelector('.chat-header .chat-cost-indicator .cost-partial-badge') as HTMLElement;
+      expect(badge).toBeTruthy();
+      expect(badge.tagName).toBe('BUTTON');
+      expect(badge.textContent?.trim()).toBe('');
+      expect(badge.querySelector('svg')).toBeTruthy();
+      expect(badge.getAttribute('aria-label')).toContain('not included');
+      expect(badge.getAttribute('interestfor')).toBe('tip-partial-cost');
+      expect(compiled.querySelector('#tip-partial-cost')?.textContent).toContain('no configured pricing');
     });
 
     it('should not mark a fully priced chat as partial', () => {
