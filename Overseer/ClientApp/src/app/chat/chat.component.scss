@@ -1074,6 +1074,11 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
     }
   }
   
+  .make-confidential-btn {
+    margin-inline-start: auto;
+    flex-shrink: 0;
+  }
+
   .rename-container {
     flex-grow: 1;
     position: relative;

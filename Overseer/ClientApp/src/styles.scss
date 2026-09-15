@@ -329,6 +329,17 @@ a:hover {
   white-space: nowrap;
 }
 
+/* Native anchor positioning centres the tooltip with anchor-center, which the browser
+   shifts only as far as needed to keep it inside the viewport. The polyfill has no
+   anchor-center, so polyfilled browsers keep the transform centring above. */
+@supports (justify-self: anchor-center) {
+  .gh-tooltip {
+    left: auto;
+    transform: none;
+    justify-self: anchor-center;
+  }
+}
+
 /* Modifier applied alongside .gh-tooltip for tooltips whose content is several lines
    rather than a single phrase. Must stay above the 600px override below, so that
    override still wins on narrow screens. */
@@ -349,6 +360,7 @@ a:hover {
   top: auto;
   left: auto;
   transform: none;
+  justify-self: auto;
   max-inline-size: min(360px, calc(100vw - 40px));
   padding: 10px 14px;
   line-height: 1.45;

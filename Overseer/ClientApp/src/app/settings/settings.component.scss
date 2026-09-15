@@ -255,8 +255,6 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
 
 .recommended-tooltip {
   position-anchor: --star-anchor;
-  top: calc(anchor(bottom) + 8px);
-  left: anchor(center);
 }
 
 .model-picker-body {
