@@ -2397,6 +2397,17 @@ describe('ChatComponent confidential chats', () => {
       expect(compiled.querySelector('.chat-header button[interestfor="tip-make-confidential"]')).toBeFalsy();
     });
 
+    it('should render as the privacy pill with a visible label, not an icon-only action button', () => {
+      component.currentSessionId = '91';
+      fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
+      const button = compiled.querySelector('button[interestfor="tip-make-confidential"]')!;
+      expect(button.classList).toContain('make-confidential-btn');
+      expect(button.classList).not.toContain('action-btn');
+      expect(button.querySelector('svg.btn-icon')).toBeTruthy();
+      expect(button.querySelector('.privacy-mode-label')?.textContent?.trim()).toBe('Make confidential');
+    });
+
     it('should adopt the upgraded state and announce the server notice', () => {
       fixture.detectChanges();
       spyOn(component, 'loadSessions');

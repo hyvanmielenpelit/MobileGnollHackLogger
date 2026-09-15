@@ -1708,8 +1708,17 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
   font-weight: 600;
 }
 
-/* Privacy choice for the chat about to be created; sized like a setting badge, on the model-selector row. */
-.privacy-mode-btn {
+/* The lit state both pills share on hover and keyboard focus. */
+@mixin privacy-pill-lit {
+  border-color: var(--primary-color, #d4af37);
+  color: var(--primary-color, #d4af37);
+  background: rgba(212, 175, 55, 0.12);
+}
+
+/* The pill both privacy controls on the composer row share: the mode selector for a new chat
+   and the Make Confidential action for a saved Standard chat. They occupy the same slot and
+   must read as one control family. */
+%privacy-pill {
   margin-inline-start: auto;
   display: inline-flex;
   align-items: center;
@@ -1731,10 +1740,44 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
     flex-shrink: 0;
   }
 
+  /* A real border carries the edge, so the pill keeps one in forced-colors mode where the
+     shadow is stripped. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.4);
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease,
+              box-shadow 0.15s ease, transform 0.15s ease;
+
   &:focus-visible {
     outline: 2px solid var(--primary-color, #d4af37);
     outline-offset: 2px;
   }
+
+  @media (hover: hover) {
+    &:hover {
+      @include privacy-pill-lit;
+    }
+  }
+
+  &:focus-visible {
+    @include privacy-pill-lit;
+  }
+
+  &:active {
+    transform: translateY(1px);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+
+    &:active {
+      transform: none;
+    }
+  }
+}
+
+/* Privacy choice for the chat about to be created; sized like a setting badge, on the model-selector row. */
+.privacy-mode-btn {
+  @extend %privacy-pill;
 
   &.mode-standard {
     color: $privacy-standard-ink;
@@ -1755,17 +1798,31 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
   }
 
   /* After the modifiers, so the gold of hover and focus wins over the mode's own colour. */
-  &:hover,
-  &:focus-visible {
-    border-color: var(--primary-color, #d4af37);
-    color: var(--primary-color, #d4af37);
+  @media (hover: hover) {
+    &:hover {
+      @include privacy-pill-lit;
+    }
   }
+
+  &:focus-visible {
+    @include privacy-pill-lit;
+  }
+}
+
+/* The upgrade action for a saved Standard chat, in the selector's slot and its clothes. Neutral
+   rather than mode-tinted: the chat is not confidential until the dialog confirms. */
+.make-confidential-btn {
+  @extend %privacy-pill;
+  color: #f0f0f0;
+  border-color: rgba(255, 255, 255, 0.4);
+  background: linear-gradient(rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04));
 }
 
 /* The same width at which .setting-indicator and the separator disappear, so the row changes
    state once: full above it, model selector plus glyphs below. */
 @media (max-width: 992px) {
-  .privacy-mode-btn {
+  .privacy-mode-btn,
+  .make-confidential-btn {
     padding: 3px 6px;
 
     .privacy-mode-label {
@@ -1787,6 +1844,13 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
     svg {
       margin-right: 0;
     }
+  }
+}
+
+/* The hint repeats the label, so it is only shown where the label is hidden. */
+@media (width > 992px) {
+  #tip-make-confidential {
+    display: none;
   }
 }
 
