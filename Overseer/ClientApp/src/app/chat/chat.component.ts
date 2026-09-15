@@ -1057,7 +1057,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   async attachGameSnapshotFromClient() {
-    if (!this.clientBridge.isEmbedded() || this.hasGameSnapshot || this.isAttachingSnapshot) {
+    if (!this.clientBridge.isEmbedded() || !this.clientBridge.isGameOn() || this.hasGameSnapshot || this.isAttachingSnapshot) {
       return;
     }
 
@@ -1368,17 +1368,30 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
           // Handle route AFTER settings are loaded to avoid
           // showThoughtsAndTools race condition (defaulting to 0 before settings arrive)
           this.debugService.log(`[Overseer] Settings loaded, now subscribing to route. showThoughtsAndTools=${this.showThoughtsAndTools}`);
-          this.route.queryParams.subscribe(params => this.applyRouteSessionParam(params['sessionId'], true));
+          this.route.queryParams.subscribe(params => {
+            this.applyRouteGameOnParam(params['gameOn']);
+            this.applyRouteSessionParam(params['sessionId'], true);
+          });
         }
       },
       error: (err) => {
         const settingsDuration = performance.now() - t0;
         this.perfLog('Settings', `getSettings FAILED in ${settingsDuration.toFixed(1)}ms: ${err.message || err}`);
         if (isInit) {
-          this.route.queryParams.subscribe(params => this.applyRouteSessionParam(params['sessionId'], false));
+          this.route.queryParams.subscribe(params => {
+            this.applyRouteGameOnParam(params['gameOn']);
+            this.applyRouteSessionParam(params['sessionId'], false);
+          });
         }
       }
     });
+  }
+
+  /* Captures the handoff's gameOn flag into page-lifetime bridge state. Anything else leaves
+     the state alone, so a sidebar switch that drops the parameter cannot clear it. */
+  private applyRouteGameOnParam(value: any): void {
+    if (value === '1') this.clientBridge.setHostGameOn(true);
+    else if (value === '0') this.clientBridge.setHostGameOn(false);
   }
 
   /**

@@ -153,9 +153,11 @@
           } @else {
             <span class="chat-title">New Chat</span>
           }
-          <!-- Mutually exclusive: attaching a snapshot requires there be none, saving one requires one. -->
+          <!-- Mutually exclusive: attaching a snapshot requires there be none, saving one requires one.
+               Attaching also requires the host to have a running game, or the request comes back
+               as a bridge error. -->
           <div class="chat-header-actions">
-            @if (clientBridge.isEmbedded() && !hasGameSnapshot) {
+            @if (clientBridge.isEmbedded() && clientBridge.isGameOn() && !hasGameSnapshot) {
               <button type="button" class="action-btn"
                       (click)="attachGameSnapshotFromClient()"
                       [disabled]="isAttachingSnapshot"

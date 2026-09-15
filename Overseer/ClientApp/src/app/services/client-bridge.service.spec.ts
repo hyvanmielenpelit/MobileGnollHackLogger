@@ -157,6 +157,23 @@ describe('ClientBridgeService', () => {
     });
   });
 
+  /* The default is "game on" so a GnollHack build predating the isGameOn field keeps the
+     snapshot controls it has today. */
+  it('should report isGameOn true until the host says otherwise', () => {
+    expect(service.isGameOn()).toBeTrue();
+  });
+
+  it('should report isGameOn false only after the host reports no running game', () => {
+    service.setHostGameOn(false);
+    expect(service.isGameOn()).toBeFalse();
+
+    service.setHostGameOn(true);
+    expect(service.isGameOn()).toBeTrue();
+
+    service.setHostGameOn(null);
+    expect(service.isGameOn()).toBeTrue();
+  });
+
   it('should format notifyUrlChanged correctly', () => {
     const postMessageSpy = spyOn(service, 'postMessage');
 

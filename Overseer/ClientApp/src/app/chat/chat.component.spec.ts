@@ -1475,6 +1475,61 @@ describe('ChatComponent context window indicator', () => {
       expect(attachBtn).toBeFalsy();
     });
 
+    /* The GnollHack host opens the Overseer from the About page with no game running, where
+       refresh_snapshot throws and the user only ever sees a bridge error toast. */
+    it('should hide the header attach-snapshot button when the host reports no running game', () => {
+      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
+      clientBridge.setHostGameOn(false);
+      component.hasGameSnapshot = false;
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game board from GnollHack to this chat"]');
+      expect(attachBtn).toBeFalsy();
+    });
+
+    /* A GnollHack build predating the isGameOn field reports nothing, and must lose nothing. */
+    it('should show the header attach-snapshot button when the host has not reported game state', () => {
+      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
+      clientBridge.setHostGameOn(null);
+      component.hasGameSnapshot = false;
+      fixture.detectChanges();
+
+      const compiled = fixture.nativeElement as HTMLElement;
+      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game board from GnollHack to this chat"]');
+      expect(attachBtn).toBeTruthy();
+    });
+
+    it('should not request a snapshot when the host reports no running game', async () => {
+      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
+      const postMessageSpy = spyOn(clientBridge, 'postMessage');
+      clientBridge.setHostGameOn(false);
+      component.hasGameSnapshot = false;
+
+      await component.attachGameSnapshotFromClient();
+
+      expect(postMessageSpy).not.toHaveBeenCalled();
+      expect(component.isAttachingSnapshot).toBeFalse();
+    });
+
+    /* The handoff redirect is the only moment the host's real game state reaches the SPA, and
+       it arrives as a query parameter the route subscription hands to this method. */
+    it('should capture gameOn from the route query parameters', () => {
+      (component as any).applyRouteGameOnParam('0');
+      expect(clientBridge.isGameOn()).toBeFalse();
+
+      (component as any).applyRouteGameOnParam('1');
+      expect(clientBridge.isGameOn()).toBeTrue();
+    });
+
+    /* A sidebar switch or "New Chat" navigates without the parameter; the state is page
+       lifetime, so an absent parameter must not reset it. */
+    it('should leave the captured game state alone when gameOn is absent', () => {
+      (component as any).applyRouteGameOnParam('0');
+      (component as any).applyRouteGameOnParam(undefined);
+      expect(clientBridge.isGameOn()).toBeFalse();
+    });
+
     it('should resolve local tool request and not forward to sendToolResult when requestId matches', async () => {
       const sendToolResultSpy = spyOn(component, 'sendToolResult');
       const reqId = 'local_test_123';

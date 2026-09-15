@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Extensions;
+using Overseer.Services;
 
 namespace Overseer.Controllers;
 
@@ -12,11 +14,13 @@ public class AuthController : ControllerBase
 {
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly ApplicationDbContext _dbContext;
 
-    public AuthController(SignInManager<ApplicationUser> signInManager, UserManager<ApplicationUser> userManager)
+    public AuthController(SignInManager<ApplicationUser> signInManager, UserManager<ApplicationUser> userManager, ApplicationDbContext dbContext)
     {
         _signInManager = signInManager;
         _userManager = userManager;
+        _dbContext = dbContext;
     }
 
     /* Every failure below answers with exactly this object. An unknown user and a wrong
@@ -167,7 +171,20 @@ public class AuthController : ControllerBase
             {
                 await _signInManager.SignInAsync(user, isPersistent: true);
                 cache.Remove(cacheKey); // Single-use
-                
+
+                /* The handoff session is the only one carrying the host's real game state, so the
+                   SPA is told here rather than per session. sessionId is a long and gameOn is
+                   "0"/"1", so nothing user-controlled reaches the markup below. */
+                string? clientSettings = await _dbContext.ChatSession
+                    .AsNoTracking()
+                    .Where(s => s.Id == sessionId && s.AspNetUserId == user.Id)
+                    .Select(s => s.ClientSettings)
+                    .FirstOrDefaultAsync();
+                string? gameOn = ResolveGameOnFlag(clientSettings);
+                // The separator is written as an entity because the target sits in an HTML attribute.
+                string target = $"/chat?sessionId={sessionId}" + (gameOn is null ? "" : $"&amp;gameOn={gameOn}");
+                string gameOnAttribute = gameOn is null ? "" : $@" data-game-on=""{gameOn}""";
+
                 // Return a client-side meta refresh instead of HTTP 302 to preserve the cookie in iOS WKWebView
                 var html = $@"<!DOCTYPE html>
 <html lang=""en"">
@@ -175,7 +192,7 @@ public class AuthController : ControllerBase
     <meta charset=""utf-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1"">
     <meta name=""theme-color"" content=""#121212"">
-    <meta http-equiv=""refresh"" content=""0;url=/chat?sessionId={sessionId}"">
+    <meta http-equiv=""refresh"" content=""0;url={target}"">
     <title>Gnoll Overseer</title>
     <style>
         html, body {{
@@ -239,9 +256,10 @@ public class AuthController : ControllerBase
     </div>
     <!-- The redirect itself is the <meta http-equiv=""refresh""> above; this script is only a
          50 ms fast path. It lives in a static file because the CSP's script-src is 'self',
-         which blocks an inline script. Target read from a data attribute rather than
-         interpolated into the script, so the file stays static. -->
-    <script src=""/js/handoff-redirect.js"" data-session-id=""{sessionId}""></script>
+         which blocks an inline script. Target read from data attributes rather than
+         interpolated into the script, so the file stays static. data-game-on is absent when
+         the host reported no game state. -->
+    <script src=""/js/handoff-redirect.js"" data-session-id=""{sessionId}""{gameOnAttribute}></script>
 </body>
 </html>";
                 return Content(html, "text/html");
@@ -249,6 +267,17 @@ public class AuthController : ControllerBase
         }
 
         return Unauthorized();
+    }
+
+    /// <summary>"1" when the host reported a running game and game context is not opted out,
+    /// "0" when either is explicitly false, null when the host reported nothing.</summary>
+    internal static string? ResolveGameOnFlag(string? clientSettings)
+    {
+        bool? isGameOn = ClientSettingsReader.ReadBool(clientSettings, "isGameOn");
+        bool? sendGameContext = ClientSettingsReader.ReadBool(clientSettings, "sendGameContext");
+        if (isGameOn == false || sendGameContext == false) return "0";
+        if (isGameOn == true) return "1";
+        return null;
     }
 }
 

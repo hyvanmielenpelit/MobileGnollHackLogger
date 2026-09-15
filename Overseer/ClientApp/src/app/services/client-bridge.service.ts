@@ -7,6 +7,20 @@ export type ClientBridgePlatform = 'webview2' | 'android' | 'ios' | null;
 })
 export class ClientBridgeService {
 
+  /* Whether the embedding GnollHack host has a game running. Set once from the handoff
+     redirect's gameOn query parameter; null until then, and for hosts that never report it. */
+  private hostGameOn: boolean | null = null;
+
+  setHostGameOn(value: boolean | null): void {
+    this.hostGameOn = value;
+  }
+
+  /* True unless the host explicitly reported no running game, so a host that reports
+     nothing keeps the snapshot controls. */
+  isGameOn(): boolean {
+    return this.hostGameOn !== false;
+  }
+
   getPlatform(): ClientBridgePlatform {
     if (typeof window === 'undefined') return null;
     if ((window as any).chrome?.webview?.postMessage) return 'webview2';
