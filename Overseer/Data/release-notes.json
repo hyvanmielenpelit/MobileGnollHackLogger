@@ -1,5 +1,148 @@
 [
   {
+    "version": "1.1.0",
+    "date": "2026-09-15T12:30:00Z",
+    "summary": "A major release built on two new pillars: a complete AI Intelligence Benchmark system in the Admin panel for measuring and comparing AI model quality, and a full data privacy framework bringing confidential chats, incognito chats, document attachments and outbound data masking. The chat now shows per-response cost and context window usage, the database maintenance dashboard was rebuilt, and three new AI models are supported.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Added the AI Intelligence Benchmark to the Admin panel: reproducible, automatically graded benchmark runs that measure how well an AI model answers GnollHack questions, scored across accuracy, completeness, conciseness and readability, with a per-question breakdown, a tool usage profile and an exportable Markdown report."
+      },
+      {
+        "type": "feature",
+        "text": "Added multi-run benchmark series and group analysis, so a model can be measured several times and the results pooled with proper statistics instead of relying on a single run. Runs that are not comparable are refused rather than silently averaged."
+      },
+      {
+        "type": "feature",
+        "text": "Added a cross-model comparison view with charts, and export of both the charts and the underlying tables."
+      },
+      {
+        "type": "feature",
+        "text": "Added AI-assisted benchmark authoring: AI-generated questions, automatic difficulty assessment, suite health and item analysis, and detection and drafting of gaps in answer criteria."
+      },
+      {
+        "type": "feature",
+        "text": "Added live game board snapshots: the GnollHack board attached to a chat can be saved and reused as benchmark context, and a snapshot viewer shows the dungeon map and character state."
+      },
+      {
+        "type": "feature",
+        "text": "Added confidential chats. A chat marked confidential has its content encrypted while stored, carries a red badge, and will only use a system-provided model once you have decided that you trust that model's provider with it."
+      },
+      {
+        "type": "feature",
+        "text": "Added incognito chats, an ephemeral session that records nothing in the database and disappears when you close it."
+      },
+      {
+        "type": "feature",
+        "text": "Added document attachments to the chat. PDF, Word, CSV, Markdown and plain text files can be attached, and for long documents only the passages relevant to your question are sent to the AI."
+      },
+      {
+        "type": "feature",
+        "text": "Added a Privacy Notice page explaining what Overseer does with a conversation, how long it keeps it, which protections apply, what they deliberately do not reach, and which third parties are involved."
+      },
+      {
+        "type": "feature",
+        "text": "The chat now shows the estimated cost of each response, a running total for the conversation, and how much of the model's context window has been consumed. Both indicators can be switched off in Settings."
+      },
+      {
+        "type": "feature",
+        "text": "Rebuilt the Admin database dashboard: storage use and free headroom measured against the limits of the running SQL Server edition, a maintenance run history with full logs, and dry-run pruning of audit rows, benchmark payloads, chat tool payloads and dismissed AI errors."
+      },
+      {
+        "type": "feature",
+        "text": "Added retention controls in Settings: how many days of inactivity before a confidential chat is deleted, and an option to destroy a deleted chat immediately instead of keeping it in Trash for 30 days."
+      },
+      {
+        "type": "feature",
+        "text": "Added support for three new models: Gemini 3.8 Flash, Claude 5.1 Fable and GPT-6 Astra."
+      },
+      {
+        "type": "feature",
+        "text": "Added a Markdown editor with live preview for writing benchmark questions and expected answer criteria."
+      },
+      {
+        "type": "feature",
+        "text": "Added a completion sound for long-running benchmark runs, so you do not have to watch the progress dialog."
+      },
+      {
+        "type": "security",
+        "text": "Added outbound masking of sensitive data: recognised credentials, payment data and contact details are replaced with placeholders before a prompt leaves the server, and restored in the reply you see."
+      },
+      {
+        "type": "security",
+        "text": "Chat attachments are now validated by content and scanned for malware before they are accepted."
+      },
+      {
+        "type": "security",
+        "text": "Deleting a confidential chat now destroys its encryption key, so the stored content cannot be recovered."
+      },
+      {
+        "type": "security",
+        "text": "Custom AI endpoints are now validated before any authenticated request is sent to them, blocking requests aimed at internal network and cloud metadata addresses."
+      },
+      {
+        "type": "security",
+        "text": "Added browser security headers, including a content security policy, and request rate limits on chat, attachment upload and error reporting."
+      },
+      {
+        "type": "security",
+        "text": "Added an access audit log recording who read which chat."
+      },
+      {
+        "type": "improvement",
+        "text": "Admin tables throughout the panel now support column sorting, column filters and paging."
+      },
+      {
+        "type": "improvement",
+        "text": "Added a filter box to System AI configurations, making a long list of configurations searchable."
+      },
+      {
+        "type": "improvement",
+        "text": "Added toast notifications so background actions report their result without interrupting what you are doing."
+      },
+      {
+        "type": "improvement",
+        "text": "Added model pricing information and clearer provider badges across model selection, and an option for how model names are displayed."
+      },
+      {
+        "type": "improvement",
+        "text": "The Admin telemetry tab now reports AI request governor activity, including requests in flight and active rate limit partitions."
+      },
+      {
+        "type": "improvement",
+        "text": "Improved model editing: the AI provider can no longer be changed on an existing model, and display names are chosen from a dropdown of known models."
+      },
+      {
+        "type": "improvement",
+        "text": "Refreshed the visual design across settings, models, API keys, sign-in, chat and the Admin panel, with consistent tabs, buttons and help texts."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed a crash that could occur when an AI response continued generating after the browser had disconnected."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed an error in the attachment malware scanner when the scanning service was unavailable."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed chart rendering errors in the Admin analytics and model comparison views."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed a tooltip that could stay on screen in the chat."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed benchmark run deletion and corrected the status reported when re-running failed questions."
+      },
+      {
+        "type": "fix",
+        "text": "Corrected the thinking levels available for Anthropic Claude models."
+      }
+    ]
+  },
+  {
     "version": "1.0.28",
     "date": "2026-08-31T16:30:00Z",
     "summary": "Added tracking and persistence for actual served AI service tiers across Google Gemini, OpenAI, and Anthropic providers, and fixed an issue with saving system API keys in the Admin panel.",
