@@ -313,14 +313,7 @@
    (the form variant) live in styles.scss, alongside the .compact and .drops-up modifiers
    used by the chat composer and the models page. Do not redeclare them here. */
 
-.price-badge {
-  font-size: 11px;
-  color: #6ee7b7;
-  background: rgba(16, 185, 129, 0.1);
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid rgba(16, 185, 129, 0.3);
-}
+/* .price-badge lives in styles.scss, in the model selector family. */
 
 /* .reasoning-badge lives in styles.scss, in the model selector family. */
 

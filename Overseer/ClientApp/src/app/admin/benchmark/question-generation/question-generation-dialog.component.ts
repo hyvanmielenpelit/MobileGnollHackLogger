@@ -6,6 +6,7 @@ import {
   EventEmitter,
   HostListener,
   Input,
+  NgZone,
   OnChanges,
   OnDestroy,
   OnInit,
@@ -30,6 +31,7 @@ import { copyToClipboard } from '../../../utils/clipboard.util';
 import { elapsedMsBetween } from '../../../utils/date.util';
 import {
   formatDifficulty,
+  formatPickerPrice,
   formatServiceTier,
   formatThinkingLevel,
   showReasoningBadge
@@ -46,7 +48,8 @@ export type QuestionGenerationItemState =
   | 'completed'
   | 'partial'
   | 'failed'
-  | 'skipped';
+  | 'skipped'
+  | 'cancelled';
 
 /** The operator instructions a new workspace starts with. */
 export const DEFAULT_QUESTION_GENERATION_INSTRUCTIONS = `Write benchmark questions a GnollHack player would actually ask while looking at this exact game state. Each question must be unanswerable without the snapshot — if it could be answered from general GnollHack knowledge alone, it belongs in the knowledge suite, not here. Vary the decision type across questions; do not ask the same thing twice in different words. In each rubric, state only snapshot facts you can point to in the snapshot, and mark anything you infer as an inference.`;
@@ -70,6 +73,7 @@ export const DEFAULT_QUESTION_GENERATION_INSTRUCTIONS = `Write benchmark questio
 export class QuestionGenerationDialogComponent implements OnInit, OnChanges, OnDestroy {
   private benchmarkService = inject(AdminBenchmarkService);
   private cdr = inject(ChangeDetectorRef);
+  private ngZone = inject(NgZone);
 
   static readonly POLL_INTERVAL_MS = 2000;
   static readonly COPIED_RESET_MS = 2000;
@@ -95,6 +99,7 @@ export class QuestionGenerationDialogComponent implements OnInit, OnChanges, OnD
   readonly showReasoningBadge = showReasoningBadge;
   readonly formatServiceTier = formatServiceTier;
   readonly formatDifficulty = formatDifficulty;
+  readonly formatPickerPrice = formatPickerPrice;
 
   // --- Setup ---------------------------------------------------------------------------------
   modelConfigId: number | null = null;
@@ -134,6 +139,23 @@ export class QuestionGenerationDialogComponent implements OnInit, OnChanges, OnD
   confirmButtonClass = 'btn-gh btn-gh-delete';
   private confirmAction: (() => void) | null = null;
 
+  // --- Setup column width ----------------------------------------------------------------------
+  static readonly SETUP_WIDTH_MIN = 320;
+  static readonly SETUP_WIDTH_MAX = 720;
+  static readonly SETUP_WIDTH_DEFAULT = 420;
+  static readonly SETUP_WIDTH_STEP = 16;
+  private static readonly SETUP_WIDTH_STORAGE_KEY = 'overseer_qg_setup_width';
+  readonly SETUP_WIDTH_MIN = QuestionGenerationDialogComponent.SETUP_WIDTH_MIN;
+  readonly SETUP_WIDTH_MAX = QuestionGenerationDialogComponent.SETUP_WIDTH_MAX;
+  setupWidth = QuestionGenerationDialogComponent.SETUP_WIDTH_DEFAULT;
+  @ViewChild('workspace') workspaceEl?: ElementRef<HTMLElement>;
+  private resizing = false;
+  private resizeStartX = 0;
+  private resizeStartWidth = 0;
+  private resizeMoveListener: ((e: MouseEvent | TouchEvent) => void) | null = null;
+  private resizeEndListener: (() => void) | null = null;
+  private resizeFrame: number | null = null;
+
   private isOpen = false;
   private jobId: string | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -150,6 +172,20 @@ export class QuestionGenerationDialogComponent implements OnInit, OnChanges, OnD
   ngOnInit(): void {
     // The row and card actions carry interestfor + popover="hint" tooltips.
     ensureOverlayPolyfills();
+
+    try {
+      const stored = localStorage.getItem(QuestionGenerationDialogComponent.SETUP_WIDTH_STORAGE_KEY);
+      if (stored != null) {
+        const parsed = Number(stored);
+        if (Number.isInteger(parsed)
+          && parsed >= QuestionGenerationDialogComponent.SETUP_WIDTH_MIN
+          && parsed <= QuestionGenerationDialogComponent.SETUP_WIDTH_MAX) {
+          this.setupWidth = parsed;
+        }
+      }
+    } catch {
+      // Storage can throw (private browsing, disabled storage); the default width still applies.
+    }
   }
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -176,6 +212,7 @@ export class QuestionGenerationDialogComponent implements OnInit, OnChanges, OnD
 
   ngOnDestroy(): void {
     this.stopPolling();
+    this.stopSetupResize();
     if (this.copiedTimer) {
       clearTimeout(this.copiedTimer);
       this.copiedTimer = null;
@@ -361,7 +398,8 @@ export class QuestionGenerationDialogComponent implements OnInit, OnChanges, OnD
     return this.visibleItems.filter(i => {
       if (i.kind !== 'Band') return false;
       const state = this.itemState(i);
-      return state === 'failed' || state === 'partial';
+      if (state === 'failed' || state === 'partial') return true;
+      return state === 'cancelled' && i.generatedCount < i.requestedCount;
     });
   }
 
@@ -386,13 +424,15 @@ export class QuestionGenerationDialogComponent implements OnInit, OnChanges, OnD
   }
 
   itemState(item: QuestionGenerationJobItemDto): QuestionGenerationItemState {
+    const jobCancelled = this.job?.status === 'Cancelled';
     switch (item.status) {
-      case 'Generating': return 'generating';
-      case 'Repairing': return 'repairing';
+      case 'Generating': return jobCancelled ? 'cancelled' : 'generating';
+      case 'Repairing': return jobCancelled ? 'cancelled' : 'repairing';
       case 'Completed': return item.generatedCount < item.requestedCount ? 'partial' : 'completed';
       case 'Failed': return 'failed';
       case 'Skipped': return 'skipped';
-      default: return 'pending';
+      case 'Cancelled': return 'cancelled';
+      default: return jobCancelled ? 'cancelled' : 'pending';
     }
   }
 
@@ -812,6 +852,101 @@ export class QuestionGenerationDialogComponent implements OnInit, OnChanges, OnD
 
   onDiagnosticsToggle(event: Event): void {
     this.diagnosticsOpen = (event.target as HTMLDetailsElement).open;
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Setup column width
+  // -------------------------------------------------------------------------------------------
+
+  startSetupResize(event: MouseEvent | TouchEvent): void {
+    if (window.innerWidth <= 900) return;
+    event.preventDefault();
+    this.resizing = true;
+    this.resizeStartX = event instanceof MouseEvent ? event.clientX : event.touches[0].clientX;
+    this.resizeStartWidth = this.setupWidth;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+
+    this.ngZone.runOutsideAngular(() => {
+      this.resizeMoveListener = (e: MouseEvent | TouchEvent) => this.onSetupResizeMove(e);
+      this.resizeEndListener = () => this.stopSetupResize();
+      window.addEventListener('mousemove', this.resizeMoveListener);
+      window.addEventListener('touchmove', this.resizeMoveListener);
+      window.addEventListener('mouseup', this.resizeEndListener);
+      window.addEventListener('touchend', this.resizeEndListener);
+    });
+  }
+
+  private onSetupResizeMove(event: MouseEvent | TouchEvent): void {
+    if (!this.resizing) return;
+    const clientX = event instanceof MouseEvent ? event.clientX : event.touches[0].clientX;
+    const delta = clientX - this.resizeStartX;
+    const width = Math.max(
+      QuestionGenerationDialogComponent.SETUP_WIDTH_MIN,
+      Math.min(this.resizeStartWidth + delta, QuestionGenerationDialogComponent.SETUP_WIDTH_MAX)
+    );
+
+    if (this.resizeFrame === null) {
+      this.resizeFrame = requestAnimationFrame(() => {
+        // Direct style write keeps change detection out of the drag.
+        if (this.workspaceEl) {
+          this.workspaceEl.nativeElement.style.setProperty('--qg-setup-width', `${width}px`);
+        }
+        this.setupWidth = width;
+        this.resizeFrame = null;
+      });
+    }
+  }
+
+  /** Safe to call with no drag in progress; a dialog closed mid-drag still leaves no window listeners or body styles behind. */
+  stopSetupResize(): void {
+    if (this.resizeFrame !== null) {
+      cancelAnimationFrame(this.resizeFrame);
+      this.resizeFrame = null;
+    }
+    if (this.resizeMoveListener) {
+      window.removeEventListener('mousemove', this.resizeMoveListener);
+      window.removeEventListener('touchmove', this.resizeMoveListener);
+      this.resizeMoveListener = null;
+    }
+    if (this.resizeEndListener) {
+      window.removeEventListener('mouseup', this.resizeEndListener);
+      window.removeEventListener('touchend', this.resizeEndListener);
+      this.resizeEndListener = null;
+    }
+    if (!this.resizing) return;
+    this.resizing = false;
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    this.persistSetupWidth();
+    // The property write keeps the ARIA value and the [style.--qg-setup-width.px] binding current.
+    this.ngZone.run(() => this.cdr.markForCheck());
+  }
+
+  onResizerKeydown(event: KeyboardEvent): void {
+    const min = QuestionGenerationDialogComponent.SETUP_WIDTH_MIN;
+    const max = QuestionGenerationDialogComponent.SETUP_WIDTH_MAX;
+    const step = QuestionGenerationDialogComponent.SETUP_WIDTH_STEP;
+    let next: number;
+    switch (event.key) {
+      case 'ArrowLeft': next = this.setupWidth - step; break;
+      case 'ArrowRight': next = this.setupWidth + step; break;
+      case 'Home': next = min; break;
+      case 'End': next = max; break;
+      default: return;
+    }
+    event.preventDefault();
+    this.setupWidth = Math.max(min, Math.min(next, max));
+    this.persistSetupWidth();
+    this.cdr.markForCheck();
+  }
+
+  private persistSetupWidth(): void {
+    try {
+      localStorage.setItem(QuestionGenerationDialogComponent.SETUP_WIDTH_STORAGE_KEY, String(this.setupWidth));
+    } catch {
+      // Storage can throw; the width still applies for the rest of this session.
+    }
   }
 
   // -------------------------------------------------------------------------------------------

@@ -28,14 +28,14 @@
     </div>
 
     <div class="dialog-body">
-      <div class="qg-workspace">
+      <div class="qg-workspace" #workspace [style.--qg-setup-width.px]="setupWidth">
 
         <!-- SETUP COLUMN -->
-        <div class="qg-column qg-setup-column">
+        <div class="qg-column qg-setup-column" id="qgSetupColumn">
           <fieldset class="gh-fieldset qg-setup" [disabled]="setupLocked" aria-describedby="qgSetupHint">
             <legend>Generator setup</legend>
             <p id="qgSetupHint" class="gh-fieldset-hint">
-              Used by Start, Generate More, every retry and every per-question regeneration.
+              Used for every generation, retry and regeneration.
             </p>
 
             <div class="form-group">
@@ -59,6 +59,9 @@
                   @if (selectedModel?.provider) {
                     <app-provider-badge [provider]="selectedModel?.provider"></app-provider-badge>
                   }
+                  @if (selectedModel?.effectiveInputPricePerMillion != null) {
+                    <span class="price-badge">{{ formatPickerPrice(selectedModel!) }}</span>
+                  }
                   <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
                 </button>
 
@@ -79,12 +82,15 @@
                           <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
                         }
                         <app-provider-badge [provider]="model.provider"></app-provider-badge>
+                        @if (model.effectiveInputPricePerMillion != null) {
+                          <span class="price-badge">{{ formatPickerPrice(model) }}</span>
+                        }
                       </div>
                     }
                   </div>
                 }
               </div>
-              <span class="form-hint">A strong reasoning model is recommended for authoring accurate rubrics grounded in the game snapshot.</span>
+              <span class="form-hint">A strong reasoning model gives the most accurate rubrics.</span>
             </div>
 
             <div class="form-group">
@@ -107,47 +113,35 @@
             </div>
 
             <div class="form-group">
-              <label for="qg-instructions">Authoring instructions (operator prompt)</label>
+              <label for="qg-instructions">Authoring instructions</label>
               <textarea id="qg-instructions" name="qgInstructions" class="gh-input gh-textarea-autosize qg-instructions" rows="8" [(ngModel)]="instructions"></textarea>
-              <span class="form-hint">Steers what decisions or aspects to probe. The rubric structure (the BOARD FACTS, REQUIRED, CRITICAL ERROR, SCOPE, FORM and SOURCE sections) is enforced by the harness. BOARD FACTS is the section's fixed name in every stored rubric; it lists the facts drawn from this game snapshot.</span>
+              <span class="form-hint">Tell the generator what to probe. The rubric format is fixed and not affected by this text.</span>
             </div>
 
             <details class="gh-disclosure qg-model-receives">
               <summary>What the model receives</summary>
               <div class="gh-disclosure-body">
-                <p>
-                  Every request carries a fixed security preamble that marks the snapshot as untrusted
-                  data, the suite's game snapshot, the instructions above, the target difficulty band,
-                  the fixed rubric format with a worked example, and the questions already in the suite
-                  so that new ones do not repeat them. Only the instructions are editable here. A rubric
-                  regeneration also sends the question text and asks for its rubric alone; a question
-                  regeneration sends the question being replaced and asks for a different one.
-                </p>
+                <p>Every request sends, in this order:</p>
+                <ul>
+                  <li>a fixed security preamble that marks the snapshot as untrusted data</li>
+                  <li>the suite's game snapshot</li>
+                  <li>your authoring instructions</li>
+                  <li>the target difficulty band</li>
+                  <li>the fixed rubric format (BOARD FACTS, REQUIRED, CRITICAL ERROR, SCOPE, FORM, SOURCE) with a worked example</li>
+                  <li>the questions already in the suite, so new ones do not repeat them</li>
+                </ul>
+                <p>A rubric regeneration also sends the question text and asks for its rubric only. A question regeneration sends the question being replaced and asks for a different one.</p>
               </div>
             </details>
-
-            <div class="qg-setup-actions">
-              <button type="button" class="btn-gh qg-start-btn"
-                      [disabled]="setupLocked || !modelConfigId || totalCount <= 0"
-                      (click)="start()">
-                @if (job) {
-                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                } @else {
-                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                }
-                {{ jobStarting ? 'Starting…' : startLabel }}
-              </button>
-              @if (isTerminal && retryableBands.length > 0) {
-                <button type="button" class="btn-gh qg-retry-failed-btn"
-                        [disabled]="setupLocked"
-                        (click)="retryFailedBands()">
-                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
-                  Retry Failed Bands
-                </button>
-              }
-            </div>
           </fieldset>
         </div>
+
+        <div class="qg-resizer" #resizer
+             role="separator" aria-orientation="vertical" aria-label="Resize the setup panel"
+             tabindex="0" aria-controls="qgSetupColumn"
+             [attr.aria-valuenow]="setupWidth" [attr.aria-valuemin]="SETUP_WIDTH_MIN" [attr.aria-valuemax]="SETUP_WIDTH_MAX"
+             (mousedown)="startSetupResize($event)" (touchstart)="startSetupResize($event)"
+             (keydown)="onResizerKeydown($event)"></div>
 
         <!-- MAIN COLUMN -->
         <div class="qg-column qg-main-column">
@@ -426,6 +420,26 @@
     </div>
 
     <div class="dialog-footer">
+      <div class="dialog-footer-primary">
+        <button type="button" class="btn-gh qg-start-btn"
+                [disabled]="setupLocked || !modelConfigId || totalCount <= 0"
+                (click)="start()">
+          @if (job) {
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          } @else {
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          }
+          {{ jobStarting ? 'Starting…' : startLabel }}
+        </button>
+        @if (isTerminal && retryableBands.length > 0) {
+          <button type="button" class="btn-gh qg-retry-failed-btn"
+                  [disabled]="setupLocked"
+                  (click)="retryFailedBands()">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+            Retry Failed Bands
+          </button>
+        }
+      </div>
       @if (isRunning) {
         <button type="button" class="btn-gh btn-gh-cancel" (click)="close()">Run in Background</button>
         <button type="button" class="btn-gh btn-gh-delete" [disabled]="cancelling" (click)="cancel()">

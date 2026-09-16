@@ -205,6 +205,33 @@ public class BenchmarkGenerationJobTests
     }
 
     [Fact]
+    public void MarkUnfinishedItemsCancelled_CancelsPendingGeneratingAndRepairing_LeavesFinishedAlone()
+    {
+        var job = new BenchmarkGenerationJob
+        {
+            SuiteId = 3,
+            SuiteName = "Suite",
+            Cts = new CancellationTokenSource(),
+            Items = new List<BenchmarkGenerationJobItem>
+            {
+                new() { Difficulty = BenchmarkDifficulty.Simple, Status = BenchmarkGenerationItemStatus.Completed },
+                new() { Difficulty = BenchmarkDifficulty.Simple, Status = BenchmarkGenerationItemStatus.Failed },
+                new() { Difficulty = BenchmarkDifficulty.Simple, Status = BenchmarkGenerationItemStatus.Skipped },
+                new() { Difficulty = BenchmarkDifficulty.Simple, Status = BenchmarkGenerationItemStatus.Generating },
+                new() { Difficulty = BenchmarkDifficulty.Simple, Status = BenchmarkGenerationItemStatus.Pending }
+            }
+        };
+
+        job.MarkUnfinishedItemsCancelled();
+
+        Assert.Equal(BenchmarkGenerationItemStatus.Completed, job.Items[0].Status);
+        Assert.Equal(BenchmarkGenerationItemStatus.Failed, job.Items[1].Status);
+        Assert.Equal(BenchmarkGenerationItemStatus.Skipped, job.Items[2].Status);
+        Assert.Equal(BenchmarkGenerationItemStatus.Cancelled, job.Items[3].Status);
+        Assert.Equal(BenchmarkGenerationItemStatus.Cancelled, job.Items[4].Status);
+    }
+
+    [Fact]
     public void ToDto_MapsKindTargetCountsAndGeneratorFacts()
     {
         var job = new BenchmarkGenerationJob

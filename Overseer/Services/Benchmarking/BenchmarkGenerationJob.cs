@@ -8,7 +8,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Models;
 
 public enum BenchmarkGenerationJobStatus { Running, Completed, CompletedWithErrors, Cancelled, Failed }
-public enum BenchmarkGenerationItemStatus { Pending, Generating, Repairing, Completed, Failed, Skipped }
+public enum BenchmarkGenerationItemStatus { Pending, Generating, Repairing, Completed, Failed, Skipped, Cancelled }
 
 /// <summary>What an item asks the generator for.</summary>
 public enum BenchmarkGenerationItemKind
@@ -139,6 +139,29 @@ public class BenchmarkGenerationJob
             item.Status = status;
             if (errorMessage != null) item.ErrorMessage = errorMessage;
             if (generatedCount.HasValue) item.GeneratedCount = generatedCount.Value;
+        }
+    }
+
+    /// <summary>Marks every item that has not finished as Cancelled; finished and skipped items are left as they are.</summary>
+    public void MarkUnfinishedItemsCancelled()
+    {
+        lock (_lock)
+        {
+            foreach (var item in Items)
+            {
+                if (item.Status != BenchmarkGenerationItemStatus.Pending
+                    && item.Status != BenchmarkGenerationItemStatus.Generating
+                    && item.Status != BenchmarkGenerationItemStatus.Repairing)
+                {
+                    continue;
+                }
+
+                item.Status = BenchmarkGenerationItemStatus.Cancelled;
+                if (item.StartedAtUtc.HasValue && item.CompletedAtUtc == null)
+                {
+                    item.CompletedAtUtc = DateTime.UtcNow;
+                }
+            }
         }
     }
 

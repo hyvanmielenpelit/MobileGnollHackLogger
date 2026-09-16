@@ -2808,6 +2808,16 @@ label.checkbox-label,
   text-transform: uppercase;
 }
 
+/* Effective price next to a model name in any model picker. */
+.price-badge {
+  font-size: 11px;
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
 /* The chat composer and the models page: a fit-content, glass trigger with a floating
    dropdown. Same markup and behaviour as the base; only the sizing and surfaces differ. */
 .custom-model-selector.compact {

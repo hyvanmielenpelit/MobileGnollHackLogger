@@ -53,7 +53,7 @@ import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/po
 import { SystemService } from '../../services/system.service';
 import { BenchmarkCompletionSoundService } from '../../services/benchmark-completion-sound.service';
 import { parseServerUtcDate, elapsedMsBetween } from '../../utils/date.util';
-import { formatThinkingLevel, showReasoningBadge, formatServiceTier, formatDifficulty } from '../../utils/model-badge-format.util';
+import { formatThinkingLevel, showReasoningBadge, formatServiceTier, formatDifficulty, formatPickerPrice } from '../../utils/model-badge-format.util';
 import { TableState, exactFilter } from '../../shared/data-table/table-state';
 import { SortHeaderComponent } from '../../shared/data-table/sort-header.component';
 import { TablePagerComponent } from '../../shared/data-table/table-pager.component';
@@ -1601,11 +1601,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   formatPickerPrice(config: SystemAiConfigDto): string {
-    if (config.effectiveInputPricePerMillion == null || config.effectiveOutputPricePerMillion == null) return '';
-    const numPipe = new DecimalPipe('en-US');
-    const inPrice = numPipe.transform(config.effectiveInputPricePerMillion, '1.2-2');
-    const outPrice = numPipe.transform(config.effectiveOutputPricePerMillion, '1.2-2');
-    return `$${inPrice}/$${outPrice} per 1M`;
+    return formatPickerPrice(config);
   }
 
   /**

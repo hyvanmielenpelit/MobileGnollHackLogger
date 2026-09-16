@@ -376,7 +376,7 @@ export interface QuestionGenerationJobItemDto {
   difficultyName: string;
   requestedCount: number;
   generatedCount: number;
-  /** `Pending` | `Generating` | `Repairing` | `Completed` | `Failed` | `Skipped`. */
+  /** `Pending` | `Generating` | `Repairing` | `Completed` | `Failed` | `Skipped` | `Cancelled`. */
   status: string;
   errorMessage?: string | null;
   /** Set for the per-question kinds only. */

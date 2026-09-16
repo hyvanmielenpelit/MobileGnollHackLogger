@@ -56,7 +56,7 @@ describe('QuestionGenerationDialogComponent', () => {
     };
   }
 
-  function buildConfig(id: number, displayName: string): SystemAiConfigDto {
+  function buildConfig(id: number, displayName: string, overrides: Partial<SystemAiConfigDto> = {}): SystemAiConfigDto {
     return {
       id,
       displayName,
@@ -65,7 +65,8 @@ describe('QuestionGenerationDialogComponent', () => {
       thinkingLevel: 'high',
       reasoningMode: null,
       isEnabled: true,
-      hasApiKey: true
+      hasApiKey: true,
+      ...overrides
     } as SystemAiConfigDto;
   }
 
@@ -133,8 +134,8 @@ describe('QuestionGenerationDialogComponent', () => {
     });
   }
 
-  function open(): void {
-    fixture.componentRef.setInput('benchmarkCapableConfigs', [buildConfig(MODEL_ID, 'GPT Generator'), buildConfig(9, 'Other')]);
+  function open(configs: SystemAiConfigDto[] = [buildConfig(MODEL_ID, 'GPT Generator'), buildConfig(9, 'Other')]): void {
+    fixture.componentRef.setInput('benchmarkCapableConfigs', configs);
     fixture.componentRef.setInput('defaultModelConfigId', MODEL_ID);
     fixture.componentRef.setInput('overseerBuildVersion', '2.3.4');
     fixture.componentRef.setInput('suite', buildSuite());
@@ -194,6 +195,7 @@ describe('QuestionGenerationDialogComponent', () => {
   afterEach(() => {
     // Polling runs on an interval; destroying the fixture clears it before the next spec.
     fixture.destroy();
+    localStorage.removeItem('overseer_qg_setup_width');
   });
 
   it('should load the suite questions on open and render a rubric per card', () => {
@@ -395,5 +397,72 @@ describe('QuestionGenerationDialogComponent', () => {
 
     expect(closed).toHaveBeenCalledWith({ questionsChanged: true });
     expect(query<HTMLDialogElement>('dialog.question-generation-dialog')!.open).toBeFalse();
+  });
+
+  it('should place the start and retry buttons in the dialog footer', () => {
+    open();
+    startWith(mixedOutcomeJob());
+
+    expect(query('.dialog-footer .qg-start-btn')).toBeTruthy();
+    expect(query('.dialog-footer .qg-retry-failed-btn')).toBeTruthy();
+    expect(query('fieldset.qg-setup .qg-start-btn')).toBeNull();
+  });
+
+  it('should render cancelled items as cancelled and offer their retry', () => {
+    open();
+    startWith(buildJob({
+      status: 'Cancelled',
+      items: [
+        buildItem({ difficulty: 1, difficultyName: 'Simple', status: 'Completed', generatedCount: 6, requestedCount: 6, createdQuestionCount: 6 }),
+        buildItem({ difficulty: 2, difficultyName: 'Intermediate', status: 'Cancelled', generatedCount: 0, requestedCount: 6 }),
+        buildItem({ difficulty: 3, difficultyName: 'Advanced', status: 'Generating', generatedCount: 0, requestedCount: 6 })
+      ]
+    }));
+
+    const cancelledChips = queryAll('.job-status-chip.status-cancelled');
+    expect(cancelledChips.length).toBe(2);
+    cancelledChips.forEach(chip => expect(chip.textContent).toContain('Cancelled'));
+
+    click('.qg-retry-failed-btn');
+
+    expect(serviceMock.retryQuestionGeneration).toHaveBeenCalledWith('job-1', {
+      difficulties: [2, 3],
+      discardExisting: false,
+      generatorModelConfigurationId: MODEL_ID,
+      instructions: component.instructions.trim()
+    });
+  });
+
+  it('should show the effective price on the selected model and in the options', () => {
+    const priced = { effectiveInputPricePerMillion: 1.25, effectiveOutputPricePerMillion: 10 };
+    open([
+      buildConfig(MODEL_ID, 'GPT Generator', priced),
+      buildConfig(9, 'Other', priced)
+    ]);
+
+    expect(query('#qgModelTrigger .price-badge')!.textContent!.trim()).toBe('$1.25/$10.00 per 1M');
+
+    click('#qgModelTrigger');
+
+    expect(queryAll('.model-option .price-badge').length).toBe(2);
+  });
+
+  it('should resize the setup column from the keyboard and persist the width', () => {
+    open();
+
+    const resizer = query<HTMLElement>('.qg-resizer')!;
+    resizer.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+    fixture.detectChanges();
+
+    const expectedWidth = QuestionGenerationDialogComponent.SETUP_WIDTH_DEFAULT + QuestionGenerationDialogComponent.SETUP_WIDTH_STEP;
+    expect(component.setupWidth).toBe(expectedWidth);
+    expect(resizer.getAttribute('aria-valuenow')).toBe(String(expectedWidth));
+    expect(localStorage.getItem('overseer_qg_setup_width')).toBe(String(expectedWidth));
+
+    resizer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true, cancelable: true }));
+    fixture.detectChanges();
+
+    expect(component.setupWidth).toBe(QuestionGenerationDialogComponent.SETUP_WIDTH_MIN);
+    expect(localStorage.getItem('overseer_qg_setup_width')).toBe(String(QuestionGenerationDialogComponent.SETUP_WIDTH_MIN));
   });
 });

@@ -56,6 +56,13 @@
       white-space: nowrap;
     }
 
+    .dialog-footer-primary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-right: auto;
+    }
+
     @media (max-width: 560px) {
       flex-direction: column-reverse;
       align-items: stretch;
@@ -63,6 +70,11 @@
       .btn-gh {
         width: 100%;
         min-width: 0;
+      }
+
+      .dialog-footer-primary {
+        flex-direction: column;
+        margin-right: 0;
       }
     }
   }
@@ -72,9 +84,9 @@
 
 .qg-workspace {
   display: grid;
-  grid-template-columns: minmax(300px, 360px) 1fr;
+  grid-template-columns: var(--qg-setup-width, 420px) 10px 1fr;
   grid-template-rows: minmax(0, 1fr);
-  gap: 16px;
+  gap: 8px;
   min-height: 0;
   flex: 1;
 }
@@ -84,6 +96,34 @@
   min-height: 0;
   min-width: 0;
   padding-right: 4px;
+}
+
+.qg-resizer {
+  cursor: col-resize;
+  align-self: stretch;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  &::after {
+    content: '';
+    width: 4px;
+    height: 40px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.2);
+    transition: background 0.2s;
+  }
+
+  &:hover::after,
+  &:active::after {
+    background: var(--primary-color);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
+    border-radius: 4px;
+  }
 }
 
 @media (max-width: 900px) {
@@ -96,6 +136,10 @@
   .qg-column {
     overflow-y: visible;
     padding-right: 0;
+  }
+
+  .qg-resizer {
+    display: none;
   }
 }
 
@@ -142,12 +186,6 @@
   font-size: 0.9em;
   line-height: 1.5;
   color: #bbb;
-}
-
-.qg-setup-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
 }
 
 /* --- Main column --- */

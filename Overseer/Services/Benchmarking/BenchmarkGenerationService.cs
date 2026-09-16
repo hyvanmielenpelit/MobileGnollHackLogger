@@ -123,6 +123,7 @@ public class BenchmarkGenerationService
         catch (OperationCanceledException)
         {
             job.AddLog("Question generation was cancelled.", "warning");
+            job.MarkUnfinishedItemsCancelled();
             job.SetStatus(BenchmarkGenerationJobStatus.Cancelled);
         }
         catch (Exception ex)
@@ -469,6 +470,8 @@ public class BenchmarkGenerationService
             }
         }
         sw.Stop();
+
+        ct.ThrowIfCancellationRequested();
 
         return (runResult, sw, terminalError);
     }
