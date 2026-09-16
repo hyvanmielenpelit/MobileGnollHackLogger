@@ -36,6 +36,8 @@ interface MapCell {
   symbol: string;
 }
 
+export type SnapshotViewerTab = 'viewer' | 'editor' | 'metadata';
+
 @Component({
   selector: 'app-snapshot-viewer',
   standalone: true,
@@ -57,7 +59,7 @@ export class SnapshotViewerComponent implements OnDestroy {
   @ViewChild('keepEditingButton') keepEditingButton?: ElementRef<HTMLButtonElement>;
   @ViewChild(SnapshotTextEditorComponent) textEditor?: SnapshotTextEditorComponent;
 
-  /* The reader region is re-created whenever the metadata form closes, so listeners and
+  /* The reader region is re-created whenever the Viewer tab is shown, so listeners and
      highlight ranges follow the element rather than the component. */
   @ViewChild('readerScroll')
   set readerScrollRef(ref: ElementRef<HTMLElement> | undefined) {
@@ -84,7 +86,16 @@ export class SnapshotViewerComponent implements OnDestroy {
   regeneratingDigest = false;
   regenerateStatus = '';
 
-  isEditingText = false;
+  /** Tab order for the row; rendered with @for, so an attribute is set in one place. */
+  readonly tabs: ReadonlyArray<{ id: SnapshotViewerTab; label: string }> = [
+    { id: 'viewer', label: 'Viewer' },
+    { id: 'editor', label: 'Editor' },
+    { id: 'metadata', label: 'Metadata' }
+  ];
+  activeTab: SnapshotViewerTab = 'viewer';
+  /** Tab requested while the editor held unsaved changes; applied when those are discarded. */
+  private pendingTab: SnapshotViewerTab | null = null;
+
   editingTextDirty = false;
   savingText = false;
   editTextError: string | null = null;
@@ -149,10 +160,11 @@ export class SnapshotViewerComponent implements OnDestroy {
     this.isEditing = false;
     this.editError = null;
     this.resetTextEditState();
+    this.activeTab = 'viewer';
     this.loadSnapshot();
   }
 
-  /* The header close button and the footer Close button; unsaved text edits ask first. */
+  /* The header close button; unsaved text edits ask first. */
   requestClose() {
     if (this.guardUnsavedText()) return;
     this.close();
@@ -169,6 +181,7 @@ export class SnapshotViewerComponent implements OnDestroy {
 
   close() {
     this.resetTextEditState();
+    this.activeTab = 'viewer';
     this.clearHighlights();
     this.clearCellReadout();
     this.viewerDialog?.nativeElement?.close();
@@ -320,19 +333,50 @@ export class SnapshotViewerComponent implements OnDestroy {
     return Number.isFinite(modified) && Number.isFinite(created) && modified - created > MODIFIED_AFTER_CREATE_MS;
   }
 
-  // ---- Text editing --------------------------------------------------------------------------
+  // ---- Tabs ----------------------------------------------------------------------------------
 
-  /* The metadata form and the reader are both replaced by the editor while it is open. */
-  startEditText() {
-    if (!this.snapshot) return;
-    this.isEditing = false;
-    this.editError = null;
-    this.resetTextEditState();
-    this.clearCellReadout();
-    this.clearHighlights();
-    this.isEditingText = true;
+  get isEditingText(): boolean {
+    return this.activeTab === 'editor';
+  }
+
+  /* Leaving the editor with unsaved changes shows the discard prompt instead; the requested tab
+     is applied if the changes are discarded. */
+  selectTab(tab: SnapshotViewerTab) {
+    if (tab === this.activeTab || (this.isEditingText && this.savingText)) return;
+    if (this.isEditingText && this.editingTextDirty) {
+      this.pendingTab = tab;
+      this.guardUnsavedText();
+      return;
+    }
+    if (this.isEditingText) this.resetTextEditState();
+    if (this.activeTab === 'metadata' && this.isEditing) this.cancelEdit();
+    if (tab === 'editor') {
+      this.clearCellReadout();
+      this.clearHighlights();
+    }
+    this.activeTab = tab;
     this.cdr.detectChanges();
   }
+
+  /* Arrow keys wrap, Home and End jump; selection follows focus. */
+  onTabKeydown(event: KeyboardEvent, index: number) {
+    const count = this.tabs.length;
+    let nextIndex: number;
+    switch (event.key) {
+      case 'ArrowRight': nextIndex = (index + 1) % count; break;
+      case 'ArrowLeft': nextIndex = (index - 1 + count) % count; break;
+      case 'Home': nextIndex = 0; break;
+      case 'End': nextIndex = count - 1; break;
+      default: return;
+    }
+    event.preventDefault();
+    const next = this.tabs[nextIndex].id;
+    this.selectTab(next);
+    if (this.activeTab !== next) return;
+    document.getElementById(`snapshot-tab-${next}-${this.uid}`)?.focus();
+  }
+
+  // ---- Text editing --------------------------------------------------------------------------
 
   onTextDirtyChange(dirty: boolean) {
     this.editingTextDirty = dirty;
@@ -357,6 +401,7 @@ export class SnapshotViewerComponent implements OnDestroy {
         this.snapshot = { ...this.snapshot!, ...updated, sanitizedText: updated.sanitizedText ?? text };
         this.prepareReader(this.snapshot.sanitizedText);
         this.resetTextEditState();
+        this.activeTab = 'viewer';
         this.snapshotUpdated.emit(this.snapshot);
         this.flashStatus('Saved. SHA-256 and digest updated.');
         this.viewerTitle?.nativeElement.focus({ preventScroll: true });
@@ -375,17 +420,21 @@ export class SnapshotViewerComponent implements OnDestroy {
     if (this.savingText) return;
     if (this.guardUnsavedText()) return;
     this.resetTextEditState();
+    this.activeTab = 'viewer';
     this.cdr.detectChanges();
   }
 
   keepEditingText() {
     this.showDiscardPrompt = false;
+    this.pendingTab = null;
     this.cdr.detectChanges();
     this.textEditor?.focus();
   }
 
   discardTextEdits() {
+    const target = this.pendingTab ?? 'viewer';
     this.resetTextEditState();
+    this.activeTab = target;
     this.cdr.detectChanges();
   }
 
@@ -399,11 +448,11 @@ export class SnapshotViewerComponent implements OnDestroy {
   }
 
   private resetTextEditState() {
-    this.isEditingText = false;
     this.editingTextDirty = false;
     this.savingText = false;
     this.editTextError = null;
     this.showDiscardPrompt = false;
+    this.pendingTab = null;
   }
 
   // ---- Reader: layout ------------------------------------------------------------------------

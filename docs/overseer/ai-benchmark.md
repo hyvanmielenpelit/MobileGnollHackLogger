@@ -3180,7 +3180,7 @@ game session.
   - **Editing and regeneration**: an administrator can hand-edit the digest field in **Edit Snapshot
     Metadata**, or rebuild it from the current snapshot text with **Regenerate from snapshot**
     (`POST snapshots/{id}/regenerate-digest`), which never touches the snapshot text. Saving a text
-    edit through **Edit Text** (below) always rebuilds the digest too — overwriting a hand-edited one
+    edit through the **Editor** tab (below) always rebuilds the digest too — overwriting a hand-edited one
     — because the digest must describe the text that is actually stored.
   - **Snapshots captured before this change keep their old prefix digest** — the first 2,000
     characters of the snapshot — until an administrator regenerates or edits them. There is no
@@ -3208,7 +3208,7 @@ game session.
     any build configuration flags.
 - **Immutability & Safety**: A snapshot cannot be deleted if any benchmark suites or runs reference
   it. Snapshot text is no longer immutable after creation: an administrator can edit it directly
-  through **Edit Text** (described under Snapshot Viewer UI below), which calls
+  through the **Editor** tab (described under Snapshot Viewer UI below), which calls
   `PUT snapshots/{id}/text`. That endpoint unifies CRLF/CR line endings to LF, runs the result through
   the same `DumpHtmlSanitizer.NormalizeFlattenedText` every capture path uses, applies the
   60,000-character cap and truncation marker through `BenchmarkSnapshotImporter.PrepareBoardText`,
@@ -3235,16 +3235,18 @@ replaces the previous dedicated "View Board" row button.
 `SnapshotViewerComponent` (`Overseer/ClientApp/src/app/shared/snapshot-viewer/`) is a full-screen
 dialog built for three jobs: reading a 60,000-character fixed-width dump comfortably, checking claims
 about it — the administrator's own, the AI's in a chat, and the rubric checker's verbatim quotes —
-and, through **Edit Text**, editing it directly. The DOM-free text logic (chunking, map detection,
-sections, find, line-number formatting) lives in `reader-text.ts` beside it; the editor is a separate
-component, described below.
-- **Layout**: A `.gh-dialog-fullscreen` dialog. The provenance facts (capture method, character
-  count, capture time, GnollHack version, source chat, and — once the snapshot has actually been
-  edited — **Last modified**) form one compact row with the SHA-256 row and its copy button under it;
-  **Notes** is an open `<details>` disclosure and the **Digest (difficulty assessor extract)** a
-  closed one, so the snapshot text starts directly under the toolbar. The snapshot text region is the
-  only scroll container while reading; while editing, the reader and the metadata form are both
-  hidden in favour of the text editor.
+and, through the **Editor** tab, editing it directly. The DOM-free text logic (chunking, map
+detection, sections, find, line-number formatting) lives in `reader-text.ts` beside it; the editor is
+a separate component, described below.
+- **Layout**: A `.gh-dialog-fullscreen` dialog whose body sits under a tab row — **Viewer**,
+  **Editor** and **Metadata** — built on the shared `.gh-tabs` widget with its full ARIA contract
+  (`tablist` / `tab` / `tabpanel`, roving `tabindex`) and keyboard model (arrow keys wrap, Home and End
+  jump). Only the active panel is rendered, and the dialog body itself never scrolls: each panel owns
+  its one scroll container — the reader region on **Viewer**, the CodeMirror scroller on **Editor**
+  (so its **Cancel** / **Save Text** footer stays in view), and the whole panel on **Metadata**. Only
+  on a viewport too short for a panel's minimum content does the Viewer or Editor panel scroll as a
+  whole. The dialog has no footer; the header close button and Escape are the ways out. The dialog
+  opens on **Viewer** every time.
 - **Monospace Rendering**: Snapshot text is **never rendered as Markdown**. Game dumps contain
   NetHack map symbols (`#`, `|`, `-`, `*`) that Markdown parsers mangle. Each line is a
   `.reader-line` element with `white-space: pre`, a monospace font stack and
@@ -3277,8 +3279,8 @@ component, described below.
 - **Preferences**: *Line numbers* (default on) and *Wrap long lines* (default off) are remembered in
   `localStorage` under `overseer.snapshotReader.lineNumbers` and `overseer.snapshotReader.wrap`; if
   storage is unavailable the defaults apply.
-- **Edit Text**: Opens `SnapshotTextEditorComponent` (`snapshot-text-editor.component.*`) in place of
-  the reader and the metadata form — a lazily-loaded **CodeMirror 6** editor.
+- **Editor tab**: Mounts `SnapshotTextEditorComponent` (`snapshot-text-editor.component.*`) — a
+  lazily-loaded **CodeMirror 6** editor.
   `shared/snapshot-viewer/codemirror-setup.ts` is the only module that imports `@codemirror/*`; the
   component `import()`s it on first mount, so it ships as its own chunk and never reaches the initial
   bundle. It keeps the reader's monospace look and dark theme, adds line numbers and an active-line
@@ -3291,14 +3293,20 @@ component, described below.
   **Ctrl+M**, which toggles Tab between indenting and moving keyboard focus out of the editor.
   **Ctrl+S**, or the **Save Text** button (disabled until the buffer is dirty), sends the current
   document back to the viewer, which calls `PUT snapshots/{id}/text` with the `sha256` it loaded as
-  `expectedSha256`, then re-renders the reader from the server's normalized response. Line wrapping
+  `expectedSha256`, then returns to the **Viewer** tab and re-renders the reader from the server's
+  normalized response. Line wrapping
   is intentionally absent — CodeMirror's wrap is document-wide, and a wrapped map row would misstate
   the map, the same reason the reader's own *Wrap long lines* affects prose only. Closing the editor
-  with unsaved changes — the **Cancel** button, the dialog's Escape key, or the header close button —
-  shows an inline **Discard unsaved changes to the snapshot text?** strip with **Keep editing** /
-  **Discard** in place of a `confirm()` popup; the dialog does not close until one is chosen.
-- **Other Tools**: *Copy Text* (the whole snapshot, unchanged), *Download .snapshot.txt*,
-  **Edit Text**, and **Edit Metadata** (opens the **Edit Snapshot Metadata** form). That form's
+  with unsaved changes — the **Cancel** button, switching to another tab, the dialog's Escape key, or
+  the header close button — shows an inline **Discard unsaved changes to the snapshot text?** strip
+  with **Keep editing** / **Discard** in place of a `confirm()` popup; the tab does not change and the
+  dialog does not close until one is chosen, and **Discard** completes the tab switch that asked.
+- **Other Tools**: The Viewer toolbar holds *Copy Text* (the whole snapshot, unchanged), *Copy with
+  line numbers* and *Download .snapshot.txt*. The **Metadata** tab holds the provenance facts
+  (capture method, character count, capture time, GnollHack version, source chat, and — once the
+  snapshot has actually been edited — **Last modified**), the SHA-256 row and its copy button, an open
+  **Notes** `<details>` disclosure, a closed **Digest (difficulty assessor extract)** one, and
+  **Edit Metadata**, which opens the **Edit Snapshot Metadata** form in the same panel. That form's
   digest field carries a **Regenerate from snapshot** button that rebuilds the extract server-side
   and puts it straight into the textarea and the disclosure; it is disabled while the request is in
   flight and the snapshot text is never touched.

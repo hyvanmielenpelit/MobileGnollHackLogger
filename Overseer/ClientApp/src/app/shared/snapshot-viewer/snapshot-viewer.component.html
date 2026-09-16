@@ -21,7 +21,21 @@
     </button>
   </div>
 
-  <div class="viewer-body" [class.editing]="isEditing" [class.editing-text]="isEditingText">
+  @if (!loading && !error && snapshot) {
+    <div class="gh-tabs gh-tabs-secondary snapshot-tabs" role="tablist" aria-label="Game snapshot sections">
+      @for (tab of tabs; track tab.id; let i = $index) {
+        <button type="button" role="tab" class="gh-tab"
+                [id]="'snapshot-tab-' + tab.id + '-' + uid"
+                [attr.aria-controls]="'snapshot-panel-' + tab.id + '-' + uid"
+                [attr.aria-selected]="activeTab === tab.id"
+                [attr.tabindex]="activeTab === tab.id ? 0 : -1"
+                (keydown)="onTabKeydown($event, i)"
+                (click)="selectTab(tab.id)">{{ tab.label }}</button>
+      }
+    </div>
+  }
+
+  <div class="viewer-body">
     @if (loading) {
       <div class="snapshot-loading" role="status">
         <span class="gh-spinner-small" aria-hidden="true"></span>
@@ -39,277 +53,281 @@
         </div>
       </div>
     } @else if (snapshot) {
-      @if (isEditingText) {
-        @if (showDiscardPrompt) {
-          <div class="discard-strip" role="group" [attr.aria-labelledby]="'snapshot-discard-label-' + uid">
-            <svg class="discard-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-              <line x1="12" y1="9" x2="12" y2="13"></line>
-              <line x1="12" y1="17" x2="12.01" y2="17"></line>
-            </svg>
-            <span class="discard-label" [id]="'snapshot-discard-label-' + uid" role="alert">Discard unsaved changes to the snapshot text?</span>
-            <div class="discard-actions">
-              <button #keepEditingButton type="button" class="btn-ghost" (click)="keepEditingText()">Keep editing</button>
-              <button type="button" class="btn-ghost btn-ghost-danger" (click)="discardTextEdits()">Discard</button>
-            </div>
-          </div>
-        }
-        <app-snapshot-text-editor
-          [text]="snapshot.sanitizedText ?? ''"
-          [sha256]="snapshot.sha256"
-          [saving]="savingText"
-          [error]="editTextError"
-          (save)="saveText($event)"
-          (cancelled)="cancelEditText()"
-          (dirtyChange)="onTextDirtyChange($event)" />
-      } @else if (isEditing) {
-        <!-- Edit metadata form -->
-        <div class="snapshot-edit-panel">
-          <h4>Edit Snapshot Metadata</h4>
-          @if (editError) {
-            <div class="alert alert-danger" role="alert">
+      @if (activeTab === 'viewer') {
+        <div class="snapshot-panel snapshot-panel-viewer" role="tabpanel" tabindex="0"
+             [id]="'snapshot-panel-viewer-' + uid" [attr.aria-labelledby]="'snapshot-tab-viewer-' + uid">
+          @if (hasTruncationMarker) {
+            <div class="alert alert-warning">
               <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="8" x2="12" y2="12"></line>
-                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
               </svg>
               <div class="alert-content">
-                <span class="alert-body">{{ editError }}</span>
+                <span class="alert-body"><strong>Notice:</strong> This game snapshot was truncated at capture limit. Tail sections of the dump are omitted.</span>
               </div>
             </div>
           }
-          <div class="form-group">
-            <label for="editBoardName">Snapshot Name *</label>
-            <input id="editBoardName" type="text" class="gh-input" [(ngModel)]="editName" required />
-          </div>
-          <div class="form-group">
-            <label for="editBoardVersion">GnollHack Version</label>
-            <input id="editBoardVersion" type="text" class="gh-input" [(ngModel)]="editGnollHackVersion" placeholder="e.g. 0.9.4" />
-          </div>
-          <div class="form-group">
-            <label for="editBoardNotes">Notes</label>
-            <textarea id="editBoardNotes" class="gh-input" [(ngModel)]="editNotes" rows="3" placeholder="Context facts: HP, level, key items, adjacent monsters"></textarea>
-          </div>
-          <div class="form-group">
-            <label for="editBoardDigest">Snapshot digest (extract the difficulty assessor reads; max 6,000 chars)</label>
-            <textarea id="editBoardDigest" class="gh-input" [(ngModel)]="editDigestText" rows="8" maxlength="6000"></textarea>
-            <div class="digest-regenerate">
-              <button type="button" class="btn-gh btn-gh-small" (click)="regenerateDigest()"
-                      [disabled]="regeneratingDigest || savingEdit">
-                {{ regeneratingDigest ? 'Regenerating...' : 'Regenerate from snapshot' }}
-              </button>
-              <span class="digest-regenerate-status" aria-live="polite">{{ regenerateStatus }}</span>
+
+          <!-- Board text reader (monospace, never Markdown) -->
+          <div class="board-text-wrapper">
+            <div class="board-text-toolbar">
+              <div class="toolbar-row">
+                <div class="toolbar-identity">
+                  <span class="toolbar-title">Snapshot text</span>
+                  <span class="toolbar-meta">{{ lineCount | number }} lines · {{ snapshot.charCount | number }} chars</span>
+                </div>
+                <div class="toolbar-actions">
+                  <button type="button" class="btn-gh btn-gh-small" (click)="copyText()">
+                    @if (copied) {
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    } @else {
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
+                    }
+                    {{ copied ? 'Copied' : 'Copy Text' }}
+                  </button>
+                  <button type="button" class="btn-gh btn-gh-small" (click)="copyWithLineNumbers()">
+                    Copy with line numbers
+                  </button>
+                  <button type="button" class="btn-gh btn-gh-small" (click)="downloadText()">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                      <polyline points="14 2 14 8 20 8"></polyline>
+                      <line x1="12" y1="18" x2="12" y2="12"></line>
+                      <polyline points="9 15 12 18 15 15"></polyline>
+                    </svg>
+                    Download .snapshot.txt
+                  </button>
+                </div>
+                <span class="visually-hidden copy-text-status" aria-live="polite">{{ copied ? 'Copied' : '' }}</span>
+              </div>
+
+              <div class="toolbar-row reader-nav">
+                @if (sections.length > 0) {
+                  <div class="reader-nav-group">
+                    <label class="visually-hidden" [for]="'reader-section-' + uid">Jump to section</label>
+                    <select #sectionSelect class="gh-input gh-filter-select reader-nav-input section-select"
+                            [id]="'reader-section-' + uid" (change)="onSectionChange(sectionSelect)">
+                      <option value="">Jump to section…</option>
+                      @for (section of sections; track section.line) {
+                        <option [value]="section.line">{{ section.title }} (line {{ section.line }})</option>
+                      }
+                    </select>
+                  </div>
+                }
+
+                <div class="reader-nav-group">
+                  <label class="visually-hidden" [for]="'reader-goto-' + uid">Go to line</label>
+                  <input type="number" class="gh-input reader-nav-input goto-input" [id]="'reader-goto-' + uid"
+                         min="1" [max]="lineCount" placeholder="Line" [(ngModel)]="goToLineInput"
+                         (keydown.enter)="goToLine(goToLineInput)" />
+                  <button type="button" class="btn-gh btn-gh-small goto-btn" aria-label="Go to line" (click)="goToLine(goToLineInput)">Go</button>
+                </div>
+
+                <div class="reader-nav-group find-group">
+                  <label class="visually-hidden" [for]="'reader-find-' + uid">Find in snapshot</label>
+                  <input type="search" class="gh-input reader-nav-input find-input" [id]="'reader-find-' + uid"
+                         placeholder="Find in snapshot" autocomplete="off" spellcheck="false"
+                         [attr.aria-describedby]="'reader-find-count-' + uid"
+                         [value]="findQuery" (input)="onFindInput($any($event.target).value)" (keydown)="onFindKeydown($event)" />
+                  <span class="find-count" [id]="'reader-find-count-' + uid" role="status" aria-live="polite">{{ findStatus }}</span>
+                  <button type="button" class="action-btn" (click)="stepMatch(-1)" [disabled]="matches.length === 0"
+                          aria-label="Previous match in snapshot"
+                          [attr.interestfor]="'reader-prev-tip-' + uid"
+                          [attr.style]="'anchor-name: --reader-prev-tip-' + uid">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <polyline points="18 15 12 9 6 15"></polyline>
+                    </svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'reader-prev-tip-' + uid"
+                       [attr.style]="'position-anchor: --reader-prev-tip-' + uid">Previous match</div>
+                  <button type="button" class="action-btn" (click)="stepMatch(1)" [disabled]="matches.length === 0"
+                          aria-label="Next match in snapshot"
+                          [attr.interestfor]="'reader-next-tip-' + uid"
+                          [attr.style]="'anchor-name: --reader-next-tip-' + uid">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'reader-next-tip-' + uid"
+                       [attr.style]="'position-anchor: --reader-next-tip-' + uid">Next match</div>
+                </div>
+
+                <div class="reader-nav-group view-toggles">
+                  <label class="checkbox-label">
+                    <input type="checkbox" class="line-numbers-toggle" [ngModel]="showLineNumbers" (ngModelChange)="setShowLineNumbers($event)" />
+                    Line numbers
+                  </label>
+                  <label class="checkbox-label">
+                    <input type="checkbox" class="wrap-toggle" [ngModel]="wrapLines" (ngModelChange)="setWrapLines($event)" />
+                    Wrap long lines (prose only)
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div #readerScroll class="reader-scroll" [class.wrap]="wrapLines" [class.no-ln]="!showLineNumbers"
+                 [style.--ln-digits]="lineNumberDigits"
+                 role="region" [attr.aria-label]="'Snapshot text of ' + snapshot.name" tabindex="0"
+                 (click)="onReaderClick($event)">
+              <div class="reader-content">
+                @for (chunk of readerChunks; track chunk.startLine) {
+                  <div class="reader-chunk" [class.map-chunk]="chunk.startLine === mapChunkStart"
+                       [style.--chunk-lines]="chunk.lines.length">
+                    @for (line of chunk.lines; track $index) {
+                      <span class="reader-line"
+                            [class.map-row]="isMapRow(chunk.startLine + $index)"
+                            [class.map-ruler]="isRuler(chunk.startLine + $index)"
+                            [class.map-ruler-units]="isUnitsRuler(chunk.startLine + $index)"
+                            [class.is-target]="targetLine === chunk.startLine + $index"
+                            [attr.data-ln]="chunk.startLine + $index">{{ line }}</span>
+                    }
+                  </div>
+                }
+              </div>
+              <div class="reader-status" [class.has-text]="!!statusText" aria-live="polite">{{ statusText }}</div>
             </div>
           </div>
-          <div class="dialog-actions">
-            <button type="button" class="btn-gh btn-gh-cancel" (click)="cancelEdit()" [disabled]="savingEdit">Cancel</button>
-            <button type="button" class="btn-gh" (click)="saveEdit()" [disabled]="savingEdit">
-              {{ savingEdit ? 'Saving...' : 'Save Changes' }}
-            </button>
-          </div>
+        </div>
+      } @else if (activeTab === 'editor') {
+        <div class="snapshot-panel snapshot-panel-editor" role="tabpanel" tabindex="0"
+             [id]="'snapshot-panel-editor-' + uid" [attr.aria-labelledby]="'snapshot-tab-editor-' + uid">
+          @if (showDiscardPrompt) {
+            <div class="discard-strip" role="group" [attr.aria-labelledby]="'snapshot-discard-label-' + uid">
+              <svg class="discard-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              </svg>
+              <span class="discard-label" [id]="'snapshot-discard-label-' + uid" role="alert">Discard unsaved changes to the snapshot text?</span>
+              <div class="discard-actions">
+                <button #keepEditingButton type="button" class="btn-ghost" (click)="keepEditingText()">Keep editing</button>
+                <button type="button" class="btn-ghost btn-ghost-danger" (click)="discardTextEdits()">Discard</button>
+              </div>
+            </div>
+          }
+          <app-snapshot-text-editor
+            [text]="snapshot.sanitizedText ?? ''"
+            [sha256]="snapshot.sha256"
+            [saving]="savingText"
+            [error]="editTextError"
+            (save)="saveText($event)"
+            (cancelled)="cancelEditText()"
+            (dirtyChange)="onTextDirtyChange($event)" />
         </div>
       } @else {
-        <!-- Provenance -->
-        <dl class="reader-facts">
-          <div class="fact"><dt>Capture method</dt><dd>{{ snapshot.captureMethod }}</dd></div>
-          <div class="fact"><dt>Character count</dt><dd>{{ snapshot.charCount | number }}</dd></div>
-          <div class="fact"><dt>Captured at</dt><dd>{{ snapshot.capturedAtUtc ? (snapshot.capturedAtUtc | date:'medium') : (snapshot.createdAtUtc | date:'medium') }}</dd></div>
-          <div class="fact"><dt>GnollHack version</dt><dd>{{ snapshot.sourceGnollHackVersion || 'Unknown' }}</dd></div>
-          <div class="fact"><dt>Source chat</dt><dd>{{ snapshot.sourceChatSessionId ? ('#' + snapshot.sourceChatSessionId) : 'None' }}</dd></div>
-          @if (showLastModified) {
-            <div class="fact last-modified"><dt>Last modified</dt><dd>{{ snapshot.modifiedAtUtc | date:'medium' }}</dd></div>
-          }
-        </dl>
+        <div class="snapshot-panel snapshot-panel-metadata" role="tabpanel" tabindex="0"
+             [id]="'snapshot-panel-metadata-' + uid" [attr.aria-labelledby]="'snapshot-tab-metadata-' + uid">
+          @if (isEditing) {
+            <!-- Edit metadata form -->
+            <div class="snapshot-edit-panel">
+              <h4>Edit Snapshot Metadata</h4>
+              @if (editError) {
+                <div class="alert alert-danger" role="alert">
+                  <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                  </svg>
+                  <div class="alert-content">
+                    <span class="alert-body">{{ editError }}</span>
+                  </div>
+                </div>
+              }
+              <div class="form-group">
+                <label for="editBoardName">Snapshot Name *</label>
+                <input id="editBoardName" type="text" class="gh-input" [(ngModel)]="editName" required />
+              </div>
+              <div class="form-group">
+                <label for="editBoardVersion">GnollHack Version</label>
+                <input id="editBoardVersion" type="text" class="gh-input" [(ngModel)]="editGnollHackVersion" placeholder="e.g. 0.9.4" />
+              </div>
+              <div class="form-group">
+                <label for="editBoardNotes">Notes</label>
+                <textarea id="editBoardNotes" class="gh-input" [(ngModel)]="editNotes" rows="3" placeholder="Context facts: HP, level, key items, adjacent monsters"></textarea>
+              </div>
+              <div class="form-group">
+                <label for="editBoardDigest">Snapshot digest (extract the difficulty assessor reads; max 6,000 chars)</label>
+                <textarea id="editBoardDigest" class="gh-input" [(ngModel)]="editDigestText" rows="8" maxlength="6000"></textarea>
+                <div class="digest-regenerate">
+                  <button type="button" class="btn-gh btn-gh-small" (click)="regenerateDigest()"
+                          [disabled]="regeneratingDigest || savingEdit">
+                    {{ regeneratingDigest ? 'Regenerating...' : 'Regenerate from snapshot' }}
+                  </button>
+                  <span class="digest-regenerate-status" aria-live="polite">{{ regenerateStatus }}</span>
+                </div>
+              </div>
+              <div class="dialog-actions">
+                <button type="button" class="btn-gh btn-gh-cancel" (click)="cancelEdit()" [disabled]="savingEdit">Cancel</button>
+                <button type="button" class="btn-gh" (click)="saveEdit()" [disabled]="savingEdit">
+                  {{ savingEdit ? 'Saving...' : 'Save Changes' }}
+                </button>
+              </div>
+            </div>
+          } @else {
+            <!-- Provenance -->
+            <dl class="reader-facts">
+              <div class="fact"><dt>Capture method</dt><dd>{{ snapshot.captureMethod }}</dd></div>
+              <div class="fact"><dt>Character count</dt><dd>{{ snapshot.charCount | number }}</dd></div>
+              <div class="fact"><dt>Captured at</dt><dd>{{ snapshot.capturedAtUtc ? (snapshot.capturedAtUtc | date:'medium') : (snapshot.createdAtUtc | date:'medium') }}</dd></div>
+              <div class="fact"><dt>GnollHack version</dt><dd>{{ snapshot.sourceGnollHackVersion || 'Unknown' }}</dd></div>
+              <div class="fact"><dt>Source chat</dt><dd>{{ snapshot.sourceChatSessionId ? ('#' + snapshot.sourceChatSessionId) : 'None' }}</dd></div>
+              @if (showLastModified) {
+                <div class="fact last-modified"><dt>Last modified</dt><dd>{{ snapshot.modifiedAtUtc | date:'medium' }}</dd></div>
+              }
+            </dl>
 
-        <div class="sha-row">
-          <span class="sha-label">SHA-256</span>
-          <code class="sha-box">{{ snapshot.sha256 }}</code>
-          <button type="button" class="action-btn" (click)="copySha()" aria-label="Copy SHA-256"
-                  [attr.interestfor]="'snapshot-sha-tip-' + uid"
-                  [attr.style]="'anchor-name: --snapshot-sha-tip-' + uid">
-            @if (copiedSha) {
-              <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-            } @else {
-              <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-              </svg>
+            <div class="sha-row">
+              <span class="sha-label">SHA-256</span>
+              <code class="sha-box">{{ snapshot.sha256 }}</code>
+              <button type="button" class="action-btn" (click)="copySha()" aria-label="Copy SHA-256"
+                      [attr.interestfor]="'snapshot-sha-tip-' + uid"
+                      [attr.style]="'anchor-name: --snapshot-sha-tip-' + uid">
+                @if (copiedSha) {
+                  <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                } @else {
+                  <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                }
+              </button>
+              <div popover="hint" class="gh-tooltip" [id]="'snapshot-sha-tip-' + uid"
+                   [attr.style]="'position-anchor: --snapshot-sha-tip-' + uid">Copy SHA-256</div>
+              <span class="visually-hidden copy-sha-status" aria-live="polite">{{ copiedSha ? 'Copied' : '' }}</span>
+            </div>
+
+            @if (snapshot.notes) {
+              <details class="reader-disclosure notes-disclosure" open>
+                <summary>Notes</summary>
+                <pre class="disclosure-pre">{{ snapshot.notes }}</pre>
+              </details>
             }
-          </button>
-          <div popover="hint" class="gh-tooltip" [id]="'snapshot-sha-tip-' + uid"
-               [attr.style]="'position-anchor: --snapshot-sha-tip-' + uid">Copy SHA-256</div>
-          <span class="visually-hidden copy-sha-status" aria-live="polite">{{ copiedSha ? 'Copied' : '' }}</span>
-        </div>
+            @if (snapshot.digestText) {
+              <details class="reader-disclosure digest-disclosure">
+                <summary>Digest (difficulty assessor extract) · {{ snapshot.digestText.length | number }} chars</summary>
+                <pre class="disclosure-pre">{{ snapshot.digestText }}</pre>
+              </details>
+            }
 
-        @if (snapshot.notes) {
-          <details class="reader-disclosure notes-disclosure" open>
-            <summary>Notes</summary>
-            <pre class="disclosure-pre">{{ snapshot.notes }}</pre>
-          </details>
-        }
-        @if (snapshot.digestText) {
-          <details class="reader-disclosure digest-disclosure">
-            <summary>Digest (difficulty assessor extract) · {{ snapshot.digestText.length | number }} chars</summary>
-            <pre class="disclosure-pre">{{ snapshot.digestText }}</pre>
-          </details>
-        }
-
-        @if (hasTruncationMarker) {
-          <div class="alert alert-warning">
-            <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-              <line x1="12" y1="9" x2="12" y2="13"></line>
-              <line x1="12" y1="17" x2="12.01" y2="17"></line>
-            </svg>
-            <div class="alert-content">
-              <span class="alert-body"><strong>Notice:</strong> This game snapshot was truncated at capture limit. Tail sections of the dump are omitted.</span>
+            <div class="metadata-actions">
+              <button type="button" class="btn-gh" (click)="startEdit()">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+                </svg>
+                Edit Metadata
+              </button>
             </div>
-          </div>
-        }
-
-        <!-- Board text reader (monospace, never Markdown) -->
-        <div class="board-text-wrapper">
-          <div class="board-text-toolbar">
-            <div class="toolbar-row">
-              <div class="toolbar-identity">
-                <span class="toolbar-title">Snapshot text</span>
-                <span class="toolbar-meta">{{ lineCount | number }} lines · {{ snapshot.charCount | number }} chars</span>
-              </div>
-              <div class="toolbar-actions">
-                <button type="button" class="btn-gh btn-gh-small" (click)="startEdit()">
-                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
-                  </svg>
-                  Edit Metadata
-                </button>
-                <button type="button" class="btn-gh btn-gh-small" (click)="startEditText()">
-                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
-                  </svg>
-                  Edit Text
-                </button>
-                <button type="button" class="btn-gh btn-gh-small" (click)="copyText()">
-                  @if (copied) {
-                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                      <polyline points="20 6 9 17 4 12"></polyline>
-                    </svg>
-                  } @else {
-                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                    </svg>
-                  }
-                  {{ copied ? 'Copied' : 'Copy Text' }}
-                </button>
-                <button type="button" class="btn-gh btn-gh-small" (click)="copyWithLineNumbers()">
-                  Copy with line numbers
-                </button>
-                <button type="button" class="btn-gh btn-gh-small" (click)="downloadText()">
-                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                    <line x1="12" y1="18" x2="12" y2="12"></line>
-                    <polyline points="9 15 12 18 15 15"></polyline>
-                  </svg>
-                  Download .snapshot.txt
-                </button>
-              </div>
-              <span class="visually-hidden copy-text-status" aria-live="polite">{{ copied ? 'Copied' : '' }}</span>
-            </div>
-
-            <div class="toolbar-row reader-nav">
-              @if (sections.length > 0) {
-                <div class="reader-nav-group">
-                  <label class="visually-hidden" [for]="'reader-section-' + uid">Jump to section</label>
-                  <select #sectionSelect class="gh-input gh-filter-select reader-nav-input section-select"
-                          [id]="'reader-section-' + uid" (change)="onSectionChange(sectionSelect)">
-                    <option value="">Jump to section…</option>
-                    @for (section of sections; track section.line) {
-                      <option [value]="section.line">{{ section.title }} (line {{ section.line }})</option>
-                    }
-                  </select>
-                </div>
-              }
-
-              <div class="reader-nav-group">
-                <label class="visually-hidden" [for]="'reader-goto-' + uid">Go to line</label>
-                <input type="number" class="gh-input reader-nav-input goto-input" [id]="'reader-goto-' + uid"
-                       min="1" [max]="lineCount" placeholder="Line" [(ngModel)]="goToLineInput"
-                       (keydown.enter)="goToLine(goToLineInput)" />
-                <button type="button" class="btn-gh btn-gh-small goto-btn" aria-label="Go to line" (click)="goToLine(goToLineInput)">Go</button>
-              </div>
-
-              <div class="reader-nav-group find-group">
-                <label class="visually-hidden" [for]="'reader-find-' + uid">Find in snapshot</label>
-                <input type="search" class="gh-input reader-nav-input find-input" [id]="'reader-find-' + uid"
-                       placeholder="Find in snapshot" autocomplete="off" spellcheck="false"
-                       [attr.aria-describedby]="'reader-find-count-' + uid"
-                       [value]="findQuery" (input)="onFindInput($any($event.target).value)" (keydown)="onFindKeydown($event)" />
-                <span class="find-count" [id]="'reader-find-count-' + uid" role="status" aria-live="polite">{{ findStatus }}</span>
-                <button type="button" class="action-btn" (click)="stepMatch(-1)" [disabled]="matches.length === 0"
-                        aria-label="Previous match in snapshot"
-                        [attr.interestfor]="'reader-prev-tip-' + uid"
-                        [attr.style]="'anchor-name: --reader-prev-tip-' + uid">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <polyline points="18 15 12 9 6 15"></polyline>
-                  </svg>
-                </button>
-                <div popover="hint" class="gh-tooltip" [id]="'reader-prev-tip-' + uid"
-                     [attr.style]="'position-anchor: --reader-prev-tip-' + uid">Previous match</div>
-                <button type="button" class="action-btn" (click)="stepMatch(1)" [disabled]="matches.length === 0"
-                        aria-label="Next match in snapshot"
-                        [attr.interestfor]="'reader-next-tip-' + uid"
-                        [attr.style]="'anchor-name: --reader-next-tip-' + uid">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <polyline points="6 9 12 15 18 9"></polyline>
-                  </svg>
-                </button>
-                <div popover="hint" class="gh-tooltip" [id]="'reader-next-tip-' + uid"
-                     [attr.style]="'position-anchor: --reader-next-tip-' + uid">Next match</div>
-              </div>
-
-              <div class="reader-nav-group view-toggles">
-                <label class="checkbox-label">
-                  <input type="checkbox" class="line-numbers-toggle" [ngModel]="showLineNumbers" (ngModelChange)="setShowLineNumbers($event)" />
-                  Line numbers
-                </label>
-                <label class="checkbox-label">
-                  <input type="checkbox" class="wrap-toggle" [ngModel]="wrapLines" (ngModelChange)="setWrapLines($event)" />
-                  Wrap long lines (prose only)
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div #readerScroll class="reader-scroll" [class.wrap]="wrapLines" [class.no-ln]="!showLineNumbers"
-               [style.--ln-digits]="lineNumberDigits"
-               role="region" [attr.aria-label]="'Snapshot text of ' + snapshot.name" tabindex="0"
-               (click)="onReaderClick($event)">
-            <div class="reader-content">
-              @for (chunk of readerChunks; track chunk.startLine) {
-                <div class="reader-chunk" [class.map-chunk]="chunk.startLine === mapChunkStart"
-                     [style.--chunk-lines]="chunk.lines.length">
-                  @for (line of chunk.lines; track $index) {
-                    <span class="reader-line"
-                          [class.map-row]="isMapRow(chunk.startLine + $index)"
-                          [class.map-ruler]="isRuler(chunk.startLine + $index)"
-                          [class.map-ruler-units]="isUnitsRuler(chunk.startLine + $index)"
-                          [class.is-target]="targetLine === chunk.startLine + $index"
-                          [attr.data-ln]="chunk.startLine + $index">{{ line }}</span>
-                  }
-                </div>
-              }
-            </div>
-            <div class="reader-status" [class.has-text]="!!statusText" aria-live="polite">{{ statusText }}</div>
-          </div>
+          }
         </div>
       }
     }
-  </div>
-
-  <div class="dialog-actions">
-    <button type="button" class="btn-gh btn-gh-cancel" (click)="requestClose()">Close</button>
   </div>
 </dialog>

@@ -42,30 +42,84 @@
     border-radius: 9999px;
   }
 
-  /* Only the reader region scrolls. The body scrolls as well only when the viewport is too short
-     for the reader's minimum height, and while the metadata form is open. */
+  .snapshot-tabs {
+    flex-shrink: 0;
+    margin: 0 20px;
+  }
+
+  /* The body never scrolls: it holds the active tab panel, and each panel owns its scroller. */
   .viewer-body {
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 12px 20px 0;
-    overflow-y: auto;
-
-    > * {
-      flex-shrink: 0;
-    }
+    padding: 12px 20px 16px;
 
     > .alert {
       margin: 0;
     }
   }
 
-  > .dialog-actions {
-    flex-shrink: 0;
-    margin-top: 0;
-    padding: 12px 20px 16px;
+  .snapshot-panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: -2px;
+    }
+  }
+
+  /* Only the reader region scrolls; the panel scrolls as well only when the viewport is too short
+     for the toolbar plus the reader's minimum height. */
+  .snapshot-panel-viewer {
+    overflow: auto;
+    overscroll-behavior: contain;
+
+    > .alert {
+      flex-shrink: 0;
+      margin: 0;
+    }
+
+    > .board-text-wrapper {
+      flex: 1 1 auto;
+      min-height: 12rem;
+    }
+  }
+
+  /* Only the CodeMirror scroller scrolls, so the editor's footer stays in view. */
+  .snapshot-panel-editor {
+    overflow: auto;
+    overscroll-behavior: contain;
+
+    > .discard-strip {
+      flex-shrink: 0;
+    }
+
+    > app-snapshot-text-editor {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+  }
+
+  /* Prose: the panel scrolls as a whole. */
+  .snapshot-panel-metadata {
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+
+    > * {
+      flex-shrink: 0;
+    }
+  }
+
+  .metadata-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
   }
 
   @media (max-width: 600px) {
@@ -73,11 +127,11 @@
       padding: 12px 12px 10px;
     }
 
-    .viewer-body {
-      padding: 10px 12px 0;
+    .snapshot-tabs {
+      margin: 0 12px;
     }
 
-    > .dialog-actions {
+    .viewer-body {
       padding: 10px 12px 12px;
     }
   }
@@ -178,20 +232,6 @@
   }
 }
 
-.viewer-body > .board-text-wrapper {
-  flex: 1 1 auto;
-}
-
-/* While the text editor is open it takes the whole body; its own scroller is the only one. */
-.viewer-body.editing-text {
-  padding-bottom: 12px;
-
-  > app-snapshot-text-editor {
-    flex: 1 1 auto;
-    min-height: 20rem;
-  }
-}
-
 .discard-strip {
   display: flex;
   flex-wrap: wrap;
@@ -223,7 +263,7 @@
 .board-text-wrapper {
   display: flex;
   flex-direction: column;
-  min-height: 16rem;
+  min-height: 0;
   border: 1px solid var(--border-glass);
   border-radius: 6px;
   background: var(--bg-input);
@@ -499,7 +539,6 @@
   padding: 16px;
   border-radius: 6px;
   border: 1px solid var(--border-glass);
-  margin-bottom: 12px;
 
   h4 {
     margin: 0 0 8px 0;

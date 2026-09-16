@@ -85,18 +85,29 @@ describe('SnapshotViewerComponent', () => {
       return ((fixture.nativeElement as HTMLElement).querySelector(selector)?.textContent ?? '').trim();
     }
 
-    it('names every action in words, with no emoji', () => {
-      for (const name of ['Edit Metadata', 'Edit Text', 'Copy Text', 'Copy with line numbers', 'Download .snapshot.txt']) {
-        const button = buttonNamed(name);
-        expect(button).withContext(name).toBeTruthy();
-      }
-      for (const name of ['Copy SHA-256', 'Close game snapshot', 'Go to line', 'Previous match in snapshot', 'Next match in snapshot']) {
-        expect(buttonNamed(name)).withContext(name).toBeTruthy();
-      }
+    function expectNoEmoji() {
       const buttons = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('button'));
       for (const button of buttons) {
         expect(/\p{Extended_Pictographic}/u.test(button.textContent ?? '')).withContext(button.textContent ?? '').toBeFalse();
       }
+    }
+
+    it('names every action in words, with no emoji', () => {
+      for (const name of ['Copy Text', 'Copy with line numbers', 'Download .snapshot.txt']) {
+        const button = buttonNamed(name);
+        expect(button).withContext(name).toBeTruthy();
+      }
+      for (const name of ['Close game snapshot', 'Go to line', 'Previous match in snapshot', 'Next match in snapshot']) {
+        expect(buttonNamed(name)).withContext(name).toBeTruthy();
+      }
+      expectNoEmoji();
+
+      component.selectTab('metadata');
+      fixture.detectChanges();
+      for (const name of ['Edit Metadata', 'Copy SHA-256']) {
+        expect(buttonNamed(name)).withContext(name).toBeTruthy();
+      }
+      expectNoEmoji();
     });
 
     it('announces a text copy, then clears the announcement', fakeAsync(() => {
@@ -116,6 +127,8 @@ describe('SnapshotViewerComponent', () => {
 
     it('announces a SHA-256 copy', fakeAsync(() => {
       spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+      component.selectTab('metadata');
+      fixture.detectChanges();
 
       component.copySha();
       flushMicrotasks();
@@ -139,6 +152,8 @@ describe('SnapshotViewerComponent', () => {
       component.open(1);
       fixture.detectChanges();
       host = fixture.nativeElement as HTMLElement;
+      component.selectTab('metadata');
+      fixture.detectChanges();
       clickButtonNamed('Edit Metadata');
       fixture.detectChanges();
     }
@@ -216,9 +231,14 @@ describe('SnapshotViewerComponent', () => {
       return fixture.debugElement.query(By.directive(SnapshotTextEditorComponent)).componentInstance;
     }
 
+    function tab(id: string): HTMLButtonElement {
+      return host.querySelector<HTMLButtonElement>(`[role="tab"][id^="snapshot-tab-${id}-"]`)!;
+    }
+
     async function openEditor() {
       openWith(snapshotWith(buildBoard()));
-      clickButtonNamed('Edit Text');
+      tab('editor').click();
+      fixture.detectChanges();
       await editor().ready;
       fixture.detectChanges();
     }
@@ -249,6 +269,8 @@ describe('SnapshotViewerComponent', () => {
       expect(host.querySelector('app-snapshot-text-editor')).toBeNull();
       expect(component.lineCount).toBe(3);
       expect(host.querySelectorAll('.reader-line').length).toBe(3);
+      component.selectTab('metadata');
+      fixture.detectChanges();
       expect(host.querySelector('.sha-box')!.textContent).toContain('def0987654321');
       expect(updatedSpy).toHaveBeenCalledWith(jasmine.objectContaining({ charCount: 13, sha256: 'def0987654321' }));
     });
@@ -289,6 +311,138 @@ describe('SnapshotViewerComponent', () => {
       clickButtonNamed('Cancel');
       expect(host.querySelector('app-snapshot-text-editor')).toBeNull();
       expect(host.querySelector('.discard-strip')).toBeNull();
+      expect(component.activeTab).toBe('viewer');
+    });
+  });
+
+  describe('the tabs', () => {
+    let host: HTMLElement;
+
+    function openWith(snapshot: BenchmarkGameSnapshotDto) {
+      mockBenchmarkService.getSnapshot.and.returnValue(of(snapshot));
+      component.open(1);
+      fixture.detectChanges();
+      host = fixture.nativeElement as HTMLElement;
+    }
+
+    function tabs(): HTMLButtonElement[] {
+      return Array.from(host.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    }
+
+    function tab(id: string): HTMLButtonElement {
+      return host.querySelector<HTMLButtonElement>(`[role="tab"][id^="snapshot-tab-${id}-"]`)!;
+    }
+
+    function key(target: HTMLElement, name: string) {
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }));
+      fixture.detectChanges();
+    }
+
+    function editor(): SnapshotTextEditorComponent {
+      return fixture.debugElement.query(By.directive(SnapshotTextEditorComponent)).componentInstance;
+    }
+
+    function clickButtonNamed(name: string) {
+      Array.from(host.querySelectorAll('button'))
+        .find(b => (b.textContent ?? '').trim() === name)!
+        .click();
+      fixture.detectChanges();
+    }
+
+    afterEach(() => component.viewerDialog?.nativeElement?.close());
+
+    it('exposes a tab list with one selected tab and its labelled panel', () => {
+      openWith(snapshotWith(buildBoard()));
+      const list = host.querySelector('[role="tablist"]')!;
+      expect(list.getAttribute('aria-label')).toBe('Game snapshot sections');
+      expect(tabs().map(t => (t.textContent ?? '').trim())).toEqual(['Viewer', 'Editor', 'Metadata']);
+
+      const selected = tabs().filter(t => t.getAttribute('aria-selected') === 'true');
+      expect(selected.length).toBe(1);
+      expect(selected[0].getAttribute('tabindex')).toBe('0');
+      for (const other of tabs().filter(t => t !== selected[0])) {
+        expect(other.getAttribute('tabindex')).toBe('-1');
+      }
+
+      const panels = host.querySelectorAll<HTMLElement>('[role="tabpanel"]');
+      expect(panels.length).toBe(1);
+      expect(panels[0].getAttribute('tabindex')).toBe('0');
+      expect(panels[0].getAttribute('aria-labelledby')).toBe(selected[0].id);
+      expect(selected[0].getAttribute('aria-controls')).toBe(panels[0].id);
+    });
+
+    it('moves selection and focus with the arrow, Home and End keys', () => {
+      openWith(snapshotWith(buildBoard()));
+
+      tab('viewer').focus();
+      key(tab('viewer'), 'ArrowRight');
+      expect(component.activeTab).toBe('editor');
+      expect(document.activeElement).toBe(tab('editor'));
+
+      key(tab('editor'), 'Home');
+      expect(component.activeTab).toBe('viewer');
+      expect(document.activeElement).toBe(tab('viewer'));
+
+      key(tab('viewer'), 'ArrowLeft');
+      expect(component.activeTab).toBe('metadata');
+      expect(document.activeElement).toBe(tab('metadata'));
+
+      key(tab('metadata'), 'Home');
+      key(tab('viewer'), 'End');
+      expect(component.activeTab).toBe('metadata');
+      expect(document.activeElement).toBe(tab('metadata'));
+    });
+
+    it('shows the Viewer tab again when reopened', () => {
+      openWith(snapshotWith(buildBoard()));
+      tab('metadata').click();
+      fixture.detectChanges();
+      expect(component.activeTab).toBe('metadata');
+
+      component.viewerDialog.nativeElement.close();
+      openWith(snapshotWith(buildBoard()));
+      expect(component.activeTab).toBe('viewer');
+      expect(tab('viewer').getAttribute('aria-selected')).toBe('true');
+      expect(host.querySelector('.reader-scroll')).toBeTruthy();
+    });
+
+    it('asks before leaving the editor with unsaved changes', async () => {
+      openWith(snapshotWith(buildBoard()));
+      tab('editor').click();
+      fixture.detectChanges();
+      await editor().ready;
+      fixture.detectChanges();
+      editor().dirtyChange.emit(true);
+      fixture.detectChanges();
+
+      tab('metadata').click();
+      fixture.detectChanges();
+      expect(host.querySelector('.discard-strip')).toBeTruthy();
+      expect(component.activeTab).toBe('editor');
+      expect((document.activeElement?.textContent ?? '').trim()).toBe('Keep editing');
+
+      clickButtonNamed('Keep editing');
+      expect(host.querySelector('.discard-strip')).toBeNull();
+      expect(host.querySelector('app-snapshot-text-editor')).toBeTruthy();
+      expect(component.activeTab).toBe('editor');
+
+      tab('metadata').click();
+      fixture.detectChanges();
+      clickButtonNamed('Discard');
+      expect(component.activeTab).toBe('metadata');
+      expect(host.querySelector('app-snapshot-text-editor')).toBeNull();
+      expect(host.querySelector('.sha-row')).toBeTruthy();
+    });
+
+    it('has no footer and no Edit Text button on any tab', () => {
+      openWith(snapshotWith(buildBoard()));
+      expect(host.querySelector('.benchmark-snapshot-viewer-dialog > .dialog-actions')).toBeNull();
+      for (const id of ['viewer', 'editor', 'metadata']) {
+        component.selectTab(id as 'viewer' | 'editor' | 'metadata');
+        fixture.detectChanges();
+        const names = Array.from(host.querySelectorAll('button')).map(b => (b.textContent ?? '').trim());
+        expect(names).withContext(id).not.toContain('Edit Text');
+      }
     });
   });
 
@@ -369,12 +523,16 @@ describe('SnapshotViewerComponent', () => {
 
     it('keeps the digest in a closed disclosure, and omits it when absent', () => {
       openWith(snapshotWith(buildBoard(), { digestText: 'Hero at low HP beside a fountain.' }));
+      component.selectTab('metadata');
+      fixture.detectChanges();
       const digest = host.querySelector<HTMLDetailsElement>('details.digest-disclosure');
       expect(digest).toBeTruthy();
       expect(digest!.open).toBeFalse();
 
       component.viewerDialog.nativeElement.close();
       openWith(snapshotWith(buildBoard()));
+      component.selectTab('metadata');
+      fixture.detectChanges();
       expect(host.querySelector('details.digest-disclosure')).toBeNull();
     });
 
