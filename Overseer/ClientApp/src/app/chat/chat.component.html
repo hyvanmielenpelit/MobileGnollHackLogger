@@ -161,7 +161,7 @@
               <button type="button" class="action-btn"
                       (click)="attachGameSnapshotFromClient()"
                       [disabled]="isAttachingSnapshot"
-                      aria-label="Attach the current game board from GnollHack to this chat"
+                      aria-label="Attach the current game snapshot from GnollHack to this chat"
                       [attr.style]="'anchor-name: --tip-attach-snapshot'"
                       interestfor="tip-attach-snapshot">
                 @if (isAttachingSnapshot) {
@@ -1099,12 +1099,12 @@
             <line x1="12" y1="17" x2="12.01" y2="17"></line>
           </svg>
           <div class="alert-content">
-            <span class="alert-body">Saved as "{{ captureBoardResult.boardName }}" because a board named "{{ captureBoardResult.requestedName }}" already existed.</span>
+            <span class="alert-body">Saved as "{{ captureBoardResult.boardName }}" because a snapshot named "{{ captureBoardResult.requestedName }}" already existed.</span>
           </div>
         </div>
       }
       <dl class="capture-facts">
-        <dt>Board</dt>
+        <dt>Snapshot</dt>
         <dd>{{ captureBoardResult.boardName }}</dd>
         <dt>Size</dt>
         <dd>{{ captureBoardResult.charCount | number }} characters</dd>
@@ -1116,12 +1116,12 @@
         </dd>
       </dl>
       <p class="success-hint">
-        An empty question suite has been created and bound to this board. You can now generate questions for it in Benchmark Admin.
+        An empty question suite has been created and bound to this snapshot. You can now generate questions for it in Benchmark Admin.
       </p>
     </div>
   } @else {
     <p class="capture-description">
-      Save the attached game snapshot from this conversation as a benchmark board. This creates a new board snapshot and an empty benchmark suite bound to it.
+      Save the attached game snapshot from this conversation as a benchmark snapshot. This creates a new stored snapshot and an empty benchmark suite bound to it.
     </p>
 
     @if (isLoadingCaptureInfo) {
@@ -1172,7 +1172,7 @@
                 </li>
               }
             </ul>
-            <span class="alert-body">Saving again creates another board.</span>
+            <span class="alert-body">Saving again creates another snapshot.</span>
           </div>
         </div>
       }
@@ -1192,7 +1192,7 @@
     }
 
     <div class="form-group">
-      <label for="captureBoardName">Board Name *</label>
+      <label for="captureBoardName">Snapshot Name *</label>
       <input id="captureBoardName" type="text" class="gh-input" [(ngModel)]="captureBoardName" placeholder="e.g. emergency_low_hp" [disabled]="isCapturingBoard" required />
     </div>
 

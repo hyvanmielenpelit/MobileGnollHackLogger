@@ -33,7 +33,7 @@ public class BenchmarkSnapshotImporterTests
         Assert.NotNull(suite);
         Assert.Equal("emergency_low_hp", snapshot.Name);
         Assert.Equal("ClientRefresh", snapshot.CaptureMethod);
-        Assert.Equal("Board: emergency_low_hp", suite.Name);
+        Assert.Equal("Snapshot: emergency_low_hp", suite.Name);
         Assert.Equal(snapshot.Id, suite.GameSnapshotId);
         Assert.False(suite.HasGeneratedQuestions);
         Assert.Empty(suite.Questions);
@@ -49,13 +49,13 @@ public class BenchmarkSnapshotImporterTests
     {
         var ct = TestContext.Current.CancellationToken;
         using var db = CreateDbContext();
-        db.BenchmarkSuites.Add(new BenchmarkSuite { Name = "Board: dup_test" });
+        db.BenchmarkSuites.Add(new BenchmarkSuite { Name = "Snapshot: dup_test" });
         await db.SaveChangesAsync(ct);
 
         var importer = new BenchmarkSnapshotImporter(db);
         var (snapshot, suite) = await importer.FromClientTextAsync("HP: 50", new BoardMetadata("dup_test"), ct);
 
-        Assert.Equal("Board: dup_test (2)", suite.Name);
+        Assert.Equal("Snapshot: dup_test (2)", suite.Name);
     }
 
     [Fact]
@@ -69,13 +69,13 @@ public class BenchmarkSnapshotImporterTests
         var (b3, s3) = await importer.FromClientTextAsync("HP: 70", new BoardMetadata("same_board"), ct);
 
         Assert.Equal("same_board", b1.Name);
-        Assert.Equal("Board: same_board", s1.Name);
+        Assert.Equal("Snapshot: same_board", s1.Name);
 
         Assert.Equal("same_board (2)", b2.Name);
-        Assert.Equal("Board: same_board (2)", s2.Name);
+        Assert.Equal("Snapshot: same_board (2)", s2.Name);
 
         Assert.Equal("same_board (3)", b3.Name);
-        Assert.Equal("Board: same_board (3)", s3.Name);
+        Assert.Equal("Snapshot: same_board (3)", s3.Name);
     }
 
     [Fact]
@@ -90,7 +90,7 @@ public class BenchmarkSnapshotImporterTests
         Assert.Equal(42, board.SourceChatSessionId);
         Assert.Equal("Admin note", board.Notes);
         Assert.Equal("session_attached_board", board.Name);
-        Assert.Equal("Board: session_attached_board", suite.Name);
+        Assert.Equal("Snapshot: session_attached_board", suite.Name);
     }
 
     [Fact]

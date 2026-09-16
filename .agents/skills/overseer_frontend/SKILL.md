@@ -92,6 +92,7 @@ The short version, so you know whether you need it:
   vocabulary** — never invent a variant, and never redefine `.btn-gh` in a component
   stylesheet (view encapsulation makes such an override invisible everywhere but that one
   component, which is how the AI Benchmark tab silently lost its image buttons).
+  Secondary actions beside one primary are `.btn-ghost`.
 - **An icon on a labelled button is decided case by case, never by default.** The test: if
   you deleted the label, would the glyph still say what the button does? `+ New Profile` and
   `▷ Start Benchmark` pass. `Done`, `Cancel`, `Save Profile`, and `Scoring Profiles` do not

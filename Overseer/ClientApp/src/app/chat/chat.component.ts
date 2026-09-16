@@ -1062,7 +1062,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     const date = now.toISOString().substring(0, 10);
     const match = /^GnollHack Gameplay \((.+)\)$/.exec((title ?? '').trim());
     const character = match ? match[1].replace(/\s+/g, ' ').trim().substring(0, 60).trim() : '';
-    return character ? `${character} ${date}` : `Board ${date}`;
+    return character ? `${character} ${date}` : `Snapshot ${date}`;
   }
 
   private static describeRequestError(err: any, fallback: string): string {

@@ -532,12 +532,24 @@
 
   .suite-card-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
+    gap: 10px 14px;
     border-top: 1px solid #2e2e2e;
     padding-top: 14px;
     margin-top: auto;
+  }
+
+  .suite-card-secondary {
+    display: flex;
     flex-wrap: wrap;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+
+    .btn-ghost-danger {
+      margin-inline-start: auto;
+    }
   }
 }
 
@@ -1910,13 +1922,14 @@
   }
 }
 
-/* Wider and full height than its .benchmark-form-dialog siblings: this is the only one of them
-   holding a Markdown editor, and 920px is what lets the source and the preview sit side by side
-   at a readable measure. dvh so a collapsing mobile URL bar cannot clip the footer.
+/* Wider and full height than their .benchmark-form-dialog siblings: these are the only two of
+   them holding a Markdown editor, and 920px is what lets the source and the preview sit side by
+   side at a readable measure. dvh so a collapsing mobile URL bar cannot clip the footer.
 
    Must stay after .benchmark-form-dialog: both selectors have the same specificity, so source
    order is what decides the width. */
-.gh-dialog.benchmark-question-form-dialog {
+.gh-dialog.benchmark-question-form-dialog,
+.gh-dialog.benchmark-suite-form-dialog {
   width: min(920px, 94vw);
   max-width: min(920px, 94vw);
   height: calc(100dvh - 16px);
@@ -1935,20 +1948,10 @@
   }
 }
 
-/* Grows with the question, to a cap. rows="3" in the markup is the floor and the whole
-   fallback: where field-sizing is unsupported the box stays three rows and scrolls. */
-.q-text-autosize {
-  field-sizing: content;
-  height: auto;          /* an inherited fixed height would override field-sizing outright */
-  width: 100%;           /* stable inline size, so replacing a long placeholder cannot jolt it */
-  min-block-size: 3lh;
-  max-block-size: 12lh;  /* past this it scrolls rather than pushing the criteria editor away */
-  resize: vertical;
-}
-
 /* Half the inset on a phone, mirroring .gh-dialog-fullscreen's own 600px step. */
 @media (max-width: 600px) {
-  .gh-dialog.benchmark-question-form-dialog {
+  .gh-dialog.benchmark-question-form-dialog,
+  .gh-dialog.benchmark-suite-form-dialog {
     height: calc(100dvh - 8px);
     max-height: calc(100dvh - 8px);
   }
@@ -2987,6 +2990,11 @@
     background: rgba(59, 130, 246, 0.3);
     color: #93c5fd;
   }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
 }
 
 .badge-ai {
@@ -3030,8 +3038,14 @@
 }
 
 .generation-dialog {
-  max-width: 680px;
-  width: 90vw;
+  width: min(760px, 94vw);
+  max-width: min(760px, 94vw);
+  max-height: calc(100dvh - 16px);
+
+  .gen-instructions {
+    --autosize-min: 4lh;
+    --autosize-max: 16lh;
+  }
 
   .counts-row {
     display: flex;

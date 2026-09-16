@@ -73,13 +73,13 @@ public class BenchmarkSnapshotImporter
         if (string.IsNullOrWhiteSpace(normalizedText))
         {
             throw new ArgumentException(
-                "Captured snapshot flattened to empty text. A dump that flattens to nothing is a capture failure, not a valid board.",
+                "Captured snapshot flattened to empty text. A dump that flattens to nothing is a capture failure, not a valid snapshot.",
                 nameof(normalizedText));
         }
 
         if (string.IsNullOrWhiteSpace(meta.Name))
         {
-            throw new ArgumentException("Board name must not be empty.", nameof(meta));
+            throw new ArgumentException("Snapshot name must not be empty.", nameof(meta));
         }
 
         var (finalText, sha256) = PrepareBoardText(normalizedText);
@@ -114,7 +114,7 @@ public class BenchmarkSnapshotImporter
                 ModifiedAtUtc = DateTime.UtcNow
             };
 
-            string suiteBaseName = $"Board: {board.Name}";
+            string suiteBaseName = $"Snapshot: {board.Name}";
             string finalSuiteName = suiteBaseName;
             int suiteCounter = 1;
             while (await _dbContext.BenchmarkSuites.AnyAsync(s => s.Name == finalSuiteName, ct))
@@ -127,7 +127,7 @@ public class BenchmarkSnapshotImporter
             var suite = new BenchmarkSuite
             {
                 Name = finalSuiteName,
-                Description = $"Benchmark question suite bound to game board '{board.Name}' (captured via {board.CaptureMethod}, {board.CharCount} characters, SHA-256 {shaPrefix}).",
+                Description = $"Benchmark question suite bound to game snapshot '{board.Name}' (captured via {board.CaptureMethod}, {board.CharCount} characters, SHA-256 {shaPrefix}).",
                 GameSnapshot = board,
                 HasGeneratedQuestions = false,
                 CreatedAtUtc = DateTime.UtcNow,

@@ -1347,7 +1347,7 @@ describe('ChatComponent context window indicator', () => {
 
       const compiled = fixture.nativeElement as HTMLElement;
       const saveBtn = compiled.querySelector('button[aria-label="Save attached game snapshot of this chat for benchmarking"]');
-      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game board from GnollHack to this chat"]');
+      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game snapshot from GnollHack to this chat"]');
 
       expect(saveBtn).toBeTruthy();
       expect(attachBtn).toBeFalsy();
@@ -1368,7 +1368,7 @@ describe('ChatComponent context window indicator', () => {
 
       const compiled = fixture.nativeElement as HTMLElement;
       const saveBtn = compiled.querySelector('button[aria-label="Save attached game snapshot of this chat for benchmarking"]');
-      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game board from GnollHack to this chat"]');
+      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game snapshot from GnollHack to this chat"]');
 
       expect(saveBtn).toBeFalsy();
       expect(attachBtn).toBeTruthy();
@@ -1389,7 +1389,7 @@ describe('ChatComponent context window indicator', () => {
 
       const compiled = fixture.nativeElement as HTMLElement;
       const saveBtn = compiled.querySelector('button[aria-label="Save attached game snapshot of this chat for benchmarking"]');
-      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game board from GnollHack to this chat"]');
+      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game snapshot from GnollHack to this chat"]');
 
       expect(saveBtn).toBeTruthy();
       expect(attachBtn).toBeFalsy();
@@ -1443,7 +1443,7 @@ describe('ChatComponent context window indicator', () => {
       fixture.detectChanges();
 
       const compiled = fixture.nativeElement as HTMLElement;
-      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game board from GnollHack to this chat"]');
+      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game snapshot from GnollHack to this chat"]');
       const saveBtn = compiled.querySelector('button[aria-label="Save attached game snapshot of this chat for benchmarking"]');
 
       expect(attachBtn).toBeTruthy();
@@ -1456,13 +1456,13 @@ describe('ChatComponent context window indicator', () => {
       fixture.detectChanges();
 
       let compiled = fixture.nativeElement as HTMLElement;
-      let attachBtn = compiled.querySelector('button[aria-label="Attach the current game board from GnollHack to this chat"]');
+      let attachBtn = compiled.querySelector('button[aria-label="Attach the current game snapshot from GnollHack to this chat"]');
       expect(attachBtn).toBeTruthy();
 
       // When hasGameSnapshot is true, it should disappear
       component.hasGameSnapshot = true;
       fixture.detectChanges();
-      attachBtn = compiled.querySelector('button[aria-label="Attach the current game board from GnollHack to this chat"]');
+      attachBtn = compiled.querySelector('button[aria-label="Attach the current game snapshot from GnollHack to this chat"]');
       expect(attachBtn).toBeFalsy();
     });
 
@@ -1472,7 +1472,7 @@ describe('ChatComponent context window indicator', () => {
       fixture.detectChanges();
 
       const compiled = fixture.nativeElement as HTMLElement;
-      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game board from GnollHack to this chat"]');
+      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game snapshot from GnollHack to this chat"]');
       expect(attachBtn).toBeFalsy();
     });
 
@@ -1485,7 +1485,7 @@ describe('ChatComponent context window indicator', () => {
       fixture.detectChanges();
 
       const compiled = fixture.nativeElement as HTMLElement;
-      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game board from GnollHack to this chat"]');
+      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game snapshot from GnollHack to this chat"]');
       expect(attachBtn).toBeFalsy();
     });
 
@@ -1497,7 +1497,7 @@ describe('ChatComponent context window indicator', () => {
       fixture.detectChanges();
 
       const compiled = fixture.nativeElement as HTMLElement;
-      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game board from GnollHack to this chat"]');
+      const attachBtn = compiled.querySelector('button[aria-label="Attach the current game snapshot from GnollHack to this chat"]');
       expect(attachBtn).toBeTruthy();
     });
 
@@ -1618,8 +1618,8 @@ describe('ChatComponent context window indicator', () => {
       const now = new Date('2026-09-15T10:00:00Z');
 
       expect(component.suggestBoardName('GnollHack Gameplay (Alice)', now)).toBe('Alice 2026-09-15');
-      expect(component.suggestBoardName('GnollHack Assistance', now)).toBe('Board 2026-09-15');
-      expect(component.suggestBoardName('New Chat', now)).toBe('Board 2026-09-15');
+      expect(component.suggestBoardName('GnollHack Assistance', now)).toBe('Snapshot 2026-09-15');
+      expect(component.suggestBoardName('New Chat', now)).toBe('Snapshot 2026-09-15');
       expect(component.suggestBoardName(`GnollHack Gameplay (${'A'.repeat(70)})`, now)).toBe(`${'A'.repeat(60)} 2026-09-15`);
     });
 

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AdminBenchmarkService, BenchmarkGameSnapshotDto } from '../../services/admin-benchmark.service';
 import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
+import { SnapshotTextEditorComponent } from './snapshot-text-editor.component';
 import {
   FindMatch,
   MapBlock,
@@ -22,6 +23,7 @@ import {
 const READER_CHUNK_LINES = 100;
 const FIND_DEBOUNCE_MS = 150;
 const STATUS_MS = 2000;
+const MODIFIED_AFTER_CREATE_MS = 60_000;
 const PREF_LINE_NUMBERS = 'overseer.snapshotReader.lineNumbers';
 const PREF_WRAP = 'overseer.snapshotReader.wrap';
 const HIGHLIGHT_FIND = 'reader-find';
@@ -37,7 +39,7 @@ interface MapCell {
 @Component({
   selector: 'app-snapshot-viewer',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, SnapshotTextEditorComponent],
   templateUrl: './snapshot-viewer.component.html',
   styleUrls: ['./snapshot-viewer.component.scss']
 })
@@ -52,6 +54,8 @@ export class SnapshotViewerComponent implements OnDestroy {
 
   @ViewChild('viewerDialog') viewerDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('viewerTitle') viewerTitle?: ElementRef<HTMLElement>;
+  @ViewChild('keepEditingButton') keepEditingButton?: ElementRef<HTMLButtonElement>;
+  @ViewChild(SnapshotTextEditorComponent) textEditor?: SnapshotTextEditorComponent;
 
   /* The reader region is re-created whenever the metadata form closes, so listeners and
      highlight ranges follow the element rather than the component. */
@@ -79,6 +83,12 @@ export class SnapshotViewerComponent implements OnDestroy {
   editError: string | null = null;
   regeneratingDigest = false;
   regenerateStatus = '';
+
+  isEditingText = false;
+  editingTextDirty = false;
+  savingText = false;
+  editTextError: string | null = null;
+  showDiscardPrompt = false;
 
   lines: string[] = [];
   readerChunks: ReaderChunk[] = [];
@@ -138,10 +148,27 @@ export class SnapshotViewerComponent implements OnDestroy {
     }
     this.isEditing = false;
     this.editError = null;
+    this.resetTextEditState();
     this.loadSnapshot();
   }
 
+  /* The header close button and the footer Close button; unsaved text edits ask first. */
+  requestClose() {
+    if (this.guardUnsavedText()) return;
+    this.close();
+  }
+
+  /* Escape on the dialog. */
+  onDialogCancel(event: Event) {
+    if (this.guardUnsavedText()) {
+      event.preventDefault();
+      return;
+    }
+    this.close();
+  }
+
   close() {
+    this.resetTextEditState();
     this.clearHighlights();
     this.clearCellReadout();
     this.viewerDialog?.nativeElement?.close();
@@ -167,7 +194,7 @@ export class SnapshotViewerComponent implements OnDestroy {
         this.viewerTitle?.nativeElement.focus({ preventScroll: true });
       },
       error: (err) => {
-        this.error = err?.error?.message || err?.error || 'Failed to load game board snapshot.';
+        this.error = err?.error?.message || err?.error || 'Failed to load game snapshot.';
         this.loading = false;
         this.cdr.detectChanges();
       }
@@ -233,14 +260,14 @@ export class SnapshotViewerComponent implements OnDestroy {
         this.editDigestText = updated.digestText || '';
         this.snapshot = { ...this.snapshot!, digestText: updated.digestText };
         this.regeneratingDigest = false;
-        this.regenerateStatus = `Digest rebuilt from the board (${this.editDigestText.length} characters).`;
+        this.regenerateStatus = `Digest rebuilt from the snapshot (${this.editDigestText.length} characters).`;
         this.snapshotUpdated.emit(this.snapshot);
         this.cdr.detectChanges();
       },
       error: (err) => {
         this.regeneratingDigest = false;
         this.regenerateStatus = '';
-        this.editError = err?.error?.message || err?.error || 'Failed to regenerate the board digest.';
+        this.editError = err?.error?.message || err?.error || 'Failed to regenerate the snapshot digest.';
         this.cdr.detectChanges();
       }
     });
@@ -249,7 +276,7 @@ export class SnapshotViewerComponent implements OnDestroy {
   saveEdit() {
     if (!this.snapshot) return;
     if (!this.editName.trim()) {
-      this.editError = 'Board name is required.';
+      this.editError = 'Snapshot name is required.';
       return;
     }
     this.savingEdit = true;
@@ -275,7 +302,7 @@ export class SnapshotViewerComponent implements OnDestroy {
         this.cdr.detectChanges();
       },
       error: (err) => {
-        this.editError = err?.error?.message || err?.error || 'Failed to update game board.';
+        this.editError = err?.error?.message || err?.error || 'Failed to update game snapshot.';
         this.savingEdit = false;
         this.cdr.detectChanges();
       }
@@ -284,6 +311,99 @@ export class SnapshotViewerComponent implements OnDestroy {
 
   get hasTruncationMarker(): boolean {
     return !!this.snapshot?.sanitizedText?.includes('[SNAPSHOT TRUNCATED');
+  }
+
+  /* Shown only when the snapshot was changed after it was stored, not merely stamped at creation. */
+  get showLastModified(): boolean {
+    const modified = this.snapshot?.modifiedAtUtc ? Date.parse(this.snapshot.modifiedAtUtc) : NaN;
+    const created = this.snapshot?.createdAtUtc ? Date.parse(this.snapshot.createdAtUtc) : NaN;
+    return Number.isFinite(modified) && Number.isFinite(created) && modified - created > MODIFIED_AFTER_CREATE_MS;
+  }
+
+  // ---- Text editing --------------------------------------------------------------------------
+
+  /* The metadata form and the reader are both replaced by the editor while it is open. */
+  startEditText() {
+    if (!this.snapshot) return;
+    this.isEditing = false;
+    this.editError = null;
+    this.resetTextEditState();
+    this.clearCellReadout();
+    this.clearHighlights();
+    this.isEditingText = true;
+    this.cdr.detectChanges();
+  }
+
+  onTextDirtyChange(dirty: boolean) {
+    this.editingTextDirty = dirty;
+    if (!dirty) this.showDiscardPrompt = false;
+    this.cdr.detectChanges();
+  }
+
+  /* The reader re-renders from the server's normalized copy, not from the editor's buffer. On
+     failure the editor stays open with its buffer intact and shows the server's message. */
+  saveText(text: string) {
+    if (!this.snapshot || this.savingText) return;
+    this.savingText = true;
+    this.editTextError = null;
+    this.showDiscardPrompt = false;
+    this.cdr.detectChanges();
+
+    this.benchmarkService.updateSnapshotText(this.snapshot.id, {
+      text,
+      expectedSha256: this.snapshot.sha256
+    }).subscribe({
+      next: (updated) => {
+        this.snapshot = { ...this.snapshot!, ...updated, sanitizedText: updated.sanitizedText ?? text };
+        this.prepareReader(this.snapshot.sanitizedText);
+        this.resetTextEditState();
+        this.snapshotUpdated.emit(this.snapshot);
+        this.flashStatus('Saved. SHA-256 and digest updated.');
+        this.viewerTitle?.nativeElement.focus({ preventScroll: true });
+      },
+      error: (err) => {
+        this.savingText = false;
+        const body = err?.error;
+        this.editTextError = body?.error || body?.message || (typeof body === 'string' && body)
+          || 'Failed to save the snapshot text.';
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  cancelEditText() {
+    if (this.savingText) return;
+    if (this.guardUnsavedText()) return;
+    this.resetTextEditState();
+    this.cdr.detectChanges();
+  }
+
+  keepEditingText() {
+    this.showDiscardPrompt = false;
+    this.cdr.detectChanges();
+    this.textEditor?.focus();
+  }
+
+  discardTextEdits() {
+    this.resetTextEditState();
+    this.cdr.detectChanges();
+  }
+
+  /* True when the text editor holds unsaved changes; the discard prompt is then shown instead. */
+  private guardUnsavedText(): boolean {
+    if (!this.isEditingText || !this.editingTextDirty) return false;
+    this.showDiscardPrompt = true;
+    this.cdr.detectChanges();
+    this.keepEditingButton?.nativeElement.focus();
+    return true;
+  }
+
+  private resetTextEditState() {
+    this.isEditingText = false;
+    this.editingTextDirty = false;
+    this.savingText = false;
+    this.editTextError = null;
+    this.showDiscardPrompt = false;
   }
 
   // ---- Reader: layout ------------------------------------------------------------------------

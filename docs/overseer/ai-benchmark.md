@@ -3103,66 +3103,256 @@ Each unmeasured configuration represents an active chat capability operating out
 
 ---
 
-## 10. Game Context Board Snapshots & AI-Generated Questions (Harness Version 8)
+## 10. Game Snapshots & AI-Generated Questions (Harness Version 8)
 
-Harness version 8 introduces **Game Context Board Snapshots** and **AI-Generated Questions Grounded in Live Game State**.
+Harness version 8 introduces **Game Snapshots** and **AI-Generated Questions Grounded in Live Game State**.
 
-### Game Context Board Snapshots
-A board snapshot (`BenchmarkGameSnapshot`) captures the complete, authentic text dump of a live GnollHack game session board.
+### Terminology
+
+The admin UI, the API and this section say **game snapshot** / **snapshot**. A few places in the
+implementation still say "board" on purpose, called out here rather than left silently inconsistent:
+
+- **Identifiers and CSS classes** are unchanged: the snapshot badge's `badge-board` class, the Suite
+  Health tab id `board-facts` (`sh-tab-board-facts` / `sh-panel-board-facts`), and method/parameter
+  names such as `BoardMetadata`, `PrepareBoardText`, `boardText` and `boardName` in
+  `BenchmarkSnapshotImporter` and `AdminBenchmarkController`. None of these reach an administrator.
+- **The rubric-format literals `` `**BOARD FACTS**` `` and `` `**SOURCE** — board` ``** are stored
+  verbatim inside every AI-generated rubric (`BenchmarkQuestion.ExpectedPoints`), required by
+  `BenchmarkGenerationParser` (a generated rubric without `**BOARD FACTS**` is rejected), checked by
+  `BenchmarkRubricCheckPrompt`, and parsed by `BenchmarkRubricCitationValidator` under the `**SOURCE**`
+  convention. They cannot be renamed without administrators meeting both spellings side by side
+  forever: every rubric already stored keeps the old heading, and rewriting stored rubrics to match
+  would bump `SuiteItemRevisions` — a **Fundamental** key in `BenchmarkComparabilityKey` — for every
+  question on every snapshot-bound suite, severing future runs from past ones. The Generate Questions
+  dialog's Authoring Instructions hint and the Suite Health panel's Snapshot facts introduction
+  (both below) explain the literal at the point an administrator meets it; this section is the third.
+- **The model-facing prompts** (`BenchmarkAssessmentPrompt`, the question-generation prompt, the
+  rubric-check prompt, the difficulty prompt) still say "GAME CONTEXT BOARD" and teach the model the
+  two literals above. This text never reaches an administrator, and the grader prompt
+  (`BenchmarkAssessmentPrompt`) is pinned by `BenchmarkAssessmentPromptTests`; changing its wording is
+  a `HarnessVersion` bump with its own comparability round, not a UI terminology fix.
+  `CandidateSystemPromptSha256` — the candidate system prompt actually hashed for comparability —
+  does not contain the word at all. The one prompt string that *is* admin-visible,
+  `BenchmarkGenerationPrompt.DefaultInstructions` (the server-side default shown in the Authoring
+  Instructions textarea), does say "snapshot".
+
+Everything else below — capture, the viewer, generation, rubric verification — uses "snapshot"
+throughout, matching the UI. Renamed suite names and report/log lines apply only going forward:
+existing stored suite names, run reports and job logs already written are not migrated.
+
+### Game Snapshots
+A snapshot (`BenchmarkGameSnapshot`) captures the complete, authentic text dump of a live GnollHack
+game session.
 - **Capture Pipeline**:
-  - **Live Game Capture (`ClientRefresh`)**: Retained for the boards already captured this way and for `BenchmarkSnapshotImporter.FromClientTextAsync`, which `BenchmarkSnapshotImporterTests` exercises directly. The chat UI offers no live capture: there is no "Capture Live Board" button and no `snapshots/capture` endpoint. A live board now reaches a benchmark by being attached to the chat and then saved through the path below.
-  - **Session Attachment Capture (`SessionAttachment`)**: Captured from an existing game snapshot attached to the chat session ("Save Attached Game Snapshot" button in the chat header). This extracts the newest attached snapshot text directly from the session's system messages without requiring a 45-second round trip to the native game client.
-  - **Server Upload (`ServerUpload`)**: Captured via programmatic API or file import (`file_upload` and `manual_entry` currently have no dedicated UI).
-- **Sanitizer Convergence**: All capture paths pass board text through `DumpHtmlSanitizer.NormalizeFlattenedText` before persistence. This normalizes line endings (`\r\n` / `\r` to `\n`), strips trailing whitespace per line, strips terminal backticks/triple backticks, rejects empty text, computes a canonical SHA-256 digest, and enforces the 60,000 character hard cap with an explicit truncation marker (`[SNAPSHOT TRUNCATED at 60000 chars]`).
-- **Provenance Tracking**: Each snapshot records `CaptureMethod`, `SourceChatSessionId`, `SourceGnollHackVersion`, `Notes`, `DigestText`, and `CapturedAtUtc`.
-- **Digest**: `DigestText` is a **deterministic extract** of the board, built at capture time by `BenchmarkSnapshotDigestBuilder` from the snapshot's own labelled sections — the preamble (version banner, dates, character line), `Status:`, `Background:`, `Current Status:`, the last few `Latest messages:`, `Pets:`, `Notable locations:` and `Inventory:`, each with a line cap that reports how many lines it dropped. The map grid, the symbol legend, the skills, spells, discoveries, game log, conducts and dungeon overview are deliberately omitted, and the whole extract is capped at **6,000 characters**. A dump carrying none of those headers falls back to its leading characters cut at a line boundary, so no capture path yields an empty digest.
-  - **Who reads it**: the **difficulty assessor only** (`BenchmarkDifficultyPrompt`), which runs in batches of four questions and would otherwise carry a 60,000-character board in every call. The prompt tells the assessor what the digest omits. Every other reader — the question generator, the grading assessor, the claim verifier, the rubric checker and the candidate model — receives the full `SanitizedText`.
-  - **Editing and regeneration**: an administrator can edit the digest in Edit Metadata, or rebuild it from the board with **Regenerate from board** (`POST snapshots/{id}/regenerate-digest`), which never touches the board text. Nothing overwrites the digest automatically; question generation leaves it alone.
-  - **Boards captured before this change keep their old prefix digest** — the first 2,000 characters of the board — until an administrator regenerates them. There is no automatic backfill.
-- **Automatic Name Disambiguation**: Duplicate board names are automatically disambiguated with an incrementing numeric counter suffix (e.g. `Board Name (2)`, `Board Name (3)`) rather than rejected with an error, keeping the bound question suite name synchronized with the board.
-- **Chat UI Controls & Gating**: Two icon buttons, both in the chat header immediately to the right of the rename (pen) button. One requires an attached snapshot and the other requires that there be none, so they can never appear together.
-  - **Attach Game Snapshot**: Displayed whenever the chat runs embedded inside the GnollHack game client (`clientBridge.isEmbedded()`) and no snapshot is attached yet (`!hasGameSnapshot`) — including in a brand-new chat, where attaching creates the session. It fetches the board over the client bridge and attaches it to the chat; it does **not** create a board snapshot or a suite.
-  - **Save Attached Game Snapshot**: Displayed when an active, non-ephemeral session has an attached snapshot (`user.isAdmin && currentSessionId && hasGameSnapshot && !isEphemeralSession`), including in an ordinary browser session, because it reads the snapshot text from the session's own stored messages. This is the only route from the chat to a benchmark board.
-  - Only **Save Attached Game Snapshot** is gated by administrator privileges (`isAdmin`); **Attach Game Snapshot** is available to any embedded user. Neither depends on `ShowDebugLog` or any build configuration flags.
-- **Immutability & Safety**: Board text is immutable after creation. Only metadata (`Name`, `SourceGnollHackVersion`, `Notes`, `DigestText`) can be edited. A board snapshot cannot be deleted if any benchmark suites or runs reference it.
+  - **Live Game Capture (`ClientRefresh`)**: Retained for the snapshots already captured this way and
+    for `BenchmarkSnapshotImporter.FromClientTextAsync`, which `BenchmarkSnapshotImporterTests`
+    exercises directly. The chat UI offers no live capture: there is no dedicated capture button and
+    no `snapshots/capture` endpoint. A live snapshot now reaches a benchmark by being attached to the
+    chat and then saved through the path below.
+  - **Session Attachment Capture (`SessionAttachment`)**: Captured from an existing game snapshot
+    attached to the chat session (the **Save Attached Game Snapshot** button in the chat header). This
+    extracts the newest attached snapshot text directly from the session's system messages without
+    requiring a 45-second round trip to the native game client.
+  - **Server Upload (`ServerUpload`)**: Captured via programmatic API or file import (`file_upload`
+    and `manual_entry` currently have no dedicated UI).
+- **Sanitizer Convergence**: All capture paths pass snapshot text through
+  `DumpHtmlSanitizer.NormalizeFlattenedText` before persistence. This normalizes line endings
+  (`\r\n` / `\r` to `\n`), strips trailing whitespace per line, strips terminal backticks/triple
+  backticks, rejects empty text, computes a canonical SHA-256 digest, and enforces the 60,000
+  character hard cap with an explicit truncation marker (`[SNAPSHOT TRUNCATED at 60000 chars]`). The
+  editable-text path below (Immutability & Safety) runs the same normalization, so a round-trip of
+  unchanged text yields the same hash.
+- **Provenance Tracking**: Each snapshot records `CaptureMethod`, `SourceChatSessionId`,
+  `SourceGnollHackVersion`, `Notes`, `DigestText`, and `CapturedAtUtc`.
+- **Digest**: `DigestText` is a **deterministic extract** of the snapshot, built by
+  `BenchmarkSnapshotDigestBuilder` from the snapshot's own labelled sections — the preamble (version
+  banner, dates, character line), `Status:`, `Background:`, `Current Status:`, the last few
+  `Latest messages:`, `Pets:`, `Notable locations:` and `Inventory:`, each with a line cap that
+  reports how many lines it dropped. The map grid, the symbol legend, the skills, spells,
+  discoveries, game log, conducts and dungeon overview are deliberately omitted, and the whole
+  extract is capped at **6,000 characters**. A dump carrying none of those headers falls back to its
+  leading characters cut at a line boundary, so no capture path yields an empty digest.
+  - **Who reads it**: the **difficulty assessor only** (`BenchmarkDifficultyPrompt`), which runs in
+    batches of four questions and would otherwise carry a 60,000-character snapshot in every call.
+    The prompt tells the assessor what the digest omits. Every other reader — the question
+    generator, the grading assessor, the claim verifier, the rubric checker and the candidate model —
+    receives the full `SanitizedText`.
+  - **Editing and regeneration**: an administrator can hand-edit the digest field in **Edit Snapshot
+    Metadata**, or rebuild it from the current snapshot text with **Regenerate from snapshot**
+    (`POST snapshots/{id}/regenerate-digest`), which never touches the snapshot text. Saving a text
+    edit through **Edit Text** (below) always rebuilds the digest too — overwriting a hand-edited one
+    — because the digest must describe the text that is actually stored.
+  - **Snapshots captured before this change keep their old prefix digest** — the first 2,000
+    characters of the snapshot — until an administrator regenerates or edits them. There is no
+    automatic backfill.
+- **Automatic Name Disambiguation**: Duplicate snapshot names are automatically disambiguated with an
+  incrementing numeric counter suffix (e.g. `Name (2)`, `Name (3)`) rather than rejected with an
+  error, keeping the bound question suite name synchronized with the snapshot. A snapshot-bound suite
+  created from a fresh capture from now on is named `Snapshot: <name>`; suites created before this
+  change keep their stored name — nothing is migrated.
+- **Chat UI Controls & Gating**: Two icon buttons, both in the chat header immediately to the right
+  of the rename (pen) button. One requires an attached snapshot and the other requires that there be
+  none, so they can never appear together.
+  - **Attach Game Snapshot**: Displayed whenever the chat runs embedded inside the GnollHack game
+    client (`clientBridge.isEmbedded()`) and no snapshot is attached yet (`!hasGameSnapshot`) —
+    including in a brand-new chat, where attaching creates the session. It fetches the snapshot over
+    the client bridge and attaches it to the chat; it does **not** create a stored snapshot or a
+    suite.
+  - **Save Attached Game Snapshot**: Displayed when an active, non-ephemeral session has an attached
+    snapshot (`user.isAdmin && currentSessionId && hasGameSnapshot && !isEphemeralSession`), including
+    in an ordinary browser session, because it reads the snapshot text from the session's own stored
+    messages. This is the only route from the chat to a benchmark snapshot; saving again creates
+    another stored snapshot rather than updating the first.
+  - Only **Save Attached Game Snapshot** is gated by administrator privileges (`isAdmin`);
+    **Attach Game Snapshot** is available to any embedded user. Neither depends on `ShowDebugLog` or
+    any build configuration flags.
+- **Immutability & Safety**: A snapshot cannot be deleted if any benchmark suites or runs reference
+  it. Snapshot text is no longer immutable after creation: an administrator can edit it directly
+  through **Edit Text** (described under Snapshot Viewer UI below), which calls
+  `PUT snapshots/{id}/text`. That endpoint unifies CRLF/CR line endings to LF, runs the result through
+  the same `DumpHtmlSanitizer.NormalizeFlattenedText` every capture path uses, applies the
+  60,000-character cap and truncation marker through `BenchmarkSnapshotImporter.PrepareBoardText`,
+  and returns `400` for text that normalizes to nothing. It takes the `ExpectedSha256` the client
+  loaded and returns `409` when the stored hash has since changed, so two administrators editing the
+  same snapshot get a conflict message instead of a silent overwrite. A successful save rebuilds
+  `Sha256`, `CharCount` and `DigestText` from the new text — **overwriting a hand-edited digest** —
+  and stamps `ModifiedAtUtc`. It leaves `CaptureMethod` and the bound suite's own description
+  unchanged, so the suite description's provenance text (character count, hash prefix) goes stale
+  after a text edit and is not refreshed automatically. Other fields (`Name`, `SourceGnollHackVersion`,
+  `Notes`, the digest text) are still edited separately through **Edit Snapshot Metadata**.
+
+### Suite Card Actions
+Each bound suite's card in Manage Suites shows one primary action and a row of secondary ones: a
+gold `.btn-gh` **Manage Questions** button, followed by a `.btn-ghost` outlined row — **Generate
+Questions** (only while the suite has a bound snapshot), **Assess Difficulty**, **Suite Health**,
+and, once the suite has generated questions, **Check Rubrics** and, while any question is still
+unreviewed, **Verify All**. A `.btn-ghost-danger` **Delete Runs** sits at the end of the row once the
+suite has recorded runs. The snapshot badge — a map-icon button naming the snapshot and its
+character count, with an interest-triggered tooltip — is the entry point into the Snapshot Viewer; it
+replaces the previous dedicated "View Board" row button.
 
 ### Snapshot Viewer UI
-`SnapshotViewerComponent` (`Overseer/ClientApp/src/app/shared/snapshot-viewer/`) is a full-screen reader built for two jobs: reading a 60,000-character fixed-width dump comfortably, and checking claims about it — the administrator's own, the AI's in a chat, and the rubric checker's verbatim quotes. The DOM-free text logic (chunking, map detection, sections, find, line-number formatting) lives in `reader-text.ts` beside it.
-- **Layout**: A `.gh-dialog-fullscreen` dialog. The provenance facts (capture method, character count, capture time, GnollHack version, source chat) form one compact row with the SHA-256 row and its copy button under it; **Notes** is an open `<details>` disclosure and the **Digest (difficulty assessor extract)** a closed one, so the board text starts directly under the toolbar. The board text region is the only scroll container.
-- **Monospace Rendering**: Board text is **never rendered as Markdown**. Board layouts contain NetHack map symbols (`#`, `|`, `-`, `*`) that Markdown parsers mangle. Each line is a `.reader-line` element with `white-space: pre`, a monospace font stack and `font-variant-ligatures: none` (a ligating coding font would draw two map cells such as `--` as one glyph), and long lines scroll horizontally. *Wrap long lines (prose only)* wraps prose lines; map rows and rulers stay `pre`, because a wrapped map row misstates the board.
-- **Chunked Rendering**: Lines are grouped into chunks of 100, each `content-visibility: auto` with a `contain-intrinsic-size` of its exact line height, so a full-size board opens instantly and scrolls smoothly. A chunk always begins at `Map grid:` and after the last map row, so the map block is one chunk. `content-visibility: hidden` is not used, so the browser's find-in-page still sees every line.
-- **Line Numbers**: Drawn by a sticky `::before { content: attr(data-ln) }` gutter, which stays visible while a line scrolls horizontally and is not part of any selection: copying a passage copies board characters only. Clicking a line number copies `L{n}`.
-- **Navigation**: *Jump to section* lists the dump's labelled sections (`Map:`, `Map grid:`, `Inventory:` and so on) with their line numbers; *Go to line* scrolls to any line and marks it. *Find in board* is a case-insensitive literal search that reports `3 of 17` or `No matches`, highlights every match with the CSS Custom Highlight API (the current one more strongly), steps with Enter / Shift+Enter or the arrow buttons, and stops counting at 2,000 matches. Escape in a non-empty find field clears it without closing the dialog.
-- **Map Tools**: Active when the text contains the `Map grid:` block `dump_map_ai()` writes (see the board format in `GnollHack/src/detect.c`). Hovering a map cell shows `<x,y>` and its symbol in the status bar at the bottom of the region, with blank cells described as unseen or rock; clicking a cell copies `<x,y>`, unless the click ends a drag selection. `y` is read from each row's gutter, never from line order, so a trimmed or missing row cannot shift it. The hero's cell, taken from the legend's "The hero is at <x,y>" sentence, is highlighted. The two column-ruler lines are sticky at the top of the region while the map is on screen, so a column can be read directly.
-- **Copy with Line Numbers**: Copies the selected whole lines, or the whole board when nothing in the reader is selected, as `L{n}: text` with the numbers padded so the colons align.
-- **Preferences**: *Line numbers* (default on) and *Wrap long lines* (default off) are remembered in `localStorage` under `overseer.snapshotReader.lineNumbers` and `overseer.snapshotReader.wrap`; if storage is unavailable the defaults apply.
-- **Other Tools**: *Copy Text* (the whole board, unchanged), *Download .snapshot.txt*, and *Edit Metadata*. The Edit Metadata form's digest field carries a **Regenerate from board** button that rebuilds the extract server-side and puts it straight into the textarea and the disclosure; it is disabled while the request is in flight and the board text is never touched.
-- **Truncation Notice**: If the snapshot contains the truncation marker, a prominent alert informs the administrator that tail sections of the dump were omitted at capture limit.
+`SnapshotViewerComponent` (`Overseer/ClientApp/src/app/shared/snapshot-viewer/`) is a full-screen
+dialog built for three jobs: reading a 60,000-character fixed-width dump comfortably, checking claims
+about it — the administrator's own, the AI's in a chat, and the rubric checker's verbatim quotes —
+and, through **Edit Text**, editing it directly. The DOM-free text logic (chunking, map detection,
+sections, find, line-number formatting) lives in `reader-text.ts` beside it; the editor is a separate
+component, described below.
+- **Layout**: A `.gh-dialog-fullscreen` dialog. The provenance facts (capture method, character
+  count, capture time, GnollHack version, source chat, and — once the snapshot has actually been
+  edited — **Last modified**) form one compact row with the SHA-256 row and its copy button under it;
+  **Notes** is an open `<details>` disclosure and the **Digest (difficulty assessor extract)** a
+  closed one, so the snapshot text starts directly under the toolbar. The snapshot text region is the
+  only scroll container while reading; while editing, the reader and the metadata form are both
+  hidden in favour of the text editor.
+- **Monospace Rendering**: Snapshot text is **never rendered as Markdown**. Game dumps contain
+  NetHack map symbols (`#`, `|`, `-`, `*`) that Markdown parsers mangle. Each line is a
+  `.reader-line` element with `white-space: pre`, a monospace font stack and
+  `font-variant-ligatures: none` (a ligating coding font would draw two map cells such as `--` as one
+  glyph), and long lines scroll horizontally. *Wrap long lines (prose only)* wraps prose lines; map
+  rows and rulers stay `pre`, because a wrapped map row misstates the map.
+- **Chunked Rendering**: Lines are grouped into chunks of 100, each `content-visibility: auto` with a
+  `contain-intrinsic-size` of its exact line height, so a full-size snapshot opens instantly and
+  scrolls smoothly. A chunk always begins at `Map grid:` and after the last map row, so the map block
+  is one chunk. `content-visibility: hidden` is not used, so the browser's find-in-page still sees
+  every line.
+- **Line Numbers**: Drawn by a sticky `::before { content: attr(data-ln) }` gutter, which stays
+  visible while a line scrolls horizontally and is not part of any selection: copying a passage
+  copies snapshot characters only. Clicking a line number copies `L{n}`.
+- **Navigation**: *Jump to section* lists the dump's labelled sections (`Map:`, `Map grid:`,
+  `Inventory:` and so on) with their line numbers; *Go to line* scrolls to any line and marks it.
+  **Find in snapshot** is a case-insensitive literal search that reports `3 of 17` or `No matches`,
+  highlights every match with the CSS Custom Highlight API (the current one more strongly), steps
+  with Enter / Shift+Enter or the arrow buttons, and stops counting at 2,000 matches. Escape in a
+  non-empty find field clears it without closing the dialog.
+- **Map Tools**: Active when the text contains the `Map grid:` block `dump_map_ai()` writes (see the
+  board format in `GnollHack/src/detect.c`). Hovering a map cell shows `<x,y>` and its symbol in the
+  status bar at the bottom of the region, with blank cells described as unseen or rock; clicking a
+  cell copies `<x,y>`, unless the click ends a drag selection. `y` is read from each row's gutter,
+  never from line order, so a trimmed or missing row cannot shift it. The hero's cell, taken from the
+  legend's "The hero is at <x,y>" sentence, is highlighted. The two column-ruler lines are sticky at
+  the top of the region while the map is on screen, so a column can be read directly.
+- **Copy with Line Numbers**: Copies the selected whole lines, or the whole snapshot when nothing in
+  the reader is selected, as `L{n}: text` with the numbers padded so the colons align.
+- **Preferences**: *Line numbers* (default on) and *Wrap long lines* (default off) are remembered in
+  `localStorage` under `overseer.snapshotReader.lineNumbers` and `overseer.snapshotReader.wrap`; if
+  storage is unavailable the defaults apply.
+- **Edit Text**: Opens `SnapshotTextEditorComponent` (`snapshot-text-editor.component.*`) in place of
+  the reader and the metadata form — a lazily-loaded **CodeMirror 6** editor.
+  `shared/snapshot-viewer/codemirror-setup.ts` is the only module that imports `@codemirror/*`; the
+  component `import()`s it on first mount, so it ships as its own chunk and never reaches the initial
+  bundle. It keeps the reader's monospace look and dark theme, adds line numbers and an active-line
+  highlight, and provides: **Ctrl+F** for CodeMirror's own find/replace panels, restyled to the
+  `.gh-input` / `.btn-ghost` look (a **Find** button opens the same panel for discoverability);
+  **Alt+G** go to line; a **Jump to section** `<select>` built from the same section detection the
+  reader uses, which scrolls to and places the cursor at the chosen line; a live
+  `{{ length }} / 60,000 chars` counter that warns once the buffer exceeds the server's cap, alongside
+  a `{{ lineCount }} lines` readout; the loaded snapshot's SHA-256 (first 12 characters); and
+  **Ctrl+M**, which toggles Tab between indenting and moving keyboard focus out of the editor.
+  **Ctrl+S**, or the **Save Text** button (disabled until the buffer is dirty), sends the current
+  document back to the viewer, which calls `PUT snapshots/{id}/text` with the `sha256` it loaded as
+  `expectedSha256`, then re-renders the reader from the server's normalized response. Line wrapping
+  is intentionally absent — CodeMirror's wrap is document-wide, and a wrapped map row would misstate
+  the map, the same reason the reader's own *Wrap long lines* affects prose only. Closing the editor
+  with unsaved changes — the **Cancel** button, the dialog's Escape key, or the header close button —
+  shows an inline **Discard unsaved changes to the snapshot text?** strip with **Keep editing** /
+  **Discard** in place of a `confirm()` popup; the dialog does not close until one is chosen.
+- **Other Tools**: *Copy Text* (the whole snapshot, unchanged), *Download .snapshot.txt*,
+  **Edit Text**, and **Edit Metadata** (opens the **Edit Snapshot Metadata** form). That form's
+  digest field carries a **Regenerate from snapshot** button that rebuilds the extract server-side
+  and puts it straight into the textarea and the disclosure; it is disabled while the request is in
+  flight and the snapshot text is never touched.
+- **Truncation Notice**: If the snapshot contains the truncation marker, a prominent alert informs
+  the administrator that tail sections of the dump were omitted — at capture, or at a later text
+  edit that itself exceeded the cap. Leaving the marker line in place when editing keeps the notice
+  showing, correctly: the tail is still missing.
 
-#### Pointing at the Board
-The administrator and the AI see the same text, so what they need is a shared way to point at it. In rubric **BOARD FACTS**, prefer `<x,y>` coordinates — the snapshot's own notation, which it instructs the AI to use — and verbatim quotes, the form the rubric checker already returns: both survive a re-capture of the board. Line numbers depend on the exact capture, so keep them for administrator-to-AI chat and notes; the AI receives the text without numbers but can count lines, and *Copy with line numbers* produces a passage whose numbers match the reader's.
+#### Pointing at the Snapshot
+The administrator and the AI see the same text, so what they need is a shared way to point at it. In
+a rubric's `` `**BOARD FACTS**` `` section, prefer `<x,y>` coordinates — the snapshot's own notation,
+which it instructs the AI to use — and verbatim quotes, the form the rubric checker already returns:
+both survive a re-capture, or a text edit, of the snapshot. Line numbers depend on the exact capture
+(or the last edit), so keep them for administrator-to-AI chat and notes; the AI receives the text
+without numbers but can count lines, and *Copy with line numbers* produces a passage whose numbers
+match the reader's.
 
 ### AI-Generated Benchmark Questions
-Administrators can generate benchmark questions tailored to a specific board snapshot using any benchmark-capable AI configuration.
+Administrators can generate benchmark questions tailored to a specific game snapshot using any
+benchmark-capable AI configuration.
 - **3 Difficulty Bands**: Questions are generated in 3 separate prompts:
   - **Simple** (Default: 6 questions, authored difficulty: `Simple`)
   - **Intermediate** (Default: 6 questions, authored difficulty: `Intermediate`)
   - **Advanced** (Default: 6 questions, authored difficulty: `Advanced`)
-- **Strict Grounding & Rubric Structure**: Every generated question must be unanswerable without the board. Every generated rubric must contain:
-  1. `**BOARD FACTS**`: Point-by-point factual claims verified against the snapshot text.
+- **Strict Grounding & Rubric Structure**: Every generated question must be unanswerable without the
+  snapshot. Every generated rubric must contain:
+  1. `` `**BOARD FACTS**` ``: Point-by-point factual claims verified against the snapshot text. The
+     section keeps this fixed name in every stored rubric — see Terminology above.
   2. `**REQUIRED**`: Essential points an answer must make to receive credit.
   3. `**ACCEPTABLE**`: Valid variations, alternative phrasings, or equivalent actions.
-  4. `**UNACCEPTABLE**`: Incorrect assertions, lethal actions, or contradictions of board facts.
+  4. `**UNACCEPTABLE**`: Incorrect assertions, lethal actions, or contradictions of snapshot facts.
 - **Human Review Discipline**:
   - All AI-generated questions are flagged `IsGenerated = true` and initially `IsReviewed = false`.
-  - Content revisions automatically increment `ItemRevision` via `BenchmarkQuestionAssessment.Clear`, resetting reviewed status if `ReviewedAtRevision != ItemRevision`.
+  - Content revisions automatically increment `ItemRevision` via `BenchmarkQuestionAssessment.Clear`,
+    resetting reviewed status if `ReviewedAtRevision != ItemRevision`.
   - Unreviewed questions display warning badges in the Admin UI.
-  - Benchmark reports display a prominent warning banner whenever a run includes unreviewed generated questions, disclosing the number of unverified items.
-  - A "Verify All" button allows an administrator to attest that all questions have been reviewed against the board snapshot.
+  - Benchmark reports display a prominent warning banner whenever a run includes unreviewed generated
+    questions, disclosing the number of unverified items.
+  - A **Verify All** button (in the suite card's action row — see Suite Card Actions above) lets an
+    administrator attest that all questions have been reviewed against the game snapshot.
 
-### AI Rubric Verification (Board Facts Tab in Suite Health)
-To assist human review, the Suite Health dialog provides a dedicated **Board facts** tab.
-- **Verifiable Quote Discipline**: The checker model evaluates every factual claim in a question's rubric against the game board snapshot. Every claim assessed as `supported` must be accompanied by a verbatim quote from the snapshot text.
-- **Findings & Verdicts**: If any claim is `contradicted` or `not-in-board`, the question verdict is flagged as `unsupported`. The findings table displays the rubric claim, the assessment badge, the exact board evidence quote, and explanatory reasoning.
-- **One-Click Corrections**: Administrators can jump directly from a finding card into the question editor to refine the rubric or verify the question.
+### AI Rubric Verification (Snapshot Facts Tab in Suite Health)
+To assist human review, the Suite Health dialog provides a dedicated **Snapshot facts** tab (the tab
+id `board-facts` is unchanged — see Terminology above). Its introduction explains the
+`` `**BOARD FACTS**` `` literal at the point the administrator meets it: the checker verifies that
+section of each question's rubric against the bound snapshot, and the section keeps its fixed name in
+every stored rubric.
+- **Verifiable Quote Discipline**: The checker model evaluates every factual claim in a question's
+  rubric against the game snapshot. Every claim assessed as `supported` must be accompanied by a
+  verbatim quote from the snapshot text.
+- **Findings & Verdicts**: If any claim is `contradicted` or `not-in-board` (verdict identifiers,
+  unchanged), the question verdict is flagged as `unsupported`. The findings table displays the
+  rubric claim, the assessment badge, the exact **Snapshot Evidence** quote, and explanatory
+  reasoning.
+- **One-Click Corrections**: Administrators can jump directly from a finding card into the question
+  editor to refine the rubric or verify the question.
 

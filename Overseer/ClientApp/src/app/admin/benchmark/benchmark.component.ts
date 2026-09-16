@@ -252,6 +252,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * back on its Write tab before the dialog is shown again.
    */
   @ViewChild(MarkdownEditorComponent) expectedPointsEditor?: MarkdownEditorComponent;
+  @ViewChild('suiteDescriptionEditor') suiteDescriptionEditor?: MarkdownEditorComponent;
   @ViewChild('snapshotViewer') snapshotViewer?: SnapshotViewerComponent;
   @ViewChild('multiRunPanel') multiRunPanel?: MultiRunComponent;
   @ViewChild('generationDialog') generationDialog!: ElementRef<HTMLDialogElement>;
@@ -879,6 +880,15 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   set expectedPointsValue(value: string) {
     this.questionForm.expectedPoints = value;
+  }
+
+  /** description is optional on the request DTO; the editor's value is always a string. */
+  get suiteDescriptionValue(): string {
+    return this.suiteForm.description ?? '';
+  }
+
+  set suiteDescriptionValue(value: string) {
+    this.suiteForm.description = value;
   }
 
   ngOnInit() {
@@ -2165,12 +2175,14 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   openCreateSuite() {
     this.editingSuiteId = null;
     this.suiteForm = { name: '', description: '' };
+    this.suiteDescriptionEditor?.resetToWrite();
     this.suiteDialog?.nativeElement.showModal();
   }
 
   openEditSuite(suite: BenchmarkSuiteDto) {
     this.editingSuiteId = suite.id;
     this.suiteForm = { name: suite.name, description: suite.description };
+    this.suiteDescriptionEditor?.resetToWrite();
     this.suiteDialog?.nativeElement.showModal();
   }
 
@@ -2559,6 +2571,16 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         this.cdr.detectChanges();
       }
     });
+  }
+
+  /** True once the list has finished loading and holds at least one question. */
+  get canAutoRateAll(): boolean {
+    return !this.loadingQuestions && this.questions.length > 0;
+  }
+
+  openAutoRateAll(): void {
+    if (!this.canAutoRateAll || !this.currentSuiteForQuestions) return;
+    this.openDifficultyAssessorDialog(this.currentSuiteForQuestions);
   }
 
   openCreateQuestion() {
@@ -6635,7 +6657,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return '';
   }
 
-  // --- Question Generation & Board Snapshot State ---
+  // --- Question Generation & Game Snapshot State ---
   generationDialogPhase: 'select' | 'progress' = 'select';
   isGenerationModelDropdownOpen = false;
   generationModelConfigId: number | null = null;
@@ -6648,7 +6670,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   generationSimpleCount = 6;
   generationIntermediateCount = 6;
   generationAdvancedCount = 6;
-  generationInstructions = `Write benchmark questions a GnollHack player would actually ask while looking at this exact game state. Each question must be unanswerable without the board — if it could be answered from general GnollHack knowledge alone, it belongs in the knowledge suite, not here. Vary the decision type across questions; do not ask the same thing twice in different words. In each rubric, state only board facts you can point to in the snapshot, and mark anything you infer as an inference.`;
+  generationInstructions = `Write benchmark questions a GnollHack player would actually ask while looking at this exact game state. Each question must be unanswerable without the snapshot — if it could be answered from general GnollHack knowledge alone, it belongs in the knowledge suite, not here. Vary the decision type across questions; do not ask the same thing twice in different words. In each rubric, state only snapshot facts you can point to in the snapshot, and mark anything you infer as an inference.`;
 
   // --- Game Snapshot & Question Generation & Review Handlers ---
 
@@ -6701,7 +6723,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   confirmVerifyAll(suite: BenchmarkSuiteDto): void {
     const unreviewedCount = (suite.questionCount || 0) - (suite.reviewedQuestionCount || 0);
     this.confirmDialogTitle = 'Verify All Questions';
-    this.confirmDialogMessage = `Attest that you have read and verified all ${unreviewedCount} unreviewed questions in '${suite.name}' against the game board snapshot.`;
+    this.confirmDialogMessage = `Attest that you have read and verified all ${unreviewedCount} unreviewed questions in '${suite.name}' against the game snapshot.`;
     this.confirmDialogDangerNotice = 'This records a human review attestation in the benchmark audit manifest.';
     this.confirmDialogButtonText = 'Verify All';
     this.confirmDialogButtonClass = 'btn-gh btn-gh-primary';

@@ -341,8 +341,20 @@ describe('AdminBenchmarkComponent', () => {
     const host = fixture.nativeElement as HTMLElement;
     const buttons = Array.from(host.querySelectorAll<HTMLElement>('.suite-card-actions button'));
     const labels = buttons.map(b => (b.textContent ?? '').trim());
-    for (const label of ['View Board', 'Generate Questions', 'Check Rubrics', 'Verify All']) {
+    for (const label of ['Manage Questions', 'Generate Questions', 'Check Rubrics', 'Verify All']) {
       expect(labels).withContext(label).toContain(label);
+    }
+
+    const primaryButtons = buttons.filter(b => b.classList.contains('btn-gh'));
+    expect(primaryButtons.length).toBe(2); // One "Manage Questions" per suite card.
+    const secondaryButtons = buttons.filter(b => !b.classList.contains('btn-gh'));
+    expect(secondaryButtons.every(b => b.classList.contains('btn-ghost'))).toBeTrue();
+
+    const snapshotBadges = Array.from(host.querySelectorAll<HTMLElement>('.badge-board'));
+    expect(snapshotBadges.length).toBe(2);
+    for (const badge of snapshotBadges) {
+      expect(badge.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+      expect(badge.getAttribute('aria-label')).toContain('Low HP');
     }
 
     const reviewed = Array.from(host.querySelectorAll<HTMLElement>('.suite-card .badge-success'));
@@ -402,13 +414,13 @@ describe('AdminBenchmarkComponent', () => {
     };
     fixture.detectChanges();
 
-    const editor = fixture.debugElement.query(By.directive(MarkdownEditorComponent));
+    const editors = fixture.debugElement.queryAll(By.directive(MarkdownEditorComponent));
+    const editor = editors.find(e => e.componentInstance.inputId === 'qExpectedInput');
     expect(editor).toBeTruthy();
-    expect(editor.componentInstance.inputId).toBe('qExpectedInput');
-    expect(editor.componentInstance.value).toBe('**REQUIRED**\n- Base AC 1');
+    expect(editor!.componentInstance.value).toBe('**REQUIRED**\n- Base AC 1');
 
     // The two-way binding writes back through the component's own accessor.
-    editor.componentInstance.valueChange.emit('**REQUIRED**\n- Reflection');
+    editor!.componentInstance.valueChange.emit('**REQUIRED**\n- Reflection');
     fixture.detectChanges();
     expect(component.questionForm.expectedPoints).toBe('**REQUIRED**\n- Reflection');
   });
@@ -419,6 +431,100 @@ describe('AdminBenchmarkComponent', () => {
     const dialog: HTMLDialogElement = fixture.nativeElement.querySelector('dialog.benchmark-question-form-dialog');
     expect(dialog).toBeTruthy();
     expect(dialog.classList.contains('benchmark-form-dialog')).toBeTrue();
+  });
+
+  it('should mark the suite form dialog as the wide markdown-editor variant', () => {
+    fixture.detectChanges();
+
+    const dialog: HTMLDialogElement = fixture.nativeElement.querySelector('dialog.benchmark-suite-form-dialog');
+    expect(dialog).toBeTruthy();
+    expect(dialog.classList.contains('benchmark-form-dialog')).toBeTrue();
+  });
+
+  it('should render the suite description through the markdown editor and write back through suiteForm', () => {
+    component.suiteForm = { name: 'Core Mechanics', description: '**Bold**\n- Item' };
+    fixture.detectChanges();
+
+    const editors = fixture.debugElement.queryAll(By.directive(MarkdownEditorComponent));
+    const editor = editors.find(e => e.componentInstance.inputId === 'suiteDescInput');
+    expect(editor).toBeTruthy();
+    expect(editor!.componentInstance.value).toBe('**Bold**\n- Item');
+
+    editor!.componentInstance.valueChange.emit('**Bold**\n- Changed');
+    fixture.detectChanges();
+    expect(component.suiteForm.description).toBe('**Bold**\n- Changed');
+  });
+
+  it('should mark the Authoring Instructions textarea as the shared autosize class', () => {
+    fixture.detectChanges();
+
+    const textarea: HTMLTextAreaElement = fixture.nativeElement.querySelector('#genInstructions');
+    expect(textarea).toBeTruthy();
+    expect(textarea.classList.contains('gh-textarea-autosize')).toBeTrue();
+  });
+
+  describe('AI Auto-Rate All Difficulties disabled state', () => {
+    it('is aria-disabled and inert while the question list is empty', () => {
+      component.currentSuiteForQuestions = {
+        id: 1,
+        name: 'Empty Suite',
+        description: '',
+        createdAtUtc: '2026-09-01T00:00:00Z',
+        modifiedAtUtc: null,
+        questionCount: 0,
+        assessedQuestionCount: 0,
+        difficultyFullyAssessed: false
+      };
+      component.questions = [];
+      component.loadingQuestions = false;
+      fixture.detectChanges();
+
+      expect(component.canAutoRateAll).toBeFalse();
+
+      const button = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('.questions-toolbar button'))
+        .find(b => b.textContent?.trim() === 'AI Auto-Rate All Difficulties');
+      expect(button).toBeTruthy();
+      expect(button!.getAttribute('aria-disabled')).toBe('true');
+
+      spyOn(component, 'openDifficultyAssessorDialog');
+      button!.click();
+      expect(component.openDifficultyAssessorDialog).not.toHaveBeenCalled();
+
+      expect(fixture.nativeElement.textContent).toContain('Add questions to enable AI rating.');
+    });
+
+    it('is enabled once the suite has at least one question', () => {
+      component.currentSuiteForQuestions = {
+        id: 1,
+        name: 'Suite With Questions',
+        description: '',
+        createdAtUtc: '2026-09-01T00:00:00Z',
+        modifiedAtUtc: null,
+        questionCount: 1,
+        assessedQuestionCount: 0,
+        difficultyFullyAssessed: false
+      };
+      component.questions = [{
+        id: 1,
+        benchmarkSuiteId: 1,
+        orderIndex: 1,
+        questionText: 'Sample question',
+        difficulty: 1,
+        createdAtUtc: '2026-09-01T00:00:00Z'
+      }] as any;
+      component.loadingQuestions = false;
+      fixture.detectChanges();
+
+      expect(component.canAutoRateAll).toBeTrue();
+
+      const button = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('.questions-toolbar button'))
+        .find(b => b.textContent?.trim() === 'AI Auto-Rate All Difficulties');
+      expect(button!.getAttribute('aria-disabled')).toBeNull();
+
+      spyOn(component, 'openDifficultyAssessorDialog');
+      button!.click();
+      expect(component.openDifficultyAssessorDialog).toHaveBeenCalledWith(component.currentSuiteForQuestions);
+    });
   });
 
   it('should render model answers, thought text, and assessor comments as plain text and not innerHTML', () => {

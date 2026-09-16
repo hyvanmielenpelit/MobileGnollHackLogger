@@ -1,0 +1,188 @@
+/* Fills the space the viewer body gives it; only the CodeMirror scroller scrolls. The editor's
+   own colours, gutter and find / replace panel styles are in codemirror-setup.ts, because
+   CodeMirror builds that DOM outside this component's template. */
+:host {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.snapshot-text-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  background: var(--bg-input);
+  overflow: hidden;
+}
+
+.editor-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--bg-glass);
+  border-bottom: 1px solid var(--border-glass);
+}
+
+.editor-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.editor-identity {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-inline-end: auto;
+  min-width: 0;
+}
+
+.editor-title {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--nav-color);
+}
+
+.editor-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  font-size: 0.8rem;
+  color: #9a9a9a;
+  font-variant-numeric: tabular-nums;
+
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.8rem;
+  }
+}
+
+.editor-counter.over-cap {
+  color: var(--color-warning);
+  font-weight: 600;
+}
+
+.editor-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.editor-tool-input {
+  width: auto;
+  height: 32px;
+  padding: 0 8px;
+  font-size: 13px;
+}
+
+.section-select {
+  max-width: 18em;
+}
+
+.editor-cap-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--color-warning);
+}
+
+.warning-icon {
+  flex-shrink: 0;
+}
+
+.editor-shortcuts {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #9a9a9a;
+}
+
+.editor-frame {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 16rem;
+  display: flex;
+  flex-direction: column;
+  background: rgb(30, 30, 30);
+}
+
+.editor-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-loading,
+.editor-load-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  color: var(--nav-color);
+}
+
+.editor-load-error {
+  color: #e57373;
+}
+
+.editor-footer {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 12px;
+  background: var(--bg-glass);
+  border-top: 1px solid var(--border-glass);
+}
+
+.editor-error {
+  flex: 1 1 16em;
+  min-width: 0;
+  font-size: 0.85rem;
+}
+
+.editor-error-text {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: #e57373;
+  overflow-wrap: anywhere;
+
+  .warning-icon {
+    margin-top: 2px;
+  }
+}
+
+.editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-inline-start: auto;
+}
+
+@media (max-width: 600px) {
+  .editor-toolbar,
+  .editor-footer {
+    padding-inline: 8px;
+  }
+
+  .editor-shortcuts {
+    display: none;
+  }
+}

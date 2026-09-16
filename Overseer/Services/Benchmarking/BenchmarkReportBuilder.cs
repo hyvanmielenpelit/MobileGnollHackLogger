@@ -580,7 +580,7 @@ public static class BenchmarkReportBuilder
         sb.AppendLine("# GnollHack Overseer AI Intelligence Benchmark Report");
         sb.AppendLine();
         string suiteDisplay = !string.IsNullOrEmpty(run.GameSnapshotNameUsed)
-            ? $"suite **{run.SuiteName}** (Board: **{run.GameSnapshotNameUsed}**)"
+            ? $"suite **{run.SuiteName}** (Snapshot: **{run.GameSnapshotNameUsed}**)"
             : $"suite **{run.SuiteName}**";
         sb.AppendLine($"This report contains the automated domain knowledge, reasoning, and efficiency benchmark results for {suiteDisplay}, evaluated against model **{run.TestedModelDisplayNameUsed}** ({run.TestedModelProviderUsed} / {run.TestedModelIdUsed}).");
         sb.AppendLine($"Run conducted on {Stamp(run.StartedAtUtc)} UTC" + (!string.IsNullOrEmpty(run.StartedByUser?.UserName) ? $" by {run.StartedByUser.UserName}." : "."));

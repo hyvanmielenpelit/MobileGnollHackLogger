@@ -1346,6 +1346,14 @@ public class UpdateBenchmarkGameSnapshotRequest
     public string? SourceGnollHackVersion { get; set; }
 }
 
+public class UpdateBenchmarkGameSnapshotTextRequest
+{
+    public string Text { get; set; } = string.Empty;
+    /// <summary>SHA-256 the client loaded. When set and different from the stored hash the
+    /// save is refused with 409, so two administrators cannot overwrite each other.</summary>
+    public string? ExpectedSha256 { get; set; }
+}
+
 public class CaptureBenchmarkSnapshotResponse
 {
     public BenchmarkGameSnapshotDto Board { get; set; } = default!;

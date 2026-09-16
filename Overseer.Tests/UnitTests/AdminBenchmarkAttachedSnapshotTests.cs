@@ -157,7 +157,7 @@ public class AdminBenchmarkAttachedSnapshotTests
         Assert.True(current.IsIdentical);
         Assert.False(earlier.IsIdentical);
         Assert.NotNull(current.SuiteId);
-        Assert.Equal("Board: current_board", current.SuiteName);
+        Assert.Equal("Snapshot: current_board", current.SuiteName);
     }
 
     [Fact]

@@ -1,41 +1,10 @@
 import { ComponentFixture, TestBed, fakeAsync, flushMicrotasks, tick } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { SnapshotViewerComponent } from './snapshot-viewer.component';
+import { SnapshotTextEditorComponent } from './snapshot-text-editor.component';
 import { AdminBenchmarkService, BenchmarkGameSnapshotDto } from '../../services/admin-benchmark.service';
-import { Subject, of } from 'rxjs';
-
-/* A board shaped like a real snapshot: prose, a legend line naming the hero, the map block the
-   way dump_map_ai() writes it, then filler to 250 lines. The hero '@' is at <10,13>. */
-function buildBoard(): string {
-  const lines = ['Map:', 'The hero is at <10,13>, shown as \'@\'.', 'A food ration lies here.', 'Map grid:'];
-  let tens = '    ';
-  let units = '    ';
-  for (let x = 1; x < 80; x++) {
-    tens += x % 10 === 0 ? String(x / 10) : ' ';
-    units += String(x % 10);
-  }
-  lines.push(tens.trimEnd(), units);
-  for (let y = 0; y <= 20; y++) {
-    const gutter = (y < 10 ? ' ' : '') + y + ': ';
-    const cells = y === 13 ? '---------@....%....|' : '  |....|';
-    lines.push((gutter + cells).trimEnd());
-  }
-  lines.push('', 'Inventory:', 'a - 2 food rations');
-  while (lines.length < 250) lines.push(`filler ${lines.length + 1}`);
-  return lines.join('\n');
-}
-
-function snapshotWith(text: string, extra: Partial<BenchmarkGameSnapshotDto> = {}): BenchmarkGameSnapshotDto {
-  return {
-    id: 1,
-    name: 'Emergency Low HP',
-    charCount: text.length,
-    sha256: 'abc1234567890',
-    captureMethod: 'client_refresh_snapshot',
-    sanitizedText: text,
-    createdAtUtc: new Date().toISOString(),
-    ...extra
-  } as BenchmarkGameSnapshotDto;
-}
+import { Subject, of, throwError } from 'rxjs';
+import { buildBoard, snapshotWith } from './snapshot-viewer.spec-fixtures';
 
 describe('SnapshotViewerComponent', () => {
   let component: SnapshotViewerComponent;
@@ -50,6 +19,7 @@ describe('SnapshotViewerComponent', () => {
       'getSnapshot',
       'getSnapshotTextUrl',
       'updateSnapshot',
+      'updateSnapshotText',
       'regenerateSnapshotDigest'
     ]);
 
@@ -116,11 +86,11 @@ describe('SnapshotViewerComponent', () => {
     }
 
     it('names every action in words, with no emoji', () => {
-      for (const name of ['Edit Metadata', 'Copy Text', 'Copy with line numbers', 'Download .snapshot.txt']) {
+      for (const name of ['Edit Metadata', 'Edit Text', 'Copy Text', 'Copy with line numbers', 'Download .snapshot.txt']) {
         const button = buttonNamed(name);
         expect(button).withContext(name).toBeTruthy();
       }
-      for (const name of ['Copy SHA-256', 'Close snapshot board', 'Go to line', 'Previous match in board', 'Next match in board']) {
+      for (const name of ['Copy SHA-256', 'Close game snapshot', 'Go to line', 'Previous match in snapshot', 'Next match in snapshot']) {
         expect(buttonNamed(name)).withContext(name).toBeTruthy();
       }
       const buttons = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('button'));
@@ -221,7 +191,104 @@ describe('SnapshotViewerComponent', () => {
       fixture.detectChanges();
 
       expect(regenerateButton().disabled).toBeFalse();
-      expect(regenerateButton().textContent!.trim()).toBe('Regenerate from board');
+      expect(regenerateButton().textContent!.trim()).toBe('Regenerate from snapshot');
+    });
+  });
+
+  describe('editing the text', () => {
+    let host: HTMLElement;
+
+    function openWith(snapshot: BenchmarkGameSnapshotDto) {
+      mockBenchmarkService.getSnapshot.and.returnValue(of(snapshot));
+      component.open(1);
+      fixture.detectChanges();
+      host = fixture.nativeElement as HTMLElement;
+    }
+
+    function clickButtonNamed(name: string) {
+      Array.from(host.querySelectorAll('button'))
+        .find(b => (b.textContent ?? '').trim() === name)!
+        .click();
+      fixture.detectChanges();
+    }
+
+    function editor(): SnapshotTextEditorComponent {
+      return fixture.debugElement.query(By.directive(SnapshotTextEditorComponent)).componentInstance;
+    }
+
+    async function openEditor() {
+      openWith(snapshotWith(buildBoard()));
+      clickButtonNamed('Edit Text');
+      await editor().ready;
+      fixture.detectChanges();
+    }
+
+    afterEach(() => component.viewerDialog?.nativeElement?.close());
+
+    it('mounts the editor in place of the reader', async () => {
+      await openEditor();
+      expect(host.querySelector('app-snapshot-text-editor')).toBeTruthy();
+      expect(host.querySelector('.reader-scroll')).toBeNull();
+      expect(host.querySelector('.snapshot-edit-panel')).toBeNull();
+    });
+
+    it('saves with the loaded SHA-256 and re-renders the returned text', async () => {
+      const updatedSpy = jasmine.createSpy('snapshotUpdated');
+      component.snapshotUpdated.subscribe(updatedSpy);
+      await openEditor();
+      mockBenchmarkService.updateSnapshotText.and.returnValue(
+        of(snapshotWith('one\ntwo\nthree', { sha256: 'def0987654321' })));
+
+      editor().save.emit('one\ntwo\nthree');
+      fixture.detectChanges();
+
+      expect(mockBenchmarkService.updateSnapshotText).toHaveBeenCalledWith(1, {
+        text: 'one\ntwo\nthree',
+        expectedSha256: 'abc1234567890'
+      });
+      expect(host.querySelector('app-snapshot-text-editor')).toBeNull();
+      expect(component.lineCount).toBe(3);
+      expect(host.querySelectorAll('.reader-line').length).toBe(3);
+      expect(host.querySelector('.sha-box')!.textContent).toContain('def0987654321');
+      expect(updatedSpy).toHaveBeenCalledWith(jasmine.objectContaining({ charCount: 13, sha256: 'def0987654321' }));
+    });
+
+    it('keeps the editor open and shows the server message when the save fails', async () => {
+      await openEditor();
+      const message = 'The snapshot text was changed by someone else since it was loaded. Reload the snapshot and reapply your edit.';
+      mockBenchmarkService.updateSnapshotText.and.returnValue(throwError(() => ({ status: 409, error: { error: message } })));
+
+      editor().save.emit('edited');
+      fixture.detectChanges();
+
+      expect(host.querySelector('app-snapshot-text-editor')).toBeTruthy();
+      expect(host.querySelector('.editor-error')!.textContent).toContain(message);
+      expect(component.savingText).toBeFalse();
+    });
+
+    it('does not close the dialog on Escape while there are unsaved changes', async () => {
+      await openEditor();
+      editor().dirtyChange.emit(true);
+      fixture.detectChanges();
+
+      const cancel = new Event('cancel', { cancelable: true });
+      component.viewerDialog.nativeElement.dispatchEvent(cancel);
+      fixture.detectChanges();
+
+      expect(cancel.defaultPrevented).toBeTrue();
+      expect(component.viewerDialog.nativeElement.open).toBeTrue();
+      expect(host.querySelector('.discard-strip')).toBeTruthy();
+
+      clickButtonNamed('Discard');
+      expect(host.querySelector('app-snapshot-text-editor')).toBeNull();
+      expect(host.querySelector('.reader-scroll')).toBeTruthy();
+    });
+
+    it('closes the editor at once when Cancel is pressed with no changes', async () => {
+      await openEditor();
+      clickButtonNamed('Cancel');
+      expect(host.querySelector('app-snapshot-text-editor')).toBeNull();
+      expect(host.querySelector('.discard-strip')).toBeNull();
     });
   });
 
@@ -267,7 +334,7 @@ describe('SnapshotViewerComponent', () => {
       openWith(snapshotWith(buildBoard()));
       const region = host.querySelector<HTMLElement>('.reader-scroll')!;
       expect(region.getAttribute('role')).toBe('region');
-      expect(region.getAttribute('aria-label')).toBe('Board text of Emergency Low HP');
+      expect(region.getAttribute('aria-label')).toBe('Snapshot text of Emergency Low HP');
       expect(region.getAttribute('tabindex')).toBe('0');
     });
 

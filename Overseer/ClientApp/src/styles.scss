@@ -168,6 +168,54 @@ a:hover {
   white-space: nowrap;
 }
 
+/* Compact secondary action, for a row of several actions under one primary .btn-gh: 32px tall,
+   outlined, body type. Never the primary action of a view and never inside a dialog footer,
+   where the gold/blue .btn-gh pair carries the hierarchy. */
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 12px;
+  background: transparent;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  color: var(--font-color);
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    border-color: var(--primary-color);
+    background: rgba(212, 175, 55, 0.08);
+    color: var(--primary-color);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+  &[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  &[aria-disabled="true"]:hover {
+    border-color: var(--border-glass);
+    background: transparent;
+    color: var(--font-color);
+  }
+  .btn-icon {
+    flex-shrink: 0;
+  }
+}
+
+.btn-ghost-danger:hover {
+  border-color: #f44336;
+  background: rgba(244, 67, 54, 0.1);
+  color: #e57373;
+}
+
 /* Cancel Button */
 .btn-gh-cancel {
   filter: hue-rotate(180deg) brightness(0.8);
@@ -392,6 +440,7 @@ a:hover {
 
 @media (prefers-reduced-motion: reduce) {
   .btn-gh,
+  .btn-ghost,
   .gh-tab,
   .action-btn,
   .btn-icon-action,
@@ -427,6 +476,18 @@ a:hover {
   outline: none;
   border-color: var(--primary-color);
   box-shadow: 0 0 5px var(--gold-glow);
+}
+
+/* Grows with its content to a cap, then scrolls. rows="…" in the markup is the floor and the
+   whole fallback where field-sizing is unsupported. Bounds are tunable per use:
+   --autosize-min / --autosize-max in line-height units. */
+.gh-textarea-autosize {
+  field-sizing: content;
+  height: auto;
+  width: 100%;
+  min-block-size: var(--autosize-min, 3lh);
+  max-block-size: var(--autosize-max, 12lh);
+  resize: vertical;
 }
 
 .form-hint {

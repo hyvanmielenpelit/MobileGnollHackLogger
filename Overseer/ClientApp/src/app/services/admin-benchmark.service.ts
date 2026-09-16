@@ -326,12 +326,18 @@ export interface UpdateBenchmarkGameSnapshotRequest {
   sourceGnollHackVersion?: string | null;
 }
 
+export interface UpdateBenchmarkGameSnapshotTextRequest {
+  text: string;
+  /* The SHA-256 the client loaded; the server refuses the save with 409 when the stored hash differs. */
+  expectedSha256?: string | null;
+}
+
 export interface CaptureBenchmarkSnapshotResponse {
   board: BenchmarkGameSnapshotDto;
   suite: BenchmarkSuiteDto;
 }
 
-/* What saving a chat's attached snapshot would store, and the boards already saved from it. */
+/* What saving a chat's attached snapshot would store, and the snapshots already saved from it. */
 export interface AttachedSnapshotInfo {
   sessionId: number;
   hasSnapshot: boolean;
@@ -1811,7 +1817,15 @@ export class AdminBenchmarkService {
     return this.http.put<BenchmarkGameSnapshotDto>(`/api/admin/benchmark/snapshots/${id}`, req);
   }
 
-  /** Rebuilds the digest from the board's own text; the board text itself is untouched. */
+  /**
+   * Replaces the snapshot text. The server normalizes it, recomputes the SHA-256 and character
+   * count, rebuilds the digest, and returns the stored snapshot with its text.
+   */
+  updateSnapshotText(id: number, req: UpdateBenchmarkGameSnapshotTextRequest): Observable<BenchmarkGameSnapshotDto> {
+    return this.http.put<BenchmarkGameSnapshotDto>(`/api/admin/benchmark/snapshots/${id}/text`, req);
+  }
+
+  /** Rebuilds the digest from the snapshot's own text; the snapshot text itself is untouched. */
   regenerateSnapshotDigest(id: number): Observable<BenchmarkGameSnapshotDto> {
     return this.http.post<BenchmarkGameSnapshotDto>(`/api/admin/benchmark/snapshots/${id}/regenerate-digest`, {});
   }

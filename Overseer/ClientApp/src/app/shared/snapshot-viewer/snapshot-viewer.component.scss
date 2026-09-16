@@ -182,6 +182,44 @@
   flex: 1 1 auto;
 }
 
+/* While the text editor is open it takes the whole body; its own scroller is the only one. */
+.viewer-body.editing-text {
+  padding-bottom: 12px;
+
+  > app-snapshot-text-editor {
+    flex: 1 1 auto;
+    min-height: 20rem;
+  }
+}
+
+.discard-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-warning);
+  border-radius: 6px;
+  background: rgba(255, 193, 7, 0.08);
+  font-size: 0.9rem;
+
+  .discard-icon {
+    flex-shrink: 0;
+    color: var(--color-warning);
+  }
+
+  .discard-label {
+    flex: 1 1 16em;
+    min-width: 0;
+  }
+
+  .discard-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
+
 .board-text-wrapper {
   display: flex;
   flex-direction: column;

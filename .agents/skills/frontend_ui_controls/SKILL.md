@@ -149,6 +149,30 @@ wrap. `.btn-gh-small` is for a button that stands alone in a genuinely tight spa
 
 ---
 
+## 2b. Compact secondary actions: `.btn-ghost`
+
+When a card or toolbar has one primary action and several secondary ones, the primary is
+`.btn-gh` and the secondaries are `.btn-ghost` — a compact, outlined, 32px-tall button — in
+one row beside it. `.btn-ghost-danger` marks the destructive one among them.
+
+```html
+<div class="suite-card-actions">
+  <button type="button" class="btn-gh" (click)="openManageQuestions(suite)">Manage Questions</button>
+  <div class="suite-card-secondary">
+    <button type="button" class="btn-ghost" (click)="openDifficultyAssessorDialog(suite)">Assess Difficulty</button>
+    <button type="button" class="btn-ghost btn-ghost-danger" (click)="openBulkDeleteDialog(suite)">Delete Runs</button>
+  </div>
+</div>
+```
+
+**Never inside a dialog footer** — there the gold/blue `.btn-gh` / `.btn-gh-cancel` pair
+already carries the primary/secondary distinction, and a `.btn-ghost` beside it would be a
+third, redundant hierarchy. `.btn-ghost` is for a card or a toolbar with more secondary
+actions than a footer ever holds. Icons on a `.btn-ghost` follow the same §3 rules as any
+other labelled button.
+
+---
+
 ## 3. Icons inside image buttons
 
 ### 3a. First decide whether the button gets an icon at all
@@ -491,6 +515,10 @@ concerns.
 - A variant needed by a **second** component **moves to `styles.scss`**; it is not copied.
   `.btn-gh-small` lived in `admin.component.scss` and was therefore unavailable to the
   benchmark view that needed it — the kind of duplication that ends as divergence.
+- `.gh-textarea-autosize` is the shared class for a `<textarea>` that grows with its content
+  to a cap and then scrolls (`field-sizing: content`, bounded by `--autosize-min` /
+  `--autosize-max`); a component sets those two custom properties for its own bounds rather
+  than defining a second autosize class.
 - Use the design tokens: `var(--primary-color)`, `var(--gold-glow)`,
   `var(--border-glass)`, `var(--nav-color)`. Not `#e0ba6d`, which *is* `--primary-color`
   and will not follow it if the theme ever changes.
@@ -689,6 +717,7 @@ Diff this against your markup before calling button, tab or table work finished.
 - [ ] Icons are 16×16 Feather geometry, `class="btn-icon"`, `aria-hidden="true"`, leading the label.
 - [ ] **No row mixes `.btn-gh` with `.btn-gh-small`** — same height and text size throughout a row.
 - [ ] The label clears the end ornaments; `.btn-gh`'s horizontal padding was not reduced.
+- [ ] A row with more than three labelled actions has one `.btn-gh` and the rest `.btn-ghost`.
 
 **Icon-only buttons**
 - [ ] Every one has an `aria-label` that names its **subject**, unique among its siblings.

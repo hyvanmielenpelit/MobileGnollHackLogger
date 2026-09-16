@@ -9,10 +9,10 @@ public static class BenchmarkGenerationPrompt
 {
     public const string DefaultInstructions =
         "Write benchmark questions a GnollHack player would actually ask while looking at this " +
-        "exact game state. Each question must be unanswerable without the board — if it could be " +
+        "exact game state. Each question must be unanswerable without the snapshot — if it could be " +
         "answered from general GnollHack knowledge alone, it belongs in the knowledge suite, not " +
         "here. Vary the decision type across questions; do not ask the same thing twice in " +
-        "different words. In each rubric, state only board facts you can point to in the snapshot, " +
+        "different words. In each rubric, state only snapshot facts you can point to in the snapshot, " +
         "and mark anything you infer as an inference.";
 
     public static string BuildPrompt(

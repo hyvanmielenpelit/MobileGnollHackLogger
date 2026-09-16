@@ -54,7 +54,7 @@ public class BenchmarkRubricCheckService
 
             if (suite == null || suite.GameSnapshot == null)
             {
-                job.AddLog("Suite not found or has no game board bound to it.", "error");
+                job.AddLog("Suite not found or has no game snapshot bound to it.", "error");
                 job.SetStatus(BenchmarkRubricCheckJobStatus.Failed);
                 return;
             }

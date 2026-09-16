@@ -45,7 +45,7 @@
               [attr.tabindex]="activeTab === 'board-facts' ? 0 : -1"
               (keydown)="onTabKeydown($event, 4)"
               (click)="selectTab('board-facts')">
-        Board facts
+        Snapshot facts
       </button>
     </div>
 
@@ -793,10 +793,10 @@
       @if (!gameSnapshotId) {
         <div class="alert alert-info" role="note">
           <div class="alert-content">
-            <div class="alert-title">No Game Context Board Bound</div>
+            <div class="alert-title">No Game Snapshot Bound</div>
             <div class="alert-body">
-              This suite is not bound to a game context board. Rubric fact verification checks the factual claims
-              in question rubrics against an actual game board snapshot, so it is available only for board-backed suites.
+              This suite is not bound to a game snapshot. Rubric fact verification checks the factual claims
+              in question rubrics against an actual game snapshot, so it is available only for snapshot-backed suites.
             </div>
           </div>
         </div>
@@ -844,7 +844,7 @@
               }
             </div>
             <span class="form-hint">
-              Board: <strong>{{ gameSnapshotName || 'Bound Board' }}</strong>. The checker verifies factual claims in each question's rubric against this board.
+              Snapshot: <strong>{{ gameSnapshotName || 'Bound snapshot' }}</strong>. The checker verifies the <strong>BOARD FACTS</strong> section of each question's rubric against this snapshot. That section keeps its fixed name in every stored rubric; it is the list of facts drawn from the game snapshot.
             </span>
           </div>
           <div class="rubric-check-actions">
@@ -910,7 +910,7 @@
                           <tr>
                             <th>Rubric Claim</th>
                             <th>Assessment</th>
-                            <th>Board Evidence</th>
+                            <th>Snapshot Evidence</th>
                             <th>Reasoning</th>
                           </tr>
                         </thead>
@@ -931,7 +931,7 @@
                       </table>
                     </div>
                   } @else if (item.status === 'Completed') {
-                    <div class="no-findings-hint text-muted">All board facts in this rubric are supported by the game snapshot.</div>
+                    <div class="no-findings-hint text-muted">Every BOARD FACTS claim in this rubric is supported by the game snapshot.</div>
                   }
                 </div>
               }

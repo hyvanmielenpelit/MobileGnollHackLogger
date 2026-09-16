@@ -1255,7 +1255,7 @@ public class AdminBenchmarkController : ControllerBase
     // --- Benchmark Game Snapshots API ---
 
     private const string ConfidentialImportRefusal =
-        "A confidential chat cannot be imported as a benchmark board: the board's content "
+        "A confidential chat cannot be imported as a benchmark snapshot: the snapshot's content "
         + "becomes shared benchmark material. Attach the snapshot to a normal chat instead.";
 
     private Task<ChatMessage?> LoadLatestSnapshotMessageAsync(long sessionId, CancellationToken ct)
@@ -1344,7 +1344,7 @@ public class AdminBenchmarkController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(request.Name))
         {
-            return BadRequest(new { error = "Board name is required." });
+            return BadRequest(new { error = "Snapshot name is required." });
         }
 
         var session = await _dbContext.ChatSession.FirstOrDefaultAsync(s => s.Id == request.SessionId, ct);
@@ -1408,7 +1408,7 @@ public class AdminBenchmarkController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(request.Name))
         {
-            return BadRequest(new { error = "Board name is required." });
+            return BadRequest(new { error = "Snapshot name is required." });
         }
         if (string.IsNullOrWhiteSpace(request.Html))
         {
@@ -1544,6 +1544,38 @@ public class AdminBenchmarkController : ControllerBase
         return Ok(ToSnapshotDto(board, suite?.Id, suite?.Name));
     }
 
+    [HttpPut("snapshots/{id}/text")]
+    public async Task<IActionResult> UpdateSnapshotText(long id, [FromBody] UpdateBenchmarkGameSnapshotTextRequest request, CancellationToken ct)
+    {
+        var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
+        if (board == null) return NotFound();
+
+        // NormalizeFlattenedText keeps single CRLFs, so line endings are unified first.
+        string text = (request.Text ?? string.Empty).Replace("\r\n", "\n").Replace('\r', '\n');
+        string normalized = DumpHtmlSanitizer.NormalizeFlattenedText(text);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return BadRequest(new { error = "Snapshot text must not be empty." });
+        }
+
+        if (request.ExpectedSha256 != null && !string.Equals(request.ExpectedSha256, board.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            return Conflict(new { error = "The snapshot text was changed by someone else since it was loaded. Reload the snapshot and reapply your edit." });
+        }
+
+        var (finalText, sha256) = BenchmarkSnapshotImporter.PrepareBoardText(normalized);
+
+        board.SanitizedText = finalText;
+        board.CharCount = finalText.Length;
+        board.Sha256 = sha256;
+        board.DigestText = BenchmarkSnapshotDigestBuilder.Build(finalText);
+        board.ModifiedAtUtc = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(ct);
+
+        var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.GameSnapshotId == id, ct);
+        return Ok(ToSnapshotDto(board, suite?.Id, suite?.Name));
+    }
+
     /// <summary>Rebuilds the digest from the board's own text. The board text is never touched.</summary>
     [HttpPost("snapshots/{id}/regenerate-digest")]
     public async Task<IActionResult> RegenerateSnapshotDigest(long id, CancellationToken ct)
@@ -1594,7 +1626,7 @@ public class AdminBenchmarkController : ControllerBase
         if (suite == null) return NotFound(new { error = "Suite not found." });
         if (suite.GameSnapshot == null)
         {
-            return BadRequest(new { error = "The suite does not have a game board bound to it. Question generation requires a game board." });
+            return BadRequest(new { error = "The suite does not have a game snapshot bound to it. Question generation requires a game snapshot." });
         }
 
         var conflict = CheckConflictingBenchmarkJob(suite.Id, "question generation");
@@ -1690,7 +1722,7 @@ public class AdminBenchmarkController : ControllerBase
         if (suite == null) return NotFound(new { error = "Suite not found." });
         if (suite.GameSnapshot == null)
         {
-            return BadRequest(new { error = "The suite does not have a game board bound to it. Rubric verification requires a game board." });
+            return BadRequest(new { error = "The suite does not have a game snapshot bound to it. Rubric verification requires a game snapshot." });
         }
 
         var conflict = CheckConflictingBenchmarkJob(suite.Id, "rubric verification");

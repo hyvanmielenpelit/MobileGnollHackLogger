@@ -1,4 +1,4 @@
-<dialog #viewerDialog class="gh-dialog gh-dialog-fullscreen benchmark-snapshot-viewer-dialog" [attr.aria-labelledby]="'snapshot-viewer-title-' + uid" (cancel)="close()">
+<dialog #viewerDialog class="gh-dialog gh-dialog-fullscreen benchmark-snapshot-viewer-dialog" [attr.aria-labelledby]="'snapshot-viewer-title-' + uid" (cancel)="onDialogCancel($event)">
   <div class="dialog-header">
     <div class="dialog-title-group">
       <h3 #viewerTitle [id]="'snapshot-viewer-title-' + uid" tabindex="-1">
@@ -7,13 +7,13 @@
           <line x1="8" y1="2" x2="8" y2="18"></line>
           <line x1="16" y1="6" x2="16" y2="22"></line>
         </svg>
-        {{ snapshot?.name || 'Game Context Board' }}
+        {{ snapshot?.name || 'Game Snapshot' }}
       </h3>
       @if (snapshot?.suiteName) {
         <span class="bound-suite-pill">Suite: {{ snapshot?.suiteName }}</span>
       }
     </div>
-    <button type="button" class="btn-icon-action" (click)="close()" aria-label="Close snapshot board">
+    <button type="button" class="btn-icon-action" (click)="requestClose()" aria-label="Close game snapshot">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <line x1="18" y1="6" x2="6" y2="18"></line>
         <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -21,11 +21,11 @@
     </button>
   </div>
 
-  <div class="viewer-body" [class.editing]="isEditing">
+  <div class="viewer-body" [class.editing]="isEditing" [class.editing-text]="isEditingText">
     @if (loading) {
       <div class="snapshot-loading" role="status">
         <span class="gh-spinner-small" aria-hidden="true"></span>
-        <span>Loading snapshot board...</span>
+        <span>Loading game snapshot...</span>
       </div>
     } @else if (error) {
       <div class="alert alert-danger" role="alert">
@@ -39,10 +39,33 @@
         </div>
       </div>
     } @else if (snapshot) {
-      <!-- Edit metadata form -->
-      @if (isEditing) {
+      @if (isEditingText) {
+        @if (showDiscardPrompt) {
+          <div class="discard-strip" role="group" [attr.aria-labelledby]="'snapshot-discard-label-' + uid">
+            <svg class="discard-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <span class="discard-label" [id]="'snapshot-discard-label-' + uid" role="alert">Discard unsaved changes to the snapshot text?</span>
+            <div class="discard-actions">
+              <button #keepEditingButton type="button" class="btn-ghost" (click)="keepEditingText()">Keep editing</button>
+              <button type="button" class="btn-ghost btn-ghost-danger" (click)="discardTextEdits()">Discard</button>
+            </div>
+          </div>
+        }
+        <app-snapshot-text-editor
+          [text]="snapshot.sanitizedText ?? ''"
+          [sha256]="snapshot.sha256"
+          [saving]="savingText"
+          [error]="editTextError"
+          (save)="saveText($event)"
+          (cancelled)="cancelEditText()"
+          (dirtyChange)="onTextDirtyChange($event)" />
+      } @else if (isEditing) {
+        <!-- Edit metadata form -->
         <div class="snapshot-edit-panel">
-          <h4>Edit Board Metadata</h4>
+          <h4>Edit Snapshot Metadata</h4>
           @if (editError) {
             <div class="alert alert-danger" role="alert">
               <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -56,7 +79,7 @@
             </div>
           }
           <div class="form-group">
-            <label for="editBoardName">Board Name *</label>
+            <label for="editBoardName">Snapshot Name *</label>
             <input id="editBoardName" type="text" class="gh-input" [(ngModel)]="editName" required />
           </div>
           <div class="form-group">
@@ -68,12 +91,12 @@
             <textarea id="editBoardNotes" class="gh-input" [(ngModel)]="editNotes" rows="3" placeholder="Context facts: HP, level, key items, adjacent monsters"></textarea>
           </div>
           <div class="form-group">
-            <label for="editBoardDigest">Board digest (extract the difficulty assessor reads; max 6,000 chars)</label>
+            <label for="editBoardDigest">Snapshot digest (extract the difficulty assessor reads; max 6,000 chars)</label>
             <textarea id="editBoardDigest" class="gh-input" [(ngModel)]="editDigestText" rows="8" maxlength="6000"></textarea>
             <div class="digest-regenerate">
               <button type="button" class="btn-gh btn-gh-small" (click)="regenerateDigest()"
                       [disabled]="regeneratingDigest || savingEdit">
-                {{ regeneratingDigest ? 'Regenerating...' : 'Regenerate from board' }}
+                {{ regeneratingDigest ? 'Regenerating...' : 'Regenerate from snapshot' }}
               </button>
               <span class="digest-regenerate-status" aria-live="polite">{{ regenerateStatus }}</span>
             </div>
@@ -93,6 +116,9 @@
           <div class="fact"><dt>Captured at</dt><dd>{{ snapshot.capturedAtUtc ? (snapshot.capturedAtUtc | date:'medium') : (snapshot.createdAtUtc | date:'medium') }}</dd></div>
           <div class="fact"><dt>GnollHack version</dt><dd>{{ snapshot.sourceGnollHackVersion || 'Unknown' }}</dd></div>
           <div class="fact"><dt>Source chat</dt><dd>{{ snapshot.sourceChatSessionId ? ('#' + snapshot.sourceChatSessionId) : 'None' }}</dd></div>
+          @if (showLastModified) {
+            <div class="fact last-modified"><dt>Last modified</dt><dd>{{ snapshot.modifiedAtUtc | date:'medium' }}</dd></div>
+          }
         </dl>
 
         <div class="sha-row">
@@ -138,7 +164,7 @@
               <line x1="12" y1="17" x2="12.01" y2="17"></line>
             </svg>
             <div class="alert-content">
-              <span class="alert-body"><strong>Notice:</strong> This game board was truncated at capture limit. Tail sections of the dump are omitted.</span>
+              <span class="alert-body"><strong>Notice:</strong> This game snapshot was truncated at capture limit. Tail sections of the dump are omitted.</span>
             </div>
           </div>
         }
@@ -148,7 +174,7 @@
           <div class="board-text-toolbar">
             <div class="toolbar-row">
               <div class="toolbar-identity">
-                <span class="toolbar-title">Board text</span>
+                <span class="toolbar-title">Snapshot text</span>
                 <span class="toolbar-meta">{{ lineCount | number }} lines · {{ snapshot.charCount | number }} chars</span>
               </div>
               <div class="toolbar-actions">
@@ -157,6 +183,12 @@
                     <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
                   </svg>
                   Edit Metadata
+                </button>
+                <button type="button" class="btn-gh btn-gh-small" (click)="startEditText()">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+                  </svg>
+                  Edit Text
                 </button>
                 <button type="button" class="btn-gh btn-gh-small" (click)="copyText()">
                   @if (copied) {
@@ -210,14 +242,14 @@
               </div>
 
               <div class="reader-nav-group find-group">
-                <label class="visually-hidden" [for]="'reader-find-' + uid">Find in board</label>
+                <label class="visually-hidden" [for]="'reader-find-' + uid">Find in snapshot</label>
                 <input type="search" class="gh-input reader-nav-input find-input" [id]="'reader-find-' + uid"
-                       placeholder="Find in board" autocomplete="off" spellcheck="false"
+                       placeholder="Find in snapshot" autocomplete="off" spellcheck="false"
                        [attr.aria-describedby]="'reader-find-count-' + uid"
                        [value]="findQuery" (input)="onFindInput($any($event.target).value)" (keydown)="onFindKeydown($event)" />
                 <span class="find-count" [id]="'reader-find-count-' + uid" role="status" aria-live="polite">{{ findStatus }}</span>
                 <button type="button" class="action-btn" (click)="stepMatch(-1)" [disabled]="matches.length === 0"
-                        aria-label="Previous match in board"
+                        aria-label="Previous match in snapshot"
                         [attr.interestfor]="'reader-prev-tip-' + uid"
                         [attr.style]="'anchor-name: --reader-prev-tip-' + uid">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -227,7 +259,7 @@
                 <div popover="hint" class="gh-tooltip" [id]="'reader-prev-tip-' + uid"
                      [attr.style]="'position-anchor: --reader-prev-tip-' + uid">Previous match</div>
                 <button type="button" class="action-btn" (click)="stepMatch(1)" [disabled]="matches.length === 0"
-                        aria-label="Next match in board"
+                        aria-label="Next match in snapshot"
                         [attr.interestfor]="'reader-next-tip-' + uid"
                         [attr.style]="'anchor-name: --reader-next-tip-' + uid">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -253,7 +285,7 @@
 
           <div #readerScroll class="reader-scroll" [class.wrap]="wrapLines" [class.no-ln]="!showLineNumbers"
                [style.--ln-digits]="lineNumberDigits"
-               role="region" [attr.aria-label]="'Board text of ' + snapshot.name" tabindex="0"
+               role="region" [attr.aria-label]="'Snapshot text of ' + snapshot.name" tabindex="0"
                (click)="onReaderClick($event)">
             <div class="reader-content">
               @for (chunk of readerChunks; track chunk.startLine) {
@@ -278,6 +310,6 @@
   </div>
 
   <div class="dialog-actions">
-    <button type="button" class="btn-gh btn-gh-cancel" (click)="close()">Close</button>
+    <button type="button" class="btn-gh btn-gh-cancel" (click)="requestClose()">Close</button>
   </div>
 </dialog>

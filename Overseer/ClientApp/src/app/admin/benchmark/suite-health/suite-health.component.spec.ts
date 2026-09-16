@@ -448,7 +448,7 @@ describe('SuiteHealthComponent', () => {
     expect(list.getAttribute('aria-label')).toBe('Suite health sections');
   });
 
-  describe('Board facts tab', () => {
+  describe('Snapshot facts tab', () => {
     it('should show unbound notice when suite has no gameSnapshotId', () => {
       open();
       component.gameSnapshotId = null;
@@ -457,7 +457,7 @@ describe('SuiteHealthComponent', () => {
 
       const alert = fixture.nativeElement.querySelector('#sh-panel-board-facts .alert');
       expect(alert).toBeTruthy();
-      expect(alert.textContent).toContain('No Game Context Board Bound');
+      expect(alert.textContent).toContain('No Game Snapshot Bound');
     });
 
     it('should show board name and controls when suite has gameSnapshotId', () => {

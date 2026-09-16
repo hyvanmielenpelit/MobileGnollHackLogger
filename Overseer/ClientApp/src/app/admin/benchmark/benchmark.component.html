@@ -1072,9 +1072,19 @@
                   <span class="default-suite-badge">Default suite</span>
                 }
                 @if (suite.gameSnapshotName) {
-                  <button type="button" class="badge-board" (click)="openSnapshotViewer(suite.gameSnapshotId!)" aria-label="View Game Board Snapshot">
-                    🎮 {{ suite.gameSnapshotName }} ({{ suite.gameSnapshotCharCount | number }} chars)
+                  <button type="button" class="badge-board" (click)="openSnapshotViewer(suite.gameSnapshotId!)"
+                          [attr.aria-label]="'View game snapshot ' + suite.gameSnapshotName"
+                          [attr.interestfor]="'tip-snapshot-badge-' + suite.id"
+                          [attr.style]="'anchor-name: --tip-snapshot-badge-' + suite.id">
+                    <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
+                      <line x1="8" y1="2" x2="8" y2="18"></line>
+                      <line x1="16" y1="6" x2="16" y2="22"></line>
+                    </svg>
+                    {{ suite.gameSnapshotName }} ({{ suite.gameSnapshotCharCount | number }} chars)
                   </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'tip-snapshot-badge-' + suite.id"
+                       [attr.style]="'position-anchor: --tip-snapshot-badge-' + suite.id">View game snapshot</div>
                 }
                 @if (suite.hasGeneratedQuestions) {
                   @if (suite.reviewedQuestionCount === suite.questionCount) {
@@ -1084,7 +1094,8 @@
                     </span>
                   } @else {
                     <span class="badge badge-warning" title="Generated questions must be verified by a human reviewer">
-                      ⚠️ Needs review ({{ suite.reviewedQuestionCount || 0 }} of {{ suite.questionCount }})
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                      Needs review ({{ suite.reviewedQuestionCount || 0 }} of {{ suite.questionCount }})
                     </span>
                   }
                 }
@@ -1145,37 +1156,36 @@
               <button type="button" class="btn-gh" (click)="openManageQuestions(suite)">
                 Manage Questions
               </button>
-              @if (suite.gameSnapshotId) {
-                <button type="button" class="btn-gh" (click)="openSnapshotViewer(suite.gameSnapshotId)">
-                  View Board
-                </button>
-                <button type="button" class="btn-gh" (click)="openGenerationDialog(suite)">
-                  Generate Questions
-                </button>
-              }
-              @if (suite.hasGeneratedQuestions) {
-                <button type="button" class="btn-gh" (click)="openSuiteHealthForRubrics(suite)">
-                  Check Rubrics
-                </button>
-                @if ((suite.reviewedQuestionCount || 0) < suite.questionCount) {
-                  <button type="button" class="btn-gh" (click)="confirmVerifyAll(suite)" aria-label="Attest that all questions have been reviewed">
-                    Verify All
+              <div class="suite-card-secondary">
+                @if (suite.gameSnapshotId) {
+                  <button type="button" class="btn-ghost" (click)="openGenerationDialog(suite)">
+                    Generate Questions
                   </button>
                 }
-              }
-              <button type="button" class="btn-gh" (click)="openDifficultyAssessorDialog(suite)">
-                Assess Question Difficulty
-              </button>
-              <button type="button" class="btn-gh" (click)="openSuiteHealth(suite)"
-                      aria-haspopup="dialog">
-                Suite Health
-              </button>
-              @if (footprints[suite.id] && footprints[suite.id].runCount > 0) {
-                <button type="button" class="btn-gh btn-gh-delete" (click)="openBulkDeleteDialog(suite)">
-                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                  Delete Runs
+                <button type="button" class="btn-ghost" (click)="openDifficultyAssessorDialog(suite)">
+                  Assess Difficulty
                 </button>
-              }
+                <button type="button" class="btn-ghost" (click)="openSuiteHealth(suite)"
+                        aria-haspopup="dialog">
+                  Suite Health
+                </button>
+                @if (suite.hasGeneratedQuestions) {
+                  <button type="button" class="btn-ghost" (click)="openSuiteHealthForRubrics(suite)">
+                    Check Rubrics
+                  </button>
+                  @if ((suite.reviewedQuestionCount || 0) < suite.questionCount) {
+                    <button type="button" class="btn-ghost" (click)="confirmVerifyAll(suite)" aria-label="Attest that all questions have been reviewed">
+                      Verify All
+                    </button>
+                  }
+                }
+                @if (footprints[suite.id] && footprints[suite.id].runCount > 0) {
+                  <button type="button" class="btn-ghost btn-ghost-danger" (click)="openBulkDeleteDialog(suite)">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                    Delete Runs
+                  </button>
+                }
+              </div>
             </div>
 
           </div>
@@ -1885,7 +1895,12 @@
         <div class="modal-actions-bar mb-20">
           @if (selectedRunGameSnapshotId) {
             <button type="button" class="btn-gh" (click)="openSnapshotViewer(selectedRunGameSnapshotId)">
-              <span style="margin-right: 4px;">🎮</span> View Game Board
+              <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
+                <line x1="8" y1="2" x2="8" y2="18"></line>
+                <line x1="16" y1="6" x2="16" y2="22"></line>
+              </svg>
+              View Game Snapshot
             </button>
           }
           <button type="button" class="btn-gh" (click)="downloadReport(selectedRunDetail.id)">
@@ -2791,7 +2806,7 @@
 </dialog>
 
 <!-- SUITE CREATE / EDIT DIALOG -->
-<dialog #suiteDialog class="gh-dialog benchmark-form-dialog">
+<dialog #suiteDialog class="gh-dialog benchmark-form-dialog benchmark-suite-form-dialog">
   <div class="dialog-content flex-col">
     <div class="dialog-header">
       <div class="dialog-title-group">
@@ -2810,8 +2825,13 @@
         <input id="suiteNameInput" type="text" class="gh-input" [(ngModel)]="suiteForm.name" placeholder="e.g. Core Roguelike Mechanics">
       </div>
       <div class="form-group">
-        <label for="suiteDescInput">Description (Optional) <span class="text-muted font-normal">(Markdown supported)</span></label>
-        <textarea id="suiteDescInput" class="gh-input font-mono" rows="6" [(ngModel)]="suiteForm.description" placeholder="Description of the test suite (Markdown supported: headings, lists, tables, code)"></textarea>
+        <app-markdown-editor #suiteDescriptionEditor
+          inputId="suiteDescInput"
+          label="Description (Optional)"
+          hint="Markdown supported: headings, lists, tables, code."
+          placeholder="Description of the test suite"
+          [minRows]="10" [fill]="true"
+          [(value)]="suiteDescriptionValue" />
       </div>
     </div>
     <div class="dialog-footer">
@@ -3002,10 +3022,14 @@
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             Add Question
           </button>
-          <button type="button" class="btn-gh" (click)="openDifficultyAssessorDialog(currentSuiteForQuestions!)">
+          <button type="button" class="btn-gh" (click)="openAutoRateAll()"
+                  [attr.aria-disabled]="canAutoRateAll ? null : 'true'">
             AI Auto-Rate All Difficulties
           </button>
         </div>
+        @if (!canAutoRateAll && !loadingQuestions) {
+          <span class="form-hint">Add questions to enable AI rating.</span>
+        }
 
         <div class="questions-list">
           @for (q of questions; track q.id; let i = $index) {
@@ -3050,13 +3074,16 @@
                   <div class="card-actions-group">
                     @if (currentSuiteForQuestions.gameSnapshotId) {
                       <button type="button" class="action-btn" (click)="checkSingleQuestionRubric(currentSuiteForQuestions, q)"
-                              [attr.aria-label]="'Check rubric for question ' + (q.orderIndex + 1) + ' against board'"
+                              [attr.aria-label]="'Check rubric for question ' + (q.orderIndex + 1) + ' against the game snapshot'"
                               [attr.interestfor]="'tip-rubric-q-' + q.id"
                               [attr.style]="'anchor-name: --tip-rubric-q-' + q.id">
-                        <span style="font-size: 14px;">🔍</span>
+                        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <circle cx="11" cy="11" r="8"></circle>
+                          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
                       </button>
                       <div popover="hint" class="gh-tooltip" [id]="'tip-rubric-q-' + q.id"
-                           [attr.style]="'position-anchor: --tip-rubric-q-' + q.id">Check rubric against board with AI</div>
+                           [attr.style]="'position-anchor: --tip-rubric-q-' + q.id">Check rubric against the game snapshot with AI</div>
                     }
                     <button type="button" class="action-btn" (click)="openDifficultyAssessorDialog(currentSuiteForQuestions!, q)"
                             [attr.aria-label]="'Auto-rate difficulty for question ' + (q.orderIndex + 1)"
@@ -3146,7 +3173,7 @@
     <div class="dialog-body">
       <div class="form-group mb-15">
         <label for="qTextInput">Question Text</label>
-        <textarea id="qTextInput" class="gh-input q-text-autosize" rows="3" [(ngModel)]="questionForm.questionText" placeholder="Enter benchmark question prompt"></textarea>
+        <textarea id="qTextInput" class="gh-input gh-textarea-autosize" rows="3" [(ngModel)]="questionForm.questionText" placeholder="Enter benchmark question prompt"></textarea>
       </div>
       <div class="form-group mb-15">
         <label for="qDiffSelect">Difficulty Tier</label>
@@ -3972,14 +3999,14 @@
     <div class="dialog-header">
       <div class="dialog-title-group">
         <h3 id="generationDialogTitle">
-          @if (generationDialogPhase === 'select') { Generate Benchmark Questions from Board }
+          @if (generationDialogPhase === 'select') { Generate Benchmark Questions from Game Snapshot }
           @else { Generating Benchmark Questions }
         </h3>
         @if (generationSuiteForJob) {
           <p class="dialog-subtitle">
             Suite: {{ generationSuiteForJob.name }}
             @if (generationSuiteForJob.gameSnapshotName) {
-              (Board: {{ generationSuiteForJob.gameSnapshotName }})
+              (Snapshot: {{ generationSuiteForJob.gameSnapshotName }})
             }
           </p>
         }
@@ -4044,7 +4071,7 @@
               </div>
             }
           </div>
-          <span class="form-hint">A strong reasoning model is recommended for authoring accurate rubrics grounded in the game board.</span>
+          <span class="form-hint">A strong reasoning model is recommended for authoring accurate rubrics grounded in the game snapshot.</span>
         </div>
 
         <div class="form-group mb-15">
@@ -4068,8 +4095,8 @@
 
         <div class="form-group mb-15">
           <label for="genInstructions">Authoring Instructions</label>
-          <textarea id="genInstructions" class="gh-input" [(ngModel)]="generationInstructions" rows="4"></textarea>
-          <span class="form-hint">Steers what decisions or aspects to probe. The rubric structure requirements (BOARD FACTS, REQUIRED, etc.) are enforced by the harness.</span>
+          <textarea id="genInstructions" class="gh-input gh-textarea-autosize gen-instructions" rows="8" [(ngModel)]="generationInstructions"></textarea>
+          <span class="form-hint">Steers what decisions or aspects to probe. The rubric structure (the BOARD FACTS, REQUIRED, CRITICAL ERROR, SCOPE, FORM and SOURCE sections) is enforced by the harness. BOARD FACTS is the section's fixed name in every stored rubric; it lists the facts drawn from this game snapshot.</span>
         </div>
       </div>
 

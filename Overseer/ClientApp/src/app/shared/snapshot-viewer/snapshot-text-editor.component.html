@@ -1,0 +1,92 @@
+<section class="snapshot-text-editor" [attr.aria-labelledby]="'snapshot-editor-title-' + uid">
+  <div class="editor-toolbar">
+    <div class="editor-toolbar-row">
+      <div class="editor-identity">
+        <h4 class="editor-title" [id]="'snapshot-editor-title-' + uid">Edit snapshot text</h4>
+        <span class="editor-meta">
+          <span class="editor-lines">{{ lineCount | number }} lines</span>
+          <span aria-hidden="true">·</span>
+          <span class="editor-counter" [class.over-cap]="overCap">{{ length | number }} / {{ maxChars | number }} chars</span>
+          @if (sha256) {
+            <span aria-hidden="true">·</span>
+            <span class="editor-sha">Loaded SHA-256 <code>{{ sha256 | slice:0:12 }}…</code></span>
+          }
+        </span>
+      </div>
+
+      <div class="editor-tools">
+        @if (sections.length > 0) {
+          <label class="visually-hidden" [for]="'snapshot-editor-section-' + uid">Jump to section</label>
+          <select #sectionSelect class="gh-input editor-tool-input section-select"
+                  [id]="'snapshot-editor-section-' + uid"
+                  [attr.aria-disabled]="view ? null : 'true'"
+                  (change)="onSectionChange(sectionSelect)">
+            <option value="">Jump to section…</option>
+            @for (section of sections; track section.line) {
+              <option [value]="section.line">{{ section.title }} (line {{ section.line }})</option>
+            }
+          </select>
+        }
+        <button type="button" class="btn-ghost find-btn" (click)="openFind()"
+                [attr.aria-disabled]="view ? null : 'true'" aria-keyshortcuts="Control+F">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          Find
+        </button>
+      </div>
+    </div>
+
+    @if (overCap) {
+      <p class="editor-cap-warning" role="status">
+        <svg class="warning-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+          <line x1="12" y1="9" x2="12" y2="13"></line>
+          <line x1="12" y1="17" x2="12.01" y2="17"></line>
+        </svg>
+        Over the limit: the server will truncate at 60,000 characters.
+      </p>
+    }
+
+    <p class="editor-shortcuts">
+      Ctrl+F find and replace · Alt+G go to line · Ctrl+S save · Ctrl+M switches Tab between indenting and moving focus
+    </p>
+  </div>
+
+  <div class="editor-frame">
+    <div #editorHost class="editor-host"></div>
+    @if (!view && !loadError) {
+      <div class="editor-loading" role="status">
+        <span class="gh-spinner-small" aria-hidden="true"></span>
+        <span>Loading the editor...</span>
+      </div>
+    }
+    @if (loadError) {
+      <div class="editor-load-error" role="alert">{{ loadError }}</div>
+    }
+  </div>
+
+  <div class="editor-footer">
+    <div class="editor-error" aria-live="polite">
+      @if (error) {
+        <span class="editor-error-text">
+          <svg class="warning-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          {{ error }}
+        </span>
+      }
+    </div>
+    <div class="editor-actions">
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="cancel()">Cancel</button>
+      <button type="button" class="btn-gh save-text-btn" (click)="requestSave()"
+              [attr.aria-disabled]="canSave ? null : 'true'"
+              [attr.aria-busy]="saving ? 'true' : null">
+        {{ saving ? 'Saving...' : 'Save Text' }}
+      </button>
+    </div>
+  </div>
+</section>
