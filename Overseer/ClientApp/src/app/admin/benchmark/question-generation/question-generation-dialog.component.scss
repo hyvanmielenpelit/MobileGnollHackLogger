@@ -1,0 +1,307 @@
+/* Question generation workspace.
+ *
+ * Layout only. The progress vocabulary (.job-progress-block, .job-item-list, .job-status-chip,
+ * .run-stat-strip, .job-diagnostics), the model selector (.custom-model-selector and its parts),
+ * the question card (.questions-list, .question-list-item and its parts, the badges and
+ * .btn-review-toggle) and every control class come from styles.scss and are never redefined
+ * here.
+ */
+
+/* --- Frame: header / body / footer column inside the full-screen dialog --- */
+
+.question-generation-dialog {
+  .dialog-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    height: 100%;
+    width: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0;
+  }
+
+  .dialog-header {
+    flex-shrink: 0;
+    gap: 12px;
+    padding: 14px 24px;
+    margin: 0;
+
+    h3:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 4px;
+      border-radius: 4px;
+    }
+  }
+
+  .dialog-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding: 16px 24px;
+  }
+
+  .dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 14px 24px;
+    border-top: 1px solid var(--border-glass);
+    background: rgba(16, 16, 16, 0.98);
+    flex-shrink: 0;
+
+    .btn-gh {
+      white-space: nowrap;
+    }
+
+    @media (max-width: 560px) {
+      flex-direction: column-reverse;
+      align-items: stretch;
+
+      .btn-gh {
+        width: 100%;
+        min-width: 0;
+      }
+    }
+  }
+}
+
+/* --- Two columns, each its own scroller --- */
+
+.qg-workspace {
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) 1fr;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 16px;
+  min-height: 0;
+  flex: 1;
+}
+
+.qg-column {
+  overflow-y: auto;
+  min-height: 0;
+  min-width: 0;
+  padding-right: 4px;
+}
+
+@media (max-width: 900px) {
+  .qg-workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto;
+    overflow-y: auto;
+  }
+
+  .qg-column {
+    overflow-y: visible;
+    padding-right: 0;
+  }
+}
+
+/* --- Setup column --- */
+
+.qg-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+
+  .form-group {
+    margin-bottom: 0;
+  }
+}
+
+.qg-group-label {
+  font-size: 0.9em;
+  font-weight: 500;
+}
+
+.qg-instructions {
+  --autosize-min: 4lh;
+  --autosize-max: 16lh;
+}
+
+.counts-row {
+  display: flex;
+  gap: 12px;
+
+  .count-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+
+    label { font-size: 12px; color: #94a3b8; }
+    input { text-align: center; }
+  }
+}
+
+.qg-model-receives p {
+  margin: 0;
+  font-size: 0.9em;
+  line-height: 1.5;
+  color: #bbb;
+}
+
+.qg-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* --- Main column --- */
+
+.qg-alert {
+  margin-bottom: 16px;
+}
+
+.qg-progress-panel {
+  margin-bottom: 20px;
+}
+
+.job-item-list .job-item-row {
+  flex-wrap: wrap;
+}
+
+.qg-item-actions {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.job-item-error {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: #f85149;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.qg-log {
+  margin: 0 0 16px 0;
+
+  .qg-log-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #94a3b8;
+    margin-bottom: 6px;
+  }
+
+  .log-entries {
+    max-height: 180px;
+    overflow-y: auto;
+    background: #090d16;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+    padding: 8px;
+    font-family: monospace;
+    font-size: 11px;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 1px;
+    }
+  }
+
+  .log-entry {
+    margin-bottom: 2px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+
+    .log-time { color: #64748b; margin-right: 8px; }
+
+    &.severity-info { color: #cbd5e1; }
+    &.severity-warning { color: #fbbf24; }
+    &.severity-error { color: #f87171; }
+  }
+}
+
+.qg-questions-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.qg-new-count,
+.qg-new-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(46, 160, 67, 0.15);
+  color: #3fb950;
+  border: 1px solid rgba(46, 160, 67, 0.3);
+}
+
+.qg-new-count {
+  margin-left: 6px;
+}
+
+/* Sticky within the main column's scroller; opaque enough that cards scrolling beneath stay unreadable. */
+.qg-selection-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(10, 10, 10, 0.85);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+
+  .qg-selection-count {
+    font-weight: 600;
+    margin-right: auto;
+  }
+}
+
+.qg-questions-empty {
+  margin: 0;
+  color: #aaa;
+}
+
+.question-list-item.is-generation-new {
+  background: rgba(212, 160, 23, 0.07);
+  box-shadow: inset 3px 0 0 var(--primary-color);
+}
+
+.qg-select {
+  padding-top: 2px;
+}
+
+/* --- Local confirmation --- */
+
+.gh-dialog.qg-confirm-dialog {
+  width: min(520px, 94vw);
+  max-width: min(520px, 94vw);
+
+  .dialog-body p {
+    margin: 0 0 12px 0;
+  }
+
+  .qg-confirm-danger {
+    color: #f85149;
+  }
+
+  .dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 8px;
+  }
+}

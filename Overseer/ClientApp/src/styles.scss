@@ -2308,3 +2308,817 @@ label.checkbox-label,
   border: 1px solid rgba(255, 167, 38, 0.6);
   color: #ffb374;
 }
+
+/* Benchmark job progress (shared by the run, difficulty, multi-run and question-generation dialogs) */
+.progress-heading {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--primary-color);
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 4px;
+    border-radius: 4px;
+  }
+}
+
+.job-progress-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+
+  .progress-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #ccc;
+    margin: 0;
+  }
+
+  .job-progress {
+    width: 100%;
+    height: 10px;
+    border-radius: 5px;
+    overflow: hidden;
+    appearance: none;
+    -webkit-appearance: none;
+    accent-color: var(--primary-color);
+
+    &::-webkit-progress-bar {
+      background-color: #2a2a2a;
+      border-radius: 5px;
+    }
+
+    &::-webkit-progress-value {
+      background-color: var(--primary-color);
+      border-radius: 5px;
+    }
+
+    &::-moz-progress-bar {
+      background-color: var(--primary-color);
+      border-radius: 5px;
+    }
+  }
+
+  .progress-status {
+    margin: 0;
+    font-size: 13px;
+    color: #aaa;
+  }
+}
+
+.job-item-list {
+  list-style: none;
+  margin: 0 0 16px 0;
+  padding: 0;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  max-height: 20rem;
+  overflow-y: auto;
+
+  .job-item-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    /* A question a failed-question re-run is repairing. The whole suite stays listed and the
+       rows outside the re-run keep the status they already have, so the accent is the only
+       thing that says which rows will move. */
+    &.is-rerun-scope {
+      background: rgba(212, 160, 23, 0.07);
+      box-shadow: inset 3px 0 0 var(--primary-color, #d4a017);
+    }
+
+    .job-item-rerun-marker {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 1px 6px;
+      border-radius: 10px;
+      color: var(--primary-color, #d4a017);
+      border: 1px solid rgba(212, 160, 23, 0.4);
+      flex-shrink: 0;
+    }
+
+    .job-item-index {
+      font-family: monospace;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--primary-color);
+      min-width: 32px;
+      flex-shrink: 0;
+    }
+
+    .job-item-excerpt {
+      flex: 1;
+      font-size: 13px;
+      color: #ddd;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+}
+
+.job-status-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+
+  &.status-pending {
+    background: rgba(255, 255, 255, 0.1);
+    color: #aaa;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+
+  // The provider request is in flight and no answer row exists yet. A distinct hue from
+  // status-assessing, so the run's two in-progress states are not read as one.
+  &.status-answering {
+    background: rgba(212, 160, 23, 0.15);
+    color: var(--primary-color, #d4a017);
+    border: 1px solid rgba(212, 160, 23, 0.35);
+    animation: pulse-assessing 1.5s infinite ease-in-out;
+  }
+
+  &.status-assessing {
+    background: rgba(0, 200, 255, 0.15);
+    color: #00d4ff;
+    border: 1px solid rgba(0, 200, 255, 0.3);
+    animation: pulse-assessing 1.5s infinite ease-in-out;
+  }
+
+  /* The claim verifier and the second-opinion assessor re-reading an answer that already
+     carries a score. Two more hues distinct from amber (status-answering) and cyan
+     (status-assessing): with four in-progress states the requirement that none of them reads
+     as another is what keeps the word on the chip from being the only difference. Both are
+     listed in the prefers-reduced-motion block below, which enumerates chip classes
+     explicitly. */
+  &.status-verifying {
+    background: rgba(163, 113, 247, 0.15);
+    color: #b98cff;
+    border: 1px solid rgba(163, 113, 247, 0.35);
+    animation: pulse-assessing 1.5s infinite ease-in-out;
+  }
+
+  &.status-secondopinion {
+    background: rgba(255, 123, 179, 0.15);
+    color: #ff8dbd;
+    border: 1px solid rgba(255, 123, 179, 0.35);
+    animation: pulse-assessing 1.5s infinite ease-in-out;
+  }
+
+  // The question-generation workspace's own in-progress states, reusing the run dialogs' two
+  // in-flight hues: a request in flight (status-answering) and a response being repaired
+  // (status-verifying), for a different job kind.
+  &.status-generating {
+    background: rgba(212, 160, 23, 0.15);
+    color: var(--primary-color, #d4a017);
+    border: 1px solid rgba(212, 160, 23, 0.35);
+    animation: pulse-assessing 1.5s infinite ease-in-out;
+  }
+
+  &.status-repairing {
+    background: rgba(163, 113, 247, 0.15);
+    color: #b98cff;
+    border: 1px solid rgba(163, 113, 247, 0.35);
+    animation: pulse-assessing 1.5s infinite ease-in-out;
+  }
+
+  &.status-rated,
+  &.status-scored,
+  &.status-completed {
+    background: rgba(46, 160, 67, 0.15);
+    color: #3fb950;
+    border: 1px solid rgba(46, 160, 67, 0.3);
+  }
+
+  /* An answer is in, its assessment has not started. Deliberately calmer than
+     status-scored so the two are distinguishable without reading the word. */
+  &.status-ok {
+    background: rgba(46, 160, 67, 0.08);
+    color: #8fce9a;
+    border: 1px solid rgba(46, 160, 67, 0.2);
+  }
+
+  &.status-failed,
+  &.status-providererror {
+    background: rgba(248, 81, 73, 0.15);
+    color: #f85149;
+    border: 1px solid rgba(248, 81, 73, 0.3);
+  }
+
+  // A generation band item that produced fewer questions than requested. No animation: the job
+  // has already moved past this item, so nothing about the chip should read as in-progress.
+  &.status-partial {
+    background: rgba(251, 191, 36, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(251, 191, 36, 0.35);
+  }
+
+  &.status-skipped {
+    background: rgba(212, 160, 23, 0.12);
+    color: #d4a017;
+    border: 1px solid rgba(212, 160, 23, 0.3);
+  }
+
+  &.status-canceled,
+  &.status-cancelled {
+    background: rgba(158, 158, 158, 0.2);
+    color: #bdbdbd;
+    border: 1px solid #757575;
+  }
+}
+
+.run-stat-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin: 0 0 16px 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+
+  .run-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-inline-size: 0;
+
+    dt {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #888;
+    }
+
+    dd {
+      margin: 0;
+      font-family: monospace;
+      font-size: 14px;
+      color: #ddd;
+      overflow: hidden;
+      text-overflow: ellipsis;
+
+      /* Secondary to the count it follows, so the number stays the thing being read. */
+      .run-stat-inflight {
+        font-family: inherit;
+        font-size: 11px;
+        color: #aaa;
+      }
+    }
+  }
+}
+
+@keyframes pulse-assessing {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(0, 200, 255, 0.4);
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 4px rgba(0, 200, 255, 0);
+  }
+}
+
+.job-diagnostics {
+  border-top: 1px solid #333;
+  padding-top: 12px;
+
+  summary {
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    color: #aaa;
+    margin-bottom: 8px;
+
+    &:hover {
+      color: #ddd;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 4px;
+      border-radius: 4px;
+    }
+  }
+
+  &[open] > summary {
+    color: var(--primary-color);
+  }
+
+  .job-diagnostics-count {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 6px;
+    background: rgba(248, 81, 73, 0.15);
+    color: #f85149;
+    border: 1px solid rgba(248, 81, 73, 0.3);
+  }
+
+  .diagnostics-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .diagnostics-copy-status {
+    margin: 0;
+    font-size: 12px;
+    color: var(--primary-color);
+    min-height: 1em;      /* reserve the line so the toolbar does not jump when it fills */
+  }
+
+  pre {
+    max-height: 16rem;
+    overflow-y: auto;
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 10px;
+    font-family: monospace;
+    font-size: 12px;
+    color: #ccc;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 1px;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .job-status-chip.status-assessing,
+  .job-status-chip.status-answering,
+  .job-status-chip.status-verifying,
+  .job-status-chip.status-secondopinion,
+  .job-status-chip.status-generating,
+  .job-status-chip.status-repairing {
+    animation: none;
+  }
+}
+
+/* Custom model selector: form variant (base), compact variant (.compact), upward placement (.drops-up) */
+.custom-model-selector {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.selector-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #141414;
+  border: 1px solid #3d3d3d;
+  border-radius: 6px;
+  padding: 7px 12px;
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  transition: all 0.2s ease;
+  min-height: 38px;
+  width: 100%;
+  justify-content: flex-start;
+
+  &:hover {
+    border-color: var(--primary-color);
+    background: #1a1a1a;
+  }
+
+  &.open {
+    border-color: var(--primary-color);
+
+    .chevron {
+      transform: rotate(180deg);
+    }
+  }
+
+  .chevron {
+    margin-left: auto;
+    transition: transform 0.2s ease;
+    stroke: var(--primary-color);
+    flex-shrink: 0;
+  }
+}
+
+.selector-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  width: max-content;
+  max-width: 480px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: #181818;
+  border: 1px solid var(--primary-color);
+  border-radius: 6px;
+  padding: 4px 0;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+
+  .empty-dropdown-hint {
+    padding: 12px 16px;
+    font-size: 12px;
+    color: #888;
+    line-height: 1.4;
+    font-style: italic;
+  }
+}
+
+.model-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background-color: rgba(212, 160, 23, 0.15);
+  }
+
+  &.selected {
+    background-color: rgba(212, 160, 23, 0.25);
+    border-left: 3px solid var(--primary-color);
+    padding-left: 9px;
+  }
+
+  // The options here are keyboard-focusable (role="option", tabindex="0") in the Suite Health
+  // model selectors, so they need a visible focus ring.
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.model-name {
+  font-weight: 500;
+  color: #fff;
+  white-space: nowrap;
+}
+
+/* In the trigger, the model name shares the row with the thinking/reasoning/provider
+   badges and the chevron. A narrower grid column (see .form-row.three-cols) must not let
+   a long name push those out — truncate the name instead. The dropdown's own .model-name
+   above keeps wrapping off (white-space: nowrap) since the dropdown is free to grow via
+   its own width: max-content; max-width: 480px. */
+.selector-trigger .model-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reasoning-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #c084fc;
+  border: 1px solid rgba(192, 132, 252, 0.4);
+  background: rgba(192, 132, 252, 0.08);
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+/* The chat composer and the models page: a fit-content, glass trigger with a floating
+   dropdown. Same markup and behaviour as the base; only the sizing and surfaces differ. */
+.custom-model-selector.compact {
+  width: fit-content;
+  margin-bottom: 5px;
+  z-index: 100;
+
+  .selector-trigger {
+    gap: 4px;
+    min-height: 28px;
+    padding: 4px 8px;
+    font-size: 0.85rem;
+    border-radius: 4px;
+    border-color: var(--border-glass);
+    background: rgba(0, 0, 0, 0.6);
+    width: auto;
+
+    &:hover {
+      border-color: var(--gh-gold);
+      background: rgba(15, 15, 15, 0.8);
+      box-shadow: 0 0 8px rgba(212, 175, 55, 0.2);
+    }
+
+    &.open {
+      border-color: var(--gh-gold);
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+
+    .chevron { margin-left: 0; stroke: var(--gh-gold); }
+    .model-name { overflow: visible; }
+  }
+
+  .selector-dropdown {
+    top: 100%;
+    min-width: 0;
+    max-width: none;
+    border-radius: 4px;
+    border-top-left-radius: 0;
+    border-color: var(--gh-gold);
+    background: var(--bg-glass);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.8), inset 0 0 10px rgba(212, 175, 55, 0.1);
+    backdrop-filter: blur(8px);
+    z-index: 101;
+  }
+
+  .model-option {
+    font-size: 0.85rem;
+
+    &:hover { background-color: rgba(212, 175, 55, 0.15); }
+
+    &.selected {
+      background-color: rgba(212, 175, 55, 0.25);
+      border-left: 2px solid var(--gh-gold);
+      padding-left: 10px;
+    }
+  }
+
+  /* The chat composer sits at the bottom of the viewport, so its list opens upward. */
+  &.drops-up {
+    .selector-trigger.open {
+      border-bottom-left-radius: 4px;
+      border-bottom-right-radius: 4px;
+      border-top-left-radius: 0;
+      border-top-right-radius: 0;
+    }
+
+    .selector-dropdown {
+      top: auto;
+      bottom: 100%;
+      border-top-left-radius: 4px;
+      border-bottom-left-radius: 0;
+      box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.8), inset 0 0 10px rgba(212, 175, 55, 0.1);
+    }
+  }
+}
+
+/* Benchmark question card (shared by Manage Questions and question generation) */
+.questions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.question-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: #191919;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 14px 16px;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+
+  &:hover {
+    background: #1e1e1e;
+    border-color: #444;
+  }
+
+  &.dragging {
+    opacity: 0.35;
+  }
+
+  &.drag-over-top {
+    border-top: 2px solid var(--primary-color) !important;
+  }
+
+  &.drag-over-bottom {
+    border-bottom: 2px solid var(--primary-color) !important;
+  }
+
+  .drag-handle {
+    cursor: grab;
+    padding: 2px;
+    margin-top: 2px;
+    margin-right: 0;
+    color: #777;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    &:hover {
+      color: var(--primary-color);
+    }
+
+    &:active {
+      cursor: grabbing;
+    }
+
+    svg {
+      width: 20px;
+      height: 20px;
+    }
+  }
+
+  .question-card-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .question-meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .meta-badges {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+
+    .q-order-badge {
+      font-weight: 700;
+      font-size: 13px;
+      color: var(--primary-color);
+    }
+  }
+
+  .card-actions-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+
+  .q-assessor-info {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 4px 0 8px 0;
+
+    &.q-not-assessed {
+      color: #777;
+      font-style: italic;
+      font-size: 11px;
+    }
+  }
+
+  .q-assessor-label,
+  .q-assessor-time {
+    font-size: 11px;
+    color: #888;
+  }
+
+  .q-model-name {
+    font-size: 11px;
+    color: #888;
+    letter-spacing: 0.5px;
+  }
+
+  .q-model-badge {
+    font-size: 10px;
+    font-weight: 600;
+    color: #888;
+    border: 1px solid rgba(136, 136, 136, 0.4);
+    background: rgba(136, 136, 136, 0.05);
+    padding: 1px 4px;
+    border-radius: 3px;
+    text-transform: uppercase;
+  }
+
+  .question-text-row {
+    width: 100%;
+
+    .q-full-text {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.55;
+      color: #f5f5f5;
+      word-break: break-word;
+    }
+  }
+
+  .q-criteria-box {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    background: rgba(0, 0, 0, 0.4);
+    border-left: 3px solid rgba(212, 160, 23, 0.5);
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-top: 2px;
+
+    .criteria-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--primary-color);
+    }
+  }
+}
+
+.difficulty-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+
+  &.diff-simple {
+    background: rgba(76, 175, 80, 0.2);
+    color: #81c784;
+  }
+
+  &.diff-intermediate {
+    background: rgba(33, 150, 243, 0.2);
+    color: #64b5f6;
+  }
+
+  &.diff-advanced {
+    background: rgba(156, 39, 176, 0.2);
+    color: #ba68c8;
+  }
+}
+
+.assessed-diff-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(212, 160, 23, 0.15);
+  color: var(--primary-color);
+  border: 1px solid rgba(212, 160, 23, 0.3);
+}
+
+.badge-ai {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.badge-revision {
+  background: rgba(100, 116, 139, 0.2);
+  color: #94a3b8;
+  border: 1px solid rgba(100, 116, 139, 0.3);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 11px;
+}
+
+.btn-review-toggle {
+  background: transparent;
+  border: 1px solid #475569;
+  color: #94a3b8;
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 1px 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &.reviewed {
+    background: rgba(34, 197, 94, 0.15);
+    border-color: #22c55e;
+    color: #4ade80;
+  }
+
+  &:hover {
+    border-color: #94a3b8;
+  }
+}

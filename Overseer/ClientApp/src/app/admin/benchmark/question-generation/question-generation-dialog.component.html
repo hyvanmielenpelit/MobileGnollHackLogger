@@ -1,0 +1,470 @@
+<!-- QUESTION GENERATION WORKSPACE
+     Setup on the left, progress and the suite's questions on the right. The progress status line
+     is the dialog's only polling live region. -->
+<dialog #dialog class="gh-dialog gh-dialog-fullscreen question-generation-dialog"
+        aria-labelledby="qgDialogTitle"
+        (cancel)="close()">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="qgDialogTitle" #heading tabindex="-1">{{ dialogTitle }}</h3>
+        @if (suite) {
+          <p class="dialog-subtitle">
+            Suite: {{ suite.name }}
+            @if (suite.gameSnapshotName) {
+              (Snapshot: {{ suite.gameSnapshotName }})
+            }
+          </p>
+        }
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close question generation" (click)="close()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;"
+             aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <div class="dialog-body">
+      <div class="qg-workspace">
+
+        <!-- SETUP COLUMN -->
+        <div class="qg-column qg-setup-column">
+          <fieldset class="gh-fieldset qg-setup" [disabled]="setupLocked" aria-describedby="qgSetupHint">
+            <legend>Generator setup</legend>
+            <p id="qgSetupHint" class="gh-fieldset-hint">
+              Used by Start, Generate More, every retry and every per-question regeneration.
+            </p>
+
+            <div class="form-group">
+              <label id="qgModelLabel">Generator model *</label>
+              <div class="custom-model-selector qg-model-selector">
+                <button type="button" id="qgModelTrigger" class="selector-trigger"
+                        (click)="toggleModelDropdown($event)"
+                        [class.open]="isModelDropdownOpen"
+                        [attr.aria-expanded]="isModelDropdownOpen"
+                        aria-haspopup="listbox"
+                        aria-labelledby="qgModelLabel qgModelTrigger">
+                  <span class="model-name" [class.text-muted]="!selectedModel">
+                    {{ selectedModel?.displayName || selectedModel?.modelId || 'Select Model' }}
+                  </span>
+                  @if (selectedModel?.thinkingLevel) {
+                    <span class="thinking-badge">{{ formatThinkingLevel(selectedModel?.thinkingLevel) }}</span>
+                  }
+                  @if (showReasoningBadge(selectedModel?.reasoningMode)) {
+                    <span class="reasoning-badge">{{ selectedModel?.reasoningMode }}</span>
+                  }
+                  @if (selectedModel?.provider) {
+                    <app-provider-badge [provider]="selectedModel?.provider"></app-provider-badge>
+                  }
+                  <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+
+                @if (isModelDropdownOpen) {
+                  <div class="selector-dropdown" role="listbox" aria-labelledby="qgModelLabel">
+                    @if (benchmarkCapableConfigs.length === 0) {
+                      <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled.</div>
+                    }
+                    @for (model of benchmarkCapableConfigs; track model.id) {
+                      <div class="model-option" role="option" tabindex="0"
+                           [attr.aria-selected]="modelConfigId === model.id"
+                           [class.selected]="modelConfigId === model.id"
+                           (click)="selectModel(model)"
+                           (keydown.enter)="selectModel(model, $event)"
+                           (keydown.space)="selectModel(model, $event)">
+                        <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                        @if (model.thinkingLevel) {
+                          <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                        }
+                        <app-provider-badge [provider]="model.provider"></app-provider-badge>
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+              <span class="form-hint">A strong reasoning model is recommended for authoring accurate rubrics grounded in the game snapshot.</span>
+            </div>
+
+            <div class="form-group">
+              <span class="qg-group-label" id="qgCountsLabel">Question counts per difficulty band</span>
+              <div class="counts-row" role="group" aria-labelledby="qgCountsLabel">
+                <div class="count-item">
+                  <label for="qg-count-simple">Simple</label>
+                  <input id="qg-count-simple" name="qgCountSimple" type="number" class="gh-input" min="0" max="25" [(ngModel)]="simpleCount" />
+                </div>
+                <div class="count-item">
+                  <label for="qg-count-intermediate">Intermediate</label>
+                  <input id="qg-count-intermediate" name="qgCountIntermediate" type="number" class="gh-input" min="0" max="25" [(ngModel)]="intermediateCount" />
+                </div>
+                <div class="count-item">
+                  <label for="qg-count-advanced">Advanced</label>
+                  <input id="qg-count-advanced" name="qgCountAdvanced" type="number" class="gh-input" min="0" max="25" [(ngModel)]="advancedCount" />
+                </div>
+              </div>
+              <span class="form-hint">Total: {{ totalCount }} questions to generate.</span>
+            </div>
+
+            <div class="form-group">
+              <label for="qg-instructions">Authoring instructions (operator prompt)</label>
+              <textarea id="qg-instructions" name="qgInstructions" class="gh-input gh-textarea-autosize qg-instructions" rows="8" [(ngModel)]="instructions"></textarea>
+              <span class="form-hint">Steers what decisions or aspects to probe. The rubric structure (the BOARD FACTS, REQUIRED, CRITICAL ERROR, SCOPE, FORM and SOURCE sections) is enforced by the harness. BOARD FACTS is the section's fixed name in every stored rubric; it lists the facts drawn from this game snapshot.</span>
+            </div>
+
+            <details class="gh-disclosure qg-model-receives">
+              <summary>What the model receives</summary>
+              <div class="gh-disclosure-body">
+                <p>
+                  Every request carries a fixed security preamble that marks the snapshot as untrusted
+                  data, the suite's game snapshot, the instructions above, the target difficulty band,
+                  the fixed rubric format with a worked example, and the questions already in the suite
+                  so that new ones do not repeat them. Only the instructions are editable here. A rubric
+                  regeneration also sends the question text and asks for its rubric alone; a question
+                  regeneration sends the question being replaced and asks for a different one.
+                </p>
+              </div>
+            </details>
+
+            <div class="qg-setup-actions">
+              <button type="button" class="btn-gh qg-start-btn"
+                      [disabled]="setupLocked || !modelConfigId || totalCount <= 0"
+                      (click)="start()">
+                @if (job) {
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                } @else {
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                }
+                {{ jobStarting ? 'Starting…' : startLabel }}
+              </button>
+              @if (isTerminal && retryableBands.length > 0) {
+                <button type="button" class="btn-gh qg-retry-failed-btn"
+                        [disabled]="setupLocked"
+                        (click)="retryFailedBands()">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+                  Retry Failed Bands
+                </button>
+              }
+            </div>
+          </fieldset>
+        </div>
+
+        <!-- MAIN COLUMN -->
+        <div class="qg-column qg-main-column">
+          @if (dialogError || jobFailureText) {
+            <div class="alert alert-danger qg-alert" role="alert" aria-live="assertive">
+              @if (jobFailureText) { <div>{{ jobFailureText }}</div> }
+              @if (dialogError) { <div>{{ dialogError }}</div> }
+            </div>
+          }
+
+          @if (job) {
+            <section class="qg-progress-panel" aria-label="Job progress">
+              <div class="job-progress-block">
+                <label class="progress-label" for="qgProgressBar">Progress</label>
+                <progress id="qgProgressBar" class="job-progress"
+                          [value]="generatedTotal"
+                          [max]="requestedTotal || 1"></progress>
+                <p class="progress-status" role="status" aria-live="polite">{{ progressLabel }}</p>
+              </div>
+
+              <dl class="run-stat-strip">
+                <div class="run-stat">
+                  <dt>Elapsed</dt>
+                  <dd>{{ elapsedLabel }}</dd>
+                </div>
+                <div class="run-stat">
+                  <dt>Items done</dt>
+                  <dd>{{ itemsDone }} / {{ visibleItems.length }}</dd>
+                </div>
+                <div class="run-stat">
+                  <dt>Model calls</dt>
+                  <dd>{{ job.totalModelCalls }}</dd>
+                </div>
+                <div class="run-stat">
+                  <dt>Prompt tokens</dt>
+                  <dd>{{ job.promptTokens | number }}</dd>
+                </div>
+                <div class="run-stat">
+                  <dt>Output tokens</dt>
+                  <dd>{{ job.outputTokens | number }}</dd>
+                </div>
+              </dl>
+
+              <ul class="job-item-list">
+                @for (item of visibleItems; track $index) {
+                  <li class="job-item-row">
+                    <span class="job-item-index">{{ itemLabel(item) }}</span>
+                    <span class="job-item-excerpt">{{ itemDetail(item) }}</span>
+                    <span class="job-status-chip" [class]="'status-' + itemState(item)">{{ itemStateLabel(item) }}</span>
+
+                    @if (canActOnBand(item)) {
+                      <span class="qg-item-actions">
+                        @if (itemState(item) === 'failed') {
+                          <button type="button" class="action-btn"
+                                  [attr.aria-label]="'Retry ' + bandLabel(item.difficulty) + ' band'"
+                                  [attr.aria-disabled]="setupLocked ? 'true' : null"
+                                  [attr.interestfor]="'tip-qg-retry-' + item.difficulty"
+                                  [attr.style]="'anchor-name: --tip-qg-retry-' + item.difficulty"
+                                  (click)="retryBand(item)">
+                            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+                          </button>
+                          <div popover="hint" class="gh-tooltip" [id]="'tip-qg-retry-' + item.difficulty"
+                               [attr.style]="'position-anchor: --tip-qg-retry-' + item.difficulty">Retry this band with the current setup</div>
+                        }
+                        @if (itemState(item) === 'partial') {
+                          <button type="button" class="action-btn"
+                                  [attr.aria-label]="'Generate the missing ' + bandLabel(item.difficulty) + ' questions'"
+                                  [attr.aria-disabled]="setupLocked ? 'true' : null"
+                                  [attr.interestfor]="'tip-qg-topup-' + item.difficulty"
+                                  [attr.style]="'anchor-name: --tip-qg-topup-' + item.difficulty"
+                                  (click)="retryBand(item)">
+                            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                          </button>
+                          <div popover="hint" class="gh-tooltip" [id]="'tip-qg-topup-' + item.difficulty"
+                               [attr.style]="'position-anchor: --tip-qg-topup-' + item.difficulty">Generate the {{ item.requestedCount - item.generatedCount }} missing question(s)</div>
+                        }
+                        @if (item.createdQuestionCount > 0) {
+                          <button type="button" class="action-btn action-btn-danger"
+                                  [attr.aria-label]="'Discard and regenerate ' + bandLabel(item.difficulty) + ' questions'"
+                                  [attr.aria-disabled]="setupLocked ? 'true' : null"
+                                  [attr.interestfor]="'tip-qg-discard-' + item.difficulty"
+                                  [attr.style]="'anchor-name: --tip-qg-discard-' + item.difficulty"
+                                  (click)="discardAndRegenerateBand(item)">
+                            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                          </button>
+                          <div popover="hint" class="gh-tooltip" [id]="'tip-qg-discard-' + item.difficulty"
+                               [attr.style]="'position-anchor: --tip-qg-discard-' + item.difficulty">Delete the {{ item.createdQuestionCount }} question(s) this band created and generate new ones</div>
+                        }
+                      </span>
+                    }
+
+                    @if (item.errorMessage) {
+                      <span class="job-item-error">{{ item.errorMessage }}</span>
+                    }
+                  </li>
+                }
+              </ul>
+
+              @if (job.log.length > 0) {
+                <div class="qg-log">
+                  <span class="qg-log-label" aria-hidden="true">Job log</span>
+                  <div class="log-entries" role="region" tabindex="0" aria-label="Job log">
+                    @for (entry of job.log; track $index) {
+                      <div [class]="severityClass(entry.severity)">
+                        <span class="log-time">{{ entry.timestampUtc | date:'HH:mm:ss' }}</span>
+                        <span class="log-msg">{{ entry.message }}</span>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+
+              <details class="job-diagnostics" [open]="diagnosticsOpen" (toggle)="onDiagnosticsToggle($event)">
+                <summary>Diagnostics</summary>
+                <div class="diagnostics-toolbar">
+                  <button type="button" class="action-btn"
+                          aria-label="Copy question generation diagnostics"
+                          interestfor="tip-qg-copy-diagnostics"
+                          style="anchor-name: --tip-qg-copy-diagnostics"
+                          (click)="copyDiagnostics()">
+                    @if (copiedDiagnostics) {
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                           viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    } @else {
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                           viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
+                    }
+                  </button>
+                  <div popover="hint" class="gh-tooltip" id="tip-qg-copy-diagnostics"
+                       style="position-anchor: --tip-qg-copy-diagnostics">Copy diagnostics</div>
+                  <p class="diagnostics-copy-status" role="status" aria-live="polite">{{ diagnosticsCopyStatus }}</p>
+                </div>
+                <pre tabindex="0"><code>{{ diagnosticsText }}</code></pre>
+              </details>
+            </section>
+          }
+
+          <section class="qg-questions-panel" aria-labelledby="qgQuestionsHeading">
+            <h4 id="qgQuestionsHeading" class="qg-questions-heading">
+              Questions in this suite ({{ questions.length }})
+              @if (newCount > 0) {
+                <span class="qg-new-count">{{ newCount }} new or updated</span>
+              }
+            </h4>
+
+            @if (selectionCount > 0) {
+              <div class="qg-selection-bar">
+                <span class="qg-selection-count">{{ selectionCount }} selected</span>
+                <button type="button" class="btn-gh btn-gh-small qg-regenerate-rubrics-btn"
+                        [attr.aria-disabled]="setupLocked ? 'true' : null"
+                        (click)="regenerateSelected('Rubric')">
+                  Regenerate Rubrics
+                </button>
+                <button type="button" class="btn-gh btn-gh-small qg-regenerate-questions-btn"
+                        [attr.aria-disabled]="setupLocked ? 'true' : null"
+                        (click)="regenerateSelected('Question')">
+                  Regenerate Questions
+                </button>
+                <button type="button" class="btn-ghost qg-clear-selection-btn" (click)="clearSelection()">Clear selection</button>
+              </div>
+            }
+
+            @if (questionsLoading && questions.length === 0) {
+              <p class="qg-questions-empty">Loading questions…</p>
+            } @else if (questions.length === 0) {
+              <p class="qg-questions-empty" role="status">No questions yet. Start a generation to fill the suite.</p>
+            } @else {
+              <div class="questions-list">
+                @for (q of questions; track q.id) {
+                  <div class="question-list-item" [class.is-generation-new]="newIds.has(q.id)">
+                    <label class="checkbox-label qg-select">
+                      <input type="checkbox"
+                             [checked]="isSelected(q.id)"
+                             (change)="toggleSelection(q.id)" />
+                      <span class="visually-hidden">Select question {{ q.orderIndex }}</span>
+                    </label>
+
+                    <div class="question-card-main">
+                      <div class="question-meta-row">
+                        <div class="meta-badges">
+                          <span class="q-order-badge">#{{ q.orderIndex }}</span>
+                          @if (q.isGenerated) {
+                            <span class="badge-ai">AI<span class="visually-hidden"> generated</span></span>
+                          }
+                          @if (q.itemRevision) {
+                            <span class="badge-revision"><span class="visually-hidden">Revision </span>r{{ q.itemRevision }}</span>
+                          }
+                          <span class="difficulty-badge" [class]="'diff-' + formatDifficulty(q.difficulty).toLowerCase()">
+                            {{ formatDifficulty(q.difficulty) }}
+                          </span>
+                          @if (newIds.has(q.id)) {
+                            <span class="qg-new-badge">New</span>
+                          }
+                          @if (q.isGenerated) {
+                            <button type="button" class="btn-review-toggle" [class.reviewed]="q.isReviewed"
+                                    [attr.aria-pressed]="!!q.isReviewed"
+                                    [attr.aria-label]="'Human-verified: question ' + q.orderIndex"
+                                    [attr.interestfor]="'tip-qg-q-verify-' + q.id"
+                                    [attr.style]="'anchor-name: --tip-qg-q-verify-' + q.id"
+                                    (click)="toggleReview(q)">
+                              @if (q.isReviewed) {
+                                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                Verified
+                              } @else {
+                                Verify
+                              }
+                            </button>
+                            <div popover="hint" class="gh-tooltip" [id]="'tip-qg-q-verify-' + q.id"
+                                 [attr.style]="'position-anchor: --tip-qg-q-verify-' + q.id">
+                              {{ q.isReviewed ? 'Human-verified. Click to unverify.' : 'Verify that you have reviewed this question and rubric.' }}
+                            </div>
+                          }
+                        </div>
+
+                        <div class="card-actions-group">
+                          <button type="button" class="action-btn"
+                                  [attr.aria-label]="'Edit question ' + q.orderIndex"
+                                  [attr.aria-disabled]="setupLocked ? 'true' : null"
+                                  [attr.interestfor]="'tip-qg-q-edit-' + q.id"
+                                  [attr.style]="'anchor-name: --tip-qg-q-edit-' + q.id"
+                                  (click)="edit(q)">
+                            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                          </button>
+                          <div popover="hint" class="gh-tooltip" [id]="'tip-qg-q-edit-' + q.id"
+                               [attr.style]="'position-anchor: --tip-qg-q-edit-' + q.id">Edit question</div>
+
+                          <button type="button" class="action-btn"
+                                  [attr.aria-label]="'Regenerate rubric for question ' + q.orderIndex"
+                                  [attr.aria-disabled]="setupLocked ? 'true' : null"
+                                  [attr.interestfor]="'tip-qg-q-rubric-' + q.id"
+                                  [attr.style]="'anchor-name: --tip-qg-q-rubric-' + q.id"
+                                  (click)="regenerate([q.id], 'Rubric')">
+                            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                          </button>
+                          <div popover="hint" class="gh-tooltip" [id]="'tip-qg-q-rubric-' + q.id"
+                               [attr.style]="'position-anchor: --tip-qg-q-rubric-' + q.id">Regenerate the rubric; the review is cleared</div>
+
+                          <button type="button" class="action-btn action-btn-danger"
+                                  [attr.aria-label]="'Regenerate question ' + q.orderIndex + ' and its rubric'"
+                                  [attr.aria-disabled]="setupLocked ? 'true' : null"
+                                  [attr.interestfor]="'tip-qg-q-replace-' + q.id"
+                                  [attr.style]="'anchor-name: --tip-qg-q-replace-' + q.id"
+                                  (click)="regenerate([q.id], 'Question')">
+                            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                          </button>
+                          <div popover="hint" class="gh-tooltip" [id]="'tip-qg-q-replace-' + q.id"
+                               [attr.style]="'position-anchor: --tip-qg-q-replace-' + q.id">Replace the question and its rubric</div>
+                        </div>
+                      </div>
+
+                      <div class="question-text-row">
+                        <p class="q-full-text">{{ q.questionText }}</p>
+                      </div>
+
+                      @if (q.expectedPoints) {
+                        <div class="q-criteria-box">
+                          <span class="criteria-label">Rubric:</span>
+                          <app-collapsible-markdown [text]="q.expectedPoints" label="rubric of question {{ q.orderIndex }}" />
+                        </div>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div class="dialog-footer">
+      @if (isRunning) {
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="close()">Run in Background</button>
+        <button type="button" class="btn-gh btn-gh-delete" [disabled]="cancelling" (click)="cancel()">
+          {{ cancelling ? 'Cancelling…' : 'Cancel Generation' }}
+        </button>
+      } @else {
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="close()">Close</button>
+      }
+    </div>
+  </div>
+</dialog>
+
+<!-- LOCAL CONFIRMATION, opened on top of the workspace -->
+<dialog #confirmDialog class="gh-dialog qg-confirm-dialog"
+        aria-labelledby="qgConfirmTitle"
+        (cancel)="closeConfirm()">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="qgConfirmTitle">{{ confirmTitle }}</h3>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close confirmation" (click)="closeConfirm()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;"
+             aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="dialog-body">
+      <p class="qg-confirm-message">{{ confirmMessage }}</p>
+      @if (confirmDangerNotice) {
+        <p class="qg-confirm-danger">{{ confirmDangerNotice }}</p>
+      }
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="closeConfirm()">Cancel</button>
+      <button type="button" class="qg-confirm-action" [class]="confirmButtonClass" (click)="executeConfirm()">{{ confirmButtonText }}</button>
+    </div>
+  </div>
+</dialog>

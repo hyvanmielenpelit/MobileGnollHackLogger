@@ -368,6 +368,37 @@ describe('AdminBenchmarkComponent', () => {
     }
   });
 
+  it('sets generationDialogVisible and passes the suite to the child when Generate Questions is clicked', () => {
+    component.activeSubTab = 'suites';
+    const suiteWithSnapshot = {
+      id: 1,
+      name: 'Board Suite',
+      description: '',
+      createdAtUtc: '2026-09-01T00:00:00Z',
+      modifiedAtUtc: null,
+      questionCount: 18,
+      assessedQuestionCount: 18,
+      difficultyFullyAssessed: true,
+      gameSnapshotId: 7,
+      gameSnapshotName: 'Low HP'
+    } as any;
+    component.suites = [suiteWithSnapshot];
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    const generateBtn = Array.from(host.querySelectorAll<HTMLElement>('.suite-card-actions button'))
+      .find(b => (b.textContent ?? '').trim() === 'Generate Questions');
+    expect(generateBtn).withContext('Generate Questions button should render for a suite with a game snapshot').toBeTruthy();
+
+    // The click sets component state synchronously through the (click) binding; fixture.detectChanges()
+    // is deliberately not called again afterwards, so the newly visible child's own ngOnChanges (which
+    // calls service methods this spec does not stub) never fires.
+    generateBtn!.click();
+
+    expect(component.generationDialogVisible).toBeTrue();
+    expect(component.generationSuiteForJob).toBe(suiteWithSnapshot);
+  });
+
   it('should render question expected criteria via CollapsibleMarkdownComponent in questions list', () => {
     component.activeSubTab = 'suites';
     component.currentSuiteForQuestions = {
@@ -453,14 +484,6 @@ describe('AdminBenchmarkComponent', () => {
     editor!.componentInstance.valueChange.emit('**Bold**\n- Changed');
     fixture.detectChanges();
     expect(component.suiteForm.description).toBe('**Bold**\n- Changed');
-  });
-
-  it('should mark the Authoring Instructions textarea as the shared autosize class', () => {
-    fixture.detectChanges();
-
-    const textarea: HTMLTextAreaElement = fixture.nativeElement.querySelector('#genInstructions');
-    expect(textarea).toBeTruthy();
-    expect(textarea.classList.contains('gh-textarea-autosize')).toBeTrue();
   });
 
   describe('AI Auto-Rate All Difficulties disabled state', () => {

@@ -367,18 +367,40 @@ export interface StartQuestionGenerationRequest {
   instructions?: string | null;
 }
 
+/** `Band` generates a difficulty band; `RubricOnly` and `ReplaceQuestion` rewrite one existing question in place. */
+export type QuestionGenerationItemKind = 'Band' | 'RubricOnly' | 'ReplaceQuestion';
+
 export interface QuestionGenerationJobItemDto {
+  kind: QuestionGenerationItemKind;
   difficulty: number;
+  difficultyName: string;
   requestedCount: number;
   generatedCount: number;
+  /** `Pending` | `Generating` | `Repairing` | `Completed` | `Failed` | `Skipped`. */
   status: string;
   errorMessage?: string | null;
+  /** Set for the per-question kinds only. */
+  targetQuestionId?: number | null;
+  targetQuestionOrderIndex?: number | null;
+  /** The first 120 characters of the target question's text. */
+  targetQuestionExcerpt?: string | null;
+  startedAtUtc?: string | null;
+  completedAtUtc?: string | null;
+  modelCalls: number;
+  promptTokens: number;
+  outputTokens: number;
+  createdQuestionCount: number;
+  updatedQuestionCount: number;
+  discardedQuestionCount: number;
 }
 
 export interface QuestionGenerationJobLogEntryDto {
   timestampUtc: string;
   message: string;
+  /** Lowercase: `info` | `warning` | `error`. */
   severity: string;
+  /** The raw provider error or model response behind a failure line, truncated by the server. */
+  rawExcerpt?: string | null;
 }
 
 export interface QuestionGenerationJobDto {
@@ -387,14 +409,51 @@ export interface QuestionGenerationJobDto {
   suiteName: string;
   generatorConfigId: number;
   generatorDisplayName: string;
+  generatorProvider?: string | null;
+  generatorModelId?: string | null;
+  generatorThinkingLevel?: string | null;
+  generatorReasoningMode?: string | null;
+  generatorServiceTier?: string | null;
+  gameSnapshotId?: number | null;
+  gameSnapshotName?: string | null;
+  /** `Generation` | `Retry` | `Regeneration`. */
+  jobKind: string;
+  retryOfJobId?: string | null;
   instructions: string;
+  startedByUserId?: string | null;
+  /** `Running` | `Completed` | `CompletedWithErrors` | `Cancelled` | `Failed`. */
   status: string;
   startedAtUtc: string;
   completedAtUtc?: string | null;
+  totalModelCalls: number;
   promptTokens: number;
   outputTokens: number;
   items: QuestionGenerationJobItemDto[];
   log: QuestionGenerationJobLogEntryDto[];
+}
+
+/**
+ * Starts a new job over the chosen bands of a finished one. Generator and instructions left
+ * null fall back to the previous job's.
+ */
+export interface RetryQuestionGenerationRequest {
+  /** Band numbers: 1 Simple, 2 Intermediate, 3 Advanced. */
+  difficulties: number[];
+  /** True deletes the band's previously created questions and generates the full count again. */
+  discardExisting: boolean;
+  generatorModelConfigurationId?: number | null;
+  instructions?: string | null;
+}
+
+/** `Rubric` rewrites only the rubric; `Question` replaces the question text and its rubric. */
+export type RegenerateQuestionsScope = 'Rubric' | 'Question';
+
+export interface RegenerateQuestionsRequest {
+  suiteId: number;
+  questionIds: number[];
+  scope: RegenerateQuestionsScope;
+  generatorModelConfigurationId: number;
+  instructions?: string | null;
 }
 
 export interface StartRubricCheckRequest {
@@ -1849,6 +1908,14 @@ export class AdminBenchmarkService {
 
   cancelQuestionGeneration(jobId: string): Observable<{ cancelled: boolean }> {
     return this.http.post<{ cancelled: boolean }>(`/api/admin/benchmark/question-generations/${jobId}/cancel`, {});
+  }
+
+  retryQuestionGeneration(jobId: string, req: RetryQuestionGenerationRequest): Observable<{ jobId: string }> {
+    return this.http.post<{ jobId: string }>(`/api/admin/benchmark/question-generations/${jobId}/retry`, req);
+  }
+
+  regenerateQuestions(req: RegenerateQuestionsRequest): Observable<{ jobId: string }> {
+    return this.http.post<{ jobId: string }>('/api/admin/benchmark/question-generations/regenerate', req);
   }
 
   // Rubric Checks

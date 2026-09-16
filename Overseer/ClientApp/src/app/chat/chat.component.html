@@ -667,7 +667,7 @@
         <div class="input-area">
           <div class="input-area-top">
             @if (hasModel) {
-              <div class="custom-model-selector model-selector-wrapper">
+              <div class="custom-model-selector compact drops-up model-selector-wrapper">
                 @if ((userModels.length + systemModels.length) > 1) {
                   <button class="selector-trigger" (click)="toggleModelDropdown($event)" [class.open]="isModelDropdownOpen">
                     <span class="model-name">{{ selectedModel?.displayName || selectedModel?.modelId || 'Select Model' }}</span>

@@ -27,9 +27,6 @@ import {
   BenchmarkSecondOpinionMode,
   BENCHMARK_SECOND_OPINION_MODES,
   BenchmarkGameSnapshotDto,
-  QuestionGenerationJobDto,
-  QuestionGenerationJobItemDto,
-  QuestionGenerationJobLogEntryDto,
   BenchmarkRunLimitsDto,
   BenchmarkRunSeriesDto,
   BenchmarkRunGroupDto,
@@ -49,12 +46,14 @@ import { MarkdownEditorComponent } from '../../shared/markdown-editor/markdown-e
 import { SuiteHealthComponent, SuiteHealthTab } from './suite-health/suite-health.component';
 import { MultiRunComponent } from './multi-run/multi-run.component';
 import { MultiRunProgressDialogComponent } from './multi-run/multi-run-progress-dialog.component';
+import { QuestionGenerationDialogComponent } from './question-generation/question-generation-dialog.component';
 import { BenchmarkCostPanelComponent } from './cost-panel/benchmark-cost-panel.component';
 import { SnapshotViewerComponent } from '../../shared/snapshot-viewer/snapshot-viewer.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import { SystemService } from '../../services/system.service';
 import { BenchmarkCompletionSoundService } from '../../services/benchmark-completion-sound.service';
 import { parseServerUtcDate, elapsedMsBetween } from '../../utils/date.util';
+import { formatThinkingLevel, showReasoningBadge, formatServiceTier, formatDifficulty } from '../../utils/model-badge-format.util';
 import { TableState, exactFilter } from '../../shared/data-table/table-state';
 import { SortHeaderComponent } from '../../shared/data-table/sort-header.component';
 import { TablePagerComponent } from '../../shared/data-table/table-pager.component';
@@ -214,6 +213,7 @@ interface BenchmarkRunSettings {
     CommonModule, DecimalPipe, FormsModule, CollapsibleMarkdownComponent, MarkdownEditorComponent,
     SuiteHealthComponent,
     SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent,
+    QuestionGenerationDialogComponent,
     SortHeaderComponent, TablePagerComponent, ModelComparisonComponent,
     ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, ProviderBadgeComponent
   ],
@@ -255,8 +255,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   @ViewChild('suiteDescriptionEditor') suiteDescriptionEditor?: MarkdownEditorComponent;
   @ViewChild('snapshotViewer') snapshotViewer?: SnapshotViewerComponent;
   @ViewChild('multiRunPanel') multiRunPanel?: MultiRunComponent;
-  @ViewChild('generationDialog') generationDialog!: ElementRef<HTMLDialogElement>;
-  @ViewChild('generationProgressHeading') generationProgressHeading?: ElementRef<HTMLElement>;
+  @ViewChild(QuestionGenerationDialogComponent) generationDialog?: QuestionGenerationDialogComponent;
   @ViewChild('importDefaultSuitesDialog') importDefaultSuitesDialog!: ElementRef<HTMLDialogElement>;
   suiteHealthInitialTab: SuiteHealthTab = 'items';
 
@@ -1366,9 +1365,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.isRetryAssessorDropdownOpen && !target.closest('.retry-assessor-model-selector')) {
       this.isRetryAssessorDropdownOpen = false;
     }
-    if (this.isGenerationModelDropdownOpen && !target.closest('.generation-model-selector')) {
-      this.isGenerationModelDropdownOpen = false;
-    }
   }
 
   get benchmarkCapableConfigs(): SystemAiConfigDto[] {
@@ -1597,14 +1593,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   formatThinkingLevel(level: string | null | undefined): string {
-    if (!level) return 'Default';
-    return level.charAt(0).toUpperCase() + level.slice(1);
+    return formatThinkingLevel(level);
   }
 
   showReasoningBadge(mode: string | null | undefined): boolean {
-    if (!mode) return false;
-    const lower = mode.toLowerCase();
-    return lower !== 'default' && lower !== 'standard';
+    return showReasoningBadge(mode);
   }
 
   formatPickerPrice(config: SystemAiConfigDto): string {
@@ -2619,6 +2612,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           this.questionFormDialog?.nativeElement.close();
           this.loadQuestions(this.currentSuiteForQuestions!.id);
           this.loadSuites();
+          if (this.generationDialogVisible) {
+            this.generationDialog?.refreshQuestions();
+          }
         },
         error: (err) => console.error('Failed to update question', err)
       });
@@ -2628,6 +2624,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           this.questionFormDialog?.nativeElement.close();
           this.loadQuestions(this.currentSuiteForQuestions!.id);
           this.loadSuites();
+          if (this.generationDialogVisible) {
+            this.generationDialog?.refreshQuestions();
+          }
         },
         error: (err) => console.error('Failed to create question', err)
       });
@@ -5906,10 +5905,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   formatDifficulty(diff: string | number): string {
-    if (diff === 1 || diff === 'Simple') return 'Simple';
-    if (diff === 2 || diff === 'Intermediate') return 'Intermediate';
-    if (diff === 3 || diff === 'Advanced') return 'Advanced';
-    return String(diff);
+    return formatDifficulty(diff);
   }
 
   parseDifficulty(diff: string | number): number {
@@ -6056,9 +6052,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   formatServiceTier(tier: string | null | undefined): string {
-    if (!tier) return 'None';
-    if (tier.toLowerCase() === 'standard_only') return 'Standard Only';
-    return tier.charAt(0).toUpperCase() + tier.slice(1);
+    return formatServiceTier(tier);
   }
 
   difficultyProgressLabel(suite?: BenchmarkSuiteDto | null): string {
@@ -6657,20 +6651,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return '';
   }
 
-  // --- Question Generation & Game Snapshot State ---
-  generationDialogPhase: 'select' | 'progress' = 'select';
-  isGenerationModelDropdownOpen = false;
-  generationModelConfigId: number | null = null;
+  // --- Question Generation State ---
+  generationDialogVisible = false;
   generationSuiteForJob: BenchmarkSuiteDto | null = null;
-  generationJobStarting = false;
-  generationDialogError: string | null = null;
-  generationJob: QuestionGenerationJobDto | null = null;
-  generationPollInterval: any = null;
-  cancellingGeneration = false;
-  generationSimpleCount = 6;
-  generationIntermediateCount = 6;
-  generationAdvancedCount = 6;
-  generationInstructions = `Write benchmark questions a GnollHack player would actually ask while looking at this exact game state. Each question must be unanswerable without the snapshot — if it could be answered from general GnollHack knowledge alone, it belongs in the knowledge suite, not here. Vary the decision type across questions; do not ask the same thing twice in different words. In each rubric, state only snapshot facts you can point to in the snapshot, and mark anything you infer as an inference.`;
 
   // --- Game Snapshot & Question Generation & Review Handlers ---
 
@@ -6745,24 +6728,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   openGenerationDialog(suite: BenchmarkSuiteDto): void {
     this.generationSuiteForJob = suite;
-    this.generationDialogPhase = 'select';
-    this.generationDialogError = null;
-    this.generationJob = null;
-    this.isGenerationModelDropdownOpen = false;
-    if (this.assessorConfigId && this.benchmarkCapableConfigs.some(c => c.id === this.assessorConfigId)) {
-      this.generationModelConfigId = this.assessorConfigId;
-    } else {
-      this.generationModelConfigId = this.benchmarkCapableConfigs[0]?.id ?? null;
-    }
-    this.generationDialog?.nativeElement.showModal();
-    this.cdr.detectChanges();
+    this.generationDialogVisible = true;
   }
 
-  closeGenerationDialog(): void {
-    this.generationDialog?.nativeElement.close();
-    this.isGenerationModelDropdownOpen = false;
-    this.stopGenerationPolling();
-    if (this.generationJob?.status === 'Completed' && this.generationSuiteForJob) {
+  /** The child reports whether any question changed while it was open, so Manage Questions and the suite cards only reload when there is something new to show. */
+  onGenerationDialogClosed(e: { questionsChanged: boolean }): void {
+    this.generationDialogVisible = false;
+    if (e.questionsChanged && this.generationSuiteForJob) {
       this.loadSuites();
       if (this.currentSuiteForQuestions?.id === this.generationSuiteForJob.id) {
         this.loadQuestions(this.generationSuiteForJob.id);
@@ -6770,112 +6742,16 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
-  toggleGenerationModelDropdown(event: Event): void {
-    event.stopPropagation();
-    this.isGenerationModelDropdownOpen = !this.isGenerationModelDropdownOpen;
-    this.cdr.detectChanges();
-  }
-
-  selectGenerationModel(config: SystemAiConfigDto): void {
-    this.generationModelConfigId = config.id;
-    this.isGenerationModelDropdownOpen = false;
-    this.cdr.detectChanges();
-  }
-
-  get selectedGenerationModel(): SystemAiConfigDto | undefined {
-    return this.benchmarkCapableConfigs.find(c => c.id === this.generationModelConfigId);
-  }
-
-  get totalGenerationCount(): number {
-    return (this.generationSimpleCount || 0) + (this.generationIntermediateCount || 0) + (this.generationAdvancedCount || 0);
-  }
-
-  confirmGeneration(): void {
-    if (!this.generationSuiteForJob || !this.generationModelConfigId) return;
-    if (this.totalGenerationCount <= 0) {
-      this.generationDialogError = 'Please request at least one question.';
-      return;
-    }
-    this.generationJobStarting = true;
-    this.generationDialogError = null;
-
-    this.benchmarkService.startQuestionGeneration({
-      suiteId: this.generationSuiteForJob.id,
-      generatorModelConfigurationId: this.generationModelConfigId,
-      simpleCount: this.generationSimpleCount,
-      intermediateCount: this.generationIntermediateCount,
-      advancedCount: this.generationAdvancedCount,
-      instructions: this.generationInstructions.trim() || undefined
-    }).subscribe({
-      next: (res) => {
-        this.generationJobStarting = false;
-        this.generationDialogPhase = 'progress';
-        this.startGenerationPolling(res.jobId);
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.generationJobStarting = false;
-        if (err.status === 409 && err.error) {
-          this.generationJob = err.error as QuestionGenerationJobDto;
-          this.generationDialogPhase = 'progress';
-          this.startGenerationPolling(this.generationJob.id);
-        } else {
-          this.generationDialogError = err?.error?.message || err?.error || 'Failed to start question generation.';
-        }
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  startGenerationPolling(jobId: string): void {
-    this.stopGenerationPolling();
-    this.pollGenerationJob(jobId);
-
-    this.generationPollInterval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return;
-      this.pollGenerationJob(jobId);
-    }, 2000);
-  }
-
-  stopGenerationPolling(): void {
-    if (this.generationPollInterval) {
-      clearInterval(this.generationPollInterval);
-      this.generationPollInterval = null;
+  /** Fired on every job item completion while the workspace stays open, so a long-running generation keeps the suite card and an open Manage Questions list current. */
+  onGenerationQuestionsChanged(suiteId: number): void {
+    this.loadSuites();
+    if (this.currentSuiteForQuestions?.id === suiteId) {
+      this.loadQuestions(suiteId);
     }
   }
 
-  pollGenerationJob(jobId: string): void {
-    this.benchmarkService.getQuestionGeneration(jobId).subscribe({
-      next: (job) => {
-        this.generationJob = job;
-        if (job.status !== 'Running') {
-          this.stopGenerationPolling();
-          this.loadSuites();
-        }
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.generationDialogError = err?.error?.message || err?.error || 'Failed to poll generation job.';
-        this.stopGenerationPolling();
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  cancelGenerationJob(): void {
-    if (!this.generationJob || this.generationJob.status !== 'Running') return;
-    this.cancellingGeneration = true;
-    this.benchmarkService.cancelQuestionGeneration(this.generationJob.id).subscribe({
-      next: () => {
-        this.cancellingGeneration = false;
-        this.stopGenerationPolling();
-        this.pollGenerationJob(this.generationJob!.id);
-      },
-      error: (err) => {
-        this.cancellingGeneration = false;
-        this.cdr.detectChanges();
-      }
-    });
+  onGenerationEditQuestion(q: BenchmarkQuestionDto): void {
+    this.openEditQuestion(q);
   }
 
 }

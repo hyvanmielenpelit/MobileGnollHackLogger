@@ -6,13 +6,11 @@
  * only this component, so the dialog would quietly stop looking like the rest of the application
  * while every other view stayed correct.
  *
- * The badge classes below (.model-name, .thinking-badge, .reasoning-badge, .parallel-badge,
- * .tier-badge, .second-opinion-mode-badge) and the progress vocabulary (.progress-heading,
- * .run-stage-rail, .run-stat-strip, .job-diagnostics …) are *duplicated* from
- * benchmark.component.scss, which owns them as component-scoped styles. They belong in
- * styles.scss so both components can share one definition; moving them is a change to a file this
- * component does not own, so it is left as a follow-up rather than done halfway. .provider-badge
- * is defined once, globally, in styles.scss.
+ * .progress-heading, .job-progress-block, .run-stat-strip, .job-status-chip, .job-diagnostics,
+ * .model-name, .thinking-badge and .reasoning-badge also live in styles.scss now, shared with the
+ * run, difficulty and question-generation dialogs. .parallel-badge, .tier-badge and
+ * .second-opinion-mode-badge stay local: no sibling reuses them yet. .provider-badge is defined
+ * once, globally, in styles.scss.
  */
 
 .gh-dialog.multi-run-progress-dialog {
@@ -105,19 +103,6 @@
   }
 }
 
-.progress-heading {
-  margin: 0 0 16px 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--primary-color);
-
-  &:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 4px;
-    border-radius: 4px;
-  }
-}
-
 /* --- Model strip ------------------------------------------------------------------------- */
 
 .run-model-strip {
@@ -167,33 +152,7 @@
   }
 }
 
-.model-name {
-  font-weight: 500;
-  color: #fff;
-  overflow-wrap: anywhere;
-}
-
-.thinking-badge {
-  font-size: 11px;
-  font-weight: 600;
-  color: #7dd3fc;
-  border: 1px solid rgba(125, 211, 252, 0.4);
-  background: rgba(125, 211, 252, 0.08);
-  padding: 1px 5px;
-  border-radius: 4px;
-  text-transform: uppercase;
-}
-
-.reasoning-badge {
-  font-size: 11px;
-  font-weight: 600;
-  color: #c084fc;
-  border: 1px solid rgba(192, 132, 252, 0.4);
-  background: rgba(192, 132, 252, 0.08);
-  padding: 1px 5px;
-  border-radius: 4px;
-  text-transform: uppercase;
-}
+/* .model-name, .thinking-badge and .reasoning-badge live in styles.scss. */
 
 .parallel-badge {
   font-size: 11px;
@@ -294,46 +253,6 @@
   }
 }
 
-.job-progress-block {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 16px;
-
-  .progress-label {
-    font-size: 13px;
-    font-weight: 500;
-    color: #ccc;
-    margin: 0;
-  }
-
-  .job-progress {
-    width: 100%;
-    height: 10px;
-    border-radius: 5px;
-    overflow: hidden;
-    appearance: none;
-    -webkit-appearance: none;
-    accent-color: var(--primary-color);
-
-    &::-webkit-progress-bar {
-      background-color: #2a2a2a;
-      border-radius: 5px;
-    }
-
-    &::-webkit-progress-value {
-      background-color: var(--primary-color);
-      border-radius: 5px;
-    }
-  }
-
-  .progress-status {
-    margin: 0;
-    font-size: 12px;
-    color: #aaa;
-  }
-}
-
 /* --- Named pause states ------------------------------------------------------------------- */
 
 .series-state-block {
@@ -390,37 +309,8 @@
 
 /* --- Stat strip -------------------------------------------------------------------------- */
 
-/* Not a live region: these change on every poll, and announcing them beside the stage line
-   would be announcement spam. */
-.run-stat-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 10px;
-  margin: 0 0 16px 0;
-  padding: 0;
-
-  .run-stat {
-    padding: 8px 10px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 6px;
-    background: rgba(0, 0, 0, 0.2);
-
-    dt {
-      margin: 0 0 2px 0;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: #888;
-    }
-
-    dd {
-      margin: 0;
-      font-size: 14px;
-      font-weight: 600;
-      color: #eee;
-    }
-  }
-}
+/* .run-stat-strip lives in styles.scss, shared with the run, difficulty and
+   question-generation dialogs. */
 
 /* --- Member table ------------------------------------------------------------------------ */
 
@@ -487,139 +377,18 @@
   }
 }
 
-.job-status-chip {
-  display: inline-flex;
-  align-items: center;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-
-  &.status-pending {
-    background: rgba(255, 255, 255, 0.1);
-    color: #aaa;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-  }
-
-  &.status-answering {
-    background: rgba(212, 160, 23, 0.15);
-    color: var(--primary-color, #d4a017);
-    border: 1px solid rgba(212, 160, 23, 0.35);
-    animation: multi-run-pulse 1.5s infinite ease-in-out;
-  }
-
-  &.status-scored {
-    background: rgba(46, 160, 67, 0.15);
-    color: #3fb950;
-    border: 1px solid rgba(46, 160, 67, 0.3);
-  }
-
-  &.status-ok {
-    background: rgba(46, 160, 67, 0.08);
-    color: #8fce9a;
-    border: 1px solid rgba(46, 160, 67, 0.2);
-  }
-
-  &.status-failed {
-    background: rgba(248, 81, 73, 0.15);
-    color: #f85149;
-    border: 1px solid rgba(248, 81, 73, 0.3);
-  }
-
-  &.status-skipped {
-    background: rgba(212, 160, 23, 0.12);
-    color: #d4a017;
-    border: 1px solid rgba(212, 160, 23, 0.3);
-  }
-}
-
-@keyframes multi-run-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
-}
+/* .job-status-chip lives in styles.scss, using its own pulse-assessing animation; every
+   status class this dialog sets (memberStatusClass) is defined there. */
 
 /* --- Diagnostics -------------------------------------------------------------------------- */
 
-.job-diagnostics {
-  border-top: 1px solid #333;
-  padding-top: 12px;
-
-  summary {
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
-    color: #aaa;
-    margin-bottom: 8px;
-
-    &:hover {
-      color: #ddd;
-    }
-
-    &:focus-visible {
-      outline: 2px solid var(--primary-color);
-      outline-offset: 4px;
-      border-radius: 4px;
-    }
-  }
-
-  &[open] > summary {
-    color: var(--primary-color);
-  }
-
-  .job-diagnostics-count {
-    display: inline-flex;
-    align-items: center;
-    padding: 1px 6px;
-    border-radius: 10px;
-    font-size: 11px;
-    font-weight: 600;
-    margin-left: 6px;
-    background: rgba(248, 81, 73, 0.15);
-    color: #f85149;
-    border: 1px solid rgba(248, 81, 73, 0.3);
-
-    &.analysis-count {
-      background: rgba(46, 160, 67, 0.15);
-      color: #3fb950;
-      border-color: rgba(46, 160, 67, 0.3);
-    }
-  }
-
-  .diagnostics-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
-  }
-
-  .diagnostics-copy-status {
-    margin: 0;
-    font-size: 12px;
-    color: var(--primary-color);
-    min-height: 1em;   /* reserve the line so the toolbar does not jump when it fills */
-  }
-
-  pre {
-    max-height: 16rem;
-    overflow-y: auto;
-    background: #111;
-    border: 1px solid #333;
-    border-radius: 6px;
-    padding: 10px;
-    font-family: monospace;
-    font-size: 12px;
-    color: #ccc;
-    white-space: pre-wrap;
-    word-break: break-word;
-    margin: 0;
-
-    &:focus-visible {
-      outline: 2px solid var(--primary-color);
-      outline-offset: 1px;
-    }
-  }
+/* .job-diagnostics lives in styles.scss. .analysis-count is local: it colours the group
+   analysis run count green against the shared red-by-default .job-diagnostics-count, and no
+   sibling dialog needs that modifier yet. */
+.job-diagnostics .job-diagnostics-count.analysis-count {
+  background: rgba(46, 160, 67, 0.15);
+  color: #3fb950;
+  border-color: rgba(46, 160, 67, 0.3);
 }
 
 /* The report button stays focusable while unavailable (aria-disabled, not disabled), because its
@@ -633,8 +402,4 @@
   margin-top: 15px;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .job-status-chip.status-answering {
-    animation: none;
-  }
-}
+/* .job-status-chip's reduced-motion rule lives in styles.scss beside the chip. */

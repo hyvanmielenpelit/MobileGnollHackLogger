@@ -29,6 +29,7 @@ import {
 import { SystemService } from '../../../services/system.service';
 import { elapsedMsBetween, parseServerUtcDate } from '../../../utils/date.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
+import { formatThinkingLevel, showReasoningBadge, formatServiceTier } from '../../../utils/model-badge-format.util';
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
 
 /**
@@ -759,25 +760,19 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
   }
 
   // -------------------------------------------------------------------------------------------
-  // Formatting helpers. Local copies rather than imports: the originals are instance members of
-  // AdminBenchmarkComponent, which is a component and not a utility.
+  // Formatting helpers, delegating to app/utils/model-badge-format.util.
   // -------------------------------------------------------------------------------------------
 
   formatThinkingLevel(level: string | null | undefined): string {
-    if (!level) return 'Default';
-    return level.charAt(0).toUpperCase() + level.slice(1);
+    return formatThinkingLevel(level);
   }
 
   showReasoningBadge(mode: string | null | undefined): boolean {
-    if (!mode) return false;
-    const lower = mode.toLowerCase();
-    return lower !== 'default' && lower !== 'standard';
+    return showReasoningBadge(mode);
   }
 
   formatServiceTier(tier: string | null | undefined): string {
-    if (!tier) return 'None';
-    if (tier.toLowerCase() === 'standard_only') return 'Standard Only';
-    return tier.charAt(0).toUpperCase() + tier.slice(1);
+    return formatServiceTier(tier);
   }
 
   formatSecondOpinionMode(mode: number | null | undefined): string {

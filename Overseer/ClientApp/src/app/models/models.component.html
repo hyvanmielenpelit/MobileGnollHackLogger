@@ -210,7 +210,7 @@
       @if (titleGenerationEnabled) {
         <div class="form-group title-gen-form">
           <div class="d-flex align-items-center flex-gap-15">
-            <div class="custom-model-selector title-model-selector-wrapper">
+            <div class="custom-model-selector compact title-model-selector-wrapper">
               <button type="button" class="selector-trigger" (click)="toggleTitleDropdown($event)" [class.open]="isTitleDropdownOpen">
                 <span class="model-name">{{ selectedTitleModelDisplay }}</span>
                 @if (selectedTitleModel?.thinkingLevel) {

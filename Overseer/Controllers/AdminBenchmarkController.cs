@@ -1639,15 +1639,8 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(new { error = complianceMsg });
         }
 
-        var generatorConfig = await _dbContext.SystemAiApiConfigurations.FindAsync(new object[] { request.GeneratorModelConfigurationId }, ct);
-        if (generatorConfig == null || !generatorConfig.IsEnabled)
-        {
-            return BadRequest(new { error = "Generator model configuration not found or disabled." });
-        }
-        if (string.IsNullOrWhiteSpace(generatorConfig.EncryptedApiKey))
-        {
-            return BadRequest(new { error = "Generator model configuration has no API key." });
-        }
+        var (generatorConfig, generatorError) = await ResolveGeneratorAsync(request.GeneratorModelConfigurationId, ct);
+        if (generatorError != null) return generatorError;
 
         string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
         var cts = new CancellationTokenSource();
@@ -1656,8 +1649,15 @@ public class AdminBenchmarkController : ControllerBase
         {
             SuiteId = suite.Id,
             SuiteName = suite.Name,
-            GeneratorConfigId = generatorConfig.Id,
+            GeneratorConfigId = generatorConfig!.Id,
             GeneratorDisplayName = generatorConfig.DisplayName,
+            GeneratorProvider = generatorConfig.Provider,
+            GeneratorModelId = generatorConfig.ModelId,
+            GeneratorThinkingLevel = generatorConfig.ThinkingLevel,
+            GeneratorReasoningMode = generatorConfig.ReasoningMode,
+            GeneratorServiceTier = generatorConfig.ServiceTier,
+            GameSnapshotId = suite.GameSnapshotId,
+            GameSnapshotName = suite.GameSnapshot.Name,
             Instructions = request.Instructions?.Trim() ?? string.Empty,
             StartedByUserId = string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId,
             Cts = cts,
@@ -1674,9 +1674,12 @@ public class AdminBenchmarkController : ControllerBase
             return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
         }
 
+        // The job outlives the request; nothing request-scoped may be used past this point.
         _ = Task.Run(async () =>
         {
-            await _generationService.RunGenerationAsync(job.Id, cts.Token);
+            using var scope = _scopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<BenchmarkGenerationService>();
+            await svc.RunGenerationAsync(job.Id, cts.Token);
         });
 
         return Accepted(new { jobId = job.Id });
@@ -1709,6 +1712,206 @@ public class AdminBenchmarkController : ControllerBase
         bool cancelled = _generationJobManager.TryCancel(jobId);
         return Ok(new { cancelled });
     }
+
+    [HttpPost("question-generations/{jobId}/retry")]
+    public async Task<IActionResult> RetryQuestionGeneration(string jobId, [FromBody] RetryQuestionGenerationRequest request, CancellationToken ct)
+    {
+        var previous = _generationJobManager.TryGet(jobId);
+        if (previous == null) return NotFound();
+        if (previous.Status == BenchmarkGenerationJobStatus.Running)
+        {
+            return StatusCode(StatusCodes.Status409Conflict, previous.ToDto());
+        }
+
+        if (request.Difficulties == null || request.Difficulties.Length == 0)
+        {
+            return BadRequest(new { error = "At least one band must be selected to retry." });
+        }
+
+        var jobBands = new HashSet<BenchmarkDifficulty>(previous.Items
+            .Where(i => i.Kind == BenchmarkGenerationItemKind.Band)
+            .Select(i => i.Difficulty));
+
+        var bands = new List<BenchmarkDifficulty>();
+        foreach (int d in request.Difficulties)
+        {
+            var band = (BenchmarkDifficulty)d;
+            if (!jobBands.Contains(band))
+            {
+                return BadRequest(new { error = $"Difficulty {d} is not one of this job's bands." });
+            }
+            bands.Add(band);
+        }
+
+        long generatorConfigId = request.GeneratorModelConfigurationId ?? previous.GeneratorConfigId;
+        var (generatorConfig, generatorError) = await ResolveGeneratorAsync(generatorConfigId, ct);
+        if (generatorError != null) return generatorError;
+
+        string instructions = request.Instructions != null ? request.Instructions.Trim() : previous.Instructions;
+        string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+
+        BenchmarkGenerationJob job;
+        try
+        {
+            job = BenchmarkGenerationJob.CreateRetry(
+                previous,
+                bands,
+                request.DiscardExisting,
+                ToGeneratorSelection(generatorConfig!),
+                instructions,
+                string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+
+        var conflict = CheckConflictingBenchmarkJob(job.SuiteId, "question generation retry");
+        if (conflict != null) return conflict;
+
+        int requestedGrowth = job.Items.Sum(i => i.RequestedCount);
+        int discardedCount = job.Items.Sum(i => i.QuestionIdsToDiscard.Count);
+        var (canAdd, complianceMsg) = await _complianceGuard.CanAddQuestionsAsync(job.SuiteId, Math.Max(0, requestedGrowth - discardedCount));
+        if (!canAdd)
+        {
+            return BadRequest(new { error = complianceMsg });
+        }
+
+        job.Cts = new CancellationTokenSource();
+
+        if (!_generationJobManager.TryStart(job, out var existingJob))
+        {
+            return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
+        }
+
+        var cts = job.Cts;
+
+        // The job outlives the request; nothing request-scoped may be used past this point.
+        _ = Task.Run(async () =>
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<BenchmarkGenerationService>();
+            await svc.RunGenerationAsync(job.Id, cts.Token);
+        });
+
+        return Accepted(new { jobId = job.Id });
+    }
+
+    [HttpPost("question-generations/regenerate")]
+    public async Task<IActionResult> RegenerateQuestions([FromBody] RegenerateQuestionsRequest request, CancellationToken ct)
+    {
+        if (request.QuestionIds == null || request.QuestionIds.Length == 0)
+        {
+            return BadRequest(new { error = "At least one question must be selected." });
+        }
+
+        BenchmarkGenerationItemKind kind;
+        if (string.Equals(request.Scope, "Rubric", StringComparison.OrdinalIgnoreCase))
+        {
+            kind = BenchmarkGenerationItemKind.RubricOnly;
+        }
+        else if (string.Equals(request.Scope, "Question", StringComparison.OrdinalIgnoreCase))
+        {
+            kind = BenchmarkGenerationItemKind.ReplaceQuestion;
+        }
+        else
+        {
+            return BadRequest(new { error = "Scope must be 'Rubric' or 'Question'." });
+        }
+
+        var suite = await _dbContext.BenchmarkSuites
+            .Include(s => s.GameSnapshot)
+            .Include(s => s.Questions)
+            .FirstOrDefaultAsync(s => s.Id == request.SuiteId, ct);
+        if (suite == null) return NotFound(new { error = "Suite not found." });
+        if (suite.GameSnapshot == null)
+        {
+            return BadRequest(new { error = "The suite does not have a game snapshot bound to it. Question regeneration requires a game snapshot." });
+        }
+
+        var idSet = new HashSet<long>(request.QuestionIds);
+        var targetQuestions = suite.Questions.Where(q => idSet.Contains(q.Id)).ToList();
+        if (targetQuestions.Count != idSet.Count)
+        {
+            return BadRequest(new { error = "One or more selected questions are not in this suite." });
+        }
+
+        var conflict = CheckConflictingBenchmarkJob(suite.Id, "question regeneration");
+        if (conflict != null) return conflict;
+
+        var (generatorConfig, generatorError) = await ResolveGeneratorAsync(request.GeneratorModelConfigurationId, ct);
+        if (generatorError != null) return generatorError;
+
+        string instructions = request.Instructions?.Trim() ?? string.Empty;
+        string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+
+        var targets = targetQuestions
+            .OrderBy(q => q.OrderIndex)
+            .Select(q => (q.Id, q.OrderIndex, q.Difficulty, q.QuestionText))
+            .ToList();
+
+        BenchmarkGenerationJob job;
+        try
+        {
+            job = BenchmarkGenerationJob.CreateRegeneration(
+                suite.Id,
+                suite.Name,
+                suite.GameSnapshotId,
+                suite.GameSnapshot.Name,
+                targets,
+                kind,
+                ToGeneratorSelection(generatorConfig!),
+                instructions,
+                string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+
+        var (canAdd, complianceMsg) = await _complianceGuard.CanAddQuestionsAsync(suite.Id, 0);
+        if (!canAdd)
+        {
+            return BadRequest(new { error = complianceMsg });
+        }
+
+        job.Cts = new CancellationTokenSource();
+
+        if (!_generationJobManager.TryStart(job, out var existingJob))
+        {
+            return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
+        }
+
+        var cts = job.Cts;
+
+        // The job outlives the request; nothing request-scoped may be used past this point.
+        _ = Task.Run(async () =>
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<BenchmarkGenerationService>();
+            await svc.RunGenerationAsync(job.Id, cts.Token);
+        });
+
+        return Accepted(new { jobId = job.Id });
+    }
+
+    /// <summary>Looks up a generator model configuration and checks it is usable, or returns the error response to send back.</summary>
+    private async Task<(SystemAiApiConfiguration? Config, IActionResult? Error)> ResolveGeneratorAsync(long id, CancellationToken ct)
+    {
+        var config = await _dbContext.SystemAiApiConfigurations.FindAsync(new object[] { id }, ct);
+        if (config == null || !config.IsEnabled)
+        {
+            return (null, BadRequest(new { error = "Generator model configuration not found or disabled." }));
+        }
+        if (string.IsNullOrWhiteSpace(config.EncryptedApiKey))
+        {
+            return (null, BadRequest(new { error = "Generator model configuration has no API key." }));
+        }
+        return (config, null);
+    }
+
+    private static GeneratorSelection ToGeneratorSelection(SystemAiApiConfiguration config) => new(
+        config.Id, config.DisplayName, config.Provider, config.ModelId, config.ThinkingLevel, config.ReasoningMode, config.ServiceTier);
 
     // --- Rubric Verification Jobs API ---
 
@@ -1782,9 +1985,12 @@ public class AdminBenchmarkController : ControllerBase
             return StatusCode(StatusCodes.Status409Conflict, existingJob?.ToDto());
         }
 
+        // The job outlives the request; nothing request-scoped may be used past this point.
         _ = Task.Run(async () =>
         {
-            await _rubricCheckService.RunRubricCheckAsync(job.Id, cts.Token);
+            using var scope = _scopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<BenchmarkRubricCheckService>();
+            await svc.RunRubricCheckAsync(job.Id, cts.Token);
         });
 
         return Accepted(new { jobId = job.Id });
@@ -1914,9 +2120,12 @@ public class AdminBenchmarkController : ControllerBase
 
         var evidenceByKey = eligible.ToDictionary(e => e.Evidence.ClusterKey, e => e.Evidence, StringComparer.Ordinal);
 
+        // The job outlives the request; nothing request-scoped may be used past this point.
         _ = Task.Run(async () =>
         {
-            await _rubricGapAuthorService.RunRubricGapAuthorAsync(job.Id, evidenceByKey, cts.Token);
+            using var scope = _scopeFactory.CreateScope();
+            var svc = scope.ServiceProvider.GetRequiredService<BenchmarkRubricGapAuthorService>();
+            await svc.RunRubricGapAuthorAsync(job.Id, evidenceByKey, cts.Token);
         });
 
         return Accepted(new { jobId = job.Id });

@@ -1401,12 +1401,24 @@ public class StartQuestionGenerationRequest
 
 public class QuestionGenerationJobItemDto
 {
+    public string Kind { get; set; } = string.Empty;
     public int Difficulty { get; set; }
     public string DifficultyName { get; set; } = string.Empty;
     public int RequestedCount { get; set; }
     public int GeneratedCount { get; set; }
     public string Status { get; set; } = string.Empty;
     public string? ErrorMessage { get; set; }
+    public long? TargetQuestionId { get; set; }
+    public int? TargetQuestionOrderIndex { get; set; }
+    public string? TargetQuestionExcerpt { get; set; }
+    public DateTime? StartedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    public int ModelCalls { get; set; }
+    public int PromptTokens { get; set; }
+    public int OutputTokens { get; set; }
+    public int CreatedQuestionCount { get; set; }
+    public int UpdatedQuestionCount { get; set; }
+    public int DiscardedQuestionCount { get; set; }
 }
 
 public class QuestionGenerationJobLogEntryDto
@@ -1424,6 +1436,16 @@ public class QuestionGenerationJobDto
     public string SuiteName { get; set; } = string.Empty;
     public long GeneratorConfigId { get; set; }
     public string GeneratorDisplayName { get; set; } = string.Empty;
+    public string? GeneratorProvider { get; set; }
+    public string? GeneratorModelId { get; set; }
+    public string? GeneratorThinkingLevel { get; set; }
+    public string? GeneratorReasoningMode { get; set; }
+    public string? GeneratorServiceTier { get; set; }
+    public long? GameSnapshotId { get; set; }
+    public string? GameSnapshotName { get; set; }
+    public string Instructions { get; set; } = string.Empty;
+    public string JobKind { get; set; } = string.Empty;
+    public string? RetryOfJobId { get; set; }
     public string? StartedByUserId { get; set; }
     public DateTime StartedAtUtc { get; set; }
     public DateTime? CompletedAtUtc { get; set; }
@@ -1433,6 +1455,24 @@ public class QuestionGenerationJobDto
     public int OutputTokens { get; set; }
     public List<QuestionGenerationJobItemDto> Items { get; set; } = new();
     public List<QuestionGenerationJobLogEntryDto> Log { get; set; } = new();
+}
+
+public class RetryQuestionGenerationRequest
+{
+    public int[] Difficulties { get; set; } = Array.Empty<int>();
+    public bool DiscardExisting { get; set; }
+    public long? GeneratorModelConfigurationId { get; set; }
+    public string? Instructions { get; set; }
+}
+
+public class RegenerateQuestionsRequest
+{
+    public long SuiteId { get; set; }
+    public long[] QuestionIds { get; set; } = Array.Empty<long>();
+    /// <summary>"Rubric" | "Question".</summary>
+    public string Scope { get; set; } = string.Empty;
+    public long GeneratorModelConfigurationId { get; set; }
+    public string? Instructions { get; set; }
 }
 
 // --- Rubric Verification Job Models ---
