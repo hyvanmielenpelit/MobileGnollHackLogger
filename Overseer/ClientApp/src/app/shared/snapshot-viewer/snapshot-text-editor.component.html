@@ -2,7 +2,7 @@
   <div class="editor-toolbar">
     <div class="editor-toolbar-row">
       <div class="editor-identity">
-        <h4 class="editor-title" [id]="'snapshot-editor-title-' + uid">Edit snapshot text</h4>
+        <h4 class="editor-title" [id]="'snapshot-editor-title-' + uid">Snapshot text</h4>
         <span class="editor-meta">
           <span class="editor-lines">{{ lineCount | number }} lines</span>
           <span aria-hidden="true">·</span>
@@ -35,6 +35,31 @@
           </svg>
           Find
         </button>
+        <button type="button" class="btn-ghost copy-text-btn" (click)="copyText()"
+                [attr.aria-disabled]="view ? null : 'true'">
+          @if (copied) {
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+          } @else {
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+          }
+          {{ copied ? 'Copied' : 'Copy Text' }}
+        </button>
+        <button type="button" class="btn-ghost copy-lines-btn" (click)="copyWithLineNumbers()"
+                [attr.aria-disabled]="view ? null : 'true'">Copy with line numbers</button>
+        <button type="button" class="btn-ghost download-btn" (click)="requestDownload()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="12" y1="18" x2="12" y2="12"></line>
+            <polyline points="9 15 12 18 15 15"></polyline>
+          </svg>
+          Download .snapshot.txt@if (snapshotName) {<span class="visually-hidden"> of {{ snapshotName }}</span>}
+        </button>
       </div>
     </div>
 
@@ -49,9 +74,23 @@
       </p>
     }
 
-    <p class="editor-shortcuts">
-      Ctrl+F find and replace · Alt+G go to line · Ctrl+S save · Ctrl+M switches Tab between indenting and moving focus
-    </p>
+    <div class="editor-toolbar-row">
+      <p class="editor-shortcuts">
+        Ctrl+F find and replace · Alt+G go to line · Ctrl+S save · Ctrl+M switches Tab between indenting and moving focus
+      </p>
+      <div class="view-toggles">
+        <label class="checkbox-label">
+          <input type="checkbox" class="line-numbers-toggle" [checked]="showLineNumbers"
+                 (change)="setShowLineNumbers($any($event.target).checked)" />
+          Line numbers
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" class="wrap-toggle" [checked]="wrapLines"
+                 (change)="setWrapLines($any($event.target).checked)" />
+          Wrap long lines (prose only)
+        </label>
+      </div>
+    </div>
   </div>
 
   <div class="editor-frame">
@@ -67,6 +106,23 @@
     }
   </div>
 
+  <div class="editor-status">
+    <span class="editor-status-text" [class.is-copy]="!!copyStatus" role="status" aria-live="polite">{{ statusText }}</span>
+    @if (readout) {
+      <button type="button" class="action-btn copy-coordinate-btn" (click)="copyCoordinate()"
+              [attr.aria-label]="'Copy coordinate ' + coordinate"
+              [attr.interestfor]="'snapshot-coordinate-tip-' + uid"
+              [attr.style]="'anchor-name: --snapshot-coordinate-tip-' + uid">
+        <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" [id]="'snapshot-coordinate-tip-' + uid"
+           [attr.style]="'position-anchor: --snapshot-coordinate-tip-' + uid">Copy coordinate {{ coordinate }}</div>
+    }
+  </div>
+
   <div class="editor-footer">
     <div class="editor-error" aria-live="polite">
       @if (error) {
@@ -78,10 +134,13 @@
           </svg>
           {{ error }}
         </span>
+      } @else if (status) {
+        <span class="is-ok">{{ status }}</span>
       }
     </div>
     <div class="editor-actions">
-      <button type="button" class="btn-gh btn-gh-cancel" (click)="cancel()">Cancel</button>
+      <button type="button" class="btn-gh btn-gh-cancel revert-text-btn" (click)="revert()"
+              [attr.aria-disabled]="canRevert ? null : 'true'">Revert</button>
       <button type="button" class="btn-gh save-text-btn" (click)="requestSave()"
               [attr.aria-disabled]="canSave ? null : 'true'"
               [attr.aria-busy]="saving ? 'true' : null">

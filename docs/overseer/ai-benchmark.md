@@ -3208,7 +3208,7 @@ game session.
     any build configuration flags.
 - **Immutability & Safety**: A snapshot cannot be deleted if any benchmark suites or runs reference
   it. Snapshot text is no longer immutable after creation: an administrator can edit it directly
-  through the **Editor** tab (described under Snapshot Viewer UI below), which calls
+  through the **Game Snapshot** tab (described under Snapshot Viewer UI below), which calls
   `PUT snapshots/{id}/text`. That endpoint unifies CRLF/CR line endings to LF, runs the result through
   the same `DumpHtmlSanitizer.NormalizeFlattenedText` every capture path uses, applies the
   60,000-character cap and truncation marker through `BenchmarkSnapshotImporter.PrepareBoardText`,
@@ -3219,7 +3219,7 @@ game session.
   and stamps `ModifiedAtUtc`. It leaves `CaptureMethod` and the bound suite's own description
   unchanged, so the suite description's provenance text (character count, hash prefix) goes stale
   after a text edit and is not refreshed automatically. Other fields (`Name`, `SourceGnollHackVersion`,
-  `Notes`, the digest text) are still edited separately through **Edit Snapshot Metadata**.
+  `Notes`, the digest text) are still edited separately, on the **Metadata** tab.
 
 ### Suite Card Actions
 Each bound suite's card in Manage Suites shows one primary action and a row of secondary ones: a
@@ -3233,87 +3233,94 @@ replaces the previous dedicated "View Board" row button.
 
 ### Snapshot Viewer UI
 `SnapshotViewerComponent` (`Overseer/ClientApp/src/app/shared/snapshot-viewer/`) is a full-screen
-dialog built for three jobs: reading a 60,000-character fixed-width dump comfortably, checking claims
-about it — the administrator's own, the AI's in a chat, and the rubric checker's verbatim quotes —
-and, through the **Editor** tab, editing it directly. The DOM-free text logic (chunking, map
-detection, sections, find, line-number formatting) lives in `reader-text.ts` beside it; the editor is
-a separate component, described below.
-- **Layout**: A `.gh-dialog-fullscreen` dialog whose body sits under a tab row — **Viewer**,
-  **Editor** and **Metadata** — built on the shared `.gh-tabs` widget with its full ARIA contract
-  (`tablist` / `tab` / `tabpanel`, roving `tabindex`) and keyboard model (arrow keys wrap, Home and End
-  jump). Only the active panel is rendered, and the dialog body itself never scrolls: each panel owns
-  its one scroll container — the reader region on **Viewer**, the CodeMirror scroller on **Editor**
-  (so its **Cancel** / **Save Text** footer stays in view), and the whole panel on **Metadata**. Only
-  on a viewport too short for a panel's minimum content does the Viewer or Editor panel scroll as a
+dialog for reading a 60,000-character fixed-width dump, checking claims about it — the
+administrator's own, the AI's in a chat, and the rubric checker's verbatim quotes — and editing it
+and its metadata directly. It has two tabs, each a single editor page. The DOM-free text logic (map
+detection, sections, line-number formatting) lives in `reader-text.ts` beside it.
+- **Layout**: A `.gh-dialog-fullscreen` dialog whose body sits under a tab row — **Game Snapshot**
+  and **Metadata** — built on the shared `.gh-tabs` widget with its full ARIA contract (`tablist` /
+  `tab` / `tabpanel`, roving `tabindex`) and keyboard model (arrow keys wrap, Home and End jump). Both
+  panels stay in the DOM and the inactive one is `hidden`, so an edit on either tab survives switching
+  to the other, and switching never asks. The dialog body itself never scrolls: only the CodeMirror
+  scrollers do, so each page's footer stays in view. Each editor frame is size-contained
+  (`contain: size`) with a minimum height, so a page's minimum height is its fixed parts plus that
+  minimum, never the document's length; only a viewport shorter than that makes the panel scroll as a
   whole. The dialog has no footer; the header close button and Escape are the ways out. The dialog
-  opens on **Viewer** every time.
-- **Monospace Rendering**: Snapshot text is **never rendered as Markdown**. Game dumps contain
-  NetHack map symbols (`#`, `|`, `-`, `*`) that Markdown parsers mangle. Each line is a
-  `.reader-line` element with `white-space: pre`, a monospace font stack and
-  `font-variant-ligatures: none` (a ligating coding font would draw two map cells such as `--` as one
-  glyph), and long lines scroll horizontally. *Wrap long lines (prose only)* wraps prose lines; map
-  rows and rulers stay `pre`, because a wrapped map row misstates the map.
-- **Chunked Rendering**: Lines are grouped into chunks of 100, each `content-visibility: auto` with a
-  `contain-intrinsic-size` of its exact line height, so a full-size snapshot opens instantly and
-  scrolls smoothly. A chunk always begins at `Map grid:` and after the last map row, so the map block
-  is one chunk. `content-visibility: hidden` is not used, so the browser's find-in-page still sees
-  every line.
-- **Line Numbers**: Drawn by a sticky `::before { content: attr(data-ln) }` gutter, which stays
-  visible while a line scrolls horizontally and is not part of any selection: copying a passage
-  copies snapshot characters only. Clicking a line number copies `L{n}`.
-- **Navigation**: *Jump to section* lists the dump's labelled sections (`Map:`, `Map grid:`,
-  `Inventory:` and so on) with their line numbers; *Go to line* scrolls to any line and marks it.
-  **Find in snapshot** is a case-insensitive literal search that reports `3 of 17` or `No matches`,
-  highlights every match with the CSS Custom Highlight API (the current one more strongly), steps
-  with Enter / Shift+Enter or the arrow buttons, and stops counting at 2,000 matches. Escape in a
-  non-empty find field clears it without closing the dialog.
-- **Map Tools**: Active when the text contains the `Map grid:` block `dump_map_ai()` writes (see the
-  board format in `GnollHack/src/detect.c`). Hovering a map cell shows `<x,y>` and its symbol in the
-  status bar at the bottom of the region, with blank cells described as unseen or rock; clicking a
-  cell copies `<x,y>`, unless the click ends a drag selection. `y` is read from each row's gutter,
-  never from line order, so a trimmed or missing row cannot shift it. The hero's cell, taken from the
-  legend's "The hero is at <x,y>" sentence, is highlighted. The two column-ruler lines are sticky at
-  the top of the region while the map is on screen, so a column can be read directly.
-- **Copy with Line Numbers**: Copies the selected whole lines, or the whole snapshot when nothing in
-  the reader is selected, as `L{n}: text` with the numbers padded so the colons align.
-- **Preferences**: *Line numbers* (default on) and *Wrap long lines* (default off) are remembered in
-  `localStorage` under `overseer.snapshotReader.lineNumbers` and `overseer.snapshotReader.wrap`; if
-  storage is unavailable the defaults apply.
-- **Editor tab**: Mounts `SnapshotTextEditorComponent` (`snapshot-text-editor.component.*`) — a
-  lazily-loaded **CodeMirror 6** editor.
-  `shared/snapshot-viewer/codemirror-setup.ts` is the only module that imports `@codemirror/*`; the
-  component `import()`s it on first mount, so it ships as its own chunk and never reaches the initial
-  bundle. It keeps the reader's monospace look and dark theme, adds line numbers and an active-line
-  highlight, and provides: **Ctrl+F** for CodeMirror's own find/replace panels, restyled to the
-  `.gh-input` / `.btn-ghost` look (a **Find** button opens the same panel for discoverability);
-  **Alt+G** go to line; a **Jump to section** `<select>` built from the same section detection the
-  reader uses, which scrolls to and places the cursor at the chosen line; a live
-  `{{ length }} / 60,000 chars` counter that warns once the buffer exceeds the server's cap, alongside
-  a `{{ lineCount }} lines` readout; the loaded snapshot's SHA-256 (first 12 characters); and
-  **Ctrl+M**, which toggles Tab between indenting and moving keyboard focus out of the editor.
-  **Ctrl+S**, or the **Save Text** button (disabled until the buffer is dirty), sends the current
-  document back to the viewer, which calls `PUT snapshots/{id}/text` with the `sha256` it loaded as
-  `expectedSha256`, then returns to the **Viewer** tab and re-renders the reader from the server's
-  normalized response. Line wrapping
-  is intentionally absent — CodeMirror's wrap is document-wide, and a wrapped map row would misstate
-  the map, the same reason the reader's own *Wrap long lines* affects prose only. Closing the editor
-  with unsaved changes — the **Cancel** button, switching to another tab, the dialog's Escape key, or
-  the header close button — shows an inline **Discard unsaved changes to the snapshot text?** strip
-  with **Keep editing** / **Discard** in place of a `confirm()` popup; the tab does not change and the
-  dialog does not close until one is chosen, and **Discard** completes the tab switch that asked.
-- **Other Tools**: The Viewer toolbar holds *Copy Text* (the whole snapshot, unchanged), *Copy with
-  line numbers* and *Download .snapshot.txt*. The **Metadata** tab holds the provenance facts
-  (capture method, character count, capture time, GnollHack version, source chat, and — once the
-  snapshot has actually been edited — **Last modified**), the SHA-256 row and its copy button, an open
-  **Notes** `<details>` disclosure, a closed **Digest (difficulty assessor extract)** one, and
-  **Edit Metadata**, which opens the **Edit Snapshot Metadata** form in the same panel. That form's
-  digest field carries a **Regenerate from snapshot** button that rebuilds the extract server-side
-  and puts it straight into the textarea and the disclosure; it is disabled while the request is in
-  flight and the snapshot text is never touched.
-- **Truncation Notice**: If the snapshot contains the truncation marker, a prominent alert informs
-  the administrator that tail sections of the dump were omitted — at capture, or at a later text
-  edit that itself exceeded the cap. Leaving the marker line in place when editing keeps the notice
-  showing, correctly: the tail is still missing.
+  opens on **Game Snapshot** every time, and closing it destroys both editors, so a reopened snapshot
+  always gets fresh ones.
+- **Game Snapshot page**: `SnapshotTextEditorComponent` (`snapshot-text-editor.component.*`), a
+  lazily-loaded **CodeMirror 6** editor. `codemirror-setup.ts` and `codemirror-map-tools.ts`, which
+  only it imports, are the only modules that import `@codemirror/*`; the editor components
+  `import()` the first on mount, so CodeMirror ships as its own chunk and never reaches the initial
+  bundle. CodeMirror is created outside the Angular zone, so pointer tracking does not run change
+  detection; only its callbacks re-enter the zone.
+  - **Monospace rendering**: Snapshot text is **never rendered as Markdown**. Game dumps contain
+    NetHack map symbols (`#`, `|`, `-`, `*`) that Markdown parsers mangle. The editor uses a monospace
+    font stack with `font-variant-ligatures: none` (a ligating coding font would draw two map cells
+    such as `--` as one glyph), a dark theme, line numbers and an active-line highlight.
+  - **Toolbar**: the line count, a live `{{ length }} / 60,000 chars` counter that warns once the
+    buffer exceeds the server's cap, and the loaded snapshot's SHA-256 (first 12 characters); then
+    **Jump to section** (a `<select>` of the dump's labelled sections — `Map:`, `Map grid:`,
+    `Inventory:` and so on — with their line numbers, which scrolls to and places the cursor at the
+    chosen line), **Find** (CodeMirror's own find/replace panel, also on **Ctrl+F**, restyled to the
+    `.gh-input` / `.btn-ghost` look), **Copy Text**, **Copy with line numbers** and **Download
+    .snapshot.txt**. A second row lists the shortcuts — **Alt+G** go to line, **Ctrl+S** save, and
+    **Ctrl+M**, which toggles Tab between indenting and moving keyboard focus out of the editor — and
+    holds the two view toggles.
+  - **View toggles**: *Line numbers* (default on) and *Wrap long lines (prose only)* (default off)
+    reconfigure CodeMirror compartments, and are remembered in `localStorage` under
+    `overseer.snapshotReader.lineNumbers` and `overseer.snapshotReader.wrap`; if storage is
+    unavailable the defaults apply. Wrapping is CodeMirror's own `EditorView.lineWrapping`, so its
+    height measurement knows lines wrap; the map rows and rulers carry line classes that keep them
+    `white-space: pre`, because a wrapped map row misstates the map.
+  - **Map tools**: Active when the text contains the `Map grid:` block `dump_map_ai()` writes (see the
+    board format in `GnollHack/src/detect.c`). The map rows carry `.cm-map-row`, the two column-ruler
+    lines `.cm-map-ruler` (dimmed), and the hero's cell, taken from the legend's "The hero is at
+    <x,y>" sentence, is highlighted gold. `y` is read from each row's gutter, never from line order,
+    so a trimmed or missing row cannot shift it. The map is re-detected at once when an edit touches
+    the map block, shifted when lines are added or removed above it, and otherwise re-detected 400 ms
+    after the last edit. A status bar under the editor shows `<x,y>` and the symbol of the map cell
+    under the pointer, or, when the pointer is not over the map, of the cell at the caret; blank cells
+    are described as unseen or rock. While a coordinate is shown, an icon button beside it copies
+    `<x,y>` — the way to copy a coordinate is to click the cell, which places the caret there, and
+    then that button.
+  - **Copy**: *Copy Text* copies the editor buffer, unsaved edits included, since that is what is on
+    screen. *Copy with line numbers* copies the lines of the selection, or every line when nothing is
+    selected, as `L{n}: text` with the numbers padded so the colons align; a selection ending at the
+    very start of a line does not include that line. Both announce the result in the status bar.
+  - **Saving**: **Ctrl+S**, or **Save Text** (disabled until the buffer is dirty), calls
+    `PUT snapshots/{id}/text` with the `sha256` the dialog loaded as `expectedSha256`. The editor
+    stays on the tab: the server's normalized text becomes the new saved document (replacing the
+    buffer, unless it was edited again while the save was in flight), the footer shows *Saved.
+    SHA-256 and digest updated.* for two seconds, and the Metadata page's SHA-256 and digest field
+    follow — the digest field only if it holds no unsaved edit of its own. A failed save leaves the
+    buffer untouched and shows the server's message in the footer. **Revert** restores the saved
+    document.
+  - **Download**: *Download .snapshot.txt* always serves the text saved on the server, through a
+    same-origin link with a `download` attribute (`<name>.snapshot.txt`, the name reduced to
+    `[A-Za-z0-9._-]`), so no tab opens. When the editor holds unsaved changes it first asks in a nested
+    `.gh-dialog` confirmation — **Cancel**, **Download saved text**, or **Save and download**, which
+    saves the buffer and downloads once the save succeeds; on a failed save nothing is downloaded and
+    the footer shows the error. The link click, unlike `window.open`, is not treated as a popup when it
+    runs after the save's response.
+- **Metadata page**: One form with a fixed footer. At the top, a compact provenance strip: capture
+  method, size, capture time, **Modified** (once the snapshot has actually been edited, not merely
+  stamped at creation), source chat, and the SHA-256 with its copy button. Below it the editable
+  fields — **Snapshot Name**, **GnollHack Version**, **Notes** (an autosizing textarea capped at six
+  lines) — and the **Snapshot digest** CodeMirror field, which takes the remaining height and scrolls
+  internally. The digest field's **Regenerate from snapshot** button rebuilds the extract
+  server-side and puts it straight into the field; it is disabled while the request is in flight and
+  the snapshot text is never touched. The footer's **Revert** and **Save Changes** are enabled only
+  while a field differs from the saved snapshot; a successful save shows *Saved.* for two seconds.
+- **Unsaved changes**: Closing the dialog — the header close button or Escape — with unsaved changes
+  on either tab shows an inline strip under the tab row in place of a `confirm()` popup, naming what
+  is unsaved (*Discard unsaved changes to the snapshot text?*, *…to the metadata?*, or *…to the
+  snapshot text and metadata?*), with **Keep editing**, which returns focus to the active tab's
+  editor, and **Discard**, which closes the dialog. A save in flight on either tab blocks closing.
+- **Truncation Notice**: If the snapshot contains the truncation marker, a prominent alert above the
+  editor informs the administrator that tail sections of the dump were omitted — at capture, or at a
+  later text edit that itself exceeded the cap. Leaving the marker line in place when editing keeps
+  the notice showing, correctly: the tail is still missing.
 
 #### Pointing at the Snapshot
 The administrator and the AI see the same text, so what they need is a shared way to point at it. In

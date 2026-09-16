@@ -1,10 +1,11 @@
 /* CodeMirror 6 assembly for the snapshot text editor.
 
-   This is the only module that imports @codemirror/*. It is loaded with import() from
-   SnapshotTextEditorComponent, so the editor code is a lazy chunk; importing it statically
-   anywhere would fold CodeMirror into the initial bundle. Framework-free on purpose. */
+   This module and codemirror-map-tools.ts, which only this module imports, are the only ones that
+   import @codemirror/*. It is loaded with import() from the editor components, so the editor code
+   is a lazy chunk; importing it statically anywhere would fold CodeMirror into the initial bundle.
+   Framework-free on purpose. */
 
-import { EditorSelection, EditorState, Text } from '@codemirror/state';
+import { Compartment, EditorSelection, EditorState, StateEffect, StateField, Text } from '@codemirror/state';
 import {
   EditorView,
   drawSelection,
@@ -16,11 +17,14 @@ import {
 } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { highlightSelectionMatches, openSearchPanel, search, searchKeymap } from '@codemirror/search';
+import { MapToolsOptions, mapTools } from './codemirror-map-tools';
+
+export type { MapReadout, MapToolsOptions } from './codemirror-map-tools';
 
 export interface SnapshotDocInfo {
   length: number;
   lineCount: number;
-  /** True when the document differs from the one the editor was created with. */
+  /** True when the document differs from the saved one: the one the editor was created with, or the last passed to markSaved. */
   modified: boolean;
 }
 
@@ -29,9 +33,30 @@ export interface SnapshotEditorOptions {
   ariaLabel?: string;
   /** Runs on Ctrl-S / Cmd-S inside the editor; the browser's own save is always suppressed. */
   onSave?: () => void;
-  /** Wraps long lines instead of scrolling them horizontally. Off by default. */
+  /** Wraps long lines instead of scrolling them horizontally; map rows and rulers never wrap. Off by default. */
   lineWrapping?: boolean;
+  /** Shows the line-number gutter. On by default. */
+  lineNumbers?: boolean;
+  /** Adds the map-row and hero-cell decorations and the cell readout. */
+  mapTools?: MapToolsOptions;
 }
+
+const lineNumbersCompartment = new Compartment();
+const lineWrappingCompartment = new Compartment();
+
+/* Carries the new saved document, or null for the transaction's own resulting document. */
+const markSavedEffect = StateEffect.define<Text | null>();
+
+/* The saved document the dirty flag compares against. */
+const savedDocField = StateField.define<Text>({
+  create: state => state.doc,
+  update(saved, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(markSavedEffect)) return effect.value ?? tr.newDoc;
+    }
+    return saved;
+  }
+});
 
 /* The reader's look: the same monospace stack and background as .reader-scroll, a gutter
    coloured like .reader-line::before, and the gold accent for the cursor and active line. */
@@ -91,6 +116,20 @@ const snapshotTheme = EditorView.theme({
   },
   '.cm-specialChar': {
     color: 'var(--color-warning, #ffc107)'
+  },
+  /* A wrapped map row misstates the map, so map rows and rulers stay unwrapped when wrapping is on. */
+  '.cm-line.cm-map-row, .cm-line.cm-map-ruler': {
+    whiteSpace: 'pre',
+    overflowWrap: 'normal',
+    wordBreak: 'normal'
+  },
+  '.cm-line.cm-map-ruler': {
+    color: 'var(--nav-color, #ccc)'
+  },
+  '.cm-hero-cell': {
+    backgroundColor: 'rgba(212, 175, 55, 0.55)',
+    color: '#000',
+    textDecoration: 'underline double'
   },
   /* The find / replace and go-to-line panels are created by CodeMirror outside any Angular
      template, so component styles cannot reach them; they are given the .gh-input and
@@ -154,27 +193,23 @@ const snapshotTheme = EditorView.theme({
   }
 }, { dark: true });
 
-/* Line wrapping is off unless the caller asks for it: EditorView.lineWrapping is document-wide,
-   and a wrapped map row misstates the map. A caller whose document carries no map grid — the
-   snapshot digest, for one — may turn it on. */
+/* Line wrapping is off unless the caller asks for it. It is EditorView.lineWrapping, so the height
+   measurement knows lines wrap; the map-row and ruler line classes opt out of it. */
 export function createSnapshotEditor(
   parent: HTMLElement,
   doc: string,
   onDocChanged: (info: SnapshotDocInfo) => void,
   options: SnapshotEditorOptions = {}
 ): EditorView {
-  let initialDoc: Text | null = null;
-
   const saveKeymap = options.onSave
     ? [keymap.of([{ key: 'Mod-s', preventDefault: true, run: () => { options.onSave!(); return true; } }])]
     : [];
 
-  const wrapping = options.lineWrapping ? [EditorView.lineWrapping] : [];
-
   const state = EditorState.create({
     doc,
     extensions: [
-      lineNumbers(),
+      savedDocField,
+      lineNumbersCompartment.of(options.lineNumbers === false ? [] : lineNumbers()),
       highlightActiveLineGutter(),
       highlightSpecialChars(),
       history(),
@@ -183,7 +218,8 @@ export function createSnapshotEditor(
       highlightSelectionMatches(),
       search({ top: true }),
       EditorState.tabSize.of(8),
-      ...wrapping,
+      lineWrappingCompartment.of(options.lineWrapping ? EditorView.lineWrapping : []),
+      ...(options.mapTools ? [mapTools(options.mapTools)] : []),
       ...saveKeymap,
       keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
       EditorView.contentAttributes.of({
@@ -193,20 +229,59 @@ export function createSnapshotEditor(
         autocapitalize: 'off'
       }),
       EditorView.updateListener.of(update => {
-        if (!update.docChanged) return;
+        const markedSaved = update.transactions.some(tr => tr.effects.some(effect => effect.is(markSavedEffect)));
+        if (!update.docChanged && !markedSaved) return;
         const current = update.state.doc;
         onDocChanged({
           length: current.length,
           lineCount: current.lines,
-          modified: !initialDoc || !current.eq(initialDoc)
+          modified: !current.eq(update.state.field(savedDocField))
         });
       }),
       snapshotTheme
     ]
   });
 
-  initialDoc = state.doc;
   return new EditorView({ state, parent });
+}
+
+export function setLineNumbers(view: EditorView, on: boolean): void {
+  view.dispatch({ effects: lineNumbersCompartment.reconfigure(on ? lineNumbers() : []) });
+}
+
+export function setLineWrapping(view: EditorView, on: boolean): void {
+  view.dispatch({ effects: lineWrappingCompartment.reconfigure(on ? EditorView.lineWrapping : []) });
+}
+
+/** 1-based first and last line of the main selection, or null when it is empty. A selection ending
+    at the very start of a line does not include that line. */
+export function selectedLineRange(view: EditorView): { from: number; to: number } | null {
+  const selection = view.state.selection.main;
+  if (selection.empty) return null;
+  const doc = view.state.doc;
+  const from = doc.lineAt(selection.from).number;
+  const last = doc.lineAt(selection.to);
+  const to = selection.to === last.from && last.number > from ? last.number - 1 : last.number;
+  return { from, to };
+}
+
+/** Makes text the saved document. With replace, the buffer is replaced by it as well; without,
+    the buffer is kept and is dirty wherever it differs. */
+export function markSaved(view: EditorView, text: string, replace: boolean): void {
+  const current = view.state.doc;
+  if (replace) {
+    const changes = current.toString() === text ? undefined : { from: 0, to: current.length, insert: text };
+    view.dispatch({ changes, effects: markSavedEffect.of(null) });
+  } else {
+    view.dispatch({ effects: markSavedEffect.of(view.state.toText(text)) });
+  }
+}
+
+/** Replaces the buffer with the saved document. */
+export function revertToSaved(view: EditorView): void {
+  const saved = view.state.field(savedDocField);
+  if (view.state.doc.eq(saved)) return;
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: saved } });
 }
 
 export function getDocText(view: EditorView): string {

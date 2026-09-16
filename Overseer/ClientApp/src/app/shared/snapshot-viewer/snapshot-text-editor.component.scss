@@ -1,21 +1,23 @@
 /* Fills the space the viewer body gives it; only the CodeMirror scroller scrolls. The editor's
    own colours, gutter and find / replace panel styles are in codemirror-setup.ts, because
-   CodeMirror builds that DOM outside this component's template. */
+   CodeMirror builds that DOM outside this component's template.
+
+   The frame is size-contained, so the component's minimum height is its toolbar, the frame's
+   min-height, the status bar and the footer, never the document's height; overflow: clip rather
+   than hidden keeps that automatic minimum in force. */
 :host {
   display: flex;
   flex-direction: column;
-  min-height: 0;
 }
 
 .snapshot-text-editor {
   flex: 1 1 auto;
-  min-height: 0;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-glass);
   border-radius: 6px;
   background: var(--bg-input);
-  overflow: hidden;
+  overflow: clip;
 }
 
 .editor-toolbar {
@@ -103,9 +105,28 @@
 }
 
 .editor-shortcuts {
-  margin: 0;
+  margin: 0 auto 0 0;
   font-size: 0.75rem;
   color: #9a9a9a;
+}
+
+.view-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+
+  .checkbox-label {
+    gap: 6px;
+    font-size: 0.8rem;
+    color: var(--nav-color);
+    white-space: nowrap;
+
+    input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+    }
+  }
 }
 
 .editor-frame {
@@ -114,7 +135,44 @@
   min-height: 16rem;
   display: flex;
   flex-direction: column;
+  contain: size;
   background: rgb(30, 30, 30);
+}
+
+/* One line tall whether or not it has text, so the editor does not jump when a readout appears. */
+.editor-status {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: content-box;
+  /* The copy button's height, so the bar keeps its height when the button appears. */
+  min-height: 24px;
+  padding: 4px 12px;
+  border-top: 1px solid var(--border-glass);
+  background: rgba(20, 20, 20, 0.95);
+  font-size: 0.8rem;
+
+  .action-btn {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    margin-left: 0;
+  }
+}
+
+.editor-status-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--primary-color);
+
+  &.is-copy {
+    font-family: inherit;
+  }
 }
 
 .editor-host {
@@ -169,6 +227,10 @@
   }
 }
 
+.editor-error .is-ok {
+  color: var(--primary-color);
+}
+
 .editor-actions {
   display: flex;
   flex-wrap: wrap;
@@ -178,6 +240,7 @@
 
 @media (max-width: 600px) {
   .editor-toolbar,
+  .editor-status,
   .editor-footer {
     padding-inline: 8px;
   }

@@ -3,11 +3,9 @@ import {
   cellOffset,
   detectMapBlock,
   detectSections,
-  findMatches,
   formatWithLineNumbers,
   mapRowY,
   parseHeroPosition,
-  splitIntoChunks,
   splitLines
 } from './reader-text';
 
@@ -55,27 +53,6 @@ describe('reader-text', () => {
     it('returns no lines for empty or missing text', () => {
       expect(splitLines('')).toEqual([]);
       expect(splitLines(null)).toEqual([]);
-    });
-  });
-
-  describe('splitIntoChunks', () => {
-    const lines = Array.from({ length: 250 }, (_, i) => `line ${i + 1}`);
-
-    it('chunks by size when there is no forced break', () => {
-      const chunks = splitIntoChunks(lines, 100, []);
-      expect(chunks.map(c => c.lines.length)).toEqual([100, 100, 50]);
-      expect(chunks.map(c => c.startLine)).toEqual([1, 101, 201]);
-    });
-
-    it('always begins a chunk at a forced break', () => {
-      const chunks = splitIntoChunks(lines, 100, [130]);
-      expect(chunks.map(c => c.lines.length)).toEqual([100, 30, 100, 20]);
-      expect(chunks[2].startLine).toBe(131);
-      expect(chunks[2].lines[0]).toBe('line 131');
-    });
-
-    it('returns no chunks for no lines', () => {
-      expect(splitIntoChunks([], 100, [0])).toEqual([]);
     });
   });
 
@@ -158,33 +135,6 @@ describe('reader-text', () => {
       const sections = detectSections(lines);
       expect(sections.map(s => s.title)).toEqual(['Map:', 'Map grid:', 'Inventory:']);
       expect(sections[1].line).toBe(3);
-    });
-  });
-
-  describe('findMatches', () => {
-    const lines = ['A food ration and a FOOD ration', 'nothing', 'ration'];
-
-    it('is case-insensitive and finds every hit on a line', () => {
-      const result = findMatches(lines, 'food');
-      expect(result.matches).toEqual([
-        { line: 1, start: 2, end: 6 },
-        { line: 1, start: 20, end: 24 }
-      ]);
-      expect(result.truncated).toBeFalse();
-    });
-
-    it('returns nothing for an empty query', () => {
-      expect(findMatches(lines, '').matches).toEqual([]);
-    });
-
-    it('treats the query as literal text', () => {
-      expect(findMatches(['a.b', 'axb'], '.').matches.length).toBe(1);
-    });
-
-    it('stops at the cap and says so', () => {
-      const result = findMatches(['aaaaaaaaaa'], 'a', 4);
-      expect(result.matches.length).toBe(4);
-      expect(result.truncated).toBeTrue();
     });
   });
 

@@ -1,5 +1,5 @@
-/* A full-screen board reader: .gh-dialog-fullscreen supplies the size, the zero padding, the entry
-   transition and the flex column; the header / body / footer paddings are set here. */
+/* A full-screen snapshot editor: .gh-dialog-fullscreen supplies the size, the zero padding, the
+   entry transition and the flex column; the header / body paddings are set here. */
 .benchmark-snapshot-viewer-dialog {
   .dialog-header {
     flex-shrink: 0;
@@ -47,7 +47,13 @@
     margin: 0 20px;
   }
 
-  /* The body never scrolls: it holds the active tab panel, and each panel owns its scroller. */
+  /* Under the tab row, so it is reachable from either tab. */
+  .discard-strip {
+    flex-shrink: 0;
+    margin: 10px 20px 0;
+  }
+
+  /* The body never scrolls: it holds both panels, and each panel owns its scroller. */
   .viewer-body {
     flex: 1;
     min-height: 0;
@@ -60,74 +66,35 @@
     }
   }
 
+  /* Only the editors scroll, so each page's footer stays in view; the panel itself scrolls only
+     when the viewport is shorter than the page's minimum height. */
   .snapshot-panel {
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
     gap: 12px;
+    overflow: auto;
+    overscroll-behavior: contain;
+
+    /* The author display: flex would otherwise beat the UA [hidden] rule. */
+    &[hidden] {
+      display: none;
+    }
 
     &:focus-visible {
       outline: 2px solid var(--primary-color);
       outline-offset: -2px;
     }
-  }
-
-  /* Only the reader region scrolls; the panel scrolls as well only when the viewport is too short
-     for the toolbar plus the reader's minimum height. */
-  .snapshot-panel-viewer {
-    overflow: auto;
-    overscroll-behavior: contain;
 
     > .alert {
       flex-shrink: 0;
       margin: 0;
     }
 
-    > .board-text-wrapper {
+    > app-snapshot-text-editor,
+    > .metadata-form {
       flex: 1 1 auto;
-      min-height: 12rem;
-    }
-  }
-
-  /* Only the CodeMirror scroller scrolls, so the editor's footer stays in view. */
-  .snapshot-panel-editor {
-    overflow: auto;
-    overscroll-behavior: contain;
-
-    > .discard-strip {
-      flex-shrink: 0;
-    }
-
-    > app-snapshot-text-editor {
-      flex: 1 1 auto;
-      min-height: 0;
-    }
-  }
-
-  /* Prose: the panel scrolls as a whole. The wider gap sets the header, the facts and the
-     disclosures apart as three groups. */
-  .snapshot-panel-metadata {
-    overflow: auto;
-    overscroll-behavior: contain;
-    scrollbar-gutter: stable;
-    gap: 16px;
-
-    > * {
-      flex-shrink: 0;
-    }
-  }
-
-  .metadata-section-header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px 16px;
-
-    h4 {
-      margin: 0;
-      color: var(--title-color);
     }
   }
 
@@ -140,42 +107,13 @@
       margin: 0 12px;
     }
 
+    .discard-strip {
+      margin-inline: 12px;
+    }
+
     .viewer-body {
       padding: 10px 12px 12px;
     }
-  }
-}
-
-/* Each fact stacks its label over its value, so the column width carries the value rather than
-   the pair; auto-fill reflows the grid without a breakpoint. */
-.meta-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
-  gap: 14px 24px;
-  margin: 0;
-
-  .fact {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    min-width: 0;
-  }
-
-  dt {
-    font-size: 0.72rem;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--nav-color);
-    font-weight: 500;
-  }
-
-  dd {
-    margin: 0;
-    font-size: 0.95rem;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    color: var(--font-color);
-    overflow-wrap: anywhere;
   }
 }
 
@@ -195,60 +133,6 @@
   font-weight: 400;
   font-style: italic;
   color: var(--nav-color);
-}
-
-.fact-wide {
-  grid-column: 1 / -1;
-}
-
-.sha-fact {
-  dd {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .sha-box {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.8rem;
-    font-weight: 400;
-    background: var(--bg-input);
-    border: 1px solid var(--border-glass);
-    padding: 2px 8px;
-    border-radius: 4px;
-    min-width: 0;
-    overflow-wrap: anywhere;
-    /* One click selects the whole hash. */
-    user-select: all;
-  }
-
-  .action-btn {
-    margin-left: 0;
-    flex-shrink: 0;
-  }
-}
-
-/* <details> keeps closed content reachable by find-in-page and assistive technology; the frame
-   is the global .gh-disclosure. */
-.gh-disclosure {
-  .disclosure-count {
-    margin-inline-start: 6px;
-    font-weight: 400;
-    font-size: 0.85em;
-    color: var(--nav-color);
-  }
-
-  .disclosure-pre {
-    margin: 0;
-    max-height: 30vh;
-    overflow: auto;
-    font-family: inherit;
-    font-size: 0.9rem;
-    line-height: 1.4;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    color: var(--font-color);
-  }
 }
 
 .discard-strip {
@@ -279,304 +163,94 @@
   }
 }
 
-.board-text-wrapper {
+/* The provenance strip, the fields, the digest editor and a fixed footer. Only the digest editor
+   grows; overflow: clip rather than hidden keeps the form's automatic minimum height, so the panel
+   scrolls instead of the footer being cut off. The two-column row collapses on the form's own
+   width, not the viewport's. */
+.metadata-form {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
-  min-height: 0;
   border: 1px solid var(--border-glass);
   border-radius: 6px;
-  background: var(--bg-input);
-  overflow: hidden;
+  background: var(--bg-glass);
+  overflow: clip;
 
-  .board-text-toolbar {
+  > * {
     flex-shrink: 0;
+  }
+
+  .meta-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 22px;
+    margin: 0;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border-glass);
+    background: var(--bg-input);
+  }
+
+  .fact {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  dt {
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--nav-color);
+    font-weight: 500;
+  }
+
+  dd {
+    margin: 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--font-color);
+    overflow-wrap: anywhere;
+  }
+
+  .fact-sha {
+    flex: 1 1 100%;
+    align-items: center;
+
+    dd {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .action-btn {
+      margin-left: 0;
+      flex-shrink: 0;
+    }
+  }
+
+  .sha-box {
+    min-width: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.78rem;
+    font-weight: 400;
+    background: var(--bg-input);
+    border: 1px solid var(--border-glass);
+    padding: 2px 8px;
+    border-radius: 4px;
+    overflow-wrap: anywhere;
+    /* One click selects the whole hash. */
+    user-select: all;
+  }
+
+  .form-fields {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 8px 12px;
-    background: var(--bg-glass);
-    border-bottom: 1px solid var(--border-glass);
-  }
-
-  .toolbar-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 16px;
-  }
-
-  .toolbar-identity {
-    display: flex;
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: 4px 10px;
-    margin-inline-end: auto;
-  }
-
-  .toolbar-title {
-    font-weight: 600;
-    font-size: 0.85rem;
-    color: var(--nav-color);
-  }
-
-  .toolbar-meta {
-    font-size: 0.8rem;
-    color: #9a9a9a;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .toolbar-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .reader-nav-group {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-  }
-
-  .reader-nav-input {
-    width: auto;
-    height: 32px;
-    padding: 0 8px;
-    font-size: 13px;
-  }
-
-  .section-select {
-    max-width: 18em;
-  }
-
-  .goto-input {
-    width: 6.5em;
-  }
-
-  .goto-btn {
-    min-width: 0;
-    min-height: 32px;
-    padding: 4px 18px;
-  }
-
-  .find-group {
-    flex: 1 1 18em;
-
-    .find-input {
-      flex: 1 1 10em;
-      min-width: 0;
-      max-width: 22em;
-    }
-  }
-
-  .find-count {
-    min-width: 5.5em;
-    font-size: 0.8rem;
-    color: var(--nav-color);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-
-  .action-btn {
-    margin-left: 0;
-
-    &:disabled {
-      opacity: 0.45;
-      cursor: not-allowed;
-    }
-  }
-
-  .view-toggles {
     gap: 14px;
-    flex-wrap: wrap;
-
-    .checkbox-label {
-      gap: 6px;
-      font-size: 0.8rem;
-      color: var(--nav-color);
-      white-space: nowrap;
-
-      input[type="checkbox"] {
-        width: 16px;
-        height: 16px;
-      }
-    }
-  }
-}
-
-/* The single scroll region. Lines never wrap by default: the map's meaning is positional, so a
-   long line scrolls horizontally instead. */
-.reader-scroll {
-  --reader-bg: rgb(30, 30, 30);
-  --reader-line-height: calc(0.82rem * 1.35);
-  --ln-width: calc(var(--ln-digits, 2) * 1ch + 20px);
-
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-  container-type: inline-size;
-  scroll-padding-block-start: calc(2 * var(--reader-line-height) + 8px);
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-glass) rgba(0, 0, 0, 0.3);
-  background: var(--reader-bg);
-  color: var(--font-color);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  /* A ligating coding font would draw two map cells such as "--" as one glyph. */
-  font-variant-ligatures: none;
-  font-size: 0.82rem;
-  line-height: 1.35;
-
-  &:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: -2px;
-  }
-}
-
-/* As wide as the widest rendered line, so every line box spans the full scroll width and the
-   sticky gutter can follow any horizontal scroll. */
-.reader-content {
-  width: max-content;
-  min-width: 100%;
-}
-
-.reader-chunk {
-  content-visibility: auto;
-  contain-intrinsic-size: auto none auto calc(var(--chunk-lines) * var(--reader-line-height));
-
-  &:first-child {
-    content-visibility: visible;
-  }
-}
-
-.reader-line {
-  display: block;
-  box-sizing: border-box;
-  min-height: var(--reader-line-height);
-  padding-inline: var(--ln-width) 16px;
-  white-space: pre;
-
-  /* The number is generated content, so a drag selection copies board characters only. */
-  &::before {
-    content: attr(data-ln);
-    display: inline-block;
-    vertical-align: top;
-    box-sizing: border-box;
-    width: var(--ln-width);
-    margin-inline-start: calc(-1 * var(--ln-width));
-    padding-inline: 4px 12px;
-    text-align: end;
-    color: #8c8c8c;
-    background: var(--reader-bg);
-    user-select: none;
-    position: sticky;
-    left: 0;
-    z-index: 1;
-  }
-
-  &.map-row {
-    cursor: crosshair;
-  }
-
-  &.is-target {
-    outline: 2px solid var(--primary-color);
-    outline-offset: -2px;
-    background: rgba(212, 175, 55, 0.12);
-  }
-}
-
-/* Both rulers stay pinned while the map chunk is on screen, and scroll away with it. */
-.reader-line.map-ruler {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: var(--reader-bg);
-  color: var(--nav-color);
-
-  &.map-ruler-units {
-    top: var(--reader-line-height);
-    box-shadow: 0 1px 0 var(--border-glass);
-  }
-}
-
-.no-ln .reader-line {
-  padding-inline-start: 8px;
-
-  &::before {
-    display: none;
-  }
-}
-
-/* Map rows and rulers stay unwrapped: wrapping a map row would misstate the board. */
-.wrap .reader-line:not(.map-row):not(.map-ruler) {
-  max-width: 100cqi;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.reader-line::highlight(reader-find) {
-  background-color: rgba(96, 165, 250, 0.35);
-}
-
-.reader-line::highlight(reader-find-current) {
-  background-color: rgba(212, 175, 55, 0.7);
-  color: #000;
-  text-decoration: underline;
-}
-
-.reader-line::highlight(reader-hero) {
-  background-color: rgba(212, 175, 55, 0.55);
-  color: #000;
-  text-decoration: underline double;
-}
-
-.reader-status {
-  position: sticky;
-  bottom: 0;
-  left: 0;
-  z-index: 3;
-  box-sizing: border-box;
-  width: 100cqi;
-  white-space: pre;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 0.8rem;
-  background: rgba(20, 20, 20, 0.95);
-
-  &.has-text {
-    padding: 4px 12px;
-    border-top: 1px solid var(--border-glass);
-    color: var(--primary-color);
-  }
-}
-
-.snapshot-edit-panel {
-  /* The two-column row collapses on the panel's own width, not the viewport's, so the dialog
-     may be narrow for any reason. */
-  container-type: inline-size;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  background: var(--bg-glass);
-  padding: 16px;
-  border-radius: 6px;
-  border: 1px solid var(--border-glass);
-
-  h4 {
-    margin: 0;
-    color: var(--title-color);
-  }
-
-  /* The panel's own gap sets the fields apart, so each group only spaces its label, hint and
-     control. */
-  .form-group {
-    min-width: 0;
-    gap: 6px;
-    margin-bottom: 0;
-
-    label {
-      margin-bottom: 0;
-    }
+    padding: 14px 16px 0;
   }
 
   .form-row {
@@ -591,8 +265,19 @@
     }
   }
 
+  /* The fields' own gap sets them apart, so each group only spaces its label, hint and control. */
+  .form-group {
+    min-width: 0;
+    gap: 6px;
+    margin-bottom: 0;
+
+    label {
+      margin-bottom: 0;
+    }
+  }
+
   /* A textarea otherwise falls back to the UA monospace face, so its placeholder and text read
-     differently from every other field on the panel. */
+     differently from every other field on the form. */
   .gh-input {
     font: inherit;
     font-size: 0.95rem;
@@ -609,13 +294,73 @@
     margin: 0;
   }
 
+  /* Capped low so the digest editor keeps its room; the textarea scrolls past the cap. */
   .notes-input {
     --autosize-min: 1lh;
-    --autosize-max: 9lh;
+    --autosize-max: 6lh;
+  }
+
+  .digest-group {
+    flex: 1 1 auto;
+    padding: 14px 16px 16px;
+
+    app-snapshot-digest-editor {
+      flex: 1 1 auto;
+    }
+  }
+
+  .form-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border-glass);
+  }
+
+  .form-status {
+    flex: 1 1 16em;
+    min-width: 0;
+    font-size: 0.85rem;
+    overflow-wrap: anywhere;
+
+    .is-error {
+      color: #e57373;
+    }
+
+    .is-ok {
+      color: var(--primary-color);
+    }
+  }
+
+  .form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-inline-start: auto;
+  }
+
+  @media (max-width: 600px) {
+    .meta-strip,
+    .form-fields,
+    .digest-group,
+    .form-footer {
+      padding-inline: 8px;
+    }
+  }
+}
+
+/* The confirmation opens above the full-screen dialog, whose own backdrop already dims the page. */
+.snapshot-download-confirm {
+  max-width: 540px;
+
+  p {
+    margin: 0;
+    line-height: 1.5;
   }
 
   .dialog-actions {
-    margin-top: 2px;
+    flex-wrap: wrap;
   }
 }
 

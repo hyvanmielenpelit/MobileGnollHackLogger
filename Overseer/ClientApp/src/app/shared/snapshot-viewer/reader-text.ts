@@ -9,13 +9,6 @@
 export const MAP_GUTTER_WIDTH = 4;
 export const MAP_COLUMNS = 79;
 export const MAP_MAX_Y = 20;
-export const FIND_MATCH_CAP = 2000;
-
-export interface ReaderChunk {
-  /** 1-based number of the chunk's first line. */
-  startLine: number;
-  lines: string[];
-}
 
 export interface MapBlock {
   headingLine: number;
@@ -35,47 +28,12 @@ export interface ReaderSection {
   line: number;
 }
 
-export interface FindMatch {
-  /** 1-based line number. */
-  line: number;
-  start: number;
-  end: number;
-}
-
-export interface FindResult {
-  matches: FindMatch[];
-  /** True when the cap cut the search short. */
-  truncated: boolean;
-}
-
 /* A blank row trimmed of its trailing whitespace is left as " 3:" with no space after the colon. */
 const MAP_ROW = /^ ?(\d{1,2}):(?: |$)/;
 
 export function splitLines(text: string | null | undefined): string[] {
   if (!text) return [];
   return text.split('\n').map(line => (line.endsWith('\r') ? line.slice(0, -1) : line));
-}
-
-/** Chunks of chunkLines lines, except that a chunk always begins at each index in forceBreakAt. */
-export function splitIntoChunks(lines: string[], chunkLines: number, forceBreakAt: number[] = []): ReaderChunk[] {
-  const size = Math.max(1, Math.floor(chunkLines));
-  const breaks = new Set(forceBreakAt);
-  const chunks: ReaderChunk[] = [];
-  let current: string[] = [];
-  let start = 0;
-
-  for (let i = 0; i < lines.length; i++) {
-    if (current.length > 0 && (current.length >= size || breaks.has(i))) {
-      chunks.push({ startLine: start + 1, lines: current });
-      current = [];
-      start = i;
-    }
-    current.push(lines[i]);
-  }
-  if (current.length > 0) {
-    chunks.push({ startLine: start + 1, lines: current });
-  }
-  return chunks;
 }
 
 /** The y a map row's gutter states, or null when the line is not a map row. */
@@ -146,25 +104,6 @@ export function detectSections(lines: string[]): ReaderSection[] {
     sections.push({ title: line, line: index + 1 });
   });
   return sections;
-}
-
-/** Case-insensitive, non-overlapping substring matches, at most cap of them. */
-export function findMatches(lines: string[], query: string, cap = FIND_MATCH_CAP): FindResult {
-  const matches: FindMatch[] = [];
-  if (!query) return { matches, truncated: false };
-
-  /* A case-insensitive RegExp keeps offsets in the original string, which lower-casing both
-     sides would not for characters whose lower case is longer. */
-  const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-  for (let i = 0; i < lines.length; i++) {
-    pattern.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(lines[i])) !== null) {
-      if (matches.length >= cap) return { matches, truncated: true };
-      matches.push({ line: i + 1, start: match.index, end: match.index + match[0].length });
-    }
-  }
-  return { matches, truncated: false };
 }
 
 /** Lines fromLine..toLine (1-based, inclusive) as "L{n}: text", numbers padded so the colons align. */

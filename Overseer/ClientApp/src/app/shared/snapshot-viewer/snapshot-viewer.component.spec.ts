@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed, fakeAsync, flushMicrotasks, tick } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { SnapshotViewerComponent } from './snapshot-viewer.component';
 import { SnapshotTextEditorComponent } from './snapshot-text-editor.component';
@@ -11,10 +11,10 @@ describe('SnapshotViewerComponent', () => {
   let component: SnapshotViewerComponent;
   let fixture: ComponentFixture<SnapshotViewerComponent>;
   let mockBenchmarkService: jasmine.SpyObj<AdminBenchmarkService>;
-  let getItemSpy: jasmine.Spy;
+  let host: HTMLElement;
 
   beforeEach(async () => {
-    getItemSpy = spyOn(Storage.prototype, 'getItem').and.returnValue(null);
+    spyOn(Storage.prototype, 'getItem').and.returnValue(null);
 
     mockBenchmarkService = jasmine.createSpyObj('AdminBenchmarkService', [
       'getSnapshot',
@@ -33,6 +33,7 @@ describe('SnapshotViewerComponent', () => {
       sanitizedText: 'Line 1\nLine 2',
       createdAtUtc: new Date().toISOString()
     }));
+    mockBenchmarkService.getSnapshotTextUrl.and.callFake((id: number) => `/api/admin/benchmark/snapshots/${id}/text`);
 
     await TestBed.configureTestingModule({
       imports: [SnapshotViewerComponent],
@@ -44,7 +45,81 @@ describe('SnapshotViewerComponent', () => {
     fixture = TestBed.createComponent(SnapshotViewerComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
+    host = fixture.nativeElement as HTMLElement;
   });
+
+  afterEach(() => {
+    component.downloadConfirmDialog?.nativeElement?.close();
+    component.viewerDialog?.nativeElement?.close();
+  });
+
+  function openWith(snapshot: BenchmarkGameSnapshotDto) {
+    mockBenchmarkService.getSnapshot.and.returnValue(of(snapshot));
+    component.open(1);
+    fixture.detectChanges();
+  }
+
+  /* The editors load CodeMirror with import(), which never settles inside fakeAsync, so tests
+     that need them are async and wait for their ready promises. */
+  async function openReady(snapshot: BenchmarkGameSnapshotDto = snapshotWith(buildBoard())) {
+    openWith(snapshot);
+    await textEditor().ready;
+    await digestEditor().ready;
+    fixture.detectChanges();
+  }
+
+  function textEditor(): SnapshotTextEditorComponent {
+    return fixture.debugElement.query(By.directive(SnapshotTextEditorComponent)).componentInstance;
+  }
+
+  function digestEditor(): SnapshotDigestEditorComponent {
+    return fixture.debugElement.query(By.directive(SnapshotDigestEditorComponent)).componentInstance;
+  }
+
+  function buttons(): HTMLButtonElement[] {
+    return Array.from(host.querySelectorAll('button'));
+  }
+
+  function buttonNamed(name: string): HTMLButtonElement | undefined {
+    return buttons().find(b => (b.getAttribute('aria-label') ?? b.textContent ?? '').replace(/\s+/g, ' ').trim() === name);
+  }
+
+  function clickButtonNamed(name: string) {
+    buttonNamed(name)!.click();
+    fixture.detectChanges();
+  }
+
+  function tabs(): HTMLButtonElement[] {
+    return Array.from(host.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+  }
+
+  function tab(id: string): HTMLButtonElement {
+    return host.querySelector<HTMLButtonElement>(`[role="tab"][id^="snapshot-tab-${id}-"]`)!;
+  }
+
+  function key(target: HTMLElement, name: string) {
+    target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }));
+    fixture.detectChanges();
+  }
+
+  function typeInto(input: HTMLInputElement, value: string) {
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+  }
+
+  function nameInput(): HTMLInputElement {
+    return host.querySelector<HTMLInputElement>('#editBoardName')!;
+  }
+
+  function editText(insert = 'Edited ') {
+    textEditor().view!.dispatch({ changes: { from: 0, insert } });
+    fixture.detectChanges();
+  }
+
+  function discardLabel(): string {
+    return (host.querySelector('.discard-label')?.textContent ?? '').trim();
+  }
 
   it('should create', () => {
     expect(component).toBeTruthy();
@@ -69,132 +144,209 @@ describe('SnapshotViewerComponent', () => {
     expect(component.hasTruncationMarker).toBeTrue();
   });
 
-  describe('the toolbar', () => {
-    beforeEach(() => {
-      component.open(1);
-      fixture.detectChanges();
+  describe('the tabs', () => {
+    it('exposes a tab list of two tabs, each controlling a panel, with one panel shown', () => {
+      openWith(snapshotWith(buildBoard()));
+      const list = host.querySelector('[role="tablist"]')!;
+      expect(list.getAttribute('aria-label')).toBe('Game snapshot sections');
+      expect(tabs().map(t => (t.textContent ?? '').trim())).toEqual(['Game Snapshot', 'Metadata']);
+
+      const selected = tabs().filter(t => t.getAttribute('aria-selected') === 'true');
+      expect(selected.length).toBe(1);
+      expect(selected[0]).toBe(tab('snapshot'));
+      expect(selected[0].getAttribute('tabindex')).toBe('0');
+      expect(tab('metadata').getAttribute('tabindex')).toBe('-1');
+
+      const panels = Array.from(host.querySelectorAll<HTMLElement>('[role="tabpanel"]'));
+      expect(panels.length).toBe(2);
+      for (const t of tabs()) {
+        const panel = document.getElementById(t.getAttribute('aria-controls')!)!;
+        expect(panels).toContain(panel);
+        expect(panel.getAttribute('aria-labelledby')).toBe(t.id);
+        expect(panel.getAttribute('tabindex')).toBe('0');
+      }
+      const shown = panels.filter(p => !p.hidden);
+      expect(shown.length).toBe(1);
+      expect(shown[0].getAttribute('aria-labelledby')).toBe(selected[0].id);
+      expect(getComputedStyle(panels.find(p => p.hidden)!).display).toBe('none');
     });
 
-    afterEach(() => component.viewerDialog?.nativeElement?.close());
+    it('moves selection and focus with the arrow, Home and End keys', () => {
+      openWith(snapshotWith(buildBoard()));
 
-    function buttonNamed(name: string): HTMLButtonElement | undefined {
-      const buttons = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('button'));
-      return buttons.find(b => (b.getAttribute('aria-label') ?? b.textContent ?? '').trim() === name);
-    }
+      tab('snapshot').focus();
+      key(tab('snapshot'), 'ArrowRight');
+      expect(component.activeTab).toBe('metadata');
+      expect(document.activeElement).toBe(tab('metadata'));
 
-    function liveText(selector: string): string {
-      return ((fixture.nativeElement as HTMLElement).querySelector(selector)?.textContent ?? '').trim();
-    }
+      key(tab('metadata'), 'ArrowRight');
+      expect(component.activeTab).toBe('snapshot');
+      expect(document.activeElement).toBe(tab('snapshot'));
 
-    function expectNoEmoji() {
-      const buttons = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('button'));
-      for (const button of buttons) {
-        expect(/\p{Extended_Pictographic}/u.test(button.textContent ?? '')).withContext(button.textContent ?? '').toBeFalse();
+      key(tab('snapshot'), 'ArrowLeft');
+      expect(component.activeTab).toBe('metadata');
+
+      key(tab('metadata'), 'Home');
+      expect(component.activeTab).toBe('snapshot');
+      expect(document.activeElement).toBe(tab('snapshot'));
+
+      key(tab('snapshot'), 'End');
+      expect(component.activeTab).toBe('metadata');
+      expect(document.activeElement).toBe(tab('metadata'));
+    });
+
+    it('shows the Game Snapshot tab again when reopened', () => {
+      openWith(snapshotWith(buildBoard()));
+      tab('metadata').click();
+      fixture.detectChanges();
+      expect(component.activeTab).toBe('metadata');
+
+      component.close();
+      openWith(snapshotWith(buildBoard()));
+      expect(component.activeTab).toBe('snapshot');
+      expect(tab('snapshot').getAttribute('aria-selected')).toBe('true');
+    });
+
+    it('keeps unsaved text edits across a tab switch, without asking', async () => {
+      await openReady();
+      const editor = textEditor();
+      editText();
+
+      tab('metadata').click();
+      fixture.detectChanges();
+      expect(host.querySelector('.discard-strip')).toBeNull();
+      expect(component.activeTab).toBe('metadata');
+
+      tab('snapshot').click();
+      fixture.detectChanges();
+      expect(textEditor()).toBe(editor);
+      expect(editor.dirty).toBeTrue();
+      expect(editor.currentText()!.startsWith('Edited Map:')).toBeTrue();
+    });
+
+    it('names every action in words, with no emoji, on both tabs and in the download confirmation', async () => {
+      await openReady();
+
+      function expectNoEmoji() {
+        for (const button of buttons()) {
+          expect(/\p{Extended_Pictographic}/u.test(button.textContent ?? '')).withContext(button.textContent ?? '').toBeFalse();
+        }
       }
-    }
 
-    it('names every action in words, with no emoji', async () => {
-      for (const name of ['Copy Text', 'Copy with line numbers', 'Download .snapshot.txt']) {
-        const button = buttonNamed(name);
-        expect(button).withContext(name).toBeTruthy();
-      }
-      for (const name of ['Close game snapshot', 'Go to line', 'Previous match in snapshot', 'Next match in snapshot']) {
+      for (const name of ['Close game snapshot', 'Find', 'Copy Text', 'Copy with line numbers',
+                          'Download .snapshot.txt of Emergency Low HP', 'Revert', 'Save Text']) {
         expect(buttonNamed(name)).withContext(name).toBeTruthy();
       }
       expectNoEmoji();
 
       component.selectTab('metadata');
       fixture.detectChanges();
-      for (const name of ['Edit Metadata', 'Copy SHA-256']) {
+      for (const name of ['Copy SHA-256', 'Regenerate digest from snapshot', 'Save Changes']) {
         expect(buttonNamed(name)).withContext(name).toBeTruthy();
       }
+      expect(buttonNamed('Edit Metadata')).toBeUndefined();
       expectNoEmoji();
 
-      buttonNamed('Edit Metadata')!.click();
-      fixture.detectChanges();
-      await fixture.debugElement.query(By.directive(SnapshotDigestEditorComponent)).componentInstance.ready;
-      fixture.detectChanges();
-      expect(buttonNamed('Regenerate digest from snapshot')).toBeTruthy();
-      expectNoEmoji();
+      for (const name of ['Cancel', 'Download saved text', 'Save and download']) {
+        expect(buttonNamed(name)).withContext(name).toBeTruthy();
+      }
+    });
+  });
+
+  describe('the metadata page', () => {
+    it('shows the provenance strip above the fields', async () => {
+      await openReady(snapshotWith(buildBoard(), { charCount: 12345, sha256: 'feedface1234' }));
+      await fixture.whenStable();
+      const strip = host.querySelector<HTMLElement>('.meta-strip')!;
+      expect(strip).toBeTruthy();
+      const facts = Array.from(strip.querySelectorAll('dt')).map(dt => (dt.textContent ?? '').trim());
+      expect(facts).toEqual(['Capture', 'Size', 'Captured', 'Source chat', 'SHA-256']);
+      expect(strip.textContent).toContain('client_refresh_snapshot');
+      expect(strip.textContent).toContain('12,345 chars');
+      expect(strip.querySelector('.sha-box')!.textContent).toBe('feedface1234');
+      expect(strip.querySelector('button[aria-label="Copy SHA-256"]')).toBeTruthy();
+      expect(nameInput().value).toBe('Emergency Low HP');
     });
 
-    it('announces a text copy, then clears the announcement', fakeAsync(() => {
-      spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
-
-      component.copyText();
-      flushMicrotasks();
-      fixture.detectChanges();
-      expect(liveText('.copy-text-status')).toBe('Copied');
-      expect(buttonNamed('Copied')).toBeTruthy();
-
-      tick(2000);
-      fixture.detectChanges();
-      expect(liveText('.copy-text-status')).toBe('');
-      expect(buttonNamed('Copy Text')).toBeTruthy();
-    }));
-
-    it('announces a SHA-256 copy', fakeAsync(() => {
-      spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
-      component.selectTab('metadata');
-      fixture.detectChanges();
+    it('announces a SHA-256 copy', async () => {
+      const writeText = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+      await openReady();
 
       component.copySha();
-      flushMicrotasks();
+      await fixture.whenStable();
       fixture.detectChanges();
-      expect(liveText('.copy-sha-status')).toBe('Copied');
+      expect(writeText).toHaveBeenCalledWith('abc1234567890');
+      expect((host.querySelector('.copy-sha-status')?.textContent ?? '').trim()).toBe('Copied');
+    });
 
-      tick(2000);
+    it('enables Save Changes and Revert once a field changes, and Revert restores it', async () => {
+      await openReady();
+      await fixture.whenStable();
+      const save = buttonNamed('Save Changes')!;
+      const revert = host.querySelector<HTMLButtonElement>('.revert-metadata-btn')!;
+      expect(save.getAttribute('aria-disabled')).toBe('true');
+      expect(revert.getAttribute('aria-disabled')).toBe('true');
+
+      typeInto(nameInput(), 'Renamed');
+      expect(component.metadataDirty).toBeTrue();
+      expect(save.getAttribute('aria-disabled')).toBeNull();
+      expect(revert.getAttribute('aria-disabled')).toBeNull();
+
+      revert.click();
       fixture.detectChanges();
-      expect(liveText('.copy-sha-status')).toBe('');
-    }));
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(component.editName).toBe('Emergency Low HP');
+      expect(nameInput().value).toBe('Emergency Low HP');
+      expect(save.getAttribute('aria-disabled')).toBe('true');
+      expect(revert.getAttribute('aria-disabled')).toBe('true');
+    });
+
+    it('saves the form, re-initialises it from the response and shows Saved.', async () => {
+      const updatedSpy = jasmine.createSpy('snapshotUpdated');
+      component.snapshotUpdated.subscribe(updatedSpy);
+      await openReady();
+      await fixture.whenStable();
+      mockBenchmarkService.updateSnapshot.and.returnValue(of(snapshotWith(buildBoard(), { name: 'Renamed' })));
+
+      typeInto(nameInput(), '  Renamed  ');
+      buttonNamed('Save Changes')!.click();
+      fixture.detectChanges();
+
+      expect(mockBenchmarkService.updateSnapshot).toHaveBeenCalledWith(1, jasmine.objectContaining({ name: 'Renamed' }));
+      expect(component.snapshot!.name).toBe('Renamed');
+      expect(component.editName).toBe('Renamed');
+      expect(component.metadataDirty).toBeFalse();
+      expect(host.querySelector('.form-status .is-ok')!.textContent).toContain('Saved.');
+      expect(updatedSpy).toHaveBeenCalledWith(jasmine.objectContaining({ name: 'Renamed' }));
+    });
+
+    it('refuses to save an empty name', async () => {
+      await openReady();
+      await fixture.whenStable();
+      typeInto(nameInput(), '   ');
+      buttonNamed('Save Changes')!.click();
+      fixture.detectChanges();
+      expect(mockBenchmarkService.updateSnapshot).not.toHaveBeenCalled();
+      expect(host.querySelector('.form-status .is-error')!.textContent).toContain('Snapshot name is required.');
+    });
   });
 
   describe('the digest regenerate action', () => {
-    let host: HTMLElement;
-
     const rebuilt = 'Board digest (extract of the snapshot; the map grid and symbol legend are omitted):\nStatus:\nHP:31(44)';
-
-    /* The digest editor loads CodeMirror with import(), which never settles inside fakeAsync,
-       so these tests are async and wait for its ready promise. */
-    async function openEditing() {
-      mockBenchmarkService.getSnapshot.and.returnValue(
-        of(snapshotWith(buildBoard(), { digestText: 'the old prefix digest' })));
-      component.open(1);
-      fixture.detectChanges();
-      host = fixture.nativeElement as HTMLElement;
-      component.selectTab('metadata');
-      fixture.detectChanges();
-      clickButtonNamed('Edit Metadata');
-      fixture.detectChanges();
-      await digestEditor().ready;
-      fixture.detectChanges();
-    }
-
-    function digestEditor(): SnapshotDigestEditorComponent {
-      return fixture.debugElement.query(By.directive(SnapshotDigestEditorComponent)).componentInstance;
-    }
 
     function digestText(): string {
       return digestEditor().view!.state.doc.toString();
-    }
-
-    /* The form is opened and closed by clicking its own buttons: a property set from the test
-       leaves the view unchecked, exactly as it would in the running app. */
-    function clickButtonNamed(name: string) {
-      Array.from(host.querySelectorAll('button'))
-        .find(b => (b.textContent ?? '').trim() === name)!
-        .click();
-      fixture.detectChanges();
     }
 
     function regenerateButton(): HTMLButtonElement {
       return host.querySelector<HTMLButtonElement>('.digest-editor .regenerate-btn')!;
     }
 
-    afterEach(() => component.viewerDialog?.nativeElement?.close());
-
-    it('rebuilds the digest and shows it in the editor and the disclosure', async () => {
-      await openEditing();
+    it('rebuilds the digest, puts it in the editor and keeps the form clean', async () => {
+      await openReady(snapshotWith(buildBoard(), { digestText: 'the old prefix digest' }));
+      component.selectTab('metadata');
+      fixture.detectChanges();
       expect(digestText()).toBe('the old prefix digest');
       mockBenchmarkService.regenerateSnapshotDigest.and.returnValue(
         of(snapshotWith(buildBoard(), { digestText: rebuilt })));
@@ -205,14 +357,13 @@ describe('SnapshotViewerComponent', () => {
       expect(mockBenchmarkService.regenerateSnapshotDigest).toHaveBeenCalledWith(1);
       expect(digestText()).toBe(rebuilt);
       expect(component.snapshot!.digestText).toBe(rebuilt);
-
-      clickButtonNamed('Cancel');
-      const disclosure = host.querySelector<HTMLDetailsElement>('details.digest-disclosure')!;
-      expect(disclosure.textContent).toContain('the map grid and symbol legend are omitted');
+      expect(component.metadataDirty).toBeFalse();
     });
 
     it('marks the button busy and refuses a second click while the request is pending', async () => {
-      await openEditing();
+      await openReady();
+      component.selectTab('metadata');
+      fixture.detectChanges();
       const pending = new Subject<BenchmarkGameSnapshotDto>();
       mockBenchmarkService.regenerateSnapshotDigest.and.returnValue(pending.asObservable());
 
@@ -229,92 +380,93 @@ describe('SnapshotViewerComponent', () => {
       fixture.detectChanges();
 
       expect(regenerateButton().getAttribute('aria-disabled')).toBeNull();
-      expect(regenerateButton().getAttribute('aria-label')).toBe('Regenerate digest from snapshot');
     });
   });
 
   describe('editing the text', () => {
-    let host: HTMLElement;
-
-    function openWith(snapshot: BenchmarkGameSnapshotDto) {
-      mockBenchmarkService.getSnapshot.and.returnValue(of(snapshot));
-      component.open(1);
-      fixture.detectChanges();
-      host = fixture.nativeElement as HTMLElement;
-    }
-
-    function clickButtonNamed(name: string) {
-      Array.from(host.querySelectorAll('button'))
-        .find(b => (b.textContent ?? '').trim() === name)!
-        .click();
-      fixture.detectChanges();
-    }
-
-    function editor(): SnapshotTextEditorComponent {
-      return fixture.debugElement.query(By.directive(SnapshotTextEditorComponent)).componentInstance;
-    }
-
-    function tab(id: string): HTMLButtonElement {
-      return host.querySelector<HTMLButtonElement>(`[role="tab"][id^="snapshot-tab-${id}-"]`)!;
-    }
-
-    async function openEditor() {
-      openWith(snapshotWith(buildBoard()));
-      tab('editor').click();
-      fixture.detectChanges();
-      await editor().ready;
-      fixture.detectChanges();
-    }
-
-    afterEach(() => component.viewerDialog?.nativeElement?.close());
-
-    it('mounts the editor in place of the reader', async () => {
-      await openEditor();
-      expect(host.querySelector('app-snapshot-text-editor')).toBeTruthy();
-      expect(host.querySelector('.reader-scroll')).toBeNull();
-      expect(host.querySelector('.snapshot-edit-panel')).toBeNull();
-    });
-
-    it('saves with the loaded SHA-256 and re-renders the returned text', async () => {
+    it('saves with the loaded SHA-256 and stays on the tab with the saved text clean', async () => {
       const updatedSpy = jasmine.createSpy('snapshotUpdated');
       component.snapshotUpdated.subscribe(updatedSpy);
-      await openEditor();
+      await openReady();
+      editText('one\ntwo\n');
       mockBenchmarkService.updateSnapshotText.and.returnValue(
-        of(snapshotWith('one\ntwo\nthree', { sha256: 'def0987654321' })));
+        of(snapshotWith('one\ntwo\nthree', { sha256: 'def0987654321', digestText: 'rebuilt digest' })));
 
-      editor().save.emit('one\ntwo\nthree');
+      textEditor().save.emit(textEditor().currentText()!);
       fixture.detectChanges();
 
       expect(mockBenchmarkService.updateSnapshotText).toHaveBeenCalledWith(1, {
-        text: 'one\ntwo\nthree',
+        text: jasmine.stringMatching(/^one\ntwo\nMap:/),
         expectedSha256: 'abc1234567890'
       });
-      expect(host.querySelector('app-snapshot-text-editor')).toBeNull();
-      expect(component.lineCount).toBe(3);
-      expect(host.querySelectorAll('.reader-line').length).toBe(3);
-      component.selectTab('metadata');
-      fixture.detectChanges();
+      expect(component.activeTab).toBe('snapshot');
+      expect(textEditor().currentText()).toBe('one\ntwo\nthree');
+      expect(textEditor().dirty).toBeFalse();
+      expect(component.editingTextDirty).toBeFalse();
+      expect(host.querySelector('.editor-error .is-ok')!.textContent).toContain('Saved. SHA-256 and digest updated.');
+      expect(component.editDigestText).toBe('rebuilt digest');
       expect(host.querySelector('.sha-box')!.textContent).toContain('def0987654321');
       expect(updatedSpy).toHaveBeenCalledWith(jasmine.objectContaining({ charCount: 13, sha256: 'def0987654321' }));
     });
 
-    it('keeps the editor open and shows the server message when the save fails', async () => {
-      await openEditor();
+    it('keeps a digest edit in progress when the text is saved', async () => {
+      await openReady();
+      component.editDigestText = 'my digest edit';
+      editText();
+      mockBenchmarkService.updateSnapshotText.and.returnValue(
+        of(snapshotWith('saved', { digestText: 'rebuilt digest' })));
+
+      textEditor().save.emit('saved');
+      fixture.detectChanges();
+      expect(component.editDigestText).toBe('my digest edit');
+    });
+
+    it('keeps the buffer and shows the server message when the save fails', async () => {
+      await openReady();
+      editText();
       const message = 'The snapshot text was changed by someone else since it was loaded. Reload the snapshot and reapply your edit.';
       mockBenchmarkService.updateSnapshotText.and.returnValue(throwError(() => ({ status: 409, error: { error: message } })));
 
-      editor().save.emit('edited');
+      textEditor().save.emit(textEditor().currentText()!);
       fixture.detectChanges();
 
-      expect(host.querySelector('app-snapshot-text-editor')).toBeTruthy();
       expect(host.querySelector('.editor-error')!.textContent).toContain(message);
+      expect(textEditor().dirty).toBeTrue();
       expect(component.savingText).toBeFalse();
     });
+  });
 
-    it('does not close the dialog on Escape while there are unsaved changes', async () => {
-      await openEditor();
-      editor().dirtyChange.emit(true);
-      fixture.detectChanges();
+  describe('closing', () => {
+    it('closes at once when nothing is unsaved', async () => {
+      await openReady();
+      clickButtonNamed('Close game snapshot');
+      expect(component.viewerDialog.nativeElement.open).toBeFalse();
+      expect(host.querySelector('app-snapshot-text-editor')).toBeNull();
+    });
+
+    it('asks before closing with unsaved text; Keep editing stays, Discard closes', async () => {
+      await openReady();
+      editText();
+
+      clickButtonNamed('Close game snapshot');
+      expect(component.viewerDialog.nativeElement.open).toBeTrue();
+      expect(discardLabel()).toBe('Discard unsaved changes to the snapshot text?');
+      expect((document.activeElement?.textContent ?? '').trim()).toBe('Keep editing');
+
+      clickButtonNamed('Keep editing');
+      expect(host.querySelector('.discard-strip')).toBeNull();
+      expect(component.viewerDialog.nativeElement.open).toBeTrue();
+      expect(textEditor().view!.hasFocus).toBeTrue();
+
+      clickButtonNamed('Close game snapshot');
+      clickButtonNamed('Discard');
+      expect(component.viewerDialog.nativeElement.open).toBeFalse();
+      expect(host.querySelector('app-snapshot-text-editor')).toBeNull();
+    });
+
+    it('does not close on Escape while there are unsaved changes', async () => {
+      await openReady();
+      editText();
 
       const cancel = new Event('cancel', { cancelable: true });
       component.viewerDialog.nativeElement.dispatchEvent(cancel);
@@ -323,310 +475,119 @@ describe('SnapshotViewerComponent', () => {
       expect(cancel.defaultPrevented).toBeTrue();
       expect(component.viewerDialog.nativeElement.open).toBeTrue();
       expect(host.querySelector('.discard-strip')).toBeTruthy();
-
-      clickButtonNamed('Discard');
-      expect(host.querySelector('app-snapshot-text-editor')).toBeNull();
-      expect(host.querySelector('.reader-scroll')).toBeTruthy();
     });
 
-    it('closes the editor at once when Cancel is pressed with no changes', async () => {
-      await openEditor();
-      clickButtonNamed('Cancel');
-      expect(host.querySelector('app-snapshot-text-editor')).toBeNull();
-      expect(host.querySelector('.discard-strip')).toBeNull();
-      expect(component.activeTab).toBe('viewer');
-    });
-  });
-
-  describe('the tabs', () => {
-    let host: HTMLElement;
-
-    function openWith(snapshot: BenchmarkGameSnapshotDto) {
-      mockBenchmarkService.getSnapshot.and.returnValue(of(snapshot));
-      component.open(1);
+    it('names the metadata, or both, in the strip', async () => {
+      await openReady();
+      component.selectTab('metadata');
       fixture.detectChanges();
-      host = fixture.nativeElement as HTMLElement;
-    }
+      typeInto(nameInput(), 'Renamed');
 
-    function tabs(): HTMLButtonElement[] {
-      return Array.from(host.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
-    }
-
-    function tab(id: string): HTMLButtonElement {
-      return host.querySelector<HTMLButtonElement>(`[role="tab"][id^="snapshot-tab-${id}-"]`)!;
-    }
-
-    function key(target: HTMLElement, name: string) {
-      target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }));
-      fixture.detectChanges();
-    }
-
-    function editor(): SnapshotTextEditorComponent {
-      return fixture.debugElement.query(By.directive(SnapshotTextEditorComponent)).componentInstance;
-    }
-
-    function clickButtonNamed(name: string) {
-      Array.from(host.querySelectorAll('button'))
-        .find(b => (b.textContent ?? '').trim() === name)!
-        .click();
-      fixture.detectChanges();
-    }
-
-    afterEach(() => component.viewerDialog?.nativeElement?.close());
-
-    it('exposes a tab list with one selected tab and its labelled panel', () => {
-      openWith(snapshotWith(buildBoard()));
-      const list = host.querySelector('[role="tablist"]')!;
-      expect(list.getAttribute('aria-label')).toBe('Game snapshot sections');
-      expect(tabs().map(t => (t.textContent ?? '').trim())).toEqual(['Viewer', 'Editor', 'Metadata']);
-
-      const selected = tabs().filter(t => t.getAttribute('aria-selected') === 'true');
-      expect(selected.length).toBe(1);
-      expect(selected[0].getAttribute('tabindex')).toBe('0');
-      for (const other of tabs().filter(t => t !== selected[0])) {
-        expect(other.getAttribute('tabindex')).toBe('-1');
-      }
-
-      const panels = host.querySelectorAll<HTMLElement>('[role="tabpanel"]');
-      expect(panels.length).toBe(1);
-      expect(panels[0].getAttribute('tabindex')).toBe('0');
-      expect(panels[0].getAttribute('aria-labelledby')).toBe(selected[0].id);
-      expect(selected[0].getAttribute('aria-controls')).toBe(panels[0].id);
-    });
-
-    it('moves selection and focus with the arrow, Home and End keys', () => {
-      openWith(snapshotWith(buildBoard()));
-
-      tab('viewer').focus();
-      key(tab('viewer'), 'ArrowRight');
-      expect(component.activeTab).toBe('editor');
-      expect(document.activeElement).toBe(tab('editor'));
-
-      key(tab('editor'), 'Home');
-      expect(component.activeTab).toBe('viewer');
-      expect(document.activeElement).toBe(tab('viewer'));
-
-      key(tab('viewer'), 'ArrowLeft');
-      expect(component.activeTab).toBe('metadata');
-      expect(document.activeElement).toBe(tab('metadata'));
-
-      key(tab('metadata'), 'Home');
-      key(tab('viewer'), 'End');
-      expect(component.activeTab).toBe('metadata');
-      expect(document.activeElement).toBe(tab('metadata'));
-    });
-
-    it('shows the Viewer tab again when reopened', () => {
-      openWith(snapshotWith(buildBoard()));
-      tab('metadata').click();
-      fixture.detectChanges();
-      expect(component.activeTab).toBe('metadata');
-
-      component.viewerDialog.nativeElement.close();
-      openWith(snapshotWith(buildBoard()));
-      expect(component.activeTab).toBe('viewer');
-      expect(tab('viewer').getAttribute('aria-selected')).toBe('true');
-      expect(host.querySelector('.reader-scroll')).toBeTruthy();
-    });
-
-    it('asks before leaving the editor with unsaved changes', async () => {
-      openWith(snapshotWith(buildBoard()));
-      tab('editor').click();
-      fixture.detectChanges();
-      await editor().ready;
-      fixture.detectChanges();
-      editor().dirtyChange.emit(true);
-      fixture.detectChanges();
-
-      tab('metadata').click();
-      fixture.detectChanges();
-      expect(host.querySelector('.discard-strip')).toBeTruthy();
-      expect(component.activeTab).toBe('editor');
-      expect((document.activeElement?.textContent ?? '').trim()).toBe('Keep editing');
+      clickButtonNamed('Close game snapshot');
+      expect(discardLabel()).toBe('Discard unsaved changes to the metadata?');
 
       clickButtonNamed('Keep editing');
-      expect(host.querySelector('.discard-strip')).toBeNull();
-      expect(host.querySelector('app-snapshot-text-editor')).toBeTruthy();
-      expect(component.activeTab).toBe('editor');
-
-      tab('metadata').click();
-      fixture.detectChanges();
-      clickButtonNamed('Discard');
-      expect(component.activeTab).toBe('metadata');
-      expect(host.querySelector('app-snapshot-text-editor')).toBeNull();
-      expect(host.querySelector('.sha-fact')).toBeTruthy();
-    });
-
-    it('has no footer and no Edit Text button on any tab', () => {
-      openWith(snapshotWith(buildBoard()));
-      expect(host.querySelector('.benchmark-snapshot-viewer-dialog > .dialog-actions')).toBeNull();
-      for (const id of ['viewer', 'editor', 'metadata']) {
-        component.selectTab(id as 'viewer' | 'editor' | 'metadata');
-        fixture.detectChanges();
-        const names = Array.from(host.querySelectorAll('button')).map(b => (b.textContent ?? '').trim());
-        expect(names).withContext(id).not.toContain('Edit Text');
-      }
+      editText();
+      clickButtonNamed('Close game snapshot');
+      expect(discardLabel()).toBe('Discard unsaved changes to the snapshot text and metadata?');
     });
   });
 
-  describe('the reader', () => {
-    let host: HTMLElement;
+  describe('downloading', () => {
+    let clickSpy: jasmine.Spy;
+    let clickedLinks: HTMLAnchorElement[];
 
-    function openWith(snapshot: BenchmarkGameSnapshotDto) {
-      mockBenchmarkService.getSnapshot.and.returnValue(of(snapshot));
-      component.open(1);
-      fixture.detectChanges();
-      host = fixture.nativeElement as HTMLElement;
+    beforeEach(() => {
+      clickedLinks = [];
+      clickSpy = spyOn(HTMLAnchorElement.prototype, 'click').and.callFake(function (this: HTMLAnchorElement) {
+        clickedLinks.push(this);
+      });
+    });
+
+    function confirmOpen(): boolean {
+      return component.downloadConfirmDialog.nativeElement.open;
     }
 
-    function line(n: number): HTMLElement {
-      return host.querySelector<HTMLElement>(`.reader-line[data-ln="${n}"]`)!;
-    }
+    it('downloads the saved text through a link when the editor is clean', async () => {
+      await openReady();
+      clickButtonNamed('Download .snapshot.txt of Emergency Low HP');
 
-    function heroRowCenter(): { row: HTMLElement; text: Text; x: number; y: number } {
-      const rowIndex = component.mapBlock!.rowByY.get(13)!;
-      const row = line(rowIndex + 1);
-      const text = row.firstChild as Text;
-      const range = document.createRange();
-      range.setStart(text, 13);
-      range.setEnd(text, 14);
-      const box = range.getBoundingClientRect();
-      return { row, text, x: box.left + box.width / 2, y: box.top + box.height / 2 };
-    }
-
-    afterEach(() => component.viewerDialog?.nativeElement?.close());
-
-    it('renders a 250-line board as three numbered chunks', () => {
-      openWith(snapshotWith(Array.from({ length: 250 }, (_, i) => `row ${i + 1}`).join('\n')));
-      const chunks = host.querySelectorAll('.reader-chunk');
-      expect(chunks.length).toBe(3);
-      const lines = host.querySelectorAll<HTMLElement>('.reader-line');
-      expect(lines.length).toBe(250);
-      expect(lines[0].dataset['ln']).toBe('1');
-      expect(lines[249].dataset['ln']).toBe('250');
-      expect(lines[0].textContent).toBe('row 1');
+      expect(confirmOpen()).toBeFalse();
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+      expect(clickedLinks[0].getAttribute('href')).toBe('/api/admin/benchmark/snapshots/1/text');
+      expect(clickedLinks[0].getAttribute('download')).toBe('Emergency_Low_HP.snapshot.txt');
+      expect(clickedLinks[0].isConnected).toBeFalse();
     });
 
-    it('is a focusable, named region', () => {
-      openWith(snapshotWith(buildBoard()));
-      const region = host.querySelector<HTMLElement>('.reader-scroll')!;
-      expect(region.getAttribute('role')).toBe('region');
-      expect(region.getAttribute('aria-label')).toBe('Snapshot text of Emergency Low HP');
-      expect(region.getAttribute('tabindex')).toBe('0');
+    it('sanitises the file name, falling back to snapshot', () => {
+      component.snapshot = snapshotWith('x', { name: 'Level 3: "Mines" / ☠' });
+      expect(component.downloadFileName).toBe('Level_3_Mines.snapshot.txt');
+      component.snapshot = snapshotWith('x', { name: '☠☠' });
+      expect(component.downloadFileName).toBe('snapshot.snapshot.txt');
     });
 
-    it('toggles line numbers and wrapping, and remembers both', fakeAsync(() => {
-      const setItem = spyOn(Storage.prototype, 'setItem');
-      openWith(snapshotWith(buildBoard()));
-      /* ngModel writes the checkboxes' initial checked state in a microtask. */
-      flushMicrotasks();
+    it('asks first when the editor is dirty; Cancel downloads nothing', async () => {
+      await openReady();
+      editText();
+      clickButtonNamed('Download .snapshot.txt of Emergency Low HP');
+
+      expect(confirmOpen()).toBeTrue();
+      expect(clickSpy).not.toHaveBeenCalled();
+
+      clickButtonNamed('Cancel');
+      expect(confirmOpen()).toBeFalse();
+      expect(clickSpy).not.toHaveBeenCalled();
+    });
+
+    it('closes the confirmation on its own Escape', async () => {
+      await openReady();
+      editText();
+      clickButtonNamed('Download .snapshot.txt of Emergency Low HP');
+
+      component.downloadConfirmDialog.nativeElement.dispatchEvent(new Event('cancel', { cancelable: true }));
       fixture.detectChanges();
-      const region = host.querySelector<HTMLElement>('.reader-scroll')!;
-      expect(region.classList.contains('no-ln')).toBeFalse();
-      expect(region.classList.contains('wrap')).toBeFalse();
-
-      host.querySelector<HTMLInputElement>('.line-numbers-toggle')!.click();
-      host.querySelector<HTMLInputElement>('.wrap-toggle')!.click();
-      fixture.detectChanges();
-
-      expect(region.classList.contains('no-ln')).toBeTrue();
-      expect(region.classList.contains('wrap')).toBeTrue();
-      expect(setItem).toHaveBeenCalledWith('overseer.snapshotReader.lineNumbers', '0');
-      expect(setItem).toHaveBeenCalledWith('overseer.snapshotReader.wrap', '1');
-    }));
-
-    it('falls back to the defaults when storage throws', () => {
-      getItemSpy.and.throwError(new Error('storage denied'));
-      const second = TestBed.createComponent(SnapshotViewerComponent);
-      second.detectChanges();
-      expect(second.componentInstance.showLineNumbers).toBeTrue();
-      expect(second.componentInstance.wrapLines).toBeFalse();
-      second.destroy();
+      expect(confirmOpen()).toBeFalse();
+      expect(component.viewerDialog.nativeElement.open).toBeTrue();
+      expect(clickSpy).not.toHaveBeenCalled();
     });
 
-    it('keeps the digest in a closed disclosure, and omits it when absent', () => {
-      openWith(snapshotWith(buildBoard(), { digestText: 'Hero at low HP beside a fountain.' }));
-      component.selectTab('metadata');
-      fixture.detectChanges();
-      const digest = host.querySelector<HTMLDetailsElement>('details.digest-disclosure');
-      expect(digest).toBeTruthy();
-      expect(digest!.open).toBeFalse();
+    it('downloads the saved text without saving from Download saved text', async () => {
+      await openReady();
+      editText();
+      clickButtonNamed('Download .snapshot.txt of Emergency Low HP');
 
-      component.viewerDialog.nativeElement.close();
-      openWith(snapshotWith(buildBoard()));
-      component.selectTab('metadata');
-      fixture.detectChanges();
-      expect(host.querySelector('details.digest-disclosure')).toBeNull();
+      clickButtonNamed('Download saved text');
+      expect(confirmOpen()).toBeFalse();
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+      expect(mockBenchmarkService.updateSnapshotText).not.toHaveBeenCalled();
+      expect(textEditor().dirty).toBeTrue();
     });
 
-    it('lists the map grid among the sections', () => {
-      openWith(snapshotWith(buildBoard()));
-      const options = Array.from(host.querySelectorAll<HTMLOptionElement>('.section-select option')).map(o => o.textContent ?? '');
-      expect(options.some(o => o.startsWith('Map grid:'))).toBeTrue();
-      expect(options.some(o => o.startsWith('Inventory:'))).toBeTrue();
+    it('saves the buffer and then downloads from Save and download', async () => {
+      await openReady();
+      editText();
+      const buffer = textEditor().currentText()!;
+      mockBenchmarkService.updateSnapshotText.and.returnValue(of(snapshotWith(buffer, { sha256: 'def0987654321' })));
+      clickButtonNamed('Download .snapshot.txt of Emergency Low HP');
+
+      clickButtonNamed('Save and download');
+      expect(mockBenchmarkService.updateSnapshotText).toHaveBeenCalledWith(1, { text: buffer, expectedSha256: 'abc1234567890' });
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+      expect(confirmOpen()).toBeFalse();
+      expect(textEditor().dirty).toBeFalse();
     });
 
-    it('marks the target line after going to it', () => {
-      openWith(snapshotWith(buildBoard()));
-      component.goToLine(200);
-      expect(line(200).classList.contains('is-target')).toBeTrue();
-      expect(host.querySelectorAll('.is-target').length).toBe(1);
-    });
+    it('downloads nothing and shows the error when Save and download fails', async () => {
+      await openReady();
+      editText();
+      mockBenchmarkService.updateSnapshotText.and.returnValue(throwError(() => ({ status: 500, error: { message: 'Server exploded.' } })));
+      clickButtonNamed('Download .snapshot.txt of Emergency Low HP');
 
-    it('finds text, reports the count, and steps between matches', fakeAsync(() => {
-      openWith(snapshotWith(buildBoard()));
-      const input = host.querySelector<HTMLInputElement>('.find-input')!;
-      input.value = 'ration';
-      input.dispatchEvent(new Event('input'));
-      tick(150);
-      fixture.detectChanges();
-
-      expect(host.querySelector('.find-count')!.textContent!.trim()).toBe('1 of 2');
-      expect(component.targetLine).toBe(3);
-      if ('highlights' in CSS) {
-        expect(CSS.highlights.has('reader-find')).toBeTrue();
-      }
-
-      component.stepMatch(1);
-      fixture.detectChanges();
-      expect(host.querySelector('.find-count')!.textContent!.trim()).toBe('2 of 2');
-      expect(component.targetLine).toBe(30);
-
-      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }));
-      fixture.detectChanges();
-      expect(host.querySelector('.find-count')!.textContent!.trim()).toBe('');
-      tick(2000);
-    }));
-
-    it('reads the map cell under the pointer as <x,y> and its symbol', () => {
-      openWith(snapshotWith(buildBoard()));
-      const { text, x, y } = heroRowCenter();
-      spyOn(document, 'caretPositionFromPoint').and.returnValue({ offsetNode: text, offset: 13 } as unknown as CaretPosition);
-
-      component.updateCellReadout(x, y);
-      expect(component.cellReadout).toBe('<10,13>  \'@\'');
-    });
-
-    it('copies the coordinate of a clicked map cell', () => {
-      openWith(snapshotWith(buildBoard()));
-      const writeText = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
-      const { row, text, x, y } = heroRowCenter();
-      spyOn(document, 'caretPositionFromPoint').and.returnValue({ offsetNode: text, offset: 13 } as unknown as CaretPosition);
-      window.getSelection()?.removeAllRanges();
-
-      row.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: x, clientY: y }));
-      expect(writeText).toHaveBeenCalledWith('<10,13>');
-    });
-
-    it('copies the whole board with line numbers when nothing is selected', () => {
-      openWith(snapshotWith(buildBoard()));
-      const writeText = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
-      window.getSelection()?.removeAllRanges();
-
-      component.copyWithLineNumbers();
-      const copied = writeText.calls.mostRecent().args[0] as string;
-      expect(copied.startsWith('L  1: Map:\n')).toBeTrue();
-      expect(copied.split('\n').length).toBe(250);
+      clickButtonNamed('Save and download');
+      expect(confirmOpen()).toBeFalse();
+      expect(clickSpy).not.toHaveBeenCalled();
+      expect(host.querySelector('.editor-error')!.textContent).toContain('Server exploded.');
+      expect(textEditor().dirty).toBeTrue();
     });
   });
 });

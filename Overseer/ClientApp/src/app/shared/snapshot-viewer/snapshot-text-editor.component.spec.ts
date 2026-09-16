@@ -1,5 +1,10 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { SNAPSHOT_MAX_CHARS, SnapshotTextEditorComponent } from './snapshot-text-editor.component';
+import {
+  PREF_LINE_NUMBERS,
+  PREF_WRAP,
+  SNAPSHOT_MAX_CHARS,
+  SnapshotTextEditorComponent
+} from './snapshot-text-editor.component';
 import { buildBoard } from './snapshot-viewer.spec-fixtures';
 
 describe('SnapshotTextEditorComponent', () => {
@@ -8,6 +13,7 @@ describe('SnapshotTextEditorComponent', () => {
   let host: HTMLElement;
 
   beforeEach(async () => {
+    spyOn(Storage.prototype, 'getItem').and.returnValue(null);
     await TestBed.configureTestingModule({
       imports: [SnapshotTextEditorComponent]
     }).compileComponents();
@@ -19,18 +25,32 @@ describe('SnapshotTextEditorComponent', () => {
     component = fixture.componentInstance;
     fixture.componentRef.setInput('text', text);
     fixture.componentRef.setInput('sha256', 'abc1234567890');
+    fixture.componentRef.setInput('snapshotName', 'Emergency Low HP');
     fixture.detectChanges();
     await component.ready;
     fixture.detectChanges();
     host = fixture.nativeElement as HTMLElement;
   }
 
+  /* Promise callbacks settle after a macrotask. */
+  function settle(): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve));
+  }
+
   function saveButton(): HTMLButtonElement {
     return host.querySelector<HTMLButtonElement>('.save-text-btn')!;
   }
 
+  function revertButton(): HTMLButtonElement {
+    return host.querySelector<HTMLButtonElement>('.revert-text-btn')!;
+  }
+
   function counterText(): string {
     return (host.querySelector('.editor-counter')?.textContent ?? '').trim();
+  }
+
+  function statusText(): string {
+    return (host.querySelector('.editor-status-text')?.textContent ?? '').trim();
   }
 
   it('shows the document in the editor', async () => {
@@ -44,6 +64,7 @@ describe('SnapshotTextEditorComponent', () => {
     expect(component.view!.state.doc.lines).toBe(250);
     expect(host.querySelector('.cm-content')!.textContent).toContain('Map grid:');
     expect((host.querySelector('.editor-lines')?.textContent ?? '').trim()).toBe('250 lines');
+    expect(component.currentText()).toBe(board);
   });
 
   it('marks the document dirty on typing, and clean again when the edit is undone', async () => {
@@ -55,11 +76,14 @@ describe('SnapshotTextEditorComponent', () => {
     fixture.detectChanges();
     expect(component.dirty).toBeTrue();
     expect(saveButton().getAttribute('aria-disabled')).toBeNull();
+    expect(revertButton().getAttribute('aria-disabled')).toBeNull();
+    expect(component.currentText()!.startsWith('XMap:')).toBeTrue();
 
     component.view!.dispatch({ changes: { from: 0, to: 1 } });
     fixture.detectChanges();
     expect(component.dirty).toBeFalse();
     expect(saveButton().getAttribute('aria-disabled')).toBe('true');
+    expect(revertButton().getAttribute('aria-disabled')).toBe('true');
 
     expect(emitted).toEqual([true, false]);
   });
@@ -93,6 +117,35 @@ describe('SnapshotTextEditorComponent', () => {
     expect(saveButton().textContent!.trim()).toBe('Saving...');
     saveButton().click();
     expect(saved).toEqual([]);
+  });
+
+  it('restores the loaded text from Revert and clears dirty', async () => {
+    const board = buildBoard();
+    await mount(board);
+    component.view!.dispatch({ changes: { from: 0, insert: 'Edited ' } });
+    fixture.detectChanges();
+
+    revertButton().click();
+    fixture.detectChanges();
+
+    expect(component.currentText()).toBe(board);
+    expect(component.dirty).toBeFalse();
+    expect(revertButton().getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('takes the saved text as the new clean state', async () => {
+    await mount(buildBoard());
+    component.view!.dispatch({ changes: { from: 0, insert: 'Edited ' } });
+    const submitted = component.currentText()!;
+
+    component.markSaved('Normalized by the server', submitted);
+    fixture.detectChanges();
+    expect(component.currentText()).toBe('Normalized by the server');
+    expect(component.dirty).toBeFalse();
+
+    component.view!.dispatch({ changes: { from: 0, insert: 'More ' } });
+    revertButton().click();
+    expect(component.currentText()).toBe('Normalized by the server');
   });
 
   it('reports the length and warns past the server cap', async () => {
@@ -131,11 +184,119 @@ describe('SnapshotTextEditorComponent', () => {
     expect(host.querySelector('.cm-search')).toBeTruthy();
   });
 
-  it('emits cancelled from Cancel', async () => {
+  it('copies the buffer, unsaved edits included, and announces it', async () => {
     await mount(buildBoard());
-    let cancelled = 0;
-    component.cancelled.subscribe(() => cancelled++);
-    Array.from(host.querySelectorAll('button')).find(b => (b.textContent ?? '').trim() === 'Cancel')!.click();
-    expect(cancelled).toBe(1);
+    const writeText = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+    component.view!.dispatch({ changes: { from: 0, insert: 'Edited ' } });
+
+    host.querySelector<HTMLButtonElement>('.copy-text-btn')!.click();
+    await settle();
+    fixture.detectChanges();
+
+    expect(writeText).toHaveBeenCalledWith(component.currentText()!);
+    expect((writeText.calls.mostRecent().args[0] as string).startsWith('Edited Map:')).toBeTrue();
+    expect(host.querySelector('.copy-text-btn')!.textContent!.trim()).toBe('Copied');
+    expect(statusText()).toBe('Copied');
+  });
+
+  it('copies all lines with line numbers when nothing is selected', async () => {
+    await mount(buildBoard());
+    const writeText = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+
+    host.querySelector<HTMLButtonElement>('.copy-lines-btn')!.click();
+    await settle();
+    fixture.detectChanges();
+
+    const copied = writeText.calls.mostRecent().args[0] as string;
+    expect(copied.startsWith('L  1: Map:\n')).toBeTrue();
+    expect(copied.split('\n').length).toBe(250);
+    expect(statusText()).toBe('Copied all 250 lines');
+  });
+
+  it('copies only the selected lines with line numbers', async () => {
+    await mount(buildBoard());
+    const writeText = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+    const doc = component.view!.state.doc;
+    component.view!.dispatch({ selection: { anchor: doc.line(2).from + 1, head: doc.line(4).to } });
+
+    host.querySelector<HTMLButtonElement>('.copy-lines-btn')!.click();
+    await settle();
+    fixture.detectChanges();
+
+    expect(writeText.calls.mostRecent().args[0]).toBe(
+      'L2: The hero is at <10,13>, shown as \'@\'.\nL3: A food ration lies here.\nL4: Map grid:');
+    expect(statusText()).toBe('Copied lines 2–4');
+  });
+
+  it('emits download with the dirty flag', async () => {
+    await mount(buildBoard());
+    const emitted: { dirty: boolean }[] = [];
+    component.download.subscribe(value => emitted.push(value));
+    const button = host.querySelector<HTMLButtonElement>('.download-btn')!;
+    expect(button.textContent!.replace(/\s+/g, ' ').trim()).toBe('Download .snapshot.txt of Emergency Low HP');
+
+    button.click();
+    component.view!.dispatch({ changes: { from: 0, insert: 'X' } });
+    button.click();
+
+    expect(emitted).toEqual([{ dirty: false }, { dirty: true }]);
+  });
+
+  it('toggles line numbers and wrapping, and remembers both', async () => {
+    await mount(buildBoard());
+    const setItem = spyOn(Storage.prototype, 'setItem');
+    const view = component.view!;
+    expect(host.querySelector<HTMLInputElement>('.line-numbers-toggle')!.checked).toBeTrue();
+    expect(host.querySelector<HTMLInputElement>('.wrap-toggle')!.checked).toBeFalse();
+    expect(host.querySelector('.cm-lineNumbers')).toBeTruthy();
+
+    host.querySelector<HTMLInputElement>('.line-numbers-toggle')!.click();
+    host.querySelector<HTMLInputElement>('.wrap-toggle')!.click();
+    fixture.detectChanges();
+
+    expect(host.querySelector('.cm-lineNumbers')).toBeNull();
+    expect(view.contentDOM.classList).toContain('cm-lineWrapping');
+    expect(setItem).toHaveBeenCalledWith(PREF_LINE_NUMBERS, '0');
+    expect(setItem).toHaveBeenCalledWith(PREF_WRAP, '1');
+  });
+
+  it('falls back to the defaults when storage throws', async () => {
+    (Storage.prototype.getItem as jasmine.Spy).and.throwError(new Error('storage denied'));
+    await mount(buildBoard());
+    expect(component.showLineNumbers).toBeTrue();
+    expect(component.wrapLines).toBeFalse();
+  });
+
+  it('shows the map readout and copies its coordinate', async () => {
+    await mount(buildBoard());
+    const writeText = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+    expect(host.querySelector('.copy-coordinate-btn')).toBeNull();
+
+    const view = component.view!;
+    view.dispatch({ selection: { anchor: view.state.doc.line(20).from + 13 } });
+    fixture.detectChanges();
+    expect(statusText()).toBe('<10,13>  \'@\'');
+
+    const button = host.querySelector<HTMLButtonElement>('.copy-coordinate-btn')!;
+    expect(button.getAttribute('aria-label')).toBe('Copy coordinate <10,13>');
+    button.click();
+    await settle();
+    fixture.detectChanges();
+
+    expect(writeText).toHaveBeenCalledWith('<10,13>');
+    expect(statusText()).toBe('Copied <10,13>');
+    expect(host.querySelector('.copy-coordinate-btn')).toBeTruthy();
+  });
+
+  it('shows the status input in the footer, and an error in its place', async () => {
+    await mount(buildBoard());
+    fixture.componentRef.setInput('status', 'Saved. SHA-256 and digest updated.');
+    fixture.detectChanges();
+    expect(host.querySelector('.editor-error .is-ok')!.textContent).toContain('Saved. SHA-256 and digest updated.');
+
+    fixture.componentRef.setInput('error', 'Failed to save the snapshot text.');
+    fixture.detectChanges();
+    expect(host.querySelector('.editor-error .is-ok')).toBeNull();
+    expect(host.querySelector('.editor-error')!.textContent).toContain('Failed to save the snapshot text.');
   });
 });

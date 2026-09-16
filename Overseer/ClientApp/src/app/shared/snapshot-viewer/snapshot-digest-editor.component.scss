@@ -1,19 +1,25 @@
-/* A framed CodeMirror field sized for a form row. The editor's own colours and gutter come from
-   codemirror-setup.ts, which builds that DOM outside this template. */
+/* A framed CodeMirror field that fills the height it is given. The editor's own colours and gutter
+   come from codemirror-setup.ts, which builds that DOM outside this template.
+
+   The frame is size-contained, so the field's minimum height is its toolbar, status line and the
+   frame's min-height, never the digest's length; overflow: clip rather than hidden keeps that
+   automatic minimum in force. */
 :host {
-  display: block;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
 }
 
 /* One frame around the toolbar, the status line and the editor, so the field reads as a single
    control the way .gh-input does. */
 .digest-editor {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-glass);
   border-radius: 6px;
   background: var(--bg-input);
-  overflow: hidden;
+  overflow: clip;
 }
 
 .digest-toolbar {
@@ -70,8 +76,9 @@
 
 .digest-frame {
   position: relative;
+  flex: 1 1 auto;
   min-height: 10rem;
-  max-height: 40vh;
+  contain: size;
   display: flex;
   flex-direction: column;
   background: rgb(30, 30, 30);
