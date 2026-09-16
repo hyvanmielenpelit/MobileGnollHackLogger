@@ -49,10 +49,45 @@
             </button>
             <div popover="hint" class="gh-tooltip" id="tip-yaml-help-download"
                  [attr.style]="'position-anchor: --tip-yaml-help-download'">Download AI instructions as Markdown</div>
-            <span class="help-copy-status" role="status" aria-live="polite">{{ copyStatus }}</span>
+            <span class="help-copy-status" role="status" aria-live="polite">{{ copyTarget === 'ai' ? copyStatus : '' }}</span>
           </div>
           <p class="help-ai-hint">Paste these into an AI chat together with an exported document, so its reply imports cleanly.</p>
           <pre class="help-ai-text">{{ aiInstructions }}</pre>
+        </div>
+      } @else if (activeTab === 'examples') {
+        <div class="help-examples">
+          <div class="markdown-body help-guide" [innerHTML]="examplesIntro | markdown"></div>
+          <!-- An exclusive accordion: the shared name lets the browser keep one example open. -->
+          <div class="help-example-list">
+            @for (ex of examples; track ex.id; let i = $index) {
+              <details class="gh-disclosure help-example" name="yaml-help-example" [open]="i === 0">
+                <summary>{{ ex.title }}</summary>
+                <div class="gh-disclosure-body">
+                  <div class="markdown-body help-example-intro" [innerHTML]="ex.intro | markdown"></div>
+                  <div class="help-ai-actions">
+                    <button type="button" class="action-btn" (click)="copyExample(ex)"
+                            [attr.aria-label]="'Copy example ' + ex.title + ' to the clipboard'"
+                            [attr.interestfor]="'tip-yaml-ex-copy-' + ex.id"
+                            [attr.style]="'anchor-name: --tip-yaml-ex-copy-' + ex.id">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" [id]="'tip-yaml-ex-copy-' + ex.id"
+                         [attr.style]="'position-anchor: --tip-yaml-ex-copy-' + ex.id">Copy example to clipboard</div>
+                    <button type="button" class="action-btn" (click)="downloadExample(ex)"
+                            [attr.aria-label]="'Download example ' + ex.title + ' as YAML'"
+                            [attr.interestfor]="'tip-yaml-ex-dl-' + ex.id"
+                            [attr.style]="'anchor-name: --tip-yaml-ex-dl-' + ex.id">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="12" x2="12" y2="18"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" [id]="'tip-yaml-ex-dl-' + ex.id"
+                         [attr.style]="'position-anchor: --tip-yaml-ex-dl-' + ex.id">Download example as YAML</div>
+                    <span class="help-copy-status" role="status" aria-live="polite">{{ copyTarget === ex.id ? copyStatus : '' }}</span>
+                  </div>
+                  <pre class="help-ai-text">{{ ex.yaml }}</pre>
+                </div>
+              </details>
+            }
+          </div>
         </div>
       } @else if (activeGuide; as guide) {
         <div class="markdown-body help-guide" [innerHTML]="guide.markdown | markdown"></div>

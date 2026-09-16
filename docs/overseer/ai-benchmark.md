@@ -2878,8 +2878,10 @@ export; `suite.snapshot` only names it.
 
 Endpoints: `POST suites/{suiteId}/questions/import` and `POST suites/import` (§ 6). The help dialog
 (*Import/Export Help* on the Manage Questions toolbar, also reachable from the import dialog) is full
-height with four tabs: *Workflow*, *Replace or Create*, *Format*, and *For an AI*, the last holding a
-copyable, downloadable set of instructions for an AI. The guide text lives in `HUMAN_GUIDE_TABS` in
+height with five tabs: *Workflow*, *Replace or Create*, *Format*, *Examples* (six copyable,
+downloadable YAML documents in an exclusive `<details name>` accordion, each spec-checked to parse
+and validate), and *For an AI*, the last holding a copyable, downloadable set of instructions for an
+AI. The guide text lives in `HUMAN_GUIDE_TABS` in
 `question-yaml-format.ts`.
 
 ---

@@ -579,6 +579,152 @@ export const HUMAN_GUIDE_TABS: ReadonlyArray<HumanGuideTab> = [
   { id: 'format', label: 'Format', markdown: FORMAT_MARKDOWN }
 ];
 
+export interface YamlExample {
+  /** Stable id: element ids, tooltip ids and the download file name derive from it. */
+  id: string;
+  title: string;
+  /** The import mode the example is written for; the spec validates it in this mode. */
+  mode: ImportMode;
+  /** One or two sentences, Markdown: when to use it and which button imports it. */
+  intro: string;
+  yaml: string;
+}
+
+export function yamlExampleFileName(example: YamlExample): string {
+  return `benchmark-example-${example.id}.yaml`;
+}
+
+/** Shown above the example accordion on the help dialog's Examples tab. */
+export const EXAMPLES_INTRO_MARKDOWN = `Copy or download an example, put your own text in it, and import it with the button its description names. The ids **42** and **43** are placeholders: use the ids from your own export (**Download All as YAML** on the Manage Questions toolbar lists every question with its id). Everything else in these files is what the import expects, so edit the text and keep the shape.`;
+
+const EXAMPLE_HEADER = `format: ${QUESTION_YAML_FORMAT}
+version: ${QUESTION_YAML_VERSION}
+`;
+
+/** Ready-to-edit documents, one per import situation. Each one must parse and validate for its mode. */
+export const YAML_EXAMPLES: ReadonlyArray<YamlExample> = [
+  {
+    id: 'replace-one',
+    title: 'Replace one question',
+    mode: 'single',
+    intro: 'Every key is present, so the text, the difficulty and the rubric are all replaced. Use it with **Import from YAML** on that question, or with **Import Questions from YAML**.',
+    yaml: EXAMPLE_HEADER + `
+questions:
+  - id: 42
+    difficulty: Simple
+    question: |
+      What is the Gnoll race, and which roles can play it?
+    rubric: |
+      **REQUIRED**
+      - The Gnoll is a GnollHack-original playable race.
+      - Names at least one role a Gnoll can play.
+`
+  },
+  {
+    id: 'replace-many',
+    title: 'Replace several questions',
+    mode: 'questions',
+    intro: 'One item per question, each with the id of the question it replaces. Use it with **Import Questions from YAML** on the Manage Questions toolbar.',
+    yaml: EXAMPLE_HEADER + `
+questions:
+  - id: 42
+    difficulty: Simple
+    question: |
+      What is the Gnoll race, and which roles can play it?
+    rubric: |
+      **REQUIRED**
+      - The Gnoll is a GnollHack-original playable race.
+      - Names at least one role a Gnoll can play.
+
+  - id: 43
+    difficulty: Intermediate
+    question: |
+      My character is Weak from hunger. What should I eat first, and what should I avoid?
+    rubric: |
+      **REQUIRED**
+      - Eat a safe, filling food item from the inventory first.
+      - Avoid cursed or rotten food while Weak.
+`
+  },
+  {
+    id: 'rubric-only',
+    title: 'Replace only a rubric',
+    mode: 'questions',
+    intro: 'There is no `question` key, so the question text is kept as it is; only the rubric changes. To clear a rubric instead, write `rubric: ""`.',
+    yaml: EXAMPLE_HEADER + `
+questions:
+  - id: 42
+    rubric: |
+      **REQUIRED**
+      - The Gnoll is a GnollHack-original playable race.
+      - Names at least one role a Gnoll can play.
+
+      ## Notes for the assessor
+      Do not reward an answer that calls Gnolls a monster only.
+`
+  },
+  {
+    id: 'question-only',
+    title: 'Replace only the question text',
+    mode: 'questions',
+    intro: 'There is no `rubric` key, so the rubric is kept as it is; only the question text changes.',
+    yaml: EXAMPLE_HEADER + `
+questions:
+  - id: 42
+    question: |
+      What is the Gnoll race in GnollHack, and which roles can a Gnoll play?
+`
+  },
+  {
+    id: 'create-new',
+    title: 'Create new questions',
+    mode: 'questions',
+    intro: 'No item has an `id`, so every one is created at the end of the suite. The second item names no difficulty and becomes Simple. Use it with **Import Questions from YAML**.',
+    yaml: EXAMPLE_HEADER + `
+questions:
+  - difficulty: Advanced
+    question: |
+      Which source file implements the hunger state transitions?
+    rubric: |
+      **REQUIRED**
+      - Names the correct source file.
+
+  - question: |
+      What does the Weak hunger state do to a character?
+    rubric: |
+      **REQUIRED**
+      - Describes the strength penalty and the risk of fainting next.
+`
+  },
+  {
+    id: 'whole-suite',
+    title: 'A whole suite',
+    mode: 'suite',
+    intro: 'A `suite` block with the name and description, then the questions. Use it with **Import Suite from YAML** on the Manage Suites toolbar; it always creates a new suite.',
+    yaml: EXAMPLE_HEADER + `
+suite:
+  name: "Hunger and Food"
+  description: |
+    Four questions on hunger states, food safety and prayer timing.
+
+questions:
+  - difficulty: Simple
+    question: |
+      What does the Weak hunger state do to a character?
+    rubric: |
+      **REQUIRED**
+      - Describes the strength penalty and the risk of fainting next.
+
+  - difficulty: Advanced
+    question: |
+      Which source file implements the hunger state transitions?
+    rubric: |
+      **REQUIRED**
+      - Names the correct source file.
+`
+  }
+];
+
 export const AI_INSTRUCTIONS_MARKDOWN = `# Editing Overseer benchmark questions in YAML
 
 You are editing a YAML document that holds benchmark questions for the Overseer AI benchmark. Each question has the text asked of the model under test (\`question\`) and the grading rubric the assessor uses (\`rubric\`, Markdown). Return the whole document as YAML, and nothing else.

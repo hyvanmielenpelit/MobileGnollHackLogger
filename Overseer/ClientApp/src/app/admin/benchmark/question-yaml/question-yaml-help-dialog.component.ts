@@ -15,13 +15,17 @@ import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils
 import {
   AI_INSTRUCTIONS_FILE_NAME,
   AI_INSTRUCTIONS_MARKDOWN,
+  EXAMPLES_INTRO_MARKDOWN,
   HUMAN_GUIDE_TABS,
-  HumanGuideTab
+  HumanGuideTab,
+  YAML_EXAMPLES,
+  YamlExample,
+  yamlExampleFileName
 } from './question-yaml-format';
 
 const STATUS_MS = 3000;
 
-export type YamlHelpTab = HumanGuideTab['id'] | 'ai';
+export type YamlHelpTab = HumanGuideTab['id'] | 'examples' | 'ai';
 
 @Component({
   selector: 'app-question-yaml-help-dialog',
@@ -39,15 +43,20 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
   @ViewChild('body') body?: ElementRef<HTMLElement>;
 
   readonly guideTabs = HUMAN_GUIDE_TABS;
-  /** Every tab in row order: the guide tabs, then the AI instructions. */
+  /** Every tab in row order: the guide tabs, the examples, then the AI instructions. */
   readonly tabs: ReadonlyArray<{ id: YamlHelpTab; label: string }> = [
     ...HUMAN_GUIDE_TABS.map(t => ({ id: t.id, label: t.label })),
+    { id: 'examples', label: 'Examples' },
     { id: 'ai', label: 'For an AI' }
   ];
   activeTab: YamlHelpTab = 'workflow';
 
+  readonly examples = YAML_EXAMPLES;
+  readonly examplesIntro = EXAMPLES_INTRO_MARKDOWN;
   readonly aiInstructions = AI_INSTRUCTIONS_MARKDOWN;
 
+  /** Which toolbar last copied: 'ai' or an example id. Its status span shows copyStatus. */
+  copyTarget = '';
   copyStatus = '';
   private statusTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -62,6 +71,7 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
       el.showModal();
     }
     this.activeTab = 'workflow';
+    this.copyTarget = '';
     this.copyStatus = '';
     this.cdr.detectChanges();
     setTimeout(() => refreshAnchorPositioning(), 0);
@@ -95,18 +105,28 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
 
   async copyInstructions(): Promise<void> {
     const ok = await copyToClipboard(this.aiInstructions);
-    this.flashStatus(ok ? 'Copied' : 'Could not copy; use Download instead.');
+    this.flashStatus('ai', ok ? 'Copied' : 'Could not copy; use Download instead.');
   }
 
   downloadInstructions(): void {
     downloadTextFile(AI_INSTRUCTIONS_FILE_NAME, this.aiInstructions, 'text/markdown;charset=utf-8');
   }
 
+  async copyExample(example: YamlExample): Promise<void> {
+    const ok = await copyToClipboard(example.yaml);
+    this.flashStatus(example.id, ok ? 'Copied' : 'Could not copy; use Download instead.');
+  }
+
+  downloadExample(example: YamlExample): void {
+    downloadTextFile(yamlExampleFileName(example), example.yaml);
+  }
+
   ngOnDestroy(): void {
     clearTimeout(this.statusTimer);
   }
 
-  private flashStatus(message: string): void {
+  private flashStatus(target: string, message: string): void {
+    this.copyTarget = target;
     this.copyStatus = message;
     this.cdr.detectChanges();
     clearTimeout(this.statusTimer);

@@ -2,6 +2,7 @@ import type { BenchmarkQuestionDto, BenchmarkSuiteDto } from '../../../services/
 import {
   AI_INSTRUCTIONS_MARKDOWN,
   HUMAN_GUIDE_TABS,
+  YAML_EXAMPLES,
   buildImportPlan,
   parseQuestionYaml,
   questionYamlFileName,
@@ -9,7 +10,8 @@ import {
   serializeSuiteYaml,
   suiteYamlFileName,
   toImportItems,
-  validateForMode
+  validateForMode,
+  yamlExampleFileName
 } from './question-yaml-format';
 
 function question(id: number, orderIndex: number, text: string, difficulty: number, rubric: string | null): BenchmarkQuestionDto {
@@ -281,6 +283,29 @@ describe('question-yaml-format', () => {
       expect(tab.label.trim()).not.toBe('');
       expect(tab.markdown.trim()).not.toBe('');
     }
+  });
+
+  describe('examples', () => {
+    // The placeholder ids every example with ids uses.
+    const existing = [question(42, 1, 'Current text', 1, 'Current rubric'), question(43, 2, 'Second', 2, null)];
+
+    it('has six examples with unique ids', () => {
+      expect(YAML_EXAMPLES.length).toBe(6);
+      expect(new Set(YAML_EXAMPLES.map(e => e.id)).size).toBe(6);
+    });
+
+    for (const example of YAML_EXAMPLES) {
+      it(`"${example.title}" parses and validates in ${example.mode} mode`, async () => {
+        const result = await parseQuestionYaml(example.yaml);
+        expect(result.errors).toEqual([]);
+        const checked = validateForMode(result, example.mode, existing, existing[0]);
+        expect(checked.errors).toEqual([]);
+      });
+    }
+
+    it('names a downloaded example after its id', () => {
+      expect(yamlExampleFileName(YAML_EXAMPLES[0])).toBe('benchmark-example-replace-one.yaml');
+    });
   });
 
   it('the AI instructions example is itself a valid document', async () => {
