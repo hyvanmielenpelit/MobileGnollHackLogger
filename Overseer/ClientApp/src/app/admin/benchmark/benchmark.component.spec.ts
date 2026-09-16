@@ -680,12 +680,12 @@ describe('AdminBenchmarkComponent', () => {
     expect(proseReview.textContent).toContain('<div id="assessment-html">');
   });
 
-  it('should display "Import Default Suites" on the import button without hardcoded question count', () => {
+  it('should display "Create Default Suites" on the import button without hardcoded question count', () => {
     component.activeSubTab = 'suites';
     fixture.detectChanges();
 
-    const buttons: HTMLButtonElement[] = Array.from(fixture.nativeElement.querySelectorAll('.suites-toolbar .btn-gh'));
-    const importBtn = buttons.find(b => b.textContent!.trim() === 'Import Default Suites');
+    const buttons: HTMLButtonElement[] = Array.from(fixture.nativeElement.querySelectorAll('.suites-toolbar .btn-ghost'));
+    const importBtn = buttons.find(b => b.textContent!.trim() === 'Create Default Suites');
     expect(importBtn).toBeTruthy();
     expect(importBtn!.textContent).not.toContain('15-Question');
   });

@@ -461,6 +461,19 @@
   gap: 15px;
 }
 
+/* Suites tab toolbar: the actions sit together at the start and the copy status takes the
+   remaining space, so no empty status line separates the toolbar from the grid. */
+.suites-toolbar-grouped {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+
+  .suites-copy-status {
+    flex: 1 1 200px;
+    text-align: end;
+  }
+}
+
 .questions-toolbar {
   display: flex;
   align-items: center;

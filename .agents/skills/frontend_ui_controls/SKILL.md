@@ -159,8 +159,8 @@ one row beside it. `.btn-ghost-danger` marks the destructive one among them.
 <div class="suite-card-actions">
   <button type="button" class="btn-gh" (click)="openManageQuestions(suite)">Manage Questions</button>
   <div class="suite-card-secondary">
-    <button type="button" class="btn-ghost" (click)="openDifficultyAssessorDialog(suite)">Assess Difficulty</button>
-    <button type="button" class="btn-ghost btn-ghost-danger" (click)="openBulkDeleteDialog(suite)">Delete Runs</button>
+    <button type="button" class="btn-ghost" (click)="openDifficultyAssessorDialog(suite)"><svg class="btn-icon" ...></svg> Assess Difficulty</button>
+    <button type="button" class="btn-ghost btn-ghost-danger" (click)="openBulkDeleteDialog(suite)"><svg class="btn-icon" ...></svg> Delete Runs</button>
   </div>
 </div>
 ```
@@ -196,7 +196,13 @@ you already read the label, it is noise; drop it.
 | trash | Delete Runs, Delete All Suite Runs | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
 | refresh / rotate | Refresh, Re-score Run, Re-run Failed Questions | "This runs again" — the circular-arrow convention is universal |
 | file-with-arrow | Download Markdown Report | "A file arrives on your disk" |
-| download | Import Default Suites | Data arriving into the application; the arrow points into the tray |
+| layers | Create Default Suites | A stack: several suites are created at once from the built-in catalog |
+| upload | Import Suite from YAML, Upload Snapshot | A file leaves the user's disk and enters the application; the arrow points out of the tray |
+| zap | Generate Questions | AI generation: content is produced from the snapshot, not typed in |
+| thermometer | Assess Difficulty | A reading on a scale; the button rates how hard each question is |
+| heart | Suite Health | The health check; the glyph *is* the concept |
+| clipboard | Check Rubrics | A checklist to go through; the rubric is what is being inspected |
+| check | Verify All | The same tick the "Reviewed" badge shows, so the button reads as "mark reviewed" |
 | star | Set Default | The marker used for the default item elsewhere in the UI; the icon *is* the concept |
 | chevron | Show / Hide Model Reasoning | A **state** indicator: which way it points says whether the section is open |
 
@@ -206,6 +212,11 @@ data-arrives-here direction `download` already carries elsewhere, not data leavi
 Markdown Report keeps its meaning but moves to the distinct file-with-arrow glyph, since two buttons
 now on the same toolbar cannot both read `download` under the one-glyph-one-meaning rule above.*
 
+*Changed 2026-09-16: the Manage Suites toolbar keeps one `.btn-gh` (Create Suite) and demotes the
+other two actions to `.btn-ghost`. Import Default Suites was renamed Create Default Suites and its
+glyph moved from `download` to `layers`, since the action creates suites rather than importing a file.
+Every `.btn-ghost` on a suite card now carries a glyph so the row scans as one family with Delete Runs.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
@@ -213,7 +224,7 @@ now on the same toolbar cannot both read `download` under the one-glyph-one-mean
 | **Done, Close, Cancel** | Dialog dismissal. The word is unambiguous in every language and context, the button's position in the footer already says "this ends the dialog", and `.btn-gh-cancel`'s blue already distinguishes it. A tick or an ✕ adds a second thing to look at and no meaning. |
 | **Save Profile, Save Suite, Save Question** | A plain commit. "Save X" cannot be misread. A floppy-disk glyph is a skeuomorph for hardware most users have never seen, and it does not say *what* is being saved — the label does. |
 | **Scoring Profiles, Manage Questions** | Opens a management view. The only available glyphs are generic — a gear reads as "application settings", which this is not; a book reads as nothing in particular. Both mislead slightly and inform not at all. |
-| **Assess Question Difficulty, AI Auto-Rate All Difficulties, Assess Difficulty** | The label already names the operation *and* says it is the AI one. These carried a circle-with-diamond and a lightning bolt; neither survives the test — a bolt alone could mean AI, or fast, or power. "Marks the AI action" is not enough justification when the word "AI" or "Assess" is right there. |
+| **Assess Question Difficulty, AI Auto-Rate All Difficulties** | The label already names the operation *and* says it is the AI one. These carried a circle-with-diamond and a lightning bolt; neither survives the test — a bolt alone could mean AI, or fast, or power. "Marks the AI action" is not enough justification when the word "AI" or "Assess" is right there. (The suite card's `Assess Difficulty` is the exception: it sits in a `.btn-ghost` row where every sibling has a glyph, and the thermometer names the scale being rated.) |
 
 The pattern behind the second table: **dismissals and plain commits go text-only.** But that
 is a consequence of the test, not a rule to apply mechanically — a footer button naming a

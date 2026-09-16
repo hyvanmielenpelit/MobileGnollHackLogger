@@ -1050,22 +1050,23 @@
 
       <div class="visually-hidden" aria-live="polite">{{ suiteActionAnnouncement }}</div>
 
-      <div class="suites-toolbar mb-20">
+      <!-- One primary .btn-gh, secondary .btn-ghost actions beside it, and the copy status on the
+           same row so the toolbar does not reserve an extra line above the grid. -->
+      <div class="suites-toolbar suites-toolbar-grouped mb-10">
         <button type="button" class="btn-gh" (click)="openCreateSuite()">
           <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
           Create Suite
         </button>
-        <button type="button" class="btn-gh" (click)="openImportDefaultSuitesDialog()">
-          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-          Import Default Suites
+        <button type="button" class="btn-ghost" (click)="openImportDefaultSuitesDialog()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+          Create Default Suites
         </button>
-        <button type="button" class="btn-gh" (click)="openQuestionYamlImport('suite')">
+        <button type="button" class="btn-ghost" (click)="openQuestionYamlImport('suite')">
           <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
           Import Suite from YAML
         </button>
+        <p class="form-hint suites-copy-status" role="status" aria-live="polite">{{ suitesCopyStatus }}</p>
       </div>
-
-      <p class="form-hint suites-copy-status" role="status" aria-live="polite">{{ suitesCopyStatus }}</p>
 
       <div class="suites-grid">
         @for (suite of suites; track suite.id) {
@@ -1186,26 +1187,32 @@
                 <button type="button" class="btn-ghost upload-snapshot-card-btn" (click)="openSnapshotUpload(suite)"
                         aria-haspopup="dialog"
                         [attr.aria-disabled]="isGenerationRunningFor(suite) ? 'true' : null">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                   Upload Snapshot
                 </button>
                 @if (suite.gameSnapshotId) {
                   <button type="button" class="btn-ghost" (click)="openGenerationDialog(suite)">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
                     Generate Questions
                   </button>
                 }
                 <button type="button" class="btn-ghost" (click)="openDifficultyAssessorDialog(suite)">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path></svg>
                   Assess Difficulty
                 </button>
                 <button type="button" class="btn-ghost" (click)="openSuiteHealth(suite)"
                         aria-haspopup="dialog">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
                   Suite Health
                 </button>
                 @if (suite.hasGeneratedQuestions) {
                   <button type="button" class="btn-ghost" (click)="openSuiteHealthForRubrics(suite)">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
                     Check Rubrics
                   </button>
                   @if ((suite.reviewedQuestionCount || 0) < suite.questionCount) {
                     <button type="button" class="btn-ghost" (click)="confirmVerifyAll(suite)" aria-label="Attest that all questions have been reviewed">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
                       Verify All
                     </button>
                   }
@@ -2883,7 +2890,7 @@
   <div class="dialog-content flex-col">
     <div class="dialog-header">
       <div class="dialog-title-group">
-        <h3 id="importDefaultSuitesTitle">Import Default Suites</h3>
+        <h3 id="importDefaultSuitesTitle">Create Default Suites</h3>
         @if (!loadingDefaultSuiteCatalog && defaultSuiteCatalog.length > 0) {
           <p class="dialog-subtitle">{{ selectableDefaultSuiteCount }} available</p>
         }
