@@ -1,0 +1,49 @@
+@use '../benchmark-dialog-frame' as frame;
+
+.gh-dialog.benchmark-snapshot-upload-dialog {
+  @include frame.frame(640px);
+}
+
+.gh-dialog.snapshot-replace-confirm {
+  @include frame.confirm;
+}
+
+.upload-detected {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: #ccc;
+  overflow-wrap: anywhere;
+
+  .form-hint {
+    display: block;
+  }
+}
+
+.upload-kind {
+  margin-bottom: 18px;
+}
+
+.upload-kind-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+
+.upload-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+
+  input {
+    accent-color: var(--primary-color);
+    width: 16px;
+    height: 16px;
+  }
+}
+
+.upload-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0 14px;
+}

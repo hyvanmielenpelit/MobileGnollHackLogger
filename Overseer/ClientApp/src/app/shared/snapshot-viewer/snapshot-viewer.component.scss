@@ -340,6 +340,14 @@
     margin-inline-start: auto;
   }
 
+  .remove-snapshot {
+    margin: 12px 16px 16px;
+
+    .btn-ghost {
+      margin-top: 8px;
+    }
+  }
+
   @media (max-width: 600px) {
     .meta-strip,
     .form-fields,
@@ -347,11 +355,16 @@
     .form-footer {
       padding-inline: 8px;
     }
+
+    .remove-snapshot {
+      margin-inline: 8px;
+    }
   }
 }
 
-/* The confirmation opens above the full-screen dialog, whose own backdrop already dims the page. */
-.snapshot-download-confirm {
+/* The confirmations open above the full-screen dialog, whose own backdrop already dims the page. */
+.snapshot-download-confirm,
+.snapshot-delete-confirm {
   max-width: 540px;
 
   p {

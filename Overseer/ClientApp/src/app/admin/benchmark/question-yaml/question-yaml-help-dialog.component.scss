@@ -1,0 +1,35 @@
+@use '../benchmark-dialog-frame' as frame;
+
+.gh-dialog.benchmark-question-help-dialog {
+  @include frame.frame(820px);
+}
+
+.help-guide {
+  margin-bottom: 20px;
+  line-height: 1.55;
+}
+
+.help-ai-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.help-copy-status {
+  font-size: 12px;
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: normal;
+  color: #aaa;
+}
+
+.help-ai-text {
+  margin: 0;
+  max-height: 40lh;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12.5px;
+  line-height: 1.45;
+}

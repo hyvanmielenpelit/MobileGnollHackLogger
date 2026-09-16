@@ -517,6 +517,48 @@ export interface UpdateBenchmarkQuestionRequest {
   expectedPoints?: string | null;
 }
 
+/** One question of a YAML import: `questionId` replaces that question, null creates a new one. */
+export interface ImportBenchmarkQuestionItem {
+  questionId: number | null;
+  /** Null keeps the current text on a replace; required on a create. */
+  questionText: string | null;
+  /** Null keeps the current difficulty on a replace; Simple on a create. */
+  difficulty: number | null;
+  /** Applied only when `replaceExpectedPoints` is true; empty clears the rubric. */
+  expectedPoints: string | null;
+  replaceExpectedPoints: boolean;
+}
+
+export interface ImportBenchmarkQuestionsRequest {
+  items: ImportBenchmarkQuestionItem[];
+}
+
+export interface ImportBenchmarkQuestionsResultDto {
+  createdCount: number;
+  replacedCount: number;
+  unchangedCount: number;
+  questions: BenchmarkQuestionDto[];
+}
+
+export interface ImportBenchmarkSuiteRequest {
+  name: string;
+  description: string | null;
+  questions: ImportBenchmarkQuestionItem[];
+}
+
+export type SnapshotContentKind = 'Auto' | 'Text' | 'Html';
+
+export interface UploadSuiteSnapshotRequest {
+  name: string;
+  /** The file's text: a viewer-downloaded .snapshot.txt or a raw HTML dump. */
+  content: string;
+  contentKind: SnapshotContentKind;
+  notes?: string | null;
+  sourceGnollHackVersion?: string | null;
+  /** True only after the admin confirmed replacing the suite's current snapshot. */
+  replaceExisting: boolean;
+}
+
 export interface StartBenchmarkRunRequest {
   suiteId: number;
   testedModelConfigurationId: number;
@@ -1682,6 +1724,16 @@ export class AdminBenchmarkService {
     return this.http.post<ImportDefaultSuitesResultDto>('/api/admin/benchmark/suites/import-default', { keys });
   }
 
+  /** Creates a new suite from an imported YAML document. An existing suite is never overwritten. */
+  importSuite(req: ImportBenchmarkSuiteRequest): Observable<BenchmarkSuiteDto> {
+    return this.http.post<BenchmarkSuiteDto>('/api/admin/benchmark/suites/import', req);
+  }
+
+  /** Attaches a board built from an uploaded file to the suite; replacing a current snapshot needs `replaceExisting`. */
+  uploadSuiteSnapshot(suiteId: number, req: UploadSuiteSnapshotRequest): Observable<CaptureBenchmarkSnapshotResponse> {
+    return this.http.post<CaptureBenchmarkSnapshotResponse>(`/api/admin/benchmark/suites/${suiteId}/snapshot`, req);
+  }
+
   // Questions
   getQuestions(suiteId: number): Observable<BenchmarkQuestionDto[]> {
     return this.http.get<BenchmarkQuestionDto[]>(`/api/admin/benchmark/suites/${suiteId}/questions`);
@@ -1697,6 +1749,11 @@ export class AdminBenchmarkService {
 
   deleteQuestion(id: number): Observable<void> {
     return this.http.delete<void>(`/api/admin/benchmark/questions/${id}`);
+  }
+
+  /** Replaces questions that carry an id and creates the rest; never deletes or reorders. */
+  importQuestions(suiteId: number, req: ImportBenchmarkQuestionsRequest): Observable<ImportBenchmarkQuestionsResultDto> {
+    return this.http.post<ImportBenchmarkQuestionsResultDto>(`/api/admin/benchmark/suites/${suiteId}/questions/import`, req);
   }
 
   reorderQuestions(suiteId: number, orderedIds: number[]): Observable<void> {

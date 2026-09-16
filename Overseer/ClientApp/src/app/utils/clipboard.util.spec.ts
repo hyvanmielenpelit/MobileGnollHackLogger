@@ -1,4 +1,4 @@
-import { copyToClipboard } from './clipboard.util';
+import { copyTextFromPromise, copyToClipboard } from './clipboard.util';
 
 /**
  * `navigator.clipboard` is a read-only accessor on the real navigator, so each case installs its
@@ -47,5 +47,53 @@ describe('clipboard.util', () => {
     // Resolved false, never a rejection: a denied permission is an outcome the caller renders.
     await expectAsync(copyToClipboard('anything')).toBeResolvedTo(false);
     expect(writeText).toHaveBeenCalled();
+  });
+
+  describe('copyTextFromPromise', () => {
+    it('falls back to writeText once the text resolves when there is no write()', async () => {
+      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      installClipboard({ writeText });
+
+      await expectAsync(copyTextFromPromise(Promise.resolve('late text'))).toBeResolvedTo(true);
+      expect(writeText).toHaveBeenCalledWith('late text');
+    });
+
+    it('reports failure when the text never arrives', async () => {
+      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      installClipboard({ writeText });
+
+      await expectAsync(copyTextFromPromise(Promise.reject(new Error('fetch failed')))).toBeResolvedTo(false);
+      expect(writeText).not.toHaveBeenCalled();
+    });
+
+    it('reports failure when there is no clipboard API', async () => {
+      installClipboard(undefined);
+      await expectAsync(copyTextFromPromise(Promise.resolve('x'))).toBeResolvedTo(false);
+    });
+
+    it('writes a promised ClipboardItem synchronously where the platform supports it', async () => {
+      if (typeof ClipboardItem === 'undefined') {
+        pending('ClipboardItem is not available in this browser.');
+        return;
+      }
+      let written: ClipboardItem[] | null = null;
+      const write = jasmine.createSpy('write').and.callFake((items: ClipboardItem[]) => {
+        written = items;
+        return Promise.resolve();
+      });
+      installClipboard({ write, writeText: jasmine.createSpy('writeText') });
+
+      let resolveText!: (t: string) => void;
+      const pendingText = new Promise<string>(r => { resolveText = r; });
+      const copy = copyTextFromPromise(pendingText);
+
+      // Issued before the text exists, which is what keeps the write inside the user's activation.
+      expect(write).toHaveBeenCalledTimes(1);
+      resolveText('produced later');
+      await expectAsync(copy).toBeResolvedTo(true);
+
+      const blob = await written![0].getType('text/plain');
+      expect(await blob.text()).toBe('produced later');
+    });
   });
 });

@@ -1,0 +1,56 @@
+<dialog #dialog class="gh-dialog benchmark-form-dialog benchmark-question-help-dialog"
+        aria-labelledby="questionYamlHelpTitle">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="questionYamlHelpTitle">YAML Import and Export</h3>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close YAML import and export help" (click)="close()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <div class="dialog-body">
+      <div class="markdown-body help-guide" [innerHTML]="guide | markdown"></div>
+
+      <fieldset class="gh-fieldset help-ai">
+        <legend>
+          <span class="help-ai-legend">
+            Instructions for an AI
+            <button type="button" class="action-btn" (click)="copyInstructions()"
+                    aria-label="Copy AI instructions to the clipboard"
+                    [attr.interestfor]="'tip-yaml-help-copy'"
+                    [attr.style]="'anchor-name: --tip-yaml-help-copy'">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" id="tip-yaml-help-copy"
+                 [attr.style]="'position-anchor: --tip-yaml-help-copy'">Copy AI instructions to clipboard</div>
+            <button type="button" class="action-btn" (click)="downloadInstructions()"
+                    aria-label="Download AI instructions as Markdown"
+                    [attr.interestfor]="'tip-yaml-help-download'"
+                    [attr.style]="'anchor-name: --tip-yaml-help-download'">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="12" x2="12" y2="18"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" id="tip-yaml-help-download"
+                 [attr.style]="'position-anchor: --tip-yaml-help-download'">Download AI instructions as Markdown</div>
+            <span class="help-copy-status" role="status" aria-live="polite">{{ copyStatus }}</span>
+          </span>
+        </legend>
+        <p class="gh-fieldset-hint">Paste these into an AI chat together with an exported document, so its reply imports cleanly.</p>
+        <details class="gh-disclosure" open>
+          <summary>Show the instructions</summary>
+          <div class="gh-disclosure-body">
+            <pre class="help-ai-text">{{ aiInstructions }}</pre>
+          </div>
+        </details>
+      </fieldset>
+    </div>
+
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="close()">Close</button>
+    </div>
+  </div>
+</dialog>

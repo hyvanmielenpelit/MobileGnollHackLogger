@@ -1,0 +1,124 @@
+<dialog #dialog class="gh-dialog benchmark-form-dialog benchmark-snapshot-upload-dialog"
+        aria-labelledby="snapshotUploadTitle"
+        (cancel)="onCancel($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="snapshotUploadTitle">Upload snapshot for {{ suite?.name }}</h3>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close snapshot upload" (click)="close()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <div class="dialog-body">
+      @if (hasCurrentSnapshot) {
+        <div class="alert alert-warning mb-15 upload-replace-warning">
+          <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <div class="alert-content">
+            <span class="alert-body">
+              This suite already has the snapshot '{{ suite?.gameSnapshotName }}' ({{ suite?.gameSnapshotCharCount | number }} chars).
+              Uploading replaces it; you will be asked to confirm.
+            </span>
+          </div>
+        </div>
+      }
+
+      <div class="form-group">
+        <label for="snapshotUploadFile">Snapshot file</label>
+        <p class="form-hint" id="snapshotUploadFileHint">A <code>.snapshot.txt</code> downloaded from the snapshot viewer, or a raw HTML game dump.</p>
+        <input #fileInput id="snapshotUploadFile" type="file" class="gh-input"
+               accept=".txt,.html,.htm,text/plain,text/html"
+               aria-describedby="snapshotUploadFileHint"
+               (change)="onFileSelected($event)">
+        @if (content !== null) {
+          <p class="upload-detected" role="status">
+            {{ fileName }} — Detected: {{ detectedIsHtml ? 'HTML dump' : 'snapshot text' }}, {{ content.length | number }} characters
+            @if (content.length > maxStoredChars) {
+              <span class="form-hint">Text longer than 60,000 characters is truncated on the server.</span>
+            }
+          </p>
+        }
+        @if (fileError) {
+          <p class="error-message" role="alert">{{ fileError }}</p>
+        }
+      </div>
+
+      <fieldset class="gh-fieldset upload-kind">
+        <legend>Content kind</legend>
+        <div class="upload-kind-options">
+          <label class="upload-radio">
+            <input type="radio" name="snapshot-content-kind" value="Auto" [checked]="contentKind === 'Auto'" (change)="setContentKind('Auto')">
+            Detect automatically
+          </label>
+          <label class="upload-radio">
+            <input type="radio" name="snapshot-content-kind" value="Text" [checked]="contentKind === 'Text'" (change)="setContentKind('Text')">
+            Snapshot text
+          </label>
+          <label class="upload-radio">
+            <input type="radio" name="snapshot-content-kind" value="Html" [checked]="contentKind === 'Html'" (change)="setContentKind('Html')">
+            HTML dump
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="upload-fields">
+        <div class="form-group">
+          <label for="snapshotUploadName">Snapshot name *</label>
+          <input id="snapshotUploadName" type="text" class="gh-input" maxlength="128" required aria-required="true"
+                 [(ngModel)]="name">
+        </div>
+        <div class="form-group">
+          <label for="snapshotUploadVersion">GnollHack version</label>
+          <input id="snapshotUploadVersion" type="text" class="gh-input" autocomplete="off"
+                 placeholder="e.g. 4.3.0 (Build 17)" [(ngModel)]="version">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="snapshotUploadNotes">Notes</label>
+        <p class="form-hint" id="snapshotUploadNotesHint">Context the assessor should know: HP, dungeon level, key items, adjacent monsters.</p>
+        <textarea id="snapshotUploadNotes" class="gh-input gh-textarea-autosize" rows="1"
+                  aria-describedby="snapshotUploadNotesHint" [(ngModel)]="notes"></textarea>
+      </div>
+
+      @if (error) {
+        <p class="error-message" role="alert">{{ error }}</p>
+      }
+    </div>
+
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="close()">Cancel</button>
+      <button type="button" class="btn-gh upload-snapshot-btn"
+              [attr.aria-disabled]="canUpload ? null : 'true'"
+              [attr.aria-busy]="posting ? 'true' : null"
+              (click)="upload()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+        {{ posting ? 'Uploading…' : 'Upload Snapshot' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- Asks before replacing the suite's current snapshot. Escape returns to the form with nothing sent. -->
+  <dialog #replaceConfirmDialog class="gh-dialog snapshot-replace-confirm"
+          aria-labelledby="snapshotReplaceTitle" aria-describedby="snapshotReplaceBody"
+          (cancel)="closeReplaceConfirm()">
+    <h3 id="snapshotReplaceTitle">Replace snapshot "{{ suite?.gameSnapshotName }}"?</h3>
+    <p id="snapshotReplaceBody">
+      The current snapshot '{{ suite?.gameSnapshotName }}' ({{ suite?.gameSnapshotCharCount | number }} chars{{ currentCapturedAt ? ', captured ' + (currentCapturedAt | date:'medium') : '' }})
+      will be deleted permanently and replaced by '{{ name.trim() }}' ({{ (content?.length ?? 0) | number }} chars).
+      Questions and runs are kept; runs keep the snapshot facts they recorded.
+      If the new name equals the old one it is stored as '{{ name.trim() }} (2)'.
+    </p>
+    <div class="dialog-actions">
+      <button #confirmCancelButton type="button" class="btn-gh btn-gh-cancel" (click)="closeReplaceConfirm()">Cancel</button>
+      <button type="button" class="btn-gh btn-gh-delete replace-snapshot-btn" (click)="confirmReplace()">Replace Snapshot</button>
+    </div>
+  </dialog>
+</dialog>

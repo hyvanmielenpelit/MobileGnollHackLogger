@@ -214,10 +214,20 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `#changelogDialog`: Changelog
 
 - **Benchmark Component (`benchmark.component.html`, Admin → AI Benchmark)** — not an exhaustive
-  list of this component's dialogs, only the one this entry was added to record:
+  list of this component's dialogs, only the ones recorded here so far:
   - `#importDefaultSuitesDialog`: Import Default Suites (Manage Suites tab) — a multi-select
     catalog of the default suite files under `Overseer/Data/DefaultSuites/`, opened by the
     toolbar's Import Default Suites button (from harness 24).
+  - `#questionYamlImportDialog` (`app-question-yaml-import-dialog`, `question-yaml/`): YAML import
+    in three modes — replace one question (a question's Import from YAML), import into the open
+    suite (Manage Questions toolbar), create a suite (Manage Suites toolbar's Import Suite from
+    YAML) — with Provide YAML, Review and Done steps.
+  - `#questionYamlHelpDialog` (`app-question-yaml-help-dialog`): YAML import and export help, with
+    copyable and downloadable instructions for an AI.
+  - `#snapshotUploadDialog` (`app-snapshot-upload-dialog`, `snapshot-upload/`): Upload Snapshot from
+    a suite card, with a nested `#replaceConfirmDialog` when the suite already has a snapshot.
+    Delete Snapshot lives in the snapshot viewer's Metadata tab (`#deleteConfirmDialog` in
+    `snapshot-viewer.component.html`).
 
 - **Comparison Source Picker (`comparison-source-picker.component.html`, Admin → AI Benchmark →
   Run History → Cross-model comparison, step 1)**

@@ -1059,7 +1059,13 @@
           <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
           Import Default Suites
         </button>
+        <button type="button" class="btn-gh" (click)="openQuestionYamlImport('suite')">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          Import Suite from YAML
+        </button>
       </div>
+
+      <p class="form-hint suites-copy-status" role="status" aria-live="polite">{{ suitesCopyStatus }}</p>
 
       <div class="suites-grid">
         @for (suite of suites; track suite.id) {
@@ -1109,6 +1115,26 @@
                   {{ difficultyProgressLabel(suite) }}
                 </span>
               </div>
+              <div class="suite-card-export">
+                <button type="button" class="action-btn" (click)="downloadSuiteYaml(suite)"
+                        [attr.aria-disabled]="suite.questionCount === 0 ? 'true' : null"
+                        [attr.aria-label]="'Download suite ' + suite.name + ' as YAML'"
+                        [attr.interestfor]="'tip-suite-yaml-dl-' + suite.id"
+                        [attr.style]="'anchor-name: --tip-suite-yaml-dl-' + suite.id">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="'tip-suite-yaml-dl-' + suite.id"
+                     [attr.style]="'position-anchor: --tip-suite-yaml-dl-' + suite.id">Download Suite as YAML</div>
+                <button type="button" class="action-btn" (click)="copySuiteYaml(suite)"
+                        [attr.aria-disabled]="suite.questionCount === 0 ? 'true' : null"
+                        [attr.aria-label]="'Copy suite ' + suite.name + ' as YAML to the clipboard'"
+                        [attr.interestfor]="'tip-suite-yaml-cp-' + suite.id"
+                        [attr.style]="'anchor-name: --tip-suite-yaml-cp-' + suite.id">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="'tip-suite-yaml-cp-' + suite.id"
+                     [attr.style]="'position-anchor: --tip-suite-yaml-cp-' + suite.id">Copy Suite as YAML to Clipboard</div>
+              </div>
               <div class="suite-top-actions">
                 <button type="button" class="action-btn" (click)="openEditSuite(suite)"
                         [attr.aria-label]="'Edit suite ' + suite.name"
@@ -1157,6 +1183,11 @@
                 Manage Questions
               </button>
               <div class="suite-card-secondary">
+                <button type="button" class="btn-ghost upload-snapshot-card-btn" (click)="openSnapshotUpload(suite)"
+                        aria-haspopup="dialog"
+                        [attr.aria-disabled]="isGenerationRunningFor(suite) ? 'true' : null">
+                  Upload Snapshot
+                </button>
                 @if (suite.gameSnapshotId) {
                   <button type="button" class="btn-ghost" (click)="openGenerationDialog(suite)">
                     Generate Questions
@@ -3026,10 +3057,49 @@
                   [attr.aria-disabled]="canAutoRateAll ? null : 'true'">
             AI Auto-Rate All Difficulties
           </button>
+          <div class="questions-toolbar-icons">
+            <button type="button" class="action-btn" (click)="downloadQuestionYaml()"
+                    [attr.aria-disabled]="canExportQuestions ? null : 'true'"
+                    [attr.aria-label]="'Download all questions of ' + currentSuiteForQuestions.name + ' as YAML'"
+                    [attr.interestfor]="'tip-yaml-dl-all-' + currentSuiteForQuestions.id"
+                    [attr.style]="'anchor-name: --tip-yaml-dl-all-' + currentSuiteForQuestions.id">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" [id]="'tip-yaml-dl-all-' + currentSuiteForQuestions.id"
+                 [attr.style]="'position-anchor: --tip-yaml-dl-all-' + currentSuiteForQuestions.id">Download All as YAML</div>
+            <button type="button" class="action-btn" (click)="copyQuestionYaml()"
+                    [attr.aria-disabled]="canExportQuestions ? null : 'true'"
+                    [attr.aria-label]="'Copy all questions of ' + currentSuiteForQuestions.name + ' as YAML to the clipboard'"
+                    [attr.interestfor]="'tip-yaml-cp-all-' + currentSuiteForQuestions.id"
+                    [attr.style]="'anchor-name: --tip-yaml-cp-all-' + currentSuiteForQuestions.id">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" [id]="'tip-yaml-cp-all-' + currentSuiteForQuestions.id"
+                 [attr.style]="'position-anchor: --tip-yaml-cp-all-' + currentSuiteForQuestions.id">Copy All to Clipboard</div>
+            <button type="button" class="action-btn" (click)="openQuestionYamlImport('questions')"
+                    [attr.aria-disabled]="loadingQuestions ? 'true' : null"
+                    [attr.aria-label]="'Import questions into ' + currentSuiteForQuestions.name + ' from YAML'"
+                    [attr.interestfor]="'tip-yaml-im-all-' + currentSuiteForQuestions.id"
+                    [attr.style]="'anchor-name: --tip-yaml-im-all-' + currentSuiteForQuestions.id">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" [id]="'tip-yaml-im-all-' + currentSuiteForQuestions.id"
+                 [attr.style]="'position-anchor: --tip-yaml-im-all-' + currentSuiteForQuestions.id">Import Questions from YAML</div>
+            <button type="button" class="action-btn" (click)="openQuestionYamlHelp()"
+                    [attr.aria-disabled]="loadingQuestions ? 'true' : null"
+                    aria-label="Open YAML import and export help"
+                    [attr.interestfor]="'tip-yaml-help-' + currentSuiteForQuestions.id"
+                    [attr.style]="'anchor-name: --tip-yaml-help-' + currentSuiteForQuestions.id">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" [id]="'tip-yaml-help-' + currentSuiteForQuestions.id"
+                 [attr.style]="'position-anchor: --tip-yaml-help-' + currentSuiteForQuestions.id">Import/Export Help</div>
+          </div>
         </div>
         @if (!canAutoRateAll && !loadingQuestions) {
           <span class="form-hint">Add questions to enable AI rating.</span>
         }
+        <p class="form-hint questions-copy-status" role="status" aria-live="polite">{{ questionsCopyStatus }}</p>
 
         <div class="questions-list">
           @for (q of questions; track q.id; let i = $index) {
@@ -3093,6 +3163,30 @@
                     </button>
                     <div popover="hint" class="gh-tooltip" [id]="'tip-rate-q-' + q.id"
                          [attr.style]="'position-anchor: --tip-rate-q-' + q.id">Auto-rate difficulty with AI</div>
+                    <button type="button" class="action-btn" (click)="downloadQuestionYaml(q)"
+                            [attr.aria-label]="'Download question ' + q.orderIndex + ' as YAML'"
+                            [attr.interestfor]="'tip-yaml-dl-q-' + q.id"
+                            [attr.style]="'anchor-name: --tip-yaml-dl-q-' + q.id">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" [id]="'tip-yaml-dl-q-' + q.id"
+                         [attr.style]="'position-anchor: --tip-yaml-dl-q-' + q.id">Download as YAML</div>
+                    <button type="button" class="action-btn" (click)="copyQuestionYaml(q)"
+                            [attr.aria-label]="'Copy question ' + q.orderIndex + ' as YAML to the clipboard'"
+                            [attr.interestfor]="'tip-yaml-cp-q-' + q.id"
+                            [attr.style]="'anchor-name: --tip-yaml-cp-q-' + q.id">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" [id]="'tip-yaml-cp-q-' + q.id"
+                         [attr.style]="'position-anchor: --tip-yaml-cp-q-' + q.id">Copy as YAML to Clipboard</div>
+                    <button type="button" class="action-btn" (click)="openQuestionYamlImport('single', q)"
+                            [attr.aria-label]="'Replace question ' + q.orderIndex + ' from YAML'"
+                            [attr.interestfor]="'tip-yaml-im-q-' + q.id"
+                            [attr.style]="'anchor-name: --tip-yaml-im-q-' + q.id">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" [id]="'tip-yaml-im-q-' + q.id"
+                         [attr.style]="'position-anchor: --tip-yaml-im-q-' + q.id">Import from YAML</div>
                     <button type="button" class="action-btn" (click)="openEditQuestion(q)"
                             [attr.aria-label]="'Edit question ' + (q.orderIndex + 1)"
                             [attr.interestfor]="'tip-edit-q-' + q.id"
@@ -3989,7 +4083,21 @@
   (openGroupAnalysis)="onOpenGroupAnalysisFromSeries($event)"></app-multi-run-progress-dialog>
 
 <!-- SNAPSHOT VIEWER COMPONENT -->
-<app-snapshot-viewer #snapshotViewer (snapshotUpdated)="onSnapshotUpdated($event)"></app-snapshot-viewer>
+<app-snapshot-viewer #snapshotViewer
+                     [deleteBlockedReason]="snapshotDeleteBlockedReason"
+                     (snapshotUpdated)="onSnapshotUpdated($event)"
+                     (snapshotDeleted)="onSnapshotDeleted($event)"></app-snapshot-viewer>
+<app-snapshot-upload-dialog #snapshotUploadDialog (uploaded)="onSnapshotUploaded($event)" />
+
+<!-- YAML import and help. Opened from Manage Questions, they stack above it in the top layer. -->
+<app-question-yaml-import-dialog #questionYamlImportDialog
+                                 [suite]="currentSuiteForQuestions"
+                                 [existing]="questions"
+                                 [suites]="suites"
+                                 (imported)="onQuestionsImported($event)"
+                                 (suiteImported)="onSuiteImported($event)"
+                                 (helpRequested)="openQuestionYamlHelp()" />
+<app-question-yaml-help-dialog #questionYamlHelpDialog />
 
 <!-- QUESTION GENERATION DIALOG -->
 <app-question-generation-dialog

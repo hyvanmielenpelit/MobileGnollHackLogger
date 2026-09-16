@@ -651,6 +651,81 @@ public class AdminBenchmarkController : ControllerBase
         });
     }
 
+    public const int MaxSuiteSnapshotUploadChars = 4_000_000;
+
+    /// <summary>
+    /// Attaches a board built from an uploaded .snapshot.txt or raw HTML dump to this suite. A
+    /// suite that already has a snapshot is refused with 409 unless the replacement is confirmed.
+    /// </summary>
+    [HttpPost("suites/{id}/snapshot")]
+    public async Task<IActionResult> UploadSuiteSnapshot(long id, [FromBody] UploadSuiteSnapshotRequest request, CancellationToken ct)
+    {
+        var suite = await _dbContext.BenchmarkSuites
+            .Include(s => s.Questions)
+            .Include(s => s.GameSnapshot)
+            .FirstOrDefaultAsync(s => s.Id == id, ct);
+        if (suite == null) return NotFound();
+
+        if (suite.GameSnapshotId != null && !request.ReplaceExisting)
+        {
+            return Conflict(new { error = "This suite already has a snapshot. Confirm the replacement to upload a new one." });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return BadRequest(new { error = "Snapshot name is required." });
+        }
+        if (string.IsNullOrWhiteSpace(request.Content))
+        {
+            return BadRequest(new { error = "Snapshot content is required." });
+        }
+        if (request.Content.Length > MaxSuiteSnapshotUploadChars)
+        {
+            return BadRequest(new { error = $"Snapshot content must be at most {MaxSuiteSnapshotUploadChars:N0} characters." });
+        }
+
+        bool isHtml;
+        switch (request.ContentKind ?? "Auto")
+        {
+            case "Html": isHtml = true; break;
+            case "Text": isHtml = false; break;
+            case "Auto": isHtml = LooksLikeHtml(request.Content); break;
+            default:
+                return BadRequest(new { error = "Content kind must be Auto, Text or Html." });
+        }
+
+        var meta = new BoardMetadata(
+            request.Name.Trim(),
+            request.Notes?.Trim(),
+            request.SourceGnollHackVersion?.Trim(),
+            DateTime.UtcNow);
+
+        try
+        {
+            var board = await _snapshotImporter.CreateForSuiteAsync(suite, request.Content, isHtml, meta, request.ReplaceExisting, ct);
+            return Ok(new CaptureBenchmarkSnapshotResponse
+            {
+                Board = ToSnapshotDto(board, suite.Id, suite.Name),
+                Suite = ToSuiteDto(suite)
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>True for content that starts with '&lt;' and contains an html, body or pre tag.</summary>
+    internal static bool LooksLikeHtml(string content)
+    {
+        if (string.IsNullOrEmpty(content)) return false;
+        string trimmed = content.TrimStart('﻿').Trim();
+        if (!trimmed.StartsWith('<')) return false;
+        return trimmed.Contains("<html", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Contains("<body", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Contains("<pre", StringComparison.OrdinalIgnoreCase);
+    }
+
     public const int MaxDefaultSuitesPerImport = 20;
 
     /// <summary>
@@ -727,6 +802,89 @@ public class AdminBenchmarkController : ControllerBase
                 .Select(s => new DefaultSuiteImportSkipDto { Key = s.Key, Reason = s.Reason })
                 .ToList()
         });
+    }
+
+    /// <summary>
+    /// Creates a new suite from an imported YAML document. An existing suite is never
+    /// overwritten: a name collision gets an " (Imported)" suffix. No snapshot is attached.
+    /// </summary>
+    [HttpPost("suites/import")]
+    public async Task<IActionResult> ImportSuite([FromBody] ImportBenchmarkSuiteRequest request)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.Name))
+        {
+            return BadRequest("Suite name is required.");
+        }
+
+        string name = request.Name.Trim();
+        if (name.Length > 128)
+        {
+            return BadRequest("Suite name must be at most 128 characters.");
+        }
+
+        if (request.Questions == null || request.Questions.Count == 0)
+        {
+            return BadRequest("A suite needs at least one question.");
+        }
+
+        if (request.Questions.Any(q => string.IsNullOrWhiteSpace(q.QuestionText)))
+        {
+            return BadRequest("Question text is required for a new question.");
+        }
+
+        var (canAdd, addDenial) = _complianceGuard.CanAddQuestions(0, request.Questions.Count);
+        if (!canAdd)
+        {
+            return BadRequest(addDenial);
+        }
+
+        if (await _dbContext.BenchmarkSuites.AnyAsync(s => s.Name == name))
+        {
+            string baseName = name + " (Imported)";
+            string candidate = baseName;
+            int counter = 1;
+            while (await _dbContext.BenchmarkSuites.AnyAsync(s => s.Name == candidate))
+            {
+                counter++;
+                candidate = $"{name} (Imported {counter})";
+            }
+            name = candidate;
+            if (name.Length > 128)
+            {
+                return BadRequest("Suite name must be at most 128 characters, including the \" (Imported)\" suffix added because the name is already taken.");
+            }
+        }
+
+        var now = DateTime.UtcNow;
+        var suite = new BenchmarkSuite
+        {
+            Name = name,
+            Description = request.Description?.Trim(),
+            GameSnapshotId = null,
+            DefaultSuiteKey = null,
+            CreatedAtUtc = now,
+            ModifiedAtUtc = now
+        };
+
+        int order = 1;
+        foreach (var item in request.Questions)
+        {
+            suite.Questions.Add(new BenchmarkQuestion
+            {
+                OrderIndex = order++,
+                QuestionText = item.QuestionText!.Trim(),
+                Difficulty = item.Difficulty ?? BenchmarkDifficulty.Simple,
+                ExpectedPoints = NullIfBlank(item.ExpectedPoints?.Trim()),
+                IsGenerated = false,
+                CreatedAtUtc = now,
+                ModifiedAtUtc = now
+            });
+        }
+
+        _dbContext.BenchmarkSuites.Add(suite);
+        await _dbContext.SaveChangesAsync();
+
+        return Ok(ToSuiteDto(suite));
     }
 
     // --- Questions CRUD ---
@@ -1199,6 +1357,127 @@ public class AdminBenchmarkController : ControllerBase
         await _dbContext.SaveChangesAsync();
         return Ok();
     }
+
+    /// <summary>
+    /// Replaces questions that carry an id and creates those that do not. Every item is validated
+    /// before anything is written, and all changes land in one save. Never deletes or reorders.
+    /// </summary>
+    [HttpPost("suites/{suiteId}/questions/import")]
+    public async Task<IActionResult> ImportQuestions(long suiteId, [FromBody] ImportBenchmarkQuestionsRequest request, CancellationToken ct)
+    {
+        var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.Id == suiteId, ct);
+        if (suite == null) return NotFound();
+
+        if (request?.Items == null || request.Items.Count == 0)
+        {
+            return BadRequest("No questions to import.");
+        }
+
+        var questions = await _dbContext.BenchmarkQuestions
+            .Where(q => q.BenchmarkSuiteId == suiteId)
+            .ToListAsync(ct);
+        var byId = questions.ToDictionary(q => q.Id);
+
+        var seenIds = new HashSet<long>();
+        foreach (var item in request.Items)
+        {
+            if (item.QuestionId is long id)
+            {
+                if (!byId.ContainsKey(id))
+                {
+                    return BadRequest($"Question {id} does not belong to suite {suiteId}.");
+                }
+                if (!seenIds.Add(id))
+                {
+                    return BadRequest($"Question {id} appears more than once in the import.");
+                }
+                if (item.QuestionText != null && string.IsNullOrWhiteSpace(item.QuestionText))
+                {
+                    return BadRequest($"Question {id}: question text must not be blank.");
+                }
+            }
+            else if (string.IsNullOrWhiteSpace(item.QuestionText))
+            {
+                return BadRequest("Question text is required for a new question.");
+            }
+        }
+
+        int createCount = request.Items.Count(i => i.QuestionId == null);
+        if (createCount > 0)
+        {
+            var (canAdd, addDenial) = await _complianceGuard.CanAddQuestionsAsync(suiteId, createCount, ct: ct);
+            if (!canAdd)
+            {
+                return BadRequest(addDenial);
+            }
+        }
+
+        var now = DateTime.UtcNow;
+        int created = 0, replaced = 0, unchanged = 0;
+        int nextOrder = (questions.Count == 0 ? 0 : questions.Max(q => q.OrderIndex)) + 1;
+
+        foreach (var item in request.Items)
+        {
+            if (item.QuestionId is long id)
+            {
+                var q = byId[id];
+                string newText = item.QuestionText?.Trim() ?? q.QuestionText;
+                var newDifficulty = item.Difficulty ?? q.Difficulty;
+                string? newPoints = item.ReplaceExpectedPoints ? NullIfBlank(item.ExpectedPoints?.Trim()) : q.ExpectedPoints;
+
+                if (q.QuestionText != newText || q.Difficulty != newDifficulty || q.ExpectedPoints != newPoints)
+                {
+                    q.QuestionText = newText;
+                    q.Difficulty = newDifficulty;
+                    q.ExpectedPoints = newPoints;
+                    BenchmarkQuestionAssessment.Clear(q);
+                    q.ModifiedAtUtc = now;
+                    replaced++;
+                }
+                else
+                {
+                    unchanged++;
+                }
+            }
+            else
+            {
+                _dbContext.BenchmarkQuestions.Add(new BenchmarkQuestion
+                {
+                    BenchmarkSuiteId = suiteId,
+                    OrderIndex = nextOrder++,
+                    QuestionText = item.QuestionText!.Trim(),
+                    Difficulty = item.Difficulty ?? BenchmarkDifficulty.Simple,
+                    ExpectedPoints = NullIfBlank(item.ExpectedPoints?.Trim()),
+                    IsGenerated = false,
+                    CreatedAtUtc = now,
+                    ModifiedAtUtc = now
+                });
+                created++;
+            }
+        }
+
+        if (created > 0 || replaced > 0)
+        {
+            suite.ModifiedAtUtc = now;
+            await _dbContext.SaveChangesAsync(ct);
+        }
+
+        var result = await _dbContext.BenchmarkQuestions
+            .Where(q => q.BenchmarkSuiteId == suiteId)
+            .OrderBy(q => q.OrderIndex)
+            .Select(q => ToQuestionDto(q))
+            .ToListAsync(ct);
+
+        return Ok(new ImportBenchmarkQuestionsResult
+        {
+            CreatedCount = created,
+            ReplacedCount = replaced,
+            UnchangedCount = unchanged,
+            Questions = result
+        });
+    }
+
+    private static string? NullIfBlank(string? value) => string.IsNullOrEmpty(value) ? null : value;
 
     // --- Question Review API ---
 

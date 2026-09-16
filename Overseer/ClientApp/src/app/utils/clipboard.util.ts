@@ -23,3 +23,36 @@ export async function copyToClipboard(text: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Copies text that is still being produced. Issues the clipboard write synchronously, inside the
+ * user's activation, where the platform accepts a promised `ClipboardItem` payload; elsewhere it
+ * waits for the text and falls back to {@link copyToClipboard}, which can fail once activation
+ * has lapsed. Same boolean contract.
+ */
+export async function copyTextFromPromise(textPromise: Promise<string>): Promise<boolean> {
+  if (typeof navigator === 'undefined' || !navigator.clipboard) {
+    // Observe the rejection so it is not reported as unhandled.
+    textPromise.catch(() => undefined);
+    return false;
+  }
+
+  if (typeof ClipboardItem !== 'undefined' && typeof navigator.clipboard.write === 'function') {
+    try {
+      const item = new ClipboardItem({
+        'text/plain': textPromise.then(t => new Blob([t], { type: 'text/plain' }))
+      });
+      await navigator.clipboard.write([item]);
+      return true;
+    } catch {
+      textPromise.catch(() => undefined);
+      return false;
+    }
+  }
+
+  try {
+    return await copyToClipboard(await textPromise);
+  } catch {
+    return false;
+  }
+}

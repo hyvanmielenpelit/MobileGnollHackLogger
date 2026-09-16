@@ -123,6 +123,39 @@ public class UpdateBenchmarkQuestionRequest
     public string? ExpectedPoints { get; set; }
 }
 
+public class ImportBenchmarkQuestionItem
+{
+    /// <summary>Existing question to replace; null creates a new question.</summary>
+    public long? QuestionId { get; set; }
+    /// <summary>Null keeps the current text on a replace; required on a create.</summary>
+    public string? QuestionText { get; set; }
+    /// <summary>Null keeps the current difficulty on a replace; Simple on a create.</summary>
+    public BenchmarkDifficulty? Difficulty { get; set; }
+    /// <summary>Applied only when <see cref="ReplaceExpectedPoints"/> is true; empty clears the rubric.</summary>
+    public string? ExpectedPoints { get; set; }
+    public bool ReplaceExpectedPoints { get; set; }
+}
+
+public class ImportBenchmarkQuestionsRequest
+{
+    public List<ImportBenchmarkQuestionItem> Items { get; set; } = new();
+}
+
+public class ImportBenchmarkQuestionsResult
+{
+    public int CreatedCount { get; set; }
+    public int ReplacedCount { get; set; }
+    public int UnchangedCount { get; set; }
+    public List<BenchmarkQuestionDto> Questions { get; set; } = new();
+}
+
+public class ImportBenchmarkSuiteRequest
+{
+    public string Name { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public List<ImportBenchmarkQuestionItem> Questions { get; set; } = new();
+}
+
 public class StartDifficultyAssessmentRequest
 {
     public long SuiteId { get; set; }
@@ -1336,6 +1369,19 @@ public class UploadBenchmarkSnapshotRequest
     public string Html { get; set; } = string.Empty;
     public string? Notes { get; set; }
     public string? SourceGnollHackVersion { get; set; }
+}
+
+public class UploadSuiteSnapshotRequest
+{
+    public string Name { get; set; } = string.Empty;
+    /// <summary>The file's text: a viewer-downloaded .snapshot.txt or a raw HTML dump.</summary>
+    public string Content { get; set; } = string.Empty;
+    /// <summary>"Html", "Text", or "Auto" (default) to detect from the content.</summary>
+    public string ContentKind { get; set; } = "Auto";
+    public string? Notes { get; set; }
+    public string? SourceGnollHackVersion { get; set; }
+    /// <summary>True only after the admin confirmed replacing the suite's current snapshot.</summary>
+    public bool ReplaceExisting { get; set; }
 }
 
 public class UpdateBenchmarkGameSnapshotRequest

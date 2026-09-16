@@ -71,6 +71,27 @@
     </div>
   </dialog>
 
+  <!-- Asks before deleting the snapshot and detaching it from its suite. -->
+  <dialog #deleteConfirmDialog class="gh-dialog snapshot-delete-confirm"
+          [attr.aria-labelledby]="'snapshot-delete-title-' + uid"
+          [attr.aria-describedby]="'snapshot-delete-body-' + uid"
+          (cancel)="onDeleteConfirmCancel($event)">
+    <h3 [id]="'snapshot-delete-title-' + uid">Delete snapshot "{{ snapshot?.name }}"?</h3>
+    <p [id]="'snapshot-delete-body-' + uid">{{ deleteConsequenceText }}</p>
+    @if (deleteError) {
+      <p class="error-message" role="alert">{{ deleteError }}</p>
+    }
+    <div class="dialog-actions">
+      <button #deleteCancelButton type="button" class="btn-gh btn-gh-cancel" (click)="closeDeleteConfirm()"
+              [attr.aria-disabled]="deleting ? 'true' : null">Cancel</button>
+      <button type="button" class="btn-gh btn-gh-delete confirm-delete-snapshot-btn" (click)="confirmDelete()"
+              [attr.aria-disabled]="deleting ? 'true' : null"
+              [attr.aria-busy]="deleting ? 'true' : null">
+        {{ deleting ? 'Deleting...' : 'Delete Snapshot' }}
+      </button>
+    </div>
+  </dialog>
+
   <div class="viewer-body">
     @if (loading) {
       <div class="snapshot-loading" role="status">
@@ -214,6 +235,21 @@
               </button>
             </div>
           </div>
+
+          @if (!savingText && !savingEdit) {
+            <fieldset class="gh-fieldset remove-snapshot">
+              <legend>Remove snapshot</legend>
+              @if (deleteBlockedReason) {
+                <p class="gh-fieldset-hint">{{ deleteBlockedReason }}</p>
+              } @else {
+                <p class="gh-fieldset-hint">{{ deleteConsequenceText }}</p>
+                <button type="button" class="btn-ghost btn-ghost-danger delete-snapshot-btn" (click)="requestDelete()">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                  Delete Snapshot
+                </button>
+              }
+            </fieldset>
+          }
         </section>
       </div>
     }

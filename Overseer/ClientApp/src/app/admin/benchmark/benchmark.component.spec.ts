@@ -10,6 +10,7 @@ import { MultiRunComponent } from './multi-run/multi-run.component';
 import { AdminBenchmarkService, BenchmarkRunAnswerDto } from '../../services/admin-benchmark.service';
 import { SystemService } from '../../services/system.service';
 import { BenchmarkCompletionSoundService } from '../../services/benchmark-completion-sound.service';
+import { serializeQuestionsYaml } from './question-yaml/question-yaml-format';
 
 describe('AdminBenchmarkComponent', () => {
   let component: AdminBenchmarkComponent;
@@ -86,8 +87,16 @@ describe('AdminBenchmarkComponent', () => {
       'getRunReportUrl',
       'getToolCallLogUrl',
       'compareModels',
-      'getComparabilityIndex'
+      'getComparabilityIndex',
+      'importQuestions',
+      'importSuite',
+      'uploadSuiteSnapshot',
+      'deleteSnapshot',
+      'getSnapshot',
+      'getActiveQuestionGeneration'
     ]);
+
+    benchmarkServiceMock.getActiveQuestionGeneration.and.returnValue(of(null));
 
     benchmarkServiceMock.getActiveDifficultyAssessment.and.returnValue(of(null));
     benchmarkServiceMock.getActiveRun.and.returnValue(of(null));
@@ -6745,6 +6754,129 @@ describe('AdminBenchmarkComponent', () => {
       expect(() => component.selectSubTab('modelcomparison')).not.toThrow();
       expect(component.comparisonRunIds).toEqual([]);
       expect(component.comparisonPricingBasis).toBe('Current');
+    });
+  });
+
+  describe('YAML import and export, snapshot upload and delete', () => {
+    const suite = {
+      id: 1, name: 'Default Suite', description: 'Test', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null,
+      questionCount: 2, assessedQuestionCount: 2, difficultyFullyAssessed: true,
+      gameSnapshotId: 7, gameSnapshotName: 'Low HP', gameSnapshotCharCount: 12000
+    } as any;
+    const questions = [
+      { id: 11, benchmarkSuiteId: 1, orderIndex: 1, questionText: 'First?', difficulty: 1, expectedPoints: '- a', createdAtUtc: '' },
+      { id: 12, benchmarkSuiteId: 1, orderIndex: 2, questionText: 'Second?', difficulty: 3, expectedPoints: null, createdAtUtc: '' }
+    ] as any[];
+
+    function host(): HTMLElement {
+      return fixture.nativeElement as HTMLElement;
+    }
+
+    function tooltipTexts(container: Element): string[] {
+      return Array.from(container.querySelectorAll('.gh-tooltip')).map(t => (t.textContent ?? '').trim());
+    }
+
+    function showQuestions(): void {
+      component.activeSubTab = 'suites';
+      component.suites = [{ ...suite }];
+      component.currentSuiteForQuestions = component.suites[0];
+      component.questions = questions.map(q => ({ ...q }));
+      component.loadingQuestions = false;
+      fixture.detectChanges();
+    }
+
+    it('renders the four toolbar icon buttons with their tooltips', () => {
+      showQuestions();
+      const icons = host().querySelector('.questions-toolbar-icons')!;
+      expect(tooltipTexts(icons)).toEqual(['Download All as YAML', 'Copy All to Clipboard', 'Import Questions from YAML', 'Import/Export Help']);
+      expect(Array.from(icons.querySelectorAll('button')).every(b => b.getAttribute('aria-label'))).toBeTrue();
+    });
+
+    it('gives every per-question YAML button a distinct accessible name', () => {
+      showQuestions();
+      const labels = Array.from(host().querySelectorAll('.card-actions-group button'))
+        .map(b => b.getAttribute('aria-label') ?? '')
+        .filter(l => l.includes('YAML'));
+      expect(labels).toContain('Download question 1 as YAML');
+      expect(labels).toContain('Copy question 2 as YAML to the clipboard');
+      expect(labels).toContain('Replace question 2 from YAML');
+      expect(new Set(labels).size).toBe(labels.length);
+    });
+
+    it('renders the suite card export buttons, the toolbar import and Upload Snapshot', () => {
+      showQuestions();
+      const card = host().querySelector('.suite-card')!;
+      expect(tooltipTexts(card.querySelector('.suite-card-export')!)).toEqual(['Download Suite as YAML', 'Copy Suite as YAML to Clipboard']);
+      const toolbarLabels = Array.from(host().querySelectorAll('.suites-toolbar button')).map(b => (b.textContent ?? '').trim());
+      expect(toolbarLabels).toContain('Import Suite from YAML');
+      expect(card.querySelector('.upload-snapshot-card-btn')!.getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('disables Upload Snapshot while a generation job runs on that suite', () => {
+      component.runningGenerationSuiteId = 1;
+      showQuestions();
+      const button = host().querySelector('.suite-card .upload-snapshot-card-btn') as HTMLButtonElement;
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+
+      const open = spyOn(component.snapshotUploadDialog!, 'open');
+      button.click();
+      expect(open).not.toHaveBeenCalled();
+      expect(component.snapshotDeleteBlockedReason).toBeNull();
+    });
+
+    it('copies one question as YAML', async () => {
+      showQuestions();
+      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true });
+      try {
+        await component.copyQuestionYaml(component.questions[0]);
+        expect(writeText).toHaveBeenCalledWith(serializeQuestionsYaml([component.questions[0]], component.currentSuiteForQuestions));
+        expect(component.questionsCopyStatus).toBe('Copied question 1 as YAML.');
+      } finally {
+        delete (navigator as { clipboard?: unknown }).clipboard;
+        if (original) Object.defineProperty(navigator, 'clipboard', original);
+      }
+    });
+
+    it('reloads questions and suites after an import', () => {
+      showQuestions();
+      benchmarkServiceMock.getQuestions.calls.reset();
+      benchmarkServiceMock.getSuites.calls.reset();
+
+      component.onQuestionsImported({ createdCount: 1, replacedCount: 0, unchangedCount: 0, questions: [] });
+      expect(benchmarkServiceMock.getQuestions).toHaveBeenCalledWith(1);
+      expect(benchmarkServiceMock.getSuites).toHaveBeenCalled();
+
+      benchmarkServiceMock.getSuites.calls.reset();
+      component.onSuiteImported({ ...suite, id: 5, name: 'Imported' });
+      expect(benchmarkServiceMock.getSuites).toHaveBeenCalled();
+    });
+
+    it('patches the suite card after an upload', () => {
+      showQuestions();
+      const card = component.suites[0];
+      Object.assign(card, { gameSnapshotId: null });
+      component.onSnapshotUploaded({
+        board: { id: 40, name: 'New board', charCount: 321 } as any,
+        suite: { ...suite, gameSnapshotId: 40, gameSnapshotName: 'New board', gameSnapshotCharCount: 321 }
+      });
+      // loadSuites then replaces the list from the mock, so the patched card object is checked.
+      expect(card.gameSnapshotId).toBe(40);
+      expect(card.gameSnapshotName).toBe('New board');
+    });
+
+    it('clears the snapshot fields after a delete and reloads', () => {
+      showQuestions();
+      benchmarkServiceMock.getSuites.calls.reset();
+      const card = component.suites[0];
+
+      component.onSnapshotDeleted(7);
+
+      expect(card.gameSnapshotId).toBeNull();
+      expect(card.gameSnapshotName).toBeNull();
+      expect(component.currentSuiteForQuestions!.gameSnapshotId).toBeNull();
+      expect(benchmarkServiceMock.getSuites).toHaveBeenCalled();
     });
   });
 });

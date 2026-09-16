@@ -29,6 +29,8 @@ export class SnapshotViewerComponent implements OnDestroy {
 
   @ViewChild('viewerDialog') viewerDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('downloadConfirmDialog') downloadConfirmDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('deleteConfirmDialog') deleteConfirmDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('deleteCancelButton') deleteCancelButton?: ElementRef<HTMLButtonElement>;
   @ViewChild('viewerTitle') viewerTitle?: ElementRef<HTMLElement>;
   @ViewChild('keepEditingButton') keepEditingButton?: ElementRef<HTMLButtonElement>;
   @ViewChild('editNameInput') editNameInput?: ElementRef<HTMLInputElement>;
@@ -36,8 +38,12 @@ export class SnapshotViewerComponent implements OnDestroy {
   @ViewChild(SnapshotDigestEditorComponent) digestEditor?: SnapshotDigestEditorComponent;
 
   @Input() snapshotId: number | null = null;
+  /** When set, Delete Snapshot is replaced by this explanation. */
+  @Input() deleteBlockedReason: string | null = null;
   @Output() closed = new EventEmitter<void>();
   @Output() snapshotUpdated = new EventEmitter<BenchmarkGameSnapshotDto>();
+  /** The id of a snapshot that was deleted; the viewer has closed. */
+  @Output() snapshotDeleted = new EventEmitter<number>();
 
   snapshot: BenchmarkGameSnapshotDto | null = null;
   loading = false;
@@ -66,6 +72,9 @@ export class SnapshotViewerComponent implements OnDestroy {
   editTextError: string | null = null;
   textStatus: string | null = null;
   showDiscardPrompt = false;
+
+  deleting = false;
+  deleteError: string | null = null;
 
   /** Set by Save and download; cleared when the confirmation is dismissed first. */
   private downloadAfterSave = false;
@@ -108,6 +117,7 @@ export class SnapshotViewerComponent implements OnDestroy {
   /* Clearing the snapshot destroys both panels and the CodeMirror instances inside them. */
   close() {
     this.closeDownloadConfirm();
+    this.closeDeleteConfirm();
     this.resetState();
     this.snapshot = null;
     this.viewerDialog?.nativeElement?.close();
@@ -421,6 +431,63 @@ export class SnapshotViewerComponent implements OnDestroy {
     link.remove();
   }
 
+  // ---- Delete --------------------------------------------------------------------------------
+
+  get deleteConsequenceText(): string {
+    const suite = this.snapshot?.suiteName ? ` and detaches it from suite ${this.snapshot.suiteName}` : '';
+    return `Deletes this snapshot permanently${suite}. Questions and runs are kept; runs keep the snapshot facts they recorded. `
+      + 'Generate Questions and Check Rubrics need a snapshot, so they are unavailable for the suite until a new one is uploaded.';
+  }
+
+  requestDelete() {
+    if (!this.snapshot || this.deleteBlockedReason || this.savingText || this.savingEdit) return;
+    this.deleteError = null;
+    const dialog = this.deleteConfirmDialog?.nativeElement;
+    if (dialog && !dialog.open) {
+      dialog.showModal();
+      this.cdr.detectChanges();
+      this.deleteCancelButton?.nativeElement.focus();
+    }
+  }
+
+  /* The board is gone on success, so unsaved edits are not asked about. */
+  confirmDelete() {
+    if (!this.snapshot || this.deleting) return;
+    const id = this.snapshot.id;
+    this.deleting = true;
+    this.deleteError = null;
+    this.cdr.detectChanges();
+
+    this.benchmarkService.deleteSnapshot(id).subscribe({
+      next: () => {
+        this.deleting = false;
+        this.snapshotDeleted.emit(id);
+        this.close();
+      },
+      error: (err) => {
+        this.deleting = false;
+        const body = err?.error;
+        this.deleteError = body?.error || body?.message || (typeof body === 'string' && body)
+          || 'Failed to delete the snapshot.';
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  closeDeleteConfirm() {
+    if (this.deleting) return;
+    const dialog = this.deleteConfirmDialog?.nativeElement;
+    if (dialog?.open) dialog.close();
+  }
+
+  onDeleteConfirmCancel(event: Event) {
+    if (this.deleting) {
+      event.preventDefault();
+      return;
+    }
+    this.deleteError = null;
+  }
+
   // ---- Close guard ---------------------------------------------------------------------------
 
   get unsavedKinds(): UnsavedKind[] {
@@ -473,5 +540,7 @@ export class SnapshotViewerComponent implements OnDestroy {
     this.textStatus = null;
     this.showDiscardPrompt = false;
     this.downloadAfterSave = false;
+    this.deleting = false;
+    this.deleteError = null;
   }
 }

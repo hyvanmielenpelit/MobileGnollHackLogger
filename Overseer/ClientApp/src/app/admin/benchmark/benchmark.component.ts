@@ -37,7 +37,9 @@ import {
   BenchmarkModelComparisonPricingBasis,
   BenchmarkToolCallDto,
   DefaultSuiteCatalogEntryDto,
-  ImportDefaultSuitesResultDto
+  ImportDefaultSuitesResultDto,
+  ImportBenchmarkQuestionsResultDto,
+  CaptureBenchmarkSnapshotResponse
 } from '../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../services/admin.service';
 
@@ -68,6 +70,21 @@ import {
   selectionNotices
 } from './model-comparison/model-comparison.models';
 import { ProviderBadgeComponent } from '../../shared/provider-badge/provider-badge.component';
+import { firstValueFrom, map } from 'rxjs';
+import { QuestionYamlImportDialogComponent } from './question-yaml/question-yaml-import-dialog.component';
+import { QuestionYamlHelpDialogComponent } from './question-yaml/question-yaml-help-dialog.component';
+import {
+  ImportMode,
+  questionYamlFileName,
+  serializeQuestionsYaml,
+  serializeSuiteYaml,
+  suiteYamlFileName
+} from './question-yaml/question-yaml-format';
+import { SnapshotUploadDialogComponent } from './snapshot-upload/snapshot-upload-dialog.component';
+import { copyTextFromPromise, copyToClipboard } from '../../utils/clipboard.util';
+import { downloadTextFile } from '../../utils/download.util';
+
+const COPY_STATUS_MS = 3000;
 
 /**
  * The Model Comparison selection, as it is remembered between visits and between sessions.
@@ -215,7 +232,8 @@ interface BenchmarkRunSettings {
     SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent,
     QuestionGenerationDialogComponent,
     SortHeaderComponent, TablePagerComponent, ModelComparisonComponent,
-    ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, ProviderBadgeComponent
+    ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, ProviderBadgeComponent,
+    QuestionYamlImportDialogComponent, QuestionYamlHelpDialogComponent, SnapshotUploadDialogComponent
   ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
@@ -257,6 +275,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   @ViewChild('multiRunPanel') multiRunPanel?: MultiRunComponent;
   @ViewChild(QuestionGenerationDialogComponent) generationDialog?: QuestionGenerationDialogComponent;
   @ViewChild('importDefaultSuitesDialog') importDefaultSuitesDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('questionYamlImportDialog') questionYamlImportDialog?: QuestionYamlImportDialogComponent;
+  @ViewChild('questionYamlHelpDialog') questionYamlHelpDialog?: QuestionYamlHelpDialogComponent;
+  @ViewChild('snapshotUploadDialog') snapshotUploadDialog?: SnapshotUploadDialogComponent;
   suiteHealthInitialTab: SuiteHealthTab = 'items';
 
   // Confirm Action Dialog State
@@ -1338,6 +1359,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.stopSeriesPolling();
     if (this.copiedDiagnosticsTimer) { clearTimeout(this.copiedDiagnosticsTimer); }
     if (this.copiedRunDiagnosticsTimer) { clearTimeout(this.copiedRunDiagnosticsTimer); }
+    clearTimeout(this.questionsCopyStatusTimer);
+    clearTimeout(this.suitesCopyStatusTimer);
     if (this.titleRestoreVisibilityHandler && typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this.titleRestoreVisibilityHandler);
       this.titleRestoreVisibilityHandler = null;
@@ -2107,6 +2130,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         this.markRunSettingsApplied('suite');
         this.loadLastAssessor();
         this.loadAllFootprints();
+        this.refreshRunningGeneration();
         this.cdr.detectChanges();
       },
       error: (err) => {
@@ -6654,7 +6678,166 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   // --- Game Snapshot & Question Generation & Review Handlers ---
 
   openSnapshotViewer(snapshotId: number): void {
+    this.refreshRunningGeneration();
     this.snapshotViewer?.open(snapshotId);
+  }
+
+  // --- Snapshot upload and delete ---
+
+  /** The suite a question generation job is running on, which holds its snapshot id while it runs. */
+  runningGenerationSuiteId: number | null = null;
+
+  refreshRunningGeneration(): void {
+    this.benchmarkService.getActiveQuestionGeneration().subscribe({
+      next: job => {
+        this.runningGenerationSuiteId = job && job.status === 'Running' ? job.suiteId : null;
+        this.cdr.detectChanges();
+      },
+      error: () => { /* Keeps the last known state; the server still refuses a conflicting job. */ }
+    });
+  }
+
+  isGenerationRunningFor(suite: BenchmarkSuiteDto | null | undefined): boolean {
+    return !!suite && this.runningGenerationSuiteId === suite.id;
+  }
+
+  /** Why the open viewer may not delete its snapshot, or null when it may. */
+  get snapshotDeleteBlockedReason(): string | null {
+    const suiteId = this.suites.find(s => s.gameSnapshotId != null && s.gameSnapshotId === this.snapshotViewer?.snapshotId)?.id;
+    return suiteId != null && suiteId === this.runningGenerationSuiteId
+      ? 'A question generation job is running on this suite. Delete the snapshot after it finishes.'
+      : null;
+  }
+
+  openSnapshotUpload(suite: BenchmarkSuiteDto): void {
+    if (this.isGenerationRunningFor(suite)) return;
+    this.snapshotUploadDialog?.open(suite);
+  }
+
+  onSnapshotUploaded(res: CaptureBenchmarkSnapshotResponse): void {
+    const suite = this.suites.find(s => s.id === res.suite.id);
+    const replacedId = suite?.gameSnapshotId ?? null;
+    if (suite) {
+      suite.gameSnapshotId = res.suite.gameSnapshotId ?? res.board.id;
+      suite.gameSnapshotName = res.suite.gameSnapshotName ?? res.board.name;
+      suite.gameSnapshotCharCount = res.suite.gameSnapshotCharCount ?? res.board.charCount;
+    }
+    if (this.currentSuiteForQuestions?.id === res.suite.id) {
+      this.currentSuiteForQuestions.gameSnapshotId = res.suite.gameSnapshotId ?? res.board.id;
+      this.currentSuiteForQuestions.gameSnapshotName = res.suite.gameSnapshotName ?? res.board.name;
+      this.currentSuiteForQuestions.gameSnapshotCharCount = res.suite.gameSnapshotCharCount ?? res.board.charCount;
+    }
+    if (replacedId != null && this.snapshotViewer?.snapshotId === replacedId && this.snapshotViewer.viewerDialog?.nativeElement?.open) {
+      this.snapshotViewer.close();
+    }
+    this.suiteActionAnnouncement = `Uploaded snapshot ${res.board.name} to suite ${res.suite.name}.`;
+    this.loadSuites();
+    this.cdr.detectChanges();
+  }
+
+  onSnapshotDeleted(snapshotId: number): void {
+    const clear = (s: BenchmarkSuiteDto) => {
+      s.gameSnapshotId = null;
+      s.gameSnapshotName = null;
+      s.gameSnapshotCharCount = null;
+    };
+    const suite = this.suites.find(s => s.gameSnapshotId === snapshotId);
+    if (suite) {
+      clear(suite);
+    }
+    if (this.currentSuiteForQuestions?.gameSnapshotId === snapshotId) {
+      clear(this.currentSuiteForQuestions);
+    }
+    this.loadSuites();
+    this.cdr.detectChanges();
+  }
+
+  // --- YAML import and export ---
+
+  questionsCopyStatus = '';
+  suitesCopyStatus = '';
+  private questionsCopyStatusTimer: ReturnType<typeof setTimeout> | undefined;
+  private suitesCopyStatusTimer: ReturnType<typeof setTimeout> | undefined;
+
+  get canExportQuestions(): boolean {
+    return !this.loadingQuestions && this.questions.length > 0 && !!this.currentSuiteForQuestions;
+  }
+
+  /** One question when given, otherwise every question of the open suite. */
+  downloadQuestionYaml(q?: BenchmarkQuestionDto): void {
+    const suite = this.currentSuiteForQuestions;
+    if (!suite || (!q && !this.canExportQuestions)) return;
+    const questions = q ? [q] : this.questions;
+    downloadTextFile(questionYamlFileName(suite.name, q), serializeQuestionsYaml(questions, suite));
+  }
+
+  async copyQuestionYaml(q?: BenchmarkQuestionDto): Promise<void> {
+    const suite = this.currentSuiteForQuestions;
+    if (!suite || (!q && !this.canExportQuestions)) return;
+    const questions = q ? [q] : this.questions;
+    const ok = await copyToClipboard(serializeQuestionsYaml(questions, suite));
+    const subject = q ? `question ${q.orderIndex}` : 'all questions';
+    this.setQuestionsCopyStatus(ok ? `Copied ${subject} as YAML.` : `Could not copy; use Download as YAML instead.`);
+  }
+
+  downloadSuiteYaml(suite: BenchmarkSuiteDto): void {
+    if (suite.questionCount === 0) return;
+    this.benchmarkService.getQuestions(suite.id).subscribe({
+      next: questions => downloadTextFile(suiteYamlFileName(suite.name), serializeSuiteYaml(suite, questions)),
+      error: () => this.setSuitesCopyStatus(`Could not load the questions of ${suite.name}.`)
+    });
+  }
+
+  /* The clipboard write is issued inside the click, before the questions arrive. */
+  async copySuiteYaml(suite: BenchmarkSuiteDto): Promise<void> {
+    if (suite.questionCount === 0) return;
+    const text = firstValueFrom(this.benchmarkService.getQuestions(suite.id).pipe(map(qs => serializeSuiteYaml(suite, qs))));
+    const ok = await copyTextFromPromise(text);
+    this.setSuitesCopyStatus(ok ? `Copied suite ${suite.name} as YAML` : 'Could not copy; use Download Suite as YAML instead.');
+  }
+
+  openQuestionYamlImport(mode: ImportMode, q?: BenchmarkQuestionDto): void {
+    if (mode !== 'suite' && (this.loadingQuestions || !this.currentSuiteForQuestions)) return;
+    this.questionYamlImportDialog?.open(mode, q);
+  }
+
+  openQuestionYamlHelp(): void {
+    this.questionYamlHelpDialog?.open();
+  }
+
+  onQuestionsImported(_result: ImportBenchmarkQuestionsResultDto): void {
+    if (this.currentSuiteForQuestions) {
+      this.loadQuestions(this.currentSuiteForQuestions.id);
+    }
+    this.loadSuites();
+    if (this.generationDialogVisible) {
+      this.generationDialog?.refreshQuestions();
+    }
+  }
+
+  onSuiteImported(suite: BenchmarkSuiteDto): void {
+    this.suiteActionAnnouncement = `Imported suite ${suite.name}.`;
+    this.loadSuites();
+  }
+
+  private setQuestionsCopyStatus(message: string): void {
+    this.questionsCopyStatus = message;
+    this.cdr.detectChanges();
+    clearTimeout(this.questionsCopyStatusTimer);
+    this.questionsCopyStatusTimer = setTimeout(() => {
+      this.questionsCopyStatus = '';
+      this.cdr.detectChanges();
+    }, COPY_STATUS_MS);
+  }
+
+  private setSuitesCopyStatus(message: string): void {
+    this.suitesCopyStatus = message;
+    this.cdr.detectChanges();
+    clearTimeout(this.suitesCopyStatusTimer);
+    this.suitesCopyStatusTimer = setTimeout(() => {
+      this.suitesCopyStatus = '';
+      this.cdr.detectChanges();
+    }, COPY_STATUS_MS);
   }
 
   onSnapshotUpdated(updated: BenchmarkGameSnapshotDto): void {

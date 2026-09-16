@@ -2801,6 +2801,85 @@ column existed. A suite imported before harness 24 carries `DefaultSuiteKey = nu
 backfilled — its runs read as *not recorded*, and the catalog dialog can only offer a *possibly
 imported earlier (matched by name)* hint for it, never a definite count.
 
+### YAML Import and Export
+
+Questions and whole suites can be exported to, and imported from, a YAML document that a human or an
+AI can edit. YAML is used because a rubric is arbitrary Markdown: a `|` block scalar holds any
+content verbatim — headings, code fences, `---` lines — delimited only by indentation.
+
+**The source of truth for the format is
+`Overseer/ClientApp/src/app/admin/benchmark/question-yaml/question-yaml-format.ts`**; the rules
+below mirror it. Parsing and serializing both happen in the client: the parser is `js-yaml`,
+loaded lazily on the first Validate, followed by a schema pass; the serializer is hand-written so
+that every multi-line value is a block scalar. The server receives structured requests.
+
+```yaml
+# Overseer benchmark questions. Edit freely; keep every `id` you were given.
+format: overseer-benchmark-questions
+version: 1
+
+suite:
+  name: "GnollHack Player Assistance Benchmark Suite"
+  description: |
+    Eighteen questions across three tiers.
+  snapshot: "Valkyrie dlvl 12"
+
+questions:
+  - id: 42
+    difficulty: Simple
+    question: |
+      What is the Gnoll race?
+    rubric: |
+      **REQUIRED** (accuracy + completeness)
+      - The Gnoll is a GnollHack-original playable race.
+
+  - difficulty: Advanced
+    question: |
+      Which source file implements ...?
+```
+
+| Rule | Requirement |
+|---|---|
+| H1 | A mapping with `format: overseer-benchmark-questions` and `version: 1`; only the keys `format`, `version`, `suite`, `questions`. |
+| H2 | `suite` is optional: `name` (1–128 characters), `description`, `snapshot` (informational); no other keys. |
+| Q1 | `questions` is a non-empty list of mappings. |
+| Q2 | Question keys are only `id`, `difficulty`, `question`, `rubric`. |
+| Q3 | `id`, when present, is a positive integer, unique in the document. |
+| Q4 | `difficulty` is Simple, Intermediate or Advanced (case-insensitive) or 1–3. |
+| Q5 | `question` and `rubric` are text. An absent key keeps the current value on a replace. |
+| Q6 | A blank `question` on a replace is an error; `rubric: \|` with nothing under it clears the rubric. |
+| M1 | Single-question import (a question's *Import from YAML*): exactly one question, whose `id`, if present, is the target's. |
+| M2 | Questions import (Manage Questions toolbar): every `id` belongs to the open suite; a question without `id` is created and needs `question`; `suite` is ignored with a notice. |
+| M3 | Suite import (Manage Suites toolbar): `suite.name` is required; every question is created and needs `question`; ids are ignored with a notice. |
+| L1 | Created questions must not push the suite past `Benchmark:Compliance:MaxQuestionsPerSuite`; the server enforces it and the dialog shows its message. |
+
+Syntax errors are reported as *Line N, column M: reason*; schema errors name the location, as in
+*questions[3] (id 42): unknown key `tier`*. Block scalars lose their trailing newline and trailing
+whitespace on parse; a BOM and CRLF are accepted. Export writes UTF-8 without a BOM, LF line endings,
+the `|2` indentation indicator where a value's first line starts with whitespace, and omits `rubric`
+for an empty rubric. File names are `benchmark-questions-<suite-slug>.yaml`,
+`benchmark-question-<orderIndex>-id-<id>.yaml` and `benchmark-suite-<suite-slug>.yaml`.
+
+**Replace and create.** A replace changes only the keys present. When the question text, difficulty
+or rubric differs after trimming, the question gets exactly what `PUT questions/{id}` does: a new
+`ItemRevision` and a cleared AI-assessed difficulty; an identical re-import changes nothing. A
+create is appended after the highest `OrderIndex`, `IsGenerated = false`, difficulty Simple unless
+given.
+
+**What an import never does**: delete or reorder questions, touch runs, assessments, reviews or the
+game snapshot, or write anything before the whole document has validated. The dialog's steps are
+*Provide YAML* (paste or upload a file of at most 2 MB, then Validate), *Review* (one card per
+question — *Replace #N* or *Create new question* — with *Side by side* and *Diff* views), and
+*Done*. The server validates the whole batch again before its single save.
+
+**Suite import always creates a new suite**, named `<name> (Imported)`, `(Imported 2)`, … when the
+name is taken, with no snapshot and no `DefaultSuiteKey`. The game snapshot is never part of a suite
+export; `suite.snapshot` only names it.
+
+Endpoints: `POST suites/{suiteId}/questions/import` and `POST suites/import` (§ 6). The help dialog
+(*Import/Export Help* on the Manage Questions toolbar) shows the admin guide and a copyable,
+downloadable set of instructions for an AI.
+
 ---
 
 ## 6. API Endpoints
@@ -2835,6 +2914,9 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `PUT /api/admin/benchmark/questions/{id}`: Update a question (clears assessment snapshot if content changed).
 - `DELETE /api/admin/benchmark/questions/{id}`: Delete a question.
 - `PUT /api/admin/benchmark/suites/{id}/questions/reorder`: Reorder questions via ID array.
+- `POST /api/admin/benchmark/suites/{suiteId}/questions/import`: YAML questions import (body `{ items: [{ questionId?, questionText?, difficulty?, expectedPoints?, replaceExpectedPoints }] }`). Items with `questionId` replace, the rest are created; 404 for an unknown suite, 400 for a foreign or duplicate id, a create without text, or the question cap — all before any write. Returns `{ createdCount, replacedCount, unchangedCount, questions }`. See *YAML Import and Export*.
+- `POST /api/admin/benchmark/suites/import`: Create a new suite from a YAML import (body `{ name, description?, questions: [...] }`). 400 for a blank or over-128-character name, no questions, a question without text, or the question cap; a taken name becomes `"<name> (Imported)"`. Returns `BenchmarkSuiteDto`.
+- `POST /api/admin/benchmark/suites/{id}/snapshot`: Attach a board built from uploaded snapshot text or an HTML dump to this suite (body `{ name, content, contentKind, notes?, sourceGnollHackVersion?, replaceExisting }`). 409 when the suite already has a snapshot and `replaceExisting` is false. Returns `{ board, suite }`. See *Game Snapshots*.
 
 ### Runs & Scoring
 - `POST /api/admin/benchmark/runs`: Start a benchmark run (gated by hourly/daily caps and same-provider acknowledgement).
@@ -3153,8 +3235,26 @@ game session.
     attached to the chat session (the **Save Attached Game Snapshot** button in the chat header). This
     extracts the newest attached snapshot text directly from the session's system messages without
     requiring a 45-second round trip to the native game client.
-  - **Server Upload (`ServerUpload`)**: Captured via programmatic API or file import (`file_upload`
-    and `manual_entry` currently have no dedicated UI).
+  - **Server Upload (`ServerUpload`)**: A raw HTML game dump, sanitized by `DumpHtmlSanitizer.Sanitize`.
+    `POST snapshots` creates a new `Snapshot: <name>` suite bound to it and has no UI; the suite card's
+    **Upload Snapshot** (below) stores an HTML dump under this method too, attached to that suite.
+  - **Text Upload (`TextUpload`)**: A `.snapshot.txt` as the Snapshot Viewer downloads it, or any
+    already-flattened snapshot text, uploaded from the suite card's **Upload Snapshot**. Line endings
+    are unified and the text runs through `NormalizeFlattenedText`, exactly as a text edit does, so
+    re-uploading a downloaded snapshot reproduces its SHA-256.
+- **Upload Snapshot** (suite card, `SnapshotUploadDialogComponent`): `POST suites/{id}/snapshot`
+  attaches a board built from the uploaded file to **that** suite and creates no suite. The body is
+  `{ name, content, contentKind, notes?, sourceGnollHackVersion?, replaceExisting }`. `contentKind`
+  is `Auto` (default), `Text` or `Html`; `Auto` treats content as HTML when, after trimming, it
+  starts with `<` and contains `<html`, `<body` or `<pre` (case-insensitive). Content over 4,000,000
+  characters is refused; the stored text is capped at 60,000 as for every capture. A suite that
+  already has a snapshot gets `409` unless `replaceExisting` is true: the dialog shows a warning
+  block naming the current snapshot, and *Upload Snapshot* opens a confirmation naming the old and new
+  snapshot before it sends `replaceExisting: true`. A confirmed replacement deletes the old board in
+  the same save that attaches the new one. Name disambiguation runs before the old board is removed,
+  so re-uploading under the old board's exact name stores `<name> (2)`. The card's button is
+  `aria-disabled` while a question generation job runs on that suite, because the job re-reads the
+  board by id.
 - **Sanitizer Convergence**: All capture paths pass snapshot text through
   `DumpHtmlSanitizer.NormalizeFlattenedText` before persistence. This normalizes line endings
   (`\r\n` / `\r` to `\n`), strips trailing whitespace per line, strips terminal backticks/triple
@@ -3206,8 +3306,10 @@ game session.
   - Only **Save Attached Game Snapshot** is gated by administrator privileges (`isAdmin`);
     **Attach Game Snapshot** is available to any embedded user. Neither depends on `ShowDebugLog` or
     any build configuration flags.
-- **Immutability & Safety**: A snapshot cannot be deleted if any benchmark suites or runs reference
-  it. Snapshot text is no longer immutable after creation: an administrator can edit it directly
+- **Immutability & Safety**: No run or answer holds a foreign key to a snapshot — a run copies the
+  snapshot's name, SHA-256, size and capture method by value — so deleting a snapshot
+  (`DELETE snapshots/{id}`, the viewer's **Delete Snapshot**) detaches it from its suite and keeps
+  every question, run and recorded snapshot fact. Snapshot text is no longer immutable after creation: an administrator can edit it directly
   through the **Game Snapshot** tab (described under Snapshot Viewer UI below), which calls
   `PUT snapshots/{id}/text`. That endpoint unifies CRLF/CR line endings to LF, runs the result through
   the same `DumpHtmlSanitizer.NormalizeFlattenedText` every capture path uses, applies the
@@ -3223,7 +3325,8 @@ game session.
 
 ### Suite Card Actions
 Each bound suite's card in Manage Suites shows one primary action and a row of secondary ones: a
-gold `.btn-gh` **Manage Questions** button, followed by a `.btn-ghost` outlined row — **Generate
+gold `.btn-gh` **Manage Questions** button, followed by a `.btn-ghost` outlined row — **Upload
+Snapshot** (on every card; see Game Snapshots above), **Generate
 Questions** (only while the suite has a bound snapshot), **Assess Difficulty**, **Suite Health**,
 and, once the suite has generated questions, **Check Rubrics** and, while any question is still
 unreviewed, **Verify All**. A `.btn-ghost-danger` **Delete Runs** sits at the end of the row once the
@@ -3312,6 +3415,14 @@ detection, sections, line-number formatting) lives in `reader-text.ts` beside it
   server-side and puts it straight into the field; it is disabled while the request is in flight and
   the snapshot text is never touched. The footer's **Revert** and **Save Changes** are enabled only
   while a field differs from the saved snapshot; a successful save shows *Saved.* for two seconds.
+  Below the form, a **Remove snapshot** fieldset holds **Delete Snapshot** (`.btn-ghost-danger`),
+  hidden while either tab is saving. It opens a nested confirmation stating that the snapshot is
+  deleted permanently and detached from its suite, that questions and runs are kept with the
+  snapshot facts they recorded, and that Generate Questions and Check Rubrics are unavailable until a
+  new snapshot is uploaded. A confirmed delete calls `DELETE snapshots/{id}`, emits
+  `snapshotDeleted`, and closes the viewer without asking about unsaved edits; a failure keeps the
+  confirmation open with the server's message. While a question generation job runs on the suite the
+  button is replaced by that explanation.
 - **Unsaved changes**: Closing the dialog — the header close button or Escape — with unsaved changes
   on either tab shows an inline strip under the tab row in place of a `confirm()` popup, naming what
   is unsaved (*Discard unsaved changes to the snapshot text?*, *…to the metadata?*, or *…to the

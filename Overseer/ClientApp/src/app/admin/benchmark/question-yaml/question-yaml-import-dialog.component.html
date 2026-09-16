@@ -1,0 +1,229 @@
+<!-- YAML IMPORT
+     One dialog for three modes: replace one question, import into the open suite, create a suite.
+     No closedby="any": light dismiss would lose pasted text. -->
+<dialog #dialog class="gh-dialog benchmark-form-dialog benchmark-question-import-dialog"
+        aria-labelledby="questionYamlImportTitle"
+        (cancel)="onCancel($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="questionYamlImportTitle">{{ title }}</h3>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close YAML import" (click)="close()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <div class="dialog-body">
+      <ol class="import-steps" aria-label="Import steps">
+        @for (s of steps; track s.id) {
+          <li [class.is-current]="step === s.id" [class.is-done]="step > s.id"
+              [attr.aria-current]="step === s.id ? 'step' : null">
+            <span class="import-step-number" aria-hidden="true">{{ s.id }}</span>
+            {{ s.label }}
+          </li>
+        }
+      </ol>
+
+      @if (step === 1) {
+        <h4 class="visually-hidden" #stepHeading tabindex="-1">Provide YAML</h4>
+
+        <fieldset class="gh-fieldset import-source">
+          <legend>Source</legend>
+          <div class="import-source-options">
+            <label class="import-radio">
+              <input type="radio" name="import-source" value="paste"
+                     [checked]="source === 'paste'" (change)="setSource('paste')">
+              Paste YAML
+            </label>
+            <label class="import-radio">
+              <input type="radio" name="import-source" value="file"
+                     [checked]="source === 'file'" (change)="setSource('file')">
+              Upload a file
+            </label>
+          </div>
+
+          @if (source === 'paste') {
+            <div class="form-group">
+              <label for="questionYamlPaste">YAML document</label>
+              <textarea id="questionYamlPaste" class="gh-input gh-textarea-autosize import-yaml-textarea"
+                        style="--autosize-min: 12lh; --autosize-max: 40lh"
+                        spellcheck="false" wrap="off" autocomplete="off"
+                        [ngModel]="pastedText" (ngModelChange)="onPastedTextChange($event)"></textarea>
+            </div>
+          } @else {
+            <div class="form-group">
+              <label for="questionYamlFile">YAML file</label>
+              <input id="questionYamlFile" type="file" class="gh-input"
+                     accept=".yaml,.yml,application/yaml,text/yaml,text/plain"
+                     (change)="onFileSelected($event)">
+              @if (fileText !== null) {
+                <div class="import-file-info" role="status">
+                  <span>{{ fileName }} ({{ fileSizeLabel }})</span>
+                  <button type="button" class="btn-ghost" (click)="clearFile()">Clear file</button>
+                </div>
+              }
+              @if (fileError) {
+                <p class="error-message" role="alert">{{ fileError }}</p>
+              }
+            </div>
+          }
+
+          <p class="form-hint import-help-hint">
+            The format is documented in the help.
+            <button type="button" class="btn-ghost" (click)="requestHelp()">Open the format help</button>
+          </p>
+        </fieldset>
+
+        @if (errors.length > 0) {
+          <ul class="error-message import-errors" role="alert">
+            @for (e of errors; track $index) {
+              <li>{{ e.message }}</li>
+            }
+          </ul>
+        }
+        @if (validSummary) {
+          <div class="import-valid" role="status">
+            <p class="import-valid-summary">{{ validSummary }}</p>
+            @for (n of notices; track $index) {
+              <p class="form-hint">{{ n }}</p>
+            }
+          </div>
+        }
+      }
+
+      @if (step === 2) {
+        <h4 class="import-step-heading" #stepHeading tabindex="-1">Review changes</h4>
+
+        @if (mode === 'suite') {
+          <section class="import-card import-suite-card" aria-labelledby="importSuiteCardTitle">
+            <h5 id="importSuiteCardTitle">New suite: {{ resolvedSuiteName }}</h5>
+            @if (resolvedSuiteName !== suiteName) {
+              <p class="form-hint">A suite named {{ suiteName }} already exists; the import will be named {{ resolvedSuiteName }}.</p>
+            }
+            @if (suiteDescription) {
+              <div class="import-markdown markdown-body" [innerHTML]="suiteDescription | markdown"></div>
+            }
+          </section>
+        } @else {
+          <div class="import-view-toggle" role="group" aria-label="Review view">
+            <button type="button" class="btn-ghost" [attr.aria-pressed]="view === 'side'" (click)="setView('side')">Side by side</button>
+            <button type="button" class="btn-ghost" [attr.aria-pressed]="view === 'diff'" (click)="setView('diff')">Diff</button>
+          </div>
+        }
+
+        @for (card of cards; track $index) {
+          <section class="import-card" [attr.aria-label]="cardHeading(card)">
+            <div class="import-card-header">
+              <h5>{{ cardHeading(card) }}</h5>
+              <div class="import-badges">
+                @if (card.item.current === null) {
+                  <span class="status-badge import-badge-new">new</span>
+                } @else if (card.item.unchanged) {
+                  <span class="status-badge import-badge-none">no changes</span>
+                } @else {
+                  @if (card.item.questionChanged) {
+                    <span class="status-badge badge-warning">question text</span>
+                  }
+                  @if (card.item.difficultyChanged) {
+                    <span class="status-badge badge-warning">difficulty {{ currentDifficultyLabel(card) }} → {{ importedDifficultyLabel(card) }}</span>
+                  }
+                  @if (card.item.rubricCleared) {
+                    <span class="status-badge badge-warning">rubric cleared</span>
+                  } @else if (card.item.rubricChanged) {
+                    <span class="status-badge badge-warning">rubric</span>
+                  }
+                }
+              </div>
+            </div>
+
+            @if (mode === 'suite' || view === 'side') {
+              <div class="import-compare">
+                @if (mode !== 'suite') {
+                  <div class="import-column">
+                    <h6>Current</h6>
+                    @if (card.item.current) {
+                      <p class="import-field-label">Question</p>
+                      <p class="q-full-text">{{ card.item.current.questionText }}</p>
+                      <p class="import-field-label">Difficulty: {{ currentDifficultyLabel(card) }}</p>
+                      <p class="import-field-label">Rubric</p>
+                      @if (card.item.current.expectedPoints) {
+                        <app-collapsible-markdown [text]="card.item.current.expectedPoints" label="current rubric" />
+                      } @else {
+                        <p class="text-muted">(no rubric)</p>
+                      }
+                    } @else {
+                      <p class="text-muted">(new question)</p>
+                    }
+                  </div>
+                }
+                <div class="import-column">
+                  <h6>Imported</h6>
+                  <p class="import-field-label">Question</p>
+                  @if (card.item.parsed.questionText !== null) {
+                    <p class="q-full-text">{{ card.item.parsed.questionText }}</p>
+                  } @else {
+                    <p class="text-muted">Not in the document, kept as is.</p>
+                  }
+                  <p class="import-field-label">Difficulty: {{ importedDifficultyLabel(card) }}</p>
+                  <p class="import-field-label">Rubric</p>
+                  @if (card.item.parsed.rubric === null) {
+                    <p class="text-muted">Rubric: not in the document, kept as is.</p>
+                  } @else if (card.item.parsed.rubric === '') {
+                    <p class="text-muted">(empty rubric)</p>
+                  } @else {
+                    <app-collapsible-markdown [text]="card.item.parsed.rubric" label="imported rubric" />
+                  }
+                </div>
+              </div>
+            } @else {
+              <p class="import-field-label">Question</p>
+              <pre class="import-diff">@for (line of card.questionDiff; track $index) {<span class="diff-line" [class.diff-added]="line.kind === 'added'" [class.diff-removed]="line.kind === 'removed'" [class.diff-equal]="line.kind === 'equal'">{{ diffPrefix(line) }}{{ line.text }}</span>}</pre>
+              <p class="import-field-label">Rubric</p>
+              @if (card.item.parsed.rubric === null) {
+                <p class="text-muted">Rubric: not in the document, kept as is.</p>
+              } @else {
+                <pre class="import-diff">@for (line of card.rubricDiff; track $index) {<span class="diff-line" [class.diff-added]="line.kind === 'added'" [class.diff-removed]="line.kind === 'removed'" [class.diff-equal]="line.kind === 'equal'">{{ diffPrefix(line) }}{{ line.text }}</span>}</pre>
+              }
+            }
+          </section>
+        }
+
+        @if (applyError) {
+          <p class="error-message" role="alert">{{ applyError }}</p>
+        }
+      }
+
+      @if (step === 3) {
+        <h4 class="import-step-heading" #stepHeading tabindex="-1">Done</h4>
+        <p class="import-done" role="status">{{ doneSummary }}</p>
+      }
+    </div>
+
+    <div class="dialog-footer">
+      @if (step === 1) {
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="close()">Cancel</button>
+        <button type="button" class="btn-gh import-validate-btn"
+                [attr.aria-disabled]="canValidate ? null : 'true'"
+                [attr.aria-busy]="validating ? 'true' : null"
+                (click)="validate()">Validate</button>
+        <button type="button" class="btn-gh import-review-btn"
+                [attr.aria-disabled]="canReview ? null : 'true'"
+                (click)="review()">Review changes</button>
+      }
+      @if (step === 2) {
+        <button type="button" class="btn-gh btn-gh-cancel" [attr.aria-disabled]="applying ? 'true' : null" (click)="back()">Back</button>
+        <button type="button" class="btn-gh import-apply-btn"
+                [attr.aria-disabled]="applying ? 'true' : null"
+                [attr.aria-busy]="applying ? 'true' : null"
+                (click)="apply()">{{ applying ? 'Applying…' : applyLabel }}</button>
+      }
+      @if (step === 3) {
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="close()">Close</button>
+      }
+    </div>
+  </div>
+</dialog>

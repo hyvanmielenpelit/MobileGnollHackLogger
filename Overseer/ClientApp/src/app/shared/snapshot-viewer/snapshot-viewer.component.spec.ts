@@ -21,7 +21,8 @@ describe('SnapshotViewerComponent', () => {
       'getSnapshotTextUrl',
       'updateSnapshot',
       'updateSnapshotText',
-      'regenerateSnapshotDigest'
+      'regenerateSnapshotDigest',
+      'deleteSnapshot'
     ]);
 
     mockBenchmarkService.getSnapshot.and.returnValue(of({
@@ -49,6 +50,7 @@ describe('SnapshotViewerComponent', () => {
   });
 
   afterEach(() => {
+    component.deleteConfirmDialog?.nativeElement?.close();
     component.downloadConfirmDialog?.nativeElement?.close();
     component.viewerDialog?.nativeElement?.close();
   });
@@ -250,6 +252,61 @@ describe('SnapshotViewerComponent', () => {
       for (const name of ['Cancel', 'Download saved text', 'Save and download']) {
         expect(buttonNamed(name)).withContext(name).toBeTruthy();
       }
+    });
+  });
+
+  describe('deleting the snapshot', () => {
+    it('offers Delete Snapshot on the Metadata tab, or the blocked reason instead', async () => {
+      await openReady(snapshotWith(buildBoard(), { suiteName: 'Board Suite' }));
+      component.selectTab('metadata');
+      fixture.detectChanges();
+
+      const panel = host.querySelector('.snapshot-panel-metadata')!;
+      expect(panel.querySelector('.delete-snapshot-btn')!.textContent!.trim()).toBe('Delete Snapshot');
+      expect(panel.querySelector('.remove-snapshot')!.textContent).toContain('detaches it from suite Board Suite');
+
+      fixture.componentRef.setInput('deleteBlockedReason', 'A question generation job is running on this suite.');
+      fixture.detectChanges();
+      expect(panel.querySelector('.delete-snapshot-btn')).toBeNull();
+      expect(panel.querySelector('.remove-snapshot')!.textContent).toContain('generation job is running');
+    });
+
+    it('deletes on confirm, emits the id and closes', async () => {
+      mockBenchmarkService.deleteSnapshot.and.returnValue(of(undefined));
+      const deleted = jasmine.createSpy('snapshotDeleted');
+      component.snapshotDeleted.subscribe(deleted);
+      await openReady();
+      component.selectTab('metadata');
+      fixture.detectChanges();
+
+      host.querySelector<HTMLButtonElement>('.delete-snapshot-btn')!.click();
+      fixture.detectChanges();
+      expect(component.deleteConfirmDialog.nativeElement.open).toBeTrue();
+      expect(mockBenchmarkService.deleteSnapshot).not.toHaveBeenCalled();
+
+      host.querySelector<HTMLButtonElement>('.confirm-delete-snapshot-btn')!.click();
+      fixture.detectChanges();
+
+      expect(mockBenchmarkService.deleteSnapshot).toHaveBeenCalledWith(1);
+      expect(deleted).toHaveBeenCalledWith(1);
+      expect(component.deleteConfirmDialog.nativeElement.open).toBeFalse();
+      expect(component.viewerDialog.nativeElement.open).toBeFalse();
+    });
+
+    it('keeps the confirmation open with the message when the delete fails', async () => {
+      mockBenchmarkService.deleteSnapshot.and.returnValue(throwError(() => ({ error: { error: 'Snapshot is locked.' } })));
+      const deleted = jasmine.createSpy('snapshotDeleted');
+      component.snapshotDeleted.subscribe(deleted);
+      await openReady();
+
+      component.requestDelete();
+      fixture.detectChanges();
+      component.confirmDelete();
+      fixture.detectChanges();
+
+      expect(component.deleteConfirmDialog.nativeElement.open).toBeTrue();
+      expect(host.querySelector('.snapshot-delete-confirm [role="alert"]')!.textContent).toContain('Snapshot is locked.');
+      expect(deleted).not.toHaveBeenCalled();
     });
   });
 
