@@ -52,6 +52,11 @@
             <span class="help-copy-status" role="status" aria-live="polite">{{ copyTarget === 'ai' ? copyStatus : '' }}</span>
           </div>
           <p class="help-ai-hint">Paste these into an AI chat together with an exported document, so its reply imports cleanly.</p>
+          @if (guidanceState === 'loading') {
+            <p class="help-ai-hint help-ai-guidance-state" role="status">Loading rubric guidance…</p>
+          } @else if (guidanceState === 'failed') {
+            <p class="help-ai-hint help-ai-guidance-state" role="status">The rubric guidance could not be loaded, so these instructions leave out the rubric format and difficulty bands.</p>
+          }
           <pre class="help-ai-text">{{ aiInstructions }}</pre>
         </div>
       } @else if (activeTab === 'examples') {

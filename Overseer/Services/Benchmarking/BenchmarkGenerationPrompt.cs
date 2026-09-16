@@ -129,17 +129,9 @@ public static class BenchmarkGenerationPrompt
     private static void AppendDifficultyBandHeader(StringBuilder sb, BenchmarkDifficulty difficulty)
     {
         sb.AppendLine("TARGET DIFFICULTY BAND:");
-        switch (difficulty)
+        if (Enum.IsDefined(difficulty))
         {
-            case BenchmarkDifficulty.Simple:
-                sb.AppendLine($"- Target: Simple ({BenchmarkDifficultyBands.RangeLabel(BenchmarkDifficulty.Simple)}). Questions focused on immediate tactical survival, direct monster threats, obvious escape item identification, standard inventory assessment, and urgent turn-1 decisions directly visible on the board.");
-                break;
-            case BenchmarkDifficulty.Intermediate:
-                sb.AppendLine($"- Target: Intermediate ({BenchmarkDifficultyBands.RangeLabel(BenchmarkDifficulty.Intermediate)}). Questions requiring multi-turn tactical planning, risk/reward assessment, non-trivial resource combinations, companion handling, prayer safety calculations, route/branch choices, or identification risk tradeoffs.");
-                break;
-            case BenchmarkDifficulty.Advanced:
-                sb.AppendLine($"- Target: Advanced ({BenchmarkDifficultyBands.RangeLabel(BenchmarkDifficulty.Advanced)}). Questions testing obscure engine interactions, complex damage or survival probability calculations, subtle GnollHack vs NetHack divergences (e.g. runewords), deep inventory and spell synergy, or edge-case escape sequences under severe constraints.");
-                break;
+            sb.AppendLine($"- Target: {difficulty} ({BenchmarkDifficultyBands.RangeLabel(difficulty)}). {BenchmarkRubricAuthoringGuidance.BandDescription(difficulty)}");
         }
     }
 
@@ -148,35 +140,10 @@ public static class BenchmarkGenerationPrompt
     {
         sb.AppendLine("RUBRIC FORMAT AND GROUNDING REQUIREMENTS:");
         sb.AppendLine("Every question MUST include an exhaustive, strict grading rubric in the ExpectedPoints field matching this exact structure:");
-        sb.AppendLine("1. **BOARD FACTS**: List every factual game state claim the rubric relies on. EVERY board fact must be directly verifiable and quotable from the snapshot. Do not hallucinate or assume items, HP, positions, or stats not present on the board.");
-        sb.AppendLine("2. **REQUIRED**: Specific correct decisions, tactical advice, or warnings the candidate must provide.");
-        sb.AppendLine("3. **CRITICAL ERROR**: Severe blunders or lethal mistakes (e.g. meleeing a mind flayer with low HP, praying while on timeout) that fail the answer.");
-        sb.AppendLine("4. **SCOPE**: Boundaries of the question (e.g. immediate turn vs long-term).");
-        sb.AppendLine("5. **FORM** (not graded — presentation note only): Expected answer structure. Label this section exactly \"**FORM** (not graded — presentation note only)\". It is a presentation note the assessor does not score: a FORM suggestion is never a Readability criterion and the section must not assert a grading consequence.");
-        sb.AppendLine("6. **SOURCE**: Must specify \"**SOURCE** — board\" for facts grounded in this snapshot, and relevant C source files or wiki citations for game mechanics.");
+        sb.AppendLine(BenchmarkRubricAuthoringGuidance.SectionRules);
         sb.AppendLine();
         sb.AppendLine("WORKED EXAMPLE OF EXPECTED RUBRIC:");
-        sb.AppendLine(@"**BOARD FACTS**
-- HP is 12 out of 60 (20% remaining).
-- An adjacent hostile master mind flayer is to the east.
-- Inventory contains a wand of teleportation (0:3) and an uncursed potion of extra healing.
-- Prayer timeout is 0 (prayer is safe).
-
-**REQUIRED**
-- Identify the lethal immediate threat of mind flayer brain-eating attacks.
-- Recommend an immediate survival action: zap wand of teleportation at self or the flayer, or pray.
-- Advise against engaging in melee combat this turn.
-
-**CRITICAL ERROR**
-- Recommending attacking in melee or drinking a standard potion while adjacent without defense.
-
-**SCOPE**
-- The turn 120 tactical emergency. Do not require long-term ascension advice.
-
-**FORM** (not graded — presentation note only)
-- Direct tactical assessment with immediate recommended action first.
-
-**SOURCE** — board; C source: src/mhit.c (mind flayer attack), include/you.c (prayer safety)");
+        sb.AppendLine(BenchmarkRubricAuthoringGuidance.WorkedExample);
         sb.AppendLine();
     }
 

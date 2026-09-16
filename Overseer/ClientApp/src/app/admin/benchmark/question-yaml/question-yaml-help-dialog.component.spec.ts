@@ -1,14 +1,34 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { of, throwError } from 'rxjs';
+import { AdminBenchmarkService, RubricAuthoringGuidance } from '../../../services/admin-benchmark.service';
 import { QuestionYamlHelpDialogComponent } from './question-yaml-help-dialog.component';
-import { AI_INSTRUCTIONS_MARKDOWN, YAML_EXAMPLES } from './question-yaml-format';
+import { RUBRIC_GUIDANCE_UNAVAILABLE, YAML_EXAMPLES, buildAiInstructions } from './question-yaml-format';
 
 describe('QuestionYamlHelpDialogComponent', () => {
   let fixture: ComponentFixture<QuestionYamlHelpDialogComponent>;
   let component: QuestionYamlHelpDialogComponent;
   let host: HTMLElement;
+  let service: jasmine.SpyObj<AdminBenchmarkService>;
+
+  const GUIDANCE: RubricAuthoringGuidance = {
+    sectionRules: '1. **BOARD FACTS**: fixture rule.\r\n2. **REQUIRED**: fixture rule.',
+    gradingSemantics: 'Only REQUIRED and CRITICAL ERROR points are ever charged.',
+    workedExample: '**REQUIRED**\r\n- A fixture point.',
+    formLabel: '**FORM** (fixture label)',
+    bands: [
+      { name: 'Simple', range: '1–35', description: 'Fixture simple.' },
+      { name: 'Intermediate', range: '36–70', description: 'Fixture intermediate.' },
+      { name: 'Advanced', range: '71–100', description: 'Fixture advanced.' }
+    ]
+  };
 
   beforeEach(async () => {
-    await TestBed.configureTestingModule({ imports: [QuestionYamlHelpDialogComponent] }).compileComponents();
+    service = jasmine.createSpyObj('AdminBenchmarkService', ['getRubricAuthoringGuidance']);
+    service.getRubricAuthoringGuidance.and.returnValue(of(GUIDANCE));
+    await TestBed.configureTestingModule({
+      imports: [QuestionYamlHelpDialogComponent],
+      providers: [{ provide: AdminBenchmarkService, useValue: service }]
+    }).compileComponents();
     fixture = TestBed.createComponent(QuestionYamlHelpDialogComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
@@ -51,7 +71,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
     component.open();
     component.selectTab('ai');
     fixture.detectChanges();
-    expect(host.querySelector('.help-ai-text')!.textContent).toBe(AI_INSTRUCTIONS_MARKDOWN);
+    expect(host.querySelector('.help-ai-text')!.textContent).toBe(buildAiInstructions(GUIDANCE));
     expect(selectedTab()!.textContent!.trim()).toBe('For an AI');
     expect(host.querySelector('.help-guide')).toBeNull();
   });
@@ -96,7 +116,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
       component.selectTab('ai');
       await component.copyInstructions();
       fixture.detectChanges();
-      expect(writeText).toHaveBeenCalledWith(AI_INSTRUCTIONS_MARKDOWN);
+      expect(writeText).toHaveBeenCalledWith(buildAiInstructions(GUIDANCE));
       expect(host.querySelector('.help-copy-status')!.textContent).toBe('Copied');
     });
   });
@@ -106,6 +126,40 @@ describe('QuestionYamlHelpDialogComponent', () => {
     component.selectTab('ai');
     const labels = Array.from(host.querySelectorAll('.action-btn')).map(b => b.getAttribute('aria-label'));
     expect(labels).toEqual(['Copy AI instructions to the clipboard', 'Download AI instructions as Markdown']);
+  });
+
+  it('builds the AI tab from the fetched rubric guidance, fetching it once', () => {
+    component.open();
+    component.selectTab('ai');
+    fixture.detectChanges();
+    const text = host.querySelector('.help-ai-text')!.textContent!;
+    expect(text).toContain('**FORM** (fixture label)');
+    for (const band of GUIDANCE.bands) {
+      expect(text).toContain(band.name);
+    }
+    expect(text).not.toContain(RUBRIC_GUIDANCE_UNAVAILABLE);
+    expect(host.querySelector('.help-ai-guidance-state')).toBeNull();
+
+    component.close();
+    component.open();
+    expect(service.getRubricAuthoringGuidance).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back when the guidance cannot be loaded, and Copy still works', async () => {
+    service.getRubricAuthoringGuidance.and.returnValue(throwError(() => new Error('offline')));
+    await withClipboard(async writeText => {
+      component.open();
+      component.selectTab('ai');
+      fixture.detectChanges();
+      expect(component.guidanceState).toBe('failed');
+      expect(host.querySelector('.help-ai-guidance-state')).not.toBeNull();
+      expect(host.querySelector('.help-ai-text')!.textContent).toContain(RUBRIC_GUIDANCE_UNAVAILABLE);
+
+      await component.copyInstructions();
+      fixture.detectChanges();
+      expect(writeText).toHaveBeenCalledWith(buildAiInstructions(null));
+      expect(host.querySelector('.help-copy-status')!.textContent).toBe('Copied');
+    });
   });
 
   describe('examples tab', () => {

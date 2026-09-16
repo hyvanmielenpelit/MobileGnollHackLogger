@@ -1,7 +1,8 @@
 import type {
   BenchmarkQuestionDto,
   BenchmarkSuiteDto,
-  ImportBenchmarkQuestionItem
+  ImportBenchmarkQuestionItem,
+  RubricAuthoringGuidance
 } from '../../../services/admin-benchmark.service';
 import { formatDifficulty } from '../../../utils/model-badge-format.util';
 
@@ -30,6 +31,8 @@ export interface ParsedSuite {
   name: string | null;
   description: string | null;
   snapshot: string | null;
+  /** The board the questions are written against; informational, never imported. */
+  snapshotText: string | null;
 }
 
 export interface ParseIssue {
@@ -50,7 +53,7 @@ export const QUESTION_YAML_FORMAT = 'overseer-benchmark-questions';
 export const QUESTION_YAML_VERSION = 1;
 
 const TOP_LEVEL_KEYS = ['format', 'version', 'suite', 'questions'];
-const SUITE_KEYS = ['name', 'description', 'snapshot'];
+const SUITE_KEYS = ['name', 'description', 'snapshot', 'snapshot_text'];
 const QUESTION_KEYS = ['id', 'difficulty', 'question', 'rubric'];
 export const MAX_SUITE_NAME_LENGTH = 128;
 
@@ -58,23 +61,34 @@ export const MAX_SUITE_NAME_LENGTH = 128;
 // Serializer
 // ---------------------------------------------------------------------------------------------
 
-/** Serializes questions, with a `suite` block naming their suite when one is given. */
-export function serializeQuestionsYaml(questions: BenchmarkQuestionDto[], suite: BenchmarkSuiteDto | null): string {
-  return serialize(questions, suite, false);
+/**
+ * Serializes questions, with a `suite` block naming their suite when one is given. The snapshot
+ * text, when given with a suite, is written as `suite.snapshot_text`.
+ */
+export function serializeQuestionsYaml(questions: BenchmarkQuestionDto[], suite: BenchmarkSuiteDto | null, snapshotText?: string | null): string {
+  return serialize(questions, suite, false, snapshotText);
 }
 
-/** Serializes a whole suite: name, description, attached snapshot name, and every question. */
-export function serializeSuiteYaml(suite: BenchmarkSuiteDto, questions: BenchmarkQuestionDto[]): string {
-  return serialize(questions, suite, true);
+/** Serializes a whole suite: name, description, attached snapshot name and text, and every question. */
+export function serializeSuiteYaml(suite: BenchmarkSuiteDto, questions: BenchmarkQuestionDto[], snapshotText?: string | null): string {
+  return serialize(questions, suite, true, snapshotText);
 }
 
-function serialize(questions: BenchmarkQuestionDto[], suite: BenchmarkSuiteDto | null, includeDescription: boolean): string {
+function serialize(
+  questions: BenchmarkQuestionDto[],
+  suite: BenchmarkSuiteDto | null,
+  includeDescription: boolean,
+  snapshotText?: string | null
+): string {
+  const hasSnapshotText = !!suite && !!snapshotText && snapshotText.trim() !== '';
   const out: string[] = [
     '# Overseer benchmark questions. Edit freely; keep every `id` you were given.',
-    '# A question without `id` is created as new. Omit `rubric` to keep the current rubric.',
-    `format: ${QUESTION_YAML_FORMAT}`,
-    `version: ${QUESTION_YAML_VERSION}`
+    '# A question without `id` is created as new. Omit `rubric` to keep the current rubric.'
   ];
+  if (hasSnapshotText) {
+    out.push('# snapshot_text is the board the questions are written against; it is ignored on import.');
+  }
+  out.push(`format: ${QUESTION_YAML_FORMAT}`, `version: ${QUESTION_YAML_VERSION}`);
 
   if (suite) {
     out.push('', 'suite:');
@@ -85,6 +99,9 @@ function serialize(questions: BenchmarkQuestionDto[], suite: BenchmarkSuiteDto |
     if (suite.gameSnapshotName) {
       out.push(`  snapshot: ${quoted(suite.gameSnapshotName)}`);
     }
+    if (hasSnapshotText) {
+      out.push(...blockScalar('snapshot_text', snapshotText!, 2));
+    }
   }
 
   out.push('', 'questions:');
@@ -92,6 +109,7 @@ function serialize(questions: BenchmarkQuestionDto[], suite: BenchmarkSuiteDto |
     if (i > 0) {
       out.push('');
     }
+    out.push(`  # Question ${q.orderIndex}`);
     out.push(`  - id: ${q.id}`);
     out.push(`    difficulty: ${formatDifficulty(q.difficulty)}`);
     out.push(...blockScalar('question', q.questionText ?? '', 4));
@@ -199,14 +217,14 @@ function checkSchema(doc: unknown, result: ParseResult): void {
   if ('suite' in doc && doc['suite'] !== null) {
     const suite = doc['suite'];
     if (!isMapping(suite)) {
-      errors.push({ line: null, message: '`suite` must be a mapping with optional `name`, `description` and `snapshot` keys.' });
+      errors.push({ line: null, message: '`suite` must be a mapping with optional `name`, `description`, `snapshot` and `snapshot_text` keys.' });
     } else {
       for (const key of Object.keys(suite)) {
         if (!SUITE_KEYS.includes(key)) {
           errors.push({ line: null, message: `Unknown key \`suite.${key}\`; allowed: ${SUITE_KEYS.join(', ')}.` });
         }
       }
-      const parsed: ParsedSuite = { name: null, description: null, snapshot: null };
+      const parsed: ParsedSuite = { name: null, description: null, snapshot: null, snapshotText: null };
       if ('name' in suite) {
         const name = suite['name'];
         const trimmed = typeof name === 'string' ? name.trim() : null;
@@ -225,6 +243,13 @@ function checkSchema(doc: unknown, result: ParseResult): void {
       }
       if ('snapshot' in suite && suite['snapshot'] !== null) {
         parsed.snapshot = String(suite['snapshot']);
+      }
+      if ('snapshot_text' in suite && suite['snapshot_text'] !== null) {
+        if (typeof suite['snapshot_text'] !== 'string') {
+          errors.push({ line: null, message: '`suite.snapshot_text` must be text.' });
+        } else {
+          parsed.snapshotText = cleanText(suite['snapshot_text']);
+        }
       }
       result.suite = parsed;
     }
@@ -348,6 +373,10 @@ export function validateForMode(
     return { errors, notices };
   }
 
+  if (result.suite?.snapshotText != null) {
+    notices.push('`suite.snapshot_text` is ignored: an import never changes the game snapshot.');
+  }
+
   if (mode === 'single') {
     if (!target) {
       errors.push({ line: null, message: 'No question was chosen to replace.' });
@@ -418,6 +447,49 @@ export function validateForMode(
     notices.push('The `suite.snapshot` name is informational: a suite import attaches no snapshot.');
   }
   return { errors, notices };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Rubric lint
+// ---------------------------------------------------------------------------------------------
+
+export type RubricNoticeCode = 'no-required' | 'form-readability' | 'bold-parenthetical' | 'no-board-facts';
+
+export interface RubricNotice {
+  code: RubricNoticeCode;
+  message: string;
+}
+
+/**
+ * Advisory checks for the rubric house format that the assessor and the citation validator rely
+ * on. Never blocks an import.
+ */
+export function lintRubric(rubric: string, suiteHasSnapshot: boolean): RubricNotice[] {
+  const notices: RubricNotice[] = [];
+  const text = (rubric ?? '').replace(/\r\n?/g, '\n');
+  if (text.trim() === '') {
+    return notices;
+  }
+
+  if (!/^\*\*REQUIRED\*\*/m.test(text)) {
+    notices.push({ code: 'no-required', message: 'There is no **REQUIRED** section, so the assessor has nothing to charge.' });
+  }
+  if (/^\*\*FORM\*\*\s*\(readability\)/mi.test(text)) {
+    notices.push({
+      code: 'form-readability',
+      message: 'The FORM label ties presentation to Readability; label it "**FORM** (not graded — presentation note only)".'
+    });
+  }
+  if (/^\*\*[A-Z ]+\s*\(.*\)\*\*/m.test(text)) {
+    notices.push({
+      code: 'bold-parenthetical',
+      message: 'A section heading has its parenthetical inside the bold markers; write it as **NAME** (note).'
+    });
+  }
+  if (suiteHasSnapshot && !/^\*\*BOARD FACTS\*\*/m.test(text)) {
+    notices.push({ code: 'no-board-facts', message: 'This is a snapshot suite, but the rubric has no **BOARD FACTS** section.' });
+  }
+  return notices;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -725,7 +797,91 @@ questions:
   }
 ];
 
-export const AI_INSTRUCTIONS_MARKDOWN = `# Editing Overseer benchmark questions in YAML
+/** Appended to the AI instructions when the rubric guidance could not be fetched from the server. */
+export const RUBRIC_GUIDANCE_UNAVAILABLE =
+  'The rubric format guidance could not be loaded from the server; ask for it before editing rubrics.';
+
+/** Server text arrives with the server's line endings; the instructions use LF throughout. */
+function lf(text: string): string {
+  return (text ?? '').replace(/\r\n?/g, '\n').trim();
+}
+
+/** Indents every non-blank line, for text placed inside a YAML block scalar. */
+function indent(text: string, spaces: number): string {
+  const pad = ' '.repeat(spaces);
+  return text.split('\n').map(l => (l === '' ? '' : pad + l)).join('\n');
+}
+
+/**
+ * The instructions for an AI editing an exported document. The YAML shape is owned here; the
+ * rubric format, grading semantics and difficulty bands come from the server
+ * (`BenchmarkRubricAuthoringGuidance`), and are replaced by {@link RUBRIC_GUIDANCE_UNAVAILABLE}
+ * when `guidance` is null.
+ */
+export function buildAiInstructions(guidance: RubricAuthoringGuidance | null): string {
+  const formLabel = guidance ? lf(guidance.formLabel) : null;
+
+  const skeletonRubric = formLabel
+    ? `**BOARD FACTS**
+- A fact quotable from snapshot_text.
+
+**REQUIRED**
+- A point the answer must make.
+
+**CRITICAL ERROR**
+- A false claim that fails the answer.
+
+**SCOPE**
+- What the question does not ask for.
+
+${formLabel}
+- How the answer is best laid out.
+
+**SOURCE** — board`
+    : `**REQUIRED**
+- A point the answer must make.`;
+
+  const skeletonSuite = formLabel
+    ? `suite:
+  name: "Suite name"
+  description: |
+    What the suite measures.
+  snapshot: "Snapshot name"
+  snapshot_text: |
+    The game board, exactly as exported.`
+    : `suite:
+  name: "Suite name"
+  description: |
+    What the suite measures.`;
+
+  const exampleRubric1 = formLabel
+    ? `**REQUIRED**
+- Eat a safe, filling food item from the inventory first.
+- Avoid cursed or rotten food while Weak.
+
+**CRITICAL ERROR**
+- Claims that eating a cockatrice corpse is safe.
+
+**SCOPE**
+- The next few turns; long-term food planning is not required.
+
+${formLabel}
+- The food to eat first, then what to avoid.
+
+**SOURCE** — C source: src/eat.c (hunger states)`
+    : `**REQUIRED**
+- Eat a safe, filling food item from the inventory first.
+- Avoid cursed or rotten food while Weak.`;
+
+  const exampleRubric2 = formLabel
+    ? `**REQUIRED**
+- Names the correct source file.
+
+**SOURCE** — C source: src/eat.c`
+    : `**REQUIRED**
+- Names the correct source file.`;
+
+  let text = `# Editing Overseer benchmark questions in YAML
 
 You are editing a YAML document that holds benchmark questions for the Overseer AI benchmark. Each question has the text asked of the model under test (\`question\`) and the grading rubric the assessor uses (\`rubric\`, Markdown). Return the whole document as YAML, and nothing else.
 
@@ -735,10 +891,7 @@ You are editing a YAML document that holds benchmark questions for the Overseer 
 format: ${QUESTION_YAML_FORMAT}
 version: ${QUESTION_YAML_VERSION}
 
-suite:
-  name: "Suite name"
-  description: |
-    What the suite measures.
+${skeletonSuite}
 
 questions:
   - id: 42
@@ -746,8 +899,7 @@ questions:
     question: |
       The question text.
     rubric: |
-      **REQUIRED**
-      - A point the answer must make.
+${indent(skeletonRubric, 6)}
 \`\`\`
 
 ## Rules
@@ -756,11 +908,40 @@ questions:
 2. Keep every \`id\` you were given, on the question it was given for. A question without \`id\` is created as a new question.
 3. Write \`question\` and \`rubric\` as \`|\` block scalars, and indent every line of them by the same amount. Indent with spaces, never tabs.
 4. Omit \`rubric\` to keep the current rubric; write \`rubric: |\` with no content to clear it.
-5. Use only the keys id, difficulty, question, rubric inside a question, and only format, version, suite, questions at the top level. \`suite\` may hold name, description and snapshot.
+5. Use only the keys id, difficulty, question, rubric inside a question, and only format, version, suite, questions at the top level. \`suite\` may hold name, description, snapshot and snapshot_text. Return \`snapshot_text\` unchanged: it is the game board the questions are written against, so use it to check every BOARD FACT.
 6. Difficulty is Simple, Intermediate or Advanced.
 7. Inside a block scalar any Markdown is allowed, including headings, code fences and \`---\` lines, as long as every line keeps the block's indentation.
 8. Do not add comments inside a block scalar: a \`#\` line there is part of the text.
+`;
 
+  if (guidance) {
+    const bands = guidance.bands.map(b => `- **${b.name}** (${b.range}): ${lf(b.description)}`).join('\n');
+    text += `
+## Writing a rubric
+
+A rubric has these sections, in this order:
+
+${lf(guidance.sectionRules)}
+
+${lf(guidance.gradingSemantics)}
+
+A worked example:
+
+\`\`\`markdown
+${lf(guidance.workedExample)}
+\`\`\`
+
+## Difficulty bands
+
+${bands}
+`;
+  } else {
+    text += `
+${RUBRIC_GUIDANCE_UNAVAILABLE}
+`;
+  }
+
+  text += `
 ## Complete example
 
 \`\`\`yaml
@@ -773,18 +954,14 @@ questions:
     question: |
       My character is Weak from hunger. What should I eat first, and what should I avoid?
     rubric: |
-      **REQUIRED** (accuracy + completeness)
-      - Eat a safe, filling food item from the inventory first.
-      - Avoid cursed or rotten food while Weak.
-
-      ## Notes for the assessor
-      Do not reward advice to pray unless prayer timeout is addressed.
+${indent(exampleRubric1, 6)}
 
   - difficulty: Advanced
     question: |
       Which source file implements the hunger state transitions?
     rubric: |
-      **REQUIRED**
-      - Names the correct source file.
+${indent(exampleRubric2, 6)}
 \`\`\`
 `;
+  return text;
+}

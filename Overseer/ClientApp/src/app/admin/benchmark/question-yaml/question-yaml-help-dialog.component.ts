@@ -9,17 +9,18 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MarkdownPipe } from '../../../chat/markdown.pipe';
+import { AdminBenchmarkService, RubricAuthoringGuidance } from '../../../services/admin-benchmark.service';
 import { copyToClipboard } from '../../../utils/clipboard.util';
 import { downloadTextFile } from '../../../utils/download.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import {
   AI_INSTRUCTIONS_FILE_NAME,
-  AI_INSTRUCTIONS_MARKDOWN,
   EXAMPLES_INTRO_MARKDOWN,
   HUMAN_GUIDE_TABS,
   HumanGuideTab,
   YAML_EXAMPLES,
   YamlExample,
+  buildAiInstructions,
   yamlExampleFileName
 } from './question-yaml-format';
 
@@ -37,6 +38,7 @@ export type YamlHelpTab = HumanGuideTab['id'] | 'examples' | 'ai';
 })
 export class QuestionYamlHelpDialogComponent implements OnDestroy {
   private cdr = inject(ChangeDetectorRef);
+  private benchmarkService = inject(AdminBenchmarkService);
 
   @ViewChild('dialog') dialog!: ElementRef<HTMLDialogElement>;
   /** The dialog body: the single tab panel and the only scroller. */
@@ -53,7 +55,15 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
 
   readonly examples = YAML_EXAMPLES;
   readonly examplesIntro = EXAMPLES_INTRO_MARKDOWN;
-  readonly aiInstructions = AI_INSTRUCTIONS_MARKDOWN;
+
+  /** The rubric guidance fetched from the server; null until it arrives, and when it failed. */
+  guidance: RubricAuthoringGuidance | null = null;
+  guidanceState: 'loading' | 'ready' | 'failed' = 'loading';
+
+  /** Without the guidance this is the fallback text, which says the rubric guidance is missing. */
+  get aiInstructions(): string {
+    return buildAiInstructions(this.guidance);
+  }
 
   /** Which toolbar last copied: 'ai' or an example id. Its status span shows copyStatus. */
   copyTarget = '';
@@ -73,6 +83,7 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
     this.activeTab = 'workflow';
     this.copyTarget = '';
     this.copyStatus = '';
+    this.loadGuidance();
     this.cdr.detectChanges();
     setTimeout(() => refreshAnchorPositioning(), 0);
   }
@@ -123,6 +134,25 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
 
   ngOnDestroy(): void {
     clearTimeout(this.statusTimer);
+  }
+
+  /* Fetched once per component; a failed fetch is retried on the next open. */
+  private loadGuidance(): void {
+    if (this.guidance) {
+      return;
+    }
+    this.guidanceState = 'loading';
+    this.benchmarkService.getRubricAuthoringGuidance().subscribe({
+      next: guidance => {
+        this.guidance = guidance;
+        this.guidanceState = 'ready';
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.guidanceState = 'failed';
+        this.cdr.detectChanges();
+      }
+    });
   }
 
   private flashStatus(target: string, message: string): void {

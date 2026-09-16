@@ -51,6 +51,27 @@ public class DefaultSuiteCatalogEntryDto
     public List<string> NameMatchedSuiteNames { get; set; } = new();
 }
 
+/// <summary>The rubric format and difficulty band definitions the YAML import instructions for an AI are assembled from.</summary>
+public class BenchmarkRubricAuthoringGuidanceDto
+{
+    public string SectionRules { get; set; } = string.Empty;
+    public string GradingSemantics { get; set; } = string.Empty;
+    public string WorkedExample { get; set; } = string.Empty;
+    public string FormLabel { get; set; } = string.Empty;
+
+    /// <summary>Simple, Intermediate and Advanced, in that order.</summary>
+    public List<BenchmarkRubricAuthoringBandDto> Bands { get; set; } = new();
+}
+
+public class BenchmarkRubricAuthoringBandDto
+{
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>Inclusive assessed-difficulty range, e.g. "36–70".</summary>
+    public string Range { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+}
+
 public class ImportDefaultSuitesRequest
 {
     public List<string> Keys { get; set; } = new();

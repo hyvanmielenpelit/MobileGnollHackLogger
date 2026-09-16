@@ -200,6 +200,23 @@ export interface DifficultyAssessmentJobDto {
   log: DifficultyAssessmentJobLogEntryDto[];
 }
 
+/** One difficulty band as the rubric authoring guidance describes it. */
+export interface RubricAuthoringBand {
+  name: string;
+  /** Inclusive assessed-difficulty range, e.g. "36–70". */
+  range: string;
+  description: string;
+}
+
+/** The server-owned rubric format and band definitions (`BenchmarkRubricAuthoringGuidance`). */
+export interface RubricAuthoringGuidance {
+  sectionRules: string;
+  gradingSemantics: string;
+  workedExample: string;
+  formLabel: string;
+  bands: RubricAuthoringBand[];
+}
+
 export interface BenchmarkSuiteDto {
   id: number;
   name: string;
@@ -1725,6 +1742,10 @@ export class AdminBenchmarkService {
   // Scoring Profiles
   getScoringProfiles(): Observable<BenchmarkScoringProfileDto[]> {
     return this.http.get<BenchmarkScoringProfileDto[]>('/api/admin/benchmark/scoring-profiles');
+  }
+
+  getRubricAuthoringGuidance(): Observable<RubricAuthoringGuidance> {
+    return this.http.get<RubricAuthoringGuidance>('/api/admin/benchmark/rubric-authoring-guidance');
   }
 
   createScoringProfile(req: CreateBenchmarkScoringProfileRequest): Observable<BenchmarkScoringProfileDto> {

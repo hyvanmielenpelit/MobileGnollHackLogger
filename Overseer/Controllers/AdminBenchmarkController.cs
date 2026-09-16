@@ -213,6 +213,12 @@ public class AdminBenchmarkController : ControllerBase
         return Ok(dtos);
     }
 
+    [HttpGet("rubric-authoring-guidance")]
+    public IActionResult GetRubricAuthoringGuidance()
+    {
+        return Ok(BenchmarkRubricAuthoringGuidance.ToDto());
+    }
+
     [HttpPost("scoring-profiles")]
     public async Task<IActionResult> CreateScoringProfile([FromBody] CreateBenchmarkScoringProfileRequest request)
     {

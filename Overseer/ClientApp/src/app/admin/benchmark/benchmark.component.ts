@@ -71,7 +71,7 @@ import {
   selectionNotices
 } from './model-comparison/model-comparison.models';
 import { ProviderBadgeComponent } from '../../shared/provider-badge/provider-badge.component';
-import { firstValueFrom, map } from 'rxjs';
+import { Observable, catchError, firstValueFrom, forkJoin, from, map, of, switchMap } from 'rxjs';
 import { QuestionYamlImportDialogComponent } from './question-yaml/question-yaml-import-dialog.component';
 import { QuestionYamlHelpDialogComponent } from './question-yaml/question-yaml-help-dialog.component';
 import {
@@ -86,6 +86,7 @@ import { copyTextFromPromise, copyToClipboard } from '../../utils/clipboard.util
 import { downloadTextFile } from '../../utils/download.util';
 
 const COPY_STATUS_MS = 3000;
+const SNAPSHOT_TEXT_EXPORT_FAILED = 'Exported without the snapshot text: it could not be loaded.';
 
 /**
  * The Model Comparison selection, as it is remembered between visits and between sessions.
@@ -6816,27 +6817,54 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return !this.loadingQuestions && this.questions.length > 0 && !!this.currentSuiteForQuestions;
   }
 
-  /** One question when given, otherwise every question of the open suite. */
-  downloadQuestionYaml(q?: BenchmarkQuestionDto): void {
+  /** One question when given, otherwise every question of the open suite, with the snapshot text of a snapshot suite. */
+  async downloadQuestionYaml(q?: BenchmarkQuestionDto): Promise<void> {
     const suite = this.currentSuiteForQuestions;
     if (!suite || (!q && !this.canExportQuestions)) return;
-    const questions = q ? [q] : this.questions;
-    downloadTextFile(questionYamlFileName(suite.name, q), serializeQuestionsYaml(questions, suite));
+    if (q) {
+      downloadTextFile(questionYamlFileName(suite.name, q), serializeQuestionsYaml([q], suite));
+      return;
+    }
+    const questions = this.questions;
+    const snapshot = await firstValueFrom(this.snapshotTextForExport(suite));
+    downloadTextFile(questionYamlFileName(suite.name), serializeQuestionsYaml(questions, suite, snapshot.text));
+    if (snapshot.failed) {
+      this.setQuestionsCopyStatus(SNAPSHOT_TEXT_EXPORT_FAILED);
+    }
   }
 
+  /* For all questions the clipboard write is issued inside the click, before the snapshot text arrives. */
   async copyQuestionYaml(q?: BenchmarkQuestionDto): Promise<void> {
     const suite = this.currentSuiteForQuestions;
     if (!suite || (!q && !this.canExportQuestions)) return;
-    const questions = q ? [q] : this.questions;
-    const ok = await copyToClipboard(serializeQuestionsYaml(questions, suite));
-    const subject = q ? `question ${q.orderIndex}` : 'all questions';
-    this.setQuestionsCopyStatus(ok ? `Copied ${subject} as YAML.` : `Could not copy; use Download as YAML instead.`);
+    if (q) {
+      const copied = await copyToClipboard(serializeQuestionsYaml([q], suite));
+      this.setQuestionsCopyStatus(copied ? `Copied question ${q.orderIndex} as YAML.` : `Could not copy; use Download as YAML instead.`);
+      return;
+    }
+    const questions = this.questions;
+    let snapshotFailed = false;
+    const text = firstValueFrom(this.snapshotTextForExport(suite).pipe(map(snapshot => {
+      snapshotFailed = snapshot.failed;
+      return serializeQuestionsYaml(questions, suite, snapshot.text);
+    })));
+    const ok = await copyTextFromPromise(text);
+    if (!ok) {
+      this.setQuestionsCopyStatus(`Could not copy; use Download as YAML instead.`);
+    } else {
+      this.setQuestionsCopyStatus(snapshotFailed ? `Copied all questions as YAML. ${SNAPSHOT_TEXT_EXPORT_FAILED}` : `Copied all questions as YAML.`);
+    }
   }
 
   downloadSuiteYaml(suite: BenchmarkSuiteDto): void {
     if (suite.questionCount === 0) return;
-    this.benchmarkService.getQuestions(suite.id).subscribe({
-      next: questions => downloadTextFile(suiteYamlFileName(suite.name), serializeSuiteYaml(suite, questions)),
+    forkJoin([this.benchmarkService.getQuestions(suite.id), this.snapshotTextForExport(suite)]).subscribe({
+      next: ([questions, snapshot]) => {
+        downloadTextFile(suiteYamlFileName(suite.name), serializeSuiteYaml(suite, questions, snapshot.text));
+        if (snapshot.failed) {
+          this.setSuitesCopyStatus(SNAPSHOT_TEXT_EXPORT_FAILED);
+        }
+      },
       error: () => this.setSuitesCopyStatus(`Could not load the questions of ${suite.name}.`)
     });
   }
@@ -6844,9 +6872,30 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   /* The clipboard write is issued inside the click, before the questions arrive. */
   async copySuiteYaml(suite: BenchmarkSuiteDto): Promise<void> {
     if (suite.questionCount === 0) return;
-    const text = firstValueFrom(this.benchmarkService.getQuestions(suite.id).pipe(map(qs => serializeSuiteYaml(suite, qs))));
+    let snapshotFailed = false;
+    const text = firstValueFrom(
+      forkJoin([this.benchmarkService.getQuestions(suite.id), this.snapshotTextForExport(suite)]).pipe(map(([qs, snapshot]) => {
+        snapshotFailed = snapshot.failed;
+        return serializeSuiteYaml(suite, qs, snapshot.text);
+      })));
     const ok = await copyTextFromPromise(text);
-    this.setSuitesCopyStatus(ok ? `Copied suite ${suite.name} as YAML` : 'Could not copy; use Download Suite as YAML instead.');
+    if (!ok) {
+      this.setSuitesCopyStatus('Could not copy; use Download Suite as YAML instead.');
+    } else {
+      this.setSuitesCopyStatus(snapshotFailed ? `Copied suite ${suite.name} as YAML. ${SNAPSHOT_TEXT_EXPORT_FAILED}` : `Copied suite ${suite.name} as YAML`);
+    }
+  }
+
+  /** The attached snapshot's text for an export; `text` is null for a suite without a snapshot, and when the fetch failed. */
+  private snapshotTextForExport(suite: BenchmarkSuiteDto): Observable<{ text: string | null; failed: boolean }> {
+    if (!suite.gameSnapshotId) {
+      return of({ text: null, failed: false });
+    }
+    return this.benchmarkService.downloadSnapshotText(suite.gameSnapshotId).pipe(
+      switchMap(blob => from(blob.text())),
+      map(text => ({ text, failed: false })),
+      catchError(() => of({ text: null, failed: true }))
+    );
   }
 
   openQuestionYamlImport(mode: ImportMode, q?: BenchmarkQuestionDto): void {

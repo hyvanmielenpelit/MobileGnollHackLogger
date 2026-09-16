@@ -140,6 +140,10 @@
               </div>
             </div>
 
+            @for (n of card.rubricNotices; track n.code) {
+              <p class="form-hint import-rubric-notice">Rubric: {{ n.message }}</p>
+            }
+
             @if (mode === 'suite' || view === 'side') {
               <div class="import-compare">
                 @if (mode !== 'suite') {

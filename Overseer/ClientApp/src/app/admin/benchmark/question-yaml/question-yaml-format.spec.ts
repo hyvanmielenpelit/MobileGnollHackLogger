@@ -1,9 +1,11 @@
-import type { BenchmarkQuestionDto, BenchmarkSuiteDto } from '../../../services/admin-benchmark.service';
+import type { BenchmarkQuestionDto, BenchmarkSuiteDto, RubricAuthoringGuidance } from '../../../services/admin-benchmark.service';
 import {
-  AI_INSTRUCTIONS_MARKDOWN,
   HUMAN_GUIDE_TABS,
+  RUBRIC_GUIDANCE_UNAVAILABLE,
   YAML_EXAMPLES,
+  buildAiInstructions,
   buildImportPlan,
+  lintRubric,
   parseQuestionYaml,
   questionYamlFileName,
   serializeQuestionsYaml,
@@ -156,7 +158,7 @@ describe('question-yaml-format', () => {
         '`suite.name` must be 1–128 characters.'
       );
       expect(await messages(header + 'suite:\n  owner: me\nquestions:\n  - question: x\n')).toContain(
-        'Unknown key `suite.owner`; allowed: name, description, snapshot.'
+        'Unknown key `suite.owner`; allowed: name, description, snapshot, snapshot_text.'
       );
     });
 
@@ -308,10 +310,139 @@ describe('question-yaml-format', () => {
     });
   });
 
-  it('the AI instructions example is itself a valid document', async () => {
-    const example = AI_INSTRUCTIONS_MARKDOWN.split('## Complete example')[1].split('```yaml\n')[1].split('```\n')[0];
-    const result = await parseQuestionYaml(example);
-    expect(result.errors).toEqual([]);
-    expect(result.questions.length).toBe(2);
+  describe('snapshot text and question numbers', () => {
+    const SNAPSHOT_SUITE: BenchmarkSuiteDto = { ...SUITE, gameSnapshotId: 3 };
+    const BOARD = '    0         1\n    0123456789012\n 1  |....@....|\n   \n\nHP:12(60) Pw:5(5)';
+
+    it('round-trips a snapshot text with an indented first line and blank lines', async () => {
+      const yaml = serializeQuestionsYaml(FIXTURE, SNAPSHOT_SUITE, BOARD);
+      expect(yaml).toContain('  snapshot_text: |2\n');
+      expect(yaml).toContain('# snapshot_text is the board the questions are written against; it is ignored on import.');
+
+      const result = await parseQuestionYaml(yaml);
+      expect(result.errors).toEqual([]);
+      expect(result.suite?.snapshotText).toBe(BOARD);
+      expect(result.questions.map(q => q.id)).toEqual(FIXTURE.map(q => q.id));
+    });
+
+    it('writes no snapshot_text without a text, and serializeSuiteYaml carries it', async () => {
+      expect(serializeQuestionsYaml(FIXTURE, SNAPSHOT_SUITE)).not.toContain('snapshot_text');
+      expect(serializeQuestionsYaml(FIXTURE, SNAPSHOT_SUITE, '  ')).not.toContain('snapshot_text');
+      const suiteResult = await parseQuestionYaml(serializeSuiteYaml(SNAPSHOT_SUITE, FIXTURE, BOARD));
+      expect(suiteResult.suite?.snapshotText).toBe(BOARD);
+    });
+
+    it('writes one question comment per question without changing the parsed result', async () => {
+      const yaml = serializeQuestionsYaml(FIXTURE, null);
+      expect(Array.from(yaml.match(/^ {2}# Question \d+$/gm) ?? [])).toEqual(FIXTURE.map(q => `  # Question ${q.orderIndex}`));
+      const withComments = await parseQuestionYaml(yaml);
+      const without = await parseQuestionYaml(yaml.replace(/^ {2}# Question \d+\n/gm, ''));
+      expect(withComments).toEqual(without);
+    });
+
+    it('rejects a non-text snapshot_text', async () => {
+      const result = await parseQuestionYaml('format: overseer-benchmark-questions\nversion: 1\nsuite:\n  snapshot_text: [a]\nquestions:\n  - question: x\n');
+      expect(result.errors.map(e => e.message)).toEqual(['`suite.snapshot_text` must be text.']);
+    });
+
+    for (const mode of ['single', 'questions', 'suite'] as const) {
+      it(`validateForMode emits the snapshot_text notice in ${mode} mode`, async () => {
+        const target = question(42, 1, 'What is the Gnoll race?\nWhich roles can play it?', 1, TRICKY_RUBRIC);
+        const parsed = await parseQuestionYaml(serializeQuestionsYaml([target], SNAPSHOT_SUITE, BOARD));
+        const checked = validateForMode(parsed, mode, [target], target);
+        expect(checked.errors).toEqual([]);
+        expect(checked.notices).toContain('`suite.snapshot_text` is ignored: an import never changes the game snapshot.');
+      });
+    }
+  });
+
+  describe('lintRubric', () => {
+    const HOUSE = [
+      '**BOARD FACTS**',
+      '- HP is 12/60.',
+      '',
+      '**REQUIRED**',
+      '- Retreat.',
+      '',
+      '**CRITICAL ERROR**',
+      '- Claims melee is safe.',
+      '',
+      '**SCOPE**',
+      '- This turn.',
+      '',
+      '**FORM** (not graded — presentation note only)',
+      '- Action first.',
+      '',
+      '**SOURCE** — board'
+    ].join('\n');
+    const codes = (rubric: string, snapshot = false) => lintRubric(rubric, snapshot).map(n => n.code);
+
+    it('accepts a house-format rubric, and an empty one', () => {
+      expect(codes(HOUSE, true)).toEqual([]);
+      expect(codes('', true)).toEqual([]);
+      expect(codes('   \n', true)).toEqual([]);
+    });
+
+    it('flags each trigger', () => {
+      expect(codes('**SCOPE**\n- x')).toEqual(['no-required']);
+      expect(codes('**REQUIRED**\n- x\n\n**FORM** (readability)\n- y')).toEqual(['form-readability']);
+      expect(codes('**REQUIRED**\n- x\n\n**FORM (readability)**\n- y')).toEqual(['bold-parenthetical']);
+      expect(codes('**REQUIRED**\n- x', true)).toEqual(['no-board-facts']);
+      expect(codes('**REQUIRED**\r\n- x', false)).toEqual([]);
+    });
+
+    it('gives every notice a message', () => {
+      for (const n of lintRubric('**FORM (readability)**\n**FORM** (readability)', true)) {
+        expect(n.message.trim()).not.toBe('');
+      }
+    });
+  });
+
+  describe('AI instructions', () => {
+    const GUIDANCE: RubricAuthoringGuidance = {
+      sectionRules: '1. **BOARD FACTS**: fixture rule.\r\n2. **REQUIRED**: fixture rule.',
+      gradingSemantics: 'Only REQUIRED and CRITICAL ERROR points are ever charged.',
+      workedExample: '**REQUIRED**\r\n- A fixture point.',
+      formLabel: '**FORM** (fixture label)',
+      bands: [
+        { name: 'Simple', range: '1–35', description: 'Fixture simple.' },
+        { name: 'Intermediate', range: '36–70', description: 'Fixture intermediate.' },
+        { name: 'Advanced', range: '71–100', description: 'Fixture advanced.' }
+      ]
+    };
+
+    const completeExample = (text: string) => text.split('## Complete example')[1].split('```yaml\n')[1].split('```\n')[0];
+    const skeleton = (text: string) => text.split('## Skeleton')[1].split('```yaml\n')[1].split('```\n')[0];
+
+    it('assembles the guidance, with LF line endings, and a valid example', async () => {
+      const text = buildAiInstructions(GUIDANCE);
+      expect(text).not.toContain('\r');
+      expect(text).toContain('## Writing a rubric');
+      expect(text).toContain('1. **BOARD FACTS**: fixture rule.\n2. **REQUIRED**: fixture rule.');
+      expect(text).toContain('## Difficulty bands');
+      expect(text).toContain('- **Intermediate** (36–70): Fixture intermediate.');
+      expect(text).toContain('snapshot_text');
+      expect(text).not.toContain(RUBRIC_GUIDANCE_UNAVAILABLE);
+
+      const result = await parseQuestionYaml(completeExample(text));
+      expect(result.errors).toEqual([]);
+      expect(result.questions.length).toBe(2);
+      expect(result.questions[0].rubric).toContain('**FORM** (fixture label)');
+      expect(lintRubric(result.questions[0].rubric!, false)).toEqual([]);
+      expect(validateForMode(result, 'questions', [question(17, 1, 'Q', 2, 'R')]).errors).toEqual([]);
+
+      const skeletonResult = await parseQuestionYaml(skeleton(text));
+      expect(skeletonResult.errors).toEqual([]);
+      expect(lintRubric(skeletonResult.questions[0].rubric!, true)).toEqual([]);
+    });
+
+    it('falls back without guidance, and the example still parses', async () => {
+      const text = buildAiInstructions(null);
+      expect(text).toContain(RUBRIC_GUIDANCE_UNAVAILABLE);
+      expect(text).not.toContain('## Writing a rubric');
+      const result = await parseQuestionYaml(completeExample(text));
+      expect(result.errors).toEqual([]);
+      expect(result.questions.length).toBe(2);
+    });
   });
 });

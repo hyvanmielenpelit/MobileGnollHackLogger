@@ -87,4 +87,37 @@ public class BenchmarkGenerationPromptTests
 
         Assert.Contains("UNTRUSTED REFERENCE DATA", prompt);
     }
+
+    [Theory]
+    [InlineData(BenchmarkDifficulty.Simple)]
+    [InlineData(BenchmarkDifficulty.Intermediate)]
+    [InlineData(BenchmarkDifficulty.Advanced)]
+    public void BuildPrompt_ContainsTheRubricAuthoringGuidanceVerbatim(BenchmarkDifficulty difficulty)
+    {
+        string prompt = BenchmarkGenerationPrompt.BuildPrompt(
+            SampleSnapshot(), "Operator instructions", difficulty, 3);
+
+        Assert.Contains(BenchmarkRubricAuthoringGuidance.SectionRules, prompt);
+        Assert.Contains(BenchmarkRubricAuthoringGuidance.WorkedExample, prompt);
+        Assert.Contains(
+            $"- Target: {difficulty} ({BenchmarkDifficultyBands.RangeLabel(difficulty)}). {BenchmarkRubricAuthoringGuidance.BandDescription(difficulty)}",
+            prompt);
+    }
+
+    [Fact]
+    public void RubricAuthoringGuidanceDto_CarriesEveryBandInOrderAndTheFormLabel()
+    {
+        var dto = BenchmarkRubricAuthoringGuidance.ToDto();
+
+        Assert.Equal(new[] { "Simple", "Intermediate", "Advanced" }, dto.Bands.Select(b => b.Name));
+        Assert.All(dto.Bands, b =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(b.Range));
+            Assert.False(string.IsNullOrWhiteSpace(b.Description));
+        });
+        Assert.Equal("**FORM** (not graded — presentation note only)", dto.FormLabel);
+        Assert.Contains(dto.FormLabel, dto.SectionRules);
+        Assert.Contains(dto.FormLabel, dto.WorkedExample);
+        Assert.False(string.IsNullOrWhiteSpace(dto.GradingSemantics));
+    }
 }

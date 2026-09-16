@@ -26,8 +26,10 @@ import {
   ImportMode,
   ImportPlanItem,
   ParseIssue,
+  RubricNotice,
   buildImportPlan,
   difficultyNumber,
+  lintRubric,
   parseQuestionYaml,
   toImportItems,
   validateForMode
@@ -44,6 +46,8 @@ export interface ReviewCard {
   item: ImportPlanItem;
   questionDiff: DiffLine[];
   rubricDiff: DiffLine[];
+  /** Advisory house-format notices for an imported rubric that is present and changed. */
+  rubricNotices: RubricNotice[];
 }
 
 @Component({
@@ -270,7 +274,10 @@ export class QuestionYamlImportDialogComponent {
     }
 
     const plan = buildImportPlan(parsed, this.mode, this.existing, this.target ?? undefined);
+    // A suite import attaches no snapshot, so only the open suite's snapshot counts.
+    const suiteHasSnapshot = this.mode !== 'suite' && !!this.suite?.gameSnapshotId;
     this.cards = plan.map(item => ({
+      rubricNotices: item.rubricChanged && item.parsed.rubric ? lintRubric(item.parsed.rubric, suiteHasSnapshot) : [],
       item,
       questionDiff: diffLines(item.current?.questionText ?? '', item.parsed.questionText ?? item.current?.questionText ?? '').lines,
       rubricDiff: diffLines(

@@ -129,6 +129,30 @@ describe('QuestionYamlImportDialogComponent', () => {
     expect(lines).toContain('+ line 2');
   });
 
+  it('shows a rubric notice on the review card and keeps the import enabled', async () => {
+    component.open('questions');
+    await paste(header + 'questions:\n  - id: 17\n    rubric: |\n      **FORM (readability)**\n      - Lead with the answer.\n');
+    await component.validate();
+    await component.review();
+    fixture.detectChanges();
+
+    const notices = Array.from(host.querySelectorAll('.import-rubric-notice')).map(n => n.textContent!.trim());
+    expect(notices.length).toBe(2);
+    expect(notices.every(n => n.startsWith('Rubric:'))).toBeTrue();
+    expect(notices[0]).toContain('**REQUIRED**');
+    expect(button('Apply 1 change').getAttribute('aria-disabled')).toBeNull();
+  });
+
+  it('shows no rubric notice for an unchanged rubric', async () => {
+    component.open('questions');
+    await paste(serializeQuestionsYaml([existing[0]], suite));
+    await component.validate();
+    await component.review();
+    fixture.detectChanges();
+
+    expect(host.querySelectorAll('.import-rubric-notice').length).toBe(0);
+  });
+
   it('applies a questions import without replacing an absent rubric', async () => {
     service.importQuestions.and.returnValue(of({ createdCount: 1, replacedCount: 1, unchangedCount: 0, questions: [] }));
     const emitted = jasmine.createSpy('imported');

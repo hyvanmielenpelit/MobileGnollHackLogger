@@ -2841,7 +2841,7 @@ questions:
 | Rule | Requirement |
 |---|---|
 | H1 | A mapping with `format: overseer-benchmark-questions` and `version: 1`; only the keys `format`, `version`, `suite`, `questions`. |
-| H2 | `suite` is optional: `name` (1–128 characters), `description`, `snapshot` (informational); no other keys. |
+| H2 | `suite` is optional: `name` (1–128 characters), `description`, `snapshot` (informational), `snapshot_text` (informational text, ignored with a notice in every mode); no other keys. |
 | Q1 | `questions` is a non-empty list of mappings. |
 | Q2 | Question keys are only `id`, `difficulty`, `question`, `rubric`. |
 | Q3 | `id`, when present, is a positive integer, unique in the document. |
@@ -2856,8 +2856,14 @@ questions:
 Syntax errors are reported as *Line N, column M: reason*; schema errors name the location, as in
 *questions[3] (id 42): unknown key `tier`*. Block scalars lose their trailing newline and trailing
 whitespace on parse; a BOM and CRLF are accepted. Export writes UTF-8 without a BOM, LF line endings,
-the `|2` indentation indicator where a value's first line starts with whitespace, and omits `rubric`
-for an empty rubric. File names are `benchmark-questions-<suite-slug>.yaml`,
+the `|2` indentation indicator where a value's first line starts with whitespace, a `# Question N`
+comment (the question's `OrderIndex`, as a run report prints it) before each item, and omits
+`rubric` for an empty rubric. Every multi-question export of a snapshot suite (*Download All as
+YAML* and its copy button on the Manage Questions toolbar, *Download Suite as YAML* and *Copy Suite
+as YAML to Clipboard*) also carries the board
+as `suite.snapshot_text`, fetched from `GET snapshots/{id}/text`, so the file alone is enough to
+check a BOARD FACT; if that fetch fails the export is written without it and the status line says
+so. A single-question export never carries it. File names are `benchmark-questions-<suite-slug>.yaml`,
 `benchmark-question-<orderIndex>-id-<id>.yaml` and `benchmark-suite-<suite-slug>.yaml`.
 
 **Replace and create.** A replace changes only the keys present. When the question text, difficulty
@@ -2873,8 +2879,18 @@ question — *Replace #N* or *Create new question* — with *Side by side* and *
 *Done*. The server validates the whole batch again before its single save.
 
 **Suite import always creates a new suite**, named `<name> (Imported)`, `(Imported 2)`, … when the
-name is taken, with no snapshot and no `DefaultSuiteKey`. The game snapshot is never part of a suite
-export; `suite.snapshot` only names it.
+name is taken, with no snapshot and no `DefaultSuiteKey`. An import never attaches or changes a
+game snapshot: `suite.snapshot` only names it and `suite.snapshot_text` is ignored.
+
+**Rubric notices.** For every question whose imported rubric is present and changed, the review
+card lists advisory *Rubric:* notices from `lintRubric`; they never block the import:
+
+| Code | Trigger |
+|---|---|
+| `no-required` | No line starting `**REQUIRED**`. |
+| `form-readability` | A line starting `**FORM** (readability)`, a FORM label that asserts a grading link. |
+| `bold-parenthetical` | A heading with its parenthetical inside the bold markers, as `**FORM (…)**`, which breaks `BenchmarkRubricCitationValidator`'s bold-heading look-ahead. |
+| `no-board-facts` | The open suite has a snapshot and the rubric has no `**BOARD FACTS**` line. |
 
 Endpoints: `POST suites/{suiteId}/questions/import` and `POST suites/import` (§ 6). The help dialog
 (*Import/Export Help* on the Manage Questions toolbar, also reachable from the import dialog) is full
@@ -2882,7 +2898,13 @@ height with five tabs: *Workflow*, *Replace or Create*, *Format*, *Examples* (si
 downloadable YAML documents in an exclusive `<details name>` accordion, each spec-checked to parse
 and validate), and *For an AI*, the last holding a copyable, downloadable set of instructions for an
 AI. The guide text lives in `HUMAN_GUIDE_TABS` in
-`question-yaml-format.ts`.
+`question-yaml-format.ts`. The *For an AI* text is assembled by `buildAiInstructions`: the YAML
+shape comes from the client, and the *Writing a rubric* section (section rules, grading semantics,
+worked example) and the *Difficulty bands* section come from `BenchmarkRubricAuthoringGuidance`
+through `GET rubric-authoring-guidance` — the same class `BenchmarkGenerationPrompt` reads, so the
+instructions and the generation prompt cannot drift apart. The dialog fetches it on first open; if
+the fetch fails, the tab says so and the instructions carry a line telling the AI to ask for the
+rubric guidance before editing rubrics.
 
 ---
 
@@ -2896,6 +2918,9 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `PUT /api/admin/benchmark/scoring-profiles/{id}`: Update profile configuration.
 - `POST /api/admin/benchmark/scoring-profiles/{id}/default`: Mark profile as system default.
 - `DELETE /api/admin/benchmark/scoring-profiles/{id}`: Delete profile (default cannot be deleted).
+
+### Rubric Authoring Guidance
+- `GET /api/admin/benchmark/rubric-authoring-guidance`: The rubric section rules, grading semantics, worked example, FORM label and the three difficulty bands (`name`, `range`, `description`) from `BenchmarkRubricAuthoringGuidance`, for the YAML help dialog's *For an AI* instructions. No database access.
 
 ### Difficulty Rating
 - `POST /api/admin/benchmark/suites/{id}/rate-difficulty`: Auto-rate difficulty for all questions in a suite with an explicitly selected assessor model; returns `{ ratedCount, suite }`.
