@@ -375,21 +375,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     return this.attachmentAcceptExtensions.join(',');
   }
 
-  /**
-   * The accepted formats named for the user, derived from the same list as `accept`. It omits
-   * the verb because the control's accessible name already carries it, and interestfor wires
-   * this text up as the button's description: repeating "add attachments" would announce it
-   * twice.
-   */
-  get attachmentFormatsHint(): string {
-    const names = this.attachmentAcceptExtensions
-      .map(e => e.replace(/^\./, '').toUpperCase())
-      .filter(n => n.length > 0);
-    return names.length > 0
-      ? `Accepted formats: ${names.join(', ')}`
-      : 'No attachment formats are accepted';
-  }
-
   /** Lower-cased extensions without the leading dot, for checking a chosen or pasted file. */
   private get acceptedExtensions(): Set<string> {
     return new Set(this.attachmentAcceptExtensions

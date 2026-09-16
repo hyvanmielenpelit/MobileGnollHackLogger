@@ -1,0 +1,112 @@
+/* A framed CodeMirror field sized for a form row. The editor's own colours and gutter come from
+   codemirror-setup.ts, which builds that DOM outside this template. */
+:host {
+  display: block;
+  min-width: 0;
+}
+
+/* One frame around the toolbar, the status line and the editor, so the field reads as a single
+   control the way .gh-input does. */
+.digest-editor {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  background: var(--bg-input);
+  overflow: hidden;
+}
+
+.digest-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  background: var(--bg-glass);
+  border-bottom: 1px solid var(--border-glass);
+
+  .action-btn {
+    margin-left: auto;
+  }
+}
+
+.digest-counter {
+  font-size: 0.8rem;
+  color: #9a9a9a;
+  font-variant-numeric: tabular-nums;
+
+  &.over-cap {
+    color: var(--color-warning);
+    font-weight: 600;
+  }
+}
+
+/* The line is kept in the flow while empty so a status message does not shift the editor. */
+.digest-status {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 2px 12px;
+  min-height: 1.2em;
+  font-size: 0.8rem;
+  color: var(--nav-color);
+  background: var(--bg-glass);
+}
+
+.digest-cap-warning {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 2px 12px 6px;
+  font-size: 0.8rem;
+  color: var(--color-warning);
+  background: var(--bg-glass);
+}
+
+.warning-icon {
+  flex-shrink: 0;
+}
+
+.digest-frame {
+  position: relative;
+  min-height: 10rem;
+  max-height: 40vh;
+  display: flex;
+  flex-direction: column;
+  background: rgb(30, 30, 30);
+  border-top: 1px solid var(--border-glass);
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.digest-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.digest-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--nav-color);
+}
+
+.fallback-textarea {
+  --autosize-min: 6lh;
+  --autosize-max: 16lh;
+
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  border: none;
+  border-top: 1px solid var(--border-glass);
+  border-radius: 0;
+}

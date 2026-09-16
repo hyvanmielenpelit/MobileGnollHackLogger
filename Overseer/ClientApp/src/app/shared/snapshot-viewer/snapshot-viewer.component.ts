@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { AdminBenchmarkService, BenchmarkGameSnapshotDto } from '../../services/admin-benchmark.service';
 import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
 import { SnapshotTextEditorComponent } from './snapshot-text-editor.component';
+import { DIGEST_MAX_CHARS, SnapshotDigestEditorComponent } from './snapshot-digest-editor.component';
 import {
   FindMatch,
   MapBlock,
@@ -41,7 +42,7 @@ export type SnapshotViewerTab = 'viewer' | 'editor' | 'metadata';
 @Component({
   selector: 'app-snapshot-viewer',
   standalone: true,
-  imports: [CommonModule, FormsModule, SnapshotTextEditorComponent],
+  imports: [CommonModule, FormsModule, SnapshotTextEditorComponent, SnapshotDigestEditorComponent],
   templateUrl: './snapshot-viewer.component.html',
   styleUrls: ['./snapshot-viewer.component.scss']
 })
@@ -290,6 +291,12 @@ export class SnapshotViewerComponent implements OnDestroy {
     if (!this.snapshot) return;
     if (!this.editName.trim()) {
       this.editError = 'Snapshot name is required.';
+      return;
+    }
+    /* The server truncates silently at this cap, so an over-long digest is refused here instead
+       of being saved short. */
+    if (this.editDigestText.trim().length > DIGEST_MAX_CHARS) {
+      this.editError = `The digest is over ${DIGEST_MAX_CHARS.toLocaleString('en-US')} characters.`;
       return;
     }
     this.savingEdit = true;

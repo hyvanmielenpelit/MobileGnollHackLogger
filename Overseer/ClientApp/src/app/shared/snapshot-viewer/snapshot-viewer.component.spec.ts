@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed, fakeAsync, flushMicrotasks, tick } from '@an
 import { By } from '@angular/platform-browser';
 import { SnapshotViewerComponent } from './snapshot-viewer.component';
 import { SnapshotTextEditorComponent } from './snapshot-text-editor.component';
+import { SnapshotDigestEditorComponent } from './snapshot-digest-editor.component';
 import { AdminBenchmarkService, BenchmarkGameSnapshotDto } from '../../services/admin-benchmark.service';
 import { Subject, of, throwError } from 'rxjs';
 import { buildBoard, snapshotWith } from './snapshot-viewer.spec-fixtures';
@@ -92,7 +93,7 @@ describe('SnapshotViewerComponent', () => {
       }
     }
 
-    it('names every action in words, with no emoji', () => {
+    it('names every action in words, with no emoji', async () => {
       for (const name of ['Copy Text', 'Copy with line numbers', 'Download .snapshot.txt']) {
         const button = buttonNamed(name);
         expect(button).withContext(name).toBeTruthy();
@@ -107,6 +108,13 @@ describe('SnapshotViewerComponent', () => {
       for (const name of ['Edit Metadata', 'Copy SHA-256']) {
         expect(buttonNamed(name)).withContext(name).toBeTruthy();
       }
+      expectNoEmoji();
+
+      buttonNamed('Edit Metadata')!.click();
+      fixture.detectChanges();
+      await fixture.debugElement.query(By.directive(SnapshotDigestEditorComponent)).componentInstance.ready;
+      fixture.detectChanges();
+      expect(buttonNamed('Regenerate digest from snapshot')).toBeTruthy();
       expectNoEmoji();
     });
 
@@ -146,7 +154,9 @@ describe('SnapshotViewerComponent', () => {
 
     const rebuilt = 'Board digest (extract of the snapshot; the map grid and symbol legend are omitted):\nStatus:\nHP:31(44)';
 
-    function openEditing() {
+    /* The digest editor loads CodeMirror with import(), which never settles inside fakeAsync,
+       so these tests are async and wait for its ready promise. */
+    async function openEditing() {
       mockBenchmarkService.getSnapshot.and.returnValue(
         of(snapshotWith(buildBoard(), { digestText: 'the old prefix digest' })));
       component.open(1);
@@ -156,6 +166,16 @@ describe('SnapshotViewerComponent', () => {
       fixture.detectChanges();
       clickButtonNamed('Edit Metadata');
       fixture.detectChanges();
+      await digestEditor().ready;
+      fixture.detectChanges();
+    }
+
+    function digestEditor(): SnapshotDigestEditorComponent {
+      return fixture.debugElement.query(By.directive(SnapshotDigestEditorComponent)).componentInstance;
+    }
+
+    function digestText(): string {
+      return digestEditor().view!.state.doc.toString();
     }
 
     /* The form is opened and closed by clicking its own buttons: a property set from the test
@@ -168,45 +188,48 @@ describe('SnapshotViewerComponent', () => {
     }
 
     function regenerateButton(): HTMLButtonElement {
-      return host.querySelector<HTMLButtonElement>('.digest-regenerate button')!;
+      return host.querySelector<HTMLButtonElement>('.digest-editor .regenerate-btn')!;
     }
 
     afterEach(() => component.viewerDialog?.nativeElement?.close());
 
-    it('rebuilds the digest and shows it in the textarea and the disclosure', fakeAsync(() => {
-      openEditing();
+    it('rebuilds the digest and shows it in the editor and the disclosure', async () => {
+      await openEditing();
+      expect(digestText()).toBe('the old prefix digest');
       mockBenchmarkService.regenerateSnapshotDigest.and.returnValue(
         of(snapshotWith(buildBoard(), { digestText: rebuilt })));
 
       regenerateButton().click();
-      flushMicrotasks();
       fixture.detectChanges();
 
       expect(mockBenchmarkService.regenerateSnapshotDigest).toHaveBeenCalledWith(1);
-      expect(host.querySelector<HTMLTextAreaElement>('#editBoardDigest')!.value).toBe(rebuilt);
+      expect(digestText()).toBe(rebuilt);
       expect(component.snapshot!.digestText).toBe(rebuilt);
 
       clickButtonNamed('Cancel');
       const disclosure = host.querySelector<HTMLDetailsElement>('details.digest-disclosure')!;
       expect(disclosure.textContent).toContain('the map grid and symbol legend are omitted');
-    }));
+    });
 
-    it('disables the button while the request is pending', () => {
-      openEditing();
+    it('marks the button busy and refuses a second click while the request is pending', async () => {
+      await openEditing();
       const pending = new Subject<BenchmarkGameSnapshotDto>();
       mockBenchmarkService.regenerateSnapshotDigest.and.returnValue(pending.asObservable());
 
       regenerateButton().click();
       fixture.detectChanges();
-      expect(regenerateButton().disabled).toBeTrue();
-      expect(regenerateButton().textContent!.trim()).toBe('Regenerating...');
+      expect(regenerateButton().getAttribute('aria-disabled')).toBe('true');
+      expect(regenerateButton().getAttribute('aria-label')).toBe('Regenerate digest from snapshot');
+
+      regenerateButton().click();
+      expect(mockBenchmarkService.regenerateSnapshotDigest).toHaveBeenCalledTimes(1);
 
       pending.next(snapshotWith(buildBoard(), { digestText: rebuilt }));
       pending.complete();
       fixture.detectChanges();
 
-      expect(regenerateButton().disabled).toBeFalse();
-      expect(regenerateButton().textContent!.trim()).toBe('Regenerate from snapshot');
+      expect(regenerateButton().getAttribute('aria-disabled')).toBeNull();
+      expect(regenerateButton().getAttribute('aria-label')).toBe('Regenerate digest from snapshot');
     });
   });
 
@@ -431,7 +454,7 @@ describe('SnapshotViewerComponent', () => {
       clickButtonNamed('Discard');
       expect(component.activeTab).toBe('metadata');
       expect(host.querySelector('app-snapshot-text-editor')).toBeNull();
-      expect(host.querySelector('.sha-row')).toBeTruthy();
+      expect(host.querySelector('.sha-fact')).toBeTruthy();
     });
 
     it('has no footer and no Edit Text button on any tab', () => {

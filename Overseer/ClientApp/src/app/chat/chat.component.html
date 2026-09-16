@@ -892,14 +892,9 @@
           <div class="modern-input-container">
             <button type="button" class="icon-btn add-media-icon" (click)="triggerFileInput()"
                     [disabled]="pendingAttachments.length >= 5"
-                    aria-label="Add attachments"
-                    interestfor="tip-add-media"
-                    [attr.style]="'anchor-name: --tip-add-media'">
+                    aria-label="Add attachments">
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
-            <div popover="hint" id="tip-add-media" class="gh-tooltip" [attr.style]="'position-anchor: --tip-add-media'">
-              {{ attachmentFormatsHint }}
-            </div>
             <input type="file" id="fileInput" hidden multiple [attr.accept]="attachmentAcceptAttr" (change)="onFileSelected($event)">
             <div class="auto-resize-wrapper" [attr.data-replicated-value]="currentInput">
               <textarea #promptInput [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keydown.enter)="onEnter($event)" (paste)="onPaste($event)" placeholder="Ask the Overseer" autofocus class="transparent-textarea"></textarea>

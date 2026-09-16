@@ -105,21 +105,30 @@
     }
   }
 
-  /* Prose: the panel scrolls as a whole. */
+  /* Prose: the panel scrolls as a whole. The wider gap sets the header, the facts and the
+     disclosures apart as three groups. */
   .snapshot-panel-metadata {
     overflow: auto;
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
+    gap: 16px;
 
     > * {
       flex-shrink: 0;
     }
   }
 
-  .metadata-actions {
+  .metadata-section-header {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+
+    h4 {
+      margin: 0;
+      color: var(--title-color);
+    }
   }
 
   @media (max-width: 600px) {
@@ -137,90 +146,100 @@
   }
 }
 
-.digest-regenerate {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-top: 6px;
-
-  .digest-regenerate-status {
-    font-size: 0.8rem;
-    opacity: 0.85;
-  }
-}
-
-.reader-facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 20px;
+/* Each fact stacks its label over its value, so the column width carries the value rather than
+   the pair; auto-fill reflows the grid without a breakpoint. */
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 14px 24px;
   margin: 0;
-  font-size: 0.8rem;
 
   .fact {
     display: flex;
-    gap: 6px;
-    white-space: nowrap;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
   }
 
   dt {
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
     color: var(--nav-color);
     font-weight: 500;
   }
 
   dd {
     margin: 0;
+    font-size: 0.95rem;
     font-weight: 600;
+    font-variant-numeric: tabular-nums;
     color: var(--font-color);
+    overflow-wrap: anywhere;
   }
 }
 
-.sha-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+.meta-pill {
+  display: inline-block;
   font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--link-color);
+  background: var(--bg-glass);
+  border: 1px solid var(--border-glass);
+  padding: 2px 8px;
+  border-radius: 9999px;
+}
 
-  .sha-label {
-    color: var(--nav-color);
-    font-weight: 500;
+/* An absent value reads as absent rather than as data. */
+.meta-empty {
+  font-weight: 400;
+  font-style: italic;
+  color: var(--nav-color);
+}
+
+.fact-wide {
+  grid-column: 1 / -1;
+}
+
+.sha-fact {
+  dd {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .sha-box {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.8rem;
+    font-weight: 400;
     background: var(--bg-input);
     border: 1px solid var(--border-glass);
     padding: 2px 8px;
     border-radius: 4px;
-    word-break: break-all;
     min-width: 0;
+    overflow-wrap: anywhere;
+    /* One click selects the whole hash. */
+    user-select: all;
   }
 
   .action-btn {
     margin-left: 0;
+    flex-shrink: 0;
   }
 }
 
-/* <details> keeps closed content reachable by find-in-page and assistive technology. */
-.reader-disclosure {
-  background: var(--bg-glass);
-  border: 1px solid var(--border-glass);
-  border-left: 3px solid var(--primary-color);
-  border-radius: 4px;
-  font-size: 0.85rem;
-
-  summary {
-    cursor: pointer;
-    padding: 6px 12px;
+/* <details> keeps closed content reachable by find-in-page and assistive technology; the frame
+   is the global .gh-disclosure. */
+.gh-disclosure {
+  .disclosure-count {
+    margin-inline-start: 6px;
+    font-weight: 400;
+    font-size: 0.85em;
     color: var(--nav-color);
-    font-weight: 500;
   }
 
   .disclosure-pre {
     margin: 0;
-    padding: 0 12px 10px;
     max-height: 30vh;
     overflow: auto;
     font-family: inherit;
@@ -532,17 +551,71 @@
 }
 
 .snapshot-edit-panel {
+  /* The two-column row collapses on the panel's own width, not the viewport's, so the dialog
+     may be narrow for any reason. */
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 14px;
   background: var(--bg-glass);
   padding: 16px;
   border-radius: 6px;
   border: 1px solid var(--border-glass);
 
   h4 {
-    margin: 0 0 8px 0;
+    margin: 0;
     color: var(--title-color);
+  }
+
+  /* The panel's own gap sets the fields apart, so each group only spaces its label, hint and
+     control. */
+  .form-group {
+    min-width: 0;
+    gap: 6px;
+    margin-bottom: 0;
+
+    label {
+      margin-bottom: 0;
+    }
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    gap: 12px 16px;
+  }
+
+  @container (max-width: 560px) {
+    .form-row {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* A textarea otherwise falls back to the UA monospace face, so its placeholder and text read
+     differently from every other field on the panel. */
+  .gh-input {
+    font: inherit;
+    font-size: 0.95rem;
+    line-height: 1.45;
+  }
+
+  .field-label {
+    display: block;
+    font-weight: 500;
+    color: #ddd;
+  }
+
+  .form-hint {
+    margin: 0;
+  }
+
+  .notes-input {
+    --autosize-min: 1lh;
+    --autosize-max: 9lh;
+  }
+
+  .dialog-actions {
+    margin-top: 2px;
   }
 }
 

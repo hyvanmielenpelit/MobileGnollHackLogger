@@ -1,0 +1,52 @@
+<div class="digest-editor">
+  <div class="digest-toolbar">
+    <span class="digest-counter" [class.over-cap]="overCap">{{ length | number }} / {{ maxChars | number }} chars</span>
+
+    <button type="button" class="action-btn regenerate-btn" (click)="onRegenerateClick()"
+            aria-label="Regenerate digest from snapshot"
+            [attr.aria-disabled]="(regenerating || disabled) ? 'true' : null"
+            [attr.aria-busy]="regenerating ? 'true' : null"
+            [attr.interestfor]="'snapshot-digest-tip-' + uid"
+            [attr.style]="'anchor-name: --snapshot-digest-tip-' + uid">
+      @if (regenerating) {
+        <span class="gh-spinner-small" aria-hidden="true"></span>
+      } @else {
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="1 4 1 10 7 10"></polyline>
+          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+        </svg>
+      }
+    </button>
+    <div popover="hint" class="gh-tooltip" [id]="'snapshot-digest-tip-' + uid"
+         [attr.style]="'position-anchor: --snapshot-digest-tip-' + uid">Regenerate from snapshot</div>
+  </div>
+
+  <p class="digest-status" role="status">{{ regenerateStatus }}</p>
+
+  @if (overCap) {
+    <p class="digest-cap-warning">
+      <svg class="warning-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      </svg>
+      Over the limit: the server cuts the digest at {{ maxChars | number }} characters.
+    </p>
+  }
+
+  <div class="digest-frame" [hidden]="loadError">
+    <div #editorHost class="digest-host"></div>
+    @if (!view && !loadError) {
+      <div class="digest-loading" role="status">
+        <span class="gh-spinner-small" aria-hidden="true"></span>
+        <span>Loading the editor...</span>
+      </div>
+    }
+  </div>
+
+  @if (loadError) {
+    <textarea class="gh-input gh-textarea-autosize fallback-textarea" rows="6"
+              aria-label="Snapshot digest" [ngModel]="fallbackText"
+              (ngModelChange)="onFallbackInput($event)"></textarea>
+  }
+</div>

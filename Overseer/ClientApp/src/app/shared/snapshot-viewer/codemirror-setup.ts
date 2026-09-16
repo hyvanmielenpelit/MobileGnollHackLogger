@@ -29,6 +29,8 @@ export interface SnapshotEditorOptions {
   ariaLabel?: string;
   /** Runs on Ctrl-S / Cmd-S inside the editor; the browser's own save is always suppressed. */
   onSave?: () => void;
+  /** Wraps long lines instead of scrolling them horizontally. Off by default. */
+  lineWrapping?: boolean;
 }
 
 /* The reader's look: the same monospace stack and background as .reader-scroll, a gutter
@@ -152,8 +154,9 @@ const snapshotTheme = EditorView.theme({
   }
 }, { dark: true });
 
-/* Line wrapping is deliberately absent: EditorView.lineWrapping is document-wide, and a wrapped
-   map row misstates the map. */
+/* Line wrapping is off unless the caller asks for it: EditorView.lineWrapping is document-wide,
+   and a wrapped map row misstates the map. A caller whose document carries no map grid — the
+   snapshot digest, for one — may turn it on. */
 export function createSnapshotEditor(
   parent: HTMLElement,
   doc: string,
@@ -165,6 +168,8 @@ export function createSnapshotEditor(
   const saveKeymap = options.onSave
     ? [keymap.of([{ key: 'Mod-s', preventDefault: true, run: () => { options.onSave!(); return true; } }])]
     : [];
+
+  const wrapping = options.lineWrapping ? [EditorView.lineWrapping] : [];
 
   const state = EditorState.create({
     doc,
@@ -178,6 +183,7 @@ export function createSnapshotEditor(
       highlightSelectionMatches(),
       search({ top: true }),
       EditorState.tabSize.of(8),
+      ...wrapping,
       ...saveKeymap,
       keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
       EditorView.contentAttributes.of({
@@ -209,6 +215,13 @@ export function getDocText(view: EditorView): string {
 
 export function getDocInfo(view: EditorView): { length: number; lineCount: number } {
   return { length: view.state.doc.length, lineCount: view.state.doc.lines };
+}
+
+/** Replaces the whole document, leaving the editor alone when the text already matches. */
+export function replaceDocText(view: EditorView, text: string): void {
+  const current = view.state.doc;
+  if (current.toString() === text) return;
+  view.dispatch({ changes: { from: 0, to: current.length, insert: text } });
 }
 
 /** Opens CodeMirror's find / replace panel. */

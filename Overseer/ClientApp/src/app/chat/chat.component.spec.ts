@@ -2883,23 +2883,16 @@ describe('ChatComponent attachment accept list', () => {
     expect(component.attachmentAcceptExtensions).toEqual(['.pdf', '.docx']);
   });
 
-  it('should name the accepted formats to the user from the same list', () => {
-    component.attachmentAcceptExtensions = ['.csv', '.pdf'];
+  it('should carry an accessible name on the attach control, and no title and no tooltip', () => {
     fixture.detectChanges();
 
-    expect(component.attachmentFormatsHint).toBe('Accepted formats: CSV, PDF');
-    const tip = (fixture.nativeElement as HTMLElement).querySelector('#tip-add-media');
-    expect(tip?.textContent?.trim()).toBe('Accepted formats: CSV, PDF');
-  });
-
-  it('should carry an accessible name on the attach control and no title attribute', () => {
-    fixture.detectChanges();
-
-    const btn = (fixture.nativeElement as HTMLElement).querySelector('.add-media-icon');
+    const host = fixture.nativeElement as HTMLElement;
+    const btn = host.querySelector('.add-media-icon');
     expect(btn).toBeTruthy();
     expect(btn!.getAttribute('aria-label')).toBe('Add attachments');
     expect(btn!.hasAttribute('title')).toBeFalse();
-    expect(btn!.getAttribute('interestfor')).toBe('tip-add-media');
+    expect(btn!.hasAttribute('interestfor')).toBeFalse();
+    expect(host.querySelector('#tip-add-media')).toBeNull();
   });
 
   it('should accept a file the widened server list allows', async () => {

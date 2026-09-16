@@ -239,28 +239,35 @@
                   </div>
                 </div>
               }
-              <div class="form-group">
-                <label for="editBoardName">Snapshot Name *</label>
-                <input id="editBoardName" type="text" class="gh-input" [(ngModel)]="editName" required />
-              </div>
-              <div class="form-group">
-                <label for="editBoardVersion">GnollHack Version</label>
-                <input id="editBoardVersion" type="text" class="gh-input" [(ngModel)]="editGnollHackVersion" placeholder="e.g. 0.9.4" />
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="editBoardName">Snapshot Name *</label>
+                  <input id="editBoardName" type="text" class="gh-input" [(ngModel)]="editName" required aria-required="true" />
+                </div>
+                <div class="form-group">
+                  <label for="editBoardVersion">GnollHack Version</label>
+                  <input id="editBoardVersion" type="text" class="gh-input" [(ngModel)]="editGnollHackVersion"
+                         placeholder="e.g. 4.3.0 (Build 17)" autocomplete="off" />
+                </div>
               </div>
               <div class="form-group">
                 <label for="editBoardNotes">Notes</label>
-                <textarea id="editBoardNotes" class="gh-input" [(ngModel)]="editNotes" rows="3" placeholder="Context facts: HP, level, key items, adjacent monsters"></textarea>
+                <p class="form-hint" [id]="'edit-notes-hint-' + uid">Context the assessor should know: HP, dungeon level, key items, adjacent monsters.</p>
+                <textarea id="editBoardNotes" class="gh-input gh-textarea-autosize notes-input" rows="1"
+                          [(ngModel)]="editNotes" [attr.aria-describedby]="'edit-notes-hint-' + uid"></textarea>
               </div>
               <div class="form-group">
-                <label for="editBoardDigest">Snapshot digest (extract the difficulty assessor reads; max 6,000 chars)</label>
-                <textarea id="editBoardDigest" class="gh-input" [(ngModel)]="editDigestText" rows="8" maxlength="6000"></textarea>
-                <div class="digest-regenerate">
-                  <button type="button" class="btn-gh btn-gh-small" (click)="regenerateDigest()"
-                          [disabled]="regeneratingDigest || savingEdit">
-                    {{ regeneratingDigest ? 'Regenerating...' : 'Regenerate from snapshot' }}
-                  </button>
-                  <span class="digest-regenerate-status" aria-live="polite">{{ regenerateStatus }}</span>
-                </div>
+                <span class="field-label" [id]="'edit-digest-label-' + uid">Snapshot digest</span>
+                <p class="form-hint" [id]="'edit-digest-hint-' + uid">The extract the difficulty assessor reads instead of the full snapshot. Up to 6,000 characters.</p>
+                <app-snapshot-digest-editor role="group"
+                                            [attr.aria-labelledby]="'edit-digest-label-' + uid"
+                                            [attr.aria-describedby]="'edit-digest-hint-' + uid"
+                                            [text]="editDigestText"
+                                            (textChange)="editDigestText = $event"
+                                            [regenerating]="regeneratingDigest"
+                                            [regenerateStatus]="regenerateStatus"
+                                            [disabled]="savingEdit"
+                                            (regenerate)="regenerateDigest()" />
               </div>
               <div class="dialog-actions">
                 <button type="button" class="btn-gh btn-gh-cancel" (click)="cancelEdit()" [disabled]="savingEdit">Cancel</button>
@@ -271,53 +278,8 @@
             </div>
           } @else {
             <!-- Provenance -->
-            <dl class="reader-facts">
-              <div class="fact"><dt>Capture method</dt><dd>{{ snapshot.captureMethod }}</dd></div>
-              <div class="fact"><dt>Character count</dt><dd>{{ snapshot.charCount | number }}</dd></div>
-              <div class="fact"><dt>Captured at</dt><dd>{{ snapshot.capturedAtUtc ? (snapshot.capturedAtUtc | date:'medium') : (snapshot.createdAtUtc | date:'medium') }}</dd></div>
-              <div class="fact"><dt>GnollHack version</dt><dd>{{ snapshot.sourceGnollHackVersion || 'Unknown' }}</dd></div>
-              <div class="fact"><dt>Source chat</dt><dd>{{ snapshot.sourceChatSessionId ? ('#' + snapshot.sourceChatSessionId) : 'None' }}</dd></div>
-              @if (showLastModified) {
-                <div class="fact last-modified"><dt>Last modified</dt><dd>{{ snapshot.modifiedAtUtc | date:'medium' }}</dd></div>
-              }
-            </dl>
-
-            <div class="sha-row">
-              <span class="sha-label">SHA-256</span>
-              <code class="sha-box">{{ snapshot.sha256 }}</code>
-              <button type="button" class="action-btn" (click)="copySha()" aria-label="Copy SHA-256"
-                      [attr.interestfor]="'snapshot-sha-tip-' + uid"
-                      [attr.style]="'anchor-name: --snapshot-sha-tip-' + uid">
-                @if (copiedSha) {
-                  <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <polyline points="20 6 9 17 4 12"></polyline>
-                  </svg>
-                } @else {
-                  <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                  </svg>
-                }
-              </button>
-              <div popover="hint" class="gh-tooltip" [id]="'snapshot-sha-tip-' + uid"
-                   [attr.style]="'position-anchor: --snapshot-sha-tip-' + uid">Copy SHA-256</div>
-              <span class="visually-hidden copy-sha-status" aria-live="polite">{{ copiedSha ? 'Copied' : '' }}</span>
-            </div>
-
-            @if (snapshot.notes) {
-              <details class="reader-disclosure notes-disclosure" open>
-                <summary>Notes</summary>
-                <pre class="disclosure-pre">{{ snapshot.notes }}</pre>
-              </details>
-            }
-            @if (snapshot.digestText) {
-              <details class="reader-disclosure digest-disclosure">
-                <summary>Digest (difficulty assessor extract) · {{ snapshot.digestText.length | number }} chars</summary>
-                <pre class="disclosure-pre">{{ snapshot.digestText }}</pre>
-              </details>
-            }
-
-            <div class="metadata-actions">
+            <div class="metadata-section-header">
+              <h4>Provenance</h4>
               <button type="button" class="btn-gh" (click)="startEdit()">
                 <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
@@ -325,6 +287,76 @@
                 Edit Metadata
               </button>
             </div>
+
+            <dl class="meta-grid">
+              <div class="fact"><dt>Capture method</dt><dd><span class="meta-pill">{{ snapshot.captureMethod }}</span></dd></div>
+              <div class="fact"><dt>Character count</dt><dd>{{ snapshot.charCount | number }}</dd></div>
+              <div class="fact"><dt>Captured at</dt><dd>{{ snapshot.capturedAtUtc ? (snapshot.capturedAtUtc | date:'medium') : (snapshot.createdAtUtc | date:'medium') }}</dd></div>
+              <div class="fact">
+                <dt>GnollHack version</dt>
+                <dd>
+                  @if (snapshot.sourceGnollHackVersion) {
+                    {{ snapshot.sourceGnollHackVersion }}
+                  } @else {
+                    <span class="meta-empty">Unknown</span>
+                  }
+                </dd>
+              </div>
+              <div class="fact">
+                <dt>Source chat</dt>
+                <dd>
+                  @if (snapshot.sourceChatSessionId) {
+                    #{{ snapshot.sourceChatSessionId }}
+                  } @else {
+                    <span class="meta-empty">None</span>
+                  }
+                </dd>
+              </div>
+              @if (showLastModified) {
+                <div class="fact last-modified"><dt>Last modified</dt><dd>{{ snapshot.modifiedAtUtc | date:'medium' }}</dd></div>
+              }
+
+              <div class="fact fact-wide sha-fact">
+                <dt>SHA-256</dt>
+                <dd>
+                  <code class="sha-box">{{ snapshot.sha256 }}</code>
+                  <button type="button" class="action-btn" (click)="copySha()" aria-label="Copy SHA-256"
+                          [attr.interestfor]="'snapshot-sha-tip-' + uid"
+                          [attr.style]="'anchor-name: --snapshot-sha-tip-' + uid">
+                    @if (copiedSha) {
+                      <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    } @else {
+                      <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
+                    }
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'snapshot-sha-tip-' + uid"
+                       [attr.style]="'position-anchor: --snapshot-sha-tip-' + uid">Copy SHA-256</div>
+                  <span class="visually-hidden copy-sha-status" aria-live="polite">{{ copiedSha ? 'Copied' : '' }}</span>
+                </dd>
+              </div>
+            </dl>
+
+            @if (snapshot.notes) {
+              <details class="gh-disclosure notes-disclosure" open>
+                <summary>Notes</summary>
+                <div class="gh-disclosure-body">
+                  <pre class="disclosure-pre">{{ snapshot.notes }}</pre>
+                </div>
+              </details>
+            }
+            @if (snapshot.digestText) {
+              <details class="gh-disclosure digest-disclosure">
+                <summary>Digest (difficulty assessor extract)<span class="disclosure-count">{{ snapshot.digestText.length | number }} chars</span></summary>
+                <div class="gh-disclosure-body">
+                  <pre class="disclosure-pre">{{ snapshot.digestText }}</pre>
+                </div>
+              </details>
+            }
           }
         </div>
       }
