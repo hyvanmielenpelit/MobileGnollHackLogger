@@ -516,39 +516,68 @@ export const AI_INSTRUCTIONS_FILE_NAME = 'overseer-benchmark-yaml-instructions.m
 // Guides
 // ---------------------------------------------------------------------------------------------
 
-export const HUMAN_GUIDE_MARKDOWN = `## What the buttons do
+export interface HumanGuideTab {
+  /** Stable id, used in element ids. */
+  id: 'workflow' | 'rules' | 'format';
+  label: string;
+  markdown: string;
+}
 
-- **Download as YAML** / **Copy as YAML to Clipboard** (on a question) export that one question.
-- **Download All as YAML** / **Copy All to Clipboard** (Manage Questions toolbar) export every question of the suite.
-- **Download Suite as YAML** / **Copy Suite as YAML to Clipboard** (on a suite card) export the suite's name, description and every question.
-- **Import from YAML** (on a question) replaces that one question from a document holding exactly one question.
-- **Import Questions from YAML** (Manage Questions toolbar) replaces every question that carries an \`id\` and creates every question that does not.
-- **Import Suite from YAML** (Manage Suites toolbar) always creates a **new** suite. If the name is taken, the new suite is named *Name (Imported)*. Question ids in the file are ignored, and no game snapshot is attached.
+const WORKFLOW_MARKDOWN = `## Export, edit, import
 
-## Replace or create
+1. **Export** a question, all questions of the suite, or the whole suite. The export keeps every question's \`id\`.
+2. **Edit** the YAML by hand, or hand it to an AI together with the instructions on the *For an AI* tab.
+3. **Import** it back. **Validate** checks the whole document, **Review changes** shows every change before anything is written, and the final button writes all of it at once. If any question is invalid, nothing is written.
 
-- A question **with** \`id\` replaces the question with that id. It must belong to the open suite.
-- A question **without** \`id\` is created at the end of the suite, with difficulty *Simple* unless \`difficulty\` says otherwise.
-- A key you leave out keeps the current value: no \`rubric\` key keeps the rubric, no \`difficulty\` keeps the difficulty. \`rubric: |\` with nothing under it **clears** the rubric.
-- Changing a question's text, difficulty or rubric counts as a new revision: the revision number goes up and the AI-assessed difficulty is cleared, exactly as when you edit a question by hand. Re-importing an unchanged export changes nothing. A change to whitespace inside the text still counts as a change.
+## Three ways to import
+
+| Button | Where | What it does |
+|---|---|---|
+| **Import from YAML** | on a question | Replaces that one question. The document must hold exactly one question, and its \`id\`, if present, must be that question's. |
+| **Import Questions from YAML** | Manage Questions toolbar | Replaces every question that carries an \`id\` and creates every question that has none. |
+| **Import Suite from YAML** | Manage Suites toolbar | Always creates a **new** suite, even when one of that name exists; it is then named *Name (Imported)*. Ids in the file are ignored, and no game snapshot is attached. |
 
 ## What an import never does
 
-- It never deletes a question and never reorders questions.
-- It never touches runs, assessments, reviews or the game snapshot.
-- It writes nothing until you press **Apply** on the review step, and it validates the whole document first: if any question is invalid, nothing is written.
-
-## The review step
-
-After **Validate**, **Review changes** shows every question as *Replace* or *Create*, with what it changes. *Side by side* shows the current and imported values; *Diff* marks removed lines with \`-\` and added lines with \`+\`.
-
-## Format essentials
-
-- The header \`format: ${QUESTION_YAML_FORMAT}\` and \`version: ${QUESTION_YAML_VERSION}\` is required.
-- Write \`question\` and \`rubric\` as \`|\` block scalars, and indent every line of a block by the same number of spaces. Inside a block, anything goes: Markdown headings, code fences, \`---\` lines.
-- Use spaces, never tabs, for indentation.
-- Allowed question keys: \`id\`, \`difficulty\`, \`question\`, \`rubric\`. Difficulty is Simple, Intermediate or Advanced.
+- Delete or reorder questions.
+- Touch runs, assessments, reviews or the game snapshot.
+- Write anything before you confirm on the review step.
 `;
+
+const RULES_MARKDOWN = `## Replace or create
+
+- A question **with** \`id\` replaces the question with that id. The id must belong to the open suite.
+- A question **without** \`id\` is created at the end of the suite, with difficulty *Simple* unless \`difficulty\` says otherwise.
+- A key you leave out keeps the current value: no \`rubric\` key keeps the rubric, no \`difficulty\` key keeps the difficulty.
+- \`rubric: |\` with nothing under it **clears** the rubric.
+
+## The catch: a change resets the AI assessment
+
+> **Any change to a question's text, difficulty or rubric, even whitespace inside the text, is a new revision**, exactly as when you edit the question by hand. The question's **AI-assessed difficulty is cleared**, a generated question loses its **Reviewed** mark, and **the suite cannot be run until every question is assessed again.**
+
+Re-importing an unchanged export changes nothing: the review step marks those questions *no changes*, and they keep their assessment.
+`;
+
+const FORMAT_MARKDOWN = `## Format essentials
+
+- The document starts with \`format: ${QUESTION_YAML_FORMAT}\` and \`version: ${QUESTION_YAML_VERSION}\`. Both are required.
+- Top-level keys: \`format\`, \`version\`, \`suite\`, \`questions\`. Question keys: \`id\`, \`difficulty\`, \`question\`, \`rubric\`. Any other key is an error.
+- Write \`question\` and \`rubric\` as \`|\` block scalars, and indent every line of the block by the same number of spaces. Inside the block anything goes: Markdown headings, code fences, \`---\` lines. A \`#\` line inside a block is text, not a comment.
+- Indent with spaces, never tabs.
+- \`difficulty\` is Simple, Intermediate or Advanced.
+- An uploaded file may be at most 2 MB.
+
+## Reading a validation message
+
+A syntax error is reported as *Line N, column M: reason*. A schema error names the question, as in *questions[3] (id 42): unknown key \`tier\`*. Fix every message: the import runs only when the whole document is valid.
+`;
+
+/** The admin guide, one entry per help dialog tab. The AI instructions below are a fourth tab. */
+export const HUMAN_GUIDE_TABS: ReadonlyArray<HumanGuideTab> = [
+  { id: 'workflow', label: 'Workflow', markdown: WORKFLOW_MARKDOWN },
+  { id: 'rules', label: 'Replace or Create', markdown: RULES_MARKDOWN },
+  { id: 'format', label: 'Format', markdown: FORMAT_MARKDOWN }
+];
 
 export const AI_INSTRUCTIONS_MARKDOWN = `# Editing Overseer benchmark questions in YAML
 

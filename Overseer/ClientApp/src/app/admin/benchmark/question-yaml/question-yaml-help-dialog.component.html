@@ -13,13 +13,26 @@
       </button>
     </div>
 
-    <div class="dialog-body">
-      <div class="markdown-body help-guide" [innerHTML]="guide | markdown"></div>
+    <!-- The tab row is pinned between the header and the body; the body is the only scroller. -->
+    <div class="help-tabs">
+      <div class="gh-tabs gh-tabs-secondary" role="tablist" aria-label="Help sections">
+        @for (t of tabs; track t.id; let i = $index) {
+          <button type="button" role="tab" class="gh-tab"
+                  [id]="'yaml-help-tab-' + t.id"
+                  aria-controls="yamlHelpPanel"
+                  [attr.aria-selected]="activeTab === t.id"
+                  [attr.tabindex]="activeTab === t.id ? 0 : -1"
+                  (keydown)="onTabKeydown($event, i)"
+                  (click)="selectTab(t.id)">{{ t.label }}</button>
+        }
+      </div>
+    </div>
 
-      <fieldset class="gh-fieldset help-ai">
-        <legend>
-          <span class="help-ai-legend">
-            Instructions for an AI
+    <div #body class="dialog-body" role="tabpanel" id="yamlHelpPanel"
+         [attr.aria-labelledby]="'yaml-help-tab-' + activeTab" tabindex="0">
+      @if (activeTab === 'ai') {
+        <div class="help-ai">
+          <div class="help-ai-actions">
             <button type="button" class="action-btn" (click)="copyInstructions()"
                     aria-label="Copy AI instructions to the clipboard"
                     [attr.interestfor]="'tip-yaml-help-copy'"
@@ -37,16 +50,13 @@
             <div popover="hint" class="gh-tooltip" id="tip-yaml-help-download"
                  [attr.style]="'position-anchor: --tip-yaml-help-download'">Download AI instructions as Markdown</div>
             <span class="help-copy-status" role="status" aria-live="polite">{{ copyStatus }}</span>
-          </span>
-        </legend>
-        <p class="gh-fieldset-hint">Paste these into an AI chat together with an exported document, so its reply imports cleanly.</p>
-        <details class="gh-disclosure" open>
-          <summary>Show the instructions</summary>
-          <div class="gh-disclosure-body">
-            <pre class="help-ai-text">{{ aiInstructions }}</pre>
           </div>
-        </details>
-      </fieldset>
+          <p class="help-ai-hint">Paste these into an AI chat together with an exported document, so its reply imports cleanly.</p>
+          <pre class="help-ai-text">{{ aiInstructions }}</pre>
+        </div>
+      } @else if (activeGuide; as guide) {
+        <div class="markdown-body help-guide" [innerHTML]="guide.markdown | markdown"></div>
+      }
     </div>
 
     <div class="dialog-footer">

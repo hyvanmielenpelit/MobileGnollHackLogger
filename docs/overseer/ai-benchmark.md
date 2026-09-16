@@ -2877,8 +2877,10 @@ name is taken, with no snapshot and no `DefaultSuiteKey`. The game snapshot is n
 export; `suite.snapshot` only names it.
 
 Endpoints: `POST suites/{suiteId}/questions/import` and `POST suites/import` (§ 6). The help dialog
-(*Import/Export Help* on the Manage Questions toolbar) shows the admin guide and a copyable,
-downloadable set of instructions for an AI.
+(*Import/Export Help* on the Manage Questions toolbar, also reachable from the import dialog) is full
+height with four tabs: *Workflow*, *Replace or Create*, *Format*, and *For an AI*, the last holding a
+copyable, downloadable set of instructions for an AI. The guide text lives in `HUMAN_GUIDE_TABS` in
+`question-yaml-format.ts`.
 
 ---
 

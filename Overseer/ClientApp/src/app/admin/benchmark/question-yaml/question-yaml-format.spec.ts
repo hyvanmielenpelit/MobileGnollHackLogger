@@ -1,6 +1,7 @@
 import type { BenchmarkQuestionDto, BenchmarkSuiteDto } from '../../../services/admin-benchmark.service';
 import {
   AI_INSTRUCTIONS_MARKDOWN,
+  HUMAN_GUIDE_TABS,
   buildImportPlan,
   parseQuestionYaml,
   questionYamlFileName,
@@ -272,6 +273,14 @@ describe('question-yaml-format', () => {
       expect(questionYamlFileName(SUITE.name, FIXTURE[1])).toBe('benchmark-question-2-id-43.yaml');
       expect(suiteYamlFileName('  ')).toBe('benchmark-suite-suite.yaml');
     });
+  });
+
+  it('every guide tab has a label and text', () => {
+    expect(HUMAN_GUIDE_TABS.length).toBe(3);
+    for (const tab of HUMAN_GUIDE_TABS) {
+      expect(tab.label.trim()).not.toBe('');
+      expect(tab.markdown.trim()).not.toBe('');
+    }
   });
 
   it('the AI instructions example is itself a valid document', async () => {
