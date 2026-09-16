@@ -21,7 +21,6 @@ public record BoardMetadata(
 public class BenchmarkSnapshotImporter
 {
     public const int DefaultMaxSnapshotChars = 60000;
-    public const int MaxDigestChars = 2000;
 
     private readonly ApplicationDbContext _dbContext;
 
@@ -85,18 +84,7 @@ public class BenchmarkSnapshotImporter
 
         var (finalText, sha256) = PrepareBoardText(normalizedText);
 
-        string digestText;
-        if (finalText.Length <= MaxDigestChars)
-        {
-            digestText = finalText;
-        }
-        else
-        {
-            int lastNewline = finalText.LastIndexOf('\n', MaxDigestChars);
-            digestText = lastNewline > 0
-                ? finalText.Substring(0, lastNewline).Trim()
-                : finalText.Substring(0, MaxDigestChars).Trim();
-        }
+        string digestText = BenchmarkSnapshotDigestBuilder.Build(finalText);
 
         string finalName = meta.Name;
         int counter = 1;

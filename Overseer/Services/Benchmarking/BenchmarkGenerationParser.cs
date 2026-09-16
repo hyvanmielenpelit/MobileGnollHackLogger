@@ -14,7 +14,6 @@ public class GeneratedQuestionItem
 public class GenerationParseResult
 {
     public bool Success { get; set; }
-    public string? BoardDigest { get; set; }
     public List<GeneratedQuestionItem> Questions { get; set; } = new();
     public List<string> ValidationErrors { get; set; } = new();
     public List<string> DiscardedQuestions { get; set; } = new();
@@ -66,15 +65,6 @@ public static class BenchmarkGenerationParser
             {
                 result.ValidationErrors.Add("Root element must be a JSON object.");
                 return result;
-            }
-
-            if (root.TryGetProperty("boardDigest", out var digestProp) && digestProp.ValueKind == JsonValueKind.String)
-            {
-                result.BoardDigest = digestProp.GetString()?.Trim();
-                if (result.BoardDigest != null && result.BoardDigest.Length > 2000)
-                {
-                    result.BoardDigest = result.BoardDigest[..2000];
-                }
             }
 
             if (!root.TryGetProperty("questions", out var questionsProp) || questionsProp.ValueKind != JsonValueKind.Array)

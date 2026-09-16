@@ -77,6 +77,8 @@ export class SnapshotViewerComponent implements OnDestroy {
   editDigestText = '';
   savingEdit = false;
   editError: string | null = null;
+  regeneratingDigest = false;
+  regenerateStatus = '';
 
   lines: string[] = [];
   readerChunks: ReaderChunk[] = [];
@@ -209,12 +211,39 @@ export class SnapshotViewerComponent implements OnDestroy {
     this.editGnollHackVersion = this.snapshot.sourceGnollHackVersion || '';
     this.editDigestText = this.snapshot.digestText || '';
     this.editError = null;
+    this.regenerateStatus = '';
     this.isEditing = true;
   }
 
   cancelEdit() {
     this.isEditing = false;
     this.editError = null;
+  }
+
+  /* The rebuilt digest is saved server-side, so it is put on the snapshot as well as in the
+     textarea: the disclosure then shows it even when the form is cancelled. */
+  regenerateDigest() {
+    if (!this.snapshot || this.regeneratingDigest) return;
+    this.regeneratingDigest = true;
+    this.regenerateStatus = '';
+    this.editError = null;
+
+    this.benchmarkService.regenerateSnapshotDigest(this.snapshot.id).subscribe({
+      next: (updated) => {
+        this.editDigestText = updated.digestText || '';
+        this.snapshot = { ...this.snapshot!, digestText: updated.digestText };
+        this.regeneratingDigest = false;
+        this.regenerateStatus = `Digest rebuilt from the board (${this.editDigestText.length} characters).`;
+        this.snapshotUpdated.emit(this.snapshot);
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.regeneratingDigest = false;
+        this.regenerateStatus = '';
+        this.editError = err?.error?.message || err?.error || 'Failed to regenerate the board digest.';
+        this.cdr.detectChanges();
+      }
+    });
   }
 
   saveEdit() {

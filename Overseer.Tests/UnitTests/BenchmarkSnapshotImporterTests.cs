@@ -177,19 +177,31 @@ public class BenchmarkSnapshotImporterTests
     }
 
     [Fact]
-    public async Task DigestText_IsSeeded_AndCutAtLineBoundary()
+    public async Task DigestText_IsTheDeterministicExtractOfTheStoredBoardText()
     {
         using var db = CreateDbContext();
         var importer = new BenchmarkSnapshotImporter(db);
 
-        string firstPart = new string('x', 1500);
-        string secondPart = new string('y', 700);
-        string fullText = firstPart + "\n" + secondPart;
+        string fullText = string.Join("\n",
+            "GnollHack Version 4.1.2 built Sep 14 2026 21:03:11",
+            "",
+            "Tommi2, neutral female gnoll Ranger",
+            "",
+            "Status:",
+            "Dlvl:3 $:412 HP:31(44) Pw:12(12) AC:5 Xp:5/241 T:2184",
+            "",
+            "Map grid:",
+            new string('-', 2500),
+            "",
+            "Inventory:",
+            "a - an oriental silk sack");
 
         var (board, _) = await importer.FromClientTextAsync(fullText, new BoardMetadata("digest_test"), TestContext.Current.CancellationToken);
 
-        Assert.True(board.DigestText!.Length <= 2000);
-        Assert.Equal(firstPart, board.DigestText);
+        Assert.Equal(BenchmarkSnapshotDigestBuilder.Build(board.SanitizedText), board.DigestText);
+        Assert.True(board.DigestText!.Length <= BenchmarkSnapshotDigestBuilder.MaxDigestChars);
+        Assert.Contains("Dlvl:3 $:412 HP:31(44)", board.DigestText);
+        Assert.DoesNotContain("Map grid:", board.DigestText);
     }
 
     [Fact]

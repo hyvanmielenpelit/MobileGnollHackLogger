@@ -20,8 +20,7 @@ public static class BenchmarkGenerationPrompt
         string instructions,
         BenchmarkDifficulty difficulty,
         int count,
-        IReadOnlyList<string>? existingQuestions = null,
-        bool isFirstBand = false)
+        IReadOnlyList<string>? existingQuestions = null)
     {
         var sb = new StringBuilder();
 
@@ -99,21 +98,11 @@ public static class BenchmarkGenerationPrompt
 **SOURCE** — board; C source: src/mhit.c (mind flayer attack), include/you.c (prayer safety)");
         sb.AppendLine();
 
-        if (isFirstBand)
-        {
-            sb.AppendLine("BOARD DIGEST REQUIREMENT:");
-            sb.AppendLine("Because this is the first band call, you MUST also provide a \"boardDigest\" field: a comprehensive summary of the entire game board of at most 2000 characters, summarizing player status, immediate environment, threats, key resources, and tactical context.");
-            sb.AppendLine();
-        }
-
         sb.AppendLine("OUTPUT INSTRUCTIONS:");
         sb.AppendLine("Respond ONLY with valid strict JSON matching the schema below. No conversational prose, no Markdown fences.");
         sb.AppendLine();
         sb.AppendLine("--- JSON SCHEMA ---");
-        if (isFirstBand)
-        {
-            sb.AppendLine(@"{
-  ""boardDigest"": ""Summary of the game state up to 2000 chars..."",
+        sb.AppendLine(@"{
   ""questions"": [
     {
       ""questionText"": ""What is the most urgent threat this turn and what should I do?"",
@@ -121,18 +110,6 @@ public static class BenchmarkGenerationPrompt
     }
   ]
 }");
-        }
-        else
-        {
-            sb.AppendLine(@"{
-  ""questions"": [
-    {
-      ""questionText"": ""What is the most urgent threat this turn and what should I do?"",
-      ""expectedPoints"": ""**BOARD FACTS**\n- HP is 12/60...\n\n**REQUIRED**\n- ...\n\n**CRITICAL ERROR**\n- ...\n\n**SCOPE**\n- ...\n\n**FORM** (not graded — presentation note only)\n- ...\n\n**SOURCE** — board""
-    }
-  ]
-}");
-        }
 
         return sb.ToString();
     }

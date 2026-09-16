@@ -113,4 +113,29 @@ public class BenchmarkDifficultyBandsTests
         Assert.DoesNotContain("Author Band:", prompt);
         Assert.Contains("deliberately withheld", prompt);
     }
+
+    [Fact]
+    public void DifficultyPrompt_ExplainsWhatTheDigestOmits()
+    {
+        // The digest is an extract, not the board: the assessor must not read a missing map grid
+        // as a board that has none.
+        var questions = new[]
+        {
+            new BenchmarkDifficultyQuestionItem
+            {
+                Id = 7,
+                OrderIndex = 1,
+                QuestionText = "Which monster is adjacent?",
+                AuthorBand = BenchmarkDifficulty.Simple
+            }
+        };
+
+        var withDigest = BenchmarkDifficultyPrompt.BuildPrompt(
+            "Suite", questions, "Board", "Board digest (extract of the snapshot):\nStatus:\nHP:31(44)");
+        var withoutDigest = BenchmarkDifficultyPrompt.BuildPrompt("Suite", questions);
+
+        Assert.Contains("This digest is an extract of the board the candidate will see in full", withDigest);
+        Assert.Contains("The map grid and symbol legend are omitted here", withDigest);
+        Assert.DoesNotContain("This digest is an extract", withoutDigest);
+    }
 }

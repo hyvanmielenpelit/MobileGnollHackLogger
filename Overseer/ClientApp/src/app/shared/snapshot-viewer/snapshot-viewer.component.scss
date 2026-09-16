@@ -83,6 +83,19 @@
   }
 }
 
+.digest-regenerate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+
+  .digest-regenerate-status {
+    font-size: 0.8rem;
+    opacity: 0.85;
+  }
+}
+
 .reader-facts {
   display: flex;
   flex-wrap: wrap;

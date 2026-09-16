@@ -83,7 +83,6 @@ public class BenchmarkGenerationService
             string apiKey = _cryptoService.Decrypt(config.EncryptedApiKey!, config.ApiKeyNonce!, config.ApiKeyTag!, "SYSTEM_API_KEY");
 
             bool hasErrors = false;
-            bool isFirstBand = true;
 
             foreach (var item in job.Items)
             {
@@ -104,8 +103,7 @@ public class BenchmarkGenerationService
                     job.Instructions,
                     item.Difficulty,
                     item.RequestedCount,
-                    existingQuestions,
-                    isFirstBand: isFirstBand);
+                    existingQuestions);
 
                 int maxOutputTokens = Math.Max(config.MaxOutputTokens ?? 8192, 8192);
                 var (runResult, sw, terminalError) = await ExecuteModelCallAsync(config, apiKey, prompt, maxOutputTokens, ct);
@@ -180,13 +178,6 @@ public class BenchmarkGenerationService
                     continue;
                 }
 
-                if (isFirstBand && !string.IsNullOrWhiteSpace(parseResult.BoardDigest))
-                {
-                    suite.GameSnapshot.DigestText = parseResult.BoardDigest;
-                    suite.GameSnapshot.ModifiedAtUtc = DateTime.UtcNow;
-                    job.AddLog("Updated board digest from generated response.");
-                }
-
                 int maxOrder = suite.Questions.Count > 0 ? suite.Questions.Max(q => q.OrderIndex) : 0;
                 foreach (var qItem in parseResult.Questions)
                 {
@@ -223,8 +214,6 @@ public class BenchmarkGenerationService
                 {
                     hasErrors = true;
                 }
-
-                isFirstBand = false;
             }
 
             job.SetStatus(hasErrors

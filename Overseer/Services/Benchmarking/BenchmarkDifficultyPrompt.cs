@@ -51,6 +51,7 @@ public static class BenchmarkDifficultyPrompt
         if (!string.IsNullOrWhiteSpace(boardDigest))
         {
             sb.AppendLine("--- GAME CONTEXT BOARD (DIGEST) ---");
+            sb.AppendLine("This digest is an extract of the board the candidate will see in full: status, background, recent messages, pets, notable locations and inventory. The map grid and symbol legend are omitted here but are present on the candidate's board.");
             if (!string.IsNullOrWhiteSpace(boardName))
             {
                 sb.AppendLine($"Board Name: {boardName}");

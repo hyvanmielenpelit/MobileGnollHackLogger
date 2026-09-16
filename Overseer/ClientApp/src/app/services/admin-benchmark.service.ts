@@ -1811,6 +1811,11 @@ export class AdminBenchmarkService {
     return this.http.put<BenchmarkGameSnapshotDto>(`/api/admin/benchmark/snapshots/${id}`, req);
   }
 
+  /** Rebuilds the digest from the board's own text; the board text itself is untouched. */
+  regenerateSnapshotDigest(id: number): Observable<BenchmarkGameSnapshotDto> {
+    return this.http.post<BenchmarkGameSnapshotDto>(`/api/admin/benchmark/snapshots/${id}/regenerate-digest`, {});
+  }
+
   deleteSnapshot(id: number): Observable<void> {
     return this.http.delete<void>(`/api/admin/benchmark/snapshots/${id}`);
   }

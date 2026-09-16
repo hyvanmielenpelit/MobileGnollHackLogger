@@ -68,8 +68,15 @@
             <textarea id="editBoardNotes" class="gh-input" [(ngModel)]="editNotes" rows="3" placeholder="Context facts: HP, level, key items, adjacent monsters"></textarea>
           </div>
           <div class="form-group">
-            <label for="editBoardDigest">Board Digest (summary for difficulty assessor, max 2000 chars)</label>
-            <textarea id="editBoardDigest" class="gh-input" [(ngModel)]="editDigestText" rows="3" maxlength="2000"></textarea>
+            <label for="editBoardDigest">Board digest (extract the difficulty assessor reads; max 6,000 chars)</label>
+            <textarea id="editBoardDigest" class="gh-input" [(ngModel)]="editDigestText" rows="8" maxlength="6000"></textarea>
+            <div class="digest-regenerate">
+              <button type="button" class="btn-gh btn-gh-small" (click)="regenerateDigest()"
+                      [disabled]="regeneratingDigest || savingEdit">
+                {{ regeneratingDigest ? 'Regenerating...' : 'Regenerate from board' }}
+              </button>
+              <span class="digest-regenerate-status" aria-live="polite">{{ regenerateStatus }}</span>
+            </div>
           </div>
           <div class="dialog-actions">
             <button type="button" class="btn-gh btn-gh-cancel" (click)="cancelEdit()" [disabled]="savingEdit">Cancel</button>
@@ -118,7 +125,7 @@
         }
         @if (snapshot.digestText) {
           <details class="reader-disclosure digest-disclosure">
-            <summary>Digest (assessor summary) · {{ snapshot.digestText.length | number }} chars</summary>
+            <summary>Digest (difficulty assessor extract) · {{ snapshot.digestText.length | number }} chars</summary>
             <pre class="disclosure-pre">{{ snapshot.digestText }}</pre>
           </details>
         }

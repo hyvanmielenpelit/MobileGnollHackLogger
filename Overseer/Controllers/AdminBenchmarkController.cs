@@ -1527,8 +1527,8 @@ public class AdminBenchmarkController : ControllerBase
 
         if (request.DigestText != null)
         {
-            board.DigestText = request.DigestText.Trim().Length > 2000
-                ? request.DigestText.Trim()[..2000]
+            board.DigestText = request.DigestText.Trim().Length > BenchmarkSnapshotDigestBuilder.MaxDigestChars
+                ? request.DigestText.Trim()[..BenchmarkSnapshotDigestBuilder.MaxDigestChars]
                 : request.DigestText.Trim();
         }
 
@@ -1537,6 +1537,21 @@ public class AdminBenchmarkController : ControllerBase
             board.SourceGnollHackVersion = request.SourceGnollHackVersion.Trim();
         }
 
+        board.ModifiedAtUtc = DateTime.UtcNow;
+        await _dbContext.SaveChangesAsync(ct);
+
+        var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.GameSnapshotId == id, ct);
+        return Ok(ToSnapshotDto(board, suite?.Id, suite?.Name));
+    }
+
+    /// <summary>Rebuilds the digest from the board's own text. The board text is never touched.</summary>
+    [HttpPost("snapshots/{id}/regenerate-digest")]
+    public async Task<IActionResult> RegenerateSnapshotDigest(long id, CancellationToken ct)
+    {
+        var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
+        if (board == null) return NotFound();
+
+        board.DigestText = BenchmarkSnapshotDigestBuilder.Build(board.SanitizedText);
         board.ModifiedAtUtc = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(ct);
 

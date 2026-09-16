@@ -12,7 +12,13 @@ public class BenchmarkGameSnapshot
 
     public string SanitizedText { get; set; } = default!;
 
-    [MaxLength(2000)]
+    /// <summary>
+    /// The extract the difficulty assessor reads. The literal matches
+    /// <c>BenchmarkSnapshotDigestBuilder.MaxDigestChars</c> in the Overseer project, which cannot
+    /// be referenced here: a data annotation needs a compile-time constant, and this project does
+    /// not reference Overseer.
+    /// </summary>
+    [MaxLength(6000)]
     public string? DigestText { get; set; }
 
     public int CharCount { get; set; }

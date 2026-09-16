@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed, fakeAsync, flushMicrotasks, tick } from '@angular/core/testing';
 import { SnapshotViewerComponent } from './snapshot-viewer.component';
 import { AdminBenchmarkService, BenchmarkGameSnapshotDto } from '../../services/admin-benchmark.service';
-import { of } from 'rxjs';
+import { Subject, of } from 'rxjs';
 
 /* A board shaped like a real snapshot: prose, a legend line naming the hero, the map block the
    way dump_map_ai() writes it, then filler to 250 lines. The hero '@' is at <10,13>. */
@@ -49,7 +49,8 @@ describe('SnapshotViewerComponent', () => {
     mockBenchmarkService = jasmine.createSpyObj('AdminBenchmarkService', [
       'getSnapshot',
       'getSnapshotTextUrl',
-      'updateSnapshot'
+      'updateSnapshot',
+      'regenerateSnapshotDigest'
     ]);
 
     mockBenchmarkService.getSnapshot.and.returnValue(of({
@@ -155,6 +156,73 @@ describe('SnapshotViewerComponent', () => {
       fixture.detectChanges();
       expect(liveText('.copy-sha-status')).toBe('');
     }));
+  });
+
+  describe('the digest regenerate action', () => {
+    let host: HTMLElement;
+
+    const rebuilt = 'Board digest (extract of the snapshot; the map grid and symbol legend are omitted):\nStatus:\nHP:31(44)';
+
+    function openEditing() {
+      mockBenchmarkService.getSnapshot.and.returnValue(
+        of(snapshotWith(buildBoard(), { digestText: 'the old prefix digest' })));
+      component.open(1);
+      fixture.detectChanges();
+      host = fixture.nativeElement as HTMLElement;
+      clickButtonNamed('Edit Metadata');
+      fixture.detectChanges();
+    }
+
+    /* The form is opened and closed by clicking its own buttons: a property set from the test
+       leaves the view unchecked, exactly as it would in the running app. */
+    function clickButtonNamed(name: string) {
+      Array.from(host.querySelectorAll('button'))
+        .find(b => (b.textContent ?? '').trim() === name)!
+        .click();
+      fixture.detectChanges();
+    }
+
+    function regenerateButton(): HTMLButtonElement {
+      return host.querySelector<HTMLButtonElement>('.digest-regenerate button')!;
+    }
+
+    afterEach(() => component.viewerDialog?.nativeElement?.close());
+
+    it('rebuilds the digest and shows it in the textarea and the disclosure', fakeAsync(() => {
+      openEditing();
+      mockBenchmarkService.regenerateSnapshotDigest.and.returnValue(
+        of(snapshotWith(buildBoard(), { digestText: rebuilt })));
+
+      regenerateButton().click();
+      flushMicrotasks();
+      fixture.detectChanges();
+
+      expect(mockBenchmarkService.regenerateSnapshotDigest).toHaveBeenCalledWith(1);
+      expect(host.querySelector<HTMLTextAreaElement>('#editBoardDigest')!.value).toBe(rebuilt);
+      expect(component.snapshot!.digestText).toBe(rebuilt);
+
+      clickButtonNamed('Cancel');
+      const disclosure = host.querySelector<HTMLDetailsElement>('details.digest-disclosure')!;
+      expect(disclosure.textContent).toContain('the map grid and symbol legend are omitted');
+    }));
+
+    it('disables the button while the request is pending', () => {
+      openEditing();
+      const pending = new Subject<BenchmarkGameSnapshotDto>();
+      mockBenchmarkService.regenerateSnapshotDigest.and.returnValue(pending.asObservable());
+
+      regenerateButton().click();
+      fixture.detectChanges();
+      expect(regenerateButton().disabled).toBeTrue();
+      expect(regenerateButton().textContent!.trim()).toBe('Regenerating...');
+
+      pending.next(snapshotWith(buildBoard(), { digestText: rebuilt }));
+      pending.complete();
+      fixture.detectChanges();
+
+      expect(regenerateButton().disabled).toBeFalse();
+      expect(regenerateButton().textContent!.trim()).toBe('Regenerate from board');
+    });
   });
 
   describe('the reader', () => {
