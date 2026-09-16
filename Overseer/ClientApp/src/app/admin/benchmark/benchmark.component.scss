@@ -1707,11 +1707,13 @@
   }
 }
 
+/* Projected into the description editor's label row; sits at the end of that row. */
 .suite-desc-tools {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
-  margin-bottom: 6px;
+  margin-inline-start: auto;
 
   .form-hint { margin-top: 0; }
 }

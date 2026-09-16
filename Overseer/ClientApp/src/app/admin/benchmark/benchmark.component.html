@@ -2863,25 +2863,26 @@
         <input id="suiteNameInput" type="text" class="gh-input" [(ngModel)]="suiteForm.name" placeholder="e.g. Core Roguelike Mechanics">
       </div>
       <div class="form-group">
-        <div class="suite-desc-tools">
-          <button type="button" class="btn-ghost" (click)="openDescriptionGeneration()"
-                  aria-haspopup="dialog"
-                  [disabled]="!editingSuiteId"
-                  [attr.aria-describedby]="editingSuiteId ? null : 'suiteDescGenerateHint'">
-            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-            Generate with AI
-          </button>
-          @if (!editingSuiteId) {
-            <span id="suiteDescGenerateHint" class="form-hint">Save the suite first, then generate a description from its questions.</span>
-          }
-        </div>
         <app-markdown-editor #suiteDescriptionEditor
           inputId="suiteDescInput"
           label="Description (Optional)"
           hint="Markdown supported: headings, lists, tables, code."
           placeholder="Description of the test suite"
           [minRows]="10" [fill]="true"
-          [(value)]="suiteDescriptionValue" />
+          [(value)]="suiteDescriptionValue">
+          <div mdEditorActions class="suite-desc-tools">
+            <button type="button" class="btn-ghost" (click)="openDescriptionGeneration()"
+                    aria-haspopup="dialog"
+                    [disabled]="!editingSuiteId"
+                    [attr.aria-describedby]="editingSuiteId ? null : 'suiteDescGenerateHint'">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+              Generate with AI
+            </button>
+            @if (!editingSuiteId) {
+              <span id="suiteDescGenerateHint" class="form-hint">Save the suite first, then generate a description from its questions.</span>
+            }
+          </div>
+        </app-markdown-editor>
       </div>
     </div>
     <div class="dialog-footer">

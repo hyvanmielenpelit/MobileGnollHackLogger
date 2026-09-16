@@ -21,6 +21,19 @@
   min-block-size: 0;
 }
 
+/* Label at the start, any projected [mdEditorActions] at the end; wraps on a narrow host. */
+.md-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+
+  > label {
+    margin: 0;
+  }
+}
+
 .md-editor-hint {
   font-size: 0.85em;
   color: #aaa;

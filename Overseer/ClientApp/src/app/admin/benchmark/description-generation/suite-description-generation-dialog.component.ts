@@ -33,6 +33,7 @@ import {
 } from '../../../utils/model-badge-format.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
+import { MarkdownPipe } from '../../../chat/markdown.pipe';
 
 /**
  * The operator instructions a new generation starts with. Must stay byte-identical to
@@ -48,6 +49,9 @@ export const DEFAULT_SUITE_DESCRIPTION_INSTRUCTIONS =
 /** The dialog's own outcome of the last (or in-flight) generation request. */
 export type SuiteDescriptionGenerationStatus = 'Idle' | 'Running' | 'Completed' | 'Failed' | 'Cancelled';
 
+/** Which pane of the generated description is shown: the source, or the rendered HTML. */
+export type SuiteDescriptionResultMode = 'markdown' | 'preview';
+
 /**
  * A single synchronous model call that drafts a suite description from its questions and,
  * optionally, its game snapshot. Nothing is saved here: the result lands in the description
@@ -59,7 +63,7 @@ export type SuiteDescriptionGenerationStatus = 'Idle' | 'Running' | 'Completed' 
 @Component({
   selector: 'app-suite-description-generation-dialog',
   standalone: true,
-  imports: [CommonModule, FormsModule, ProviderBadgeComponent],
+  imports: [CommonModule, FormsModule, ProviderBadgeComponent, MarkdownPipe],
   templateUrl: './suite-description-generation-dialog.component.html',
   styleUrls: ['./suite-description-generation-dialog.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -108,6 +112,8 @@ export class SuiteDescriptionGenerationDialogComponent implements OnInit, OnChan
   /** Set once *Use this description* has emitted the result; guards the close confirmation. */
   applied = false;
   elapsedMs = 0;
+  readonly resultModes: SuiteDescriptionResultMode[] = ['markdown', 'preview'];
+  resultMode: SuiteDescriptionResultMode = 'preview';
 
   // --- Diagnostics ---------------------------------------------------------------------------
   diagnosticsOpen = false;
@@ -183,6 +189,7 @@ export class SuiteDescriptionGenerationDialogComponent implements OnInit, OnChan
     this.dialogError = null;
     this.applied = false;
     this.elapsedMs = 0;
+    this.resultMode = 'preview';
     this.diagnosticsOpen = false;
     this.copiedDiagnostics = false;
     this.diagnosticsCopyFailed = false;
@@ -384,10 +391,39 @@ export class SuiteDescriptionGenerationDialogComponent implements OnInit, OnChan
     this.result = null;
     this.dialogError = null;
     this.applied = false;
+    this.resultMode = 'preview';
     this.diagnosticsOpen = false;
     this.lastHttpErrorStatus = null;
     this.lastHttpErrorBody = null;
     this.cdr.markForCheck();
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Generated description view: a two-tab row with the roving-tabindex keyboard model
+  // -------------------------------------------------------------------------------------------
+
+  resultModeLabel(mode: SuiteDescriptionResultMode): string {
+    return mode === 'markdown' ? 'Markdown' : 'Preview';
+  }
+
+  selectResultMode(mode: SuiteDescriptionResultMode): void {
+    this.resultMode = mode;
+    this.cdr.markForCheck();
+  }
+
+  onResultTabKeydown(event: KeyboardEvent, index: number): void {
+    const modes = this.resultModes;
+    let next = index;
+    if (event.key === 'ArrowRight') next = (index + 1) % modes.length;
+    else if (event.key === 'ArrowLeft') next = (index - 1 + modes.length) % modes.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = modes.length - 1;
+    else return;
+
+    event.preventDefault();
+    this.selectResultMode(modes[next]);
+    this.cdr.detectChanges();
+    document.getElementById(`sdgResult-tab-${this.resultMode}`)?.focus();
   }
 
   useDescription(): void {

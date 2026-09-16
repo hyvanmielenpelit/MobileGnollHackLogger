@@ -1,44 +1,113 @@
 /* Suite description generation dialog.
  *
  * Layout only. The controls themselves (.btn-gh and its variants, .action-btn, .btn-icon-action,
- * .gh-tooltip, .gh-fieldset, .gh-input, .gh-textarea-autosize) and the shared run vocabulary
- * (.job-progress-block, .run-stat-strip, .job-diagnostics, .custom-model-selector and its parts)
- * come from styles.scss and are never redefined here.
+ * .gh-tooltip, .gh-fieldset, .gh-input, .gh-textarea-autosize, .gh-tabs) and the shared run
+ * vocabulary (.job-progress-block, .run-stat-strip, .job-diagnostics, .custom-model-selector and
+ * its parts) come from styles.scss and are never redefined here.
  */
 
 @use '../benchmark-dialog-frame' as frame;
 
 .gh-dialog.sdg-dialog {
-  @include frame.frame(760px);
+  @include frame.frame(880px, true);
+
+  /* A size container so the result panes can be capped by the body's visible height (100cqb),
+     not by its scroll height. */
+  .dialog-body {
+    container-type: size;
+  }
 }
 
 .gh-dialog.sdg-confirm-dialog {
   @include frame.confirm;
 }
 
+/* Two columns on a wide dialog, one on a phone; the picker and the instructions span both. */
 .sdg-setup {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin-bottom: 18px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px 20px;
+  margin-bottom: 16px;
 
   .form-group {
     margin-bottom: 0;
   }
+
+  .sdg-span-all {
+    grid-column: 1 / -1;
+  }
 }
 
 .sdg-instructions {
-  --autosize-min: 4lh;
-  --autosize-max: 16lh;
+  --autosize-min: 3lh;
+  --autosize-max: 10lh;
 }
 
 .sdg-alert {
   margin-bottom: 16px;
 }
 
+/* Result: a Markdown / Preview tab row over two panes. The panes size to their content, capped so
+   that with the body scrolled to the bottom the label, the tab row and the collapsed Diagnostics
+   summary still fit above the footer; the cap tightens further while the diagnostics are open. */
+.sdg-result-group {
+  --sdg-pane-max: 60dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  @supports (block-size: 1cqb) {
+    --sdg-pane-max: max(12rem, calc(100cqb - 140px));
+  }
+}
+
+@supports (block-size: 1cqb) {
+  .dialog-body:has(.job-diagnostics[open]) .sdg-result-group {
+    --sdg-pane-max: max(12rem, calc(100cqb - 470px));
+  }
+}
+
+.sdg-result-panes {
+  border-radius: 4px;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
+  }
+}
+
 .sdg-result {
-  min-height: 12rem;
-  font-family: inherit;
+  field-sizing: content;
+  height: auto;
+  width: 100%;
+  min-block-size: 6rem;
+  max-block-size: var(--sdg-pane-max);
+  resize: vertical;
+  overscroll-behavior: contain;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Same box as .md-editor-preview in the shared editor, so the two previews read alike. */
+.sdg-result-preview {
+  min-block-size: 6rem;
+  max-block-size: var(--sdg-pane-max);
+  padding: 10px 12px;
+  border: 1px solid var(--border-glass);
+  border-radius: 4px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  background: var(--bg-input);
+  font-size: 13px;
+}
+
+.sdg-result,
+.sdg-result-preview {
+  &[hidden] {
+    display: none !important;
+  }
 }
 
 .sdg-estimated {

@@ -1,3 +1,4 @@
+import { Component } from '@angular/core';
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 
 import { MarkdownEditorComponent, computeMarkdownWarnings } from './markdown-editor.component';
@@ -186,5 +187,32 @@ describe('MarkdownEditorComponent', () => {
   it('warns once for a table whose header has no separator, however many rows follow', () => {
     const table = ['| a | b |', '| 1 | 2 |', '| 3 | 4 |'].join('\n');
     expect(computeMarkdownWarnings(table).map(w => w.id)).toEqual(['table']);
+  });
+});
+
+@Component({
+  standalone: true,
+  imports: [MarkdownEditorComponent],
+  template: `
+    <app-markdown-editor inputId="hosted" label="Hosted label">
+      <button type="button" mdEditorActions class="hosted-action">Act</button>
+    </app-markdown-editor>`
+})
+class ProjectionHostComponent {}
+
+describe('MarkdownEditorComponent content projection', () => {
+  it('renders [mdEditorActions] content in the label row, after the label', async () => {
+    await TestBed.configureTestingModule({ imports: [ProjectionHostComponent] }).compileComponents();
+    const fixture = TestBed.createComponent(ProjectionHostComponent);
+    fixture.detectChanges();
+
+    const head = fixture.nativeElement.querySelector('.md-editor-head') as HTMLElement;
+    expect(head).toBeTruthy();
+    const label = head.querySelector('label')!;
+    const action = head.querySelector('.hosted-action')!;
+    expect(label.textContent).toContain('Hosted label');
+    expect(action).toBeTruthy();
+    // DOM order: label first, then the projected action.
+    expect(label.compareDocumentPosition(action) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

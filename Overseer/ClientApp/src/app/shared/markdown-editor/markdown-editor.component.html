@@ -1,5 +1,8 @@
 <div class="md-editor" [class.md-editor-split]="mode === 'split'" #root>
-  <label [for]="inputId">{{ label }}</label>
+  <div class="md-editor-head">
+    <label [for]="inputId">{{ label }}</label>
+    <ng-content select="[mdEditorActions]"></ng-content>
+  </div>
   @if (hint) {
     <span [id]="inputId + '-hint'" class="md-editor-hint">{{ hint }}</span>
   }

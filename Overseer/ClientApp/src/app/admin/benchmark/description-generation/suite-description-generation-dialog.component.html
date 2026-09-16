@@ -31,7 +31,7 @@
       <fieldset class="gh-fieldset sdg-setup" [disabled]="running">
         <legend>Generator setup</legend>
 
-        <div class="form-group">
+        <div class="form-group sdg-span-all">
           <label id="sdgModelLabel">Generator model *</label>
           <div class="custom-model-selector sdg-model-selector">
             <button type="button" id="sdgModelTrigger" class="selector-trigger"
@@ -103,10 +103,10 @@
           </label>
         </div>
 
-        <div class="form-group">
+        <div class="form-group sdg-span-all">
           <label for="sdgInstructions">Instructions</label>
           <textarea id="sdgInstructions" name="sdgInstructions" class="gh-input gh-textarea-autosize sdg-instructions"
-                     rows="8" [(ngModel)]="instructions"></textarea>
+                     rows="4" [(ngModel)]="instructions"></textarea>
           <span class="form-hint">Tell the generator what to emphasize. The Markdown format is fixed and not affected by this text.</span>
         </div>
       </fieldset>
@@ -179,9 +179,27 @@
       }
 
       @if (result?.description) {
-        <div class="form-group">
+        <div class="form-group sdg-result-group">
           <label for="sdgResult">Generated description</label>
-          <textarea id="sdgResult" readonly class="gh-input sdg-result" [value]="result?.description ?? ''"></textarea>
+          <div class="gh-tabs gh-tabs-secondary" role="tablist" aria-label="Generated description view">
+            @for (m of resultModes; track m; let i = $index) {
+              <button type="button" role="tab" class="gh-tab"
+                      [id]="'sdgResult-tab-' + m"
+                      aria-controls="sdgResult-panel"
+                      [attr.aria-selected]="resultMode === m"
+                      [attr.tabindex]="resultMode === m ? 0 : -1"
+                      (keydown)="onResultTabKeydown($event, i)"
+                      (click)="selectResultMode(m)">{{ resultModeLabel(m) }}</button>
+            }
+          </div>
+          <div role="tabpanel" id="sdgResult-panel" class="sdg-result-panes"
+               [attr.aria-labelledby]="'sdgResult-tab-' + resultMode" tabindex="0">
+            <textarea id="sdgResult" readonly class="gh-input sdg-result"
+                      [hidden]="resultMode === 'preview'"
+                      [value]="result?.description ?? ''"></textarea>
+            <div class="markdown-body sdg-result-preview" [hidden]="resultMode === 'markdown'"
+                 [innerHTML]="(result?.description ?? '') | markdown"></div>
+          </div>
         </div>
       }
 
@@ -225,7 +243,10 @@
         @if (status === 'Completed' && result?.description) {
           <button type="button" class="btn-gh sdg-use-btn" (click)="useDescription()">Use this description</button>
         }
-        <button type="button" class="btn-ghost sdg-again-btn" (click)="generateAgain()">Generate again</button>
+        <button type="button" class="btn-gh sdg-again-btn" (click)="generateAgain()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+          Generate again
+        </button>
         <button type="button" class="btn-gh btn-gh-cancel" (click)="requestClose()">Close</button>
       } @else {
         <button type="button" class="btn-gh btn-gh-cancel" (click)="requestClose()">Close</button>

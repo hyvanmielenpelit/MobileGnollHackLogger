@@ -179,6 +179,25 @@ describe('SuiteDescriptionGenerationDialogComponent', () => {
     expect(query('.run-stat-strip')!.textContent).toContain('$0.0123');
     expect(query('.run-stat-strip')!.textContent).toContain('1m 00s');
 
+    // Preview is the default: the rendered pane is visible, the source pane hidden.
+    expect(query('#sdgResult-tab-preview')!.getAttribute('aria-selected')).toBe('true');
+    const preview = query<HTMLElement>('.sdg-result-preview')!;
+    expect(preview.hasAttribute('hidden')).toBeFalse();
+    // Heading level is the pipe's business; the preview only has to render it as a heading.
+    const headings = Array.from(preview.querySelectorAll('h1, h2, h3')).map(h => h.textContent ?? '');
+    expect(headings.some(text => text.includes('Draft description'))).toBeTrue();
+    expect(resultBox.hasAttribute('hidden')).toBeTrue();
+
+    click('#sdgResult-tab-markdown');
+    expect(query('#sdgResult-tab-markdown')!.getAttribute('aria-selected')).toBe('true');
+    expect(preview.hasAttribute('hidden')).toBeTrue();
+    expect(resultBox.hasAttribute('hidden')).toBeFalse();
+
+    // Generate again is the plain gold image button, never a ghost button in a footer.
+    const again = query<HTMLButtonElement>('.sdg-again-btn')!;
+    expect(again.classList.contains('btn-gh')).toBeTrue();
+    expect(again.classList.contains('btn-ghost')).toBeFalse();
+
     click('.sdg-use-btn');
 
     expect(generated).toHaveBeenCalledWith('## Draft description\n\nSome generated text.');
@@ -238,6 +257,19 @@ describe('SuiteDescriptionGenerationDialogComponent', () => {
     expect(query<HTMLDialogElement>('dialog.sdg-dialog')!.open).toBeFalse();
     expect(closed).toHaveBeenCalled();
     expect(subject.observed).toBeFalse();
+  });
+
+  it('should move between the result tabs with the arrow keys and follow with focus', () => {
+    open();
+    click('.sdg-start-btn');
+
+    const previewTab = query<HTMLButtonElement>('#sdgResult-tab-preview')!;
+    previewTab.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    fixture.detectChanges();
+
+    expect(component.resultMode).toBe('markdown');
+    expect(query('#sdgResult-tab-markdown')!.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(query('#sdgResult-tab-markdown'));
   });
 
   it('should keep the default instructions non-empty', () => {

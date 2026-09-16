@@ -324,8 +324,9 @@ export class MarkdownPipe implements PipeTransform {
             // Normal non-table line
 
             // Fix missing newlines before headings (e.g. LLM outputs "TEXT#### HEADING")
-            // Only apply if the # is preceded by a non-newline character and followed by a space
-            line = line.replace(/([^\n])(#{1,6}\s+)/g, (match, p1, p2, offset, str) => {
+            // Only apply if the # is preceded by a non-newline, non-hash character and followed by a space;
+            // a line that already starts with its heading marker is left alone
+            line = line.replace(/([^\n#])(#{1,6}\s+)/g, (match, p1, p2, offset, str) => {
               if (p2.trim() === '#') {
                 // Prevent replacing C#, F# by checking if it's a standalone letter before #
                 if (/[a-zA-Z]/.test(p1)) {

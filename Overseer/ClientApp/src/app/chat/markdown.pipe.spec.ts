@@ -20,6 +20,24 @@ describe('MarkdownPipe', () => {
     expect(result).not.toContain('```');
   });
 
+  it('should leave a line that already starts with a heading marker alone', () => {
+    const h2 = pipe.transform('## Title') as string;
+    expect(h2.match(/<h2[^>]*>Title<\/h2>/g)!.length).toBe(1);
+    expect(h2).not.toMatch(/<h1[^>]*>\s*<\/h1>/);
+    expect(h2).not.toContain('<h1');
+
+    const h3 = pipe.transform('### Sub') as string;
+    expect(h3.match(/<h3[^>]*>Sub<\/h3>/g)!.length).toBe(1);
+    expect(h3).not.toContain('<h1');
+    expect(h3).not.toContain('<h2');
+  });
+
+  it('should still split a heading glued to preceding text', () => {
+    const result = pipe.transform('TEXT#### HEADING') as string;
+    expect(result).toContain('TEXT');
+    expect(result).toMatch(/<h4[^>]*>HEADING<\/h4>/);
+  });
+
   it('should render LaTeX display math \\[ ... \\] with KaTeX', () => {
     const input = `The GnollHack score formula is:
 

@@ -3484,14 +3484,16 @@ every stored rubric.
   editor to refine the rubric or verify the question.
 
 ### AI-Generated Suite Descriptions
-The **Edit Benchmark Suite** dialog has a **Generate with AI** button above the description editor.
+The **Edit Benchmark Suite** dialog has a **Generate with AI** button at the end of the description
+editor's label row.
 It is disabled while creating a suite: a suite without an id has no questions to describe, so save it
 first.
 - **The dialog**: pick a benchmark-capable model, optionally edit the instructions (prefilled with
   the default brief: a 120–300 word Markdown description with a lead paragraph and a
   `### Covered Domains` list), and choose whether to include the game snapshot (shown only when the
   suite has one; default on). **Generate** runs one model call and shows an indeterminate progress bar
-  with an elapsed timer; **Cancel** aborts the request. The result shows the description and a stat
+  with an elapsed timer; **Cancel** aborts the request. The result shows the description in a
+  **Preview** tab rendered as HTML, with a **Markdown** tab showing the source, and a stat
   strip: elapsed time, time to first token, prompt, cached, output and reasoning tokens, and the USD
   cost (`—` when no price card resolves, never `$0.0000`).
 - **What the model sees**: the suite name, every question's text and authored difficulty band in
