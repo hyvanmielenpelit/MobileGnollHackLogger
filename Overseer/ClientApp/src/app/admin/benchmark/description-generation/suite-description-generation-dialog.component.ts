@@ -74,6 +74,8 @@ export class SuiteDescriptionGenerationDialogComponent implements OnInit, OnChan
 
   static readonly COPIED_RESET_MS = 2000;
   static readonly TICK_MS = 1000;
+  /** localStorage key holding the id of the last generator model picked in this dialog. */
+  static readonly MODEL_STORAGE_KEY = 'overseer_admin_suite_description_model';
 
   @Input() suiteId: number | null = null;
   @Input() suiteName = '';
@@ -202,12 +204,35 @@ export class SuiteDescriptionGenerationDialogComponent implements OnInit, OnChan
     this.applyDefaultModel();
   }
 
+  /** The remembered model first, when it is still benchmark-capable; then the host default; then the first config. */
   private applyDefaultModel(): void {
     const configs = this.benchmarkCapableConfigs ?? [];
-    if (this.defaultModelConfigId != null && configs.some(c => c.id === this.defaultModelConfigId)) {
+    const stored = this.readStoredModelId();
+    if (stored != null && configs.some(c => c.id === stored)) {
+      this.modelConfigId = stored;
+    } else if (this.defaultModelConfigId != null && configs.some(c => c.id === this.defaultModelConfigId)) {
       this.modelConfigId = this.defaultModelConfigId;
     } else {
       this.modelConfigId = configs[0]?.id ?? null;
+    }
+  }
+
+  private readStoredModelId(): number | null {
+    try {
+      const raw = localStorage.getItem(SuiteDescriptionGenerationDialogComponent.MODEL_STORAGE_KEY);
+      const id = raw == null ? NaN : Number(raw);
+      return Number.isFinite(id) ? id : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private storeModelId(id: number): void {
+    try {
+      localStorage.setItem(SuiteDescriptionGenerationDialogComponent.MODEL_STORAGE_KEY, String(id));
+    } catch {
+      // Storage throws in private-browsing modes. Failing to remember a selection is not worth
+      // surfacing to the operator.
     }
   }
 
@@ -284,6 +309,7 @@ export class SuiteDescriptionGenerationDialogComponent implements OnInit, OnChan
   selectModel(config: SystemAiConfigDto, event?: Event): void {
     event?.preventDefault();
     this.modelConfigId = config.id;
+    this.storeModelId(config.id);
     this.isModelDropdownOpen = false;
     this.cdr.markForCheck();
   }

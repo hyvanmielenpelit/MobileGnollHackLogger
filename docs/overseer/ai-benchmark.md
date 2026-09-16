@@ -3488,7 +3488,9 @@ The **Edit Benchmark Suite** dialog has a **Generate with AI** button at the end
 editor's label row.
 It is disabled while creating a suite: a suite without an id has no questions to describe, so save it
 first.
-- **The dialog**: pick a benchmark-capable model, optionally edit the instructions (prefilled with
+- **The dialog**: pick a benchmark-capable model (the picker remembers the last model chosen in this
+  browser via `localStorage`, falling back to the run panel's assessor when that model is no longer
+  benchmark-capable), optionally edit the instructions (prefilled with
   the default brief: a 120–300 word Markdown description with a lead paragraph and a
   `### Covered Domains` list), and choose whether to include the game snapshot (shown only when the
   suite has one; default on). **Generate** runs one model call and shows an indeterminate progress bar
@@ -3507,6 +3509,9 @@ first.
 - **Endpoint**: `POST /api/admin/benchmark/suites/{id}/description-generation`, synchronous like
   coverage analysis, and gated by the same spend caps (429 when the compliance guard refuses).
 - **Output limit**: `Benchmark:DescriptionMaxOutputTokens` in configuration, default 4096.
+- **Thinking blocks**: a model that emits its reasoning as `<div class="ai-thought">` markup has
+  that block removed before the fence is unwrapped, so neither the preview nor **Use this
+  description** carries it. The raw response in the diagnostics keeps it.
 - **Usage accounting**: each completed call writes one `SystemAiUsageLog` row with `RoleContext = 7`
   (Suite Description). A request cancelled before the provider reported usage is not recorded.
 - **Diagnostics**: the collapsible diagnostics panel has a copy button, and its text carries the

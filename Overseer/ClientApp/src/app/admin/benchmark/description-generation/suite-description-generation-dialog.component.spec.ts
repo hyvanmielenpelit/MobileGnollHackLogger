@@ -106,6 +106,7 @@ describe('SuiteDescriptionGenerationDialogComponent', () => {
   }
 
   beforeEach(async () => {
+    localStorage.removeItem(SuiteDescriptionGenerationDialogComponent.MODEL_STORAGE_KEY);
     serviceMock = jasmine.createSpyObj('AdminBenchmarkService', ['generateSuiteDescription']);
     serviceMock.generateSuiteDescription.and.returnValue(of(buildResult()));
 
@@ -120,6 +121,7 @@ describe('SuiteDescriptionGenerationDialogComponent', () => {
 
   afterEach(() => {
     fixture.destroy();
+    localStorage.removeItem(SuiteDescriptionGenerationDialogComponent.MODEL_STORAGE_KEY);
   });
 
   it('should render the picker with the benchmark-capable configs and preselect the default', () => {
@@ -131,6 +133,34 @@ describe('SuiteDescriptionGenerationDialogComponent', () => {
 
     click('#sdgModelTrigger');
     expect(queryAll('.model-option').length).toBe(2);
+  });
+
+  it('should remember the picked model in localStorage', () => {
+    open();
+
+    click('#sdgModelTrigger');
+    queryAll('.model-option')[1].click();
+    fixture.detectChanges();
+
+    expect(component.modelConfigId).toBe(9);
+    expect(localStorage.getItem(SuiteDescriptionGenerationDialogComponent.MODEL_STORAGE_KEY)).toBe('9');
+  });
+
+  it('should preselect the remembered model over the host default on open', () => {
+    localStorage.setItem(SuiteDescriptionGenerationDialogComponent.MODEL_STORAGE_KEY, '9');
+
+    open();
+
+    expect(component.modelConfigId).toBe(9);
+    expect(query('#sdgModelTrigger .model-name')!.textContent).toContain('Other');
+  });
+
+  it('should fall back to the host default when the remembered model is not benchmark-capable', () => {
+    localStorage.setItem(SuiteDescriptionGenerationDialogComponent.MODEL_STORAGE_KEY, '999');
+
+    open();
+
+    expect(component.modelConfigId).toBe(MODEL_ID);
   });
 
   it('should hide the snapshot checkbox when the suite has no snapshot', () => {

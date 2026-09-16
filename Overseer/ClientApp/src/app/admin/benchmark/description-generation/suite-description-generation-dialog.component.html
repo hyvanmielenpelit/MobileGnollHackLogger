@@ -179,8 +179,8 @@
       }
 
       @if (result?.description) {
-        <div class="form-group sdg-result-group">
-          <label for="sdgResult">Generated description</label>
+        <section class="form-group sdg-result-group" aria-labelledby="sdgResultHeading">
+          <h4 id="sdgResultHeading" class="sdg-result-heading">Generated description</h4>
           <div class="gh-tabs gh-tabs-secondary" role="tablist" aria-label="Generated description view">
             @for (m of resultModes; track m; let i = $index) {
               <button type="button" role="tab" class="gh-tab"
@@ -195,12 +195,13 @@
           <div role="tabpanel" id="sdgResult-panel" class="sdg-result-panes"
                [attr.aria-labelledby]="'sdgResult-tab-' + resultMode" tabindex="0">
             <textarea id="sdgResult" readonly class="gh-input sdg-result"
+                      aria-labelledby="sdgResultHeading"
                       [hidden]="resultMode === 'preview'"
                       [value]="result?.description ?? ''"></textarea>
             <div class="markdown-body sdg-result-preview" [hidden]="resultMode === 'markdown'"
                  [innerHTML]="(result?.description ?? '') | markdown"></div>
           </div>
-        </div>
+        </section>
       }
 
       @if (result || dialogError) {

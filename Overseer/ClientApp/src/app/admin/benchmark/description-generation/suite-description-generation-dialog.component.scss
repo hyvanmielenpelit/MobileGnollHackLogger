@@ -61,6 +61,14 @@
   }
 }
 
+.sdg-result-heading {
+  margin: 4px 0 0;
+  font-family: "Cinzel", serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--title-color);
+}
+
 @supports (block-size: 1cqb) {
   .dialog-body:has(.job-diagnostics[open]) .sdg-result-group {
     --sdg-pane-max: max(12rem, calc(100cqb - 470px));

@@ -187,7 +187,13 @@ public class BenchmarkDescriptionService
                 return result;
             }
 
-            string description = BenchmarkDescriptionPrompt.UnwrapMarkdown(rawText);
+            string visibleText = BenchmarkAnswerSanitizer.StripThoughts(rawText);
+            if (visibleText.Length != rawText.Trim().Length)
+            {
+                AddLog(result, "Removed the model's thinking block from the response.");
+            }
+
+            string description = BenchmarkDescriptionPrompt.UnwrapMarkdown(visibleText);
             if (description.Length == 0)
             {
                 result.Status = "Failed";

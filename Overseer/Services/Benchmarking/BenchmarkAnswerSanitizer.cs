@@ -41,6 +41,17 @@ public static class BenchmarkAnswerSanitizer
                 value.Contains("[Answer truncated", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// Removes every <c>&lt;div class="ai-thought"&gt;</c> block, closed or left open at the end of
+    /// the text, and trims the remainder. Nothing else is touched: no artifact scrubbing, no
+    /// newline collapsing, no flags.
+    /// </summary>
+    public static string StripThoughts(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return string.Empty;
+        return ThoughtDivRegex.Replace(text, string.Empty).Trim();
+    }
+
     public static SanitizedAnswer Sanitize(string? text, BenchmarkArtifactScrubber? scrubber = null)
     {
         if (string.IsNullOrEmpty(text))

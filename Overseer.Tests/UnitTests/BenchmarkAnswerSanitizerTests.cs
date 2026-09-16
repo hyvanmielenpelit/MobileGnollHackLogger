@@ -81,4 +81,49 @@ public class BenchmarkAnswerSanitizerTests
         Assert.Contains("Thinking about silver dragons...", result.ThoughtText);
         Assert.Equal(BenchmarkAnswerFlags.None, result.Flags);
     }
+
+    [Fact]
+    public void StripThoughts_RemovesLeadingClosedBlock()
+    {
+        string raw = "<div class=\"ai-thought\">\n\nI should aim for 120-300 words.\n\n</div>\n\nThis suite evaluates an AI assistant.";
+
+        Assert.Equal("This suite evaluates an AI assistant.", BenchmarkAnswerSanitizer.StripThoughts(raw));
+    }
+
+    [Fact]
+    public void StripThoughts_RemovesUnclosedTrailingBlock()
+    {
+        string raw = "Lead paragraph.\n\n<div class=\"ai-thought\">\nstill thinking";
+
+        Assert.Equal("Lead paragraph.", BenchmarkAnswerSanitizer.StripThoughts(raw));
+    }
+
+    [Fact]
+    public void StripThoughts_ThoughtOnly_ReturnsEmpty()
+    {
+        Assert.Equal(string.Empty, BenchmarkAnswerSanitizer.StripThoughts("<div class=\"ai-thought\">\nonly thoughts\n</div>"));
+    }
+
+    [Fact]
+    public void StripThoughts_NoBlock_TrimsOnly()
+    {
+        Assert.Equal("Plain text.", BenchmarkAnswerSanitizer.StripThoughts("  Plain text.  "));
+    }
+
+    [Fact]
+    public void StripThoughts_NullOrEmpty_ReturnsEmpty()
+    {
+        Assert.Equal(string.Empty, BenchmarkAnswerSanitizer.StripThoughts(null));
+        Assert.Equal(string.Empty, BenchmarkAnswerSanitizer.StripThoughts(string.Empty));
+    }
+
+    [Fact]
+    public void StripThoughts_ThenUnwrapMarkdown_RemovesFenceAfterThought()
+    {
+        string raw = "<div class=\"ai-thought\">\n\nPlanning the description.\n\n</div>\n\n```markdown\n### Covered Domains\n- **A**: b\n```";
+
+        string description = BenchmarkDescriptionPrompt.UnwrapMarkdown(BenchmarkAnswerSanitizer.StripThoughts(raw));
+
+        Assert.Equal("### Covered Domains\n- **A**: b", description);
+    }
 }
