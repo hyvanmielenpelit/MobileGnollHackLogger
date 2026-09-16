@@ -1,0 +1,47 @@
+/* Suite description generation dialog.
+ *
+ * Layout only. The controls themselves (.btn-gh and its variants, .action-btn, .btn-icon-action,
+ * .gh-tooltip, .gh-fieldset, .gh-input, .gh-textarea-autosize) and the shared run vocabulary
+ * (.job-progress-block, .run-stat-strip, .job-diagnostics, .custom-model-selector and its parts)
+ * come from styles.scss and are never redefined here.
+ */
+
+@use '../benchmark-dialog-frame' as frame;
+
+.gh-dialog.sdg-dialog {
+  @include frame.frame(760px);
+}
+
+.gh-dialog.sdg-confirm-dialog {
+  @include frame.confirm;
+}
+
+.sdg-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 18px;
+
+  .form-group {
+    margin-bottom: 0;
+  }
+}
+
+.sdg-instructions {
+  --autosize-min: 4lh;
+  --autosize-max: 16lh;
+}
+
+.sdg-alert {
+  margin-bottom: 16px;
+}
+
+.sdg-result {
+  min-height: 12rem;
+  font-family: inherit;
+}
+
+.sdg-estimated {
+  font-size: 11px;
+  color: #94a3b8;
+}

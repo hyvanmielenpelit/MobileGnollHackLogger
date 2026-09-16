@@ -1258,6 +1258,72 @@ public class BenchmarkCoverageReportDto
     public string? ErrorMessage { get; set; }
 }
 
+public class GenerateSuiteDescriptionRequest
+{
+    public long GeneratorModelConfigurationId { get; set; }
+    public string? Instructions { get; set; }
+    public bool IncludeSnapshot { get; set; } = true;
+
+    /// <summary>When true the response also carries the full prompt and raw response text.</summary>
+    public bool IncludeDebugText { get; set; }
+}
+
+public class SuiteDescriptionLogEntryDto
+{
+    public DateTime TimestampUtc { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public string Severity { get; set; } = "info"; // info | warning | error
+    public string? RawExcerpt { get; set; }
+}
+
+/// <summary>
+/// One model call that drafts a suite description. Nothing is persisted; the operator edits and
+/// saves the text through the ordinary suite update.
+/// </summary>
+public class SuiteDescriptionGenerationResultDto
+{
+    public long SuiteId { get; set; }
+    public string SuiteName { get; set; } = string.Empty;
+    public int QuestionCount { get; set; }
+    public bool SnapshotIncluded { get; set; }
+    public string? GameSnapshotName { get; set; }
+    public int SnapshotCharCount { get; set; }
+    public int PromptCharCount { get; set; }
+
+    public long GeneratorConfigId { get; set; }
+    public string? GeneratorDisplayName { get; set; }
+    public string? GeneratorProvider { get; set; }
+    public string? GeneratorModelId { get; set; }
+    public string? GeneratorThinkingLevel { get; set; }
+    public string? GeneratorReasoningMode { get; set; }
+    public string? GeneratorServiceTier { get; set; }
+    public string? ActualServiceTier { get; set; }
+
+    public DateTime StartedAtUtc { get; set; }
+    public DateTime CompletedAtUtc { get; set; }
+    public long DurationMs { get; set; }
+    public int? TimeToFirstTokenMs { get; set; }
+    public int ModelCalls { get; set; }
+
+    public int PromptTokens { get; set; }          // total input, as reported by the provider
+    public int UncachedInputTokens { get; set; }
+    public int CacheReadTokens { get; set; }
+    public int CacheCreationTokens { get; set; }
+    public int OutputTokens { get; set; }
+    public int ReasoningTokens { get; set; }
+    public bool TokensEstimated { get; set; }      // true when provider usage was absent
+    public decimal? CostUsd { get; set; }          // null when no price card resolves
+    public string? PricingSource { get; set; }     // "catalog" | "custom" | null
+
+    public string Status { get; set; } = "Completed"; // Completed | Failed | Cancelled
+    public string? Description { get; set; }
+    public string? ErrorMessage { get; set; }
+    public List<SuiteDescriptionLogEntryDto> Log { get; set; } = new();
+
+    public string? PromptText { get; set; }        // only when IncludeDebugText
+    public string? RawResponseText { get; set; }   // only when IncludeDebugText
+}
+
 public class BenchmarkRunSummaryDto
 {
     public long Id { get; set; }

@@ -49,6 +49,7 @@ import { SuiteHealthComponent, SuiteHealthTab } from './suite-health/suite-healt
 import { MultiRunComponent } from './multi-run/multi-run.component';
 import { MultiRunProgressDialogComponent } from './multi-run/multi-run-progress-dialog.component';
 import { QuestionGenerationDialogComponent } from './question-generation/question-generation-dialog.component';
+import { SuiteDescriptionGenerationDialogComponent } from './description-generation/suite-description-generation-dialog.component';
 import { BenchmarkCostPanelComponent } from './cost-panel/benchmark-cost-panel.component';
 import { SnapshotViewerComponent } from '../../shared/snapshot-viewer/snapshot-viewer.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
@@ -230,7 +231,7 @@ interface BenchmarkRunSettings {
     CommonModule, DecimalPipe, FormsModule, CollapsibleMarkdownComponent, MarkdownEditorComponent,
     SuiteHealthComponent,
     SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent,
-    QuestionGenerationDialogComponent,
+    QuestionGenerationDialogComponent, SuiteDescriptionGenerationDialogComponent,
     SortHeaderComponent, TablePagerComponent, ModelComparisonComponent,
     ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, ProviderBadgeComponent,
     QuestionYamlImportDialogComponent, QuestionYamlHelpDialogComponent, SnapshotUploadDialogComponent
@@ -751,6 +752,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   // Suite Dialogs
   editingSuiteId: number | null = null;
   suiteForm: CreateBenchmarkSuiteRequest = { name: '', description: '' };
+  private suiteFormBaseline: { name: string; description: string } = { name: '', description: '' };
+  descriptionGenerationVisible = false;
+  descriptionGenerationSuite: BenchmarkSuiteDto | null = null;
 
   // Questions Dialog
   currentSuiteForQuestions: BenchmarkSuiteDto | null = null;
@@ -2187,16 +2191,65 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   openCreateSuite() {
     this.editingSuiteId = null;
+    this.descriptionGenerationSuite = null;
     this.suiteForm = { name: '', description: '' };
+    this.setSuiteFormBaseline();
     this.suiteDescriptionEditor?.resetToWrite();
     this.suiteDialog?.nativeElement.showModal();
   }
 
   openEditSuite(suite: BenchmarkSuiteDto) {
     this.editingSuiteId = suite.id;
+    this.descriptionGenerationSuite = suite;
     this.suiteForm = { name: suite.name, description: suite.description };
+    this.setSuiteFormBaseline();
     this.suiteDescriptionEditor?.resetToWrite();
     this.suiteDialog?.nativeElement.showModal();
+  }
+
+  private setSuiteFormBaseline() {
+    this.suiteFormBaseline = { name: this.suiteForm.name, description: this.suiteForm.description ?? '' };
+  }
+
+  get suiteFormDirty(): boolean {
+    return this.suiteForm.name !== this.suiteFormBaseline.name
+      || (this.suiteForm.description ?? '') !== this.suiteFormBaseline.description;
+  }
+
+  requestCloseSuiteDialog() {
+    if (!this.suiteFormDirty) {
+      this.suiteDialog?.nativeElement.close();
+      return;
+    }
+    this.openConfirmDialog({
+      title: 'Discard unsaved changes?',
+      message: `'${this.suiteForm.name || 'This suite'}' has unsaved changes to its name or description. Close without saving?`,
+      buttonText: 'Discard changes',
+      buttonClass: 'btn-gh btn-gh-delete',
+      icon: 'none',
+      action: () => this.suiteDialog?.nativeElement.close()
+    });
+  }
+
+  // Escape fires cancel on a native dialog; the dialog stays open until the guard decides.
+  onSuiteDialogCancel(event: Event) {
+    event.preventDefault();
+    this.requestCloseSuiteDialog();
+  }
+
+  openDescriptionGeneration() {
+    if (!this.editingSuiteId) return;
+    this.descriptionGenerationVisible = true;
+  }
+
+  onDescriptionGenerationClosed() {
+    this.descriptionGenerationVisible = false;
+  }
+
+  onDescriptionGenerated(text: string) {
+    this.suiteDescriptionValue = text;
+    this.suiteDescriptionEditor?.resetToWrite();
+    this.cdr.detectChanges();
   }
 
   saveSuite() {

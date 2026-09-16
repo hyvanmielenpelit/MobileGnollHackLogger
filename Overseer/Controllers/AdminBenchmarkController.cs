@@ -1221,6 +1221,51 @@ public class AdminBenchmarkController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// Drafts a suite description with an explicitly selected model and returns it with its timing,
+    /// usage, cost and log. Nothing is written to the suite: the operator edits the draft and saves
+    /// it through the ordinary suite update. A cancelled or failed generation still returns 200 so
+    /// the client can show its diagnostics.
+    /// </summary>
+    [HttpPost("suites/{id}/description-generation")]
+    public async Task<IActionResult> GenerateSuiteDescription(
+        long id,
+        [FromBody] GenerateSuiteDescriptionRequest request,
+        [FromServices] BenchmarkDescriptionService descriptionService,
+        CancellationToken ct)
+    {
+        if (request == null || request.GeneratorModelConfigurationId <= 0)
+        {
+            return BadRequest(new { error = "A generator model must be selected." });
+        }
+
+        bool suiteExists = await _dbContext.BenchmarkSuites.AnyAsync(s => s.Id == id, ct);
+        if (!suiteExists) return NotFound();
+
+        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
+        if (!canSpend)
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+        }
+
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) userId = null;
+
+        try
+        {
+            var result = await descriptionService.GenerateAsync(id, request, userId, ct);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
     [HttpGet("suites/{suiteId}/questions")]
     public async Task<IActionResult> GetQuestions(long suiteId)
     {

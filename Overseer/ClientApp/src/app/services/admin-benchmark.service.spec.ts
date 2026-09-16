@@ -125,6 +125,51 @@ describe('AdminBenchmarkService', () => {
     req.flush(mockResult);
   });
 
+  it('should post a suite description generation request', () => {
+    const mockResult = {
+      suiteId: 5,
+      suiteName: 'Board Suite',
+      questionCount: 18,
+      snapshotIncluded: true,
+      gameSnapshotName: 'Gnomish Mines level 3',
+      snapshotCharCount: 4000,
+      promptCharCount: 6500,
+      generatorConfigId: 7,
+      startedAtUtc: '2026-09-16T08:00:00Z',
+      completedAtUtc: '2026-09-16T08:01:00Z',
+      durationMs: 60000,
+      modelCalls: 1,
+      promptTokens: 1000,
+      uncachedInputTokens: 1000,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      outputTokens: 300,
+      reasoningTokens: 0,
+      tokensEstimated: false,
+      costUsd: 0.0123,
+      pricingSource: 'catalog',
+      status: 'Completed',
+      description: '## Draft description',
+      log: []
+    };
+    const body = {
+      generatorModelConfigurationId: 7,
+      instructions: 'Emphasize the difficulty spread.',
+      includeSnapshot: true,
+      includeDebugText: false
+    };
+
+    service.generateSuiteDescription(5, body).subscribe(res => {
+      expect(res.status).toBe('Completed');
+      expect(res.description).toBe('## Draft description');
+    });
+
+    const req = httpMock.expectOne('/api/admin/benchmark/suites/5/description-generation');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual(body);
+    req.flush(mockResult);
+  });
+
   it('should get the comparability index with repeated runIds and groupIds params', () => {
     const mockIndex = {
       computedAtUtc: '2026-09-01T00:00:00Z',

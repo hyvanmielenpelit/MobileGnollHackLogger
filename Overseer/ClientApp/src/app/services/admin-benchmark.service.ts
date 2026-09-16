@@ -456,6 +456,73 @@ export interface RegenerateQuestionsRequest {
   instructions?: string | null;
 }
 
+export interface GenerateSuiteDescriptionRequest {
+  generatorModelConfigurationId: number;
+  instructions?: string | null;
+  includeSnapshot: boolean;
+  /** When true the response also carries the full prompt and raw response text. */
+  includeDebugText: boolean;
+}
+
+export interface SuiteDescriptionLogEntryDto {
+  timestampUtc: string;
+  message: string;
+  /** Lowercase: `info` | `warning` | `error`. */
+  severity: string;
+  rawExcerpt?: string | null;
+}
+
+/**
+ * One model call that drafts a suite description. Nothing is persisted; the operator edits and
+ * saves the text through the ordinary suite update.
+ */
+export interface SuiteDescriptionGenerationResultDto {
+  suiteId: number;
+  suiteName: string;
+  questionCount: number;
+  snapshotIncluded: boolean;
+  gameSnapshotName?: string | null;
+  snapshotCharCount: number;
+  promptCharCount: number;
+
+  generatorConfigId: number;
+  generatorDisplayName?: string | null;
+  generatorProvider?: string | null;
+  generatorModelId?: string | null;
+  generatorThinkingLevel?: string | null;
+  generatorReasoningMode?: string | null;
+  generatorServiceTier?: string | null;
+  actualServiceTier?: string | null;
+
+  startedAtUtc: string;
+  completedAtUtc: string;
+  durationMs: number;
+  timeToFirstTokenMs?: number | null;
+  modelCalls: number;
+
+  promptTokens: number;
+  uncachedInputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  /** True when the provider reported no usage and the client-side estimate was used instead. */
+  tokensEstimated: boolean;
+  costUsd?: number | null;
+  /** `'catalog'` | `'custom'` | null. */
+  pricingSource?: string | null;
+
+  /** `Completed` | `Failed` | `Cancelled`. */
+  status: string;
+  description?: string | null;
+  errorMessage?: string | null;
+  log: SuiteDescriptionLogEntryDto[];
+
+  /** Populated only when the request set `includeDebugText`. */
+  promptText?: string | null;
+  rawResponseText?: string | null;
+}
+
 export interface StartRubricCheckRequest {
   suiteId: number;
   checkerModelConfigurationId: number;
@@ -1732,6 +1799,16 @@ export class AdminBenchmarkService {
   /** Attaches a board built from an uploaded file to the suite; replacing a current snapshot needs `replaceExisting`. */
   uploadSuiteSnapshot(suiteId: number, req: UploadSuiteSnapshotRequest): Observable<CaptureBenchmarkSnapshotResponse> {
     return this.http.post<CaptureBenchmarkSnapshotResponse>(`/api/admin/benchmark/suites/${suiteId}/snapshot`, req);
+  }
+
+  /**
+   * Drafts a Markdown suite description from the suite's name, questions and (optionally) its
+   * game snapshot in a single synchronous model call. Nothing is persisted server-side; the
+   * caller applies the text through the ordinary suite update.
+   */
+  generateSuiteDescription(suiteId: number, req: GenerateSuiteDescriptionRequest): Observable<SuiteDescriptionGenerationResultDto> {
+    return this.http.post<SuiteDescriptionGenerationResultDto>(
+      `/api/admin/benchmark/suites/${suiteId}/description-generation`, req);
   }
 
   // Questions

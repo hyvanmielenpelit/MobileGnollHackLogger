@@ -1,0 +1,267 @@
+<!-- SUITE DESCRIPTION GENERATION
+     One synchronous model call: setup on top, an indeterminate progress strip while it runs, then
+     the result and its diagnostics. Nothing here is saved; "Use this description" hands the
+     Markdown back to the host and closes. -->
+<dialog #dialog class="gh-dialog benchmark-form-dialog sdg-dialog"
+        aria-labelledby="sdgDialogTitle"
+        (cancel)="onDialogCancel($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="sdgDialogTitle" #heading tabindex="-1">{{ dialogTitle }}</h3>
+        <p class="dialog-subtitle">
+          Suite: {{ suiteName }} ({{ questionCount }} question{{ questionCount === 1 ? '' : 's' }})
+          @if (gameSnapshotName) {
+            &middot; Snapshot: {{ gameSnapshotName }}
+          }
+        </p>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close suite description generation"
+              (click)="requestClose()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;"
+             aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <div class="dialog-body">
+      <fieldset class="gh-fieldset sdg-setup" [disabled]="running">
+        <legend>Generator setup</legend>
+
+        <div class="form-group">
+          <label id="sdgModelLabel">Generator model *</label>
+          <div class="custom-model-selector sdg-model-selector">
+            <button type="button" id="sdgModelTrigger" class="selector-trigger"
+                    (click)="toggleModelDropdown($event)"
+                    [class.open]="isModelDropdownOpen"
+                    [attr.aria-expanded]="isModelDropdownOpen"
+                    aria-haspopup="listbox"
+                    aria-labelledby="sdgModelLabel sdgModelTrigger">
+              <span class="model-name" [class.text-muted]="!selectedModel">
+                {{ selectedModel?.displayName || selectedModel?.modelId || 'Select Model' }}
+              </span>
+              @if (selectedModel?.thinkingLevel) {
+                <span class="thinking-badge">{{ formatThinkingLevel(selectedModel?.thinkingLevel) }}</span>
+              }
+              @if (showReasoningBadge(selectedModel?.reasoningMode)) {
+                <span class="reasoning-badge">{{ selectedModel?.reasoningMode }}</span>
+              }
+              @if (selectedModel?.provider) {
+                <app-provider-badge [provider]="selectedModel?.provider"></app-provider-badge>
+              }
+              @if (selectedModel?.effectiveInputPricePerMillion != null) {
+                <span class="price-badge">{{ formatPickerPrice(selectedModel!) }}</span>
+              }
+              <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+
+            @if (isModelDropdownOpen) {
+              <div class="selector-dropdown" role="listbox" aria-labelledby="sdgModelLabel">
+                @if (benchmarkCapableConfigs.length === 0) {
+                  <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled.</div>
+                }
+                @for (model of benchmarkCapableConfigs; track model.id) {
+                  <div class="model-option" role="option" tabindex="0"
+                       [attr.aria-selected]="modelConfigId === model.id"
+                       [class.selected]="modelConfigId === model.id"
+                       (click)="selectModel(model)"
+                       (keydown.enter)="selectModel(model, $event)"
+                       (keydown.space)="selectModel(model, $event)">
+                    <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                    @if (model.thinkingLevel) {
+                      <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                    }
+                    <app-provider-badge [provider]="model.provider"></app-provider-badge>
+                    @if (model.effectiveInputPricePerMillion != null) {
+                      <span class="price-badge">{{ formatPickerPrice(model) }}</span>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          </div>
+          <span class="form-hint">A strong reasoning model gives the most useful description.</span>
+        </div>
+
+        @if (gameSnapshotName) {
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" name="sdgIncludeSnapshot" [(ngModel)]="includeSnapshot" />
+              Include game snapshot
+            </label>
+            <span class="form-hint">Sent behind the same untrusted-data fence question generation uses.</span>
+          </div>
+        }
+
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" name="sdgIncludeDebugText" [(ngModel)]="includeDebugText" />
+            Include prompt and raw response in diagnostics
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label for="sdgInstructions">Instructions</label>
+          <textarea id="sdgInstructions" name="sdgInstructions" class="gh-input gh-textarea-autosize sdg-instructions"
+                     rows="8" [(ngModel)]="instructions"></textarea>
+          <span class="form-hint">Tell the generator what to emphasize. The Markdown format is fixed and not affected by this text.</span>
+        </div>
+      </fieldset>
+
+      @if (dialogError || status === 'Failed' || status === 'Cancelled') {
+        <div class="alert alert-danger sdg-alert" role="alert" aria-live="assertive">
+          @if (status === 'Failed') {
+            <div>Suite description generation failed: {{ result?.errorMessage || 'see the diagnostics for details.' }}</div>
+          }
+          @if (status === 'Cancelled') {
+            <div>Suite description generation was cancelled.</div>
+          }
+          @if (dialogError) { <div>{{ dialogError }}</div> }
+        </div>
+      }
+
+      @if (running) {
+        <div class="job-progress-block">
+          <progress class="job-progress" aria-label="Generating"></progress>
+          <p class="progress-status" role="status" aria-live="polite">{{ progressStatusLabel }}</p>
+        </div>
+      }
+
+      @if (result) {
+        <dl class="run-stat-strip">
+          <div class="run-stat">
+            <dt>Elapsed</dt>
+            <dd>{{ elapsedLabel }}</dd>
+          </div>
+          <div class="run-stat">
+            <dt>Time to first token</dt>
+            <dd>{{ result.timeToFirstTokenMs != null ? (result.timeToFirstTokenMs + ' ms') : '—' }}</dd>
+          </div>
+          <div class="run-stat">
+            <dt>Prompt tokens</dt>
+            <dd>{{ result.promptTokens | number }}</dd>
+          </div>
+          <div class="run-stat">
+            <dt>Cached tokens</dt>
+            <dd>{{ cachedTokens | number }}</dd>
+          </div>
+          <div class="run-stat">
+            <dt>Output tokens</dt>
+            <dd>{{ result.outputTokens | number }}</dd>
+          </div>
+          @if (result.reasoningTokens > 0) {
+            <div class="run-stat">
+              <dt>Reasoning tokens</dt>
+              <dd>{{ result.reasoningTokens | number }}</dd>
+            </div>
+          }
+          <div class="run-stat">
+            <dt>Cost</dt>
+            <dd>
+              @if (result.costUsd != null) {
+                ${{ result.costUsd.toFixed(4) }}
+                @if (result.tokensEstimated) {
+                  <span class="sdg-estimated"> (estimated tokens)</span>
+                }
+              } @else {
+                —
+              }
+            </dd>
+          </div>
+          <div class="run-stat">
+            <dt>Pricing source</dt>
+            <dd>{{ result.pricingSource || '—' }}</dd>
+          </div>
+        </dl>
+      }
+
+      @if (result?.description) {
+        <div class="form-group">
+          <label for="sdgResult">Generated description</label>
+          <textarea id="sdgResult" readonly class="gh-input sdg-result" [value]="result?.description ?? ''"></textarea>
+        </div>
+      }
+
+      @if (result || dialogError) {
+        <details class="job-diagnostics" [open]="diagnosticsOpen" (toggle)="onDiagnosticsToggle($event)">
+          <summary>Diagnostics</summary>
+          <div class="diagnostics-toolbar">
+            <button type="button" class="action-btn"
+                    aria-label="Copy suite description diagnostics"
+                    interestfor="tip-sdg-copy-diagnostics"
+                    style="anchor-name: --tip-sdg-copy-diagnostics"
+                    (click)="copyDiagnostics()">
+              @if (copiedDiagnostics) {
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                     viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+              } @else {
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                     viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              }
+            </button>
+            <div popover="hint" class="gh-tooltip" id="tip-sdg-copy-diagnostics"
+                 style="position-anchor: --tip-sdg-copy-diagnostics">Copy diagnostics</div>
+            <p class="diagnostics-copy-status" role="status" aria-live="polite">{{ diagnosticsCopyStatus }}</p>
+          </div>
+          <pre tabindex="0"><code>{{ diagnosticsText }}</code></pre>
+        </details>
+      }
+    </div>
+
+    <div class="dialog-footer">
+      @if (running) {
+        <button type="button" class="btn-gh btn-gh-delete" (click)="cancel()">Cancel</button>
+      } @else if (isTerminal) {
+        @if (status === 'Completed' && result?.description) {
+          <button type="button" class="btn-gh sdg-use-btn" (click)="useDescription()">Use this description</button>
+        }
+        <button type="button" class="btn-ghost sdg-again-btn" (click)="generateAgain()">Generate again</button>
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="requestClose()">Close</button>
+      } @else {
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="requestClose()">Close</button>
+        <button type="button" class="btn-gh sdg-start-btn" [disabled]="running || !modelConfigId" (click)="start()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+          Generate
+        </button>
+      }
+    </div>
+  </div>
+</dialog>
+
+<!-- UNAPPLIED-RESULT CONFIRMATION, opened on top of the workspace -->
+<dialog #confirmDialog class="gh-dialog sdg-confirm-dialog"
+        aria-labelledby="sdgConfirmTitle"
+        (cancel)="closeDiscardConfirm()">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="sdgConfirmTitle">Discard generated description?</h3>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close confirmation" (click)="closeDiscardConfirm()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;"
+             aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="dialog-body">
+      <p>The generated description has not been applied to the suite. Close without using it?</p>
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="closeDiscardConfirm()">Cancel</button>
+      <button type="button" class="btn-gh btn-gh-delete" (click)="discardAndClose()">Discard</button>
+    </div>
+  </div>
+</dialog>

@@ -371,6 +371,11 @@ describe('AdminBenchmarkComponent', () => {
     expect(reviewed[0].textContent?.trim()).toBe('Reviewed');
     expect(reviewed[0].querySelector('svg[aria-hidden="true"]')).toBeTruthy();
 
+    const needsReview = Array.from(host.querySelectorAll<HTMLElement>('.suite-card .badge-warning'));
+    expect(needsReview.length).toBe(1);
+    expect(needsReview[0].textContent?.trim()).toBe('Needs review (3 of 18)');
+    expect(needsReview[0].querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+
     const iconCharacters = /\p{Extended_Pictographic}|✓|✔/u;
     for (const element of [...buttons, ...reviewed]) {
       expect(iconCharacters.test(element.textContent ?? '')).withContext(element.textContent ?? '').toBeFalse();
@@ -493,6 +498,105 @@ describe('AdminBenchmarkComponent', () => {
     editor!.componentInstance.valueChange.emit('**Bold**\n- Changed');
     fixture.detectChanges();
     expect(component.suiteForm.description).toBe('**Bold**\n- Changed');
+  });
+
+  describe('suite description generation and unsaved-changes guard', () => {
+    const suite = {
+      id: 5,
+      name: 'Core Mechanics',
+      description: 'Original',
+      createdAtUtc: '2026-09-01T00:00:00Z',
+      modifiedAtUtc: null,
+      questionCount: 12,
+      assessedQuestionCount: 12,
+      difficultyFullyAssessed: true
+    } as any;
+
+    let suiteClose: jasmine.Spy;
+    let confirmShowModal: jasmine.Spy;
+
+    function generateButton(): HTMLButtonElement | undefined {
+      const host = fixture.nativeElement as HTMLElement;
+      return Array.from(host.querySelectorAll<HTMLButtonElement>('dialog.benchmark-suite-form-dialog .suite-desc-tools button'))
+        .find(b => (b.textContent ?? '').trim() === 'Generate with AI');
+    }
+
+    beforeEach(() => {
+      fixture.detectChanges();
+      spyOn(component.suiteDialog.nativeElement, 'showModal');
+      suiteClose = spyOn(component.suiteDialog.nativeElement, 'close');
+      confirmShowModal = spyOn(component.confirmActionDialog.nativeElement, 'showModal');
+      spyOn(component.confirmActionDialog.nativeElement, 'close');
+    });
+
+    it('disables Generate with AI in create mode and enables it for an existing suite', () => {
+      component.openCreateSuite();
+      fixture.detectChanges();
+      expect(generateButton()).toBeTruthy();
+      expect(generateButton()!.disabled).toBeTrue();
+
+      component.openEditSuite(suite);
+      fixture.detectChanges();
+      expect(generateButton()!.disabled).toBeFalse();
+    });
+
+    it('sets descriptionGenerationVisible when Generate with AI is clicked', () => {
+      component.openEditSuite(suite);
+      fixture.detectChanges();
+
+      // No detectChanges after the click, so the child's ngOnChanges never reaches unstubbed services.
+      generateButton()!.click();
+
+      expect(component.descriptionGenerationVisible).toBeTrue();
+      expect(component.descriptionGenerationSuite).toBe(suite);
+    });
+
+    it('writes a generated description into the suite form and marks it dirty', () => {
+      component.openEditSuite(suite);
+      expect(component.suiteFormDirty).toBeFalse();
+
+      component.onDescriptionGenerated('## Draft');
+
+      expect(component.suiteForm.description).toBe('## Draft');
+      expect(component.suiteFormDirty).toBeTrue();
+    });
+
+    it('closes an unchanged suite dialog without asking', () => {
+      component.openEditSuite(suite);
+      const titleBefore = component.confirmDialogTitle;
+
+      component.requestCloseSuiteDialog();
+
+      expect(suiteClose).toHaveBeenCalled();
+      expect(confirmShowModal).not.toHaveBeenCalled();
+      expect(component.confirmDialogTitle).toBe(titleBefore);
+    });
+
+    it('asks before discarding an edited name, and closes on confirmation', () => {
+      component.openEditSuite(suite);
+      component.suiteForm.name = 'Renamed';
+
+      component.requestCloseSuiteDialog();
+
+      expect(suiteClose).not.toHaveBeenCalled();
+      expect(confirmShowModal).toHaveBeenCalled();
+      expect(component.confirmDialogTitle).toBe('Discard unsaved changes?');
+
+      component.executeConfirmAction();
+      expect(suiteClose).toHaveBeenCalled();
+    });
+
+    it('routes Escape on a dirty suite dialog through the confirmation', () => {
+      component.openEditSuite(suite);
+      component.suiteForm.description = 'Edited';
+      const event = new Event('cancel', { cancelable: true });
+
+      component.onSuiteDialogCancel(event);
+
+      expect(event.defaultPrevented).toBeTrue();
+      expect(suiteClose).not.toHaveBeenCalled();
+      expect(component.confirmDialogTitle).toBe('Discard unsaved changes?');
+    });
   });
 
   describe('AI Auto-Rate All Difficulties disabled state', () => {

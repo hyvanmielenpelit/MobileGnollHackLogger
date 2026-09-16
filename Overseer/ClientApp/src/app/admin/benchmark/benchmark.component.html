@@ -2844,13 +2844,13 @@
 </dialog>
 
 <!-- SUITE CREATE / EDIT DIALOG -->
-<dialog #suiteDialog class="gh-dialog benchmark-form-dialog benchmark-suite-form-dialog">
+<dialog #suiteDialog class="gh-dialog benchmark-form-dialog benchmark-suite-form-dialog" (cancel)="onSuiteDialogCancel($event)">
   <div class="dialog-content flex-col">
     <div class="dialog-header">
       <div class="dialog-title-group">
         <h3>{{ editingSuiteId ? 'Edit Benchmark Suite' : 'Create Benchmark Suite' }}</h3>
       </div>
-      <button type="button" class="btn-icon-action" aria-label="Close suite form" (click)="suiteDialog.close()">
+      <button type="button" class="btn-icon-action" aria-label="Close suite form" (click)="requestCloseSuiteDialog()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -2863,6 +2863,18 @@
         <input id="suiteNameInput" type="text" class="gh-input" [(ngModel)]="suiteForm.name" placeholder="e.g. Core Roguelike Mechanics">
       </div>
       <div class="form-group">
+        <div class="suite-desc-tools">
+          <button type="button" class="btn-ghost" (click)="openDescriptionGeneration()"
+                  aria-haspopup="dialog"
+                  [disabled]="!editingSuiteId"
+                  [attr.aria-describedby]="editingSuiteId ? null : 'suiteDescGenerateHint'">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+            Generate with AI
+          </button>
+          @if (!editingSuiteId) {
+            <span id="suiteDescGenerateHint" class="form-hint">Save the suite first, then generate a description from its questions.</span>
+          }
+        </div>
         <app-markdown-editor #suiteDescriptionEditor
           inputId="suiteDescInput"
           label="Description (Optional)"
@@ -2873,7 +2885,7 @@
       </div>
     </div>
     <div class="dialog-footer">
-      <button type="button" class="btn-gh btn-gh-cancel" (click)="suiteDialog.close()">Cancel</button>
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="requestCloseSuiteDialog()">Cancel</button>
       <button type="button" class="btn-gh" [disabled]="!suiteForm.name.trim()" (click)="saveSuite()">Save Suite</button>
     </div>
   </div>
@@ -4116,6 +4128,19 @@
   (closed)="onGenerationDialogClosed($event)"
   (questionsChanged)="onGenerationQuestionsChanged($event)"
   (editQuestionRequested)="onGenerationEditQuestion($event)"></app-question-generation-dialog>
+
+<!-- SUITE DESCRIPTION GENERATION DIALOG -->
+<app-suite-description-generation-dialog
+  [suiteId]="editingSuiteId"
+  [suiteName]="suiteForm.name"
+  [questionCount]="descriptionGenerationSuite?.questionCount ?? 0"
+  [gameSnapshotName]="descriptionGenerationSuite?.gameSnapshotName ?? null"
+  [visible]="descriptionGenerationVisible"
+  [benchmarkCapableConfigs]="benchmarkCapableConfigs"
+  [defaultModelConfigId]="assessorConfigId"
+  [overseerBuildVersion]="overseerBuildVersion"
+  (closed)="onDescriptionGenerationClosed()"
+  (descriptionGenerated)="onDescriptionGenerated($event)"></app-suite-description-generation-dialog>
 
 <!--
   THE MODEL COMPARISON WIZARD

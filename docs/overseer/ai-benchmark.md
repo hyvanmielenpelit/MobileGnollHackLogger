@@ -2909,6 +2909,7 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `GET /api/admin/benchmark/suites/{id}/rubric-gaps`: Clustered unverified claims with a `LikelyRubricGap` / `LikelyHallucination` verdict per cluster. No AI calls.
 - `POST /api/admin/benchmark/suites/{id}/validate-citations`: Resolves the rubrics' `**SOURCE**` citations against the running source and wiki indexes. A POST rather than a GET because it walks the whole index. No AI calls.
 - `POST /api/admin/benchmark/suites/{id}/coverage-analysis`: Asks an explicitly selected model which subsystems the suite does not test (gated by spend caps). Returns a **read-only report**; nothing is written into the suite, and no endpoint exists that would.
+- `POST /api/admin/benchmark/suites/{id}/description-generation`: Drafts a suite description with an explicitly selected model (body `{ generatorModelConfigurationId, instructions?, includeSnapshot, includeDebugText }`; gated by spend caps). 400 for a missing or unusable configuration, 404 for an unknown suite. Returns `SuiteDescriptionGenerationResultDto` with the text, timing, tokens, cost and log; nothing is saved. See *AI-Generated Suite Descriptions*.
 - `GET /api/admin/benchmark/suites/{id}/questions`: List questions by order index with assessor snapshot properties.
 - `POST /api/admin/benchmark/suites/{id}/questions`: Add a question to a suite.
 - `PUT /api/admin/benchmark/questions/{id}`: Update a question (clears assessment snapshot if content changed).
@@ -3481,4 +3482,33 @@ every stored rubric.
   reasoning.
 - **One-Click Corrections**: Administrators can jump directly from a finding card into the question
   editor to refine the rubric or verify the question.
+
+### AI-Generated Suite Descriptions
+The **Edit Benchmark Suite** dialog has a **Generate with AI** button above the description editor.
+It is disabled while creating a suite: a suite without an id has no questions to describe, so save it
+first.
+- **The dialog**: pick a benchmark-capable model, optionally edit the instructions (prefilled with
+  the default brief: a 120–300 word Markdown description with a lead paragraph and a
+  `### Covered Domains` list), and choose whether to include the game snapshot (shown only when the
+  suite has one; default on). **Generate** runs one model call and shows an indeterminate progress bar
+  with an elapsed timer; **Cancel** aborts the request. The result shows the description and a stat
+  strip: elapsed time, time to first token, prompt, cached, output and reasoning tokens, and the USD
+  cost (`—` when no price card resolves, never `$0.0000`).
+- **What the model sees**: the suite name, every question's text and authored difficulty band in
+  order, the per-band counts, and — when included — the snapshot's full sanitized text. All of it is
+  fenced as untrusted reference data. **Rubrics are never sent**, so the description cannot leak
+  answer keys.
+- **Nothing is saved by the server.** **Use this description** writes the text into the suite's
+  description editor; it is persisted only by **Save Suite**. Closing the generation dialog with an
+  unapplied result asks first, and closing the Edit Suite dialog (Cancel, header close or Escape) with
+  an edited name or description asks before discarding the changes.
+- **Endpoint**: `POST /api/admin/benchmark/suites/{id}/description-generation`, synchronous like
+  coverage analysis, and gated by the same spend caps (429 when the compliance guard refuses).
+- **Output limit**: `Benchmark:DescriptionMaxOutputTokens` in configuration, default 4096.
+- **Usage accounting**: each completed call writes one `SystemAiUsageLog` row with `RoleContext = 7`
+  (Suite Description). A request cancelled before the provider reported usage is not recorded.
+- **Diagnostics**: the collapsible diagnostics panel has a copy button, and its text carries the
+  suite, generator, instructions, usage and a structured log with raw-response excerpts. The full
+  prompt and raw response are included only when **Include prompt and raw response in diagnostics**
+  is ticked before generating. No API key is ever included.
 
