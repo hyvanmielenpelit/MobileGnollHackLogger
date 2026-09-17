@@ -339,8 +339,62 @@ describe('QuestionYamlImportPanelComponent', () => {
     await component.loadFile(new File([header + 'questions:\n  - question: From a file\n'], 'q.yaml', { type: 'application/yaml' }));
     fixture.detectChanges();
 
-    expect(host.querySelector('.import-file-info')!.textContent).toContain('q.yaml');
+    const card = host.querySelector('#panel-test-file-card')!;
+    expect(card.querySelector('.gh-file-card-name')!.textContent).toBe('q.yaml');
+    expect(host.querySelector('input[type="file"]')).toBeNull();
+    expect(host.querySelector('.import-file-advice')).toBeNull();
     await expectAsync(component.validate()).toBeResolvedTo(true);
+  });
+
+  it('returns to the empty picker when the attached file is removed', async () => {
+    open('questions');
+    component.setSource('file');
+    await component.loadFile(new File(['x'], 'q.yaml'));
+    fixture.detectChanges();
+
+    (host.querySelector('#panel-test-file-remove') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(component.fileText).toBeNull();
+    expect(host.querySelector('#panel-test-file-card')).toBeNull();
+    expect(host.querySelector('input[type="file"]#panel-test-file')).not.toBeNull();
+  });
+
+  describe('file-name advice', () => {
+    async function attach(name: string, expected: string | null, downloaded: string | null): Promise<void> {
+      fixture.componentRef.setInput('expectedFileName', expected);
+      fixture.componentRef.setInput('downloadedFileName', downloaded);
+      open('questions');
+      component.setSource('file');
+      await component.loadFile(new File(['format: x'], name));
+      fixture.detectChanges();
+    }
+
+    it('advises against the downloaded suite export, by pattern or by exact name', async () => {
+      await attach('overseer-suite-export-core (1).yaml', 'agent-new-questions-core.yaml', 'overseer-suite-export-core.yaml');
+      expect(host.querySelector('.import-file-advice')!.textContent)
+        .toContain('This is the file you downloaded for the agent. Upload agent-new-questions-core.yaml instead.');
+
+      await attach('renamed.yaml', 'agent-new-questions-core.yaml', 'renamed.yaml');
+      expect(host.querySelector('.import-file-advice')).not.toBeNull();
+    });
+
+    it('says nothing for another name, nor without the wizard\'s file names', async () => {
+      await attach('something-else.yaml', 'agent-new-questions-core.yaml', 'overseer-suite-export-core.yaml');
+      expect(host.querySelector('.import-file-advice')).toBeNull();
+
+      await attach('overseer-suite-export-core.yaml', null, null);
+      expect(host.querySelector('.import-file-advice')).toBeNull();
+
+      await attach('overseer-suite-export-core.yaml', 'agent-new-suite-core.yaml', null);
+      expect(host.querySelector('.import-file-advice')).toBeNull();
+    });
+
+    it('never blocks validation', async () => {
+      await attach('overseer-suite-export-core.yaml', 'agent-new-questions-core.yaml', 'overseer-suite-export-core.yaml');
+      expect(host.querySelector('.import-file-advice')).not.toBeNull();
+      expect(component.canValidate).toBeTrue();
+    });
   });
 
   describe('with an expectation', () => {

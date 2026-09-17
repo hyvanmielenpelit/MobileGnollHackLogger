@@ -222,6 +222,10 @@ Every `.btn-ghost` on a suite card now carries a glyph so the row scans as one f
 `compass` glyph, after Import Suite from YAML and before the help icon. The suite help's *Open the
 Snapshot Suite Wizard* button uses the same glyph, since it opens the same thing.*
 
+*Changed 2026-09-17: trash also covers **removing an attached file** in `app-file-picker` (§4a).
+It still means "this thing goes away"; an ✕ was rejected because ✕ already means *close this
+dialog*, and it sits in the header of the very dialogs the picker renders in.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
@@ -370,6 +374,42 @@ downloads none of them. Never import them unconditionally.
 > pseudo-class and applies a `.\:popover-open` class instead. Any rule targeting the open
 > state must combine both — `:is(:popover-open, .\:popover-open)` — because a browser that
 > does not understand `:popover-open` discards the entire rule, not just that selector.
+
+### 4a. File pickers: `app-file-picker`
+
+A single-file upload is `app-file-picker` from `app/shared/file-picker/`. **Never a bare
+`<input type="file" class="gh-input">`**: the native control reads *No file chosen* while the
+host holds a file (hosts reset its value so the same file can be picked again), and its
+*Choose File* button stays beside the attached file.
+
+```html
+<app-file-picker [inputId]="idPrefix + '-file'" label="YAML file"
+                 accept=".yaml,.yml,text/plain" acceptHint=".yaml or .yml, up to 2 MB"
+                 [fileName]="fileText !== null ? fileName : null" [fileDetail]="fileSizeLabel"
+                 [error]="fileError"
+                 (fileSelected)="loadFile($event)" (cleared)="clearFile()" />
+```
+
+- **Presentational.** The host reads the file and owns its state; a non-null `fileName` is what
+  switches the picker to its attached state. Keep the host's own size limit and error text.
+- **Empty state**: a dashed drop zone that is the `<label>` of a real file input. Clicking
+  anywhere on it, or Enter on the focused input, opens the native picker; drag and drop is an
+  enhancement on top, and a dropped file is checked against the `.ext` tokens of `accept`, which
+  the browser does not apply to a drop.
+- **The input is hidden by the component's own clip-path rule, never by the global
+  `.visually-hidden`.** That class is `:where(:not(:focus-within, :active))` — it un-hides on
+  focus, skip-link style, so the native control would pop into view when tabbed to. Never
+  `display: none` either: the input must stay focusable.
+- **Attached state**: the zone and the input are not rendered. A card shows the name and
+  `fileDetail`, with an `.action-btn-danger` **trash** button named *Remove {file name}* and a
+  *Remove file* tooltip (§4.1, §4.2). Focus moves to the card after a file is attached — not to
+  the remove button, so Enter cannot delete what was just attached — and back to the input
+  after removal. One `role="status"` line announces both.
+- `inputId` must be unique in the document: the card (`{inputId}-card`), the remove button,
+  the tooltip and both anchor names derive from it. A host that focuses the picker after a
+  failed step targets `#{inputId}` and then `#{inputId}-card`.
+- The chat composer's hidden multi-file attachment input is a different control and does not
+  use this component.
 
 ---
 
@@ -741,6 +781,10 @@ Diff this against your markup before calling button, tab or table work finished.
 - [ ] Each has an `interestfor` tooltip with a matching `popover="hint"` `.gh-tooltip`.
 - [ ] Anchor names are set on **both** ends via `[attr.style]`, and are unique per row.
 - [ ] `ensureOverlayPolyfills()` is called in `ngOnInit`.
+
+**File pickers**
+- [ ] Every single-file upload is `app-file-picker` (§4a); no bare `<input type="file" class="gh-input">` remains.
+- [ ] Each picker's `inputId` is unique in the document, and the host clears its state on `(cleared)`.
 
 **Tabs**
 - [ ] Every tab in the row has an icon, or none of them does.

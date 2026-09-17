@@ -1,0 +1,54 @@
+<span class="gh-file-label" [id]="inputId + '-label'">{{ label }}@if (optional) { <span class="gh-file-optional">(optional)</span>}</span>
+
+@if (!attached) {
+  <label class="gh-file-zone" [attr.for]="inputId" [class.is-dragover]="dragDepth > 0"
+         (dragenter)="onDragEnter($event)" (dragover)="onDragOver($event)"
+         (dragleave)="onDragLeave($event)" (drop)="onDrop($event)">
+    <svg class="gh-file-zone-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+    <span class="gh-file-zone-text" [id]="inputId + '-action'">
+      @if (dragDepth > 0) {
+        Drop the file to attach it
+      } @else {
+        <span class="gh-file-zone-action">Choose a file</span> or drop it here
+      }
+    </span>
+    @if (acceptHint) {
+      <span class="gh-file-zone-hint" [id]="inputId + '-accept'">{{ acceptHint }}</span>
+    }
+    <input #fileInput class="gh-file-input" type="file" [id]="inputId"
+           [attr.accept]="accept || null"
+           [attr.aria-labelledby]="inputId + '-label ' + inputId + '-action'"
+           [attr.aria-describedby]="describedByIds"
+           [attr.aria-invalid]="shownError ? 'true' : null"
+           (change)="onNativeChange($event)">
+  </label>
+} @else {
+  <div #card class="gh-file-card" role="group" tabindex="-1" [id]="inputId + '-card'"
+       [attr.aria-labelledby]="inputId + '-label'"
+       [class.is-dragover]="dragDepth > 0"
+       (dragenter)="onDragEnter($event)" (dragover)="onDragOver($event)"
+       (dragleave)="onDragLeave($event)" (drop)="onDrop($event)">
+    <svg class="gh-file-card-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+    <span class="gh-file-card-text">
+      <span class="gh-file-card-name">{{ fileName }}</span>
+      @if (fileDetail) {
+        <span class="gh-file-card-detail">{{ fileDetail }}</span>
+      }
+    </span>
+    <button type="button" class="action-btn action-btn-danger gh-file-remove" [id]="inputId + '-remove'"
+            [attr.aria-label]="'Remove ' + fileName"
+            [attr.interestfor]="inputId + '-remove-tip'"
+            [attr.style]="'anchor-name: --' + inputId + '-remove'"
+            (click)="clear()">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+    </button>
+    <div popover="hint" class="gh-tooltip" [id]="inputId + '-remove-tip'"
+         [attr.style]="'position-anchor: --' + inputId + '-remove'">Remove file</div>
+  </div>
+}
+
+@if (shownError) {
+  <p class="error-message gh-file-error" role="alert" [id]="inputId + '-error'">{{ shownError }}</p>
+}
+
+<p class="gh-file-status" role="status">{{ status }}</p>

@@ -22,6 +22,7 @@ import {
   MatchSnapshotResult
 } from '../../../services/admin-benchmark.service';
 import { CollapsibleMarkdownComponent } from '../../../shared/collapsible-markdown/collapsible-markdown.component';
+import { FilePickerComponent } from '../../../shared/file-picker/file-picker.component';
 import { MarkdownPipe } from '../../../chat/markdown.pipe';
 import { formatDifficulty } from '../../../utils/model-badge-format.util';
 import { DiffLine, diffLines } from '../../../utils/text-diff.util';
@@ -33,6 +34,7 @@ import {
   RubricNotice,
   buildImportPlan,
   difficultyNumber,
+  isSuiteExportFileName,
   lintRubric,
   parseQuestionYaml,
   toImportItems,
@@ -92,7 +94,7 @@ export interface ImportIntentCheck {
 @Component({
   selector: 'app-question-yaml-import-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule, CollapsibleMarkdownComponent, MarkdownPipe],
+  imports: [CommonModule, FormsModule, CollapsibleMarkdownComponent, FilePickerComponent, MarkdownPipe],
   templateUrl: './question-yaml-import-panel.component.html',
   styleUrls: ['./question-yaml-import-panel.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -115,6 +117,10 @@ export class QuestionYamlImportPanelComponent implements OnDestroy {
   @Input() idPrefix = 'yaml-import';
   @Input() preferredSource: ImportSource = 'paste';
   @Input() expectation: ImportExpectation | null = null;
+  /** The file the agent writes; named in the advice when the downloaded file is attached instead. */
+  @Input() expectedFileName: string | null = null;
+  /** The file downloaded for the agent, on the wizard's add route only; without it there is no advice. */
+  @Input() downloadedFileName: string | null = null;
 
   @Output() imported = new EventEmitter<ImportBenchmarkQuestionsResultDto>();
   @Output() suiteImported = new EventEmitter<BenchmarkSuiteDto>();
@@ -250,19 +256,6 @@ export class QuestionYamlImportPanelComponent implements OnDestroy {
     this.stateChange.emit(this.state);
   }
 
-  async onFileSelected(event: Event): Promise<void> {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    this.clearValidation();
-    this.fileError = null;
-    if (!file) {
-      this.changed();
-      return;
-    }
-    await this.loadFile(file);
-    input.value = '';
-  }
-
   async loadFile(file: File): Promise<void> {
     this.fileError = null;
     if (file.size > MAX_IMPORT_FILE_BYTES) {
@@ -270,6 +263,7 @@ export class QuestionYamlImportPanelComponent implements OnDestroy {
       this.fileName = '';
       this.fileSize = 0;
       this.fileError = `${file.name} is ${formatBytes(file.size)}; the limit is 2 MB.`;
+      this.clearValidation();
       this.changed();
       return;
     }
@@ -296,6 +290,21 @@ export class QuestionYamlImportPanelComponent implements OnDestroy {
 
   get fileSizeLabel(): string {
     return formatBytes(this.fileSize);
+  }
+
+  /**
+   * Advice when the attached file is, by its name, the one downloaded for the agent. Advisory only:
+   * a renamed file is still a valid file, and the content checks on validation remain the gate.
+   */
+  get fileNameAdvice(): string | null {
+    if (this.source !== 'file' || this.fileText === null || !this.downloadedFileName) {
+      return null;
+    }
+    const looksDownloaded = isSuiteExportFileName(this.fileName) || this.fileName === this.downloadedFileName;
+    if (!looksDownloaded) return null;
+    return this.expectedFileName
+      ? `This is the file you downloaded for the agent. Upload ${this.expectedFileName} instead.`
+      : 'This is the file you downloaded for the agent. Upload the file the agent wrote instead.';
   }
 
   async validate(): Promise<boolean> {

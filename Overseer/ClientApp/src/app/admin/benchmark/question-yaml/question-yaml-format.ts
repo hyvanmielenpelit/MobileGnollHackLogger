@@ -710,13 +710,18 @@ export function suiteSlug(suiteName: string): string {
 
 export function questionYamlFileName(suiteName: string, question?: BenchmarkQuestionDto): string {
   if (question) {
-    return `benchmark-question-${question.orderIndex}-id-${question.id}.yaml`;
+    return `overseer-question-export-${question.orderIndex}-id-${question.id}.yaml`;
   }
-  return `benchmark-questions-${suiteSlug(suiteName)}.yaml`;
+  return `overseer-questions-export-${suiteSlug(suiteName)}.yaml`;
 }
 
 export function suiteYamlFileName(suiteName: string): string {
-  return `benchmark-suite-${suiteSlug(suiteName)}.yaml`;
+  return `overseer-suite-export-${suiteSlug(suiteName)}.yaml`;
+}
+
+/** True for a name Overseer's own suite download produces, browser "(1)" suffixes included. */
+export function isSuiteExportFileName(name: string): boolean {
+  return /^overseer-suite-export-.*\.ya?ml$/i.test((name ?? '').trim());
 }
 
 export const AI_INSTRUCTIONS_FILE_NAME = 'overseer-benchmark-yaml-instructions.md';

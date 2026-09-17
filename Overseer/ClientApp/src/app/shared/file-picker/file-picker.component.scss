@@ -1,0 +1,147 @@
+/*
+ * The file picker. .action-btn, .action-btn-danger, .btn-icon, .gh-tooltip and .error-message are
+ * global classes from styles.scss and are never redefined here: emulated encapsulation would scope
+ * an override to this component and split the look of the application.
+ */
+
+:host {
+  display: block;
+}
+
+.gh-file-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #ccc;
+}
+
+.gh-file-optional {
+  font-weight: normal;
+  color: #aaa;
+}
+
+/* Hidden without display: none, so the input stays focusable and in the accessibility tree. The
+   global .visually-hidden un-hides on focus, which would pop the native control into view. */
+.gh-file-input,
+.gh-file-status {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.gh-file-zone,
+.gh-file-card {
+  position: relative;
+  border-radius: 8px;
+  background: var(--bg-input);
+}
+
+.gh-file-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 88px;
+  padding: 14px 16px;
+  border: 1px dashed var(--border-glass);
+  text-align: center;
+  color: #ccc;
+  cursor: pointer;
+
+  &:hover,
+  &.is-dragover {
+    border-style: solid;
+    border-color: var(--primary-color);
+    background: color-mix(in srgb, var(--primary-color) 8%, var(--bg-input));
+  }
+
+  &:has(.gh-file-input:focus-visible) {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 3px;
+  }
+}
+
+.gh-file-zone-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--primary-color);
+}
+
+.gh-file-zone-action {
+  color: var(--primary-color);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.gh-file-zone-hint {
+  font-size: 0.85em;
+  color: #aaa;
+}
+
+.gh-file-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--border-glass);
+  border-inline-start: 3px solid var(--color-success);
+
+  &.is-dragover {
+    border-color: var(--primary-color);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 3px;
+  }
+}
+
+.gh-file-card-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  color: var(--color-success);
+}
+
+.gh-file-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gh-file-card-name {
+  color: #eee;
+  overflow-wrap: anywhere;
+}
+
+.gh-file-card-detail {
+  font-size: 0.9em;
+  color: #aaa;
+}
+
+.gh-file-remove {
+  flex-shrink: 0;
+  margin-inline-start: auto;
+}
+
+.gh-file-error {
+  margin: 8px 0 0 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .gh-file-zone,
+  .gh-file-card {
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+}

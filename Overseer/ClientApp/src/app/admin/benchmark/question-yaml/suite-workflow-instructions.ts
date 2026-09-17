@@ -55,21 +55,21 @@ function numbered(lines: string[]): string {
 function routeSteps(route: WorkflowRoute, d: WorkflowDetails): string[] {
   const suite = d.suiteName?.trim() || (route === 'add-to-suite' ? '<suite>' : '<name>');
   const count: number | string = d.questionCount ?? 'N';
-  const agentFile = code(d.outputFileName || (route === 'add-to-suite' ? 'benchmark-questions-<slug>.yaml' : 'benchmark-suite-<slug>.yaml'));
+  const agentFile = code(d.outputFileName || (route === 'add-to-suite' ? 'agent-new-questions-<slug>.yaml' : 'agent-new-suite-<slug>.yaml'));
   const path = d.sourcePath?.trim() ? ` (${code(d.sourcePath.trim())})` : '';
   const agent = `Paste the prompt into an agent session opened on the MobileGnollHackLogger repository, and approve the count table it shows.`;
 
   if (route === 'add-to-suite') {
-    const downloaded = code(d.sourceFileName || 'benchmark-suite-<slug>.yaml');
+    const downloaded = code(d.sourceFileName || 'overseer-suite-export-<slug>.yaml');
     return [
       `Open the ${bold(WIZARD_LABELS.title)} on the Manage Suites toolbar.`,
       `Choose ${bold(WIZARD_LABELS.routeSuite)}, pick the suite ${bold(suite)}, and press ${bold(WIZARD_LABELS.next)}.`,
-      `Press ${bold(WIZARD_LABELS.downloadSuite)} and note where the browser saved ${downloaded}.`,
+      `Press ${bold(WIZARD_LABELS.downloadSuite)} and note where the browser saved ${downloaded} — this is the file the agent reads.`,
       `Paste its full path into ${bold(WIZARD_LABELS.pathSuite)}${path} and press ${bold(WIZARD_LABELS.next)}.`,
       `Press ${bold(BUILDER_LABELS.generate)} and copy the prompt.`,
       agent,
       `Wait for the agent to write ${agentFile} beside the suite file.`,
-      `Back in the wizard, upload ${agentFile} — not the file you downloaded — and press ${bold(PANEL_LABELS.validateAndReview)}.`,
+      `Back in the wizard, upload ${agentFile} — the one starting ${code('agent-new-')}, not the ${code('overseer-suite-export-')} file you downloaded — and press ${bold(PANEL_LABELS.validateAndReview)}.`,
       'Read the checks, look through the questions, and tick the confirmation.',
       `Press ${bold(PANEL_LABELS.addQuestions(count, suite))}.`,
       `Press ${bold(WIZARD_LABELS.assess)}; the suite cannot run until every question is assessed.`,

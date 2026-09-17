@@ -2873,8 +2873,8 @@ as YAML to Clipboard*) also carries the board as the `suite.snapshot` mapping �
 metadata from one `GET snapshots/{id}?includeText=true` — so the file alone is enough to check a
 BOARD FACT **and** to recreate the suite together with its board. If that fetch fails the export is
 written with **no `snapshot` key at all** (an incomplete mapping would not import) and the status
-line says so. A single-question export never carries it. File names are `benchmark-questions-<suite-slug>.yaml`,
-`benchmark-question-<orderIndex>-id-<id>.yaml` and `benchmark-suite-<suite-slug>.yaml`.
+line says so. A single-question export never carries it. File names are `overseer-questions-export-<suite-slug>.yaml`,
+`overseer-question-export-<orderIndex>-id-<id>.yaml` and `overseer-suite-export-<suite-slug>.yaml`.
 
 **Which suites export.** A suite card's *Download Suite as YAML* and *Copy Suite as YAML to
 Clipboard* are live whenever `canExportSuite` holds — the suite has questions **or** a game
@@ -3523,8 +3523,14 @@ walks both routes and imports the agent's file itself.
 
 | Route | The board is… | The agent reads / writes | The import |
 |---|---|---|---|
-| **A** — *Attached to a suite in Overseer* | stored on a suite that has a snapshot | the suite YAML the wizard downloads / `benchmark-questions-<slug>.yaml` | the **questions import**: adds the questions, changes nothing else. No server change was needed. |
-| **B** — *A snapshot file from GnollHack* | an `.ai.html` or `.snapshot.txt` on disk | that file / `benchmark-suite-<slug>.yaml` | the **suite import**: creates a new suite with the snapshot attached |
+| **A** — *Attached to a suite in Overseer* | stored on a suite that has a snapshot | the suite YAML the wizard downloads, `overseer-suite-export-<slug>.yaml` / `agent-new-questions-<slug>.yaml` | the **questions import**: adds the questions, changes nothing else. No server change was needed. |
+| **B** — *A snapshot file from GnollHack* | an `.ai.html` or `.snapshot.txt` on disk | that file / `agent-new-suite-<slug>.yaml` | the **suite import**: creates a new suite with the snapshot attached |
+
+The names follow one rule: `overseer-…-export` was written by Overseer, `agent-new-…` was written by
+the agent and is the one to upload. The first token differs, so the two files sort apart in a folder
+and stay distinguishable when a file dialog truncates the name. Nothing parses a file name on
+import, so a file written under an older name still imports; only the upload step's advisory —
+shown when the attached file is named like the suite download — depends on it.
 
 Its six steps are *Source* (the route, with no default, and for A a list of the suites with a
 snapshot, empty ones first), *File*, *Prompt* (`app-suite-prompt-builder`, which takes the route
@@ -3561,7 +3567,7 @@ The workflow, route B:
 2. **In the wizard**, choose the file route, optionally check the file, and paste its path.
 3. **In an agent session** with the repositories on disk — Claude Code, Antigravity or similar —
    paste the prompt the wizard generates (`Mode: create a new suite`, `Snapshot file:`).
-4. The agent reports its **count table**, then writes **one file**, `benchmark-suite-<slug>.yaml`,
+4. The agent reports its **count table**, then writes **one file**, `agent-new-suite-<slug>.yaml`,
    beside the snapshot.
 5. **Back in the wizard**: upload it → the review shows the outcome, the checks, the suite, what
    happens to the snapshot and every question → tick the confirmation → **Create Suite {name}** →
@@ -3569,7 +3575,7 @@ The workflow, route B:
 
 Route A is the same with the suite chosen on the first step, **Download Suite YAML** in place of
 the export, a prompt with `Mode: add questions to an existing suite` and `Suite file:`, a
-`benchmark-questions-<slug>.yaml` from the agent, and **Add N Questions to {suite}**. The agent
+`agent-new-questions-<slug>.yaml` from the agent, and **Add N Questions to {suite}**. The agent
 keeps the `suite` block verbatim, gives no question an `id`, and suggests a description, which the
 import does not change.
 

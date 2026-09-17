@@ -8,17 +8,6 @@
   @include frame.confirm;
 }
 
-.upload-detected {
-  margin: 4px 0 0 0;
-  font-size: 13px;
-  color: #ccc;
-  overflow-wrap: anywhere;
-
-  .form-hint {
-    display: block;
-  }
-}
-
 .upload-kind {
   margin-bottom: 18px;
 }

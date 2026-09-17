@@ -21,6 +21,7 @@ import {
   ImportBenchmarkQuestionsResultDto
 } from '../../../services/admin-benchmark.service';
 import { CodeBlockComponent } from '../../../shared/code-block/code-block.component';
+import { FilePickerComponent } from '../../../shared/file-picker/file-picker.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import { suiteYamlFileName } from './question-yaml-format';
 import { ImportExpectation, ImportRoute } from './import-expectation';
@@ -75,7 +76,7 @@ const MAX_CHECKED_FILE_BYTES = 20 * 1024 * 1024;
 @Component({
   selector: 'app-snapshot-suite-wizard',
   standalone: true,
-  imports: [CommonModule, FormsModule, CodeBlockComponent, SuitePromptBuilderComponent, QuestionYamlImportPanelComponent],
+  imports: [CommonModule, FormsModule, CodeBlockComponent, FilePickerComponent, SuitePromptBuilderComponent, QuestionYamlImportPanelComponent],
   templateUrl: './snapshot-suite-wizard.component.html',
   styleUrls: ['./snapshot-suite-wizard.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -169,7 +170,7 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
   }
 
   get downloadFileName(): string {
-    return this.selectedSuite ? suiteYamlFileName(this.selectedSuite.name) : 'benchmark-suite-<slug>.yaml';
+    return this.selectedSuite ? suiteYamlFileName(this.selectedSuite.name) : 'overseer-suite-export-<slug>.yaml';
   }
 
   get outputFileName(): string {
@@ -229,12 +230,6 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
 
   get importMode(): 'questions' | 'suite' {
     return this.isAddRoute ? 'questions' : 'suite';
-  }
-
-  get uploadLead(): string {
-    return this.isAddRoute
-      ? `Upload ${this.outputFileName}, the file the agent wrote — not the one you downloaded.`
-      : `Upload ${this.outputFileName}, the file the agent wrote.`;
   }
 
   get resumeName(): string {
@@ -377,15 +372,9 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
     this.cdr.detectChanges();
   }
 
-  async onCheckFileSelected(event: Event): Promise<void> {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
+  onCheckFileCleared(): void {
     this.clearFileCheck();
-    if (!file) {
-      this.cdr.detectChanges();
-      return;
-    }
-    await this.checkFile(file);
+    this.cdr.detectChanges();
   }
 
   async checkFile(file: File): Promise<void> {
@@ -502,7 +491,7 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
         if (await this.panel!.validateAndReview()) {
           this.goToStep(5);
         } else {
-          this.focusFirst([`#${this.idPrefix}-import-file`, `#${this.idPrefix}-import-paste`]);
+          this.focusFirst([`#${this.idPrefix}-import-file`, `#${this.idPrefix}-import-file-card`, `#${this.idPrefix}-import-paste`]);
         }
         return;
       case 5:
@@ -551,7 +540,7 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
         this.stepError = this.isAddRoute && this.existingState !== 'ready'
           ? 'The suite\'s questions have not loaded yet.'
           : 'Choose the file the agent wrote, or paste it.';
-        this.focusFirst([`#${this.idPrefix}-import-file`, `#${this.idPrefix}-import-paste`]);
+        this.focusFirst([`#${this.idPrefix}-import-file`, `#${this.idPrefix}-import-file-card`, `#${this.idPrefix}-import-paste`]);
         break;
       case 5:
         this.stepError = this.panel && this.panel.blockingFindings.length > 0

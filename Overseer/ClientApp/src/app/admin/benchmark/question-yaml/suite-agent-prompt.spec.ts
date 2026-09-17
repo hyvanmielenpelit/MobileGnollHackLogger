@@ -44,15 +44,21 @@ describe('buildSuiteAgentPrompt', () => {
     const prompt = buildSuiteAgentPrompt(options());
     expect(line(prompt, 'Suite name')).toBe('propose one');
     expect(line(prompt, 'Question counts')).toBe('propose them from the board');
-    expect(prompt).toContain('`benchmark-suite-<slug>.yaml`');
+    expect(prompt).toContain('`agent-new-suite-<slug>.yaml`');
     expect(prompt).toContain('lower-cased and reduced to a-z, 0-9 and hyphens');
+  });
+
+  it('tells the agent to keep the output name, without the downloaded-file clause', () => {
+    const prompt = buildSuiteAgentPrompt(options());
+    expect(prompt).toContain('Use exactly that name.');
+    expect(prompt).not.toContain('overseer-suite-export-');
   });
 
   it('states the exact output file name once a suite name is given', () => {
     const prompt = buildSuiteAgentPrompt(options({ suiteName: 'Valkyrie at Dlvl 11' }));
     expect(line(prompt, 'Suite name')).toBe('Valkyrie at Dlvl 11');
-    expect(prompt).toContain(`\`benchmark-suite-${suiteSlug('Valkyrie at Dlvl 11')}.yaml\``);
-    expect(prompt).toContain('`benchmark-suite-valkyrie-at-dlvl-11.yaml`');
+    expect(prompt).toContain(`\`agent-new-suite-${suiteSlug('Valkyrie at Dlvl 11')}.yaml\``);
+    expect(prompt).toContain('`agent-new-suite-valkyrie-at-dlvl-11.yaml`');
     expect(prompt).not.toContain('<slug>');
   });
 
@@ -121,7 +127,7 @@ describe('buildSuiteAgentPrompt', () => {
 });
 
 describe('buildSuiteAgentPrompt for a suite YAML', () => {
-  const SUITE_PATH = String.raw`C:\temp\benchmark-suite-valkyrie.yaml`;
+  const SUITE_PATH = String.raw`C:\temp\overseer-suite-export-valkyrie.yaml`;
   const suiteYaml = (overrides: Partial<SuiteAgentPromptOptions> = {}): SuiteAgentPromptOptions =>
     options({ source: 'suite-yaml', sourcePath: SUITE_PATH, ...overrides });
 
@@ -142,22 +148,28 @@ describe('buildSuiteAgentPrompt for a suite YAML', () => {
     expect(prompt).toContain('Keep the `suite` block exactly as it is');
     expect(prompt).toContain('question an `id`');
     expect(prompt).toContain('Snapshot Suite Wizard');
-    expect(prompt).toContain('`benchmark-questions-<slug>.yaml`');
+    expect(prompt).toContain('`agent-new-questions-<slug>.yaml`');
     expect(prompt).toContain('stop and tell me');
     expect(prompt).not.toContain('\r');
   });
 
+  it('tells the agent to keep the output name apart from the downloaded file', () => {
+    const prompt = buildSuiteAgentPrompt(suiteYaml());
+    expect(prompt).toContain('Use exactly that name: the file I downloaded starts with `overseer-suite-export-`');
+    expect(prompt).toContain('Never overwrite the suite file.');
+  });
+
   it('writes the literal file name when the suite name is known', () => {
     const prompt = buildSuiteAgentPrompt(suiteYaml({ suiteName: 'Valkyrie at Dlvl 11' }));
-    expect(prompt).toContain('`benchmark-questions-valkyrie-at-dlvl-11.yaml`');
+    expect(prompt).toContain('`agent-new-questions-valkyrie-at-dlvl-11.yaml`');
     expect(prompt).not.toContain('<slug>');
   });
 });
 
 describe('agentOutputFileName', () => {
   it('names the file per route', () => {
-    expect(agentOutputFileName('suite-yaml', '')).toBe('benchmark-questions-<slug>.yaml');
-    expect(agentOutputFileName('snapshot-file', 'A B')).toBe('benchmark-suite-a-b.yaml');
+    expect(agentOutputFileName('suite-yaml', '')).toBe('agent-new-questions-<slug>.yaml');
+    expect(agentOutputFileName('snapshot-file', 'A B')).toBe('agent-new-suite-a-b.yaml');
   });
 });
 

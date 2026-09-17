@@ -35,7 +35,7 @@ export interface ExpectationFinding {
 /** The server's message for a document whose `questions` list is missing or empty. */
 export const EMPTY_QUESTIONS_ERROR = '`questions` must be a non-empty list.';
 
-export const DOWNLOADED_FILE_HINT = 'This looks like the file you downloaded for the agent, not the file the agent wrote.';
+export const DOWNLOADED_FILE_HINT = 'This looks like the file you downloaded for the agent (`overseer-suite-export-…`), not the file the agent wrote (`agent-new-questions-…`).';
 
 /** The name the server gives an imported suite, following its "(Imported)" collision rule. */
 export function resolveImportedSuiteName(name: string, existingNames: Iterable<string>): string {

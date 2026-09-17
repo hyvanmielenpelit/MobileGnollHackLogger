@@ -6,6 +6,7 @@ import {
   YAML_EXAMPLES,
   buildAiInstructions,
   buildImportPlan,
+  isSuiteExportFileName,
   lintRubric,
   parseQuestionYaml,
   questionYamlFileName,
@@ -307,9 +308,18 @@ describe('question-yaml-format', () => {
 
   describe('file names', () => {
     it('builds slugs and names', () => {
-      expect(questionYamlFileName(SUITE.name)).toBe('benchmark-questions-gnollhack-player-assistance-suite.yaml');
-      expect(questionYamlFileName(SUITE.name, FIXTURE[1])).toBe('benchmark-question-2-id-43.yaml');
-      expect(suiteYamlFileName('  ')).toBe('benchmark-suite-suite.yaml');
+      expect(questionYamlFileName(SUITE.name)).toBe('overseer-questions-export-gnollhack-player-assistance-suite.yaml');
+      expect(questionYamlFileName(SUITE.name, FIXTURE[1])).toBe('overseer-question-export-2-id-43.yaml');
+      expect(suiteYamlFileName('  ')).toBe('overseer-suite-export-suite.yaml');
+    });
+
+    it('recognises a suite export name, browser suffixes included', () => {
+      expect(isSuiteExportFileName(suiteYamlFileName('Core'))).toBeTrue();
+      expect(isSuiteExportFileName('overseer-suite-export-core (1).yaml')).toBeTrue();
+      expect(isSuiteExportFileName('OVERSEER-SUITE-EXPORT-core.YML')).toBeTrue();
+      expect(isSuiteExportFileName('agent-new-questions-core.yaml')).toBeFalse();
+      expect(isSuiteExportFileName('overseer-questions-export-core.yaml')).toBeFalse();
+      expect(isSuiteExportFileName('overseer-suite-export-core.txt')).toBeFalse();
     });
   });
 

@@ -32,22 +32,17 @@
       }
 
       <div class="form-group">
-        <label for="snapshotUploadFile">Snapshot file</label>
+        <app-file-picker inputId="snapshotUploadFile" label="Snapshot file"
+                         accept=".txt,.html,.htm,text/plain,text/html"
+                         acceptHint=".snapshot.txt or an HTML game dump, up to 4 MB"
+                         describedBy="snapshotUploadFileHint"
+                         [fileName]="content !== null ? fileName : null"
+                         [fileDetail]="fileDetail"
+                         [error]="fileError"
+                         (fileSelected)="loadFile($event)" (cleared)="clearFile()" />
         <p class="form-hint" id="snapshotUploadFileHint">A <code>.snapshot.txt</code> downloaded from the snapshot viewer, or a raw HTML game dump.</p>
-        <input #fileInput id="snapshotUploadFile" type="file" class="gh-input"
-               accept=".txt,.html,.htm,text/plain,text/html"
-               aria-describedby="snapshotUploadFileHint"
-               (change)="onFileSelected($event)">
-        @if (content !== null) {
-          <p class="upload-detected" role="status">
-            {{ fileName }} — Detected: {{ detectedIsHtml ? 'HTML dump' : 'snapshot text' }}, {{ content.length | number }} characters
-            @if (content.length > maxStoredChars) {
-              <span class="form-hint">Text longer than 60,000 characters is truncated on the server.</span>
-            }
-          </p>
-        }
-        @if (fileError) {
-          <p class="error-message" role="alert">{{ fileError }}</p>
+        @if (content !== null && content.length > maxStoredChars) {
+          <p class="form-hint upload-truncation-note" role="status">Text longer than 60,000 characters is truncated on the server.</p>
         }
       </div>
 

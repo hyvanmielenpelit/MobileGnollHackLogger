@@ -98,7 +98,7 @@ Rationale, the `[Trait("Category", "UsesExternalApi")]` convention, live-model p
 ## Environment & Shell Conventions
 
 - **Operating System:** Development and tool execution take place on Windows. For PowerShell commands, syntax rules, quoting, and file I/O best practices, follow the global `agent-powershell-guidelines` skill.
-- **Snapshot Suite Wizard files:** Files written for the Snapshot Suite Wizard (`benchmark-suite-<slug>.yaml`, `benchmark-questions-<slug>.yaml`) live outside the repository and are written UTF-8 without a BOM with **LF** line endings, matching Overseer's own downloads; the repository's CRLF convention does not apply to them. The rule and its reason are in the `server_snapshot_suite_authoring` skill.
+- **Snapshot Suite Wizard files:** Files written for the Snapshot Suite Wizard (`agent-new-suite-<slug>.yaml`, `agent-new-questions-<slug>.yaml`) live outside the repository and are written UTF-8 without a BOM with **LF** line endings, matching Overseer's own downloads; the repository's CRLF convention does not apply to them. The rule and its reason are in the `server_snapshot_suite_authoring` skill.
 
 ## Implementation Plans
 

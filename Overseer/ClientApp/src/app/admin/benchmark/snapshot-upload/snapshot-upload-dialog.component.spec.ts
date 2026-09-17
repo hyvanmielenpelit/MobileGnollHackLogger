@@ -78,9 +78,39 @@ describe('SnapshotUploadDialogComponent', () => {
 
     await chooseFile('<html><body><pre>Dlvl:1</pre></body></html>', 'dump.html');
 
-    expect(host.querySelector('.upload-detected')!.textContent).toContain('Detected: HTML dump');
+    expect(host.querySelector('#snapshotUploadFile-card .gh-file-card-name')!.textContent).toBe('dump.html');
+    expect(host.querySelector('.gh-file-card-detail')!.textContent).toBe('Detected: HTML dump, 43 characters');
     expect(component.name).toBe('dump');
     expect(uploadButton().getAttribute('aria-disabled')).toBeNull();
+  });
+
+  it('clears an attached file, dropping a derived name and keeping a typed one', async () => {
+    component.open(bareSuite);
+    fixture.detectChanges();
+    const remove = () => host.querySelector('#snapshotUploadFile-remove') as HTMLButtonElement;
+
+    await chooseFile('Dlvl:1');
+    expect(component.name).toBe('Valkyrie dlvl 12');
+    remove().click();
+    fixture.detectChanges();
+
+    expect(host.querySelector('#snapshotUploadFile-card')).toBeNull();
+    expect(host.querySelector('input[type="file"]#snapshotUploadFile')).not.toBeNull();
+    expect(component.content).toBeNull();
+    expect(component.name).toBe('');
+    expect(uploadButton().getAttribute('aria-disabled')).toBe('true');
+
+    const nameInput = host.querySelector('#snapshotUploadName') as HTMLInputElement;
+    nameInput.value = 'My board';
+    nameInput.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    await chooseFile('Dlvl:2');
+    expect(component.name).toBe('My board');
+    remove().click();
+    fixture.detectChanges();
+
+    expect(component.name).toBe('My board');
+    expect(uploadButton().getAttribute('aria-disabled')).toBe('true');
   });
 
   it('posts directly, with the chosen content kind, for a suite without a snapshot', async () => {

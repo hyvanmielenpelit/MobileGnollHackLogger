@@ -43,9 +43,9 @@ describe('buildSuiteWorkflowInstructions', () => {
   it('bolds nothing but a real control label, generic and concrete', () => {
     const concrete: WorkflowDetails = {
       suiteName: 'Valkyrie at Dlvl 11',
-      sourceFileName: 'benchmark-suite-valkyrie-at-dlvl-11.yaml',
-      sourcePath: 'C:\\temp\\benchmark-suite-valkyrie-at-dlvl-11.yaml',
-      outputFileName: 'benchmark-questions-valkyrie-at-dlvl-11.yaml',
+      sourceFileName: 'overseer-suite-export-valkyrie-at-dlvl-11.yaml',
+      sourcePath: 'C:\\temp\\overseer-suite-export-valkyrie-at-dlvl-11.yaml',
+      outputFileName: 'agent-new-questions-valkyrie-at-dlvl-11.yaml',
       questionCount: 18
     };
     for (const details of [{}, concrete] as WorkflowDetails[]) {
@@ -60,10 +60,12 @@ describe('buildSuiteWorkflowInstructions', () => {
 
   it('writes the concrete names once they are known', () => {
     const text = buildSuiteWorkflowInstructions('add-to-suite', {
-      suiteName: 'Core', outputFileName: 'benchmark-questions-core.yaml', questionCount: 1, sourcePath: 'C:\\t\\s.yaml'
+      suiteName: 'Core', outputFileName: 'agent-new-questions-core.yaml', questionCount: 1, sourcePath: 'C:\\t\\s.yaml'
     });
     expect(text).toContain('**Add 1 Question to Core**');
-    expect(text).toContain('`benchmark-questions-core.yaml`');
+    expect(text).toContain('`agent-new-questions-core.yaml`');
+    expect(text).toContain('the one starting `agent-new-`, not the `overseer-suite-export-` file you downloaded');
+    expect(text).toContain('this is the file the agent reads');
     expect(text).toContain('`C:\\t\\s.yaml`');
     expect(text).not.toContain('## B');
   });

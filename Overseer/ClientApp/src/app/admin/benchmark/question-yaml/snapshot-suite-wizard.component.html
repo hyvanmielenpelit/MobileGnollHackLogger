@@ -116,15 +116,25 @@
                 <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
                 {{ labels.downloadSuite }}
               </button>
-              <p class="builder-hint">The file is named <code>{{ downloadFileName }}</code>. Keep it outside every repository.</p>
+              <dl class="wizard-file-pair">
+                <div class="wizard-file-row">
+                  <dt><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg> You download</dt>
+                  <dd><code>{{ downloadFileName }}</code><span class="builder-hint">The suite and its game snapshot, for the agent to read. Keep it outside every repository.</span></dd>
+                </div>
+                <div class="wizard-file-row is-upload">
+                  <dt><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg> The agent writes</dt>
+                  <dd><code>{{ outputFileName }}</code><span class="builder-hint">The new questions. This is the file you upload in step 4.</span></dd>
+                </div>
+              </dl>
             </div>
           } @else {
             <div class="wizard-field">
-              <label [attr.for]="idPrefix + '-check-file'">{{ labels.checkFile }} <span class="builder-optional">(optional)</span></label>
-              <input type="file" class="gh-input" [id]="idPrefix + '-check-file'"
-                     accept=".html,.htm,.txt,text/html,text/plain"
-                     [attr.aria-describedby]="idPrefix + '-check-file-hint'"
-                     (change)="onCheckFileSelected($event)">
+              <app-file-picker [inputId]="idPrefix + '-check-file'" [label]="labels.checkFile" [optional]="true"
+                               accept=".html,.htm,.txt,text/html,text/plain"
+                               acceptHint=".ai.html or .snapshot.txt"
+                               [describedBy]="idPrefix + '-check-file-hint'"
+                               [fileName]="checkedFileName"
+                               (fileSelected)="checkFile($event)" (cleared)="onCheckFileCleared()" />
               <p class="builder-hint" [id]="idPrefix + '-check-file-hint'">Read here in the browser and never uploaded: it only tells you whether this is a snapshot and how large it is.</p>
               @if (fileCheckMessage) {
                 <p class="wizard-status" [class.wizard-status-warning]="!fileCheck?.looksLikeSnapshot || fileCheck?.exceedsCap" role="status">{{ fileCheckMessage }}</p>
@@ -164,7 +174,7 @@
                                     (input)="onBuilderEdited()"
                                     (change)="onBuilderEdited()" />
           @if (promptOptions) {
-            <p class="builder-hint wizard-after-prompt">Paste it into an agent session opened on the MobileGnollHackLogger repository. The agent shows a count table, then writes <code>{{ outputFileName }}</code> beside your file. You can close this wizard meanwhile; it remembers this step.</p>
+            <p class="builder-hint wizard-after-prompt">Paste it into an agent session opened on the MobileGnollHackLogger repository. The agent shows a count table, then writes <code>{{ outputFileName }}</code> beside {{ isAddRoute ? 'the file you downloaded' : 'the snapshot' }}. You can close this wizard meanwhile; it remembers this step.</p>
           }
         }
 
@@ -172,7 +182,18 @@
         @if (step >= 4) {
           @if (step === 4) {
             <h4 class="wizard-step-heading" #stepHeading tabindex="-1">Upload the agent's file</h4>
-            <p class="wizard-lead">{{ uploadLead }}</p>
+            <dl class="wizard-file-pair wizard-upload-pair">
+              <div class="wizard-file-row is-upload">
+                <dt><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg> Upload this</dt>
+                <dd><code>{{ outputFileName }}</code><span class="builder-hint">The file the agent wrote.</span></dd>
+              </div>
+              @if (isAddRoute) {
+                <div class="wizard-file-row is-muted">
+                  <dt><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg> Not this</dt>
+                  <dd><code>{{ downloadFileName }}</code><span class="builder-hint">The file you downloaded for the agent to read.</span></dd>
+                </div>
+              }
+            </dl>
             @if (isAddRoute && existingState === 'loading') {
               <p class="form-hint" role="status">Loading the suite's questions…</p>
             }
@@ -198,6 +219,8 @@
                                           [existing]="existing"
                                           [suites]="suites"
                                           [expectation]="expectation"
+                                          [expectedFileName]="outputFileName"
+                                          [downloadedFileName]="isAddRoute ? downloadFileName : null"
                                           (imported)="onQuestionsImported($event)"
                                           (suiteImported)="onSuiteImported($event)"
                                           (helpRequested)="helpRequested.emit()"

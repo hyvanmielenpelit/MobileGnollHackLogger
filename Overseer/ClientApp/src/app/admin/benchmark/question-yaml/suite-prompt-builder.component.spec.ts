@@ -9,7 +9,7 @@ describe('SuitePromptBuilderComponent', () => {
   let host: HTMLElement;
 
   const PATH = 'C:\\temp\\gnollhack.valkyrie.ai.html';
-  const SUITE_PATH = 'C:\\temp\\benchmark-suite-core.yaml';
+  const SUITE_PATH = 'C:\\temp\\overseer-suite-export-core.yaml';
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({ imports: [SuitePromptBuilderComponent] }).compileComponents();
@@ -84,7 +84,7 @@ describe('SuitePromptBuilderComponent', () => {
   it('shows the output file name once a suite name is typed', () => {
     type('name', 'Valkyrie at Dlvl 11');
     expect(host.querySelector('#suite-prompt-name-file')!.textContent)
-      .toContain('benchmark-suite-valkyrie-at-dlvl-11.yaml');
+      .toContain('agent-new-suite-valkyrie-at-dlvl-11.yaml');
   });
 
   it('hides the suite name for a suite YAML and names the questions file from the known suite', () => {
@@ -94,7 +94,7 @@ describe('SuitePromptBuilderComponent', () => {
     fixture.detectChanges();
 
     expect(input('name')).toBeNull();
-    expect(host.querySelector('#suite-prompt-name-file')!.textContent).toContain('benchmark-questions-core.yaml');
+    expect(host.querySelector('#suite-prompt-name-file')!.textContent).toContain('agent-new-questions-core.yaml');
 
     submit();
     expect(prompt()!.textContent).toBe(buildSuiteAgentPrompt({

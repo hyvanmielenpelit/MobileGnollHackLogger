@@ -23,7 +23,7 @@ import {
 const WORKFLOW_MARKDOWN = `## Download, edit, import
 
 1. **Download** a suite with the two icon buttons on its card: **Download Suite as YAML** and **Copy Suite as YAML to Clipboard**. Both are inert only while the suite has neither questions nor a game snapshot. A snapshot suite with no questions yet downloads with \`questions: []\`: that file is for an agent to write questions against, and does not import as it is.
-2. The file holds the suite's name and description, the \`snapshot\` mapping for a snapshot suite, and every question with its \`id\`, \`difficulty\`, \`question\` and \`rubric\`. It is named \`benchmark-suite-<slug>.yaml\`.
+2. The file holds the suite's name and description, the \`snapshot\` mapping for a snapshot suite, and every question with its \`id\`, \`difficulty\`, \`question\` and \`rubric\`. It is named \`overseer-suite-export-<slug>.yaml\`.
 3. **Import Suite from YAML** on this toolbar takes it back: **Validate** checks the whole document, **Review changes** shows the new suite, what happens to the game snapshot and every question, and **Create suite** writes all of it at once.
 
 ## What a suite import does
@@ -235,8 +235,10 @@ The **Snapshot Suite Wizard** on this toolbar walks through every step below, ge
 
 | The game snapshot is… | The agent… | The wizard's import… |
 |---|---|---|
-| **Attached to a suite in Overseer** | reads the suite YAML the wizard downloads, and writes \`benchmark-questions-<slug>.yaml\` | **adds** the new questions to that suite; its name, description, snapshot and existing questions stay as they are |
-| **A snapshot file from GnollHack** | reads the \`.ai.html\` or \`.snapshot.txt\`, and writes \`benchmark-suite-<slug>.yaml\` | **creates** a new suite with the snapshot attached |
+| **Attached to a suite in Overseer** | reads the suite YAML the wizard downloads, \`overseer-suite-export-<slug>.yaml\`, and writes \`agent-new-questions-<slug>.yaml\` | **adds** the new questions to that suite; its name, description, snapshot and existing questions stay as they are |
+| **A snapshot file from GnollHack** | reads the \`.ai.html\` or \`.snapshot.txt\`, and writes \`agent-new-suite-<slug>.yaml\` | **creates** a new suite with the snapshot attached |
+
+A name starting \`overseer-…-export\` was written by Overseer; a name starting \`agent-new-\` was written by the agent, and is the one to upload.
 
 In both routes:
 

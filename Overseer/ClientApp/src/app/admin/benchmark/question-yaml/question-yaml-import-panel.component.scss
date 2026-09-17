@@ -29,13 +29,20 @@
   tab-size: 2;
 }
 
-.import-file-info {
+/* Advisory: the glyph and the wording carry the warning, not the colour alone. */
+.import-file-advice {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  font-size: 13px;
-  color: #ccc;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+
+  .import-check-glyph {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--color-warning);
+  }
 }
 
 .import-help-hint {

@@ -131,9 +131,77 @@
   margin-block-start: 12px;
 }
 
-.wizard-lead {
-  margin: 0 0 14px;
-  overflow-wrap: anywhere;
+/* Which file is which: a name/value callout. The upload row is marked by its border, icon and
+   label, so the emphasis does not rest on colour alone. */
+.gh-dialog.snapshot-suite-wizard .dialog-body {
+  container-type: inline-size;
+}
+
+.wizard-file-pair {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  margin: 0;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.wizard-upload-pair {
+  margin-block-end: 14px;
+}
+
+.wizard-file-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  gap: 4px 14px;
+  padding: 10px 14px;
+  border-inline-start: 3px solid transparent;
+
+  & + & {
+    border-top: 1px solid var(--border-glass);
+  }
+
+  dt {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85em;
+    font-weight: 600;
+    color: var(--primary-color);
+  }
+
+  dd {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    min-width: 0;
+  }
+
+  code {
+    overflow-wrap: anywhere;
+  }
+
+  &.is-upload {
+    border-inline-start-color: var(--primary-color);
+  }
+
+  &.is-muted {
+    dt,
+    code {
+      color: #aaa;
+    }
+  }
+}
+
+@container (max-width: 560px) {
+  .wizard-file-pair {
+    grid-template-columns: 1fr;
+  }
+
+  .wizard-file-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .wizard-assess {

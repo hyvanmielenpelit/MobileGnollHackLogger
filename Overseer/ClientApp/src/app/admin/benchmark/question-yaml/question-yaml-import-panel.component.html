@@ -26,18 +26,18 @@
       </div>
     } @else {
       <div class="form-group">
-        <label [attr.for]="idPrefix + '-file'">YAML file</label>
-        <input [id]="idPrefix + '-file'" type="file" class="gh-input"
-               accept=".yaml,.yml,application/yaml,text/yaml,text/plain"
-               (change)="onFileSelected($event)">
-        @if (fileText !== null) {
-          <div class="import-file-info" role="status">
-            <span>{{ fileName }} ({{ fileSizeLabel }})</span>
-            <button type="button" class="btn-ghost" (click)="clearFile()">Clear file</button>
-          </div>
-        }
-        @if (fileError) {
-          <p class="error-message" role="alert">{{ fileError }}</p>
+        <app-file-picker [inputId]="idPrefix + '-file'" label="YAML file"
+                         accept=".yaml,.yml,application/yaml,text/yaml,text/plain"
+                         acceptHint=".yaml or .yml, up to 2 MB"
+                         [fileName]="fileText !== null ? fileName : null"
+                         [fileDetail]="fileText !== null ? fileSizeLabel : null"
+                         [error]="fileError"
+                         (fileSelected)="loadFile($event)" (cleared)="clearFile()" />
+        @if (fileNameAdvice) {
+          <p class="import-file-advice" role="status">
+            <svg class="import-check-glyph" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            <span>{{ fileNameAdvice }}</span>
+          </p>
         }
       </div>
     }

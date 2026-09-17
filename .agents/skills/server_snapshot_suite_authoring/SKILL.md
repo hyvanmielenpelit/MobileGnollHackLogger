@@ -60,10 +60,13 @@ The wizard writes them as a line-oriented block, so both ends agree on the wordi
 | `Question counts:` | `S Simple / I Intermediate / A Advanced`, or `propose them from the board`. Supplied counts win (§ 3.5). |
 | `Count table:` | `…wait for my go-ahead…` is the § 3.5 default. `…continue without waiting…` is an explicit instruction from the user to report the table and carry on; honour it. |
 
-**Output.** Exactly **one** file, written **beside the input file**: `benchmark-suite-<slug>.yaml`
-in create mode, `benchmark-questions-<slug>.yaml` in add mode. The slug is the suite name — in add
+**Output.** Exactly **one** file, written **beside the input file**: `agent-new-suite-<slug>.yaml`
+in create mode, `agent-new-questions-<slug>.yaml` in add mode. The slug is the suite name — in add
 mode, the file's `suite.name` — lower-cased and reduced to `[a-z0-9-]`, as `suiteSlug` in
-`question-yaml-format.ts` does it.
+`question-yaml-format.ts` does it. The prefix is part of the contract: the input in add mode is
+named `overseer-suite-export-<slug>.yaml`, and the wizard's upload step tells the two apart by
+name. Never write to, rename or overwrite the input file. A prompt that names a different output
+file wins — older prompts name `benchmark-…` files.
 
 **Boundaries.**
 
@@ -213,7 +216,7 @@ H2 for the header and the `suite` block, Q1–Q6 for the questions, M2 for quest
 suite mode. The model to copy is the `suite-snapshot` example in `suite-yaml-guide.ts` in the same
 directory.
 
-**Add mode writes a different shape.** `benchmark-questions-<slug>.yaml` holds the header, the
+**Add mode writes a different shape.** `agent-new-questions-<slug>.yaml` holds the header, the
 input file's **`suite` block verbatim** — name, description and the whole `snapshot` mapping,
 `sha256` included — and **only the new questions**. **No question carries an `id`**: an id means
 *replace that question*, and the Snapshot Suite Wizard refuses a file that has one. The rest of

@@ -66,7 +66,7 @@ describe('SnapshotSuiteWizardComponent', () => {
     click(host.querySelector<HTMLInputElement>('#snapshot-wizard-route-suite')!);
     click(host.querySelectorAll<HTMLInputElement>('input[name="snapshot-wizard-suite"]')[0]);
     click(forward());
-    typePath('C:\\temp\\benchmark-suite-zed-empty.yaml');
+    typePath('C:\\temp\\overseer-suite-export-zed-empty.yaml');
     click(forward());
   }
 
@@ -114,7 +114,10 @@ describe('SnapshotSuiteWizardComponent', () => {
     const downloadButton = Array.from(host.querySelectorAll<HTMLButtonElement>('.wizard-field .btn-ghost')).find(b => b.textContent!.includes('Download Suite YAML'))!;
     click(downloadButton);
     expect(download).toHaveBeenCalledWith(empty);
-    expect(host.textContent).toContain('benchmark-suite-zed-empty.yaml');
+    const pair = Array.from(host.querySelectorAll('.wizard-file-pair .wizard-file-row'));
+    expect(pair.map(r => r.querySelector('dt')!.textContent!.trim())).toEqual(['You download', 'The agent writes']);
+    expect(pair.map(r => r.querySelector('code')!.textContent)).toEqual(['overseer-suite-export-zed-empty.yaml', 'agent-new-questions-zed-empty.yaml']);
+    expect(pair[1].classList).toContain('is-upload');
 
     click(forward());
     expect(component.step).toBe(2);
@@ -123,19 +126,20 @@ describe('SnapshotSuiteWizardComponent', () => {
     typePath('board.ai.html');
     expect(host.textContent).toContain('This does not look like a full path');
     expect(host.textContent).toContain('This does not look like a suite YAML file.');
-    typePath('"C:\\temp\\benchmark-suite-zed-empty.yaml"');
+    typePath('"C:\\temp\\overseer-suite-export-zed-empty.yaml"');
     click(forward());
 
     expect(component.step).toBe(3);
     expect(saved().step).toBe(3);
-    expect(saved().sourcePath).toBe('"C:\\temp\\benchmark-suite-zed-empty.yaml"');
+    expect(saved().sourcePath).toBe('"C:\\temp\\overseer-suite-export-zed-empty.yaml"');
     expect(forward().getAttribute('aria-disabled')).toBe('true');
 
     click(host.querySelector<HTMLButtonElement>('#snapshot-wizard-builder-generate')!);
     expect(component.promptOptions!.source).toBe('suite-yaml');
     expect(host.querySelector('app-suite-prompt-builder pre code')!.textContent).toContain('Mode: add questions to an existing suite');
     expect(forward().getAttribute('aria-disabled')).toBeNull();
-    expect(host.textContent).toContain('benchmark-questions-zed-empty.yaml');
+    expect(host.textContent).toContain('agent-new-questions-zed-empty.yaml');
+    expect(host.querySelector('.wizard-after-prompt')!.textContent).toContain('beside the file you downloaded');
   });
 
   it('imports route A in the wizard and hands the suite on for assessment', async () => {
@@ -152,7 +156,15 @@ describe('SnapshotSuiteWizardComponent', () => {
     expect(component.step).toBe(4);
     expect(service.getQuestions).toHaveBeenCalledWith(2);
     expect(component.panel!.source).toBe('file');
-    expect(host.querySelector('.wizard-lead')!.textContent).toContain('benchmark-questions-zed-empty.yaml');
+    const rows = Array.from(host.querySelectorAll('.wizard-upload-pair .wizard-file-row'));
+    expect(rows.length).toBe(2);
+    expect(rows[0].classList).toContain('is-upload');
+    expect(rows[0].querySelector('dt')!.textContent).toContain('Upload this');
+    expect(rows[0].querySelector('code')!.textContent).toBe('agent-new-questions-zed-empty.yaml');
+    expect(rows[1].querySelector('dt')!.textContent).toContain('Not this');
+    expect(rows[1].querySelector('code')!.textContent).toBe('overseer-suite-export-zed-empty.yaml');
+    expect(component.panel!.expectedFileName).toBe('agent-new-questions-zed-empty.yaml');
+    expect(component.panel!.downloadedFileName).toBe('overseer-suite-export-zed-empty.yaml');
 
     component.panel!.setSource('paste');
     const textarea = host.querySelector<HTMLTextAreaElement>('#snapshot-wizard-import-paste')!;
@@ -219,6 +231,7 @@ describe('SnapshotSuiteWizardComponent', () => {
     fixture.detectChanges();
 
     expect(component.step).toBe(3);
+    expect(host.querySelector('.wizard-after-prompt')!.textContent).toContain('agent-new-suite-valk.yaml beside the snapshot');
     expect(component.builder!.suiteName).toBe('Valk');
     expect(component.promptOptions!.counts).toEqual({ simple: 3, intermediate: 3, advanced: 3 });
     expect(host.querySelector('app-suite-prompt-builder pre code')!.textContent).toContain('3 Simple / 3 Intermediate / 3 Advanced');
@@ -258,11 +271,20 @@ describe('SnapshotSuiteWizardComponent', () => {
     click(host.querySelector<HTMLInputElement>('#snapshot-wizard-route-file')!);
     click(forward());
     expect(component.step).toBe(2);
+    expect(host.querySelector('.wizard-file-pair')).toBeNull();
+    expect(host.querySelector('#snapshot-wizard-check-file-label')!.textContent).toContain('(optional)');
+    expect(host.querySelector('#snapshot-wizard-check-file')!.getAttribute('aria-describedby')).toContain('snapshot-wizard-check-file-hint');
 
     await component.checkFile(new File(['<html><body><pre>GnollHack 4.2.0\nDlvl:1</pre></body></html>'], 'valk.ai.html'));
     fixture.detectChanges();
     expect(host.querySelector('.wizard-status')!.textContent).toContain('valk.ai.html looks like an exported .ai.html snapshot');
+    expect(host.querySelector('#snapshot-wizard-check-file-card .gh-file-card-name')!.textContent).toBe('valk.ai.html');
     expect(host.querySelector<HTMLInputElement>('#snapshot-wizard-path')!.placeholder).toContain('valk.ai.html');
+
+    click(host.querySelector<HTMLButtonElement>('#snapshot-wizard-check-file-remove')!);
+    expect(component.checkedFileName).toBeNull();
+    expect(host.querySelector('.wizard-status')).toBeNull();
+    expect(host.querySelector('input[type="file"]#snapshot-wizard-check-file')).not.toBeNull();
 
     typePath('C:\\t\\suite.yaml');
     expect(host.textContent).toContain('This looks like a suite YAML; that is the other route.');

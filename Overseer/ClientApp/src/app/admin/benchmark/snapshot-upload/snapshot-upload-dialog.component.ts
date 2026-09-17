@@ -18,6 +18,7 @@ import {
   CaptureBenchmarkSnapshotResponse,
   SnapshotContentKind
 } from '../../../services/admin-benchmark.service';
+import { FilePickerComponent } from '../../../shared/file-picker/file-picker.component';
 import { errorText } from '../question-yaml/question-yaml-import-dialog.component';
 
 export const MAX_SNAPSHOT_FILE_BYTES = 4 * 1024 * 1024;
@@ -46,7 +47,7 @@ export function snapshotNameFromFileName(fileName: string): string {
 @Component({
   selector: 'app-snapshot-upload-dialog',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, FilePickerComponent],
   templateUrl: './snapshot-upload-dialog.component.html',
   styleUrls: ['./snapshot-upload-dialog.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -58,7 +59,6 @@ export class SnapshotUploadDialogComponent implements OnDestroy {
   @ViewChild('dialog') dialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('replaceConfirmDialog') replaceConfirmDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('confirmCancelButton') confirmCancelButton?: ElementRef<HTMLButtonElement>;
-  @ViewChild('fileInput') fileInput?: ElementRef<HTMLInputElement>;
 
   @Output() uploaded = new EventEmitter<CaptureBenchmarkSnapshotResponse>();
 
@@ -71,6 +71,8 @@ export class SnapshotUploadDialogComponent implements OnDestroy {
   content: string | null = null;
   fileName = '';
   fileError: string | null = null;
+  /** The snapshot name last derived from a file name; `name` still equals it until the admin edits it. */
+  private nameFromFile: string | null = null;
 
   contentKind: SnapshotContentKind = 'Auto';
   name = '';
@@ -136,10 +138,10 @@ export class SnapshotUploadDialogComponent implements OnDestroy {
     return !this.posting && this.content !== null && this.name.trim() !== '';
   }
 
-  async onFileSelected(event: Event): Promise<void> {
-    const file = (event.target as HTMLInputElement).files?.[0];
-    if (!file) return;
-    await this.loadFile(file);
+  /** What the file card shows under the name: the detected kind and the length. */
+  get fileDetail(): string | null {
+    if (this.content === null) return null;
+    return `Detected: ${this.detectedIsHtml ? 'HTML dump' : 'snapshot text'}, ${this.content.length.toLocaleString('en-US')} characters`;
   }
 
   async loadFile(file: File): Promise<void> {
@@ -155,13 +157,27 @@ export class SnapshotUploadDialogComponent implements OnDestroy {
     try {
       this.content = await file.text();
       this.fileName = file.name;
-      if (this.name.trim() === '') {
+      if (this.name.trim() === '' || this.name === this.nameFromFile) {
         this.name = snapshotNameFromFileName(file.name).slice(0, 128);
+        this.nameFromFile = this.name;
       }
     } catch {
       this.content = null;
       this.fileError = `Could not read ${file.name}.`;
     }
+    this.cdr.detectChanges();
+  }
+
+  /* A name derived from the file goes with it; a name the admin typed or edited stays. */
+  clearFile(): void {
+    this.content = null;
+    this.fileName = '';
+    this.fileError = null;
+    this.error = null;
+    if (this.nameFromFile !== null && this.name === this.nameFromFile) {
+      this.name = '';
+    }
+    this.nameFromFile = null;
     this.cdr.detectChanges();
   }
 
@@ -235,8 +251,6 @@ export class SnapshotUploadDialogComponent implements OnDestroy {
     this.notes = '';
     this.posting = false;
     this.error = null;
-    if (this.fileInput?.nativeElement) {
-      this.fileInput.nativeElement.value = '';
-    }
+    this.nameFromFile = null;
   }
 }
