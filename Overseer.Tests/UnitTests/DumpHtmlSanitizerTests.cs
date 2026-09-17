@@ -189,4 +189,73 @@ public class DumpHtmlSanitizerTests
         Assert.Equal(rowWithNbsps.Length, lines[1].Length);
         Assert.Equal("  #  . @", lines[1]);
     }
+
+    [Fact]
+    public void TableHeaders_AsTheEngineWritesThem_AreSanitizedCleanly()
+    {
+        /* The same table as the compact case above, but with the newline the C engine writes
+           after every block tag. This is the shape the client's SanitizeDumpHtml() is levelled
+           to; if the two ever drift apart, they drift here. */
+        string html = "<table>\n<thead>\n<tr>\n<th>Name</th><th>Value</th>\n</tr>\n</thead>\n"
+                    + "<tbody>\n<tr>\n<td>Item</td><td>10</td>\n</tr>\n</tbody>\n</table>\n";
+        string result = DumpHtmlSanitizer.Sanitize(html);
+
+        Assert.Equal("Name Value\n\nItem 10", result);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   \n\n  ")]
+    public void PrepareFlattenedSnapshot_ReturnsEmptyForNothingUsable(string? text)
+    {
+        Assert.Equal(string.Empty, DumpHtmlSanitizer.PrepareFlattenedSnapshot(text));
+    }
+
+    [Fact]
+    public void PrepareFlattenedSnapshot_CapsAtTheDocumentedLength()
+    {
+        string oversize = new('x', DumpHtmlSanitizer.MaxFlattenedSnapshotChars + 500);
+        string result = DumpHtmlSanitizer.PrepareFlattenedSnapshot(oversize);
+
+        Assert.Equal(DumpHtmlSanitizer.MaxFlattenedSnapshotChars, result.Length);
+    }
+
+    [Fact]
+    public void PrepareFlattenedSnapshot_DoesNotSplitASurrogatePair()
+    {
+        /* An unpaired surrogate left by a blind Substring can make a JSON serializer or the
+           SignalR transport throw, so the cut backs up one character. */
+        string text = new string('x', DumpHtmlSanitizer.MaxFlattenedSnapshotChars - 1)
+                    + "😀"
+                    + new string('x', 100);
+        Assert.True(char.IsHighSurrogate(text[DumpHtmlSanitizer.MaxFlattenedSnapshotChars - 1]));
+
+        string result = DumpHtmlSanitizer.PrepareFlattenedSnapshot(text);
+
+        Assert.Equal(DumpHtmlSanitizer.MaxFlattenedSnapshotChars - 1, result.Length);
+        Assert.False(char.IsHighSurrogate(result[^1]));
+    }
+
+    [Fact]
+    public void PrepareFlattenedSnapshot_IsIdempotent()
+    {
+        string clientShapedText = "Map:\n   #   .\n\n\n\nInventory:   \n1 - an apple   \n";
+        string once = DumpHtmlSanitizer.PrepareFlattenedSnapshot(clientShapedText);
+
+        Assert.Equal(once, DumpHtmlSanitizer.PrepareFlattenedSnapshot(once));
+    }
+
+    [Fact]
+    public void PrepareFlattenedSnapshot_ConvertsNbspToAsciiSpace_AndPreservesColumns()
+    {
+        string rowWithNbsps = "  #  . @";
+        string normalized = DumpHtmlSanitizer.PrepareFlattenedSnapshot($"Header\n{rowWithNbsps}\nFooter");
+
+        Assert.DoesNotContain(' ', normalized);
+        string[] lines = normalized.Split('\n');
+        Assert.Equal(3, lines.Length);
+        Assert.Equal(rowWithNbsps.Length, lines[1].Length);
+        Assert.Equal("  #  . @", lines[1]);
+    }
 }

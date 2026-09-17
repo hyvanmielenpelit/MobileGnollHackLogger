@@ -20,8 +20,9 @@ public class SessionController : ControllerBase
     private readonly ChatRetentionService _chatRetentionService;
     private readonly Overseer.Services.Privacy.ConfidentialPolicyResolver _confidentialPolicyResolver;
     private readonly Overseer.Services.Privacy.ContentProtectionService _contentProtection;
+    private readonly ILogger<SessionController> _logger;
 
-    public SessionController(SignInManager<ApplicationUser> signInManager, ApplicationDbContext dbContext, IMemoryCache cache, IConfiguration configuration, IServiceScopeFactory scopeFactory, OngoingChatManager ongoingChatManager, ChatRetentionService chatRetentionService, Overseer.Services.Privacy.ConfidentialPolicyResolver confidentialPolicyResolver, Overseer.Services.Privacy.ContentProtectionService contentProtection)
+    public SessionController(SignInManager<ApplicationUser> signInManager, ApplicationDbContext dbContext, IMemoryCache cache, IConfiguration configuration, IServiceScopeFactory scopeFactory, OngoingChatManager ongoingChatManager, ChatRetentionService chatRetentionService, Overseer.Services.Privacy.ConfidentialPolicyResolver confidentialPolicyResolver, Overseer.Services.Privacy.ContentProtectionService contentProtection, ILogger<SessionController> logger)
     {
         _signInManager = signInManager;
         _dbContext = dbContext;
@@ -32,6 +33,7 @@ public class SessionController : ControllerBase
         _chatRetentionService = chatRetentionService;
         _confidentialPolicyResolver = confidentialPolicyResolver;
         _contentProtection = contentProtection;
+        _logger = logger;
     }
 
     [HttpPost("create")]
@@ -96,19 +98,38 @@ public class SessionController : ControllerBase
 
         await _chatRetentionService.EnforceUserSessionQuotaAsync(user.Id);
 
-        if (!string.IsNullOrWhiteSpace(request.SnapshotHtml))
+        /* Current apps send both fields; older ones send the raw dump only. Falling back on an
+           empty result rather than on the field being absent means a whitespace-only
+           SnapshotText does not suppress a usable SnapshotHtml. */
+        string snapshot = DumpHtmlSanitizer.PrepareFlattenedSnapshot(request.SnapshotText);
+        string snapshotSource = "text";
+        if (snapshot.Length == 0 && !string.IsNullOrWhiteSpace(request.SnapshotHtml))
         {
-            var sanitized = Overseer.Services.ChatService.SanitizeSnapshotForLlm(request.SnapshotHtml);
+            snapshot = Overseer.Services.ChatService.SanitizeSnapshotForLlm(request.SnapshotHtml);
+            snapshotSource = "html";
+        }
+
+        if (snapshot.Length > 0)
+        {
             var systemMsg = new ChatMessage
             {
                 ChatSessionId = session.Id,
                 Role = "system",
-                Content = Protect(Overseer.Services.ChatService.GameSnapshotPrefix + "\n" + sanitized),
+                Content = Protect(Overseer.Services.ChatService.GameSnapshotPrefix + "\n" + snapshot),
                 IsGameSnapshot = true,
                 TimestampUtc = DateTime.UtcNow
             };
             _dbContext.ChatMessage.Add(systemMsg);
             await _dbContext.SaveChangesAsync();
+
+            /* Which field the app used, so the HTML path can be retired once no app reports it.
+               Never the content, the user or the title - and no length for a confidential
+               session, whose payload size is a side-channel fingerprint. */
+            if (session.IsConfidential)
+                _logger.LogInformation("Game snapshot stored: source={Source}", snapshotSource);
+            else
+                _logger.LogInformation("Game snapshot stored: source={Source}, length={Length}",
+                    snapshotSource, snapshot.Length);
         }
 
         // Save additional context channels to disk and/or as system messages
@@ -234,7 +255,17 @@ public class CreateSessionRequest
     public string UserName { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
     public string AntiForgeryToken { get; set; } = string.Empty;
+
+    /// <summary>Raw GnollHack dump HTML. Sent by app versions that leave sanitizing to the server.</summary>
     public string? SnapshotHtml { get; set; }
+
+    /// <summary>
+    /// The snapshot already flattened to text by the app. Takes precedence over
+    /// <see cref="SnapshotHtml"/> when both are present, which is every request from a
+    /// current app.
+    /// </summary>
+    public string? SnapshotText { get; set; }
+
     public string? MessageHistory { get; set; }        // NEW: Full 16384-message history (plain text)
     public string? DirectoryManifest { get; set; }     // NEW: Game directory file listing (tab-separated)
 

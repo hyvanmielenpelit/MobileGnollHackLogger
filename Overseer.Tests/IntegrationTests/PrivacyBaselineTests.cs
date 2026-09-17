@@ -185,6 +185,50 @@ public class PrivacyBaselineTests : IClassFixture<OverseerWebApplicationFactory>
         // The two are distinct rows, not one row wearing both flags.
         Assert.NotEqual(snapshot.Id, history.Id);
     }
+
+    [Fact]
+    public async Task SessionCreate_SetsTheSameFlags_WhenTheAppSendsFlattenedSnapshotText()
+    {
+        /* Current apps post both fields and the text wins. This is the only test that puts the
+           new field through real form binding rather than a directly constructed request. */
+        var user = await CreateUserAsync("Correct-Horse-Battery-4");
+
+        var form = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["AntiForgeryToken"] = "test-antiforgery-secret",
+            ["UserName"] = user.UserName!,
+            ["Password"] = "Correct-Horse-Battery-4",
+            ["Title"] = "Flag test session, text snapshot",
+            ["SnapshotText"] = "Dungeon Level 3",
+            ["SnapshotHtml"] = "<pre>Dungeon Level 17</pre>",
+            ["MessageHistory"] = "You hit the gnoll. The gnoll bites!",
+            ["IsGnollHackSession"] = "true"
+        });
+
+        var response = await _client.PostAsync("/api/session/create", form, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        var session = await db.ChatSession
+            .Where(s => s.AspNetUserId == user.Id)
+            .OrderByDescending(s => s.Id)
+            .FirstAsync(TestContext.Current.CancellationToken);
+
+        var messages = await db.ChatMessage
+            .Where(m => m.ChatSessionId == session.Id)
+            .ToListAsync(TestContext.Current.CancellationToken);
+
+        var snapshot = Assert.Single(messages, m => m.IsGameSnapshot);
+        Assert.Contains("Dungeon Level 3", snapshot.Content);
+        Assert.DoesNotContain("Dungeon Level 17", snapshot.Content);
+
+        var history = Assert.Single(messages, m => m.IsMessageHistory);
+        Assert.Contains("bites", history.Content);
+
+        Assert.NotEqual(snapshot.Id, history.Id);
+    }
 }
 
 internal static class PrivacyBaselineHttpExtensions

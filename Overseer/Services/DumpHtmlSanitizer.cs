@@ -9,15 +9,20 @@ namespace Overseer.Services;
 /// block tags and after every map row, so block-level tags consume that newline
 /// and inline tags are removed without inserting anything.
 ///
-/// Steps 1-7 are a transcription of SanitizeDumpHtml() in the GnollHack client
-/// (win/win32/xpl/GnollHackX/GnollHackX/Pages/Game/OverseerPage.xaml.cs), so a
-/// snapshot arriving through refresh_snapshot and one arriving through
-/// POST /api/session/create have the same line structure. Keep the two in sync.
+/// The reference implementation is SanitizeDumpHtml() in the GnollHack client
+/// (win/win32/xpl/GnollHackX/GnollHackX/Pages/Game/OverseerPage.xaml.cs), and it
+/// runs for every snapshot a current app sends: such an app posts the flattened
+/// text in SnapshotText and the raw dump in SnapshotHtml, and the server reads
+/// the latter only when the former is absent or blank.
 ///
-/// Step 8 is a deliberate, server-only addition: U+00A0 is normalized back to an
-/// ASCII space to save tokens. It is visually identical to the model and safe
-/// because every collapse has already run. If the client ever adopts the same
-/// step, the two implementations become byte-identical again.
+/// Sanitize() is therefore for app versions that upload raw dump HTML alone, and
+/// must keep producing what the client's function produces for the same input.
+/// The two are byte-identical for the same dump - the client has the thead / tr
+/// block-tag handling and the U+00A0 step as well. Keep them in sync.
+///
+/// Step 8 normalizes U+00A0 back to an ASCII space to save tokens. It is safe
+/// precisely because every collapse has already run, so one U+00A0 becomes
+/// exactly one space and the map's column counts are unchanged.
 /// </summary>
 public static class DumpHtmlSanitizer
 {
@@ -83,6 +88,32 @@ public static class DumpHtmlSanitizer
         return text.Trim();
     }
 
+    /* Upper bound for snapshot text that arrives already flattened. The app truncates at
+       60,000 characters and appends a short marker; the slack covers the marker. */
+    public const int MaxFlattenedSnapshotChars = 60200;
+
+    /// <summary>
+    /// Caps and normalizes snapshot text the client has already flattened, whether it
+    /// arrives as SnapshotText on session create or through refresh_snapshot. Returns an
+    /// empty string for null or whitespace-only input.
+    /// </summary>
+    public static string PrepareFlattenedSnapshot(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+
+        if (text.Length > MaxFlattenedSnapshotChars)
+        {
+            /* Never cut between the halves of a surrogate pair: a lone surrogate can make a
+               JSON serializer or the SignalR transport throw. */
+            int cap = MaxFlattenedSnapshotChars;
+            if (char.IsHighSurrogate(text[cap - 1]))
+                cap--;
+            text = text.Substring(0, cap);
+        }
+
+        return NormalizeFlattenedText(text);
+    }
+
     public static string Sanitize(string? html)
     {
         if (string.IsNullOrWhiteSpace(html)) return string.Empty;
@@ -100,11 +131,11 @@ public static class DumpHtmlSanitizer
               no ""&lt;"" can be mistaken for a tag by step 4. */
         text = WebUtility.HtmlDecode(text);
 
-        /* 8. Server-only: normalize U+00A0 back to ASCII space now that all
-              collapsing has finished. One U+00A0 becomes exactly one space, so
-              column counts are unchanged; plain spaces cost fewer tokens.
-              Extracted to NormalizeFlattenedText so client-sanitized text (Path B)
-              shares the same final normalization as raw-HTML-sanitized text (Path A). */
+        /* 8. Normalize U+00A0 back to ASCII space now that all collapsing has
+              finished. One U+00A0 becomes exactly one space, so column counts are
+              unchanged; plain spaces cost fewer tokens. Extracted to
+              NormalizeFlattenedText so client-sanitized text (Path B) shares the
+              same final normalization as raw-HTML-sanitized text (Path A). */
         return NormalizeFlattenedText(text);
     }
 }

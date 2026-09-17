@@ -153,7 +153,8 @@ public class SessionControllerCreateTests : IDisposable
         var controller = new SessionController(
             signInManager, db, new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 }), config,
             null!, new OngoingChatManager(config), retention,
-            new ConfidentialPolicyResolver(config), protection);
+            new ConfidentialPolicyResolver(config), protection,
+            NullLogger<SessionController>.Instance);
 
         return (controller, protection);
     }
@@ -279,5 +280,184 @@ public class SessionControllerCreateTests : IDisposable
 
         Assert.IsType<UnauthorizedResult>(await controller.Create(request));
         Assert.Empty(await db.ChatSession.ToListAsync(ct));
+    }
+
+    // ── SnapshotText ────────────────────────────────────────────────────────────
+    // The field a current app fills with the snapshot it flattened itself. The cases above
+    // stay as they are: they are the regression suite for apps that upload raw dump HTML.
+
+    private const string AppFlattenedText = "Dlvl 3\n  #  . @";
+
+    /* The same board as AppFlattenedText, as the engine writes it. Every test that pairs the
+       two is asserting that this is not what gets stored. */
+    private const string RawDumpHtml =
+        "<div>Dlvl 3</div>\n<pre>\n&nbsp;&nbsp;<span>#</span>&nbsp;&nbsp;. @\n</pre>\n";
+
+    /// <summary>
+    /// Creates a session and returns the body of its game-snapshot message — the prefix line
+    /// removed, and the envelope opened when the session is confidential. Null when no
+    /// snapshot message was written.
+    /// </summary>
+    private static async Task<string?> CreateAndReadSnapshotAsync(
+        SessionController controller, ApplicationDbContext db, ContentProtectionService protection,
+        CreateSessionRequest request)
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var result = await controller.Create(request);
+        dynamic value = Assert.IsType<OkObjectResult>(result).Value!;
+        long sessionId = (long)value.sessionId;
+
+        var session = await db.ChatSession.FindAsync([sessionId], ct);
+        var snapshots = await db.ChatMessage
+            .Where(m => m.ChatSessionId == sessionId && m.IsGameSnapshot)
+            .ToListAsync(ct);
+
+        if (snapshots.Count == 0) return null;
+
+        string content = protection.Decrypt(session!, Assert.Single(snapshots).Content)!;
+        Assert.StartsWith(ChatService.GameSnapshotPrefix + "\n", content);
+        return content[(ChatService.GameSnapshotPrefix.Length + 1)..];
+    }
+
+    [Fact]
+    public async Task SnapshotText_IsStoredAsGivenWithItsColumnSpacingIntact()
+    {
+        var config = CreateConfig();
+        using var db = CreateDb();
+        var (controller, protection) = CreateController(db, config);
+
+        var request = Request(isConfidential: false);
+        request.SnapshotHtml = null;
+        request.SnapshotText = AppFlattenedText;
+
+        string? body = await CreateAndReadSnapshotAsync(controller, db, protection, request);
+
+        /* Sanitize() would have collapsed those runs of spaces and flattened the map. That it
+           is stored verbatim is the whole point of the second field. */
+        Assert.Equal(AppFlattenedText, body);
+    }
+
+    [Fact]
+    public async Task SnapshotText_WinsOverSnapshotHtml_WhenACurrentAppSendsBoth()
+    {
+        var config = CreateConfig();
+        using var db = CreateDb();
+        var (controller, protection) = CreateController(db, config);
+
+        var request = Request(isConfidential: false);
+        request.SnapshotText = AppFlattenedText;
+        request.SnapshotHtml = RawDumpHtml;
+
+        Assert.Equal(AppFlattenedText, await CreateAndReadSnapshotAsync(controller, db, protection, request));
+    }
+
+    [Fact]
+    public async Task SnapshotHtml_IsNotReadAtAll_WhenSnapshotTextIsPresent()
+    {
+        var config = CreateConfig();
+        using var db = CreateDb();
+        var (controller, protection) = CreateController(db, config);
+
+        var request = Request(isConfidential: false);
+        request.SnapshotText = "Dlvl 3, the text field won";
+        request.SnapshotHtml = "<p>Dlvl 17, the html field won</p>";
+
+        string? body = await CreateAndReadSnapshotAsync(controller, db, protection, request);
+
+        Assert.Equal("Dlvl 3, the text field won", body);
+        Assert.DoesNotContain("Dlvl 17", body);
+    }
+
+    [Fact]
+    public async Task ABlankSnapshotText_DoesNotSuppressAUsableSnapshotHtml()
+    {
+        var config = CreateConfig();
+        using var db = CreateDb();
+        var (controller, protection) = CreateController(db, config);
+
+        var request = Request(isConfidential: false);
+        request.SnapshotText = "  \n";
+        request.SnapshotHtml = "<p>Dungeon Level 3</p>";
+
+        Assert.Equal("Dungeon Level 3", await CreateAndReadSnapshotAsync(controller, db, protection, request));
+    }
+
+    [Fact]
+    public async Task AnOversizeSnapshotText_IsCapped()
+    {
+        var config = CreateConfig();
+        using var db = CreateDb();
+        var (controller, protection) = CreateController(db, config);
+
+        var request = Request(isConfidential: false);
+        request.SnapshotHtml = null;
+        request.SnapshotText = new string('x', DumpHtmlSanitizer.MaxFlattenedSnapshotChars + 500);
+
+        string? body = await CreateAndReadSnapshotAsync(controller, db, protection, request);
+
+        Assert.NotNull(body);
+        Assert.Equal(DumpHtmlSanitizer.MaxFlattenedSnapshotChars, body!.Length);
+    }
+
+    [Fact]
+    public async Task LiteralAngleBracketsInSnapshotText_Survive()
+    {
+        var config = CreateConfig();
+        using var db = CreateDb();
+        var (controller, protection) = CreateController(db, config);
+
+        var request = Request(isConfidential: false);
+        request.SnapshotHtml = null;
+        request.SnapshotText = "1 - Fido, <12,7>, 3 squares away";
+
+        /* Proof the text path does not run Sanitize(): its tag stripper deletes any literal
+           <…>, which is why a pet's position needs a field of its own. */
+        Assert.Equal("1 - Fido, <12,7>, 3 squares away",
+            await CreateAndReadSnapshotAsync(controller, db, protection, request));
+    }
+
+    [Fact]
+    public async Task AConfidentialCreateEnvelopesASnapshotTextRowTheSameWay()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var config = CreateConfig();
+        using var db = CreateDb();
+        var (controller, protection) = CreateController(db, config);
+
+        var request = Request(isConfidential: true);
+        request.SnapshotText = AppFlattenedText;
+        request.SnapshotHtml = RawDumpHtml;
+
+        var result = await controller.Create(request);
+        dynamic value = Assert.IsType<OkObjectResult>(result).Value!;
+        long sessionId = (long)value.sessionId;
+
+        var session = await db.ChatSession.FindAsync([sessionId], ct);
+        var messages = await db.ChatMessage.Where(m => m.ChatSessionId == sessionId).ToListAsync(ct);
+
+        Assert.Equal(3, messages.Count);
+        Assert.All(messages, m => Assert.True(ContentProtectionService.IsEncrypted(m.Content)));
+
+        var snapshot = messages.Single(m => m.IsGameSnapshot);
+        Assert.EndsWith(AppFlattenedText, protection.Decrypt(session!, snapshot.Content));
+    }
+
+    [Fact]
+    public async Task NoSnapshotField_WritesNoSnapshotMessage()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var config = CreateConfig();
+        using var db = CreateDb();
+        var (controller, protection) = CreateController(db, config);
+
+        var request = Request(isConfidential: false);
+        request.SnapshotHtml = null;
+        request.SnapshotText = null;
+
+        Assert.Null(await CreateAndReadSnapshotAsync(controller, db, protection, request));
+
+        // The other two context rows are unaffected.
+        Assert.Equal(2, await db.ChatMessage.CountAsync(ct));
     }
 }

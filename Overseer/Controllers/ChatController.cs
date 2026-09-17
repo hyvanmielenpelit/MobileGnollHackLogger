@@ -1146,13 +1146,7 @@ public class ChatController : ControllerBase
             return BadRequest(new { error = "An incognito session is always confidential." });
         }
 
-        string snapshotText = request.SnapshotText;
-        if (snapshotText.Length > 60200)
-        {
-            snapshotText = snapshotText.Substring(0, 60200);
-        }
-
-        string normalized = DumpHtmlSanitizer.NormalizeFlattenedText(snapshotText);
+        string normalized = DumpHtmlSanitizer.PrepareFlattenedSnapshot(request.SnapshotText);
         string snapshotContent = ChatService.GameSnapshotPrefix + "\n" + normalized;
 
         // Written only into a session created here; an existing session's ClientSettings is the client's document.
