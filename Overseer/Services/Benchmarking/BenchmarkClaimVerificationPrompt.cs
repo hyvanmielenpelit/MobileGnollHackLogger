@@ -17,7 +17,9 @@ public static class BenchmarkClaimVerificationPrompt
         bool isDisputedVerdict = false,
         bool isCriticalErrorAdjudication = false,
         bool isOutOfRubricAdjudication = false,
-        string? assessorEvidence = null)
+        string? assessorEvidence = null,
+        string? boardName = null,
+        string? boardText = null)
     {
         var sb = new StringBuilder();
         // All three adjudication preambles can apply to one answer: a disputed verdict, a
@@ -58,12 +60,18 @@ public static class BenchmarkClaimVerificationPrompt
         sb.AppendLine("3. Use the available tools to search the GnollHack codebase and wiki for evidence supporting or refuting each claim.");
         sb.AppendLine("3a. A claim about how a spell, attack or effect is computed is checked in the code that implements it — the case or function that applies the effect — not only in a data table (src/monst.c, src/objects.c) or a wiki page. A table or page that omits a term does not refute a claim that names the term; a Refuted verdict needs code, or a wiki statement, that contradicts the claim.");
         sb.AppendLine("3b. A claim about the magnitude or tier of a resistance or property (for example \"50 % fire resistance\") is checked against the code that applies the property — the enlightenment strings in src/cmd.c and the resistance rolls in src/zap.c — not against the code that grants it: how an intrinsic is acquired says nothing about how much it protects.");
+        if (!string.IsNullOrWhiteSpace(boardText))
+        {
+            sb.AppendLine("3c. A claim about the hero's current state — inventory, equipment, skills, spells, position, dungeon overview — is checked against the GAME BOARD below, not against the rubric's BOARD FACTS, which quote only part of it. Cite it as board: \"<the quoted line>\". Absence from the rubric is not absence from the board.");
+        }
         sb.AppendLine("4. Possible verdicts for each claim:");
         sb.AppendLine("   - Supported: Concrete evidence was found in the source code or wiki that the claim is true.");
         sb.AppendLine("   - Refuted: Concrete evidence was found in the source code or wiki that the claim is false.");
         sb.AppendLine("   - Indeterminate: No conclusive evidence was found either way within the tool budget.");
         sb.AppendLine("   * Indeterminate is a normal outcome and is preferred over a guess.");
-        sb.AppendLine("5. CITATION REQUIREMENT: Every Supported or Refuted verdict MUST include a citation (e.g. source file path and line/symbol such as 'src/mon.c' or 'src/weapon.c:450', or wiki page title such as 'wiki:Yeenoghu'). A verdict without a citation will be demoted by the harness to Indeterminate.");
+        sb.AppendLine(!string.IsNullOrWhiteSpace(boardText)
+            ? "5. CITATION REQUIREMENT: Every Supported or Refuted verdict MUST include a citation (e.g. source file path and line/symbol such as 'src/mon.c' or 'src/weapon.c:450', a wiki page title such as 'wiki:Yeenoghu', or a game board line such as 'board: \"a - a blessed +1 quarterstaff (weapon in hands)\"'). A verdict without a citation will be demoted by the harness to Indeterminate."
+            : "5. CITATION REQUIREMENT: Every Supported or Refuted verdict MUST include a citation (e.g. source file path and line/symbol such as 'src/mon.c' or 'src/weapon.c:450', or wiki page title such as 'wiki:Yeenoghu'). A verdict without a citation will be demoted by the harness to Indeterminate.");
         sb.AppendLine("6. ECHO REQUIREMENT: You MUST echo each claim verbatim alongside its verdict so the harness can confirm alignment. A mismatched or paraphrased claim will be dropped.");
         sb.AppendLine("7. Output ONLY a valid JSON object matching the schema specified below. Do not output markdown fences around conversational prose.");
         sb.AppendLine();
@@ -75,6 +83,20 @@ public static class BenchmarkClaimVerificationPrompt
             sb.AppendLine("--- BEGIN RUBRIC ---");
             sb.AppendLine(expectedPoints);
             sb.AppendLine("--- END RUBRIC ---");
+        }
+        // The board, not the rubric, is what a claim about the hero's own state is true or false
+        // against: a rubric's BOARD FACTS quote a handful of lines, so a verifier holding only the
+        // rubric refuted claims the board itself supports.
+        if (!string.IsNullOrWhiteSpace(boardText))
+        {
+            sb.AppendLine();
+            sb.AppendLine("--- GAME BOARD (the snapshot the question is about; authoritative for the hero's current state) ---");
+            if (!string.IsNullOrWhiteSpace(boardName))
+            {
+                sb.AppendLine($"Board Name: {boardName}");
+            }
+            sb.AppendLine(boardText);
+            sb.AppendLine("--- END GAME BOARD ---");
         }
         // Carried under any adjudication: a critical-error quote or an out-of-rubric basis is argued
         // from the assessor's own stated evidence exactly as a disputed verdict is.

@@ -62,10 +62,11 @@ internal string BuildSystemPrompt(
 
 Transferring findings back to chat is therefore not an analogy or an extrapolation; it is the direct analysis of production prompt performance under test conditions.
 
-Two qualifications that the phrase "verbatim production prompt" hides, and that every analysis must hold in view:
+Three qualifications that the phrase "verbatim production prompt" hides, and that every analysis must hold in view:
 
 - **There are three call sites**, not one — `BenchmarkService.cs:270`, `:497` and `:3562` — and all of them route through `BenchmarkCandidatePromptOptions`. That record is the authoritative statement of what was graded; read it, not this section, when attributing a result.
 - **"Verbatim" is true of the builder, not of every input.** `wikiContext` is always empty in a benchmark run, while live chat pre-injects wiki articles. The prompt-building *code* is identical; the prompt *text* a benchmark candidate sees is not the text a live user's model sees. See § 4.
+- **"Grades the production prompt" was true of the builder, not of the wire, before harness 29.** `CandidatePromptOptionsJson` records the prompt the harness *built*; nothing recorded what a provider's request body actually *contained*, until `BenchmarkCandidateRequestProbe` began checking the serialized request itself (§ 4a below, and `docs/overseer/ai-benchmark.md` § *Harness Version 29 Updates*). Before that round a Google or Anthropic candidate on a snapshot suite was silently graded with no board, and an OpenAI candidate with no system prompt at all, behind a report that read `HasGameSnapshot: true` as if nothing were wrong.
 
 ---
 
@@ -173,7 +174,7 @@ A benchmark run executes the **production tool registry**, so a tool defect seen
 - **Whether arguments and results were stored is a version boundary — check the run's harness version before anything else.** For a run **before harness 17** they were not stored: `BenchmarkRunAnswer.ToolCallSummary` is a `name×count` string over *successful* calls only, `AgentRunRequest.ShowDebugLog` is hardcoded `false` at every benchmark call site, and a run creates no `ChatMessage` rows, so nothing equivalent to `ChatMessageToolCall.ArgsText` / `.Result` exists. For such a run, *"compare the parameters and results"* is **reconstruction and replay**, never transcript reading. **From harness 17** a run's `BenchmarkRunAnswer.ToolCalls` rows carry the real `ArgsText`, `Result`, `Error`, `Status`, emission order (`SortOrder`), tool round (`IterationIndex`), timings and the result size as `ToolExecutor` handed it over (`ResultLengthChars`) for **every attempted call**, read through `GET /api/admin/benchmark/runs/{id}/answers/{answerId}/tool-calls` (admin-authenticated). Reading those rows is **rung zero** — attempted before any reconstruction or replay (`server_benchmark_tool_diagnostics` § 2, § 7). A row whose payload the retention sweep pruned shows `ArgsText`/`Result` null beside a non-zero `ResultLengthChars`; that is the sweep, not an absent record.
 - **The count of failed tool calls is derived for a run before harness 17.** `ToolCallCount − Σ(ToolCallSummary counts) − ToolCallsBlocked` is the number of calls that errored technically. No report section surfaces it, and a non-zero value is direct evidence of a tool problem. Compute it first. A null `ToolCallsBlocked` means *not recorded*, never zero. **From harness 17 the figure is reported** as the answer's three-way outcome split, so read it rather than deriving what the record already states.
 - **From harness 16 a run fingerprints three of the five corpora** — knowledge base, GnollHack wiki, GnollHack source. The NetHack wiki and NetHack source are **not** fingerprinted and are both reachable from a run. These fingerprints are **provenance, not comparability keys**: a difference is a fact to investigate, not an automatic tier drop.
-- **Version currency.** The bullets above were last checked against harness **28**, during the runs 47–48 round (2026-09-13). `BenchmarkAssessmentPrompt.HarnessVersion` is the source of truth for the current value; if it now reads higher, treat this section as possibly aged and verify every claim against `server_benchmark_tool_diagnostics` § 2 before relying on it. This section silently aged out at harness 17 once already, and cost a run-28 analysis its tool-layer evidence — that is why this line exists.
+- **Version currency.** The bullets above were last checked against harness **29**, during the runs 50–51 round (2026-09-17). `BenchmarkAssessmentPrompt.HarnessVersion` is the source of truth for the current value; if it now reads higher, treat this section as possibly aged and verify every claim against `server_benchmark_tool_diagnostics` § 2 before relying on it. This section silently aged out at harness 17 once already, and cost a run-28 analysis its tool-layer evidence — that is why this line exists.
 
 > 🛑 **Stop here.** Read the three tool-layer skills **now**, before dispatching any research about a tool, a corpus, or a tool count, and before writing the first finding. All three are read at this point; none is reached through the others.
 >
@@ -439,7 +440,7 @@ Any implementation plan derived from a benchmark run must replicate this section
 
 ### Runs 11–35 — 2026-09-04 to 2026-09-10 (pruned per the rule above)
 
-Full entries were collapsed on 2026-09-08 when this registry passed the pruning threshold, again on 2026-09-10 when runs 28 and 29 became the most recent pair, once more on 2026-09-10 in the run-34 round, which folded runs 28–30 into this table and kept runs 31–34 in full, again on 2026-09-10 in the run-35 round, which folded runs 31–32 in and kept runs 33–35 in full, again on 2026-09-11 in the run-36 round, which folded run 33 in and kept runs 34–36 in full, again on 2026-09-11 in the run-37 round, which folded run 34 in and kept runs 35–37 in full, again on 2026-09-11 in the run-37 re-run round, which folded run 35 in, kept runs 36–37 in full and replaced the partial run-37 entry with the completed run's, again on 2026-09-11 in the run-38 round, which removed the run-35 full entry the previous round's fold had left behind and keeps runs 36–38 in full, again on 2026-09-12 in the run-39 round, which folded run 36 in and kept runs 37–39 in full, again on 2026-09-12 in the run-40 round, which folded run 37 in and kept runs 38–40 in full, again on 2026-09-12 in the run-41 round, which folded run 38 in and kept runs 39–41 in full, again on 2026-09-12 in the run-42 round, which folded run 39 in and kept runs 40–42 in full, again on 2026-09-12 in the runs 43–46 round, which folded runs 40, 41 and 42 in and kept the four runs 43–46 in full — one round's cross-model set, kept whole because the grader-scale finding rests on the four side by side — and again on 2026-09-13 in the runs 47–48 round, which folded all four of those in and keeps runs 47–48 in full. What each run established is preserved below; the reports themselves remain the primary source.
+Full entries were collapsed on 2026-09-08 when this registry passed the pruning threshold, again on 2026-09-10 when runs 28 and 29 became the most recent pair, once more on 2026-09-10 in the run-34 round, which folded runs 28–30 into this table and kept runs 31–34 in full, again on 2026-09-10 in the run-35 round, which folded runs 31–32 in and kept runs 33–35 in full, again on 2026-09-11 in the run-36 round, which folded run 33 in and kept runs 34–36 in full, again on 2026-09-11 in the run-37 round, which folded run 34 in and kept runs 35–37 in full, again on 2026-09-11 in the run-37 re-run round, which folded run 35 in, kept runs 36–37 in full and replaced the partial run-37 entry with the completed run's, again on 2026-09-11 in the run-38 round, which removed the run-35 full entry the previous round's fold had left behind and keeps runs 36–38 in full, again on 2026-09-12 in the run-39 round, which folded run 36 in and kept runs 37–39 in full, again on 2026-09-12 in the run-40 round, which folded run 37 in and kept runs 38–40 in full, again on 2026-09-12 in the run-41 round, which folded run 38 in and kept runs 39–41 in full, again on 2026-09-12 in the run-42 round, which folded run 39 in and kept runs 40–42 in full, again on 2026-09-12 in the runs 43–46 round, which folded runs 40, 41 and 42 in and kept the four runs 43–46 in full — one round's cross-model set, kept whole because the grader-scale finding rests on the four side by side — and again on 2026-09-13 in the runs 47–48 round, which folded all four of those in and keeps runs 47–48 in full, and again on 2026-09-17 in the harness-29 round (runs 50–51), which folded runs 47–48 in and keeps runs 50–51 in full. What each run established is preserved below; the reports themselves remain the primary source.
 
 | Run(s) | Date | Candidate | Intelligence Index | Transfer action, and what it settled |
 |---|---|---|---|---|
@@ -471,6 +472,7 @@ Full entries were collapsed on 2026-09-08 when this registry passed the pruning 
 | 44 | 2026-09-12 | Claude 5 Opus (`low`) | 68 ± 8 | Same set and roster. 1 critical error, **spurious** (Q15: 19 of 20 layer names written without the `LAYER_` prefix, all present in `include/layer.h:13-36`), S3. Second reader +31.0 over 4. **The most expensive candidate of the four and no better on quality** — $0.096/question. Median model time 13,257 ms; Speed Index 99, saturated. One `get_monster_stats` in-payload `error` is the documented stats-tool convention, not a failure (H8). |
 | 45 | 2026-09-12 | Gemini 3.7 Flash (`medium`) | 72 ± 11 | Same set and roster; the highest of the three Sol-graded runs and inside the other two intervals. 2 critical errors, **Q14 spurious** — the rubric demands an *"amulet-stealing `AD_SAMU` attack"* but Master Kaen carries `M3_WANTSARTI`, and `stealamulet` (`src/steal.c:655-701`) takes the quest artifact first (S1, and the origin of the run-47/48 **T1** tool-data fix). **Q13 claim verification timed out at verifier `max`** — H5, the reason the verifier stays at `high`. Median model time 6,908 ms, TTFT P50 1,448 — the fastest first token in the set. $1.94; cache read 42 % with no cache creation. |
 | 46 | 2026-09-12 | GPT-5.6 Luna (`max`) | 97 ± 2 — **not rankable** | The fourth run, on **the other grader's scale** (assessor Gemini 3.7 Flash @ `high`): NotComparable with 43–45 on three roster keys, and the whole point of the set. The first reader flagged 13 unverified claims against Sol's 57–63, so the 0 refutations is an artefact; **the blind second reader's sign flipped, −13.3 over 4**. Median model time **98,417 ms — the slowest run in the registry**, unusable mid-game, while TTFT stays at 2,796 ms. Hit the 22-round iteration limit on Q5 and Q7 (H7). Candidate **$0.018/question, the cheapest of the four** — the two-run half of **T2**. 312 tool calls (17.3/q). The round's changes were admin-UI only. |
+| 47–48 | 2026-09-12 | GPT-5.6 Luna (`max`) / Gemini 3.7 Flash (`medium`) — Tier A pair | 83 ± 5 / 80 ± 5 | **T1**: `AD_SAMU` flag description corrected to name the quest artifact rather than the Amulet of Yendor (`src/steal.c:655-701`). **H1**: Speed Index recalibrated (`SpeedTargetMs` 2,000 / `SpeedDecayK` 12), left the quality comparability signature for its own `SpeedCalibration` key. **H2**: claim-verification instruction 3b (a resistance/property magnitude is checked where it is applied, not where it is granted). **S1/S2**: rubric edits on Q10 (mithril MC) and Q4 (engraving scope), mirrored to the default-suite seed file. **Not a clean Tier A pair on the model axis, per the harness-29 correction below** — run 47 is a prompt-less OpenAI run. |
 
 The full entries for runs 28–30 — the run-28 Q3 units proof with its source lines, the run-29 T4
 correction in full, the run-30 N1–N3 detail and the harness-18 comparability reasoning — are in
@@ -509,7 +511,12 @@ this file's Git history before the run-41 round. The full entries for runs 43–
 instrument block, the per-run grader rosters, the four tool-layer breakdowns, the H5 verifier-timeout
 detail and the pre-declared calibration measurement that is still outstanding — are likewise in
 `benchmark_runs_43_46_analysis/` (2026-09-12) under `hyvanmielenpelit/MobileGnollHackLogger/` in the
-plans repository, and verbatim in this file's Git history before the runs 47–48 round.
+plans repository, and verbatim in this file's Git history before the runs 47–48 round. The full entries
+for runs 47–48 — the T1 `AD_SAMU` fix and the H1 Speed Index recalibration derivation, the H2
+claim-verification instruction 3b and its rationale, and the S1/S2 rubric edits with their source
+citations — are likewise in `benchmark_runs_47_48_analysis/` (2026-09-13) under
+`hyvanmielenpelit/MobileGnollHackLogger/` in the plans repository, and verbatim in this file's Git
+history before the harness-29 round.
 
 Seven standing cautions from these entries, kept because they still bind:
 
@@ -535,115 +542,80 @@ cache-read share. Anthropic and OpenAI figures are unaffected. Every "grading sh
 the assessor, and a cost comparison across the fix is not like-for-like. The stored figures are not
 rewritten; see `docs/overseer/ai-benchmark.md` § *Harness Version 18 Updates*.
 
-### Runs 47–48 — 2026-09-12: Tier A pair on a third roster (GPT-5.6 Luna, Gemini 3.7 Flash; harness 27)
+**Correction, 2026-09-17 (harness-29 round, H1): runs 36, 37, 38, 42, 46, 47 and 51 are prompt-less
+OpenAI runs.** `BuildCandidateSeedHistory` put the board (when present) ahead of the system prompt in
+the history it built for a candidate call, and `OpenAiResponsesProvider` builds `instructions` from
+the history's own system messages rather than from `SegmentedPrompt` — so from 2026-09-10 until the fix
+an OpenAI candidate received **no system prompt at all**: on a suite with no board the seed carried no
+system message, so `instructions` was omitted outright; on a snapshot suite the board was the only
+system message, so the board became the entire system text. **Run 47 is one of them.** Its table row above is unchanged
+as a record of what the run measured, but its Intelligence Index (83 ± 5) is not an OpenAI-candidate
+measurement under the production prompt, and **the 47–48 pair is not usable as a clean Tier A pair on
+the model axis** — the two runs differ on more than the candidate model, and of the two only 48
+(Gemini) reliably received the prompt the harness recorded as having been sent. See
+`docs/overseer/ai-benchmark.md` § *Harness Version 29 Updates* for the full defect, the three-provider
+breakdown, and the wire-level check now in place.
 
-*Two runs of suite 6 under one roster, differing on the model axis alone — the pair the speed
-recalibration and the AD_SAMU wording rest on. Everything in this shared block holds for both.*
+### Runs 50–51 — 2026-09-17: the first game-snapshot runs since the OpenAI candidate wiring (harness 29)
 
-- **Shared instrument SHAs**: `CandidateSystemPromptSha256 = 715c0dcb…` (= runs 35–46);
-  `ToolGuidesSha256 = f86c42e9…` (= runs 43–46); `KnowledgeBaseHeadSha = 576ca574…`;
-  `WikiHeadSha = 7039ca0c…` — **moved from runs 43–46**, which is why neither run is Tier A with any
-  of them; `SourceCodeHeadSha = ea0eee42…` (= runs 42–46); `ChatService.cs` last touched at
-  `1e17038`.
-- **Shared prompt options**: `overseerMode` 0, `verboseMode` false, tools on, source references
-  allowed, web search, subagents, spoiler-free, game, snapshot, history and wiki context all off,
-  `parallelMode` Enabled.
-- **Shared grading regime**: harness 27, scoring method 10, profile Standard Intelligence Index (1),
-  budget 45 calls. Assessor **Claude 5 Opus @ `medium`**; second opinion **Claude 5 Sonnet @
-  `high`**, blind, FlaggedPlusSample; claim verifier **Claude 5 Sonnet @ `high`**. **This is a third
-  roster on suite 6** — not the Sol roster of runs 43–45 nor the Gemini roster of run 46 — so
-  **neither index is rankable against runs 43–46**, and the grader-scale caution applies unchanged.
-  The two runs *are* a Tier A pair with each other.
-- **Roster note, settled**: the verifier ran at `high` here, as the run-41 entry recommends and the
-  runs 43–46 entry insists. No verification timeout occurred on either run, against run 45's Q13
-  timeout at `max`. **Keep it at `high`.**
-- **Shared tool layer**: harness 27, so every statement is read at **rung zero** from each run's own
-  `BenchmarkRunAnswerToolCall` rows. **0 failed calls and 0 refused by budget on both runs.** Two
-  corpus defects were found on disk rather than in the tool layer (C1, C2 — the wiki carries a wrong
-  mithril MC figure and non-existent attribute modifiers), and the tools returned them faithfully:
-  the corpus was wrong, not the retrieval.
-- **Shared Transfer Action**: **T1 at rung 3** — the `AD_SAMU` entry in
-  `Overseer/Data/flag_descriptions.json` now names the quest artifact as what the attack steals and
-  confines the Amulet of Yendor to a monster carrying `M3_WANTSAMUL` (`src/steal.c:666,684`). That
-  file is read from the application base and is **not** part of `ToolGuidesSha256`, so
-  `HarnessVersion` 27 → 28 is the only marker of the change. **H1**: the Speed Index is recalibrated
-  to a 2,000 ms target with k = 12, and its three constants leave the scoring profile's quality
-  signature for a `SpeedCalibration` comparability key of kind SpeedAndCost — a recalibration now
-  degrades the speed aggregates and leaves quality comparable, which is what made re-tuning possible
-  at all; the model-comparison figures move to the candidate's own model time as their speed axis.
-  **H2**: the claim-verification prompt gains instruction 3b (verifier caution instance 11). **C1,
-  C2** wiki handoff (`wiki_handoff_prompt_v2.md`). T2–T5 recorded with no change.
-- **S1 and S2 — rubric edits, saved 2026-09-13** (`rubric_handoff_v2.md`; suite 6, *GnollHack Player
-  Assistance Benchmark Suite*). **S1, Q10** (`Id` 97): the mithril bullet read *"−3 AC, +2 MC on body
-  armor"*; `src/o_init.c:139` gives `acbonus_armor {3, 2, …}` and `mcbonus_armor {3, 1, …}` with
-  index 0 = `ARM_SUIT` (`include/objclass.h:71,383-384`), and `get_object_base_mc`
-  (`src/o_init.c:1821-1833`) adds that value straight onto `oc_magic_cancellation`, so the
-  player-visible figure is **+3 MC** and the rubric was one point low. The sign convention was fixed
-  against the undisputed dragonhide bullet. `ItemRevision` **2 → 3**; `AssessedDifficulty`
-  **82 → 82** (unmoved). **S2, Q4** (`Id` 91): the engraving-method bullet moved from REQUIRED to
-  SCOPE — no fact changed — because the assessor filed it under `OUT-OF-SCOPE:` on both runs and
-  still held Completeness at 5 with no in-scope defect named (`UnevidencedDeduction` on Q4 of both).
-  `ItemRevision` **1 → 2**; `AssessedDifficulty` **30 → 32**. **Both are Fundamental comparability
-  breaks** on `SuiteItemRevisions`, and Q4 on `SuiteAssessedDifficulties` too, against every run
-  ≤ 48; the new text applies from the next run of suite 6. **Seed file mirrored**:
-  `Overseer/Data/DefaultSuites/gnollhack_player_assistance.json`, both entries, verified by a
-  `ConvertFrom-Json` round-trip either side and a two-line diff. Before the paste the database and
-  the seed file were byte-identical on both questions, which is better evidence that this file is
-  the suite's seed than the `SuiteName` match rule 3 allows — `DefaultSuiteKey` is still null.
-  **Closure criteria**: S1 — a candidate stating mithril body armour at +3 MC is graded as matching
-  the rubric and the verifier records no refutation of a +3 MC claim; S2 — Q4 carries no
-  `UnevidencedDeduction`, and an answer naming the three runewords, their effects and their domains
-  reaches Completeness 6 when nothing in scope is missing. **Sequencing**: W1
-  (`wiki_handoff_prompt_v2.md`) corrects the same mithril figure in the wiki's `Object Materials.md`;
-  until it lands, a candidate faithfully reporting the wiki is marked wrong on Q10 — correct
-  grading for a corpus reason, not a candidate one.
-- **Verification Outcome — runs 43–46 round**: nothing to verify. That round made no prompt, guide
-  or limit change, and the calibration re-assessment it pre-declared (re-grade run 46 under GPT-5.6
-  Sol, or one of runs 43–45 under Gemini 3.7 Flash) **is still outstanding**. Until it is done,
-  **do not change `RecommendedModels`** on any of runs 43–48.
-- **Verification Outcome (for this round)**, pre-declared: **T1** — on the next run of suite 6, Q14
-  names the quest artifact and carries no Amulet claim; roll back if Q14 omits the theft attack or
-  its Accuracy drops a level on two consecutive runs. **H1** — on the next Gemini 3.7 Flash run at
-  `medium`, the Speed Index is not saturated (fewer than half the answers at 100) and the run's
-  median model time is unchanged within its own noise; roll back to 15,000 ms / k = 20 if a
-  Simple-band answer that did not time out ever scores 1. **H2** — the next run records no
-  refutation whose basis is an acquisition path for a claim about a resistance tier; rollback is
-  deleting the clause.
+*Two runs on game-snapshot suites — the runs that exposed H1. **Explicitly not a reproduction pair**:
+unlike the runs 47–48 pair, they are read for what they exposed about the harness, not compared
+against each other on quality, speed or cost, and neither is usable for model selection.*
 
-#### Run 47 — 2026-09-12: GPT-5.6 Luna (`max`)
-- **Candidate**: `gpt-5.6-luna`, thinking `max`, reasoning standard, max output 128,000, parallel
-  tool calls on.
-- **Quality**: II **83 ± 5** (raw 83, unweighted 84, holistic 81). Accuracy 88.4 / Completeness 75.6
-  / Conciseness 77.5 / Readability 91.3. **0 critical errors.** 1 refuted claim — Q10's mithril +2
-  MC, where **the wiki and the rubric both carry the wrong number** (C1/S1), so the refutation is
-  correct and the corpus is not. Q1 scored 60 for repeating the wiki's non-existent attribute
-  modifiers (C2). Q14 took Accuracy 3 for the AD_SAMU Amulet framing (T1) — the tool told it so.
-- **Speed**: median model time **52,084 ms**; P90 144,558; max 207,214. TTFT P50 2,208 / P90 3,555.
-  145 model calls (8.1/q). Speed Index 75 on the old scale, advisory.
-- **Cost**: **$4.68** — candidate **$0.27** ($0.015/q), grading 94 %, verifier 59 % (the two graders
-  are 19 of every 20 dollars). 3,220,172 in / 125,537 out; cache read 90 %. 290 tool calls
-  (16.1/q): Source 56 % / Wiki 43 % / Structured 1 % / KB 0 %. Budget pressure on Q11, Q13, Q16.
-
-#### Run 48 — 2026-09-12: Gemini 3.7 Flash (`medium`)
-- **Candidate**: `gemini-3.7-flash`, thinking `medium`, max output 65,536, parallel tool calls on.
-  Prompt options, grading regime and instrument SHAs are identical to run 47 — the Tier A pair.
-- **Quality**: II **80 ± 5** (raw 80, unweighted 81, holistic 82). Accuracy 84.7 / Completeness 69.7
-  / Conciseness 90.9 / Readability 85.3. **0 critical errors.** 4 refuted claims: Q7 (general skill
-  table only), Q8 (Lindisse services) and Q15 (`src/drawing.c` attribution) are genuine; **Q13's
-  50 % fire resistance is not — verifier caution instance 11** (`src/cmd.c:4579`), and it is what
-  instruction 3b now addresses. 5 contested accuracy deductions and 2 disagreements (Q13, Q15), the
-  first resting on the wrong refutation.
-- **Speed**: median model time **7,136 ms**; P90 19,576; max 26,777. TTFT P50 1,394 / P90 1,659.
-  83 model calls (4.6/q). **Speed Index 100, saturated on 18 of 18** — the measurement H1 exists to
-  answer. Under 2,000 ms / k = 12 the run recomputes to ≈ 86 with none at the ceiling.
-- **Cost**: **$4.39** — candidate $0.78 ($0.043/q; $0.69 of it uncached input), grading 82 %,
-  verifier 48 %. 1,619,991 in / 9,893 out; **cache read 43 % with no cache creation** — the Google
-  shortfall again, unchanged since run 22 and closed against explicit caching in the run-40 round.
-  71 tool calls (3.9/q): Source 45 % / Wiki 45 % / Structured 7 % / KB 3 %. Wall clock 11m 36s
-  against 2m 47s of answering: **four fifths of the wall clock is grading, not the candidate.**
-- **T3 recorded for a second observation**: the model answers from snippets rather than opening the
-  file — 9,893 output tokens across 18 answers, against Luna's 125,537 — which buys Conciseness 90.9
-  and costs Completeness 69.7. Motivated only; no change.
+- **Instrument SHAs**: `HarnessVersion` 28 → **29**. `CandidateSystemPromptSha256` and
+  `ToolGuidesSha256` do not move — the defect was in what reached the wire, not in the prompt text or
+  the tool guides.
+- **Prompt options**: `hasGameSnapshot: true` on both — the axis H1 turns on. `CandidatePromptOptionsJson`
+  recorded the prompt the harness *built*; it never recorded, and structurally could not record, what
+  a provider's request body actually carried, which is why the defect survived behind a
+  `HasGameSnapshot: true` line in every report it appeared in (§ 1's third qualification).
+- **Transfer Action — H1 through T3, all delivered this round, all rung 1 (Harness Defect)**:
+  - **H1**: `BenchmarkService.BuildCandidateSeedHistory` now emits the system prompt before the board
+    rather than after. Before the fix the board was the first system message, which
+    `GoogleProvider.OrderSystemParts` and `AnthropicProvider.BuildChatRequestBody` replace with the
+    prompt's own segments (so a Google or Anthropic candidate on a snapshot suite lost the board), and
+    which `OpenAiResponsesProvider` — which builds `instructions` from the history's system messages
+    and never from `SegmentedPrompt` — took as its entire system text (so an OpenAI candidate lost the
+    prompt). Affected OpenAI runs: 36, 37, 38, 42, 46, 47, 51 (see the correction above).
+  - **The wire check** — new `BenchmarkCandidateRequestProbe`, run per-run (fail closed, before the
+    first question) and per-question (fails only that answer, `BenchmarkAnswerStatus.Failed`,
+    Transport Defect, re-runnable). No network call, no tokens.
+  - **H2**: the claim verifier now receives the board too (`BenchmarkClaimVerificationPrompt`
+    instruction 3c, `board:` citations).
+  - **T1–T3**: `MarkdownSectionExtractor`'s breadcrumb-section retry on the last `›` segment;
+    `NetHackWikiViewTool`'s article-miss candidate list; `SourceCodeService.GetItemStats`'s near-name
+    list and its standing appearance-vs-identity note.
+  - Full detail: `docs/overseer/ai-benchmark.md` § *Harness Version 29 Updates*.
+- **Pre-declared criteria for this round's confirming runs** (same suite, same roster; assessor
+  Claude 5 Opus @ `medium`, second reader and verifier Claude 5 Sonnet @ `high`; after steps 1–5 and
+  the step-8 rubric import and re-assessment, on both models):
+  - **H1** — both reports show *Game snapshot: yes* and the delivery line. Gemini: ≥ 15 of 18 answers
+    cite a board-only fact (inventory letter, coordinate, percentage or turn count) and no answer
+    invents a pet or an uncarried item. Luna: input tokens on a two-model-call question rise from
+    ≈ 18,000 to ≥ 28,000, and mean tool calls per question fall below run 51's 25.8.
+  - **H2** — no Refuted verdict whose basis asserts a board fact is absent while the board contains
+    it; Indeterminate share below run 51's 29 % (15 of 51). *Rollback*: remove the board block if
+    verifier cost per claim rises above run 50's $0.09 by more than half with no fall in
+    Indeterminate.
+  - **T1** — zero `[Section '…' not found` results whose requested section contains `›`.
+    **T2** — every `nethack_wiki_view` article miss opens `No NetHack wiki article matched '`.
+    **T3** — at least half of `get_item_stats` misses are followed by a successful `get_item_stats`
+    call naming one of the suggested entries, and no answer states an appearance name as an
+    identified type.
+  - **Step 8 (rubrics)** — no critical error charged on Q5, Q14 or Q15 for a statement the repair
+    cites as true, and no Accuracy deduction on Q7, Q8 or Q18 resting on a replaced point.
+  - **Side effect (§ 9)** — Accuracy and the refuted-claim count must not fall on the Gemini run
+    relative to run 48's 84.7 by more than its ± 5. On a different suite this is a sanity check, not
+    a comparison.
+- **Verification Outcome**: **these criteria are unverified — the confirming runs have not been
+  launched.** In addition, **the runs 47–48 round's three pre-declared criteria (T1 `AD_SAMU`
+  wording, H1 Speed Index saturation, H2 the acquisition-path refutation clause) are still
+  outstanding** — no clean run of suite 6 has landed since 48 to check them, run 47's own standing is
+  now in question (see the correction above), and runs 50–51 do not settle them either, being
+  snapshot-suite runs read for the harness defect rather than for suite 6's quality axes. The runs
+  43–46 calibration re-assessment (recorded above) is likewise still outstanding. Do not change
+  `RecommendedModels` or treat any of runs 43–51 as a clean basis for model selection until both are
+  done.
 
 ---
 

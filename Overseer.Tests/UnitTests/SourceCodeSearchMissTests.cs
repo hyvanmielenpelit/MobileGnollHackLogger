@@ -321,4 +321,153 @@ struct windowprocs { void (*win_print_glyph)(int, int, int); };
         Assert.True(result.Content.Length < 600,
             $"Miss payload was {result.Content.Length} characters: {result.Content}");
     }
+
+    /// <summary>
+    /// get_item_stats's own miss path: src/objects.c is indexed and holds a real item, but the
+    /// query names none of the recognised item macros verbatim (here because the fixture entry is
+    /// built through a wrapper macro get_item_stats's line regex does not itself recognise), so
+    /// GetItemStats falls into its <c>matchLine == -1</c> branch even though the item is indexed.
+    /// The miss names a near neighbour drawn from a word of the query, keeps the existing
+    /// item_lookup/wiki_search pointer, and always appends the appearance-vs-discoveries reminder.
+    /// </summary>
+    [Fact]
+    public async Task ItemStatsMiss_NamesANearNeighbourAndAlwaysAppendsTheAppearanceReminder()
+    {
+        string itemsDir = Path.Combine(Path.GetTempPath(), "SourceCodeItemStatsMissTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(itemsDir, "src"));
+        try
+        {
+            File.WriteAllLines(
+                Path.Combine(itemsDir, "src", "objects.c"),
+                FixtureObjectsC(DragonSuitEntry("hooded cloak")));
+
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new[]
+                {
+                    new KeyValuePair<string, string?>("SourceCodePath", itemsDir),
+                    new KeyValuePair<string, string?>("MaxSourceFileSizeKB", "800")
+                })
+                .Build();
+
+            var service = new SourceCodeService(config, NullLogger<SourceCodeService>.Instance);
+            await service.StartAsync(TestContext.Current.CancellationToken);
+            using (service)
+            {
+                // "hooded" (>=4 chars) matches the indexed "hooded cloak"; "mantle" matches nothing.
+                var response = service.GetItemStats("hooded mantle");
+
+                Assert.Null(response.Stats);
+                Assert.NotNull(response.Error);
+                Assert.StartsWith("No item named 'hooded mantle' found in the game data.", response.Error);
+                Assert.Contains("Did you mean: hooded cloak.", response.Error);
+                Assert.Contains("item_lookup or wiki_search", response.Error);
+                Assert.Contains(
+                    "A name that is an unidentified appearance — 'hooded cloak', 'orange potion', 'red mushroom' — has no entry: appearances are randomized per game; see the snapshot's Discoveries section.",
+                    response.Error);
+                Assert.True(response.Error!.Length <= 600,
+                    $"Miss payload was {response.Error.Length} characters: {response.Error}");
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(itemsDir))
+            {
+                Directory.Delete(itemsDir, true);
+            }
+        }
+    }
+
+    /* ==================================================================================
+     * A synthetic objects.c, shaped exactly like the real one, copied from
+     * ObjectsMacroResolverTests: two compilation passes over one array, OBJ and the pass-1
+     * OBJECT in the first, BITS and the pass-2 OBJECT in the second, and the DRGN_ARMR-style
+     * wrapper chain that lets one call site register a real item name without needing
+     * objclass.h. Kept local to this test rather than shared, because it exists only to get a
+     * real item into ObjectsMacroResolver.FindItemNames for the get_item_stats miss path above.
+     * =============================================================================== */
+
+    private static string[] FixtureObjectsC(params string[] entries)
+    {
+        var lines = new List<string>
+        {
+            "/* objects.c fixture */",
+            "#ifndef OBJECTS_PASS_2_",
+            "/* first pass -- object descriptive text */",
+            "#define OBJ(name,desc,contentname,contentdesc,itemdesc,height,odflags,stand_anim,enlarge,replacement)  name, desc, contentname, contentdesc, itemdesc, height, odflags, stand_anim, enlarge, replacement",
+            "#define OBJECT(obj,bits,prp1,prp2,prp3,pflags,sym,prob,multigen,dly,wt,cost, \\",
+            "               dmgtype,sdice,sdam,sdmgplus,ldice,ldam,ldmgplus, edmgtype,edice,edam,edmgplus,aflags,aflags2,critpct,  hitbon,mcadj,fixdmgbon,range,  oc1,oc2,oc3,oc4,oc5,oc6,oc7,oc8,  nut,color, soundset,  dirsubtype,materials,cooldown,special_quality,  powconfermask,permittedtargets,flags,flags2,flags3,flags4,flags5,flags6)  { obj }",
+            "#define None (char *) 0",
+            "",
+            "NEARDATA struct objdescr obj_descr[] =",
+            "#else",
+            "/* second pass -- object definitions */",
+            "#define BITS(nmkn,mrg,uskn,ctnr,mgc,spetype,chrg,recharging,uniq,nwsh,big,tuf,dir,sub,skill,matinit,mtrl) \\",
+            "  nmkn,mrg,uskn,0,mgc,spetype,chrg,recharging,uniq,nwsh,big,tuf,dir,matinit,mtrl,sub,skill",
+            "#define OBJECT(obj,bits,prp1,prp2,prp3,pflags,sym,prob,multigen,dly,wt,cost,dmgtype,sdice,sdam,sdmgplus,ldice,ldam,ldmgplus,edmgtype,edice,edam,edmgplus,aflags,aflags2,critpct,   hitbon,mcadj,fixdmgbon,range,  oc1,oc2,oc3,oc4,oc5,oc6,oc7,oc8,  nut,color,soundset,  dirsubtype,materials,cooldown,special_quality,  powconfermask,permittedtargets,flags,flags2,flags3,flags4,flags5,flags6) \\",
+            "  { 0, 0, (char *) 0, bits, prp1, prp2, prp3, pflags, sym, dly, color, prob, wt, nut,  \\",
+            "    cost, dmgtype, sdice, sdam, sdmgplus, ldice, ldam, ldmgplus, edmgtype, edice, edam, edmgplus, aflags, aflags2, hitbon, mcadj, fixdmgbon, range,   oc1, oc2, oc3, oc4, oc5, oc6, oc7, oc8,   dirsubtype, materials, cooldown, special_quality,  flags,flags2,flags3,flags4,flags5,flags6,powconfermask, permittedtargets, critpct, multigen, soundset }",
+            "",
+            "NEARDATA struct objclass objects[] =",
+            "#endif",
+            "{",
+            "    /* dummy object[0] -- excluded by its ILLOBJ_CLASS */",
+            "OBJECT(OBJ(\"strange object\", None, None, None, None, 0, OD_NONE, NO_ANIMATION, NO_ENLARGEMENT, NO_REPLACEMENT), \\",
+            "    BITS(1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, P_NONE, MATINIT_BASE_MATERIAL, MAT_NONE), \\",
+            "    NO_POWER, NO_POWER, NO_POWER, P1_NONE, ILLOBJ_CLASS, 0, MULTIGEN_SINGLE, 0, 0, 0, \\",
+            "    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, A1_NONE, A2_NONE, 0, \\",
+            "    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, \\",
+            "    0, 0, OBJECT_SOUNDSET_NONE, \\",
+            "    0, 0, 0, 0, \\",
+            "    PERMITTED_ALL, ALL_TARGETS,",
+            "    O1_NONE, O2_NONE, O3_NONE, O4_NONE, O5_NONE, O6_NONE),",
+            "",
+            "/* --- the armour chain: the ac argument is stored as 10 - ac ------------------ */",
+            "#define GENERAL_ARMOR(name,desc,kn,mgc,blk,power,power2,power3,pflags,enchtype,prob,delay,wt,  \\",
+            "            cost,ac,mgccancel,manabon,hpbon,bonusattrs,attrbonus,splcastpen,sub,skill,matinit,metal,c,height,soundset,\\",
+            "            flags,flags2,flags3,flags4,flags5,flags6,powconfermask,odflags,anim,enl,repl)           \\",
+            "        OBJECT(OBJ(name, desc, None, None, None, height, odflags, anim, enl, repl),                       \\",
+            "            BITS(kn, 0, 1, 0, mgc, enchtype, CHARGED_NOT_CHARGED, RECHARGING_NOT_RECHARGEABLE, 0, 0, blk, 0, 0, sub, skill, matinit, metal),  \\",
+            "            power, power2, power3, pflags, ARMOR_CLASS, prob, MULTIGEN_SINGLE, delay, wt, cost,             \\",
+            "            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, A1_NONE, A2_NONE, 0, \\",
+            "            0, 0, 0, 0, 10 - ac, mgccancel, manabon, hpbon, bonusattrs, attrbonus, splcastpen, 0, \\",
+            "            wt, c, soundset,\\",
+            "            0, 0, 0, 0, \\",
+            "            powconfermask, ALL_TARGETS, flags, flags2, flags3, flags4, flags5, flags6 )",
+            "",
+            "#define ARMOR(name,desc,kn,mgc,blk,power,power2,power3,pflags,enchtype,prob,delay,wt,  \\",
+            "            cost,ac,mgccancel,manabon,hpbon,bonusattrs,attrbonus,splcastpen,sub,skill,matinit,metal,c,height,soundset,flags,flags2,flags3,flags4,flags5,flags6,powconfermask)           \\",
+            "        GENERAL_ARMOR(name,desc,kn,mgc,blk,power,power2,power3,pflags,enchtype,prob,delay,wt,  \\",
+            "            cost,ac,mgccancel,manabon,hpbon,bonusattrs,attrbonus,splcastpen,sub,skill,matinit,metal,c,height,soundset,flags,flags2,flags3,flags4,flags5,flags6,powconfermask,OD_NONE,NO_ANIMATION,NO_ENLARGEMENT,NO_REPLACEMENT)",
+            "",
+            "/* A wrapper that injects delay, weight, category and material of its own. */",
+            "#define TEST_DRGN_ARMR(name,mgc,power,power2,power3,pflags,cost,ac,mc,manabon,hpbon,bonusattrs,attrbonus,splcastpen,color,soundset,flags,flags2,flags3,flags4,flags5,flags6,powconfermask)  \\",
+            "    ARMOR(name, None, 1, mgc, 1, power, power2, power3, pflags, ENCHTYPE_GENERAL_ARMOR, 0, 5, 550,  \\",
+            "      cost, ac, mc, manabon, hpbon, bonusattrs, attrbonus, splcastpen, ARM_SUIT, P_NONE, MATINIT_BASE_MATERIAL, MAT_DRAGON_HIDE, color, 0, soundset, flags, flags2, flags3, O4_NON_MYTHIC | O4_CAN_HAVE_EXCEPTIONALITY | flags4, O5_NO_CATALOGUE | flags5, O6_NORMALLY_NON_EXCEPTIONAL | flags6, powconfermask)",
+            ""
+        };
+
+        lines.AddRange(entries);
+        lines.Add("");
+        lines.Add("    /* array terminator */");
+        lines.Add("OBJECT(OBJ(None, None, None, None, None, 0, OD_NONE, NO_ANIMATION, NO_ENLARGEMENT, NO_REPLACEMENT), \\");
+        lines.Add("    BITS(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, P_NONE, MATINIT_BASE_MATERIAL, MAT_NONE), \\");
+        lines.Add("    NO_POWER, NO_POWER, NO_POWER, P1_NONE, ILLOBJ_CLASS, 0, MULTIGEN_SINGLE, 0, 0, 0, \\");
+        lines.Add("    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, A1_NONE, A2_NONE, 0, \\");
+        lines.Add("    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, \\");
+        lines.Add("    0, 0, OBJECT_SOUNDSET_NONE, \\");
+        lines.Add("    0, 0, 0, 0, \\");
+        lines.Add("    PERMITTED_ALL, ALL_TARGETS,");
+        lines.Add("    O1_NONE, O2_NONE, O3_NONE, O4_NONE, O5_NONE, O6_NONE)");
+        lines.Add("};");
+        return lines.ToArray();
+    }
+
+    /// <summary>The dragon-hide suit entry, in the shape objects.c writes it, renamed for one item name.</summary>
+    private static string[] DragonSuitEntry(string name) => new[]
+    {
+        $"TEST_DRGN_ARMR(\"{name}\",",
+        "    1, COLD_RESISTANCE, REFLECTING, NO_POWER, P1_NONE,",
+        "    6000, 1, 4, 0, 0, 0, 0, 5, DRAGON_SILVER, OBJECT_SOUNDSET_GENERIC, ",
+        "    O1_NONE, O2_DRAGON_ITEM | O2_MONSTER_SCALE_MAIL, O3_NONE, O4_NONE, O5_NONE, O6_NONE, PERMITTED_ALL),"
+    };
 }

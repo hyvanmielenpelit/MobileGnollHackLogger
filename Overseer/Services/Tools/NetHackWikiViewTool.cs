@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -66,7 +68,7 @@ namespace Overseer.Services.Tools
 
             if (string.IsNullOrWhiteSpace(content))
             {
-                return Task.FromResult(new ToolResult { Success = true, Content = $"NetHack wiki article matching '{article}' not found." });
+                return Task.FromResult(new ToolResult { Success = true, Content = BuildMissContent(article, candidates) });
             }
 
             if (resolvedTitle != null && !string.Equals(NormalizeForComparison(article), NormalizeForComparison(resolvedTitle), StringComparison.Ordinal))
@@ -84,9 +86,77 @@ namespace Overseer.Services.Tools
 
         private const int ResolutionLineMaxChars = 600;
         private const int MaxOtherCandidates = 4;
+        private const int MissContentMaxChars = 600;
+        private const int MaxMissCandidates = 4;
 
         // Trims, collapses internal whitespace, and lowercases, so a request differing from the resolved title only by spacing or case still counts as an exact hit.
         private static string NormalizeForComparison(string s) => Regex.Replace(s.Trim(), @"\s+", " ").ToLowerInvariant();
+
+        /// <summary>
+        /// Builds the payload returned when <paramref name="article"/> resolved to no content at
+        /// all: names the miss, lists up to <see cref="MaxMissCandidates"/> candidate titles (the
+        /// resolver's own <paramref name="candidates"/>, or, when the resolver found none, the top
+        /// titles of one <c>nethack_wiki_search</c>-style query for the same string), and points at
+        /// <c>nethack_wiki_search</c> as the next action. Never exceeds
+        /// <see cref="MissContentMaxChars"/>. Wrapped in a try/catch so a defect in the suggestion
+        /// step falls back to the plain miss sentence rather than turning a miss into a tool error.
+        /// </summary>
+        private string BuildMissContent(string article, IReadOnlyList<string> candidates)
+        {
+            try
+            {
+                var titles = candidates.Count > 0 ? candidates : SearchCandidateTitles(article);
+
+                var sb = new StringBuilder();
+                sb.Append($"No NetHack wiki article matched '{article}'.");
+
+                if (titles.Count > 0)
+                {
+                    var chosen = titles.Distinct(StringComparer.OrdinalIgnoreCase).Take(MaxMissCandidates);
+                    sb.Append($" Candidates: {string.Join("; ", chosen)}.");
+                }
+                else
+                {
+                    sb.Append(" No candidates found.");
+                }
+
+                sb.Append(" Try nethack_wiki_search.");
+
+                string missContent = sb.ToString();
+                return missContent.Length > MissContentMaxChars ? missContent.Substring(0, MissContentMaxChars) : missContent;
+            }
+            catch
+            {
+                return $"NetHack wiki article matching '{article}' not found.";
+            }
+        }
+
+        /// <summary>
+        /// The top article titles a <c>nethack_wiki_search</c>-style query for <paramref name="article"/>
+        /// would surface, read off <see cref="NetHackWikiService.GetRelevantContext"/>'s
+        /// <c>--- Title ---</c> headers. An exception here yields an empty list, which
+        /// <see cref="BuildMissContent"/> renders as "No candidates found."
+        /// </summary>
+        private List<string> SearchCandidateTitles(string article)
+        {
+            try
+            {
+                var titles = new List<string>();
+                foreach (var snippet in _netHackWikiService.GetRelevantContext(article, null, MaxMissCandidates))
+                {
+                    var m = Regex.Match(snippet, @"^--- (.+?) ---", RegexOptions.Multiline);
+                    if (m.Success)
+                    {
+                        titles.Add(m.Groups[1].Value);
+                    }
+                }
+                return titles;
+            }
+            catch
+            {
+                return new List<string>();
+            }
+        }
 
         /// <summary>
         /// Builds the line prepended when the request did not resolve to an exact title: names

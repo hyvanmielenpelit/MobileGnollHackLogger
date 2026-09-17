@@ -77,17 +77,24 @@ public static class DumpHtmlSanitizer
     /// Final normalization applied to text that is already flattened — either by
     /// Sanitize() here, or by the client's SanitizeDumpHtml() before a
     /// refresh_snapshot round trip. Unifies CRLF and lone CR line endings to LF, trims
-    /// trailing spaces per line, collapses runs of blank lines to one, turns U+00A0 into
-    /// a space and trims the whole. Idempotent: running it twice changes nothing.
+    /// trailing spaces per line, turns U+00A0 into a space, trims trailing spaces per line,
+    /// collapses runs of blank lines to one and trims the whole. Idempotent: running it twice
+    /// changes nothing.
     /// </summary>
+    /// <remarks>
+    /// U+00A0 becomes a space before the trailing-space trim, not after it, because the trim
+    /// matches <c>[ \t]+\n</c> and a line ending in U+00A0 would otherwise keep a trailing space
+    /// that a second pass then removes \u2014 two different texts, and two different SHA-256 hashes,
+    /// for one snapshot.
+    /// </remarks>
     public static string NormalizeFlattenedText(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;
 
         text = text.Replace("\r\n", "\n").Replace('\r', '\n');
+        text = text.Replace('\u00A0', ' ');
         text = TrailingSpaceRegex.Replace(text, "\n");
         text = BlankLineRunRegex.Replace(text, "\n\n");
-        text = text.Replace('\u00A0', ' ');
         return text.Trim();
     }
 

@@ -4627,6 +4627,28 @@ describe('AdminBenchmarkComponent', () => {
       // Blocked calls come from the tool summary, because toolCallCount counts attempts.
       expect(text).toContain('tools=25/25 (3 blocked) exhausted');
     });
+
+    it('should record whether the candidate prompt carried a game snapshot', () => {
+      component.activeRunDetail = buildDiagnosticsRun({
+        candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true,"hasGameSnapshot":true}'
+      });
+      expect(component.runDiagnosticsText).toContain('snapshot=true');
+
+      component.activeRunDetail = buildDiagnosticsRun({
+        candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true}'
+      });
+      expect(component.runDiagnosticsText).toContain('snapshot=false');
+    });
+
+    it('should name the snapshot in the prompt summary only when the run had one', () => {
+      expect(component.candidatePromptSummaryOf({
+        candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true,"hasGameSnapshot":true}'
+      } as any)).toBe('Gameplay Help · concise (tools on) · snapshot');
+
+      expect(component.candidatePromptSummaryOf({
+        candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true}'
+      } as any)).toBe('Gameplay Help · concise (tools on)');
+    });
   });
 
   describe('assessor calibration panel', () => {

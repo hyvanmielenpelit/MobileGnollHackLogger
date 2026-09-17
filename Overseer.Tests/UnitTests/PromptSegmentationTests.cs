@@ -185,6 +185,48 @@ public class PromptSegmentationTests
     }
 
     [Fact]
+    public void OpenAiProvider_BuildChatRequestBody_FallsBackToTheSegmentedPromptForInstructions()
+    {
+        // This provider builds `instructions` from the history's system messages; Google and
+        // Anthropic build theirs from the segments. A caller that carries its prompt only in
+        // SegmentedPrompt would otherwise send no system text at all.
+        var provider = new OpenAiResponsesProvider(new ConfigurationBuilder().Build());
+        var segmentedPrompt = new SegmentedPrompt("Frozen Identity. ", "Session Style. ", "Volatile Context.");
+
+        var requestBody = provider.BuildChatRequestBody(
+            "gpt-4o",
+            new List<object> { provider.FormatMessage("user", "Hello", null) },
+            1024,
+            null,
+            new ToolsForRequest(),
+            segmentedPrompt: segmentedPrompt);
+
+        Assert.Equal("Frozen Identity. Session Style. Volatile Context.", requestBody["instructions"]);
+    }
+
+    [Fact]
+    public void OpenAiProvider_BuildChatRequestBody_PrefersTheHistorySystemMessageOverTheSegments()
+    {
+        // ChatService always supplies a system message; the fallback above must not double it or
+        // replace it.
+        var provider = new OpenAiResponsesProvider(new ConfigurationBuilder().Build());
+
+        var requestBody = provider.BuildChatRequestBody(
+            "gpt-4o",
+            new List<object>
+            {
+                new { role = "system", content = "The history's own prompt." },
+                provider.FormatMessage("user", "Hello", null)
+            },
+            1024,
+            null,
+            new ToolsForRequest(),
+            segmentedPrompt: new SegmentedPrompt("Frozen Identity. ", "Session Style. ", string.Empty));
+
+        Assert.Equal("The history's own prompt.", requestBody["instructions"]);
+    }
+
+    [Fact]
     public void AnthropicProvider_BuildChatRequestBody_WithSegmentedPrompt_AddsCacheControlBreakpoints()
     {
         var inMemorySettings = new Dictionary<string, string?>

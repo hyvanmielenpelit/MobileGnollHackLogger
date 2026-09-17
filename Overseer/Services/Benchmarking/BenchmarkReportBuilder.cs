@@ -73,6 +73,36 @@ public static class BenchmarkReportBuilder
     };
 
     /// <summary>
+    /// What is known about whether the candidate's request really carried the prompt and the board,
+    /// from the harness version the run was stamped with. Null when there is nothing to state: a
+    /// pre-29 run with no snapshot and a candidate whose provider was never affected.
+    /// </summary>
+    /// <remarks>
+    /// This is a fact about the harness, read from the run row, not an interpretation of the run's
+    /// answers. Before harness 29 nothing checked the wire, and on a snapshot suite a Google or
+    /// Anthropic candidate received no board while an OpenAI candidate received no system prompt.
+    /// </remarks>
+    private static string? DeliveryStatement(BenchmarkRun run, bool hasGameSnapshot)
+    {
+        if (int.TryParse(run.HarnessVersion, out int harness) && harness >= 29)
+        {
+            return "prompt and board delivery verified against the provider request body before the first question.";
+        }
+
+        bool isOpenAi = (run.TestedModelProviderUsed ?? string.Empty)
+            .Contains("openai", StringComparison.OrdinalIgnoreCase);
+
+        if (hasGameSnapshot)
+        {
+            return "not verified — before harness 29 a Google or Anthropic candidate did not receive the board and an OpenAI candidate did not receive this prompt.";
+        }
+
+        return isOpenAi
+            ? "not verified — before harness 29 an OpenAI candidate did not receive this prompt."
+            : null;
+    }
+
+    /// <summary>
     /// A UTC timestamp in the report's own fixed shape. Needed because ":" in a custom format
     /// string is the culture's *time separator* rather than a literal, so an interpolated
     /// "{d:yyyy-MM-dd HH:mm:ss}" renders "08.30.00" under fi-FI — the culture these machines
@@ -783,9 +813,14 @@ public static class BenchmarkReportBuilder
             sb.AppendLine();
             sb.AppendLine($"- **Mode:** {modeStr} · **Response style:** {styleStr}");
             sb.AppendLine($"- **Tools:** {toolsStr} · **Web search:** {webStr} · **Subagents:** {subagentsStr} · **Source code references:** {srcStr}");
-            sb.AppendLine($"- **Spoiler-free mode:** {spoilerStr} · **Active game:** {activeGameStr} · **Message history:** {historyStr}");
+            sb.AppendLine($"- **Spoiler-free mode:** {spoilerStr} · **Active game:** {activeGameStr} · **Message history:** {historyStr} · **Game snapshot:** {(promptOpts.HasGameSnapshot ? "yes" : "no")}");
             sb.AppendLine($"- **Tool batching policy:** {run.TestedModelParallelExecutionModeUsed} — {ParallelPolicyDescription(run.TestedModelParallelExecutionModeUsed)}");
             sb.AppendLine("- **Pre-injected wiki context:** none — live chat pre-injects relevant articles, so this run is a strictly harder configuration than production and its tool counts are an upper bound on chat's.");
+            string? delivery = DeliveryStatement(run, promptOpts.HasGameSnapshot);
+            if (delivery != null)
+            {
+                sb.AppendLine($"- **Delivery:** {delivery}");
+            }
             sb.AppendLine();
             sb.AppendLine("*Configurations differ in what they measure. Two runs are comparable on Completeness, Conciseness and Readability only if this block matches.*");
         }

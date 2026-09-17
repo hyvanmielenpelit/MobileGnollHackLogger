@@ -161,6 +161,33 @@ macro alias has no extractable body under that name. The whole payload is capped
 and the builder can never itself fail — it falls back to the service's original sentence
 (`server_tool_parameter_reference` § 4 states the contract).
 
+**A `nethack_wiki_view` article-miss opening `No NetHack wiki article matched '` is a harness-29-round
+marker (2026-09-17).** Before the round an article miss on this tool fell through to whatever bare
+sentence the resolver returned. From the round `NetHackWikiViewTool` catches an article miss itself
+and returns a payload opening `No NetHack wiki article matched '` that lists up to four candidate
+titles — the resolver's own candidates when it offered any, else the top titles of one
+`nethack_wiki_search`-style query, with any exception the probe itself throws swallowed into "no
+hit" — and ends with `Try nethack_wiki_search.`, capped at **600 characters**, and reported as
+`Success = true` like any other ordinary miss. The builder sits inside its own `catch`, which returns
+the old bare sentence — the resolver-defect payload, exactly as with the source-code family's own
+miss builders (§ 4 above). A stored result that is the bare sentence alone, with no candidate list
+and no `Try nethack_wiki_search.` pointer, is a run recorded **before** the harness-29 round, or a
+call in which the builder threw.
+
+**A `get_item_stats` miss carrying `Did you mean: ` is a harness-29-round marker (2026-09-17).**
+Before the round a miss on this tool was a bare "not found"-shaped message with no near-name
+guidance. From the round `SourceCodeService.GetItemStats`'s miss lists up to five distinct near
+names from `_itemResolver.FindItemNames` — called once with the whole requested name and then once
+per word of the name that is 4 characters or longer — under a `Did you mean: …` heading, keeps the
+existing pointer to `item_lookup` / `wiki_search`, and **always** appends the standing note that an
+unidentified appearance ("hooded cloak", "orange potion", "red mushroom") has no entry because
+appearances are randomized per game, and that the snapshot's Discoveries section is where an
+identified type is found instead. The whole payload is capped at **600 characters**. `_itemResolver`
+is an `ObjectsMacroResolver` — the same field `get_item_stats`'s Level 1 resolution already reads
+(`server_tool_parameter_reference` § 6); the plan that authorized this change named the field
+`_objectsResolver`, which does not exist. A stored miss with no `Did you mean:` line and no
+appearance note is a run recorded **before** the harness-29 round.
+
 ---
 
 **The wiki family's miss payloads changed under harness 18, and both forms must stay diagnosable.**
@@ -335,7 +362,7 @@ A tool-diagnostics pass **must** produce this table, one row per tool per run (o
 
 **Limits of this pass** — state this, or its equivalent, in every tool-diagnostics output:
 
-> This pass reads stored run columns only. **For any run before harness 17, arguments and results were never stored** for any benchmark tool call (`ShowDebugLog` is `false` at every benchmark call site, and a run creates no `ChatMessage` rows), so every statement about such a call's parameters or its returned content is a reconstruction or a replay, labelled as such. **From harness 17, a run's `BenchmarkRunAnswerToolCall` rows carry the real arguments, result, error, status, emission order and timings for every attempted call** — read them through the tool-calls endpoint (§ 7, rung 0) rather than reconstructing, unless the payload columns were later pruned by the retention sweep (`ChatRetentionSettings.PruneBenchmarkToolCallResultsDays`, default 90 days), in which case `ArgsText`/`Result` are null but `Name`, `Status`, `Error` and `ResultLengthChars` still are not. **Two corpora reachable from this run carry no fingerprint** — the NetHack source (`NetHackSourceCodePath`) and the NetHack wiki (`NetHackWikiPath`) — so any NetHack finding rests on `StartedAtUtc` against the corpus as it stands now. **Any run before harness 16 has no GnollHack wiki or GnollHack source provenance at all**: `WikiHeadSha` and `SourceCodeHeadSha` were added in harness 16, no historical row is backfilled and none can be, and null in either column means *not recorded*. `BenchmarkAssessmentPrompt.HarnessVersion` is now `"28"`.
+> This pass reads stored run columns only. **For any run before harness 17, arguments and results were never stored** for any benchmark tool call (`ShowDebugLog` is `false` at every benchmark call site, and a run creates no `ChatMessage` rows), so every statement about such a call's parameters or its returned content is a reconstruction or a replay, labelled as such. **From harness 17, a run's `BenchmarkRunAnswerToolCall` rows carry the real arguments, result, error, status, emission order and timings for every attempted call** — read them through the tool-calls endpoint (§ 7, rung 0) rather than reconstructing, unless the payload columns were later pruned by the retention sweep (`ChatRetentionSettings.PruneBenchmarkToolCallResultsDays`, default 90 days), in which case `ArgsText`/`Result` are null but `Name`, `Status`, `Error` and `ResultLengthChars` still are not. **Two corpora reachable from this run carry no fingerprint** — the NetHack source (`NetHackSourceCodePath`) and the NetHack wiki (`NetHackWikiPath`) — so any NetHack finding rests on `StartedAtUtc` against the corpus as it stands now. **Any run before harness 16 has no GnollHack wiki or GnollHack source provenance at all**: `WikiHeadSha` and `SourceCodeHeadSha` were added in harness 16, no historical row is backfilled and none can be, and null in either column means *not recorded*. `BenchmarkAssessmentPrompt.HarnessVersion` is now `"29"`.
 
 ---
 

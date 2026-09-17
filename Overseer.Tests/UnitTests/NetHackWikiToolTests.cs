@@ -389,7 +389,62 @@ Spellcasters include gnomish wizards and other spell-slinging monsters.
 
         var result = await viewTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
         Assert.True(result.Success);
-        Assert.Equal("NetHack wiki article matching 'NonExistentArticleXYZ' not found.", result.Content);
+        Assert.Equal(
+            "No NetHack wiki article matched 'NonExistentArticleXYZ'. No candidates found. Try nethack_wiki_search.",
+            result.Content);
+    }
+
+    /// <summary>
+    /// A miss the resolver's own candidate list already covers (the summary query hit, even though
+    /// the title/filename query missed entirely): the miss payload names the article, lists that
+    /// candidate, and points at nethack_wiki_search as the next action.
+    /// </summary>
+    [Fact]
+    public async Task NetHackWikiViewTool_Miss_WithResolverCandidates_ListsThemAndNamesNextAction()
+    {
+        var missDir = Path.Combine(Path.GetTempPath(), "NetHackWikiViewMissTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(missDir);
+        try
+        {
+            var fooContent = @"---
+title: ""Foo""
+namespace: article
+summary: ""An article about zzgnollbarqqterm, a made-up term used only here.""
+---
+
+Foo has no mention of the search term in its title or body.
+";
+            File.WriteAllText(Path.Combine(missDir, "Foo.md"), fooContent);
+
+            var config = new ConfigurationBuilder()
+                .AddInMemoryCollection(new[]
+                {
+                    new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", missDir)
+                })
+                .Build();
+
+            using var service = new NetHackWikiService(config);
+            await service.InitializationTask;
+            var viewTool = new NetHackWikiViewTool(service);
+
+            var jsonParams = JsonDocument.Parse("{\"article\": \"zzgnollbarqqterm\"}").RootElement;
+            var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(3001), SpoilerFreeMode = false };
+
+            var result = await viewTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
+
+            Assert.True(result.Success);
+            Assert.StartsWith("No NetHack wiki article matched 'zzgnollbarqqterm'.", result.Content);
+            Assert.Contains("Candidates: Foo.", result.Content);
+            Assert.Contains("Try nethack_wiki_search.", result.Content);
+            Assert.True(result.Content!.Length <= 600);
+        }
+        finally
+        {
+            if (Directory.Exists(missDir))
+            {
+                Directory.Delete(missDir, true);
+            }
+        }
     }
 
     [Fact]

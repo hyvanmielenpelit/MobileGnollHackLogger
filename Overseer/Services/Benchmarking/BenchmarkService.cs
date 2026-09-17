@@ -346,6 +346,9 @@ public class BenchmarkService
             var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode);
             PopulateInstrumentFingerprint(run, systemPrompt);
 
+            VerifyCandidateDeliveryBeforeRun(
+                run, testedConfig, systemPrompt, segmentedPrompt, questions.FirstOrDefault()?.QuestionText);
+
             // Check credential collision between candidate and assessor
             string testedKey = AiRequestGovernor.GetCredentialKey(testedConfig.Provider, null, testedConfig.Id);
             string assessorKey = AiRequestGovernor.GetCredentialKey(assessorConfig.Provider, null, assessorConfig.Id);
@@ -666,6 +669,9 @@ public class BenchmarkService
             // them falsifies the provenance of every answer this pass does not touch.
             PopulateRerunInstrumentFingerprint(run, systemPrompt);
 
+            VerifyCandidateDeliveryBeforeRun(
+                run, testedConfig, systemPrompt, segmentedPrompt, failedAnswers.FirstOrDefault()?.QuestionText);
+
             var suiteQuestions = (run.BenchmarkSuite?.Questions ?? new List<BenchmarkQuestion>())
                 .ToDictionary(q => q.OrderIndex, q => q.ExpectedPoints);
 
@@ -909,13 +915,28 @@ public class BenchmarkService
     }
 
     /// <summary>
-    /// The candidate's message history: the suite's game snapshot when it has one, then the question
-    /// carrying the instruction chat appends to every turn after the first. The suffix is in the
-    /// model-facing message only; the question text stored on the answer is the plain question.
+    /// The candidate's message history: the production chat system prompt, then the suite's game
+    /// snapshot when it has one, then the question carrying the instruction chat appends to every
+    /// turn after the first. The suffix is in the model-facing message only; the question text
+    /// stored on the answer is the plain question.
     /// </summary>
-    private static List<object> BuildCandidateSeedHistory(BenchmarkRun run, string questionText)
+    /// <remarks>
+    /// The order is byte-for-byte the shape <c>ChatService</c> sends — the prompt at index 0,
+    /// snapshots as later system messages — and it is the only shape the providers handle
+    /// correctly. <c>GoogleProvider.OrderSystemParts</c> and
+    /// <c>AnthropicProvider.BuildChatRequestBody</c> replace the *first* system message with the
+    /// prompt segments and hoist every later one, so a history whose first system message was the
+    /// board dropped the board. The prompt is prepended whether or not a segmented prompt is in
+    /// play: with <c>PromptCacheSettings:EnableSegmentedPrompt</c> off,
+    /// <c>AgentLoopRunner</c> injects a prompt only into a history that has no system message at
+    /// all — and a board is one.
+    /// </remarks>
+    internal static List<object> BuildCandidateSeedHistory(BenchmarkRun run, string systemPrompt, string questionText)
     {
-        var seed = new List<object>();
+        var seed = new List<object>
+        {
+            new { role = "system", content = systemPrompt }
+        };
         var board = run.BenchmarkSuite?.GameSnapshot;
         if (board != null)
         {
@@ -927,6 +948,68 @@ public class BenchmarkService
         }
         seed.Add(new { role = "user", content = questionText + ChatService.NoGreetInstruction });
         return seed;
+    }
+
+    /// <summary>
+    /// Builds the candidate request body through the provider that will send it and requires the
+    /// system prompt and — when the suite has a board — the board to be in it. Throws
+    /// <see cref="InvalidOperationException"/> when either is missing.
+    /// </summary>
+    /// <remarks>
+    /// The provider is resolved the way <see cref="AgentLoopRunner"/> resolves it, from the same
+    /// registrations, so the instance probed is the instance that runs. An unknown provider name
+    /// fails here rather than one line later inside the agent loop, with the same effect.
+    /// </remarks>
+    private void VerifyCandidateDelivery(
+        BenchmarkRun run,
+        string providerName,
+        IAiProvider? requestProvider,
+        List<object> seedHistory,
+        SegmentedPrompt? segmentedPrompt,
+        string systemPrompt,
+        int? questionNumber)
+    {
+        var provider = requestProvider;
+        using var scope = provider == null ? _scopeFactory.CreateScope() : null;
+        provider ??= scope!.ServiceProvider.GetServices<IAiProvider>()
+            .FirstOrDefault(p => string.Equals(p.ProviderName, providerName, StringComparison.OrdinalIgnoreCase));
+
+        if (provider == null)
+        {
+            throw new InvalidOperationException(
+                $"Harness delivery check failed: unknown AI provider '{providerName}'.");
+        }
+
+        BenchmarkCandidateRequestProbe.Verify(
+            provider,
+            seedHistory,
+            segmentedPrompt,
+            systemPrompt,
+            run.BenchmarkSuite?.GameSnapshot?.SanitizedText,
+            questionNumber);
+    }
+
+    /// <summary>
+    /// The once-per-execution delivery check, run before the first question so that a candidate
+    /// that would receive neither the prompt nor the board costs nothing: the throw reaches the
+    /// caller's terminal handler, which marks the run failed with this message and creates no
+    /// answers.
+    /// </summary>
+    private void VerifyCandidateDeliveryBeforeRun(
+        BenchmarkRun run,
+        SystemAiApiConfiguration testedConfig,
+        string systemPrompt,
+        SegmentedPrompt? segmentedPrompt,
+        string? firstQuestionText)
+    {
+        VerifyCandidateDelivery(
+            run,
+            testedConfig.Provider,
+            requestProvider: null,
+            BuildCandidateSeedHistory(run, systemPrompt, firstQuestionText ?? string.Empty),
+            segmentedPrompt,
+            systemPrompt,
+            questionNumber: null);
     }
 
     /// <summary>
@@ -963,7 +1046,7 @@ public class BenchmarkService
         return (segmented, seedHistory);
     }
 
-    private async Task<BenchmarkRunAnswer> ExecuteSingleQuestionAsync(
+    internal async Task<BenchmarkRunAnswer> ExecuteSingleQuestionAsync(
         ApplicationDbContext db,
         SystemAiConfigService configService,
         BenchmarkRun run,
@@ -1029,7 +1112,7 @@ public class BenchmarkService
                 MaxCallsPerSession = toolCallBudget,
                 ShowDebugLog = false
             },
-            SeedHistory = BuildCandidateSeedHistory(run, question.QuestionText)
+            SeedHistory = BuildCandidateSeedHistory(run, systemPrompt, question.QuestionText)
         };
 
         int perQuestionTimeoutSec = ResolveQuestionTimeoutSeconds(question.Difficulty, question.AssessedDifficulty);
@@ -1060,6 +1143,14 @@ public class BenchmarkService
         _runManager.MarkQuestionInFlight(run.Id, question.OrderIndex);
         try
         {
+            // The run-level check ran against the first question's seed only. This one runs against
+            // the request actually about to be sent, and a miss becomes the terminal error below:
+            // the answer is stored Failed, never graded, counted under Transport Defects, and
+            // repeatable with "re-run failed questions".
+            VerifyCandidateDelivery(
+                run, runRequest.ProviderName, runRequest.AiProvider, runRequest.SeedHistory,
+                runRequest.SegmentedPrompt, systemPrompt, question.OrderIndex);
+
             await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, questionCts.Token))
             {
                 if (evt.Type == "error")
@@ -1296,7 +1387,7 @@ public class BenchmarkService
                 MaxCallsPerSession = toolCallBudget,
                 ShowDebugLog = false
             },
-            SeedHistory = BuildCandidateSeedHistory(run, answer.QuestionText)
+            SeedHistory = BuildCandidateSeedHistory(run, systemPrompt, answer.QuestionText)
         };
 
         int perQuestionTimeoutSec = ResolveQuestionTimeoutSeconds(answer.Difficulty, answer.AssessedDifficulty);
@@ -1319,6 +1410,11 @@ public class BenchmarkService
         _runManager.MarkQuestionInFlight(run.Id, answer.OrderIndex);
         try
         {
+            // Per question, on the same contract as ExecuteSingleQuestionAsync.
+            VerifyCandidateDelivery(
+                run, runRequest.ProviderName, runRequest.AiProvider, runRequest.SeedHistory,
+                runRequest.SegmentedPrompt, systemPrompt, answer.OrderIndex);
+
             await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, questionCts.Token))
             {
                 if (evt.Type == "error")
@@ -2643,7 +2739,9 @@ public class BenchmarkService
             isDisputedVerdict: isDisputed,
             isCriticalErrorAdjudication: isCriticalErrorAdjudication,
             isOutOfRubricAdjudication: isOutOfRubricAdjudication,
-            assessorEvidence: accuracyEvidence);
+            assessorEvidence: accuracyEvidence,
+            boardName: run.BenchmarkSuite?.GameSnapshot?.Name,
+            boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText);
 
         var runRequest = BuildClaimVerificationRequest(
             verifierConfig,
@@ -4822,6 +4920,9 @@ public class BenchmarkService
             var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode);
             PopulateInstrumentFingerprint(run, systemPrompt);
 
+            VerifyCandidateDeliveryBeforeRun(
+                run, testedConfig, systemPrompt, segmentedPrompt, answer.QuestionText);
+
             string? expectedPoints = MatchSuiteQuestion(run, answer)?.ExpectedPoints;
 
             // A one-question scope, on the same contract as the failed-question re-run: the row is
@@ -5216,8 +5317,13 @@ public class BenchmarkService
         // what the handlers there need in order to restore the status. Cancelling it would throw
         // past every handler and past the finally that releases the run manager, leaving the row
         // reading Running with no owner. The cancellation check is the first statement in the try.
+        // The suite's board is part of the verifier's prompt from harness 29, so this path loads it
+        // as the two run-level paths already do; without it a retry would verify board claims
+        // against the rubric alone.
         var run = await db.BenchmarkRuns
             .Include(r => r.Answers)
+            .Include(r => r.BenchmarkSuite)
+            .ThenInclude(s => s!.GameSnapshot)
             .FirstOrDefaultAsync(r => r.Id == runId, CancellationToken.None);
 
         if (run == null)

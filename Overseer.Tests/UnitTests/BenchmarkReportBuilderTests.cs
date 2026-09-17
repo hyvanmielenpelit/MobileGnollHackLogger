@@ -1751,6 +1751,69 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
+    public void ChatPromptUnderTest_NamesTheGameSnapshot()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+
+        var withBoard = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        withBoard.CandidatePromptOptionsJson =
+            new BenchmarkCandidatePromptOptions { HasGameSnapshot = true }.ToCanonicalJson();
+        BenchmarkRunFinalizer.Apply(withBoard, new[] { q1 });
+        Assert.Contains("**Game snapshot:** yes", BenchmarkReportBuilder.BuildMarkdownReport(withBoard));
+
+        var withoutBoard = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        withoutBoard.CandidatePromptOptionsJson =
+            new BenchmarkCandidatePromptOptions { HasGameSnapshot = false }.ToCanonicalJson();
+        BenchmarkRunFinalizer.Apply(withoutBoard, new[] { q1 });
+        Assert.Contains("**Game snapshot:** no", BenchmarkReportBuilder.BuildMarkdownReport(withoutBoard));
+    }
+
+    [Fact]
+    public void ChatPromptUnderTest_StatesWhetherDeliveryWasVerified()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+
+        var verified = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        verified.HarnessVersion = "29";
+        verified.CandidatePromptOptionsJson =
+            new BenchmarkCandidatePromptOptions { HasGameSnapshot = true }.ToCanonicalJson();
+        BenchmarkRunFinalizer.Apply(verified, new[] { q1 });
+        Assert.Contains(
+            "prompt and board delivery verified against the provider request body",
+            BenchmarkReportBuilder.BuildMarkdownReport(verified));
+
+        // A snapshot run before harness 29 lost the board on Google and Anthropic and the prompt on
+        // OpenAI, and nothing checked either.
+        var oldSnapshotRun = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        oldSnapshotRun.HarnessVersion = "28";
+        oldSnapshotRun.CandidatePromptOptionsJson =
+            new BenchmarkCandidatePromptOptions { HasGameSnapshot = true }.ToCanonicalJson();
+        BenchmarkRunFinalizer.Apply(oldSnapshotRun, new[] { q1 });
+        Assert.Contains(
+            "not verified — before harness 29 a Google or Anthropic candidate did not receive the board",
+            BenchmarkReportBuilder.BuildMarkdownReport(oldSnapshotRun));
+
+        var oldOpenAiRun = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        oldOpenAiRun.HarnessVersion = "28";
+        oldOpenAiRun.TestedModelProviderUsed = "OpenAI";
+        oldOpenAiRun.CandidatePromptOptionsJson =
+            new BenchmarkCandidatePromptOptions { HasGameSnapshot = false }.ToCanonicalJson();
+        BenchmarkRunFinalizer.Apply(oldOpenAiRun, new[] { q1 });
+        Assert.Contains(
+            "not verified — before harness 29 an OpenAI candidate did not receive this prompt.",
+            BenchmarkReportBuilder.BuildMarkdownReport(oldOpenAiRun));
+
+        // Nothing was wrong with a pre-29 run on another provider with no board, so nothing is said.
+        var unaffected = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        unaffected.HarnessVersion = "28";
+        unaffected.TestedModelProviderUsed = "Google";
+        unaffected.CandidatePromptOptionsJson =
+            new BenchmarkCandidatePromptOptions { HasGameSnapshot = false }.ToCanonicalJson();
+        BenchmarkRunFinalizer.Apply(unaffected, new[] { q1 });
+        Assert.DoesNotContain("**Delivery:**", BenchmarkReportBuilder.BuildMarkdownReport(unaffected));
+    }
+
+    [Fact]
     public void ToolRouting_RendersFamilyCountsAndCaveats()
     {
         var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);

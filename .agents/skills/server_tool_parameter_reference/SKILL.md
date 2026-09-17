@@ -482,6 +482,18 @@ An earlier pass always beats a later one, so a heading that matches literally is
 a longer one containing it (`strategy` answers `## Strategy`, not `## Armor strategy`). The first two
 passes are first-wins on a tie.
 
+**A `section` containing `›` is retried on its last segment, from harness 29 (2026-09-17).** A
+breadcrumb-shaped request — `"Combat › Two-Weapon Combat"`, copied from some display that renders
+headings that way — is tried on the **full string first, unchanged**: it goes through the same
+three-pass helper exactly as any other `section` value, and a heading that happens to equal or
+contain the whole breadcrumb still wins there. Only when none of the three passes resolves the full
+string is it retried on the **trimmed text after the last `›`**, through the same three-pass helper
+again — so `"Combat › Two-Weapon Combat"` falls back to `"Two-Weapon Combat"` and reaches
+`## Two-weapon combat` by the normalised pass. The retry is a second full run of the same
+`MarkdownSectionExtractor.Extract` helper, not a new pass appended to the three, so the **unique
+substring** ambiguity refusal still holds on the retried segment: a last segment contained in more
+than one heading still falls through to the miss line, exactly as it would for a plain request.
+
 A `section` no pass resolves still returns the **full article** and is not an error, behind a marker
 line that **lists the article's headings** — every heading in document order, as written so one can
 be copied straight back, `; `-separated and capped at 600 characters with a trailing `…`:
@@ -528,6 +540,22 @@ field — and end with a next action naming a specific alternative tool. Every p
 exceptions and any `Error:`-prefixed content into "no hit", so a miss can never itself fail.
 **Match the opening, never a length**, and reserve the bare strings above for a run recorded before
 harness 18 or a call in which the builder threw.
+
+**`nethack_wiki_view`'s article miss gained its own near-miss payload at harness 29 (2026-09-17),
+matching `wiki_view`'s own harness-18 shape.** Before the round — and this is why the table above
+reads `unchanged` for this row — an article miss on this tool fell through to
+`NetHackWikiService`'s bare resolver sentence, with none of the near-miss guidance the rest of this
+family had already grown. From the round `NetHackWikiViewTool` catches the miss itself and returns a
+payload **opening** `No NetHack wiki article matched '` — matched on that opening, never on length,
+exactly as the rest of this table is read — that lists up to four candidate titles (the resolver's
+own candidates when it offered any, else the top titles of one `nethack_wiki_search`-style probe,
+with any exception swallowed into "no hit"), and ends with `Try nethack_wiki_search.`, capped at
+**600 characters** and reported `Success = true`. The builder sits inside its own `catch`, which
+returns the resolver's original bare sentence — the resolver-defect payload, as with every other miss
+builder in this family. **This is distinct from the resolution line below** (`[No NetHack wiki
+article titled '`), which is a `Success = true` non-miss that still returns an article; the new miss
+payload fires only when no article resolves at all. A stored miss carrying neither the new opening
+nor a candidate list is a run recorded before the harness-29 round.
 
 `wiki_view`'s miss payload also states, when a `section` was requested, that it was the **article**
 that missed so the section was never reached. A section that matches no heading is **not** a miss at
@@ -719,6 +747,21 @@ exists for all three tools, by two different mechanisms:**
     `CHARGEDRING`, `MISCELLANEOUSITEM`, `GENERAL_TOOL`, `GENERAL_SPELLTOOL`, `CONTAINER` and
     `GENERAL_ROCK` compare against), on every re-index, and `NetHackSourceCodeService` overrides
     `ParseGameData()` with a no-op.
+
+> 🛑 **`get_item_stats`'s miss gained a near-name list and a standing appearance note at harness 29
+> (2026-09-17).** Before the round a miss was `response.Error` set to a bare "not found"-shaped
+> message, per the general stats-tool miss pattern above, with none of the near-miss guidance the
+> source-code and wiki families had already grown. From the round, a miss lists up to five distinct
+> near names drawn from `_itemResolver.FindItemNames` — called once with the whole requested name and
+> then once per word of the name that is 4 or more characters long — under a `Did you mean: …`
+> heading, keeps the tool's existing pointer to `item_lookup` / `wiki_search`, and **always** appends:
+> *"A name that is an unidentified appearance — 'hooded cloak', 'orange potion', 'red mushroom' — has
+> no entry: appearances are randomized per game; see the snapshot's Discoveries section."* — capped at
+> **600 characters** in total. `_itemResolver` is the same `ObjectsMacroResolver` field
+> `GetItemStats`'s Level 1 resolution already reads, above; a document that names the field
+> `_objectsResolver` is describing a field that does not exist on `SourceCodeService`. A stored miss
+> carrying neither the `Did you mean:` line nor the appearance sentence is a run recorded **before**
+> the harness-29 round.
 
 ---
 

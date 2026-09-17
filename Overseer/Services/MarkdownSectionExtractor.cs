@@ -17,6 +17,12 @@ internal static class MarkdownSectionExtractor
     internal const int SectionMissHeadingListMaxChars = 600;
 
     /// <summary>
+    /// The breadcrumb separator <c>wiki_search</c>'s snippet header joins heading levels with
+    /// (<c>A › B</c>), so a <c>section</c> argument copied from that header carries it too.
+    /// </summary>
+    private const char BreadcrumbSeparator = '›';
+
+    /// <summary>
     /// The requested section's text: the matched heading line, then every line up to but not
     /// including the next heading of the same or a higher level. Matching runs in three passes over
     /// the article's headings — case-insensitive equality on the heading text, then equality with
@@ -24,9 +30,11 @@ internal static class MarkdownSectionExtractor
     /// so a heading carrying an emoji prefix (<c>## 🔮 Elbereth</c>) answers a request for
     /// <c>Elbereth</c>, <c>Spell failure</c> answers <c>Minimum spell failure rates</c>, and an
     /// earlier pass always beats a later one. The first two passes take the first heading they
-    /// match; the third takes a heading only when it is the sole one containing the request. A
-    /// section no pass resolves yields a marker line naming the article's headings, followed by the
-    /// whole article.
+    /// match; the third takes a heading only when it is the sole one containing the request. When a
+    /// request carries the <c>A › B</c> breadcrumb <c>wiki_search</c>'s snippet header prints, and
+    /// all three passes miss on the full string, the same three passes run again on the text after
+    /// the breadcrumb's last <c>›</c>, trimmed. A section no pass resolves yields a marker line
+    /// naming the article's headings, followed by the whole article.
     /// </summary>
     public static string Extract(string content, string section)
     {
@@ -47,30 +55,14 @@ internal static class MarkdownSectionExtractor
             }
         }
 
-        int selected = headings.FindIndex(h => h.Title.Equals(section, StringComparison.OrdinalIgnoreCase));
+        int selected = FindHeadingIndex(headings, section);
 
-        if (selected < 0)
+        if (selected < 0 && section.IndexOf(BreadcrumbSeparator) >= 0)
         {
-            string normalizedSection = NormalizeHeadingTitle(section);
-            if (normalizedSection.Length > 0)
+            string lastSegment = section.Substring(section.LastIndexOf(BreadcrumbSeparator) + 1).Trim();
+            if (lastSegment.Length > 0)
             {
-                selected = headings.FindIndex(
-                    h => NormalizeHeadingTitle(h.Title).Equals(normalizedSection, StringComparison.OrdinalIgnoreCase));
-
-                if (selected < 0)
-                {
-                    var containing = headings
-                        .Select((h, index) => (Index: index, Title: NormalizeHeadingTitle(h.Title)))
-                        .Where(h => h.Title.Contains(normalizedSection, StringComparison.OrdinalIgnoreCase))
-                        .Select(h => h.Index)
-                        .Take(2)
-                        .ToList();
-
-                    if (containing.Count == 1)
-                    {
-                        selected = containing[0];
-                    }
-                }
+                selected = FindHeadingIndex(headings, lastSegment);
             }
         }
 
@@ -98,6 +90,44 @@ internal static class MarkdownSectionExtractor
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// The three-pass match a <c>section</c> request runs against <paramref name="headings"/> —
+    /// exact heading equality, then equality with both sides normalised, then a normalised request
+    /// contained in exactly one normalised heading — returning the winning heading's index, or -1
+    /// when no pass resolves one. Two headings containing the request is a miss, not a pick.
+    /// </summary>
+    private static int FindHeadingIndex(List<(int LineIndex, int Level, string Title)> headings, string section)
+    {
+        int selected = headings.FindIndex(h => h.Title.Equals(section, StringComparison.OrdinalIgnoreCase));
+
+        if (selected < 0)
+        {
+            string normalizedSection = NormalizeHeadingTitle(section);
+            if (normalizedSection.Length > 0)
+            {
+                selected = headings.FindIndex(
+                    h => NormalizeHeadingTitle(h.Title).Equals(normalizedSection, StringComparison.OrdinalIgnoreCase));
+
+                if (selected < 0)
+                {
+                    var containing = headings
+                        .Select((h, index) => (Index: index, Title: NormalizeHeadingTitle(h.Title)))
+                        .Where(h => h.Title.Contains(normalizedSection, StringComparison.OrdinalIgnoreCase))
+                        .Select(h => h.Index)
+                        .Take(2)
+                        .ToList();
+
+                    if (containing.Count == 1)
+                    {
+                        selected = containing[0];
+                    }
+                }
+            }
+        }
+
+        return selected;
     }
 
     /// <summary>

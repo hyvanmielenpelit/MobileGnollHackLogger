@@ -372,8 +372,29 @@ public static class BenchmarkAssessmentPrompt
     ///     until it is rescored. ScoringMethodVersion stays 10 and CandidateSystemPromptSha256 does
     ///     not move. A run stamped 28 differs from one stamped 27 on HarnessVersion alone, which is
     ///     Tier C.
+    /// v29: the candidate's seed history carries the production chat system prompt as its first
+    ///     system message, ahead of the game board. Before this, the board was the first system
+    ///     message, and the first system message is exactly what GoogleProvider and
+    ///     AnthropicProvider replace with the prompt segments — so a Google or Anthropic candidate
+    ///     on a snapshot suite received no board, and an OpenAI candidate, whose provider reads
+    ///     `instructions` from the history and never from the segments, received no system prompt
+    ///     at all. Runs 36, 37, 38, 42, 46, 47 and 51 are OpenAI candidates graded with no prompt
+    ///     and must not be compared with a later OpenAI run on any axis; runs 50 and 51 are the
+    ///     snapshot runs that exposed it. A wire check (BenchmarkCandidateRequestProbe) now builds
+    ///     the request body through the real provider before the first question and again on every
+    ///     question's own request: the run refuses to start when the first fails, and a later miss
+    ///     stores that answer Failed with the delivery message, unassessed. The claim verifier
+    ///     receives the board and cites it as `board: "…"`; the report states, per run, whether
+    ///     delivery was verified. OpenAiResponsesProvider falls back to the segmented prompt when a
+    ///     history carries no system message. Three tool contracts gain a usable miss payload
+    ///     (breadcrumb sections, nethack_wiki_view, get_item_stats), which moves ToolGuidesSha256
+    ///     only if a guide file changes — none does here. ScoringMethodVersion stays 10 and
+    ///     CandidateSystemPromptSha256 does not move: the prompt text is what it always was, it is
+    ///     now delivered. A run stamped 29 differs from one stamped 28 on HarnessVersion alone, but
+    ///     the candidate receives materially different input on a snapshot suite or on OpenAI, so
+    ///     this is a Fundamental break against every earlier run of either kind, not Tier C.
     /// </summary>
-    public const string HarnessVersion = "28";
+    public const string HarnessVersion = "29";
 
     /// <summary>
     /// The complete per-question assessor prompt: <see cref="BuildPerQuestionPreamble"/>, a blank

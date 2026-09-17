@@ -1261,7 +1261,7 @@ namespace Overseer.Services
 
             if (matchLine == -1)
             {
-                response.Error = $"No item named '{name}' found in the game data. Try item_lookup or wiki_search for partial matches, or check the spelling.";
+                response.Error = BuildItemStatsMissMessage(name);
                 return response;
             }
 
@@ -1315,6 +1315,59 @@ namespace Overseer.Services
             PopulateFlagDescriptions(response, rawDef);
 
             return response;
+        }
+
+        private const int ItemStatsMissMaxChars = 600;
+        private const int MaxItemStatsSuggestions = 5;
+
+        /// <summary>
+        /// The <see cref="StatsResponse{T}.Error"/> get_item_stats returns when no source line names
+        /// <paramref name="name"/>: up to <see cref="MaxItemStatsSuggestions"/> distinct near-miss
+        /// names from src/objects.c, found via <see cref="ObjectsMacroResolver.FindItemNames"/> —
+        /// first against the whole name, then against each word of four or more characters — the
+        /// existing pointer to item_lookup and wiki_search, and, whether or not any suggestion was
+        /// found, the reminder that an unidentified appearance (<c>hooded cloak</c>, <c>orange
+        /// potion</c>, <c>red mushroom</c>) is randomised per game and so has no objects.c entry of
+        /// its own. Capped at <see cref="ItemStatsMissMaxChars"/>.
+        /// </summary>
+        private string BuildItemStatsMissMessage(string name)
+        {
+            var suggestions = new List<string>();
+
+            void AddCandidates(string query)
+            {
+                if (suggestions.Count >= MaxItemStatsSuggestions || string.IsNullOrWhiteSpace(query))
+                {
+                    return;
+                }
+
+                foreach (var candidate in _itemResolver.FindItemNames(query))
+                {
+                    if (suggestions.Count >= MaxItemStatsSuggestions) break;
+                    if (!suggestions.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+                    {
+                        suggestions.Add(candidate);
+                    }
+                }
+            }
+
+            AddCandidates(name);
+            foreach (Match wordMatch in Regex.Matches(name, @"[A-Za-z0-9]{4,}"))
+            {
+                AddCandidates(wordMatch.Value);
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append($"No item named '{name}' found in the game data.");
+            if (suggestions.Count > 0)
+            {
+                sb.Append($" Did you mean: {string.Join("; ", suggestions.Take(MaxItemStatsSuggestions))}.");
+            }
+            sb.Append(" Try item_lookup or wiki_search for partial matches, or check the spelling.");
+            sb.Append(" A name that is an unidentified appearance — 'hooded cloak', 'orange potion', 'red mushroom' — has no entry: appearances are randomized per game; see the snapshot's Discoveries section.");
+
+            string message = sb.ToString();
+            return message.Length > ItemStatsMissMaxChars ? message.Substring(0, ItemStatsMissMaxChars) : message;
         }
 
         public IEnumerable<string> SearchItems(string query)

@@ -131,6 +131,17 @@ the stored text into the file.
   the survey in § 3, and write only questions about decisions they do not cover. Never rewrite,
   renumber or restate an existing question.
 
+## 2b. Repair Mode — Not This Skill
+
+A request to fix a wrong rubric point, a wrong difficulty band, or a stale fact in a question that
+**already exists** belongs to [`server_rubric_handoff`](../server_rubric_handoff/SKILL.md), not here.
+This skill's two modes (§ 1) only ever **add** — a whole new suite, or new questions onto an existing
+one — and neither mode edits a question already saved. Recognise a repair request by its shape: it
+names a question that already exists and a fact in it that is wrong, rather than a board with no
+questions yet or a gap the existing questions don't cover. Routing a repair through this skill's add
+mode does not work either, by construction: add mode's own rule (§ 6) refuses a file carrying an
+`id`, and a repair is defined by editing the row an `id` already names.
+
 ## 3. Survey, Classify, Count
 
 **Never decide the count before reading the board.** The board decides it.
@@ -208,6 +219,41 @@ repository. When they are not, `server_tool_data_sources` explains how Overseer 
 paths from User Secrets and `Overseer/appsettings.json` — report **keys only**, never a secret's
 value.
 
+## 5a. Six Authoring Pitfalls, With Their Runs 50–51 Example
+
+Six mistakes recur often enough, and are specific enough to GnollHack's own data model, to name
+individually. Each cost a draft question or rubric point during the runs 50–51 authoring round
+(2026-09-17) before being caught in review; check for all six before writing a rubric point down.
+
+1. **An appearance is not an identity.** Potions, scrolls, wands, rings, amulets, spellbooks —
+   **and mushrooms** (`src/o_init.c`, the `CHAMPIGNON` .. `ORACULAR_TOADSTOOL` block) — have their
+   in-game names shuffled per game; only the snapshot's **Discoveries** section names what a
+   player-visible appearance actually *is*. A board line reading a shuffled appearance name is a
+   board fact about the appearance, never about the underlying type, unless Discoveries confirms
+   the two are the same thing on this board. Runs 50–51 example: a draft question named a mushroom
+   by its underlying species where the board itself only ever showed the shuffled appearance —
+   Discoveries had not yet resolved it — so the question assumed knowledge the board did not give
+   the player.
+2. **A conduct list is read from `src/eat.c`, never recalled.** GnollHack's conducts are not the
+   stock NetHack set from memory, and the file is the only ground truth for which conducts exist and
+   what breaks each one.
+3. **Dungeon geography is read from `dat/dungeon.def`.** Branch points, level ranges and which
+   branch leads where are declared there; a board's *Notable locations* or dungeon overview is
+   read against that file before a question relies on where a branch goes.
+4. **"N castings left" is a prepared material-component batch, not a spell-agnostic resource.**
+   `src/matcomps.c` defines which reagents a given spell consumes; before writing a reagent
+   question, check which of the hero's own carried reagents actually feed which of the hero's own
+   known spells — a reagent count on the board says nothing about a spell it does not supply.
+5. **The question text must not state the board fact the rubric rewards.** Phrase the question the
+   way a player looking at their own screen would ask it — from the situation, never from the
+   answer. A question that already names the fact its own rubric charges for is not testing
+   retrieval or reasoning; it is testing transcription.
+6. **A CRITICAL ERROR clause is a false statement of fact or a harmful instruction, never a
+   preference.** A REQUIRED point is a fact the answer must state, not a recommendation for how the
+   hero should play. A rubric that penalises a candidate for choosing a legitimate but non-optimal
+   tactic — rather than for stating something false or dangerous — is grading taste as if it were
+   accuracy.
+
 ## 6. Write the YAML — One File
 
 The format's source of truth is
@@ -220,8 +266,9 @@ directory.
 input file's **`suite` block verbatim** — name, description and the whole `snapshot` mapping,
 `sha256` included — **plus one key, `suite.suggested_description`** (§ 6a), and **only the new
 questions**. **No question carries an `id`**: an id means *replace that question*, and the Snapshot
-Suite Wizard refuses a file that has one. The rest of this section describes the create-mode file,
-which never writes `suggested_description`; the question rules below apply to both.
+Suite Wizard refuses a file that has one — a repair file is imported with **Import Questions from
+YAML** instead (§ 2b). The rest of this section describes the create-mode file, which never writes
+`suggested_description`; the question rules below apply to both.
 
 - `suite.name` — required.
 - `suite.description` — written by the rules of § 6a. **No answer keys.**

@@ -4312,7 +4312,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         if (run.candidatePromptOptionsJson) {
           try {
             const opts = JSON.parse(run.candidatePromptOptionsJson);
-            lines.push(`options: mode=${opts.overseerMode ?? 0}, verbose=${opts.verboseMode ?? false}, spoilerFree=${opts.spoilerFreeMode ?? false}, tools=${opts.enableToolUse ?? true}, webSearch=${opts.enableWebSearch ?? false}, subagents=${opts.enableSubAgents ?? false}, sourceCodeRefs=${opts.allowSourceCodeReferences ?? true}`);
+            lines.push(`options: mode=${opts.overseerMode ?? 0}, verbose=${opts.verboseMode ?? false}, spoilerFree=${opts.spoilerFreeMode ?? false}, tools=${opts.enableToolUse ?? true}, webSearch=${opts.enableWebSearch ?? false}, subagents=${opts.enableSubAgents ?? false}, sourceCodeRefs=${opts.allowSourceCodeReferences ?? true}, snapshot=${opts.hasGameSnapshot ?? false}`);
           } catch {
             lines.push(`options: ${run.candidatePromptOptionsJson}`);
           }
@@ -6567,7 +6567,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       const opts = JSON.parse(run.candidatePromptOptionsJson);
       const style = opts.verboseMode ? 'detailed' : 'concise';
       const tools = opts.enableToolUse !== false ? 'tools on' : 'tools off';
-      return `Gameplay Help · ${style} (${tools})`;
+      const snapshot = opts.hasGameSnapshot ? ' · snapshot' : '';
+      return `Gameplay Help · ${style} (${tools})${snapshot}`;
     } catch {
       return run.candidatePromptSourceUsed || 'ChatService.BuildSystemPrompt';
     }

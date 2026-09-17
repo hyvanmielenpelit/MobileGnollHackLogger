@@ -136,6 +136,16 @@ public class OpenAiResponsesProvider : IAiProvider
             catch { }
         }
 
+        // Unlike Google and Anthropic, this provider builds `instructions` from the history alone
+        // and never from the segments, so a caller that puts its prompt only in SegmentedPrompt
+        // sends no system text at all. Every benchmark candidate on this provider did exactly that
+        // between 2026-09-10 and harness 29. ChatService always supplies a system message, so this
+        // changes nothing on the live path.
+        if (string.IsNullOrEmpty(systemContent) && segmentedPrompt != null)
+        {
+            systemContent = segmentedPrompt.FullPrompt;
+        }
+
         var req = new Dictionary<string, object>
         {
             ["model"] = modelId,

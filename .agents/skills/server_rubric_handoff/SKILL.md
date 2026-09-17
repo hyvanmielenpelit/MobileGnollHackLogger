@@ -2,18 +2,21 @@
 name: server_rubric_handoff
 description: >-
   Mandatory method for turning a Suite Defect finding from an Overseer AI benchmark analysis
-  into a rubric edit a human can paste into the suite editor. Covers why the agent never edits a
-  rubric itself, how to obtain the current rubric text (it lives only in the database, so the
-  user runs a query), the pre-flight checks before a replacement is written (verify every fact
-  on disk with a citation, the units rule, scope, no rubric point copied from a candidate
-  answer), the copy-paste deliverable (the whole rubric verbatim, never a diff or a paraphrase),
-  what the harness does on save (item revision bump, assessed difficulty cleared, review mark
-  invalidated, launcher refusal until re-assessed), the human steps in the Admin UI, and what to
-  record in the registry afterwards. Read whenever an analysis files a Suite Defect that needs a
-  rubric change, or a user asks for a rubric edit they can copy-paste.
+  into a YAML repair file a human imports in one action with Import Questions from YAML. Covers
+  why the agent never edits a rubric itself, how to obtain the current text (Download All as
+  YAML from the suite's Manage Questions toolbar, with a database query kept as a fallback for
+  the revision and assessed-difficulty fields alone), the pre-flight checks before a replacement
+  is written (verify every fact on disk with a citation, the units rule, scope, no rubric point
+  copied from a candidate answer), the deliverable itself (one file carrying only the changed
+  questions, each keyed by id, each rubric whole and verbatim, self-checked with a real YAML
+  parser before handoff), what the harness does on import (item revision bump, assessed
+  difficulty cleared, review mark invalidated, launcher refusal until re-assessed), the human
+  steps in the Admin UI, and what to record in the registry afterwards. Read whenever an
+  analysis files a Suite Defect that needs a rubric change, or a user asks for a rubric edit
+  they can hand to the importer.
 ---
 
-# Rubric Handoff: Turning a Suite Defect Into an Edit a Human Can Paste
+# Rubric Handoff: Turning a Suite Defect Into a Repair File a Human Can Import
 
 ## 1. Purpose and When It Binds
 
@@ -28,20 +31,41 @@ reader, grading against the same text, agrees with the mistake. Run 38 Q7 is the
 that is not the Admin UI, and there should not be one: rubric authorship is a human act the
 harness records (`BenchmarkRubricAdditionAcceptance` stores who accepted what, and whether the
 text was edited from a draft). What the agent produces is the **complete replacement text**, in
-a form the human pastes without further thought, plus the facts that make it right.
+a form the human reviews and applies in one action — the § 4 import file by default, or the § 4b
+paste block when import is not available — plus the facts that make it right.
 
 This skill binds whenever a benchmark analysis files a **Suite Defect**
 (`server_benchmark_to_chat_transfer` § 2, category 2) whose repair is a rubric change, and
-whenever a user asks for a rubric edit to copy-paste. It is not one of the five skills every
-benchmark analysis must read; the analysis reaches it through the Suite Defect category.
+whenever a user asks for a rubric edit they can hand to the importer. It is not one of the five
+skills every benchmark analysis must read; the analysis reaches it through the Suite Defect
+category.
 
-## 2. Get the Current Text First — It Lives Only in the Database
+## 2. Get the Current Text First — Export It, Don't Recall It
 
 A report never carries the rubric; it carries the assessor's **paraphrase** of the points it
 charged (*"Rubric point 3: …"*). A replacement written from the paraphrase rewrites points the
 grader never quoted and drops the ones it did not mention. So the first step is always the real
-text, and the agent cannot read it: follow `database_queries` and ask the user to run, in SSMS
-against the Overseer database:
+text — and the agent neither reads it from the database directly nor asks the user to paste one
+rubric at a time; it asks for an export.
+
+**The default: the user downloads the suite's questions as YAML.** On the suite's **Manage
+Questions** toolbar, **Download All as YAML** (or, from the suite list, **Download Suite as
+YAML**) exports every question's `id`, `difficulty`, `question` and `rubric` **verbatim** —
+including the current `ExpectedPoints` text this skill edits, with its line breaks and any
+Markdown intact, and the suite's `snapshot` block when it has one. Ask the user for the file
+path; this step needs no database query, no admin session and no SQL.
+
+**A report's question number is never assumed to be the export's row order.**
+`BenchmarkReportBuilder` prints `Question {OrderIndex}`, and the export is ordered by
+`OrderIndex` too, so the two usually agree — but match a report's "Question 7" to the export by
+its **question text**, read off the export's own `question` field, and take that item's `id`
+from there, rather than counting rows. The first handoff written from an earlier version of this
+skill matched by position instead, was off by one, and cost a round trip.
+
+**The SSMS query is the fallback**, kept for the columns the export does not carry —
+`ItemRevision`, `AssessedDifficulty`, and (§ 3a) `DefaultSuiteKey` — which are import-time and
+administrative fields, not authored ones, and matter when a repair needs to reason about what
+changed or whether the seed-file mirror applies:
 
 ```sql
 SELECT q.Id, q.BenchmarkSuiteId, s.Name AS SuiteName, q.OrderIndex,
@@ -52,12 +76,8 @@ JOIN BenchmarkSuites s ON s.Id = q.BenchmarkSuiteId
 WHERE q.BenchmarkSuiteId = <suite id> AND q.OrderIndex = <report question number>;
 ```
 
-**The report's question number is `OrderIndex` itself** — `BenchmarkReportBuilder` prints
-`Question {OrderIndex}` — so "Question 7" is `OrderIndex = 7`. Do not subtract one: the first
-handoff written from this skill did, fetched Question 6, and cost a round trip. Confirm the row
-by its `QuestionText` and its `AssessedDifficulty` against the report before using it. Ask for
-the result with headers, and treat `ExpectedPoints` as the document to edit — line breaks and
-any Markdown in it are part of the text the grader sees.
+Confirm the row by its `QuestionText` against the report, exactly as for the export — the same
+"never assume position" caution applies to `OrderIndex` here too.
 
 **House format.** Suite 6's rubrics follow one shape, and a replacement keeps it: a
 `**REQUIRED** (accuracy + completeness)` bullet list, a `**CRITICAL ERROR** (set
@@ -134,29 +154,95 @@ an added or deleted question, or an accepted rubric addition (§ 5) all move the
 
 ## 4. The Deliverable
 
-One fenced block containing the **entire** new `ExpectedPoints` text, ready to select-all and
-paste over the field. Never a diff, never "replace point 3 with…", never a paraphrase. Beside
-it, in prose:
+**One file, `agent-rubric-repair-<slug>.yaml`, written beside the export, outside every
+repository.** `<slug>` follows the same rule `server_snapshot_suite_authoring` uses for its own
+output — the suite name, lower-cased and reduced to `[a-z0-9-]`. The file carries:
 
-- the suite and question (name, number, `Id`, `ItemRevision` read from the query);
-- which point(s) changed and why, with the source citations from § 3;
+- The **two header lines** `format: overseer-benchmark-questions` and `version: 1` —
+  `question-yaml-format.ts`'s H1/H2, the same header every suite YAML in this repository's tool
+  family uses.
+- **No `suite` block.** A repair changes questions, not the suite's name, description or board;
+  omitting the block leaves the import's own defaults — no rename, no re-description, no
+  re-import of the board — untouched.
+- **One `questions` item per *changed* question**, each carrying its `id` (from § 2, matched by
+  question text, never by position) and the **whole** new rubric as `rubric: |` — the entire
+  replacement text, never a diff, never "replace point 3 with…", never a paraphrase. A question
+  whose `question` text or `difficulty` band also changes carries that key too; a key left out of
+  an item **keeps that question's current value** — `question-yaml-format.ts`'s `rubric-only`
+  example is exactly this shape.
+- **Unchanged questions are left out of the file entirely**, so they keep their revision and
+  their assessed difficulty — listing one unchanged, even byte-identical, moves nothing (see
+  § 4a's self-check, which drops such an item for the same reason).
+- **UTF-8 without a BOM, LF line endings, spaces only** — the same convention
+  `server_snapshot_suite_authoring` uses for its own output files, and for the same reason: these
+  files live outside every repository, so the repository's CRLF convention does not apply to
+  them, and LF keeps a byte comparison against the export meaningful.
+
+Beside the file, in prose:
+
+- the suite and, per question, which point(s) changed and why, with the source citations from
+  § 3;
 - the human steps (§ 6) and the consequences (§ 5);
 - the pre-declared criterion that says the defect is closed on the next run (for example:
   *the assessor no longer charges Accuracy on Q7 for a table matching `src/zap.c:361-364` plus
   `:949` at 5 % per point*);
-- **the seed-mirror step**, when § 3a's check finds this is a default suite: the
+- **the seed-mirror step**, when § 3a's check finds a question belongs to a default suite: the
   `Overseer/Data/DefaultSuites/<key>.json` entry the agent updates, alongside the deliverable, in
   the same round. When § 3a's check finds a custom suite, this bullet says so instead — *"custom
   suite; no seed file to mirror"* — so the check is visibly made rather than silently skipped.
 
-If the query result has not been received yet, say so and deliver the block only after it has.
-A "full rubric" reconstructed from a report paraphrase is not the deliverable; it is a guess
-that overwrites text nobody has seen.
+If the export has not been received yet, say so and deliver the file only after it has. A "full
+rubric" reconstructed from a report paraphrase is not the deliverable; it is a guess that
+overwrites text nobody has seen.
+
+## 4a. Self-Check Before Handing Over
+
+Parse the finished file with a **real YAML parser** — for example `js-yaml` from
+`Overseer/ClientApp/node_modules`, from a scratch script that only reads — the same pattern
+`server_snapshot_suite_authoring` § 7 uses for its own output. Then assert, and report each
+result:
+
+- The header is `format: overseer-benchmark-questions` and `version: 1`, and every question item
+  carries only the four allowed keys (`id`, `question`, `difficulty`, `rubric`) — never a fifth.
+- **Every `id` occurs in the export, exactly once** — a typo'd id imports as *nothing changed*
+  for the question it was meant to fix and, if it happens to collide with another row, as a
+  silent edit of the wrong one.
+- **Every item differs from the export.** An item whose `question`, `difficulty` and `rubric`
+  all equal the export's own is dropped from the file — it would import as no change, and its
+  presence only obscures which questions the round actually touched.
+- **For a snapshot suite, every BOARD FACT quote in a changed rubric occurs verbatim in the
+  export's `suite.snapshot.text`.** This is the same check `server_snapshot_suite_authoring` § 7
+  runs on a freshly authored suite, applied here to a repair.
+- **Every cited source path exists in the GnollHack clone at the SHA named in the handoff.**
+- The file contains **no `\r` character** — verify by byte count, never by eye.
+- The file is under **2 MB** (the upload limit).
+
+A failure here is fixed in the file, not explained away in the handoff. The prose beside the file
+(§ 4) already carries, per question, which points changed and the source lines that make them
+right — the self-check does not replace that prose, it verifies the file matches it.
+
+## 4b. Fallback: Single-Rubric Paste
+
+When Overseer's import is unavailable, or the repair is a single question and an export-and-import
+round is not worth setting up, fall back to the pre-harness-29 method: one fenced block containing
+the **entire** new `ExpectedPoints` text, ready to select-all and paste over the **Expected answer
+criteria** field in the question editor, with the same prose alongside it that § 4 lists. Never a
+diff, never "replace point 3 with…", never a paraphrase — exactly as for the YAML deliverable.
+This fallback needs no self-check beyond the pre-flight checklist (§ 3), since there is no file to
+parse, but every other rule in this skill binds it identically, including § 3a's seed-file mirror.
 
 ## 5. What the Harness Does When the Rubric Is Saved
 
-Verified in `AdminBenchmarkController` (the question editor and `AcceptRubricAddition`) and
-`BenchmarkQuestionAssessment.Clear`:
+Verified in `AdminBenchmarkController` (the question editor, `AcceptRubricAddition` and
+`ImportQuestions`) and `BenchmarkQuestionAssessment.Clear`:
+
+- **The import path is `AdminBenchmarkController.ImportQuestions`.** It replaces a question by
+  `id`, compares the imported `question`, `difficulty` and `rubric` against the stored row, and
+  calls `BenchmarkQuestionAssessment.Clear` on every question that differs — the same revision
+  bump, cleared assessed difficulty and invalidated review mark the editor produces on a single
+  question, applied per changed row across the whole file in one action. **Nothing is written
+  until the review step is confirmed** (§ 6), and an invalid document — a bad header, an id the
+  suite does not contain, a key outside the four allowed ones — **writes nothing at all**.
 
 - **`ItemRevision` is incremented.** An edited question is a *different item*; every stored
   answer records the revision it was graded against (`BenchmarkRunAnswer.ItemRevisionUsed`) and
@@ -178,27 +264,44 @@ Verified in `AdminBenchmarkController` (the question editor and `AcceptRubricAdd
 - **The review mark is invalidated** for a generated question: `IsReviewed` holds only while
   `ReviewedAtRevision == ItemRevision`, so the human re-marks the question reviewed after the
   edit (`ReviewedAtRevision` is set to the current revision by the review endpoint).
-- **`AcceptRubricAddition` appends; the question editor replaces.** The suite-health "accept
-  rubric addition" path adds the accepted text after the existing rubric. A repair that
-  *changes* a point goes through the question editor (**Edit question**), pasting the whole
-  field — which is why the deliverable is the whole field.
+- **`AcceptRubricAddition` appends; the question editor and the importer both replace.** The
+  suite-health "accept rubric addition" path adds the accepted text after the existing rubric. A
+  repair that *changes* a point goes through either the question editor (**Edit question**),
+  pasting the whole field, or the importer (§ 6), uploading the whole file — which is why the
+  deliverable is always the whole field, never a diff, in either transport.
 - **It is a suite comparability break** on that question. Runs before and after the edit are
   not comparable on it; the registry entry (§ 8) records the revision and the run from which
   the new text applies.
 
 ## 6. The Human Steps (Admin UI)
 
+**By import — the default, for the § 4 deliverable:**
+
+1. Admin → **AI Benchmark** → the suite → **Manage Questions** → **Import Questions from YAML** →
+   upload `agent-rubric-repair-<slug>.yaml`.
+2. **Validate**, then **Review changes**. The review step must list **exactly** the questions the
+   handoff names, **all** of them as *replace*, **none** as *create* — a question showing as
+   *create* means an `id` in the file did not match the suite, and the import stops there rather
+   than being confirmed. This is **not** the Snapshot Suite Wizard, which refuses outright any
+   file carrying an `id` (`server_snapshot_suite_authoring` § 6) — the wizard is for adding new
+   questions; the importer is for replacing existing ones.
+3. Confirm the import.
+4. On the suite, **Assess Difficulty** once (the suite-level action; it re-assesses only
+   questions whose assessed difficulty is null — every question the import just changed). Wait
+   for the assessment to complete.
+5. Re-mark every changed **generated** question **reviewed**.
+6. Note each question's new `ItemRevision` and `AssessedDifficulty` (the same query as § 2), for
+   the registry entry (§ 8).
+7. **If § 3a found a question belongs to a default suite**, the agent — not the human — mirrors
+   the saved text into the matching `Overseer/Data/DefaultSuites/<key>.json` entry in the same
+   round; for a custom suite this step does not apply and the handoff says so.
+
+**By paste — the § 4b fallback:**
+
 1. Admin → **AI Benchmark** → the suite → the question → **Edit question** (the pencil action
    button on the question row).
-2. Select all of **Expected answer criteria** and paste the block from § 4. Save.
-3. On the suite, **Assess Difficulty** (the suite-level action; it re-assesses only questions
-   whose assessed difficulty is null). Wait for the assessment to complete.
-4. If the question is generated, mark it **reviewed** again.
-5. Note the question's new `ItemRevision` and `AssessedDifficulty` (the same query as § 2), for
-   the registry entry.
-6. **If § 3a found this is a default suite**, the agent — not the human — mirrors the saved text
-   into the matching `Overseer/Data/DefaultSuites/<key>.json` entry in the same round; for a
-   custom suite this step does not apply and the handoff says so.
+2. Select all of **Expected answer criteria** and paste the block from § 4b. Save.
+3. Steps 4–7 above, unchanged.
 
 ## 7. Worked Examples
 
@@ -262,6 +365,10 @@ question must be able to see the break.
   the run-28 units rule and the verifier caution)
 - [`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) — the sibling handoff for rung-2 wiki
   findings; the same division of labour, a different store
-- [`database_queries`](../database_queries/SKILL.md) — how the user runs the § 2 query
+- [`server_snapshot_suite_authoring`](../server_snapshot_suite_authoring/SKILL.md) — the YAML
+  format this skill's § 4 deliverable shares (`question-yaml-format.ts`), the same self-check
+  pattern (§ 4a here, its own § 7), and § 2b there for the reverse hand-off (a repair request
+  arriving at that skill)
+- [`database_queries`](../database_queries/SKILL.md) — how the user runs the § 2 fallback query
 - [`server_tool_data_sources`](../server_tool_data_sources/SKILL.md) — § 2 resolving
   `SourceCodePath` for the on-disk source reading, § 3 secrets hygiene

@@ -103,6 +103,19 @@ The rolestrategybody is advice per role.
 ## Armor strategy
 The armorstrategybody is advice per slot.
 ");
+
+        // Nested headings, so wiki_search's own snippet header would print the breadcrumb
+        // "Outer Heading › Inner Heading" for the inner one - the shape a model copies back into
+        // a section argument verbatim.
+        File.WriteAllText(Path.Combine(_tempDir, "Nested.md"),
+@"Nested is an article whose body is organised under nested headings.
+
+## Outer Heading
+The outerbody introduces the topic.
+
+### Inner Heading
+The innerbody has the actual detail.
+");
     }
 
     public void Dispose()
@@ -242,6 +255,23 @@ The armorstrategybody is advice per slot.
         Assert.Contains("plainstrategybody", content);
         Assert.DoesNotContain("rolestrategybody", content);
         Assert.DoesNotContain("armorstrategybody", content);
+    }
+
+    /// <summary>
+    /// wiki_search's own snippet header prints the breadcrumb "Outer Heading › Inner Heading" for a
+    /// nested heading, and a model passes that whole string back as wiki_view's section argument.
+    /// All three passes miss on the full breadcrumb, so the extractor retries them on the text
+    /// after the last '›', trimmed, and lands on the inner heading.
+    /// </summary>
+    [Fact]
+    public async Task WikiView_SectionIsABreadcrumbFromTheSnippetHeader_FallsBackToItsLastSegment()
+    {
+        string? content = await ViewSectionAsync("Nested", "Outer Heading › Inner Heading");
+
+        Assert.Contains("### Inner Heading", content);
+        Assert.Contains("innerbody", content);
+        Assert.DoesNotContain("outerbody", content);
+        Assert.DoesNotContain("not found in article", content);
     }
 
     /// <summary>

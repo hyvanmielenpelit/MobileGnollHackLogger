@@ -212,9 +212,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsTwentyEight()
+    public void HarnessVersion_IsTwentyNine()
     {
-        Assert.Equal("28", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("29", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -454,16 +454,16 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs28_ScoringMethodIs10()
+    public void Versions_HarnessIs29_ScoringMethodIs10()
     {
-        Assert.Equal("28", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("29", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 28 rewords the AD_SAMU attack description, adds the resistance-magnitude clause to
-        // the claim verifier, and recalibrates the speed model while moving its constants out of the
-        // scoring profile's quality signature. None of it is carried by a fingerprinted file — the
-        // flag descriptions are not part of ToolGuidesSha256 — so a 28-stamped run differs from a
-        // 27-stamped one on HarnessVersion alone, which is Tier C. The scoring method does not move:
-        // nothing here changes what a quality score is.
+        // Harness 29 delivers the production system prompt and the game board to the candidate,
+        // which earlier versions built and then dropped on the wire, and checks both against the
+        // provider request body. No fingerprinted file moves: the prompt text is what it always
+        // was. The scoring method does not move either — nothing here changes what a quality score
+        // is — but the candidate's input does, so a 29-stamped run is not comparable with an
+        // earlier snapshot-suite or OpenAI run however few instrument keys separate them.
         Assert.Equal(10, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

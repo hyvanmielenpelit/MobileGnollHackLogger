@@ -309,4 +309,21 @@ public class BenchmarkProviderErrorClassifierTests
         Assert.True(result.IsProviderError);
         Assert.Equal(503, result.HttpStatus);
     }
+
+    [Theory]
+    [InlineData("Harness delivery check failed: the Google request for question 4 did not contain the board.")]
+    [InlineData("Harness delivery check failed: the OpenAI request for question 12 did not contain the system prompt.")]
+    [InlineData("Harness delivery check failed: the Anthropic request did not contain the system prompt and the board.")]
+    public void Classify_HarnessDeliveryFailure_IsNotAProviderError(string message)
+    {
+        // The answer is stored Failed and lands under Transport Defects; ProviderError would put a
+        // harness bug on the provider's account and change what the run's integrity block says.
+        // This pins the message against a later widening of the substring rules above.
+        var result = BenchmarkProviderErrorClassifier.Classify(
+            new InvalidOperationException(message), message, false);
+
+        Assert.False(result.IsProviderError);
+        Assert.Null(result.HttpStatus);
+        Assert.Equal(message, result.Message);
+    }
 }

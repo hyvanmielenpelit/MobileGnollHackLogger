@@ -2390,6 +2390,103 @@ below is carried by a file no fingerprint covers.
   with their columns — sorting by *Timings* sorts on model time per question. **The exported table
   still carries all 26 columns**, so nothing is lost from the artefact, only from the screen.
 
+### Harness Version 29 Updates
+
+Prompted by the analysis of runs 50 and 51, the first two runs of a game-snapshot suite, which showed that
+`BenchmarkCandidatePromptOptions` had been recording the prompt the harness *built*, never the request
+body a provider actually *sent* — so the defect below could hide behind a `HasGameSnapshot: true` line in
+the report. `ScoringMethodVersion` stays **10**, `CandidateSystemPromptSha256` does not move, and
+`ToolGuidesSha256` does not move either — no guide file and no prompt text changed; only what reached the
+wire.
+
+- **The board silently dropped out for two of three providers, and the system prompt for the third.**
+  `BenchmarkService.BuildCandidateSeedHistory(run, systemPrompt, questionText)` now emits, in order, a
+  `{role="system", content=systemPrompt}` message, then the board message
+  (`ChatService.GameSnapshotPrefix + "\n" + board.SanitizedText`) when the suite carries one, then the
+  user message. Before this round the board **was** the first system message — and the first system
+  message is exactly what `GoogleProvider.OrderSystemParts` and `AnthropicProvider.BuildChatRequestBody`
+  replace with the prompt's own segments, so a Google or Anthropic candidate on a snapshot suite received
+  **no board at all**. `OpenAiResponsesProvider` builds `instructions` from the history's system messages
+  and never from `SegmentedPrompt`, so it took that same first system message — the board — as its only
+  system text, and an OpenAI candidate received **no system prompt at all**.
+
+  | Provider | What actually reached the wire | What was silently missing |
+  |---|---|---|
+  | Google (`GoogleProvider.OrderSystemParts`) | The system prompt's own segments | The board |
+  | Anthropic (`AnthropicProvider.BuildChatRequestBody`) | The system prompt's own segments | The board |
+  | OpenAI (`OpenAiResponsesProvider`, builds `instructions`) | The board, as the entire system text | The system prompt |
+
+  `OpenAiResponsesProvider.BuildChatRequestBody` now falls back to `segmentedPrompt.FullPrompt` for
+  `instructions` when the history carries no system message; `ChatService` always supplies one on the live
+  chat path, so that path is unaffected. **Affected runs: 36, 37, 38, 42, 46, 47, 51** — prompt-less on
+  OpenAI since 2026-09-10. Runs **50 and 51** are the snapshot runs that exposed the defect; neither is
+  usable for model selection.
+
+- **The wire check.** New `Overseer/Services/Benchmarking/BenchmarkCandidateRequestProbe.cs`:
+  `Verify(IAiProvider provider, List<object> seedHistory, SegmentedPrompt? segmentedPrompt, string
+  systemPrompt, string? boardText, int? questionNumber = null)` runs the same `provider.PrepareMessageHistory`
+  → `BuildChatRequestBody(modelId: "probe", …)` → `JsonSerializer.Serialize` pipeline a real candidate call
+  would use, and requires the serialised body to contain the first 120 characters of each thing that must
+  be there, escaped through the same serializer. With a segmented prompt it checks each non-empty segment
+  separately, because the providers emit the segments as separate JSON strings — separate Gemini parts,
+  separate Anthropic system blocks — and a needle spanning a segment boundary would be found nowhere
+  although every character of the prompt is present; it falls back to the flat prompt when the segments do
+  not concatenate to it. No network call, no tokens spent. It runs at two levels:
+  - **Per run, fail closed** — once, immediately after the instrument fingerprint is populated, on all
+    three candidate entry points (`RunAsync`, `RunFailedQuestionsAsync`, the single-answer re-run), seeded
+    from the run's first question. A throw reaches the existing terminal handler: the run row is marked
+    `Failed` with the message, no answers are created and nothing is spent.
+  - **Per question, fail the answer** — the first statement inside the `try` that wraps
+    `_agentLoopRunner.RunAsync`, in both `ExecuteSingleQuestionAsync` and `ReExecuteSingleAnswerAsync`. The
+    message reads *"Harness delivery check failed: the {provider} request for question {n} did not contain
+    the {board | system prompt}."* (both parts missing reads "the system prompt and the board"). It lands
+    in the existing `catch (Exception ex)`, becomes `terminalError`, and since
+    `BenchmarkProviderErrorClassifier` does not classify an `InvalidOperationException` with that text as a
+    provider error, the answer is stored `BenchmarkAnswerStatus.Failed`: cleared text, that error message,
+    no assessor call, counted under Transport Defects, out of the Intelligence Index, and repeatable with
+    re-run failed questions. A test pins the message to `Failed` rather than `ProviderError`. No new flag,
+    status or column.
+
+- **The claim verifier now sees the board too.** `BenchmarkClaimVerificationPrompt.BuildPrompt` takes
+  `boardName` / `boardText`. When there is a board it emits, after the rubric block, a
+  `--- GAME BOARD (the snapshot the question is about; authoritative for the hero's current state) ---` …
+  `--- END GAME BOARD ---` block, adds instruction **3c** — a claim about the hero's current state is
+  checked against the GAME BOARD, not against the rubric's BOARD FACTS, which quote only part of it, cited
+  as `board: "<the quoted line>"`, with absence from the rubric not meaning absence from the board — and
+  extends instruction 5's citation examples with the `board:` form. `BenchmarkService` passes
+  `run.BenchmarkSuite?.GameSnapshot?.Name` / `?.SanitizedText`, and `RetryFailedClaimVerificationAsync`
+  gained the `Include(r => r.BenchmarkSuite).ThenInclude(s => s!.GameSnapshot)` it was missing.
+  `BenchmarkClaimVerificationParser` needed no change: it validates only that a citation is non-blank,
+  never its shape. Cost: roughly 3,000 input tokens per verification conversation on a snapshot suite,
+  cached within it.
+
+- **The report says what was sent, not just what was built.** *Chat Prompt Under Test* gains
+  `· **Game snapshot:** yes|no` from `promptOpts.HasGameSnapshot`, and a `- **Delivery:**` line: for
+  `HarnessVersion` ≥ 29, *"prompt and board delivery verified against the provider request body before the
+  first question."*; for an older run with a snapshot, *"not verified — before harness 29 a Google or
+  Anthropic candidate did not receive the board and an OpenAI candidate did not receive this prompt."*; for
+  an older OpenAI run with no snapshot, *"not verified — before harness 29 an OpenAI candidate did not
+  receive this prompt."*; and no line at all for a pre-29 run on another provider with no board, where
+  nothing was wrong. The Angular diagnostics `options:` line gained `snapshot=<bool>` and the run-detail
+  prompt summary gained `· snapshot`.
+
+- **T1–T3, the tool contracts.** `MarkdownSectionExtractor.Extract`: a `section` containing `›` is tried on
+  the full string first (unchanged), then on the trimmed text after the **last** `›`, through the same
+  three-pass helper, so the ambiguity refusal still holds. `NetHackWikiViewTool`: an article miss now
+  returns a payload opening `No NetHack wiki article matched '` that lists up to four candidate titles (the
+  resolver's own, else the top titles of one wiki-search-style query, exceptions swallowed) and ends with
+  `Try nethack_wiki_search.`, capped at 600 characters, `Success = true`, with a `catch` that returns the
+  old bare sentence. `SourceCodeService.GetItemStats`: a miss lists up to five distinct near names from
+  `_itemResolver.FindItemNames` — called with the whole name and then with each word of ≥ 4 characters — as
+  *"Did you mean: …"*, keeps the existing `item_lookup` / `wiki_search` pointer, and always appends *"A
+  name that is an unidentified appearance — 'hooded cloak', 'orange potion', 'red mushroom' — has no entry:
+  appearances are randomized per game; see the snapshot's Discoveries section."*, capped at 600 characters.
+
+`BenchmarkAssessmentPrompt.HarnessVersion` is now **"29"**, with a v29 paragraph in its version history. A
+run stamped 29 differs from one stamped 28 on `HarnessVersion` alone, but the candidate receives materially
+different input on a snapshot suite or on OpenAI, so it is a **Fundamental** comparability break against
+every earlier run of either kind, not Tier C.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.

@@ -178,6 +178,20 @@ public class DumpHtmlSanitizerTests
     }
 
     [Fact]
+    public void NormalizeFlattenedText_IsIdempotent_ForLinesEndingInNbsp()
+    {
+        /* A flattened map row ends in a run of U+00A0. Each becomes a space before the
+           trailing-space trim rather than after it, so one pass leaves nothing for a second
+           pass to remove — one snapshot, one text, one SHA-256. */
+        string text = "Map:\n   #   .  \nInventory: \n1 - an apple\n";
+        string once = DumpHtmlSanitizer.NormalizeFlattenedText(text);
+        string twice = DumpHtmlSanitizer.NormalizeFlattenedText(once);
+
+        Assert.Equal(once, twice);
+        Assert.Equal("Map:\n   #   .\nInventory:\n1 - an apple", once);
+    }
+
+    [Fact]
     public void NormalizeFlattenedText_UnifiesCrlfAndLoneCrToLf()
     {
         string mixed = "Dlvl:3 HP:14(14) \r\nThe map\r@....|\n\r\n\r\n\r\nInventory:\r\na - an apple";

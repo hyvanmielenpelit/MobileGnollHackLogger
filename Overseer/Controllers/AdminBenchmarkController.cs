@@ -1913,6 +1913,17 @@ public class AdminBenchmarkController : ControllerBase
         {
             dto.SanitizedText = null;
         }
+        else
+        {
+            /* The YAML exporter writes this text and this hash into one snapshot block, so the
+               hash and the count describe the text beside them rather than whatever the stored
+               columns were computed over. The row itself is left alone: GameSnapshotSha256Used
+               on every finished run is the hash the answers were graded against. */
+            string text = dto.SanitizedText?.Replace("\r\n", "\n").Replace('\r', '\n') ?? string.Empty;
+            dto.SanitizedText = text;
+            dto.Sha256 = BenchmarkSnapshotImporter.PrepareBoardText(text).Sha256;
+            dto.CharCount = text.Length;
+        }
         return Ok(dto);
     }
 

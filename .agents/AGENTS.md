@@ -98,7 +98,7 @@ Rationale, the `[Trait("Category", "UsesExternalApi")]` convention, live-model p
 ## Environment & Shell Conventions
 
 - **Operating System:** Development and tool execution take place on Windows. For PowerShell commands, syntax rules, quoting, and file I/O best practices, follow the global `agent-powershell-guidelines` skill.
-- **Snapshot Suite Wizard files:** Files written for the Snapshot Suite Wizard (`agent-new-suite-<slug>.yaml`, `agent-new-questions-<slug>.yaml`) live outside the repository and are written UTF-8 without a BOM with **LF** line endings, matching Overseer's own downloads; the repository's CRLF convention does not apply to them. The rule and its reason are in the `server_snapshot_suite_authoring` skill.
+- **Snapshot Suite Wizard files:** Files written for the Snapshot Suite Wizard (`agent-new-suite-<slug>.yaml`, `agent-new-questions-<slug>.yaml`) and the rubric-repair handoff (`agent-rubric-repair-<slug>.yaml`) live outside the repository and are written UTF-8 without a BOM with **LF** line endings, matching Overseer's own downloads; the repository's CRLF convention does not apply to them. The rules and their reasons are in the `server_snapshot_suite_authoring` and `server_rubric_handoff` skills.
 
 ## Implementation Plans
 
@@ -153,7 +153,7 @@ Skills in this repository use the **`server_`** prefix. Canonical bodies live in
 `.agents/skills/<underscore_name>/SKILL.md`; the `.claude/skills/<kebab-name>/` stubs are
 **generated** by `SharedAgentSkills\tools\sync_stubs.ps1` and must never be hand-edited.
 Notable project skills include `server_implementation_planning`, `server_benchmark_to_chat_transfer`, `server_wiki_handoff`,
-`server_rubric_handoff` (the human-pasted rubric edit a Suite Defect finding hands off),
+`server_rubric_handoff` (the YAML repair file a Suite Defect finding hands off for one-action import),
 `server_data_privacy_framework`, `server_snapshot_suite_authoring` (turning an exported GnollHack
 AI snapshot into a one-file benchmark suite YAML, offline), and the tool-layer trio
 `server_tool_data_sources`, `server_tool_parameter_reference` and
