@@ -2242,7 +2242,6 @@ label.checkbox-label,
    because view encapsulation does not reach injected nodes. Used together with .markdown-body. */
 .gh-help-prose {
   line-height: 1.6;
-  max-width: 78ch;                       /* prose measure; tables and code opt out below */
 
   > :first-child { margin-block-start: 0; }
   > :last-child { margin-block-end: 0; }
@@ -2256,13 +2255,16 @@ label.checkbox-label,
   blockquote { margin-block: 16px; padding: 10px 16px; }
   pre { margin-block: 12px 20px; }
 
-  table, pre { max-width: none; }
-  table { margin-block: 16px 24px; }
+  table { display: table; width: 100%; margin-block: 16px 24px; }
   th, td { padding: 10px 14px; vertical-align: top; line-height: 1.5; }
 
   /* A key or a value in the first column stays on one line; the table scrolls sideways on a phone. */
   td:first-child code,
   th:first-child { white-space: nowrap; text-wrap: nowrap; }
+
+  @media (max-width: 600px) {
+    table { display: block; }
+  }
 }
 
 

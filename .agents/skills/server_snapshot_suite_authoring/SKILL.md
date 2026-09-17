@@ -22,7 +22,7 @@ description: >-
 `server_snapshot_suite_authoring`.
 
 The prompt that invokes it comes from the **prompt builder** on Overseer's *Suite YAML Import and
-Export* help dialog (*For an AI* tab; the *From a Snapshot* tab has a button that jumps to it).
+Export* help dialog (*AI Prompt* tab; the *From a Snapshot* tab has a button that jumps to it).
 It is assembled by `buildSuiteAgentPrompt` in
 `Overseer/ClientApp/src/app/admin/benchmark/question-yaml/suite-agent-prompt.ts`, which names this
 skill by both names and **by no path**, and `suite-agent-prompt.spec.ts` pins both. **Renaming this

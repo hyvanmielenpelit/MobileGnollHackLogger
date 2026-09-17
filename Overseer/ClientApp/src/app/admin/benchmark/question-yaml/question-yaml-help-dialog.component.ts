@@ -89,12 +89,12 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
     return this.isSuite ? SUITE_GUIDE_TABS : HUMAN_GUIDE_TABS;
   }
 
-  /** Every tab in row order: the guide tabs, the examples, then the prompt for an AI. */
+  /** Every tab in row order: the guide tabs, the examples, then the AI Prompt. */
   get tabs(): ReadonlyArray<{ id: YamlHelpTab; label: string }> {
     return [
       ...this.guideTabs.map(t => ({ id: t.id as YamlHelpTab, label: t.label })),
       { id: 'examples' as YamlHelpTab, label: 'Examples' },
-      { id: 'ai' as YamlHelpTab, label: 'For an AI' }
+      { id: 'ai' as YamlHelpTab, label: 'AI Prompt' }
     ];
   }
 
@@ -106,7 +106,7 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
     return this.isSuite ? SUITE_EXAMPLES_INTRO_MARKDOWN : EXAMPLES_INTRO_MARKDOWN;
   }
 
-  /** The suite variant's For an AI tab holds the prompt builder, so these serve the questions one. */
+  /** The suite variant's AI Prompt tab holds the prompt builder, so these serve the questions one. */
   get aiInstructions(): string {
     return buildAiInstructions(this.guidance);
   }

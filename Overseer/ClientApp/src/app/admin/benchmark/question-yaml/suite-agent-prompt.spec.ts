@@ -6,6 +6,7 @@ import {
   SuiteAgentPromptOptions,
   buildSuiteAgentPrompt,
   looksLikeAbsolutePath,
+  unquotePath,
   validateSuiteAgentPromptOptions
 } from './suite-agent-prompt';
 
@@ -78,6 +79,39 @@ describe('buildSuiteAgentPrompt', () => {
   it('uses LF line endings only', () => {
     expect(buildSuiteAgentPrompt(options({ suiteName: 'Valkyrie' }))).not.toContain('\r');
   });
+
+  it('builds the identical prompt from a quoted and an unquoted path, backslashes intact', () => {
+    const cases = [
+      String.raw`C:\temp\a.ai.html`,
+      String.raw`\\server\share\x.snapshot.txt`,
+      String.raw`C:\Users\me\My Snapshots\x.ai.html`
+    ];
+    for (const path of cases) {
+      const quoted = buildSuiteAgentPrompt(options({ snapshotPath: `"${path}"` }));
+      const unquoted = buildSuiteAgentPrompt(options({ snapshotPath: path }));
+      expect(quoted).withContext(path).toBe(unquoted);
+
+      const written = line(quoted, 'Snapshot file');
+      expect(written).withContext(path).toBe(path);
+      expect(written.split('\\').length).withContext(path).toBe(path.split('\\').length);
+      expect(written).withContext(path).not.toContain('/');
+      expect(written).withContext(path).not.toContain('"');
+    }
+  });
+});
+
+describe('unquotePath', () => {
+  it('strips a matched pair of double quotes and trims inside it', () => {
+    expect(unquotePath(String.raw`"C:\temp\a.ai.html"`)).toBe(String.raw`C:\temp\a.ai.html`);
+    expect(unquotePath(String.raw`  " C:\temp\a.ai.html "  `)).toBe(String.raw`C:\temp\a.ai.html`);
+  });
+
+  it('leaves an unquoted path and a lone quote alone', () => {
+    expect(unquotePath(String.raw`C:\temp\a.ai.html`)).toBe(String.raw`C:\temp\a.ai.html`);
+    expect(unquotePath(String.raw`"C:\temp\a.ai.html`)).toBe(String.raw`"C:\temp\a.ai.html`);
+    expect(unquotePath(String.raw`C:\temp\a.ai.html"`)).toBe(String.raw`C:\temp\a.ai.html"`);
+    expect(unquotePath('"')).toBe('"');
+  });
 });
 
 describe('validateSuiteAgentPromptOptions', () => {
@@ -88,6 +122,13 @@ describe('validateSuiteAgentPromptOptions', () => {
   it('requires a snapshot path', () => {
     expect(validateSuiteAgentPromptOptions(options({ snapshotPath: '   ' })).snapshotPath)
       .toBe('Enter the path to the snapshot file.');
+  });
+
+  it('treats a pair of quotes with nothing inside as no path', () => {
+    for (const path of ['""', '"   "']) {
+      expect(validateSuiteAgentPromptOptions(options({ snapshotPath: path })).snapshotPath)
+        .withContext(path).toBe('Enter the path to the snapshot file.');
+    }
   });
 
   it('caps the suite name at the suite name limit', () => {
@@ -123,5 +164,11 @@ describe('looksLikeAbsolutePath', () => {
     for (const path of ['board.ai.html', './board.ai.html', '..\\board.ai.html', '']) {
       expect(looksLikeAbsolutePath(path)).withContext(path).toBeFalse();
     }
+  });
+
+  it('looks inside the quotes of a quoted path', () => {
+    expect(looksLikeAbsolutePath('"C:\\temp\\a.ai.html"')).toBeTrue();
+    expect(looksLikeAbsolutePath('"\\\\server\\share\\board.ai.html"')).toBeTrue();
+    expect(looksLikeAbsolutePath('"board.ai.html"')).toBeFalse();
   });
 });

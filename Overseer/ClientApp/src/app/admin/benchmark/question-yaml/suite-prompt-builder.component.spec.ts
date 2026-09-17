@@ -100,6 +100,20 @@ describe('SuitePromptBuilderComponent', () => {
     expect(prompt()).not.toBeNull();
   });
 
+  it('accepts a quoted absolute path without advice, and writes it bare', () => {
+    type('path', `"${PATH}"`);
+    expect(host.querySelector('#suite-prompt-path-advisory')).toBeNull();
+    submit();
+
+    expect(prompt()!.textContent).toContain(`\nSnapshot file: ${PATH}\n`);
+    expect(prompt()!.textContent).toBe(buildSuiteAgentPrompt({
+      snapshotPath: PATH,
+      suiteName: '',
+      counts: null,
+      waitForGoAhead: true
+    }));
+  });
+
   it('shows the output file name once a suite name is typed', () => {
     type('name', 'Valkyrie at Dlvl 11');
     expect(host.querySelector('#suite-prompt-name-file')!.textContent)

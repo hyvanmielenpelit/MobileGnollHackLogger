@@ -9,7 +9,7 @@
            [attr.aria-describedby]="idPrefix + '-path-hint'"
            [attr.aria-errormessage]="idPrefix + '-path-error'"
            [attr.aria-invalid]="errors.snapshotPath ? 'true' : null">
-    <p class="builder-hint" [id]="idPrefix + '-path-hint'">The full path to the <code>.ai.html</code> or <code>.snapshot.txt</code> on the machine where the agent runs. Keep it outside every repository.</p>
+    <p class="builder-hint" [id]="idPrefix + '-path-hint'">The full path to the <code>.ai.html</code> or <code>.snapshot.txt</code> on the machine where the agent runs. Keep it outside every repository. Paste it with or without the surrounding double quotes that File Explorer's <em>Copy as path</em> adds.</p>
     @if (errors.snapshotPath) {
       <p class="builder-error" [id]="idPrefix + '-path-error'">{{ errors.snapshotPath }}</p>
     }

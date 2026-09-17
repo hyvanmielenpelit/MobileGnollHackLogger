@@ -18,7 +18,7 @@ import { SUITE_AI_PROMPT_FILE_NAME } from './suite-yaml-guide';
 const STATUS_MS = 3000;
 
 /**
- * The *For an AI* tab of the suite help: the fields of {@link SuiteAgentPromptOptions}, a Generate
+ * The *AI Prompt* tab of the suite help: the fields of {@link SuiteAgentPromptOptions}, a Generate
  * button, and the assembled prompt with Copy and Download.
  *
  * Nothing is persisted and nothing is fetched. The host renders this inside `@if`, so a tab switch

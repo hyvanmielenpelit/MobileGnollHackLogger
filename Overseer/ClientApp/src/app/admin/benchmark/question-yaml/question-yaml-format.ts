@@ -737,7 +737,7 @@ export type HumanGuideTab = GuideTab & { id: 'workflow' | 'rules' | 'format' };
 const WORKFLOW_MARKDOWN = `## Export, edit, import
 
 1. **Export** a question, all questions of the suite, or the whole suite. The export keeps every question's \`id\`.
-2. **Edit** the YAML by hand, or hand it to an AI together with the instructions on the *For an AI* tab.
+2. **Edit** the YAML by hand, or hand it to an AI together with the instructions on the *AI Prompt* tab.
 3. **Import** it back. **Validate** checks the whole document, **Review changes** shows every change before anything is written, and the final button writes all of it at once. If any question is invalid, nothing is written.
 
 ## Three ways to import
@@ -808,7 +808,7 @@ export const HUMAN_GUIDE_TABS: ReadonlyArray<HumanGuideTab> = [
 /** Shown above the example accordion on the help dialog's Examples tab. Plain text. */
 export const EXAMPLES_INGRESS = 'Ready-to-edit documents, one for each import situation.';
 
-/** Shown above the AI instructions on the help dialog's For an AI tab. Plain text. */
+/** Shown above the AI instructions on the help dialog's AI Prompt tab. Plain text. */
 export const AI_INGRESS = 'Instructions to hand to an AI chat together with an exported document, so that what it returns imports cleanly.';
 
 export interface YamlExample {

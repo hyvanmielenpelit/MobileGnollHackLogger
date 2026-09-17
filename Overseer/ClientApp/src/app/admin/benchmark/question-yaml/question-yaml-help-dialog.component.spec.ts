@@ -62,7 +62,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
 
   it('renders five tabs with one selected and one in the tab order', () => {
     component.open();
-    expect(tabButtons().map(b => b.textContent!.trim())).toEqual(['Workflow', 'Replace or Create', 'Format', 'Examples', 'For an AI']);
+    expect(tabButtons().map(b => b.textContent!.trim())).toEqual(['Workflow', 'Replace or Create', 'Format', 'Examples', 'AI Prompt']);
     expect(tabButtons().filter(b => b.getAttribute('aria-selected') === 'true').length).toBe(1);
     expect(tabButtons().filter(b => b.getAttribute('tabindex') === '0').length).toBe(1);
     expect(host.querySelector('[role="tabpanel"]')!.getAttribute('aria-labelledby')).toBe('yaml-help-tab-workflow');
@@ -87,7 +87,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
     component.selectTab('ai');
     fixture.detectChanges();
     expect(host.querySelector('.help-ai-text')!.textContent).toBe(buildAiInstructions(GUIDANCE));
-    expect(selectedTab()!.textContent!.trim()).toBe('For an AI');
+    expect(selectedTab()!.textContent!.trim()).toBe('AI Prompt');
     expect(host.querySelector('.help-guide')).toBeNull();
   });
 
@@ -223,7 +223,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
       component.open();
       expect(host.querySelector('h3')!.textContent).toBe('Suite YAML Import and Export');
       expect(tabButtons().map(b => b.textContent!.trim()))
-        .toEqual(['Workflow', 'Format', 'From a Snapshot', 'Examples', 'For an AI']);
+        .toEqual(['Workflow', 'Format', 'From a Snapshot', 'Examples', 'AI Prompt']);
       expect(selectedTab()!.textContent!.trim()).toBe('Workflow');
       expect(host.querySelector('.help-guide')!.textContent).toContain('Download, edit, import');
     });
@@ -247,7 +247,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
       expect(host.querySelector('.help-ai-guidance-state')).toBeNull();
     });
 
-    it('holds the prompt builder on For an AI, with no prompt until one is generated', () => {
+    it('holds the prompt builder on AI Prompt, with no prompt until one is generated', () => {
       component.open();
       component.selectTab('ai');
       fixture.detectChanges();

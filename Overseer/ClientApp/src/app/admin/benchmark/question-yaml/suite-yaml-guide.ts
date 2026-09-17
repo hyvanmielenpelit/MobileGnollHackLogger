@@ -12,7 +12,7 @@ import {
 /**
  * The content of the Manage Suites help dialog: the whole-suite YAML workflow, the format with its
  * `suite.snapshot` mapping, authoring a suite from an exported AI snapshot, and ready-to-edit
- * examples. The agent prompt of the *For an AI* tab is assembled in `suite-agent-prompt.ts`.
+ * examples. The agent prompt of the *AI Prompt* tab is assembled in `suite-agent-prompt.ts`.
  *
  * The questions help (`question-yaml-format.ts`) owns the per-question rules; this file states only
  * what is specific to a whole suite. Everything here is static: the suite variant of the help
@@ -27,7 +27,7 @@ const WORKFLOW_MARKDOWN = `## Download, edit, import
 
 ## What a suite import does
 
-| | |
+| Rule | What it means |
 |---|---|
 | **Always creates a new suite** | Even when a suite of that name exists; the new one is then named *Name (Imported)*, then *Name (Imported 2)* and so on. |
 | **Ignores question ids** | Every question in the file is created as a new question of the new suite. |
@@ -248,7 +248,7 @@ const SNAPSHOT_MARKDOWN = `## From a game snapshot to a suite, in four steps
 4. **Split** toward equal thirds by trimming the largest band, never by promoting a question into a band it does not belong in. Where the board cannot fill a band, keep what is real and say so.
 5. The agent **reports the table before writing the YAML**. Counts you supply win.
 
-| | |
+| Setting | Value |
 |---|---|
 | Default target | 18 |
 | Sensible range | 12–24 |
@@ -257,7 +257,7 @@ const SNAPSHOT_MARKDOWN = `## From a game snapshot to a suite, in four steps
 | Minimum per band | 4, where the board supports it |
 `;
 
-/** The suite help's guide tabs; the Examples and For an AI tabs follow them in the dialog. */
+/** The suite help's guide tabs; the Examples and AI Prompt tabs follow them in the dialog. */
 export const SUITE_GUIDE_TABS: ReadonlyArray<GuideTab> = [
   {
     id: 'workflow',
@@ -286,7 +286,7 @@ export const SUITE_EXAMPLES_INTRO_MARKDOWN = `Copy or download an example, put y
 /** Shown above the example accordion on the suite help's Examples tab. Plain text. */
 export const SUITE_EXAMPLES_INGRESS = 'Four complete suite files to copy, edit and import.';
 
-/** Shown above the prompt builder on the suite help's For an AI tab. Plain text. */
+/** Shown above the prompt builder on the suite help's AI Prompt tab. Plain text. */
 export const SUITE_AI_INGRESS = 'Fill in the fields and generate a prompt you can paste into Claude Code or Antigravity exactly as it is.';
 
 const EXAMPLE_BOARD = `      GnollHack 4.2.0 Build 47

@@ -230,9 +230,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     `suite`). Both live in one document, so every element id carries the variant's `idPrefix`
     (`yaml-help`, `suite-yaml-help`) — a duplicated id silently breaks `aria-labelledby`,
     `aria-controls`, the tooltip anchors and the exclusive `<details name>` accordion. The
-    questions variant fetches the rubric authoring guidance and assembles its *For an AI* text;
+    questions variant fetches the rubric authoring guidance and assembles its *AI Prompt* text;
     the suite variant makes **no** server call — its guide text is static (`suite-yaml-guide.ts`)
-    and its *For an AI* tab holds `app-suite-prompt-builder`, which assembles the agent prompt
+    and its *AI Prompt* tab holds `app-suite-prompt-builder`, which assembles the agent prompt
     client-side (`suite-agent-prompt.ts`).
   - `#snapshotUploadDialog` (`app-snapshot-upload-dialog`, `snapshot-upload/`): Upload Snapshot from
     a suite card, with a nested `#replaceConfirmDialog` when the suite already has a snapshot.
