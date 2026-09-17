@@ -13,6 +13,8 @@ using MobileGnollHackLogger.Data;
 /// </summary>
 public static class BenchmarkDescriptionPrompt
 {
+    // The Snapshot Suite Wizard's agent prompt carries a copy: descriptionAuthoringLines in
+    // Overseer/ClientApp/src/app/admin/benchmark/question-yaml/suite-agent-prompt.ts.
     public const string DefaultInstructions =
         "Write a Markdown description of this benchmark suite for the administrators who choose and run suites, 120 to 300 words long. " +
         "Start with one lead paragraph that states what the suite tests, who it is for, and its difficulty spread, giving the number of questions in each difficulty band. " +

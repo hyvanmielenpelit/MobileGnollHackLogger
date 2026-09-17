@@ -136,6 +136,13 @@ export function checkImportExpectation(
       default:
         add('warning', 'board-unchecked', 'The board in the file could not be checked against this suite\'s snapshot.');
     }
+    if (result.suite?.suggestedDescription) {
+      add('confirmed', 'description-suggested',
+        'The file suggests a new suite description. The import does not change it; you can read and apply it after the import.');
+    } else {
+      add('warning', 'description-not-suggested',
+        'The file includes no suggested description (`suite.suggested_description`). You can still paste one from the agent\'s handoff after the import.');
+    }
     if (target) {
       const total = target.questionCount + plan.length;
       if (total > expectation.maxQuestionsPerSuite) {

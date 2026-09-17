@@ -18,6 +18,7 @@ export const WIZARD_LABELS = {
   checkFile: 'Check a snapshot file',
   assess: 'Assess Difficulty',
   editSuite: 'Edit suite',
+  applyDescription: 'Apply Suggested Description',
   done: 'Done'
 } as const;
 
@@ -72,8 +73,9 @@ function routeSteps(route: WorkflowRoute, d: WorkflowDetails): string[] {
       `Back in the wizard, upload ${agentFile} — the one starting ${code('agent-new-')}, not the ${code('overseer-suite-export-')} file you downloaded — and press ${bold(PANEL_LABELS.validateAndReview)}.`,
       'Read the checks, look through the questions, and tick the confirmation.',
       `Press ${bold(PANEL_LABELS.addQuestions(count, suite))}.`,
-      `Press ${bold(WIZARD_LABELS.assess)}; the suite cannot run until every question is assessed.`,
-      `Optionally paste the description the agent suggested with ${bold(WIZARD_LABELS.editSuite)}, and run Suite Health *Snapshot facts*.`
+      `Press ${bold(WIZARD_LABELS.assess)}; the suite cannot run until every question is assessed. The step shows a check mark when it is done.`,
+      `Press ${bold(WIZARD_LABELS.next)}, read the description the agent suggested — if the YAML file included none, paste it from the agent's handoff — and press ${bold(WIZARD_LABELS.applyDescription)}. You can change it later with ${bold(WIZARD_LABELS.editSuite)}.`,
+      'Optionally run Suite Health *Snapshot facts* and the citation check.'
     ];
   }
 
@@ -100,7 +102,7 @@ export function buildSuiteWorkflowInstructions(route: WorkflowRoute | 'both', de
   const header = '# From a game snapshot to a benchmark suite\n\n'
     + 'A browser cannot see where a file is on disk, so wherever a path is asked for, paste the full path — File Explorer\'s *Copy as path* works, with or without the quotes.';
   const sectionA = '## A — The snapshot is attached to a suite in Overseer\n\n'
-    + 'The agent adds questions to that suite; its name, description and snapshot are not changed.\n\n'
+    + 'The agent adds questions to that suite; its name and snapshot are not changed; the description changes only if you apply the suggested one.\n\n'
     + numbered(routeSteps('add-to-suite', details));
   const sectionB = '## B — A snapshot file from GnollHack\n\n'
     + 'The agent writes a new suite, and the import creates it with the snapshot attached.\n\n'

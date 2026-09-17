@@ -218,12 +218,13 @@ directory.
 
 **Add mode writes a different shape.** `agent-new-questions-<slug>.yaml` holds the header, the
 input file's **`suite` block verbatim** — name, description and the whole `snapshot` mapping,
-`sha256` included — and **only the new questions**. **No question carries an `id`**: an id means
-*replace that question*, and the Snapshot Suite Wizard refuses a file that has one. The rest of
-this section describes the create-mode file; the question rules below apply to both.
+`sha256` included — **plus one key, `suite.suggested_description`** (§ 6a), and **only the new
+questions**. **No question carries an `id`**: an id means *replace that question*, and the Snapshot
+Suite Wizard refuses a file that has one. The rest of this section describes the create-mode file,
+which never writes `suggested_description`; the question rules below apply to both.
 
 - `suite.name` — required.
-- `suite.description` — two or three sentences on what the suite measures. **No answer keys.**
+- `suite.description` — written by the rules of § 6a. **No answer keys.**
 - `suite.snapshot` — a mapping:
   - `name` — a short human name for the board, at most 128 characters.
   - `gnollhack_version` — the **version identifier** from the banner line, at most 64 characters.
@@ -243,6 +244,49 @@ These files live outside every repository, so this rule replaces the repository 
 conventions for them; the importer would accept CRLF, but LF keeps a byte comparison against the
 export meaningful. The file name is per § 1.
 
+## 6a. Writing the Description
+
+One set of rules governs both descriptions an agent writes: `suite.suggested_description` in add
+mode and `suite.description` in create mode. They follow `BenchmarkDescriptionPrompt.DefaultInstructions`
+(`Overseer/Services/Benchmarking/BenchmarkDescriptionPrompt.cs`), which is what **Generate
+description** in Edit Suite sends to a model, so an agent-written description has the shape of an
+Overseer-drafted one. The wizard's generated prompt carries the same rules
+(`descriptionAuthoringLines` in `suite-agent-prompt.ts`); **the prompt wins where they differ, and
+both are changed together.**
+
+- A `|` block scalar of Markdown, **120 to 300 words**, for the administrators who choose and run
+  suites.
+- One **lead paragraph**: what the suite tests, that its questions are asked against one fixed game
+  board, and its difficulty spread with the **number of questions in each band**.
+- A `### Covered Domains` heading and a bullet list; each bullet opens with a bolded domain group
+  name, then a colon and the topics that group covers — for example
+  `- **Combat & Threats**: melee reach, ranged attackers, and escape routes.` No heading above
+  `###`.
+- **No question quoted verbatim, no answer or rubric point revealed or hinted at, and no board fact
+  that would answer a question.**
+- No mention of the agent or the session.
+
+Add mode adds:
+
+- `suite.suggested_description` **replaces** the suite's description when the admin applies it, so
+  it describes the **whole suite as it will be after the import** — the questions already in the
+  input file and the new ones — never only the additions. Read the current `suite.description`
+  first and keep what is still true in it.
+- The per-band counts are those of the whole suite after the import.
+- Never say that questions were added.
+- Leave `suite.description` itself unchanged.
+- Repeat the text in the handoff (§ 8), so the admin can paste it if the file is lost.
+
+| Rule | Reason |
+|------|--------|
+| Describe the whole suite, not the additions | The applied text replaces the description; a text about "the 12 new questions" misdescribes the suite |
+| Keep what is still true in the current description | It may hold admin-written context the agent cannot re-derive |
+| Per-band counts for the whole suite after the import | Both halves are in the file; the admin should not have to fix the numbers |
+| No verbatim question, no answer, no deciding board fact | The description is shown to anyone running the suite and appears in exports |
+| No mention of the agent, the session or of questions being added | The text must stay true after the next edit of the suite |
+| Leave `suite.description` unchanged | Keeps the § 7 equality self-check meaningful |
+| Repeat it in the handoff | Feeds the wizard's paste fallback |
+
 ## 7. Self-Check Before Handing Over
 
 Parse the finished file with a **real YAML parser** — for example `js-yaml` from
@@ -257,7 +301,9 @@ each result:
 - **The parsed `suite.snapshot.text`, with trailing whitespace removed, is character for
   character the board text from § 2** — in add mode, the `suite.snapshot.text` parsed from the
   **input** file. This is the check that catches a block-scalar mistake, and nothing else will.
-- Add mode: no question has an `id`, and the `suite` block equals the input file's.
+- Add mode: no question has an `id`; `suite.name`, `suite.description` and `suite.snapshot` equal the
+  input file's; `suite.suggested_description` is present, non-blank, 120–300 words, has the
+  `### Covered Domains` heading, and quotes no question.
 - Every BOARD FACT quote occurs verbatim in that parsed text.
 - Every cited source path exists in the GnollHack clone.
 - Every rubric has `**BOARD FACTS**` and `**REQUIRED**`, uses the exact FORM label, and has no
@@ -285,8 +331,11 @@ Report, in this order:
      Suite from YAML** on the Manage Suites toolbar.
    - **Assess Difficulty**. The launcher refuses the suite until every question has an AI-assessed
      difficulty.
-   - Add mode: **suggest a suite description** that covers the old and new questions. The import
-     does not change the description; the admin pastes it with **Edit suite**.
+   - Add mode: the suggested description is **in the file**, as `suite.suggested_description`
+     (§ 6a). The import does not change the description; the wizard shows the suggestion on its
+     *Describe* step with **Apply Suggested Description**. **Repeat the text in the handoff**: it
+     is what the admin pastes when the wizard reports that the file included no suggested
+     description.
    - Optional: Suite Health **Snapshot facts**, and the citation check.
 6. The **encoding and line endings** the file was written with.
 
@@ -304,7 +353,10 @@ Report, in this order:
 - [ ] Questions in a player's voice, unanswerable without the board, one decision each, no leaks.
 - [ ] BOARD FACTS quotable verbatim; mechanics under REQUIRED with a verified source citation.
 - [ ] YAML written as one file, LF line endings, no BOM, `text: |` uniformly indented and untouched
-      otherwise; add mode keeps the `suite` block verbatim and gives no question an `id`.
+      otherwise; add mode keeps `name`, `description` and `snapshot` verbatim, adds
+      `suggested_description`, and gives no question an `id`.
+- [ ] Description written by § 6a: 120–300 words, lead paragraph with per-band counts,
+      `### Covered Domains`, no leaks; in add mode it describes the whole suite after the import.
 - [ ] Self-check run with a real parser; text compared character for character (§ 7).
 - [ ] Handoff reported with the count table, the ungrounded list, the Overseer steps and, in add
-      mode, a suggested suite description (§ 8).
+      mode, the suggested description repeated from the file (§ 8).

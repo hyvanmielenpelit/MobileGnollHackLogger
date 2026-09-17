@@ -6954,8 +6954,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.openDifficultyAssessorDialog(this.freshSuite(suite));
   }
 
-  onWizardEditSuiteRequested(suite: BenchmarkSuiteDto): void {
-    this.openEditSuite(this.freshSuite(suite));
+  /** The wizard applied a description; the suite cards show the new one. */
+  onWizardSuiteUpdated(): void {
+    this.loadSuites();
   }
 
   /** The help that matches the open import: the suite help for a suite import, the question help otherwise. */

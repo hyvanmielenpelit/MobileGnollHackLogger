@@ -44,6 +44,8 @@ export interface ParsedSnapshot {
 export interface ParsedSuite {
   name: string | null;
   description: string | null;
+  /** Read only by the Snapshot Suite Wizard's add-questions route; no export writes it. */
+  suggestedDescription: string | null;
   snapshot: ParsedSnapshot | null;
 }
 
@@ -65,7 +67,7 @@ export const QUESTION_YAML_FORMAT = 'overseer-benchmark-questions';
 export const QUESTION_YAML_VERSION = 1;
 
 const TOP_LEVEL_KEYS = ['format', 'version', 'suite', 'questions'];
-const SUITE_KEYS = ['name', 'description', 'snapshot'];
+const SUITE_KEYS = ['name', 'description', 'suggested_description', 'snapshot'];
 const SNAPSHOT_KEYS = ['name', 'gnollhack_version', 'captured_at', 'notes', 'sha256', 'text'];
 const QUESTION_KEYS = ['id', 'difficulty', 'question', 'rubric'];
 export const MAX_SUITE_NAME_LENGTH = 128;
@@ -342,7 +344,7 @@ function checkSchema(doc: unknown, result: ParseResult): void {
   if ('suite' in doc && doc['suite'] !== null) {
     const suite = doc['suite'];
     if (!isMapping(suite)) {
-      errors.push({ line: null, message: '`suite` must be a mapping with optional `name`, `description` and `snapshot` keys.' });
+      errors.push({ line: null, message: '`suite` must be a mapping with optional `name`, `description`, `suggested_description` and `snapshot` keys.' });
     } else {
       for (const key of Object.keys(suite)) {
         if (key === 'snapshot_text') {
@@ -351,7 +353,7 @@ function checkSchema(doc: unknown, result: ParseResult): void {
           errors.push({ line: null, message: `Unknown key \`suite.${key}\`; allowed: ${SUITE_KEYS.join(', ')}.` });
         }
       }
-      const parsed: ParsedSuite = { name: null, description: null, snapshot: null };
+      const parsed: ParsedSuite = { name: null, description: null, suggestedDescription: null, snapshot: null };
       if ('name' in suite) {
         const name = suite['name'];
         const trimmed = typeof name === 'string' ? name.trim() : null;
@@ -366,6 +368,13 @@ function checkSchema(doc: unknown, result: ParseResult): void {
           errors.push({ line: null, message: '`suite.description` must be text.' });
         } else {
           parsed.description = cleanText(suite['description']);
+        }
+      }
+      if ('suggested_description' in suite && suite['suggested_description'] !== null) {
+        if (typeof suite['suggested_description'] !== 'string') {
+          errors.push({ line: null, message: '`suite.suggested_description` must be text.' });
+        } else {
+          parsed.suggestedDescription = cleanText(suite['suggested_description']) || null;
         }
       }
       if ('snapshot' in suite && suite['snapshot'] !== null) {
@@ -566,6 +575,9 @@ export function validateForMode(
   }
   if (result.questions.some(q => q.id !== null)) {
     notices.push('Question ids in the file are ignored: a suite import always creates new questions.');
+  }
+  if (result.suite?.suggestedDescription) {
+    notices.push('`suite.suggested_description` is ignored: a suite import uses `suite.description`.');
   }
   // What happens to the snapshot is reported on the review step, from the server's preflight.
   return { errors, notices };
@@ -782,7 +794,7 @@ Re-importing an unchanged export changes nothing: the review step marks those qu
 const FORMAT_MARKDOWN = `## Format essentials
 
 - The document starts with \`format: ${QUESTION_YAML_FORMAT}\` and \`version: ${QUESTION_YAML_VERSION}\`. Both are required.
-- Top-level keys: \`format\`, \`version\`, \`suite\`, \`questions\`. Suite keys: \`name\`, \`description\`, \`snapshot\`. Question keys: \`id\`, \`difficulty\`, \`question\`, \`rubric\`. Any other key is an error.
+- Top-level keys: \`format\`, \`version\`, \`suite\`, \`questions\`. Suite keys: \`name\`, \`description\`, \`suggested_description\`, \`snapshot\`; only the Snapshot Suite Wizard's add-questions route reads \`suggested_description\`. Question keys: \`id\`, \`difficulty\`, \`question\`, \`rubric\`. Any other key is an error.
 - Write \`question\` and \`rubric\` as \`|\` block scalars, and indent every line of the block by the same number of spaces. Inside the block anything goes: Markdown headings, code fences, \`---\` lines. A \`#\` line inside a block is text, not a comment.
 - Indent with spaces, never tabs.
 - \`difficulty\` is Simple, Intermediate or Advanced.
@@ -1081,7 +1093,7 @@ ${indent(skeletonRubric, 6)}
 2. Keep every \`id\` you were given, on the question it was given for. A question without \`id\` is created as a new question.
 3. Write \`question\` and \`rubric\` as \`|\` block scalars, and indent every line of them by the same amount. Indent with spaces, never tabs.
 4. Omit \`rubric\` to keep the current rubric; write \`rubric: |\` with no content to clear it.
-5. Use only the keys id, difficulty, question, rubric inside a question, and only format, version, suite, questions at the top level. \`suite\` may hold name, description and snapshot. Return \`snapshot\` unchanged: its \`text\` is the game board the questions are written against, so use it to check every BOARD FACT.
+5. Use only the keys id, difficulty, question, rubric inside a question, and only format, version, suite, questions at the top level. \`suite\` may hold name, description, suggested_description and snapshot; only the Snapshot Suite Wizard's add-questions route reads suggested_description. Return \`snapshot\` unchanged: its \`text\` is the game board the questions are written against, so use it to check every BOARD FACT.
 6. Difficulty is Simple, Intermediate or Advanced.
 7. Inside a block scalar any Markdown is allowed, including headings, code fences and \`---\` lines, as long as every line keeps the block's indentation.
 8. Do not add comments inside a block scalar: a \`#\` line there is part of the text.

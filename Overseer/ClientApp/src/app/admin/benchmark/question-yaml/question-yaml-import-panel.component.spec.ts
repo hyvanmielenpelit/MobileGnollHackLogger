@@ -436,6 +436,20 @@ describe('QuestionYamlImportPanelComponent', () => {
       expect(component.canApply).toBeTrue();
     });
 
+    it('keeps the suggested description of the validated file, and clears it on reset', async () => {
+      const withSuggestion = addDoc.replace('  name: Core Suite\n', '  name: Core Suite\n  suggested_description: |\n    The **whole** suite.\n');
+      expect(await reviewWith('add-to-suite', withSuggestion)).toBeTrue();
+      expect(component.suggestedDescription).toBe('The **whole** suite.');
+      expect(host.querySelector('.import-outcome')!.textContent).toContain('The file\'s suggested description is offered in the next steps.');
+
+      component.reset();
+      expect(component.suggestedDescription).toBeNull();
+
+      expect(await reviewWith('add-to-suite', addDoc)).toBeTrue();
+      expect(component.suggestedDescription).toBeNull();
+      expect(host.querySelector('.import-outcome')!.textContent).not.toContain('suggested description');
+    });
+
     it('checks the result against the intent after apply', async () => {
       service.matchSnapshot.and.returnValue(of({ ...noMatch(), match: { id: 3, name: 'Board', suiteId: 7, suiteName: 'Core Suite' } }));
       service.importQuestions.and.returnValue(of({ createdCount: 2, replacedCount: 0, unchangedCount: 0, questions: [] }));

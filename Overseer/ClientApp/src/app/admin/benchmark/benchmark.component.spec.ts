@@ -6954,15 +6954,19 @@ describe('AdminBenchmarkComponent', () => {
       expect(order).toEqual(['close help', 'open wizard']);
     });
 
-    it('opens the assessor and Edit suite for the current copy of the suite the wizard names', () => {
+    it('opens the assessor for the current copy of the suite the wizard names', () => {
       showQuestions();
       const assess = spyOn(component, 'openDifficultyAssessorDialog');
-      const edit = spyOn(component, 'openEditSuite');
       const stale = { ...component.suites[0], questionCount: 0 };
       component.onWizardAssessRequested(stale);
-      component.onWizardEditSuiteRequested(stale);
       expect(assess).toHaveBeenCalledWith(component.suites[0]);
-      expect(edit).toHaveBeenCalledWith(component.suites[0]);
+    });
+
+    it('reloads the suites when the wizard applies a description', () => {
+      showQuestions();
+      const load = spyOn(component, 'loadSuites');
+      component.onWizardSuiteUpdated();
+      expect(load).toHaveBeenCalled();
     });
 
     it('exports an empty snapshot suite without asking for its questions, and keeps a bare suite inert', async () => {

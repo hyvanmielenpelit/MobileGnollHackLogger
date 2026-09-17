@@ -169,8 +169,29 @@ describe('question-yaml-format', () => {
         '`suite.name` must be 1–128 characters.'
       );
       expect(await messages(header + 'suite:\n  owner: me\nquestions:\n  - question: x\n')).toContain(
-        'Unknown key `suite.owner`; allowed: name, description, snapshot.'
+        'Unknown key `suite.owner`; allowed: name, description, suggested_description, snapshot.'
       );
+    });
+
+    it('H2: parses suite.suggested_description as optional text', async () => {
+      const parsed = await parseQuestionYaml(header + 'suite:\n  name: S\n  suggested_description: |\n    A **new** description.\n\nquestions:\n  - question: x\n');
+      expect(parsed.errors).toEqual([]);
+      expect(parsed.suite?.suggestedDescription).toBe('A **new** description.');
+      expect(parsed.suite?.description).toBeNull();
+
+      const blank = await parseQuestionYaml(header + 'suite:\n  name: S\n  suggested_description: "  "\nquestions:\n  - question: x\n');
+      expect(blank.suite?.suggestedDescription).toBeNull();
+      const absent = await parseQuestionYaml(header + 'suite:\n  name: S\nquestions:\n  - question: x\n');
+      expect(absent.suite?.suggestedDescription).toBeNull();
+
+      expect(await messages(header + 'suite:\n  suggested_description: [a, b]\nquestions:\n  - question: x\n')).toEqual([
+        '`suite.suggested_description` must be text.'
+      ]);
+    });
+
+    it('never writes suggested_description in an export', () => {
+      expect(serializeSuiteYaml(SUITE, FIXTURE)).not.toContain('suggested_description');
+      expect(serializeQuestionsYaml(FIXTURE, SUITE)).not.toContain('suggested_description');
     });
 
     it('Q1: requires a non-empty list of mappings', async () => {
@@ -266,6 +287,14 @@ describe('question-yaml-format', () => {
       const withIds = await validate(header + 'suite:\n  name: S\nquestions:\n  - id: 17\n    question: a\n', 'suite');
       expect(withIds.errors).toEqual([]);
       expect(withIds.notices).toContain('Question ids in the file are ignored: a suite import always creates new questions.');
+    });
+
+    it('M3: suite mode says a suggested description is ignored', async () => {
+      const text = header + 'suite:\n  name: S\n  suggested_description: |\n    New.\nquestions:\n  - question: a\n';
+      const suite = await validate(text, 'suite');
+      expect(suite.notices).toEqual(['`suite.suggested_description` is ignored: a suite import uses `suite.description`.']);
+      const questions = await validate(text, 'questions');
+      expect(questions.notices).toEqual(['The `suite` block is ignored: this import changes questions of the open suite only.']);
     });
   });
 

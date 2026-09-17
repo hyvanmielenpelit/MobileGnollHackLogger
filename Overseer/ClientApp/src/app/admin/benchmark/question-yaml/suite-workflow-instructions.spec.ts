@@ -70,6 +70,15 @@ describe('buildSuiteWorkflowInstructions', () => {
     expect(text).not.toContain('## B');
   });
 
+  it('ends route A with assessment, the suggested description and the optional checks', () => {
+    expect(WIZARD_LABELS.applyDescription).toBe('Apply Suggested Description');
+    const text = buildSuiteWorkflowInstructions('add-to-suite');
+    expect(text).toContain('its name and snapshot are not changed; the description changes only if you apply the suggested one.');
+    expect(text).toContain('Press **Assess Difficulty**; the suite cannot run until every question is assessed. The step shows a check mark when it is done.');
+    expect(text).toContain('Press **Next**, read the description the agent suggested — if the YAML file included none, paste it from the agent\'s handoff — and press **Apply Suggested Description**. You can change it later with **Edit suite**.');
+    expect(text).toMatch(/\. \[ \] Optionally run Suite Health \*Snapshot facts\* and the citation check\.\n$/);
+  });
+
   it('names the create button for route B', () => {
     expect(buildSuiteWorkflowInstructions('create-suite', { suiteName: 'New' })).toContain('**Create Suite New**');
   });

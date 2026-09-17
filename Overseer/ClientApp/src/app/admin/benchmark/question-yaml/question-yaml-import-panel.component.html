@@ -74,7 +74,7 @@
   @if (expectation) {
     <div class="import-outcome" [attr.id]="idPrefix + '-outcome'">
       @if (expectation.route === 'add-to-suite') {
-        <p>This will <strong>add {{ cards.length }} new {{ cards.length === 1 ? 'question' : 'questions' }}</strong> to the existing suite <strong>{{ suite?.name }}</strong>, which has {{ suite?.questionCount ?? 0 }} now. Its name, description, game snapshot and existing questions are not changed.</p>
+        <p>This will <strong>add {{ cards.length }} new {{ cards.length === 1 ? 'question' : 'questions' }}</strong> to the existing suite <strong>{{ suite?.name }}</strong>, which has {{ suite?.questionCount ?? 0 }} now. Its name, description, game snapshot and existing questions are not changed.@if (suggestedDescription) { The file's suggested description is offered in the next steps.}</p>
       } @else {
         <p>This will <strong>create a new suite</strong> named <strong>{{ resolvedSuiteName }}</strong> with {{ cards.length }} {{ cards.length === 1 ? 'question' : 'questions' }} and attach the game snapshot <strong>{{ snapshotDisplayName }}</strong>. No existing suite is changed.</p>
       }

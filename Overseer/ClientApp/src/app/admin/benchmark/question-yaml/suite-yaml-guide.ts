@@ -104,6 +104,7 @@ Both lines are required, exactly as written. A different \`format\` or a differe
 |---|---|---|
 | \`name\` | **yes** | 1–${MAX_SUITE_NAME_LENGTH} characters. A suite import always creates a new suite, so a taken name gets an *(Imported)* suffix rather than an error. |
 | \`description\` | no | Markdown. A block scalar keeps its line breaks. |
+| \`suggested_description\` | no | Markdown. Read only by the Snapshot Suite Wizard when adding questions, which offers it to apply; every other import ignores it, and no export writes it. |
 | \`snapshot\` | no | A **mapping**, not a name. A document without it imports a suite with no board. |
 
 \`\`\`yaml
@@ -235,7 +236,7 @@ The **Snapshot Suite Wizard** on this toolbar walks through every step below, ge
 
 | The game snapshot is… | The agent… | The wizard's import… |
 |---|---|---|
-| **Attached to a suite in Overseer** | reads the suite YAML the wizard downloads, \`overseer-suite-export-<slug>.yaml\`, and writes \`agent-new-questions-<slug>.yaml\` | **adds** the new questions to that suite; its name, description, snapshot and existing questions stay as they are |
+| **Attached to a suite in Overseer** | reads the suite YAML the wizard downloads, \`overseer-suite-export-<slug>.yaml\`, and writes \`agent-new-questions-<slug>.yaml\` | **adds** the new questions to that suite; its name, snapshot and existing questions stay as they are, and the description changes only if you apply the suggested one |
 | **A snapshot file from GnollHack** | reads the \`.ai.html\` or \`.snapshot.txt\`, and writes \`agent-new-suite-<slug>.yaml\` | **creates** a new suite with the snapshot attached |
 
 A name starting \`overseer-…-export\` was written by Overseer; a name starting \`agent-new-\` was written by the agent, and is the one to upload.

@@ -1,6 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { By } from '@angular/platform-browser';
+import { of, throwError } from 'rxjs';
 import { AdminBenchmarkService, BenchmarkSuiteDto, MatchSnapshotResult } from '../../../services/admin-benchmark.service';
+import { MarkdownEditorComponent } from '../../../shared/markdown-editor/markdown-editor.component';
 import { SnapshotSuiteWizardComponent, WIZARD_STORAGE_KEY, SnapshotSuiteWizardState } from './snapshot-suite-wizard.component';
 
 describe('SnapshotSuiteWizardComponent', () => {
@@ -20,7 +22,7 @@ describe('SnapshotSuiteWizardComponent', () => {
 
   beforeEach(async () => {
     localStorage.removeItem(WIZARD_STORAGE_KEY);
-    service = jasmine.createSpyObj('AdminBenchmarkService', ['getQuestions', 'importQuestions', 'importSuite', 'matchSnapshot']);
+    service = jasmine.createSpyObj('AdminBenchmarkService', ['getQuestions', 'importQuestions', 'importSuite', 'matchSnapshot', 'updateSuite']);
     service.getQuestions.and.returnValue(of([]));
     service.matchSnapshot.and.returnValue(of<MatchSnapshotResult>({
       sha256: 'a'.repeat(64), charCount: 10, truncated: false, isHtml: false,
@@ -198,6 +200,11 @@ describe('SnapshotSuiteWizardComponent', () => {
     click(assessButton);
     expect(assess).toHaveBeenCalledWith(empty);
 
+    expect(forward().textContent!.trim()).toBe('Next');
+    click(forward());
+    expect(component.step).toBe(7);
+    expect(heading()).toBe('Apply the suggested description');
+
     click(forward());
     expect(localStorage.getItem(WIZARD_STORAGE_KEY)).toBeNull();
     expect(component.dialog.nativeElement.open).toBeFalse();
@@ -211,7 +218,7 @@ describe('SnapshotSuiteWizardComponent', () => {
     localStorage.setItem(WIZARD_STORAGE_KEY, JSON.stringify(state));
     component.open();
 
-    expect(host.querySelector('.wizard-resume')!.textContent).toContain('Continue with Zed Empty, step 5 of 6?');
+    expect(host.querySelector('.wizard-resume')!.textContent).toContain('Continue with Zed Empty, step 5 of 7?');
     const resume = Array.from(host.querySelectorAll<HTMLButtonElement>('.wizard-resume button')).find(b => b.textContent!.trim() === 'Resume')!;
     click(resume);
 
@@ -309,6 +316,229 @@ describe('SnapshotSuiteWizardComponent', () => {
     fixture.detectChanges();
     const ids = Array.from(host.querySelectorAll('[id]')).map(e => e.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  describe('after the import', () => {
+    /** Suite 2 after questions were added to it: one of three assessed. */
+    const added: BenchmarkSuiteDto = { ...empty, description: 'Old text.', questionCount: 3, assessedQuestionCount: 1 };
+    const assessedSuite: BenchmarkSuiteDto = { ...added, assessedQuestionCount: 3, difficultyFullyAssessed: true };
+
+    function stateAt(step: 6 | 7, overrides: Partial<SnapshotSuiteWizardState> = {}): SnapshotSuiteWizardState {
+      return {
+        v: 1, route: 'add-to-suite', suiteId: 2, sourcePath: 'C:\\t\\s.yaml', suiteName: '',
+        counts: null, waitForGoAhead: true, step, importedSuiteId: 2,
+        suggestedDescription: 'The **whole** suite.', agentFileName: 'agent-new-questions-zed-empty.yaml',
+        ...overrides
+      };
+    }
+
+    function resumeAt(state: SnapshotSuiteWizardState, suites: BenchmarkSuiteDto[] = [full, added, plain]): void {
+      fixture.componentRef.setInput('suites', suites);
+      fixture.detectChanges();
+      localStorage.setItem(WIZARD_STORAGE_KEY, JSON.stringify(state));
+      component.open();
+      component.resume();
+      fixture.detectChanges();
+    }
+
+    const stepItems = () => Array.from(host.querySelectorAll('.gh-steps li'));
+    const assessButton = () => host.querySelector<HTMLButtonElement>('.wizard-assess-button')!;
+    const applyButton = () => host.querySelector<HTMLButtonElement>('.wizard-apply-description')!;
+    const textarea = () => host.querySelector<HTMLTextAreaElement>('#snapshot-wizard-description')!;
+    const editor = () => fixture.debugElement.query(By.directive(MarkdownEditorComponent)).componentInstance as MarkdownEditorComponent;
+
+    /** ngModel writes the textarea's value after the change detection that set it. */
+    async function settle(): Promise<void> {
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    function typeDescription(value: string): void {
+      textarea().value = value;
+      textarea().dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    }
+
+    it('route B has six steps and ends with Done on step 6', () => {
+      resumeAt(stateAt(6, { route: 'create-suite', suiteId: null, suggestedDescription: null, agentFileName: null }));
+      expect(stepItems().length).toBe(6);
+      expect(component.step).toBe(6);
+      expect(forward().textContent!.trim()).toBe('Done');
+      expect(host.querySelector('.wizard-assess')!.textContent).toContain('Optional next checks');
+    });
+
+    it('route A has seven steps, Next on step 6, and marks step 6 done only once the suite is assessed', () => {
+      resumeAt(stateAt(6));
+      expect(stepItems().map(li => li.textContent!.replace(/\s+/g, ' ').trim()).pop()).toBe('7 Describe');
+      expect(forward().textContent!.trim()).toBe('Next');
+      expect(host.querySelector('.wizard-assess-status')!.textContent)
+        .toContain('2 of 3 questions still need an AI-assessed difficulty. The suite cannot run until they have one.');
+      expect(stepItems()[5].classList).not.toContain('is-done');
+      expect(host.querySelector('.wizard-done-row')).toBeNull();
+
+      const region = host.querySelector('.wizard-assess-announcement')!;
+      expect(region.getAttribute('role')).toBe('status');
+      expect(region.textContent!.trim()).toBe('');
+      const button = assessButton();
+      expect(button.classList).toContain('btn-gh');
+
+      fixture.componentRef.setInput('suites', [full, assessedSuite, plain]);
+      fixture.detectChanges();
+
+      expect(host.querySelector('.wizard-done-row')!.textContent!.replace(/\s+/g, ' ').trim())
+        .toBe('Done. All 3 questions have an AI-assessed difficulty.');
+      expect(stepItems()[5].classList).toContain('is-done');
+      expect(stepItems()[5].querySelector('.visually-hidden')!.textContent).toContain('Completed:');
+      expect(stepItems()[5].querySelector('.gh-step-number svg')).not.toBeNull();
+      expect(host.querySelector('.wizard-assess-announcement')).toBe(region);
+      expect(region.textContent!.trim())
+        .toBe('Difficulty assessment complete: all 3 questions are assessed. Next: the suggested description.');
+      expect(assessButton()).toBe(button);
+      expect(button.classList).toContain('btn-ghost');
+      expect(button.classList).not.toContain('btn-gh');
+
+      fixture.componentRef.setInput('suites', [full, { ...assessedSuite }, plain]);
+      fixture.detectChanges();
+      expect(region.textContent!.trim()).toBe('Difficulty assessment complete: all 3 questions are assessed. Next: the suggested description.');
+    });
+
+    it('keeps step 6 unfinished on step 7 when it was skipped', () => {
+      resumeAt(stateAt(6));
+      click(forward());
+      expect(component.step).toBe(7);
+      expect(stepItems()[5].classList).not.toContain('is-done');
+      expect(stepItems()[6].getAttribute('aria-current')).toBe('step');
+    });
+
+    it('seeds step 7 from the file, in split, and applies the description with the fresh name', async () => {
+      const updated = jasmine.createSpy('suiteUpdated');
+      component.suiteUpdated.subscribe(updated);
+      service.updateSuite.and.returnValue(of(undefined));
+      resumeAt(stateAt(7));
+      await settle();
+
+      expect(component.step).toBe(7);
+      expect(textarea().value).toBe('The **whole** suite.');
+      expect(editor().initialMode).toBe('split');
+      expect(host.querySelector('.wizard-describe')!.textContent).toContain('From suite.suggested_description in agent-new-questions-zed-empty.yaml.');
+      expect(host.querySelector('.wizard-no-suggestion')).toBeNull();
+      expect(host.querySelector('.wizard-panel')!.hasAttribute('hidden')).toBeTrue();
+      expect(host.querySelector('.wizard-current-description')!.textContent).toContain('Old text.');
+      expect(applyButton().textContent!.trim()).toBe('Apply Suggested Description');
+      expect(applyButton().getAttribute('aria-disabled')).toBeNull();
+
+      typeDescription('   ');
+      expect(applyButton().getAttribute('aria-disabled')).toBe('true');
+      click(applyButton());
+      expect(service.updateSuite).not.toHaveBeenCalled();
+      expect(host.querySelector('.wizard-step-error')!.textContent).toContain('Write or paste a description first.');
+
+      typeDescription('Old text.');
+      expect(applyButton().getAttribute('aria-disabled')).toBe('true');
+
+      const renamed = { ...added, name: 'Zed Renamed' };
+      fixture.componentRef.setInput('suites', [full, renamed, plain]);
+      typeDescription('A new description.');
+      expect(applyButton().getAttribute('aria-disabled')).toBeNull();
+      click(applyButton());
+
+      expect(service.updateSuite).toHaveBeenCalledWith(2, { name: 'Zed Renamed', description: 'A new description.' });
+      expect(host.querySelector('.wizard-apply-status')!.textContent).toBe('Description applied to Zed Renamed.');
+      expect(updated).toHaveBeenCalledWith(renamed);
+      expect(stepItems()[6].classList).toContain('is-done');
+      expect(applyButton().getAttribute('aria-disabled')).toBe('true');
+    });
+
+    it('shows a failed save inline and keeps the draft', () => {
+      service.updateSuite.and.returnValue(throwError(() => ({ error: 'A suite with this name already exists.' })));
+      resumeAt(stateAt(7));
+      typeDescription('Draft kept.');
+      click(applyButton());
+      expect(host.querySelector('.wizard-describe .error-message[role="alert"]')!.textContent).toContain('A suite with this name already exists.');
+      expect(textarea().value).toBe('Draft kept.');
+      expect(component.descriptionApplied).toBeFalse();
+    });
+
+    it('says the file included no suggested description, and describes the empty editor with it', () => {
+      resumeAt(stateAt(7, { suggestedDescription: null }));
+      const notice = host.querySelector('.wizard-no-suggestion')!;
+      expect(notice.textContent).toContain('No suggested description was included in the YAML file (agent-new-questions-zed-empty.yaml).');
+      expect(textarea().value).toBe('');
+      expect(textarea().placeholder).toBe('Paste the suggested description here');
+      expect(editor().initialMode).toBe('write');
+      expect(editor().mode).toBe('write');
+      expect(textarea().getAttribute('aria-describedby')).toContain(notice.id);
+      expect(host.querySelector('label[for="snapshot-wizard-description"]')!.textContent).toContain('Description to apply');
+      expect(applyButton().getAttribute('aria-disabled')).toBe('true');
+
+      typeDescription('Pasted from the handoff.');
+      expect(applyButton().getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('names no file for a pasted document', () => {
+      resumeAt(stateAt(7, { suggestedDescription: null, agentFileName: null }));
+      expect(host.querySelector('.wizard-no-suggestion')!.textContent)
+        .toContain('No suggested description was included in the YAML file. Paste the description');
+    });
+
+    it('goes back from 7 to 6 but not from 6 to 5', () => {
+      resumeAt(stateAt(7));
+      expect(host.querySelector('.wizard-back')!.textContent!.trim()).toBe('Back');
+      click(host.querySelector<HTMLButtonElement>('.wizard-back')!);
+      expect(component.step).toBe(6);
+      expect(host.querySelector('.wizard-back')!.textContent!.trim()).toBe('Close');
+      component.back();
+      expect(component.step).toBe(6);
+    });
+
+    it('remembers step 7, the suggestion and the file name, and resumes a state saved without them', async () => {
+      resumeAt(stateAt(6));
+      click(forward());
+      expect(saved().step).toBe(7);
+      expect(saved().suggestedDescription).toBe('The **whole** suite.');
+      expect(saved().agentFileName).toBe('agent-new-questions-zed-empty.yaml');
+
+      component.dialog.nativeElement.close();
+      component.open();
+      fixture.detectChanges();
+      expect(host.querySelector('.wizard-resume')!.textContent).toContain('step 7 of 7?');
+      component.resume();
+      fixture.detectChanges();
+      await settle();
+      expect(component.step).toBe(7);
+      expect(textarea().value).toBe('The **whole** suite.');
+
+      const older = stateAt(6);
+      delete older.suggestedDescription;
+      delete older.agentFileName;
+      component.dialog.nativeElement.close();
+      resumeAt(older);
+      expect(component.step).toBe(6);
+      click(forward());
+      expect(host.querySelector('.wizard-no-suggestion')!.textContent).toContain('No suggested description was included in the YAML file.');
+    });
+
+    it('carries the suggestion and the uploaded file name from the import panel', () => {
+      service.importQuestions.and.returnValue(of({ createdCount: 1, replacedCount: 0, unchangedCount: 0, questions: [] }));
+      resumeAt(stateAt(6));
+      const panel = component.panel!;
+      panel.suggestedDescription = 'From the panel.';
+      panel.source = 'file';
+      panel.fileName = 'agent-new-questions-x.yaml';
+      component.onQuestionsImported({ createdCount: 1, replacedCount: 0, unchangedCount: 0, questions: [] });
+      expect(component.suggestedDescription).toBe('From the panel.');
+      expect(component.agentFileName).toBe('agent-new-questions-x.yaml');
+
+      panel.source = 'paste';
+      component.onQuestionsImported({ createdCount: 1, replacedCount: 0, unchangedCount: 0, questions: [] });
+      expect(component.agentFileName).toBeNull();
+    });
+
+    it('no longer offers Edit suite', () => {
+      resumeAt(stateAt(6));
+      expect(host.querySelector('.wizard-edit-suite')).toBeNull();
+      expect((component as unknown as Record<string, unknown>)['editSuiteRequested']).toBeUndefined();
+    });
   });
 
   it('shows the generic checklist before a route and the route checklist after', () => {

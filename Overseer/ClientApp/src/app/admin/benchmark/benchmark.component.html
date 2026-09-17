@@ -4126,7 +4126,7 @@
      Suites, they stack above the page in the top layer. The two help instances are one component in
      its two variants, which keep their element ids apart; the import dialog's help link routes to
      the one that matches the import it was opened for. The wizard stacks only the difficulty
-     assessor, Edit suite and the suite help above itself. -->
+     assessor and the suite help above itself. -->
 <app-question-yaml-import-dialog #questionYamlImportDialog
                                  [suite]="currentSuiteForQuestions"
                                  [existing]="questions"
@@ -4144,7 +4144,7 @@
                            (suiteImported)="onSuiteImported($event)"
                            (helpRequested)="openSuiteYamlHelp()"
                            (assessRequested)="onWizardAssessRequested($event)"
-                           (editSuiteRequested)="onWizardEditSuiteRequested($event)" />
+                           (suiteUpdated)="onWizardSuiteUpdated()" />
 
 <!-- QUESTION GENERATION DIALOG -->
 <app-question-generation-dialog

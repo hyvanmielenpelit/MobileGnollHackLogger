@@ -2849,7 +2849,7 @@ questions:
 | Rule | Requirement |
 |---|---|
 | H1 | A mapping with `format: overseer-benchmark-questions` and `version: 1`; only the keys `format`, `version`, `suite`, `questions`. |
-| H2 | `suite` is optional: `name` (1–128 characters), `description`, `snapshot`; no other keys. `snapshot` is a **mapping**, whose keys are only `name` (1–128), `gnollhack_version` (≤ 64), `captured_at` (a parseable date, normalized to ISO 8601), `notes`, `sha256` (64 hexadecimal characters) and `text` (required, non-blank). A **string** `snapshot`, or a `snapshot_text` key, gets the old-shape error: *"`suite.snapshot` is now a mapping with `name` and `text`; `suite.snapshot_text` is no longer a key."* |
+| H2 | `suite` is optional: `name` (1–128 characters), `description`, `suggested_description`, `snapshot`; no other keys. `suggested_description` is Markdown read only by the Snapshot Suite Wizard's add-questions route; no export writes it. `snapshot` is a **mapping**, whose keys are only `name` (1–128), `gnollhack_version` (≤ 64), `captured_at` (a parseable date, normalized to ISO 8601), `notes`, `sha256` (64 hexadecimal characters) and `text` (required, non-blank). A **string** `snapshot`, or a `snapshot_text` key, gets the old-shape error: *"`suite.snapshot` is now a mapping with `name` and `text`; `suite.snapshot_text` is no longer a key."* |
 | Q1 | `questions` is a non-empty list of mappings. |
 | Q2 | Question keys are only `id`, `difficulty`, `question`, `rubric`. |
 | Q3 | `id`, when present, is a positive integer, unique in the document. |
@@ -2858,7 +2858,7 @@ questions:
 | Q6 | A blank `question` on a replace is an error; `rubric: \|` with nothing under it clears the rubric. |
 | M1 | Single-question import (a question's *Import from YAML*): exactly one question, whose `id`, if present, is the target's. |
 | M2 | Questions import (Manage Questions toolbar): every `id` belongs to the open suite; a question without `id` is created and needs `question`; `suite` is ignored with a notice. When the open suite's name is passed and the file's `suite.name` differs, a second notice says *"This file names suite "X", but you are importing into "Y"."* — the Snapshot Suite Wizard passes no name and reports the difference as a route check instead. |
-| M3 | Suite import (Manage Suites toolbar): `suite.name` is required; every question is created and needs `question`; ids are ignored with a notice. The snapshot gets no notice here — what happens to it is reported on the review step, from the server's preflight. In `single` and `questions` mode a document that carries a snapshot gets the notice *"The game snapshot in the file is ignored: this import changes questions only."* |
+| M3 | Suite import (Manage Suites toolbar): `suite.name` is required; every question is created and needs `question`; ids are ignored with a notice, and so is a `suite.suggested_description` (*"`suite.suggested_description` is ignored: a suite import uses `suite.description`."*). The snapshot gets no notice here — what happens to it is reported on the review step, from the server's preflight. In `single` and `questions` mode a document that carries a snapshot gets the notice *"The game snapshot in the file is ignored: this import changes questions only."* |
 | L1 | Created questions must not push the suite past `Benchmark:Compliance:MaxQuestionsPerSuite`; the server enforces it and the dialog shows its message. |
 
 Syntax errors are reported as *Line N, column M: reason*; schema errors name the location, as in
@@ -3523,7 +3523,7 @@ walks both routes and imports the agent's file itself.
 
 | Route | The board is… | The agent reads / writes | The import |
 |---|---|---|---|
-| **A** — *Attached to a suite in Overseer* | stored on a suite that has a snapshot | the suite YAML the wizard downloads, `overseer-suite-export-<slug>.yaml` / `agent-new-questions-<slug>.yaml` | the **questions import**: adds the questions, changes nothing else. No server change was needed. |
+| **A** — *Attached to a suite in Overseer* | stored on a suite that has a snapshot | the suite YAML the wizard downloads, `overseer-suite-export-<slug>.yaml` / `agent-new-questions-<slug>.yaml` | the **questions import**: adds the questions; the description changes only if the admin applies the suggested one. No server change was needed. |
 | **B** — *A snapshot file from GnollHack* | an `.ai.html` or `.snapshot.txt` on disk | that file / `agent-new-suite-<slug>.yaml` | the **suite import**: creates a new suite with the snapshot attached |
 
 The names follow one rule: `overseer-…-export` was written by Overseer, `agent-new-…` was written by
@@ -3532,15 +3532,34 @@ and stay distinguishable when a file dialog truncates the name. Nothing parses a
 import, so a file written under an older name still imports; only the upload step's advisory —
 shown when the attached file is named like the suite download — depends on it.
 
-Its six steps are *Source* (the route, with no default, and for A a list of the suites with a
+Its steps are *Source* (the route, with no default, and for A a list of the suites with a
 snapshot, empty ones first), *File*, *Prompt* (`app-suite-prompt-builder`, which takes the route
 and path as inputs), *Upload*, *Review and confirm* (the import panel with an `ImportExpectation`,
-see *YAML Import and Export*) and *Assess* (**Assess Difficulty**; for A also **Edit suite**, for
-pasting the description the agent suggests). A disclosure above the steps holds the whole workflow
+see *YAML Import and Export*), *Assess* (**Assess Difficulty**) and, for route A only, *Describe*.
+*Assess* reports the remaining unassessed count, and once the reloaded suite list shows every
+question assessed it says **Done.**, marks the step with a check in the indicator and announces the
+completion once through a live region; the step indicator marks step 6 and 7 by their outcome, not
+by having been passed, so a skipped assessment stays visibly unfinished. *Describe* shows the file's
+`suite.suggested_description` in the shared Markdown editor, opened in Split, beside the suite's
+current description, and **Apply Suggested Description** writes it with `PUT suites/{id}` (the
+fresh suite name is sent, as the endpoint requires one). When the file carried no suggestion, the
+step says *"No suggested description was included in the YAML file"* and offers an empty editor for
+the text the agent repeated in its handoff; the review step already warned about it. A disclosure above the steps holds the whole workflow
 as a copyable, downloadable checklist (`suite-workflow-instructions.ts`), generic until the details
 are known. Every forward button is `aria-disabled` while its step is incomplete, and pressing it
 then moves focus to what is missing; Escape and Close are refused while an import is applying.
-Only the difficulty assessor, Edit suite and the suite help open above the wizard.
+Only the difficulty assessor and the suite help open above the wizard.
+
+**The description rules.** Both prompts carry one paragraph on how to write the description
+(`descriptionAuthoringLines` in `suite-agent-prompt.ts`): route A's `suite.suggested_description`,
+route B's `suite.description`. It follows `BenchmarkDescriptionPrompt.DefaultInstructions` in
+`Overseer/Services/Benchmarking/BenchmarkDescriptionPrompt.cs` — 120 to 300 words, a lead paragraph
+with the per-band counts, a `### Covered Domains` list, no quoted question and no answer — so an
+agent-written description has the shape of one **Generate description** drafts. Route A adds that
+the text replaces the description and so describes the whole suite after the import, that
+`suite.description` stays unchanged, and that the handoff repeats it. The two copies cross-reference
+each other in comments; no test links them. The `server_snapshot_suite_authoring` skill (§ 6a)
+states the same rules.
 
 **The path constraint.** A web page never learns where a file is on disk: a file picker gives it
 a name and contents, and a download's destination is invisible. So route A downloads the suite YAML
@@ -3550,10 +3569,12 @@ the 60,000-character cap as an advisory — nothing is uploaded, nothing blocks)
 admin pastes the full path. Uploading the agent's *output* has no such problem.
 
 **Persistence.** `{ v, route, suiteId, sourcePath, suiteName, counts, waitForGoAhead, step,
-importedSuiteId }` is kept under `localStorage['overseer.snapshotSuiteWizard']`, written on every
+importedSuiteId, suggestedDescription, agentFileName }` is kept under `localStorage['overseer.snapshotSuiteWizard']`, written on every
 step change and removed on **Done** and **Start over**; every access is wrapped in `try/catch`.
 Opening with saved state offers **Resume** / **Start over**. The uploaded YAML is never stored, so
-a resume inside the import lands on *Upload*, and a resume after a successful import on *Assess*.
+a resume inside the import lands on *Upload*, and a resume after a successful import on *Assess*,
+or on *Describe* when that was the saved step. The last two fields are optional, so a state saved
+before they existed still resumes.
 A saved suite that no longer exists or no longer has a snapshot discards the state with a one-line
 explanation, as does a different `v`.
 

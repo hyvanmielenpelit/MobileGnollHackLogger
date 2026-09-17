@@ -41,12 +41,21 @@ const codes = (findings: { level: string; code: string }[], level: string) =>
   findings.filter(f => f.level === level).map(f => f.code);
 
 describe('checkImportExpectation, route A', () => {
-  it('confirms a clean file: all new, same board', async () => {
-    const f = await run(HEADER + 'suite:\n  name: Core\n' + BOARD + 'questions:\n  - difficulty: Simple\n    question: Q\n' + RUBRIC,
+  it('confirms a clean file: all new, same board, a suggested description', async () => {
+    const f = await run(HEADER + 'suite:\n  name: Core\n  suggested_description: |\n    A suite.\n' + BOARD + 'questions:\n  - difficulty: Simple\n    question: Q\n' + RUBRIC,
       routeA(), { state: 'matches-target' });
     expect(codes(f, 'blocking')).toEqual([]);
     expect(codes(f, 'warning')).toEqual([]);
+    expect(codes(f, 'confirmed')).toEqual(['all-new', 'board-matches', 'description-suggested']);
+  });
+
+  it('warns, without blocking, when the file suggests no description', async () => {
+    const f = await run(HEADER + 'suite:\n  name: Core\n' + BOARD + 'questions:\n  - difficulty: Simple\n    question: Q\n' + RUBRIC,
+      routeA(), { state: 'matches-target' });
+    expect(codes(f, 'blocking')).toEqual([]);
+    expect(codes(f, 'warning')).toEqual(['description-not-suggested']);
     expect(codes(f, 'confirmed')).toEqual(['all-new', 'board-matches']);
+    expect(f.find(x => x.code === 'description-not-suggested')!.message).toContain('`suite.suggested_description`');
   });
 
   it('blocks a file that would replace a question', async () => {
@@ -61,7 +70,7 @@ describe('checkImportExpectation, route A', () => {
     const f = await run(HEADER + 'suite:\n  name: Other\n' + BOARD + 'questions:\n  - question: Q\n',
       routeA({ targetSuite: { ...target, questionCount: 50 }, requestedCounts: { simple: 6, intermediate: 6, advanced: 6 } }),
       { state: 'other-suite', otherSuiteName: 'X' });
-    expect(codes(f, 'warning')).toEqual(['other-suite-name', 'board-other-suite', 'over-cap', 'counts-differ', 'no-difficulty', 'no-rubric']);
+    expect(codes(f, 'warning')).toEqual(['other-suite-name', 'board-other-suite', 'description-not-suggested', 'over-cap', 'counts-differ', 'no-difficulty', 'no-rubric']);
     expect(f.find(x => x.code === 'counts-differ')!.message).toBe('You asked for 6 / 6 / 6; the file has 1 / 0 / 0.');
   });
 
@@ -89,6 +98,13 @@ describe('checkImportExpectation, route B', () => {
     expect(codes(f, 'warning')).toEqual(['name-differs', 'name-taken', 'ids-ignored']);
     expect(f.find(x => x.code === 'name-taken')!.message).toContain('"Core (Imported)"');
     expect(codes(f, 'confirmed')).toEqual(['counts-match']);
+  });
+
+  it('reports nothing about a suggested description', async () => {
+    const f = await run(HEADER + 'suite:\n  name: New\n  suggested_description: |\n    A suite.\n' + BOARD + 'questions:\n  - difficulty: Simple\n    question: Q\n' + RUBRIC,
+      routeB(), { state: 'unknown' });
+    expect(f.map(x => x.code)).not.toContain('description-suggested');
+    expect(f.map(x => x.code)).not.toContain('description-not-suggested');
   });
 });
 

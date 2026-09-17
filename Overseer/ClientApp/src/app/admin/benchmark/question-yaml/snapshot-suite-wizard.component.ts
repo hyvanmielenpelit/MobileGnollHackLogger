@@ -5,9 +5,11 @@ import {
   ElementRef,
   EventEmitter,
   Input,
+  OnChanges,
   OnDestroy,
   OnInit,
   Output,
+  SimpleChanges,
   ViewChild,
   inject
 } from '@angular/core';
@@ -22,10 +24,12 @@ import {
 } from '../../../services/admin-benchmark.service';
 import { CodeBlockComponent } from '../../../shared/code-block/code-block.component';
 import { FilePickerComponent } from '../../../shared/file-picker/file-picker.component';
+import { MarkdownEditorComponent } from '../../../shared/markdown-editor/markdown-editor.component';
+import { MarkdownPipe } from '../../../chat/markdown.pipe';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import { suiteYamlFileName } from './question-yaml-format';
 import { ImportExpectation, ImportRoute } from './import-expectation';
-import { ImportPanelState, QuestionYamlImportPanelComponent } from './question-yaml-import-panel.component';
+import { ImportPanelState, QuestionYamlImportPanelComponent, errorText } from './question-yaml-import-panel.component';
 import { SuitePromptBuilderComponent } from './suite-prompt-builder.component';
 import {
   MAX_QUESTIONS_PER_SUITE,
@@ -46,7 +50,7 @@ import {
   buildSuiteWorkflowInstructions
 } from './suite-workflow-instructions';
 
-export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
+export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export const WIZARD_STORAGE_KEY = 'overseer.snapshotSuiteWizard';
 export const WIZARD_STATE_VERSION = 1;
@@ -62,6 +66,15 @@ export interface SnapshotSuiteWizardState {
   waitForGoAhead: boolean;
   step: WizardStep;
   importedSuiteId: number | null;
+  /** Route A: `suite.suggested_description` of the imported file. Absent from a state saved by an older build. */
+  suggestedDescription?: string | null;
+  /** Route A: the name of the uploaded file; null for a pasted document. */
+  agentFileName?: string | null;
+}
+
+/** A suite whose every question has an AI-assessed difficulty; an empty suite is not one. */
+function isFullyAssessed(suite: BenchmarkSuiteDto | null | undefined): boolean {
+  return !!suite?.difficultyFullyAssessed && suite.questionCount > 0;
 }
 
 /** A local file larger than this is not read for the snapshot check. */
@@ -76,12 +89,15 @@ const MAX_CHECKED_FILE_BYTES = 20 * 1024 * 1024;
 @Component({
   selector: 'app-snapshot-suite-wizard',
   standalone: true,
-  imports: [CommonModule, FormsModule, CodeBlockComponent, FilePickerComponent, SuitePromptBuilderComponent, QuestionYamlImportPanelComponent],
+  imports: [
+    CommonModule, FormsModule, CodeBlockComponent, FilePickerComponent, SuitePromptBuilderComponent,
+    QuestionYamlImportPanelComponent, MarkdownEditorComponent, MarkdownPipe
+  ],
   templateUrl: './snapshot-suite-wizard.component.html',
   styleUrls: ['./snapshot-suite-wizard.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
+export class SnapshotSuiteWizardComponent implements OnInit, OnChanges, OnDestroy {
   private benchmarkService = inject(AdminBenchmarkService);
   private cdr = inject(ChangeDetectorRef);
   private host = inject<ElementRef<HTMLElement>>(ElementRef);
@@ -97,13 +113,13 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
   @Output() imported = new EventEmitter<ImportBenchmarkQuestionsResultDto>();
   @Output() suiteImported = new EventEmitter<BenchmarkSuiteDto>();
   @Output() assessRequested = new EventEmitter<BenchmarkSuiteDto>();
-  @Output() editSuiteRequested = new EventEmitter<BenchmarkSuiteDto>();
+  @Output() suiteUpdated = new EventEmitter<BenchmarkSuiteDto>();
   @Output() helpRequested = new EventEmitter<void>();
 
   readonly idPrefix = 'snapshot-wizard';
   readonly labels = WIZARD_LABELS;
   readonly instructionsFileName = INSTRUCTIONS_FILE_NAME;
-  readonly steps: ReadonlyArray<{ id: WizardStep; label: string }> = [
+  private static readonly COMMON_STEPS: ReadonlyArray<{ id: WizardStep; label: string }> = [
     { id: 1, label: 'Source' },
     { id: 2, label: 'File' },
     { id: 3, label: 'Prompt' },
@@ -111,6 +127,15 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
     { id: 5, label: 'Review and confirm' },
     { id: 6, label: 'Assess' }
   ];
+  private static readonly ADD_ROUTE_STEPS: ReadonlyArray<{ id: WizardStep; label: string }> = [
+    ...SnapshotSuiteWizardComponent.COMMON_STEPS,
+    { id: 7, label: 'Describe' }
+  ];
+
+  /** Route A has a seventh step, where the suggested description is applied. */
+  get steps(): ReadonlyArray<{ id: WizardStep; label: string }> {
+    return this.isAddRoute ? SnapshotSuiteWizardComponent.ADD_ROUTE_STEPS : SnapshotSuiteWizardComponent.COMMON_STEPS;
+  }
 
   step: WizardStep = 1;
   route: ImportRoute | null = null;
@@ -140,12 +165,43 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
   /** The message for a forward press while the step is incomplete. */
   stepError: string | null = null;
 
+  /** Step 6's live region text, set once the suite becomes fully assessed. */
+  assessAnnouncement = '';
+
+  /** Step 7: the file's `suite.suggested_description`; null when the file carried none. */
+  suggestedDescription: string | null = null;
+  /** Step 7: the uploaded file's name; null for a pasted document. */
+  agentFileName: string | null = null;
+  /** The editor's text, seeded from the suggestion the first time step 7 is shown. */
+  descriptionDraft = '';
+  private descriptionSeeded = false;
+  applyingDescription = false;
+  descriptionApplied = false;
+  descriptionError: string | null = null;
+  descriptionStatus = '';
+  /** The description Apply last wrote, until the host's suite list catches up. */
+  private appliedDescription: string | null = null;
+  private applySub: Subscription | undefined;
+
   ngOnInit(): void {
     ensureOverlayPolyfills();
   }
 
+  ngOnChanges(changes: SimpleChanges): void {
+    const change = changes['suites'];
+    if (!change || change.firstChange || this.step !== 6 || this.importedSuiteId === null) return;
+    const id = this.importedSuiteId;
+    const before = (change.previousValue as BenchmarkSuiteDto[] | undefined)?.find(s => s.id === id) ?? this.importedSuite;
+    const after = this.resultSuite;
+    if (!isFullyAssessed(before) && isFullyAssessed(after)) {
+      this.assessAnnouncement = `Difficulty assessment complete: all ${after!.questionCount} questions are assessed.`
+        + (this.isAddRoute ? ' Next: the suggested description.' : '');
+    }
+  }
+
   ngOnDestroy(): void {
     this.existingSub?.unsubscribe();
+    this.applySub?.unsubscribe();
   }
 
   // ---- Derived state -------------------------------------------------------------------------
@@ -242,6 +298,48 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
     return path === '' ? 'a snapshot file' : path.split(/[\\/]/).pop() || path;
   }
 
+  get resumeStep(): number {
+    const state = this.resumeOffer;
+    if (!state) return 0;
+    if (state.importedSuiteId !== null) return state.step === 7 && state.route === 'add-to-suite' ? 7 : 6;
+    return state.step;
+  }
+
+  get resumeStepCount(): number {
+    return this.resumeOffer?.route === 'add-to-suite' ? 7 : 6;
+  }
+
+  /** True once the imported suite has an AI-assessed difficulty for every question. */
+  get assessed(): boolean {
+    return isFullyAssessed(this.resultSuite);
+  }
+
+  get unassessedCount(): number {
+    const suite = this.resultSuite;
+    return suite ? Math.max(0, suite.questionCount - suite.assessedQuestionCount) : 0;
+  }
+
+  /** Steps 1 to 5 are done once passed; steps 6 and 7 only by their outcome. */
+  stepDone(id: WizardStep): boolean {
+    if (id <= 5) return id < this.step;
+    if (id === 6) return this.step >= 6 && this.assessed;
+    return this.descriptionApplied;
+  }
+
+  get descriptionFromFile(): boolean {
+    return this.suggestedDescription !== null;
+  }
+
+  /** The suite's description as it stands, counting an Apply the host's list has not reloaded yet. */
+  get currentDescription(): string {
+    return this.appliedDescription ?? this.resultSuite?.description ?? '';
+  }
+
+  get canApplyDescription(): boolean {
+    const draft = this.descriptionDraft.trim();
+    return !this.applyingDescription && !!this.resultSuite && draft !== '' && draft !== this.currentDescription.trim();
+  }
+
   get canGoForward(): boolean {
     switch (this.step) {
       case 1: return this.route === 'create-suite' || (this.route === 'add-to-suite' && !!this.selectedSuite);
@@ -257,12 +355,14 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
     switch (this.step) {
       case 4: return PANEL_LABELS.validateAndReview;
       case 5: return this.applying ? 'Importing…' : (this.panel?.applyLabel ?? '');
-      case 6: return WIZARD_LABELS.done;
+      case 6: return this.isAddRoute ? WIZARD_LABELS.next : WIZARD_LABELS.done;
+      case 7: return WIZARD_LABELS.done;
       default: return WIZARD_LABELS.next;
     }
   }
 
   get canGoBack(): boolean {
+    if (this.step === 7) return !this.applyingDescription;
     return this.step > 1 && this.importedSuiteId === null && !this.applying;
   }
 
@@ -290,7 +390,7 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
   }
 
   close(): void {
-    if (this.applying) return;
+    if (this.applying || this.applyingDescription) return;
     this.existingSub?.unsubscribe();
     this.panel?.cancel();
     this.dialog?.nativeElement?.close();
@@ -298,7 +398,7 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
 
   /* Escape on the dialog; an import in flight is not abandoned half way. */
   onCancel(event: Event): void {
-    if (this.applying) {
+    if (this.applying || this.applyingDescription) {
       event.preventDefault();
     }
   }
@@ -312,11 +412,15 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
     this.sourcePath = state.sourcePath;
     this.importedSuiteId = state.importedSuiteId;
     this.importedSuite = this.suites.find(s => s.id === state.importedSuiteId) ?? null;
+    this.suggestedDescription = state.suggestedDescription ?? null;
+    this.agentFileName = state.agentFileName ?? null;
     if (state.step >= 3) {
       this.pendingBuilderState = { suiteName: state.suiteName, counts: state.counts, waitForGoAhead: state.waitForGoAhead };
     }
     // The uploaded YAML is not remembered: a resume inside the import starts it again.
-    const step: WizardStep = state.importedSuiteId !== null ? 6 : state.step >= 4 ? 4 : state.step;
+    const step: WizardStep = state.importedSuiteId !== null
+      ? (state.step === 7 && state.route === 'add-to-suite' ? 7 : 6)
+      : state.step >= 4 ? 4 : state.step;
     this.goToStep(step);
   }
 
@@ -416,7 +520,7 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
     this.cdr.detectChanges();
   }
 
-  // ---- Steps 4 to 6 --------------------------------------------------------------------------
+  // ---- Steps 4 to 7 --------------------------------------------------------------------------
 
   onPanelState(state: ImportPanelState): void {
     this.applying = state.applying;
@@ -434,6 +538,8 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
   onQuestionsImported(result: ImportBenchmarkQuestionsResultDto): void {
     this.importedSuiteId = this.suiteId;
     this.importedSuite = this.selectedSuite;
+    this.suggestedDescription = this.panel?.suggestedDescription ?? null;
+    this.agentFileName = this.panel?.source === 'file' && this.panel.fileName ? this.panel.fileName : null;
     writeState(this.snapshotState(6));
     this.imported.emit(result);
   }
@@ -450,9 +556,47 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
     if (suite) this.assessRequested.emit(suite);
   }
 
-  requestEditSuite(): void {
+  onDescriptionDraftChange(value: string): void {
+    this.descriptionDraft = value;
+    this.descriptionError = null;
+    this.stepError = null;
+    this.cdr.detectChanges();
+  }
+
+  applyDescription(): void {
+    if (this.applyingDescription) return;
     const suite = this.resultSuite;
-    if (suite) this.editSuiteRequested.emit(suite);
+    if (!this.canApplyDescription || !suite) {
+      this.stepError = this.descriptionDraft.trim() === ''
+        ? 'Write or paste a description first.'
+        : 'This is already the suite\'s description.';
+      this.cdr.detectChanges();
+      this.focusFirst([`#${this.idPrefix}-description`]);
+      return;
+    }
+    const description = this.descriptionDraft;
+    this.applyingDescription = true;
+    this.descriptionError = null;
+    this.stepError = null;
+    this.descriptionStatus = '';
+    this.cdr.detectChanges();
+    this.applySub?.unsubscribe();
+    // The PUT requires the name: the fresh one, so a rename made meanwhile is not undone.
+    this.applySub = this.benchmarkService.updateSuite(suite.id, { name: suite.name, description }).subscribe({
+      next: () => {
+        this.applyingDescription = false;
+        this.descriptionApplied = true;
+        this.appliedDescription = description;
+        this.descriptionStatus = `Description applied to ${suite.name}.`;
+        this.cdr.detectChanges();
+        this.suiteUpdated.emit(suite);
+      },
+      error: err => {
+        this.applyingDescription = false;
+        this.descriptionError = errorText(err, 'Could not save the description.');
+        this.cdr.detectChanges();
+      }
+    });
   }
 
   /** The suite the import wrote to, as fresh as the host's list has it. */
@@ -469,8 +613,12 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
   // ---- Footer --------------------------------------------------------------------------------
 
   async forward(): Promise<void> {
-    if (this.applying) return;
-    if (this.step === 6) {
+    if (this.applying || this.applyingDescription) return;
+    if (this.step === 6 && this.isAddRoute) {
+      this.goToStep(7);
+      return;
+    }
+    if (this.step >= 6) {
       this.finish();
       return;
     }
@@ -563,6 +711,11 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
     }
     this.step = step;
     this.stepError = null;
+    this.assessAnnouncement = '';
+    if (step === 7 && !this.descriptionSeeded) {
+      this.descriptionDraft = this.suggestedDescription ?? '';
+      this.descriptionSeeded = true;
+    }
     if (step === 4 && previous !== 5) {
       if (this.isAddRoute) this.loadExisting();
     }
@@ -653,12 +806,15 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
       counts: options?.counts ?? null,
       waitForGoAhead: options?.waitForGoAhead ?? true,
       step,
-      importedSuiteId: this.importedSuiteId
+      importedSuiteId: this.importedSuiteId,
+      suggestedDescription: this.suggestedDescription,
+      agentFileName: this.agentFileName
     };
   }
 
   private resetState(): void {
     this.existingSub?.unsubscribe();
+    this.applySub?.unsubscribe();
     this.step = 1;
     this.route = null;
     this.suiteId = null;
@@ -674,6 +830,16 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnDestroy {
     this.resumeOffer = null;
     this.discardNotice = null;
     this.stepError = null;
+    this.assessAnnouncement = '';
+    this.suggestedDescription = null;
+    this.agentFileName = null;
+    this.descriptionDraft = '';
+    this.descriptionSeeded = false;
+    this.applyingDescription = false;
+    this.descriptionApplied = false;
+    this.descriptionError = null;
+    this.descriptionStatus = '';
+    this.appliedDescription = null;
   }
 
   private focusStepHeading(): void {
@@ -697,7 +863,7 @@ function readState(): SnapshotSuiteWizardState | null {
     const raw = localStorage.getItem(WIZARD_STORAGE_KEY);
     if (!raw) return null;
     const state = JSON.parse(raw) as SnapshotSuiteWizardState;
-    if (!state || state.v !== WIZARD_STATE_VERSION || ![1, 2, 3, 4, 5, 6].includes(state.step)) {
+    if (!state || state.v !== WIZARD_STATE_VERSION || ![1, 2, 3, 4, 5, 6, 7].includes(state.step)) {
       localStorage.removeItem(WIZARD_STORAGE_KEY);
       return null;
     }

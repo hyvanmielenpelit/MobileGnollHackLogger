@@ -120,6 +120,27 @@ describe('MarkdownEditorComponent', () => {
     expect(tabs.length).toBe(2);
   });
 
+  it('opens in the initialMode a host asks for, and a narrow host demotes split to preview', () => {
+    const splitFixture = TestBed.createComponent(MarkdownEditorComponent);
+    const split = splitFixture.componentInstance;
+    split.inputId = 'splitEditor';
+    split.initialMode = 'split';
+    splitFixture.detectChanges();
+    expect(split.mode).toBe('split');
+
+    split.onWidth(split.splitMinWidth - 1);
+    expect(split.splitAvailable).toBeFalse();
+    expect(split.mode).toBe('preview');
+  });
+
+  it('a default host opens in write, and a narrow host demotes split to write', () => {
+    expect(component.mode).toBe('write');
+    component.onWidth(component.splitMinWidth);
+    component.selectMode('split');
+    component.onWidth(component.splitMinWidth - 1);
+    expect(component.mode).toBe('write');
+  });
+
   it('sanitises the preview so an injected onerror handler never reaches the rendered HTML', () => {
     component.value = '<img src=x onerror="alert(1)">';
     fixture.changeDetectorRef.markForCheck();

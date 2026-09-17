@@ -6,6 +6,7 @@ import {
   SuiteAgentPromptOptions,
   agentOutputFileName,
   buildSuiteAgentPrompt,
+  descriptionAuthoringLines,
   looksLikeAbsolutePath,
   sourcePathAdvisory,
   unquotePath,
@@ -117,6 +118,22 @@ describe('buildSuiteAgentPrompt', () => {
     }
   });
 
+  it('asks for suite.description with the same authoring rules, without the add-mode sentences', () => {
+    const prompt = buildSuiteAgentPrompt(options());
+    const flat = prompt.replace(/\n/g, ' ');
+    expect(prompt).toContain('Description. Write `suite.description` as a `|` block scalar of Markdown.');
+    expect(flat).toContain('120 to 300 words');
+    expect(flat).toContain('giving the number of questions in each band.');
+    expect(flat).toContain('`### Covered Domains`');
+    expect(flat).toContain('Do not quote any question verbatim, do not reveal or hint at any answer or rubric point, and state no board fact that would answer a question.');
+    expect(flat).not.toContain('suggested_description');
+    expect(flat).not.toContain('after the import');
+    expect(flat).not.toContain('that questions were added');
+    expect(flat).not.toContain('Leave `suite.description` itself unchanged.');
+    expect(flat).not.toContain('Repeat the same text in your handoff message');
+    expect(prompt).not.toContain('\r');
+  });
+
   it('marks the snapshot-file prompt as creating a new suite', () => {
     const prompt = buildSuiteAgentPrompt(options());
     const lines = prompt.split('\n');
@@ -145,8 +162,10 @@ describe('buildSuiteAgentPrompt for a suite YAML', () => {
     expect(prompt).toContain(SKILL_NAME);
     expect(prompt).toContain(SKILL_CANONICAL_NAME);
     expect(prompt).toContain('without flattening it again');
-    expect(prompt).toContain('Keep the `suite` block exactly as it is');
+    expect(prompt).toContain('Keep `suite.name`, `suite.description` and the whole `suite.snapshot` mapping exactly as they are,');
+    expect(prompt).toContain('add one key, `suite.suggested_description`');
     expect(prompt).toContain('question an `id`');
+    expect(prompt).toContain('offers me your suggested description');
     expect(prompt).toContain('Snapshot Suite Wizard');
     expect(prompt).toContain('`agent-new-questions-<slug>.yaml`');
     expect(prompt).toContain('stop and tell me');
@@ -157,6 +176,27 @@ describe('buildSuiteAgentPrompt for a suite YAML', () => {
     const prompt = buildSuiteAgentPrompt(suiteYaml());
     expect(prompt).toContain('Use exactly that name: the file I downloaded starts with `overseer-suite-export-`');
     expect(prompt).toContain('Never overwrite the suite file.');
+  });
+
+  it('asks for a suggested description of the whole suite after the import', () => {
+    const prompt = buildSuiteAgentPrompt(suiteYaml());
+    const flat = prompt.replace(/\n/g, ' ');
+    expect(prompt).toContain('Suggested description. Write `suite.suggested_description` as a `|` block scalar of Markdown.');
+    expect(flat).toContain('describe the WHOLE suite as it will be after the import');
+    expect(flat).toContain('for the whole suite after the import.');
+    expect(flat).toContain('120 to 300 words');
+    expect(flat).toContain('`### Covered Domains`');
+    expect(flat).toContain('Do not quote any question verbatim, do not reveal or hint at any answer or rubric point, and state no board fact that would answer a question.');
+    expect(flat).toContain('Leave `suite.description` itself unchanged.');
+    expect(flat).toContain('Repeat the same text in your handoff message, so I can paste it if the file is lost.');
+    expect(prompt).not.toContain('\r');
+
+    const lines = prompt.split('\n');
+    const block = descriptionAuthoringLines('suite-yaml');
+    const start = lines.indexOf(block[0]);
+    expect(lines[start - 1]).toBe('');
+    expect(lines.slice(start, start + block.length)).toEqual(block);
+    expect(lines[start + block.length]).toBe('');
   });
 
   it('writes the literal file name when the suite name is known', () => {

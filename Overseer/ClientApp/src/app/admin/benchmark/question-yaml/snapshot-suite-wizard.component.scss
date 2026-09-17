@@ -217,11 +217,37 @@
   }
 }
 
-.wizard-edit-suite {
+/* The check carries the meaning with the text; the colour only repeats it. */
+.wizard-done-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+
+  svg {
+    flex: none;
+    color: var(--primary-color);
+  }
+}
+
+.wizard-describe {
+  display: grid;
+  gap: 14px;
+
+  > p {
+    margin: 0;
+  }
+}
+
+.wizard-current-description .markdown-body {
+  overflow-wrap: anywhere;
+}
+
+.wizard-apply-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
 }
 
 .wizard-resume {

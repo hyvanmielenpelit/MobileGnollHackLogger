@@ -236,8 +236,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     which the page closes the help and opens the wizard. Every code sample in both variants is an
     `app-code-block` (`shared/code-block/`).
   - `#snapshotSuiteWizard` (`app-snapshot-suite-wizard`, `question-yaml/`): the Snapshot Suite Wizard
-    from the Manage Suites toolbar — six steps from a game snapshot to an imported suite, by adding
-    questions to a snapshot suite or creating a new one. It holds `app-suite-prompt-builder` and an
+    from the Manage Suites toolbar — from a game snapshot to an imported suite, by adding questions
+    to a snapshot suite (seven steps, the last, *Describe*, applying the description the agent
+    suggested) or creating a new one (six steps). It holds `app-suite-prompt-builder` and an
     `app-question-yaml-import-panel` (the import body the standalone import dialog also wraps), and
     keeps its progress in `localStorage['overseer.snapshotSuiteWizard']`.
   - `#snapshotUploadDialog` (`app-snapshot-upload-dialog`, `snapshot-upload/`): Upload Snapshot from

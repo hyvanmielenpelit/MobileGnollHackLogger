@@ -113,10 +113,14 @@ export class MarkdownEditorComponent implements OnInit, AfterViewInit, OnChanges
   @Input({ required: true }) inputId!: string;
   @Input() label = '';
   @Input() hint = '';
+  /** Ids of host elements that also describe the textarea, space-separated. */
+  @Input() describedByIds = '';
   @Input() placeholder = '';
   @Input() minRows = 6;
   @Input() fill = false;
   @Input() splitMinWidth = 700;
+  /** The mode the editor opens in. A host too narrow for `split` falls back to `preview`. */
+  @Input() initialMode: MarkdownEditorMode = 'write';
   @Input() value = '';
   @Output() valueChange = new EventEmitter<string>();
 
@@ -139,6 +143,9 @@ export class MarkdownEditorComponent implements OnInit, AfterViewInit, OnChanges
 
   get describedBy(): string | null {
     const parts: string[] = [];
+    if (this.describedByIds) {
+      parts.push(this.describedByIds);
+    }
     if (this.hint) {
       parts.push(`${this.inputId}-hint`);
     }
@@ -150,6 +157,7 @@ export class MarkdownEditorComponent implements OnInit, AfterViewInit, OnChanges
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
+    this.mode = this.initialMode;
     this.warnings = computeMarkdownWarnings(this.value);
   }
 
@@ -157,18 +165,20 @@ export class MarkdownEditorComponent implements OnInit, AfterViewInit, OnChanges
     if (typeof ResizeObserver === 'undefined') {
       return;
     }
-    this.resizeObserver = new ResizeObserver(entries => {
-      const width = entries[0]?.contentRect.width ?? 0;
-      const available = width >= this.splitMinWidth;
-      if (available !== this.splitAvailable) {
-        this.splitAvailable = available;
-        if (!available && this.mode === 'split') {
-          this.mode = 'write';
-        }
-        this.cdr.markForCheck();
-      }
-    });
+    this.resizeObserver = new ResizeObserver(entries => this.onWidth(entries[0]?.contentRect.width ?? 0));
     this.resizeObserver.observe(this.rootRef.nativeElement);
+  }
+
+  /** Public so a test can drive it directly instead of forcing a ResizeObserver callback. */
+  onWidth(width: number): void {
+    const available = width >= this.splitMinWidth;
+    if (available !== this.splitAvailable) {
+      this.splitAvailable = available;
+      if (!available && this.mode === 'split') {
+        this.mode = this.initialMode === 'split' ? 'preview' : 'write';
+      }
+      this.cdr.markForCheck();
+    }
   }
 
   ngOnChanges(changes: SimpleChanges): void {

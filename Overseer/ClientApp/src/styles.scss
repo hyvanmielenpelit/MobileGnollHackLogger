@@ -1312,6 +1312,11 @@ label.checkbox-label,
     border-radius: 50%;
     border: 1px solid currentColor;
     font-size: 12px;
+
+    svg {
+      width: 14px;
+      height: 14px;
+    }
   }
 
   li.is-done {

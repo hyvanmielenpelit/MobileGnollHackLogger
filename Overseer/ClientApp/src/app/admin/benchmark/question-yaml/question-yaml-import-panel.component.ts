@@ -151,6 +151,8 @@ export class QuestionYamlImportPanelComponent implements OnDestroy {
   cards: ReviewCard[] = [];
   suiteName = '';
   suiteDescription: string | null = null;
+  /** `suite.suggested_description` of the validated document; null when it carries none. */
+  suggestedDescription: string | null = null;
   /** The snapshot the document carries, in suite mode; null when it carries none. */
   suiteSnapshot: ImportBenchmarkSuiteSnapshot | null = null;
   /** The hash the file claims its board had; a difference from the server's is a warning. */
@@ -363,6 +365,7 @@ export class QuestionYamlImportPanelComponent implements OnDestroy {
     }));
     this.suiteName = parsed.suite?.name ?? '';
     this.suiteDescription = parsed.suite?.description ?? null;
+    this.suggestedDescription = parsed.suite?.suggestedDescription ?? null;
     this.validatedText = text;
     this.validSummary = this.describeValid(plan);
     this.refreshFindings();
@@ -656,6 +659,7 @@ export class QuestionYamlImportPanelComponent implements OnDestroy {
     this.confirmed = false;
     this.suiteName = '';
     this.suiteDescription = null;
+    this.suggestedDescription = null;
     this.suiteSnapshot = null;
     this.fileSha256 = null;
     this.attachSnapshot = true;
