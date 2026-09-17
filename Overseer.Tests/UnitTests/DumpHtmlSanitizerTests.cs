@@ -166,14 +166,34 @@ public class DumpHtmlSanitizerTests
     [Fact]
     public void NormalizeFlattenedText_IsIdempotent()
     {
-        string clientShapedText = "Map:\n   #\u00A0\u00A0\u00A0.\n\n\n\nInventory:   \n1 - an apple   \n";
+        string clientShapedText = "Map:\r\n   #\u00A0\u00A0\u00A0.\n\n\n\nInventory:   \n1 - an apple   \n";
         string once = DumpHtmlSanitizer.NormalizeFlattenedText(clientShapedText);
         string twice = DumpHtmlSanitizer.NormalizeFlattenedText(once);
 
         Assert.Equal(once, twice);
         Assert.DoesNotContain('\u00A0', once);
+        Assert.DoesNotContain('\r', once);
         Assert.DoesNotContain("   \n", once);
         Assert.DoesNotContain("\n\n\n", once);
+    }
+
+    [Fact]
+    public void NormalizeFlattenedText_UnifiesCrlfAndLoneCrToLf()
+    {
+        string mixed = "Dlvl:3 HP:14(14) \r\nThe map\r@....|\n\r\n\r\n\r\nInventory:\r\na - an apple";
+        string normalized = DumpHtmlSanitizer.NormalizeFlattenedText(mixed);
+
+        Assert.DoesNotContain('\r', normalized);
+        Assert.Equal("Dlvl:3 HP:14(14)\nThe map\n@....|\n\nInventory:\na - an apple", normalized);
+    }
+
+    [Fact]
+    public void PrepareFlattenedSnapshot_StoresLfOnly()
+    {
+        string normalized = DumpHtmlSanitizer.PrepareFlattenedSnapshot("Header\r\n  #  . @\r\nFooter\r\n");
+
+        Assert.DoesNotContain('\r', normalized);
+        Assert.Equal("Header\n  #  . @\nFooter", normalized);
     }
 
     [Fact]

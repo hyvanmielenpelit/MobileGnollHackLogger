@@ -83,6 +83,15 @@ describe('buildSuiteAgentPrompt', () => {
     expect(buildSuiteAgentPrompt(options({ suiteName: 'Valkyrie' }))).not.toContain('\r');
   });
 
+  it('names the encoding and line endings of the generated file, in both routes', () => {
+    const sentence = 'Write the file as UTF-8 without a BOM and with LF line endings, like the downloaded file; never mix line endings in one file.';
+    for (const source of ['snapshot-file', 'suite-yaml'] as const) {
+      const lines = buildSuiteAgentPrompt(options({ source })).split('\n');
+      expect(lines).withContext(source).toContain(sentence);
+      expect(lines.indexOf(sentence) + 1).withContext(source).toBe(lines.findIndex(l => l.includes('stop and tell me')));
+    }
+  });
+
   it('builds the identical prompt from a quoted and an unquoted path, backslashes intact', () => {
     const cases = [
       String.raw`C:\temp\a.ai.html`,

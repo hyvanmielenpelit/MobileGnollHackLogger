@@ -69,20 +69,23 @@ public static class DumpHtmlSanitizer
 
     /* 6. Tidy trailing horizontal whitespace and excess blank lines. */
     private static readonly Regex TrailingSpaceRegex = new(
-        @"[ \t]+(\r?\n)", RegexOptions.Compiled);
+        @"[ \t]+\n", RegexOptions.Compiled);
     private static readonly Regex BlankLineRunRegex = new(
-        @"(\r?\n){3,}", RegexOptions.Compiled);
+        @"\n{3,}", RegexOptions.Compiled);
 
     /// <summary>
     /// Final normalization applied to text that is already flattened — either by
     /// Sanitize() here, or by the client's SanitizeDumpHtml() before a
-    /// refresh_snapshot round trip. Idempotent: running it twice changes nothing.
+    /// refresh_snapshot round trip. Unifies CRLF and lone CR line endings to LF, trims
+    /// trailing spaces per line, collapses runs of blank lines to one, turns U+00A0 into
+    /// a space and trims the whole. Idempotent: running it twice changes nothing.
     /// </summary>
     public static string NormalizeFlattenedText(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return string.Empty;
 
-        text = TrailingSpaceRegex.Replace(text, "$1");
+        text = text.Replace("\r\n", "\n").Replace('\r', '\n');
+        text = TrailingSpaceRegex.Replace(text, "\n");
         text = BlankLineRunRegex.Replace(text, "\n\n");
         text = text.Replace('\u00A0', ' ');
         return text.Trim();

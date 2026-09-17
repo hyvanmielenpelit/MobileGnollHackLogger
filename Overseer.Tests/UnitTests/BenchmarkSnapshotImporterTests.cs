@@ -206,6 +206,22 @@ public class BenchmarkSnapshotImporterTests
     }
 
     [Fact]
+    public async Task FromSessionAttachmentAsync_WithCrlfText_StoresLf_AndHashesLikeItsLfForm()
+    {
+        using var db = CreateDbContext();
+        var importer = new BenchmarkSnapshotImporter(db);
+        const string crlfText = "Dlvl:3 $:10 HP:14(14)\r\n\r\nThe map\r\n@....|\nInventory:\r\na - an apple";
+        const string lfText = "Dlvl:3 $:10 HP:14(14)\n\nThe map\n@....|\nInventory:\na - an apple";
+
+        var (board, _) = await importer.FromSessionAttachmentAsync(crlfText, new BoardMetadata("crlf_attachment"), TestContext.Current.CancellationToken);
+        var stored = BenchmarkSnapshotImporter.StoredForm(lfText, false);
+
+        Assert.DoesNotContain('\r', board.SanitizedText);
+        Assert.Equal(lfText.Length, board.CharCount);
+        Assert.Equal(stored.Sha256, board.Sha256);
+    }
+
+    [Fact]
     public async Task PrefixedStoredText_SatisfiesIsGameSnapshotMessage()
     {
         using var db = CreateDbContext();

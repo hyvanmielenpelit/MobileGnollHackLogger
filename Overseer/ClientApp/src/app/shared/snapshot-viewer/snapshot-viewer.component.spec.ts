@@ -440,6 +440,49 @@ describe('SnapshotViewerComponent', () => {
     });
   });
 
+  describe('the line-endings repair action', () => {
+    function notice(): HTMLElement | null {
+      return host.querySelector<HTMLElement>('.line-endings-notice');
+    }
+
+    function normalizeButton(): HTMLButtonElement {
+      return host.querySelector<HTMLButtonElement>('.normalize-line-endings-btn')!;
+    }
+
+    it('is absent for a snapshot without carriage returns', async () => {
+      await openReady();
+      expect(notice()).toBeNull();
+    });
+
+    it('names the carriage return count and saves the unchanged text with the loaded hash', async () => {
+      const crText = 'Map:\r\nThe hero is here.\r\nInventory:\na - an apple';
+      await openReady(snapshotWith(crText));
+
+      expect(notice()).not.toBeNull();
+      expect(notice()!.textContent).toContain('holds 2 carriage return characters');
+
+      mockBenchmarkService.updateSnapshotText.and.returnValue(
+        of(snapshotWith('Map:\nThe hero is here.\nInventory:\na - an apple', { sha256: 'def0987654321' })));
+      normalizeButton().click();
+      fixture.detectChanges();
+
+      expect(mockBenchmarkService.updateSnapshotText).toHaveBeenCalledWith(1, { text: crText, expectedSha256: 'abc1234567890' });
+      expect(notice()).toBeNull();
+      expect(host.querySelector('.sha-box')!.textContent).toContain('def0987654321');
+    });
+
+    it('does nothing while the text editor holds unsaved changes', async () => {
+      await openReady(snapshotWith('Map:\r\nInventory:'));
+      editText();
+
+      expect(normalizeButton().getAttribute('aria-disabled')).toBe('true');
+      normalizeButton().click();
+      fixture.detectChanges();
+
+      expect(mockBenchmarkService.updateSnapshotText).not.toHaveBeenCalled();
+    });
+  });
+
   describe('editing the text', () => {
     it('saves with the loaded SHA-256 and stays on the tab with the saved text clean', async () => {
       const updatedSpy = jasmine.createSpy('snapshotUpdated');

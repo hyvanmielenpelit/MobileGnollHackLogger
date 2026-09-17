@@ -169,6 +169,28 @@ export class SnapshotViewerComponent implements OnDestroy {
     return !!this.snapshot?.sanitizedText?.includes('[SNAPSHOT TRUNCATED');
   }
 
+  get carriageReturnCount(): number {
+    const text = this.snapshot?.sanitizedText ?? '';
+    let count = 0;
+    for (let i = text.indexOf('\r'); i !== -1; i = text.indexOf('\r', i + 1)) count++;
+    return count;
+  }
+
+  get hasCarriageReturns(): boolean {
+    return this.carriageReturnCount > 0;
+  }
+
+  get canNormalizeLineEndings(): boolean {
+    return this.hasCarriageReturns && !this.savingText && !this.editingTextDirty;
+  }
+
+  /* Saves the stored text unchanged; the server unifies its line endings, re-hashes it and rebuilds
+     the digest. The editor buffer is not what is saved, so an unsaved edit blocks this. */
+  normalizeLineEndings() {
+    if (!this.snapshot?.sanitizedText || !this.canNormalizeLineEndings) return;
+    this.saveText(this.snapshot.sanitizedText);
+  }
+
   /* Shown only when the snapshot was changed after it was stored, not merely stamped at creation. */
   get showLastModified(): boolean {
     const modified = this.snapshot?.modifiedAtUtc ? Date.parse(this.snapshot.modifiedAtUtc) : NaN;

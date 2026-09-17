@@ -105,6 +105,21 @@ public class AdminBenchmarkSnapshotMatchTests
     }
 
     [Fact]
+    public async Task BoardSavedFromCrlfChatText_IsMatchedByItsLfText()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController();
+        var (board, _) = await new BenchmarkSnapshotImporter(db).FromSessionAttachmentAsync(
+            Board.Replace("\n", "\r\n"), new BoardMetadata("Chat board"), ct);
+
+        var value = ReadResult(await controller.MatchSnapshot(new MatchSnapshotRequest { Text = Board }, ct));
+
+        Assert.NotNull(value.Match);
+        Assert.Equal(board.Id, value.Match!.Id);
+        Assert.Equal("Chat board", value.Match.Name);
+    }
+
+    [Fact]
     public async Task OverlongText_IsTruncatedAndCounted()
     {
         var ct = TestContext.Current.CancellationToken;

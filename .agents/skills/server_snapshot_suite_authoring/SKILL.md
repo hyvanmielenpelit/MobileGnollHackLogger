@@ -118,6 +118,10 @@ the stored text into the file.
 - Take `suite.snapshot.text` **as it is**: do **not** flatten it again and do **not** apply the cap
   again. It is the stored board, character for character, and the rubrics are graded against
   exactly that.
+- If the wizard's review step reports that the questions were written against a different board
+  although the `suite` block is verbatim, the stored board holds carriage returns from its capture;
+  the administrator repairs it with the Snapshot Viewer's **Normalize line endings** and the
+  questions file needs no change.
 - **If the file has no `suite.snapshot`, stop** and say so: the suite has no board to write
   snapshot questions against, and this is the wrong route.
 - If the file already holds questions, **their decisions are taken**. Read them, leave them out of
@@ -231,7 +235,10 @@ this section describes the create-mode file; the question rules below apply to b
   add-mode import treats one as a replacement and is refused.
 - `question` and `rubric` as `|` block scalars, **spaces only**, never tabs.
 
-UTF-8 without a BOM. The file name is per § 1.
+UTF-8 without a BOM, LF line endings — the same as the file Overseer downloaded, and never mixed.
+These files live outside every repository, so this rule replaces the repository and global CRLF
+conventions for them; the importer would accept CRLF, but LF keeps a byte comparison against the
+export meaningful. The file name is per § 1.
 
 ## 7. Self-Check Before Handing Over
 
@@ -243,6 +250,7 @@ each result:
   allowed one at its level.
 - Every question has a non-blank `question`, and the band counts equal the agreed table.
 - The file is under 2 MB (the upload limit).
+- The file contains no `\r` character (verify by byte count, not by eye).
 - **The parsed `suite.snapshot.text`, with trailing whitespace removed, is character for
   character the board text from § 2** — in add mode, the `suite.snapshot.text` parsed from the
   **input** file. This is the check that catches a block-scalar mistake, and nothing else will.
@@ -277,6 +285,7 @@ Report, in this order:
    - Add mode: **suggest a suite description** that covers the old and new questions. The import
      does not change the description; the admin pastes it with **Edit suite**.
    - Optional: Suite Health **Snapshot facts**, and the citation check.
+6. The **encoding and line endings** the file was written with.
 
 ## 9. Checklist
 
@@ -291,8 +300,8 @@ Report, in this order:
 - [ ] Decisions surveyed, candidates classified, table reported, go-ahead received (§ 3).
 - [ ] Questions in a player's voice, unanswerable without the board, one decision each, no leaks.
 - [ ] BOARD FACTS quotable verbatim; mechanics under REQUIRED with a verified source citation.
-- [ ] YAML written as one file, `text: |` uniformly indented and untouched otherwise; add mode keeps
-      the `suite` block verbatim and gives no question an `id`.
+- [ ] YAML written as one file, LF line endings, no BOM, `text: |` uniformly indented and untouched
+      otherwise; add mode keeps the `suite` block verbatim and gives no question an `id`.
 - [ ] Self-check run with a real parser; text compared character for character (§ 7).
 - [ ] Handoff reported with the count table, the ungrounded list, the Overseer steps and, in add
       mode, a suggested suite description (§ 8).

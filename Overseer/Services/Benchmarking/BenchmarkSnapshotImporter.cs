@@ -33,7 +33,7 @@ public class BenchmarkSnapshotImporter
     public async Task<(BenchmarkGameSnapshot Board, BenchmarkSuite Suite)> FromClientTextAsync(
         string flattenedText, BoardMetadata meta, CancellationToken ct = default)
     {
-        string normalized = DumpHtmlSanitizer.NormalizeFlattenedText(flattenedText);
+        string normalized = Normalize(flattenedText, isHtml: false);
         return await ProcessAndPersistAsync(normalized, "ClientRefresh", meta, ct);
     }
 
@@ -47,7 +47,7 @@ public class BenchmarkSnapshotImporter
     public async Task<(BenchmarkGameSnapshot Board, BenchmarkSuite Suite)> FromSessionAttachmentAsync(
         string attachedText, BoardMetadata meta, CancellationToken ct = default)
     {
-        string normalized = DumpHtmlSanitizer.NormalizeFlattenedText(attachedText);
+        string normalized = Normalize(attachedText, isHtml: false);
         return await ProcessAndPersistAsync(normalized, "SessionAttachment", meta, ct);
     }
 
@@ -92,7 +92,7 @@ public class BenchmarkSnapshotImporter
         return (finalText, sha256, IsAlreadyTruncated(finalText));
     }
 
-    /// <summary>HTML is flattened; flat text has its line endings unified and is normalized.</summary>
+    /// <summary>HTML is flattened; flat text is normalized, which unifies its line endings.</summary>
     private static string Normalize(string content, bool isHtml)
     {
         if (isHtml)
@@ -100,9 +100,7 @@ public class BenchmarkSnapshotImporter
             return DumpHtmlSanitizer.Sanitize(content);
         }
 
-        // NormalizeFlattenedText keeps single CRLFs, so line endings are unified first.
-        string text = (content ?? string.Empty).Replace("\r\n", "\n").Replace('\r', '\n');
-        return DumpHtmlSanitizer.NormalizeFlattenedText(text);
+        return DumpHtmlSanitizer.NormalizeFlattenedText(content ?? string.Empty);
     }
 
     /// <summary>

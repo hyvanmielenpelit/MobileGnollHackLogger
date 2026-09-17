@@ -1976,9 +1976,7 @@ public class AdminBenchmarkController : ControllerBase
         var board = await _dbContext.BenchmarkGameSnapshots.FirstOrDefaultAsync(s => s.Id == id, ct);
         if (board == null) return NotFound();
 
-        // NormalizeFlattenedText keeps single CRLFs, so line endings are unified first.
-        string text = (request.Text ?? string.Empty).Replace("\r\n", "\n").Replace('\r', '\n');
-        string normalized = DumpHtmlSanitizer.NormalizeFlattenedText(text);
+        string normalized = DumpHtmlSanitizer.NormalizeFlattenedText(request.Text ?? string.Empty);
         if (string.IsNullOrWhiteSpace(normalized))
         {
             return BadRequest(new { error = "Snapshot text must not be empty." });

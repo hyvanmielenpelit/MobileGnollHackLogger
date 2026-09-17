@@ -2863,7 +2863,8 @@ questions:
 
 Syntax errors are reported as *Line N, column M: reason*; schema errors name the location, as in
 *questions[3] (id 42): unknown key `tier`*. Block scalars lose their trailing newline and trailing
-whitespace on parse; a BOM and CRLF are accepted. Export writes UTF-8 without a BOM, LF line endings,
+whitespace on parse; a BOM and CRLF are accepted. A file written for the Snapshot Suite Wizard
+follows the export — UTF-8 without a BOM, LF line endings, never mixed. Export writes UTF-8 without a BOM, LF line endings,
 the `|2` indentation indicator where a value's first line starts with whitespace, a `# Question N`
 comment (the question's `OrderIndex`, as a run report prints it) before each item, and omits
 `rubric` for an empty rubric. Every multi-question export of a snapshot suite (*Download All as
@@ -2975,7 +2976,10 @@ preferred when several exist. It writes nothing. The import dialog calls it once
 document when the review step opens in suite mode, and the review step reports which of the three
 outcomes applies, plus *"cut at 60,000 characters"* when `truncated`. A failed preflight says the
 check could not be made and the import still works, because the server applies the same rule
-itself. Unticking the checkbox imports the suite without a snapshot.
+itself. Unticking the checkbox imports the suite without a snapshot. A *"different board"* result
+for a file whose `suite` block is the export verbatim means the stored board predates line-ending
+normalization and still holds carriage returns; repair it with the Snapshot Viewer's **Normalize
+line endings** (see Sanitizer Convergence), and the file needs no change.
 
 **The `sha256` warning.** Every export writes the stored board's hash. On import the server
 recomputes it from `text`, and a difference is a **warning** on the review step — *"the text
@@ -3438,6 +3442,13 @@ game session.
   survive an export/import or a download/re-upload with its hash intact — and therefore be matched
   at all. The editable-text path below (Immutability & Safety) runs the same normalization, so a
   round-trip of unchanged text yields the same hash.
+  Boards saved from a chat session before `NormalizeFlattenedText` unified line endings went through
+  a normalizer that kept CRLF, so they may still hold carriage returns and a hash that differs from
+  a YAML export or a `.snapshot.txt` re-upload of the same text. For such a board the Snapshot
+  Viewer's **Game Snapshot** tab shows a notice with a **Normalize line endings** button, which saves
+  the stored text unchanged through `PUT snapshots/{id}/text`; the server unifies the line endings,
+  re-hashes the board and rebuilds its digest. The button is unavailable while the text editor holds
+  unsaved changes.
 - **Provenance Tracking**: Each snapshot records `CaptureMethod`, `SourceChatSessionId`,
   `SourceGnollHackVersion`, `Notes`, `DigestText`, and `CapturedAtUtc`.
 - **Digest**: `DigestText` is a **deterministic extract** of the snapshot, built by
@@ -3487,8 +3498,9 @@ game session.
   (`DELETE snapshots/{id}`, the viewer's **Delete Snapshot**) detaches it from its suite and keeps
   every question, run and recorded snapshot fact. Snapshot text is no longer immutable after creation: an administrator can edit it directly
   through the **Game Snapshot** tab (described under Snapshot Viewer UI below), which calls
-  `PUT snapshots/{id}/text`. That endpoint unifies CRLF/CR line endings to LF, runs the result through
-  the same `DumpHtmlSanitizer.NormalizeFlattenedText` every capture path uses, applies the
+  `PUT snapshots/{id}/text`. That endpoint runs the text through the same
+  `DumpHtmlSanitizer.NormalizeFlattenedText` every capture path uses, which unifies CRLF/CR line
+  endings to LF, applies the
   60,000-character cap and truncation marker through `BenchmarkSnapshotImporter.PrepareBoardText`,
   and returns `400` for text that normalizes to nothing. It takes the `ExpectedSha256` the client
   loaded and returns `409` when the stored hash has since changed, so two administrators editing the

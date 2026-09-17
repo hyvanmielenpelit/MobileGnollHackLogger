@@ -125,6 +125,28 @@
             </div>
           </div>
         }
+        @if (hasCarriageReturns) {
+          <div class="alert alert-warning line-endings-notice">
+            <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <div class="alert-content">
+              <span class="alert-body" [id]="'snapshot-line-endings-body-' + uid">
+                <strong>Notice:</strong> This snapshot's text holds {{ carriageReturnCount | number }} carriage return characters from its capture.
+                Its hash does not match a YAML export of the same board, so the Snapshot Suite Wizard reports it as a different board.
+                Normalizing rewrites the line endings, re-hashes the snapshot and rebuilds the digest; the text itself is unchanged.
+              </span>
+              <div class="alert-actions">
+                <button type="button" class="btn-ghost normalize-line-endings-btn" (click)="normalizeLineEndings()"
+                        [attr.aria-describedby]="'snapshot-line-endings-body-' + uid"
+                        [attr.aria-disabled]="canNormalizeLineEndings ? null : 'true'"
+                        [attr.aria-busy]="savingText ? 'true' : null">Normalize line endings</button>
+              </div>
+            </div>
+          </div>
+        }
         <app-snapshot-text-editor
           [text]="snapshot.sanitizedText ?? ''"
           [sha256]="snapshot.sha256"
