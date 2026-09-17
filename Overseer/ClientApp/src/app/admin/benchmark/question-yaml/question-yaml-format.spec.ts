@@ -302,6 +302,7 @@ describe('question-yaml-format', () => {
     for (const tab of HUMAN_GUIDE_TABS) {
       expect(tab.label.trim()).not.toBe('');
       expect(tab.markdown.trim()).not.toBe('');
+      expect(tab.ingress.trim()).withContext(tab.id).not.toBe('');
     }
   });
 

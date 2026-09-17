@@ -15,7 +15,9 @@ import { copyToClipboard } from '../../../utils/clipboard.util';
 import { downloadTextFile } from '../../../utils/download.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import {
+  AI_INGRESS,
   AI_INSTRUCTIONS_FILE_NAME,
+  EXAMPLES_INGRESS,
   EXAMPLES_INTRO_MARKDOWN,
   GuideTab,
   HUMAN_GUIDE_TABS,
@@ -25,12 +27,13 @@ import {
   yamlExampleFileName
 } from './question-yaml-format';
 import {
-  SUITE_AI_PROMPT,
-  SUITE_AI_PROMPT_FILE_NAME,
+  SUITE_AI_INGRESS,
+  SUITE_EXAMPLES_INGRESS,
   SUITE_EXAMPLES_INTRO_MARKDOWN,
   SUITE_GUIDE_TABS,
   SUITE_YAML_EXAMPLES
 } from './suite-yaml-guide';
+import { SuitePromptBuilderComponent } from './suite-prompt-builder.component';
 
 const STATUS_MS = 3000;
 
@@ -40,7 +43,7 @@ export type YamlHelpTab = GuideTab['id'] | 'examples' | 'ai';
 @Component({
   selector: 'app-question-yaml-help-dialog',
   standalone: true,
-  imports: [CommonModule, MarkdownPipe],
+  imports: [CommonModule, MarkdownPipe, SuitePromptBuilderComponent],
   templateUrl: './question-yaml-help-dialog.component.html',
   styleUrls: ['./question-yaml-help-dialog.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -103,32 +106,36 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
     return this.isSuite ? SUITE_EXAMPLES_INTRO_MARKDOWN : EXAMPLES_INTRO_MARKDOWN;
   }
 
-  /** Without the guidance the questions variant falls back to text that says so. */
+  /** The suite variant's For an AI tab holds the prompt builder, so these serve the questions one. */
   get aiInstructions(): string {
-    return this.isSuite ? SUITE_AI_PROMPT : buildAiInstructions(this.guidance);
+    return buildAiInstructions(this.guidance);
   }
 
   get aiFileName(): string {
-    return this.isSuite ? SUITE_AI_PROMPT_FILE_NAME : AI_INSTRUCTIONS_FILE_NAME;
+    return AI_INSTRUCTIONS_FILE_NAME;
   }
 
   get aiHint(): string {
-    return this.isSuite
-      ? 'Paste this into an agent session that can read the repositories, with the snapshot path filled in.'
-      : 'Paste these into an AI chat together with an exported document, so its reply imports cleanly.';
+    return 'Paste these into an AI chat together with an exported document, so its reply imports cleanly.';
   }
 
   get aiCopyLabel(): string {
-    return this.isSuite ? 'Copy agent prompt to the clipboard' : 'Copy AI instructions to the clipboard';
+    return 'Copy AI instructions to the clipboard';
   }
 
   get aiDownloadLabel(): string {
-    return this.isSuite ? 'Download agent prompt as Markdown' : 'Download AI instructions as Markdown';
+    return 'Download AI instructions as Markdown';
   }
 
-  /** A guide tab that shows the prompt under its Markdown as well, or null for none. */
-  get promptTabId(): YamlHelpTab | null {
-    return this.isSuite ? 'snapshot' : null;
+  /** One or two plain-text sentences above the active tab's body. */
+  get activeIngress(): string {
+    if (this.activeTab === 'examples') {
+      return this.isSuite ? SUITE_EXAMPLES_INGRESS : EXAMPLES_INGRESS;
+    }
+    if (this.activeTab === 'ai') {
+      return this.isSuite ? SUITE_AI_INGRESS : AI_INGRESS;
+    }
+    return this.activeGuide?.ingress ?? '';
   }
 
   /** Which toolbar last copied: 'ai' or an example id. Its status span shows copyStatus. */
@@ -164,6 +171,12 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
     // One scroller serves every tab, so a switch starts the new tab at the top.
     this.body?.nativeElement.scrollTo({ top: 0 });
     setTimeout(() => refreshAnchorPositioning(), 0);
+  }
+
+  /** The jump from the From a Snapshot guide; focus follows the selection, as the arrow keys do. */
+  openPromptBuilder(): void {
+    this.selectTab('ai');
+    document.getElementById(`${this.idPrefix}-tab-ai`)?.focus();
   }
 
   onTabKeydown(event: KeyboardEvent, index: number): void {

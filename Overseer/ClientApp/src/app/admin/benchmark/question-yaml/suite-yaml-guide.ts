@@ -11,8 +11,8 @@ import {
 
 /**
  * The content of the Manage Suites help dialog: the whole-suite YAML workflow, the format with its
- * `suite.snapshot` mapping, authoring a suite from an exported AI snapshot, ready-to-edit examples,
- * and the prompt that invokes the offline authoring skill.
+ * `suite.snapshot` mapping, authoring a suite from an exported AI snapshot, and ready-to-edit
+ * examples. The agent prompt of the *For an AI* tab is assembled in `suite-agent-prompt.ts`.
  *
  * The questions help (`question-yaml-format.ts`) owns the per-question rules; this file states only
  * what is specific to a whole suite. Everything here is static: the suite variant of the help
@@ -46,15 +46,72 @@ Run **Assess Difficulty** on the new suite's card. The launcher refuses a suite 
 - Author a whole suite with an AI — see the *From a Snapshot* tab.
 `;
 
-const FORMAT_MARKDOWN = `## Header
+const FORMAT_MARKDOWN = `## The file at a glance
 
-The document starts with \`format: ${QUESTION_YAML_FORMAT}\` and \`version: ${QUESTION_YAML_VERSION}\`. Both are required.
+One complete document: the header, a \`suite\` block carrying its board, and one question. Copy it into **Import Suite from YAML** and it validates.
+
+\`\`\`yaml
+format: ${QUESTION_YAML_FORMAT}
+version: ${QUESTION_YAML_VERSION}
+
+suite:
+  name: "Valkyrie at Dlvl 11"
+  description: |
+    One decision on one board.
+  snapshot:
+    name: "Valkyrie dlvl 11"
+    text: |
+      GnollHack 4.2.0 Build 47
+      Dlvl:11 $:842 HP:14(58) Pw:22(22) AC:2 Xp:9/4210 T:3120 Hungry
+      f - 2 uncursed potions of extra healing
+
+questions:
+  - difficulty: Simple
+    question: |
+      A jackal is next to me and I am low on health. What should I do this turn?
+    rubric: |
+      **BOARD FACTS**
+      - The status line reads "HP:14(58)".
+
+      **REQUIRED**
+      - Recommends drinking a potion of extra healing, or retreating, rather than trading blows.
+
+      **SOURCE** — board; C source: src/potion.c (extra healing)
+\`\`\`
+
+| Top-level key | Required | Holds |
+|---|---|---|
+| \`format\` | **yes** | Always \`${QUESTION_YAML_FORMAT}\`. |
+| \`version\` | **yes** | Always \`${QUESTION_YAML_VERSION}\`. |
+| \`suite\` | **yes** for a suite import | The suite's name, description and game snapshot. |
+| \`questions\` | **yes** | A non-empty list of questions. |
+
+Any key that is not listed on this tab is an error.
+
+## The header
+
+\`\`\`text
+format: ${QUESTION_YAML_FORMAT}
+version: ${QUESTION_YAML_VERSION}
+\`\`\`
+
+Both lines are required, exactly as written. A different \`format\` or a different \`version\` is refused before the rest of the document is read.
 
 ## The \`suite\` block
 
-- \`name\` — required for a suite import, 1–${MAX_SUITE_NAME_LENGTH} characters.
-- \`description\` — optional Markdown, best as a \`|\` block scalar.
-- \`snapshot\` — optional; a **mapping**, not a name. A document without it imports a suite with no board.
+| Key | Required | Notes |
+|---|---|---|
+| \`name\` | **yes** | 1–${MAX_SUITE_NAME_LENGTH} characters. A suite import always creates a new suite, so a taken name gets an *(Imported)* suffix rather than an error. |
+| \`description\` | no | Markdown. A block scalar keeps its line breaks. |
+| \`snapshot\` | no | A **mapping**, not a name. A document without it imports a suite with no board. |
+
+\`\`\`yaml
+suite:
+  name: "Hunger and Food"
+  description: |
+    Questions on hunger states and food safety. No board is needed
+    to answer them, so this suite carries no snapshot.
+\`\`\`
 
 ## The \`snapshot\` mapping
 
@@ -67,38 +124,114 @@ The document starts with \`format: ${QUESTION_YAML_FORMAT}\` and \`version: ${QU
 | \`sha256\` | no | 64 hexadecimal characters: the hash of the board this file was exported from. Every export writes it. A mismatch is only a **warning** on the review step — editing the board in the file is legitimate — and an agent-authored file simply leaves it out. |
 | \`text\` | **yes** | The board itself: flattened snapshot text, or a raw HTML dump, which the server flattens. It is cut at 60,000 characters, and the review step says so when it is. |
 
+These are the four keys an agent writes:
+
+\`\`\`yaml
+  snapshot:
+    name: "Valkyrie dlvl 11"
+    gnollhack_version: "4.2.0 Build 47"
+    notes: |
+      Exported with Export AI Snapshot; suite authored by an agent.
+    text: |
+      GnollHack 4.2.0 Build 47
+      Dlvl:11 $:842 HP:14(58) Pw:22(22) AC:2 Xp:9/4210 T:3120 Hungry
+\`\`\`
+
+It leaves out the two an export alone can know: \`sha256\`, the hash of the board the file came from, and \`captured_at\`, the moment the game wrote it. Both are optional, and a hash that no longer matches is a warning, never a refusal.
+
 ## Questions
 
-Question keys are \`id\`, \`difficulty\`, \`question\` and \`rubric\`; any other key is an error. A suite import ignores \`id\`.
+| Key | Required | Notes |
+|---|---|---|
+| \`id\` | no | Ignored by a suite import: every question in the file is created as new. |
+| \`difficulty\` | no | **Simple**, **Intermediate** or **Advanced**. Absent, the question becomes Simple, silently. |
+| \`question\` | **yes** | The question text, phrased as a player would ask it. |
+| \`rubric\` | no | Allowed to be absent, but the assessor has nothing to charge without one. |
 
-\`difficulty\` is **Simple**, **Intermediate** or **Advanced**. Two things to know about it:
+\`\`\`yaml
+questions:
+  - difficulty: Intermediate
+    question: |
+      I am Fainting and my prayer timeout is unknown. Is praying worth the risk?
+    rubric: |
+      **REQUIRED**
+      - Fainting is a major trouble, so a successful prayer fixes it.
 
-- A question with **no** \`difficulty\` key becomes **Simple**, silently.
-- This is the **authored** band only. The **AI-assessed** difficulty — 1–100, with Simple 1–35, Intermediate 36–70 and Advanced 71–100 — is what weights the Intelligence Index, the assessor is never shown the authored band, and the launcher refuses to run the suite until **Assess Difficulty** has rated every question.
+      **CRITICAL ERROR**
+      - Claims prayer is always safe regardless of timeout.
+
+      **SOURCE** — C source: src/pray.c (prayer troubles and timeout)
+\`\`\`
+
+Any other question key is an error.
+
+### Difficulty: authored band and AI-assessed score
+
+| Band (\`difficulty\`) | AI-assessed range |
+|---|---|
+| Simple | 1–35 |
+| Intermediate | 36–70 |
+| Advanced | 71–100 |
+
+- The key in the file is the **authored** band only.
+- The **AI-assessed** score is what weights the Intelligence Index, and the assessor is never shown the authored band.
+- The launcher refuses the suite until **Assess Difficulty** has rated every question.
 
 ## Block scalars and indentation
 
-- Write \`description\`, \`notes\`, \`question\`, \`rubric\` and \`text\` as \`|\` block scalars.
+- Write \`description\`, \`notes\`, \`question\`, \`rubric\` and \`text\` as block scalars — the \`key:\` line followed by a bar.
 - **Indent every line of a block by the same number of spaces.** A map row's own leading spaces come *after* that indent and are kept, which is what keeps the column ruler aligned.
-- Indent with spaces, never tabs. Inside a block anything goes: Markdown headings, code fences, \`---\` lines, and a \`#\` line, which is text there and not a comment.
-- An uploaded file may be at most 2 MB.
+- Indent with spaces, never tabs.
+- Inside a block anything goes: Markdown headings, code fences, \`---\` lines, and a \`#\` line, which is text there and not a comment.
+
+**Right** — every line of the block sits at the same six spaces, and the map's own spaces survive on top of them:
+
+\`\`\`yaml
+    text: |
+      GnollHack 4.2.0 Build 47
+
+      Map grid:
+           0         1
+           0123456789012345
+        8  |..........@...|
+\`\`\`
+
+**Wrong** — the third line is indented less than the first, which ends the block; everything after it is read as YAML and fails:
+
+\`\`\`yaml
+    text: |
+      GnollHack 4.2.0 Build 47
+    Map grid:
+\`\`\`
+
+## Limits
+
+| Limit | Value |
+|---|---|
+| Uploaded file | 2 MB |
+| Questions per suite | 50 by default |
+| \`suite.name\` | ${MAX_SUITE_NAME_LENGTH} characters |
+| \`snapshot.name\` | ${MAX_SNAPSHOT_NAME_LENGTH} characters |
+| \`gnollhack_version\` | ${MAX_GNOLLHACK_VERSION_LENGTH} characters |
+| Board text | cut at 60,000 characters, reported on the review step |
 
 ## Reading a validation message
 
-A syntax error is reported as *Line N, column M: reason*. A schema error names its place, as in *\`suite.snapshot.text\` is required.* or *questions[3] (id 42): unknown key \`tier\`*. Fix every message: the import runs only when the whole document is valid.
+| Kind | Looks like | What to do |
+|---|---|---|
+| Syntax | *Line 14, column 7: bad indentation of a mapping entry* | Fix the YAML at that position; it is almost always indentation. |
+| Schema, document level | *\`suite.snapshot.text\` is required.* | Add or correct the named key. |
+| Schema, one question | *questions[3] (id 42): unknown key \`tier\`* | The index counts from 0; remove or rename the key. |
+
+Fix every message: the import runs only when the whole document is valid.
 `;
 
 const SNAPSHOT_MARKDOWN = `## From a game snapshot to a suite, in four steps
 
 1. **In GnollHack**: game menu → **Developer** → **Export AI Snapshot**, and save the \`.ai.html\` file somewhere outside any repository. A \`.snapshot.txt\` downloaded from the Snapshot Viewer works just as well.
-2. **In an agent session** that can read the repositories on disk — Claude Code, Antigravity or similar — paste the prompt below with the snapshot's path filled in. Overseer does not need to be running.
+2. **In an agent session** opened on the MobileGnollHackLogger repository — Claude Code, Antigravity or similar — paste the prompt from the **prompt builder**. Overseer does not need to be running.
 3. The agent **shows its count table**, then writes **one file**, \`benchmark-suite-<slug>.yaml\`, beside the snapshot.
 4. **Back here**: **Import Suite from YAML** → review → **Create suite** → **Assess Difficulty** on the new card. Optionally run Suite Health *Snapshot facts* and the citation check.
-
-Two ways to invoke the skill:
-
-- **Claude Code**: paste the prompt, or type \`/server-snapshot-suite-authoring <path to the snapshot>\`.
-- **Antigravity and others**: paste the prompt; it names the skill file to read.
 
 ## How many questions, and how many per band
 
@@ -111,22 +244,50 @@ Two ways to invoke the skill:
 | **Intermediate** | Multi-turn planning, risk and reward, resource combinations, companion handling, prayer safety, route and branch choices, identification risk. |
 | **Advanced** | Obscure engine interactions, damage or survival calculations, GnollHack versus NetHack divergences, deep inventory and spell synergy, edge-case escapes — each needing a mechanics point that can be cited to a source file. |
 
-3. **Total** = the candidates that survive, capped at **50**. The default target is **18**, and **12–24** is the sensible range. **Never pad**: every question costs a candidate call plus one or two assessor calls on *every* run.
-4. **Split** toward equal thirds — **6 / 6 / 6** — by trimming the largest band, never by promoting a question into a band it does not belong in. Keep at least **4** per band where the board supports it; otherwise keep what is real and say so.
+3. **Total** = the candidates that survive. **Never pad**: every question costs a candidate call plus one or two assessor calls on *every* run.
+4. **Split** toward equal thirds by trimming the largest band, never by promoting a question into a band it does not belong in. Where the board cannot fill a band, keep what is real and say so.
 5. The agent **reports the table before writing the YAML**. Counts you supply win.
 
-The prompt to paste is below and on the *For an AI* tab.
+| | |
+|---|---|
+| Default target | 18 |
+| Sensible range | 12–24 |
+| Cap | 50 |
+| Preferred split | 6 / 6 / 6 |
+| Minimum per band | 4, where the board supports it |
 `;
 
 /** The suite help's guide tabs; the Examples and For an AI tabs follow them in the dialog. */
 export const SUITE_GUIDE_TABS: ReadonlyArray<GuideTab> = [
-  { id: 'workflow', label: 'Workflow', markdown: WORKFLOW_MARKDOWN },
-  { id: 'format', label: 'Format', markdown: FORMAT_MARKDOWN },
-  { id: 'snapshot', label: 'From a Snapshot', markdown: SNAPSHOT_MARKDOWN }
+  {
+    id: 'workflow',
+    label: 'Workflow',
+    ingress: 'How a whole suite — its questions and its game board — leaves Overseer as one YAML file and comes back as a new suite.',
+    markdown: WORKFLOW_MARKDOWN
+  },
+  {
+    id: 'format',
+    label: 'Format',
+    ingress: 'Every key a suite file may contain, with a snippet for each part, the limits the importer enforces, and how to read its messages.',
+    markdown: FORMAT_MARKDOWN
+  },
+  {
+    id: 'snapshot',
+    label: 'From a Snapshot',
+    ingress: 'Turning a game snapshot exported from GnollHack into a finished suite, with an AI agent doing the writing.',
+    markdown: SNAPSHOT_MARKDOWN,
+    action: 'prompt-builder'
+  }
 ];
 
 /** Shown above the example accordion on the suite help's Examples tab. */
 export const SUITE_EXAMPLES_INTRO_MARKDOWN = `Copy or download an example, put your own text in it, and import it with **Import Suite from YAML** on this toolbar. Every one of these creates a *new* suite, so none of them can overwrite anything. Everything in these files is what the import expects, so edit the text and keep the shape.`;
+
+/** Shown above the example accordion on the suite help's Examples tab. Plain text. */
+export const SUITE_EXAMPLES_INGRESS = 'Four complete suite files to copy, edit and import.';
+
+/** Shown above the prompt builder on the suite help's For an AI tab. Plain text. */
+export const SUITE_AI_INGRESS = 'Fill in the fields and generate a prompt you can paste into Claude Code or Antigravity exactly as it is.';
 
 const EXAMPLE_BOARD = `      GnollHack 4.2.0 Build 47
       Game began 2026-09-16 09:12, snapshot at turn 3120.
@@ -355,21 +516,3 @@ questions:
 ];
 
 export const SUITE_AI_PROMPT_FILE_NAME = 'overseer-suite-from-snapshot-prompt.md';
-
-/**
- * The prompt an admin copies into an agent session. It names the skill by its invocable name and
- * by its path, so a harness that indexes skill descriptions and one that does not both reach it;
- * renaming either must change this text and `.agents/skills/server_snapshot_suite_authoring/`.
- */
-export const SUITE_AI_PROMPT = `Use the \`server-snapshot-suite-authoring\` skill of the MobileGnollHackLogger repository
-(\`.agents/skills/server_snapshot_suite_authoring/SKILL.md\` — read it in full if your harness has
-not loaded it) to create an Overseer benchmark suite YAML from this GnollHack AI snapshot.
-
-Snapshot file: <absolute path to the .ai.html or .snapshot.txt>
-Suite name: <optional — leave blank and propose one>
-Question counts: <optional — leave blank and propose them, e.g. 6 Simple / 6 Intermediate / 6 Advanced>
-
-Overseer is not running and you do not need it. Show me the count table before you write the
-questions. Write one file, \`benchmark-suite-<slug>.yaml\`, beside the snapshot and never inside a
-repository. If you cannot find the skill, stop and tell me; do not improvise the format.
-`;

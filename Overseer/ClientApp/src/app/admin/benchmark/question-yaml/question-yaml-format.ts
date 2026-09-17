@@ -720,12 +720,16 @@ export const AI_INSTRUCTIONS_FILE_NAME = 'overseer-benchmark-yaml-instructions.m
 // Guides
 // ---------------------------------------------------------------------------------------------
 
-/** One tab of a help dialog guide: its stable id, its label and its Markdown body. */
+/** One tab of a help dialog guide: its stable id, its label, its ingress and its Markdown body. */
 export interface GuideTab {
   /** Stable id, used in element ids. */
   id: string;
   label: string;
+  /** One or two plain-text sentences shown above the body: what this tab is for. */
+  ingress: string;
   markdown: string;
+  /** A control rendered between the ingress and the body. */
+  action?: 'prompt-builder';
 }
 
 export type HumanGuideTab = GuideTab & { id: 'workflow' | 'rules' | 'format' };
@@ -781,10 +785,31 @@ A syntax error is reported as *Line N, column M: reason*. A schema error names t
 
 /** The admin guide, one entry per help dialog tab. The AI instructions below are a fourth tab. */
 export const HUMAN_GUIDE_TABS: ReadonlyArray<HumanGuideTab> = [
-  { id: 'workflow', label: 'Workflow', markdown: WORKFLOW_MARKDOWN },
-  { id: 'rules', label: 'Replace or Create', markdown: RULES_MARKDOWN },
-  { id: 'format', label: 'Format', markdown: FORMAT_MARKDOWN }
+  {
+    id: 'workflow',
+    label: 'Workflow',
+    ingress: 'How questions travel out of Overseer as YAML and back in, and what each of the three import buttons does.',
+    markdown: WORKFLOW_MARKDOWN
+  },
+  {
+    id: 'rules',
+    label: 'Replace or Create',
+    ingress: 'How an import decides between replacing a question and creating one, and what a change costs you afterwards.',
+    markdown: RULES_MARKDOWN
+  },
+  {
+    id: 'format',
+    label: 'Format',
+    ingress: 'The keys a question document may contain, and how to read a validation message.',
+    markdown: FORMAT_MARKDOWN
+  }
 ];
+
+/** Shown above the example accordion on the help dialog's Examples tab. Plain text. */
+export const EXAMPLES_INGRESS = 'Ready-to-edit documents, one for each import situation.';
+
+/** Shown above the AI instructions on the help dialog's For an AI tab. Plain text. */
+export const AI_INGRESS = 'Instructions to hand to an AI chat together with an exported document, so that what it returns imports cleanly.';
 
 export interface YamlExample {
   /** Stable id: element ids, tooltip ids and the download file name derive from it. */

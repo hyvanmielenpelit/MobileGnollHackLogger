@@ -3,7 +3,7 @@ import { of, throwError } from 'rxjs';
 import { AdminBenchmarkService, RubricAuthoringGuidance } from '../../../services/admin-benchmark.service';
 import { QuestionYamlHelpDialogComponent } from './question-yaml-help-dialog.component';
 import { RUBRIC_GUIDANCE_UNAVAILABLE, YAML_EXAMPLES, buildAiInstructions } from './question-yaml-format';
-import { SUITE_AI_PROMPT, SUITE_YAML_EXAMPLES } from './suite-yaml-guide';
+import { SUITE_YAML_EXAMPLES } from './suite-yaml-guide';
 
 describe('QuestionYamlHelpDialogComponent', () => {
   let fixture: ComponentFixture<QuestionYamlHelpDialogComponent>;
@@ -66,6 +66,20 @@ describe('QuestionYamlHelpDialogComponent', () => {
     expect(tabButtons().filter(b => b.getAttribute('aria-selected') === 'true').length).toBe(1);
     expect(tabButtons().filter(b => b.getAttribute('tabindex') === '0').length).toBe(1);
     expect(host.querySelector('[role="tabpanel"]')!.getAttribute('aria-labelledby')).toBe('yaml-help-tab-workflow');
+  });
+
+  it('opens every tab of both variants with an ingress', () => {
+    for (const variant of ['questions', 'suite'] as const) {
+      component.variant = variant;
+      component.open();
+      for (const tab of component.tabs) {
+        component.selectTab(tab.id);
+        fixture.detectChanges();
+        expect(host.querySelector('.help-ingress')!.textContent!.trim())
+          .withContext(`${variant} / ${tab.id}`).not.toBe('');
+      }
+      component.close();
+    }
   });
 
   it('shows the AI instructions on the AI tab', () => {
@@ -233,23 +247,28 @@ describe('QuestionYamlHelpDialogComponent', () => {
       expect(host.querySelector('.help-ai-guidance-state')).toBeNull();
     });
 
-    it('shows the agent prompt on For an AI and on From a Snapshot, with a working copy button', async () => {
+    it('holds the prompt builder on For an AI, with no prompt until one is generated', () => {
       component.open();
-      for (const tab of ['ai', 'snapshot'] as const) {
-        component.selectTab(tab);
-        fixture.detectChanges();
-        expect(host.querySelector('.help-ai-text')!.textContent).toBe(SUITE_AI_PROMPT);
-        expect(host.querySelector('.help-ai-hint')!.textContent)
-          .toContain('Paste this into an agent session that can read the repositories');
+      component.selectTab('ai');
+      fixture.detectChanges();
+      expect(host.querySelector('app-suite-prompt-builder')).not.toBeNull();
+      expect(host.querySelector('.help-ai-text')).toBeNull();
+    });
 
-        await withClipboard(async writeText => {
-          (host.querySelector('.help-ai-actions .action-btn') as HTMLButtonElement).click();
-          await fixture.whenStable();
-          fixture.detectChanges();
-          expect(writeText).toHaveBeenCalledWith(SUITE_AI_PROMPT);
-          expect(host.querySelector('.help-copy-status')!.textContent).toBe('Copied');
-        });
-      }
+    it('jumps from From a Snapshot to the builder, moving focus with the selection', () => {
+      component.open();
+      component.selectTab('snapshot');
+      fixture.detectChanges();
+      expect(host.querySelector('app-suite-prompt-builder')).toBeNull();
+
+      const jump = host.querySelector<HTMLButtonElement>('.help-jump .btn-ghost')!;
+      expect(jump.textContent!.trim()).toBe('Open the prompt builder');
+      jump.click();
+      fixture.detectChanges();
+
+      expect(component.activeTab).toBe('ai');
+      expect(host.querySelector('app-suite-prompt-builder')).not.toBeNull();
+      expect(document.activeElement!.id).toBe('suite-yaml-help-tab-ai');
     });
 
     it('names its accordion apart from the question help and opens the first example', () => {

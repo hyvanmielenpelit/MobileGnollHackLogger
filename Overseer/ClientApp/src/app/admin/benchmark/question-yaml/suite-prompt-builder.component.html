@@ -1,0 +1,128 @@
+<form class="prompt-builder" novalidate (ngSubmit)="generate()">
+  <div class="builder-field">
+    <label [attr.for]="idPrefix + '-path'">Snapshot file</label>
+    <input type="text" class="gh-input" [id]="idPrefix + '-path'"
+           required autocomplete="off" spellcheck="false" autocapitalize="off"
+           [ngModel]="snapshotPath" [ngModelOptions]="{ standalone: true }"
+           (ngModelChange)="snapshotPath = $event; onFieldInput('snapshotPath')"
+           (blur)="onFieldBlur('snapshotPath')"
+           [attr.aria-describedby]="idPrefix + '-path-hint'"
+           [attr.aria-errormessage]="idPrefix + '-path-error'"
+           [attr.aria-invalid]="errors.snapshotPath ? 'true' : null">
+    <p class="builder-hint" [id]="idPrefix + '-path-hint'">The full path to the <code>.ai.html</code> or <code>.snapshot.txt</code> on the machine where the agent runs. Keep it outside every repository.</p>
+    @if (errors.snapshotPath) {
+      <p class="builder-error" [id]="idPrefix + '-path-error'">{{ errors.snapshotPath }}</p>
+    }
+    @if (showRelativePathHint) {
+      <p class="builder-advisory" [id]="idPrefix + '-path-advisory'" role="status">This does not look like a full path; the agent resolves a relative path against its working directory.</p>
+    }
+  </div>
+
+  <div class="builder-field">
+    <label [attr.for]="idPrefix + '-name'">Suite name <span class="builder-optional">(optional)</span></label>
+    <input type="text" class="gh-input" [id]="idPrefix + '-name'"
+           [attr.maxlength]="maxSuiteNameLength" autocomplete="off"
+           [ngModel]="suiteName" [ngModelOptions]="{ standalone: true }"
+           (ngModelChange)="suiteName = $event; onFieldInput('suiteName')"
+           (blur)="onFieldBlur('suiteName')"
+           [attr.aria-describedby]="idPrefix + '-name-hint'"
+           [attr.aria-errormessage]="idPrefix + '-name-error'"
+           [attr.aria-invalid]="errors.suiteName ? 'true' : null">
+    <p class="builder-hint" [id]="idPrefix + '-name-hint'">Leave empty and the agent proposes one.</p>
+    @if (suiteName.trim() !== '') {
+      <p class="builder-hint" [id]="idPrefix + '-name-file'">The agent will write <code>{{ outputFileName }}</code>.</p>
+    }
+    @if (errors.suiteName) {
+      <p class="builder-error" [id]="idPrefix + '-name-error'">{{ errors.suiteName }}</p>
+    }
+  </div>
+
+  <fieldset class="gh-fieldset builder-counts" [attr.aria-describedby]="idPrefix + '-counts-hint'">
+    <legend>Question counts</legend>
+    <p class="gh-fieldset-hint" [id]="idPrefix + '-counts-hint'">How many questions the suite holds, and how they split across the difficulty bands.</p>
+
+    <label class="builder-radio">
+      <input type="radio" [attr.name]="idPrefix + '-counts-mode'" value="propose" [id]="idPrefix + '-counts-propose'"
+             [checked]="countsMode === 'propose'" (change)="setCountsMode('propose')">
+      Let the agent propose them from the board
+    </label>
+    <label class="builder-radio">
+      <input type="radio" [attr.name]="idPrefix + '-counts-mode'" value="manual" [id]="idPrefix + '-counts-manual'"
+             [checked]="countsMode === 'manual'" (change)="setCountsMode('manual')">
+      Set them myself
+    </label>
+
+    @if (countsMode === 'manual') {
+      <div class="builder-count-grid">
+        <div class="builder-field">
+          <label [attr.for]="idPrefix + '-simple'">Simple</label>
+          <input type="number" class="gh-input" [id]="idPrefix + '-simple'"
+                 min="0" [attr.max]="maxQuestions" step="1" inputmode="numeric" required
+                 [ngModel]="simple" [ngModelOptions]="{ standalone: true }"
+                 (ngModelChange)="simple = $event; onFieldInput('counts')"
+                 (blur)="onFieldBlur('counts')"
+                 [attr.aria-errormessage]="idPrefix + '-counts-error'"
+                 [attr.aria-invalid]="errors.counts ? 'true' : null">
+        </div>
+        <div class="builder-field">
+          <label [attr.for]="idPrefix + '-intermediate'">Intermediate</label>
+          <input type="number" class="gh-input" [id]="idPrefix + '-intermediate'"
+                 min="0" [attr.max]="maxQuestions" step="1" inputmode="numeric" required
+                 [ngModel]="intermediate" [ngModelOptions]="{ standalone: true }"
+                 (ngModelChange)="intermediate = $event; onFieldInput('counts')"
+                 (blur)="onFieldBlur('counts')"
+                 [attr.aria-errormessage]="idPrefix + '-counts-error'"
+                 [attr.aria-invalid]="errors.counts ? 'true' : null">
+        </div>
+        <div class="builder-field">
+          <label [attr.for]="idPrefix + '-advanced'">Advanced</label>
+          <input type="number" class="gh-input" [id]="idPrefix + '-advanced'"
+                 min="0" [attr.max]="maxQuestions" step="1" inputmode="numeric" required
+                 [ngModel]="advanced" [ngModelOptions]="{ standalone: true }"
+                 (ngModelChange)="advanced = $event; onFieldInput('counts')"
+                 (blur)="onFieldBlur('counts')"
+                 [attr.aria-errormessage]="idPrefix + '-counts-error'"
+                 [attr.aria-invalid]="errors.counts ? 'true' : null">
+        </div>
+      </div>
+      <p class="builder-total" [id]="idPrefix + '-counts-total'" role="status" aria-live="polite">{{ total }} questions in total.</p>
+    }
+
+    @if (errors.counts) {
+      <p class="builder-error" [id]="idPrefix + '-counts-error'">{{ errors.counts }}</p>
+    }
+  </fieldset>
+
+  <div class="builder-field">
+    <label class="checkbox-label align-start">
+      <input type="checkbox" [id]="idPrefix + '-wait'"
+             [checked]="waitForGoAhead" (change)="setWaitForGoAhead($any($event.target).checked)"
+             [attr.aria-describedby]="idPrefix + '-wait-hint'">
+      Wait for my go-ahead after the count table
+    </label>
+    <p class="builder-hint" [id]="idPrefix + '-wait-hint'">The agent shows how many questions the board supports per band before writing them. Untick to let it run to the end unattended.</p>
+  </div>
+
+  <div class="builder-actions">
+    <button type="submit" class="btn-gh">Generate Prompt</button>
+    <span class="builder-status" [id]="idPrefix + '-status'" role="status" aria-live="polite">{{ status }}</span>
+  </div>
+</form>
+
+@if (prompt) {
+  <section #result class="builder-result" [attr.aria-labelledby]="idPrefix + '-result-title'">
+    <h4 [id]="idPrefix + '-result-title'">Your prompt</h4>
+    <div class="help-ai-actions">
+      <button type="button" class="btn-ghost" (click)="copyPrompt()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        Copy Prompt
+      </button>
+      <button type="button" class="btn-ghost" (click)="downloadPrompt()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="12" x2="12" y2="18"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+        Download Prompt
+      </button>
+      <span class="help-copy-status" role="status" aria-live="polite">{{ copyStatus }}</span>
+    </div>
+    <pre class="help-ai-text" tabindex="0">{{ prompt }}</pre>
+  </section>
+}

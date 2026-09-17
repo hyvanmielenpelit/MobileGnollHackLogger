@@ -6,8 +6,9 @@ import {
   validateForMode
 } from './question-yaml-format';
 import {
-  SUITE_AI_PROMPT,
+  SUITE_AI_INGRESS,
   SUITE_AI_PROMPT_FILE_NAME,
+  SUITE_EXAMPLES_INGRESS,
   SUITE_EXAMPLES_INTRO_MARKDOWN,
   SUITE_GUIDE_TABS,
   SUITE_YAML_EXAMPLES
@@ -20,14 +21,23 @@ function boardFactQuotes(rubric: string): string[] {
   return Array.from(section.matchAll(/"([^"]+)"/g)).map(m => m[1]);
 }
 
+/** The body of every fenced ```yaml block of a Markdown document. */
+function yamlBlocks(markdown: string): string[] {
+  return Array.from(markdown.matchAll(/^```yaml\n([\s\S]*?)^```$/gm)).map(m => m[1]);
+}
+
 describe('suite-yaml-guide', () => {
-  it('gives every guide tab a label and text, and opens on Workflow', () => {
+  it('gives every guide tab a label, an ingress and text, and opens on Workflow', () => {
     expect(SUITE_GUIDE_TABS.map(t => t.id)).toEqual(['workflow', 'format', 'snapshot']);
     expect(SUITE_GUIDE_TABS.map(t => t.label)).toEqual(['Workflow', 'Format', 'From a Snapshot']);
     for (const tab of SUITE_GUIDE_TABS) {
-      expect(tab.markdown.trim()).not.toBe('');
+      expect(tab.markdown.trim()).withContext(tab.id).not.toBe('');
+      expect(tab.ingress.trim()).withContext(tab.id).not.toBe('');
     }
+    expect(SUITE_GUIDE_TABS.filter(t => t.action === 'prompt-builder').map(t => t.id)).toEqual(['snapshot']);
     expect(SUITE_EXAMPLES_INTRO_MARKDOWN.trim()).not.toBe('');
+    expect(SUITE_EXAMPLES_INGRESS.trim()).not.toBe('');
+    expect(SUITE_AI_INGRESS.trim()).not.toBe('');
   });
 
   it('states the format rules the parser enforces on the Format tab', () => {
@@ -102,10 +112,34 @@ describe('suite-yaml-guide', () => {
       .toContain('Question ids in the file are ignored: a suite import always creates new questions.');
   });
 
-  it('names the skill, its path and the output file in the agent prompt', () => {
-    expect(SUITE_AI_PROMPT).toContain('server-snapshot-suite-authoring');
-    expect(SUITE_AI_PROMPT).toContain('.agents/skills/server_snapshot_suite_authoring/SKILL.md');
-    expect(SUITE_AI_PROMPT).toContain('benchmark-suite-<slug>.yaml');
+  it('names the file the prompt is downloaded as', () => {
     expect(SUITE_AI_PROMPT_FILE_NAME).toBe('overseer-suite-from-snapshot-prompt.md');
+  });
+
+  it('keeps every complete document on the Format tab importable as a suite', async () => {
+    const blocks = yamlBlocks(SUITE_GUIDE_TABS.find(t => t.id === 'format')!.markdown);
+    expect(blocks.length).toBeGreaterThan(3);
+
+    const documents = blocks.filter(b => b.startsWith('format:'));
+    expect(documents.length).toBeGreaterThan(0);
+    for (const document of documents) {
+      const result = await parseQuestionYaml(document);
+      expect(result.errors).withContext(document).toEqual([]);
+      expect(validateForMode(result, 'suite', []).errors).withContext(document).toEqual([]);
+    }
+  });
+
+  it('names neither the skill file nor a slash command anywhere in the guide text', () => {
+    const texts = [
+      ...SUITE_GUIDE_TABS.map(t => t.markdown),
+      ...SUITE_GUIDE_TABS.map(t => t.ingress),
+      SUITE_EXAMPLES_INTRO_MARKDOWN,
+      SUITE_EXAMPLES_INGRESS,
+      SUITE_AI_INGRESS
+    ];
+    for (const text of texts) {
+      expect(text).not.toContain('/server-snapshot-suite-authoring');
+      expect(text).not.toContain('.agents/');
+    }
   });
 });

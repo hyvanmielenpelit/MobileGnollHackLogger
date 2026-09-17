@@ -1,7 +1,7 @@
 @use '../benchmark-dialog-frame' as frame;
 
 .gh-dialog.benchmark-question-help-dialog {
-  @include frame.frame(880px, true);
+  @include frame.frame(960px, true);
 }
 
 /* The tab row is pinned between the header and the body, so only the body scrolls. */
@@ -15,15 +15,27 @@
   }
 }
 
-.help-guide {
+/* What the tab is for, above its body. Plain text, so it is interpolated rather than injected. */
+.help-ingress {
+  margin: 0 0 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-glass);
+  font-size: 1.05rem;
   line-height: 1.55;
+  color: #ddd;
+  max-width: 78ch;
+  text-wrap: pretty;
+}
+
+.help-jump {
+  margin: 0 0 24px;
 }
 
 .help-example-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-top: 16px;
+  gap: 14px;
+  margin-top: 20px;
 }
 
 .help-example > summary {
@@ -44,11 +56,11 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
 .help-ai-hint {
-  margin: 0 0 12px;
+  margin: 0 0 16px;
   font-size: 0.9em;
   line-height: 1.45;
   color: #aaa;
@@ -64,8 +76,8 @@
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 12.5px;
-  line-height: 1.45;
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 @media (max-width: 600px) {

@@ -28,8 +28,8 @@
       </div>
     </div>
 
-    <!-- The prompt toolbar and text, shown on the For an AI tab and, for the suite variant, under
-         the guide Markdown of the tab that walks through the workflow it belongs to. -->
+    <!-- The AI instructions toolbar and text of the questions variant's For an AI tab. The suite
+         variant builds its prompt with app-suite-prompt-builder instead. -->
     <ng-template #promptBlock>
       <div class="help-ai">
         <div class="help-ai-actions">
@@ -65,18 +65,24 @@
 
     <div #body class="dialog-body" role="tabpanel" [id]="idPrefix + '-panel'"
          [attr.aria-labelledby]="idPrefix + '-tab-' + activeTab" tabindex="0">
+      <p class="help-ingress">{{ activeIngress }}</p>
+
       @if (activeTab === 'ai') {
-        <ng-container *ngTemplateOutlet="promptBlock"></ng-container>
+        @if (isSuite) {
+          <app-suite-prompt-builder [idPrefix]="idPrefix + '-builder'" />
+        } @else {
+          <ng-container *ngTemplateOutlet="promptBlock"></ng-container>
+        }
       } @else if (activeTab === 'examples') {
         <div class="help-examples">
-          <div class="markdown-body help-guide" [innerHTML]="examplesIntro | markdown"></div>
+          <div class="markdown-body help-guide gh-help-prose" [innerHTML]="examplesIntro | markdown"></div>
           <!-- An exclusive accordion: the shared name lets the browser keep one example open. -->
           <div class="help-example-list">
             @for (ex of examples; track ex.id; let i = $index) {
               <details class="gh-disclosure help-example" [attr.name]="idPrefix + '-example'" [open]="i === 0">
                 <summary>{{ ex.title }}</summary>
                 <div class="gh-disclosure-body">
-                  <div class="markdown-body help-example-intro" [innerHTML]="ex.intro | markdown"></div>
+                  <div class="markdown-body help-example-intro gh-help-prose" [innerHTML]="ex.intro | markdown"></div>
                   <div class="help-ai-actions">
                     <button type="button" class="action-btn" (click)="copyExample(ex)"
                             [attr.aria-label]="'Copy example ' + ex.title + ' to the clipboard'"
@@ -103,10 +109,12 @@
           </div>
         </div>
       } @else if (activeGuide; as guide) {
-        <div class="markdown-body help-guide" [innerHTML]="guide.markdown | markdown"></div>
-        @if (activeTab === promptTabId) {
-          <ng-container *ngTemplateOutlet="promptBlock"></ng-container>
+        @if (guide.action === 'prompt-builder') {
+          <div class="help-jump">
+            <button type="button" class="btn-ghost" (click)="openPromptBuilder()">Open the prompt builder</button>
+          </div>
         }
+        <div class="markdown-body help-guide gh-help-prose" [innerHTML]="guide.markdown | markdown"></div>
       }
     </div>
 

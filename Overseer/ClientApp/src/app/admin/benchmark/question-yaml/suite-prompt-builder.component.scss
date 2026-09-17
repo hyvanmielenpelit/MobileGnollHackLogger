@@ -1,0 +1,139 @@
+/* Layout only: the themed controls (.btn-gh, .btn-ghost, .gh-input, .gh-fieldset, .checkbox-label)
+   come from the global stylesheet. */
+
+.prompt-builder {
+  display: grid;
+  gap: 20px;
+}
+
+.builder-field {
+  display: grid;
+  gap: 6px;
+
+  > label {
+    font-weight: 600;
+  }
+
+  .gh-input {
+    width: 100%;
+    font-size: 1rem;
+    min-height: 44px;
+  }
+}
+
+.builder-optional {
+  font-weight: 400;
+  color: #aaa;
+}
+
+.builder-hint {
+  margin: 0;
+  font-size: 0.9em;
+  line-height: 1.45;
+  color: #aaa;
+}
+
+/* Paired with the border colour below, so the message is never the only signal. */
+.builder-error {
+  margin: 0;
+  font-size: 0.9em;
+  line-height: 1.45;
+  color: var(--color-error);
+}
+
+.builder-advisory {
+  margin: 0;
+  font-size: 0.9em;
+  line-height: 1.45;
+  color: var(--color-warning);
+}
+
+.gh-input:user-invalid,
+.gh-input[aria-invalid="true"] {
+  border-color: var(--color-error);
+}
+
+.builder-counts {
+  display: grid;
+  gap: 12px;
+}
+
+.builder-radio {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+
+  input[type="radio"] {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    accent-color: var(--primary-color);
+    cursor: pointer;
+    margin: 0;
+  }
+}
+
+.builder-count-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+}
+
+.builder-total {
+  margin: 0;
+  font-size: 0.9em;
+  color: #ddd;
+}
+
+.builder-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.builder-status {
+  font-size: 0.9em;
+  color: #aaa;
+}
+
+.builder-result {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-glass);
+
+  > h4 {
+    margin: 0 0 12px;
+    font-family: "Cinzel", serif;
+    color: var(--title-color);
+  }
+}
+
+.help-ai-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.help-copy-status {
+  font-size: 12px;
+  color: #aaa;
+}
+
+/* Grows with its content: the dialog body is the only scroller. */
+.help-ai-text {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.55;
+}

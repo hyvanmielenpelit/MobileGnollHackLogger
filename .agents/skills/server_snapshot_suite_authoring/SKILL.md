@@ -17,21 +17,34 @@ description: >-
 
 ## 0. How This Skill Is Invoked
 
-- **Claude Code** — by description match, or explicitly:
-  `/server-snapshot-suite-authoring <path to the snapshot>`.
-- **Antigravity and other harnesses** — through the prompt on Overseer's *Suite Import/Export
-  Help* dialog (*From a Snapshot* and *For an AI* tabs), which names this file by path.
+**By name, in every harness** — never by path. Where the Claude stub is indexed the name is
+`server-snapshot-suite-authoring`; where `.agents/skills/` is discovered directly it is
+`server_snapshot_suite_authoring`.
 
-That prompt lives in
-`Overseer/ClientApp/src/app/admin/benchmark/question-yaml/suite-yaml-guide.ts`
-(`SUITE_AI_PROMPT`) and quotes both this skill's invocable name and its path, and
-`suite-yaml-guide.spec.ts` pins them. **Renaming this skill or moving this file must change that
-constant too**, or the prompt sends the next session looking for something that is not there.
+The prompt that invokes it comes from the **prompt builder** on Overseer's *Suite YAML Import and
+Export* help dialog (*For an AI* tab; the *From a Snapshot* tab has a button that jumps to it).
+It is assembled by `buildSuiteAgentPrompt` in
+`Overseer/ClientApp/src/app/admin/benchmark/question-yaml/suite-agent-prompt.ts`, which names this
+skill by both names and **by no path**, and `suite-agent-prompt.spec.ts` pins both. **Renaming this
+skill must change `SKILL_NAME` and `SKILL_CANONICAL_NAME` there**, or the prompt sends the next
+session looking for something that is not there.
+
+In Claude Code, `/server-snapshot-suite-authoring <path to the snapshot>` also works and takes
+every default below.
 
 ## 1. Inputs, Output, Boundaries
 
 **Inputs.** The path to a snapshot file; optionally a suite name; optionally the question counts.
 Nothing else is required, and **Overseer does not need to be running**.
+
+The prompt builder writes them as a line-oriented block, so both ends agree on the wording:
+
+| Prompt line | Meaning |
+|---|---|
+| `Snapshot file:` | The path. Required. |
+| `Suite name:` | A name, or `propose one`. |
+| `Question counts:` | `S Simple / I Intermediate / A Advanced`, or `propose them from the board`. Supplied counts win (§ 3.5). |
+| `Count table:` | `…wait for my go-ahead…` is the § 3.5 default. `…continue without waiting…` is an explicit instruction from the user to report the table and carry on; honour it. |
 
 **Output.** Exactly **one** file, `benchmark-suite-<slug>.yaml`, written **beside the snapshot**.
 The slug is the suite name lower-cased and reduced to `[a-z0-9-]`, as `suiteSlug` in
@@ -103,8 +116,9 @@ than working around it.
    over one or two items are noise. Where the board cannot fill a band, keep what is real.
 5. **Report the table before writing anything.** Show the candidates per band and the proposed
    total, then wait for the go-ahead — unless the counts were supplied in the request, in which
-   case they win and the table is reported for information. Say plainly which band the board could
-   not fill, and why.
+   case they win and the table is reported for information, or the request says to continue
+   without waiting, in which case report the table and carry on. Say plainly which band the board
+   could not fill, and why.
 
 ## 4. Write the Questions
 
