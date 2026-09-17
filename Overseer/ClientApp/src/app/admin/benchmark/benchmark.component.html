@@ -1066,6 +1066,10 @@
           <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
           Import Suite from YAML
         </button>
+        <button type="button" class="btn-ghost" (click)="openSnapshotSuiteWizard()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+          Snapshot Suite Wizard
+        </button>
         <button type="button" class="action-btn" (click)="openSuiteYamlHelp()"
                 aria-label="Open suite YAML import and export help"
                 [attr.interestfor]="'tip-suite-yaml-help'"
@@ -1127,7 +1131,7 @@
               </div>
               <div class="suite-card-export">
                 <button type="button" class="action-btn" (click)="downloadSuiteYaml(suite)"
-                        [attr.aria-disabled]="suite.questionCount === 0 ? 'true' : null"
+                        [attr.aria-disabled]="canExportSuite(suite) ? null : 'true'"
                         [attr.aria-label]="'Download suite ' + suite.name + ' as YAML'"
                         [attr.interestfor]="'tip-suite-yaml-dl-' + suite.id"
                         [attr.style]="'anchor-name: --tip-suite-yaml-dl-' + suite.id">
@@ -1136,7 +1140,7 @@
                 <div popover="hint" class="gh-tooltip" [id]="'tip-suite-yaml-dl-' + suite.id"
                      [attr.style]="'position-anchor: --tip-suite-yaml-dl-' + suite.id">Download Suite as YAML</div>
                 <button type="button" class="action-btn" (click)="copySuiteYaml(suite)"
-                        [attr.aria-disabled]="suite.questionCount === 0 ? 'true' : null"
+                        [attr.aria-disabled]="canExportSuite(suite) ? null : 'true'"
                         [attr.aria-label]="'Copy suite ' + suite.name + ' as YAML to the clipboard'"
                         [attr.interestfor]="'tip-suite-yaml-cp-' + suite.id"
                         [attr.style]="'anchor-name: --tip-suite-yaml-cp-' + suite.id">
@@ -4118,10 +4122,11 @@
                      (snapshotDeleted)="onSnapshotDeleted($event)"></app-snapshot-viewer>
 <app-snapshot-upload-dialog #snapshotUploadDialog (uploaded)="onSnapshotUploaded($event)" />
 
-<!-- YAML import and help. Opened from Manage Questions and Manage Suites, they stack above the
-     page in the top layer. The two help instances are one component in its two variants, which
-     keep their element ids apart; the import dialog's help link routes to the one that matches the
-     import it was opened for. -->
+<!-- YAML import, help and the Snapshot Suite Wizard. Opened from Manage Questions and Manage
+     Suites, they stack above the page in the top layer. The two help instances are one component in
+     its two variants, which keep their element ids apart; the import dialog's help link routes to
+     the one that matches the import it was opened for. The wizard stacks only the difficulty
+     assessor, Edit suite and the suite help above itself. -->
 <app-question-yaml-import-dialog #questionYamlImportDialog
                                  [suite]="currentSuiteForQuestions"
                                  [existing]="questions"
@@ -4130,7 +4135,16 @@
                                  (suiteImported)="onSuiteImported($event)"
                                  (helpRequested)="onYamlHelpRequested()" />
 <app-question-yaml-help-dialog #questionYamlHelpDialog />
-<app-question-yaml-help-dialog #suiteYamlHelpDialog variant="suite" />
+<app-question-yaml-help-dialog #suiteYamlHelpDialog variant="suite"
+                               (wizardRequested)="onSuiteWizardRequestedFromHelp()" />
+<app-snapshot-suite-wizard #snapshotSuiteWizard
+                           [suites]="suites"
+                           (downloadSuite)="downloadSuiteYaml($event)"
+                           (imported)="onQuestionsImported($event)"
+                           (suiteImported)="onSuiteImported($event)"
+                           (helpRequested)="openSuiteYamlHelp()"
+                           (assessRequested)="onWizardAssessRequested($event)"
+                           (editSuiteRequested)="onWizardEditSuiteRequested($event)" />
 
 <!-- QUESTION GENERATION DIALOG -->
 <app-question-generation-dialog

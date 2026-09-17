@@ -144,7 +144,8 @@ function serialize(
     }
   }
 
-  out.push('', 'questions:');
+  // An empty list is written as a flow sequence: a bare `questions:` would read back as null.
+  out.push('', questions.length === 0 ? 'questions: []' : 'questions:');
   questions.forEach((q, i) => {
     if (i > 0) {
       out.push('');
@@ -484,7 +485,8 @@ export function validateForMode(
   result: ParseResult,
   mode: ImportMode,
   existing: BenchmarkQuestionDto[],
-  target?: BenchmarkQuestionDto
+  target?: BenchmarkQuestionDto,
+  openSuiteName?: string | null
 ): { errors: ParseIssue[]; notices: string[] } {
   const errors: ParseIssue[] = [];
   const notices: string[] = [];
@@ -543,6 +545,9 @@ export function validateForMode(
     }
     if (result.suite) {
       notices.push('The `suite` block is ignored: this import changes questions of the open suite only.');
+      if (openSuiteName && result.suite.name && result.suite.name !== openSuiteName) {
+        notices.push(`This file names suite "${result.suite.name}", but you are importing into "${openSuiteName}".`);
+      }
     }
     return { errors, notices };
   }
@@ -729,7 +734,7 @@ export interface GuideTab {
   ingress: string;
   markdown: string;
   /** A control rendered between the ingress and the body. */
-  action?: 'prompt-builder';
+  action?: 'wizard';
 }
 
 export type HumanGuideTab = GuideTab & { id: 'workflow' | 'rules' | 'format' };

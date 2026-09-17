@@ -1,0 +1,172 @@
+@use '../benchmark-dialog-frame' as frame;
+
+/* Layout only: buttons, the stepper, radios, fieldsets and disclosures are global. */
+
+.gh-dialog.snapshot-suite-wizard {
+  @include frame.frame(960px, true);
+
+  .dialog-footer .wizard-back {
+    margin-inline-end: auto;
+  }
+}
+
+.wizard-checklist {
+  margin-block-end: 20px;
+
+  .gh-disclosure-body app-code-block {
+    margin-block: 4px 0;
+  }
+}
+
+.wizard-step-heading {
+  margin: 0 0 14px;
+  font-family: "Cinzel", serif;
+  color: var(--primary-color);
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 3px;
+  }
+}
+
+.wizard-step-error {
+  margin: 0 0 14px;
+}
+
+.wizard-notice {
+  margin: 0 0 14px;
+}
+
+.wizard-routes {
+  display: grid;
+  gap: 14px;
+}
+
+.wizard-route {
+  display: grid;
+  gap: 4px;
+
+  .builder-hint {
+    padding-inline-start: 28px;
+  }
+}
+
+.wizard-suite-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  margin-inline-start: 28px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  min-width: 0;
+
+  .builder-radio {
+    align-items: flex-start;
+    overflow-wrap: anywhere;
+
+    input[type="radio"] {
+      margin-top: 2px;
+    }
+  }
+
+  .builder-hint {
+    padding-inline-start: 28px;
+  }
+}
+
+.wizard-suite-row {
+  display: grid;
+  gap: 2px;
+}
+
+.wizard-empty {
+  margin: 0;
+  margin-inline-start: 28px;
+}
+
+.wizard-field {
+  display: grid;
+  gap: 6px;
+  margin-block-end: 20px;
+
+  > label {
+    font-weight: 600;
+  }
+
+  > .btn-ghost {
+    justify-self: start;
+  }
+
+  .gh-input {
+    width: 100%;
+    min-height: 44px;
+  }
+}
+
+.builder-hint {
+  margin: 0;
+  font-size: 0.9em;
+  line-height: 1.45;
+  color: #aaa;
+}
+
+.builder-optional {
+  font-weight: 400;
+  color: #aaa;
+}
+
+.wizard-status {
+  margin: 0;
+  font-size: 0.9em;
+  line-height: 1.45;
+  color: #ddd;
+}
+
+.wizard-status-warning {
+  color: var(--color-warning);
+}
+
+.wizard-after-prompt {
+  margin-block-start: 12px;
+}
+
+.wizard-lead {
+  margin: 0 0 14px;
+  overflow-wrap: anywhere;
+}
+
+.wizard-assess {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  margin-block-start: 18px;
+  padding-block-start: 16px;
+  border-top: 1px solid var(--border-glass);
+
+  p {
+    margin: 0;
+  }
+}
+
+.wizard-edit-suite {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.wizard-resume {
+  display: grid;
+  gap: 12px;
+
+  p {
+    margin: 0;
+  }
+}
+
+.wizard-resume-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}

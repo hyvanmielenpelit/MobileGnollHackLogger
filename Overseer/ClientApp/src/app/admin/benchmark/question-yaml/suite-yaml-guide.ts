@@ -12,7 +12,8 @@ import {
 /**
  * The content of the Manage Suites help dialog: the whole-suite YAML workflow, the format with its
  * `suite.snapshot` mapping, authoring a suite from an exported AI snapshot, and ready-to-edit
- * examples. The agent prompt of the *AI Prompt* tab is assembled in `suite-agent-prompt.ts`.
+ * examples. The agent prompt is assembled in `suite-agent-prompt.ts` and built in the Snapshot Suite
+ * Wizard; the *AI Prompt* tab points there.
  *
  * The questions help (`question-yaml-format.ts`) owns the per-question rules; this file states only
  * what is specific to a whole suite. Everything here is static: the suite variant of the help
@@ -21,7 +22,7 @@ import {
 
 const WORKFLOW_MARKDOWN = `## Download, edit, import
 
-1. **Download** a suite with the two icon buttons on its card: **Download Suite as YAML** and **Copy Suite as YAML to Clipboard**. Both are inert while the suite has no questions.
+1. **Download** a suite with the two icon buttons on its card: **Download Suite as YAML** and **Copy Suite as YAML to Clipboard**. Both are inert only while the suite has neither questions nor a game snapshot. A snapshot suite with no questions yet downloads with \`questions: []\`: that file is for an agent to write questions against, and does not import as it is.
 2. The file holds the suite's name and description, the \`snapshot\` mapping for a snapshot suite, and every question with its \`id\`, \`difficulty\`, \`question\` and \`rubric\`. It is named \`benchmark-suite-<slug>.yaml\`.
 3. **Import Suite from YAML** on this toolbar takes it back: **Validate** checks the whole document, **Review changes** shows the new suite, what happens to the game snapshot and every question, and **Create suite** writes all of it at once.
 
@@ -226,12 +227,26 @@ Any other question key is an error.
 Fix every message: the import runs only when the whole document is valid.
 `;
 
-const SNAPSHOT_MARKDOWN = `## From a game snapshot to a suite, in four steps
+const SNAPSHOT_MARKDOWN = `## Use the Snapshot Suite Wizard
 
-1. **In GnollHack**: game menu → **Developer** → **Export AI Snapshot**, and save the \`.ai.html\` file somewhere outside any repository. A \`.snapshot.txt\` downloaded from the Snapshot Viewer works just as well.
-2. **In an agent session** opened on the MobileGnollHackLogger repository — Claude Code, Antigravity or similar — paste the prompt from the **prompt builder**. Overseer does not need to be running.
-3. The agent **shows its count table**, then writes **one file**, \`benchmark-suite-<slug>.yaml\`, beside the snapshot.
-4. **Back here**: **Import Suite from YAML** → review → **Create suite** → **Assess Difficulty** on the new card. Optionally run Suite Health *Snapshot facts* and the citation check.
+The **Snapshot Suite Wizard** on this toolbar walks through every step below, generates the agent prompt, and imports the agent's file itself — checking that it does what the route is for before anything is written. It remembers where you are, so you can close it while the agent works.
+
+## Two routes, by where the board is
+
+| The game snapshot is… | The agent… | The wizard's import… |
+|---|---|---|
+| **Attached to a suite in Overseer** | reads the suite YAML the wizard downloads, and writes \`benchmark-questions-<slug>.yaml\` | **adds** the new questions to that suite; its name, description, snapshot and existing questions stay as they are |
+| **A snapshot file from GnollHack** | reads the \`.ai.html\` or \`.snapshot.txt\`, and writes \`benchmark-suite-<slug>.yaml\` | **creates** a new suite with the snapshot attached |
+
+In both routes:
+
+1. **Get the file** the agent reads — Download Suite YAML in the wizard, or *Developer → Export AI Snapshot* in GnollHack — and keep it outside every repository.
+2. **Paste its full path** into the wizard. A browser cannot see where a file is on disk.
+3. **In an agent session** opened on the MobileGnollHackLogger repository — Claude Code, Antigravity or similar — paste the prompt the wizard generates. Overseer does not need to be running.
+4. The agent **shows its count table**, then writes **one file** beside yours.
+5. **Back in the wizard**: upload that file, read the checks, confirm, and import. Then **Assess Difficulty**. Optionally run Suite Health *Snapshot facts* and the citation check.
+
+The wizard refuses a file that would replace an existing question, and a new suite without a board. Both remain possible outside it: **Import Questions from YAML** in Manage Questions, and **Import Suite from YAML** on this toolbar.
 
 ## How many questions, and how many per band
 
@@ -274,9 +289,9 @@ export const SUITE_GUIDE_TABS: ReadonlyArray<GuideTab> = [
   {
     id: 'snapshot',
     label: 'From a Snapshot',
-    ingress: 'Turning a game snapshot exported from GnollHack into a finished suite, with an AI agent doing the writing.',
+    ingress: 'Turning a game snapshot into finished questions, with an AI agent doing the writing and the Snapshot Suite Wizard doing the rest.',
     markdown: SNAPSHOT_MARKDOWN,
-    action: 'prompt-builder'
+    action: 'wizard'
   }
 ];
 
@@ -286,8 +301,8 @@ export const SUITE_EXAMPLES_INTRO_MARKDOWN = `Copy or download an example, put y
 /** Shown above the example accordion on the suite help's Examples tab. Plain text. */
 export const SUITE_EXAMPLES_INGRESS = 'Four complete suite files to copy, edit and import.';
 
-/** Shown above the prompt builder on the suite help's AI Prompt tab. Plain text. */
-export const SUITE_AI_INGRESS = 'Fill in the fields and generate a prompt you can paste into Claude Code or Antigravity exactly as it is.';
+/** Shown above the wizard button and the checklist on the suite help's AI Prompt tab. Plain text. */
+export const SUITE_AI_INGRESS = 'The Snapshot Suite Wizard builds the prompt for Claude Code or Antigravity and imports what the agent writes. The same steps are below as a checklist to keep beside you.';
 
 const EXAMPLE_BOARD = `      GnollHack 4.2.0 Build 47
       Game began 2026-09-16 09:12, snapshot at turn 3120.

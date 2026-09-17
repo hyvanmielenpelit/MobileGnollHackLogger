@@ -74,6 +74,7 @@ import { ProviderBadgeComponent } from '../../shared/provider-badge/provider-bad
 import { Observable, catchError, firstValueFrom, forkJoin, from, map, of, switchMap } from 'rxjs';
 import { QuestionYamlImportDialogComponent } from './question-yaml/question-yaml-import-dialog.component';
 import { QuestionYamlHelpDialogComponent } from './question-yaml/question-yaml-help-dialog.component';
+import { SnapshotSuiteWizardComponent } from './question-yaml/snapshot-suite-wizard.component';
 import {
   ImportMode,
   SnapshotExport,
@@ -236,7 +237,8 @@ interface BenchmarkRunSettings {
     QuestionGenerationDialogComponent, SuiteDescriptionGenerationDialogComponent,
     SortHeaderComponent, TablePagerComponent, ModelComparisonComponent,
     ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, ProviderBadgeComponent,
-    QuestionYamlImportDialogComponent, QuestionYamlHelpDialogComponent, SnapshotUploadDialogComponent
+    QuestionYamlImportDialogComponent, QuestionYamlHelpDialogComponent, SnapshotUploadDialogComponent,
+    SnapshotSuiteWizardComponent
   ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
@@ -281,6 +283,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   @ViewChild('questionYamlImportDialog') questionYamlImportDialog?: QuestionYamlImportDialogComponent;
   @ViewChild('questionYamlHelpDialog') questionYamlHelpDialog?: QuestionYamlHelpDialogComponent;
   @ViewChild('suiteYamlHelpDialog') suiteYamlHelpDialog?: QuestionYamlHelpDialogComponent;
+  @ViewChild('snapshotSuiteWizard') snapshotSuiteWizard?: SnapshotSuiteWizardComponent;
   @ViewChild('snapshotUploadDialog') snapshotUploadDialog?: SnapshotUploadDialogComponent;
   suiteHealthInitialTab: SuiteHealthTab = 'items';
 
@@ -6858,9 +6861,19 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
+  /** A suite can be exported once it has questions or a snapshot; a questionless file is for an agent. */
+  canExportSuite(suite: BenchmarkSuiteDto): boolean {
+    return suite.questionCount > 0 || !!suite.gameSnapshotId;
+  }
+
+  /** The questions of a suite for an export; a suite without any needs no request. */
+  private questionsForExport(suite: BenchmarkSuiteDto): Observable<BenchmarkQuestionDto[]> {
+    return suite.questionCount > 0 ? this.benchmarkService.getQuestions(suite.id) : of([]);
+  }
+
   downloadSuiteYaml(suite: BenchmarkSuiteDto): void {
-    if (suite.questionCount === 0) return;
-    forkJoin([this.benchmarkService.getQuestions(suite.id), this.snapshotForExport(suite)]).subscribe({
+    if (!this.canExportSuite(suite)) return;
+    forkJoin([this.questionsForExport(suite), this.snapshotForExport(suite)]).subscribe({
       next: ([questions, exported]) => {
         downloadTextFile(suiteYamlFileName(suite.name), serializeSuiteYaml(suite, questions, exported.snapshot));
         if (exported.failed) {
@@ -6873,10 +6886,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /* The clipboard write is issued inside the click, before the questions arrive. */
   async copySuiteYaml(suite: BenchmarkSuiteDto): Promise<void> {
-    if (suite.questionCount === 0) return;
+    if (!this.canExportSuite(suite)) return;
     let snapshotFailed = false;
     const text = firstValueFrom(
-      forkJoin([this.benchmarkService.getQuestions(suite.id), this.snapshotForExport(suite)]).pipe(map(([qs, exported]) => {
+      forkJoin([this.questionsForExport(suite), this.snapshotForExport(suite)]).pipe(map(([qs, exported]) => {
         snapshotFailed = exported.failed;
         return serializeSuiteYaml(suite, qs, exported.snapshot);
       })));
@@ -6920,6 +6933,29 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   openSuiteYamlHelp(): void {
     this.suiteYamlHelpDialog?.open();
+  }
+
+  openSnapshotSuiteWizard(): void {
+    this.snapshotSuiteWizard?.open();
+  }
+
+  /** The suite help closes before the wizard opens, so the two never stack. */
+  onSuiteWizardRequestedFromHelp(): void {
+    this.suiteYamlHelpDialog?.close();
+    this.openSnapshotSuiteWizard();
+  }
+
+  /** The current copy of a suite the wizard names, which the list reload may have replaced. */
+  private freshSuite(suite: BenchmarkSuiteDto): BenchmarkSuiteDto {
+    return this.suites.find(s => s.id === suite.id) ?? suite;
+  }
+
+  onWizardAssessRequested(suite: BenchmarkSuiteDto): void {
+    this.openDifficultyAssessorDialog(this.freshSuite(suite));
+  }
+
+  onWizardEditSuiteRequested(suite: BenchmarkSuiteDto): void {
+    this.openEditSuite(this.freshSuite(suite));
   }
 
   /** The help that matches the open import: the suite help for a suite import, the question help otherwise. */

@@ -3,16 +3,16 @@ import {
   ChangeDetectorRef,
   Component,
   ElementRef,
+  EventEmitter,
   Input,
-  OnDestroy,
+  Output,
   ViewChild,
   inject
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MarkdownPipe } from '../../../chat/markdown.pipe';
 import { AdminBenchmarkService, RubricAuthoringGuidance } from '../../../services/admin-benchmark.service';
-import { copyToClipboard } from '../../../utils/clipboard.util';
-import { downloadTextFile } from '../../../utils/download.util';
+import { CodeBlockComponent } from '../../../shared/code-block/code-block.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import {
   AI_INGRESS,
@@ -33,9 +33,8 @@ import {
   SUITE_GUIDE_TABS,
   SUITE_YAML_EXAMPLES
 } from './suite-yaml-guide';
-import { SuitePromptBuilderComponent } from './suite-prompt-builder.component';
-
-const STATUS_MS = 3000;
+import { GuideSegment, splitGuideMarkdown } from './guide-segments';
+import { INSTRUCTIONS_FILE_NAME, WIZARD_LABELS, buildSuiteWorkflowInstructions } from './suite-workflow-instructions';
 
 export type YamlHelpVariant = 'questions' | 'suite';
 export type YamlHelpTab = GuideTab['id'] | 'examples' | 'ai';
@@ -43,12 +42,12 @@ export type YamlHelpTab = GuideTab['id'] | 'examples' | 'ai';
 @Component({
   selector: 'app-question-yaml-help-dialog',
   standalone: true,
-  imports: [CommonModule, MarkdownPipe, SuitePromptBuilderComponent],
+  imports: [CommonModule, MarkdownPipe, CodeBlockComponent],
   templateUrl: './question-yaml-help-dialog.component.html',
   styleUrls: ['./question-yaml-help-dialog.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class QuestionYamlHelpDialogComponent implements OnDestroy {
+export class QuestionYamlHelpDialogComponent {
   private cdr = inject(ChangeDetectorRef);
   private benchmarkService = inject(AdminBenchmarkService);
 
@@ -62,6 +61,15 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
    * tooltip anchors and the exclusive accordion.
    */
   @Input() variant: YamlHelpVariant = 'questions';
+
+  /** The suite variant's request to open the Snapshot Suite Wizard; the host closes this help first. */
+  @Output() wizardRequested = new EventEmitter<void>();
+
+  readonly wizardLabel = `Open the ${WIZARD_LABELS.title}`;
+  readonly yamlExampleFileName = yamlExampleFileName;
+  readonly workflowFileName = INSTRUCTIONS_FILE_NAME;
+  readonly workflowInstructions = buildSuiteWorkflowInstructions('both');
+  private readonly segmentCache = new Map<string, GuideSegment[]>();
 
   activeTab: YamlHelpTab = 'workflow';
 
@@ -106,7 +114,7 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
     return this.isSuite ? SUITE_EXAMPLES_INTRO_MARKDOWN : EXAMPLES_INTRO_MARKDOWN;
   }
 
-  /** The suite variant's AI Prompt tab holds the prompt builder, so these serve the questions one. */
+  /** The questions variant's AI Prompt text; the suite variant's tab points at the wizard instead. */
   get aiInstructions(): string {
     return buildAiInstructions(this.guidance);
   }
@@ -117,14 +125,6 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
 
   get aiHint(): string {
     return 'Paste these into an AI chat together with an exported document, so its reply imports cleanly.';
-  }
-
-  get aiCopyLabel(): string {
-    return 'Copy AI instructions to the clipboard';
-  }
-
-  get aiDownloadLabel(): string {
-    return 'Download AI instructions as Markdown';
   }
 
   /** One or two plain-text sentences above the active tab's body. */
@@ -138,13 +138,30 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
     return this.activeGuide?.ingress ?? '';
   }
 
-  /** Which toolbar last copied: 'ai' or an example id. Its status span shows copyStatus. */
-  copyTarget = '';
-  copyStatus = '';
-  private statusTimer: ReturnType<typeof setTimeout> | undefined;
-
   get activeGuide(): GuideTab | null {
     return this.guideTabs.find(t => t.id === this.activeTab) ?? null;
+  }
+
+  get activeTabLabel(): string {
+    return this.tabs.find(t => t.id === this.activeTab)?.label ?? '';
+  }
+
+  /** The active guide tab split into prose and code, computed once per tab. */
+  get activeGuideSegments(): GuideSegment[] {
+    const guide = this.activeGuide;
+    if (!guide) return [];
+    const key = `${this.variant}:${guide.id}`;
+    let segments = this.segmentCache.get(key);
+    if (!segments) {
+      segments = splitGuideMarkdown(guide.markdown);
+      this.segmentCache.set(key, segments);
+    }
+    return segments;
+  }
+
+  /** The number of a code segment among the code segments of its tab, from 1. */
+  codeNumber(segments: GuideSegment[], index: number): number {
+    return segments.slice(0, index + 1).filter(s => s.kind === 'code').length;
   }
 
   open(): void {
@@ -154,8 +171,6 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
       el.showModal();
     }
     this.activeTab = 'workflow';
-    this.copyTarget = '';
-    this.copyStatus = '';
     this.loadGuidance();
     this.cdr.detectChanges();
     setTimeout(() => refreshAnchorPositioning(), 0);
@@ -173,10 +188,8 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
     setTimeout(() => refreshAnchorPositioning(), 0);
   }
 
-  /** The jump from the From a Snapshot guide; focus follows the selection, as the arrow keys do. */
-  openPromptBuilder(): void {
-    this.selectTab('ai');
-    document.getElementById(`${this.idPrefix}-tab-ai`)?.focus();
+  requestWizard(): void {
+    this.wizardRequested.emit();
   }
 
   onTabKeydown(event: KeyboardEvent, index: number): void {
@@ -194,30 +207,8 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
     document.getElementById(`${this.idPrefix}-tab-${this.activeTab}`)?.focus();
   }
 
-  async copyInstructions(): Promise<void> {
-    const ok = await copyToClipboard(this.aiInstructions);
-    this.flashStatus('ai', ok ? 'Copied' : 'Could not copy; use Download instead.');
-  }
-
-  downloadInstructions(): void {
-    downloadTextFile(this.aiFileName, this.aiInstructions, 'text/markdown;charset=utf-8');
-  }
-
-  async copyExample(example: YamlExample): Promise<void> {
-    const ok = await copyToClipboard(example.yaml);
-    this.flashStatus(example.id, ok ? 'Copied' : 'Could not copy; use Download instead.');
-  }
-
-  downloadExample(example: YamlExample): void {
-    downloadTextFile(yamlExampleFileName(example), example.yaml);
-  }
-
-  ngOnDestroy(): void {
-    clearTimeout(this.statusTimer);
-  }
-
   /* Fetched once per component; a failed fetch is retried on the next open. The suite variant's
-     prompt is static, so it never calls the server. */
+     text is static, so it never calls the server. */
   private loadGuidance(): void {
     if (this.isSuite || this.guidance) {
       return;
@@ -234,16 +225,5 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
         this.cdr.detectChanges();
       }
     });
-  }
-
-  private flashStatus(target: string, message: string): void {
-    this.copyTarget = target;
-    this.copyStatus = message;
-    this.cdr.detectChanges();
-    clearTimeout(this.statusTimer);
-    this.statusTimer = setTimeout(() => {
-      this.copyStatus = '';
-      this.cdr.detectChanges();
-    }, STATUS_MS);
   }
 }

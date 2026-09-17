@@ -2857,7 +2857,7 @@ questions:
 | Q5 | `question` and `rubric` are text. An absent key keeps the current value on a replace. |
 | Q6 | A blank `question` on a replace is an error; `rubric: \|` with nothing under it clears the rubric. |
 | M1 | Single-question import (a question's *Import from YAML*): exactly one question, whose `id`, if present, is the target's. |
-| M2 | Questions import (Manage Questions toolbar): every `id` belongs to the open suite; a question without `id` is created and needs `question`; `suite` is ignored with a notice. |
+| M2 | Questions import (Manage Questions toolbar): every `id` belongs to the open suite; a question without `id` is created and needs `question`; `suite` is ignored with a notice. When the open suite's name is passed and the file's `suite.name` differs, a second notice says *"This file names suite "X", but you are importing into "Y"."* — the Snapshot Suite Wizard passes no name and reports the difference as a route check instead. |
 | M3 | Suite import (Manage Suites toolbar): `suite.name` is required; every question is created and needs `question`; ids are ignored with a notice. The snapshot gets no notice here — what happens to it is reported on the review step, from the server's preflight. In `single` and `questions` mode a document that carries a snapshot gets the notice *"The game snapshot in the file is ignored: this import changes questions only."* |
 | L1 | Created questions must not push the suite past `Benchmark:Compliance:MaxQuestionsPerSuite`; the server enforces it and the dialog shows its message. |
 
@@ -2875,6 +2875,13 @@ written with **no `snapshot` key at all** (an incomplete mapping would not impor
 line says so. A single-question export never carries it. File names are `benchmark-questions-<suite-slug>.yaml`,
 `benchmark-question-<orderIndex>-id-<id>.yaml` and `benchmark-suite-<suite-slug>.yaml`.
 
+**Which suites export.** A suite card's *Download Suite as YAML* and *Copy Suite as YAML to
+Clipboard* are live whenever `canExportSuite` holds — the suite has questions **or** a game
+snapshot — and `aria-disabled` otherwise. A snapshot suite with no questions skips the questions
+request and writes `questions: []`, because a bare `questions:` would read back as YAML null. That
+file is the input of the Snapshot Suite Wizard's add-to-suite route; it does **not** re-import as
+is, since Q1 requires a non-empty list.
+
 **Replace and create.** A replace changes only the keys present. When the question text, difficulty
 or rubric differs after trimming, the question gets exactly what `PUT questions/{id}` does: a new
 `ItemRevision` and a cleared AI-assessed difficulty; an identical re-import changes nothing. A
@@ -2886,6 +2893,46 @@ change an **existing** game snapshot, or write anything before the whole documen
 *Provide YAML* (paste or upload a file of at most 2 MB, then Validate), *Review* (one card per
 question — *Replace #N* or *Create new question* — with *Side by side* and *Diff* views), and
 *Done*. The server validates the whole batch again before its single save.
+
+**Panel and shell.** The import itself is `app-question-yaml-import-panel`
+(`question-yaml-import-panel.component.ts`): the source radios, paste and file inputs, validation,
+the review cards, the suite card with the snapshot preflight, `apply()` and the done summary. It
+renders **no stepper and no footer**. Two hosts own those: `QuestionYamlImportDialogComponent`, the
+standalone dialog, which keeps its three modes, its `.gh-steps` stepper and its footer bound to the
+panel through a `ViewChild`; and the Snapshot Suite Wizard. Every element id and the radio group
+name derive from the panel's `idPrefix` (`questionYamlImport` in the dialog, `snapshot-wizard-import`
+in the wizard), so two panels share one document. `stateChange` tells an `OnPush` host to redraw its
+footer.
+
+**Route checks with an expectation.** The standalone dialog passes no `expectation`, and the panel
+behaves exactly as described above. The wizard passes an `ImportExpectation` (`import-expectation.ts`),
+and the review step then opens with an **outcome statement** in a bordered callout, a **Checks** list
+grouped *Blocking* / *Warning* / *Confirmed* (each with a text label and a glyph), and a required
+confirmation checkbox whose label counts the warnings. The apply button reads *Add N Questions to
+{suite}* or *Create Suite {name}*, and stays inert while a blocking check exists or the box is
+unticked. Route A calls `POST snapshots/match` once per validated document to compare the file's
+board with the suite's; a failed call is a warning, never a block. Route B does not offer the
+*Attach the game snapshot* checkbox and always attaches.
+
+| Route | Level | Code | Trigger |
+|---|---|---|---|
+| A (add) | blocking | `replaces-questions` | An item carries an `id`: it would replace an existing question. The way out is *Import Questions from YAML* in Manage Questions. |
+| A | warning | `other-suite-name` | The file's `suite.name` differs from the target suite's. |
+| A | warning | `board-other-suite`, `board-not-stored` | The file's board is stored on another suite, or nowhere: its BOARD FACTS will fail *Snapshot facts*. |
+| A | warning | `board-none-in-file`, `board-unchecked` | The file carries no board, or the preflight failed. |
+| A | confirmed | `board-matches` | The file's board is the one stored on the suite. |
+| A | warning | `over-cap` | Existing plus new questions exceed `MaxQuestionsPerSuite`. |
+| A | confirmed | `all-new` | No item carries an id. |
+| B (create) | blocking | `no-board` | No `suite.snapshot`. A board-less suite still imports with *Import Suite from YAML*. |
+| B | warning | `name-differs`, `name-taken`, `ids-ignored` | The name differs from the one the prompt asked for; a suite of that name exists (*(Imported)*); items carry ids. |
+| both | warning / confirmed | `counts-differ` / `counts-match` | The prompt set per-band counts and the file's differ, or match. |
+| both | warning | `no-difficulty`, `no-rubric`, `rubric-lint` | Items without a difficulty or rubric; `lintRubric` codes aggregated with counts. |
+
+A route-A document whose `questions` list is empty but which carries a board adds the hint *"This
+looks like the file you downloaded for the agent, not the file the agent wrote."* After apply the
+result is **checked against the intent** — route A expects `createdCount === N` and
+`replacedCount === 0`, route B a suite with `N` questions and a snapshot — and the done step shows
+the match as a confirmation or the mismatch, with the numbers, as a warning.
 
 **Suite import always creates a new suite**, named `<name> (Imported)`, `(Imported 2)`, … when the
 name is taken, with no `DefaultSuiteKey`.
@@ -2964,15 +3011,24 @@ tooltip anchors and the exclusive accordion. The import dialog's *Open the forma
 to whichever matches the open import's mode. The **suite** variant is titled *Suite YAML Import and
 Export*, opens from the help icon on the Manage Suites toolbar, and has the tabs *Workflow*,
 *Format*, *From a Snapshot*, *Examples* and *AI Prompt*. It makes **no server call**: its guide
-text is static, in `suite-yaml-guide.ts`, and its *AI Prompt* tab holds the **prompt builder**
-(`app-suite-prompt-builder`, `suite-prompt-builder.component.ts`) rather than assembled rubric
-guidance. The builder takes the snapshot path, an optional suite name, optional per-band question
-counts and the go-ahead choice, and assembles — client-side, in `suite-agent-prompt.ts` — a prompt
-naming the `server_snapshot_suite_authoring` skill by name, with Copy and Download beside it. The
-path is accepted with or without the surrounding double quotes File Explorer's *Copy as path* adds;
-`unquotePath` strips a matched pair and leaves the backslashes as they are. The
-*From a Snapshot* tab carries an **Open the prompt builder** button that jumps to it. Every tab of
-both variants opens with a plain-text ingress saying what the tab is for (`GuideTab.ingress`).
+text is static, in `suite-yaml-guide.ts`. Its *AI Prompt* tab holds an explanation, an **Open the
+Snapshot Suite Wizard** button (Feather `compass`) and the step-by-step instructions of both routes
+(`buildSuiteWorkflowInstructions('both')`, downloadable as `overseer-snapshot-suite-steps.md`); the
+*From a Snapshot* tab carries the same button (`GuideTab.action: 'wizard'`). The button emits
+`(wizardRequested)`, and the page closes the help before it opens the wizard, so the two never
+stack. The prompt builder lives only in the wizard. Every tab of both variants opens with a
+plain-text ingress saying what the tab is for (`GuideTab.ingress`).
+
+**Code samples.** Every code sample in both variants is an `app-code-block`
+(`shared/code-block/code-block.component.ts`): the exact text in `<pre><code>`, never injected as
+HTML, with a Copy icon button in its top-right corner — a Feather check for two seconds and a
+polite *Copied* announcement on success, a visible line under the block on failure. With a
+`caption` it draws a header bar holding the file name and the buttons **Download, Copy**. A guide
+tab's Markdown is split by `splitGuideMarkdown` (`guide-segments.ts`) into prose, rendered through
+the Markdown pipe as before, and column-0 fenced code, rendered as caption-less code blocks — the
+pipe's sanitized `innerHTML` cannot hold a component. On the *Examples* tab each disclosure reads
+title, divider, description, then a captioned code card; the questions variant's AI instructions
+are a captioned code block too.
 
 The **questions** variant (*Import/Export Help* on the Manage Questions toolbar, also reachable
 from the import dialog) is full height with five tabs: *Workflow*, *Replace or Create*, *Format*, *Examples* (six copyable,
@@ -3449,20 +3505,61 @@ A suite YAML is a **complete, one-file description of a snapshot suite** (see *Y
 Export*), so a whole snapshot suite can be authored offline, with Overseer not running, and
 imported in one step.
 
-The workflow:
+**The Snapshot Suite Wizard** (`app-snapshot-suite-wizard`, `snapshot-suite-wizard.component.ts`),
+a `.btn-ghost` with the `compass` glyph on the Manage Suites toolbar after *Import Suite from YAML*,
+walks both routes and imports the agent's file itself.
+
+| Route | The board is… | The agent reads / writes | The import |
+|---|---|---|---|
+| **A** — *Attached to a suite in Overseer* | stored on a suite that has a snapshot | the suite YAML the wizard downloads / `benchmark-questions-<slug>.yaml` | the **questions import**: adds the questions, changes nothing else. No server change was needed. |
+| **B** — *A snapshot file from GnollHack* | an `.ai.html` or `.snapshot.txt` on disk | that file / `benchmark-suite-<slug>.yaml` | the **suite import**: creates a new suite with the snapshot attached |
+
+Its six steps are *Source* (the route, with no default, and for A a list of the suites with a
+snapshot, empty ones first), *File*, *Prompt* (`app-suite-prompt-builder`, which takes the route
+and path as inputs), *Upload*, *Review and confirm* (the import panel with an `ImportExpectation`,
+see *YAML Import and Export*) and *Assess* (**Assess Difficulty**; for A also **Edit suite**, for
+pasting the description the agent suggests). A disclosure above the steps holds the whole workflow
+as a copyable, downloadable checklist (`suite-workflow-instructions.ts`), generic until the details
+are known. Every forward button is `aria-disabled` while its step is incomplete, and pressing it
+then moves focus to what is missing; Escape and Close are refused while an import is applying.
+Only the difficulty assessor, Edit suite and the suite help open above the wizard.
+
+**The path constraint.** A web page never learns where a file is on disk: a file picker gives it
+a name and contents, and a download's destination is invisible. So route A downloads the suite YAML
+and then asks where it was saved, route B's file picker is only a local **checker**
+(`snapshot-file-check.ts`: HTML or text by the server's `LooksLikeHtml` rule, a GnollHack banner,
+the 60,000-character cap as an advisory — nothing is uploaded, nothing blocks), and in both the
+admin pastes the full path. Uploading the agent's *output* has no such problem.
+
+**Persistence.** `{ v, route, suiteId, sourcePath, suiteName, counts, waitForGoAhead, step,
+importedSuiteId }` is kept under `localStorage['overseer.snapshotSuiteWizard']`, written on every
+step change and removed on **Done** and **Start over**; every access is wrapped in `try/catch`.
+Opening with saved state offers **Resume** / **Start over**. The uploaded YAML is never stored, so
+a resume inside the import lands on *Upload*, and a resume after a successful import on *Assess*.
+A saved suite that no longer exists or no longer has a snapshot discards the state with a one-line
+explanation, as does a different `v`.
+
+The workflow, route B:
 
 1. **In GnollHack**: game menu → **Developer** → **Export AI Snapshot** (visible with Developer
    Mode and debug log messages on). It writes `gnollhack.<name>.<…>.ai.html` — despite the
    extension, plain monospace text in an HTML wrapper — and opens the OS share sheet. Overseer is
    not involved, and the standalone export is **not** truncated, so it can exceed 60,000
    characters. A `.snapshot.txt` downloaded from the Snapshot Viewer works just as well.
-2. **In an agent session** with the repositories on disk — Claude Code, Antigravity or similar —
-   paste the prompt generated by the prompt builder on the Manage Suites help dialog (*AI Prompt*).
-3. The agent reports its **count table**, then writes **one file**, `benchmark-suite-<slug>.yaml`,
+2. **In the wizard**, choose the file route, optionally check the file, and paste its path.
+3. **In an agent session** with the repositories on disk — Claude Code, Antigravity or similar —
+   paste the prompt the wizard generates (`Mode: create a new suite`, `Snapshot file:`).
+4. The agent reports its **count table**, then writes **one file**, `benchmark-suite-<slug>.yaml`,
    beside the snapshot.
-4. **In Overseer**: **Import Suite from YAML** → the review step shows the suite, what happens to
-   the snapshot and every question → **Create suite** → **Assess Difficulty** on the new card.
-   Optionally Suite Health *Snapshot facts* and the citation check.
+5. **Back in the wizard**: upload it → the review shows the outcome, the checks, the suite, what
+   happens to the snapshot and every question → tick the confirmation → **Create Suite {name}** →
+   **Assess Difficulty**. Optionally Suite Health *Snapshot facts* and the citation check.
+
+Route A is the same with the suite chosen on the first step, **Download Suite YAML** in place of
+the export, a prompt with `Mode: add questions to an existing suite` and `Suite file:`, a
+`benchmark-questions-<slug>.yaml` from the agent, and **Add N Questions to {suite}**. The agent
+keeps the `suite` block verbatim, gives no question an `id`, and suggests a description, which the
+import does not change.
 
 **How many questions.** The board decides, not a target. The agent surveys the board's distinct
 *decisions* — one candidate question each — classifies them with

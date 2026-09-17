@@ -34,7 +34,7 @@ describe('suite-yaml-guide', () => {
       expect(tab.markdown.trim()).withContext(tab.id).not.toBe('');
       expect(tab.ingress.trim()).withContext(tab.id).not.toBe('');
     }
-    expect(SUITE_GUIDE_TABS.filter(t => t.action === 'prompt-builder').map(t => t.id)).toEqual(['snapshot']);
+    expect(SUITE_GUIDE_TABS.filter(t => t.action === 'wizard').map(t => t.id)).toEqual(['snapshot']);
     expect(SUITE_EXAMPLES_INTRO_MARKDOWN.trim()).not.toBe('');
     expect(SUITE_EXAMPLES_INGRESS.trim()).not.toBe('');
     expect(SUITE_AI_INGRESS.trim()).not.toBe('');

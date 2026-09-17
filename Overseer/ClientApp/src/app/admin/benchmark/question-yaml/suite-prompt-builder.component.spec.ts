@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { SuitePromptBuilderComponent } from './suite-prompt-builder.component';
-import { buildSuiteAgentPrompt } from './suite-agent-prompt';
+import { SUITE_ADD_QUESTIONS_PROMPT_FILE_NAME, SuitePromptBuilderComponent } from './suite-prompt-builder.component';
+import { SuiteAgentPromptOptions, buildSuiteAgentPrompt } from './suite-agent-prompt';
+import { SUITE_AI_PROMPT_FILE_NAME } from './suite-yaml-guide';
 
 describe('SuitePromptBuilderComponent', () => {
   let fixture: ComponentFixture<SuitePromptBuilderComponent>;
@@ -8,18 +9,21 @@ describe('SuitePromptBuilderComponent', () => {
   let host: HTMLElement;
 
   const PATH = 'C:\\temp\\gnollhack.valkyrie.ai.html';
+  const SUITE_PATH = 'C:\\temp\\benchmark-suite-core.yaml';
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({ imports: [SuitePromptBuilderComponent] }).compileComponents();
     fixture = TestBed.createComponent(SuitePromptBuilderComponent);
     component = fixture.componentInstance;
-    component.idPrefix = 'suite-prompt';
+    fixture.componentRef.setInput('idPrefix', 'suite-prompt');
+    fixture.componentRef.setInput('source', 'snapshot-file');
+    fixture.componentRef.setInput('sourcePath', PATH);
     fixture.detectChanges();
     host = fixture.nativeElement as HTMLElement;
   });
 
   const input = (suffix: string): HTMLInputElement => host.querySelector<HTMLInputElement>(`#suite-prompt-${suffix}`)!;
-  const prompt = (): HTMLElement | null => host.querySelector('.help-ai-text');
+  const prompt = (): HTMLElement | null => host.querySelector('app-code-block pre code');
   const status = (): string => host.querySelector('.builder-status')!.textContent!.trim();
 
   const type = (suffix: string, value: string) => {
@@ -34,90 +38,87 @@ describe('SuitePromptBuilderComponent', () => {
     fixture.detectChanges();
   };
 
-  const withClipboard = async (run: (writeText: jasmine.Spy) => Promise<void>, reject = false) => {
-    const writeText = jasmine.createSpy('writeText')
-      .and.returnValue(reject ? Promise.reject(new Error('denied')) : Promise.resolve());
-    const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true });
-    try {
-      await run(writeText);
-    } finally {
-      delete (navigator as { clipboard?: unknown }).clipboard;
-      if (original) Object.defineProperty(navigator, 'clipboard', original);
-    }
-  };
+  const snapshotOptions = (overrides: Partial<SuiteAgentPromptOptions> = {}): SuiteAgentPromptOptions => ({
+    source: 'snapshot-file', sourcePath: PATH, suiteName: '', counts: null, waitForGoAhead: true, ...overrides
+  });
 
   it('labels every control and prefixes every element id', () => {
     component.setCountsMode('manual');
     fixture.detectChanges();
 
     const controls = Array.from(host.querySelectorAll<HTMLInputElement>('input'));
-    expect(controls.length).toBeGreaterThan(5);
+    expect(controls.length).toBeGreaterThan(4);
     for (const control of controls) {
       expect(control.labels!.length).withContext(control.id || control.type).toBeGreaterThan(0);
     }
     for (const el of Array.from(host.querySelectorAll('[id]'))) {
-      expect(el.id).withContext(el.id).toMatch(/^suite-prompt-/);
+      expect(el.id).withContext(el.id).toMatch(/^(tip-)?suite-prompt-/);
     }
   });
 
-  it('opens with no prompt and the go-ahead box ticked', () => {
+  it('opens with no prompt, no path field and the go-ahead box ticked', () => {
     expect(prompt()).toBeNull();
+    expect(input('path')).toBeNull();
     expect(input('wait').checked).toBeTrue();
     expect(input('counts-propose').checked).toBeTrue();
   });
 
-  it('refuses a blank path, marks the field and puts focus in it', () => {
-    submit();
-    expect(prompt()).toBeNull();
-    expect(input('path').getAttribute('aria-invalid')).toBe('true');
-    expect(host.querySelector('#suite-prompt-path-error')!.textContent)
-      .toContain('Enter the path to the snapshot file.');
-    expect(document.activeElement).toBe(input('path'));
-
-    type('path', PATH);
-    expect(host.querySelector('#suite-prompt-path-error')).toBeNull();
-    expect(input('path').getAttribute('aria-invalid')).toBeNull();
-  });
-
-  it('generates the prompt the builder module would, and announces it', () => {
-    type('path', PATH);
+  it('generates the prompt the builder module would, announces it and emits the options', () => {
+    const emitted = jasmine.createSpy('generated');
+    component.generated.subscribe(emitted);
     submit();
 
-    expect(prompt()!.textContent).toBe(buildSuiteAgentPrompt({
-      snapshotPath: PATH,
-      suiteName: '',
-      counts: null,
-      waitForGoAhead: true
-    }));
+    expect(prompt()!.textContent).toBe(buildSuiteAgentPrompt(snapshotOptions()));
     expect(status()).toBe('Prompt generated.');
+    expect(emitted).toHaveBeenCalledWith(snapshotOptions());
   });
 
-  it('advises on a path that does not look rooted, without refusing it', () => {
-    type('path', 'board.ai.html');
-    expect(host.querySelector('#suite-prompt-path-advisory')).not.toBeNull();
+  it('renders the prompt in a code block with the file name, Download and Copy', () => {
     submit();
-    expect(prompt()).not.toBeNull();
-  });
-
-  it('accepts a quoted absolute path without advice, and writes it bare', () => {
-    type('path', `"${PATH}"`);
-    expect(host.querySelector('#suite-prompt-path-advisory')).toBeNull();
-    submit();
-
-    expect(prompt()!.textContent).toContain(`\nSnapshot file: ${PATH}\n`);
-    expect(prompt()!.textContent).toBe(buildSuiteAgentPrompt({
-      snapshotPath: PATH,
-      suiteName: '',
-      counts: null,
-      waitForGoAhead: true
-    }));
+    const block = host.querySelector('app-code-block')!;
+    expect(block.querySelector('.code-block-caption')!.textContent).toBe(SUITE_AI_PROMPT_FILE_NAME);
+    expect(Array.from(block.querySelectorAll('button')).map(b => b.getAttribute('aria-label')))
+      .toEqual(['Download the prompt', 'Copy the prompt to the clipboard']);
   });
 
   it('shows the output file name once a suite name is typed', () => {
     type('name', 'Valkyrie at Dlvl 11');
     expect(host.querySelector('#suite-prompt-name-file')!.textContent)
       .toContain('benchmark-suite-valkyrie-at-dlvl-11.yaml');
+  });
+
+  it('hides the suite name for a suite YAML and names the questions file from the known suite', () => {
+    fixture.componentRef.setInput('source', 'suite-yaml');
+    fixture.componentRef.setInput('sourcePath', SUITE_PATH);
+    fixture.componentRef.setInput('knownSuiteName', 'Core');
+    fixture.detectChanges();
+
+    expect(input('name')).toBeNull();
+    expect(host.querySelector('#suite-prompt-name-file')!.textContent).toContain('benchmark-questions-core.yaml');
+
+    submit();
+    expect(prompt()!.textContent).toBe(buildSuiteAgentPrompt({
+      source: 'suite-yaml', sourcePath: SUITE_PATH, suiteName: 'Core', counts: null, waitForGoAhead: true
+    }));
+    expect(host.querySelector('.code-block-caption')!.textContent).toBe(SUITE_ADD_QUESTIONS_PROMPT_FILE_NAME);
+  });
+
+  it('discards the prompt when the route or path input changes', () => {
+    submit();
+    expect(prompt()).not.toBeNull();
+
+    fixture.componentRef.setInput('sourcePath', 'C:\\temp\\other.ai.html');
+    fixture.detectChanges();
+    expect(prompt()).toBeNull();
+    expect(status()).toBe('Inputs changed — generate the prompt again.');
+  });
+
+  it('shows a missing path as an error rather than generating', () => {
+    fixture.componentRef.setInput('sourcePath', '');
+    fixture.detectChanges();
+    submit();
+    expect(prompt()).toBeNull();
+    expect(host.querySelector('#suite-prompt-source-error')!.textContent).toContain('Enter the path to the snapshot file.');
   });
 
   it('reveals three counts and their total on "Set them myself"', () => {
@@ -129,7 +130,6 @@ describe('SuitePromptBuilderComponent', () => {
     expect(host.querySelectorAll('input[type="number"]').length).toBe(3);
     expect(host.querySelector('#suite-prompt-counts-total')!.textContent).toContain('18 questions in total.');
 
-    type('path', PATH);
     submit();
     expect(prompt()!.textContent).toContain('6 Simple / 6 Intermediate / 6 Advanced (18 in total)');
   });
@@ -137,7 +137,6 @@ describe('SuitePromptBuilderComponent', () => {
   it('refuses counts that add up to more than the cap', () => {
     input('counts-manual').click();
     fixture.detectChanges();
-    type('path', PATH);
     type('simple', '20');
     type('intermediate', '20');
     type('advanced', '11');
@@ -146,10 +145,10 @@ describe('SuitePromptBuilderComponent', () => {
     expect(prompt()).toBeNull();
     expect(host.querySelector('#suite-prompt-counts-error')!.textContent)
       .toContain('A suite holds at most 50 questions; these add up to 51.');
+    expect(document.activeElement).toBe(input('simple'));
   });
 
   it('writes the continue-without-waiting line when the box is unticked', () => {
-    type('path', PATH);
     input('wait').click();
     fixture.detectChanges();
     submit();
@@ -158,42 +157,11 @@ describe('SuitePromptBuilderComponent', () => {
   });
 
   it('discards the prompt as soon as any field changes', () => {
-    type('path', PATH);
     submit();
     expect(prompt()).not.toBeNull();
 
     type('name', 'Valkyrie');
     expect(prompt()).toBeNull();
     expect(status()).toBe('Inputs changed — generate the prompt again.');
-  });
-
-  it('offers Copy and Download beside the prompt', () => {
-    type('path', PATH);
-    submit();
-    expect(Array.from(host.querySelectorAll('.builder-result .btn-ghost')).map(b => b.textContent!.trim()))
-      .toEqual(['Copy Prompt', 'Download Prompt']);
-  });
-
-  it('copies the prompt and announces the result', async () => {
-    await withClipboard(async writeText => {
-      type('path', PATH);
-      submit();
-      await component.copyPrompt();
-      fixture.detectChanges();
-
-      expect(writeText).toHaveBeenCalledWith(component.prompt);
-      expect(host.querySelector('.help-copy-status')!.textContent).toBe('Copied');
-    });
-  });
-
-  it('falls back to Download when the clipboard refuses', async () => {
-    await withClipboard(async () => {
-      type('path', PATH);
-      submit();
-      await component.copyPrompt();
-      fixture.detectChanges();
-
-      expect(host.querySelector('.help-copy-status')!.textContent).toBe('Could not copy; use Download instead.');
-    }, true);
   });
 });

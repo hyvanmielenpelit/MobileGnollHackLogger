@@ -201,6 +201,7 @@ you already read the label, it is noise; drop it.
 | zap | Generate Questions | AI generation: content is produced from the snapshot, not typed in |
 | thermometer | Assess Difficulty | A reading on a scale; the button rates how hard each question is |
 | heart | Suite Health | The health check; the glyph *is* the concept |
+| compass | Snapshot Suite Wizard, Open the Snapshot Suite Wizard | A guided route through several steps: the wizard finds the way, the admin follows it |
 | clipboard | Check Rubrics | A checklist to go through; the rubric is what is being inspected |
 | check | Verify All | The same tick the "Reviewed" badge shows, so the button reads as "mark reviewed" |
 | star | Set Default | The marker used for the default item elsewhere in the UI; the icon *is* the concept |
@@ -216,6 +217,10 @@ now on the same toolbar cannot both read `download` under the one-glyph-one-mean
 other two actions to `.btn-ghost`. Import Default Suites was renamed Create Default Suites and its
 glyph moved from `download` to `layers`, since the action creates suites rather than importing a file.
 Every `.btn-ghost` on a suite card now carries a glyph so the row scans as one family with Delete Runs.*
+
+*Changed 2026-09-17: the Manage Suites toolbar gains a `.btn-ghost` **Snapshot Suite Wizard** with the
+`compass` glyph, after Import Suite from YAML and before the help icon. The suite help's *Open the
+Snapshot Suite Wizard* button uses the same glyph, since it opens the same thing.*
 
 **Leave the icon off when the label is already the whole message:**
 

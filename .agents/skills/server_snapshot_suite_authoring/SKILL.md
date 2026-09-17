@@ -8,9 +8,12 @@ description: >-
   board supports and how many per difficulty band, writing questions that are unanswerable
   without the board, writing rubrics whose BOARD FACTS are quotable from it verbatim and whose
   mechanics points are verified against the GnollHack source, and producing the single file that
-  Import Suite from YAML turns into a suite with its game snapshot attached. Read it whenever the
-  task is "make a benchmark suite from this snapshot", "turn this .ai.html into questions", or an
-  Overseer suite YAML with a `suite.snapshot` block has to be written by hand.
+  Import Suite from YAML turns into a suite with its game snapshot attached. Also covers adding
+  questions to an existing snapshot suite from its exported YAML, where the board is taken from the
+  file's `suite.snapshot.text` and the output is a questions file the Snapshot Suite Wizard imports
+  into that suite. Read it whenever the task is "make a benchmark suite from this snapshot", "turn
+  this .ai.html into questions", "add questions to this suite YAML", or an Overseer suite YAML with
+  a `suite.snapshot` block has to be written by hand.
 ---
 
 # Authoring a Snapshot Suite Offline
@@ -21,8 +24,8 @@ description: >-
 `server-snapshot-suite-authoring`; where `.agents/skills/` is discovered directly it is
 `server_snapshot_suite_authoring`.
 
-The prompt that invokes it comes from the **prompt builder** on Overseer's *Suite YAML Import and
-Export* help dialog (*AI Prompt* tab; the *From a Snapshot* tab has a button that jumps to it).
+The prompt that invokes it comes from the **Snapshot Suite Wizard** on Overseer's Manage Suites
+toolbar (the *Suite YAML Import and Export* help's *AI Prompt* and *From a Snapshot* tabs open it).
 It is assembled by `buildSuiteAgentPrompt` in
 `Overseer/ClientApp/src/app/admin/benchmark/question-yaml/suite-agent-prompt.ts`, which names this
 skill by both names and **by no path**, and `suite-agent-prompt.spec.ts` pins both. **Renaming this
@@ -34,20 +37,32 @@ every default below.
 
 ## 1. Inputs, Output, Boundaries
 
-**Inputs.** The path to a snapshot file; optionally a suite name; optionally the question counts.
-Nothing else is required, and **Overseer does not need to be running**.
+This skill has **two modes**, named by the prompt's `Mode:` line:
 
-The prompt builder writes them as a line-oriented block, so both ends agree on the wording:
+- **Create a new suite** — the input is a snapshot file exported from GnollHack; the output is a
+  whole suite YAML. A prompt with **no** `Mode:` line means this mode, so older prompts keep working.
+- **Add questions to an existing suite** — the input is a suite YAML downloaded from Overseer with
+  **Download Suite as YAML**, carrying the suite's board in `suite.snapshot`; the output is a file of
+  new questions for that suite.
+
+**Inputs.** The path to a snapshot file or a suite YAML; optionally a suite name (create mode);
+optionally the question counts. Nothing else is required, and **Overseer does not need to be
+running**.
+
+The wizard writes them as a line-oriented block, so both ends agree on the wording:
 
 | Prompt line | Meaning |
 |---|---|
-| `Snapshot file:` | The path. Required. |
-| `Suite name:` | A name, or `propose one`. |
+| `Mode:` | `create a new suite` (also the meaning of a prompt without the line) or `add questions to an existing suite`. |
+| `Snapshot file:` | Create mode: the path to the snapshot. Required there. |
+| `Suite file:` | Add mode: the path to the downloaded suite YAML. Required there. |
+| `Suite name:` | Create mode only: a name, or `propose one`. |
 | `Question counts:` | `S Simple / I Intermediate / A Advanced`, or `propose them from the board`. Supplied counts win (§ 3.5). |
 | `Count table:` | `…wait for my go-ahead…` is the § 3.5 default. `…continue without waiting…` is an explicit instruction from the user to report the table and carry on; honour it. |
 
-**Output.** Exactly **one** file, `benchmark-suite-<slug>.yaml`, written **beside the snapshot**.
-The slug is the suite name lower-cased and reduced to `[a-z0-9-]`, as `suiteSlug` in
+**Output.** Exactly **one** file, written **beside the input file**: `benchmark-suite-<slug>.yaml`
+in create mode, `benchmark-questions-<slug>.yaml` in add mode. The slug is the suite name — in add
+mode, the file's `suite.name` — lower-cased and reduced to `[a-z0-9-]`, as `suiteSlug` in
 `question-yaml-format.ts` does it.
 
 **Boundaries.**
@@ -91,6 +106,23 @@ that quotes it can never be satisfied.
 first line is the version banner; the map rows line up under the column ruler when printed in a
 monospace view. A board that fails any of these was flattened wrong — fix the flattening rather
 than working around it.
+
+## 2a. Board from a Suite YAML — Add Mode
+
+In add mode the board has **already** been through § 2: Overseer stored it, and the export wrote
+the stored text into the file.
+
+- **Parse the file with a real YAML parser** — for example `js-yaml` from
+  `Overseer/ClientApp/node_modules`, from a scratch script that only reads. A hand-rolled reading of
+  a block scalar gets the indentation wrong.
+- Take `suite.snapshot.text` **as it is**: do **not** flatten it again and do **not** apply the cap
+  again. It is the stored board, character for character, and the rubrics are graded against
+  exactly that.
+- **If the file has no `suite.snapshot`, stop** and say so: the suite has no board to write
+  snapshot questions against, and this is the wrong route.
+- If the file already holds questions, **their decisions are taken**. Read them, leave them out of
+  the survey in § 3, and write only questions about decisions they do not cover. Never rewrite,
+  renumber or restate an existing question.
 
 ## 3. Survey, Classify, Count
 
@@ -173,8 +205,15 @@ value.
 
 The format's source of truth is
 `Overseer/ClientApp/src/app/admin/benchmark/question-yaml/question-yaml-format.ts`: rules H1 and
-H2 for the header and the `suite` block, Q1–Q6 for the questions, M3 for suite mode. The model to
-copy is the `suite-snapshot` example in `suite-yaml-guide.ts` in the same directory.
+H2 for the header and the `suite` block, Q1–Q6 for the questions, M2 for questions mode and M3 for
+suite mode. The model to copy is the `suite-snapshot` example in `suite-yaml-guide.ts` in the same
+directory.
+
+**Add mode writes a different shape.** `benchmark-questions-<slug>.yaml` holds the header, the
+input file's **`suite` block verbatim** — name, description and the whole `snapshot` mapping,
+`sha256` included — and **only the new questions**. **No question carries an `id`**: an id means
+*replace that question*, and the Snapshot Suite Wizard refuses a file that has one. The rest of
+this section describes the create-mode file; the question rules below apply to both.
 
 - `suite.name` — required.
 - `suite.description` — two or three sentences on what the suite measures. **No answer keys.**
@@ -188,11 +227,11 @@ copy is the `suite-snapshot` example in `suite-yaml-guide.ts` in the same direct
     the server hashes what arrives.
   - Omit `sha256` (there is no stored board to hash against) and omit `captured_at` (the banner's
     time carries no zone, so it would be a guess).
-- Every question carries `difficulty`; **no** `id` — a suite import ignores ids anyway, and
-  writing them invites the reader to think they mean something.
+- Every question carries `difficulty`; **no** `id` — a suite import ignores ids anyway, and an
+  add-mode import treats one as a replacement and is refused.
 - `question` and `rubric` as `|` block scalars, **spaces only**, never tabs.
 
-UTF-8 without a BOM. The file name is `benchmark-suite-<slug>.yaml` per § 1.
+UTF-8 without a BOM. The file name is per § 1.
 
 ## 7. Self-Check Before Handing Over
 
@@ -205,8 +244,9 @@ each result:
 - Every question has a non-blank `question`, and the band counts equal the agreed table.
 - The file is under 2 MB (the upload limit).
 - **The parsed `suite.snapshot.text`, with trailing whitespace removed, is character for
-  character the board text from § 2.** This is the check that catches a block-scalar mistake, and
-  nothing else will.
+  character the board text from § 2** — in add mode, the `suite.snapshot.text` parsed from the
+  **input** file. This is the check that catches a block-scalar mistake, and nothing else will.
+- Add mode: no question has an `id`, and the `suite` block equals the input file's.
 - Every BOARD FACT quote occurs verbatim in that parsed text.
 - Every cited source path exists in the GnollHack clone.
 - Every rubric has `**BOARD FACTS**` and `**REQUIRED**`, uses the exact FORM label, and has no
@@ -224,23 +264,35 @@ Report, in this order:
 3. The snapshot's `gnollhack_version` against the GnollHack clone's current state, and whether
    they agree. A rubric's citations hold for the source the snapshot's version corresponds to.
 4. Whether the board was **cut at the cap**, and what that excludes.
-5. The Overseer steps, in order:
-   - **Import Suite from YAML** on the Manage Suites toolbar. The review step says whether the
-     snapshot is created, or an identical stored one is reused, before anything is written.
-   - **Assess Difficulty** on the new suite's card. The launcher refuses the suite until every
-     question has an AI-assessed difficulty.
+5. The Overseer steps, in order, for the mode:
+   - **In the Snapshot Suite Wizard**, upload the file on its *Upload* step and press **Validate
+     and Review**. The review step states what the import will do and lists its checks — in add
+     mode whether the board in the file is the board stored on the suite, in create mode whether
+     the snapshot is created or an identical stored one is reused — before anything is written.
+   - Tick the confirmation and press **Add N Questions to {suite}** (add mode) or **Create Suite
+     {name}** (create mode). Outside the wizard, a create-mode file also imports with **Import
+     Suite from YAML** on the Manage Suites toolbar.
+   - **Assess Difficulty**. The launcher refuses the suite until every question has an AI-assessed
+     difficulty.
+   - Add mode: **suggest a suite description** that covers the old and new questions. The import
+     does not change the description; the admin pastes it with **Edit suite**.
    - Optional: Suite Health **Snapshot facts**, and the citation check.
 
 ## 9. Checklist
 
-- [ ] Snapshot path taken from the request; nothing written inside a repository.
-- [ ] Format decided by the `LooksLikeHtml` rule, not the extension (§ 2).
-- [ ] Board flattened by reproducing `Sanitize()` in its order, or `NormalizeFlattenedText` alone.
-- [ ] Cap applied; nothing grounded beyond a cut.
+- [ ] Mode read from the prompt (no `Mode:` line means create); input path taken from the request;
+      nothing written inside a repository.
+- [ ] Create mode: format decided by the `LooksLikeHtml` rule, not the extension (§ 2).
+- [ ] Create mode: board flattened by reproducing `Sanitize()` in its order, or
+      `NormalizeFlattenedText` alone; cap applied; nothing grounded beyond a cut.
+- [ ] Add mode: board taken from the parsed `suite.snapshot.text` as it is; existing questions'
+      decisions left out of the survey (§ 2a).
 - [ ] Sanity checks passed: no tag remnants, no CSS, banner first, map rows aligned.
 - [ ] Decisions surveyed, candidates classified, table reported, go-ahead received (§ 3).
 - [ ] Questions in a player's voice, unanswerable without the board, one decision each, no leaks.
 - [ ] BOARD FACTS quotable verbatim; mechanics under REQUIRED with a verified source citation.
-- [ ] YAML written as one file, `text: |` uniformly indented and untouched otherwise.
+- [ ] YAML written as one file, `text: |` uniformly indented and untouched otherwise; add mode keeps
+      the `suite` block verbatim and gives no question an `id`.
 - [ ] Self-check run with a real parser; text compared character for character (§ 7).
-- [ ] Handoff reported with the count table, the ungrounded list, and the Overseer steps (§ 8).
+- [ ] Handoff reported with the count table, the ungrounded list, the Overseer steps and, in add
+      mode, a suggested suite description (§ 8).

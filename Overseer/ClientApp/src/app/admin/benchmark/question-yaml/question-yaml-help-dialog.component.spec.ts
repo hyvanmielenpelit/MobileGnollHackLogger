@@ -3,7 +3,8 @@ import { of, throwError } from 'rxjs';
 import { AdminBenchmarkService, RubricAuthoringGuidance } from '../../../services/admin-benchmark.service';
 import { QuestionYamlHelpDialogComponent } from './question-yaml-help-dialog.component';
 import { RUBRIC_GUIDANCE_UNAVAILABLE, YAML_EXAMPLES, buildAiInstructions } from './question-yaml-format';
-import { SUITE_YAML_EXAMPLES } from './suite-yaml-guide';
+import { SUITE_GUIDE_TABS, SUITE_YAML_EXAMPLES } from './suite-yaml-guide';
+import { INSTRUCTIONS_FILE_NAME, buildSuiteWorkflowInstructions } from './suite-workflow-instructions';
 
 describe('QuestionYamlHelpDialogComponent', () => {
   let fixture: ComponentFixture<QuestionYamlHelpDialogComponent>;
@@ -40,6 +41,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
 
   const tabButtons = (): HTMLButtonElement[] => Array.from(host.querySelectorAll<HTMLButtonElement>('.gh-tab'));
   const selectedTab = (): HTMLButtonElement | undefined => tabButtons().find(b => b.getAttribute('aria-selected') === 'true');
+  const aiText = (): HTMLElement | null => host.querySelector('.help-ai app-code-block pre code');
 
   const withClipboard = async (run: (writeText: jasmine.Spy) => Promise<void>) => {
     const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
@@ -57,7 +59,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
     component.open();
     expect(component.dialog.nativeElement.open).toBeTrue();
     expect(host.querySelector('.help-guide')!.textContent).toContain('Export, edit, import');
-    expect(host.querySelector('.help-ai-text')).toBeNull();
+    expect(host.querySelector('.help-ai')).toBeNull();
   });
 
   it('renders five tabs with one selected and one in the tab order', () => {
@@ -86,7 +88,8 @@ describe('QuestionYamlHelpDialogComponent', () => {
     component.open();
     component.selectTab('ai');
     fixture.detectChanges();
-    expect(host.querySelector('.help-ai-text')!.textContent).toBe(buildAiInstructions(GUIDANCE));
+    expect(aiText()!.textContent).toBe(buildAiInstructions(GUIDANCE));
+    expect(host.querySelector('.help-ai .code-block-caption')!.textContent).toBe('overseer-benchmark-yaml-instructions.md');
     expect(selectedTab()!.textContent!.trim()).toBe('AI Prompt');
     expect(host.querySelector('.help-guide')).toBeNull();
   });
@@ -125,29 +128,32 @@ describe('QuestionYamlHelpDialogComponent', () => {
     expect(selectedTab()!.textContent!.trim()).toBe('Workflow');
   });
 
-  it('copies the instructions and announces the result', async () => {
+  it('copies the instructions from the code block and announces the result', async () => {
     await withClipboard(async writeText => {
       component.open();
       component.selectTab('ai');
-      await component.copyInstructions();
+      fixture.detectChanges();
+      host.querySelector<HTMLButtonElement>('.help-ai .code-block-copy')!.click();
+      await fixture.whenStable();
       fixture.detectChanges();
       expect(writeText).toHaveBeenCalledWith(buildAiInstructions(GUIDANCE));
-      expect(host.querySelector('.help-copy-status')!.textContent).toBe('Copied');
+      expect(host.querySelector('.help-ai [role="status"]')!.textContent).toBe('Copied');
     });
   });
 
   it('has distinct accessible names on its icon buttons', () => {
     component.open();
     component.selectTab('ai');
+    fixture.detectChanges();
     const labels = Array.from(host.querySelectorAll('.action-btn')).map(b => b.getAttribute('aria-label'));
-    expect(labels).toEqual(['Copy AI instructions to the clipboard', 'Download AI instructions as Markdown']);
+    expect(labels).toEqual(['Download the AI instructions', 'Copy the AI instructions to the clipboard']);
   });
 
   it('builds the AI tab from the fetched rubric guidance, fetching it once', () => {
     component.open();
     component.selectTab('ai');
     fixture.detectChanges();
-    const text = host.querySelector('.help-ai-text')!.textContent!;
+    const text = aiText()!.textContent!;
     expect(text).toContain('**FORM** (fixture label)');
     for (const band of GUIDANCE.bands) {
       expect(text).toContain(band.name);
@@ -168,12 +174,12 @@ describe('QuestionYamlHelpDialogComponent', () => {
       fixture.detectChanges();
       expect(component.guidanceState).toBe('failed');
       expect(host.querySelector('.help-ai-guidance-state')).not.toBeNull();
-      expect(host.querySelector('.help-ai-text')!.textContent).toContain(RUBRIC_GUIDANCE_UNAVAILABLE);
+      expect(aiText()!.textContent).toContain(RUBRIC_GUIDANCE_UNAVAILABLE);
 
-      await component.copyInstructions();
+      host.querySelector<HTMLButtonElement>('.help-ai .code-block-copy')!.click();
+      await fixture.whenStable();
       fixture.detectChanges();
       expect(writeText).toHaveBeenCalledWith(buildAiInstructions(null));
-      expect(host.querySelector('.help-copy-status')!.textContent).toBe('Copied');
     });
   });
 
@@ -192,15 +198,22 @@ describe('QuestionYamlHelpDialogComponent', () => {
       expect(details.every(d => d.getAttribute('name') === 'yaml-help-example')).toBeTrue();
       expect(details.map(d => d.open)).toEqual(YAML_EXAMPLES.map((_, i) => i === 0));
       expect(details.map(d => d.querySelector('summary')!.textContent!.trim())).toEqual(YAML_EXAMPLES.map(e => e.title));
-      expect(details[0].querySelector('.help-ai-text')!.textContent).toBe(YAML_EXAMPLES[0].yaml);
+      expect(details[0].querySelector('app-code-block pre code')!.textContent).toBe(YAML_EXAMPLES[0].yaml);
+    });
+
+    it('orders each example as title, description, then a code card with its file name', () => {
+      const body = exampleDetails()[0].querySelector('.gh-disclosure-body')!;
+      expect(Array.from(body.children).map(c => c.tagName.toLowerCase())).toEqual(['div', 'app-code-block']);
+      expect(body.querySelector('.code-block-caption')!.textContent).toBe(`benchmark-example-${YAML_EXAMPLES[0].id}.yaml`);
     });
 
     it('copies one example and announces it beside that example only', async () => {
       await withClipboard(async writeText => {
-        await component.copyExample(YAML_EXAMPLES[2]);
+        exampleDetails()[2].querySelector<HTMLButtonElement>('.code-block-copy')!.click();
+        await fixture.whenStable();
         fixture.detectChanges();
         expect(writeText).toHaveBeenCalledWith(YAML_EXAMPLES[2].yaml);
-        const statuses = exampleDetails().map(d => d.querySelector('.help-copy-status')!.textContent);
+        const statuses = exampleDetails().map(d => d.querySelector('app-code-block [role="status"]')!.textContent);
         expect(statuses.filter(s => s === 'Copied').length).toBe(1);
         expect(statuses[2]).toBe('Copied');
       });
@@ -247,28 +260,52 @@ describe('QuestionYamlHelpDialogComponent', () => {
       expect(host.querySelector('.help-ai-guidance-state')).toBeNull();
     });
 
-    it('holds the prompt builder on AI Prompt, with no prompt until one is generated', () => {
+    it('explains the wizard on AI Prompt, with the step-by-step instructions and no builder', () => {
       component.open();
       component.selectTab('ai');
       fixture.detectChanges();
-      expect(host.querySelector('app-suite-prompt-builder')).not.toBeNull();
-      expect(host.querySelector('.help-ai-text')).toBeNull();
+      expect(host.querySelector('app-suite-prompt-builder')).toBeNull();
+      expect(host.querySelector('.help-jump .btn-ghost')!.textContent!.trim()).toBe('Open the Snapshot Suite Wizard');
+      expect(host.querySelector('app-code-block pre code')!.textContent).toBe(buildSuiteWorkflowInstructions('both'));
+      expect(host.querySelector('.code-block-caption')!.textContent).toBe(INSTRUCTIONS_FILE_NAME);
     });
 
-    it('jumps from From a Snapshot to the builder, moving focus with the selection', () => {
+    it('asks for the wizard from From a Snapshot and from AI Prompt', () => {
+      const requested = jasmine.createSpy('wizardRequested');
+      component.wizardRequested.subscribe(requested);
       component.open();
-      component.selectTab('snapshot');
-      fixture.detectChanges();
-      expect(host.querySelector('app-suite-prompt-builder')).toBeNull();
+      for (const tab of ['snapshot', 'ai'] as const) {
+        component.selectTab(tab);
+        fixture.detectChanges();
+        host.querySelector<HTMLButtonElement>('.help-jump .btn-ghost')!.click();
+      }
+      expect(requested).toHaveBeenCalledTimes(2);
+    });
 
-      const jump = host.querySelector<HTMLButtonElement>('.help-jump .btn-ghost')!;
-      expect(jump.textContent!.trim()).toBe('Open the prompt builder');
-      jump.click();
+    it('renders every code sample of the Format guide in a code block with a corner copy button, byte for byte', () => {
+      component.open();
+      component.selectTab('format');
       fixture.detectChanges();
+      const blocks = Array.from(host.querySelectorAll('app-code-block'));
+      const fences = (SUITE_GUIDE_TABS.find(t => t.id === 'format')!.markdown.match(/^```/gm) ?? []).length / 2;
+      expect(blocks.length).toBe(fences);
+      expect(blocks.every(b => b.querySelector('.code-block-corner .code-block-copy'))).toBeTrue();
+      expect(host.querySelector('.help-guide pre')).toBeNull();
+      const right = blocks.map(b => b.querySelector('pre code')!.textContent!).find(t => t.includes('0123456789012345'))!;
+      expect(right).toContain('\n           0123456789012345\n');
+      const labels = blocks.map(b => b.querySelector('button')!.getAttribute('aria-label'));
+      expect(labels[0]).toBe('Copy code sample 1 of the Format guide to the clipboard');
+      expect(new Set(labels).size).toBe(labels.length);
+    });
 
-      expect(component.activeTab).toBe('ai');
-      expect(host.querySelector('app-suite-prompt-builder')).not.toBeNull();
-      expect(document.activeElement!.id).toBe('suite-yaml-help-tab-ai');
+    it('has no duplicate element ids on any tab', () => {
+      component.open();
+      for (const tab of component.tabs) {
+        component.selectTab(tab.id);
+        fixture.detectChanges();
+        const ids = Array.from(host.querySelectorAll('[id]')).map(e => e.id);
+        expect(new Set(ids).size).withContext(tab.id).toBe(ids.length);
+      }
     });
 
     it('names its accordion apart from the question help and opens the first example', () => {

@@ -28,38 +28,12 @@
       </div>
     </div>
 
-    <!-- The AI instructions toolbar and text of the questions variant's AI Prompt tab. The suite
-         variant builds its prompt with app-suite-prompt-builder instead. -->
-    <ng-template #promptBlock>
-      <div class="help-ai">
-        <div class="help-ai-actions">
-          <button type="button" class="action-btn" (click)="copyInstructions()"
-                  [attr.aria-label]="aiCopyLabel"
-                  [attr.interestfor]="'tip-' + idPrefix + '-copy'"
-                  [attr.style]="'anchor-name: --tip-' + idPrefix + '-copy'">
-            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-          </button>
-          <div popover="hint" class="gh-tooltip" [id]="'tip-' + idPrefix + '-copy'"
-               [attr.style]="'position-anchor: --tip-' + idPrefix + '-copy'">{{ aiCopyLabel }}</div>
-          <button type="button" class="action-btn" (click)="downloadInstructions()"
-                  [attr.aria-label]="aiDownloadLabel"
-                  [attr.interestfor]="'tip-' + idPrefix + '-download'"
-                  [attr.style]="'anchor-name: --tip-' + idPrefix + '-download'">
-            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="12" x2="12" y2="18"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
-          </button>
-          <div popover="hint" class="gh-tooltip" [id]="'tip-' + idPrefix + '-download'"
-               [attr.style]="'position-anchor: --tip-' + idPrefix + '-download'">{{ aiDownloadLabel }}</div>
-          <span class="help-copy-status" role="status" aria-live="polite">{{ copyTarget === 'ai' ? copyStatus : '' }}</span>
-        </div>
-        <p class="help-ai-hint">{{ aiHint }}</p>
-        @if (variant === 'questions') {
-          @if (guidanceState === 'loading') {
-            <p class="help-ai-hint help-ai-guidance-state" role="status">Loading rubric guidance…</p>
-          } @else if (guidanceState === 'failed') {
-            <p class="help-ai-hint help-ai-guidance-state" role="status">The rubric guidance could not be loaded, so these instructions leave out the rubric format and difficulty bands.</p>
-          }
-        }
-        <pre class="help-ai-text">{{ aiInstructions }}</pre>
+    <ng-template #wizardButton>
+      <div class="help-jump">
+        <button type="button" class="btn-ghost" (click)="requestWizard()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+          {{ wizardLabel }}
+        </button>
       </div>
     </ng-template>
 
@@ -69,9 +43,28 @@
 
       @if (activeTab === 'ai') {
         @if (isSuite) {
-          <app-suite-prompt-builder [idPrefix]="idPrefix + '-builder'" />
+          <ng-container *ngTemplateOutlet="wizardButton"></ng-container>
+          <app-code-block [idPrefix]="idPrefix + '-ai-steps'"
+                          [caption]="workflowFileName"
+                          [downloadName]="workflowFileName"
+                          downloadType="text/markdown;charset=utf-8"
+                          [code]="workflowInstructions"
+                          subject="the step-by-step instructions" />
         } @else {
-          <ng-container *ngTemplateOutlet="promptBlock"></ng-container>
+          <div class="help-ai">
+            <p class="help-ai-hint">{{ aiHint }}</p>
+            @if (guidanceState === 'loading') {
+              <p class="help-ai-hint help-ai-guidance-state" role="status">Loading rubric guidance…</p>
+            } @else if (guidanceState === 'failed') {
+              <p class="help-ai-hint help-ai-guidance-state" role="status">The rubric guidance could not be loaded, so these instructions leave out the rubric format and difficulty bands.</p>
+            }
+            <app-code-block [idPrefix]="idPrefix + '-ai'"
+                            [caption]="aiFileName"
+                            [downloadName]="aiFileName"
+                            downloadType="text/markdown;charset=utf-8"
+                            [code]="aiInstructions"
+                            subject="the AI instructions" />
+          </div>
         }
       } @else if (activeTab === 'examples') {
         <div class="help-examples">
@@ -83,38 +76,29 @@
                 <summary>{{ ex.title }}</summary>
                 <div class="gh-disclosure-body">
                   <div class="markdown-body help-example-intro gh-help-prose" [innerHTML]="ex.intro | markdown"></div>
-                  <div class="help-ai-actions">
-                    <button type="button" class="action-btn" (click)="copyExample(ex)"
-                            [attr.aria-label]="'Copy example ' + ex.title + ' to the clipboard'"
-                            [attr.interestfor]="'tip-' + idPrefix + '-ex-copy-' + ex.id"
-                            [attr.style]="'anchor-name: --tip-' + idPrefix + '-ex-copy-' + ex.id">
-                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                    </button>
-                    <div popover="hint" class="gh-tooltip" [id]="'tip-' + idPrefix + '-ex-copy-' + ex.id"
-                         [attr.style]="'position-anchor: --tip-' + idPrefix + '-ex-copy-' + ex.id">Copy example to clipboard</div>
-                    <button type="button" class="action-btn" (click)="downloadExample(ex)"
-                            [attr.aria-label]="'Download example ' + ex.title + ' as YAML'"
-                            [attr.interestfor]="'tip-' + idPrefix + '-ex-dl-' + ex.id"
-                            [attr.style]="'anchor-name: --tip-' + idPrefix + '-ex-dl-' + ex.id">
-                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="12" x2="12" y2="18"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
-                    </button>
-                    <div popover="hint" class="gh-tooltip" [id]="'tip-' + idPrefix + '-ex-dl-' + ex.id"
-                         [attr.style]="'position-anchor: --tip-' + idPrefix + '-ex-dl-' + ex.id">Download example as YAML</div>
-                    <span class="help-copy-status" role="status" aria-live="polite">{{ copyTarget === ex.id ? copyStatus : '' }}</span>
-                  </div>
-                  <pre class="help-ai-text">{{ ex.yaml }}</pre>
+                  <app-code-block [idPrefix]="idPrefix + '-ex-' + ex.id"
+                                  [caption]="yamlExampleFileName(ex)"
+                                  [downloadName]="yamlExampleFileName(ex)"
+                                  [code]="ex.yaml"
+                                  [subject]="'example ' + ex.title" />
                 </div>
               </details>
             }
           </div>
         </div>
       } @else if (activeGuide; as guide) {
-        @if (guide.action === 'prompt-builder') {
-          <div class="help-jump">
-            <button type="button" class="btn-ghost" (click)="openPromptBuilder()">Open the prompt builder</button>
-          </div>
+        @if (guide.action === 'wizard') {
+          <ng-container *ngTemplateOutlet="wizardButton"></ng-container>
         }
-        <div class="markdown-body help-guide gh-help-prose" [innerHTML]="guide.markdown | markdown"></div>
+        @for (segment of activeGuideSegments; track $index) {
+          @if (segment.kind === 'prose') {
+            <div class="markdown-body help-guide gh-help-prose" [innerHTML]="segment.markdown | markdown"></div>
+          } @else {
+            <app-code-block [idPrefix]="idPrefix + '-' + activeTab + '-code-' + $index"
+                            [code]="segment.code"
+                            [subject]="'code sample ' + codeNumber(activeGuideSegments, $index) + ' of the ' + activeTabLabel + ' guide'" />
+          }
+        }
       }
     </div>
 

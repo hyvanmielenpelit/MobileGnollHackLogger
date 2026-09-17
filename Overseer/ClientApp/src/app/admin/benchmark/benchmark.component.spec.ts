@@ -6930,6 +6930,72 @@ describe('AdminBenchmarkComponent', () => {
       expect(openQuestions).not.toHaveBeenCalled();
     });
 
+    it('places the Snapshot Suite Wizard after Import Suite from YAML and before the help icon', () => {
+      showQuestions();
+      const toolbar = host().querySelector('.suites-toolbar-grouped')!;
+      const buttons = Array.from(toolbar.querySelectorAll('button'));
+      const labels = buttons.map(b => (b.textContent ?? '').trim());
+      const wizardIndex = labels.indexOf('Snapshot Suite Wizard');
+      expect(wizardIndex).toBe(labels.indexOf('Import Suite from YAML') + 1);
+      expect(buttons[wizardIndex + 1].classList).toContain('action-btn');
+      expect(buttons[wizardIndex].classList).toContain('btn-ghost');
+
+      const open = spyOn(component.snapshotSuiteWizard!, 'open');
+      buttons[wizardIndex].click();
+      expect(open).toHaveBeenCalled();
+    });
+
+    it('closes the suite help before opening the wizard it asks for', () => {
+      showQuestions();
+      const order: string[] = [];
+      spyOn(component.suiteYamlHelpDialog!, 'close').and.callFake(() => { order.push('close help'); });
+      spyOn(component.snapshotSuiteWizard!, 'open').and.callFake(() => { order.push('open wizard'); });
+      component.onSuiteWizardRequestedFromHelp();
+      expect(order).toEqual(['close help', 'open wizard']);
+    });
+
+    it('opens the assessor and Edit suite for the current copy of the suite the wizard names', () => {
+      showQuestions();
+      const assess = spyOn(component, 'openDifficultyAssessorDialog');
+      const edit = spyOn(component, 'openEditSuite');
+      const stale = { ...component.suites[0], questionCount: 0 };
+      component.onWizardAssessRequested(stale);
+      component.onWizardEditSuiteRequested(stale);
+      expect(assess).toHaveBeenCalledWith(component.suites[0]);
+      expect(edit).toHaveBeenCalledWith(component.suites[0]);
+    });
+
+    it('exports an empty snapshot suite without asking for its questions, and keeps a bare suite inert', async () => {
+      showQuestions();
+      benchmarkServiceMock.getQuestions.calls.reset();
+      benchmarkServiceMock.getSnapshot.and.returnValue(of({
+        id: 7, name: 'Low HP', sanitizedText: 'GnollHack 4.2.0 Build 47', charCount: 24,
+        sha256: 'a'.repeat(64), captureMethod: 'TextUpload', createdAtUtc: ''
+      } as any));
+      const emptySnapshotSuite = { ...component.suites[0], questionCount: 0, gameSnapshotId: 7 };
+      const bare = { ...component.suites[0], questionCount: 0, gameSnapshotId: null };
+      expect(component.canExportSuite(emptySnapshotSuite)).toBeTrue();
+      expect(component.canExportSuite(bare)).toBeFalse();
+
+      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true });
+      try {
+        await component.copySuiteYaml(emptySnapshotSuite);
+        expect(benchmarkServiceMock.getQuestions).not.toHaveBeenCalled();
+        const yaml = writeText.calls.mostRecent().args[0] as string;
+        expect(yaml).toContain('\nquestions: []\n');
+        expect(yaml).toContain('  snapshot:\n');
+
+        writeText.calls.reset();
+        await component.copySuiteYaml(bare);
+        expect(writeText).not.toHaveBeenCalled();
+      } finally {
+        delete (navigator as { clipboard?: unknown }).clipboard;
+        if (original) Object.defineProperty(navigator, 'clipboard', original);
+      }
+    });
+
     it('routes the import dialog help request by the mode the import was opened for', () => {
       showQuestions();
       const openSuite = spyOn(component.suiteYamlHelpDialog!, 'open');

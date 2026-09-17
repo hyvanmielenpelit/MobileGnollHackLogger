@@ -1,46 +1,64 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, ElementRef, Input, OnDestroy, ViewChild, inject } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  Component,
+  ElementRef,
+  EventEmitter,
+  Input,
+  OnChanges,
+  Output,
+  SimpleChanges,
+  ViewChild,
+  inject
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { copyToClipboard } from '../../../utils/clipboard.util';
-import { downloadTextFile } from '../../../utils/download.util';
-import { MAX_SUITE_NAME_LENGTH, suiteSlug } from './question-yaml-format';
+import { CodeBlockComponent } from '../../../shared/code-block/code-block.component';
+import { MAX_SUITE_NAME_LENGTH } from './question-yaml-format';
 import {
   DEFAULT_BAND_COUNT,
   MAX_QUESTIONS_PER_SUITE,
   SuiteAgentPromptField,
   SuiteAgentPromptOptions,
+  SuiteAgentPromptSource,
+  agentOutputFileName,
   buildSuiteAgentPrompt,
-  looksLikeAbsolutePath,
   validateSuiteAgentPromptOptions
 } from './suite-agent-prompt';
 import { SUITE_AI_PROMPT_FILE_NAME } from './suite-yaml-guide';
+import { BUILDER_LABELS } from './suite-workflow-instructions';
 
-const STATUS_MS = 3000;
+/** The download name of a prompt that adds questions to an existing suite. */
+export const SUITE_ADD_QUESTIONS_PROMPT_FILE_NAME = 'overseer-suite-add-questions-prompt.md';
 
 /**
- * The *AI Prompt* tab of the suite help: the fields of {@link SuiteAgentPromptOptions}, a Generate
- * button, and the assembled prompt with Copy and Download.
- *
- * Nothing is persisted and nothing is fetched. The host renders this inside `@if`, so a tab switch
- * destroys it and the next visit starts empty, which is intended.
+ * The prompt step of the Snapshot Suite Wizard: the fields of {@link SuiteAgentPromptOptions} the
+ * wizard does not own, a Generate button, and the assembled prompt in a copyable code block.
+ * The route and the path are inputs; changing either discards a generated prompt.
  */
 @Component({
   selector: 'app-suite-prompt-builder',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, CodeBlockComponent],
   templateUrl: './suite-prompt-builder.component.html',
   styleUrls: ['./suite-prompt-builder.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class SuitePromptBuilderComponent implements OnDestroy {
+export class SuitePromptBuilderComponent implements OnChanges {
   private cdr = inject(ChangeDetectorRef);
 
   @ViewChild('result') result?: ElementRef<HTMLElement>;
 
   /** Prefixed onto every element id, so two instances can share one document. */
   @Input() idPrefix = 'suite-prompt';
+  @Input() source: SuiteAgentPromptSource | null = null;
+  @Input() sourcePath = '';
+  /** Route A: the existing suite's name, which names the agent's output file. */
+  @Input() knownSuiteName = '';
 
-  snapshotPath = '';
+  /** Emits the options a prompt was generated from. */
+  @Output() generated = new EventEmitter<SuiteAgentPromptOptions>();
+
   suiteName = '';
   countsMode: 'propose' | 'manual' = 'propose';
   simple: number | null = DEFAULT_BAND_COUNT;
@@ -50,6 +68,7 @@ export class SuitePromptBuilderComponent implements OnDestroy {
 
   readonly maxSuiteNameLength = MAX_SUITE_NAME_LENGTH;
   readonly maxQuestions = MAX_QUESTIONS_PER_SUITE;
+  readonly labels = BUILDER_LABELS;
 
   /** The generated prompt, or empty while none is current. */
   prompt = '';
@@ -57,15 +76,16 @@ export class SuitePromptBuilderComponent implements OnDestroy {
   errors: Partial<Record<SuiteAgentPromptField, string>> = {};
   /** The form-level announcement: generated, or invalidated by an edit. */
   status = '';
-  /** The copy toolbar's announcement. */
-  copyStatus = '';
 
-  private statusTimer: ReturnType<typeof setTimeout> | undefined;
+  get isSuiteYaml(): boolean {
+    return this.source === 'suite-yaml';
+  }
 
   get options(): SuiteAgentPromptOptions {
     return {
-      snapshotPath: this.snapshotPath,
-      suiteName: this.suiteName,
+      source: this.source,
+      sourcePath: this.sourcePath,
+      suiteName: this.isSuiteYaml ? this.knownSuiteName : this.suiteName,
       counts: this.countsMode === 'manual'
         ? { simple: this.simple ?? NaN, intermediate: this.intermediate ?? NaN, advanced: this.advanced ?? NaN }
         : null,
@@ -77,13 +97,25 @@ export class SuitePromptBuilderComponent implements OnDestroy {
     return (this.simple ?? 0) + (this.intermediate ?? 0) + (this.advanced ?? 0);
   }
 
-  /** Advisory only: a relative path still resolves, against the agent's working directory. */
-  get showRelativePathHint(): boolean {
-    return this.snapshotPath.trim() !== '' && !looksLikeAbsolutePath(this.snapshotPath);
+  get outputFileName(): string {
+    return agentOutputFileName(this.source ?? 'snapshot-file', this.options.suiteName.trim());
   }
 
-  get outputFileName(): string {
-    return `benchmark-suite-${suiteSlug(this.suiteName.trim())}.yaml`;
+  get promptFileName(): string {
+    return this.isSuiteYaml ? SUITE_ADD_QUESTIONS_PROMPT_FILE_NAME : SUITE_AI_PROMPT_FILE_NAME;
+  }
+
+  /** The route or path problem the wizard should have prevented; shown above Generate. */
+  get sourceError(): string | null {
+    return this.errors.source ?? this.errors.sourcePath ?? null;
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['source'] || changes['sourcePath'] || changes['knownSuiteName']) {
+      delete this.errors.source;
+      delete this.errors.sourcePath;
+      this.discardPrompt();
+    }
   }
 
   /** A generated prompt describes the fields as they were; an edit makes it a lie. */
@@ -129,49 +161,29 @@ export class SuitePromptBuilderComponent implements OnDestroy {
 
     this.prompt = buildSuiteAgentPrompt(options);
     this.status = 'Prompt generated.';
-    this.copyStatus = '';
     this.cdr.detectChanges();
+    this.generated.emit(options);
     this.scrollResultIntoView();
-  }
-
-  async copyPrompt(): Promise<void> {
-    const ok = await copyToClipboard(this.prompt);
-    this.copyStatus = ok ? 'Copied' : 'Could not copy; use Download instead.';
-    this.cdr.detectChanges();
-    clearTimeout(this.statusTimer);
-    this.statusTimer = setTimeout(() => {
-      this.copyStatus = '';
-      this.cdr.detectChanges();
-    }, STATUS_MS);
-  }
-
-  downloadPrompt(): void {
-    downloadTextFile(SUITE_AI_PROMPT_FILE_NAME, this.prompt, 'text/markdown;charset=utf-8');
-  }
-
-  ngOnDestroy(): void {
-    clearTimeout(this.statusTimer);
   }
 
   private discardPrompt(): void {
     if (this.prompt !== '') {
       this.prompt = '';
-      this.copyStatus = '';
       this.status = 'Inputs changed — generate the prompt again.';
     }
   }
 
   private focusFirstInvalid(invalid: SuiteAgentPromptField[]): void {
-    const order: SuiteAgentPromptField[] = ['snapshotPath', 'suiteName', 'counts'];
+    const order: SuiteAgentPromptField[] = ['suiteName', 'counts'];
     const first = order.find(f => invalid.includes(f));
-    const suffix = first === 'snapshotPath' ? 'path' : first === 'suiteName' ? 'name' : 'simple';
-    document.getElementById(`${this.idPrefix}-${suffix}`)?.focus();
+    const id = first === 'suiteName' ? 'name' : first === 'counts' ? 'simple' : 'generate';
+    document.getElementById(`${this.idPrefix}-${id}`)?.focus();
   }
 
   private scrollResultIntoView(): void {
     const reduced = typeof window !== 'undefined' && window.matchMedia
       ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
       : false;
-    this.result?.nativeElement.scrollIntoView({ block: 'nearest', behavior: reduced ? 'auto' : 'smooth' });
+    this.result?.nativeElement.scrollIntoView?.({ block: 'nearest', behavior: reduced ? 'auto' : 'smooth' });
   }
 }

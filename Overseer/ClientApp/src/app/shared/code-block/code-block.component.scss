@@ -1,0 +1,97 @@
+/* Layout only: .action-btn, .gh-tooltip and .visually-hidden come from the global stylesheet. */
+
+:host {
+  position: relative;
+  display: block;
+  margin-block: 12px 20px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  overflow: clip;
+}
+
+.code-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 14px;
+  border-bottom: 1px solid var(--border-glass);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.code-block-caption {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12.5px;
+  color: #aaa;
+}
+
+.code-block-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The corner button sits on its own backing, so wrapped text never shows through it. */
+.code-block-corner {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-end: 8px;
+  border-radius: 6px;
+  background: rgba(20, 20, 20, 0.9);
+  opacity: 0.75;
+}
+
+:host(:hover) .code-block-corner,
+:host(:focus-within) .code-block-corner {
+  opacity: 1;
+}
+
+.code-block-pre {
+  margin: 0;
+  padding: 12px 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.55;
+
+  &.has-corner-button {
+    padding-inline-end: 52px;
+  }
+
+  code {
+    font: inherit;
+    background: none;
+    padding: 0;
+    color: inherit;
+  }
+}
+
+.code-block-error {
+  margin: 0;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border-glass);
+  font-size: 0.9em;
+  color: var(--color-warning);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .code-block-corner {
+    transition: opacity 0.15s ease;
+  }
+
+  .code-block-glyph {
+    animation: code-block-glyph-in 0.15s ease;
+  }
+}
+
+@keyframes code-block-glyph-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+}

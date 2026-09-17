@@ -1,0 +1,273 @@
+@if (step === 1) {
+  <h4 class="visually-hidden" #stepHeading tabindex="-1">Provide YAML</h4>
+
+  <fieldset class="gh-fieldset import-source">
+    <legend>Source</legend>
+    <div class="import-source-options">
+      <label class="import-radio">
+        <input type="radio" [attr.name]="idPrefix + '-source'" value="paste"
+               [checked]="source === 'paste'" (change)="setSource('paste')">
+        Paste YAML
+      </label>
+      <label class="import-radio">
+        <input type="radio" [attr.name]="idPrefix + '-source'" value="file"
+               [checked]="source === 'file'" (change)="setSource('file')">
+        Upload a file
+      </label>
+    </div>
+
+    @if (source === 'paste') {
+      <div class="form-group">
+        <label [attr.for]="idPrefix + '-paste'">YAML document</label>
+        <textarea [id]="idPrefix + '-paste'" class="gh-input gh-textarea-autosize import-yaml-textarea"
+                  style="--autosize-min: 12lh; --autosize-max: 40lh"
+                  spellcheck="false" wrap="off" autocomplete="off"
+                  [ngModel]="pastedText" (ngModelChange)="onPastedTextChange($event)"></textarea>
+      </div>
+    } @else {
+      <div class="form-group">
+        <label [attr.for]="idPrefix + '-file'">YAML file</label>
+        <input [id]="idPrefix + '-file'" type="file" class="gh-input"
+               accept=".yaml,.yml,application/yaml,text/yaml,text/plain"
+               (change)="onFileSelected($event)">
+        @if (fileText !== null) {
+          <div class="import-file-info" role="status">
+            <span>{{ fileName }} ({{ fileSizeLabel }})</span>
+            <button type="button" class="btn-ghost" (click)="clearFile()">Clear file</button>
+          </div>
+        }
+        @if (fileError) {
+          <p class="error-message" role="alert">{{ fileError }}</p>
+        }
+      </div>
+    }
+
+    <p class="form-hint import-help-hint">
+      The format is documented in the help.
+      <button type="button" class="btn-ghost" (click)="requestHelp()">Open the format help</button>
+    </p>
+  </fieldset>
+
+  @if (errors.length > 0) {
+    <ul class="error-message import-errors" role="alert">
+      @for (e of errors; track $index) {
+        <li>{{ e.message }}</li>
+      }
+    </ul>
+    @if (showDownloadedFileHint) {
+      <p class="form-hint import-downloaded-hint">{{ downloadedFileHint }}</p>
+    }
+  }
+  @if (validSummary) {
+    <div class="import-valid" role="status">
+      <p class="import-valid-summary">{{ validSummary }}</p>
+      @for (n of notices; track $index) {
+        <p class="form-hint">{{ n }}</p>
+      }
+    </div>
+  }
+}
+
+@if (step === 2) {
+  <h4 class="import-step-heading" #stepHeading tabindex="-1">Review changes</h4>
+
+  @if (expectation) {
+    <div class="import-outcome" [attr.id]="idPrefix + '-outcome'">
+      @if (expectation.route === 'add-to-suite') {
+        <p>This will <strong>add {{ cards.length }} new {{ cards.length === 1 ? 'question' : 'questions' }}</strong> to the existing suite <strong>{{ suite?.name }}</strong>, which has {{ suite?.questionCount ?? 0 }} now. Its name, description, game snapshot and existing questions are not changed.</p>
+      } @else {
+        <p>This will <strong>create a new suite</strong> named <strong>{{ resolvedSuiteName }}</strong> with {{ cards.length }} {{ cards.length === 1 ? 'question' : 'questions' }} and attach the game snapshot <strong>{{ snapshotDisplayName }}</strong>. No existing suite is changed.</p>
+      }
+    </div>
+
+    <section class="import-checks" [attr.aria-labelledby]="idPrefix + '-checks-title'">
+      <h5 [id]="idPrefix + '-checks-title'">Checks</h5>
+      @if (boardChecking) {
+        <p class="form-hint" role="status">Checking the board…</p>
+      }
+      <ul class="import-check-list">
+        @for (f of blockingFindings; track $index) {
+          <li class="import-check import-check-blocking" [attr.data-code]="f.code">
+            <svg class="import-check-glyph" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+            <span><span class="import-check-level">Blocking:</span> {{ f.message }}</span>
+          </li>
+        }
+        @for (f of warningFindings; track $index) {
+          <li class="import-check import-check-warning" [attr.data-code]="f.code">
+            <svg class="import-check-glyph" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            <span><span class="import-check-level">Warning:</span> {{ f.message }}</span>
+          </li>
+        }
+        @for (f of confirmedFindings; track $index) {
+          <li class="import-check import-check-confirmed" [attr.data-code]="f.code">
+            <svg class="import-check-glyph" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            <span><span class="import-check-level">Confirmed:</span> {{ f.message }}</span>
+          </li>
+        }
+      </ul>
+    </section>
+  }
+
+  @if (mode === 'suite') {
+    <section class="import-card import-suite-card" [attr.aria-labelledby]="idPrefix + '-suite-card-title'">
+      <h5 [id]="idPrefix + '-suite-card-title'">New suite: {{ resolvedSuiteName }}</h5>
+      @if (resolvedSuiteName !== suiteName) {
+        <p class="form-hint">A suite named {{ suiteName }} already exists; the import will be named {{ resolvedSuiteName }}.</p>
+      }
+      @if (suiteDescription) {
+        <div class="import-markdown markdown-body" [innerHTML]="suiteDescription | markdown"></div>
+      }
+
+      <!-- What happens to the board is decided by the server; the preflight only reports it. -->
+      @if (suiteSnapshot) {
+        <div class="import-snapshot">
+          @if (!expectation) {
+            <label class="gh-checkbox" [attr.for]="idPrefix + '-attach-snapshot'">
+              <input [id]="idPrefix + '-attach-snapshot'" type="checkbox" [checked]="attachSnapshot"
+                     (change)="onAttachSnapshotChange($any($event.target).checked)">
+              <span>Attach the game snapshot from this file</span>
+            </label>
+          }
+          @if (attachSnapshot) {
+            <p class="form-hint import-snapshot-outcome" role="status">{{ snapshotOutcome }}</p>
+            @if (snapshotCheck?.truncated) {
+              <p class="form-hint">The board is cut at 60,000 characters.</p>
+            }
+            @if (suiteSnapshot.sourceGnollHackVersion || suiteSnapshot.capturedAtUtc) {
+              <p class="form-hint">
+                @if (suiteSnapshot.sourceGnollHackVersion) { <span>GnollHack {{ suiteSnapshot.sourceGnollHackVersion }}</span> }
+                @if (suiteSnapshot.sourceGnollHackVersion && suiteSnapshot.capturedAtUtc) { <span>&nbsp;&middot;&nbsp;</span> }
+                @if (suiteSnapshot.capturedAtUtc) { <span>captured {{ suiteSnapshot.capturedAtUtc | date: 'medium' }}</span> }
+              </p>
+            }
+            @if (snapshotHashMismatch) {
+              <p class="form-hint import-snapshot-warning">The text differs from the snapshot this file was exported from &mdash; it was edited, or damaged in transit.</p>
+            }
+            <details class="gh-disclosure import-snapshot-text">
+              <summary>Show the snapshot text</summary>
+              <div class="gh-disclosure-body">
+                <pre>{{ suiteSnapshot.text }}</pre>
+              </div>
+            </details>
+          }
+        </div>
+      } @else {
+        <p class="form-hint">No game snapshot in this document. Use Upload Snapshot on the new suite's card to add one.</p>
+      }
+    </section>
+  } @else {
+    <div class="import-view-toggle" role="group" aria-label="Review view">
+      <button type="button" class="btn-ghost" [attr.aria-pressed]="view === 'side'" (click)="setView('side')">Side by side</button>
+      <button type="button" class="btn-ghost" [attr.aria-pressed]="view === 'diff'" (click)="setView('diff')">Diff</button>
+    </div>
+  }
+
+  @for (card of cards; track $index) {
+    <section class="import-card" [attr.aria-label]="cardHeading(card)">
+      <div class="import-card-header">
+        <h5>{{ cardHeading(card) }}</h5>
+        <div class="import-badges">
+          @if (card.item.current === null) {
+            <span class="status-badge import-badge-new">new</span>
+          } @else if (card.item.unchanged) {
+            <span class="status-badge import-badge-none">no changes</span>
+          } @else {
+            @if (card.item.questionChanged) {
+              <span class="status-badge badge-warning">question text</span>
+            }
+            @if (card.item.difficultyChanged) {
+              <span class="status-badge badge-warning">difficulty {{ currentDifficultyLabel(card) }} → {{ importedDifficultyLabel(card) }}</span>
+            }
+            @if (card.item.rubricCleared) {
+              <span class="status-badge badge-warning">rubric cleared</span>
+            } @else if (card.item.rubricChanged) {
+              <span class="status-badge badge-warning">rubric</span>
+            }
+          }
+        </div>
+      </div>
+
+      @for (n of card.rubricNotices; track n.code) {
+        <p class="form-hint import-rubric-notice">Rubric: {{ n.message }}</p>
+      }
+
+      @if (mode === 'suite' || view === 'side') {
+        <div class="import-compare">
+          @if (mode !== 'suite') {
+            <div class="import-column">
+              <h6>Current</h6>
+              @if (card.item.current) {
+                <p class="import-field-label">Question</p>
+                <p class="q-full-text">{{ card.item.current.questionText }}</p>
+                <p class="import-field-label">Difficulty: {{ currentDifficultyLabel(card) }}</p>
+                <p class="import-field-label">Rubric</p>
+                @if (card.item.current.expectedPoints) {
+                  <app-collapsible-markdown [text]="card.item.current.expectedPoints" label="current rubric" />
+                } @else {
+                  <p class="text-muted">(no rubric)</p>
+                }
+              } @else {
+                <p class="text-muted">(new question)</p>
+              }
+            </div>
+          }
+          <div class="import-column">
+            <h6>Imported</h6>
+            <p class="import-field-label">Question</p>
+            @if (card.item.parsed.questionText !== null) {
+              <p class="q-full-text">{{ card.item.parsed.questionText }}</p>
+            } @else {
+              <p class="text-muted">Not in the document, kept as is.</p>
+            }
+            <p class="import-field-label">Difficulty: {{ importedDifficultyLabel(card) }}</p>
+            <p class="import-field-label">Rubric</p>
+            @if (card.item.parsed.rubric === null) {
+              <p class="text-muted">Rubric: not in the document, kept as is.</p>
+            } @else if (card.item.parsed.rubric === '') {
+              <p class="text-muted">(empty rubric)</p>
+            } @else {
+              <app-collapsible-markdown [text]="card.item.parsed.rubric" label="imported rubric" />
+            }
+          </div>
+        </div>
+      } @else {
+        <p class="import-field-label">Question</p>
+        <pre class="import-diff">@for (line of card.questionDiff; track $index) {<span class="diff-line" [class.diff-added]="line.kind === 'added'" [class.diff-removed]="line.kind === 'removed'" [class.diff-equal]="line.kind === 'equal'">{{ diffPrefix(line) }}{{ line.text }}</span>}</pre>
+        <p class="import-field-label">Rubric</p>
+        @if (card.item.parsed.rubric === null) {
+          <p class="text-muted">Rubric: not in the document, kept as is.</p>
+        } @else {
+          <pre class="import-diff">@for (line of card.rubricDiff; track $index) {<span class="diff-line" [class.diff-added]="line.kind === 'added'" [class.diff-removed]="line.kind === 'removed'" [class.diff-equal]="line.kind === 'equal'">{{ diffPrefix(line) }}{{ line.text }}</span>}</pre>
+        }
+      }
+    </section>
+  }
+
+  @if (expectation) {
+    <div class="import-confirm">
+      <label class="checkbox-label align-start" [attr.for]="idPrefix + '-confirm'">
+        <input [id]="idPrefix + '-confirm'" type="checkbox" required
+               [checked]="confirmed" (change)="onConfirmedChange($any($event.target).checked)"
+               [attr.aria-describedby]="idPrefix + '-outcome'">
+        <span>{{ confirmLabel }}</span>
+      </label>
+      @if (blockingFindings.length > 0) {
+        <p class="form-hint import-confirm-blocked">Resolve the blocking {{ blockingFindings.length === 1 ? 'check' : 'checks' }} above before importing.</p>
+      }
+    </div>
+  }
+
+  @if (applyError) {
+    <p class="error-message" role="alert">{{ applyError }}</p>
+  }
+}
+
+@if (step === 3) {
+  <h4 class="import-step-heading" #stepHeading tabindex="-1">Done</h4>
+  <p class="import-done" role="status">{{ doneSummary }}</p>
+  @if (intentCheck) {
+    <p class="import-intent" [class.import-intent-ok]="intentCheck.ok" [class.import-intent-mismatch]="!intentCheck.ok">
+      <span class="import-check-level">{{ intentCheck.ok ? 'Confirmed:' : 'Warning:' }}</span> {{ intentCheck.message }}
+    </p>
+  }
+}

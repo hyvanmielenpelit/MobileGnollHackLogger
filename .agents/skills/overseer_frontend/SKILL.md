@@ -232,8 +232,14 @@ To find specific popups, look in the corresponding component's `.html` template:
     `aria-controls`, the tooltip anchors and the exclusive `<details name>` accordion. The
     questions variant fetches the rubric authoring guidance and assembles its *AI Prompt* text;
     the suite variant makes **no** server call — its guide text is static (`suite-yaml-guide.ts`)
-    and its *AI Prompt* tab holds `app-suite-prompt-builder`, which assembles the agent prompt
-    client-side (`suite-agent-prompt.ts`).
+    and its *AI Prompt* tab explains the Snapshot Suite Wizard and emits `(wizardRequested)`, on
+    which the page closes the help and opens the wizard. Every code sample in both variants is an
+    `app-code-block` (`shared/code-block/`).
+  - `#snapshotSuiteWizard` (`app-snapshot-suite-wizard`, `question-yaml/`): the Snapshot Suite Wizard
+    from the Manage Suites toolbar — six steps from a game snapshot to an imported suite, by adding
+    questions to a snapshot suite or creating a new one. It holds `app-suite-prompt-builder` and an
+    `app-question-yaml-import-panel` (the import body the standalone import dialog also wraps), and
+    keeps its progress in `localStorage['overseer.snapshotSuiteWizard']`.
   - `#snapshotUploadDialog` (`app-snapshot-upload-dialog`, `snapshot-upload/`): Upload Snapshot from
     a suite card, with a nested `#replaceConfirmDialog` when the suite already has a snapshot.
     Delete Snapshot lives in the snapshot viewer's Metadata tab (`#deleteConfirmDialog` in

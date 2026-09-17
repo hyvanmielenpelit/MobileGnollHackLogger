@@ -95,6 +95,14 @@ describe('question-yaml-format', () => {
       expect(result.suite?.name).toBe(SUITE.name);
       expect(result.suite?.description).toBe(SUITE.description);
     });
+
+    it('writes an empty question list as a flow sequence, which reads back as the empty-list error', async () => {
+      const yaml = serializeSuiteYaml(SUITE, []);
+      expect(yaml).toContain('\nquestions: []\n');
+      const result = await parseQuestionYaml(yaml);
+      expect(result.suite?.name).toBe(SUITE.name);
+      expect(result.errors.map(e => e.message)).toEqual(['`questions` must be a non-empty list.']);
+    });
   });
 
   describe('input handling', () => {
@@ -240,6 +248,14 @@ describe('question-yaml-format', () => {
         'questions[1] has no id, so it will be created, and a created question needs a non-blank `question`.'
       ]);
       expect(result.notices.length).toBe(1);
+    });
+
+    it('M2: questions mode notes a file that names another suite, when the open suite is given', async () => {
+      const parsed = await parseQuestionYaml(header + 'suite:\n  name: Other\nquestions:\n  - question: a\n');
+      expect(validateForMode(parsed, 'questions', existing, undefined, 'Core').notices)
+        .toContain('This file names suite "Other", but you are importing into "Core".');
+      expect(validateForMode(parsed, 'questions', existing, undefined, 'Other').notices.length).toBe(1);
+      expect(validateForMode(parsed, 'questions', existing).notices.length).toBe(1);
     });
 
     it('M3: suite mode requires a suite name and ignores ids with a notice', async () => {

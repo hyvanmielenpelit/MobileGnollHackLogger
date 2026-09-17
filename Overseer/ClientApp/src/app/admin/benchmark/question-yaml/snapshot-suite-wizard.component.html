@@ -1,0 +1,247 @@
+<!-- SNAPSHOT SUITE WIZARD
+     Both routes from a game snapshot to an imported suite. No closedby="any": light dismiss would
+     drop an import in progress. -->
+<dialog #dialog class="gh-dialog benchmark-form-dialog snapshot-suite-wizard"
+        [attr.aria-labelledby]="idPrefix + '-title'"
+        (cancel)="onCancel($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 [id]="idPrefix + '-title'">{{ labels.title }}</h3>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close snapshot suite wizard"
+              [attr.aria-disabled]="applying ? 'true' : null" (click)="close()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <div class="dialog-body">
+      @if (resumeOffer) {
+        <section class="wizard-resume" [attr.aria-labelledby]="idPrefix + '-resume-title'">
+          <h4 [id]="idPrefix + '-resume-title'" class="wizard-step-heading" #stepHeading tabindex="-1">Continue where you left off?</h4>
+          <p>Continue with {{ resumeName }}, step {{ resumeOffer.importedSuiteId !== null ? 6 : resumeOffer.step }} of 6?</p>
+          <div class="wizard-resume-actions">
+            <button type="button" class="btn-gh" (click)="resume()">Resume</button>
+            <button type="button" class="btn-gh btn-gh-cancel" (click)="startOver()">Start over</button>
+          </div>
+        </section>
+      } @else {
+        <ol class="gh-steps" aria-label="Wizard steps">
+          @for (s of steps; track s.id) {
+            <li [class.is-done]="step > s.id" [attr.aria-current]="step === s.id ? 'step' : null">
+              <span class="gh-step-number" aria-hidden="true">{{ s.id }}</span>
+              {{ s.label }}
+            </li>
+          }
+        </ol>
+
+        <details class="gh-disclosure wizard-checklist">
+          <summary>The whole workflow as a checklist</summary>
+          <div class="gh-disclosure-body">
+            <app-code-block [idPrefix]="idPrefix + '-steps'"
+                            [caption]="instructionsFileName"
+                            [downloadName]="instructionsFileName"
+                            downloadType="text/markdown;charset=utf-8"
+                            [code]="instructions"
+                            subject="the workflow checklist" />
+          </div>
+        </details>
+
+        @if (stepError) {
+          <p class="error-message wizard-step-error" role="alert">{{ stepError }}</p>
+        }
+
+        <!-- Step 1: where the board is -->
+        @if (step === 1) {
+          <h4 class="wizard-step-heading" #stepHeading tabindex="-1">Where is the game snapshot?</h4>
+          @if (discardNotice) {
+            <p class="form-hint wizard-notice" role="status">{{ discardNotice }}</p>
+          }
+          <fieldset class="gh-fieldset wizard-routes">
+            <legend>Where is the game snapshot?</legend>
+            <div class="wizard-route">
+              <label class="builder-radio">
+                <input type="radio" [id]="idPrefix + '-route-suite'" [attr.name]="idPrefix + '-route'" value="add-to-suite"
+                       [checked]="route === 'add-to-suite'" (change)="setRoute('add-to-suite')"
+                       [attr.aria-describedby]="idPrefix + '-route-suite-hint'">
+                {{ labels.routeSuite }}
+              </label>
+              <p class="builder-hint" [id]="idPrefix + '-route-suite-hint'">The suite has the snapshot already; the agent adds questions to it.</p>
+            </div>
+
+            @if (route === 'add-to-suite') {
+              @if (snapshotSuites.length === 0) {
+                <p class="form-hint wizard-empty">No suite has a game snapshot yet. Create a suite, use <strong>Upload Snapshot</strong> on its card, then come back.</p>
+              } @else {
+                <fieldset class="wizard-suite-list">
+                  <legend class="visually-hidden">Suite</legend>
+                  @for (s of snapshotSuites; track s.id) {
+                    <div class="wizard-suite-row">
+                      <label class="builder-radio">
+                        <input type="radio" [attr.name]="idPrefix + '-suite'" [value]="s.id"
+                               [checked]="suiteId === s.id" (change)="selectSuite(s.id)">
+                        {{ suiteRowLabel(s) }}
+                      </label>
+                      @if (s.questionCount > 0) {
+                        <p class="builder-hint">The agent adds new questions and leaves these alone.</p>
+                      }
+                    </div>
+                  }
+                </fieldset>
+              }
+            }
+
+            <div class="wizard-route">
+              <label class="builder-radio">
+                <input type="radio" [id]="idPrefix + '-route-file'" [attr.name]="idPrefix + '-route'" value="create-suite"
+                       [checked]="route === 'create-suite'" (change)="setRoute('create-suite')"
+                       [attr.aria-describedby]="idPrefix + '-route-file-hint'">
+                {{ labels.routeFile }}
+              </label>
+              <p class="builder-hint" [id]="idPrefix + '-route-file-hint'">An <code>.ai.html</code> or <code>.snapshot.txt</code> on disk; the agent writes a new suite.</p>
+            </div>
+          </fieldset>
+        }
+
+        <!-- Step 2: the file the agent reads -->
+        @if (step === 2) {
+          <h4 class="wizard-step-heading" #stepHeading tabindex="-1">{{ isAddRoute ? 'Download the suite' : 'The snapshot file' }}</h4>
+
+          @if (isAddRoute) {
+            <div class="wizard-field">
+              <button type="button" class="btn-ghost" (click)="requestDownload()">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+                {{ labels.downloadSuite }}
+              </button>
+              <p class="builder-hint">The file is named <code>{{ downloadFileName }}</code>. Keep it outside every repository.</p>
+            </div>
+          } @else {
+            <div class="wizard-field">
+              <label [attr.for]="idPrefix + '-check-file'">{{ labels.checkFile }} <span class="builder-optional">(optional)</span></label>
+              <input type="file" class="gh-input" [id]="idPrefix + '-check-file'"
+                     accept=".html,.htm,.txt,text/html,text/plain"
+                     [attr.aria-describedby]="idPrefix + '-check-file-hint'"
+                     (change)="onCheckFileSelected($event)">
+              <p class="builder-hint" [id]="idPrefix + '-check-file-hint'">Read here in the browser and never uploaded: it only tells you whether this is a snapshot and how large it is.</p>
+              @if (fileCheckMessage) {
+                <p class="wizard-status" [class.wizard-status-warning]="!fileCheck?.looksLikeSnapshot || fileCheck?.exceedsCap" role="status">{{ fileCheckMessage }}</p>
+              }
+              @if (fileCheckError) {
+                <p class="wizard-status wizard-status-warning" role="status">{{ fileCheckError }}</p>
+              }
+            </div>
+          }
+
+          <div class="wizard-field">
+            <label [attr.for]="idPrefix + '-path'">{{ pathLabel }}</label>
+            <input type="text" class="gh-input" [id]="idPrefix + '-path'"
+                   required autocomplete="off" spellcheck="false" autocapitalize="off"
+                   [attr.placeholder]="pathPlaceholder"
+                   [ngModel]="sourcePath" (ngModelChange)="onSourcePathChange($event)"
+                   [attr.aria-describedby]="idPrefix + '-path-hint'">
+            <p class="builder-hint" [id]="idPrefix + '-path-hint'">A browser cannot see where a file is on disk, so paste its full path — File Explorer's <strong>Copy as path</strong> works, with or without the quotes.</p>
+            @if (relativePathAdvice) {
+              <p class="wizard-status wizard-status-warning" role="status">This does not look like a full path; the agent resolves a relative path against its working directory.</p>
+            }
+            @if (extensionAdvice) {
+              <p class="wizard-status wizard-status-warning" role="status">{{ extensionAdvice }}</p>
+            }
+          </div>
+        }
+
+        <!-- Step 3: the prompt -->
+        @if (step === 3) {
+          <h4 class="wizard-step-heading" #stepHeading tabindex="-1">Generate the prompt</h4>
+          <app-suite-prompt-builder #builder
+                                    [idPrefix]="idPrefix + '-builder'"
+                                    [source]="promptSource"
+                                    [sourcePath]="sourcePath"
+                                    [knownSuiteName]="selectedSuite?.name ?? ''"
+                                    (generated)="onPromptGenerated($event)"
+                                    (input)="onBuilderEdited()"
+                                    (change)="onBuilderEdited()" />
+          @if (promptOptions) {
+            <p class="builder-hint wizard-after-prompt">Paste it into an agent session opened on the MobileGnollHackLogger repository. The agent shows a count table, then writes <code>{{ outputFileName }}</code> beside your file. You can close this wizard meanwhile; it remembers this step.</p>
+          }
+        }
+
+        <!-- Steps 4 to 6: the import panel stays alive across them -->
+        @if (step >= 4) {
+          @if (step === 4) {
+            <h4 class="wizard-step-heading" #stepHeading tabindex="-1">Upload the agent's file</h4>
+            <p class="wizard-lead">{{ uploadLead }}</p>
+            @if (isAddRoute && existingState === 'loading') {
+              <p class="form-hint" role="status">Loading the suite's questions…</p>
+            }
+            @if (isAddRoute && existingState === 'failed') {
+              <p class="error-message" role="alert">
+                Could not load the suite's questions.
+                <button type="button" class="btn-ghost" (click)="retryExisting()">Try again</button>
+              </p>
+            }
+          }
+          @if (step === 5) {
+            <h4 class="wizard-step-heading" #stepHeading tabindex="-1">Review and confirm</h4>
+          }
+          @if (step === 6) {
+            <h4 class="wizard-step-heading" #stepHeading tabindex="-1">Assess the questions</h4>
+          }
+
+          <app-question-yaml-import-panel #panel
+                                          [idPrefix]="idPrefix + '-import'"
+                                          preferredSource="file"
+                                          [mode]="importMode"
+                                          [suite]="isAddRoute ? selectedSuite : null"
+                                          [existing]="existing"
+                                          [suites]="suites"
+                                          [expectation]="expectation"
+                                          (imported)="onQuestionsImported($event)"
+                                          (suiteImported)="onSuiteImported($event)"
+                                          (helpRequested)="helpRequested.emit()"
+                                          (stateChange)="onPanelState($event)" />
+
+          @if (step === 6) {
+            @if (panel && panel.step !== 3) {
+              <p class="import-done">The import is done.</p>
+            }
+            <div class="wizard-assess">
+              <p>The suite cannot run until every question has an AI-assessed difficulty.</p>
+              <button type="button" class="btn-gh" (click)="requestAssess()" [attr.aria-disabled]="resultSuite ? null : 'true'">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"></path></svg>
+                {{ labels.assess }}
+              </button>
+              @if (isAddRoute) {
+                <p class="wizard-edit-suite">
+                  The agent suggested a description in its handoff — paste it with
+                  <button type="button" class="btn-ghost" (click)="requestEditSuite()" [attr.aria-disabled]="resultSuite ? null : 'true'">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    {{ labels.editSuite }}
+                  </button>
+                </p>
+              }
+              <p class="builder-hint">Optional next checks: Suite Health <em>Snapshot facts</em>, and the citation check.</p>
+            </div>
+          }
+        }
+      }
+    </div>
+
+    @if (!resumeOffer) {
+      <div class="dialog-footer">
+        @if (canGoBack) {
+          <button type="button" class="btn-gh btn-gh-cancel wizard-back" (click)="back()">Back</button>
+        } @else {
+          <button type="button" class="btn-gh btn-gh-cancel wizard-back"
+                  [attr.aria-disabled]="applying ? 'true' : null" (click)="close()">Close</button>
+        }
+        <button type="button" class="btn-gh wizard-forward"
+                [attr.aria-disabled]="canGoForward && !applying ? null : 'true'"
+                [attr.aria-busy]="applying || panel?.validating ? 'true' : null"
+                (click)="forward()">{{ forwardLabel }}</button>
+      </div>
+    }
+  </div>
+</dialog>
