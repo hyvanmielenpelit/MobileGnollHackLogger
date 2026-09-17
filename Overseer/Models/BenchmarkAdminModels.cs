@@ -170,11 +170,47 @@ public class ImportBenchmarkQuestionsResult
     public List<BenchmarkQuestionDto> Questions { get; set; } = new();
 }
 
+public class ImportBenchmarkSuiteSnapshot
+{
+    /// <summary>Blank uses the suite's name.</summary>
+    public string? Name { get; set; }
+    /// <summary>Flattened snapshot text, or a raw HTML dump.</summary>
+    public string Text { get; set; } = string.Empty;
+    public string? SourceGnollHackVersion { get; set; }
+    public DateTime? CapturedAtUtc { get; set; }
+    public string? Notes { get; set; }
+}
+
 public class ImportBenchmarkSuiteRequest
 {
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public List<ImportBenchmarkQuestionItem> Questions { get; set; } = new();
+    /// <summary>Null imports the suite without a snapshot.</summary>
+    public ImportBenchmarkSuiteSnapshot? Snapshot { get; set; }
+}
+
+public class MatchSnapshotRequest
+{
+    public string Text { get; set; } = string.Empty;
+}
+
+public class MatchedSnapshotDto
+{
+    public long Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public long? SuiteId { get; set; }
+    public string? SuiteName { get; set; }
+}
+
+public class MatchSnapshotResult
+{
+    public string Sha256 { get; set; } = string.Empty;
+    public int CharCount { get; set; }
+    public bool Truncated { get; set; }
+    public bool IsHtml { get; set; }
+    /// <summary>A stored snapshot with the same text; null when there is none.</summary>
+    public MatchedSnapshotDto? Match { get; set; }
 }
 
 public class StartDifficultyAssessmentRequest

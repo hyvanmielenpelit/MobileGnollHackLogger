@@ -3,6 +3,7 @@ import { of, throwError } from 'rxjs';
 import { AdminBenchmarkService, RubricAuthoringGuidance } from '../../../services/admin-benchmark.service';
 import { QuestionYamlHelpDialogComponent } from './question-yaml-help-dialog.component';
 import { RUBRIC_GUIDANCE_UNAVAILABLE, YAML_EXAMPLES, buildAiInstructions } from './question-yaml-format';
+import { SUITE_AI_PROMPT, SUITE_YAML_EXAMPLES } from './suite-yaml-guide';
 
 describe('QuestionYamlHelpDialogComponent', () => {
   let fixture: ComponentFixture<QuestionYamlHelpDialogComponent>;
@@ -195,6 +196,79 @@ describe('QuestionYamlHelpDialogComponent', () => {
       const labels = Array.from(host.querySelectorAll('.action-btn')).map(b => b.getAttribute('aria-label'));
       expect(labels.length).toBe(YAML_EXAMPLES.length * 2);
       expect(new Set(labels).size).toBe(labels.length);
+    });
+  });
+
+  describe('suite variant', () => {
+    beforeEach(() => {
+      component.variant = 'suite';
+      fixture.detectChanges();
+    });
+
+    it('is titled for a suite, opens on Workflow and carries its own five tabs', () => {
+      component.open();
+      expect(host.querySelector('h3')!.textContent).toBe('Suite YAML Import and Export');
+      expect(tabButtons().map(b => b.textContent!.trim()))
+        .toEqual(['Workflow', 'Format', 'From a Snapshot', 'Examples', 'For an AI']);
+      expect(selectedTab()!.textContent!.trim()).toBe('Workflow');
+      expect(host.querySelector('.help-guide')!.textContent).toContain('Download, edit, import');
+    });
+
+    it('prefixes every element id, so the two instances never collide', () => {
+      component.open();
+      const ids = Array.from(host.querySelectorAll('[id]')).map(e => e.id);
+      expect(ids).toContain('suite-yaml-help-title');
+      expect(ids).toContain('suite-yaml-help-panel');
+      expect(tabButtons().every(b => b.id.startsWith('suite-yaml-help-tab-'))).toBeTrue();
+      expect(ids.some(id => id === 'yaml-help-title' || id === 'yaml-help-panel')).toBeFalse();
+      expect(host.querySelector('button.btn-icon-action')!.getAttribute('aria-label'))
+        .toBe('Close suite YAML import and export help');
+    });
+
+    it('never asks the server for the rubric guidance', () => {
+      component.open();
+      component.selectTab('ai');
+      fixture.detectChanges();
+      expect(service.getRubricAuthoringGuidance).not.toHaveBeenCalled();
+      expect(host.querySelector('.help-ai-guidance-state')).toBeNull();
+    });
+
+    it('shows the agent prompt on For an AI and on From a Snapshot, with a working copy button', async () => {
+      component.open();
+      for (const tab of ['ai', 'snapshot'] as const) {
+        component.selectTab(tab);
+        fixture.detectChanges();
+        expect(host.querySelector('.help-ai-text')!.textContent).toBe(SUITE_AI_PROMPT);
+        expect(host.querySelector('.help-ai-hint')!.textContent)
+          .toContain('Paste this into an agent session that can read the repositories');
+
+        await withClipboard(async writeText => {
+          (host.querySelector('.help-ai-actions .action-btn') as HTMLButtonElement).click();
+          await fixture.whenStable();
+          fixture.detectChanges();
+          expect(writeText).toHaveBeenCalledWith(SUITE_AI_PROMPT);
+          expect(host.querySelector('.help-copy-status')!.textContent).toBe('Copied');
+        });
+      }
+    });
+
+    it('names its accordion apart from the question help and opens the first example', () => {
+      component.open();
+      component.selectTab('examples');
+      fixture.detectChanges();
+      const details = Array.from(host.querySelectorAll<HTMLDetailsElement>('details.help-example'));
+      expect(details.length).toBe(SUITE_YAML_EXAMPLES.length);
+      expect(details.every(d => d.getAttribute('name') === 'suite-yaml-help-example')).toBeTrue();
+      expect(details.map(d => d.open)).toEqual(SUITE_YAML_EXAMPLES.map((_, i) => i === 0));
+    });
+
+    it('wraps the arrow keys round to the last tab', () => {
+      component.open();
+      const first = tabButtons()[0];
+      first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+      fixture.detectChanges();
+      expect(component.activeTab).toBe('ai');
+      expect(document.activeElement!.id).toBe('suite-yaml-help-tab-ai');
     });
   });
 });

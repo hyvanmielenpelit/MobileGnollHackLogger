@@ -11,11 +11,14 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
 import {
   AdminBenchmarkService,
   BenchmarkQuestionDto,
   BenchmarkSuiteDto,
-  ImportBenchmarkQuestionsResultDto
+  ImportBenchmarkQuestionsResultDto,
+  ImportBenchmarkSuiteSnapshot,
+  MatchSnapshotResult
 } from '../../../services/admin-benchmark.service';
 import { CollapsibleMarkdownComponent } from '../../../shared/collapsible-markdown/collapsible-markdown.component';
 import { MarkdownPipe } from '../../../chat/markdown.pipe';
@@ -32,6 +35,7 @@ import {
   lintRubric,
   parseQuestionYaml,
   toImportItems,
+  toSuiteSnapshot,
   validateForMode
 } from './question-yaml-format';
 
@@ -103,6 +107,15 @@ export class QuestionYamlImportDialogComponent {
   cards: ReviewCard[] = [];
   suiteName = '';
   suiteDescription: string | null = null;
+  /** The snapshot the document carries, in suite mode; null when it carries none. */
+  suiteSnapshot: ImportBenchmarkSuiteSnapshot | null = null;
+  /** The hash the file claims its board had; a difference from the server's is a warning. */
+  fileSha256: string | null = null;
+  /** Unticking it imports the suite without the file's snapshot. */
+  attachSnapshot = true;
+  snapshotCheck: MatchSnapshotResult | null = null;
+  snapshotCheckState: 'idle' | 'loading' | 'ready' | 'failed' = 'idle';
+  private snapshotCheckSub: Subscription | undefined;
   view: ReviewView = 'side';
 
   applying = false;
@@ -124,6 +137,7 @@ export class QuestionYamlImportDialogComponent {
 
   close(): void {
     if (this.applying) return;
+    this.cancelSnapshotCheck();
     this.dialog?.nativeElement?.close();
   }
 
@@ -273,11 +287,14 @@ export class QuestionYamlImportDialogComponent {
       return false;
     }
 
+    this.suiteSnapshot = this.mode === 'suite' ? toSuiteSnapshot(parsed) : null;
+    this.fileSha256 = parsed.suite?.snapshot?.sha256 ?? null;
+    this.attachSnapshot = true;
+    this.cancelSnapshotCheck();
+
     const plan = buildImportPlan(parsed, this.mode, this.existing, this.target ?? undefined);
-    // A suite import attaches no snapshot, so only the open suite's snapshot counts.
-    const suiteHasSnapshot = this.mode !== 'suite' && !!this.suite?.gameSnapshotId;
     this.cards = plan.map(item => ({
-      rubricNotices: item.rubricChanged && item.parsed.rubric ? lintRubric(item.parsed.rubric, suiteHasSnapshot) : [],
+      rubricNotices: item.rubricChanged && item.parsed.rubric ? lintRubric(item.parsed.rubric, this.suiteHasSnapshot) : [],
       item,
       questionDiff: diffLines(item.current?.questionText ?? '', item.parsed.questionText ?? item.current?.questionText ?? '').lines,
       rubricDiff: diffLines(
@@ -310,7 +327,78 @@ export class QuestionYamlImportDialogComponent {
     if (!this.canReview) return;
     if (!(await this.validate())) return;
     this.view = 'side';
+    this.checkSnapshot();
     this.goToStep(2);
+  }
+
+  /** The snapshot the rubric lint grades against: in suite mode, the board about to be attached. */
+  get suiteHasSnapshot(): boolean {
+    return this.mode === 'suite' ? !!this.suiteSnapshot && this.attachSnapshot : !!this.suite?.gameSnapshotId;
+  }
+
+  /** Recomputes the rubric notices, which depend on whether a board will be attached. */
+  onAttachSnapshotChange(attach: boolean): void {
+    this.attachSnapshot = attach;
+    const hasSnapshot = this.suiteHasSnapshot;
+    this.cards = this.cards.map(card => ({
+      ...card,
+      rubricNotices: card.item.rubricChanged && card.item.parsed.rubric ? lintRubric(card.item.parsed.rubric, hasSnapshot) : []
+    }));
+    this.cdr.detectChanges();
+  }
+
+  /** True while the file's own hash disagrees with the hash the server computes from its text. */
+  get snapshotHashMismatch(): boolean {
+    return !!this.fileSha256 && !!this.snapshotCheck && this.fileSha256 !== this.snapshotCheck.sha256;
+  }
+
+  /** What the import will do with the file's snapshot, as the server's preflight reports it. */
+  get snapshotOutcome(): string {
+    if (this.snapshotCheckState === 'loading') {
+      return 'Checking for an identical stored snapshot…';
+    }
+    if (this.snapshotCheckState === 'failed' || !this.snapshotCheck) {
+      return 'Could not check for an identical stored snapshot. The import still attaches one.';
+    }
+
+    const name = this.suiteSnapshot?.name || this.resolvedSuiteName;
+    const match = this.snapshotCheck.match;
+    if (!match) {
+      return `The game snapshot ${name} (${this.snapshotCheck.charCount.toLocaleString()} characters) will be created and attached.`;
+    }
+    if (match.suiteId == null) {
+      return `An identical snapshot, ${match.name}, is already stored and belongs to no suite. It will be attached; no copy is made.`;
+    }
+    return `An identical snapshot, ${match.name}, belongs to suite ${match.suiteName}. `
+      + `A snapshot belongs to one suite, so this import stores a copy named ${match.name} (2).`;
+  }
+
+  /* One preflight per validated document; it writes nothing, and the import decides again anyway. */
+  private checkSnapshot(): void {
+    this.cancelSnapshotCheck();
+    if (this.mode !== 'suite' || !this.suiteSnapshot) {
+      return;
+    }
+    this.snapshotCheckState = 'loading';
+    this.snapshotCheckSub = this.benchmarkService.matchSnapshot(this.suiteSnapshot.text).subscribe({
+      next: result => {
+        this.snapshotCheck = result;
+        this.snapshotCheckState = 'ready';
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.snapshotCheck = null;
+        this.snapshotCheckState = 'failed';
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  private cancelSnapshotCheck(): void {
+    this.snapshotCheckSub?.unsubscribe();
+    this.snapshotCheckSub = undefined;
+    this.snapshotCheck = null;
+    this.snapshotCheckState = 'idle';
   }
 
   requestHelp(): void {
@@ -327,6 +415,7 @@ export class QuestionYamlImportDialogComponent {
   back(): void {
     if (this.applying) return;
     this.applyError = null;
+    this.cancelSnapshotCheck();
     this.goToStep(1);
   }
 
@@ -339,14 +428,18 @@ export class QuestionYamlImportDialogComponent {
     const items = toImportItems(this.cards.map(c => c.item), this.mode);
 
     if (this.mode === 'suite') {
+      const snapshot = this.attachSnapshot ? this.suiteSnapshot : null;
       this.benchmarkService.importSuite({
         name: this.suiteName,
         description: this.suiteDescription,
-        questions: items
+        questions: items,
+        snapshot
       }).subscribe({
         next: suite => {
           this.applying = false;
-          this.doneSummary = `Created suite ${suite.name} with ${suite.questionCount} ${suite.questionCount === 1 ? 'question' : 'questions'}.`;
+          this.doneSummary = `Created suite ${suite.name} with ${suite.questionCount} ${suite.questionCount === 1 ? 'question' : 'questions'}.`
+            + this.snapshotDoneSentence(suite.gameSnapshotId ?? null, suite.gameSnapshotName ?? null)
+            + ' Run Assess Difficulty before the first benchmark run.';
           this.suiteImported.emit(suite);
           this.goToStep(3);
         },
@@ -371,6 +464,17 @@ export class QuestionYamlImportDialogComponent {
       },
       error: err => this.onApplyError(err)
     });
+  }
+
+  /** Whether the board on the new suite was reused or created, as the response reports it. */
+  private snapshotDoneSentence(snapshotId: number | null, snapshotName: string | null): string {
+    if (snapshotId == null) {
+      return '';
+    }
+    const name = snapshotName ?? 'the game snapshot';
+    return snapshotId === this.snapshotCheck?.match?.id
+      ? ` Attached the existing game snapshot ${name}.`
+      : ` Created game snapshot ${name}.`;
   }
 
   private onApplyError(err: unknown): void {
@@ -428,6 +532,10 @@ export class QuestionYamlImportDialogComponent {
     this.cards = [];
     this.suiteName = '';
     this.suiteDescription = null;
+    this.suiteSnapshot = null;
+    this.fileSha256 = null;
+    this.attachSnapshot = true;
+    this.cancelSnapshotCheck();
     this.view = 'side';
     this.applying = false;
     this.applyError = null;

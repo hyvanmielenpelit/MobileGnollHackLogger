@@ -624,10 +624,40 @@ export interface ImportBenchmarkQuestionsResultDto {
   questions: BenchmarkQuestionDto[];
 }
 
+/** The game snapshot a suite YAML carries; the import attaches it to the new suite. */
+export interface ImportBenchmarkSuiteSnapshot {
+  /** Blank uses the suite's name. */
+  name: string | null;
+  /** Flattened snapshot text, or a raw HTML dump. */
+  text: string;
+  sourceGnollHackVersion: string | null;
+  capturedAtUtc: string | null;
+  notes: string | null;
+}
+
 export interface ImportBenchmarkSuiteRequest {
   name: string;
   description: string | null;
   questions: ImportBenchmarkQuestionItem[];
+  /** Null or absent imports the suite without a snapshot. */
+  snapshot?: ImportBenchmarkSuiteSnapshot | null;
+}
+
+export interface MatchedSnapshotDto {
+  id: number;
+  name: string;
+  suiteId?: number | null;
+  suiteName?: string | null;
+}
+
+/** What a suite import would do with a snapshot text, checked before anything is written. */
+export interface MatchSnapshotResult {
+  sha256: string;
+  charCount: number;
+  truncated: boolean;
+  isHtml: boolean;
+  /** A stored snapshot with the same text; null when there is none. */
+  match?: MatchedSnapshotDto | null;
 }
 
 export type SnapshotContentKind = 'Auto' | 'Text' | 'Html';
@@ -1815,6 +1845,11 @@ export class AdminBenchmarkService {
   /** Creates a new suite from an imported YAML document. An existing suite is never overwritten. */
   importSuite(req: ImportBenchmarkSuiteRequest): Observable<BenchmarkSuiteDto> {
     return this.http.post<BenchmarkSuiteDto>('/api/admin/benchmark/suites/import', req);
+  }
+
+  /** The read-only preflight behind the import review step's snapshot sentence. Writes nothing. */
+  matchSnapshot(text: string): Observable<MatchSnapshotResult> {
+    return this.http.post<MatchSnapshotResult>('/api/admin/benchmark/snapshots/match', { text });
   }
 
   /** Attaches a board built from an uploaded file to the suite; replacing a current snapshot needs `replaceExisting`. */

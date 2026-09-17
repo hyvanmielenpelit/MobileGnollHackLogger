@@ -2822,7 +2822,15 @@ suite:
   name: "GnollHack Player Assistance Benchmark Suite"
   description: |
     Eighteen questions across three tiers.
-  snapshot: "Valkyrie dlvl 12"
+  snapshot:
+    name: "Valkyrie dlvl 12"            # optional; defaults to the suite name
+    gnollhack_version: "4.2.0 Build 47" # optional, at most 64 characters
+    captured_at: "2026-09-16T18:04:11Z" # optional, ISO 8601 UTC
+    notes: |                            # optional
+      Exported from the developer menu.
+    sha256: "9f2c…"                     # optional; written by every export, checked on import
+    text: |                             # required inside `snapshot`
+      GnollHack 4.2.0 …
 
 questions:
   - id: 42
@@ -2841,7 +2849,7 @@ questions:
 | Rule | Requirement |
 |---|---|
 | H1 | A mapping with `format: overseer-benchmark-questions` and `version: 1`; only the keys `format`, `version`, `suite`, `questions`. |
-| H2 | `suite` is optional: `name` (1–128 characters), `description`, `snapshot` (informational), `snapshot_text` (informational text, ignored with a notice in every mode); no other keys. |
+| H2 | `suite` is optional: `name` (1–128 characters), `description`, `snapshot`; no other keys. `snapshot` is a **mapping**, whose keys are only `name` (1–128), `gnollhack_version` (≤ 64), `captured_at` (a parseable date, normalized to ISO 8601), `notes`, `sha256` (64 hexadecimal characters) and `text` (required, non-blank). A **string** `snapshot`, or a `snapshot_text` key, gets the old-shape error: *"`suite.snapshot` is now a mapping with `name` and `text`; `suite.snapshot_text` is no longer a key."* |
 | Q1 | `questions` is a non-empty list of mappings. |
 | Q2 | Question keys are only `id`, `difficulty`, `question`, `rubric`. |
 | Q3 | `id`, when present, is a positive integer, unique in the document. |
@@ -2850,7 +2858,7 @@ questions:
 | Q6 | A blank `question` on a replace is an error; `rubric: \|` with nothing under it clears the rubric. |
 | M1 | Single-question import (a question's *Import from YAML*): exactly one question, whose `id`, if present, is the target's. |
 | M2 | Questions import (Manage Questions toolbar): every `id` belongs to the open suite; a question without `id` is created and needs `question`; `suite` is ignored with a notice. |
-| M3 | Suite import (Manage Suites toolbar): `suite.name` is required; every question is created and needs `question`; ids are ignored with a notice. |
+| M3 | Suite import (Manage Suites toolbar): `suite.name` is required; every question is created and needs `question`; ids are ignored with a notice. The snapshot gets no notice here — what happens to it is reported on the review step, from the server's preflight. In `single` and `questions` mode a document that carries a snapshot gets the notice *"The game snapshot in the file is ignored: this import changes questions only."* |
 | L1 | Created questions must not push the suite past `Benchmark:Compliance:MaxQuestionsPerSuite`; the server enforces it and the dialog shows its message. |
 
 Syntax errors are reported as *Line N, column M: reason*; schema errors name the location, as in
@@ -2860,10 +2868,11 @@ the `|2` indentation indicator where a value's first line starts with whitespace
 comment (the question's `OrderIndex`, as a run report prints it) before each item, and omits
 `rubric` for an empty rubric. Every multi-question export of a snapshot suite (*Download All as
 YAML* and its copy button on the Manage Questions toolbar, *Download Suite as YAML* and *Copy Suite
-as YAML to Clipboard*) also carries the board
-as `suite.snapshot_text`, fetched from `GET snapshots/{id}/text`, so the file alone is enough to
-check a BOARD FACT; if that fetch fails the export is written without it and the status line says
-so. A single-question export never carries it. File names are `benchmark-questions-<suite-slug>.yaml`,
+as YAML to Clipboard*) also carries the board as the `suite.snapshot` mapping — text, hash and
+metadata from one `GET snapshots/{id}?includeText=true` — so the file alone is enough to check a
+BOARD FACT **and** to recreate the suite together with its board. If that fetch fails the export is
+written with **no `snapshot` key at all** (an incomplete mapping would not import) and the status
+line says so. A single-question export never carries it. File names are `benchmark-questions-<suite-slug>.yaml`,
 `benchmark-question-<orderIndex>-id-<id>.yaml` and `benchmark-suite-<suite-slug>.yaml`.
 
 **Replace and create.** A replace changes only the keys present. When the question text, difficulty
@@ -2872,15 +2881,66 @@ or rubric differs after trimming, the question gets exactly what `PUT questions/
 create is appended after the highest `OrderIndex`, `IsGenerated = false`, difficulty Simple unless
 given.
 
-**What an import never does**: delete or reorder questions, touch runs, assessments, reviews or the
-game snapshot, or write anything before the whole document has validated. The dialog's steps are
+**What an import never does**: delete or reorder questions, touch runs, assessments or reviews,
+change an **existing** game snapshot, or write anything before the whole document has validated. The dialog's steps are
 *Provide YAML* (paste or upload a file of at most 2 MB, then Validate), *Review* (one card per
 question — *Replace #N* or *Create new question* — with *Side by side* and *Diff* views), and
 *Done*. The server validates the whole batch again before its single save.
 
 **Suite import always creates a new suite**, named `<name> (Imported)`, `(Imported 2)`, … when the
-name is taken, with no snapshot and no `DefaultSuiteKey`. An import never attaches or changes a
-game snapshot: `suite.snapshot` only names it and `suite.snapshot_text` is ignored.
+name is taken, with no `DefaultSuiteKey`.
+
+**The snapshot the document carries is attached.** `ImportSuite` takes an optional
+`snapshot: { name?, text, sourceGnollHackVersion?, capturedAtUtc?, notes? }`. Text or HTML is
+decided by `LooksLikeHtml`, the same rule an upload uses; HTML is flattened by `DumpHtmlSanitizer`.
+The board is capped at 60,000 characters and the request's text at
+`MaxSuiteSnapshotUploadChars` (4,000,000). A blank text, an over-long text, a snapshot name over
+128 characters or a version over 64 is `400`, checked before anything is added to the context. The
+capture method is **`YamlImport`**; a blank snapshot name defaults to the *requested* suite name,
+before any "(Imported)" suffix; `notes` defaults to *"Imported with suite YAML."*.
+
+**Matching is by the SHA-256 of the stored form** — after flattening, `NormalizeFlattenedText` and
+the cap — so the server, never the client, decides whether two boards are the same.
+`BenchmarkSnapshotImporter.StoredForm` computes it, and `CreateForSuiteAsync` normalizes through
+the same private helper, so the preflight and the import cannot disagree.
+
+| Identical snapshot found… | What the import does |
+|---|---|
+| …attached to **no** suite | **Reuses it.** No new row; its name, version, notes and capture method are left as they are, so the file's are dropped. |
+| …attached to **another** suite | **Creates a copy**, with the `(2)` name suffix, and the review step says so. |
+
+Why a copy: `BenchmarkSuite.GameSnapshotId` has a unique index and the rest of the system is built
+on one board having one owner — the Snapshot Viewer edits the text in place, *Upload Snapshot* with
+replace **deletes** the old board, the snapshot DTO names one owning suite. De-duplication suits
+immutable content; a snapshot is a mutable, suite-owned record. A run records the snapshot's
+SHA-256 **by value**, so two identical copies stay fully comparable, and a copy costs at most
+~60 KB.
+
+The suite, its questions and the board land in **one save**. An `ArgumentException` from the
+importer — text that flattens to nothing — is `400`; the race in which two imports grab the same
+free board at once trips the unique index and returns `409` *"The snapshot was attached to another
+suite a moment ago. Import again."* In both cases nothing is persisted.
+
+**The preflight.** `POST snapshots/match` takes `{ text }` and returns
+`{ sha256, charCount, truncated, isHtml, match }`, where `match` is `null` or
+`{ id, name, suiteId, suiteName }` for a stored snapshot with that hash — an unattached one
+preferred when several exist. It writes nothing. The import dialog calls it once per validated
+document when the review step opens in suite mode, and the review step reports which of the three
+outcomes applies, plus *"cut at 60,000 characters"* when `truncated`. A failed preflight says the
+check could not be made and the import still works, because the server applies the same rule
+itself. Unticking the checkbox imports the suite without a snapshot.
+
+**The `sha256` warning.** Every export writes the stored board's hash. On import the server
+recomputes it from `text`, and a difference is a **warning** on the review step — *"the text
+differs from the snapshot this file was exported from — it was edited, or damaged in transit"* —
+never an error, because editing the board in the file is legitimate. An agent-authored file simply
+omits the key.
+
+**Difficulty travels.** `difficulty` is parsed per Q4, carried through `toImportItems` in every
+mode, and stored as `item.Difficulty ?? BenchmarkDifficulty.Simple` — so an omitted `difficulty`
+becomes **Simple**, silently. That is the **authored** band only: the AI-assessed difficulty
+(1–100) is what weights the Intelligence Index, the assessor is never shown the authored band, and
+the launcher refuses the suite until **Assess Difficulty** has rated every question.
 
 **Rubric notices.** For every question whose imported rubric is present and changed, the review
 card lists advisory *Rubric:* notices from `lintRubric`; they never block the import:
@@ -2892,9 +2952,24 @@ card lists advisory *Rubric:* notices from `lintRubric`; they never block the im
 | `bold-parenthetical` | A heading with its parenthetical inside the bold markers, as `**FORM (…)**`, which breaks `BenchmarkRubricCitationValidator`'s bold-heading look-ahead. |
 | `no-board-facts` | The open suite has a snapshot and the rubric has no `**BOARD FACTS**` line. |
 
-Endpoints: `POST suites/{suiteId}/questions/import` and `POST suites/import` (§ 6). The help dialog
-(*Import/Export Help* on the Manage Questions toolbar, also reachable from the import dialog) is full
-height with five tabs: *Workflow*, *Replace or Create*, *Format*, *Examples* (six copyable,
+Endpoints: `POST suites/{suiteId}/questions/import`, `POST suites/import` and
+`POST snapshots/match` (§ 6).
+
+**Two help dialogs, one component.** `QuestionYamlHelpDialogComponent` takes a
+`variant` input and is instantiated twice on the benchmark page: `#questionYamlHelpDialog`
+(`variant` defaults to `questions`) and `#suiteYamlHelpDialog` (`variant="suite"`). Because both
+live in one document, every element id carries the variant's `idPrefix` — `yaml-help` and
+`suite-yaml-help` — since a duplicated id silently breaks `aria-labelledby`, `aria-controls`, the
+tooltip anchors and the exclusive accordion. The import dialog's *Open the format help* link routes
+to whichever matches the open import's mode. The **suite** variant is titled *Suite YAML Import and
+Export*, opens from the help icon on the Manage Suites toolbar, and has the tabs *Workflow*,
+*Format*, *From a Snapshot*, *Examples* and *For an AI*. Its whole content is static, in
+`suite-yaml-guide.ts`: it makes **no server call**, because its *For an AI* tab holds a fixed
+prompt that invokes the `server_snapshot_suite_authoring` skill rather than assembled rubric
+guidance. That prompt also appears under the *From a Snapshot* guide, with its own copy button.
+
+The **questions** variant (*Import/Export Help* on the Manage Questions toolbar, also reachable
+from the import dialog) is full height with five tabs: *Workflow*, *Replace or Create*, *Format*, *Examples* (six copyable,
 downloadable YAML documents in an exclusive `<details name>` accordion, each spec-checked to parse
 and validate), and *For an AI*, the last holding a copyable, downloadable set of instructions for an
 AI. The guide text lives in `HUMAN_GUIDE_TABS` in
@@ -2945,7 +3020,8 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `DELETE /api/admin/benchmark/questions/{id}`: Delete a question.
 - `PUT /api/admin/benchmark/suites/{id}/questions/reorder`: Reorder questions via ID array.
 - `POST /api/admin/benchmark/suites/{suiteId}/questions/import`: YAML questions import (body `{ items: [{ questionId?, questionText?, difficulty?, expectedPoints?, replaceExpectedPoints }] }`). Items with `questionId` replace, the rest are created; 404 for an unknown suite, 400 for a foreign or duplicate id, a create without text, or the question cap — all before any write. Returns `{ createdCount, replacedCount, unchangedCount, questions }`. See *YAML Import and Export*.
-- `POST /api/admin/benchmark/suites/import`: Create a new suite from a YAML import (body `{ name, description?, questions: [...] }`). 400 for a blank or over-128-character name, no questions, a question without text, or the question cap; a taken name becomes `"<name> (Imported)"`. Returns `BenchmarkSuiteDto`.
+- `POST /api/admin/benchmark/suites/import`: Create a new suite from a YAML import (body `{ name, description?, questions: [...], snapshot? }`). 400 for a blank or over-128-character name, no questions, a question without text, or the question cap; a taken name becomes `"<name> (Imported)"`. The optional `snapshot` is `{ name?, text, sourceGnollHackVersion?, capturedAtUtc?, notes? }`: 400 for blank text, text over 4,000,000 characters, a snapshot name over 128 or a version over 64; 409 when the board this import meant to reuse was attached elsewhere a moment earlier. The suite, its questions and the board are one save. Returns `BenchmarkSuiteDto`. See *YAML Import and Export*.
+- `POST /api/admin/benchmark/snapshots/match`: Read-only preflight for a suite import (body `{ text }`). Returns `{ sha256, charCount, truncated, isHtml, match }`, where `match` is `null` or `{ id, name, suiteId, suiteName }` for a stored snapshot with the same stored-form hash, preferring one no suite owns. 400 for blank text, text over 4,000,000 characters, or text that flattens to nothing. Writes nothing.
 - `POST /api/admin/benchmark/suites/{id}/snapshot`: Attach a board built from uploaded snapshot text or an HTML dump to this suite (body `{ name, content, contentKind, notes?, sourceGnollHackVersion?, replaceExisting }`). 409 when the suite already has a snapshot and `replaceExisting` is false. Returns `{ board, suite }`. See *Game Snapshots*.
 
 ### Runs & Scoring
@@ -3272,6 +3348,11 @@ game session.
     already-flattened snapshot text, uploaded from the suite card's **Upload Snapshot**. Line endings
     are unified and the text runs through `NormalizeFlattenedText`, exactly as a text edit does, so
     re-uploading a downloaded snapshot reproduces its SHA-256.
+  - **YAML Import (`YamlImport`)**: The board carried by a suite YAML's `suite.snapshot` mapping,
+    attached by `POST suites/import` (see *YAML Import and Export*). Text or HTML is decided by the
+    same `LooksLikeHtml` rule as an upload. An identical stored snapshot that belongs to no suite is
+    reused rather than copied; one that belongs to another suite is copied, because a board has one
+    owner.
 - **Upload Snapshot** (suite card, `SnapshotUploadDialogComponent`): `POST suites/{id}/snapshot`
   attaches a board built from the uploaded file to **that** suite and creates no suite. The body is
   `{ name, content, contentKind, notes?, sourceGnollHackVersion?, replaceExisting }`. `contentKind`
@@ -3289,9 +3370,12 @@ game session.
   `DumpHtmlSanitizer.NormalizeFlattenedText` before persistence. This normalizes line endings
   (`\r\n` / `\r` to `\n`), strips trailing whitespace per line, strips terminal backticks/triple
   backticks, rejects empty text, computes a canonical SHA-256 digest, and enforces the 60,000
-  character hard cap with an explicit truncation marker (`[SNAPSHOT TRUNCATED at 60000 chars]`). The
-  editable-text path below (Immutability & Safety) runs the same normalization, so a round-trip of
-  unchanged text yields the same hash.
+  character hard cap with an explicit truncation marker (`[SNAPSHOT TRUNCATED at 60000 characters.]`).
+  `PrepareBoardText` is **idempotent**: text that is already exactly the cut plus that marker is
+  left alone rather than cut and marked a second time, which is what lets a truncated snapshot
+  survive an export/import or a download/re-upload with its hash intact — and therefore be matched
+  at all. The editable-text path below (Immutability & Safety) runs the same normalization, so a
+  round-trip of unchanged text yields the same hash.
 - **Provenance Tracking**: Each snapshot records `CaptureMethod`, `SourceChatSessionId`,
   `SourceGnollHackVersion`, `Notes`, `DigestText`, and `CapturedAtUtc`.
 - **Digest**: `DigestText` is a **deterministic extract** of the snapshot, built by
@@ -3352,6 +3436,46 @@ game session.
   unchanged, so the suite description's provenance text (character count, hash prefix) goes stale
   after a text edit and is not refreshed automatically. Other fields (`Name`, `SourceGnollHackVersion`,
   `Notes`, the digest text) are still edited separately, on the **Metadata** tab.
+
+### Authoring a Suite from an Exported AI Snapshot
+
+A suite YAML is a **complete, one-file description of a snapshot suite** (see *YAML Import and
+Export*), so a whole snapshot suite can be authored offline, with Overseer not running, and
+imported in one step.
+
+The workflow:
+
+1. **In GnollHack**: game menu → **Developer** → **Export AI Snapshot** (visible with Developer
+   Mode and debug log messages on). It writes `gnollhack.<name>.<…>.ai.html` — despite the
+   extension, plain monospace text in an HTML wrapper — and opens the OS share sheet. Overseer is
+   not involved, and the standalone export is **not** truncated, so it can exceed 60,000
+   characters. A `.snapshot.txt` downloaded from the Snapshot Viewer works just as well.
+2. **In an agent session** with the repositories on disk — Claude Code, Antigravity or similar —
+   paste the prompt from the Manage Suites help dialog (*From a Snapshot* or *For an AI*), with
+   the snapshot's path filled in.
+3. The agent reports its **count table**, then writes **one file**, `benchmark-suite-<slug>.yaml`,
+   beside the snapshot.
+4. **In Overseer**: **Import Suite from YAML** → the review step shows the suite, what happens to
+   the snapshot and every question → **Create suite** → **Assess Difficulty** on the new card.
+   Optionally Suite Health *Snapshot facts* and the citation check.
+
+**How many questions.** The board decides, not a target. The agent surveys the board's distinct
+*decisions* — one candidate question each — classifies them with
+`BenchmarkRubricAuthoringGuidance.BandDescription`, and caps the total at
+`Benchmark:Compliance:MaxQuestionsPerSuite`. The default target is 18, the sensible range 12–24,
+and the split moves toward equal thirds (6 / 6 / 6) by trimming the largest band rather than
+promoting a question. Padding is never free: every question costs a candidate call plus one or two
+assessor calls on every run.
+
+**Why rubrics are grounded in the flattened text.** Suite Health's *Snapshot facts* check demands a
+verbatim quote from the **stored** snapshot for every BOARD FACTS claim, and the stored snapshot is
+the flattened, normalized, capped text — not the HTML the game exported. An agent that grounds in
+the raw HTML writes facts the check cannot find.
+
+**The canonical procedure is the skill**, `.agents/skills/server_snapshot_suite_authoring/SKILL.md`
+(invocable as `server-snapshot-suite-authoring`). It owns the flattening steps, the count rule, the
+rubric rules and the self-check; the prompt in `suite-yaml-guide.ts` names it by path, and
+`suite-yaml-guide.spec.ts` pins that name, so renaming one must change the other.
 
 ### Suite Card Actions
 Each bound suite's card in Manage Suites shows one primary action and a row of secondary ones: a

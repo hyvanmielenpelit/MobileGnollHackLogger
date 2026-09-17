@@ -150,6 +150,35 @@
   margin-bottom: 8px;
 }
 
+.import-snapshot {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
+
+  .form-hint {
+    margin: 6px 0 0 0;
+  }
+}
+
+.import-snapshot-warning {
+  color: #fbbf24;
+}
+
+.import-snapshot-text {
+  margin-top: 8px;
+
+  pre {
+    margin: 0;
+    max-height: 30lh;
+    overflow: auto;
+    white-space: pre;
+    background: rgba(0, 0, 0, 0.35);
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-size: 12.5px;
+  }
+}
+
 .import-card-header {
   display: flex;
   flex-wrap: wrap;

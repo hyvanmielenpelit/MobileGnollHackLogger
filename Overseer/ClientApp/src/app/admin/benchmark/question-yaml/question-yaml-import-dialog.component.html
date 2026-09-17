@@ -107,6 +107,41 @@
             @if (suiteDescription) {
               <div class="import-markdown markdown-body" [innerHTML]="suiteDescription | markdown"></div>
             }
+
+            <!-- What happens to the board is decided by the server; the preflight only reports it. -->
+            @if (suiteSnapshot) {
+              <div class="import-snapshot">
+                <label class="gh-checkbox" for="importAttachSnapshot">
+                  <input id="importAttachSnapshot" type="checkbox" [checked]="attachSnapshot"
+                         (change)="onAttachSnapshotChange($any($event.target).checked)">
+                  <span>Attach the game snapshot from this file</span>
+                </label>
+                @if (attachSnapshot) {
+                  <p class="form-hint import-snapshot-outcome" role="status">{{ snapshotOutcome }}</p>
+                  @if (snapshotCheck?.truncated) {
+                    <p class="form-hint">The board is cut at 60,000 characters.</p>
+                  }
+                  @if (suiteSnapshot.sourceGnollHackVersion || suiteSnapshot.capturedAtUtc) {
+                    <p class="form-hint">
+                      @if (suiteSnapshot.sourceGnollHackVersion) { <span>GnollHack {{ suiteSnapshot.sourceGnollHackVersion }}</span> }
+                      @if (suiteSnapshot.sourceGnollHackVersion && suiteSnapshot.capturedAtUtc) { <span>&nbsp;&middot;&nbsp;</span> }
+                      @if (suiteSnapshot.capturedAtUtc) { <span>captured {{ suiteSnapshot.capturedAtUtc | date: 'medium' }}</span> }
+                    </p>
+                  }
+                  @if (snapshotHashMismatch) {
+                    <p class="form-hint import-snapshot-warning">The text differs from the snapshot this file was exported from &mdash; it was edited, or damaged in transit.</p>
+                  }
+                  <details class="gh-disclosure import-snapshot-text">
+                    <summary>Show the snapshot text</summary>
+                    <div class="gh-disclosure-body">
+                      <pre>{{ suiteSnapshot.text }}</pre>
+                    </div>
+                  </details>
+                }
+              </div>
+            } @else {
+              <p class="form-hint">No game snapshot in this document. Use Upload Snapshot on the new suite's card to add one.</p>
+            }
           </section>
         } @else {
           <div class="import-view-toggle" role="group" aria-label="Review view">

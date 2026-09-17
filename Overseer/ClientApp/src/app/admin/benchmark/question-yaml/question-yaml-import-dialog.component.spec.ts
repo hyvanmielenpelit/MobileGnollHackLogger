@@ -3,7 +3,8 @@ import { of, throwError } from 'rxjs';
 import {
   AdminBenchmarkService,
   BenchmarkQuestionDto,
-  BenchmarkSuiteDto
+  BenchmarkSuiteDto,
+  MatchSnapshotResult
 } from '../../../services/admin-benchmark.service';
 import { QuestionYamlImportDialogComponent } from './question-yaml-import-dialog.component';
 import { serializeQuestionsYaml } from './question-yaml-format';
@@ -23,9 +24,22 @@ describe('QuestionYamlImportDialogComponent', () => {
     { id: 18, benchmarkSuiteId: 7, orderIndex: 5, questionText: 'Other question', difficulty: 2, expectedPoints: null, createdAtUtc: '' }
   ];
   const header = 'format: overseer-benchmark-questions\nversion: 1\n';
+  const BOARD = 'GnollHack 4.2.0 Build 47\nDlvl:11 HP:14(58) Hungry';
+  /* A suite document that carries a board, with a rubric that has no BOARD FACTS section. */
+  const snapshotDoc = header
+    + 'suite:\n  name: Core Suite\n  snapshot:\n    name: Valkyrie dlvl 11\n'
+    + '    gnollhack_version: "4.2.0 Build 47"\n'
+    + '    sha256: "' + 'a'.repeat(64) + '"\n'
+    + '    text: |\n      GnollHack 4.2.0 Build 47\n      Dlvl:11 HP:14(58) Hungry\n'
+    + 'questions:\n  - question: Q\n    rubric: |\n      **REQUIRED**\n      - A point.\n';
+
+  function noMatch(): MatchSnapshotResult {
+    return { sha256: 'a'.repeat(64), charCount: BOARD.length, truncated: false, isHtml: false, match: null };
+  }
 
   beforeEach(async () => {
-    service = jasmine.createSpyObj('AdminBenchmarkService', ['importQuestions', 'importSuite']);
+    service = jasmine.createSpyObj('AdminBenchmarkService', ['importQuestions', 'importSuite', 'matchSnapshot']);
+    service.matchSnapshot.and.returnValue(of(noMatch()));
 
     await TestBed.configureTestingModule({
       imports: [QuestionYamlImportDialogComponent],
@@ -190,15 +204,114 @@ describe('QuestionYamlImportDialogComponent', () => {
     fixture.detectChanges();
 
     expect(host.textContent).toContain('the import will be named Core Suite (Imported)');
+    expect(host.textContent).toContain('No game snapshot in this document.');
     button('Create suite').click();
     fixture.detectChanges();
 
     expect(service.importSuite).toHaveBeenCalledWith({
       name: 'Core Suite',
       description: null,
-      questions: [{ questionId: null, questionText: 'Q', difficulty: null, expectedPoints: 'R', replaceExpectedPoints: true }]
+      questions: [{ questionId: null, questionText: 'Q', difficulty: null, expectedPoints: 'R', replaceExpectedPoints: true }],
+      snapshot: null
     });
     expect(emitted).toHaveBeenCalledWith(created);
+    expect(service.matchSnapshot).not.toHaveBeenCalled();
+  });
+
+  describe('the game snapshot a suite document carries', () => {
+    async function reviewSnapshotDoc(): Promise<void> {
+      component.open('suite');
+      await paste(snapshotDoc);
+      await component.validate();
+      await component.review();
+      fixture.detectChanges();
+    }
+
+    it('announces a snapshot that will be created', async () => {
+      await reviewSnapshotDoc();
+
+      expect(service.matchSnapshot).toHaveBeenCalledWith('GnollHack 4.2.0 Build 47\nDlvl:11 HP:14(58) Hungry');
+      expect(host.textContent).toContain('will be created and attached');
+      expect(host.textContent).toContain('GnollHack 4.2.0 Build 47');
+    });
+
+    it('announces a reused unattached snapshot, and a copy of one owned by another suite', async () => {
+      service.matchSnapshot.and.returnValue(of({ ...noMatch(), match: { id: 5, name: 'Stored board', suiteId: null, suiteName: null } }));
+      await reviewSnapshotDoc();
+      expect(host.textContent).toContain('An identical snapshot, Stored board, is already stored and belongs to no suite.');
+
+      component.close();
+      service.matchSnapshot.and.returnValue(of({ ...noMatch(), match: { id: 5, name: 'Stored board', suiteId: 3, suiteName: 'Other Suite' } }));
+      await reviewSnapshotDoc();
+      expect(host.textContent).toContain('belongs to suite Other Suite');
+      expect(host.textContent).toContain('stores a copy named Stored board (2)');
+    });
+
+    it('still imports when the preflight fails', async () => {
+      service.matchSnapshot.and.returnValue(throwError(() => new Error('down')));
+      await reviewSnapshotDoc();
+
+      expect(component.snapshotCheckState).toBe('failed');
+      expect(host.textContent).toContain('Could not check for an identical stored snapshot. The import still attaches one.');
+      expect(button('Create suite').disabled).toBeFalse();
+    });
+
+    it('warns when the file hash differs from the hash the server computes', async () => {
+      service.matchSnapshot.and.returnValue(of({ ...noMatch(), sha256: 'b'.repeat(64) }));
+      await reviewSnapshotDoc();
+
+      expect(component.snapshotHashMismatch).toBeTrue();
+      expect(host.querySelector('.import-snapshot-warning')!.textContent).toContain('it was edited, or damaged in transit');
+    });
+
+    it('sends the snapshot with the box ticked and null with it cleared', async () => {
+      const created: BenchmarkSuiteDto = { ...suite, id: 9, name: 'Core Suite (Imported)', questionCount: 1, gameSnapshotId: 12, gameSnapshotName: 'Valkyrie dlvl 11' };
+      service.importSuite.and.returnValue(of(created));
+      await reviewSnapshotDoc();
+
+      button('Create suite').click();
+      fixture.detectChanges();
+      expect(service.importSuite.calls.mostRecent().args[0].snapshot).toEqual({
+        name: 'Valkyrie dlvl 11',
+        text: 'GnollHack 4.2.0 Build 47\nDlvl:11 HP:14(58) Hungry',
+        sourceGnollHackVersion: '4.2.0 Build 47',
+        capturedAtUtc: null,
+        notes: null
+      });
+      expect(host.querySelector('.import-done')!.textContent).toContain('Created game snapshot Valkyrie dlvl 11.');
+      expect(host.querySelector('.import-done')!.textContent).toContain('Run Assess Difficulty before the first benchmark run.');
+
+      component.close();
+      await reviewSnapshotDoc();
+      const box = host.querySelector('#importAttachSnapshot') as HTMLInputElement;
+      box.click();
+      fixture.detectChanges();
+      expect(component.attachSnapshot).toBeFalse();
+
+      button('Create suite').click();
+      fixture.detectChanges();
+      expect(service.importSuite.calls.mostRecent().args[0].snapshot).toBeNull();
+    });
+
+    it('names the attached snapshot as existing when the response reuses the matched board', async () => {
+      service.matchSnapshot.and.returnValue(of({ ...noMatch(), match: { id: 12, name: 'Stored board', suiteId: null, suiteName: null } }));
+      service.importSuite.and.returnValue(of({ ...suite, id: 9, name: 'Core Suite (Imported)', questionCount: 1, gameSnapshotId: 12, gameSnapshotName: 'Stored board' }));
+      await reviewSnapshotDoc();
+
+      button('Create suite').click();
+      fixture.detectChanges();
+      expect(host.querySelector('.import-done')!.textContent).toContain('Attached the existing game snapshot Stored board.');
+    });
+
+    it('raises the missing BOARD FACTS notice only while the box is ticked', async () => {
+      await reviewSnapshotDoc();
+      expect(component.cards[0].rubricNotices.map(n => n.code)).toEqual(['no-board-facts']);
+
+      const box = host.querySelector('#importAttachSnapshot') as HTMLInputElement;
+      box.click();
+      fixture.detectChanges();
+      expect(component.cards[0].rubricNotices).toEqual([]);
+    });
   });
 
   it('shows a server error inline and stays on the review step', async () => {

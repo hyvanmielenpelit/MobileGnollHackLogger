@@ -76,6 +76,7 @@ import { QuestionYamlImportDialogComponent } from './question-yaml/question-yaml
 import { QuestionYamlHelpDialogComponent } from './question-yaml/question-yaml-help-dialog.component';
 import {
   ImportMode,
+  SnapshotExport,
   questionYamlFileName,
   serializeQuestionsYaml,
   serializeSuiteYaml,
@@ -279,6 +280,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   @ViewChild('importDefaultSuitesDialog') importDefaultSuitesDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('questionYamlImportDialog') questionYamlImportDialog?: QuestionYamlImportDialogComponent;
   @ViewChild('questionYamlHelpDialog') questionYamlHelpDialog?: QuestionYamlHelpDialogComponent;
+  @ViewChild('suiteYamlHelpDialog') suiteYamlHelpDialog?: QuestionYamlHelpDialogComponent;
   @ViewChild('snapshotUploadDialog') snapshotUploadDialog?: SnapshotUploadDialogComponent;
   suiteHealthInitialTab: SuiteHealthTab = 'items';
 
@@ -6826,9 +6828,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       return;
     }
     const questions = this.questions;
-    const snapshot = await firstValueFrom(this.snapshotTextForExport(suite));
-    downloadTextFile(questionYamlFileName(suite.name), serializeQuestionsYaml(questions, suite, snapshot.text));
-    if (snapshot.failed) {
+    const exported = await firstValueFrom(this.snapshotForExport(suite));
+    downloadTextFile(questionYamlFileName(suite.name), serializeQuestionsYaml(questions, suite, exported.snapshot));
+    if (exported.failed) {
       this.setQuestionsCopyStatus(SNAPSHOT_TEXT_EXPORT_FAILED);
     }
   }
@@ -6844,9 +6846,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
     const questions = this.questions;
     let snapshotFailed = false;
-    const text = firstValueFrom(this.snapshotTextForExport(suite).pipe(map(snapshot => {
-      snapshotFailed = snapshot.failed;
-      return serializeQuestionsYaml(questions, suite, snapshot.text);
+    const text = firstValueFrom(this.snapshotForExport(suite).pipe(map(exported => {
+      snapshotFailed = exported.failed;
+      return serializeQuestionsYaml(questions, suite, exported.snapshot);
     })));
     const ok = await copyTextFromPromise(text);
     if (!ok) {
@@ -6858,10 +6860,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   downloadSuiteYaml(suite: BenchmarkSuiteDto): void {
     if (suite.questionCount === 0) return;
-    forkJoin([this.benchmarkService.getQuestions(suite.id), this.snapshotTextForExport(suite)]).subscribe({
-      next: ([questions, snapshot]) => {
-        downloadTextFile(suiteYamlFileName(suite.name), serializeSuiteYaml(suite, questions, snapshot.text));
-        if (snapshot.failed) {
+    forkJoin([this.benchmarkService.getQuestions(suite.id), this.snapshotForExport(suite)]).subscribe({
+      next: ([questions, exported]) => {
+        downloadTextFile(suiteYamlFileName(suite.name), serializeSuiteYaml(suite, questions, exported.snapshot));
+        if (exported.failed) {
           this.setSuitesCopyStatus(SNAPSHOT_TEXT_EXPORT_FAILED);
         }
       },
@@ -6874,9 +6876,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (suite.questionCount === 0) return;
     let snapshotFailed = false;
     const text = firstValueFrom(
-      forkJoin([this.benchmarkService.getQuestions(suite.id), this.snapshotTextForExport(suite)]).pipe(map(([qs, snapshot]) => {
-        snapshotFailed = snapshot.failed;
-        return serializeSuiteYaml(suite, qs, snapshot.text);
+      forkJoin([this.benchmarkService.getQuestions(suite.id), this.snapshotForExport(suite)]).pipe(map(([qs, exported]) => {
+        snapshotFailed = exported.failed;
+        return serializeSuiteYaml(suite, qs, exported.snapshot);
       })));
     const ok = await copyTextFromPromise(text);
     if (!ok) {
@@ -6886,15 +6888,24 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
-  /** The attached snapshot's text for an export; `text` is null for a suite without a snapshot, and when the fetch failed. */
-  private snapshotTextForExport(suite: BenchmarkSuiteDto): Observable<{ text: string | null; failed: boolean }> {
+  /** The attached snapshot for an export, in one call: its text, hash and metadata. `snapshot` is null for a suite without one, and when the fetch failed. */
+  private snapshotForExport(suite: BenchmarkSuiteDto): Observable<{ snapshot: SnapshotExport | null; failed: boolean }> {
     if (!suite.gameSnapshotId) {
-      return of({ text: null, failed: false });
+      return of({ snapshot: null, failed: false });
     }
-    return this.benchmarkService.downloadSnapshotText(suite.gameSnapshotId).pipe(
-      switchMap(blob => from(blob.text())),
-      map(text => ({ text, failed: false })),
-      catchError(() => of({ text: null, failed: true }))
+    return this.benchmarkService.getSnapshot(suite.gameSnapshotId, true).pipe(
+      map(board => ({
+        snapshot: {
+          name: board.name,
+          gnollhackVersion: board.sourceGnollHackVersion ?? null,
+          capturedAtUtc: board.capturedAtUtc ?? null,
+          notes: board.notes ?? null,
+          sha256: board.sha256 ?? null,
+          text: board.sanitizedText ?? ''
+        } as SnapshotExport,
+        failed: false
+      })),
+      catchError(() => of({ snapshot: null, failed: true }))
     );
   }
 
@@ -6905,6 +6916,19 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   openQuestionYamlHelp(): void {
     this.questionYamlHelpDialog?.open();
+  }
+
+  openSuiteYamlHelp(): void {
+    this.suiteYamlHelpDialog?.open();
+  }
+
+  /** The help that matches the open import: the suite help for a suite import, the question help otherwise. */
+  onYamlHelpRequested(): void {
+    if (this.questionYamlImportDialog?.mode === 'suite') {
+      this.openSuiteYamlHelp();
+      return;
+    }
+    this.openQuestionYamlHelp();
   }
 
   onQuestionsImported(_result: ImportBenchmarkQuestionsResultDto): void {

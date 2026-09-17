@@ -153,8 +153,10 @@ Skills in this repository use the **`server_`** prefix. Canonical bodies live in
 **generated** by `SharedAgentSkills\tools\sync_stubs.ps1` and must never be hand-edited.
 Notable project skills include `server_implementation_planning`, `server_benchmark_to_chat_transfer`, `server_wiki_handoff`,
 `server_rubric_handoff` (the human-pasted rubric edit a Suite Defect finding hands off),
-`server_data_privacy_framework`, and the tool-layer trio `server_tool_data_sources`,
-`server_tool_parameter_reference` and `server_benchmark_tool_diagnostics`.
+`server_data_privacy_framework`, `server_snapshot_suite_authoring` (turning an exported GnollHack
+AI snapshot into a one-file benchmark suite YAML, offline), and the tool-layer trio
+`server_tool_data_sources`, `server_tool_parameter_reference` and
+`server_benchmark_tool_diagnostics`.
 
 > [!IMPORTANT]
 > **Never use the `client_` prefix here.** It is reserved for **GnollHack**, which is the

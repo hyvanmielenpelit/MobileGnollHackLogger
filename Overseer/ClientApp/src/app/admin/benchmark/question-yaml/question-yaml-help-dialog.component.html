@@ -1,11 +1,11 @@
 <dialog #dialog class="gh-dialog benchmark-form-dialog benchmark-question-help-dialog"
-        aria-labelledby="questionYamlHelpTitle">
+        [attr.aria-labelledby]="idPrefix + '-title'">
   <div class="dialog-content">
     <div class="dialog-header">
       <div class="dialog-title-group">
-        <h3 id="questionYamlHelpTitle">YAML Import and Export</h3>
+        <h3 [id]="idPrefix + '-title'">{{ title }}</h3>
       </div>
-      <button type="button" class="btn-icon-action" aria-label="Close YAML import and export help" (click)="close()">
+      <button type="button" class="btn-icon-action" [attr.aria-label]="closeLabel" (click)="close()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -18,8 +18,8 @@
       <div class="gh-tabs gh-tabs-secondary" role="tablist" aria-label="Help sections">
         @for (t of tabs; track t.id; let i = $index) {
           <button type="button" role="tab" class="gh-tab"
-                  [id]="'yaml-help-tab-' + t.id"
-                  aria-controls="yamlHelpPanel"
+                  [id]="idPrefix + '-tab-' + t.id"
+                  [attr.aria-controls]="idPrefix + '-panel'"
                   [attr.aria-selected]="activeTab === t.id"
                   [attr.tabindex]="activeTab === t.id ? 0 : -1"
                   (keydown)="onTabKeydown($event, i)"
@@ -28,64 +28,72 @@
       </div>
     </div>
 
-    <div #body class="dialog-body" role="tabpanel" id="yamlHelpPanel"
-         [attr.aria-labelledby]="'yaml-help-tab-' + activeTab" tabindex="0">
-      @if (activeTab === 'ai') {
-        <div class="help-ai">
-          <div class="help-ai-actions">
-            <button type="button" class="action-btn" (click)="copyInstructions()"
-                    aria-label="Copy AI instructions to the clipboard"
-                    [attr.interestfor]="'tip-yaml-help-copy'"
-                    [attr.style]="'anchor-name: --tip-yaml-help-copy'">
-              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-            </button>
-            <div popover="hint" class="gh-tooltip" id="tip-yaml-help-copy"
-                 [attr.style]="'position-anchor: --tip-yaml-help-copy'">Copy AI instructions to clipboard</div>
-            <button type="button" class="action-btn" (click)="downloadInstructions()"
-                    aria-label="Download AI instructions as Markdown"
-                    [attr.interestfor]="'tip-yaml-help-download'"
-                    [attr.style]="'anchor-name: --tip-yaml-help-download'">
-              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="12" x2="12" y2="18"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
-            </button>
-            <div popover="hint" class="gh-tooltip" id="tip-yaml-help-download"
-                 [attr.style]="'position-anchor: --tip-yaml-help-download'">Download AI instructions as Markdown</div>
-            <span class="help-copy-status" role="status" aria-live="polite">{{ copyTarget === 'ai' ? copyStatus : '' }}</span>
-          </div>
-          <p class="help-ai-hint">Paste these into an AI chat together with an exported document, so its reply imports cleanly.</p>
+    <!-- The prompt toolbar and text, shown on the For an AI tab and, for the suite variant, under
+         the guide Markdown of the tab that walks through the workflow it belongs to. -->
+    <ng-template #promptBlock>
+      <div class="help-ai">
+        <div class="help-ai-actions">
+          <button type="button" class="action-btn" (click)="copyInstructions()"
+                  [attr.aria-label]="aiCopyLabel"
+                  [attr.interestfor]="'tip-' + idPrefix + '-copy'"
+                  [attr.style]="'anchor-name: --tip-' + idPrefix + '-copy'">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          </button>
+          <div popover="hint" class="gh-tooltip" [id]="'tip-' + idPrefix + '-copy'"
+               [attr.style]="'position-anchor: --tip-' + idPrefix + '-copy'">{{ aiCopyLabel }}</div>
+          <button type="button" class="action-btn" (click)="downloadInstructions()"
+                  [attr.aria-label]="aiDownloadLabel"
+                  [attr.interestfor]="'tip-' + idPrefix + '-download'"
+                  [attr.style]="'anchor-name: --tip-' + idPrefix + '-download'">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="12" x2="12" y2="18"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+          </button>
+          <div popover="hint" class="gh-tooltip" [id]="'tip-' + idPrefix + '-download'"
+               [attr.style]="'position-anchor: --tip-' + idPrefix + '-download'">{{ aiDownloadLabel }}</div>
+          <span class="help-copy-status" role="status" aria-live="polite">{{ copyTarget === 'ai' ? copyStatus : '' }}</span>
+        </div>
+        <p class="help-ai-hint">{{ aiHint }}</p>
+        @if (variant === 'questions') {
           @if (guidanceState === 'loading') {
             <p class="help-ai-hint help-ai-guidance-state" role="status">Loading rubric guidance…</p>
           } @else if (guidanceState === 'failed') {
             <p class="help-ai-hint help-ai-guidance-state" role="status">The rubric guidance could not be loaded, so these instructions leave out the rubric format and difficulty bands.</p>
           }
-          <pre class="help-ai-text">{{ aiInstructions }}</pre>
-        </div>
+        }
+        <pre class="help-ai-text">{{ aiInstructions }}</pre>
+      </div>
+    </ng-template>
+
+    <div #body class="dialog-body" role="tabpanel" [id]="idPrefix + '-panel'"
+         [attr.aria-labelledby]="idPrefix + '-tab-' + activeTab" tabindex="0">
+      @if (activeTab === 'ai') {
+        <ng-container *ngTemplateOutlet="promptBlock"></ng-container>
       } @else if (activeTab === 'examples') {
         <div class="help-examples">
           <div class="markdown-body help-guide" [innerHTML]="examplesIntro | markdown"></div>
           <!-- An exclusive accordion: the shared name lets the browser keep one example open. -->
           <div class="help-example-list">
             @for (ex of examples; track ex.id; let i = $index) {
-              <details class="gh-disclosure help-example" name="yaml-help-example" [open]="i === 0">
+              <details class="gh-disclosure help-example" [attr.name]="idPrefix + '-example'" [open]="i === 0">
                 <summary>{{ ex.title }}</summary>
                 <div class="gh-disclosure-body">
                   <div class="markdown-body help-example-intro" [innerHTML]="ex.intro | markdown"></div>
                   <div class="help-ai-actions">
                     <button type="button" class="action-btn" (click)="copyExample(ex)"
                             [attr.aria-label]="'Copy example ' + ex.title + ' to the clipboard'"
-                            [attr.interestfor]="'tip-yaml-ex-copy-' + ex.id"
-                            [attr.style]="'anchor-name: --tip-yaml-ex-copy-' + ex.id">
+                            [attr.interestfor]="'tip-' + idPrefix + '-ex-copy-' + ex.id"
+                            [attr.style]="'anchor-name: --tip-' + idPrefix + '-ex-copy-' + ex.id">
                       <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                     </button>
-                    <div popover="hint" class="gh-tooltip" [id]="'tip-yaml-ex-copy-' + ex.id"
-                         [attr.style]="'position-anchor: --tip-yaml-ex-copy-' + ex.id">Copy example to clipboard</div>
+                    <div popover="hint" class="gh-tooltip" [id]="'tip-' + idPrefix + '-ex-copy-' + ex.id"
+                         [attr.style]="'position-anchor: --tip-' + idPrefix + '-ex-copy-' + ex.id">Copy example to clipboard</div>
                     <button type="button" class="action-btn" (click)="downloadExample(ex)"
                             [attr.aria-label]="'Download example ' + ex.title + ' as YAML'"
-                            [attr.interestfor]="'tip-yaml-ex-dl-' + ex.id"
-                            [attr.style]="'anchor-name: --tip-yaml-ex-dl-' + ex.id">
+                            [attr.interestfor]="'tip-' + idPrefix + '-ex-dl-' + ex.id"
+                            [attr.style]="'anchor-name: --tip-' + idPrefix + '-ex-dl-' + ex.id">
                       <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="12" x2="12" y2="18"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
                     </button>
-                    <div popover="hint" class="gh-tooltip" [id]="'tip-yaml-ex-dl-' + ex.id"
-                         [attr.style]="'position-anchor: --tip-yaml-ex-dl-' + ex.id">Download example as YAML</div>
+                    <div popover="hint" class="gh-tooltip" [id]="'tip-' + idPrefix + '-ex-dl-' + ex.id"
+                         [attr.style]="'position-anchor: --tip-' + idPrefix + '-ex-dl-' + ex.id">Download example as YAML</div>
                     <span class="help-copy-status" role="status" aria-live="polite">{{ copyTarget === ex.id ? copyStatus : '' }}</span>
                   </div>
                   <pre class="help-ai-text">{{ ex.yaml }}</pre>
@@ -96,6 +104,9 @@
         </div>
       } @else if (activeGuide; as guide) {
         <div class="markdown-body help-guide" [innerHTML]="guide.markdown | markdown"></div>
+        @if (activeTab === promptTabId) {
+          <ng-container *ngTemplateOutlet="promptBlock"></ng-container>
+        }
       }
     </div>
 

@@ -3,6 +3,7 @@ import {
   ChangeDetectorRef,
   Component,
   ElementRef,
+  Input,
   OnDestroy,
   ViewChild,
   inject
@@ -16,17 +17,25 @@ import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils
 import {
   AI_INSTRUCTIONS_FILE_NAME,
   EXAMPLES_INTRO_MARKDOWN,
+  GuideTab,
   HUMAN_GUIDE_TABS,
-  HumanGuideTab,
   YAML_EXAMPLES,
   YamlExample,
   buildAiInstructions,
   yamlExampleFileName
 } from './question-yaml-format';
+import {
+  SUITE_AI_PROMPT,
+  SUITE_AI_PROMPT_FILE_NAME,
+  SUITE_EXAMPLES_INTRO_MARKDOWN,
+  SUITE_GUIDE_TABS,
+  SUITE_YAML_EXAMPLES
+} from './suite-yaml-guide';
 
 const STATUS_MS = 3000;
 
-export type YamlHelpTab = HumanGuideTab['id'] | 'examples' | 'ai';
+export type YamlHelpVariant = 'questions' | 'suite';
+export type YamlHelpTab = GuideTab['id'] | 'examples' | 'ai';
 
 @Component({
   selector: 'app-question-yaml-help-dialog',
@@ -44,25 +53,82 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
   /** The dialog body: the single tab panel and the only scroller. */
   @ViewChild('body') body?: ElementRef<HTMLElement>;
 
-  readonly guideTabs = HUMAN_GUIDE_TABS;
-  /** Every tab in row order: the guide tabs, the examples, then the AI instructions. */
-  readonly tabs: ReadonlyArray<{ id: YamlHelpTab; label: string }> = [
-    ...HUMAN_GUIDE_TABS.map(t => ({ id: t.id, label: t.label })),
-    { id: 'examples', label: 'Examples' },
-    { id: 'ai', label: 'For an AI' }
-  ];
-  activeTab: YamlHelpTab = 'workflow';
+  /**
+   * Which help this instance is. Two instances share one document, so every element id carries
+   * {@link idPrefix}; a duplicated id silently breaks `aria-labelledby`, `aria-controls`, the
+   * tooltip anchors and the exclusive accordion.
+   */
+  @Input() variant: YamlHelpVariant = 'questions';
 
-  readonly examples = YAML_EXAMPLES;
-  readonly examplesIntro = EXAMPLES_INTRO_MARKDOWN;
+  activeTab: YamlHelpTab = 'workflow';
 
   /** The rubric guidance fetched from the server; null until it arrives, and when it failed. */
   guidance: RubricAuthoringGuidance | null = null;
   guidanceState: 'loading' | 'ready' | 'failed' = 'loading';
 
-  /** Without the guidance this is the fallback text, which says the rubric guidance is missing. */
+  get isSuite(): boolean {
+    return this.variant === 'suite';
+  }
+
+  get idPrefix(): string {
+    return this.isSuite ? 'suite-yaml-help' : 'yaml-help';
+  }
+
+  get title(): string {
+    return this.isSuite ? 'Suite YAML Import and Export' : 'YAML Import and Export';
+  }
+
+  get closeLabel(): string {
+    return this.isSuite ? 'Close suite YAML import and export help' : 'Close YAML import and export help';
+  }
+
+  get guideTabs(): ReadonlyArray<GuideTab> {
+    return this.isSuite ? SUITE_GUIDE_TABS : HUMAN_GUIDE_TABS;
+  }
+
+  /** Every tab in row order: the guide tabs, the examples, then the prompt for an AI. */
+  get tabs(): ReadonlyArray<{ id: YamlHelpTab; label: string }> {
+    return [
+      ...this.guideTabs.map(t => ({ id: t.id as YamlHelpTab, label: t.label })),
+      { id: 'examples' as YamlHelpTab, label: 'Examples' },
+      { id: 'ai' as YamlHelpTab, label: 'For an AI' }
+    ];
+  }
+
+  get examples(): ReadonlyArray<YamlExample> {
+    return this.isSuite ? SUITE_YAML_EXAMPLES : YAML_EXAMPLES;
+  }
+
+  get examplesIntro(): string {
+    return this.isSuite ? SUITE_EXAMPLES_INTRO_MARKDOWN : EXAMPLES_INTRO_MARKDOWN;
+  }
+
+  /** Without the guidance the questions variant falls back to text that says so. */
   get aiInstructions(): string {
-    return buildAiInstructions(this.guidance);
+    return this.isSuite ? SUITE_AI_PROMPT : buildAiInstructions(this.guidance);
+  }
+
+  get aiFileName(): string {
+    return this.isSuite ? SUITE_AI_PROMPT_FILE_NAME : AI_INSTRUCTIONS_FILE_NAME;
+  }
+
+  get aiHint(): string {
+    return this.isSuite
+      ? 'Paste this into an agent session that can read the repositories, with the snapshot path filled in.'
+      : 'Paste these into an AI chat together with an exported document, so its reply imports cleanly.';
+  }
+
+  get aiCopyLabel(): string {
+    return this.isSuite ? 'Copy agent prompt to the clipboard' : 'Copy AI instructions to the clipboard';
+  }
+
+  get aiDownloadLabel(): string {
+    return this.isSuite ? 'Download agent prompt as Markdown' : 'Download AI instructions as Markdown';
+  }
+
+  /** A guide tab that shows the prompt under its Markdown as well, or null for none. */
+  get promptTabId(): YamlHelpTab | null {
+    return this.isSuite ? 'snapshot' : null;
   }
 
   /** Which toolbar last copied: 'ai' or an example id. Its status span shows copyStatus. */
@@ -70,7 +136,7 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
   copyStatus = '';
   private statusTimer: ReturnType<typeof setTimeout> | undefined;
 
-  get activeGuide(): HumanGuideTab | null {
+  get activeGuide(): GuideTab | null {
     return this.guideTabs.find(t => t.id === this.activeTab) ?? null;
   }
 
@@ -101,7 +167,8 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
   }
 
   onTabKeydown(event: KeyboardEvent, index: number): void {
-    const count = this.tabs.length;
+    const tabs = this.tabs;
+    const count = tabs.length;
     let next = index;
     if (event.key === 'ArrowRight') next = (index + 1) % count;
     else if (event.key === 'ArrowLeft') next = (index - 1 + count) % count;
@@ -110,8 +177,8 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
     else return;
 
     event.preventDefault();
-    this.selectTab(this.tabs[next].id);
-    document.getElementById(`yaml-help-tab-${this.activeTab}`)?.focus();
+    this.selectTab(tabs[next].id);
+    document.getElementById(`${this.idPrefix}-tab-${this.activeTab}`)?.focus();
   }
 
   async copyInstructions(): Promise<void> {
@@ -120,7 +187,7 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
   }
 
   downloadInstructions(): void {
-    downloadTextFile(AI_INSTRUCTIONS_FILE_NAME, this.aiInstructions, 'text/markdown;charset=utf-8');
+    downloadTextFile(this.aiFileName, this.aiInstructions, 'text/markdown;charset=utf-8');
   }
 
   async copyExample(example: YamlExample): Promise<void> {
@@ -136,9 +203,10 @@ export class QuestionYamlHelpDialogComponent implements OnDestroy {
     clearTimeout(this.statusTimer);
   }
 
-  /* Fetched once per component; a failed fetch is retried on the next open. */
+  /* Fetched once per component; a failed fetch is retried on the next open. The suite variant's
+     prompt is static, so it never calls the server. */
   private loadGuidance(): void {
-    if (this.guidance) {
+    if (this.isSuite || this.guidance) {
       return;
     }
     this.guidanceState = 'loading';

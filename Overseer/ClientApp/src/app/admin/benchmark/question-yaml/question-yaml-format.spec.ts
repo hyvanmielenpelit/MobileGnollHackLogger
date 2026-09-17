@@ -2,6 +2,7 @@ import type { BenchmarkQuestionDto, BenchmarkSuiteDto, RubricAuthoringGuidance }
 import {
   HUMAN_GUIDE_TABS,
   RUBRIC_GUIDANCE_UNAVAILABLE,
+  SnapshotExport,
   YAML_EXAMPLES,
   buildAiInstructions,
   buildImportPlan,
@@ -12,6 +13,7 @@ import {
   serializeSuiteYaml,
   suiteYamlFileName,
   toImportItems,
+  toSuiteSnapshot,
   validateForMode,
   yamlExampleFileName
 } from './question-yaml-format';
@@ -70,7 +72,7 @@ describe('question-yaml-format', () => {
       });
       expect(result.questions.map(q => q.difficulty)).toEqual([1, 2, 3, 2]);
       expect(result.suite?.name).toBe(SUITE.name);
-      expect(result.suite?.snapshot).toBe('Valkyrie dlvl 12');
+      expect(result.suite?.snapshot).toBeNull();
     });
 
     it('writes the indentation indicator only when the first line starts with whitespace', () => {
@@ -158,7 +160,7 @@ describe('question-yaml-format', () => {
         '`suite.name` must be 1–128 characters.'
       );
       expect(await messages(header + 'suite:\n  owner: me\nquestions:\n  - question: x\n')).toContain(
-        'Unknown key `suite.owner`; allowed: name, description, snapshot, snapshot_text.'
+        'Unknown key `suite.owner`; allowed: name, description, snapshot.'
       );
     });
 
@@ -269,6 +271,22 @@ describe('question-yaml-format', () => {
       expect(plan[0].rubricCleared).toBeTrue();
       expect(toImportItems(plan, 'suite')[0].questionId).toBeNull();
     });
+
+    it('carries every authored difficulty into the request items of a suite import', async () => {
+      const doc = 'format: overseer-benchmark-questions\nversion: 1\n'
+        + 'suite:\n  name: Bands\n'
+        + 'questions:\n'
+        + '  - id: 101\n    difficulty: Simple\n    question: a\n'
+        + '  - id: 102\n    difficulty: Intermediate\n    question: b\n'
+        + '  - id: 103\n    difficulty: Advanced\n    question: c\n';
+      const parsed = await parseQuestionYaml(doc);
+      expect(parsed.errors).toEqual([]);
+      expect(validateForMode(parsed, 'suite', []).errors).toEqual([]);
+
+      const items = toImportItems(buildImportPlan(parsed, 'suite', []), 'suite');
+      expect(items.map(i => i.difficulty)).toEqual([1, 2, 3]);
+      expect(items.map(i => i.questionId)).toEqual([null, null, null]);
+    });
   });
 
   describe('file names', () => {
@@ -310,26 +328,76 @@ describe('question-yaml-format', () => {
     });
   });
 
-  describe('snapshot text and question numbers', () => {
+  describe('the snapshot mapping and question numbers', () => {
     const SNAPSHOT_SUITE: BenchmarkSuiteDto = { ...SUITE, gameSnapshotId: 3 };
-    const BOARD = '    0         1\n    0123456789012\n 1  |....@....|\n   \n\nHP:12(60) Pw:5(5)';
+    /* A hostile board: a column ruler, gutter-indented map rows, a blank run, a line that holds
+       every character the serializer has to keep out of YAML's way, and a truncation marker. */
+    const BOARD = [
+      'GnollHack 4.2.0 Build 47',
+      '',
+      '     0         1',
+      '     0123456789012',
+      '  1  |....@....|',
+      '  2  |.........|',
+      '',
+      'Status: HP:12(60) Pw:5(5)  # not a comment - a: b | c',
+      '- a bullet that is not a list item',
+      '',
+      '[SNAPSHOT TRUNCATED at 60000 characters.]'
+    ].join('\n');
+    const SNAPSHOT: SnapshotExport = {
+      name: 'Valkyrie dlvl 12',
+      gnollhackVersion: '4.2.0 Build 47',
+      capturedAtUtc: '2026-09-16T18:04:11Z',
+      notes: 'Exported from the developer menu.',
+      sha256: 'a'.repeat(64),
+      text: BOARD
+    };
 
-    it('round-trips a snapshot text with an indented first line and blank lines', async () => {
-      const yaml = serializeQuestionsYaml(FIXTURE, SNAPSHOT_SUITE, BOARD);
-      expect(yaml).toContain('  snapshot_text: |2\n');
-      expect(yaml).toContain('# snapshot_text is the board the questions are written against; it is ignored on import.');
+    it('round-trips the whole board and every metadata key', async () => {
+      const yaml = serializeSuiteYaml(SNAPSHOT_SUITE, FIXTURE, SNAPSHOT);
+      expect(yaml).toContain('  snapshot:\n');
+      expect(yaml).toContain('    text: |\n');
+      expect(yaml).toContain('# suite.snapshot is the board the questions are written against. A suite import attaches it; a questions import ignores it.');
 
       const result = await parseQuestionYaml(yaml);
       expect(result.errors).toEqual([]);
-      expect(result.suite?.snapshotText).toBe(BOARD);
+      expect(result.suite?.snapshot?.text).toBe(BOARD);
+      expect(result.suite?.snapshot?.name).toBe('Valkyrie dlvl 12');
+      expect(result.suite?.snapshot?.gnollhackVersion).toBe('4.2.0 Build 47');
+      expect(result.suite?.snapshot?.capturedAt).toBe('2026-09-16T18:04:11.000Z');
+      expect(result.suite?.snapshot?.notes).toBe('Exported from the developer menu.');
+      expect(result.suite?.snapshot?.sha256).toBe('a'.repeat(64));
       expect(result.questions.map(q => q.id)).toEqual(FIXTURE.map(q => q.id));
     });
 
-    it('writes no snapshot_text without a text, and serializeSuiteYaml carries it', async () => {
-      expect(serializeQuestionsYaml(FIXTURE, SNAPSHOT_SUITE)).not.toContain('snapshot_text');
-      expect(serializeQuestionsYaml(FIXTURE, SNAPSHOT_SUITE, '  ')).not.toContain('snapshot_text');
-      const suiteResult = await parseQuestionYaml(serializeSuiteYaml(SNAPSHOT_SUITE, FIXTURE, BOARD));
-      expect(suiteResult.suite?.snapshotText).toBe(BOARD);
+    it('writes the indentation indicator for a board whose first line is indented', async () => {
+      const indented: SnapshotExport = { ...SNAPSHOT, text: '   leading spaces\nthen flush' };
+      const yaml = serializeSuiteYaml(SNAPSHOT_SUITE, FIXTURE, indented);
+      expect(yaml).toContain('    text: |2\n');
+      const result = await parseQuestionYaml(yaml);
+      expect(result.suite?.snapshot?.text).toBe('   leading spaces\nthen flush');
+    });
+
+    it('writes no snapshot key at all when the text could not be fetched', async () => {
+      expect(serializeSuiteYaml(SNAPSHOT_SUITE, FIXTURE)).not.toContain('snapshot');
+      expect(serializeSuiteYaml(SNAPSHOT_SUITE, FIXTURE, null)).not.toContain('snapshot');
+      const blank = serializeSuiteYaml(SNAPSHOT_SUITE, FIXTURE, { ...SNAPSHOT, text: '  ' });
+      expect(blank).not.toContain('snapshot');
+      const result = await parseQuestionYaml(blank);
+      expect(result.errors).toEqual([]);
+      expect(result.suite?.snapshot).toBeNull();
+    });
+
+    it('omits the metadata keys that are null', async () => {
+      const bare: SnapshotExport = { name: null, gnollhackVersion: null, capturedAtUtc: null, notes: null, sha256: null, text: BOARD };
+      const yaml = serializeSuiteYaml(SNAPSHOT_SUITE, FIXTURE, bare);
+      expect(yaml).not.toContain('gnollhack_version');
+      expect(yaml).not.toContain('sha256');
+      const result = await parseQuestionYaml(yaml);
+      expect(result.errors).toEqual([]);
+      expect(result.suite?.snapshot?.text).toBe(BOARD);
+      expect(result.suite?.snapshot?.name).toBeNull();
     });
 
     it('writes one question comment per question without changing the parsed result', async () => {
@@ -340,20 +408,86 @@ describe('question-yaml-format', () => {
       expect(withComments).toEqual(without);
     });
 
-    it('rejects a non-text snapshot_text', async () => {
-      const result = await parseQuestionYaml('format: overseer-benchmark-questions\nversion: 1\nsuite:\n  snapshot_text: [a]\nquestions:\n  - question: x\n');
-      expect(result.errors.map(e => e.message)).toEqual(['`suite.snapshot_text` must be text.']);
+    describe('H2 snapshot rules', () => {
+      const header = 'format: overseer-benchmark-questions\nversion: 1\n';
+      const tail = 'questions:\n  - question: x\n';
+
+      async function messages(suiteBlock: string): Promise<string[]> {
+        return (await parseQuestionYaml(header + suiteBlock + tail)).errors.map(e => e.message);
+      }
+
+      const oldShape = '`suite.snapshot` is now a mapping with `name` and `text`; `suite.snapshot_text` is no longer a key.';
+
+      it('names the new shape for a string snapshot and for snapshot_text', async () => {
+        expect(await messages('suite:\n  snapshot: "Valkyrie dlvl 12"\n')).toContain(oldShape);
+        expect(await messages('suite:\n  snapshot_text: |\n    a board\n')).toContain(oldShape);
+      });
+
+      it('rejects an unknown key, a bad name, version, date and hash', async () => {
+        expect(await messages('suite:\n  snapshot:\n    owner: me\n    text: a board\n')).toContain(
+          'Unknown key `suite.snapshot.owner`; allowed: name, gnollhack_version, captured_at, notes, sha256, text.'
+        );
+        expect(await messages(`suite:\n  snapshot:\n    name: ${'x'.repeat(129)}\n    text: a board\n`)).toContain(
+          '`suite.snapshot.name` must be 1–128 characters.'
+        );
+        expect(await messages(`suite:\n  snapshot:\n    gnollhack_version: ${'v'.repeat(65)}\n    text: a board\n`)).toContain(
+          '`suite.snapshot.gnollhack_version` must be at most 64 characters.'
+        );
+        expect(await messages('suite:\n  snapshot:\n    captured_at: "not a date"\n    text: a board\n')).toContain(
+          '`suite.snapshot.captured_at` must be a date, for example 2026-09-16T18:04:11Z.'
+        );
+        expect(await messages('suite:\n  snapshot:\n    sha256: "abc"\n    text: a board\n')).toContain(
+          '`suite.snapshot.sha256` must be 64 hexadecimal characters.'
+        );
+      });
+
+      it('requires a non-blank text', async () => {
+        expect(await messages('suite:\n  snapshot:\n    name: A board\n')).toContain('`suite.snapshot.text` is required.');
+        expect(await messages('suite:\n  snapshot:\n    text: [a]\n')).toContain('`suite.snapshot.text` must be text.');
+        expect(await messages('suite:\n  snapshot:\n    text: "   "\n')).toContain(
+          '`suite.snapshot.text` is blank; remove the whole `snapshot` mapping to import without a game snapshot.'
+        );
+      });
+
+      it('accepts captured_at as an unquoted timestamp and as a string', async () => {
+        const unquoted = await parseQuestionYaml(header + 'suite:\n  snapshot:\n    captured_at: 2026-09-16T18:04:11Z\n    text: a board\n' + tail);
+        expect(unquoted.errors).toEqual([]);
+        expect(unquoted.suite?.snapshot?.capturedAt).toBe('2026-09-16T18:04:11.000Z');
+
+        const quoted = await parseQuestionYaml(header + 'suite:\n  snapshot:\n    captured_at: "2026-09-16T18:04:11Z"\n    text: a board\n' + tail);
+        expect(quoted.errors).toEqual([]);
+        expect(quoted.suite?.snapshot?.capturedAt).toBe('2026-09-16T18:04:11.000Z');
+      });
     });
 
-    for (const mode of ['single', 'questions', 'suite'] as const) {
-      it(`validateForMode emits the snapshot_text notice in ${mode} mode`, async () => {
+    it('builds the import request snapshot, and null without one', async () => {
+      const withBoard = await parseQuestionYaml(serializeSuiteYaml(SNAPSHOT_SUITE, FIXTURE, SNAPSHOT));
+      expect(toSuiteSnapshot(withBoard)).toEqual({
+        name: 'Valkyrie dlvl 12',
+        text: BOARD,
+        sourceGnollHackVersion: '4.2.0 Build 47',
+        capturedAtUtc: '2026-09-16T18:04:11.000Z',
+        notes: 'Exported from the developer menu.'
+      });
+      expect(toSuiteSnapshot(await parseQuestionYaml(serializeSuiteYaml(SUITE, FIXTURE)))).toBeNull();
+    });
+
+    for (const mode of ['single', 'questions'] as const) {
+      it(`validateForMode says the snapshot is ignored in ${mode} mode`, async () => {
         const target = question(42, 1, 'What is the Gnoll race?\nWhich roles can play it?', 1, TRICKY_RUBRIC);
-        const parsed = await parseQuestionYaml(serializeQuestionsYaml([target], SNAPSHOT_SUITE, BOARD));
+        const parsed = await parseQuestionYaml(serializeSuiteYaml(SNAPSHOT_SUITE, [target], SNAPSHOT));
         const checked = validateForMode(parsed, mode, [target], target);
         expect(checked.errors).toEqual([]);
-        expect(checked.notices).toContain('`suite.snapshot_text` is ignored: an import never changes the game snapshot.');
+        expect(checked.notices).toContain('The game snapshot in the file is ignored: this import changes questions only.');
       });
     }
+
+    it('says nothing about the snapshot in suite mode: the review step reports it', async () => {
+      const parsed = await parseQuestionYaml(serializeSuiteYaml(SNAPSHOT_SUITE, FIXTURE, SNAPSHOT));
+      const checked = validateForMode(parsed, 'suite', []);
+      expect(checked.errors).toEqual([]);
+      expect(checked.notices.some(n => n.includes('snapshot'))).toBeFalse();
+    });
   });
 
   describe('lintRubric', () => {
@@ -421,7 +555,8 @@ describe('question-yaml-format', () => {
       expect(text).toContain('1. **BOARD FACTS**: fixture rule.\n2. **REQUIRED**: fixture rule.');
       expect(text).toContain('## Difficulty bands');
       expect(text).toContain('- **Intermediate** (36–70): Fixture intermediate.');
-      expect(text).toContain('snapshot_text');
+      expect(text).toContain('snapshot:');
+      expect(text).not.toContain('snapshot_text');
       expect(text).not.toContain(RUBRIC_GUIDANCE_UNAVAILABLE);
 
       const result = await parseQuestionYaml(completeExample(text));

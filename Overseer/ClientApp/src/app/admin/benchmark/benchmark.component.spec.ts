@@ -6916,6 +6916,80 @@ describe('AdminBenchmarkComponent', () => {
       expect(card.querySelector('.upload-snapshot-card-btn')!.getAttribute('aria-disabled')).toBeNull();
     });
 
+    it('offers suite YAML help on the Manage Suites toolbar', () => {
+      showQuestions();
+      const toolbar = host().querySelector('.suites-toolbar-grouped')!;
+      const help = toolbar.querySelector('.action-btn') as HTMLButtonElement;
+      expect(help.getAttribute('aria-label')).toBe('Open suite YAML import and export help');
+      expect(tooltipTexts(toolbar)).toEqual(['Suite Import/Export Help']);
+
+      const openSuite = spyOn(component.suiteYamlHelpDialog!, 'open');
+      const openQuestions = spyOn(component.questionYamlHelpDialog!, 'open');
+      help.click();
+      expect(openSuite).toHaveBeenCalled();
+      expect(openQuestions).not.toHaveBeenCalled();
+    });
+
+    it('routes the import dialog help request by the mode the import was opened for', () => {
+      showQuestions();
+      const openSuite = spyOn(component.suiteYamlHelpDialog!, 'open');
+      const openQuestions = spyOn(component.questionYamlHelpDialog!, 'open');
+
+      component.questionYamlImportDialog!.mode = 'suite';
+      component.onYamlHelpRequested();
+      expect(openSuite).toHaveBeenCalled();
+      expect(openQuestions).not.toHaveBeenCalled();
+
+      component.questionYamlImportDialog!.mode = 'questions';
+      component.onYamlHelpRequested();
+      expect(openQuestions).toHaveBeenCalled();
+    });
+
+    it('exports a suite with its whole snapshot: text, hash and metadata', async () => {
+      showQuestions();
+      benchmarkServiceMock.getQuestions.and.returnValue(of(questions.map(q => ({ ...q }))));
+      benchmarkServiceMock.getSnapshot.and.returnValue(of({
+        id: 7, name: 'Low HP', sanitizedText: 'GnollHack 4.2.0 Build 47\nDlvl:11 HP:14(58)', charCount: 44,
+        sha256: 'a'.repeat(64), captureMethod: 'TextUpload', sourceGnollHackVersion: '4.2.0 Build 47',
+        notes: 'From the viewer.', capturedAtUtc: '2026-09-16T18:04:11Z', createdAtUtc: ''
+      } as any));
+
+      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true });
+      try {
+        await component.copySuiteYaml(component.suites[0]);
+        expect(benchmarkServiceMock.getSnapshot).toHaveBeenCalledWith(7, true);
+        const yaml = writeText.calls.mostRecent().args[0] as string;
+        expect(yaml).toContain('  snapshot:\n');
+        expect(yaml).toContain('    sha256: "' + 'a'.repeat(64) + '"');
+        expect(yaml).toContain('    text: |\n');
+        expect(yaml).toContain('      GnollHack 4.2.0 Build 47');
+        expect(component.suitesCopyStatus).toContain('Copied suite Default Suite as YAML');
+      } finally {
+        delete (navigator as { clipboard?: unknown }).clipboard;
+        if (original) Object.defineProperty(navigator, 'clipboard', original);
+      }
+    });
+
+    it('exports without the board, and says so, when the snapshot fetch fails', async () => {
+      showQuestions();
+      benchmarkServiceMock.getQuestions.and.returnValue(of(questions.map(q => ({ ...q }))));
+      benchmarkServiceMock.getSnapshot.and.returnValue(throwError(() => new Error('gone')));
+
+      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true });
+      try {
+        await component.copySuiteYaml(component.suites[0]);
+        expect(writeText.calls.mostRecent().args[0] as string).not.toContain('snapshot');
+        expect(component.suitesCopyStatus).toContain('Exported without the snapshot text');
+      } finally {
+        delete (navigator as { clipboard?: unknown }).clipboard;
+        if (original) Object.defineProperty(navigator, 'clipboard', original);
+      }
+    });
+
     it('disables Upload Snapshot while a generation job runs on that suite', () => {
       component.runningGenerationSuiteId = 1;
       showQuestions();

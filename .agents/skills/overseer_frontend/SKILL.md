@@ -221,9 +221,18 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `#questionYamlImportDialog` (`app-question-yaml-import-dialog`, `question-yaml/`): YAML import
     in three modes — replace one question (a question's Import from YAML), import into the open
     suite (Manage Questions toolbar), create a suite (Manage Suites toolbar's Import Suite from
-    YAML) — with Provide YAML, Review and Done steps.
-  - `#questionYamlHelpDialog` (`app-question-yaml-help-dialog`): YAML import and export help, with
-    copyable and downloadable instructions for an AI.
+    YAML) — with Provide YAML, Review and Done steps. In **suite** mode it attaches the game
+    snapshot the document carries, behind a checkbox on the review step whose sentence comes from
+    a server preflight (`POST snapshots/match`) that says whether an identical board is already
+    stored and who owns it. Its help link routes to whichever help dialog matches the open mode.
+  - `#questionYamlHelpDialog` and `#suiteYamlHelpDialog` (`app-question-yaml-help-dialog`): **two
+    instances of one component**, selected by its `variant` input (`questions`, the default, and
+    `suite`). Both live in one document, so every element id carries the variant's `idPrefix`
+    (`yaml-help`, `suite-yaml-help`) — a duplicated id silently breaks `aria-labelledby`,
+    `aria-controls`, the tooltip anchors and the exclusive `<details name>` accordion. The
+    questions variant fetches the rubric authoring guidance and assembles its *For an AI* text;
+    the suite variant is entirely static (`suite-yaml-guide.ts`), makes **no** server call, and
+    shows its agent prompt on two tabs.
   - `#snapshotUploadDialog` (`app-snapshot-upload-dialog`, `snapshot-upload/`): Upload Snapshot from
     a suite card, with a nested `#replaceConfirmDialog` when the suite already has a snapshot.
     Delete Snapshot lives in the snapshot viewer's Metadata tab (`#deleteConfirmDialog` in

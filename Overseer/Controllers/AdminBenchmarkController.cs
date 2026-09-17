@@ -812,10 +812,11 @@ public class AdminBenchmarkController : ControllerBase
 
     /// <summary>
     /// Creates a new suite from an imported YAML document. An existing suite is never
-    /// overwritten: a name collision gets an " (Imported)" suffix. No snapshot is attached.
+    /// overwritten: a name collision gets an " (Imported)" suffix. A snapshot carried by the
+    /// request is attached: an identical unattached one is reused, otherwise one is created.
     /// </summary>
     [HttpPost("suites/import")]
-    public async Task<IActionResult> ImportSuite([FromBody] ImportBenchmarkSuiteRequest request)
+    public async Task<IActionResult> ImportSuite([FromBody] ImportBenchmarkSuiteRequest request, CancellationToken ct = default)
     {
         if (request == null || string.IsNullOrWhiteSpace(request.Name))
         {
@@ -826,6 +827,29 @@ public class AdminBenchmarkController : ControllerBase
         if (name.Length > 128)
         {
             return BadRequest("Suite name must be at most 128 characters.");
+        }
+
+        // The snapshot name defaults to the requested suite name, before any "(Imported)" suffix.
+        string? snapshotName = null;
+        if (request.Snapshot != null)
+        {
+            if (string.IsNullOrWhiteSpace(request.Snapshot.Text))
+            {
+                return BadRequest("Snapshot text is empty.");
+            }
+            if (request.Snapshot.Text.Length > MaxSuiteSnapshotUploadChars)
+            {
+                return BadRequest($"Snapshot content must be at most {MaxSuiteSnapshotUploadChars:N0} characters.");
+            }
+            snapshotName = string.IsNullOrWhiteSpace(request.Snapshot.Name) ? name : request.Snapshot.Name.Trim();
+            if (snapshotName.Length > 128)
+            {
+                return BadRequest("Snapshot name must be at most 128 characters.");
+            }
+            if ((request.Snapshot.SourceGnollHackVersion?.Trim().Length ?? 0) > 64)
+            {
+                return BadRequest("Snapshot GnollHack version must be at most 64 characters.");
+            }
         }
 
         if (request.Questions == null || request.Questions.Count == 0)
@@ -888,7 +912,38 @@ public class AdminBenchmarkController : ControllerBase
         }
 
         _dbContext.BenchmarkSuites.Add(suite);
-        await _dbContext.SaveChangesAsync();
+
+        if (request.Snapshot == null)
+        {
+            await _dbContext.SaveChangesAsync(ct);
+            return Ok(ToSuiteDto(suite));
+        }
+
+        var meta = new BoardMetadata(
+            snapshotName!,
+            NullIfBlank(request.Snapshot.Notes?.Trim()) ?? "Imported with suite YAML.",
+            NullIfBlank(request.Snapshot.SourceGnollHackVersion?.Trim()),
+            request.Snapshot.CapturedAtUtc ?? now);
+
+        try
+        {
+            // The one save covers the suite, its questions and the board.
+            await _snapshotImporter.AttachOrCreateForSuiteAsync(
+                suite,
+                request.Snapshot.Text,
+                LooksLikeHtml(request.Snapshot.Text),
+                meta,
+                BenchmarkSnapshotImporter.YamlImportCaptureMethod,
+                ct);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+        catch (DbUpdateException)
+        {
+            return Conflict(new { error = "The snapshot was attached to another suite a moment ago. Import again." });
+        }
 
         return Ok(ToSuiteDto(suite));
     }
@@ -1803,6 +1858,47 @@ public class AdminBenchmarkController : ControllerBase
         }
 
         return Ok(boards);
+    }
+
+    /// <summary>
+    /// What a suite import would do with this snapshot text: the stored form's hash, size and
+    /// truncation, and the stored snapshot carrying the same text when there is one. Writes
+    /// nothing; the import applies the same rule again and is the authority.
+    /// </summary>
+    [HttpPost("snapshots/match")]
+    public async Task<IActionResult> MatchSnapshot([FromBody] MatchSnapshotRequest request, CancellationToken ct)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.Text))
+        {
+            return BadRequest(new { error = "Snapshot text is empty." });
+        }
+        if (request.Text.Length > MaxSuiteSnapshotUploadChars)
+        {
+            return BadRequest(new { error = $"Snapshot content must be at most {MaxSuiteSnapshotUploadChars:N0} characters." });
+        }
+
+        bool isHtml = LooksLikeHtml(request.Text);
+        var (text, sha256, truncated) = BenchmarkSnapshotImporter.StoredForm(request.Text, isHtml);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return BadRequest(new { error = "Captured snapshot flattened to empty text. A dump that flattens to nothing is a capture failure, not a valid snapshot." });
+        }
+
+        var (board, owner) = await _snapshotImporter.FindIdenticalAsync(sha256, ct);
+        return Ok(new MatchSnapshotResult
+        {
+            Sha256 = sha256,
+            CharCount = text.Length,
+            Truncated = truncated,
+            IsHtml = isHtml,
+            Match = board == null ? null : new MatchedSnapshotDto
+            {
+                Id = board.Id,
+                Name = board.Name,
+                SuiteId = owner?.Id,
+                SuiteName = owner?.Name
+            }
+        });
     }
 
     [HttpGet("snapshots/{id}")]

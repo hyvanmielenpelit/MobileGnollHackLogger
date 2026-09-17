@@ -140,6 +140,57 @@ public class BenchmarkSnapshotImporterTests
     }
 
     [Fact]
+    public void PrepareBoardText_IsIdempotent_SoTruncatedTextRoundTrips()
+    {
+        var once = BenchmarkSnapshotImporter.PrepareBoardText(new string('a', BenchmarkSnapshotImporter.DefaultMaxSnapshotChars + 10));
+        var twice = BenchmarkSnapshotImporter.PrepareBoardText(once.Text);
+
+        Assert.Equal(once.Text, twice.Text);
+        Assert.Equal(once.Sha256, twice.Sha256);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(twice.Text, @"\[SNAPSHOT TRUNCATED at 60000 characters\.\]"));
+    }
+
+    [Fact]
+    public void PrepareBoardText_LeavesAShortTextThatMentionsTheMarkerAlone()
+    {
+        string text = "Before\n\n[SNAPSHOT TRUNCATED at 60000 characters.]\nAfter";
+        var (result, _) = BenchmarkSnapshotImporter.PrepareBoardText(text);
+
+        Assert.Equal(text, result);
+    }
+
+    [Fact]
+    public async Task StoredForm_EqualsWhatAnUploadStores()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateDbContext();
+        var importer = new BenchmarkSnapshotImporter(db);
+        var suite = new BenchmarkSuite { Name = "Stored form" };
+        db.BenchmarkSuites.Add(suite);
+        await db.SaveChangesAsync(ct);
+
+        const string content = "Dlvl:3 $:10 HP:14(14)  \r\n\r\n\r\n\r\nThe map";
+        var board = await importer.CreateForSuiteAsync(suite, content, false, new BoardMetadata("stored form"), false, ct);
+        var stored = BenchmarkSnapshotImporter.StoredForm(content, false);
+
+        Assert.Equal(board.SanitizedText, stored.Text);
+        Assert.Equal(board.Sha256, stored.Sha256);
+        Assert.False(stored.Truncated);
+    }
+
+    [Fact]
+    public void StoredForm_ReportsTruncationAndFlattensHtml()
+    {
+        var longText = BenchmarkSnapshotImporter.StoredForm(new string('a', 70000), false);
+        Assert.True(longText.Truncated);
+        Assert.Equal(BenchmarkSnapshotImporter.DefaultMaxSnapshotChars + "\n\n[SNAPSHOT TRUNCATED at 60000 characters.]".Length, longText.Text.Length);
+
+        var fromHtml = BenchmarkSnapshotImporter.StoredForm("<html><body><pre>HP: 12/60</pre></body></html>", true);
+        Assert.DoesNotContain("<", fromHtml.Text);
+        Assert.Contains("HP: 12/60", fromHtml.Text);
+    }
+
+    [Fact]
     public async Task PrepareBoardText_HashMatchesTheStoredBoard()
     {
         using var db = CreateDbContext();

@@ -2,6 +2,7 @@ import type {
   BenchmarkQuestionDto,
   BenchmarkSuiteDto,
   ImportBenchmarkQuestionItem,
+  ImportBenchmarkSuiteSnapshot,
   RubricAuthoringGuidance
 } from '../../../services/admin-benchmark.service';
 import { formatDifficulty } from '../../../utils/model-badge-format.util';
@@ -27,12 +28,23 @@ export interface ParsedQuestion {
   rubric: string | null;
 }
 
+/** The game snapshot a document carries: the board itself plus the metadata of the stored one. */
+export interface ParsedSnapshot {
+  name: string | null;
+  gnollhackVersion: string | null;
+  /** ISO 8601, normalized from a quoted string or an unquoted YAML timestamp. */
+  capturedAt: string | null;
+  notes: string | null;
+  /** The hash of the board this file was exported from; a mismatch only warns. */
+  sha256: string | null;
+  /** The board the questions are written against. A suite import attaches it. */
+  text: string;
+}
+
 export interface ParsedSuite {
   name: string | null;
   description: string | null;
-  snapshot: string | null;
-  /** The board the questions are written against; informational, never imported. */
-  snapshotText: string | null;
+  snapshot: ParsedSnapshot | null;
 }
 
 export interface ParseIssue {
@@ -53,40 +65,54 @@ export const QUESTION_YAML_FORMAT = 'overseer-benchmark-questions';
 export const QUESTION_YAML_VERSION = 1;
 
 const TOP_LEVEL_KEYS = ['format', 'version', 'suite', 'questions'];
-const SUITE_KEYS = ['name', 'description', 'snapshot', 'snapshot_text'];
+const SUITE_KEYS = ['name', 'description', 'snapshot'];
+const SNAPSHOT_KEYS = ['name', 'gnollhack_version', 'captured_at', 'notes', 'sha256', 'text'];
 const QUESTION_KEYS = ['id', 'difficulty', 'question', 'rubric'];
 export const MAX_SUITE_NAME_LENGTH = 128;
+export const MAX_SNAPSHOT_NAME_LENGTH = 128;
+export const MAX_GNOLLHACK_VERSION_LENGTH = 64;
+
+/** The snapshot an export writes into `suite.snapshot`; every key but `text` may be null. */
+export interface SnapshotExport {
+  name: string | null;
+  gnollhackVersion: string | null;
+  capturedAtUtc: string | null;
+  notes: string | null;
+  sha256: string | null;
+  text: string;
+}
 
 // ---------------------------------------------------------------------------------------------
 // Serializer
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Serializes questions, with a `suite` block naming their suite when one is given. The snapshot
- * text, when given with a suite, is written as `suite.snapshot_text`.
+ * Serializes questions, with a `suite` block naming their suite when one is given. A snapshot,
+ * when given with a suite, is written as the `suite.snapshot` mapping.
  */
-export function serializeQuestionsYaml(questions: BenchmarkQuestionDto[], suite: BenchmarkSuiteDto | null, snapshotText?: string | null): string {
-  return serialize(questions, suite, false, snapshotText);
+export function serializeQuestionsYaml(questions: BenchmarkQuestionDto[], suite: BenchmarkSuiteDto | null, snapshot?: SnapshotExport | null): string {
+  return serialize(questions, suite, false, snapshot);
 }
 
-/** Serializes a whole suite: name, description, attached snapshot name and text, and every question. */
-export function serializeSuiteYaml(suite: BenchmarkSuiteDto, questions: BenchmarkQuestionDto[], snapshotText?: string | null): string {
-  return serialize(questions, suite, true, snapshotText);
+/** Serializes a whole suite: name, description, the attached snapshot, and every question. */
+export function serializeSuiteYaml(suite: BenchmarkSuiteDto, questions: BenchmarkQuestionDto[], snapshot?: SnapshotExport | null): string {
+  return serialize(questions, suite, true, snapshot);
 }
 
 function serialize(
   questions: BenchmarkQuestionDto[],
   suite: BenchmarkSuiteDto | null,
   includeDescription: boolean,
-  snapshotText?: string | null
+  snapshot?: SnapshotExport | null
 ): string {
-  const hasSnapshotText = !!suite && !!snapshotText && snapshotText.trim() !== '';
+  // A snapshot whose text could not be fetched writes no `snapshot` key: the mapping needs a board.
+  const hasSnapshot = !!suite && !!snapshot && !!snapshot.text && snapshot.text.trim() !== '';
   const out: string[] = [
     '# Overseer benchmark questions. Edit freely; keep every `id` you were given.',
     '# A question without `id` is created as new. Omit `rubric` to keep the current rubric.'
   ];
-  if (hasSnapshotText) {
-    out.push('# snapshot_text is the board the questions are written against; it is ignored on import.');
+  if (hasSnapshot) {
+    out.push('# suite.snapshot is the board the questions are written against. A suite import attaches it; a questions import ignores it.');
   }
   out.push(`format: ${QUESTION_YAML_FORMAT}`, `version: ${QUESTION_YAML_VERSION}`);
 
@@ -96,11 +122,25 @@ function serialize(
     if (includeDescription && suite.description && suite.description.trim() !== '') {
       out.push(...blockScalar('description', suite.description, 2));
     }
-    if (suite.gameSnapshotName) {
-      out.push(`  snapshot: ${quoted(suite.gameSnapshotName)}`);
-    }
-    if (hasSnapshotText) {
-      out.push(...blockScalar('snapshot_text', snapshotText!, 2));
+    if (hasSnapshot) {
+      const s = snapshot!;
+      out.push('  snapshot:');
+      if (s.name) {
+        out.push(`    name: ${quoted(s.name)}`);
+      }
+      if (s.gnollhackVersion) {
+        out.push(`    gnollhack_version: ${quoted(s.gnollhackVersion)}`);
+      }
+      if (s.capturedAtUtc) {
+        out.push(`    captured_at: ${quoted(s.capturedAtUtc)}`);
+      }
+      if (s.notes && s.notes.trim() !== '') {
+        out.push(...blockScalar('notes', s.notes, 4));
+      }
+      if (s.sha256) {
+        out.push(`    sha256: ${quoted(s.sha256)}`);
+      }
+      out.push(...blockScalar('text', s.text, 4));
     }
   }
 
@@ -191,6 +231,90 @@ function isMapping(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/** Names the current shape for a document written against the flat keys this replaced. */
+const OLD_SNAPSHOT_SHAPE_MESSAGE =
+  '`suite.snapshot` is now a mapping with `name` and `text`; `suite.snapshot_text` is no longer a key.';
+
+/** Checks the `suite.snapshot` mapping; returns null when it is unusable, with the errors pushed. */
+function checkSnapshot(value: unknown, errors: ParseIssue[]): ParsedSnapshot | null {
+  if (!isMapping(value)) {
+    errors.push({ line: null, message: OLD_SNAPSHOT_SHAPE_MESSAGE });
+    return null;
+  }
+
+  for (const key of Object.keys(value)) {
+    if (!SNAPSHOT_KEYS.includes(key)) {
+      errors.push({ line: null, message: `Unknown key \`suite.snapshot.${key}\`; allowed: ${SNAPSHOT_KEYS.join(', ')}.` });
+    }
+  }
+
+  const parsed: ParsedSnapshot = { name: null, gnollhackVersion: null, capturedAt: null, notes: null, sha256: null, text: '' };
+
+  if ('name' in value && value['name'] !== null) {
+    const name = value['name'];
+    const trimmed = typeof name === 'string' ? name.trim() : null;
+    if (trimmed === null || trimmed.length < 1 || trimmed.length > MAX_SNAPSHOT_NAME_LENGTH) {
+      errors.push({ line: null, message: `\`suite.snapshot.name\` must be 1–${MAX_SNAPSHOT_NAME_LENGTH} characters.` });
+    } else {
+      parsed.name = trimmed;
+    }
+  }
+
+  if ('gnollhack_version' in value && value['gnollhack_version'] !== null) {
+    const version = value['gnollhack_version'];
+    const trimmed = typeof version === 'string' ? version.trim() : String(version).trim();
+    if (trimmed.length > MAX_GNOLLHACK_VERSION_LENGTH) {
+      errors.push({ line: null, message: `\`suite.snapshot.gnollhack_version\` must be at most ${MAX_GNOLLHACK_VERSION_LENGTH} characters.` });
+    } else if (trimmed !== '') {
+      parsed.gnollhackVersion = trimmed;
+    }
+  }
+
+  if ('captured_at' in value && value['captured_at'] !== null) {
+    // An unquoted YAML timestamp arrives as a Date; a quoted one as a string.
+    const raw = value['captured_at'];
+    const date = raw instanceof Date ? raw : new Date(String(raw));
+    if (Number.isNaN(date.getTime())) {
+      errors.push({ line: null, message: '`suite.snapshot.captured_at` must be a date, for example 2026-09-16T18:04:11Z.' });
+    } else {
+      parsed.capturedAt = date.toISOString();
+    }
+  }
+
+  if ('notes' in value && value['notes'] !== null) {
+    if (typeof value['notes'] !== 'string') {
+      errors.push({ line: null, message: '`suite.snapshot.notes` must be text.' });
+    } else {
+      parsed.notes = cleanText(value['notes']) || null;
+    }
+  }
+
+  if ('sha256' in value && value['sha256'] !== null) {
+    const sha = typeof value['sha256'] === 'string' ? value['sha256'].trim().toLowerCase() : '';
+    if (!/^[0-9a-f]{64}$/.test(sha)) {
+      errors.push({ line: null, message: '`suite.snapshot.sha256` must be 64 hexadecimal characters.' });
+    } else {
+      parsed.sha256 = sha;
+    }
+  }
+
+  if (!('text' in value) || value['text'] === null) {
+    errors.push({ line: null, message: '`suite.snapshot.text` is required.' });
+    return null;
+  }
+  if (typeof value['text'] !== 'string') {
+    errors.push({ line: null, message: '`suite.snapshot.text` must be text.' });
+    return null;
+  }
+  const text = cleanText(value['text']);
+  if (text === '') {
+    errors.push({ line: null, message: '`suite.snapshot.text` is blank; remove the whole `snapshot` mapping to import without a game snapshot.' });
+    return null;
+  }
+  parsed.text = text;
+  return parsed;
+}
+
 function checkSchema(doc: unknown, result: ParseResult): void {
   const errors = result.errors;
   const headerMessage = `The document must be a YAML mapping with \`format: ${QUESTION_YAML_FORMAT}\` and \`version: ${QUESTION_YAML_VERSION}\`.`;
@@ -217,14 +341,16 @@ function checkSchema(doc: unknown, result: ParseResult): void {
   if ('suite' in doc && doc['suite'] !== null) {
     const suite = doc['suite'];
     if (!isMapping(suite)) {
-      errors.push({ line: null, message: '`suite` must be a mapping with optional `name`, `description`, `snapshot` and `snapshot_text` keys.' });
+      errors.push({ line: null, message: '`suite` must be a mapping with optional `name`, `description` and `snapshot` keys.' });
     } else {
       for (const key of Object.keys(suite)) {
-        if (!SUITE_KEYS.includes(key)) {
+        if (key === 'snapshot_text') {
+          errors.push({ line: null, message: OLD_SNAPSHOT_SHAPE_MESSAGE });
+        } else if (!SUITE_KEYS.includes(key)) {
           errors.push({ line: null, message: `Unknown key \`suite.${key}\`; allowed: ${SUITE_KEYS.join(', ')}.` });
         }
       }
-      const parsed: ParsedSuite = { name: null, description: null, snapshot: null, snapshotText: null };
+      const parsed: ParsedSuite = { name: null, description: null, snapshot: null };
       if ('name' in suite) {
         const name = suite['name'];
         const trimmed = typeof name === 'string' ? name.trim() : null;
@@ -242,14 +368,7 @@ function checkSchema(doc: unknown, result: ParseResult): void {
         }
       }
       if ('snapshot' in suite && suite['snapshot'] !== null) {
-        parsed.snapshot = String(suite['snapshot']);
-      }
-      if ('snapshot_text' in suite && suite['snapshot_text'] !== null) {
-        if (typeof suite['snapshot_text'] !== 'string') {
-          errors.push({ line: null, message: '`suite.snapshot_text` must be text.' });
-        } else {
-          parsed.snapshotText = cleanText(suite['snapshot_text']);
-        }
+        parsed.snapshot = checkSnapshot(suite['snapshot'], errors);
       }
       result.suite = parsed;
     }
@@ -373,8 +492,8 @@ export function validateForMode(
     return { errors, notices };
   }
 
-  if (result.suite?.snapshotText != null) {
-    notices.push('`suite.snapshot_text` is ignored: an import never changes the game snapshot.');
+  if (result.suite?.snapshot && mode !== 'suite') {
+    notices.push('The game snapshot in the file is ignored: this import changes questions only.');
   }
 
   if (mode === 'single') {
@@ -443,10 +562,23 @@ export function validateForMode(
   if (result.questions.some(q => q.id !== null)) {
     notices.push('Question ids in the file are ignored: a suite import always creates new questions.');
   }
-  if (result.suite?.snapshot) {
-    notices.push('The `suite.snapshot` name is informational: a suite import attaches no snapshot.');
-  }
+  // What happens to the snapshot is reported on the review step, from the server's preflight.
   return { errors, notices };
+}
+
+/** The snapshot a suite import sends, or null when the document carries none. */
+export function toSuiteSnapshot(result: ParseResult): ImportBenchmarkSuiteSnapshot | null {
+  const snapshot = result.suite?.snapshot;
+  if (!snapshot) {
+    return null;
+  }
+  return {
+    name: snapshot.name,
+    text: snapshot.text,
+    sourceGnollHackVersion: snapshot.gnollhackVersion,
+    capturedAtUtc: snapshot.capturedAt,
+    notes: snapshot.notes
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -588,12 +720,15 @@ export const AI_INSTRUCTIONS_FILE_NAME = 'overseer-benchmark-yaml-instructions.m
 // Guides
 // ---------------------------------------------------------------------------------------------
 
-export interface HumanGuideTab {
+/** One tab of a help dialog guide: its stable id, its label and its Markdown body. */
+export interface GuideTab {
   /** Stable id, used in element ids. */
-  id: 'workflow' | 'rules' | 'format';
+  id: string;
   label: string;
   markdown: string;
 }
+
+export type HumanGuideTab = GuideTab & { id: 'workflow' | 'rules' | 'format' };
 
 const WORKFLOW_MARKDOWN = `## Export, edit, import
 
@@ -607,12 +742,12 @@ const WORKFLOW_MARKDOWN = `## Export, edit, import
 |---|---|---|
 | **Import from YAML** | on a question | Replaces that one question. The document must hold exactly one question, and its \`id\`, if present, must be that question's. |
 | **Import Questions from YAML** | Manage Questions toolbar | Replaces every question that carries an \`id\` and creates every question that has none. |
-| **Import Suite from YAML** | Manage Suites toolbar | Always creates a **new** suite, even when one of that name exists; it is then named *Name (Imported)*. Ids in the file are ignored, and no game snapshot is attached. |
+| **Import Suite from YAML** | Manage Suites toolbar | Always creates a **new** suite, even when one of that name exists; it is then named *Name (Imported)*. Ids in the file are ignored, and the game snapshot in the file is attached. The Manage Suites toolbar has its own help. |
 
 ## What an import never does
 
 - Delete or reorder questions.
-- Touch runs, assessments, reviews or the game snapshot.
+- Touch runs, assessments or reviews, or change an existing game snapshot.
 - Write anything before you confirm on the review step.
 `;
 
@@ -633,7 +768,7 @@ Re-importing an unchanged export changes nothing: the review step marks those qu
 const FORMAT_MARKDOWN = `## Format essentials
 
 - The document starts with \`format: ${QUESTION_YAML_FORMAT}\` and \`version: ${QUESTION_YAML_VERSION}\`. Both are required.
-- Top-level keys: \`format\`, \`version\`, \`suite\`, \`questions\`. Question keys: \`id\`, \`difficulty\`, \`question\`, \`rubric\`. Any other key is an error.
+- Top-level keys: \`format\`, \`version\`, \`suite\`, \`questions\`. Suite keys: \`name\`, \`description\`, \`snapshot\`. Question keys: \`id\`, \`difficulty\`, \`question\`, \`rubric\`. Any other key is an error.
 - Write \`question\` and \`rubric\` as \`|\` block scalars, and indent every line of the block by the same number of spaces. Inside the block anything goes: Markdown headings, code fences, \`---\` lines. A \`#\` line inside a block is text, not a comment.
 - Indent with spaces, never tabs.
 - \`difficulty\` is Simple, Intermediate or Advanced.
@@ -669,7 +804,8 @@ export function yamlExampleFileName(example: YamlExample): string {
 /** Shown above the example accordion on the help dialog's Examples tab. */
 export const EXAMPLES_INTRO_MARKDOWN = `Copy or download an example, put your own text in it, and import it with the button its description names. The ids **42** and **43** are placeholders: use the ids from your own export (**Download All as YAML** on the Manage Questions toolbar lists every question with its id). Everything else in these files is what the import expects, so edit the text and keep the shape.`;
 
-const EXAMPLE_HEADER = `format: ${QUESTION_YAML_FORMAT}
+/** The two header lines every example starts with. */
+export const EXAMPLE_HEADER = `format: ${QUESTION_YAML_FORMAT}
 version: ${QUESTION_YAML_VERSION}
 `;
 
@@ -823,7 +959,7 @@ export function buildAiInstructions(guidance: RubricAuthoringGuidance | null): s
 
   const skeletonRubric = formLabel
     ? `**BOARD FACTS**
-- A fact quotable from snapshot_text.
+- A fact quotable from the snapshot text.
 
 **REQUIRED**
 - A point the answer must make.
@@ -846,9 +982,11 @@ ${formLabel}
   name: "Suite name"
   description: |
     What the suite measures.
-  snapshot: "Snapshot name"
-  snapshot_text: |
-    The game board, exactly as exported.`
+  snapshot:
+    name: "Snapshot name"
+    gnollhack_version: "4.2.0 Build 47"
+    text: |
+      The game board, exactly as exported.`
     : `suite:
   name: "Suite name"
   description: |
@@ -908,7 +1046,7 @@ ${indent(skeletonRubric, 6)}
 2. Keep every \`id\` you were given, on the question it was given for. A question without \`id\` is created as a new question.
 3. Write \`question\` and \`rubric\` as \`|\` block scalars, and indent every line of them by the same amount. Indent with spaces, never tabs.
 4. Omit \`rubric\` to keep the current rubric; write \`rubric: |\` with no content to clear it.
-5. Use only the keys id, difficulty, question, rubric inside a question, and only format, version, suite, questions at the top level. \`suite\` may hold name, description, snapshot and snapshot_text. Return \`snapshot_text\` unchanged: it is the game board the questions are written against, so use it to check every BOARD FACT.
+5. Use only the keys id, difficulty, question, rubric inside a question, and only format, version, suite, questions at the top level. \`suite\` may hold name, description and snapshot. Return \`snapshot\` unchanged: its \`text\` is the game board the questions are written against, so use it to check every BOARD FACT.
 6. Difficulty is Simple, Intermediate or Advanced.
 7. Inside a block scalar any Markdown is allowed, including headings, code fences and \`---\` lines, as long as every line keeps the block's indentation.
 8. Do not add comments inside a block scalar: a \`#\` line there is part of the text.

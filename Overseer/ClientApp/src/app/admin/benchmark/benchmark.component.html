@@ -1050,8 +1050,9 @@
 
       <div class="visually-hidden" aria-live="polite">{{ suiteActionAnnouncement }}</div>
 
-      <!-- One primary .btn-gh, secondary .btn-ghost actions beside it, and the copy status on the
-           same row so the toolbar does not reserve an extra line above the grid. -->
+      <!-- One primary .btn-gh, secondary .btn-ghost actions beside it, the help icon after the
+           import, and the copy status on the same row so the toolbar does not reserve an extra
+           line above the grid. -->
       <div class="suites-toolbar suites-toolbar-grouped mb-10">
         <button type="button" class="btn-gh" (click)="openCreateSuite()">
           <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -1065,6 +1066,14 @@
           <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
           Import Suite from YAML
         </button>
+        <button type="button" class="action-btn" (click)="openSuiteYamlHelp()"
+                aria-label="Open suite YAML import and export help"
+                [attr.interestfor]="'tip-suite-yaml-help'"
+                [attr.style]="'anchor-name: --tip-suite-yaml-help'">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        </button>
+        <div popover="hint" class="gh-tooltip" id="tip-suite-yaml-help"
+             [attr.style]="'position-anchor: --tip-suite-yaml-help'">Suite Import/Export Help</div>
         <p class="form-hint suites-copy-status" role="status" aria-live="polite">{{ suitesCopyStatus }}</p>
       </div>
 
@@ -4109,15 +4118,19 @@
                      (snapshotDeleted)="onSnapshotDeleted($event)"></app-snapshot-viewer>
 <app-snapshot-upload-dialog #snapshotUploadDialog (uploaded)="onSnapshotUploaded($event)" />
 
-<!-- YAML import and help. Opened from Manage Questions, they stack above it in the top layer. -->
+<!-- YAML import and help. Opened from Manage Questions and Manage Suites, they stack above the
+     page in the top layer. The two help instances are one component in its two variants, which
+     keep their element ids apart; the import dialog's help link routes to the one that matches the
+     import it was opened for. -->
 <app-question-yaml-import-dialog #questionYamlImportDialog
                                  [suite]="currentSuiteForQuestions"
                                  [existing]="questions"
                                  [suites]="suites"
                                  (imported)="onQuestionsImported($event)"
                                  (suiteImported)="onSuiteImported($event)"
-                                 (helpRequested)="openQuestionYamlHelp()" />
+                                 (helpRequested)="onYamlHelpRequested()" />
 <app-question-yaml-help-dialog #questionYamlHelpDialog />
+<app-question-yaml-help-dialog #suiteYamlHelpDialog variant="suite" />
 
 <!-- QUESTION GENERATION DIALOG -->
 <app-question-generation-dialog

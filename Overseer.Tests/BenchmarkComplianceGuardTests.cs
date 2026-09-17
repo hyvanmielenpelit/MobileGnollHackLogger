@@ -265,10 +265,11 @@ public class BenchmarkComplianceGuardTests
             scopeFactory, runManager, NullLogger<BenchmarkSeriesOrchestrator>.Instance);
 
         // The source and wiki indexes are only reached by the suite-health citation endpoint,
-        // which these tests do not exercise — same reason the two nulls above are safe.
+        // which these tests do not exercise — same reason the two nulls above are safe. The
+        // snapshot importer is real: a suite import may attach a board.
         var controller = new AdminBenchmarkController(
             db, benchmarkService, scoringProfileService, runManager, difficultyJobManager, guard, scopeFactory,
-            null!, null!, null!, null!, null!, null!, null!, null!, null!,
+            null!, null!, new BenchmarkSnapshotImporter(db), null!, null!, null!, null!, null!, null!,
             runLauncher, seriesOrchestrator, null!)
         {
             ControllerContext = new ControllerContext
