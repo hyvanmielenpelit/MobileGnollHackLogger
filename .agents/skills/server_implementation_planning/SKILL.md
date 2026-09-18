@@ -224,7 +224,7 @@ Any plan derived from an AI benchmark run analysis, report, or diagnostic review
 <plans-root>/hyvanmielenpelit/MobileGnollHackLogger/YYYY-MM-DD/<task_name>/
   benchmark_run_<N>_analysis_v<N>.md
   implementation_plan_v<N>.md               <- the Overseer / server plan
-  wiki_handoff_prompt_v<N>.md               <- when a finding lands on rung 2
+  wiki_handoff_prompt_v<N>.md               <- the three-step handoff, when a finding lands on rung 2
   gnollhack_implementation_plan_v<N>.md     <- a plan whose work is in another repository
   task.md, walkthrough.md                   <- the server plan's
   gnollhack_task.md, gnollhack_walkthrough.md
@@ -257,7 +257,7 @@ The benchmark evaluates the production chat system prompt (`ChatService.BuildSys
 4. Evaluate whether the evidence bar is met (minimum two comparable runs or an isolated variable pair) before any chat prompt change is proposed.
 5. State the pre-declared acceptance criterion and the rollback trigger for any proposed change, per the skill's Verification and Rollback section.
 6. Carry the **tool-diagnostics table** and the **"Limits of this pass"** statement that `server_benchmark_to_chat_transfer` § 10 requires, with columns as `server_benchmark_tool_diagnostics` § 10 defines them.
-7. For any rung-2 wiki finding, name the wiki handoff document and state whether the plan has a **confirmation gate** before the steps that depend on the wiki change, per `server_wiki_handoff` § 4a — or that nothing in the plan depends on it.
+7. For any rung-2 wiki finding, name the wiki handoff document, state its validation verdict if validation has been run, and state whether the plan has a **confirmation gate** before the steps that depend on the wiki change, per `server_wiki_handoff` § 4a — or that nothing in the plan depends on it.
 
 If the plan addresses only harness or suite infrastructure, it must explicitly state: *"No chat-transferable changes proposed in this plan."*
 
@@ -269,5 +269,5 @@ If the plan addresses only harness or suite infrastructure, it must explicitly s
 - `server_benchmark_tool_diagnostics` (reading a run as a tool-layer instrument; the § 10 table)
 - `server_tool_data_sources` (the corpora behind each tool, and what each index excludes)
 - `server_tool_parameter_reference` (the per-tool parameter and result contract)
-- `server_wiki_handoff` (the rung-2 handoff prompt, its prompt-only document contract, and the confirmation gate)
+- `server_wiki_handoff` (the rung-2 three-step handoff document — proposed changes, source validation, execution — and the confirmation gate)
 - `testing_guidelines` (test classification and execution)

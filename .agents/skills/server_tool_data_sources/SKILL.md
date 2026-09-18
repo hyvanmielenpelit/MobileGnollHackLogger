@@ -112,8 +112,13 @@ Rules that follow from it:
   not.
 
 The only absolute paths that may appear in a document written from this skill are: values already
-committed in `Overseer/appsettings.json`, the conversion script's repository-relative path, and
-the backup root `C:\Backup\NetHack Wiki`.
+committed in `Overseer/appsettings.json`, the conversion script's repository-relative path,
+the backup root `C:\Backup\NetHack Wiki`, and the two standard clone locations a wiki handoff's
+sessions open (`server_wiki_handoff` § 2): `C:\hmp\GnollHack`, the GnollHack source clone, and
+`C:\hmp\GnollHackWiki`, the GnollHackWiki clone. Those two may appear in prose and in a snippet
+alike, as standard machine locations and never as the value of `SourceCodePath` or `WikiPath`: a
+document compares each clone's HEAD with `SourceCodeHeadSha` or `WikiHeadSha` and does not say
+whether the key resolves to it.
 
 ---
 
