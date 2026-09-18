@@ -3019,9 +3019,14 @@ so the comparison view already refuses to pool across the boundary.
     *"The browser held the sound until this tab was shown."* A late fulfilment still marks the key
     played, so a retry cannot chime twice.
   - **Desktop notification.** A second checkbox, *Show a desktop notification*, is independent of the
-    sound: either, both or neither may be on. Permission is requested only from that checkbox's change
-    handler, never on page load. A refused, dismissed or unsupported result unticks the box and says
-    why in a status line under the two checkboxes that is always in the DOM. A notification is raised
+    sound: either, both or neither may be on. Permission is requested when the box is ticked, while
+    the operator is at the screen. It is requested again under the Start gesture (and the other
+    arming actions) only when the box is ticked and this browser has not decided yet — a setting
+    restored in another browser or profile, or after site data was cleared — so the run does not end
+    in a notification that silently never fires. It is never requested on page load, and never again
+    once the browser has decided. A refused, dismissed or unsupported result unticks the box and says
+    why in a status line under the two checkboxes; that line is always in the DOM for screen readers,
+    and taken out of the layout while it is empty. A notification is raised
     only while the tab is hidden or unfocused, once per run or series, and clicking it focuses the tab.
     Whether it makes a sound is up to the browser and the operating system, so it is not a guaranteed
     audio fallback. A platform whose `Notification` constructor requires a service worker gets none;

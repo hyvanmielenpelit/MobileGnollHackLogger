@@ -57,6 +57,19 @@ describe('BenchmarkCompletionNotificationService', () => {
     });
   });
 
+  describe('permission', () => {
+    it('reads the browser decision without prompting', () => {
+      FakeNotification.permission = 'denied';
+      expect(service.permission()).toBe('denied');
+      expect(FakeNotification.requestPermission).not.toHaveBeenCalled();
+    });
+
+    it('is unsupported when the Notification API does not exist', () => {
+      delete (window as any).Notification;
+      expect(service.permission()).toBe('unsupported');
+    });
+  });
+
   describe('requestPermission', () => {
     it('resolves unsupported without calling the platform when the API does not exist', async () => {
       delete (window as any).Notification;

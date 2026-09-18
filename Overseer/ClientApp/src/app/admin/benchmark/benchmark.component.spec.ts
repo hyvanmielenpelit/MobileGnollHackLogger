@@ -6110,6 +6110,7 @@ describe('AdminBenchmarkComponent', () => {
   describe('Part C: the desktop notification', () => {
     let notificationService: BenchmarkCompletionNotificationService;
     let notifySpy: jasmine.Spy;
+    let permissionSpy: jasmine.Spy;
 
     function buildRun(overrides: Record<string, unknown> = {}): any {
       return {
@@ -6124,8 +6125,92 @@ describe('AdminBenchmarkComponent', () => {
     beforeEach(() => {
       notificationService = TestBed.inject(BenchmarkCompletionNotificationService);
       notifySpy = spyOn(notificationService, 'notify');
+      permissionSpy = spyOn(notificationService, 'permission').and.returnValue('granted');
       spyOn(TestBed.inject(BenchmarkCompletionSoundService), 'play').and.returnValue(Promise.resolve('played'));
+      spyOn(TestBed.inject(BenchmarkCompletionSoundService), 'arm').and.returnValue(Promise.resolve());
     });
+
+    describe('when Start is pressed with the box ticked', () => {
+      it('prompts under the gesture when this browser has not decided, and keeps the box on a grant', fakeAsync(() => {
+        permissionSpy.and.returnValue('default');
+        const requestSpy = spyOn(notificationService, 'requestPermission').and.returnValue(Promise.resolve('granted'));
+        component.completionNotification = true;
+
+        (component as any).armCompletionSignalsFromGesture();
+        expect(requestSpy).toHaveBeenCalledTimes(1);
+        tick();
+
+        expect(component.completionNotification).toBeTrue();
+        expect(component.completionNotificationStatus).toBeNull();
+      }));
+
+      it('unticks the box with the reason when the Start prompt is dismissed', fakeAsync(() => {
+        permissionSpy.and.returnValue('default');
+        spyOn(notificationService, 'requestPermission').and.returnValue(Promise.resolve('default'));
+        component.completionNotification = true;
+
+        (component as any).armCompletionSignalsFromGesture();
+        tick();
+
+        expect(component.completionNotification).toBeFalse();
+        expect(component.completionNotificationStatus).toBe('The permission prompt was dismissed.');
+      }));
+
+      it('does not prompt again once permission was granted', () => {
+        const requestSpy = spyOn(notificationService, 'requestPermission');
+        component.completionNotification = true;
+
+        (component as any).armCompletionSignalsFromGesture();
+
+        expect(requestSpy).not.toHaveBeenCalled();
+        expect(component.completionNotification).toBeTrue();
+      });
+
+      it('does not prompt when blocked, and unticks the box with the reason at once', () => {
+        permissionSpy.and.returnValue('denied');
+        const requestSpy = spyOn(notificationService, 'requestPermission');
+        component.completionNotification = true;
+
+        (component as any).armCompletionSignalsFromGesture();
+
+        expect(requestSpy).not.toHaveBeenCalled();
+        expect(component.completionNotification).toBeFalse();
+        expect(component.completionNotificationStatus).toBe("Notifications are blocked for this site in the browser's settings.");
+      });
+
+      it('never prompts when the box is unticked', () => {
+        permissionSpy.and.returnValue('default');
+        const requestSpy = spyOn(notificationService, 'requestPermission');
+        component.completionSound = true;
+        component.completionNotification = false;
+
+        (component as any).armCompletionSignalsFromGesture();
+
+        expect(requestSpy).not.toHaveBeenCalled();
+      });
+    });
+
+    it('takes the empty status line out of the layout, and puts it back when it has a message', fakeAsync(() => {
+      fixture.detectChanges();
+      const status = fixture.nativeElement.querySelector('.completion-signals-status') as HTMLElement;
+      expect(status.classList).toContain('is-empty');
+      expect(status.getAttribute('role')).toBe('status');
+      expect(getComputedStyle(status).position).toBe('absolute');
+      expect(getComputedStyle(status).marginTop).toBe('0px');
+      const toggle = fixture.nativeElement.querySelector('label[for="completionNotificationInput"]') as HTMLElement;
+      const hint = fixture.nativeElement.querySelector('#completionSignalsHint') as HTMLElement;
+      expect(toggle.getBoundingClientRect().height).toBeGreaterThan(0);
+      const gap = hint.getBoundingClientRect().top - toggle.getBoundingClientRect().bottom;
+      expect(gap).toBeLessThanOrEqual(12);
+
+      spyOn(notificationService, 'requestPermission').and.returnValue(Promise.resolve('default'));
+      component.onCompletionNotificationChange(true);
+      tick();
+
+      expect(status.classList).not.toContain('is-empty');
+      expect(getComputedStyle(status).position).toBe('static');
+      expect(status.textContent).toContain('The permission prompt was dismissed.');
+    }));
 
     it('persists and restores completionNotification alongside completionSound', () => {
       benchmarkServiceMock.startRun.and.returnValue(of({ runId: 99 }));

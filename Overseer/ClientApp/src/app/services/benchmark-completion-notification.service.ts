@@ -23,6 +23,11 @@ export class BenchmarkCompletionNotificationService {
     return typeof window !== 'undefined' && 'Notification' in window && window.isSecureContext;
   }
 
+  /** The browser's current decision for this site, read without prompting. */
+  permission(): NotificationPermission | 'unsupported' {
+    return this.isSupported() ? Notification.permission : 'unsupported';
+  }
+
   /**
    * Must be called only from the completion-notification checkbox's own change handler, never on
    * page load: the permission prompt is itself a user-facing action and browsers increasingly

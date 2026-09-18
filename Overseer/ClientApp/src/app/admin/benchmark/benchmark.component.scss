@@ -155,6 +155,17 @@
   gap: 15px;
 }
 
+// The launch form's completion-signal status line. Always in the DOM so a message is announced,
+// but out of the flex flow while empty, where its default margins and the column gap on both
+// sides would open a blank band under the checkboxes.
+.completion-signals-status {
+  margin: 0;
+
+  &.is-empty {
+    position: absolute;
+  }
+}
+
 .form-group {
   display: flex;
   flex-direction: column;

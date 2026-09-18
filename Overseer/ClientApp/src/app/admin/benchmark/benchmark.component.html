@@ -617,7 +617,8 @@
                        (change)="onCompletionNotificationChange($any($event.target).checked)">
                 <span>Show a desktop notification</span>
               </label>
-              <p class="text-muted completion-signals-status" role="status" aria-live="polite">{{ completionSignalsStatusText }}</p>
+              <p class="text-muted completion-signals-status" role="status" aria-live="polite"
+                 [class.is-empty]="!completionSignalsStatusText">{{ completionSignalsStatusText }}</p>
               <span id="completionSignalsHint" class="form-hint">
                 Armed when you press Start, so the chime can play while this tab is in the background.
                 While the tab is hidden, completion is checked about every 15 seconds; browsers slow

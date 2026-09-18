@@ -56,7 +56,7 @@ import { SnapshotViewerComponent } from '../../shared/snapshot-viewer/snapshot-v
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import { SystemService } from '../../services/system.service';
 import { BenchmarkCompletionSoundService } from '../../services/benchmark-completion-sound.service';
-import { BenchmarkCompletionNotificationService } from '../../services/benchmark-completion-notification.service';
+import { BenchmarkCompletionNotificationService, BenchmarkNotificationPermissionOutcome } from '../../services/benchmark-completion-notification.service';
 import { BenchmarkBackgroundActivityService } from '../../services/benchmark-background-activity.service';
 import { parseServerUtcDate, elapsedMsBetween } from '../../utils/date.util';
 import { formatThinkingLevel, showReasoningBadge, formatServiceTier, formatDifficulty, formatPickerPrice } from '../../utils/model-badge-format.util';
@@ -3675,12 +3675,35 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   private armCompletionSignalsFromGesture(): void {
     if (!this.completionSound && !this.completionNotification) return;
     void this.completionSoundService.arm();
+    this.settleNotificationPermissionFromGesture();
   }
 
   /**
-   * The desktop-notification checkbox's own change handler. Requests permission only from here,
-   * never on page load. A result other than `granted` unticks the box and explains why in the
-   * status line beside the checkboxes.
+   * A ticked notification box restored from saved settings may meet a browser that was never
+   * asked (another browser or profile, or cleared site data). The prompt is then shown here, under
+   * the Start gesture, so the run does not end in a notification that silently never fires. A
+   * browser that already decided is not asked again: `granted` changes nothing, and a refusal
+   * unticks the box with the reason.
+   */
+  private settleNotificationPermissionFromGesture(): void {
+    if (!this.completionNotification) return;
+    const permission = this.completionNotificationService.permission();
+    if (permission === 'granted') return;
+    if (permission !== 'default') {
+      this.applyNotificationPermissionOutcome(permission);
+      return;
+    }
+    this.completionNotificationService.requestPermission().then(outcome => {
+      this.applyNotificationPermissionOutcome(outcome);
+      this.cdr.detectChanges();
+    });
+  }
+
+  /**
+   * The desktop-notification checkbox's own change handler. Ticking it asks for permission at
+   * once, while the operator is at the screen; the Start gesture asks only when this browser has
+   * not decided yet. Never asked on page load. A result other than `granted` unticks the box and
+   * explains why in the status line beside the checkboxes.
    */
   onCompletionNotificationChange(checked: boolean): void {
     if (!checked) {
@@ -3691,19 +3714,23 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
 
     this.completionNotificationService.requestPermission().then(outcome => {
-      if (outcome === 'granted') {
-        this.completionNotification = true;
-        this.completionNotificationStatus = null;
-      } else {
-        this.completionNotification = false;
-        this.completionNotificationStatus = outcome === 'denied'
-          ? "Notifications are blocked for this site in the browser's settings."
-          : outcome === 'default'
-            ? 'The permission prompt was dismissed.'
-            : 'This browser does not support desktop notifications here.';
-      }
+      this.applyNotificationPermissionOutcome(outcome);
       this.cdr.detectChanges();
     });
+  }
+
+  private applyNotificationPermissionOutcome(outcome: BenchmarkNotificationPermissionOutcome): void {
+    if (outcome === 'granted') {
+      this.completionNotification = true;
+      this.completionNotificationStatus = null;
+      return;
+    }
+    this.completionNotification = false;
+    this.completionNotificationStatus = outcome === 'denied'
+      ? "Notifications are blocked for this site in the browser's settings."
+      : outcome === 'default'
+        ? 'The permission prompt was dismissed.'
+        : 'This browser does not support desktop notifications here.';
   }
 
   /**
