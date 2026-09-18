@@ -416,6 +416,8 @@ Any implementation plan derived from a benchmark run must replicate this section
 
 **All of it goes in one task directory.** The analysis, the server plan, a wiki handoff document, and any plan whose work is in another repository — named with that repository's prefix, e.g. `gnollhack_implementation_plan_v<N>.md` — are one document set under `hyvanmielenpelit/MobileGnollHackLogger/YYYY-MM-DD/<task_name>/`, never split across scopes. [`server_implementation_planning`](../server_implementation_planning/SKILL.md) § *One task directory per analysis* owns the rule.
 
+**A finding that lands in GnollHack — a game snapshot improvement above all — never proposes a change to GnollHack's save-file layout.** That layout changes about once a year, in a major upgrade, so a new saved field is not a plan item, not even an optional one. Derive the text at export time, or record the fact as an `LL_AI` game-log entry and read it back; if only a layout change would serve, list it as deferred to the next major upgrade and schedule nothing. [`server_implementation_planning`](../server_implementation_planning/SKILL.md) § *A GnollHack plan never changes the save-file layout* owns the rule and says what counts.
+
 ---
 
 ## 11. Model Behaviour Notes (Accumulated Knowledge)

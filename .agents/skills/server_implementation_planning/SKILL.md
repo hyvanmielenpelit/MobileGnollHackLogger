@@ -237,6 +237,22 @@ Any plan derived from an AI benchmark run analysis, report, or diagnostic review
 
 Set on 2026-09-18 by the user's instruction, in the run-52 round, after a GnollHack plan was first filed under `hyvanmielenpelit/GnollHack/` and had to be moved: split across two scopes, the round's four documents could not be found, versioned or handed over as one thing.
 
+### A GnollHack plan never changes the save-file layout
+
+> 🛑 **Do not propose a change that alters GnollHack's save-file layout — not as a plan item, not as an "optional half", not as an alternative.** GnollHack's save format changes about **once a year, in a major upgrade**, and a change that needs it can take up to a year to land. A benchmark finding is never a reason to break players' saves.
+
+What this rules out in a `gnollhack_` plan: a new field in `struct you` (`u.*`), `struct context_info` (`context.*`), `struct flag` (`flags.*`), `struct obj`, `struct monst`, a level structure, or any other structure that `src/save.c` and `src/restore.c` write and read whole; reordering or resizing an existing one; a new saved list or a changed record in one.
+
+What stays available, and is where a snapshot improvement goes instead:
+
+- **Text the snapshot writer derives at export time** from state that already exists — the usual case.
+- **A new entry in an existing variable-length saved list whose record shape does not change.** The game log is the standing example: `struct gamelog_line` (`include/hack.h`) is a turn, flags and a text, and the `LL_AI` category exists so an event can be recorded for the AI snapshot alone. A later export can then read the fact back out of the log instead of out of a new field.
+- **`iflags.*`**, which is not saved.
+
+If a finding can only be served by a layout change, **say so and defer it**: list it in the plan under a heading *Deferred to the next major GnollHack upgrade (needs a save-file layout change)*, with the finding and the smallest field that would serve it, and schedule nothing. Do not present it for a decision in *User Review Required* — the answer is already known.
+
+Set on 2026-09-18 by the user's instruction, in the run-54 round, after a snapshot plan offered a new turn-number field as an optional item.
+
 ### The `Skills consulted:` line
 
 Every plan and every analysis document derived from a benchmark run **MUST** carry a one-line `Skills consulted:` field, near the top with the other metadata, listing the skills actually read — and stating explicitly when a mandatory one was **not** read, and why.
