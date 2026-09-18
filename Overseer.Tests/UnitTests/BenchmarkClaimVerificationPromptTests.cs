@@ -133,4 +133,69 @@ public class BenchmarkClaimVerificationPromptTests
         Assert.DoesNotContain("3c.", prompt);
         Assert.DoesNotContain("board:", prompt);
     }
+
+    // Run 52 Q5: the list item's meaning ("these are safe to eat") comes from its heading.
+    private const string MushroomAnswer =
+        "**Safe to Eat (Vegan):**\n"
+        + "- `Q` & `W` – brown and red mushrooms\n"
+        + "- `R` – food ration\n"
+        + "\n"
+        + "**Avoid:**\n"
+        + "- `S` – lizard corpse (keep it for emergencies).\n";
+
+    private const string MushroomQuote = "`Q` & `W` – brown and red mushrooms";
+
+    [Fact]
+    public void CriticalErrorQuoteContext_AVerblessListItem_CarriesItsHeading()
+    {
+        Assert.Equal(
+            "Safe to Eat (Vegan)",
+            BenchmarkClaimVerificationPrompt.CriticalErrorQuoteContext(MushroomAnswer, MushroomQuote));
+    }
+
+    [Fact]
+    public void CriticalErrorQuoteContext_AFullSentenceOutsideAList_HasNone()
+    {
+        string answer = "Heading\n\nDrinking from a fountain while blind always grants a wish.";
+
+        Assert.Null(BenchmarkClaimVerificationPrompt.CriticalErrorQuoteContext(
+            answer, "Drinking from a fountain while blind always grants a wish."));
+    }
+
+    [Fact]
+    public void BuildPrompt_CriticalErrorQuoteWithContext_PlacesTheHeadingInClaimZeroAndKeepsTheClaimVerbatim()
+    {
+        string prompt = BenchmarkClaimVerificationPrompt.BuildPrompt(
+            "GnollHack Suite",
+            5,
+            "Which of your food items are vegan and safe to eat?",
+            "**REQUIRED** - mushrooms are unidentified.",
+            new List<string> { MushroomQuote },
+            new List<string> { "source_code_search" },
+            15,
+            isCriticalErrorAdjudication: true,
+            criticalErrorQuoteContext: BenchmarkClaimVerificationPrompt.CriticalErrorQuoteContext(MushroomAnswer, MushroomQuote));
+
+        Assert.Contains("Judge the assertion the answer makes by placing this text under that heading, not whether the quoted words are individually true.", prompt);
+        Assert.Contains(
+            "ClaimIndex: 0\nContext (not part of the claim): Under \"Safe to Eat (Vegan)\":\n" + MushroomQuote,
+            prompt.Replace("\r\n", "\n"));
+    }
+
+    [Fact]
+    public void BuildPrompt_NoQuoteContext_AddsNoContextLine()
+    {
+        string prompt = BenchmarkClaimVerificationPrompt.BuildPrompt(
+            "GnollHack Suite",
+            5,
+            "Question?",
+            null,
+            new List<string> { MushroomQuote },
+            new List<string> { "source_code_search" },
+            15,
+            isCriticalErrorAdjudication: true);
+
+        Assert.DoesNotContain("Context (not part of the claim)", prompt);
+        Assert.DoesNotContain("placing this text under that heading", prompt);
+    }
 }

@@ -648,6 +648,16 @@ public class BenchmarkRunAnswerDto
     public string? SecondOpinionTrigger { get; set; }
     public string? SecondOpinionError { get; set; }
 
+    /// <summary>Board characters each grading role's prompt carried; null when not recorded.</summary>
+    public int? AssessorBoardChars { get; set; }
+    public int? SecondOpinionBoardChars { get; set; }
+    public int? VerifierBoardChars { get; set; }
+
+    /// <summary>The advisory evidence-informed re-grade; null when the answer was not re-graded.</summary>
+    public int? EvidenceInformedQualityScore { get; set; }
+    public bool? EvidenceInformedCriticalError { get; set; }
+    public string? EvidenceInformedJson { get; set; }
+
     /// <summary>
     /// Re-assessment provenance. A published index can move after publication, and these are how
     /// the screen says that it did, and what it moved from.
@@ -1114,7 +1124,24 @@ public class BenchmarkRunDetailDto
 
     public DateTime? RerunCompletedAtUtc { get; set; }
 
+    /// <summary>When the pre-run candidate delivery probe passed; null when not recorded.</summary>
+    public DateTime? CandidateDeliveryVerifiedAtUtc { get; set; }
+
+    /// <summary>
+    /// Board delivery per grading role, as the report's Delivery block prints it. Empty for a run
+    /// with no board, or one before harness 30.
+    /// </summary>
+    public List<BenchmarkBoardDeliveryDto> BoardDelivery { get; set; } = new();
+
     public List<BenchmarkRunAnswerDto> Answers { get; set; } = new();
+}
+
+public class BenchmarkBoardDeliveryDto
+{
+    public string Role { get; set; } = string.Empty;
+    public int Delivered { get; set; }
+    public int Total { get; set; }
+    public List<int> MissingQuestions { get; set; } = new();
 }
 
 // ---------------------------------------------------------------------------------------------

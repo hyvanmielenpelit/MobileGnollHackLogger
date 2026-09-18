@@ -1688,6 +1688,54 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   /**
+   * Board delivery per grading role, in the report's own wording. Null for a run with no board or
+   * one before harness 30, which recorded none of it.
+   */
+  boardDeliveryLine(run: BenchmarkRunDetailDto | null | undefined): string | null {
+    const figures = run?.boardDelivery ?? [];
+    if (figures.length === 0) {
+      return null;
+    }
+    const of = (role: string) => {
+      const f = figures.find(x => x.role === role);
+      return f ? `${f.delivered} of ${f.total}` : 'n/a';
+    };
+    return `Board delivered — assessor ${of('assessor')} graded, second opinion ${of('second opinion')}, `
+      + `claim verifier ${of('claim verifier')}; synthesis: yes; difficulty assessment: digest (no map).`;
+  }
+
+  /** Roles whose recorded verdicts include one graded without the board, with the questions. */
+  boardDeliveryGaps(run: BenchmarkRunDetailDto | null | undefined): string[] {
+    return (run?.boardDelivery ?? [])
+      .filter(f => f.missingQuestions.length > 0)
+      .map(f => `${f.role}: ${f.missingQuestions.map(q => `Q${q}`).join(', ')}`);
+  }
+
+  /** The per-answer board figures as `assessor/second/verifier`, or null when none was recorded. */
+  answerBoardChars(ans: BenchmarkRunAnswerDto): string | null {
+    if (ans.assessorBoardChars == null && ans.secondOpinionBoardChars == null && ans.verifierBoardChars == null) {
+      return null;
+    }
+    const fmt = (v: number | null | undefined) => (v == null ? '-' : `${v}`);
+    return `${fmt(ans.assessorBoardChars)}/${fmt(ans.secondOpinionBoardChars)}/${fmt(ans.verifierBoardChars)}`;
+  }
+
+  /** The `withdrawn` list of an evidence-informed re-grade; empty when absent or malformed. */
+  evidenceInformedWithdrawn(ans: BenchmarkRunAnswerDto): string[] {
+    if (!ans.evidenceInformedJson) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(ans.evidenceInformedJson) as { withdrawn?: unknown };
+      return Array.isArray(parsed.withdrawn)
+        ? parsed.withdrawn.filter((w): w is string => typeof w === 'string' && w.trim().length > 0)
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * H2. The first eight hex characters of a run's candidate system-prompt hash — enough to tell two
    * instruments apart at a glance, and short enough to sit in a table cell. The full hash is on the title.
    */
@@ -4183,6 +4231,14 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       }
       lines.push(`Second opinion: ${secondOpinionParts.join(', ')}`);
       lines.push(`Tool call budget: ${run.maxToolCallsPerQuestionUsed ?? 'not recorded'}`);
+      lines.push(`Candidate delivery probe: ${run.candidateDeliveryVerifiedAtUtc ? `verified at ${run.candidateDeliveryVerifiedAtUtc}` : 'not recorded'}`);
+      const boardDelivery = this.boardDeliveryLine(run);
+      if (boardDelivery) {
+        lines.push(boardDelivery);
+        for (const gap of this.boardDeliveryGaps(run)) {
+          lines.push(`Board not delivered — ${gap}`);
+        }
+      }
       lines.push('');
 
       // --- PROGRESS ---
@@ -4482,6 +4538,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         if ((ans.answerFlagNames ?? []).length > 0) parts.push(`flags=${(ans.answerFlagNames ?? []).join('|')}`);
         if (ans.secondOpinionQualityScore != null) {
           parts.push(`secondOpinion=${ans.secondOpinionQualityScore}/${ans.secondOpinionTrigger ?? 'unknown'}${ans.secondOpinionDisagreed ? ' disagreed' : ''}`);
+        }
+        const boardChars = this.answerBoardChars(ans);
+        if (boardChars) parts.push(`boardChars=${boardChars}`);
+        if (ans.evidenceInformedQualityScore != null) {
+          parts.push(`evidenceInformed=${ans.evidenceInformedQualityScore}${ans.evidenceInformedCriticalError ? ' critical' : ''} withdrew=${this.evidenceInformedWithdrawn(ans).length}`);
         }
         if ((ans.reassessmentCount ?? 0) > 0) {
           parts.push(`reassessed=${ans.previousQualityScore ?? '?'}→${ans.qualityScore ?? '?'}/${ans.reassessedByModelDisplayNameUsed ?? 'unknown'}`);

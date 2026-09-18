@@ -186,4 +186,73 @@ Mentions armor in heading and armor in body and shields and elite quality.";
         Assert.True(posGamma >= 0);
         Assert.True(posAlpha < posGamma, "Alpha should appear before Gamma in document order");
     }
+
+    // Spells/Cure petrification.md as the run-52 wiki carried it: the stat block is section 0,
+    // and only the Description section shares a term with the query.
+    private const string CurePetrificationArticle = @"## Level 4 healing spell
+
+- **Attributes:** Wisdom
+- **Mana cost:** 30.0
+- **Casting time:** 1 round
+- **Cooldown:** None
+- **Targeting:** One target in selected direction
+- **Range:** 25'
+- **Train chance:** 100%
+- **Base write cost:** 60 charges
+- **Write cost:** From half to full base cost
+- **Components:** Verbal, Material
+
+## Material components - 2 castings
+
+1. a ginseng root
+
+## Description
+
+Cures petrification";
+
+    [Fact]
+    public void BuildSnippet_ShortArticle_IsReturnedWholeWithItsStatBlock()
+    {
+        string snippet = WikiSnippetExtractor.BuildSnippet(
+            "Spells/Cure petrification.md", CurePetrificationArticle, "cure petrification", 2500);
+
+        Assert.Contains("- **Mana cost:** 30.0", snippet);
+        Assert.Contains("1. a ginseng root", snippet);
+        Assert.Contains("Cures petrification", snippet);
+        Assert.EndsWith("[article: Spells/Cure petrification.md — complete]", snippet);
+    }
+
+    private static string LongArticle(string leadBody)
+    {
+        string filler = new string('x', 900);
+        return "## Level 3 enchantment spell\n\n" + leadBody + "\n\n"
+            + "## History\n\n" + filler + "\n\n"
+            + "## Strategy\n\n" + filler + "\n\n"
+            + "## Trivia\n\n" + filler + "\n\n"
+            + "## Description\n\nCauses monsters to flee.";
+    }
+
+    [Fact]
+    public void BuildSnippet_LongArticle_KeepsAShortLeadBlockAheadOfTheRankedSections()
+    {
+        string lead = "- **Mana cost:** 20.0\n- **Components:** Verbal, Material";
+        string snippet = WikiSnippetExtractor.BuildSnippet("Spells/Fear.md", LongArticle(lead), "flee description", 1500);
+
+        Assert.Contains("- **Mana cost:** 20.0", snippet);
+        Assert.Contains("Causes monsters to flee.", snippet);
+        Assert.Contains("further section(s) omitted", snippet);
+        Assert.True(
+            snippet.IndexOf("Mana cost", System.StringComparison.Ordinal) < snippet.IndexOf("Causes monsters", System.StringComparison.Ordinal),
+            "The lead block keeps its document position ahead of the ranked section.");
+    }
+
+    [Fact]
+    public void BuildSnippet_LongArticle_DropsALeadBlockLongerThanTheLimit()
+    {
+        string lead = "- **Mana cost:** 20.0\n" + new string('y', 1800);
+        string snippet = WikiSnippetExtractor.BuildSnippet("Spells/Fear.md", LongArticle(lead), "flee description", 2500);
+
+        Assert.DoesNotContain("- **Mana cost:** 20.0", snippet);
+        Assert.Contains("Causes monsters to flee.", snippet);
+    }
 }

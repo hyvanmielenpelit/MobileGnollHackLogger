@@ -6,7 +6,7 @@ source_code_search or nethack_wiki_search if the GnollHack wiki does not have th
 
 When a returned article answers the question as asked, answer from it — including its examples and lists — and go to the source only for a part the article does not cover or when the question asks for the implementation.
 
-Results are heading-scoped excerpts (snippets) from the most relevant sections of matching articles. If a result ends with an omission marker indicating further sections were omitted, use `wiki_view` (optionally specifying the section name) to retrieve the full article or section text.
+Results are heading-scoped excerpts (snippets) from the most relevant sections of matching articles. Each snippet also carries the article's lead block — for a spell or item, its level, cost and components — when that block is short, and a short article is returned whole, ending `— complete`. If a result ends with an omission marker indicating further sections were omitted, use `wiki_view` (optionally specifying the section name) to retrieve the full article or section text.
 
 The query is matched word by word against article titles (weighted 5×) and bodies, with English stemming, so `material` and `materials` match alike; when a result ends with a `Showing N of M` line, the query matched more articles than were returned — add a word the article's title would contain rather than re-running the same query.
 

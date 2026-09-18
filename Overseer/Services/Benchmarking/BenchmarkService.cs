@@ -122,6 +122,43 @@ public class BenchmarkService
         await db.SaveChangesAsync(CancellationToken.None);
     }
 
+    // The loads of the three secondary grading paths. Each includes the suite's board, which every
+    // grading prompt reads; BenchmarkBoardGuard refuses a grading pass whose load did not.
+
+    /// <summary>The answer, its run, the run's suite with questions and board, and the assessor, for re-assessment.</summary>
+    internal static IQueryable<BenchmarkRunAnswer> ReassessmentAnswerQuery(ApplicationDbContext db) =>
+        db.BenchmarkRunAnswers
+            .Include(a => a.BenchmarkRun)
+            .ThenInclude(r => r.BenchmarkSuite)
+            .ThenInclude(s => s!.Questions)
+            .Include(a => a.BenchmarkRun)
+            .ThenInclude(r => r.BenchmarkSuite)
+            .ThenInclude(s => s!.GameSnapshot)
+            .Include(a => a.BenchmarkRun.AssessorModelConfiguration);
+
+    /// <summary>The run with its answers, assessor and suite (questions and board), for retrying failed assessments.</summary>
+    internal static IQueryable<BenchmarkRun> RetryAssessmentsRunQuery(ApplicationDbContext db) =>
+        db.BenchmarkRuns
+            .Include(r => r.Answers)
+            .Include(r => r.AssessorModelConfiguration)
+            .Include(r => r.BenchmarkSuite)
+            .ThenInclude(s => s!.Questions)
+            .Include(r => r.BenchmarkSuite)
+            .ThenInclude(s => s!.GameSnapshot);
+
+    /// <summary>The run with its suite (questions and board), for an assessor calibration.</summary>
+    internal static IQueryable<BenchmarkRun> CalibrationRunQuery(ApplicationDbContext db) =>
+        db.BenchmarkRuns
+            .Include(r => r.BenchmarkSuite)
+            .ThenInclude(s => s!.Questions)
+            .Include(r => r.BenchmarkSuite)
+            .ThenInclude(s => s!.GameSnapshot);
+
+    /// <summary>Why a re-run was refused for a run that recorded no candidate prompt options.</summary>
+    internal static string MissingPromptOptionsMessage(BenchmarkRun run) =>
+        $"Re-run refused: run {run.Id} has no recorded candidate prompt options (BenchmarkRun.CandidatePromptOptionsJson is empty), "
+        + "so the candidate prompt it was answered under cannot be rebuilt. Start a new run instead.";
+
     /// <summary>A trial leaves the run byte-identical, so every exit from one puts back what the caller captured.</summary>
     private static async Task RestoreCapturedStatusAsync(
         ApplicationDbContext db, BenchmarkRun run, BenchmarkRunStatus originalStatus, DateTime? originalCompletedAtUtc)
@@ -637,6 +674,15 @@ public class BenchmarkService
                 return;
             }
 
+            // A re-run rebuilds the candidate prompt from the options the run recorded; defaults would
+            // stand in for options nobody recorded, and the re-run's answers would claim them.
+            if (string.IsNullOrWhiteSpace(run.CandidatePromptOptionsJson))
+            {
+                await RestoreTerminalStatusAsync(db, run, MissingPromptOptionsMessage(run));
+                _runManager.Complete(runId);
+                return;
+            }
+
             // A re-run overwrites answer rows in place and adds none, so the suite totals cannot
             // describe its progress. The scope and the two marks below are what the progress
             // dialog counts instead.
@@ -656,10 +702,7 @@ public class BenchmarkService
             int maxResultLength = _configuration.GetValue<int>("Benchmark:MaxResultLength", 10000);
             int maxCallsPerSession = _configuration.GetValue<int>("Benchmark:MaxCallsPerSession", 50);
 
-            bool suiteHasBoard = run.BenchmarkSuite?.GameSnapshot != null;
-            var promptOptions = !string.IsNullOrWhiteSpace(run.CandidatePromptOptionsJson)
-                ? BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson)
-                : new BenchmarkCandidatePromptOptions { HasGameSnapshot = suiteHasBoard };
+            var promptOptions = BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson!);
             string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
             var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode);
 
@@ -1010,6 +1053,7 @@ public class BenchmarkService
             segmentedPrompt,
             systemPrompt,
             questionNumber: null);
+        run.CandidateDeliveryVerifiedAtUtc = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -1675,10 +1719,27 @@ public class BenchmarkService
             return;
         }
 
+        // A board the load did not include fails this answer's assessment, re-runnable, rather
+        // than grading a snapshot suite rubric-only.
+        try
+        {
+            BenchmarkBoardGuard.RequireBoardLoaded(run);
+        }
+        catch (InvalidOperationException ex)
+        {
+            answer.AssessmentStatus = BenchmarkAssessmentStatus.Failed;
+            answer.AssessmentError = BenchmarkAssessmentFailure.Truncate(ex.Message);
+            _logger.LogWarning("Benchmark run {RunId} answer {OrderIndex} assessment failed: {Error}",
+                run.Id, answer.OrderIndex, ex.Message);
+            await db.SaveChangesAsync(CancellationToken.None);
+            return;
+        }
+
         answer.AssessmentStatus = BenchmarkAssessmentStatus.Assessing;
         await db.SaveChangesAsync(CancellationToken.None);
 
         var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
+        int? assessorBoardChars = BenchmarkBoardGuard.BoardCharsSent(run);
         string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionBody(
             answer.OrderIndex,
             answer.QuestionText,
@@ -1800,6 +1861,12 @@ public class BenchmarkService
             answer.ReadabilityLevel = res.ReadabilityLevel;
             answer.CriticalError = res.CriticalError;
             answer.ReviewComment = res.Comment;
+            answer.AssessorBoardChars = assessorBoardChars;
+
+            // An evidence-informed re-grade describes the verdict it re-read, so a new verdict drops it.
+            answer.EvidenceInformedQualityScore = null;
+            answer.EvidenceInformedCriticalError = null;
+            answer.EvidenceInformedJson = null;
             answer.CriticalErrorQuote = BenchmarkAssessmentFailure.Truncate(res.CriticalErrorQuote, 2048);
             answer.AssessmentEvidenceJson = BuildEvidenceJson(res);
 
@@ -2712,6 +2779,21 @@ public class BenchmarkService
 
         if (claims == null || claims.Count == 0) return;
 
+        // Recorded as a verification failure, which "retry failed claim verification" re-runs.
+        try
+        {
+            BenchmarkBoardGuard.RequireBoardLoaded(run);
+        }
+        catch (InvalidOperationException ex)
+        {
+            answer.ClaimVerificationError = BenchmarkAssessmentFailure.Truncate(ex.Message, BenchmarkAssessmentFailure.MaxClaimVerificationErrorLength);
+            _logger.LogWarning(
+                "Benchmark run {RunId} answer {OrderIndex}: claim verification failed ({Error}).",
+                run.Id, answer.OrderIndex, ex.Message);
+            await db.SaveChangesAsync(CancellationToken.None);
+            return;
+        }
+
         if (expectedPoints == null)
         {
             expectedPoints = await db.BenchmarkQuestions
@@ -2741,7 +2823,11 @@ public class BenchmarkService
             isOutOfRubricAdjudication: isOutOfRubricAdjudication,
             assessorEvidence: accuracyEvidence,
             boardName: run.BenchmarkSuite?.GameSnapshot?.Name,
-            boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText);
+            boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText,
+            criticalErrorQuoteContext: isCriticalErrorAdjudication
+                ? BenchmarkClaimVerificationPrompt.CriticalErrorQuoteContext(answer.AnswerText, answer.CriticalErrorQuote)
+                : null);
+        answer.VerifierBoardChars = BenchmarkBoardGuard.BoardCharsSent(run);
 
         var runRequest = BuildClaimVerificationRequest(
             verifierConfig,
@@ -2801,6 +2887,7 @@ public class BenchmarkService
         int cacheReadTokens = runResult.CacheReadTokens;
         int cacheCreationTokens = runResult.CacheCreationTokens;
         int toolCallsCount = runResult.ToolCalls.Count(tc => tc.Status == "completed");
+        bool verdictsPersisted = false;
 
         if (!string.IsNullOrWhiteSpace(terminalError))
         {
@@ -2952,6 +3039,8 @@ public class BenchmarkService
                 {
                     answer.AnswerFlags &= ~(int)BenchmarkAnswerFlags.ContestedAccuracyDeduction;
                 }
+
+                verdictsPersisted = true;
             }
         }
 
@@ -2973,7 +3062,231 @@ public class BenchmarkService
         {
             _logger.LogWarning(ex, "Failed to record usage for claim verification call.");
         }
+
+        if (verdictsPersisted)
+        {
+            await RunEvidenceInformedRegradeAsync(db, configService, run, answer, expectedPoints, cancellationToken);
+        }
     }
+
+    /// <summary>
+    /// The answer's grading was contested by the claim verifier: the statement an out-of-rubric
+    /// Accuracy deduction rested on was refuted, the critical-error quote was supported, or the
+    /// deduction is a verification-cleared one.
+    /// </summary>
+    internal static bool QualifiesForEvidenceInformedRegrade(BenchmarkRunAnswer answer)
+    {
+        var flags = (BenchmarkAnswerFlags)answer.AnswerFlags;
+        return flags.HasFlag(BenchmarkAnswerFlags.ContestedAccuracyDeduction)
+            || flags.HasFlag(BenchmarkAnswerFlags.ContestedCriticalError)
+            || IsVerificationClearedAccuracyDeduction(answer);
+    }
+
+    /// <summary>
+    /// Accuracy was docked with no defect named while the answer's out-of-rubric claims were all
+    /// checked and supported — none refuted, none left indeterminate. The report's
+    /// Verification-cleared Accuracy deductions are exactly these answers.
+    /// </summary>
+    internal static bool IsVerificationClearedAccuracyDeduction(BenchmarkRunAnswer a)
+        => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.UnevidencedDeduction)
+            && (a.UnverifiedClaimCount ?? 0) > 0
+            && (a.ClaimsRefutedCount ?? 0) == 0
+            && (a.ClaimsIndeterminateCount ?? 0) == 0
+            && a.AccuracyLevel.HasValue
+            && a.AccuracyLevel.Value <= BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel;
+
+    /// <summary>
+    /// Re-grades a contested answer once with the run's primary assessor, the claim verifier's
+    /// findings in hand, and stores the verdict in the <c>EvidenceInformed*</c> columns. Advisory:
+    /// no stored level, score, cap, flag or index changes, and the second-opinion columns are not
+    /// touched. Cost is pooled into the answer's assessment fields. An unusable verdict, a timeout
+    /// or an exception is logged and leaves the columns null; it never fails the answer or the run.
+    /// Off when <c>Benchmark:EvidenceInformedRegrade:Enabled</c> is false.
+    /// </summary>
+    private async Task RunEvidenceInformedRegradeAsync(
+        ApplicationDbContext db,
+        SystemAiConfigService configService,
+        BenchmarkRun run,
+        BenchmarkRunAnswer answer,
+        string? expectedPoints,
+        CancellationToken cancellationToken)
+    {
+        if (!_configuration.GetValue<bool>("Benchmark:EvidenceInformedRegrade:Enabled", true)) return;
+        if (!QualifiesForEvidenceInformedRegrade(answer)) return;
+        if (!run.AssessorModelConfigurationId.HasValue || !answer.QualityScore.HasValue) return;
+
+        try
+        {
+            BenchmarkBoardGuard.RequireBoardLoaded(run);
+
+            var verifications = JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(
+                answer.ClaimVerificationJson ?? "[]",
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new List<BenchmarkClaimVerification>();
+            if (verifications.Count == 0) return;
+
+            var (assessorConfig, assessorApiKey, resolveError) = await ResolveAssessorAsync(
+                db, run, run.AssessorModelConfigurationId.Value, cancellationToken);
+            if (assessorConfig == null || assessorApiKey == null)
+            {
+                _logger.LogWarning(
+                    "Benchmark run {RunId} answer {OrderIndex}: evidence-informed re-grade skipped — assessor configuration unusable ({Error}).",
+                    run.Id, answer.OrderIndex, resolveError);
+                return;
+            }
+
+            var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
+            string prompt = BenchmarkAssessmentPrompt.BuildEvidenceInformedBody(
+                answer.OrderIndex,
+                answer.QuestionText,
+                answer.Difficulty,
+                expectedPoints,
+                answer.AnswerText,
+                answer.Status,
+                verifications,
+                criticalErrorQuote: answer.CriticalError ? answer.CriticalErrorQuote : null,
+                outOfRubricBasis: OutOfRubricBasisOf(answer),
+                allowedTools: allowedTools,
+                toolCallsCompleted: answer.ToolCallCount ?? 0,
+                toolBudgetExhausted: answer.ToolBudgetExhausted,
+                scrubbedArtifactCount: answer.ScrubbedArtifactCount,
+                toolCallBudget: answer.ToolCallBudgetUsed,
+                boardName: run.BenchmarkSuite?.GameSnapshot?.Name,
+                boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText);
+
+            // The one timeout a grading call already has; the primary assessment itself runs unbounded.
+            int timeoutSeconds = _configuration.GetValue<int>("Benchmark:SecondOpinion:TimeoutSeconds", 900);
+            using var regradeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            regradeCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+
+            AssessorVerdict verdict;
+            try
+            {
+                verdict = await RunAssessorPromptAsync(run, answer, prompt, assessorConfig, assessorApiKey, regradeCts.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning(
+                    "Benchmark run {RunId} answer {OrderIndex}: evidence-informed re-grade timed out ({Timeout} s).",
+                    run.Id, answer.OrderIndex, timeoutSeconds);
+                return;
+            }
+
+            answer.AssessmentInputTokens = (answer.AssessmentInputTokens ?? 0) + verdict.InputTokens;
+            answer.AssessmentOutputTokens = (answer.AssessmentOutputTokens ?? 0) + verdict.OutputTokens;
+            answer.AssessmentCacheReadTokens = (answer.AssessmentCacheReadTokens ?? 0) + verdict.CacheReadTokens;
+            answer.AssessmentCacheCreationTokens = (answer.AssessmentCacheCreationTokens ?? 0) + verdict.CacheCreationTokens;
+            answer.AssessmentDurationMs = (answer.AssessmentDurationMs ?? 0) + verdict.DurationMs;
+            answer.AssessorBoardChars = verdict.BoardChars;
+
+            try
+            {
+                await configService.RecordUsageAsync(
+                    assessorConfig.Id, run.StartedByUserId, verdict.InputTokens, verdict.OutputTokens,
+                    roleContext: 4,
+                    cacheReadTokens: verdict.CacheReadTokens,
+                    cacheCreationTokens: verdict.CacheCreationTokens,
+                    totalDurationMs: (int)verdict.DurationMs);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to record usage for an evidence-informed re-grade.");
+            }
+
+            if (verdict.Result == null)
+            {
+                _logger.LogWarning(
+                    "Benchmark run {RunId} answer {OrderIndex}: evidence-informed re-grade produced no usable verdict ({Error}).",
+                    run.Id, answer.OrderIndex, verdict.Error);
+                await db.SaveChangesAsync(CancellationToken.None);
+                return;
+            }
+
+            var profile = run.ScoringProfileId.HasValue
+                ? await _scoringProfileService.GetProfileByIdAsync(run.ScoringProfileId.Value) ?? await _scoringProfileService.GetDefaultProfileAsync()
+                : await _scoringProfileService.GetDefaultProfileAsync();
+            var constants = _scoringProfileService.ToConstants(profile);
+
+            var res = verdict.Result;
+            var (quality, _, _) = BenchmarkScoring.Quality(
+                res.AccuracyLevel, res.CompletenessLevel, res.ConcisenessLevel, res.ReadabilityLevel,
+                res.CriticalError, constants);
+            var withdrawn = ReadWithdrawn(verdict.RawText);
+
+            answer.EvidenceInformedQualityScore = quality;
+            answer.EvidenceInformedCriticalError = res.CriticalError;
+            answer.EvidenceInformedJson = JsonSerializer.Serialize(new
+            {
+                assessor = assessorConfig.DisplayName ?? assessorConfig.ModelId,
+                provider = assessorConfig.Provider,
+                modelId = assessorConfig.ModelId,
+                assessedAtUtc = DateTime.UtcNow,
+                accuracyLevel = res.AccuracyLevel,
+                completenessLevel = res.CompletenessLevel,
+                concisenessLevel = res.ConcisenessLevel,
+                readabilityLevel = res.ReadabilityLevel,
+                criticalError = res.CriticalError,
+                criticalErrorQuote = res.CriticalErrorQuote,
+                qualityScore = quality,
+                comment = res.Comment,
+                accuracyEvidence = res.AccuracyEvidence,
+                completenessEvidence = res.CompletenessEvidence,
+                withdrawn
+            });
+
+            await db.SaveChangesAsync(CancellationToken.None);
+
+            _logger.LogInformation(
+                "Benchmark run {RunId} answer {OrderIndex}: evidence-informed re-grade {Regrade} against the scored {Scored}, withdrew {Withdrawn} item(s). Score unchanged.",
+                run.Id, answer.OrderIndex, quality, answer.QualityScore.Value, withdrawn.Count);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Benchmark run {RunId} answer {OrderIndex}: evidence-informed re-grade failed. The verdict stands.",
+                run.Id, answer.OrderIndex);
+        }
+    }
+
+    /// <summary>
+    /// The <c>withdrawn</c> list of an evidence-informed verdict's raw text; empty when the field
+    /// is absent or malformed.
+    /// </summary>
+    internal static List<string> ReadWithdrawn(string? rawText)
+    {
+        var result = new List<string>();
+        if (string.IsNullOrWhiteSpace(rawText)) return result;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(BenchmarkJsonExtractor.Extract(rawText));
+            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                doc.RootElement.TryGetProperty("withdrawn", out var list) &&
+                list.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in list.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(item.GetString()))
+                    {
+                        result.Add(item.GetString()!.Trim());
+                    }
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Advisory: a malformed list reads as empty.
+        }
+
+        return result;
+    }
+
+    /// <summary>The <c>withdrawn</c> list stored in <see cref="BenchmarkRunAnswer.EvidenceInformedJson"/>.</summary>
+    internal static List<string> ReadEvidenceInformedWithdrawn(string? evidenceInformedJson)
+        => ReadWithdrawn(evidenceInformedJson);
 
     internal static AgentRunRequest BuildClaimVerificationRequest(
         SystemAiApiConfiguration verifierConfig,
@@ -3080,9 +3393,7 @@ public class BenchmarkService
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var configService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
 
-        var run = await db.BenchmarkRuns
-            .Include(r => r.BenchmarkSuite)
-            .ThenInclude(s => s!.Questions)
+        var run = await CalibrationRunQuery(db)
             .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
 
         if (run == null)
@@ -3249,7 +3560,11 @@ public class BenchmarkService
         int InputTokens,
         int OutputTokens,
         long DurationMs,
-        string? Error);
+        string? Error,
+        int? BoardChars = null,
+        string? RawText = null,
+        int CacheReadTokens = 0,
+        int CacheCreationTokens = 0);
 
     /// <summary>
     /// Runs the per-question assessor prompt against a stored answer and parses the verdict,
@@ -3266,6 +3581,8 @@ public class BenchmarkService
         string assessorApiKey,
         CancellationToken cancellationToken)
     {
+        BenchmarkBoardGuard.RequireBoardLoaded(run);
+
         var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
         string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionBody(
             answer.OrderIndex,
@@ -3281,6 +3598,21 @@ public class BenchmarkService
             answer.ToolCallBudgetUsed,
             boardName: run.BenchmarkSuite?.GameSnapshot?.Name,
             boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText);
+        return await RunAssessorPromptAsync(run, answer, prompt, assessorConfig, assessorApiKey, cancellationToken);
+    }
+
+    /// <summary>
+    /// Sends one per-question assessor body with the shared preamble and parses the verdict,
+    /// writing nothing. <see cref="AssessorVerdict.BoardChars"/> is what the body carried.
+    /// </summary>
+    private async Task<AssessorVerdict> RunAssessorPromptAsync(
+        BenchmarkRun run,
+        BenchmarkRunAnswer answer,
+        string prompt,
+        SystemAiApiConfiguration assessorConfig,
+        string assessorApiKey,
+        CancellationToken cancellationToken)
+    {
         var (gradingPrompt, gradingSeedHistory) = BuildGradingPrompt(
             "You are an objective AI benchmark evaluator. Strictly adhere to the requested JSON response format.",
             BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(run.SuiteName),
@@ -3345,7 +3677,11 @@ public class BenchmarkService
             inputTokens,
             outputTokens,
             sw.ElapsedMilliseconds,
-            terminalError ?? parseResult.ErrorMessage);
+            terminalError ?? parseResult.ErrorMessage,
+            BenchmarkBoardGuard.BoardCharsSent(run),
+            parseResult.RawText ?? runResult.FinalText,
+            runResult.CacheReadTokens,
+            runResult.CacheCreationTokens);
     }
 
     /// <summary>
@@ -3578,6 +3914,7 @@ public class BenchmarkService
         answer.SecondOpinionCriticalError = res.CriticalError;
         answer.SecondOpinionByModelDisplayNameUsed = assessorConfig.DisplayName ?? assessorConfig.ModelId;
         answer.SecondOpinionTrigger = SecondOpinionTriggers.Manual;
+        answer.SecondOpinionBoardChars = verdict.BoardChars;
         answer.SecondOpinionJson = JsonSerializer.Serialize(new
         {
             assessor = assessorConfig.DisplayName ?? assessorConfig.ModelId,
@@ -3707,6 +4044,20 @@ public class BenchmarkService
             _logger.LogWarning(
                 "Benchmark run {RunId} answer {OrderIndex}: second-opinion assessor {ConfigId} unusable ({Error}). The first verdict stands.",
                 run.Id, answer.OrderIndex, run.SecondOpinionAssessorModelConfigurationId.Value, resolveError);
+            return;
+        }
+
+        try
+        {
+            BenchmarkBoardGuard.RequireBoardLoaded(run);
+        }
+        catch (InvalidOperationException ex)
+        {
+            answer.SecondOpinionError = BenchmarkAssessmentFailure.Truncate(ex.Message);
+            _logger.LogWarning(
+                "Benchmark run {RunId} answer {OrderIndex}: second opinion unavailable ({Error}). The first verdict stands.",
+                run.Id, answer.OrderIndex, ex.Message);
+            await db.SaveChangesAsync(CancellationToken.None);
             return;
         }
 
@@ -3885,6 +4236,7 @@ public class BenchmarkService
         answer.SecondOpinionCriticalError = second.CriticalError;
         answer.SecondOpinionByModelDisplayNameUsed = secondConfig.DisplayName ?? secondConfig.ModelId;
         answer.SecondOpinionTrigger = trigger;
+        answer.SecondOpinionBoardChars = BenchmarkBoardGuard.BoardCharsSent(run);
         answer.SecondOpinionJson = JsonSerializer.Serialize(new
         {
             assessor = secondConfig.DisplayName ?? secondConfig.ModelId,
@@ -4082,6 +4434,9 @@ public class BenchmarkService
                      && outOfRubricBasis != null
                         ? new[] { outOfRubricBasis }
                         : Array.Empty<string>(),
+                EvidenceInformedQualityScore = a.EvidenceInformedQualityScore,
+                EvidenceInformedCriticalError = a.EvidenceInformedCriticalError,
+                EvidenceInformedWithdrawn = ReadEvidenceInformedWithdrawn(a.EvidenceInformedJson),
                 SecondOpinionQualityScore = a.SecondOpinionQualityScore,
                 SecondOpinionCriticalError = a.SecondOpinionCriticalError,
                 ReviewComment = a.ReviewComment,
@@ -4089,6 +4444,8 @@ public class BenchmarkService
             };
         }).ToList();
 
+        string? boardName = null;
+        string? boardDigest = null;
         if (run.BenchmarkSuiteId.HasValue)
         {
             var suiteQuestions = await db.BenchmarkQuestions
@@ -4102,9 +4459,17 @@ public class BenchmarkService
                     s.ExpectedPoints = ep;
                 }
             }
+
+            // Queried rather than read off run.BenchmarkSuite: not every caller loads the suite.
+            var board = await db.BenchmarkSuites
+                .Where(s => s.Id == run.BenchmarkSuiteId.Value && s.GameSnapshot != null)
+                .Select(s => new { s.GameSnapshot!.Name, s.GameSnapshot.DigestText })
+                .FirstOrDefaultAsync(cancellationToken);
+            boardName = board?.Name;
+            boardDigest = board?.DigestText;
         }
 
-        string synthesisPrompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt(run.SuiteName, summaries);
+        string synthesisPrompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt(run.SuiteName, summaries, boardName, boardDigest);
         var (gradingPrompt, gradingSeedHistory) = BuildGradingPrompt(
             "You are an objective AI benchmark evaluator synthesizing a final report. Strictly adhere to the requested JSON response format.",
             null,
@@ -4874,6 +5239,13 @@ public class BenchmarkService
                 return;
             }
 
+            // Ahead of clearing the verdict below, so a refused re-run leaves the answer as it was.
+            if (string.IsNullOrWhiteSpace(run.CandidatePromptOptionsJson))
+            {
+                await RestoreTerminalStatusAsync(db, run, MissingPromptOptionsMessage(run));
+                return;
+            }
+
             string testedApiKey = _cryptoService.Decrypt(testedConfig.EncryptedApiKey, testedConfig.ApiKeyNonce!, testedConfig.ApiKeyTag!, "SYSTEM_API_KEY");
 
             run.Status = BenchmarkRunStatus.Running;
@@ -4912,10 +5284,7 @@ public class BenchmarkService
             int maxCallsPerSession = _configuration.GetValue<int>("Benchmark:MaxCallsPerSession", 50);
             int maxToolCallsPerQuestion = ResolveToolCallBudget();
 
-            bool suiteHasBoard = run.BenchmarkSuite?.GameSnapshot != null;
-            var promptOptions = !string.IsNullOrWhiteSpace(run.CandidatePromptOptionsJson)
-                ? BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson)
-                : new BenchmarkCandidatePromptOptions { HasGameSnapshot = suiteHasBoard };
+            var promptOptions = BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson!);
             string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
             var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode);
             PopulateInstrumentFingerprint(run, systemPrompt);
@@ -4994,11 +5363,7 @@ public class BenchmarkService
         // what the handlers there need in order to restore the status. Cancelling it would throw
         // past every handler and past the finally that releases the run manager, leaving the row
         // reading Running with no owner. The cancellation check is the first statement in the try.
-        var answer = await db.BenchmarkRunAnswers
-            .Include(a => a.BenchmarkRun)
-            .ThenInclude(r => r.BenchmarkSuite)
-            .ThenInclude(s => s!.Questions)
-            .Include(a => a.BenchmarkRun.AssessorModelConfiguration)
+        var answer = await ReassessmentAnswerQuery(db)
             .FirstOrDefaultAsync(a => a.Id == answerId, CancellationToken.None);
 
         if (answer == null)
@@ -5223,11 +5588,7 @@ public class BenchmarkService
         // what the handlers there need in order to restore the status. Cancelling it would throw
         // past every handler and past the finally that releases the run manager, leaving the row
         // reading Running with no owner. The cancellation check is the first statement in the try.
-        var run = await db.BenchmarkRuns
-            .Include(r => r.Answers)
-            .Include(r => r.AssessorModelConfiguration)
-            .Include(r => r.BenchmarkSuite)
-            .ThenInclude(s => s!.Questions)
+        var run = await RetryAssessmentsRunQuery(db)
             .FirstOrDefaultAsync(r => r.Id == runId, CancellationToken.None);
 
         if (run == null)

@@ -1517,6 +1517,12 @@
             }
             Started: {{ selectedRunDetail.startedAtUtc | date:'yyyy-MM-dd HH:mm:ss' }} UTC
           </p>
+          @if (boardDeliveryLine(selectedRunDetail); as boardDelivery) {
+            <p class="dialog-subtitle board-delivery-line">{{ boardDelivery }}</p>
+            @for (gap of boardDeliveryGaps(selectedRunDetail); track gap) {
+              <p class="dialog-subtitle"><strong>Graded without the board — {{ gap }}</strong></p>
+            }
+          }
         </div>
         <button type="button" class="btn-icon-action" aria-label="Close run details" (click)="closeRunDetail()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
@@ -2278,6 +2284,25 @@
                         second reading to replace it.
                       </div>
                     </div>
+                  }
+
+                  @if (ans.evidenceInformedQualityScore != null) {
+                    <div class="second-opinion-box mb-15 evidence-informed-box">
+                      <div>
+                        <strong>Evidence-informed re-grade:</strong>
+                        {{ ans.evidenceInformedQualityScore }} / 100, critical error
+                        {{ ans.evidenceInformedCriticalError ? 'yes' : 'no' }} —
+                        withdrew: {{ evidenceInformedWithdrawn(ans).length > 0 ? evidenceInformedWithdrawn(ans).join('; ') : 'nothing' }}
+                      </div>
+                      <div class="second-opinion-note">
+                        Advisory. The primary assessor re-read this answer with the claim verifier's findings in hand;
+                        the first verdict is what scored.
+                      </div>
+                    </div>
+                  }
+
+                  @if (answerBoardChars(ans); as boardChars) {
+                    <div class="text-muted text-11 mb-15">Board characters sent — assessor / second opinion / verifier: {{ boardChars }}</div>
                   }
 
                   @if (claimVerificationsOf(ans); as verifications) {

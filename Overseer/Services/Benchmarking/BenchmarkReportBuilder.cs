@@ -84,7 +84,15 @@ public static class BenchmarkReportBuilder
     /// </remarks>
     private static string? DeliveryStatement(BenchmarkRun run, bool hasGameSnapshot)
     {
-        if (int.TryParse(run.HarnessVersion, out int harness) && harness >= 29)
+        if (int.TryParse(run.HarnessVersion, out int harness) && harness >= 30)
+        {
+            // From harness 30 the sentence rests on the recorded probe, not on the version stamp.
+            return run.CandidateDeliveryVerifiedAtUtc.HasValue
+                ? $"prompt and board delivery verified against the provider request body before the first question ({Stamp(run.CandidateDeliveryVerifiedAtUtc.Value)} UTC)."
+                : "not recorded — no pre-run delivery probe is on record for this run.";
+        }
+
+        if (harness >= 29)
         {
             return "prompt and board delivery verified against the provider request body before the first question.";
         }
@@ -100,6 +108,65 @@ public static class BenchmarkReportBuilder
         return isOpenAi
             ? "not verified — before harness 29 an OpenAI candidate did not receive this prompt."
             : null;
+    }
+
+    /// <summary>The run was graded against a game board.</summary>
+    private static bool RunHasBoard(BenchmarkRun run) => !string.IsNullOrWhiteSpace(run.GameSnapshotSha256Used);
+
+    /// <summary>
+    /// One grading role's board delivery: how many of its verdicts on record carried the board
+    /// (<c>Delivered</c>), of how many (<c>Total</c>), and which questions went without.
+    /// </summary>
+    internal sealed record BoardDeliveryFigure(string Role, int Delivered, int Total, IReadOnlyList<int> MissingQuestions);
+
+    /// <summary>
+    /// Board delivery per grading role, from the per-answer board-character columns. A role's total
+    /// is every answer carrying that role's verdict or a recorded board figure, so a verdict whose
+    /// prompt carried no board counts against it. Empty for a run before harness 30, which recorded
+    /// none of this.
+    /// </summary>
+    internal static IReadOnlyList<BoardDeliveryFigure> BoardDeliveryFigures(BenchmarkRun run, IReadOnlyList<BenchmarkRunAnswer> answers)
+    {
+        if (PredatesHarnessVersion(run, 30) || !int.TryParse(run.HarnessVersion, out _))
+        {
+            return Array.Empty<BoardDeliveryFigure>();
+        }
+
+        BoardDeliveryFigure Figure(string role, Func<BenchmarkRunAnswer, bool> hasVerdict, Func<BenchmarkRunAnswer, int?> chars)
+        {
+            var population = answers.Where(a => hasVerdict(a) || chars(a).HasValue).OrderBy(a => a.OrderIndex).ToList();
+            var missing = population.Where(a => (chars(a) ?? 0) <= 0).Select(a => a.OrderIndex).ToList();
+            return new BoardDeliveryFigure(role, population.Count - missing.Count, population.Count, missing);
+        }
+
+        return new[]
+        {
+            Figure("assessor",
+                a => a.AssessmentStatus == BenchmarkAssessmentStatus.Scored && a.AssessedByModelConfigurationId.HasValue,
+                a => a.AssessorBoardChars),
+            Figure("second opinion", a => a.SecondOpinionQualityScore.HasValue, a => a.SecondOpinionBoardChars),
+            Figure("claim verifier", a => !string.IsNullOrWhiteSpace(a.ClaimVerificationJson), a => a.VerifierBoardChars)
+        };
+    }
+
+    /// <summary>
+    /// The Delivery manifest's per-role line on a board suite: <c>Board delivered — assessor N of M
+    /// graded, …</c>. Null when the run has no board or predates harness 30.
+    /// </summary>
+    internal static string? BoardDeliveryLine(BenchmarkRun run, IReadOnlyList<BenchmarkRunAnswer> answers)
+    {
+        if (!RunHasBoard(run)) return null;
+
+        var figures = BoardDeliveryFigures(run, answers);
+        if (figures.Count == 0) return null;
+
+        var assessor = figures[0];
+        var second = figures[1];
+        var verifier = figures[2];
+        return $"Board delivered — assessor {Inv(assessor.Delivered)} of {Inv(assessor.Total)} graded, "
+            + $"second opinion {Inv(second.Delivered)} of {Inv(second.Total)}, "
+            + $"claim verifier {Inv(verifier.Delivered)} of {Inv(verifier.Total)}; "
+            + "synthesis: yes; difficulty assessment: digest (no map).";
     }
 
     /// <summary>
@@ -305,6 +372,26 @@ public static class BenchmarkReportBuilder
     /// the FORM count falls back to the per-answer
     /// <see cref="BenchmarkRunAnswer.ReadabilityFormOnly"/> column for them.
     /// </summary>
+    /// <summary>One top-level string property of a stored JSON blob; null when absent or malformed.</summary>
+    private static string? ReadJsonString(string? json, string property)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.ValueKind == JsonValueKind.Object &&
+                   doc.RootElement.TryGetProperty(property, out var value) &&
+                   value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     private static (string? Accuracy, string? Completeness, string? Readability, bool CriticalErrorDemoted) ReadEvidence(BenchmarkRunAnswer answer)
     {
         if (string.IsNullOrWhiteSpace(answer.AssessmentEvidenceJson))
@@ -821,6 +908,11 @@ public static class BenchmarkReportBuilder
             {
                 sb.AppendLine($"- **Delivery:** {delivery}");
             }
+            string? boardDelivery = BoardDeliveryLine(run, answers);
+            if (boardDelivery != null)
+            {
+                sb.AppendLine($"  - {boardDelivery}");
+            }
             sb.AppendLine();
             sb.AppendLine("*Configurations differ in what they measure. Two runs are comparable on Completeness, Conciseness and Readability only if this block matches.*");
         }
@@ -1104,12 +1196,7 @@ public static class BenchmarkReportBuilder
         // the sensitivity index beside the contested one prices them; both are advisory and move
         // no score. § 7 prints the index from this same variable, so the two cannot drift.
         var verificationClearedAnswers = answers
-            .Where(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.UnevidencedDeduction)
-                && (a.UnverifiedClaimCount ?? 0) > 0
-                && (a.ClaimsRefutedCount ?? 0) == 0
-                && (a.ClaimsIndeterminateCount ?? 0) == 0
-                && a.AccuracyLevel.HasValue
-                && a.AccuracyLevel.Value <= BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel)
+            .Where(BenchmarkService.IsVerificationClearedAccuracyDeduction)
             .OrderBy(a => a.OrderIndex)
             .ToList();
         int? verificationClearedIndex = null;
@@ -1167,6 +1254,25 @@ public static class BenchmarkReportBuilder
             if (sensitivityIndex.HasValue)
             {
                 sb.AppendLine($"- **Contested-Verdict Sensitivity:** {sensitivityIndex.Value} / 100 — Intelligence Index recomputed with each split resolved at the second reader's score (raises and lowers both).");
+            }
+        }
+
+        // The same substitution as the contested-verdict figure above, with the primary assessor's
+        // evidence-informed re-grade in place of the second reader's score. Omitted at K = 0.
+        var evidenceInformedAnswers = scoredAnswers
+            .Where(a => a.EvidenceInformedQualityScore.HasValue)
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+        int? evidenceInformedIndex = null;
+        if (evidenceInformedAnswers.Count > 0)
+        {
+            evidenceInformedIndex = BenchmarkScoring.QualityIndex(scoredAnswers
+                .Select(a => (a.EvidenceInformedQualityScore ?? a.QualityScore,
+                              a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
+                .ToList());
+            if (evidenceInformedIndex.HasValue)
+            {
+                sb.AppendLine($"- **Evidence-informed Sensitivity:** {evidenceInformedIndex.Value} / 100 — Intelligence Index recomputed with the evidence-informed score on the {evidenceInformedAnswers.Count} answer(s) re-graded with the verifier's findings in hand; advisory, changes no score.");
             }
         }
 
@@ -1723,6 +1829,13 @@ public static class BenchmarkReportBuilder
         // The finalizer's own persisted count, as of the last Apply — see IndexHeadline above. A
         // mismatch against Provider Errors means the answers moved since the run was last finalized.
         sb.AppendLine($"- **Terminal provider failures:** {terminalFailureCount}");
+        if (RunHasBoard(run))
+        {
+            foreach (var gap in BoardDeliveryFigures(run, answers).Where(f => f.MissingQuestions.Count > 0))
+            {
+                sb.AppendLine($"- **Board Not Delivered ({gap.Role}):** {gap.MissingQuestions.Count} of {gap.Total} verdict(s) — Q{string.Join(", Q", gap.MissingQuestions)} — *graded without the game board this snapshot suite is about; re-assess them*");
+            }
+        }
         sb.AppendLine($"*Clean + transport defects + recovered + harness limits + unanswered = {cleanCount + transportDefectCount + recoveredCount + harnessLimitCount + unansweredCount} of {totalQuestions}.*");
         sb.AppendLine();
         // On the 2026-09-03 run the report claimed the removal was unconditional; the streaming
@@ -2474,9 +2587,16 @@ public static class BenchmarkReportBuilder
             .ToList();
         if (ungroundedAdvanced.Count > 0)
         {
-            sb.AppendLine($"- **Grounding:** {ungroundedAdvanced.Count} Advanced-band question(s) answered with one tool call or fewer — " +
-                string.Join(", ", ungroundedAdvanced.Select(a => $"Q{a.OrderIndex} ({a.ToolCallCount ?? 0})")) +
-                ". *Worth reviewing as suite maintenance: these may no longer test source retrieval.*");
+            // On a snapshot suite the board often settles the question, so answering from it is
+            // the expected behaviour rather than a sign the item stopped testing anything.
+            string groundingNote = RunHasBoard(run)
+                ? $"- **Grounding:** {ungroundedAdvanced.Count} Advanced-band question(s) answered from the board with one tool call or fewer — " +
+                  string.Join(", ", ungroundedAdvanced.Select(a => $"Q{a.OrderIndex} ({a.ToolCallCount ?? 0})")) +
+                  ". *Expected on a snapshot suite when the board settles the question.*"
+                : $"- **Grounding:** {ungroundedAdvanced.Count} Advanced-band question(s) answered with one tool call or fewer — " +
+                  string.Join(", ", ungroundedAdvanced.Select(a => $"Q{a.OrderIndex} ({a.ToolCallCount ?? 0})")) +
+                  ". *Worth reviewing as suite maintenance: these may no longer test source retrieval.*";
+            sb.AppendLine(groundingNote);
         }
 
         if (toolCounts.Count > 0)
@@ -2841,6 +2961,13 @@ public static class BenchmarkReportBuilder
                     int iCount = a.ClaimsIndeterminateCount ?? 0;
                     sb.AppendLine($"> - **Claim Verification ({verifierName}):** {sCount} supported, {rCount} refuted, {iCount} indeterminate — *checked against source/wiki; advisory, not reflected in the score.*");
                 }
+                if (a.EvidenceInformedQualityScore.HasValue)
+                {
+                    string regrader = ReadJsonString(a.EvidenceInformedJson, "assessor") ?? a.AssessedByModelDisplayNameUsed ?? "assessor";
+                    var withdrawn = BenchmarkService.ReadEvidenceInformedWithdrawn(a.EvidenceInformedJson);
+                    string withdrew = withdrawn.Count > 0 ? string.Join("; ", withdrawn) : "nothing";
+                    sb.AppendLine($"> - **Evidence-informed re-grade ({regrader}):** {a.EvidenceInformedQualityScore.Value} / 100, critical error {(a.EvidenceInformedCriticalError == true ? "yes" : "no")} — withdrew: {withdrew}. *Advisory; the first verdict is what scored.*");
+                }
                 if (a.AssessedByModelConfigurationId.HasValue &&
                     a.AssessedByModelConfigurationId != run.AssessorModelConfigurationId)
                 {
@@ -3196,6 +3323,10 @@ public static class BenchmarkReportBuilder
         if (formClearedIndex.HasValue)
         {
             sb.AppendLine($"### FORM-cleared Readability Sensitivity: {formClearedIndex.Value} / 100 — Intelligence Index recomputed with Readability one level higher on the {formClearedAnswers.Count} answer(s) whose only Readability basis was a rubric FORM suggestion; advisory, changes no score.");
+        }
+        if (evidenceInformedIndex.HasValue)
+        {
+            sb.AppendLine($"### Evidence-informed Sensitivity: {evidenceInformedIndex.Value} / 100 — Intelligence Index recomputed with the evidence-informed score on the {evidenceInformedAnswers.Count} answer(s) re-graded with the verifier's findings in hand; advisory, changes no score.");
         }
         // H9. The same demotion as § 2, from the same two conditions, so the headline block and the
         // summary cannot present the speed figure differently.

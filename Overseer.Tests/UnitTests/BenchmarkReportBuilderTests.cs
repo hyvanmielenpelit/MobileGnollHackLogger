@@ -1813,6 +1813,127 @@ public class BenchmarkReportBuilderTests
         Assert.DoesNotContain("**Delivery:**", BenchmarkReportBuilder.BuildMarkdownReport(unaffected));
     }
 
+    /// <summary>A harness-30 run on a snapshot suite with the given answers.</summary>
+    private static BenchmarkRun Harness30BoardRun(params BenchmarkRunAnswer[] answers)
+    {
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, answers);
+        run.HarnessVersion = "30";
+        run.ScoringMethodVersion = 10;
+        run.GameSnapshotSha256Used = "8f8c4778d449";
+        run.CandidatePromptOptionsJson =
+            new BenchmarkCandidatePromptOptions { HasGameSnapshot = true }.ToCanonicalJson();
+        BenchmarkRunFinalizer.Apply(run, answers);
+        return run;
+    }
+
+    private static BenchmarkRunAnswer BoardGradedAnswer(int orderIndex, int qualityScore, int? assessorBoardChars = 12037)
+    {
+        var answer = ScoredAnswer(orderIndex, BenchmarkDifficulty.Simple, 25, qualityScore);
+        answer.AssessedByModelConfigurationId = 1;
+        answer.AssessorBoardChars = assessorBoardChars;
+        return answer;
+    }
+
+    [Fact]
+    public void ChatPromptUnderTest_Harness30_DeliverySentenceRestsOnTheRecordedProbe()
+    {
+        var unrecorded = Harness30BoardRun(BoardGradedAnswer(1, 80));
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(unrecorded);
+        Assert.Contains("**Delivery:** not recorded — no pre-run delivery probe is on record for this run.", report);
+        Assert.DoesNotContain("delivery verified against the provider request body", report);
+
+        var recorded = Harness30BoardRun(BoardGradedAnswer(1, 80));
+        recorded.CandidateDeliveryVerifiedAtUtc = new DateTime(2026, 9, 18, 7, 11, 0, DateTimeKind.Utc);
+        Assert.Contains(
+            "prompt and board delivery verified against the provider request body before the first question (2026-09-18 07:11:00 UTC).",
+            BenchmarkReportBuilder.BuildMarkdownReport(recorded));
+    }
+
+    [Fact]
+    public void ChatPromptUnderTest_Harness30BoardSuite_PrintsBoardDeliveryPerRole()
+    {
+        var q1 = BoardGradedAnswer(1, 80);
+        q1.SecondOpinionQualityScore = 75;
+        q1.SecondOpinionBoardChars = 12037;
+        q1.ClaimVerificationJson = "[]";
+        q1.VerifierBoardChars = 12037;
+        var q2 = BoardGradedAnswer(2, 60);
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(Harness30BoardRun(q1, q2));
+
+        Assert.Contains(
+            "Board delivered — assessor 2 of 2 graded, second opinion 1 of 1, claim verifier 1 of 1; synthesis: yes; difficulty assessment: digest (no map).",
+            report);
+        Assert.DoesNotContain("Board Not Delivered", report);
+    }
+
+    [Fact]
+    public void RunIntegrity_Harness30BoardSuite_NamesARoleThatGradedWithoutTheBoard()
+    {
+        var q1 = BoardGradedAnswer(1, 80);
+        q1.SecondOpinionQualityScore = 75;
+        q1.SecondOpinionBoardChars = 0;
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(Harness30BoardRun(q1));
+
+        Assert.Contains("second opinion 0 of 1", report);
+        Assert.Contains("- **Board Not Delivered (second opinion):** 1 of 1 verdict(s) — Q1", report);
+    }
+
+    [Fact]
+    public void ChatPromptUnderTest_Harness29_KeepsItsSentenceAndPrintsNoBoardBlock()
+    {
+        var run = Harness30BoardRun(BoardGradedAnswer(1, 80));
+        run.HarnessVersion = "29";
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("prompt and board delivery verified against the provider request body before the first question.", report);
+        Assert.DoesNotContain("Board delivered —", report);
+    }
+
+    [Fact]
+    public void Grounding_OnABoardSuite_CallsABoardAnswerExpected()
+    {
+        var advanced = ScoredAnswer(1, BenchmarkDifficulty.Advanced, 85, 71);
+        advanced.ToolCallCount = 0;
+
+        string boardReport = BenchmarkReportBuilder.BuildMarkdownReport(Harness30BoardRun(advanced));
+        Assert.Contains("answered from the board with one tool call or fewer", boardReport);
+        Assert.Contains("Expected on a snapshot suite when the board settles the question.", boardReport);
+        Assert.DoesNotContain("may no longer test source retrieval", boardReport);
+
+        var plain = HarnessV7Run(BenchmarkSecondOpinionMode.Off, advanced);
+        Assert.Contains("may no longer test source retrieval", BenchmarkReportBuilder.BuildMarkdownReport(plain));
+    }
+
+    [Fact]
+    public void EvidenceInformedSensitivity_AbsentAtZero_PresentWithItsCount_AndMovesNothingElse()
+    {
+        var q1 = BoardGradedAnswer(1, 40);
+        var q2 = BoardGradedAnswer(2, 90);
+        var run = Harness30BoardRun(q1, q2);
+
+        string before = BenchmarkReportBuilder.BuildMarkdownReport(run);
+        Assert.DoesNotContain("Evidence-informed", before);
+
+        q1.EvidenceInformedQualityScore = 70;
+        q1.EvidenceInformedCriticalError = false;
+        q1.EvidenceInformedJson = "{\"assessor\":\"Claude 5 Opus\",\"withdrawn\":[\"Accuracy deduction: peacefuls are never displaced\"]}";
+        string after = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("**Evidence-informed Sensitivity:**", after);
+        Assert.Contains("on the 1 answer(s) re-graded with the verifier's findings in hand; advisory, changes no score.", after);
+        Assert.Contains("**Evidence-informed re-grade (Claude 5 Opus):** 70 / 100, critical error no — withdrew: Accuracy deduction: peacefuls are never displaced.", after);
+
+        // Every other line of the report is unchanged by the stored re-grade.
+        static string[] Without(string report) => report.Replace("\r\n", "\n").Split('\n')
+            .Where(l => !l.Contains("Evidence-informed", StringComparison.Ordinal))
+            .ToArray();
+        Assert.Equal(Without(before), Without(after));
+        Assert.Equal(40, q1.QualityScore);
+    }
+
     [Fact]
     public void ToolRouting_RendersFamilyCountsAndCaveats()
     {

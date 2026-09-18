@@ -927,6 +927,16 @@ export interface BenchmarkRunAnswerDto {
   /** Failure details if the second-opinion call threw or returned no parseable verdict. */
   secondOpinionError?: string | null;
 
+  /** Board characters each grading role's prompt carried. Null when not recorded (before harness 30, or no board). */
+  assessorBoardChars?: number | null;
+  secondOpinionBoardChars?: number | null;
+  verifierBoardChars?: number | null;
+
+  /** The primary assessor's advisory re-grade with the verifier's findings in hand. Null when not re-graded. */
+  evidenceInformedQualityScore?: number | null;
+  evidenceInformedCriticalError?: boolean | null;
+  evidenceInformedJson?: string | null;
+
   /** Claims the assessor could neither confirm nor refute. Null for a run graded before the field existed. */
   unverifiedClaimCount?: number | null;
   unverifiedClaimsJson?: string | null;
@@ -1267,7 +1277,19 @@ export interface BenchmarkRunDetailDto {
   pricingSource?: string | null;
   pricingIncomplete?: boolean;
 
+  /** When the pre-run candidate delivery probe passed. Null when not recorded. */
+  candidateDeliveryVerifiedAtUtc?: string | null;
+  /** Board delivery per grading role. Empty for a run with no board, or before harness 30. */
+  boardDelivery?: BenchmarkBoardDeliveryDto[];
+
   answers: BenchmarkRunAnswerDto[];
+}
+
+export interface BenchmarkBoardDeliveryDto {
+  role: string;
+  delivered: number;
+  total: number;
+  missingQuestions: number[];
 }
 
 // ---------------------------------------------------------------------------------------------

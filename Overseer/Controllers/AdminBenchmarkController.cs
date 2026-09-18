@@ -3098,6 +3098,19 @@ public class AdminBenchmarkController : ControllerBase
             RerunStartedAtUtc = run.RerunStartedAtUtc,
             RerunCompletedAtUtc = run.RerunCompletedAtUtc,
 
+            CandidateDeliveryVerifiedAtUtc = run.CandidateDeliveryVerifiedAtUtc,
+            BoardDelivery = string.IsNullOrWhiteSpace(run.GameSnapshotSha256Used)
+                ? new List<BenchmarkBoardDeliveryDto>()
+                : BenchmarkReportBuilder.BoardDeliveryFigures(run, run.Answers.ToList())
+                    .Select(f => new BenchmarkBoardDeliveryDto
+                    {
+                        Role = f.Role,
+                        Delivered = f.Delivered,
+                        Total = f.Total,
+                        MissingQuestions = f.MissingQuestions.ToList()
+                    })
+                    .ToList(),
+
             Answers = run.Answers.OrderBy(a => a.OrderIndex).Select(a =>
             {
                 bool hasToolCallOutcome = toolCallOutcomesByAnswer.TryGetValue(a.Id, out var toolCallOutcome);
@@ -3185,6 +3198,12 @@ public class AdminBenchmarkController : ControllerBase
                     SecondOpinionDisagreed = a.SecondOpinionDisagreed,
                     SecondOpinionTrigger = a.SecondOpinionTrigger,
                     SecondOpinionError = a.SecondOpinionError,
+                    AssessorBoardChars = a.AssessorBoardChars,
+                    SecondOpinionBoardChars = a.SecondOpinionBoardChars,
+                    VerifierBoardChars = a.VerifierBoardChars,
+                    EvidenceInformedQualityScore = a.EvidenceInformedQualityScore,
+                    EvidenceInformedCriticalError = a.EvidenceInformedCriticalError,
+                    EvidenceInformedJson = a.EvidenceInformedJson,
                     ClaimVerificationJson = a.ClaimVerificationJson,
                     ClaimsSupportedCount = a.ClaimsSupportedCount,
                     ClaimsRefutedCount = a.ClaimsRefutedCount,

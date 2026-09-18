@@ -619,6 +619,13 @@ public class BenchmarkRun
     public string? CandidatePromptSourceUsed { get; set; }
 
     /// <summary>
+    /// When the pre-run candidate delivery probe passed: the system prompt and, on a snapshot
+    /// suite, the board were found in the request body the provider would send. Null means not
+    /// recorded — a run before harness 30, or one that never reached the probe.
+    /// </summary>
+    public DateTime? CandidateDeliveryVerifiedAtUtc { get; set; }
+
+    /// <summary>
     /// SHA-256 of the exact candidate system prompt string (lower-case hex).
     /// </summary>
     [MaxLength(64)]

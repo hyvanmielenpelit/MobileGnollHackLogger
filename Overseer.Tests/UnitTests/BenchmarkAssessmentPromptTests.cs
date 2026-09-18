@@ -212,9 +212,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsTwentyNine()
+    public void HarnessVersion_IsThirty()
     {
-        Assert.Equal("29", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("30", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -454,16 +454,58 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs29_ScoringMethodIs10()
+    public void BuildEvidenceInformedBody_CarriesBoardRubricFindingsAndInstruction_ButNotTheFirstVerdict()
     {
-        Assert.Equal("29", BenchmarkAssessmentPrompt.HarnessVersion);
+        const string quote = "Peacefuls are never displaced.";
+        const string basis = "walking into a peaceful never displaces it";
+        string body = BenchmarkAssessmentPrompt.BuildEvidenceInformedBody(
+            1,
+            "Can you swap places with the peaceful dwarf?",
+            BenchmarkDifficulty.Intermediate,
+            "- displace_peaceful defaults to on",
+            "Yes: walk into it and you swap places.",
+            BenchmarkAnswerStatus.Ok,
+            new[]
+            {
+                new BenchmarkClaimVerification(0, basis, BenchmarkClaimVerdict.Refuted, "src/options.c:139", "displace_peaceful defaults TRUE."),
+                new BenchmarkClaimVerification(1, "A peaceful dwarf is displaced.", BenchmarkClaimVerdict.Supported, "src/hack.c:2319", "The swap is in domove.")
+            },
+            criticalErrorQuote: quote,
+            outOfRubricBasis: basis,
+            boardName: "Tommi2",
+            boardText: "Dungeon Level 3\nd - peaceful dwarf");
 
-        // Harness 29 delivers the production system prompt and the game board to the candidate,
-        // which earlier versions built and then dropped on the wire, and checks both against the
-        // provider request body. No fingerprinted file moves: the prompt text is what it always
-        // was. The scoring method does not move either — nothing here changes what a quality score
-        // is — but the candidate's input does, so a 29-stamped run is not comparable with an
-        // earlier snapshot-suite or OpenAI run however few instrument keys separate them.
+        Assert.Contains("--- GAME CONTEXT BOARD", body);
+        Assert.Contains("d - peaceful dwarf", body);
+        Assert.Contains("--- BEGIN RUBRIC ---", body);
+        Assert.Contains("- displace_peaceful defaults to on", body);
+        Assert.Contains("--- VERIFIER FINDINGS ---", body);
+        Assert.Contains($"Claim (the statement your out-of-rubric Accuracy deduction rested on): \"{basis}\"", body);
+        Assert.Contains("Verdict: Refuted", body);
+        Assert.Contains("Citation: src/options.c:139", body);
+        Assert.Contains("Basis: displace_peaceful defaults TRUE.", body);
+        Assert.Contains("Verdict: Supported", body);
+        Assert.Contains("Basis: The swap is in domove.", body);
+        Assert.Contains(BenchmarkAssessmentPrompt.EvidenceInformedInstruction, body);
+        Assert.Contains("\"withdrawn\"", body);
+
+        // The first verdict is absent, as it is from a blind second opinion.
+        Assert.DoesNotContain("Quality score:", body);
+        Assert.DoesNotContain("FIRST VERDICT", body);
+        Assert.DoesNotContain("Critical error: yes", body);
+    }
+
+    [Fact]
+    public void Versions_HarnessIs30_ScoringMethodIs10()
+    {
+        Assert.Equal("30", BenchmarkAssessmentPrompt.HarnessVersion);
+
+        // Harness 30 gives every grading path the board and refuses to grade a snapshot suite
+        // without it, records board delivery per grading role, adds an advisory evidence-informed
+        // re-grade, and changes the wiki_search snippet, which moves ToolGuidesSha256. The scoring
+        // method does not move: nothing here changes what a quality score is, and the re-grade is
+        // read by no scoring path. A 30-stamped run differs from a 29-stamped one on two
+        // instrument keys, which is below Tier B.
         Assert.Equal(10, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

@@ -235,6 +235,7 @@ public class BenchmarkRubricGapAuthorService
 
             var suite = await db.BenchmarkSuites
                 .Include(s => s.Questions)
+                .Include(s => s.GameSnapshot)
                 .FirstOrDefaultAsync(s => s.Id == job.SuiteId, ct);
 
             if (suite == null)
@@ -293,7 +294,7 @@ public class BenchmarkRubricGapAuthorService
                 draft.Status = BenchmarkRubricGapAuthorDraftStatus.Drafting;
                 job.AddLog($"Drafting a rubric addition for question {draft.QuestionOrderIndex} (cluster {draft.ClusterKey}) using {config.DisplayName}...");
 
-                string prompt = BenchmarkRubricGapAuthorPrompt.BuildPrompt(question, evidence, job.Instructions);
+                string prompt = BenchmarkRubricGapAuthorPrompt.BuildPrompt(question, evidence, job.Instructions, suite.GameSnapshot);
 
                 var (runResult, terminalError) = await ExecuteModelCallAsync(
                     config, apiKey, prompt, maxOutputTokens, allowedTools, maxResultLength, job, draft.ClusterKey, ct);

@@ -263,6 +263,39 @@ public class BenchmarkRunAnswer
     [MaxLength(2048)]
     public string? SecondOpinionError { get; set; }
 
+    // --- Board delivery per grading role -----------------------------------------------------
+
+    /// <summary>
+    /// Characters of game board placed in the primary assessor's prompt for the verdict this
+    /// answer carries. Zero when the suite has a board and none was sent; null when the suite has
+    /// no board, or the answer was graded before harness 30.
+    /// </summary>
+    public int? AssessorBoardChars { get; set; }
+
+    /// <summary>The same figure for the second-opinion (or trial) verdict.</summary>
+    public int? SecondOpinionBoardChars { get; set; }
+
+    /// <summary>The same figure for the claim verifier's prompt.</summary>
+    public int? VerifierBoardChars { get; set; }
+
+    // --- Evidence-informed re-grade ----------------------------------------------------------
+
+    /// <summary>
+    /// The primary assessor's quality score after re-grading with the claim verifier's findings in
+    /// hand, on an answer whose deduction or critical error the verifier contested. Advisory: no
+    /// scoring path, index or flag reads it. Null when the answer did not qualify, the stage is
+    /// disabled, or the re-grade produced no usable verdict.
+    /// </summary>
+    public int? EvidenceInformedQualityScore { get; set; }
+
+    public bool? EvidenceInformedCriticalError { get; set; }
+
+    /// <summary>
+    /// The evidence-informed verdict in full, in the shape of <see cref="SecondOpinionJson"/>
+    /// plus <c>withdrawn</c>: the deductions and critical errors the re-grade withdrew.
+    /// </summary>
+    public string? EvidenceInformedJson { get; set; }
+
     /// <summary>
     /// Claims the assessor could neither confirm nor refute against the rubric, verbatim from
     /// the answer, as a JSON array. Under scoring method v6 these do not reduce Accuracy — the

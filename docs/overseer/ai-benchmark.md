@@ -2487,6 +2487,101 @@ run stamped 29 differs from one stamped 28 on `HarnessVersion` alone, but the ca
 different input on a snapshot suite or on OpenAI, so it is a **Fundamental** comparability break against
 every earlier run of either kind, not Tier C.
 
+### Harness Version 30 Updates
+
+Prompted by the analysis of run 52, the first harness-29 run of a snapshot suite. It confirmed that the
+candidate, the primary assessor, the second reader and the claim verifier all receive the board, and found
+three secondary grading paths that still graded a snapshot suite without it. It also found a report line
+asserting a verification nothing recorded, a grader calling tool-grounded facts "fabricated", and a
+`wiki_search` snippet rule that hid an article's stat block. `ScoringMethodVersion` stays **10** and
+`CandidateSystemPromptSha256` does not move; `ToolGuidesSha256` **moves**, because `wiki_search.md` gained
+one sentence.
+
+- **Every grading path loads the board, and none grades without it (H1).** `ReassessSingleQuestionAsync`,
+  `RetryFailedAssessmentsAsync` and `RunAssessorCalibrationAsync` loaded the suite's questions but not its
+  `GameSnapshot`; lazy loading is off, so `run.BenchmarkSuite?.GameSnapshot?.SanitizedText` was `null` and
+  the assessor prompt was built rubric-only, silently. Their loads are now the internal query builders
+  `BenchmarkService.ReassessmentAnswerQuery`, `RetryAssessmentsRunQuery` and `CalibrationRunQuery`, each
+  including the board. New `BenchmarkBoardGuard.RequireBoardLoaded(run)` throws when the suite references
+  a snapshot that was not loaded, and runs before every board read. What a refusal does depends on the
+  path. On the primary assessment the answer is stored `AssessmentStatus = Failed` with the message, and
+  can be re-run. On the second opinion it becomes `SecondOpinionError`. On the claim verifier it becomes
+  `ClaimVerificationError`, which *retry failed claim verification* picks up. Calibration skips the answer,
+  and a trial re-assessment fails the trial.
+
+- **Delivery is recorded, per role (H2).** `BenchmarkRun.CandidateDeliveryVerifiedAtUtc` is stamped when
+  the pre-run probe (`VerifyCandidateDeliveryBeforeRun`) passes. `BenchmarkRunAnswer.AssessorBoardChars`,
+  `SecondOpinionBoardChars` and `VerifierBoardChars` record the board characters each role's prompt
+  carried: the length of `SanitizedText`, or `0` when the suite has a board that did not reach the
+  prompt, or `null` when the suite has no board. A trial re-assessment writes `SecondOpinionBoardChars`,
+  because its verdict is stored in the second-opinion columns. From harness 30 the report's
+  `- **Delivery:**` sentence reads *"verified … before the first question (<time> UTC)"* only when the
+  stamp exists; otherwise it reads *"not recorded"*. A run stamped 29 keeps the sentence it always had.
+  On a board suite the Delivery line is followed by
+  `Board delivered — assessor N of M graded, second opinion N of M, claim verifier N of M; synthesis: yes; difficulty assessment: digest (no map).`
+  A role with any answer at `0` gets a `- **Board Not Delivered (<role>):**` line under Run Integrity.
+  The run-detail DTO carries `CandidateDeliveryVerifiedAtUtc` and `BoardDelivery`, and the Angular run
+  detail and diagnostics text print the same figures.
+
+- **Evidence-informed re-grade (H3), advisory.** The assessor never sees tool results, and on run 52 it
+  called several tool-grounded facts invented. After an answer's claim verification is persisted, the
+  answer qualifies for a re-grade when it carries `ContestedAccuracyDeduction` or
+  `ContestedCriticalError`, or is a verification-cleared Accuracy deduction
+  (`BenchmarkService.IsVerificationClearedAccuracyDeduction`, the predicate the report's figure of that
+  name also uses). A qualifying answer is re-graded once by the run's **primary** assessor, whose prompt
+  is `BenchmarkAssessmentPrompt.BuildEvidenceInformedBody`. That prompt is the unchanged per-question
+  body, then a `--- VERIFIER FINDINGS ---` block (claim, verdict, citation and basis, with the
+  critical-error quote and the out-of-rubric basis labelled as the assessor's own statements), then
+  `EvidenceInformedInstruction` and a `withdrawn` list in the schema. The first verdict's levels, score
+  and comment are withheld, as they are from the blind second opinion. The result is stored in
+  `EvidenceInformedQualityScore`, `EvidenceInformedCriticalError` and `EvidenceInformedJson` (the
+  `SecondOpinionJson` shape plus `withdrawn`). **No stored level, score, cap, flag or index changes, and
+  the second-opinion columns are untouched.** A new primary verdict clears the three columns. Cost is
+  pooled into the answer's `Assessment*` fields and recorded under role context 4. The call is bounded by
+  `Benchmark:SecondOpinion:TimeoutSeconds`, the only grading-call timeout the harness has. A failure is
+  logged and leaves the columns null. `Benchmark:EvidenceInformedRegrade:Enabled` (default `true`, also
+  written into `appsettings.json`) switches the stage off. The report prints
+  `- **Evidence-informed Sensitivity:** N / 100` beside the other sensitivity figures and in § 7,
+  computed the way *Contested-Verdict Sensitivity* is. It prints a per-question
+  `Evidence-informed re-grade (<assessor>): S / 100, critical error yes|no — withdrew: …` line, and the
+  synthesis prompt gets one line per re-graded answer.
+
+- **The synthesis and the rubric gap author see the board (H4).** `BuildFinalSynthesisPrompt` takes
+  `boardName` / `boardDigest` and prints the digest (≤ 6,000 characters, no map) under a
+  `GAME CONTEXT BOARD (DIGEST …)` block. `ExecuteFinalSynthesisAsync` queries it directly, because
+  `RerunFinalSynthesisAsync` loads no suite. `BenchmarkRubricGapAuthorPrompt.BuildPrompt` takes the
+  suite's `BenchmarkGameSnapshot` and prints `SanitizedText` whole, in the untrusted-data delimiter form
+  the Suite Wizard uses, with rule 8: a point about the hero's situation must be quotable from the board.
+
+- **A critical-error quote is verified in its context (H6).**
+  `BenchmarkClaimVerificationPrompt.CriticalErrorQuoteContext(answerText, quote)` returns the nearest
+  preceding heading or non-list line, stripped of heading and bold markup, when the quote is a list item
+  or a fragment (no sentence-ending punctuation, under 80 characters). The prompt shows it as a
+  `Context (not part of the claim): Under "<line>":` line inside claim 0's block, and adds the
+  instruction to judge the text as placed under that heading. The claim text itself stays the verbatim
+  quote. `BenchmarkClaimVerificationParser` stores the submitted text and every reader matches the
+  critical-error quote against it verbatim, so folding the context into the claim would break that
+  matching. Run 52's Q5 (`Safe to Eat (Vegan)` over a mushroom line) is the case this fixes.
+
+- **H7, H8.** On a board suite the Grounding note reads *"answered from the board with one tool call or
+  fewer — … Expected on a snapshot suite when the board settles the question."* and no longer says the
+  items may not test source retrieval. A failed-question re-run or a single-answer re-run of a run whose
+  `CandidatePromptOptionsJson` is blank is now refused with a message naming the missing record. It used
+  to build default options, silently resetting `VerboseMode`. The refusal comes before any status flip
+  or verdict clearing.
+
+- **`wiki_search` lead block (T1, tool layer).** `WikiSnippetExtractor.BuildSnippet`, when some section
+  scores above zero, returns the whole article (footer `— complete`) if it formats to
+  ≤ `perResultChars / 2`. Otherwise it always keeps the article's first section with a body when that
+  section formats to ≤ `LeadBlockMaxChars` (600), ahead of the ranked sections. The first ranked section
+  is still always kept. On run 52, `Spells/Cure petrification.md` came back as its one-line *Description*
+  because the level / mana / components block scored 0.
+
+`BenchmarkAssessmentPrompt.HarnessVersion` is now **"30"**, with a v30 paragraph in its version history.
+A run stamped 30 differs from one stamped 29 on `HarnessVersion` and `ToolGuidesSha256`, which is below
+Tier B. Migration: `AddBoardDeliveryAndEvidenceInformedVerdict` (seven nullable columns, none backfilled;
+null means not recorded).
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.

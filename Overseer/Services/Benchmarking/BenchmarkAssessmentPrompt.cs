@@ -52,6 +52,15 @@ public class BenchmarkPerQuestionVerdictSummary
     /// so the narrative does not describe the deduction as an error of the answer.
     /// </summary>
     public IReadOnlyList<string> ContestedAccuracyDeductionBases { get; set; } = Array.Empty<string>();
+
+    /// <summary>
+    /// The primary assessor's advisory re-grade with the verifier's findings in hand, and what it
+    /// withdrew. Null when the answer was not re-graded.
+    /// </summary>
+    public int? EvidenceInformedQualityScore { get; set; }
+    public bool? EvidenceInformedCriticalError { get; set; }
+    public IReadOnlyList<string> EvidenceInformedWithdrawn { get; set; } = Array.Empty<string>();
+
     public int? SecondOpinionQualityScore { get; set; }
     public bool? SecondOpinionCriticalError { get; set; }
     public int? AssessedDifficulty { get; set; }
@@ -393,8 +402,24 @@ public static class BenchmarkAssessmentPrompt
     ///     now delivered. A run stamped 29 differs from one stamped 28 on HarnessVersion alone, but
     ///     the candidate receives materially different input on a snapshot suite or on OpenAI, so
     ///     this is a Fundamental break against every earlier run of either kind, not Tier C.
+    /// v30: every grading path receives the board. Re-assess, retry-failed-assessments and assessor
+    ///     calibration load the suite's snapshot, and a grading prompt built for a suite whose board
+    ///     was not loaded now fails that answer's assessment instead of grading rubric-only
+    ///     (BenchmarkBoardGuard) (H1). The run records when the pre-run delivery probe passed and,
+    ///     per answer, the board characters the assessor, second opinion and claim verifier
+    ///     received; the report prints delivery from those records (H2). A contested answer is
+    ///     re-graded once by the primary assessor with the verifier's findings in hand, stored in
+    ///     its own EvidenceInformed* columns and read by no scoring path (H3). The synthesis
+    ///     receives the board digest and the rubric gap author the board (H4). A critical-error
+    ///     quote that is a list item or fragment reaches the verifier with the line it sits under
+    ///     (H6). The Grounding note no longer calls a board-answered question untested (H7), and a
+    ///     re-run of a run that recorded no prompt options is refused (H8). wiki_search always
+    ///     returns an article's lead block, and a short article whole, which moves ToolGuidesSha256.
+    ///     ScoringMethodVersion stays 10 and CandidateSystemPromptSha256 does not move. A run
+    ///     stamped 30 differs from one stamped 29 on HarnessVersion and ToolGuidesSha256, which is
+    ///     below Tier B.
     /// </summary>
-    public const string HarnessVersion = "29";
+    public const string HarnessVersion = "30";
 
     /// <summary>
     /// The complete per-question assessor prompt: <see cref="BuildPerQuestionPreamble"/>, a blank
@@ -796,6 +821,80 @@ public static class BenchmarkAssessmentPrompt
         return sb.ToString();
     }
 
+    /// <summary>
+    /// The evidence-informed re-grade body: <see cref="BuildPerQuestionBody"/> unchanged, then the
+    /// claim verifier's findings and the re-grade instruction. The first verdict's levels, score
+    /// and comment are deliberately absent, for the reason the blind second opinion omits them:
+    /// the re-grade is to say what the evidence supports, not how far to move from an anchor.
+    /// </summary>
+    public static string BuildEvidenceInformedBody(
+        int orderIndex,
+        string questionText,
+        BenchmarkDifficulty difficulty,
+        string? expectedPoints,
+        string answerText,
+        BenchmarkAnswerStatus status,
+        IReadOnlyList<BenchmarkClaimVerification> verifications,
+        string? criticalErrorQuote = null,
+        string? outOfRubricBasis = null,
+        IReadOnlyList<string>? allowedTools = null,
+        int toolCallsCompleted = 0,
+        bool toolBudgetExhausted = false,
+        int scrubbedArtifactCount = 0,
+        int? toolCallBudget = null,
+        string? boardName = null,
+        string? boardText = null)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(BuildPerQuestionBody(
+            orderIndex,
+            questionText,
+            difficulty,
+            expectedPoints,
+            answerText,
+            status,
+            allowedTools,
+            toolCallsCompleted,
+            toolBudgetExhausted,
+            scrubbedArtifactCount,
+            toolCallBudget,
+            boardName,
+            boardText));
+        sb.AppendLine();
+        sb.AppendLine("--- VERIFIER FINDINGS ---");
+        sb.AppendLine("An automated claim verifier with read-only access to the GnollHack source code and wiki checked the following statements after you graded this answer.");
+        sb.AppendLine();
+        foreach (var v in verifications)
+        {
+            string role = string.Equals(v.Claim?.Trim(), criticalErrorQuote?.Trim(), StringComparison.Ordinal)
+                ? " (the sentence you quoted as a critical error)"
+                : string.Equals(v.Claim?.Trim(), outOfRubricBasis?.Trim(), StringComparison.Ordinal)
+                    ? " (the statement your out-of-rubric Accuracy deduction rested on)"
+                    : string.Empty;
+            sb.AppendLine($"- Claim{role}: \"{v.Claim}\"");
+            sb.AppendLine($"  Verdict: {v.Verdict}");
+            if (!string.IsNullOrWhiteSpace(v.Citation))
+            {
+                sb.AppendLine($"  Citation: {v.Citation}");
+            }
+            if (!string.IsNullOrWhiteSpace(v.Basis))
+            {
+                sb.AppendLine($"  Basis: {v.Basis}");
+            }
+        }
+        sb.AppendLine("--- END VERIFIER FINDINGS ---");
+        sb.AppendLine();
+        sb.AppendLine(EvidenceInformedInstruction);
+        sb.AppendLine();
+        sb.AppendLine("Output the same JSON schema as above, with one more field: \"withdrawn\", a list of short strings naming each deduction or critical error you withdrew — for example [\"Accuracy deduction: the claim that peacefuls are never displaced\"]. Output nothing else.");
+
+        return sb.ToString();
+    }
+
+    /// <summary>The re-grade instruction <see cref="BuildEvidenceInformedBody"/> ends with.</summary>
+    public const string EvidenceInformedInstruction =
+        "Re-grade this answer. You previously graded it without these findings. Withdraw an Accuracy deduction whose stated basis the verifier refuted. Withdraw a critical error whose quoted claim is true **in the context the answer gave it**. A Supported verdict on a claim does not excuse a different error in the same sentence. Change nothing the findings do not bear on. List what you withdrew in `withdrawn`, or return an empty list.";
+
     private static string GetTriggerDescription(string triggerLabel) => triggerLabel switch
     {
         "CriticalError" => "the first assessor flagged a critical error.",
@@ -832,7 +931,9 @@ public static class BenchmarkAssessmentPrompt
 
     public static string BuildFinalSynthesisPrompt(
         string suiteName,
-        IReadOnlyList<BenchmarkPerQuestionVerdictSummary> verdicts)
+        IReadOnlyList<BenchmarkPerQuestionVerdictSummary> verdicts,
+        string? boardName = null,
+        string? boardDigest = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are an expert AI intelligence and game knowledge assessor synthesizing the overall evaluation for an AI benchmark run on GnollHack.");
@@ -850,6 +951,21 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine("3. Produce a holistic finalScore (1-100), key strengths, key weaknesses, and a comprehensive overall review commentary.");
         sb.AppendLine("4. Output ONLY a valid JSON object matching the exact schema specified at the end.");
         sb.AppendLine();
+        // The digest, not the full board: the synthesis judges no map coordinates, and the digest
+        // carries the hero's state that a cross-question finding about board reading turns on.
+        if (!string.IsNullOrWhiteSpace(boardDigest))
+        {
+            sb.AppendLine("--- GAME CONTEXT BOARD (DIGEST; GROUND TRUTH REFERENCE DATA) ---");
+            if (!string.IsNullOrWhiteSpace(boardName))
+            {
+                sb.AppendLine($"Board Name: {boardName}");
+            }
+            sb.AppendLine("Every candidate answered with the full game state snapshot board in hand; this is its digest, without the map. Judge a claim about how the candidate read the board against it.");
+            sb.AppendLine();
+            sb.AppendLine(boardDigest);
+            sb.AppendLine("--- END GAME CONTEXT BOARD ---");
+            sb.AppendLine();
+        }
         sb.AppendLine("--- PER-QUESTION VERDICTS AND ASSESSMENTS ---");
         sb.AppendLine();
 
@@ -941,6 +1057,13 @@ public static class BenchmarkAssessmentPrompt
                     {
                         sb.AppendLine($"Accuracy deduction on Q{v.OrderIndex} rests on the assessor's own-knowledge statement \"{basis}\", which the verifier refuted against the source/wiki — do not describe this deduction as an error of the answer; if you name it, name it as a contested grading deduction.");
                     }
+                }
+                if (v.EvidenceInformedQualityScore.HasValue)
+                {
+                    string withdrew = v.EvidenceInformedWithdrawn.Count > 0
+                        ? string.Join("; ", v.EvidenceInformedWithdrawn.Select(w => $"\"{w}\""))
+                        : "nothing";
+                    sb.AppendLine($"Evidence-informed re-grade on Q{v.OrderIndex} (the same assessor with the verifier's findings in hand; advisory, did not score): {v.EvidenceInformedQualityScore.Value}/100, critical error {(v.EvidenceInformedCriticalError == true ? "yes" : "no")} — withdrew: {withdrew}");
                 }
                 if (v.SecondOpinionQualityScore.HasValue)
                 {

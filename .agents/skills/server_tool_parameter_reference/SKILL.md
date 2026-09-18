@@ -507,7 +507,15 @@ An article with no headings at all keeps the original
 carries that original line on every `nethack_wiki_view` section miss, whatever the article.
 
 **Result shape**: `wiki_search` returns per-hit snippets via `WikiSnippetExtractor.BuildSnippet`
-(bounded to `PerResultChars`, query-term-aware). **`nethack_wiki_search` returned full article
+(bounded to `PerResultChars`, query-term-aware). **From harness 30 a snippet keeps an article's lead
+block regardless of score.** When some section scores above zero and the whole article formats to
+≤ `PerResultChars / 2`, the article comes back **whole**, footer `— complete`. Otherwise the first
+section with a body (section 0, or section 1 when section 0 is empty) is always kept when it formats
+to ≤ `WikiSnippetExtractor.LeadBlockMaxChars` (600), ahead of the ranked sections. Before that, a spell
+or item article could come back as its one-line *Description* with the level / mana / components
+block omitted, because that block rarely shares a term with the query (run 52, Q11,
+`Spells/Cure petrification.md`). On a harness-30 run, a *Description*-only snippet of an article
+whose lead block is 600 characters or shorter is a defect, not the documented shape. **`nethack_wiki_search` returned full article
 bodies with no per-result cap of its own up to harness 17**, bounded only by the generic per-tool
 `MaxResultLength` truncation in `ToolExecutor` — which cuts the *last* article mid-sentence and
 drops the ones after it, so which articles the model saw depended on Lucene's ordering. **From

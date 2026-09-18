@@ -4640,6 +4640,48 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.runDiagnosticsText).toContain('snapshot=false');
     });
 
+    it('should record the candidate delivery probe and the board delivery per grading role', () => {
+      component.activeRunDetail = buildDiagnosticsRun();
+      expect(component.runDiagnosticsText).toContain('Candidate delivery probe: not recorded');
+      expect(component.runDiagnosticsText).not.toContain('Board delivered');
+
+      component.activeRunDetail = buildDiagnosticsRun({
+        candidateDeliveryVerifiedAtUtc: '2026-09-18T07:11:00Z',
+        boardDelivery: [
+          { role: 'assessor', delivered: 18, total: 18, missingQuestions: [] },
+          { role: 'second opinion', delivered: 13, total: 14, missingQuestions: [6] },
+          { role: 'claim verifier', delivered: 9, total: 9, missingQuestions: [] }
+        ]
+      });
+      const text = component.runDiagnosticsText;
+
+      expect(text).toContain('Candidate delivery probe: verified at 2026-09-18T07:11:00Z');
+      expect(text).toContain('Board delivered — assessor 18 of 18 graded, second opinion 13 of 14, claim verifier 9 of 9; synthesis: yes; difficulty assessment: digest (no map).');
+      expect(text).toContain('Board not delivered — second opinion: Q6');
+    });
+
+    it('should extend a question line with its board characters and evidence-informed re-grade', () => {
+      const run = buildDiagnosticsRun();
+      run.answers[0] = {
+        ...run.answers[0],
+        assessorBoardChars: 12037,
+        secondOpinionBoardChars: 12037,
+        verifierBoardChars: null,
+        evidenceInformedQualityScore: 74,
+        evidenceInformedCriticalError: false,
+        evidenceInformedJson: '{"withdrawn":["Accuracy deduction: peacefuls are never displaced"]}'
+      };
+      component.activeRunDetail = run;
+      const text = component.runDiagnosticsText;
+
+      expect(text).toContain('boardChars=12037/12037/-');
+      expect(text).toContain('evidenceInformed=74 withdrew=1');
+      // Neither is printed for an answer that recorded neither.
+      expect(text.split('\n').find(l => l.startsWith('[Q2]'))).not.toContain('boardChars=');
+      expect(component.evidenceInformedWithdrawn(run.answers[0])).toEqual(['Accuracy deduction: peacefuls are never displaced']);
+      expect(component.evidenceInformedWithdrawn({ ...run.answers[0], evidenceInformedJson: 'not json' })).toEqual([]);
+    });
+
     it('should name the snapshot in the prompt summary only when the run had one', () => {
       expect(component.candidatePromptSummaryOf({
         candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true,"hasGameSnapshot":true}'

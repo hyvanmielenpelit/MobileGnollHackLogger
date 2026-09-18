@@ -206,6 +206,11 @@ public static class WikiSnippetExtractor
                 selected.Add(sections[0]);
             }
         }
+        else if (header.Length + sections.Sum(FormatSectionLength) <= perResultChars / 2)
+        {
+            // A short article is returned whole: a follow-up wiki_view would cost a round for it.
+            selected = new List<WikiSection>(sections);
+        }
         else
         {
             var ranked = scored
@@ -218,13 +223,30 @@ public static class WikiSnippetExtractor
             selected = new List<WikiSection>();
             int currentEstimatedLength = header.Length + 100;
 
+            // The lead block of a spell or item article is its stat block, which rarely shares a
+            // term with the query; it is kept ahead of the ranking when it is short.
+            var lead = LeadSection(sections);
+            if (lead != null && FormatSectionLength(lead) <= LeadBlockMaxChars)
+            {
+                selected.Add(lead);
+                currentEstimatedLength += FormatSectionLength(lead);
+            }
+
+            bool rankedSelected = false;
             foreach (var sec in ranked)
             {
+                if (selected.Contains(sec))
+                {
+                    rankedSelected = true;
+                    continue;
+                }
+
                 int secLength = FormatSectionLength(sec);
-                if (selected.Count == 0 || currentEstimatedLength + secLength <= perResultChars)
+                if (!rankedSelected || currentEstimatedLength + secLength <= perResultChars)
                 {
                     selected.Add(sec);
                     currentEstimatedLength += secLength;
+                    rankedSelected = true;
                 }
             }
         }
@@ -269,6 +291,20 @@ public static class WikiSnippetExtractor
         sb.Append(footer);
 
         return sb.ToString();
+    }
+
+    /// <summary>The longest lead block, as formatted, that a snippet always carries.</summary>
+    public const int LeadBlockMaxChars = 600;
+
+    /// <summary>
+    /// The article's first section with a body: section 0, or section 1 when section 0 has an
+    /// empty body. Null when neither has one.
+    /// </summary>
+    private static WikiSection? LeadSection(IReadOnlyList<WikiSection> sections)
+    {
+        return sections
+            .Take(2)
+            .FirstOrDefault(s => !string.IsNullOrWhiteSpace(s.Body));
     }
 
     private static int FormatSectionLength(WikiSection sec)

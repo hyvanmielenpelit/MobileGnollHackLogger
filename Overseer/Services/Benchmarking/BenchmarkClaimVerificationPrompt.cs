@@ -2,7 +2,9 @@ namespace Overseer.Services.Benchmarking;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 
 public static class BenchmarkClaimVerificationPrompt
 {
@@ -19,8 +21,10 @@ public static class BenchmarkClaimVerificationPrompt
         bool isOutOfRubricAdjudication = false,
         string? assessorEvidence = null,
         string? boardName = null,
-        string? boardText = null)
+        string? boardText = null,
+        string? criticalErrorQuoteContext = null)
     {
+        bool quoteHasContext = isCriticalErrorAdjudication && !string.IsNullOrWhiteSpace(criticalErrorQuoteContext);
         var sb = new StringBuilder();
         // All three adjudication preambles can apply to one answer: a disputed verdict, a
         // critical-error quote and an out-of-rubric basis are independent conditions. The disputed
@@ -41,6 +45,10 @@ public static class BenchmarkClaimVerificationPrompt
             sb.AppendLine();
             sb.AppendLine("CRITICAL ERROR ADJUDICATION:");
             sb.AppendLine("The first assessor marked the first claim below as a critical error — a confidently asserted, material falsehood. Its stated evidence follows the rubric. Check that claim against the source code and wiki exactly as you check the others; if it is true, the verdict is Supported with a citation. A claim absent from the rubric is not thereby false.");
+            if (quoteHasContext)
+            {
+                sb.AppendLine("The first claim is a list item or fragment, and its block names the heading or line it sits under in the answer. Judge the assertion the answer makes by placing this text under that heading, not whether the quoted words are individually true. Echo only the claim text, without the context line.");
+            }
         }
         if (isOutOfRubricAdjudication)
         {
@@ -119,6 +127,10 @@ public static class BenchmarkClaimVerificationPrompt
         {
             sb.AppendLine($"=== START CLAIM {i} ===");
             sb.AppendLine($"ClaimIndex: {i}");
+            if (i == 0 && quoteHasContext)
+            {
+                sb.AppendLine($"Context (not part of the claim): Under \"{criticalErrorQuoteContext!.Trim()}\":");
+            }
             sb.AppendLine(claims[i]);
             sb.AppendLine($"=== END CLAIM {i} ===");
             sb.AppendLine();
@@ -138,5 +150,60 @@ public static class BenchmarkClaimVerificationPrompt
         sb.AppendLine("}");
 
         return sb.ToString();
+    }
+
+    /// <summary>Below this length, a quote with no sentence-ending punctuation is treated as a fragment.</summary>
+    internal const int FragmentMaxLength = 80;
+
+    private static readonly Regex ListItemRegex = new(@"^\s*(?:[-*+•]|\d+[.)])\s+", RegexOptions.Compiled);
+    private static readonly Regex HeadingMarkupRegex = new(@"^\s*#+\s*|^\s*\*\*|\*\*\s*:?\s*$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// The line a critical-error quote takes its meaning from: the nearest heading or non-list
+    /// line above it in the answer, stripped of Markdown heading and bold markup and a trailing
+    /// colon. Null unless the quote is a list item or a fragment (no sentence-ending punctuation
+    /// and shorter than <see cref="FragmentMaxLength"/>), when the quote cannot be found in the
+    /// answer, or when nothing precedes it.
+    /// </summary>
+    public static string? CriticalErrorQuoteContext(string? answerText, string? quote)
+    {
+        if (string.IsNullOrWhiteSpace(answerText) || string.IsNullOrWhiteSpace(quote))
+        {
+            return null;
+        }
+
+        string trimmedQuote = quote.Trim();
+        string normalized = answerText.Replace("\r\n", "\n");
+        int at = normalized.IndexOf(trimmedQuote, StringComparison.OrdinalIgnoreCase);
+        if (at < 0)
+        {
+            return null;
+        }
+
+        var lines = normalized.Split('\n');
+        int quoteLine = normalized.Take(at).Count(c => c == '\n');
+
+        string bare = trimmedQuote.TrimEnd('*', '_', '`', ')', '"', '\'', ' ');
+        bool isListItem = ListItemRegex.IsMatch(lines[quoteLine]);
+        bool isFragment = trimmedQuote.Length < FragmentMaxLength
+            && (bare.Length == 0 || !".!?".Contains(bare[^1]));
+        if (!isListItem && !isFragment)
+        {
+            return null;
+        }
+
+        for (int i = quoteLine - 1; i >= 0; i--)
+        {
+            string line = lines[i];
+            if (string.IsNullOrWhiteSpace(line) || ListItemRegex.IsMatch(line))
+            {
+                continue;
+            }
+
+            string context = HeadingMarkupRegex.Replace(line, string.Empty).Trim().TrimEnd(':').Trim();
+            return context.Length > 0 ? context : null;
+        }
+
+        return null;
     }
 }
