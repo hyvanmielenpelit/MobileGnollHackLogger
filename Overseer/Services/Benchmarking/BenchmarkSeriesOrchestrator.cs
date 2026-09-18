@@ -304,6 +304,28 @@ public class BenchmarkSeriesOrchestrator
                 denialReason ?? "The benchmark spend guard refused this resume.");
         }
 
+        // Not overridable, unlike a moved hash: a member launched now is graded under this build's
+        // scoring method, and a series holding two methods has no meaningful pooled index.
+        var memberMethods = await db.BenchmarkRuns
+            .Where(r => r.RunSeriesId == series.Id)
+            .Select(r => r.ScoringMethodVersion)
+            .Distinct()
+            .ToListAsync(ct);
+        var foreignMethods = memberMethods.Where(m => m != BenchmarkAssessmentPrompt.ScoringMethodVersion).ToList();
+        if (foreignMethods.Count > 0)
+        {
+            return new BenchmarkSeriesStartResult
+            {
+                Outcome = BenchmarkSeriesStartOutcome.Invalid,
+                SeriesId = series.Id,
+                Error =
+                    "This series cannot be resumed because the scoring method changed since its members were graded: " +
+                    $"they were graded under scoring method {string.Join(", ", foreignMethods.OrderBy(m => m))}, and this build " +
+                    $"grades under {BenchmarkAssessmentPrompt.ScoringMethodVersion}. Mixing the two inside one series would make " +
+                    "its pooled scores meaningless. Start a new series instead."
+            };
+        }
+
         var changed = await GetChangedInstrumentHashesAsync(scope.ServiceProvider, db, series, ct);
         if (changed.Count > 0 && !acknowledgeInstrumentChange)
         {

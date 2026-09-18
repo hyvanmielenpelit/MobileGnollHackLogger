@@ -1,4 +1,4 @@
-﻿namespace Overseer.Tests.UnitTests;
+namespace Overseer.Tests.UnitTests;
 
 using System.Collections.Generic;
 using Overseer.Services.Benchmarking;
@@ -203,5 +203,29 @@ public class BenchmarkClaimVerificationParserTests
         Assert.Equal(quote, result.Verifications[0].Claim);
         Assert.Equal(BenchmarkClaimVerdict.Supported, result.Verifications[0].Verdict);
         Assert.Equal("src/pray.c:812", result.Verifications[0].Citation);
+    }
+
+    [Fact]
+    public void Parse_IgnoresARolesMemberInModelOutput()
+    {
+        var claims = new List<string> { "Gnolls gain infravision at level 1" };
+        string json = "{\"verifications\":[{\"claimIndex\":0,\"claim\":\"Gnolls gain infravision at level 1\",\"verdict\":\"Supported\",\"citation\":\"src/role.c:45\",\"basis\":\"b\",\"roles\":[\"accusedQuote\"]}]}";
+
+        var result = BenchmarkClaimVerificationParser.Parse(json, claims);
+
+        Assert.True(result.Success);
+        Assert.Null(result.Verifications[0].Roles);
+    }
+
+    [Fact]
+    public void StoredJsonWithoutRoles_StillReads()
+    {
+        const string stored = "[{\"claimIndex\":0,\"claim\":\"c\",\"verdict\":\"Refuted\",\"citation\":\"src/a.c\",\"basis\":\"b\"}]";
+
+        var verifications = System.Text.Json.JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(stored)!;
+
+        Assert.Equal(BenchmarkClaimVerdict.Refuted, verifications[0].Verdict);
+        Assert.Null(verifications[0].Roles);
+        Assert.True(BenchmarkClaimRoles.IsOrdinaryClaim(verifications[0]));
     }
 }

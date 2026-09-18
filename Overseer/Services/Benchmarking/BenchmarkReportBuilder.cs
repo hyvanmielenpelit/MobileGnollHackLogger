@@ -392,6 +392,111 @@ public static class BenchmarkReportBuilder
         }
     }
 
+    /// <summary>The sentences the assessor charged as false that the verifier supported with a citation; empty on a legacy record.</summary>
+    private static List<BenchmarkClaimVerification> SupportedAccusationsOf(BenchmarkRunAnswer answer)
+    {
+        if (string.IsNullOrWhiteSpace(answer.ClaimVerificationJson)) return new List<BenchmarkClaimVerification>();
+        try
+        {
+            var verifications = JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(
+                answer.ClaimVerificationJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return BenchmarkService.SupportedAccusations(verifications);
+        }
+        catch (JsonException)
+        {
+            return new List<BenchmarkClaimVerification>();
+        }
+    }
+
+    /// <summary>
+    /// The per-answer re-grade line: its score, the four levels it returned, what it withdrew, what
+    /// was dropped and why, and whether it was validated, rejected, or is a legacy record.
+    /// </summary>
+    private static string EvidenceInformedRegradeLine(BenchmarkRun run, BenchmarkRunAnswer a)
+    {
+        string? json = a.EvidenceInformedJson;
+        string regrader = ReadJsonString(json, "assessor") ?? a.AssessedByModelDisplayNameUsed ?? "assessor";
+        var withdrawn = BenchmarkService.ReadEvidenceInformedWithdrawn(json);
+        string withdrew = withdrawn.Count > 0 ? string.Join("; ", withdrawn) : "nothing";
+
+        int? accuracy = ReadJsonInt(json, "accuracyLevel");
+        int? completeness = ReadJsonInt(json, "completenessLevel");
+        int? conciseness = ReadJsonInt(json, "concisenessLevel");
+        int? readability = ReadJsonInt(json, "readabilityLevel");
+        string levels = accuracy.HasValue && completeness.HasValue && conciseness.HasValue && readability.HasValue
+            ? $", levels {accuracy}/{completeness}/{conciseness}/{readability} (Accuracy/Completeness/Conciseness/Readability)"
+            : ", levels not recorded";
+
+        string status;
+        string rejection = string.Empty;
+        if (BenchmarkService.HasEvidenceInformedValidation(json))
+        {
+            bool eligible = BenchmarkService.IsEligibleEvidenceInformedRegrade(run, a);
+            status = eligible ? "validated" : "rejected";
+            var dropped = ReadJsonStrings(json, "withdrawnDropped");
+            var errors = ReadJsonStrings(json, "validationErrors");
+            if (dropped.Count > 0)
+            {
+                rejection += $"; dropped: {string.Join("; ", dropped)}";
+            }
+            var verdictErrors = errors.Where(e => !dropped.Contains(e)).ToList();
+            if (verdictErrors.Count > 0)
+            {
+                rejection += $"; rejected because {string.Join("; ", verdictErrors)}";
+            }
+        }
+        else
+        {
+            status = BenchmarkService.IsLegacyEvidenceInformed(run, a)
+                ? "legacy, unvalidated"
+                : "no validation provenance, excluded";
+        }
+
+        return $"**Evidence-informed re-grade ({regrader}; {status}):** {a.EvidenceInformedQualityScore} / 100, critical error {(a.EvidenceInformedCriticalError == true ? "yes" : "no")}{levels} — withdrew: {withdrew}{rejection}. *Advisory; the first verdict is what scored.*";
+    }
+
+    private static int? ReadJsonInt(string? json, string property)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty(property, out var value)
+                && value.ValueKind == JsonValueKind.Number
+                && value.TryGetInt32(out int number)
+                ? number
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static List<string> ReadJsonStrings(string? json, string property)
+    {
+        var result = new List<string>();
+        if (string.IsNullOrWhiteSpace(json)) return result;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty(property, out var list)
+                && list.ValueKind == JsonValueKind.Array)
+            {
+                result.AddRange(list.EnumerateArray()
+                    .Where(x => x.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(x.GetString()))
+                    .Select(x => x.GetString()!));
+            }
+        }
+        catch (JsonException)
+        {
+            // A malformed record reads as empty.
+        }
+        return result;
+    }
+
     private static (string? Accuracy, string? Completeness, string? Readability, bool CriticalErrorDemoted) ReadEvidence(BenchmarkRunAnswer answer)
     {
         if (string.IsNullOrWhiteSpace(answer.AssessmentEvidenceJson))
@@ -1258,21 +1363,36 @@ public static class BenchmarkReportBuilder
         }
 
         // The same substitution as the contested-verdict figure above, with the primary assessor's
-        // evidence-informed re-grade in place of the second reader's score. Omitted at K = 0.
-        var evidenceInformedAnswers = scoredAnswers
+        // evidence-informed re-grade in place of the second reader's score. Omitted at K = 0. One
+        // predicate decides both which re-grades are counted and which are substituted. From harness
+        // 31 a re-grade counts only when it passed validation, over the Intelligence Index's own item
+        // set; an excluded one keeps its primary score in the figure. An earlier run keeps the
+        // calculation it always had, over the graded answers, labelled legacy and unvalidated.
+        bool validatedRegrades = BenchmarkService.IsValidatedRegradeHarness(run.HarnessVersion);
+        var evidenceInformedPopulation = validatedRegrades ? indexAnswers : scoredAnswers;
+        var regradedAnswers = evidenceInformedPopulation
             .Where(a => a.EvidenceInformedQualityScore.HasValue)
             .OrderBy(a => a.OrderIndex)
             .ToList();
+        var evidenceInformedAnswers = regradedAnswers
+            .Where(a => BenchmarkService.IsEligibleEvidenceInformedRegrade(run, a))
+            .ToList();
+        int excludedRegradeCount = regradedAnswers.Count - evidenceInformedAnswers.Count;
         int? evidenceInformedIndex = null;
-        if (evidenceInformedAnswers.Count > 0)
+        string? evidenceInformedClause = null;
+        if (regradedAnswers.Count > 0)
         {
-            evidenceInformedIndex = BenchmarkScoring.QualityIndex(scoredAnswers
-                .Select(a => (a.EvidenceInformedQualityScore ?? a.QualityScore,
+            var eligibleIds = evidenceInformedAnswers.Select(a => a.OrderIndex).ToHashSet();
+            evidenceInformedIndex = BenchmarkScoring.QualityIndex(evidenceInformedPopulation
+                .Select(a => (eligibleIds.Contains(a.OrderIndex) ? a.EvidenceInformedQualityScore : a.QualityScore,
                               a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
                 .ToList());
             if (evidenceInformedIndex.HasValue)
             {
-                sb.AppendLine($"- **Evidence-informed Sensitivity:** {evidenceInformedIndex.Value} / 100 — Intelligence Index recomputed with the evidence-informed score on the {evidenceInformedAnswers.Count} answer(s) re-graded with the verifier's findings in hand; advisory, changes no score.");
+                evidenceInformedClause = validatedRegrades
+                    ? $"Evidence-informed Sensitivity (validated re-grades only):** {evidenceInformedIndex.Value} / 100 — Intelligence Index recomputed with the evidence-informed score on the {evidenceInformedAnswers.Count} answer(s) whose re-grade passed validation; {excludedRegradeCount} re-grade(s) excluded (rejected, or without validation provenance) keep their primary score; advisory, changes no score."
+                    : $"Evidence-informed Sensitivity (legacy, unvalidated):** {evidenceInformedIndex.Value} / 100 — Intelligence Index recomputed with the evidence-informed score on the {evidenceInformedAnswers.Count} answer(s) re-graded with the verifier's findings in hand; advisory, changes no score.";
+                sb.AppendLine($"- **{evidenceInformedClause}");
             }
         }
 
@@ -1854,6 +1974,19 @@ public static class BenchmarkReportBuilder
             advisoryNote += $" *Removal was not recorded for {bleedUnrecorded} of these — the run predates harness version {BenchmarkAssessmentPrompt.HarnessVersion}, which added the counter; that figure is inferred, not measured.*";
         }
         sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {contestedCount}, unevidenced deductions: {unevidencedCount}, omissions as accuracy: {omissionCount}, refuted claims: {refutedCount}, contested critical errors: {contestedCriticalErrorCount}, out-of-rubric accuracy deductions: {outOfRubricAccuracyCount}, contested accuracy deductions: {contestedAccuracyDeductionFigure}, dimension outliers: {dimensionOutlierCount}, answer-framing openers: {answerFramingOpenerCount}) {advisoryNote}");
+
+        // The Accuracy-specific share of the generic unevidenced-deduction flag, which is shared
+        // by dimensions. Read from the stored evidence, so a run graded before the rule existed
+        // is measured by it too.
+        var precisionWithheldAnswers = answers
+            .Where(a => a.AccuracyLevel.HasValue
+                        && BenchmarkVerdictConsistency.IsPrecisionGroundedAccuracyDeduction(a.AccuracyLevel.Value, ReadEvidence(a).Accuracy))
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+        if (precisionWithheldAnswers.Count > 0)
+        {
+            sb.AppendLine($"- **Accuracy Withheld for Precision:** {precisionWithheldAnswers.Count} ({string.Join(", ", precisionWithheldAnswers.Select(a => $"Q{a.OrderIndex}"))}) — *Accuracy below 6 whose evidence withholds the level for missing precision, nuance or depth and names no false statement. Detected on the stored Accuracy evidence; an advisory heuristic that changed no score.*");
+        }
         if (answerFramingOpenerCount > 0)
         {
             var answerFramingOpenerAnswers = answers
@@ -1923,8 +2056,12 @@ public static class BenchmarkReportBuilder
             .Where(a => !string.IsNullOrWhiteSpace(a.ClaimVerificationError) && !IsClaimVerificationBudgetNotChecked(a.ClaimVerificationError))
             .OrderBy(a => a.OrderIndex)
             .ToList();
+        var supportedAccusations = answers
+            .OrderBy(a => a.OrderIndex)
+            .SelectMany(a => SupportedAccusationsOf(a).Select(v => (Answer: a, Verification: v)))
+            .ToList();
 
-        if (!claimsRecorded || unverifiedTotal > 0 || contestedAnswers.Count > 0 || omissionAnswers.Count > 0 || dimensionOutlierAnswers.Count > 0 || refutedAnswers.Count > 0 || verificationFailedAnswers.Count > 0 || notCheckedAnswers.Count > 0)
+        if (!claimsRecorded || unverifiedTotal > 0 || contestedAnswers.Count > 0 || omissionAnswers.Count > 0 || dimensionOutlierAnswers.Count > 0 || refutedAnswers.Count > 0 || verificationFailedAnswers.Count > 0 || notCheckedAnswers.Count > 0 || supportedAccusations.Count > 0)
         {
             sb.AppendLine("### Assessor Findings");
             if (!claimsRecorded)
@@ -1979,6 +2116,14 @@ public static class BenchmarkReportBuilder
             {
                 sb.AppendLine($"- **Dimension Outliers:** {dimensionOutlierAnswers.Count} ({string.Join(", ", dimensionOutlierAnswers.Select(a => $"Q{a.OrderIndex}"))}) — *one dimension at level ≤ 1 beside three at ≥ 3 with no defect of that kind named. Advisory; routed to a second reader.*");
             }
+            if (supportedAccusations.Count > 0)
+            {
+                sb.AppendLine($"- **Supported Accusations:** {supportedAccusations.Count} ({string.Join(", ", supportedAccusations.Select(s => $"Q{s.Answer.OrderIndex}").Distinct())}) — *a sentence the assessor quoted when it docked Accuracy was checked by the claim verifier and supported. The harness finds only accusations the assessor quoted, so this is a bounded count. Advisory; the deduction stands and no score moves.*");
+                foreach (var (ans, v) in supportedAccusations)
+                {
+                    sb.AppendLine($"  - **Q{ans.OrderIndex}:** a sentence the assessor charged as false was checked by the claim verifier and **supported** — \"{v.Claim}\" ({v.Citation}).");
+                }
+            }
             if (refutedAnswers.Count > 0)
             {
                 sb.AppendLine();
@@ -1992,9 +2137,10 @@ public static class BenchmarkReportBuilder
                         var vers = JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(ans.ClaimVerificationJson!, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                         if (vers != null)
                         {
-                            // The out-of-rubric basis is the assessor's statement, not a claim of
-                            // the answer; a refutation of it is reported as a contested deduction.
-                            foreach (var v in BenchmarkService.WithoutOutOfRubricBasis(vers, BenchmarkService.OutOfRubricBasisOf(ans))
+                            // The out-of-rubric basis, the critical-error quote and an accused
+                            // sentence are the assessor's statements or charges, not claims the answer
+                            // left unverified; a refutation of any of them is reported elsewhere.
+                            foreach (var v in BenchmarkService.OrdinaryClaimVerifications(vers, ans)
                                          .Where(x => x.Verdict == BenchmarkClaimVerdict.Refuted))
                             {
                                 sb.AppendLine($"- **Q{ans.OrderIndex}:** \"{v.Claim}\"");
@@ -2474,6 +2620,24 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Tool Call Outcomes:** {succeededCalls} succeeded, {failedCalls} failed, {refusedCalls} refused by budget. " +
                 "*A failed call is one that ran and did not complete — most commonly a JSON result over the result cap, which `ToolExecutor` converts into an error telling the model to narrow its query. It appears in no tool-name count in the table below, which is why the outcome split is stated separately from the profile: a model that repeatedly over-fetched leaves the profile looking sparse rather than looking wasteful. A refused call ran no tool code at all — its budget was already spent when it was emitted.*");
 
+            // What the successful calls returned, read from the stored rows by
+            // BenchmarkToolResultClassifier. A payload the retention sweep nulled is neither a hit
+            // nor a miss, so it is counted apart rather than in either figure.
+            var toolResults = BenchmarkToolResultClassifier.Summarize(answers.SelectMany(a => a.ToolCalls));
+            static string ToolTally(IReadOnlyList<KeyValuePair<string, int>> byTool) =>
+                string.Join(", ", byTool.Select(kv => $"`{kv.Key}` ×{Inv(kv.Value)}"));
+            string notFoundTools = toolResults.NotFoundByTool.Count > 0
+                ? $" ({ToolTally(toolResults.NotFoundByTool)})"
+                : string.Empty;
+            string failedNotFound = toolResults.FailedNotFound > 0
+                ? $"; plus {toolResults.FailedNotFound} failed call(s) whose error is a not-found ({ToolTally(toolResults.FailedNotFoundByTool)})"
+                : string.Empty;
+            sb.AppendLine($"- **Not-found results:** {toolResults.NotFound} of {toolResults.InspectableSuccessful} inspectable successful payloads{notFoundTools}{failedNotFound}; {toolResults.Unavailable} payloads unavailable.");
+            // AgentLoopRunner stores a result before the batch budget and the turn limit cut it, so
+            // those two cuts never reach a stored row: they are not recorded, which is not zero.
+            sb.AppendLine($"- **Cut before the model saw it:** {toolResults.PerToolCap} by the per-tool cap; batch budget and turn limit not recorded. **Cut in the stored record only:** {toolResults.RecordCut}. " +
+                "*A result is stored before the batch budget and the turn limit apply, so a cut by either is invisible in the stored rows.*");
+
             // Over the answers that actually called tools, not over every question: a question that
             // called none has no rounds, and averaging its absence in would report the run as more
             // batched than it was.
@@ -2769,12 +2933,13 @@ public static class BenchmarkReportBuilder
             // game source — and live behind the per-answer admin endpoint and the tool-call log
             // export instead. The result column carries ResultLengthChars — the true size the tool
             // produced, before any cap — so an over-large or truncated payload is visible as a
-            // number without a character of it being quoted here.
+            // number without a character of it being quoted here. The Note column carries
+            // BenchmarkToolResultClassifier's fixed vocabulary, which needs no escaping.
             if (a.ToolCalls.Count > 0)
             {
                 sb.AppendLine();
-                sb.AppendLine("| Round | Tool | Args | Status | Exec (ms) | Result Size |");
-                sb.AppendLine("|------:|------|------|--------|----------:|------------:|");
+                sb.AppendLine("| Round | Tool | Args | Status | Exec (ms) | Result Size | Note |");
+                sb.AppendLine("|------:|------|------|--------|----------:|------------:|------|");
                 foreach (var call in a.ToolCalls.OrderBy(c => c.SortOrder))
                 {
                     string round = call.IterationIndex.HasValue ? Inv(call.IterationIndex.Value) : "N/A";
@@ -2785,7 +2950,8 @@ public static class BenchmarkReportBuilder
                     string resultSize = call.ResultLengthChars > 0
                         ? $"{Inv(call.ResultLengthChars, "N0")} chars"
                         : "—";
-                    sb.AppendLine($"| {round} | {toolName} | {args} | {status} | {execMs} | {resultSize} |");
+                    string callNote = BenchmarkToolResultClassifier.Note(call);
+                    sb.AppendLine($"| {round} | {toolName} | {args} | {status} | {execMs} | {resultSize} | {callNote} |");
                 }
             }
 
@@ -2919,6 +3085,10 @@ public static class BenchmarkReportBuilder
                         {
                             flaggedDims.Add($"Accuracy to {a.AccuracyLevel.Value}/6 while its stated evidence rests only on claims it could not verify, which scoring method v7 does not permit as an accuracy deduction");
                         }
+                        else if (BenchmarkVerdictConsistency.IsPrecisionGroundedAccuracyDeduction(a.AccuracyLevel.Value, accuracyEvidence))
+                        {
+                            flaggedDims.Add($"Accuracy to {a.AccuracyLevel.Value}/6 while its stated evidence withholds the level for missing precision, nuance or depth rather than naming a statement that is wrong or imprecise");
+                        }
                     }
                     if (a.CompletenessLevel.HasValue && a.CompletenessLevel.Value <= BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel && BenchmarkVerdictConsistency.IsNoFaultEvidence(completenessEvidence))
                     {
@@ -2932,7 +3102,7 @@ public static class BenchmarkReportBuilder
                     }
                     else
                     {
-                        sb.AppendLine("> - **Harness note:** the assessor docked a level while its stated evidence names no defect, or rests only on unverifiability. Advisory: the verdict stands and this did not change the score.");
+                        sb.AppendLine("> - **Harness note:** the assessor docked a level while its stated evidence names no defect, rests only on unverifiability, or withholds Accuracy for missing precision. Advisory: the verdict stands and this did not change the score.");
                     }
                 }
                 if (a.SecondOpinionQualityScore.HasValue)
@@ -2961,12 +3131,13 @@ public static class BenchmarkReportBuilder
                     int iCount = a.ClaimsIndeterminateCount ?? 0;
                     sb.AppendLine($"> - **Claim Verification ({verifierName}):** {sCount} supported, {rCount} refuted, {iCount} indeterminate — *checked against source/wiki; advisory, not reflected in the score.*");
                 }
+                foreach (var accusation in SupportedAccusationsOf(a))
+                {
+                    sb.AppendLine($"> - **Supported accusation:** a sentence the assessor charged as false was checked by the claim verifier and **supported** — \"{accusation.Claim}\" ({accusation.Citation}). *Advisory; the deduction stands.*");
+                }
                 if (a.EvidenceInformedQualityScore.HasValue)
                 {
-                    string regrader = ReadJsonString(a.EvidenceInformedJson, "assessor") ?? a.AssessedByModelDisplayNameUsed ?? "assessor";
-                    var withdrawn = BenchmarkService.ReadEvidenceInformedWithdrawn(a.EvidenceInformedJson);
-                    string withdrew = withdrawn.Count > 0 ? string.Join("; ", withdrawn) : "nothing";
-                    sb.AppendLine($"> - **Evidence-informed re-grade ({regrader}):** {a.EvidenceInformedQualityScore.Value} / 100, critical error {(a.EvidenceInformedCriticalError == true ? "yes" : "no")} — withdrew: {withdrew}. *Advisory; the first verdict is what scored.*");
+                    sb.AppendLine($"> - {EvidenceInformedRegradeLine(run, a)}");
                 }
                 if (a.AssessedByModelConfigurationId.HasValue &&
                     a.AssessedByModelConfigurationId != run.AssessorModelConfigurationId)
@@ -3324,9 +3495,10 @@ public static class BenchmarkReportBuilder
         {
             sb.AppendLine($"### FORM-cleared Readability Sensitivity: {formClearedIndex.Value} / 100 — Intelligence Index recomputed with Readability one level higher on the {formClearedAnswers.Count} answer(s) whose only Readability basis was a rubric FORM suggestion; advisory, changes no score.");
         }
-        if (evidenceInformedIndex.HasValue)
+        // Likewise the same value and clause as § 2, from the same variables.
+        if (evidenceInformedClause != null)
         {
-            sb.AppendLine($"### Evidence-informed Sensitivity: {evidenceInformedIndex.Value} / 100 — Intelligence Index recomputed with the evidence-informed score on the {evidenceInformedAnswers.Count} answer(s) re-graded with the verifier's findings in hand; advisory, changes no score.");
+            sb.AppendLine($"### {evidenceInformedClause.Replace(":**", ":", StringComparison.Ordinal)}");
         }
         // H9. The same demotion as § 2, from the same two conditions, so the headline block and the
         // summary cannot present the speed figure differently.

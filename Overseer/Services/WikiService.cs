@@ -244,7 +244,7 @@ public class WikiService : IDisposable
     /// As <see cref="GetRelevantSnippets(string, string?, int, int)"/>, and additionally reports
     /// the query's total match count through <paramref name="totalHits"/> — which may exceed
     /// <paramref name="maxResults"/> — so a caller can tell the model more articles matched than
-    /// were returned.
+    /// were returned. Results are ordered by <see cref="RankByCoverage"/>.
     /// </summary>
     public IEnumerable<string> GetRelevantSnippets(string query, string? categoryFilter, int maxResults, int perResultChars, out int totalHits)
     {
@@ -284,14 +284,19 @@ public class WikiService : IDisposable
             luceneQuery = boolQuery;
         }
 
-        var hits = searcher.Search(luceneQuery, maxResults > 0 ? maxResults : 5);
+        int resultCount = maxResults > 0 ? maxResults : 5;
+        var hits = searcher.Search(luceneQuery, resultCount);
         totalHits = hits.TotalHits;
         var results = new List<string>();
         var queryTerms = WikiSnippetExtractor.ExtractQueryTerms(query);
 
-        foreach (var hit in hits.ScoreDocs)
+        var docIds = hits.TotalHits > 0
+            ? RankByCoverage(searcher, analyzer, query, luceneQuery, resultCount, hits)
+            : new List<int>();
+
+        foreach (int docId in docIds)
         {
-            var doc = searcher.Doc(hit.Doc);
+            var doc = searcher.Doc(docId);
 
             // The path form, so a hit on Races/Gnoll is distinguishable from one on
             // Monsters/Gnoll and the header can be passed straight back to wiki_view.
@@ -301,6 +306,99 @@ public class WikiService : IDisposable
         }
 
         return results;
+    }
+
+    /// <summary>Fewest distinct query terms that coverage ranking applies to.</summary>
+    private const int CoverageMinTerms = 2;
+
+    /// <summary>Most distinct query terms that coverage ranking applies to.</summary>
+    private const int CoverageMaxTerms = 16;
+
+    /// <summary>
+    /// An uppercase AND, OR or NOT as a whole word, which <c>QueryParserBase.Escape</c> leaves in
+    /// place as a query operator.
+    /// </summary>
+    private static readonly Regex BooleanOperatorPattern = new(@"\b(?:AND|OR|NOT)\b", RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// The document ids <see cref="GetRelevantSnippets(string, string?, int, int, out int)"/>
+    /// returns, in order: articles matching more of the query's distinct analyzed terms first,
+    /// then by <paramref name="scoredQuery"/>'s own score, then by document id. Every id is a
+    /// match of <paramref name="scoredQuery"/>, category clause included. A query with fewer than
+    /// <see cref="CoverageMinTerms"/> or more than <see cref="CoverageMaxTerms"/> distinct terms,
+    /// or one carrying an uppercase operator, keeps <paramref name="scoredHits"/>' score order.
+    /// </summary>
+    private static List<int> RankByCoverage(IndexSearcher searcher, Analyzer analyzer, string query, Query scoredQuery, int maxResults, TopDocs scoredHits)
+    {
+        var scoredOrder = scoredHits.ScoreDocs.Select(hit => hit.Doc).ToList();
+        if (BooleanOperatorPattern.IsMatch(query)) return scoredOrder;
+
+        var terms = AnalyzeDistinctTerms(analyzer, query);
+        if (terms.Count < CoverageMinTerms || terms.Count > CoverageMaxTerms) return scoredOrder;
+
+        // One group per term, so a term found in both the title and the body counts once.
+        var groups = terms.Select(term =>
+        {
+            var group = new BooleanQuery();
+            group.Add(new TermQuery(new Term("title", term)), Occur.SHOULD);
+            group.Add(new TermQuery(new Term("content", term)), Occur.SHOULD);
+            return group;
+        }).ToList();
+
+        var selected = new List<int>(maxResults);
+        var seen = new HashSet<int>();
+
+        // Tier k holds the articles matching at least k groups. The filter does not score, so
+        // each tier is ordered by the scored query's original score.
+        for (int k = terms.Count; k >= 1 && selected.Count < maxResults; k--)
+        {
+            var coverage = new BooleanQuery { MinimumNumberShouldMatch = k };
+            foreach (var group in groups)
+            {
+                coverage.Add(group, Occur.SHOULD);
+            }
+
+            var tierHits = searcher.Search(scoredQuery, new QueryWrapperFilter(coverage), maxResults);
+            foreach (var hit in tierHits.ScoreDocs)
+            {
+                if (selected.Count >= maxResults) break;
+                if (seen.Add(hit.Doc)) selected.Add(hit.Doc);
+            }
+        }
+
+        // A scored match no tier reached, where the query parser split the raw query into
+        // different tokens than the analyzer alone did.
+        foreach (int docId in scoredOrder)
+        {
+            if (selected.Count >= maxResults) break;
+            if (seen.Add(docId)) selected.Add(docId);
+        }
+
+        return selected;
+    }
+
+    /// <summary>
+    /// The query's distinct terms as the index's analyzer produces them — lowercased, stop words
+    /// removed, Porter-stemmed — in first-occurrence order.
+    /// </summary>
+    private static List<string> AnalyzeDistinctTerms(Analyzer analyzer, string query)
+    {
+        var terms = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        using (var stream = analyzer.GetTokenStream("content", query))
+        {
+            var termAttribute = stream.AddAttribute<Lucene.Net.Analysis.TokenAttributes.ICharTermAttribute>();
+            stream.Reset();
+            while (stream.IncrementToken())
+            {
+                string term = termAttribute.ToString();
+                if (term.Length > 0 && seen.Add(term)) terms.Add(term);
+            }
+            stream.End();
+        }
+
+        return terms;
     }
 
     /// <summary>The indexed extensions an article request may carry.</summary>

@@ -304,6 +304,29 @@ Spell{i} requires no material components to cast.
         Assert.DoesNotContain("Showing", result.Content);
     }
 
+    [Fact]
+    public async Task WikiSearchTool_TwoTermQuery_BodyMatchOnBothOutranksTitleMatchOnOne_CountUnchanged()
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new WikiSearchTool(service, BuildConfig());
+
+        // Spell1-7 carry both "material" and "components" in the body; Object Materials.md
+        // carries only "material", in its boosted title. The count stays the eight articles that
+        // match either word.
+        var jsonParams = JsonDocument.Parse("{\"query\": \"material components\", \"max_results\": 3}").RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        var headers = System.Text.RegularExpressions.Regex.Matches(result.Content!, @"(?m)^--- (.+?) ---\r?$")
+            .Select(m => m.Groups[1].Value)
+            .ToList();
+        Assert.Equal(3, headers.Count);
+        Assert.All(headers, h => Assert.StartsWith("Spells/Spell", h));
+        Assert.DoesNotContain("--- Object Materials.md ---", result.Content);
+        Assert.Contains("[Showing 3 of 8 matching articles", result.Content);
+    }
+
     // ----- wiki_view -----
 
     [Fact]
@@ -800,5 +823,242 @@ Every sokobanboulderpuzzle has exactly one solution that does not waste a boulde
         string? content = await SearchAsync("sokoban", "spell");
 
         Assert.Contains("No GnollHack wiki article matched", content);
+    }
+}
+
+/// <summary>
+/// Covers the order GetRelevantSnippets returns articles in: those matching more of the query's
+/// distinct analyzed terms first, then by the original title-boosted score, with the reported
+/// total left as the whole query's match count. Its corpus is its own, so the counts the other
+/// classes pin are untouched. GetRelevantContext runs the same parsed query in plain score order
+/// and serves as the reference for the queries that keep that order.
+/// </summary>
+public class WikiSearchCoverageRankingTests : IDisposable
+{
+    private readonly string _tempDir;
+
+    public WikiSearchCoverageRankingTests()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), "WikiSearchCoverageRankingTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_tempDir);
+
+        // "brass lantern oil refill": three of the four words in Lighting's body, two in Oil
+        // Flask's (one of them also its title) and one in Brass's, where it is also the title.
+        Write("Guides/Lighting.md", "A lantern burns oil; refill it before it runs dry.\n");
+        Write("Items/Oil Flask.md", "A flask of oil for a lantern.\n");
+        Write("Items/Brass.md", "Brass is a yellowish alloy.\n");
+
+        // "rune runes rune ward": Runes carries one distinct term, however often it is repeated.
+        Write("Runes.md", "Runes are carved symbols. A rune glows faintly when read.\n");
+        Write("Guides/Warding.md", "A ward is drawn around a single rune.\n");
+
+        // "anvil forge": Anvil carries one term in both its title and its body.
+        Write("Items/Anvil.md", "An anvil is a heavy block of iron.\n");
+        Write("Guides/Smithy.md", "The forge stands beside the anvil.\n");
+
+        // "honey smoke hive": a held-out topic.
+        Write("Guides/Beekeeping.md", "Calm the hive with smoke before taking honey from it.\n");
+        Write("Items/Honey.md", "Honey is sweet and never spoils.\n");
+    }
+
+    private void Write(string relativePath, string content)
+    {
+        string fullPath = Path.Combine(_tempDir, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        File.WriteAllText(fullPath, content);
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_tempDir))
+        {
+            try
+            {
+                Directory.Delete(_tempDir, true);
+            }
+            catch { }
+        }
+    }
+
+    private IConfiguration BuildConfig()
+    {
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(new List<KeyValuePair<string, string?>> { new("WikiPath", _tempDir) })
+            .Build();
+    }
+
+    private async Task<WikiService> CreateServiceAsync()
+    {
+        var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        return service;
+    }
+
+    /// <summary>The "--- X ---" header of each result, in order.</summary>
+    private static List<string> Headers(IEnumerable<string> results)
+    {
+        return results
+            .Select(r => System.Text.RegularExpressions.Regex.Match(r, @"^--- (.+?) ---"))
+            .Where(m => m.Success)
+            .Select(m => m.Groups[1].Value)
+            .ToList();
+    }
+
+    private static string FileName(string header) => header.Substring(header.LastIndexOf('/') + 1);
+
+    /// <summary>The same parsed query's plain score order, as file names.</summary>
+    private static List<string> ScoreOrder(WikiService service, string query, string? category = null)
+    {
+        return Headers(service.GetRelevantContext(query, category, 5));
+    }
+
+    private static string Fillers(int count)
+    {
+        return string.Join(" ", Enumerable.Range(0, count).Select(i => "zq" + (char)('a' + i)));
+    }
+
+    [Fact]
+    public async Task ThreeOfFourTermsInBody_OutrankATitleMatchOnOneTerm()
+    {
+        using var service = await CreateServiceAsync();
+
+        var results = service.GetRelevantSnippets("brass lantern oil refill", null, 5, 2500, out int totalHits).ToList();
+
+        Assert.Equal(new[] { "Guides/Lighting.md", "Items/Oil Flask.md", "Items/Brass.md" }, Headers(results));
+        Assert.Equal(3, totalHits);
+
+        // Score order alone, with the title boost, does not put Lighting first.
+        Assert.NotEqual("Lighting.md", ScoreOrder(service, "brass lantern oil refill")[0]);
+    }
+
+    [Fact]
+    public async Task TotalHits_StaysTheWholeQueryMatchCount_WhenFewerAreReturned()
+    {
+        using var service = await CreateServiceAsync();
+
+        var results = service.GetRelevantSnippets("brass lantern oil refill", null, 1, 2500, out int totalHits).ToList();
+
+        Assert.Equal(new[] { "Guides/Lighting.md" }, Headers(results));
+        Assert.Equal(3, totalHits);
+    }
+
+    [Fact]
+    public async Task RepeatedAndStemEquivalentWords_CountOnce()
+    {
+        using var service = await CreateServiceAsync();
+
+        var results = service.GetRelevantSnippets("rune runes rune ward", null, 5, 2500, out int totalHits).ToList();
+
+        Assert.Equal(new[] { "Guides/Warding.md", "Runes.md" }, Headers(results));
+        Assert.Equal(2, totalHits);
+    }
+
+    [Fact]
+    public async Task TermInTitleAndBody_CountsOnce()
+    {
+        using var service = await CreateServiceAsync();
+
+        var results = service.GetRelevantSnippets("anvil forge", null, 5, 2500, out int totalHits).ToList();
+
+        Assert.Equal(new[] { "Guides/Smithy.md", "Items/Anvil.md" }, Headers(results));
+        Assert.Equal(2, totalHits);
+    }
+
+    [Fact]
+    public async Task StopWordOnlyQuery_ReturnsNothing()
+    {
+        using var service = await CreateServiceAsync();
+
+        var results = service.GetRelevantSnippets("the of and", null, 5, 2500, out int totalHits).ToList();
+
+        Assert.Empty(results);
+        Assert.Equal(0, totalHits);
+    }
+
+    [Fact]
+    public async Task OneTermLeftAfterStopWords_KeepsScoreOrder()
+    {
+        using var service = await CreateServiceAsync();
+
+        var results = service.GetRelevantSnippets("the lantern", null, 5, 2500, out _).ToList();
+
+        Assert.Equal(ScoreOrder(service, "the lantern"), Headers(results).Select(FileName).ToList());
+    }
+
+    [Fact]
+    public async Task SixteenDistinctTerms_AreRankedByCoverage()
+    {
+        using var service = await CreateServiceAsync();
+
+        // Four matching terms and twelve that match nothing.
+        string query = "brass lantern oil refill " + Fillers(12);
+        var results = service.GetRelevantSnippets(query, null, 5, 2500, out int totalHits).ToList();
+
+        Assert.Equal(new[] { "Guides/Lighting.md", "Items/Oil Flask.md", "Items/Brass.md" }, Headers(results));
+        Assert.Equal(3, totalHits);
+    }
+
+    [Fact]
+    public async Task SeventeenDistinctTerms_KeepScoreOrder()
+    {
+        using var service = await CreateServiceAsync();
+
+        string query = "brass lantern oil refill " + Fillers(13);
+        var results = service.GetRelevantSnippets(query, null, 5, 2500, out int totalHits).ToList();
+        var scoreOrder = ScoreOrder(service, query);
+
+        Assert.Equal(scoreOrder, Headers(results).Select(FileName).ToList());
+        Assert.NotEqual("Lighting.md", scoreOrder[0]);
+        Assert.Equal(3, totalHits);
+    }
+
+    [Fact]
+    public async Task UppercaseNot_KeepsScoreOrder()
+    {
+        using var service = await CreateServiceAsync();
+
+        string query = "brass lantern oil refill NOT soot";
+        var results = service.GetRelevantSnippets(query, null, 5, 2500, out _).ToList();
+        var scoreOrder = ScoreOrder(service, query);
+
+        Assert.Equal(scoreOrder, Headers(results).Select(FileName).ToList());
+        Assert.NotEqual("Lighting.md", scoreOrder[0]);
+    }
+
+    [Fact]
+    public async Task Category_AppliesInEveryTier()
+    {
+        using var service = await CreateServiceAsync();
+
+        // Lighting covers the most terms but sits outside Items/.
+        var results = service.GetRelevantSnippets("brass lantern oil refill", "items", 5, 2500, out int totalHits).ToList();
+
+        Assert.Equal(new[] { "Items/Oil Flask.md", "Items/Brass.md" }, Headers(results));
+        Assert.Equal(2, totalHits);
+    }
+
+    [Fact]
+    public async Task WikiViewMissProbe_ListsTheFullerMatchFirst()
+    {
+        using var service = await CreateServiceAsync();
+        var tool = new WikiViewTool(service);
+
+        string content = tool.BuildMissContent("brass lantern oil refill", null);
+
+        int lighting = content.IndexOf("Guides/Lighting.md", StringComparison.Ordinal);
+        int brass = content.IndexOf("Items/Brass.md", StringComparison.Ordinal);
+        Assert.True(lighting >= 0, content);
+        Assert.True(brass > lighting, content);
+    }
+
+    [Fact]
+    public async Task HeldOutTopic_FullerBodyMatchOutranksTitleMatch()
+    {
+        using var service = await CreateServiceAsync();
+
+        var results = service.GetRelevantSnippets("honey smoke hive", null, 5, 2500, out int totalHits).ToList();
+
+        Assert.Equal(new[] { "Guides/Beekeeping.md", "Items/Honey.md" }, Headers(results));
+        Assert.Equal(2, totalHits);
     }
 }

@@ -85,7 +85,9 @@ public class BenchmarkPerQuestionAssessmentResult
     /// <summary>
     /// The assessor docked accuracy or completeness to UnevidencedDeductionMaxLevel or below while
     /// its stated evidence for that dimension names no defect. Advisory; see
-    /// <see cref="BenchmarkVerdictConsistency.HasUnevidencedDeduction"/>.
+    /// <see cref="BenchmarkVerdictConsistency.HasUnevidencedDeduction"/>,
+    /// <see cref="BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction"/> and
+    /// <see cref="BenchmarkVerdictConsistency.IsPrecisionGroundedAccuracyDeduction"/>.
     /// </summary>
     [JsonIgnore]
     public bool UnevidencedDeduction { get; set; }
@@ -357,10 +359,14 @@ public static class BenchmarkAssessmentParser
             // Same treatment — recorded, routed to a second reader, never applied to the score.
             bool unverifiabilityGroundedDeduction = BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
                 Math.Clamp(accuracyLevel, 0, 6), accuracyEvidence, unverifiedClaims.Count);
+            // Accuracy withheld for missing precision or depth, at any unverified-claim count.
+            bool precisionGroundedDeduction = BenchmarkVerdictConsistency.IsPrecisionGroundedAccuracyDeduction(
+                Math.Clamp(accuracyLevel, 0, 6), accuracyEvidence);
             bool unevidencedDeduction = BenchmarkVerdictConsistency.HasUnevidencedDeduction(
                 Math.Clamp(accuracyLevel, 0, 6), accuracyEvidence,
                 Math.Clamp(completenessLevel, 0, 6), completenessEvidence)
-                || unverifiabilityGroundedDeduction;
+                || unverifiabilityGroundedDeduction
+                || precisionGroundedDeduction;
 
             bool omissionAsAccuracy = BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
                 Math.Clamp(accuracyLevel, 0, 6), accuracyEvidence);

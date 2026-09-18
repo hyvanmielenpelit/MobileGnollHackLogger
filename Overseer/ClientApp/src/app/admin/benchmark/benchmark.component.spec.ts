@@ -4252,6 +4252,51 @@ describe('AdminBenchmarkComponent', () => {
       expect(pills[2].classList.contains('verdict-refuted')).toBeFalse();
     });
 
+    function renderClaimVerifications(claimVerificationJson: string): HTMLElement {
+      const answer: any = {
+        id: 1, orderIndex: 1, questionText: 'Q1', difficulty: 1, answerText: 'a',
+        status: 'Ok', assessmentStatus: 'Scored', durationMs: 1, modelTimeMs: 1,
+        scrubbedArtifactCount: 0, answerFlags: 0, answerFlagNames: [], qualityScore: 80,
+        claimVerificationJson
+      };
+      component.selectedRunDetail = buildFinishedRun({ answers: [answer] });
+      fixture.detectChanges();
+      (fixture.nativeElement.querySelector('.question-card-header') as HTMLElement).click();
+      fixture.detectChanges();
+      return fixture.nativeElement.querySelector('.claim-verification-box') as HTMLElement;
+    }
+
+    it('should label the entries the harness sent to check the assessor', () => {
+      const box = renderClaimVerifications(JSON.stringify([
+        { claimIndex: 0, claim: 'Quoted as critical', verdict: 'Supported', citation: 'src/a.c', basis: 'True.', roles: ['criticalErrorQuote'] },
+        { claimIndex: 1, claim: 'Charged as false', verdict: 'Supported', citation: 'src/b.c', basis: 'True.', roles: ['accusedQuote'] },
+        { claimIndex: 2, claim: 'Unverified and charged', verdict: 'Refuted', citation: 'src/c.c', basis: 'False.', roles: ['unverifiedClaim', 'accusedQuote'] },
+        { claimIndex: 3, claim: 'Own claim', verdict: 'Indeterminate', citation: null, basis: 'Unknown.', roles: ['unverifiedClaim'] }
+      ]));
+
+      expect(box).toBeTruthy();
+      const items: HTMLElement[] = Array.from(box.querySelectorAll('.claim-verification-item'));
+      expect(items.length).toBe(4);
+      const labelsOf = (item: HTMLElement) =>
+        Array.from(item.querySelectorAll('.claim-role-label')).map(l => (l.textContent || '').trim());
+      expect(labelsOf(items[0])).toEqual(['(critical-error quote)']);
+      expect(labelsOf(items[1])).toEqual(['(sentence the assessor charged as false)']);
+      expect(labelsOf(items[2])).toEqual(['(sentence the assessor charged as false)']);
+      expect(labelsOf(items[3])).toEqual([]);
+      expect(box.querySelector('.claim-roles-note')).toBeTruthy();
+    });
+
+    it('should render a legacy verification record without roles and without labels', () => {
+      const box = renderClaimVerifications(JSON.stringify([
+        { claimIndex: 0, claim: 'Claim 1', verdict: 'Supported', citation: 'src/a.c', basis: 'Valid.' }
+      ]));
+
+      expect(box).toBeTruthy();
+      expect(box.querySelectorAll('.claim-verification-item').length).toBe(1);
+      expect(box.querySelectorAll('.claim-role-label').length).toBe(0);
+      expect(box.querySelector('.claim-roles-note')).toBeNull();
+    });
+
     describe('Band drift', () => {
       function bandedAnswer(orderIndex: number, difficulty: number, assessedDifficulty: number): any {
         return {

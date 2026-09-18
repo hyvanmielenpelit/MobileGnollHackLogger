@@ -523,6 +523,31 @@ public class BenchmarkVerdictConsistencyTests
         Assert.False(BenchmarkVerdictConsistency.SynthesisClaimsNoFactualErrors(synthesis));
     }
 
+    [Theory]
+    // Run 53's admissions: each sentence also matches the "confined to ... omissions" claim, and
+    // must be disqualified by what it admits.
+    [InlineData("The run is not factually clean: its weaknesses were not confined to omissions.")]
+    [InlineData("The run cannot be characterized as factually clean; weaknesses were confined to omissions elsewhere.")]
+    [InlineData("The run can't be described as factually clean, although most weaknesses were confined to omissions.")]
+    [InlineData("The run cannot be described as free of factual errors, though several weaknesses were confined to omissions.")]
+    [InlineData("Weaknesses were not confined to omissions.")]
+    [InlineData("Weaknesses were not confined to minor secondary omissions.")]
+    public void SynthesisClaimsNoFactualErrors_DoesNotFireOnRun53Admissions(string synthesis)
+    {
+        Assert.False(BenchmarkVerdictConsistency.SynthesisClaimsNoFactualErrors(synthesis));
+    }
+
+    [Fact]
+    public void SynthesisClaimsNoFactualErrors_NotConfinedToANonOmissionObject_IsNotAnAdmission()
+    {
+        // "not confined to" admits factual errors only when its object is omissions; here it
+        // describes a place, and the same sentence then makes the no-factual-errors claim.
+        const string synthesis =
+            "The model's knowledge was not confined to this dungeon, and its weaknesses were confined to minor omissions.";
+
+        Assert.True(BenchmarkVerdictConsistency.SynthesisClaimsNoFactualErrors(synthesis));
+    }
+
     [Fact]
     public void SynthesisClaimsNoFactualErrors_DoesNotReachAcrossSentences()
     {
@@ -620,9 +645,9 @@ public class BenchmarkVerdictConsistencyTests
     [Fact]
     public void NamesAnAccuracyDefect_DenialAlongsideAFalsehood_StillFlags()
     {
-        // FalsehoodRegex takes precedence over the denial, exactly as it does over
-        // OmissionRegex in IsOmissionGroundedAccuracyDeduction: a denial paired with an
-        // assertion that the answer stated something untrue still names a defect.
+        // The denial clause is stripped before the falsehood test, and the concession that follows
+        // it still charges a defect: a denial paired with an assertion that the answer stated
+        // something untrue still names one.
         const string evidence = "no contradictions, but states the level as 40 when it is 25";
         Assert.True(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(5, evidence));
     }
@@ -668,21 +693,32 @@ public class BenchmarkVerdictConsistencyTests
     }
 
     [Theory]
-    // These three DefectDenialRegex alternatives share a root with an existing FalsehoodRegex
-    // alternative — "contradic" with "contradiction(s)"/"contradicted claims", "\bfalse" with
-    // "false statements", "misstat" with "misstatements" — so evidence built from them always
-    // also matches FalsehoodRegex, and the precedence rule then names a defect regardless of
-    // whether a second, unrelated defect is actually present. DefectDenialRegex still recognises
-    // the phrase; the override just never yields for it. No regression: this is exactly the
-    // pre-existing behaviour for these three phrases before DefectDenialRegex existed.
+    // These DefectDenialRegex alternatives share a root with a FalsehoodRegex alternative —
+    // "contradic", "\bfalse", "misstat". The denial clause is stripped before the falsehood test,
+    // so the shared root inside the denial no longer reads as a charge.
     [InlineData("no contradiction")]
     [InlineData("no contradictions")]
     [InlineData("no contradicted claims")]
     [InlineData("no false statements")]
     [InlineData("no misstatements")]
-    public void NamesAnAccuracyDefect_DenialSharingAFalsehoodRoot_StillFlags(string denial)
+    [InlineData("no falsehood")]
+    [InlineData("no false claims")]
+    [InlineData("no false claims identified")]
+    [InlineData("no adjudicable falsehood")]
+    public void NamesAnAccuracyDefect_DenialSharingAFalsehoodRoot_DoesNotFlag(string denial)
     {
         string evidence = $"Reviewed against the rubric point by point, {denial} were found in the answer.";
+        Assert.False(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(5, evidence));
+    }
+
+    [Theory]
+    [InlineData("No false claims identified; the answer wrongly gives the prayer timeout as 50 turns.")]
+    [InlineData("No false claims found. The answer incorrectly says the Grail can be invoked by any role.")]
+    [InlineData("No contradictions in the table; it hallucinates a sixth alignment.")]
+    public void NamesAnAccuracyDefect_DenialFollowedByAnAffirmativeFalsehood_StillFlags(string evidence)
+    {
+        // Only the denial clause is stripped, never its sentence, so a falsehood charged after it
+        // still counts.
         Assert.True(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(5, evidence));
     }
 
@@ -857,5 +893,118 @@ public class BenchmarkVerdictConsistencyTests
             concisenessLevel: 0,
             readabilityLevel: 0,
             comment: null));
+    }
+
+    // -------------------------------------------------------------------------------------
+    // The Accuracy precision rule: a level below 6 withheld for missing precision, nuance or
+    // depth rather than for a statement the answer makes. Run 53's Q9 and Q14 shapes, which
+    // the unverifiability detector cannot see because it needs an unverified claim.
+    // -------------------------------------------------------------------------------------
+
+    private const string Run53Q9Evidence =
+        "Accuracy is held at 4 rather than 6 because the answer lacks the source-level precision the rubric's formula implies: it describes the to-hit bonus qualitatively and gives no d20 comparison.";
+
+    private const string Run53Q14Evidence =
+        "Every stated effect of the Holy Grail is consistent with the artifact entry, but the explanation does not reach source-level precision on how the healing amount scales with blessed status.";
+
+    private const string MixedEvidenceWithFalsehood =
+        "Accuracy is held at 4 rather than 6: the answer lacks the source-level precision of the healing formula, and it incorrectly states that any role can invoke the Grail.";
+
+    [Theory]
+    [InlineData(Run53Q9Evidence, 4)]
+    [InlineData(Run53Q14Evidence, 5)]
+    [InlineData("Withheld from 6 for lack of nuance about the multishot bonus.", 5)]
+    [InlineData("No false claims identified; Accuracy is held at 5 rather than 6 because the answer lacks the nuanced precision of the source.", 5)]
+    public void IsPrecisionGroundedAccuracyDeduction_Run53Shapes_ReturnTrue(string evidence, int level)
+    {
+        Assert.True(BenchmarkVerdictConsistency.IsPrecisionGroundedAccuracyDeduction(level, evidence));
+    }
+
+    [Theory]
+    [InlineData(MixedEvidenceWithFalsehood)]
+    [InlineData("No false claims identified, but held at 5 rather than 6 because the answer wrongly gives the timeout as 50 turns.")]
+    [InlineData("Held at 4 rather than 6: the answer hallucinates a sixth alignment and lacks the source-level precision of the formula.")]
+    public void IsPrecisionGroundedAccuracyDeduction_EvidenceNamingAFalsehood_ReturnsFalse(string evidence)
+    {
+        // A concrete falsehood beside the precision phrase is a named defect, and the rule stays
+        // silent.
+        Assert.False(BenchmarkVerdictConsistency.IsPrecisionGroundedAccuracyDeduction(4, evidence));
+    }
+
+    [Fact]
+    public void IsPrecisionGroundedAccuracyDeduction_LevelSixOrMissingEvidence_ReturnsFalse()
+    {
+        Assert.False(BenchmarkVerdictConsistency.IsPrecisionGroundedAccuracyDeduction(6, Run53Q9Evidence));
+        Assert.False(BenchmarkVerdictConsistency.IsPrecisionGroundedAccuracyDeduction(4, null));
+        Assert.False(BenchmarkVerdictConsistency.IsPrecisionGroundedAccuracyDeduction(4, "   "));
+    }
+
+    [Fact]
+    public void IsPrecisionGroundedAccuracyDeduction_EvidenceWithoutAPrecisionPhrase_ReturnsFalse()
+    {
+        Assert.False(BenchmarkVerdictConsistency.IsPrecisionGroundedAccuracyDeduction(
+            5, "The answer lists Level as 40 and Hit dice as 25; his level is 25."));
+        Assert.False(BenchmarkVerdictConsistency.IsPrecisionGroundedAccuracyDeduction(
+            5, "Held at 6 rather than lower because nothing is wrong."));
+    }
+
+    [Fact]
+    public void MixedEvidenceWithFalsehood_StillNamesAnAccuracyDefect()
+    {
+        Assert.True(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(4, MixedEvidenceWithFalsehood));
+    }
+
+    [Fact]
+    public void Run53Q9Evidence_IsNotAnUnverifiabilityGroundedDeduction_AtAnyClaimCount()
+    {
+        // The gap the precision rule closes: the unverifiability detector needs an unverified
+        // claim and unverifiability vocabulary, and this evidence has neither.
+        Assert.False(BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(4, Run53Q9Evidence, 0));
+        Assert.False(BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(4, Run53Q9Evidence, 2));
+    }
+
+    private static string PrecisionVerdict(int accuracyLevel, string accuracyEvidence, string unverifiedClaimsJson)
+    {
+        string escapedEvidence = accuracyEvidence.Replace("\"", "\\\"");
+        return $$"""
+        {
+          "accuracyLevel": {{accuracyLevel}},
+          "completenessLevel": 6,
+          "concisenessLevel": 6,
+          "readabilityLevel": 6,
+          "criticalError": false,
+          "criticalErrorQuote": null,
+          "unverifiedClaims": {{unverifiedClaimsJson}},
+          "accuracyEvidence": "{{escapedEvidence}}",
+          "completenessEvidence": "Matches rubric.",
+          "comment": "A clear answer."
+        }
+        """;
+    }
+
+    [Theory]
+    [InlineData(Run53Q9Evidence, 4, "[]")]
+    [InlineData(Run53Q9Evidence, 4, """["The to-hit bonus is added to a d20 roll."]""")]
+    [InlineData(Run53Q14Evidence, 5, "[]")]
+    [InlineData(Run53Q14Evidence, 5, """["Blessed status doubles the healing.", "The Grail heals fully when invoked."]""")]
+    public void Parser_SetsUnevidencedDeduction_ForAPrecisionOnlyDeduction_AtAnyUnverifiedClaimCount(
+        string evidence, int level, string unverifiedClaimsJson)
+    {
+        // No graded answer text is passed, so the unverified claims are taken as given.
+        var parsed = BenchmarkAssessmentParser.ParsePerQuestion(PrecisionVerdict(level, evidence, unverifiedClaimsJson));
+
+        Assert.True(parsed.Success);
+        Assert.True(parsed.Result!.UnevidencedDeduction);
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("""["The Grail heals fully when invoked."]""")]
+    public void Parser_DoesNotSetUnevidencedDeduction_WhenTheEvidenceNamesAFalsehood(string unverifiedClaimsJson)
+    {
+        var parsed = BenchmarkAssessmentParser.ParsePerQuestion(PrecisionVerdict(4, MixedEvidenceWithFalsehood, unverifiedClaimsJson));
+
+        Assert.True(parsed.Success);
+        Assert.False(parsed.Result!.UnevidencedDeduction);
     }
 }

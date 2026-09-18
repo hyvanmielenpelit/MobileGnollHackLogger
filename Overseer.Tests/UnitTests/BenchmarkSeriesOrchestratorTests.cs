@@ -551,6 +551,75 @@ public class BenchmarkSeriesOrchestratorTests
         Assert.Equal(BenchmarkSeriesStartOutcome.Started, result.Outcome);
     }
 
+    private static BenchmarkRun SeriesMember(BenchmarkSuite suite, BenchmarkRunSeries series, int scoringMethod) => new()
+    {
+        BenchmarkSuiteId = suite.Id,
+        SuiteName = suite.Name,
+        TestedModelDisplayNameUsed = "Candidate",
+        TestedModelProviderUsed = "TestProvider",
+        TestedModelIdUsed = "candidate-model",
+        AssessorModelDisplayNameUsed = "Assessor",
+        AssessorModelProviderUsed = "TestProvider",
+        AssessorModelIdUsed = "assessor-model",
+        RunSeriesId = series.Id,
+        RunSeriesIndex = 1,
+        Status = BenchmarkRunStatus.Completed,
+        StartedAtUtc = DateTime.UtcNow.AddHours(-30),
+        ScoringMethodVersion = scoringMethod
+    };
+
+    /// <summary>
+    /// A member launched now is graded under this build's scoring method, so a series whose members
+    /// were graded under another one is refused, and acknowledging an instrument change does not
+    /// override it.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Resume_IsRefused_WhenAMemberWasGradedUnderAnotherScoringMethod(bool acknowledge)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var config = CreateConfig();
+        var (factory, dbName) = CreateScopeFactory(config);
+        using var db = CreateDbContext(dbName);
+        var suite = await SeedSuiteAndConfigsAsync(db);
+        var series = await SeedSeriesAsync(db, suite, BenchmarkRunSeriesStatus.Stopped);
+        db.BenchmarkRuns.Add(SeriesMember(suite, series, 10));
+        await db.SaveChangesAsync(ct);
+
+        var orchestrator = CreateOrchestrator(factory, new BenchmarkRunManager());
+
+        var result = await orchestrator.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: acknowledge, ct);
+
+        Assert.Equal(BenchmarkSeriesStartOutcome.Invalid, result.Outcome);
+        Assert.Contains("scoring method 10", result.Error);
+        Assert.Contains("Start a new series", result.Error);
+
+        using var readback = CreateDbContext(dbName);
+        var unchanged = await readback.BenchmarkRunSeries.FirstAsync(s => s.Id == series.Id, ct);
+        Assert.Equal(BenchmarkRunSeriesStatus.Stopped, unchanged.Status);
+        Assert.False(orchestrator.IsDriving(series.Id));
+    }
+
+    [Fact]
+    public async Task Resume_IsAccepted_WhenEveryMemberWasGradedUnderTheCurrentScoringMethod()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var config = CreateConfig();
+        var (factory, dbName) = CreateScopeFactory(config);
+        using var db = CreateDbContext(dbName);
+        var suite = await SeedSuiteAndConfigsAsync(db);
+        var series = await SeedSeriesAsync(db, suite, BenchmarkRunSeriesStatus.Stopped);
+        db.BenchmarkRuns.Add(SeriesMember(suite, series, BenchmarkAssessmentPrompt.ScoringMethodVersion));
+        await db.SaveChangesAsync(ct);
+
+        var orchestrator = CreateOrchestrator(factory, new BenchmarkRunManager());
+
+        var result = await orchestrator.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false, ct);
+
+        Assert.Equal(BenchmarkSeriesStartOutcome.Started, result.Outcome);
+    }
+
     /// <summary>
     /// The Tier A assertion in <c>CreateGroupForSeriesAsync</c>, tested at its decision input.
     ///

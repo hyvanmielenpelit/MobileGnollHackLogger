@@ -2314,8 +2314,8 @@
                             <span class="claim-verification-counts">
                               {{ ans.claimsSupportedCount ?? 0 }} supported, {{ ans.claimsRefutedCount ?? 0 }} refuted, {{ ans.claimsIndeterminateCount ?? 0 }} indeterminate
                             </span>
-                            @if (ans.answerFlagNames && ans.answerFlagNames.includes('ContestedAccuracyDeduction')) {
-                              <div class="text-muted text-11">One entry below is the assessor's own-knowledge basis for its Accuracy deduction, refuted by the verifier; it is not a claim of this answer and is not counted here.</div>
+                            @if (hasAdvisoryClaimRoles(verifications) || (ans.answerFlagNames && ans.answerFlagNames.includes('ContestedAccuracyDeduction'))) {
+                              <div class="text-muted text-11 claim-roles-note">Entries labelled below were sent by the harness to check the assessor — its critical-error quote, its out-of-rubric basis, or a sentence it charged as false — and are not claims the answer was marked down for leaving unverified; they are not counted here.</div>
                             }
                           </div>
                           @if (ans.claimVerificationToolCallCount != null) {
@@ -2330,6 +2330,9 @@
                                   {{ v.verdict }}
                                 </span>
                                 <span class="claim-text">“{{ v.claim }}”</span>
+                                @for (label of claimRoleLabels(v.roles); track label) {
+                                  <span class="claim-role-label text-muted text-11">({{ label }})</span>
+                                }
                               </div>
                               @if (v.citation) {
                                 <div class="claim-citation"><strong>Citation:</strong> {{ v.citation }}</div>

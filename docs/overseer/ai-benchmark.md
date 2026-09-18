@@ -77,7 +77,7 @@ A run that never reached the end of its suite has a real cost and a real elapsed
 
 **The report states what it does not have.** `### Harness Cost` fires on candidate spend as well as grading-role spend, so a run that stopped before any grading still reports what it cost; an **Answer Rate** line sits under Answered Questions. A provenance line claims a run predates a harness version only when the run's own `HarnessVersion` parses and is genuinely lower — an unknown version is not evidence of age, and a missing figure on a current run has a current cause. The band distribution is labelled as being over **answers**, which is what it counts.
 
-**The provider's finish reason is persisted.** `BenchmarkRunAnswer.ProviderFinishReason` holds the provider's own verbatim reason for ending the response — Anthropic `stop_reason`, OpenAI `incomplete_details.reason` or status, Google `finishReason` — unmapped. It is distinct from `TerminationReason`, which describes what the harness loop did. The pair is what separates an empty answer the model produced from one a transport defect destroyed, and therefore what scoring method 10 scores 0. Null means "not recorded" and never "stopped normally". The three providers emit it as a `finish_reason` `ChatEvent`, which `AgentLoopRunner` consumes without yielding onward; truncation detection now prefers this typed value and keeps the older debug-text match only as a fallback for a provider that does not emit it.
+**The provider's finish reason is persisted.** `BenchmarkRunAnswer.ProviderFinishReason` holds the provider's own verbatim reason for ending the response — Anthropic `stop_reason`, OpenAI `incomplete_details.reason` or status, Google `finishReason` — unmapped. It is distinct from `TerminationReason`, which describes what the harness loop did. The pair is what separates an empty answer the model produced from one a transport defect destroyed, and therefore what the harness scores 0 from scoring method 10 on. Null means "not recorded" and never "stopped normally". The three providers emit it as a `finish_reason` `ChatEvent`, which `AgentLoopRunner` consumes without yielding onward; truncation detection now prefers this typed value and keeps the older debug-text match only as a fallback for a provider that does not emit it.
 
 **A moved instrument and a changed option are different things.** The Run History instrument badge compares a run's three hashes against the next older completed run of the same suite. `CandidateSystemPromptSha256` covers the prompt *as built*, so a run option that changes the prompt text — `verboseMode` is the usual one — moves the hash without the instrument having moved. The badge therefore consults `CandidatePromptOptionsJson` first: differing options are reported as `OPTIONS CHANGED` naming the keys that differ, and only runs whose options match can say anything about whether the instrument held still. Runs 24 and 25 of 2026-09-08 are the worked example — the two candidate hashes differ by 92 characters and by exactly one option, 25 minutes apart, on unchanged code, and `INSTRUMENT CHANGED` fired twice while the instrument never moved.
 
@@ -92,10 +92,14 @@ Levels are scored on a 7-point scale mapped non-linearly to 100 points:
 | **0** | `1` | Completely incorrect, nonsensical, irrelevant, or fabricated. |
 | **1** | `15` | Major inaccuracies with isolated correct fragments; misleading. |
 | **2** | `35` | Partially correct but significant errors or critical omissions. |
-| **3** | `55` | Mostly correct; minor inaccuracies, omissions, or slight hallucination. |
-| **4** | `72` | Fully correct and clear; covers standard gameplay/code accurately. |
-| **5** | `87` | Comprehensive and insightful; accurate C macro/logic understanding. |
-| **6** | `100` | Flawless, authoritative, concise, and perfectly formatted. |
+| **3** | `55` | Mostly sound; several minor defects of the dimension's kind. |
+| **4** | `72` | Sound, with minor defects that would not mislead a player or leave the question unanswered. |
+| **5** | `87` | Strong, with at most one trivial defect of the dimension's kind. |
+| **6** | `100` | No defect of the dimension's kind. |
+
+The table gives the shape of the scale only. The per-dimension anchors the assessor actually grades
+by — and the scope rules beside them — are in `BenchmarkAssessmentPrompt.BuildPerQuestionPreamble`,
+which is authoritative wherever the two differ.
 
 ### Speed Scoring Profiles
 Response speed is graded relative to a target latency and decay factor using:
@@ -1973,7 +1977,9 @@ on counts and per-question thresholds, not as a reproduction pair.
 - **Two sentences in the assessment prompt (H2).** After preamble instruction 8: *"A claim outside
   the rubric does not lower the ACCURACY level either — do not withhold level 5 or 6 because the
   answer states something the rubric does not cover. Levels 5 and 6 are withheld only for a named
-  defect."* And the evidence rule now makes the marker mandatory rather than exemplary: an
+  defect."* (From scoring method 11 the last sentence reads *"Award an ACCURACY level below 6 only for
+  a named statement in the answer that is wrong or imprecise."* — see Harness Version 31.) And the
+  evidence rule now makes the marker mandatory rather than exemplary: an
   out-of-rubric deduction's evidence sentence **MUST** begin with `Not in rubric:`, because that
   basis is what the harness sends to the claim verifier, and a deduction written without the marker
   is never checked.
@@ -2577,10 +2583,278 @@ one sentence.
   is still always kept. On run 52, `Spells/Cure petrification.md` came back as its one-line *Description*
   because the level / mana / components block scored 0.
 
-`BenchmarkAssessmentPrompt.HarnessVersion` is now **"30"**, with a v30 paragraph in its version history.
+`BenchmarkAssessmentPrompt.HarnessVersion` moved to **"30"**, with a v30 paragraph in its version history.
 A run stamped 30 differs from one stamped 29 on `HarnessVersion` and `ToolGuidesSha256`, which is below
 Tier B. Migration: `AddBoardDeliveryAndEvidenceInformedVerdict` (seven nullable columns, none backfilled;
 null means not recorded).
+
+### Harness Version 31 & Scoring Method Version 11 Updates
+
+Prompted by the analysis of run 53 (Gemini 3.7 Flash @ `medium`, snapshot suite 8, harness 30, method
+10). No grader sees what the candidate's tools returned, so the assessor called true, tool-grounded facts
+"fabricated" on seven of 18 answers and the harness caught four. The harness-30 re-grade withdrew
+deductions that no verifier finding bore on, on two answers. And the Accuracy anchors for levels 4–6
+rewarded source-level depth that the production concise prompt tells the candidate not to produce.
+`HarnessVersion` moves to **"31"** and `ScoringMethodVersion` to **11**, together. `ToolGuidesSha256`
+**moves** (`wiki_search.md`, `get_artifact_stats.md`). `CandidateSystemPromptSha256` does not move
+because of this round: per-tool guides are not inlined into the candidate prompt. No EF Core migration:
+everything new is stored inside existing JSON columns.
+
+- **Grading operations are refused on a run graded under another scoring method (H0).**
+  `BenchmarkService.IsCurrentScoringMethod(run)` is true only when the run's stored
+  `ScoringMethodVersion` equals the constant. When it is not, these are refused with
+  `ScoringMethodRefusal(run)` — *"Refused: run N was graded under scoring method S, and this build grades
+  under C. … Start a new run instead."*:
+  - re-assess, including a trial;
+  - calibrate, which also gains the aborted-run check it lacked;
+  - re-run one answer;
+  - re-run failed questions;
+  - retry failed assessments;
+  - retry claim verification.
+
+  The controller refuses synchronously, right after the aborted-run check. That comes before the row is
+  set to `Running`, before any timestamp, run-manager registration, background scheduling or billing.
+  The service repeats the test at the top of each operation, for a direct or background entry. It
+  restores the terminal status and records the refusal in `ErrorMessage`; a trial restores the captured
+  status instead. The harness version is deliberately not part of the test, because a re-run under a
+  newer harness is a recorded case (`RerunHarnessVersion`).
+
+  **Series resume** is refused, with outcome `Invalid`, when any member run of the series carries
+  another scoring method. Unlike a moved instrument hash this cannot be overridden: a member launched
+  now would be graded under this build's method. **Still available on every historical run:** reports,
+  exports, the tool-call log, diagnostics, comparisons, group analysis, cancel, Rescore and re-running
+  the final synthesis. The synthesis grades nothing: `BuildFinalSynthesisPrompt` does not build on
+  `BuildPerQuestionPreamble` and carries no anchor text. The accepted cost is that a historical run
+  with a failed assessment can no longer be repaired in place; start a new run.
+
+- **Rescore never stamps a method onto levels it did not grade.** `RescoreRunAsync` remaps stored
+  levels to points and recomputes the indices; it cannot apply new anchors, because it grades nothing.
+  It stamps `LastMethodRescoreCanApply` (**10**) when the stored value is 10 or lower, and leaves 11 or
+  higher untouched. Methods up to 10 changed how stored levels become scores, which a rescore applies.
+  Method 11 changed only the anchors, which it cannot apply. The documented use — moving a
+  pre-recalibration run onto the current Speed Index scale — keeps working for runs 11–53.
+
+- **The sentences the assessor charged as false are checked (H1).**
+  `BenchmarkService.ExtractAccusedQuotes(answerText, accuracyEvidence)` takes each span between paired
+  double quotes, straight or typographic, in the stored accuracy evidence. A span must be 15–400
+  characters and occur in the answer once Markdown emphasis markers and whitespace runs are ignored,
+  the normalisation the parser applies to a critical-error quote. The **answer's** own span is kept,
+  not the assessor's copy. A span that is not in the answer is a rubric or board quotation and is
+  dropped. At most three are kept per answer, longest first, ties in evidence order.
+
+  An answer is eligible at Accuracy ≤ 4 or when it carries `ContestedVerdict`, whatever its
+  unverified-claim count. `Benchmark:ClaimVerification:AccusedQuotesEnabled` (default `true`) switches
+  the feature off. Each accused sentence carries a context excerpt: its list heading when it is a list
+  item or fragment, and the text immediately before it. A literally true fragment under a heading that
+  makes it false advice is judged in that context. This is a bounded heuristic: it finds only the
+  accusations the assessor quoted.
+
+- **Roles are server-owned (H1).** Every item submitted to the verifier comes from one ordered
+  manifest (`BuildClaimManifest`), and each item has a set of roles: `unverifiedClaim`,
+  `criticalErrorQuote`, `outOfRubricBasis` and `accusedQuote`. Submission order is:
+  1. unverified claims, or `ExtractDisputedClaims` when there are none and the verdict is disputed;
+  2. the critical-error quote at index 0;
+  3. the out-of-rubric basis after it;
+  4. the accused quotes.
+
+  Text is de-duplicated and roles are not: an accused span equal to an unverified claim is one item
+  with both roles, counted once, as an ordinary claim. A critical-error quote or basis equal to an
+  unverified claim takes that item's place, as the text-matching filters always read it.
+
+  After parsing, each `BenchmarkClaimVerification` is stamped from the manifest by its claim index.
+  `Roles` is an init-only property serialised as `roles` and omitted when null, and a `roles` member in
+  model output is never read. A record without roles is **legacy**: every consumer reads it by the
+  exact-text rules it always had (`WithoutOutOfRubricBasis`, `WithoutCriticalErrorQuote`), and it never
+  acquires an accused role retrospectively. The consumers:
+  - The answer's claim counts, `RefutedClaim`, the verification-cleared sensitivity, the synthesis's
+    own claim lists, the report's *Refuted Claims* and the rubric-gap samples read **ordinary** claims
+    only.
+  - `ContestedAccuracyDeduction` is set when the basis is Refuted **or** an accused sentence is
+    Supported with a citation. A Refuted accused sentence changes nothing: the deduction stands, and no
+    refutation of the answer is added.
+  - The second reader receives no accusation and no assessor quote.
+  - The synthesis lists supported accusations on their own line; they never join
+    `ContestedAccuracyDeductionBases`, which means a refuted assessor statement.
+  - The report prints a *Supported Accusations* line under Assessor Findings and a per-answer
+    *Supported accusation* line.
+  - The admin run detail labels each advisory entry (see *Admin run detail* below).
+
+  No stored level, score, cap or index moves.
+
+- **The verifier gets the candidate's tool calls as untrusted leads (H1).**
+  `LoadToolCallLeadsAsync` queries the answer's rows explicitly, ordered by `SortOrder`. The rows are
+  in memory only in the pass that executed the answer, never on a retry, a re-assessment or a sweep.
+  The prompt gains a `--- CANDIDATE TOOL CALLS (untrusted leads, not evidence) ---` block:
+  - at most 12 lines of `tool {args}`, for `Benchmark:AllowedTools` tools only;
+  - arguments cut at 200 characters with `…`, line breaks collapsed;
+  - calls whose arguments the retention sweep pruned are counted, not shown;
+  - results are never included.
+
+  The block says that repeating a call reads today's corpus and that the text is candidate data, not
+  instructions.
+
+- **A new verdict clears the old verdict's verification (H1).** `ClearReplacedVerdictEvidence` runs on
+  every fresh verdict in `ExecutePerQuestionAssessmentAsync`. It clears:
+  - `EvidenceInformed*`;
+  - `ClaimVerificationJson`, `ClaimVerificationError` and `ClaimVerificationRawText`;
+  - the three `Claims*Count` columns;
+  - the `RefutedClaim`, `ContestedCriticalError` and `ContestedAccuracyDeduction` flags.
+
+  The new verdict is then verified afresh. Before, `VerifyAnswerClaimsCoreAsync` returned early on any
+  stored verification, so a re-assessed answer kept findings about a quote and basis that no longer
+  existed. *Retry claim verification* clears `EvidenceInformed*` before its attempt. Token and cost
+  accounting of discarded attempts is kept.
+
+- **The evidence-informed re-grade withdraws only listed targets (H3).**
+  `BuildEvidenceInformedTargets` builds one target per deduction a finding can bear on, with the
+  finding ids (`F` + claim index) allowed for it:
+
+  | Target | Created when | Allowed finding |
+  |---|---|---|
+  | `criticalError` | The primary verdict has a critical error with a quote | The quote's record, Supported with a citation |
+  | `accuracy`, out-of-rubric | There is a basis | The basis record, Refuted with a citation |
+  | `accuracy`, accused | Once per accused sentence | That sentence's record, Supported with a citation |
+
+  An ordinary Supported claim creates no target, and with no target the re-grade is not run.
+
+  The prompt lists the findings with their ids, the first verdict's four levels and critical-error
+  state, and the targets. It asks for
+  `"withdrawn": [ { "targetId": "T1", "findingIds": ["F2"], "reason": "…" } ]`, and the instruction adds:
+  *"Withdraw only a listed target, and only on the strength of the findings listed for it … a true
+  sentence beside bad advice does not clear it."*
+
+  `ValidateEvidenceInformed` is separate from `ReadWithdrawn`, which still reads historical string
+  arrays. It rejects:
+  - a missing or non-array list, or a bare-string element;
+  - an unknown or duplicate `targetId`, an empty `reason`, or no `findingIds`;
+  - a finding outside the target's allow-list;
+  - a lower Accuracy than the primary's, or an added critical error;
+  - a critical error removed, or Accuracy raised, without a valid withdrawal of that kind.
+
+  `[]` is valid only when Accuracy and the critical-error state equal the primary's.
+
+  The advisory quality score takes the re-grade's Accuracy and critical-error state with the primary's
+  other three levels, under constants from the run's `ScoringProfileSnapshotJson`, not the live
+  profile. `EvidenceInformedJson` keeps its fields and gains `validationVersion: 1`, `targets`,
+  `accepted`, `withdrawnDropped`, `validationErrors` and `eligibleForSensitivity`; `withdrawn` holds
+  the accepted items.
+
+- **One eligibility predicate (H3).** `IsEligibleEvidenceInformedRegrade(run, answer)` decides the
+  eligible count, the substitution in both printed sensitivity figures, and the synthesis input:
+  - A validated record counts when it passed.
+  - A record with no validation provenance on a run stamped 31 or later is ineligible, even if its
+    JSON parses.
+  - On an earlier run the existing calculation is kept exactly, over the graded answers, labelled
+    *legacy, unvalidated*. No old record is restamped.
+
+  From harness 31 the figure (*Evidence-informed Sensitivity (validated re-grades only)*) is taken over
+  the Intelligence Index's own item set. An excluded answer keeps its primary score in the figure, and
+  the excluded count is printed even when every re-grade is excluded. The per-answer re-grade line
+  prints the four stored levels, the accepted withdrawals, the dropped ones with reasons, and its
+  status: validated, rejected, legacy, or no provenance. A person reads every accepted critical-error
+  withdrawal against the rubric clause before the advisory figure is used; the scored critical error
+  never moves.
+
+- **Detectors (H2, H4), advisory.** `BenchmarkVerdictConsistency.IsPrecisionGroundedAccuracyDeduction`
+  sets `UnevidencedDeduction`, at any unverified-claim count, when Accuracy is below 6 and the
+  evidence withholds the level for missing precision, nuance or depth with no undenied falsehood.
+  Examples: *held at 4 rather than*, *lacks the source-level precision*, *does not reach source-level
+  precision*. That was run 53's Q9 and Q14 shape. The report prints an *Accuracy Withheld for
+  Precision* count on its own.
+
+  `FactualErrorsAdmittedRegex` accepts *not factually clean*, *cannot be characterised / described as
+  factually clean*, and *not confined to omissions*, which must have omissions as its object.
+  `DefectDenialRegex` accepts *no false claims (identified / found)*. `NamesNoDefect` strips only the
+  denial clause, sentence by sentence (`HasUndeniedFalsehood`), before testing for an affirmative
+  falsehood. `DefectRegex` is unchanged. These are heuristics, not proof that a deduction is invalid.
+
+- **Tool-result diagnostics (H6).** `BenchmarkToolResultClassifier.Classify(row)` returns independent
+  facets: outcome, payload available or unavailable, not-found, model-visible cut, record cut, partial
+  result, content error. A `null` `Result` beside a non-zero `ResultLengthChars` is the retention sweep:
+  it is neither a hit nor a miss. Misses are matched at the start of the result against each tool's
+  own openings. A `get_knowledge_article` miss is a failed call and is reported apart. Near-miss
+  openings (`Several wiki articles are titled '`, `[No function|macro|struct named '`, `[Note: …`) are
+  not misses.
+
+  The Tool Usage Profile gains *Not-found results: N of K inspectable successful payloads (…); U
+  payloads unavailable* and *Cut before the model saw it: N by the per-tool cap; batch budget and
+  turn limit not recorded. Cut in the stored record only: M*. `AgentLoopRunner` stores a result
+  before the batch budget and the turn limit apply, so those two cuts never reach a stored row, and
+  the report says *not recorded* rather than print a zero. The report's per-question tool table and the
+  tool-call log gain a `Note` column with a fixed vocabulary: `miss`, `cut`, `record cut`, `partial`,
+  `content error`, `unavailable`.
+
+- **Grading prompt (H3b, H5).** Beside the critical-error quote rule: *"Quote the sentence that commits
+  the error the clause names. When the clause is about advice or an implication, quote the advice, not
+  a true statement beside it."* After the Readability anchors: valid Markdown and LaTeX math
+  (`$…$`, `$$…$$`, `\(…\)`, `\[…\]`) is judged as the player sees it typeset.
+
+- **Admin run detail.** Each claim-verification entry carrying an advisory role shows a label:
+  *critical-error quote*, *out-of-rubric basis*, or *sentence the assessor charged as false*. One note
+  says these were sent to check the assessor and are not claims the answer was marked down for. A
+  legacy record shows no label.
+
+- **Tool layer (T1–T4).**
+  - **`source_code_search`:** a filtered literal miss runs one bounded unfiltered probe of the whole
+    query and says where it matches (*"(top 3 files shown)"* when three are named) or that it matches
+    nowhere unfiltered. It never claims corpus-wide absence. The probe is skipped for `is_regex` and
+    `whole_word`. The enriched miss is kept to 600 characters: the query echo is cut at 80 with `…`,
+    and the near-neighbour hints come last, in whole sentences. An unfiltered miss is byte-identical
+    to before.
+  - **`wiki_search` ranking:** `WikiService.GetRelevantSnippets` ranks articles matching more of the
+    query's distinct analyzed terms first, then by the original BM25 order. It falls back to the
+    legacy order for under 2 or over 16 terms, or an uppercase `AND` / `OR` / `NOT`. `totalHits` — the
+    `M` of `Showing N of M` — is unchanged. Three callers get the new order: `wiki_search`, its miss
+    probe, and the `wiki_view` miss probe.
+  - **Flag fields:** `SourceCodeService.ParseFlagField` unwraps a balanced outer parenthesis before
+    splitting, so a flag union such as The Holy Grail's `aflags` no longer comes back as
+    `["(AF_RESTR", "AF_NAME_KNOWN_WHEN_INVOKED)"]`. An expression that still contains a parenthesis is
+    returned verbatim.
+  - **`get_artifact_stats.md`:** the guide says where a base item's effect is found: `get_item_stats`
+    under its exact name.
+
+- **Rollback keys.** `Benchmark:ClaimVerification:AccusedQuotesEnabled` turns accused-sentence
+  checking off. `Benchmark:EvidenceInformedRegrade:Enabled` turns the re-grade off. The anchors have no
+  switch: a follow-up wording change is a **new** method version, never a silent edit of method 11.
+
+#### Scoring Method 11: the Accuracy anchors
+
+Levels 0–3, Completeness, Conciseness, Readability, the critical-error definition, the weights and the
+level-to-points mapping are unchanged. Levels 4–6:
+
+| Level | Method 10 | Method 11 |
+|---|---|---|
+| 4 | Fully accurate; all factual claims align with GnollHack mechanics with no meaningful errors. | Accurate in substance, with minor imprecisions that are not errors a player would act on: a loosely stated figure, an imprecise term, a rule stated without a condition that does not apply here. |
+| 5 | Highly accurate and precise; demonstrates nuanced understanding of mechanics and interactions. | Accurate, with a single trivial imprecision and nothing a player could act on wrongly. |
+| 6 | Flawless, authoritative precision matching C core source code implementation details exactly. | No false or imprecise statement: every claim the answer makes that you can adjudicate is correct as stated. |
+
+Directly beneath them, a scope rule: *"ACCURACY grades only what the answer states. Depth, length,
+source-level detail and how many mechanics are covered are not ACCURACY criteria. A two-sentence answer
+in which you find no false or imprecise statement is level 6; what it leaves out is graded under
+COMPLETENESS. … A claim you cannot adjudicate goes to `unverifiedClaims` (instruction 8): it does not
+lower the level, and level 6 does not certify it. Every level below 6 must name a statement the answer
+makes and say what is wrong or imprecise about it."*
+
+Instruction 8's last sentence became *"Award an ACCURACY level below 6 only for a named statement in the
+answer that is wrong or imprecise."* The evidence rule became *"An accuracy deduction must name
+something the answer **states** that is wrong or imprecise."*
+
+**Why.** The method-10 anchors for 5 and 6 rewarded source-level depth, and the production chat
+prompt's concise mode tells the candidate not to produce it. On run 53, short answers containing no
+false statement were held at 4 or 5 "rather than 6" for lacking source-level precision. Accuracy
+measured compliance with the chat prompt instead of truthfulness. Completeness anchors 5 and 6 also
+reward breadth that concise mode limits. That is a recorded product trade-off (run 12 tested and
+refuted verbose mode) and is not changed. An empty, failed, cancelled or provider-error answer never
+reaches the grader, so it cannot receive a vacuous level 6.
+
+**Comparability.** Scores are not comparable with method 10 on Accuracy, and therefore on the quality
+score and every index. The break is not confined to answers graded 4 or 5, because the index is a
+weighted mean over all of them. On the default profile the largest single-answer lift, Accuracy 4 → 6,
+is 28 points × 0.55 = 15.4 quality points before caps and rounding. Scores rise, and a rise across this
+boundary is not evidence of anything. The comparison view refuses to rank a method-10 run against a
+method-11 run because `HarnessVersion` and `ScoringMethodVersion` are both `Instrument` keys and both
+move here: two differing instrument keys are `NotComparable`. A later round that bumped only one of
+them would produce Tier C instead.
 
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).

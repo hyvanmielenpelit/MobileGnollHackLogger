@@ -21,7 +21,41 @@ public record BenchmarkClaimVerification(
     [property: JsonConverter(typeof(JsonStringEnumConverter))]
     BenchmarkClaimVerdict Verdict,
     [property: JsonPropertyName("citation")] string? Citation,
-    [property: JsonPropertyName("basis")] string? Basis);
+    [property: JsonPropertyName("basis")] string? Basis)
+{
+    /// <summary>
+    /// Why the harness submitted this item (<see cref="BenchmarkClaimRoles"/>), stamped by the harness
+    /// from its own submission manifest and never read from model output. Null on a record stored
+    /// before harness 31, which consumers read by exact-text matching instead.
+    /// </summary>
+    [JsonPropertyName("roles")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? Roles { get; init; }
+}
+
+/// <summary>
+/// The reasons an item is submitted to the claim verifier. <see cref="UnverifiedClaim"/> is a claim
+/// of the answer; the other three are the assessor's statements or accusations, checked to test the
+/// assessor rather than the answer.
+/// </summary>
+public static class BenchmarkClaimRoles
+{
+    public const string UnverifiedClaim = "unverifiedClaim";
+    public const string CriticalErrorQuote = "criticalErrorQuote";
+    public const string OutOfRubricBasis = "outOfRubricBasis";
+    public const string AccusedQuote = "accusedQuote";
+
+    /// <summary>A claim of the answer's own: a legacy record without roles, or one carrying <see cref="UnverifiedClaim"/>.</summary>
+    public static bool IsOrdinaryClaim(BenchmarkClaimVerification verification)
+        => verification.Roles == null || verification.Roles.Contains(UnverifiedClaim);
+
+    public static bool HasRole(BenchmarkClaimVerification verification, string role)
+        => verification.Roles != null && verification.Roles.Contains(role);
+
+    /// <summary>True when any record in the list carries roles, which makes roles, not text, the rule for the whole list.</summary>
+    public static bool HasRoles(IReadOnlyList<BenchmarkClaimVerification>? verifications)
+        => verifications != null && verifications.Any(v => v.Roles != null);
+}
 
 public class BenchmarkClaimVerificationParseResult
 {

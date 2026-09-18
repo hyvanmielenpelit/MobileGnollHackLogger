@@ -8,7 +8,7 @@ When a returned article answers the question as asked, answer from it — includ
 
 Results are heading-scoped excerpts (snippets) from the most relevant sections of matching articles. Each snippet also carries the article's lead block — for a spell or item, its level, cost and components — when that block is short, and a short article is returned whole, ending `— complete`. If a result ends with an omission marker indicating further sections were omitted, use `wiki_view` (optionally specifying the section name) to retrieve the full article or section text.
 
-The query is matched word by word against article titles (weighted 5×) and bodies, with English stemming, so `material` and `materials` match alike; when a result ends with a `Showing N of M` line, the query matched more articles than were returned — add a word the article's title would contain rather than re-running the same query.
+The query is matched word by word against article titles (weighted 5×) and bodies, with English stemming, so `material` and `materials` match alike. Articles matching more of the query's distinct words rank first. Use two to four distinctive words — the subject and the mechanic — not a sentence. When a result ends with a `Showing N of M` line, the query matched more articles than were returned: replace a generic word with a more distinctive one. Adding words widens the set of matches; it does not narrow it.
 
 `category` is **not** a taxonomy field. It is a case-insensitive substring of the article's
 path inside the wiki, so it selects a directory — `Monsters`, `Items`, `Spells`, `Skills`,

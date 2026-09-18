@@ -6690,8 +6690,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
-  /** The per-claim verifications for this answer. Empty on a malformed or absent blob. */
-  claimVerificationsOf(answer: BenchmarkRunAnswerDto): { claimIndex?: number; claim: string; verdict: string; citation?: string | null; basis?: string | null }[] {
+  /**
+   * The per-claim verifications for this answer. Empty on a malformed or absent blob. `roles` is
+   * set by the harness from harness 31 and absent on an older record.
+   */
+  claimVerificationsOf(answer: BenchmarkRunAnswerDto): { claimIndex?: number; claim: string; verdict: string; citation?: string | null; basis?: string | null; roles?: string[] }[] {
     if (!answer.claimVerificationJson) return [];
     try {
       const parsed = JSON.parse(answer.claimVerificationJson);
@@ -6699,6 +6702,25 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     } catch {
       return [];
     }
+  }
+
+  /**
+   * One label per advisory role an entry was submitted for: the assessor's critical-error quote,
+   * its out-of-rubric basis, or a sentence it charged as false. None for an ordinary claim or a
+   * record without roles.
+   */
+  claimRoleLabels(roles: string[] | null | undefined): string[] {
+    if (!Array.isArray(roles)) return [];
+    const labels: string[] = [];
+    if (roles.includes('criticalErrorQuote')) labels.push('critical-error quote');
+    if (roles.includes('outOfRubricBasis')) labels.push('out-of-rubric basis');
+    if (roles.includes('accusedQuote')) labels.push('sentence the assessor charged as false');
+    return labels;
+  }
+
+  /** Whether any entry was sent to check the assessor rather than the answer. */
+  hasAdvisoryClaimRoles(verifications: { roles?: string[] }[]): boolean {
+    return verifications.some(v => this.claimRoleLabels(v.roles).length > 0);
   }
 
   /** Trigger names as stored, in the words this screen uses for them. */

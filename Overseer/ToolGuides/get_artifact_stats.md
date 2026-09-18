@@ -13,6 +13,12 @@ Use this tool for precise artifact questions: base item type, special effects (s
 artifact flags, attack damage, alignment, role/race restrictions, invoke properties,
 cost, and material. Every artifact in the game is indexed.
 
+`otyp` names the artifact's base item. What the base item does when used — its effect text,
+charges and weight — is in `get_item_stats` under that item's exact name (for The Holy Grail,
+`GRAIL_OF_HEALING` is `grail of healing`). Issue both calls together only when you already
+know that name; otherwise read `otyp` first and then look the item up. What invoking the
+artifact does beyond its base item may need `wiki_search` or the source.
+
 For descriptions, strategy tips, and usage advice, use wiki_search FIRST — it contains
 gameplay context not in raw struct fields.
 

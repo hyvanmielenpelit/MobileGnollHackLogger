@@ -82,8 +82,9 @@ public static class BenchmarkToolCallLogBuilder
 
             var orderedCalls = answer.ToolCalls.OrderBy(c => c.SortOrder).ToList();
 
-            sb.AppendLine("| SortOrder | IterationIndex | Name | Status | QueueWaitMs | ExecutionMs | ResultLengthChars | ArgsTruncated | ResultTruncated |");
-            sb.AppendLine("|----------:|---------------:|------|--------|------------:|------------:|-------------------:|:-------------:|:---------------:|");
+            // Note carries BenchmarkToolResultClassifier's fixed vocabulary, which needs no escaping.
+            sb.AppendLine("| SortOrder | IterationIndex | Name | Status | QueueWaitMs | ExecutionMs | ResultLengthChars | ArgsTruncated | ResultTruncated | Note |");
+            sb.AppendLine("|----------:|---------------:|------|--------|------------:|------------:|-------------------:|:-------------:|:---------------:|------|");
             foreach (var call in orderedCalls)
             {
                 string iteration = call.IterationIndex.HasValue ? Inv(call.IterationIndex.Value) : "N/A";
@@ -94,7 +95,8 @@ public static class BenchmarkToolCallLogBuilder
                 string resultLen = Inv(call.ResultLengthChars, "N0");
                 string argsTrunc = call.ArgsTruncated ? "yes" : "no";
                 string resultTrunc = call.ResultTruncated ? "yes" : "no";
-                sb.AppendLine($"| {call.SortOrder} | {iteration} | {name} | {status} | {queueWait} | {execMs} | {resultLen} | {argsTrunc} | {resultTrunc} |");
+                string note = BenchmarkToolResultClassifier.Note(call);
+                sb.AppendLine($"| {call.SortOrder} | {iteration} | {name} | {status} | {queueWait} | {execMs} | {resultLen} | {argsTrunc} | {resultTrunc} | {note} |");
             }
             sb.AppendLine();
 

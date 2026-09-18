@@ -112,6 +112,37 @@ public class ObjectsMacroResolverTests
         "    O1_NONE, O2_DRAGON_ITEM | O2_MONSTER_SCALE_MAIL, O3_NONE, O4_NONE, O5_NONE, O6_NONE, PERMITTED_ALL),"
     };
 
+    /// <summary>
+    /// The real GENERAL_SPELLTOOL / SPELLTOOL wrapper chain (objects.c:2376-2391) and the grail of
+    /// healing entry it produces (objects.c:2889), copied verbatim rather than reduced, because
+    /// get_artifact_stats's follow-up lookup depends on this exact chain resolving the artifact's
+    /// base item.
+    /// </summary>
+    private static string[] GrailOfHealingEntry() => new[]
+    {
+        "#define GENERAL_SPELLTOOL(name,desc,contentname,contentdesc,itemdesc, odflags, stand_anim, enl, repl, subtype,kn,mrg,mgc,charged,recharging,prob,wt,cost,\\",
+        "            dir,dirsubtype, adtyp, sdice, sdam, sdmgplus, durdice, durdiesize, durplus, durbucplus, cooldown,special_quality, skill, mat,color,height,soundset,\\",
+        "            sflags,seflags,flags,flags2,flags3, flags4,flags5,flags6) \\",
+        "        OBJECT(OBJ(name, desc, contentname, contentdesc, itemdesc, height, odflags, stand_anim, enl, repl),                       \\",
+        "            BITS(kn, mrg, charged ? 1 : 0, 0, mgc, ENCHTYPE_NO_ENCHANTMENT, charged, recharging, 0, 0, 0, 0, dir, subtype, skill, MATINIT_BASE_MATERIAL, mat), \\",
+        "            NO_POWER, NO_POWER, NO_POWER, P1_NONE,  TOOL_CLASS, prob, MULTIGEN_SINGLE, 0, wt, cost, \\",
+        "            adtyp, sdice, sdam, sdmgplus, durdice, durdiesize, durplus, durbucplus, 0, 0, 0, sflags, seflags, 0, \\",
+        "            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, \\",
+        "            wt, color, soundset, dirsubtype, 0, cooldown, special_quality, PERMITTED_ALL, ALL_TARGETS, O1_SPELLTOOL | flags, flags2, flags3, flags4, flags5, flags6)",
+        "#define SPELLTOOL(name,desc,contentname,contentdesc,itemdesc,subtype,kn,mrg,mgc,charged,recharging,prob,wt,cost,\\",
+        "            dir,dirsubtype, adtyp, sdice, sdam, sdmgplus, durdice, durdiesize, durplus, durbucplus, cooldown,special_quality, skill, mat,color,height,soundset,\\",
+        "            sflags,seflags,flags,flags2,flags3, flags4, flags5, flags6) \\",
+        "        GENERAL_SPELLTOOL(name,desc,contentname,contentdesc,itemdesc, OD_NONE, 0, 0, 0, subtype,kn,mrg,mgc,charged,recharging,prob,wt,cost,\\",
+        "            dir,dirsubtype, adtyp, sdice, sdam, sdmgplus, durdice, durdiesize, durplus, durbucplus, cooldown,special_quality, skill, mat,color,height,soundset,\\",
+        "            sflags,seflags,flags,flags2,flags3,flags4,flags5,flags6)",
+        "SPELLTOOL(\"grail of healing\", \"wooden grail\", \"sacred wine\", \"red liquid\", \"Heals a target for 1000 hit points and 500 mana\", ",
+        "    TOOLTYPE_GRAIL, 0, 0, 1, CHARGED_HOLY_GRAIL, RECHARGING_HOLY_GRAIL,  //Base item for Holy Grail",
+        "    0, 15, 1000, TOUCH, TOUCH_NONE, AD_HEAL, 0, 0, 1000, 0, 0, 0, 0, 0, 0,",
+        "    P_NONE, MAT_WOOD, CLR_BROWN, 0, OBJECT_SOUNDSET_GENERIC,",
+        "    S1_NONE, S2_NONE,",
+        "    O1_NONE, O2_NONE, O3_NO_WISH | O3_NO_GENERATION | O3_QUAFFABLE, O4_ALLOWS_DIPPING_INTO, O5_EFFECT_IS_HEALING, O6_NONE),"
+    };
+
     private static long AsLong(object value) => value switch
     {
         int i => i,
@@ -261,6 +292,26 @@ public class ObjectsMacroResolverTests
         Assert.Equal("TEST_PLATE_ANIMATION", resolution.Fields["stand_animation"]);
         Assert.Equal("TEST_PLATE_ENLARGEMENT", resolution.Fields["enlargement"]);
         Assert.Equal("TEST_PLATE_REPLACEMENT", resolution.Fields["replacement"]);
+    }
+
+    /// <summary>
+    /// get_artifact_stats's follow-up guidance sends the model to get_item_stats for the artifact's
+    /// base item; that lookup only helps if the base item's own entry resolves. The Holy Grail's
+    /// base item goes through the SPELLTOOL wrapper chain, not the ARMOR one the other synthetic
+    /// tests exercise, so it is loaded here deterministically rather than only through the on-disk
+    /// spot-check below.
+    /// </summary>
+    [Fact]
+    public void Resolve_GrailOfHealing_ThroughTheSpelltoolMacroChain_HasANonEmptyItemDescription()
+    {
+        var resolver = NewResolver();
+        resolver.Load(FixtureObjectsC(GrailOfHealingEntry()));
+
+        var resolution = resolver.Resolve("grail of healing");
+
+        Assert.True(resolution.Success, resolution.FailureReason);
+        Assert.Equal("TOOL_CLASS", resolution.ObjectClass);
+        Assert.Equal("Heals a target for 1000 hit points and 500 mana", resolution.Fields["item_description"]);
     }
 
     // --- Names shared by several object classes ---------------------------------------

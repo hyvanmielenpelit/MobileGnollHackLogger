@@ -291,4 +291,53 @@ public class BenchmarkToolCallLogBuilderTests
 
         Assert.Contains("Result (first 600 and last 240 of 12,897 chars, stored 12,000):", markdown);
     }
+
+    [Fact]
+    public void Build_NoteColumn_UsesTheSameVocabularyAsTheReport()
+    {
+        var answer = new BenchmarkRunAnswer
+        {
+            OrderIndex = 1,
+            QuestionText = "Q1",
+            AnswerText = "A1",
+            ToolCalls = new List<BenchmarkRunAnswerToolCall>
+            {
+                new BenchmarkRunAnswerToolCall
+                {
+                    SortOrder = 0,
+                    Name = "wiki_search",
+                    Status = "completed",
+                    ArgsText = "{}",
+                    Result = "No GnollHack wiki article matched 'grail'.",
+                    ResultLengthChars = 42
+                },
+                new BenchmarkRunAnswerToolCall
+                {
+                    SortOrder = 1,
+                    Name = "wiki_search",
+                    Status = "completed",
+                    ArgsText = null,
+                    Result = null,
+                    ResultLengthChars = 4096
+                },
+                new BenchmarkRunAnswerToolCall
+                {
+                    SortOrder = 2,
+                    Name = "wiki_view",
+                    Status = "completed",
+                    ArgsText = "{}",
+                    Result = "The Holy Grail heals.",
+                    ResultLengthChars = 21
+                }
+            }
+        };
+
+        string markdown = BenchmarkToolCallLogBuilder.Build(SampleRun(), new[] { answer });
+
+        Assert.Contains("| SortOrder | IterationIndex | Name | Status | QueueWaitMs | ExecutionMs | ResultLengthChars | ArgsTruncated | ResultTruncated | Note |", markdown);
+        Assert.Contains("|----------:|---------------:|------|--------|------------:|------------:|-------------------:|:-------------:|:---------------:|------|", markdown);
+        Assert.Contains("| 0 | N/A | `wiki_search` | completed | N/A | N/A | 42 | no | no | miss |", markdown);
+        Assert.Contains("| 1 | N/A | `wiki_search` | completed | N/A | N/A | 4,096 | no | no | unavailable |", markdown);
+        Assert.Contains("| 2 | N/A | `wiki_view` | completed | N/A | N/A | 21 | no | no |  |", markdown);
+    }
 }

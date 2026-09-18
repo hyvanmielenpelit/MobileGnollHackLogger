@@ -1646,17 +1646,47 @@ namespace Overseer.Services
         }
 
         /// <summary>
-        /// Parse a flag field like "M1_HUMANOID | M1_CARNIVORE" into a list, or a simple value.
+        /// Parse a flag field like "M1_HUMANOID | M1_CARNIVORE" into a list, or a simple value. An
+        /// enclosing pair of parentheses is unwrapped first, repeating for a nested full wrapper; an
+        /// expression that still contains a parenthesis afterwards (an unbalanced fragment, or a
+        /// union of unions like "(A | B) | (C | D)") is returned verbatim rather than split into
+        /// fabricated names.
         /// </summary>
-        private static object ParseFlagField(string token)
+        internal static object ParseFlagField(string token)
         {
             string trimmed = token.Trim();
+            while (trimmed.Length > 0 && trimmed[0] == '(')
+            {
+                int matchingClose = FindMatchingParen(trimmed, 0);
+                if (matchingClose != trimmed.Length - 1) break;
+                trimmed = trimmed.Substring(1, trimmed.Length - 2).Trim();
+            }
+            if (trimmed.IndexOfAny(new[] { '(', ')' }) >= 0)
+            {
+                return trimmed;
+            }
             if (trimmed.Contains('|'))
             {
                 var flags = trimmed.Split('|').Select(p => p.Trim()).Where(p => !string.IsNullOrEmpty(p)).ToList();
                 return flags;
             }
             return trimmed;
+        }
+
+        /// <summary>Index of the ')' balancing the '(' at openIndex within text, or -1 if unbalanced.</summary>
+        private static int FindMatchingParen(string text, int openIndex)
+        {
+            int depth = 0;
+            for (int i = openIndex; i < text.Length; i++)
+            {
+                if (text[i] == '(') depth++;
+                else if (text[i] == ')')
+                {
+                    depth--;
+                    if (depth == 0) return i;
+                }
+            }
+            return -1;
         }
 
         /// <summary>

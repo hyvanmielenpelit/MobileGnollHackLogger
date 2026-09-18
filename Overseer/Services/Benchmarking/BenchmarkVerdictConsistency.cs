@@ -261,6 +261,62 @@ public static class BenchmarkVerdictConsistency
     }
 
     /// <summary>
+    /// Phrases that withhold an ACCURACY level for missing precision, nuance or depth rather than
+    /// for a statement the answer makes: "held at 4 rather than 6", "lacks the source-level
+    /// precision", "does not reach source-level precision", "withheld ... for ... nuance". Scoring
+    /// method 11 grades ACCURACY only on what the answer states, so a level withheld on this basis
+    /// alone names no defect. The "withheld" gaps are bounded and stop at sentence punctuation, as
+    /// <see cref="SubstitutionRegex"/> bounds its own.
+    /// </summary>
+    private static readonly Regex PrecisionWithholdingRegex = new(
+        @"\bheld\s+at\s+(?:level\s+)?[2-5]\s+rather\s+than\b"
+        + @"|\blacks?\s+the\s+(?:nuanced\s+|source-level\s+)?precision"
+        + @"|\bdoes\s+not\s+reach\s+source-level\s+precision"
+        + @"|\bwithh?eld\b[^.;]{0,80}?\bfor\b[^.;]{0,80}?\b(?:nuance|precision|depth)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// True when <see cref="FalsehoodRegex"/> or <see cref="FabricationRegex"/> matches some part of
+    /// <paramref name="evidence"/> that survives stripping every <see cref="DefectDenialRegex"/>
+    /// clause, sentence by sentence. Only the denial clause is removed, so "no false claims
+    /// identified, but the level is wrong" still asserts a falsehood on what follows "but", while
+    /// "no false claims identified" on its own does not.
+    /// </summary>
+    private static bool HasUndeniedFalsehood(string evidence)
+    {
+        foreach (string sentence in SplitSentences(evidence))
+        {
+            string stripped = DefectDenialRegex.Replace(sentence, " ");
+            if (FalsehoodRegex.IsMatch(stripped) || FabricationRegex.IsMatch(stripped))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// True when ACCURACY sits below <see cref="FullAccuracyLevel"/>, its evidence withholds the
+    /// level for missing precision, nuance or depth (<see cref="PrecisionWithholdingRegex"/>), and
+    /// it asserts no undenied falsehood. Independent of the unverified-claim count, unlike
+    /// <see cref="IsUnverifiabilityGroundedDeduction"/>: run 53's Q9 and Q14 withheld the level
+    /// this way on answers with no unverified claims at all. Sets the shared
+    /// <c>UnevidencedDeduction</c> flag. An advisory heuristic, not proof that the deduction is
+    /// invalid; changes no score.
+    /// </summary>
+    public static bool IsPrecisionGroundedAccuracyDeduction(int accuracyLevel, string? accuracyEvidence)
+    {
+        if (accuracyLevel >= FullAccuracyLevel || string.IsNullOrWhiteSpace(accuracyEvidence))
+        {
+            return false;
+        }
+
+        return PrecisionWithholdingRegex.IsMatch(accuracyEvidence)
+            && !HasUndeniedFalsehood(accuracyEvidence);
+    }
+
+    /// <summary>
     /// The first sentence of <paramref name="accuracyEvidence"/> — per <see cref="SplitSentences"/> —
     /// in which <see cref="UnverifiabilityRegex"/> matches, trimmed and capped at
     /// <see cref="BenchmarkService.OutOfRubricBasisMaxLength"/> characters. Null when no sentence
@@ -470,9 +526,17 @@ public static class BenchmarkVerdictConsistency
     /// this detector exists to catch, and matching it would accuse an honest synthesis — the
     /// expensive direction, exactly as in <see cref="QuestionsNamedWithFabrication"/>. A sentence
     /// matching this is disqualified even when it also matches <see cref="NoFactualErrorsRegex"/>.
+    ///
+    /// Run 53's admissions are covered too: "not factually clean", "cannot be characterized (or
+    /// described) as factually clean" (or "as free of factual errors"), and "not confined to
+    /// omissions". The last requires omissions as the object, with at most three modifier words
+    /// between, so "not confined to this dungeon" is not an admission.
     /// </summary>
     private static readonly Regex FactualErrorsAdmittedRegex = new(
-        @"\bnot\s+(?:entirely\s+|wholly\s+|completely\s+)?(?:free|devoid)\s+of\s+(?:any\s+)?factual\s+error|\bnot\s+without\s+(?:any\s+)?factual\s+error|\b(?:contains?|contained|carries|carried|includes?|included|exhibits?|exhibited)\s+(?:a\s+|some\s+|several\s+|two\s+|three\s+)?factual\s+error|\bfactual\s+errors?\s+(?:were|was|are|is)\s+(?:present|found|identified|recorded|noted)",
+        @"\bnot\s+(?:entirely\s+|wholly\s+|completely\s+)?(?:free|devoid)\s+of\s+(?:any\s+)?factual\s+error|\bnot\s+without\s+(?:any\s+)?factual\s+error|\b(?:contains?|contained|carries|carried|includes?|included|exhibits?|exhibited)\s+(?:a\s+|some\s+|several\s+|two\s+|three\s+)?factual\s+error|\bfactual\s+errors?\s+(?:were|was|are|is)\s+(?:present|found|identified|recorded|noted)"
+        + @"|\bnot\s+factually\s+clean"
+        + @"|\b(?:cannot|can\s+not|can['’]t)\s+be\s+(?:characteri[sz]ed|described)\s+as\s+(?:factually\s+clean|free\s+of\s+(?:any\s+)?factual\s+error)"
+        + @"|\bnot\s+confined\s+to\s+(?:[\w-]+\s+){0,3}?omissions?\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>
@@ -525,9 +589,16 @@ public static class BenchmarkVerdictConsistency
     /// - "free of factual errors" / "devoid of factual errors" — the direct-claim form
     ///   <see cref="NoFactualErrorsRegex"/> also carries.
     /// - "without error(s)" / "without factual error(s)" — the participle form.
+    /// - "no false claim(s) identified/found" — the run 53 form, with the participle kept inside
+    ///   the match so stripping the denial removes it whole; "adjudicable" joins the tolerated
+    ///   qualifiers for run 41's "No adjudicable falsehood found".
+    ///
+    /// Several of these share a root with <see cref="FalsehoodRegex"/> ("false", "contradic",
+    /// "misstat"), which is why <see cref="HasUndeniedFalsehood"/> strips the denial before
+    /// testing for a falsehood rather than testing the whole string.
     /// </summary>
     private static readonly Regex DefectDenialRegex = new(
-        @"(?:free|devoid)\s+of\s+(?:any\s+)?factual\s+error|\b(?:no|zero)\s+(?:material\s+|significant\s+|outright\s+)?(?:factual\s+error|contradict\w*|error|inaccurac|false\s+statement|falsehood|misstatement)|\bwithout\s+(?:any\s+)?(?:factual\s+)?error",
+        @"(?:free|devoid)\s+of\s+(?:any\s+)?factual\s+error|\b(?:no|zero)\s+(?:material\s+|significant\s+|outright\s+|adjudicable\s+)?(?:factual\s+error|contradict\w*|error|inaccurac|false\s+claims?(?:\s+(?:were\s+|was\s+)?(?:identified|found))?|false\s+statement|falsehood|misstatement)|\bwithout\s+(?:any\s+)?(?:factual\s+)?error",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>
@@ -581,8 +652,9 @@ public static class BenchmarkVerdictConsistency
     /// string charges nothing, either as the anchored boilerplate <see cref="IsNoFaultEvidence"/>
     /// recognises or as a sentence-form denial. One implementation rather than three copies, because
     /// the four regexes only compose correctly together — the denial suppresses, and each of
-    /// <see cref="FalsehoodRegex"/>, <see cref="OmissionRegex"/> and <see cref="ConcessionRegex"/>
-    /// overrides that suppression — and a second copy would drift out of that arrangement silently.
+    /// <see cref="FalsehoodRegex"/> (outside the denial clause, via <see cref="HasUndeniedFalsehood"/>),
+    /// <see cref="OmissionRegex"/> and <see cref="ConcessionRegex"/> overrides that suppression —
+    /// and a second copy would drift out of that arrangement silently.
     /// </summary>
     private static bool NamesNoDefect(string? evidence)
     {
@@ -592,7 +664,7 @@ public static class BenchmarkVerdictConsistency
         }
 
         return DefectDenialRegex.IsMatch(evidence!)
-            && !FalsehoodRegex.IsMatch(evidence!)
+            && !HasUndeniedFalsehood(evidence!)
             && !OmissionRegex.IsMatch(evidence!)
             && !ConcessionRegex.IsMatch(evidence!);
     }

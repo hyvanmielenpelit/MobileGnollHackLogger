@@ -1084,9 +1084,11 @@ public class AdminBenchmarkController : ControllerBase
                     if (verifications != null)
                     {
                         verificationsByClaim = new Dictionary<string, BenchmarkClaimVerification>(StringComparer.Ordinal);
+                        // An advisory-only item (the assessor's quote, basis or accusation) is a
+                        // verdict on the grading, not on a claim the answer left unverified.
                         foreach (var v in verifications)
                         {
-                            if (!string.IsNullOrWhiteSpace(v.Claim))
+                            if (!string.IsNullOrWhiteSpace(v.Claim) && BenchmarkClaimRoles.IsOrdinaryClaim(v))
                             {
                                 verificationsByClaim[v.Claim.Trim()] = v;
                             }
@@ -3594,6 +3596,11 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(BenchmarkService.AbortedRunRefusal);
         }
 
+        if (!BenchmarkService.IsCurrentScoringMethod(run))
+        {
+            return BadRequest(BenchmarkService.ScoringMethodRefusal(run));
+        }
+
         var answer = run.Answers.FirstOrDefault(a => a.Id == answerId);
         if (answer == null) return NotFound();
 
@@ -3660,8 +3667,20 @@ public class AdminBenchmarkController : ControllerBase
             return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
         }
 
-        var run = await _dbContext.BenchmarkRuns.FirstOrDefaultAsync(r => r.Id == id);
+        var run = await _dbContext.BenchmarkRuns
+            .Include(r => r.Answers)
+            .FirstOrDefaultAsync(r => r.Id == id);
         if (run == null) return NotFound();
+
+        if (BenchmarkRunFinalizer.IsAbortedRun(run, run.Answers))
+        {
+            return BadRequest(BenchmarkService.AbortedRunRefusal);
+        }
+
+        if (!BenchmarkService.IsCurrentScoringMethod(run))
+        {
+            return BadRequest(BenchmarkService.ScoringMethodRefusal(run));
+        }
 
         var (assessorValid, assessorError) = await ValidateAssessorConfigurationAsync(request.AssessorModelConfigurationId);
         if (!assessorValid)
@@ -3745,6 +3764,11 @@ public class AdminBenchmarkController : ControllerBase
         if (BenchmarkRunFinalizer.IsAbortedRun(run, run.Answers))
         {
             return BadRequest(BenchmarkService.AbortedRunRefusal);
+        }
+
+        if (!BenchmarkService.IsCurrentScoringMethod(run))
+        {
+            return BadRequest(BenchmarkService.ScoringMethodRefusal(run));
         }
 
         var answer = run.Answers.FirstOrDefault(a => a.Id == answerId);
@@ -3866,6 +3890,11 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(BenchmarkService.AbortedRunRefusal);
         }
 
+        if (!BenchmarkService.IsCurrentScoringMethod(run))
+        {
+            return BadRequest(BenchmarkService.ScoringMethodRefusal(run));
+        }
+
         if (!run.Answers.Any(a => a.AssessmentStatus != BenchmarkAssessmentStatus.Scored))
         {
             return BadRequest("This run has no unscored assessments to retry.");
@@ -3915,6 +3944,11 @@ public class AdminBenchmarkController : ControllerBase
         if (BenchmarkRunFinalizer.IsAbortedRun(run, run.Answers))
         {
             return BadRequest(BenchmarkService.AbortedRunRefusal);
+        }
+
+        if (!BenchmarkService.IsCurrentScoringMethod(run))
+        {
+            return BadRequest(BenchmarkService.ScoringMethodRefusal(run));
         }
 
         if (!run.Answers.Any(a => !string.IsNullOrWhiteSpace(a.ClaimVerificationError)))
@@ -4012,6 +4046,11 @@ public class AdminBenchmarkController : ControllerBase
         if (BenchmarkRunFinalizer.IsAbortedRun(run, run.Answers))
         {
             return BadRequest(BenchmarkService.AbortedRunRefusal);
+        }
+
+        if (!BenchmarkService.IsCurrentScoringMethod(run))
+        {
+            return BadRequest(BenchmarkService.ScoringMethodRefusal(run));
         }
 
         // A row still reading Running past the CurrentRunId check above is orphaned — the same

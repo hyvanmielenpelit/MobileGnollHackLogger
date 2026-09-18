@@ -94,6 +94,8 @@ public class BenchmarkRerunStatusTests
             AssessorModelIdUsed = modelC.ModelId!,
             AssessorModelDisplayNameUsed = modelC.DisplayName!,
             ClaimVerifierModelConfigurationId = modelC.Id,
+            // Graded under this build's method, or every re-run and re-grade below is refused.
+            ScoringMethodVersion = BenchmarkAssessmentPrompt.ScoringMethodVersion,
             StartedAtUtc = DateTime.UtcNow.AddHours(-2),
             CompletedAtUtc = DateTime.UtcNow.AddHours(-1)
         };

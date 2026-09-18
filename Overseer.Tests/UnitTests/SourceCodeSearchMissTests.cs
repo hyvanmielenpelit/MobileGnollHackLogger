@@ -161,7 +161,8 @@ struct windowprocs { void (*win_print_glyph)(int, int, int); };
 
     /// <summary>
     /// Five of six recorded identifier misses were scoped to one file, and the model was never told
-    /// that the filter rather than the corpus may have been what excluded the hit.
+    /// that the filter rather than the corpus may have been what excluded the hit. The unfiltered
+    /// probe now also says where the same query does match.
     /// </summary>
     [Fact]
     public async Task Miss_UnderAFileFilter_NamesTheFilter()
@@ -170,6 +171,135 @@ struct windowprocs { void (*win_print_glyph)(int, int, int); };
 
         Assert.True(result.Success);
         Assert.Contains("file_filter='makemon.c' may be excluding the match", result.Content);
+        Assert.Contains("Without file_filter, 'encounter_list' matches", result.Content);
+        Assert.Contains("src/encounter.c", result.Content);
+    }
+
+    /// <summary>The unfiltered probe can miss too: the query occurs nowhere, filter or no filter.</summary>
+    [Fact]
+    public async Task Miss_UnderAFileFilter_WhenQueryExistsNowhere_TheUnfilteredProbeSaysSoToo()
+    {
+        var result = await SearchAsync(@"{""query"": ""zzzqqqxxx"", ""file_filter"": ""makemon.c""}");
+
+        Assert.True(result.Success);
+        Assert.Contains("The same search without file_filter found no match either.", result.Content);
+        Assert.DoesNotContain("it does not occur in any indexed file", result.Content);
+    }
+
+    /// <summary>
+    /// A regex query is rewritten before BuildMissContent sees it under whole_word, and is_regex is
+    /// passed through directly; in both cases the unfiltered probe is skipped, deliberately, because
+    /// a near-miss probe on a pattern would be guessing about a guess.
+    /// </summary>
+    [Fact]
+    public async Task Miss_UnderAFileFilter_WithRegexOrWholeWord_SkipsTheUnfilteredProbe()
+    {
+        var regexResult = await SearchAsync(@"{""query"": ""zzz[0-9]+qqq"", ""file_filter"": ""makemon.c"", ""is_regex"": true}");
+        Assert.True(regexResult.Success);
+        Assert.DoesNotContain("Without file_filter", regexResult.Content);
+        Assert.DoesNotContain("without file_filter found no match", regexResult.Content);
+
+        var wholeWordResult = await SearchAsync(@"{""query"": ""zzzqqqxxx"", ""file_filter"": ""makemon.c"", ""whole_word"": true}");
+        Assert.True(wholeWordResult.Success);
+        Assert.DoesNotContain("Without file_filter", wholeWordResult.Content);
+        Assert.DoesNotContain("without file_filter found no match", wholeWordResult.Content);
+    }
+
+    /// <summary>
+    /// The cost guard for the enriched, file-filtered miss specifically: it carries more text than a
+    /// plain miss (the unfiltered file lead), so it gets its own, tighter bound.
+    /// </summary>
+    [Fact]
+    public async Task Miss_UnderAFileFilter_StaysWithinTheEnrichedBound()
+    {
+        foreach (string args in new[]
+        {
+            @"{""query"": ""encounter_list"", ""file_filter"": ""makemon.c""}",
+            @"{""query"": ""zzzqqqxxx"", ""file_filter"": ""makemon.c""}"
+        })
+        {
+            var result = await SearchAsync(args);
+            Assert.True(result.Content.Length <= 600,
+                $"Enriched filtered miss for {args} was {result.Content.Length} characters: {result.Content}");
+        }
+    }
+
+    /// <summary>
+    /// A long query and a long file_filter path together would push the enriched miss well past 600
+    /// characters without the echoed-query truncation; the truncated echo carries the ellipsis, and
+    /// the closing sentence still survives.
+    /// </summary>
+    [Fact]
+    public async Task Miss_UnderAFileFilter_WithALongQueryAndLongPath_StaysUnderTheBoundAndKeepsTheClosingSentence()
+    {
+        string longQuery = new string('a', 120) + "_zzz_unmatched_identifier";
+        string longFilter = "some/deeply/nested/path/that/does/not/exist/in/the/index/either/quite/a/long/filename.c";
+        string argsJson = "{\"query\": \"" + longQuery + "\", \"file_filter\": \"" + longFilter + "\"}";
+
+        var result = await SearchAsync(argsJson);
+
+        Assert.True(result.Success);
+        Assert.True(result.Content.Length <= 600,
+            $"Enriched filtered miss was {result.Content.Length} characters: {result.Content}");
+        Assert.Contains("…", result.Content);
+        Assert.Contains("Try search_definitions", result.Content);
+    }
+
+    /// <summary>
+    /// Without a file_filter the miss path takes exactly the branch it took before the unfiltered
+    /// probe existed: the new code re-enters through a temporary buffer, but the resulting bytes
+    /// must not move.
+    /// </summary>
+    [Fact]
+    public async Task Miss_WithNoFileFilter_IsByteIdenticalToTheUnenrichedPath()
+    {
+        var result = await SearchAsync(@"{""query"": ""zzzqqqxxx""}");
+
+        Assert.Equal(
+            "No relevant source code found for 'zzzqqqxxx'. No shorter form of this identifier matched either." +
+            " Try search_definitions for a known symbol, or list_indexed_files to see what is indexed.",
+            result.Content);
+    }
+
+    /// <summary>
+    /// RunProbe's three states, tested directly: SafeProbe collapses an exception, an "Error:"
+    /// result and an empty result into one empty string, and SearchFiles is non-virtual, so this is
+    /// the only seam that can prove a thrown exception is told apart from a clean miss.
+    /// </summary>
+    [Fact]
+    public void RunProbe_OnAThrowingDelegate_ReturnsFailed()
+    {
+        var (state, summary) = SourceCodeSearchTool.RunProbe(() => throw new InvalidOperationException("boom"));
+
+        Assert.Equal(SourceCodeSearchTool.ProbeState.Failed, state);
+        Assert.Equal(string.Empty, summary);
+    }
+
+    [Fact]
+    public void RunProbe_OnAnErrorResult_ReturnsFailed()
+    {
+        var (state, summary) = SourceCodeSearchTool.RunProbe(() => "Error: invalid pattern");
+
+        Assert.Equal(SourceCodeSearchTool.ProbeState.Failed, state);
+        Assert.Equal(string.Empty, summary);
+    }
+
+    [Fact]
+    public void RunProbe_OnAnEmptyResult_ReturnsNoMatch()
+    {
+        var (state, summary) = SourceCodeSearchTool.RunProbe(() => "");
+
+        Assert.Equal(SourceCodeSearchTool.ProbeState.NoMatch, state);
+        Assert.Equal(string.Empty, summary);
+    }
+
+    [Fact]
+    public void RunProbe_OnAHit_ReturnsTheResultUnchanged()
+    {
+        var (state, summary) = SourceCodeSearchTool.RunProbe(() => "src/encounter.c (2 matches)");
+
+        Assert.Equal(SourceCodeSearchTool.ProbeState.Hit, state);
+        Assert.Equal("src/encounter.c (2 matches)", summary);
     }
 
     /// <summary>

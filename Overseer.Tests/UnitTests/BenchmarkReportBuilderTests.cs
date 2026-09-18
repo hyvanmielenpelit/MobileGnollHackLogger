@@ -1922,9 +1922,10 @@ public class BenchmarkReportBuilderTests
         q1.EvidenceInformedJson = "{\"assessor\":\"Claude 5 Opus\",\"withdrawn\":[\"Accuracy deduction: peacefuls are never displaced\"]}";
         string after = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.Contains("**Evidence-informed Sensitivity:**", after);
+        // A harness-30 record carries no validation provenance: it keeps its calculation and says so.
+        Assert.Contains("**Evidence-informed Sensitivity (legacy, unvalidated):**", after);
         Assert.Contains("on the 1 answer(s) re-graded with the verifier's findings in hand; advisory, changes no score.", after);
-        Assert.Contains("**Evidence-informed re-grade (Claude 5 Opus):** 70 / 100, critical error no — withdrew: Accuracy deduction: peacefuls are never displaced.", after);
+        Assert.Contains("**Evidence-informed re-grade (Claude 5 Opus; legacy, unvalidated):** 70 / 100, critical error no, levels not recorded — withdrew: Accuracy deduction: peacefuls are never displaced.", after);
 
         // Every other line of the report is unchanged by the stored re-grade.
         static string[] Without(string report) => report.Replace("\r\n", "\n").Split('\n')
@@ -1932,6 +1933,83 @@ public class BenchmarkReportBuilderTests
             .ToArray();
         Assert.Equal(Without(before), Without(after));
         Assert.Equal(40, q1.QualityScore);
+    }
+
+    private static string ValidatedRegradeJson(bool eligible, string errors = "[]", string dropped = "[]") =>
+        "{\"assessor\":\"Claude 5 Opus\",\"accuracyLevel\":6,\"completenessLevel\":5,\"concisenessLevel\":5,\"readabilityLevel\":4,"
+        + "\"withdrawn\":[\"T1 accuracy: \\\"It has no charges.\\\" (F2) — the verifier supported the sentence\"],"
+        + $"\"validationVersion\":1,\"withdrawnDropped\":{dropped},\"validationErrors\":{errors},\"eligibleForSensitivity\":{(eligible ? "true" : "false")}}}";
+
+    [Fact]
+    public void EvidenceInformedSensitivity_Harness31_CountsValidatedRegradesOnly_AndReportsTheExcluded()
+    {
+        var q1 = BoardGradedAnswer(1, 40);
+        var q2 = BoardGradedAnswer(2, 60);
+        var q3 = BoardGradedAnswer(3, 90);
+        var run = Harness30BoardRun(q1, q2, q3);
+        run.HarnessVersion = "31";
+        run.ScoringMethodVersion = 11;
+
+        q1.EvidenceInformedQualityScore = 80;
+        q1.EvidenceInformedCriticalError = false;
+        q1.EvidenceInformedJson = ValidatedRegradeJson(eligible: true);
+        q2.EvidenceInformedQualityScore = 100;
+        q2.EvidenceInformedCriticalError = false;
+        q2.EvidenceInformedJson = ValidatedRegradeJson(eligible: false, errors: "[\"Accuracy was raised from 4 to 6 with no valid accuracy withdrawal.\"]");
+        // No provenance on a harness-31 run: ineligible even though the JSON parses.
+        q3.EvidenceInformedQualityScore = 95;
+        q3.EvidenceInformedJson = "{\"assessor\":\"Claude 5 Opus\",\"withdrawn\":[\"something\"]}";
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        int expected = BenchmarkScoring.QualityIndex(new List<(int?, int)> { (80, 25), (60, 25), (90, 25) })!.Value;
+        Assert.Contains($"- **Evidence-informed Sensitivity (validated re-grades only):** {expected} / 100", report);
+        Assert.Contains("on the 1 answer(s) whose re-grade passed validation; 2 re-grade(s) excluded (rejected, or without validation provenance) keep their primary score", report);
+        Assert.Contains($"### Evidence-informed Sensitivity (validated re-grades only): {expected} / 100", report);
+
+        Assert.Contains("**Evidence-informed re-grade (Claude 5 Opus; validated):** 80 / 100, critical error no, levels 6/5/5/4 (Accuracy/Completeness/Conciseness/Readability)", report);
+        Assert.Contains("**Evidence-informed re-grade (Claude 5 Opus; rejected):** 100 / 100", report);
+        Assert.Contains("rejected because Accuracy was raised from 4 to 6 with no valid accuracy withdrawal.", report);
+        Assert.Contains("**Evidence-informed re-grade (Claude 5 Opus; no validation provenance, excluded):** 95 / 100", report);
+    }
+
+    [Fact]
+    public void EvidenceInformedSensitivity_Harness31_ReportsTheExcludedCount_WhenEveryRegradeIsExcluded()
+    {
+        var q1 = BoardGradedAnswer(1, 40);
+        var run = Harness30BoardRun(q1);
+        run.HarnessVersion = "31";
+        q1.EvidenceInformedQualityScore = 90;
+        q1.EvidenceInformedJson = ValidatedRegradeJson(eligible: false, errors: "[\"the re-grade lowered Accuracy from 4 to 3.\"]");
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("on the 0 answer(s) whose re-grade passed validation; 1 re-grade(s) excluded", report);
+        Assert.Contains($"- **Evidence-informed Sensitivity (validated re-grades only):** {run.QualityIndex} / 100", report);
+    }
+
+    [Fact]
+    public void AssessorFindings_NameASupportedAccusation_AndKeepAdvisoryItemsOutOfRefutedClaims()
+    {
+        var q1 = BoardGradedAnswer(1, 60);
+        q1.AccuracyLevel = 4;
+        q1.ClaimsRefutedCount = 1;
+        q1.ClaimVerificationJson = System.Text.Json.JsonSerializer.Serialize(new[]
+        {
+            new BenchmarkClaimVerification(0, "Own refuted claim.", BenchmarkClaimVerdict.Refuted, "src/own.c:1", "False.")
+                { Roles = new[] { BenchmarkClaimRoles.UnverifiedClaim } },
+            new BenchmarkClaimVerification(1, "Charged but true.", BenchmarkClaimVerdict.Supported, "src/objects.c:2889", "True.")
+                { Roles = new[] { BenchmarkClaimRoles.AccusedQuote } },
+            new BenchmarkClaimVerification(2, "Charged and false.", BenchmarkClaimVerdict.Refuted, "src/zap.c:9", "False.")
+                { Roles = new[] { BenchmarkClaimRoles.AccusedQuote } }
+        });
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(Harness30BoardRun(q1));
+
+        Assert.Contains("- **Supported Accusations:** 1 (Q1)", report);
+        Assert.Contains("a sentence the assessor charged as false was checked by the claim verifier and **supported** — \"Charged but true.\" (src/objects.c:2889)", report);
+        Assert.Contains("- **Q1:** \"Own refuted claim.\"", report);
+        Assert.DoesNotContain("- **Q1:** \"Charged and false.\"", report);
     }
 
     [Fact]
@@ -2916,7 +2994,9 @@ public class BenchmarkReportBuilderTests
         // A legacy run printing "0 failed" would assert something false — no rows exist to
         // count, so the line must be absent rather than printed with zeroes.
         Assert.DoesNotContain("**Tool Call Outcomes:**", report);
-        Assert.DoesNotContain("| Round | Tool | Args | Status | Exec (ms) | Result Size |", report);
+        Assert.DoesNotContain("**Not-found results:**", report);
+        Assert.DoesNotContain("**Cut before the model saw it:**", report);
+        Assert.DoesNotContain("| Round | Tool | Args | Status | Exec (ms) | Result Size | Note |", report);
 
         Assert.Contains("### Tool Usage Profile", report);
         Assert.Contains("`wiki_search`", report);
@@ -3033,6 +3113,105 @@ public class BenchmarkReportBuilderTests
         var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(answer));
 
         Assert.Contains("(pruned)", report);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Diagnostics read from the stored rows by BenchmarkToolResultClassifier: the two Tool
+    // Usage Profile lines and the per-question Note column.
+    // -------------------------------------------------------------------------------------
+
+    private static List<BenchmarkRunAnswerToolCall> DiagnosticToolCalls()
+    {
+        const string capped = "src/zap.c:1: x... [Truncated: showing 20 of 90 characters. Narrow the query, or ask for a specific section, to see the rest.]";
+        const string recordCut = "abc... [Record truncated: stored 3 of 50 characters]";
+        return new List<BenchmarkRunAnswerToolCall>
+        {
+            new BenchmarkRunAnswerToolCall { SortOrder = 0, Name = "wiki_search", Status = "completed", Result = "No GnollHack wiki article matched 'grail'.", ResultLengthChars = 42 },
+            new BenchmarkRunAnswerToolCall { SortOrder = 1, Name = "source_code_search", Status = "completed", Result = capped, ResultLengthChars = capped.Length },
+            new BenchmarkRunAnswerToolCall { SortOrder = 2, Name = "wiki_search", Status = "completed", Result = null, ResultLengthChars = 4096 },
+            new BenchmarkRunAnswerToolCall { SortOrder = 3, Name = "wiki_view", Status = "completed", Result = recordCut, ResultLengthChars = 50, ResultTruncated = true },
+            new BenchmarkRunAnswerToolCall { SortOrder = 4, Name = "wiki_view", Status = "completed", Result = "The Holy Grail heals.", ResultLengthChars = 21 },
+            new BenchmarkRunAnswerToolCall { SortOrder = 5, Name = "get_knowledge_article", Status = "error", Error = "Article not found for topic 'grail'. Available topics: artifacts" }
+        };
+    }
+
+    [Fact]
+    public void ToolUsageProfile_RowCarryingRun_PrintsNotFoundAndCutLines()
+    {
+        var answer = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        answer.ToolCalls = DiagnosticToolCalls();
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(answer));
+
+        // Four inspectable successes (the pruned payload is neither a hit nor a miss), one miss
+        // among them, and the knowledge-article miss reported apart because it is a failed call.
+        Assert.Contains(
+            "- **Not-found results:** 1 of 4 inspectable successful payloads (`wiki_search` ×1); plus 1 failed call(s) whose error is a not-found (`get_knowledge_article` ×1); 1 payloads unavailable.",
+            report);
+        // The batch budget and the turn limit cut after a result is stored, so they are never
+        // printed as a count: "not recorded" is not zero.
+        Assert.Contains(
+            "- **Cut before the model saw it:** 1 by the per-tool cap; batch budget and turn limit not recorded. **Cut in the stored record only:** 1.",
+            report);
+        Assert.DoesNotContain("batch budget 0", report);
+
+        // The outcome split is unchanged beside them.
+        Assert.Contains("**Tool Call Outcomes:** 5 succeeded, 1 failed, 0 refused by budget.", report);
+    }
+
+    [Fact]
+    public void PerQuestionCallTable_NoteColumn_UsesTheFixedVocabulary()
+    {
+        var answer = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        answer.ToolCalls = DiagnosticToolCalls();
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(answer));
+
+        Assert.Contains("| Round | Tool | Args | Status | Exec (ms) | Result Size | Note |", report);
+        Assert.Contains("|------:|------|------|--------|----------:|------------:|------|", report);
+        Assert.Contains("| 42 chars | miss |", report);
+        Assert.Contains("| 4,096 chars | unavailable |", report);
+        Assert.Contains("| 50 chars | record cut |", report);
+        Assert.Contains("| 21 chars |  |", report);
+        Assert.Contains("| — | miss |", report);
+        Assert.Contains(" | cut |", report);
+    }
+
+    [Fact]
+    public void AccuracyWithheldForPrecision_IsCountedOnItsOwnLine_AndNamedInTheHarnessNote()
+    {
+        // Run 53's Q9 shape: Accuracy withheld for missing precision on an answer with no
+        // unverified claims.
+        var q9 = ScoredAnswer(9, BenchmarkDifficulty.Advanced, 60, 70);
+        q9.AccuracyLevel = 4;
+        q9.CompletenessLevel = 6;
+        q9.ConcisenessLevel = 6;
+        q9.ReadabilityLevel = 6;
+        q9.AssessmentEvidenceJson = EvidenceJson(
+            "Accuracy is held at 4 rather than 6 because the answer lacks the source-level precision the rubric's formula implies.",
+            "Matches rubric.");
+        q9.AnswerFlags = (int)BenchmarkAnswerFlags.UnevidencedDeduction;
+
+        var clean = ScoredAnswer(10, BenchmarkDifficulty.Simple, 20, 90);
+        clean.AccuracyLevel = 5;
+        clean.AssessmentEvidenceJson = EvidenceJson("The answer incorrectly gives the timeout as 50 turns; held at 5 rather than 6.");
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(q9, clean));
+
+        Assert.Contains("- **Accuracy Withheld for Precision:** 1 (Q9)", report);
+        Assert.Contains("Accuracy to 4/6 while its stated evidence withholds the level for missing precision, nuance or depth rather than naming a statement that is wrong or imprecise", report);
+    }
+
+    [Fact]
+    public void AccuracyWithheldForPrecision_IsAbsent_WhenNoAnswerMatches()
+    {
+        var answer = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        answer.AccuracyLevel = 5;
+        answer.AssessmentEvidenceJson = EvidenceJson("The answer lists Level as 40 when it is 25.");
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(answer));
+
+        Assert.DoesNotContain("**Accuracy Withheld for Precision:**", report);
     }
 
     // -------------------------------------------------------------------------------------

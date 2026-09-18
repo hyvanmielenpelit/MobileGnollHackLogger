@@ -179,49 +179,150 @@ namespace Overseer.Services.Tools
 
         private const int ProbeMaxResults = 3;
         private const int ProbeMaxResultLength = 1000;
+        private const int MissContentMaxLength = 600;
+        private const int QueryEchoMaxLength = 80;
+
+        /// <summary>The outcome of a bounded probe: whether it hit, found nothing, or could not be run at all.</summary>
+        internal enum ProbeState { Hit, NoMatch, Failed }
 
         /// <summary>
         /// Builds a miss message that points at a next action instead of a bare "not found":
         /// near-neighbour identifiers, a whitespace-collapsed retry, or per-term phrase probes,
-        /// depending on the shape of the query. Never throws — falls back to a plain miss message.
+        /// depending on the shape of the query. Under a file_filter and a literal query, an
+        /// unfiltered re-run of the same query says whether the filter or the corpus excluded the
+        /// match, and the message is kept to 600 characters by truncating the echoed query and
+        /// placing the near-neighbour text after the closing sentence. Never throws — falls back to
+        /// a plain miss message.
         /// </summary>
         private string BuildMissContent(SourceCodeService service, string query, string fileFilter, bool includeNetCode, bool isRegex)
         {
             try
             {
-                var sb = new System.Text.StringBuilder("No relevant source code found for '").Append(query).Append('\'');
+                bool enriched = !isRegex && !string.IsNullOrWhiteSpace(fileFilter);
+                string queryEcho = enriched ? TruncateQueryEcho(query) : query;
+
+                var sb = new System.Text.StringBuilder("No relevant source code found for '").Append(queryEcho).Append('\'');
                 if (!string.IsNullOrWhiteSpace(fileFilter))
                 {
                     sb.Append(" (file_filter='").Append(fileFilter).Append("' may be excluding the match)");
                 }
                 sb.Append('.');
 
+                if (enriched)
+                {
+                    AppendUnfilteredProbe(sb, service, query, queryEcho, includeNetCode);
+                }
+
+                var neighbourText = new System.Text.StringBuilder();
                 bool hasWhitespace = query.Any(char.IsWhiteSpace);
 
                 if (!isRegex && !hasWhitespace && Regex.IsMatch(query, @"^[A-Za-z0-9_][A-Za-z0-9_.>\-]*$"))
                 {
-                    AppendIdentifierNeighbours(sb, service, query, fileFilter, includeNetCode);
+                    AppendIdentifierNeighbours(neighbourText, service, query, fileFilter, includeNetCode);
                 }
                 else if (!isRegex && hasWhitespace)
                 {
-                    sb.Append(" No line contains it as one literal substring — spacing matters (e.g. 'a =' and 'a=' do not match).");
-                    AppendCollapsedWhitespaceProbe(sb, service, query, fileFilter, includeNetCode);
+                    neighbourText.Append(" No line contains it as one literal substring — spacing matters (e.g. 'a =' and 'a=' do not match).");
+                    AppendCollapsedWhitespaceProbe(neighbourText, service, query, fileFilter, includeNetCode);
 
                     var terms = query.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)
                         .Where(t => t.Length >= 2).Take(3).ToArray();
                     if (terms.Length >= 2)
                     {
-                        AppendPhraseProbes(sb, service, terms, fileFilter, includeNetCode);
+                        AppendPhraseProbes(neighbourText, service, terms, fileFilter, includeNetCode);
                     }
                 }
 
-                sb.Append(" Try search_definitions for a known symbol, or list_indexed_files to see what is indexed.");
+                if (enriched)
+                {
+                    sb.Append(" Try search_definitions for a known symbol, or list_indexed_files to see what is indexed.");
+
+                    // The near-neighbour text is optional: whole sentences of it are kept while they fit.
+                    string neighbours = neighbourText.ToString();
+                    int room = MissContentMaxLength - sb.Length;
+                    if (neighbours.Length > room)
+                    {
+                        int lastStop = room > 0 ? neighbours.LastIndexOf('.', room - 1) : -1;
+                        neighbours = lastStop > 0 ? neighbours.Substring(0, lastStop + 1) : string.Empty;
+                    }
+                    sb.Append(neighbours);
+
+                    // Only an extreme file_filter path reaches this; the cut says so.
+                    if (sb.Length > MissContentMaxLength)
+                    {
+                        sb.Length = MissContentMaxLength - 1;
+                        sb.Append('…');
+                    }
+                }
+                else
+                {
+                    sb.Append(neighbourText);
+                    sb.Append(" Try search_definitions for a known symbol, or list_indexed_files to see what is indexed.");
+                }
+
                 return sb.ToString();
             }
             catch
             {
                 return "No relevant source code found.";
             }
+        }
+
+        /// <summary>Cuts an echoed query at 80 characters with a trailing "…" so a long query cannot dominate the 600-character enriched miss.</summary>
+        private static string TruncateQueryEcho(string query) =>
+            query.Length > QueryEchoMaxLength ? query.Substring(0, QueryEchoMaxLength) + "…" : query;
+
+        /// <summary>
+        /// Reruns the same query with no file_filter, so a filtered miss can say whether the filter
+        /// or the corpus excluded the match. Uses RunProbe's three-state result rather than SafeProbe's
+        /// collapsed empty string, because "no match" and "the probe could not run" read differently.
+        /// </summary>
+        private static void AppendUnfilteredProbe(System.Text.StringBuilder sb, SourceCodeService service, string query, string queryEcho, bool includeNetCode)
+        {
+            var (state, content) = RunProbe(() => service.SearchFiles(query, "", ProbeMaxResults, includeNetCode, ProbeMaxResultLength, false, true, 0, false));
+            switch (state)
+            {
+                case ProbeState.Hit:
+                    var (summary, fileCount) = SummarizeUnfilteredProbe(content);
+                    sb.Append(" Without file_filter, '").Append(queryEcho).Append("' matches ").Append(summary).Append('.');
+                    if (fileCount == ProbeMaxResults)
+                    {
+                        sb.Append(" (top ").Append(ProbeMaxResults).Append(" files shown)");
+                    }
+                    break;
+                case ProbeState.NoMatch:
+                    sb.Append(" The same search without file_filter found no match either.");
+                    break;
+                case ProbeState.Failed:
+                    sb.Append(" The unfiltered check could not be run.");
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Runs a probe delegate and separates an exception or an "Error:" result from a clean empty
+        /// result — the three outcomes SafeProbe collapses into one empty string.
+        /// </summary>
+        internal static (ProbeState State, string Summary) RunProbe(Func<string> search)
+        {
+            string result;
+            try
+            {
+                result = search();
+            }
+            catch
+            {
+                return (ProbeState.Failed, string.Empty);
+            }
+
+            if (result != null && result.StartsWith("Error:", StringComparison.Ordinal))
+            {
+                return (ProbeState.Failed, string.Empty);
+            }
+
+            return string.IsNullOrWhiteSpace(result)
+                ? (ProbeState.NoMatch, string.Empty)
+                : (ProbeState.Hit, result);
         }
 
         private static void AppendIdentifierNeighbours(System.Text.StringBuilder sb, SourceCodeService service, string query, string fileFilter, bool includeNetCode)
@@ -319,6 +420,25 @@ namespace Overseer.Services.Tools
             return files.Count == 0
                 ? "some lines"
                 : $"{totalMatches} lines across {string.Join(", ", files.Take(3))}";
+        }
+
+        /// <summary>Same parse as SummarizeProbe, plus the distinct file count, so the caller can say when the ProbeMaxResults cap hid further files.</summary>
+        private static (string Summary, int FileCount) SummarizeUnfilteredProbe(string probeContent)
+        {
+            var files = new List<string>();
+            int totalMatches = 0;
+            foreach (var line in probeContent.Split('\n'))
+            {
+                var m = Regex.Match(line.Trim(), @"^(.*?)\s*\((\d+) matches?\)$");
+                if (m.Success)
+                {
+                    totalMatches += int.Parse(m.Groups[2].Value);
+                    files.Add(m.Groups[1].Value);
+                }
+            }
+            return files.Count == 0
+                ? ("some lines", 0)
+                : ($"{totalMatches} lines across {string.Join(", ", files.Take(3))}", files.Count);
         }
     }
 }

@@ -54,6 +54,13 @@ public class BenchmarkPerQuestionVerdictSummary
     public IReadOnlyList<string> ContestedAccuracyDeductionBases { get; set; } = Array.Empty<string>();
 
     /// <summary>
+    /// Sentences of the answer the assessor charged as false when it docked Accuracy, which the claim
+    /// verifier checked against the source or wiki and supported with a citation. Printed into the
+    /// synthesis prompt so the narrative does not repeat the charge as an error of the answer.
+    /// </summary>
+    public IReadOnlyList<(string Claim, string? Citation)> SupportedAccusations { get; set; } = Array.Empty<(string, string?)>();
+
+    /// <summary>
     /// The primary assessor's advisory re-grade with the verifier's findings in hand, and what it
     /// withdrew. Null when the answer was not re-graded.
     /// </summary>
@@ -67,6 +74,22 @@ public class BenchmarkPerQuestionVerdictSummary
     public bool CriticalError { get; set; }
     public string? ReviewComment { get; set; }
     public BenchmarkAnswerStatus Status { get; set; }
+}
+
+/// <summary>
+/// One original deduction an evidence-informed re-grade may withdraw: an opaque id, its kind
+/// (<c>criticalError</c> or <c>accuracy</c>), the verification role it was established from, the
+/// deduction's own text, and the finding ids (<c>F</c> + claim index) that bear on it.
+/// </summary>
+public sealed record BenchmarkEvidenceInformedTarget(
+    string Id,
+    string Kind,
+    string Source,
+    string Text,
+    IReadOnlyList<string> FindingIds)
+{
+    public const string CriticalErrorKind = "criticalError";
+    public const string AccuracyKind = "accuracy";
 }
 
 public static class BenchmarkAssessmentPrompt
@@ -142,7 +165,21 @@ public static class BenchmarkAssessmentPrompt
     //   counting one failure on two orthogonal axes would penalise it twice. The run still reports
     //   CompletedWithErrors — an unanswered question is an error, not merely a low score.
     // Scores are not comparable with v9 whenever either run contains an unanswered question.
-    public const int ScoringMethodVersion = 10;
+    // v11: ACCURACY levels 4-6 are re-anchored on what the answer states. v10's anchors rewarded
+    //   source-level depth — level 5 "nuanced understanding of mechanics and interactions", level 6
+    //   "authoritative precision matching C core source code implementation details exactly" — which
+    //   the production chat prompt's concise mode tells the candidate not to produce, so on run 53
+    //   (2026-09-18) short answers with no false statement were held at 4 or 5 "rather than 6" for
+    //   lacking source-level precision. Level 4 is now accurate in substance with minor imprecisions a
+    //   player would not act on, level 5 a single trivial imprecision, and level 6 no false or
+    //   imprecise statement in any claim the assessor can adjudicate. A scope rule says depth and
+    //   length are not ACCURACY criteria, and instruction 8 and the evidence rule require every level
+    //   below 6 to name a statement the answer makes that is wrong or imprecise. Completeness,
+    //   Conciseness, Readability, the critical-error definition, the weights and the level-to-points
+    //   mapping do not move. On the default profile the largest single-answer lift, Accuracy 4 to 6,
+    //   is 28 points x 0.55 = 15.4 quality points before caps and rounding.
+    // Scores are not comparable with v10 on Accuracy, and therefore on the quality score and every index.
+    public const int ScoringMethodVersion = 11;
 
     /// <summary>
     /// The harness the run executed under. A constant rather than a configuration key: it exists
@@ -418,8 +455,31 @@ public static class BenchmarkAssessmentPrompt
     ///     ScoringMethodVersion stays 10 and CandidateSystemPromptSha256 does not move. A run
     ///     stamped 30 differs from one stamped 29 on HarnessVersion and ToolGuidesSha256, which is
     ///     below Tier B.
+    /// v31: scoring method 11 (ACCURACY levels 4-6 anchored on what the answer states, a scope rule,
+    ///     instruction 8 and the evidence rule requiring a named wrong or imprecise statement below 6)
+    ///     moves with it. Re-assess, trial, calibrate, re-run, re-run failed, both retries and series
+    ///     resume are refused on a run graded under another scoring method; Rescore stays available
+    ///     and never stamps a method onto levels it did not grade (H0). A sentence of the answer the
+    ///     assessor quoted when it docked ACCURACY at 4 or below, or on a contested verdict, is sent to
+    ///     the claim verifier with its context; every verification record carries harness-owned roles
+    ///     (unverifiedClaim, criticalErrorQuote, outOfRubricBasis, accusedQuote), a supported accused
+    ///     sentence raises ContestedAccuracyDeduction, and the verifier receives the candidate's tool
+    ///     calls as untrusted leads. A new verdict clears the previous verdict's verification (H1).
+    ///     The unevidenced-deduction detector gains an ACCURACY precision rule and the no-fault and
+    ///     denial vocabularies widen (H2, H4). The evidence-informed re-grade withdraws only
+    ///     server-listed targets on the strength of their listed findings, is validated, and counts in
+    ///     a sensitivity figure or the synthesis only when valid; its advisory quality keeps the
+    ///     primary's Completeness, Conciseness and Readability and the run's scoring snapshot (H3). The
+    ///     critical-error quote must quote the advice a clause is about (H3b), valid Markdown and LaTeX
+    ///     math is judged as typeset (H5), and the report classifies every tool result by facet (H6).
+    ///     source_code_search reports where a filtered literal miss matches unfiltered, wiki_search
+    ///     ranks articles matching more of the query's words first, flag unions lose their enclosing
+    ///     parentheses, and two tool guides change, which moves ToolGuidesSha256.
+    ///     CandidateSystemPromptSha256 does not move. A run stamped 31 differs from one stamped 30 on
+    ///     HarnessVersion, ScoringMethodVersion and ToolGuidesSha256: two instrument keys, so the
+    ///     comparison view does not rank them against each other.
     /// </summary>
-    public const string HarnessVersion = "30";
+    public const string HarnessVersion = "31";
 
     /// <summary>
     /// The complete per-question assessor prompt: <see cref="BuildPerQuestionPreamble"/>, a blank
@@ -488,7 +548,7 @@ public static class BenchmarkAssessmentPrompt
         // confirm this" is ACCURACY level 3, so an unverifiable claim cost the same as a verified
         // falsehood: on the 2026-09-03 run Q1 was docked to 3/6 for a Yeenaghu trait the assessor
         // called "unverified", which is a deduction for knowing more than the rubric.
-        sb.AppendLine("8. A claim the rubric neither states nor contradicts, and that you cannot positively say is **wrong**, is **not** an accuracy deduction. Report it in `unverifiedClaims` instead — verbatim from the answer — and grade ACCURACY on the claims you can actually adjudicate. \"I could not confirm this\" and \"this is false\" are different findings and the harness records them differently. A claim outside the rubric does not lower the ACCURACY level either — do not withhold level 5 or 6 because the answer states something the rubric does not cover. Levels 5 and 6 are withheld only for a named defect.");
+        sb.AppendLine("8. A claim the rubric neither states nor contradicts, and that you cannot positively say is **wrong**, is **not** an accuracy deduction. Report it in `unverifiedClaims` instead — verbatim from the answer — and grade ACCURACY on the claims you can actually adjudicate. \"I could not confirm this\" and \"this is false\" are different findings and the harness records them differently. A claim outside the rubric does not lower the ACCURACY level either — do not withhold level 5 or 6 because the answer states something the rubric does not cover. Award an ACCURACY level below 6 only for a named statement in the answer that is wrong or imprecise.");
         sb.AppendLine();
         sb.AppendLine("--- SCORING DIMENSIONS (BARS 0-6) ---");
         sb.AppendLine();
@@ -500,9 +560,12 @@ public static class BenchmarkAssessmentPrompt
         // reached for when it could not verify a claim, which is what instruction 8 now forbids.
         // Fabrication is still covered at levels 0-2 and by CRITICAL ERROR.
         sb.AppendLine("- Level 3: Mostly correct; minor inaccuracies or subtle confusion of edge cases.");
-        sb.AppendLine("- Level 4: Fully accurate; all factual claims align with GnollHack mechanics with no meaningful errors.");
-        sb.AppendLine("- Level 5: Highly accurate and precise; demonstrates nuanced understanding of mechanics and interactions.");
-        sb.AppendLine("- Level 6: Flawless, authoritative precision matching C core source code implementation details exactly.");
+        // Scoring method v11: levels 4-6 anchor on what the answer states, not on its depth, which
+        // the production concise prompt tells the candidate not to produce.
+        sb.AppendLine("- Level 4: Accurate in substance, with minor imprecisions that are not errors a player would act on: a loosely stated figure, an imprecise term, a rule stated without a condition that does not apply here.");
+        sb.AppendLine("- Level 5: Accurate, with a single trivial imprecision and nothing a player could act on wrongly.");
+        sb.AppendLine("- Level 6: No false or imprecise statement: every claim the answer makes that you can adjudicate is correct as stated.");
+        sb.AppendLine("- **ACCURACY grades only what the answer states.** Depth, length, source-level detail and how many mechanics are covered are not ACCURACY criteria. A two-sentence answer in which you find no false or imprecise statement is level 6; what it leaves out is graded under COMPLETENESS. Never withhold an ACCURACY level because the answer lacks precision, nuance, a formula, a figure or a source reference that it did not attempt to give. A claim you cannot adjudicate goes to `unverifiedClaims` (instruction 8): it does not lower the level, and level 6 does not certify it. Every level below 6 must name a statement the answer makes and say what is wrong or imprecise about it.");
         sb.AppendLine();
         sb.AppendLine("### 2. COMPLETENESS (Weight: 25%)");
         sb.AppendLine("- Level 0: Completely fails to answer the question prompt.");
@@ -539,6 +602,7 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine("- Level 4: Clear structure, logical flow, good use of formatting and markdown.");
         sb.AppendLine("- Level 5: Highly readable, clean headings, bullet points, intuitive flow.");
         sb.AppendLine("- Level 6: Masterful formatting, pristine layout, effortless to scan and comprehend.");
+        sb.AppendLine("- The answer is displayed in a client that renders Markdown and LaTeX math (`$…$`, `$$…$$`, `\\(…\\)`, `\\[…\\]`). Valid math markup is judged as the player sees it typeset and is not a readability defect. Invalid markup, an unreadable formula, or a formula where a sentence would do, still are.");
         // Scoring method v9. The anchors above already name bullet points and clean headings as the
         // level-5 form, so a rubric FORM criterion proposing some other presentation is a second,
         // unstated scale. The suite grades the production chat prompt, which asks for concise prose;
@@ -562,11 +626,12 @@ public static class BenchmarkAssessmentPrompt
         // different findings and only the second one can carry a critical error.
         sb.AppendLine("- **A claim the rubric does not mention is not thereby invented.** Mark criticalError only for a claim the rubric's ground truth or your own verified knowledge **contradicts**; a claim the rubric merely omits belongs in `unverifiedClaims` (section 7), where the harness checks it against the source.");
         sb.AppendLine("- When criticalError is true you MUST return `criticalErrorQuote`: the offending sentence copied verbatim from the candidate answer. The harness checks that this text appears in the answer and **ignores an unverifiable critical error**, so a missing or paraphrased quote costs the finding.");
+        sb.AppendLine("- Quote the sentence that commits the error the clause names. When the clause is about advice or an implication, quote the advice, not a true statement beside it.");
         sb.AppendLine();
         sb.AppendLine("### 6. EVIDENCE FOR DEDUCTIONS");
         sb.AppendLine("For accuracy and completeness, state what your deduction rests on:");
         sb.AppendLine("- `accuracyEvidence` / `completenessEvidence`: name the rubric point the answer failed, quoting the rubric where you can.");
-        sb.AppendLine("- **An omission is NEVER an ACCURACY deduction**, however material. Missing information is graded through COMPLETENESS, and charging it on both dimensions costs the answer 80% of the quality weight for one defect. An accuracy deduction must name something the answer **states** that is wrong. \"The answer gives X instead of Y\" and \"the answer fails to mention Y\" are completeness findings; \"the answer says X, and X is false\" is an accuracy finding. The harness checks this and routes a mismatch to a second reader.");
+        sb.AppendLine("- **An omission is NEVER an ACCURACY deduction**, however material. Missing information is graded through COMPLETENESS, and charging it on both dimensions costs the answer 80% of the quality weight for one defect. An accuracy deduction must name something the answer **states** that is wrong or imprecise. \"The answer gives X instead of Y\" and \"the answer fails to mention Y\" are completeness findings; \"the answer says X, and X is false\" is an accuracy finding. The harness checks this and routes a mismatch to a second reader.");
         sb.AppendLine($"- If a deduction does not come from the rubric, the evidence sentence MUST begin with `{BenchmarkAssessmentParser.OutOfRubricAccuracyMarker}` followed by the basis — the harness sends that basis to the claim verifier, and a deduction written without the marker is never checked.");
         sb.AppendLine("- A no-fault evidence string such as 'Matches rubric' may accompany **level 6 only**. If you award any level below 6, the evidence string MUST name specifically what kept it below — the rubric point, the claim, or the missing element. 'Matches rubric' beside level 4 asserts both that the answer was faultless and that it was not; the harness records that contradiction and routes the answer to a second reader.");
         sb.AppendLine("- Never invent a rubric point that is not present above.");
@@ -823,9 +888,10 @@ public static class BenchmarkAssessmentPrompt
 
     /// <summary>
     /// The evidence-informed re-grade body: <see cref="BuildPerQuestionBody"/> unchanged, then the
-    /// claim verifier's findings and the re-grade instruction. The first verdict's levels, score
-    /// and comment are deliberately absent, for the reason the blind second opinion omits them:
-    /// the re-grade is to say what the evidence supports, not how far to move from an anchor.
+    /// claim verifier's findings, each with its id, the first verdict's four levels and critical-error
+    /// state, the targets it may withdraw, and the re-grade instruction. The first verdict's score and
+    /// comment stay absent: the re-grade withdraws listed deductions on listed findings and is
+    /// validated against those, so it needs the levels it is compared with and nothing else.
     /// </summary>
     public static string BuildEvidenceInformedBody(
         int orderIndex,
@@ -843,7 +909,10 @@ public static class BenchmarkAssessmentPrompt
         int scrubbedArtifactCount = 0,
         int? toolCallBudget = null,
         string? boardName = null,
-        string? boardText = null)
+        string? boardText = null,
+        IReadOnlyList<BenchmarkEvidenceInformedTarget>? targets = null,
+        (int Accuracy, int Completeness, int Conciseness, int Readability)? originalLevels = null,
+        bool originalCriticalError = false)
     {
         var sb = new StringBuilder();
         sb.AppendLine(BuildPerQuestionBody(
@@ -866,12 +935,7 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine();
         foreach (var v in verifications)
         {
-            string role = string.Equals(v.Claim?.Trim(), criticalErrorQuote?.Trim(), StringComparison.Ordinal)
-                ? " (the sentence you quoted as a critical error)"
-                : string.Equals(v.Claim?.Trim(), outOfRubricBasis?.Trim(), StringComparison.Ordinal)
-                    ? " (the statement your out-of-rubric Accuracy deduction rested on)"
-                    : string.Empty;
-            sb.AppendLine($"- Claim{role}: \"{v.Claim}\"");
+            sb.AppendLine($"- Finding F{v.ClaimIndex}{FindingRoleLabel(v, criticalErrorQuote, outOfRubricBasis)}: \"{v.Claim}\"");
             sb.AppendLine($"  Verdict: {v.Verdict}");
             if (!string.IsNullOrWhiteSpace(v.Citation))
             {
@@ -883,17 +947,57 @@ public static class BenchmarkAssessmentPrompt
             }
         }
         sb.AppendLine("--- END VERIFIER FINDINGS ---");
+        if (originalLevels.HasValue)
+        {
+            var levels = originalLevels.Value;
+            sb.AppendLine();
+            sb.AppendLine("--- YOUR FIRST VERDICT ---");
+            sb.AppendLine($"Levels: Accuracy={levels.Accuracy}/6, Completeness={levels.Completeness}/6, Conciseness={levels.Conciseness}/6, Readability={levels.Readability}/6");
+            sb.AppendLine($"Critical error: {(originalCriticalError ? "yes" : "no")}");
+            sb.AppendLine("--- END YOUR FIRST VERDICT ---");
+        }
+        if (targets != null && targets.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("--- DEDUCTIONS YOU MAY WITHDRAW ---");
+            foreach (var target in targets)
+            {
+                string kind = target.Kind == BenchmarkEvidenceInformedTarget.CriticalErrorKind ? "Critical error" : "Accuracy deduction";
+                sb.AppendLine($"- {target.Id} ({kind}): \"{target.Text}\" — findings that bear on it: {string.Join(", ", target.FindingIds)}");
+            }
+            sb.AppendLine("--- END DEDUCTIONS YOU MAY WITHDRAW ---");
+        }
         sb.AppendLine();
         sb.AppendLine(EvidenceInformedInstruction);
         sb.AppendLine();
-        sb.AppendLine("Output the same JSON schema as above, with one more field: \"withdrawn\", a list of short strings naming each deduction or critical error you withdrew — for example [\"Accuracy deduction: the claim that peacefuls are never displaced\"]. Output nothing else.");
+        sb.AppendLine("Output the same JSON schema as above, with one more field: \"withdrawn\", a list with one object per deduction you withdrew — \"withdrawn\": [ { \"targetId\": \"T1\", \"findingIds\": [\"F2\"], \"reason\": \"…\" } ] — or an empty list. Output nothing else.");
 
         return sb.ToString();
     }
 
+    /// <summary>Why a finding was submitted, from its roles, or for a legacy record by matching its text.</summary>
+    private static string FindingRoleLabel(BenchmarkClaimVerification v, string? criticalErrorQuote, string? outOfRubricBasis)
+    {
+        if (v.Roles != null)
+        {
+            var labels = new List<string>();
+            if (v.Roles.Contains(BenchmarkClaimRoles.CriticalErrorQuote)) labels.Add("the sentence you quoted as a critical error");
+            if (v.Roles.Contains(BenchmarkClaimRoles.OutOfRubricBasis)) labels.Add("the statement your out-of-rubric Accuracy deduction rested on");
+            if (v.Roles.Contains(BenchmarkClaimRoles.AccusedQuote)) labels.Add("a sentence of the answer you charged as false or imprecise");
+            return labels.Count > 0 ? $" ({string.Join("; ", labels)})" : string.Empty;
+        }
+
+        return string.Equals(v.Claim?.Trim(), criticalErrorQuote?.Trim(), StringComparison.Ordinal)
+            ? " (the sentence you quoted as a critical error)"
+            : string.Equals(v.Claim?.Trim(), outOfRubricBasis?.Trim(), StringComparison.Ordinal)
+                ? " (the statement your out-of-rubric Accuracy deduction rested on)"
+                : string.Empty;
+    }
+
     /// <summary>The re-grade instruction <see cref="BuildEvidenceInformedBody"/> ends with.</summary>
     public const string EvidenceInformedInstruction =
-        "Re-grade this answer. You previously graded it without these findings. Withdraw an Accuracy deduction whose stated basis the verifier refuted. Withdraw a critical error whose quoted claim is true **in the context the answer gave it**. A Supported verdict on a claim does not excuse a different error in the same sentence. Change nothing the findings do not bear on. List what you withdrew in `withdrawn`, or return an empty list.";
+        "Re-grade this answer. You previously graded it without these findings. Withdraw an Accuracy deduction whose stated basis the verifier refuted. Withdraw a critical error whose quoted claim is true **in the context the answer gave it**. A Supported verdict on a claim does not excuse a different error in the same sentence. Change nothing the findings do not bear on. List what you withdrew in `withdrawn`, or return an empty list. "
+        + "Withdraw only a listed target, and only on the strength of the findings listed for it; a deduction you would now grade differently for another reason is not a withdrawal. A Supported verdict on the critical-error quote shows only that the quoted sentence is literally true. Withdraw the critical error only when the rubric's CRITICAL ERROR clause is a claim about that sentence's truth; when the clause describes advice or an implication, judge the whole answer against the clause — a true sentence beside bad advice does not clear it.";
 
     private static string GetTriggerDescription(string triggerLabel) => triggerLabel switch
     {
@@ -1056,6 +1160,14 @@ public static class BenchmarkAssessmentPrompt
                     foreach (var basis in v.ContestedAccuracyDeductionBases)
                     {
                         sb.AppendLine($"Accuracy deduction on Q{v.OrderIndex} rests on the assessor's own-knowledge statement \"{basis}\", which the verifier refuted against the source/wiki — do not describe this deduction as an error of the answer; if you name it, name it as a contested grading deduction.");
+                    }
+                }
+                if (v.SupportedAccusations != null && v.SupportedAccusations.Count > 0)
+                {
+                    foreach (var accusation in v.SupportedAccusations)
+                    {
+                        string cit = !string.IsNullOrWhiteSpace(accusation.Citation) ? $" ({accusation.Citation})" : string.Empty;
+                        sb.AppendLine($"A sentence of Q{v.OrderIndex} the assessor charged as false, \"{accusation.Claim}\", was checked by the claim verifier and supported{cit} — do not describe it as an error of the answer; if you name the deduction, name it as a contested grading deduction.");
                     }
                 }
                 if (v.EvidenceInformedQualityScore.HasValue)

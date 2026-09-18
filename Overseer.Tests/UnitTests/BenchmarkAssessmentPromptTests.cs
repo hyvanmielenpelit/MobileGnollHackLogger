@@ -192,7 +192,7 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void ScoringMethodVersion_IsTen()
+    public void ScoringMethodVersion_IsEleven()
     {
         // v4 was the artifact scrubbing and speed recalibration. v5 changed what a critical
         // error is — an omission can no longer be one, and the claim must be quoted. v6 changed
@@ -206,15 +206,18 @@ public class BenchmarkAssessmentPromptTests
         // under FORM: rather than deducted for — and stops the synthesis accuracy-defect marker
         // firing on sentence-form denials. v10 scores a question the model failed to answer 0
         // instead of excluding it, so a candidate can no longer raise its index by not answering.
+        // v11 re-anchors ACCURACY levels 4-6 on what the answer states rather than on source-level
+        // depth, which the production concise prompt tells the candidate not to produce; a level
+        // below 6 must name a wrong or imprecise statement. It moves every index.
         // Scores are not comparable across any of those boundaries on the answers they touch, and
         // the report prints the version so a mixed comparison is visible rather than silent.
-        Assert.Equal(10, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        Assert.Equal(11, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 
     [Fact]
-    public void HarnessVersion_IsThirty()
+    public void HarnessVersion_IsThirtyOne()
     {
-        Assert.Equal("30", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("31", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -480,7 +483,8 @@ public class BenchmarkAssessmentPromptTests
         Assert.Contains("--- BEGIN RUBRIC ---", body);
         Assert.Contains("- displace_peaceful defaults to on", body);
         Assert.Contains("--- VERIFIER FINDINGS ---", body);
-        Assert.Contains($"Claim (the statement your out-of-rubric Accuracy deduction rested on): \"{basis}\"", body);
+        Assert.Contains($"Finding F0 (the statement your out-of-rubric Accuracy deduction rested on): \"{basis}\"", body);
+        Assert.Contains("Finding F1: \"A peaceful dwarf is displaced.\"", body);
         Assert.Contains("Verdict: Refuted", body);
         Assert.Contains("Citation: src/options.c:139", body);
         Assert.Contains("Basis: displace_peaceful defaults TRUE.", body);
@@ -489,24 +493,111 @@ public class BenchmarkAssessmentPromptTests
         Assert.Contains(BenchmarkAssessmentPrompt.EvidenceInformedInstruction, body);
         Assert.Contains("\"withdrawn\"", body);
 
-        // The first verdict is absent, as it is from a blind second opinion.
+        // Without levels and targets the first verdict is absent; the score and comment never appear.
         Assert.DoesNotContain("Quality score:", body);
         Assert.DoesNotContain("FIRST VERDICT", body);
         Assert.DoesNotContain("Critical error: yes", body);
     }
 
     [Fact]
-    public void Versions_HarnessIs30_ScoringMethodIs10()
+    public void BuildEvidenceInformedBody_ListsTheFirstLevelsAndTheTargets_AndAsksForStructuredWithdrawals()
     {
-        Assert.Equal("30", BenchmarkAssessmentPrompt.HarnessVersion);
+        string body = BenchmarkAssessmentPrompt.BuildEvidenceInformedBody(
+            1,
+            "Question?",
+            BenchmarkDifficulty.Intermediate,
+            "Rubric.",
+            "Answer.",
+            BenchmarkAnswerStatus.Ok,
+            new[]
+            {
+                new BenchmarkClaimVerification(0, "Quoted sentence.", BenchmarkClaimVerdict.Supported, "src/a.c:1", "True.")
+                    { Roles = new[] { BenchmarkClaimRoles.CriticalErrorQuote } },
+                new BenchmarkClaimVerification(1, "Charged sentence.", BenchmarkClaimVerdict.Supported, "src/b.c:2", "True.")
+                    { Roles = new[] { BenchmarkClaimRoles.AccusedQuote } }
+            },
+            targets: new[]
+            {
+                new BenchmarkEvidenceInformedTarget("T1", BenchmarkEvidenceInformedTarget.CriticalErrorKind, BenchmarkClaimRoles.CriticalErrorQuote, "Quoted sentence.", new[] { "F0" }),
+                new BenchmarkEvidenceInformedTarget("T2", BenchmarkEvidenceInformedTarget.AccuracyKind, BenchmarkClaimRoles.AccusedQuote, "Charged sentence.", new[] { "F1" })
+            },
+            originalLevels: (4, 5, 6, 5),
+            originalCriticalError: true);
 
-        // Harness 30 gives every grading path the board and refuses to grade a snapshot suite
-        // without it, records board delivery per grading role, adds an advisory evidence-informed
-        // re-grade, and changes the wiki_search snippet, which moves ToolGuidesSha256. The scoring
-        // method does not move: nothing here changes what a quality score is, and the re-grade is
-        // read by no scoring path. A 30-stamped run differs from a 29-stamped one on two
-        // instrument keys, which is below Tier B.
-        Assert.Equal(10, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        Assert.Contains("Finding F0 (the sentence you quoted as a critical error): \"Quoted sentence.\"", body);
+        Assert.Contains("Finding F1 (a sentence of the answer you charged as false or imprecise): \"Charged sentence.\"", body);
+        Assert.Contains("Levels: Accuracy=4/6, Completeness=5/6, Conciseness=6/6, Readability=5/6", body);
+        Assert.Contains("Critical error: yes", body);
+        Assert.Contains("- T1 (Critical error): \"Quoted sentence.\" — findings that bear on it: F0", body);
+        Assert.Contains("- T2 (Accuracy deduction): \"Charged sentence.\" — findings that bear on it: F1", body);
+        Assert.Contains("\"withdrawn\": [ { \"targetId\": \"T1\", \"findingIds\": [\"F2\"], \"reason\": \"…\" } ]", body);
+        Assert.Contains("Withdraw only a listed target, and only on the strength of the findings listed for it", BenchmarkAssessmentPrompt.EvidenceInformedInstruction);
+        Assert.Contains("a true sentence beside bad advice does not clear it", BenchmarkAssessmentPrompt.EvidenceInformedInstruction);
+        Assert.DoesNotContain("Quality score:", body);
+    }
+
+    [Fact]
+    public void Versions_HarnessIs31_ScoringMethodIs11()
+    {
+        Assert.Equal("31", BenchmarkAssessmentPrompt.HarnessVersion);
+
+        // Harness 31 moves with scoring method 11: ACCURACY levels 4-6 anchored on what the answer
+        // states. It refuses to grade part of a run graded under another method, checks the
+        // sentences the assessor charged as false, validates the evidence-informed re-grade, and
+        // changes two tool guides, which moves ToolGuidesSha256. A 31-stamped run differs from a
+        // 30-stamped one on HarnessVersion and ScoringMethodVersion, two instrument keys, so the
+        // comparison view does not rank them against each other.
+        Assert.Equal(11, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+    }
+
+    [Fact]
+    public void PerQuestionPrompt_AnchorsAccuracyLevelsFourToSixOnWhatTheAnswerStates()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            "Suite", 1, "Question?", BenchmarkDifficulty.Simple, "Rubric.", "Answer.", BenchmarkAnswerStatus.Ok);
+
+        Assert.Contains("- Level 4: Accurate in substance, with minor imprecisions that are not errors a player would act on: a loosely stated figure, an imprecise term, a rule stated without a condition that does not apply here.", prompt);
+        Assert.Contains("- Level 5: Accurate, with a single trivial imprecision and nothing a player could act on wrongly.", prompt);
+        Assert.Contains("- Level 6: No false or imprecise statement: every claim the answer makes that you can adjudicate is correct as stated.", prompt);
+        Assert.Contains("- **ACCURACY grades only what the answer states.** Depth, length, source-level detail and how many mechanics are covered are not ACCURACY criteria. A two-sentence answer in which you find no false or imprecise statement is level 6; what it leaves out is graded under COMPLETENESS. Never withhold an ACCURACY level because the answer lacks precision, nuance, a formula, a figure or a source reference that it did not attempt to give. A claim you cannot adjudicate goes to `unverifiedClaims` (instruction 8): it does not lower the level, and level 6 does not certify it. Every level below 6 must name a statement the answer makes and say what is wrong or imprecise about it.", prompt);
+        Assert.Contains("An accuracy deduction must name something the answer **states** that is wrong or imprecise.", prompt);
+
+        // The v10 anchors rewarded source-level depth the concise prompt tells the candidate not to produce.
+        Assert.DoesNotContain("Fully accurate; all factual claims align with GnollHack mechanics", prompt);
+        Assert.DoesNotContain("demonstrates nuanced understanding of mechanics and interactions", prompt);
+        Assert.DoesNotContain("matching C core source code implementation details exactly", prompt);
+    }
+
+    [Fact]
+    public void PerQuestionPrompt_CarriesTheCriticalErrorQuoteRuleAndTheMathRenderingRule()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            "Suite", 1, "Question?", BenchmarkDifficulty.Simple, "Rubric.", "Answer.", BenchmarkAnswerStatus.Ok);
+
+        Assert.Contains("- Quote the sentence that commits the error the clause names. When the clause is about advice or an implication, quote the advice, not a true statement beside it.", prompt);
+        Assert.Contains("- The answer is displayed in a client that renders Markdown and LaTeX math (`$…$`, `$$…$$`, `\\(…\\)`, `\\[…\\]`). Valid math markup is judged as the player sees it typeset and is not a readability defect. Invalid markup, an unreadable formula, or a formula where a sentence would do, still are.", prompt);
+    }
+
+    [Fact]
+    public void SynthesisPrompt_NamesASupportedAccusation_ApartFromARefutedBasis()
+    {
+        var summary = new BenchmarkPerQuestionVerdictSummary
+        {
+            OrderIndex = 9,
+            QuestionText = "Question 9",
+            AccuracyLevel = 4,
+            CompletenessLevel = 5,
+            ConcisenessLevel = 5,
+            ReadabilityLevel = 5,
+            QualityScore = 70,
+            Status = BenchmarkAnswerStatus.Ok,
+            SupportedAccusations = new List<(string Claim, string? Citation)> { ("The Grail heals 1000 hit points.", "src/objects.c:2889") }
+        };
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { summary });
+
+        Assert.Contains("A sentence of Q9 the assessor charged as false, \"The Grail heals 1000 hit points.\", was checked by the claim verifier and supported (src/objects.c:2889)", prompt);
+        Assert.DoesNotContain("own-knowledge statement", prompt);
     }
 
     [Fact]
@@ -648,7 +739,7 @@ public class BenchmarkAssessmentPromptTests
             BenchmarkAnswerStatus.Ok);
 
         Assert.Contains(
-            "A claim outside the rubric does not lower the ACCURACY level either — do not withhold level 5 or 6 because the answer states something the rubric does not cover. Levels 5 and 6 are withheld only for a named defect.",
+            "A claim outside the rubric does not lower the ACCURACY level either — do not withhold level 5 or 6 because the answer states something the rubric does not cover. Award an ACCURACY level below 6 only for a named statement in the answer that is wrong or imprecise.",
             prompt);
     }
 

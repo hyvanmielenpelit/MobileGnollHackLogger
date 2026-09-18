@@ -222,6 +222,25 @@ hidden ...]` for the rest.
 > tool result is re-sent to the model on each subsequent round of the same question**, so a
 > verbose miss is paid for once per remaining round.
 >
+> **From harness 31, a filtered literal miss says where the query does match.** When `file_filter`
+> is non-blank and the search is not a regex (`whole_word` arrives already rewritten to `\b…\b` and
+> is skipped with it), `BuildMissContent` runs one more probe — the **whole query with no filter**,
+> same `includeNetCode`, same resolved repository — through `RunProbe`, which returns a three-state
+> `ProbeState` (`Hit`, `NoMatch`, `Failed`) instead of `SafeProbe`'s collapsed empty string. Directly
+> after part 1 it appends one of:
+> - *"Without file_filter, '<query>' matches N lines across a.c, b.c."*, plus *"(top 3 files
+>   shown)"* when three files are named — `SearchFiles` ranks by match count and takes
+>   `ProbeMaxResults` = 3, so this is never a corpus total;
+> - *"The same search without file_filter found no match either."* — never *"it does not occur in
+>   any indexed file"*: the probe is one literal, line-bounded, case-insensitive substring test, and
+>   files over `MaxSourceFileSizeKB` are not in the index at all;
+> - *"The unfiltered check could not be run."* when the probe threw or returned `Error:`.
+>
+> This enriched miss is kept to **600 characters**: the echoed query is cut at 80 characters with `…`,
+> part 4 moves ahead of the near-neighbour hints, and those hints are kept only in whole sentences
+> that fit. An unfiltered miss, a regex miss and a `whole_word` miss are byte-identical to before.
+> The existing probes still go through `SafeProbe`.
+>
 > Read a run's misses against the payload of the harness version that produced them. An
 > information-free miss leaves a model no way to tell "my phrasing was wrong" from "the game does
 > not contain this", and its cheapest recovery is another guess — the **latency and cost** failure
@@ -377,6 +396,28 @@ articles — narrow the query, or add a distinctive word from the article's titl
 after the snippets (`WikiSearchTool.cs`, `WikiService.GetRelevantSnippets`'s `totalHits` overload).
 Absent on a result whose hit count did not exceed what was returned — never assume M from N alone on
 a run before this line existed.
+
+**From harness 31, `wiki_search` ranks by coverage first.** `WikiService.GetRelevantSnippets` still
+parses, applies the category clause and searches exactly as before, so `totalHits` — the `M` of
+`Showing N of M` — is unchanged: it is the category-filtered OR query's own `TotalHits`, and no
+stricter second count exists. It then tokenizes the raw query with the service's `EnglishAnalyzer`,
+keeping distinct terms in first-occurrence order (stop words vanish, `materials`/`material` are one
+term, `two-handed` is two). For `k = n … 1` it runs the **same** scored query under a
+`QueryWrapperFilter` of a coverage query — one `title OR content` group per term with
+`MinimumNumberShouldMatch = k` — and appends documents not yet selected until `max_results` are
+chosen. The order is exactly coverage-descending, then the original BM25 score (the 5× title boost
+included), then document order; the filter does not score. **It falls back to the legacy order** for
+fewer than 2 or more than 16 distinct terms, or when the raw query contains a whole-word uppercase
+`AND`, `OR` or `NOT` (which `QueryParserBase.Escape` leaves as operators). Any scored hit no tier
+reached is appended in score order, so the returned set is unchanged whenever every match fits.
+**Three callers get the new order**: `wiki_search` itself, its own miss probe, and the `wiki_view`
+miss probe, whose candidate titles for a multi-word request now list the fuller match first.
+`GetRelevantContext` (live chat's pre-injected context, the two lookup tools), `GetLookupContext`,
+`GetArticle` and `NetHackWikiService` build their own queries and are unchanged. The guide now says
+that articles matching more of the query's distinct words rank first, and that adding words widens
+the set of matches rather than narrowing it. The tool's own `Showing N of M` line still reads
+*"narrow the query, or add a distinctive word from the article's title"* — the guide's more precise
+advice is to replace a generic word with a more distinctive one.
 
 | Tool | Required | Optional | Defaults / clamps | Config key |
 |---|---|---|---|---|
@@ -696,6 +737,27 @@ that want it); steals the Amulet of Yendor only for a monster that wants the Amu
 Wizard"*. Judge a description against the code that implements the flag, the way any other tool
 result is judged.
 
+**Flag unions lose their enclosing parentheses from harness 31** (`SourceCodeService.ParseFlagField`,
+now `internal static`). It serves the artifact `aflags`, `aflags2`, `spfx` and `cspfx` slots and the
+monster `mresists`, `mresists2`, `mconveys` and `mflags*` slots. Before splitting on `|` it removes an
+enclosing pair of parentheses **only when the opening parenthesis's matching close is the last
+character**, repeating for nested full wrappers; an expression that still contains a parenthesis is
+returned **verbatim as a string** rather than split into fabricated names. Until then The Holy
+Grail's `aflags` came back as `["(AF_RESTR", "AF_NAME_KNOWN_WHEN_INVOKED)"]` and a single
+parenthesised flag as `"(SPFX_SEARCH)"` (`include/artilist.h:333`, `:58`). `flag_descriptions` was
+unaffected either way, because `PopulateFlagDescriptions` splits on parentheses itself, so the
+criterion is the **flag values**. Two siblings keep the old blindness and are recorded follow-ups: the
+artifact `mtype` slot (a plain trim) and `ObjectsMacroResolver.SplitFlagUnions`. `ParseGenoFlags`,
+which strips any leading and trailing parenthesis, is not the template either.
+
+**`get_artifact_stats` and the artifact's base item.** `otyp` names the base item; what that item
+does when used — its effect text, charges and weight — is in `get_item_stats` under the item's
+**exact** name (The Holy Grail's `GRAIL_OF_HEALING` is `grail of healing`, resolved through the
+`SPELLTOOL` macro chain with a non-empty `item_description`). From harness 31 `get_artifact_stats.md`
+says so, permits issuing both calls together **only when the base item's name is already known**,
+and otherwise has the model read `otyp` first; what invoking the artifact adds beyond its base item
+may still need `wiki_search` or the source.
+
 **Truncation** (`Tools:get_monster_stats` / `get_item_stats` / `get_artifact_stats`, each with
 `TruncationThreshold` 9900 and `HardLimit` 10000): if the serialized JSON exceeds the threshold,
 the handler re-serializes a minified version — dropping `flag_descriptions` if only `Stats` was
@@ -744,7 +806,8 @@ exists for all three tools, by two different mechanisms:**
   - **A slot whose value is an OR of symbolic flags comes back as a list**, not as a `|`-joined
     string (`ObjectsMacroResolver.SplitFlagUnions`) — the same shape `get_monster_stats` already
     returns for `mflags1` and its siblings via `SourceCodeService.ParseFlagField`. A value with no
-    `|` is left as it stands.
+    `|` is left as it stands. `SplitFlagUnions` does **not** unwrap parentheses the way
+    `ParseFlagField` does from harness 31 (below); that sibling is a recorded follow-up.
   - **The AC, MC and spell-casting unit conventions travel with the values as `notes`**, because
     all three are stored in units the player never sees. `ac_bonus` is the stored `oc_armor_class`,
     which armour writes as `10 - ac` (`src/objects.c:1005`), and `base_ac` is that `ac` argument —

@@ -69,6 +69,28 @@ public class BenchmarkService
         "Re-scoring or re-running it would publish indices computed over only the questions that completed.";
 
     /// <summary>
+    /// True when the run was graded under the scoring method this build grades under. Anything
+    /// that grades part of a run (re-assess, calibrate, re-run, retries, series resume) is refused
+    /// otherwise, so one run never holds verdicts from two methods. The harness version is not
+    /// part of the test: a re-run under a newer harness is recorded (<c>RerunHarnessVersion</c>).
+    /// </summary>
+    internal static bool IsCurrentScoringMethod(BenchmarkRun run)
+        => run.ScoringMethodVersion == BenchmarkAssessmentPrompt.ScoringMethodVersion;
+
+    /// <summary>Why an operation that grades part of a run was refused for a run graded under another scoring method.</summary>
+    internal static string ScoringMethodRefusal(BenchmarkRun run) =>
+        $"Refused: run {run.Id} was graded under scoring method {run.ScoringMethodVersion}, and this build grades under "
+        + $"{BenchmarkAssessmentPrompt.ScoringMethodVersion}. Mixing the two inside one run would make its scores meaningless. "
+        + "Start a new run instead.";
+
+    /// <summary>
+    /// The newest scoring method whose changes a rescore applies. Methods up to 10 changed how stored
+    /// levels are turned into points and indices, which a rescore recomputes; method 11 changed only the
+    /// anchors the assessor grades by, which a rescore cannot apply because it grades nothing.
+    /// </summary>
+    internal const int LastMethodRescoreCanApply = 10;
+
+    /// <summary>
     /// A provider finish reason cut to the width of
     /// <see cref="BenchmarkRunAnswer.ProviderFinishReason"/>. These are short enumerated tokens on
     /// every provider the harness talks to; the cut is here so an unexpected one is stored rather
@@ -632,6 +654,13 @@ public class BenchmarkService
 
             if (run == null)
             {
+                _runManager.Complete(runId);
+                return;
+            }
+
+            if (!IsCurrentScoringMethod(run))
+            {
+                await RestoreTerminalStatusAsync(db, run, ScoringMethodRefusal(run));
                 _runManager.Complete(runId);
                 return;
             }
@@ -1863,10 +1892,9 @@ public class BenchmarkService
             answer.ReviewComment = res.Comment;
             answer.AssessorBoardChars = assessorBoardChars;
 
-            // An evidence-informed re-grade describes the verdict it re-read, so a new verdict drops it.
-            answer.EvidenceInformedQualityScore = null;
-            answer.EvidenceInformedCriticalError = null;
-            answer.EvidenceInformedJson = null;
+            // An evidence-informed re-grade and a claim verification describe the verdict they read,
+            // so a new verdict drops both.
+            ClearReplacedVerdictEvidence(answer);
             answer.CriticalErrorQuote = BenchmarkAssessmentFailure.Truncate(res.CriticalErrorQuote, 2048);
             answer.AssessmentEvidenceJson = BuildEvidenceJson(res);
 
@@ -2075,8 +2103,9 @@ public class BenchmarkService
         // A critical-error quote is checked here too, not only an unadjudicable claim: the quote is
         // the one assertion in the answer whose truth the cap already turns on, and the assessor
         // grades without tools while the verifier has them. So is the statement an out-of-rubric
-        // Accuracy deduction rests on, which the assessor gave from its own knowledge.
-        if (run.ClaimVerifierModelConfigurationId.HasValue && NeedsClaimVerification(answer))
+        // Accuracy deduction rests on, which the assessor gave from its own knowledge, and a
+        // sentence of the answer the assessor quoted when it docked Accuracy.
+        if (run.ClaimVerifierModelConfigurationId.HasValue && NeedsClaimVerificationOrAccusation(answer))
         {
             try
             {
@@ -2584,7 +2613,7 @@ public class BenchmarkService
             .ToListAsync(cancellationToken);
 
         candidateAnswers = candidateAnswers
-            .Where(a => NeedsClaimVerification(a) ||
+            .Where(a => NeedsClaimVerificationOrAccusation(a) ||
                         (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedVerdict) != 0 ||
                         (a.SecondOpinionCriticalError.HasValue && a.SecondOpinionCriticalError.Value != a.CriticalError))
             .ToList();
@@ -2760,24 +2789,22 @@ public class BenchmarkService
         }
 
         // After the disputed branch has persisted whatever it collected, so the quote is carried in
-        // the prompt only and never lands in the unadjudicable-claims columns.
+        // the prompt only and never lands in the unadjudicable-claims columns. The out-of-rubric
+        // basis is carried the same way. Fixed order: the critical-error quote is claim 0 and the
+        // basis claim 1; alone, the basis is claim 0. The verifier preamble names the basis by that
+        // position. Accused quotes follow; each item's roles come from this manifest, never from
+        // model output.
         bool isCriticalErrorAdjudication = IsCriticalErrorAdjudication(answer);
-        if (isCriticalErrorAdjudication)
-        {
-            claims = WithCriticalErrorQuoteFirst(claims, answer.CriticalErrorQuote);
-        }
-
-        // The out-of-rubric basis is carried the same way. Fixed order: the critical-error quote is
-        // claim 0 and the basis claim 1; alone, the basis is claim 0. The verifier preamble names
-        // the basis by that position.
         string? outOfRubricBasis = OutOfRubricBasisOf(answer);
         bool isOutOfRubricAdjudication = outOfRubricBasis != null;
-        if (isOutOfRubricAdjudication)
-        {
-            claims = WithOutOfRubricBasis(claims, outOfRubricBasis, isCriticalErrorAdjudication ? 1 : 0);
-        }
+        var manifest = BuildClaimManifest(
+            claims,
+            isCriticalErrorAdjudication ? answer.CriticalErrorQuote : null,
+            outOfRubricBasis,
+            AccusedQuotesFor(answer));
+        claims = manifest.Select(m => m.Text).ToList();
 
-        if (claims == null || claims.Count == 0) return;
+        if (claims.Count == 0) return;
 
         // Recorded as a verification failure, which "retry failed claim verification" re-runs.
         try
@@ -2810,6 +2837,8 @@ public class BenchmarkService
         int timeoutSeconds = _configuration.GetValue<int>("Benchmark:ClaimVerification:TimeoutSeconds", 300);
         int maxResultLength = _configuration.GetValue<int>("Benchmark:MaxResultLength", 10000);
 
+        var toolCallLeads = await LoadToolCallLeadsAsync(db, answer.Id, allowedTools, cancellationToken);
+
         string prompt = BenchmarkClaimVerificationPrompt.BuildPrompt(
             run.SuiteName,
             answer.OrderIndex,
@@ -2826,7 +2855,10 @@ public class BenchmarkService
             boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText,
             criticalErrorQuoteContext: isCriticalErrorAdjudication
                 ? BenchmarkClaimVerificationPrompt.CriticalErrorQuoteContext(answer.AnswerText, answer.CriticalErrorQuote)
-                : null);
+                : null,
+            claimRoles: manifest.Select(m => m.Roles).ToList(),
+            claimContexts: manifest.Select(m => m.Context).ToList(),
+            toolCallLeads: toolCallLeads);
         answer.VerifierBoardChars = BenchmarkBoardGuard.BoardCharsSent(run);
 
         var runRequest = BuildClaimVerificationRequest(
@@ -2990,18 +3022,18 @@ public class BenchmarkService
                 answer.ClaimVerificationError = null;
                 answer.ClaimVerificationRawText = null;
 
-                // The out-of-rubric basis and the critical-error quote are the assessor's statements,
-                // not the answer's, so their verdicts stay out of the answer's claim counts and the
-                // RefutedClaim flag; the counts then total the unverified claims the answer actually
-                // made. Both are kept in ClaimVerificationJson, where their citations are the record,
-                // and the ContestedCriticalError decision below reads that unfiltered list.
-                var answerClaimVerifications = WithoutCriticalErrorQuote(
-                    WithoutOutOfRubricBasis(parseResult.Verifications, outOfRubricBasis),
-                    answer.CriticalErrorQuote);
+                // The out-of-rubric basis, the critical-error quote and an accused quote are the
+                // assessor's statements or charges, not claims the answer left unverified, so their
+                // verdicts stay out of the answer's claim counts and the RefutedClaim flag; the counts
+                // then total the unverified claims the answer actually made, each once. All are kept
+                // in ClaimVerificationJson with their roles, where their citations are the record,
+                // and the contested-verdict decisions below read that full list.
+                var verifications = StampRoles(parseResult.Verifications, manifest);
+                var answerClaimVerifications = verifications.Where(BenchmarkClaimRoles.IsOrdinaryClaim).ToList();
                 answer.ClaimsSupportedCount = answerClaimVerifications.Count(v => v.Verdict == BenchmarkClaimVerdict.Supported);
                 answer.ClaimsRefutedCount = answerClaimVerifications.Count(v => v.Verdict == BenchmarkClaimVerdict.Refuted);
                 answer.ClaimsIndeterminateCount = answerClaimVerifications.Count(v => v.Verdict == BenchmarkClaimVerdict.Indeterminate);
-                answer.ClaimVerificationJson = JsonSerializer.Serialize(parseResult.Verifications);
+                answer.ClaimVerificationJson = JsonSerializer.Serialize(verifications);
 
                 if (answer.ClaimsRefutedCount > 0)
                 {
@@ -3017,7 +3049,7 @@ public class BenchmarkService
                 // is contested so a reader argues it from the record rather than from the verdict.
                 // Cleared in the negative case so a re-verification cannot leave a stale flag.
                 if (isCriticalErrorAdjudication &&
-                    CriticalErrorQuoteWasSupported(parseResult.Verifications, answer.CriticalErrorQuote))
+                    CriticalErrorQuoteWasSupported(verifications, answer.CriticalErrorQuote))
                 {
                     answer.AnswerFlags |= (int)BenchmarkAnswerFlags.ContestedCriticalError;
                 }
@@ -3027,11 +3059,13 @@ public class BenchmarkService
                 }
 
                 // The statement the out-of-rubric Accuracy deduction rests on was checked against
-                // the source and refuted. Advisory in the same way: the deduction stays, no index
-                // moves, and the flag says the deduction is contested. Cleared on Supported or
-                // Indeterminate, so a re-verification cannot leave a stale flag.
-                if (isOutOfRubricAdjudication &&
-                    OutOfRubricBasisWasRefuted(parseResult.Verifications, outOfRubricBasis))
+                // the source and refuted, or a sentence the assessor charged as false was checked and
+                // supported with a citation. Advisory in the same way: the deduction stays, no index
+                // moves, and the flag says the deduction is contested. A refuted accused sentence
+                // leaves the deduction standing and adds no refutation of the answer. Cleared
+                // otherwise, so a re-verification cannot leave a stale flag.
+                if ((isOutOfRubricAdjudication && OutOfRubricBasisWasRefuted(verifications, outOfRubricBasis))
+                    || SupportedAccusations(verifications).Count > 0)
                 {
                     answer.AnswerFlags |= (int)BenchmarkAnswerFlags.ContestedAccuracyDeduction;
                 }
@@ -3067,6 +3101,46 @@ public class BenchmarkService
         {
             await RunEvidenceInformedRegradeAsync(db, configService, run, answer, expectedPoints, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// Drops what described the verdict a new one replaces: the evidence-informed re-grade that re-read
+    /// it, and the claim verification of its quote, basis and accused sentences, with the counts and
+    /// the three flags that verification set. The new verdict is then verified afresh, as a first
+    /// grading is. Token and cost accounting of the discarded work is kept.
+    /// </summary>
+    internal static void ClearReplacedVerdictEvidence(BenchmarkRunAnswer answer)
+    {
+        answer.EvidenceInformedQualityScore = null;
+        answer.EvidenceInformedCriticalError = null;
+        answer.EvidenceInformedJson = null;
+
+        answer.ClaimVerificationJson = null;
+        answer.ClaimVerificationError = null;
+        answer.ClaimVerificationRawText = null;
+        answer.ClaimsSupportedCount = null;
+        answer.ClaimsRefutedCount = null;
+        answer.ClaimsIndeterminateCount = null;
+        answer.AnswerFlags &= ~(int)(BenchmarkAnswerFlags.RefutedClaim
+            | BenchmarkAnswerFlags.ContestedCriticalError
+            | BenchmarkAnswerFlags.ContestedAccuracyDeduction);
+    }
+
+    /// <summary>
+    /// The candidate's tool calls for one answer, as untrusted leads for the verifier. Loaded
+    /// explicitly: the rows are in memory only when the answer was executed in the same pass, never on
+    /// a retry, a re-assessment or a run-level sweep.
+    /// </summary>
+    internal static async Task<BenchmarkClaimVerificationPrompt.ToolCallLeads> LoadToolCallLeadsAsync(
+        ApplicationDbContext db, long answerId, IReadOnlyList<string> allowedTools, CancellationToken cancellationToken)
+    {
+        var calls = await db.BenchmarkRunAnswerToolCalls
+            .Where(tc => tc.BenchmarkRunAnswerId == answerId)
+            .OrderBy(tc => tc.SortOrder)
+            .Select(tc => new { tc.Name, tc.ArgsText })
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+        return BenchmarkClaimVerificationPrompt.BuildToolCallLeads(calls.Select(c => (c.Name, c.ArgsText)), allowedTools);
     }
 
     /// <summary>
@@ -3124,6 +3198,16 @@ public class BenchmarkService
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new List<BenchmarkClaimVerification>();
             if (verifications.Count == 0) return;
 
+            // Nothing a finding can bear on means nothing a re-grade may withdraw.
+            var targets = BuildEvidenceInformedTargets(answer, verifications);
+            if (targets.Count == 0)
+            {
+                _logger.LogInformation(
+                    "Benchmark run {RunId} answer {OrderIndex}: evidence-informed re-grade not run — no deduction a finding bears on.",
+                    run.Id, answer.OrderIndex);
+                return;
+            }
+
             var (assessorConfig, assessorApiKey, resolveError) = await ResolveAssessorAsync(
                 db, run, run.AssessorModelConfigurationId.Value, cancellationToken);
             if (assessorConfig == null || assessorApiKey == null)
@@ -3151,7 +3235,10 @@ public class BenchmarkService
                 scrubbedArtifactCount: answer.ScrubbedArtifactCount,
                 toolCallBudget: answer.ToolCallBudgetUsed,
                 boardName: run.BenchmarkSuite?.GameSnapshot?.Name,
-                boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText);
+                boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText,
+                targets: targets,
+                originalLevels: (answer.AccuracyLevel ?? 0, answer.CompletenessLevel ?? 0, answer.ConcisenessLevel ?? 0, answer.ReadabilityLevel ?? 0),
+                originalCriticalError: answer.CriticalError);
 
             // The one timeout a grading call already has; the primary assessment itself runs unbounded.
             int timeoutSeconds = _configuration.GetValue<int>("Benchmark:SecondOpinion:TimeoutSeconds", 900);
@@ -3201,16 +3288,18 @@ public class BenchmarkService
                 return;
             }
 
-            var profile = run.ScoringProfileId.HasValue
-                ? await _scoringProfileService.GetProfileByIdAsync(run.ScoringProfileId.Value) ?? await _scoringProfileService.GetDefaultProfileAsync()
-                : await _scoringProfileService.GetDefaultProfileAsync();
-            var constants = _scoringProfileService.ToConstants(profile);
-
+            // This pass adjudicates Accuracy and the critical error only, so the advisory quality keeps
+            // the primary's other three levels, scored with the constants the run was scored with.
             var res = verdict.Result;
+            var constants = BenchmarkScoring.ConstantsFromSnapshot(run.ScoringProfileSnapshotJson);
             var (quality, _, _) = BenchmarkScoring.Quality(
-                res.AccuracyLevel, res.CompletenessLevel, res.ConcisenessLevel, res.ReadabilityLevel,
+                res.AccuracyLevel,
+                answer.CompletenessLevel ?? res.CompletenessLevel,
+                answer.ConcisenessLevel ?? res.ConcisenessLevel,
+                answer.ReadabilityLevel ?? res.ReadabilityLevel,
                 res.CriticalError, constants);
-            var withdrawn = ReadWithdrawn(verdict.RawText);
+            var validation = ValidateEvidenceInformed(
+                verdict.RawText, targets, answer.AccuracyLevel ?? 0, answer.CriticalError, res.AccuracyLevel, res.CriticalError);
 
             answer.EvidenceInformedQualityScore = quality;
             answer.EvidenceInformedCriticalError = res.CriticalError;
@@ -3230,14 +3319,21 @@ public class BenchmarkService
                 comment = res.Comment,
                 accuracyEvidence = res.AccuracyEvidence,
                 completenessEvidence = res.CompletenessEvidence,
-                withdrawn
+                withdrawn = validation.Accepted.Select(a => a.Summary).ToList(),
+                validationVersion = EvidenceInformedValidationVersion,
+                targets = targets.Select(t => new { id = t.Id, kind = t.Kind, source = t.Source, text = t.Text, findingIds = t.FindingIds }).ToList(),
+                accepted = validation.Accepted.Select(a => new { targetId = a.TargetId, kind = a.Kind, findingIds = a.FindingIds, reason = a.Reason }).ToList(),
+                withdrawnDropped = validation.Dropped,
+                validationErrors = validation.Errors,
+                eligibleForSensitivity = validation.Eligible
             });
 
             await db.SaveChangesAsync(CancellationToken.None);
 
             _logger.LogInformation(
-                "Benchmark run {RunId} answer {OrderIndex}: evidence-informed re-grade {Regrade} against the scored {Scored}, withdrew {Withdrawn} item(s). Score unchanged.",
-                run.Id, answer.OrderIndex, quality, answer.QualityScore.Value, withdrawn.Count);
+                "Benchmark run {RunId} answer {OrderIndex}: evidence-informed re-grade {Regrade} against the scored {Scored}, withdrew {Withdrawn} item(s), {Status}. Score unchanged.",
+                run.Id, answer.OrderIndex, quality, answer.QualityScore.Value, validation.Accepted.Count,
+                validation.Eligible ? "validated" : $"rejected ({string.Join("; ", validation.Errors)})");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -3287,6 +3383,285 @@ public class BenchmarkService
     /// <summary>The <c>withdrawn</c> list stored in <see cref="BenchmarkRunAnswer.EvidenceInformedJson"/>.</summary>
     internal static List<string> ReadEvidenceInformedWithdrawn(string? evidenceInformedJson)
         => ReadWithdrawn(evidenceInformedJson);
+
+    /// <summary>The version of the withdrawal validation a stored re-grade carries; absent before harness 31.</summary>
+    internal const int EvidenceInformedValidationVersion = 1;
+
+    /// <summary>The first harness whose re-grades carry validation provenance.</summary>
+    internal const int FirstValidatedRegradeHarness = 31;
+
+    /// <summary>One withdrawal that passed validation, and the string stored for it in <c>withdrawn</c>.</summary>
+    internal sealed record AcceptedWithdrawal(string TargetId, string Kind, IReadOnlyList<string> FindingIds, string Reason, string Summary);
+
+    /// <summary>What the validator made of a re-grade: accepted withdrawals, dropped ones with reasons, and every error.</summary>
+    internal sealed record EvidenceInformedValidation(
+        IReadOnlyList<AcceptedWithdrawal> Accepted,
+        IReadOnlyList<string> Dropped,
+        IReadOnlyList<string> Errors)
+    {
+        public bool Eligible => Errors.Count == 0;
+    }
+
+    private static bool HasCitation(BenchmarkClaimVerification v) => !string.IsNullOrWhiteSpace(v.Citation);
+
+    /// <summary>
+    /// The deductions an evidence-informed re-grade may withdraw, each with the findings that bear on
+    /// it: the critical error, when its quote was Supported with a citation; the out-of-rubric
+    /// Accuracy deduction, when its basis was Refuted with a citation; and one Accuracy target per
+    /// accused sentence Supported with a citation. An ordinary Supported claim creates none. Finding
+    /// ids are <c>F</c> + the stored claim index. A legacy record without roles is matched by text.
+    /// </summary>
+    internal static List<BenchmarkEvidenceInformedTarget> BuildEvidenceInformedTargets(
+        BenchmarkRunAnswer answer,
+        IReadOnlyList<BenchmarkClaimVerification> verifications)
+    {
+        var targets = new List<BenchmarkEvidenceInformedTarget>();
+        bool withRoles = BenchmarkClaimRoles.HasRoles(verifications);
+        string Next() => $"T{targets.Count + 1}";
+
+        if (answer.CriticalError && !string.IsNullOrWhiteSpace(answer.CriticalErrorQuote))
+        {
+            string quote = answer.CriticalErrorQuote.Trim();
+            var findings = verifications
+                .Where(v => (withRoles
+                        ? BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.CriticalErrorQuote)
+                        : string.Equals(v.Claim?.Trim(), quote, StringComparison.Ordinal))
+                    && v.Verdict == BenchmarkClaimVerdict.Supported && HasCitation(v))
+                .Select(v => $"F{v.ClaimIndex}")
+                .ToList();
+            if (findings.Count > 0)
+            {
+                targets.Add(new BenchmarkEvidenceInformedTarget(
+                    Next(), BenchmarkEvidenceInformedTarget.CriticalErrorKind, BenchmarkClaimRoles.CriticalErrorQuote, quote, findings));
+            }
+        }
+
+        string? basis = OutOfRubricBasisOf(answer);
+        if (basis != null)
+        {
+            string trimmed = basis.Trim();
+            var findings = verifications
+                .Where(v => (withRoles
+                        ? BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.OutOfRubricBasis)
+                        : string.Equals(v.Claim?.Trim(), trimmed, StringComparison.Ordinal))
+                    && v.Verdict == BenchmarkClaimVerdict.Refuted && HasCitation(v))
+                .Select(v => $"F{v.ClaimIndex}")
+                .ToList();
+            if (findings.Count > 0)
+            {
+                targets.Add(new BenchmarkEvidenceInformedTarget(
+                    Next(), BenchmarkEvidenceInformedTarget.AccuracyKind, BenchmarkClaimRoles.OutOfRubricBasis, trimmed, findings));
+            }
+        }
+
+        foreach (var accused in SupportedAccusations(verifications))
+        {
+            targets.Add(new BenchmarkEvidenceInformedTarget(
+                Next(), BenchmarkEvidenceInformedTarget.AccuracyKind, BenchmarkClaimRoles.AccusedQuote,
+                accused.Claim.Trim(), new[] { $"F{accused.ClaimIndex}" }));
+        }
+
+        return targets;
+    }
+
+    /// <summary>
+    /// Validates an evidence-informed verdict's structured <c>withdrawn</c> list against the target
+    /// catalog and the primary verdict. Every withdrawal must name a listed target once, with a
+    /// reason, on findings from that target's own list. The re-grade may not lower Accuracy or add a
+    /// critical error; it may remove the critical error or raise Accuracy only with a valid
+    /// withdrawal of that kind. An empty list is valid only when both are unchanged. Separate from
+    /// <see cref="ReadWithdrawn"/>, which keeps reading historical string arrays.
+    /// </summary>
+    internal static EvidenceInformedValidation ValidateEvidenceInformed(
+        string? rawText,
+        IReadOnlyList<BenchmarkEvidenceInformedTarget> targets,
+        int primaryAccuracyLevel,
+        bool primaryCriticalError,
+        int regradeAccuracyLevel,
+        bool regradeCriticalError)
+    {
+        var accepted = new List<AcceptedWithdrawal>();
+        var dropped = new List<string>();
+        var errors = new List<string>();
+        var byId = targets.ToDictionary(t => t.Id, StringComparer.Ordinal);
+        var seenTargets = new HashSet<string>(StringComparer.Ordinal);
+
+        JsonElement list = default;
+        bool haveList = false;
+        if (!string.IsNullOrWhiteSpace(rawText))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(BenchmarkJsonExtractor.Extract(rawText));
+                if (doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("withdrawn", out var w)
+                    && w.ValueKind == JsonValueKind.Array)
+                {
+                    list = w.Clone();
+                    haveList = true;
+                }
+            }
+            catch (JsonException)
+            {
+                // Reported below as a missing list.
+            }
+        }
+
+        if (!haveList)
+        {
+            errors.Add("`withdrawn` is missing or not an array.");
+        }
+        else
+        {
+            int position = 0;
+            foreach (var item in list.EnumerateArray())
+            {
+                position++;
+                if (item.ValueKind != JsonValueKind.Object)
+                {
+                    string shown = item.ValueKind == JsonValueKind.String ? $"\"{item.GetString()}\"" : item.ValueKind.ToString();
+                    Drop($"item {position} ({shown}) is not an object with a targetId.");
+                    continue;
+                }
+
+                string? targetId = item.TryGetProperty("targetId", out var tid) && tid.ValueKind == JsonValueKind.String
+                    ? tid.GetString()?.Trim()
+                    : null;
+                string? reason = item.TryGetProperty("reason", out var r) && r.ValueKind == JsonValueKind.String
+                    ? r.GetString()?.Trim()
+                    : null;
+                var findingIds = new List<string>();
+                if (item.TryGetProperty("findingIds", out var f) && f.ValueKind == JsonValueKind.Array)
+                {
+                    findingIds.AddRange(f.EnumerateArray()
+                        .Where(x => x.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(x.GetString()))
+                        .Select(x => x.GetString()!.Trim()));
+                }
+
+                if (string.IsNullOrEmpty(targetId) || !byId.TryGetValue(targetId, out var target))
+                {
+                    Drop($"item {position}: unknown targetId \"{targetId}\".");
+                    continue;
+                }
+                if (!seenTargets.Add(targetId))
+                {
+                    Drop($"item {position}: duplicate targetId {targetId}.");
+                    continue;
+                }
+                if (string.IsNullOrEmpty(reason))
+                {
+                    Drop($"item {position} ({targetId}): empty reason.");
+                    continue;
+                }
+                if (findingIds.Count == 0)
+                {
+                    Drop($"item {position} ({targetId}): no findingIds.");
+                    continue;
+                }
+                var foreign = findingIds.Where(id => !target.FindingIds.Contains(id, StringComparer.Ordinal)).ToList();
+                if (foreign.Count > 0)
+                {
+                    Drop($"item {position} ({targetId}): finding(s) {string.Join(", ", foreign)} do not bear on this target.");
+                    continue;
+                }
+
+                accepted.Add(new AcceptedWithdrawal(
+                    targetId, target.Kind, findingIds, reason,
+                    $"{targetId} {target.Kind}: \"{target.Text}\" ({string.Join(", ", findingIds)}) — {reason}"));
+            }
+        }
+
+        bool accuracyWithdrawn = accepted.Any(a => a.Kind == BenchmarkEvidenceInformedTarget.AccuracyKind);
+        bool criticalWithdrawn = accepted.Any(a => a.Kind == BenchmarkEvidenceInformedTarget.CriticalErrorKind);
+
+        if (regradeAccuracyLevel < primaryAccuracyLevel)
+        {
+            errors.Add($"the re-grade lowered Accuracy from {primaryAccuracyLevel} to {regradeAccuracyLevel}.");
+        }
+        if (regradeCriticalError && !primaryCriticalError)
+        {
+            errors.Add("the re-grade added a critical error the primary verdict did not have.");
+        }
+        if (primaryCriticalError && !regradeCriticalError && !criticalWithdrawn)
+        {
+            errors.Add("the critical error was removed with no valid criticalError withdrawal.");
+        }
+        if (regradeAccuracyLevel > primaryAccuracyLevel && !accuracyWithdrawn)
+        {
+            errors.Add($"Accuracy was raised from {primaryAccuracyLevel} to {regradeAccuracyLevel} with no valid accuracy withdrawal.");
+        }
+
+        return new EvidenceInformedValidation(accepted, dropped, errors);
+
+        void Drop(string message)
+        {
+            dropped.Add(message);
+            errors.Add(message);
+        }
+    }
+
+    /// <summary>Whether the re-grade stored in <paramref name="evidenceInformedJson"/> carries validation provenance.</summary>
+    internal static bool HasEvidenceInformedValidation(string? evidenceInformedJson)
+        => ReadEvidenceInformedBool(evidenceInformedJson, "validationVersion", out _, requireNumber: true);
+
+    /// <summary>
+    /// A re-grade stored before validation existed: a run stamped below
+    /// <see cref="FirstValidatedRegradeHarness"/> whose record carries no validation provenance. Its
+    /// sensitivity is computed as it always was and labelled legacy, unvalidated.
+    /// </summary>
+    internal static bool IsLegacyEvidenceInformed(BenchmarkRun run, BenchmarkRunAnswer answer)
+        => answer.EvidenceInformedQualityScore.HasValue
+            && !HasEvidenceInformedValidation(answer.EvidenceInformedJson)
+            && !IsValidatedRegradeHarness(run.HarnessVersion);
+
+    internal static bool IsValidatedRegradeHarness(string? harnessVersion)
+        => int.TryParse(harnessVersion, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int v)
+            && v >= FirstValidatedRegradeHarness;
+
+    /// <summary>
+    /// The one predicate every consumer of a re-grade uses — the eligible count, the substitution in
+    /// the sensitivity figure and the synthesis input. A validated record counts when it passed; a
+    /// record without provenance counts only as a legacy one, on a run stamped before harness 31.
+    /// </summary>
+    internal static bool IsEligibleEvidenceInformedRegrade(BenchmarkRun run, BenchmarkRunAnswer answer)
+    {
+        if (!answer.EvidenceInformedQualityScore.HasValue) return false;
+        if (HasEvidenceInformedValidation(answer.EvidenceInformedJson))
+        {
+            return ReadEvidenceInformedBool(answer.EvidenceInformedJson, "eligibleForSensitivity", out bool eligible, requireNumber: false)
+                && eligible;
+        }
+        return !IsValidatedRegradeHarness(run.HarnessVersion);
+    }
+
+    private static bool ReadEvidenceInformedBool(string? json, string property, out bool value, bool requireNumber)
+    {
+        value = false;
+        if (string.IsNullOrWhiteSpace(json)) return false;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty(property, out var p))
+            {
+                return false;
+            }
+            if (requireNumber)
+            {
+                return p.ValueKind == JsonValueKind.Number;
+            }
+            if (p.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                value = p.GetBoolean();
+                return true;
+            }
+            return false;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
 
     internal static AgentRunRequest BuildClaimVerificationRequest(
         SystemAiApiConfiguration verifierConfig,
@@ -3399,6 +3774,14 @@ public class BenchmarkService
         if (run == null)
         {
             _logger.LogWarning("Benchmark run {RunId} not found for assessor calibration.", runId);
+            return;
+        }
+
+        // A calibration compares the stored verdicts with ones graded under this build's anchors,
+        // which is meaningless across a scoring method.
+        if (!IsCurrentScoringMethod(run))
+        {
+            _logger.LogWarning("Assessor calibration of benchmark run {RunId} refused: {Reason}", runId, ScoringMethodRefusal(run));
             return;
         }
 
@@ -4078,11 +4461,16 @@ public class BenchmarkService
             }
         }
 
-        // The out-of-rubric basis is the first assessor's own statement, not a claim of the answer,
-        // and this context is presented to the second reader as claims from the candidate answer.
+        // The out-of-rubric basis, the critical-error quote and an accused sentence are the first
+        // assessor's statements or charges, not claims the answer left unverified, and this context
+        // is presented to the second reader as claims from the candidate answer: a blind reader gets
+        // no assessor accusation and no assessor quote. A legacy list without roles strips the
+        // basis only, as it always did.
         if (claimVerifications != null)
         {
-            claimVerifications = WithoutOutOfRubricBasis(claimVerifications, OutOfRubricBasisOf(answer));
+            claimVerifications = BenchmarkClaimRoles.HasRoles(claimVerifications)
+                ? claimVerifications.Where(BenchmarkClaimRoles.IsOrdinaryClaim).ToList()
+                : WithoutOutOfRubricBasis(claimVerifications, OutOfRubricBasisOf(answer));
         }
 
         var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
@@ -4360,6 +4748,8 @@ public class BenchmarkService
             string? outOfRubricBasis = OutOfRubricBasisOf(a);
             var refutedList = new List<(string Claim, string? Citation, string? Basis)>();
             var supportedList = new List<string>();
+            var supportedAccusations = new List<(string Claim, string? Citation)>();
+            bool basisRefuted = false;
             if (!string.IsNullOrWhiteSpace(a.ClaimVerificationJson))
             {
                 try
@@ -4369,13 +4759,14 @@ public class BenchmarkService
                         new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                     if (verifications != null)
                     {
-                        // The assessor's own statements — the out-of-rubric basis and the
-                        // critical-error quote — are excluded from both lists: a verdict on either
-                        // is a statement about the grading, and the synthesis prints those
-                        // separately.
-                        var ownClaims = WithoutCriticalErrorQuote(
-                            WithoutOutOfRubricBasis(verifications, outOfRubricBasis),
-                            a.CriticalErrorQuote);
+                        // The assessor's own statements and charges — the out-of-rubric basis, the
+                        // critical-error quote and an accused sentence — are excluded from both lists:
+                        // a verdict on any of them is a statement about the grading, and the synthesis
+                        // prints those separately.
+                        var ownClaims = OrdinaryClaimVerifications(verifications, a);
+                        basisRefuted = OutOfRubricBasisWasRefuted(verifications, outOfRubricBasis);
+                        supportedAccusations.AddRange(SupportedAccusations(verifications)
+                            .Select(v => (v.Claim.Trim(), v.Citation)));
 
                         foreach (var v in ownClaims.Where(x => x.Verdict == BenchmarkClaimVerdict.Refuted))
                         {
@@ -4429,14 +4820,21 @@ public class BenchmarkService
                      && !string.IsNullOrWhiteSpace(a.CriticalErrorQuote)
                         ? new[] { a.CriticalErrorQuote!.Trim() }
                         : Array.Empty<string>(),
+                // A refuted assessor statement only; a supported accusation sets the same flag and is
+                // listed on its own.
                 ContestedAccuracyDeductionBases =
                     (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedAccuracyDeduction) != 0
                      && outOfRubricBasis != null
+                     && basisRefuted
                         ? new[] { outOfRubricBasis }
                         : Array.Empty<string>(),
-                EvidenceInformedQualityScore = a.EvidenceInformedQualityScore,
-                EvidenceInformedCriticalError = a.EvidenceInformedCriticalError,
-                EvidenceInformedWithdrawn = ReadEvidenceInformedWithdrawn(a.EvidenceInformedJson),
+                SupportedAccusations = supportedAccusations,
+                // A rejected or unprovenanced re-grade never reaches the synthesis as a withdrawal.
+                EvidenceInformedQualityScore = IsEligibleEvidenceInformedRegrade(run, a) ? a.EvidenceInformedQualityScore : null,
+                EvidenceInformedCriticalError = IsEligibleEvidenceInformedRegrade(run, a) ? a.EvidenceInformedCriticalError : null,
+                EvidenceInformedWithdrawn = IsEligibleEvidenceInformedRegrade(run, a)
+                    ? ReadEvidenceInformedWithdrawn(a.EvidenceInformedJson)
+                    : Array.Empty<string>(),
                 SecondOpinionQualityScore = a.SecondOpinionQualityScore,
                 SecondOpinionCriticalError = a.SecondOpinionCriticalError,
                 ReviewComment = a.ReviewComment,
@@ -5140,7 +5538,13 @@ public class BenchmarkService
 
         run.ScoringProfileId = profile.Id;
         run.ScoringProfileSnapshotJson = JsonSerializer.Serialize(profile);
-        run.ScoringMethodVersion = BenchmarkAssessmentPrompt.ScoringMethodVersion;
+
+        // A rescore brings a run up to the last method whose changes it can apply, and never stamps a
+        // later method onto levels graded under an earlier one's anchors.
+        if (run.ScoringMethodVersion <= LastMethodRescoreCanApply)
+        {
+            run.ScoringMethodVersion = LastMethodRescoreCanApply;
+        }
 
         foreach (var a in answersWithLevels)
         {
@@ -5222,6 +5626,12 @@ public class BenchmarkService
             // Before the key is decrypted, so a retry launched with an already-cancelled token takes
             // the restore path below rather than failing on whatever it touched first.
             cancellationToken.ThrowIfCancellationRequested();
+
+            if (!IsCurrentScoringMethod(run))
+            {
+                await RestoreTerminalStatusAsync(db, run, ScoringMethodRefusal(run));
+                return;
+            }
 
             var testedConfig = run.TestedModelConfiguration;
             if (testedConfig == null || string.IsNullOrWhiteSpace(testedConfig.EncryptedApiKey))
@@ -5391,6 +5801,19 @@ public class BenchmarkService
             // Before the assessor is resolved, so a retry launched with an already-cancelled token
             // takes the restore path below rather than failing on whatever it touched first.
             cancellationToken.ThrowIfCancellationRequested();
+
+            if (!IsCurrentScoringMethod(run))
+            {
+                if (trial)
+                {
+                    await RestoreCapturedStatusAsync(db, run, originalStatus, originalCompletedAtUtc);
+                }
+                else
+                {
+                    await RestoreTerminalStatusAsync(db, run, ScoringMethodRefusal(run));
+                }
+                return;
+            }
 
             var (assessorConfig, assessorApiKey, error) = await ResolveAssessorAsync(db, run, assessorConfigId, cancellationToken);
             if (assessorConfig == null || assessorApiKey == null)
@@ -5604,6 +6027,12 @@ public class BenchmarkService
             // takes the restore path below rather than failing on whatever it touched first.
             cancellationToken.ThrowIfCancellationRequested();
 
+            if (!IsCurrentScoringMethod(run))
+            {
+                await RestoreTerminalStatusAsync(db, run, ScoringMethodRefusal(run));
+                return;
+            }
+
             var (assessorConfig, assessorApiKey, error) = await ResolveAssessorAsync(db, run, assessorConfigId, cancellationToken);
             if (assessorConfig == null || assessorApiKey == null)
             {
@@ -5700,6 +6129,12 @@ public class BenchmarkService
             // restore path below rather than failing on whatever it touched first.
             cancellationToken.ThrowIfCancellationRequested();
 
+            if (!IsCurrentScoringMethod(run))
+            {
+                await RestoreTerminalStatusAsync(db, run, ScoringMethodRefusal(run));
+                return;
+            }
+
             if (verifierConfigId.HasValue)
             {
                 run.ClaimVerifierModelConfigurationId = verifierConfigId.Value;
@@ -5716,10 +6151,15 @@ public class BenchmarkService
                 return;
             }
 
+            // A re-grade stored beside the failed attempt described findings that no longer exist; the
+            // fresh attempt writes one only if it qualifies again and produces a valid verdict.
             foreach (var answer in failedAnswers)
             {
                 answer.ClaimVerificationError = null;
                 answer.ClaimVerificationRawText = null;
+                answer.EvidenceInformedQualityScore = null;
+                answer.EvidenceInformedCriticalError = null;
+                answer.EvidenceInformedJson = null;
             }
             await db.SaveChangesAsync(cancellationToken);
 
@@ -6202,5 +6642,302 @@ public class BenchmarkService
 
         return claims;
     }
+
+    /// <summary>One item submitted to the claim verifier: its text, why it was submitted, and the answer context it is read in.</summary>
+    internal sealed record ClaimSubmission(string Text, IReadOnlyList<string> Roles, string? Context);
+
+    /// <summary>A sentence of the answer the assessor quoted in its accuracy evidence: the answer's own span, and its context.</summary>
+    internal sealed record AccusedQuote(string Text, string? Context);
+
+    internal const int AccusedQuoteMinLength = 15;
+    internal const int AccusedQuoteMaxLength = 400;
+    internal const int MaxAccusedQuotesPerAnswer = 3;
+    internal const int AccusedQuoteEligibleMaxAccuracyLevel = 4;
+    private const int AccusedQuoteContextMaxLength = 300;
+
+    private static readonly Regex StraightQuotedSpanRegex = new("\"([^\"]*)\"", RegexOptions.Compiled);
+    private static readonly Regex TypographicQuotedSpanRegex = new("“([^”]*)”", RegexOptions.Compiled);
+    private static readonly Regex TrailingListMarkerRegex = new(@"(?:^|\n)[ \t]*(?:[-*+•]|\d+[.)])[ \t]*$", RegexOptions.Compiled);
+    private static readonly Regex PrecedingSentenceBoundaryRegex = new(@"[.!?](?=\s)|\n", RegexOptions.Compiled | RegexOptions.RightToLeft);
+
+    /// <summary>
+    /// Whether the harness checks the sentences the assessor quoted against this answer: an Accuracy
+    /// level of <see cref="AccusedQuoteEligibleMaxAccuracyLevel"/> or below, or a contested verdict,
+    /// whatever the answer's unverified-claim count.
+    /// </summary>
+    internal static bool IsAccusedQuoteEligible(BenchmarkRunAnswer answer)
+        => (answer.AccuracyLevel.HasValue && answer.AccuracyLevel.Value <= AccusedQuoteEligibleMaxAccuracyLevel)
+            || ((BenchmarkAnswerFlags)answer.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedVerdict);
+
+    private bool AccusedQuotesEnabled
+        => _configuration.GetValue<bool>("Benchmark:ClaimVerification:AccusedQuotesEnabled", true);
+
+    /// <summary>The accused quotes this answer would submit, empty when the feature is off or the answer is not eligible.</summary>
+    internal IReadOnlyList<AccusedQuote> AccusedQuotesFor(BenchmarkRunAnswer answer)
+        => AccusedQuotesEnabled && IsAccusedQuoteEligible(answer)
+            ? ExtractAccusedQuotes(answer.AnswerText, ReadEvidence(answer.AssessmentEvidenceJson, "accuracy"))
+            : Array.Empty<AccusedQuote>();
+
+    /// <summary><see cref="NeedsClaimVerification"/>, or a sentence the assessor charged that the verifier can check.</summary>
+    internal bool NeedsClaimVerificationOrAccusation(BenchmarkRunAnswer answer)
+        => NeedsClaimVerification(answer) || AccusedQuotesFor(answer).Count > 0;
+
+    /// <summary>
+    /// The sentences of the answer the assessor quoted in its accuracy evidence: each span between
+    /// paired double quotes (straight or typographic) of <see cref="AccusedQuoteMinLength"/> to
+    /// <see cref="AccusedQuoteMaxLength"/> characters that occurs in the answer once Markdown
+    /// emphasis and whitespace runs are ignored. The answer's own span is returned, not the
+    /// assessor's copy; a span not in the answer (a rubric or board quotation) is dropped. At most
+    /// <see cref="MaxAccusedQuotesPerAnswer"/>, longest first, ties in evidence order. A bounded
+    /// heuristic: it finds only accusations the assessor quoted.
+    /// </summary>
+    internal static List<AccusedQuote> ExtractAccusedQuotes(string? answerText, string? accuracyEvidence)
+    {
+        var result = new List<AccusedQuote>();
+        if (string.IsNullOrWhiteSpace(answerText) || string.IsNullOrWhiteSpace(accuracyEvidence))
+        {
+            return result;
+        }
+
+        var (normalizedAnswer, map) = NormalizeWithMap(answerText);
+        var candidates = new List<(int SourceIndex, int Start, string Span)>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var matches = StraightQuotedSpanRegex.Matches(accuracyEvidence).Cast<Match>()
+            .Concat(TypographicQuotedSpanRegex.Matches(accuracyEvidence).Cast<Match>())
+            .OrderBy(m => m.Index);
+
+        foreach (var match in matches)
+        {
+            string quoted = match.Groups[1].Value.Trim();
+            if (quoted.Length < AccusedQuoteMinLength || quoted.Length > AccusedQuoteMaxLength)
+            {
+                continue;
+            }
+
+            string normalizedQuote = NormalizeWithMap(quoted).Normalized;
+            if (normalizedQuote.Length == 0)
+            {
+                continue;
+            }
+
+            int at = normalizedAnswer.IndexOf(normalizedQuote, StringComparison.OrdinalIgnoreCase);
+            if (at < 0)
+            {
+                continue;
+            }
+
+            int start = map[at];
+            int end = map[at + normalizedQuote.Length - 1];
+            string span = answerText.Substring(start, end - start + 1).Trim();
+            if (span.Length == 0 || !seen.Add(NormalizeWithMap(span).Normalized))
+            {
+                continue;
+            }
+
+            candidates.Add((match.Index, start, span));
+        }
+
+        foreach (var candidate in candidates
+            .OrderByDescending(c => c.Span.Length)
+            .ThenBy(c => c.SourceIndex)
+            .Take(MaxAccusedQuotesPerAnswer))
+        {
+            result.Add(new AccusedQuote(candidate.Span, AccusedQuoteContext(answerText, candidate.Start, candidate.Span)));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// <paramref name="text"/> with Markdown emphasis markers dropped and whitespace runs collapsed
+    /// to one space, trimmed — the normalisation <see cref="BenchmarkAssessmentParser"/> applies to a
+    /// critical-error quote — and, for every character kept, its index in the original.
+    /// </summary>
+    private static (string Normalized, List<int> Map) NormalizeWithMap(string text)
+    {
+        var sb = new StringBuilder(text.Length);
+        var map = new List<int>(text.Length);
+        bool pendingSpace = false;
+        int pendingSpaceIndex = 0;
+
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (c is '*' or '_' or '`' or '>' or '#')
+            {
+                continue;
+            }
+
+            if (char.IsWhiteSpace(c))
+            {
+                if (!pendingSpace)
+                {
+                    pendingSpace = true;
+                    pendingSpaceIndex = i;
+                }
+                continue;
+            }
+
+            if (pendingSpace && sb.Length > 0)
+            {
+                sb.Append(' ');
+                map.Add(pendingSpaceIndex);
+            }
+            pendingSpace = false;
+            sb.Append(c);
+            map.Add(i);
+        }
+
+        return (sb.ToString(), map);
+    }
+
+    /// <summary>
+    /// What an accused sentence is read under: the heading of the list it belongs to, when it is a
+    /// list item or fragment, and the text immediately before it. Null when neither exists.
+    /// </summary>
+    private static string? AccusedQuoteContext(string answerText, int start, string span)
+    {
+        string? heading = BenchmarkClaimVerificationPrompt.CriticalErrorQuoteContext(answerText, span);
+
+        string prefix = answerText.Substring(0, start).Replace("\r\n", "\n");
+        prefix = TrailingListMarkerRegex.Replace(prefix.TrimEnd(), string.Empty).TrimEnd();
+        string? preceding = null;
+        if (prefix.Length > 0)
+        {
+            var boundary = PrecedingSentenceBoundaryRegex.Match(prefix, prefix.Length - 1);
+            string sentence = (boundary.Success ? prefix.Substring(boundary.Index + 1) : prefix).Trim();
+            if (sentence.Length > AccusedQuoteContextMaxLength)
+            {
+                sentence = "…" + sentence.Substring(sentence.Length - AccusedQuoteContextMaxLength);
+            }
+            string bareHeading = heading ?? string.Empty;
+            if (sentence.Length > 0 && !string.Equals(sentence.Trim('#', '*', ' ', ':'), bareHeading, StringComparison.OrdinalIgnoreCase))
+            {
+                preceding = sentence;
+            }
+        }
+
+        return (heading, preceding) switch
+        {
+            (null, null) => null,
+            (not null, null) => $"Under \"{heading}\".",
+            (null, not null) => $"Preceded by: \"{preceding}\"",
+            _ => $"Under \"{heading}\". Preceded by: \"{preceding}\""
+        };
+    }
+
+    /// <summary>
+    /// The ordered submission manifest. Texts and their order are exactly what
+    /// <see cref="WithCriticalErrorQuoteFirst"/> and <see cref="WithOutOfRubricBasis"/> make of the
+    /// answer's claims; accused quotes follow, de-duplicated by trimmed text. An accused quote equal
+    /// to an item already listed adds its role to that item. A critical-error quote or basis equal
+    /// to an unverified claim takes that item's place, as the text-matching filters always read it.
+    /// </summary>
+    internal static List<ClaimSubmission> BuildClaimManifest(
+        IReadOnlyList<string>? unverifiedClaims,
+        string? criticalErrorQuote,
+        string? outOfRubricBasis,
+        IReadOnlyList<AccusedQuote>? accusedQuotes)
+    {
+        List<string> texts = unverifiedClaims?.ToList() ?? new List<string>();
+        if (!string.IsNullOrWhiteSpace(criticalErrorQuote))
+        {
+            texts = WithCriticalErrorQuoteFirst(texts, criticalErrorQuote);
+        }
+        if (!string.IsNullOrWhiteSpace(outOfRubricBasis))
+        {
+            texts = WithOutOfRubricBasis(texts, outOfRubricBasis, string.IsNullOrWhiteSpace(criticalErrorQuote) ? 0 : 1);
+        }
+
+        string? quote = criticalErrorQuote?.Trim();
+        string? basis = outOfRubricBasis?.Trim();
+        var roles = new List<List<string>>();
+        var contexts = new List<string?>();
+        foreach (string text in texts)
+        {
+            string trimmed = text.Trim();
+            var itemRoles = new List<string>();
+            if (!string.IsNullOrEmpty(quote) && string.Equals(trimmed, quote, StringComparison.Ordinal))
+            {
+                itemRoles.Add(BenchmarkClaimRoles.CriticalErrorQuote);
+            }
+            if (!string.IsNullOrEmpty(basis) && string.Equals(trimmed, basis, StringComparison.Ordinal))
+            {
+                itemRoles.Add(BenchmarkClaimRoles.OutOfRubricBasis);
+            }
+            if (itemRoles.Count == 0)
+            {
+                itemRoles.Add(BenchmarkClaimRoles.UnverifiedClaim);
+            }
+            roles.Add(itemRoles);
+            contexts.Add(null);
+        }
+
+        foreach (var accused in accusedQuotes ?? Array.Empty<AccusedQuote>())
+        {
+            string trimmed = accused.Text.Trim();
+            int existing = texts.FindIndex(t => string.Equals(t.Trim(), trimmed, StringComparison.Ordinal));
+            if (existing >= 0)
+            {
+                if (!roles[existing].Contains(BenchmarkClaimRoles.AccusedQuote))
+                {
+                    roles[existing].Add(BenchmarkClaimRoles.AccusedQuote);
+                }
+                contexts[existing] ??= accused.Context;
+                continue;
+            }
+
+            texts.Add(trimmed);
+            roles.Add(new List<string> { BenchmarkClaimRoles.AccusedQuote });
+            contexts.Add(accused.Context);
+        }
+
+        return texts.Select((t, i) => new ClaimSubmission(t, roles[i], contexts[i])).ToList();
+    }
+
+    /// <summary>Each verification stamped with the roles of the manifest item at its claim index.</summary>
+    internal static List<BenchmarkClaimVerification> StampRoles(
+        IReadOnlyList<BenchmarkClaimVerification> verifications,
+        IReadOnlyList<ClaimSubmission> manifest)
+        => verifications
+            .Select(v => v with
+            {
+                Roles = v.ClaimIndex >= 0 && v.ClaimIndex < manifest.Count
+                    ? manifest[v.ClaimIndex].Roles.ToList()
+                    : null
+            })
+            .ToList();
+
+    /// <summary>
+    /// The verifications of the answer's own claims. A list carrying roles is filtered by role; a
+    /// legacy list without roles by the exact-text rule it was always read by: every entry except the
+    /// out-of-rubric basis and the critical-error quote.
+    /// </summary>
+    internal static List<BenchmarkClaimVerification> OrdinaryClaimVerifications(
+        IReadOnlyList<BenchmarkClaimVerification>? verifications,
+        BenchmarkRunAnswer answer)
+    {
+        if (verifications == null) return new List<BenchmarkClaimVerification>();
+        if (BenchmarkClaimRoles.HasRoles(verifications))
+        {
+            return verifications.Where(BenchmarkClaimRoles.IsOrdinaryClaim).ToList();
+        }
+
+        return WithoutCriticalErrorQuote(
+            WithoutOutOfRubricBasis(verifications, OutOfRubricBasisOf(answer)),
+            answer.CriticalErrorQuote);
+    }
+
+    /// <summary>
+    /// The sentences the assessor charged as false that the verifier supported with a citation.
+    /// Empty for a legacy list, which never carries the accused role.
+    /// </summary>
+    internal static List<BenchmarkClaimVerification> SupportedAccusations(IReadOnlyList<BenchmarkClaimVerification>? verifications)
+        => (verifications ?? Array.Empty<BenchmarkClaimVerification>())
+            .Where(v => BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.AccusedQuote)
+                && v.Verdict == BenchmarkClaimVerdict.Supported
+                && !string.IsNullOrWhiteSpace(v.Citation))
+            .ToList();
 }
 
