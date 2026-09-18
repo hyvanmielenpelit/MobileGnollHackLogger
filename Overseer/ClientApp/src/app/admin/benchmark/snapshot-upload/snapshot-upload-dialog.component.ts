@@ -15,6 +15,7 @@ import { Subscription } from 'rxjs';
 import {
   AdminBenchmarkService,
   BenchmarkSuiteDto,
+  BoardFactsCheckDto,
   CaptureBenchmarkSnapshotResponse,
   SnapshotContentKind
 } from '../../../services/admin-benchmark.service';
@@ -81,6 +82,11 @@ export class SnapshotUploadDialogComponent implements OnDestroy {
 
   posting = false;
   error: string | null = null;
+
+  /** The check stamped by the upload that just succeeded; kept on screen until Done is pressed. */
+  boardFactsCheck: BoardFactsCheckDto | null = null;
+  /** True once an upload has succeeded this opening, replacing the form with the check and Done. */
+  uploadSucceeded = false;
 
   private currentSnapshotSub: Subscription | null = null;
 
@@ -228,8 +234,15 @@ export class SnapshotUploadDialogComponent implements OnDestroy {
     }).subscribe({
       next: response => {
         this.posting = false;
+        this.boardFactsCheck = response.boardFactsCheck ?? null;
         this.uploaded.emit(response);
-        this.dialog?.nativeElement?.close();
+        /* A clean check needs no further look; the dialog closes as it always has. A check with
+           something missing stays on screen so the admin sees it before losing the dialog. */
+        if (this.boardFactsCheck && this.boardFactsCheck.missingLiterals.length > 0) {
+          this.uploadSucceeded = true;
+        } else {
+          this.dialog?.nativeElement?.close();
+        }
         this.cdr.detectChanges();
       },
       error: err => {
@@ -238,6 +251,11 @@ export class SnapshotUploadDialogComponent implements OnDestroy {
         this.cdr.detectChanges();
       }
     });
+  }
+
+  /** Closes the dialog from the post-upload Done button. */
+  finish(): void {
+    this.dialog?.nativeElement?.close();
   }
 
   private reset(): void {
@@ -252,5 +270,7 @@ export class SnapshotUploadDialogComponent implements OnDestroy {
     this.posting = false;
     this.error = null;
     this.nameFromFile = null;
+    this.boardFactsCheck = null;
+    this.uploadSucceeded = false;
   }
 }

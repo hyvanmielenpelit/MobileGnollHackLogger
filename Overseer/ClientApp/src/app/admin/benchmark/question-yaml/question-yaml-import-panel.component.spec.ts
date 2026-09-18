@@ -4,6 +4,7 @@ import {
   AdminBenchmarkService,
   BenchmarkQuestionDto,
   BenchmarkSuiteDto,
+  BoardFactsCheckDto,
   MatchSnapshotResult
 } from '../../../services/admin-benchmark.service';
 import { QuestionYamlImportPanelComponent } from './question-yaml-import-panel.component';
@@ -39,8 +40,9 @@ describe('QuestionYamlImportPanelComponent', () => {
   }
 
   beforeEach(async () => {
-    service = jasmine.createSpyObj('AdminBenchmarkService', ['importQuestions', 'importSuite', 'matchSnapshot']);
+    service = jasmine.createSpyObj('AdminBenchmarkService', ['importQuestions', 'importSuite', 'matchSnapshot', 'getBoardFactsCheck']);
     service.matchSnapshot.and.returnValue(of(noMatch()));
+    service.getBoardFactsCheck.and.returnValue(of(null));
 
     await TestBed.configureTestingModule({
       imports: [QuestionYamlImportPanelComponent],
@@ -193,6 +195,29 @@ describe('QuestionYamlImportPanelComponent', () => {
     expect(host.querySelector('.import-intent')).toBeNull();
   });
 
+  it('lists a missing board-facts literal the import result carries, with the repair sentence', async () => {
+    const check: BoardFactsCheckDto = {
+      bulletCount: 10, checkedLiteralCount: 9, unquotedBulletCount: 2,
+      unquotedBullets: [],
+      missingLiterals: [{ questionId: 18, orderIndex: 5, literal: 'the uncursed Holy Grail', lineExcerpt: 'T - the Holy Grail' }]
+    };
+    service.importQuestions.and.returnValue(of({ createdCount: 0, replacedCount: 1, unchangedCount: 0, questions: [], boardFactsCheck: check }));
+
+    open('questions');
+    await paste(header + 'questions:\n  - id: 18\n    difficulty: Advanced\n');
+    await component.validate();
+    await component.review();
+    fixture.detectChanges();
+    component.apply();
+    fixture.detectChanges();
+
+    const notice = host.querySelector('.board-facts-notice')!;
+    expect(notice.textContent).toContain('Q6: "the uncursed Holy Grail"');
+    expect(notice.textContent).toContain('server_rubric_handoff');
+    expect(host.querySelector('.board-facts-unquoted')!.textContent).toContain('2 BOARD FACTS line');
+    expect(service.getBoardFactsCheck).not.toHaveBeenCalled();
+  });
+
   it('creates a suite in suite mode', async () => {
     const created: BenchmarkSuiteDto = { ...suite, id: 9, name: 'Core Suite (Imported)', questionCount: 1 };
     service.importSuite.and.returnValue(of(created));
@@ -219,6 +244,29 @@ describe('QuestionYamlImportPanelComponent', () => {
     });
     expect(emitted).toHaveBeenCalledWith(created);
     expect(service.matchSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('fetches the board-facts check on demand after a successful suite import', async () => {
+    const created: BenchmarkSuiteDto = { ...suite, id: 9, name: 'Core Suite (Imported)', questionCount: 1 };
+    service.importSuite.and.returnValue(of(created));
+    const check: BoardFactsCheckDto = {
+      bulletCount: 4, checkedLiteralCount: 3, unquotedBulletCount: 0,
+      unquotedBullets: [],
+      missingLiterals: [{ questionId: 17, orderIndex: 0, literal: 'a level 3 peaceful dwarf', lineExcerpt: 'h - a level 3 peaceful dwarf' }]
+    };
+    service.getBoardFactsCheck.and.returnValue(of(check));
+
+    open('suite');
+    await paste(header + 'suite:\n  name: Core Suite\nquestions:\n  - id: 17\n    question: Q\n    rubric: |\n      R\n');
+    await component.validate();
+    await component.review();
+    fixture.detectChanges();
+    component.apply();
+    fixture.detectChanges();
+
+    expect(service.getBoardFactsCheck).toHaveBeenCalledWith(9);
+    const notice = host.querySelector('.board-facts-notice')!;
+    expect(notice.textContent).toContain('Q1: "a level 3 peaceful dwarf"');
   });
 
   describe('the game snapshot a suite document carries', () => {

@@ -1,7 +1,7 @@
 import { Component, ElementRef, EventEmitter, Input, OnDestroy, Output, ViewChild, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { AdminBenchmarkService, BenchmarkGameSnapshotDto } from '../../services/admin-benchmark.service';
+import { AdminBenchmarkService, BenchmarkGameSnapshotDto, BoardFactsCheckDto } from '../../services/admin-benchmark.service';
 import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
 import { SnapshotTextEditorComponent } from './snapshot-text-editor.component';
 import { DIGEST_MAX_CHARS, SnapshotDigestEditorComponent } from './snapshot-digest-editor.component';
@@ -72,6 +72,8 @@ export class SnapshotViewerComponent implements OnDestroy {
   editTextError: string | null = null;
   textStatus: string | null = null;
   showDiscardPrompt = false;
+  /** The BOARD FACTS quote check from the most recent text save. Cleared on load and on reset. */
+  boardFactsCheck: BoardFactsCheckDto | null = null;
 
   deleting = false;
   deleteError: string | null = null;
@@ -359,11 +361,13 @@ export class SnapshotViewerComponent implements OnDestroy {
       text,
       expectedSha256: this.snapshot.sha256
     }).subscribe({
-      next: (updated) => {
+      next: (response) => {
+        const updated = response.snapshot;
         /* A digest edit in progress is kept; a later Save Changes overwrites the rebuilt one. */
         const keepDigestEdit = this.digestDirty;
         this.snapshot = { ...this.snapshot!, ...updated, sanitizedText: updated.sanitizedText ?? text };
         if (!keepDigestEdit) this.editDigestText = this.snapshot.digestText || '';
+        this.boardFactsCheck = response.boardFactsCheck;
         this.savingText = false;
         this.textEditor?.markSaved(this.snapshot.sanitizedText ?? '', text);
         this.snapshotUpdated.emit(this.snapshot);
@@ -561,6 +565,7 @@ export class SnapshotViewerComponent implements OnDestroy {
     this.editTextError = null;
     this.textStatus = null;
     this.showDiscardPrompt = false;
+    this.boardFactsCheck = null;
     this.downloadAfterSave = false;
     this.deleting = false;
     this.deleteError = null;

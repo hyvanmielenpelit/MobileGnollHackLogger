@@ -712,7 +712,8 @@ public class AdminBenchmarkController : ControllerBase
             return Ok(new CaptureBenchmarkSnapshotResponse
             {
                 Board = ToSnapshotDto(board, suite.Id, suite.Name),
-                Suite = ToSuiteDto(suite)
+                Suite = ToSuiteDto(suite),
+                BoardFactsCheck = BenchmarkBoardFactsChecker.Check(board.SanitizedText, suite.Questions)
             });
         }
         catch (ArgumentException ex)
@@ -1581,11 +1582,42 @@ public class AdminBenchmarkController : ControllerBase
             CreatedCount = created,
             ReplacedCount = replaced,
             UnchangedCount = unchanged,
-            Questions = result
+            Questions = result,
+            BoardFactsCheck = await CheckBoardFactsAsync(suiteId, ct)
         });
     }
 
     private static string? NullIfBlank(string? value) => string.IsNullOrEmpty(value) ? null : value;
+
+    /// <summary>
+    /// The BOARD FACTS quote check of a suite's rubrics against its attached board, on demand. Null
+    /// for a suite with no board. Advisory.
+    /// </summary>
+    [HttpGet("suites/{id}/board-facts-check")]
+    public async Task<IActionResult> GetBoardFactsCheck(long id, CancellationToken ct)
+    {
+        if (!await _dbContext.BenchmarkSuites.AnyAsync(s => s.Id == id, ct)) return NotFound();
+        return Ok(await CheckBoardFactsAsync(id, ct));
+    }
+
+    /// <summary>Null when the suite has no board.</summary>
+    private async Task<BoardFactsCheckDto?> CheckBoardFactsAsync(long suiteId, CancellationToken ct)
+    {
+        string? boardText = await _dbContext.BenchmarkSuites
+            .AsNoTracking()
+            .Where(s => s.Id == suiteId && s.GameSnapshotId != null)
+            .Select(s => s.GameSnapshot!.SanitizedText)
+            .FirstOrDefaultAsync(ct);
+        if (boardText == null) return null;
+
+        var questions = await _dbContext.BenchmarkQuestions
+            .AsNoTracking()
+            .Where(q => q.BenchmarkSuiteId == suiteId)
+            .Select(q => new { q.Id, q.OrderIndex, q.ExpectedPoints })
+            .ToListAsync(ct);
+
+        return BenchmarkBoardFactsChecker.Check(boardText, questions.Select(q => (q.Id, q.OrderIndex, q.ExpectedPoints)));
+    }
 
     // --- Question Review API ---
 
@@ -2009,8 +2041,13 @@ public class AdminBenchmarkController : ControllerBase
         board.ModifiedAtUtc = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(ct);
 
+        // At most one suite owns a snapshot (unique filtered index on GameSnapshotId).
         var suite = await _dbContext.BenchmarkSuites.FirstOrDefaultAsync(s => s.GameSnapshotId == id, ct);
-        return Ok(ToSnapshotDto(board, suite?.Id, suite?.Name));
+        return Ok(new UpdateBenchmarkSnapshotTextResponse
+        {
+            Snapshot = ToSnapshotDto(board, suite?.Id, suite?.Name),
+            BoardFactsCheck = suite == null ? null : await CheckBoardFactsAsync(suite.Id, ct)
+        });
     }
 
     /// <summary>Rebuilds the digest from the board's own text. The board text is never touched.</summary>
@@ -3018,6 +3055,7 @@ public class AdminBenchmarkController : ControllerBase
             WikiHeadSha = run.WikiHeadSha,
             SourceCodeHeadSha = run.SourceCodeHeadSha,
             DefaultSuiteKeyUsed = run.DefaultSuiteKeyUsed,
+            BoardFactsCheck = BenchmarkBoardFactsChecker.Deserialize(run.BoardFactsCheckJson),
             ToolFamilyCounts = toolRouting.FamilyCalls.ToDictionary(
                 kv => kv.Key switch
                 {

@@ -2334,7 +2334,8 @@ below is carried by a file no fingerprint covers.
   15-second cadence instead of pausing — browsers throttle background timers to roughly once a minute
   after five minutes, so the chime can lag by up to a minute — and the document title carries a
   "✓ " prefix until the tab is revisited. Blocked playback is reported in the dialog rather than
-  swallowed.
+  swallowed. From harness 32 the sound is armed on Start, an optional desktop notification sits beside
+  it, and the tab holds a Web Lock while it watches live work; see *Harness Version 32 Updates* below.
 
 ### Cross-Model Comparison UI Polish (2026-09-13) — No Version Bump
 
@@ -2855,6 +2856,200 @@ boundary is not evidence of anything. The comparison view refuses to rank a meth
 method-11 run because `HarnessVersion` and `ScoringMethodVersion` are both `Instrument` keys and both
 move here: two differing instrument keys are `NotComparable`. A later round that bumped only one of
 them would produce Tier C instead.
+
+### Harness Version 32 Updates
+
+Prompted by the analysis of run 54 (Gemini 3.7 Flash @ `medium`, snapshot suite 8, harness 31, method
+11). The suite's board had been replaced with a newer export, and two rubrics still quoted lines the new
+board no longer carried. The contested-deduction flag named only one of its two causes. The
+accused-sentence extractor missed single-quoted sentences, took quotations the assessor approved of as
+accusations, and printed no outcome for the sentences it did send. Half the evidence-informed
+re-grades were rejected on form. The verifier cited unreachable code once and supported a false number
+from a wiki page once. And every grading call paid full price for the board, because it sat after the
+question. `HarnessVersion` moves to **"32"**; `ScoringMethodVersion` stays **11**, and
+`FirstValidatedRegradeHarness` stays **31**. No tool guide moves, so `ToolGuidesSha256` and
+`CandidateSystemPromptSha256` do not move because of this round. One EF Core migration
+(`AddBenchmarkRunBoardFactsCheck`) adds the nullable `BenchmarkRuns.BoardFactsCheckJson`.
+
+**A 31-stamped snapshot-suite run is not grade-comparable with a 32-stamped one.** The graders read the
+same board text in a different place (A6), a different set of accused sentences reaches the verifier
+(A3), and the verifier works under two more instructions (A5). `HarnessVersion` is an `Instrument` key,
+so the comparison view already refuses to pool across the boundary.
+
+- **Rubric board quotes are checked against the board (A1).** `BenchmarkBoardFactsChecker` reads every
+  `**BOARD FACTS**` section of a suite's rubrics — from the line that is exactly that heading to the
+  next line starting with `**` — and every bullet in it (a line starting `- `, with any following
+  non-empty line that is neither a bullet nor a heading). Inside a bullet, straight double quotes pair
+  sequentially (first with second, third with fourth; an unpaired last quote is ignored) and typographic
+  `“…”` pairs are read the same way. Each non-empty span is looked up in the stored board
+  (`BenchmarkGameSnapshot.SanitizedText`, the text every grader receives) ordinally, after converting
+  CRLF and lone CR to LF, with no other normalisation: the authoring contract is verbatim. Sequential
+  pairing is what makes a quoted board line containing quote characters safe, because the fragments on
+  either side are each still substrings of the board.
+
+  The result (`BoardFactsCheckDto`) counts bullets, checked literals and bullets with **no** quoted
+  literal, and lists the **missing literals** — the only issues. A bullet with no quoted literal is a
+  count, never a warning: an absence fact such as *"The status line shows no hunger state."* cannot be
+  quoted, and the harness's own rubric generator writes unquoted prose. Reporting those as issues would
+  warn on every write of every generated suite. The count is there so that "none missing" is not read
+  as "every fact was checked".
+
+  The check is shown after uploading or replacing a suite's board (`POST suites/{id}/snapshot`),
+  after saving the board text in the snapshot viewer (`PUT snapshots/{id}/text`, which now returns
+  `{ snapshot, boardFactsCheck }`; the check is null when no suite owns the snapshot), and after
+  importing questions. The question import panel also calls the new
+  `GET suites/{id}/board-facts-check` after a whole-suite import, because that is the path the offline
+  authoring skill feeds. The upload dialog stays open when a literal is missing, so the list can be
+  read before it closes. `CreateQuestion`, `UpdateQuestion`, `AcceptRubricAddition`, question
+  generation, default-suite import and suite duplication are not instrumented; the on-demand endpoint
+  and the launch-time stamp cover them. `RunAsync` stamps the check into
+  `BenchmarkRun.BoardFactsCheckJson` beside the other board fields (null for a suite with no board), so
+  a run records what applied when it started and is never recomputed against later edits. The report
+  manifest prints, under *Game Snapshot*, *"Rubric board quotes: N checked, none missing."* or the
+  missing count by question — *"these rubrics quote text this board does not contain; grades on them
+  rest on stale facts"* — followed by the unquoted count when it is not zero. The run detail shows a
+  notice only when something is missing. **Everything here is advisory**: no write, question or launch
+  is ever refused.
+
+- **The board is a Fundamental comparability key (A1).** `GameSnapshot`, valued from
+  `GameSnapshotSha256Used`, joins the `Fundamental` keys: two runs of one snapshot suite on different
+  boards sat different exams and are not pooled or ranked. Runs 53 and 54 read different boards, and no
+  key recorded it. A suite with no board has no value for this key, and that is **not** an absent
+  identity: `BenchmarkComparabilityKey.IsAbsentIdentity` exempts it, so two non-board runs still match on
+  it and are not excluded from the comparison view. `ComputeKeyHash` hashes every `Name=Value`, so
+  **every run's key hash changes**, and every stored `BenchmarkRunGroup.ComparabilityKeyHash` is stale.
+  Nothing compares that column for equality; re-analyse a stored group analysis to refresh it, as
+  already advised for the narrowed scoring-profile key.
+
+- **`ContestedAccuracyDeduction` names its cause (A2).** The flag is raised when the verifier refutes
+  the own-knowledge basis of an out-of-rubric Accuracy deduction, **or** supports a sentence the
+  assessor quoted as false. The report now splits the run-level list by cause, read from each answer's
+  stored verification items by role — *"own-knowledge basis refuted: …; a sentence the assessor quoted
+  as false was supported: …"* — and lists a legacy record without roles under *"cause not recorded"*.
+  The per-answer line names its cause, and the run detail notice and tooltip describe both. The Advisory
+  Flags parenthetical is unchanged.
+
+- **Accused-sentence extraction reads single quotes and approval (A3).** `ExtractAccusedQuotes` also
+  takes straight and typographic single-quoted spans. For those only, the opening quote must follow the
+  start of the text, whitespace, `(` or an em dash, and the closing one must precede the end of the
+  text, whitespace or punctuation; the existing guard that the span occurs in the answer is what keeps
+  contractions from pairing. A span is then skipped when its clause approves of it and nothing in the
+  clause charges it. The clause runs back to the previous `.`, `;` or `:` followed by a space and
+  forward to the next. An enclosing parenthesis decides on its own only when it holds a marker of
+  either kind. Otherwise the clause around it decides, which is what keeps *Correct on the core
+  mechanic ("…")* approved. The approval and charge vocabularies are
+  `BenchmarkVerdictConsistency.AccusationApprovalRegex` and `AccusationChargeRegex`; a charge wins
+  when both occur. The report prints, per answer, *"Accused sentences checked: N — supported a, refuted
+  b, indeterminate c"* with the refuted and indeterminate ones listed; at run level the same totals
+  under Assessor Findings; and the Claim Verification Yield line states the two populations apart
+  (*"X unverified claim(s) + Y accused sentence(s) checked"*). All of it is computed at render time from
+  `ClaimVerificationJson` by role. The run-level `Claims*Count` columns keep counting ordinary claims
+  only, and no column is added.
+
+- **An evidence-informed re-grade gets one repair turn (A4).** The re-grade body's schema block now
+  carries `withdrawn` itself, with *"`withdrawn` is required; use `[]` when you withdraw nothing."*;
+  the trailing prose that mentioned it is gone. Each withdrawable target lists only the verifier
+  findings that bear on it, and the rest are printed once as context that must never be cited. When the
+  first reply parses but fails only because `withdrawn` is missing or not an array, the harness sends
+  one repair turn, gated by `Benchmark:EvidenceInformedRegrade:ParseRetryEnabled` (default `true`). It
+  reuses the same request and budget and appends the first reply and a repair message quoting the
+  error. Tokens and duration are summed over both turns, and `EvidenceInformedJson` records
+  `repairTurns` and the repair's outcome. Nothing else is retried — no provider error, timeout,
+  unparseable reply, unknown id or dropped withdrawal — and the all-or-nothing eligibility guard is
+  unchanged. Calibration and trial reassessment, which share the assessor call, are unaffected. The
+  primary, second-opinion, calibration and trial bodies are byte-identical apart from A6's board line.
+
+- **Verifier instructions 3d and 3e (A5).** 3d: before citing a function as the code that implements
+  something, confirm it has a live call site — GnollHack keeps superseded NetHack code, and a function
+  whose only callers are commented out decides nothing (run 54 Q12, `priest_talk`). 3e: a wiki page
+  alone does not settle a claim about a number while the source is searchable; the code that applies
+  it decides, and without it the verdict is Indeterminate (run 54 Q11). They follow 3a–3c, and 3c is
+  still emitted only on a board suite.
+
+- **The board sits ahead of the question for every grading role, and the wire is checked (A6).**
+  `BuildGradingPrompt` returns a history of the grading system prompt, **a second system message with
+  the delimited board** (same heading and delimiters as before), then the per-question user message.
+  The per-question body prints *"The game snapshot for this suite is given above, before this
+  question."* where the board used to be. A second system message is the one form all three providers
+  carry: Anthropic emits it as the second cached system block, Google as the next `systemInstruction`
+  part, and OpenAI joins every history system message into `instructions` (a session segment would not
+  reach an OpenAI grader at all). This covers the primary assessment, second opinion, re-grade and its
+  repair turn, calibration and trial. The final synthesis passes no board; it reads the digest. The
+  verifier keeps its one-sentence system prompt and single user message, reordered to instructions,
+  board, question, rubric, evidence, harness context, tool-call leads, claims. Instructions and board
+  are therefore a byte-identical prefix across a run's verifier calls. The Anthropic assessor's cache
+  should cover preamble plus board on repeated calls; read the real cache telemetry before claiming a
+  saving.
+
+  `BenchmarkGradingRequestProbe` runs before every grading call. It builds the body through the real
+  provider's `PrepareMessageHistory` and `BuildChatRequestBody`, serialises it and makes no network
+  call. It checks 120-character needles, JSON-encoded the way the body is, for the instructions, the
+  head of the board block (required **exactly once**), the head of the board text, and the question
+  marker. They must appear in that order, read the way the model reads the request: system text first,
+  then conversation, since the OpenAI body serialises `input` before `instructions`. The board text
+  itself is not required once, because BOARD FACTS quote board lines. A failure sends nothing. It
+  fails a primary assessment, sets the second opinion's or verifier's error, and leaves a re-grade or
+  calibration without a verdict. **`AssessorBoardChars`, `SecondOpinionBoardChars` and
+  `VerifierBoardChars` are stamped only after that call's probe passed**: `BenchmarkBoardGuard.BoardCharsSent`
+  reads the loaded entity, so without this the *Board delivered* line would stay green with no board
+  on the wire, which is the harness-29 failure.
+
+- **Report § 2 order (A7).** The Critical Errors line and the four sensitivity lines (Contested-Verdict,
+  Evidence-informed, Verification-cleared Accuracy, FORM-cleared Readability) sit directly after the
+  Intelligence Index block, before the Speed Index or Median Model Time heading, as § 7 already
+  prints them. In § 2 the Verification-cleared line refers to *"answer(s) listed under Assessor
+  Findings"*, which follow it; § 7 keeps *"answer(s) above"*, where they precede it.
+
+- **Completion signals in a background tab (no version effect).** A run watched from another tab could
+  chime only when the operator returned. The likely cause, not reproduced: the one `HTMLAudioElement`
+  was created lazily on the first `play()`, at completion, in a hidden tab, and Chromium defers loading
+  such an element until the tab is shown. The run diagnostics now record enough to confirm or refute
+  this on the first real run.
+  - **Arming on Start.** `BenchmarkCompletionSoundService.arm()` is called synchronously from the click
+    handlers that start or resume watched work: Start (which also covers series launch), Resume series,
+    both failed-question re-run entry points, *Test sound*, and the series dialog's *Continue series*.
+    Before its first `await` it creates an `AudioContext`, calls `resume()` and starts a one-sample
+    silent buffer, so the gesture's activation is not spent waiting on the network. It then creates and
+    loads the fallback element, and fetches and decodes the Opus chime (the M4A on a failed fetch,
+    non-OK response or failed decode). Concurrent calls share one attempt; a failed arm may retry.
+  - **Playback.** With a decoded buffer the chime plays through the `AudioContext` at gain 0.6, resuming
+    a suspended context first; otherwise, or on failure, the element plays as before. `'played'` means
+    the browser accepted the playback, not that anyone heard it. A new outcome, **`'deferred'`**,
+    means the element's `play()` had not settled 2 seconds into a hidden tab. The status then reads
+    *"The browser held the sound until this tab was shown."* A late fulfilment still marks the key
+    played, so a retry cannot chime twice.
+  - **Desktop notification.** A second checkbox, *Show a desktop notification*, is independent of the
+    sound: either, both or neither may be on. Permission is requested only from that checkbox's change
+    handler, never on page load. A refused, dismissed or unsupported result unticks the box and says
+    why in a status line under the two checkboxes that is always in the DOM. A notification is raised
+    only while the tab is hidden or unfocused, once per run or series, and clicking it focuses the tab.
+    Whether it makes a sound is up to the browser and the operating system, so it is not a guaranteed
+    audio fallback. A platform whose `Notification` constructor requires a service worker gets none;
+    the application has no service worker and does not gain one for this.
+  - **Hidden-tab polling** continues at the 15-second cadence when **either** signal is on; with both
+    off a hidden tab pauses as before. Browsers slow background timers further over time, so a signal
+    can arrive up to a minute late.
+  - **Web Lock.** While a run or series poller is live the tab holds a Web Lock named
+    `overseer-benchmark-live:run:<id>` or `…:series:<id>` (unique per operation, so two tabs on
+    different runs never queue), acquired when polling starts and released when it stops — terminal
+    status, poll error, cancellation, leaving the page — including a run already live when the page
+    loads and a series resumed from the dialog. While a series is watched, the series owns the lock
+    across all its members; the run poller that follows each member neither takes nor releases it. Chrome lists a held Web Lock among the conditions that
+    exempt a tab from Energy Saver freezing, but Web Locks are a coordination API: this is **no
+    guarantee** against throttling, suspension, discard or operating-system sleep, on any browser.
+  - **A series resumed from the series dialog now chimes.** The dialog's *Continue series* arms the
+    signals and emits `seriesResumed`, and the page restarts its series poll, which had stopped at
+    *Stopped*.
+  - Both choices are remembered in the run-settings blob, which is written when a run is started, so a
+    changed checkbox is remembered from the next Start, exactly as the sound's has always been.
+  - The run diagnostics' *Completion sound* line adds arming and armed state, the `AudioContext` state,
+    the path taken and its outcome, visibility and focus at the attempt, the milliseconds a deferred
+    play took to settle, notification support, permission and outcome, and the lock state.
+  - No CSP change: the fetch is same-origin (`connect-src 'self'`), and `Permissions-Policy` restricts
+    neither autoplay nor notifications. References: [Web Audio best practices](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API/Best_practices),
+    [Notification.requestPermission](https://developer.mozilla.org/docs/Web/API/Notification/requestPermission_static),
+    [Web Locks API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API),
+    [Chrome Energy Saver freezing](https://developer.chrome.com/blog/freezing-on-energy-saver).
 
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).

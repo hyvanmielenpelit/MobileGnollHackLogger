@@ -607,13 +607,21 @@
                 Candidate Response Style, and a third column would displace Number of Runs.
               -->
               <label class="gh-checkbox completion-sound-toggle" for="completionSoundInput">
-                <input id="completionSoundInput" type="checkbox" [(ngModel)]="completionSound">
+                <input id="completionSoundInput" type="checkbox" [(ngModel)]="completionSound"
+                       aria-describedby="completionSignalsHint">
                 <span>Play a sound when the run &mdash; or the whole series &mdash; completes</span>
               </label>
-              <span class="form-hint">
-                While this tab is hidden, the check for completion keeps running, but only once
-                every 15 seconds instead of pausing outright, so the chime still arrives without
-                the tab open.
+              <label class="gh-checkbox completion-sound-toggle" for="completionNotificationInput">
+                <input id="completionNotificationInput" type="checkbox" [checked]="completionNotification"
+                       aria-describedby="completionSignalsHint"
+                       (change)="onCompletionNotificationChange($any($event.target).checked)">
+                <span>Show a desktop notification</span>
+              </label>
+              <p class="text-muted completion-signals-status" role="status" aria-live="polite">{{ completionSignalsStatusText }}</p>
+              <span id="completionSignalsHint" class="form-hint">
+                Armed when you press Start, so the chime can play while this tab is in the background.
+                While the tab is hidden, completion is checked about every 15 seconds; browsers slow
+                background timers further over time, so the signal can arrive up to a minute late.
               </span>
               <div class="completion-sound-actions">
                 <button type="button" class="btn-gh btn-gh-small" (click)="testCompletionSound()">Test sound</button>
@@ -1839,7 +1847,13 @@
                 @if ((contestedAccuracyDeductionAnswerCount ?? 0) > 0) {
                   <div>
                     <strong>{{ contestedAccuracyDeductionAnswerCount }} answer(s) carry a contested accuracy deduction</strong>@if (contestedAccuracyDeductionQuestionNumbers) { <span> (question(s) {{ contestedAccuracyDeductionQuestionNumbers }})</span> } &mdash;
-                    the own-knowledge statement an out-of-rubric Accuracy deduction rests on was checked against the source code/wiki by the claim verifier and refuted. Advisory; the deduction stands and no score changed. Re-assess from the run detail.
+                    either the own-knowledge statement an out-of-rubric Accuracy deduction rests on was refuted by the claim verifier, or a sentence the assessor quoted as false was supported by it. Advisory; the deduction stands and no score changed. Re-assess from the run detail.
+                  </div>
+                }
+                @if (selectedRunBoardFactsCheck && selectedRunBoardFactsCheck.missingLiterals.length > 0) {
+                  <div class="board-facts-notice">
+                    <strong>{{ selectedRunBoardFactsCheck.missingLiterals.length }} rubric quote(s) not found on this run's board</strong> &mdash;
+                    these rubrics quote text the board does not contain. Repair them before the next run: download the suite as YAML and hand it to an agent with the <code>server_rubric_handoff</code> skill.
                   </div>
                 }
                 @if ((dimensionOutlierAnswerCount ?? 0) > 0) {
@@ -2138,7 +2152,7 @@
                       -->
                       <span class="badge-flag"
                             [class]="'badge-flag-' + flag.toLowerCase() + (isAdvisoryFlagName(flag) ? ' badge-flag-advisory' : '')"
-                            [title]="flag === 'RefutedClaim' ? 'Advisory: a claim outside the rubric was checked against the source/wiki and refuted. Recorded after scoring; no score changed.' : flag === 'UnevidencedDeduction' ? 'Advisory: a level was docked with evidence that names no defect, or that rests only on unverifiability. The verdict stands and no score changed.' : flag === 'OmissionAsAccuracy' ? 'Advisory: an omission was docked as accuracy, which Completeness already grades. The verdict stands and no score changed.' : flag === 'ContestedCriticalError' ? 'Advisory: the critical-error quote was checked against the source/wiki by the claim verifier and supported. Contested, not overturned — the quality cap stands and no score changed.' : flag === 'ContestedAccuracyDeduction' ? 'Advisory: the own-knowledge statement an out-of-rubric Accuracy deduction rests on was checked against the source/wiki by the claim verifier and refuted. Contested, not overturned — the deduction stands and no score changed.' : flag === 'DimensionOutlier' ? 'Advisory: one grading dimension scored ≤ 1 while the other three scored ≥ 3, with no defect of that kind named in the assessor comment. Routed to a second reader; no score changed.' : isAdvisoryFlagName(flag) ? 'Advisory only — this does not affect the run status or the clean answer count.' : 'Transport defect detected in this answer.'">{{ flagBadgeLabel(flag) }}</span>
+                            [title]="flag === 'RefutedClaim' ? 'Advisory: a claim outside the rubric was checked against the source/wiki and refuted. Recorded after scoring; no score changed.' : flag === 'UnevidencedDeduction' ? 'Advisory: a level was docked with evidence that names no defect, or that rests only on unverifiability. The verdict stands and no score changed.' : flag === 'OmissionAsAccuracy' ? 'Advisory: an omission was docked as accuracy, which Completeness already grades. The verdict stands and no score changed.' : flag === 'ContestedCriticalError' ? 'Advisory: the critical-error quote was checked against the source/wiki by the claim verifier and supported. Contested, not overturned — the quality cap stands and no score changed.' : flag === 'ContestedAccuracyDeduction' ? 'Advisory: either the own-knowledge statement an out-of-rubric Accuracy deduction rests on was refuted by the claim verifier, or a sentence the assessor quoted as false was supported by it. Contested, not overturned — the deduction stands and no score changed.' : flag === 'DimensionOutlier' ? 'Advisory: one grading dimension scored ≤ 1 while the other three scored ≥ 3, with no defect of that kind named in the assessor comment. Routed to a second reader; no score changed.' : isAdvisoryFlagName(flag) ? 'Advisory only — this does not affect the run status or the clean answer count.' : 'Transport defect detected in this answer.'">{{ flagBadgeLabel(flag) }}</span>
                     }
                   }
                   @if (formatAssessmentStatus(ans.assessmentStatus) !== 'Scored') {
@@ -4141,7 +4155,8 @@
   [visible]="multiRunDialogVisible"
   (closed)="onMultiRunDialogClosed()"
   (openRunProgress)="onOpenRunProgressFromSeries($event)"
-  (openGroupAnalysis)="onOpenGroupAnalysisFromSeries($event)"></app-multi-run-progress-dialog>
+  (openGroupAnalysis)="onOpenGroupAnalysisFromSeries($event)"
+  (seriesResumed)="onSeriesResumedFromDialog($event)"></app-multi-run-progress-dialog>
 
 <!-- SNAPSHOT VIEWER COMPONENT -->
 <app-snapshot-viewer #snapshotViewer

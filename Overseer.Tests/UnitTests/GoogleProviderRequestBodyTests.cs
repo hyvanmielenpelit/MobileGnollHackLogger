@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using Overseer.Services.Benchmarking;
 using Overseer.Services.Providers;
 using Overseer.Services.Tools;
 using Xunit;
@@ -257,5 +258,69 @@ public class GoogleProviderRequestBodyTests
 
         // The segments replace the first system message; they must not be emitted twice.
         Assert.DoesNotContain(segmented.FullPrompt, json);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Benchmark grading requests: the grading instructions, then the board, then the question.
+    // ---------------------------------------------------------------------------------------
+
+    private const string GradingBoard = "Dlvl:3  HP:14(14)\na - a blessed +1 quarterstaff (weapon in hands)\nc - 3 fortune cookies";
+
+    private static string SerializeGrading(GoogleProvider provider, int questionNumber, bool repairTurn = false)
+    {
+        var (prompt, seed) = BenchmarkService.BuildGradingPrompt(
+            BenchmarkService.GradingSystemPrompt,
+            "Grading preamble.",
+            BenchmarkAssessmentPrompt.QuestionBlockMarker + $"\nQuestion #{questionNumber}\nRubric and answer.",
+            BenchmarkAssessmentPrompt.BuildGradingBoardBlock("Tommi2", GradingBoard));
+        if (repairTurn)
+        {
+            seed.Add(new { role = "assistant", content = "{\"accuracyLevel\":5}" });
+            seed.Add(new { role = "user", content = BenchmarkService.WithdrawnRepairMessage });
+        }
+
+        return JsonSerializer.Serialize(provider.BuildChatRequestBody(
+            modelId: "gemini-3.7-flash",
+            messageHistory: provider.PrepareMessageHistory(seed),
+            maxOutputTokens: 4096,
+            thinkingLevel: null,
+            requestTools: new ToolsForRequest(),
+            segmentedPrompt: prompt));
+    }
+
+    [Fact]
+    public void BuildChatRequestBody_GradingRequest_OrdersInstructionsThenBoardInSystemInstruction()
+    {
+        using var doc = JsonDocument.Parse(SerializeGrading(CreateProvider(), 2));
+
+        var parts = doc.RootElement.GetProperty("systemInstruction").GetProperty("parts");
+        Assert.Equal(2, parts.GetArrayLength());
+        Assert.StartsWith(BenchmarkService.GradingSystemPrompt, parts[0].GetProperty("text").GetString());
+        Assert.StartsWith(BenchmarkAssessmentPrompt.GradingBoardHeading, parts[1].GetProperty("text").GetString());
+        Assert.DoesNotContain("GAME CONTEXT BOARD", doc.RootElement.GetProperty("contents").GetRawText());
+    }
+
+    [Fact]
+    public void BuildChatRequestBody_TwoGradingRequests_ShareInstructionsAndBoardAsAPrefix()
+    {
+        var provider = CreateProvider();
+
+        string prefix = CommonPrefix(SerializeGrading(provider, 2), SerializeGrading(provider, 3));
+
+        Assert.Contains("\"systemInstruction\"", prefix);
+        Assert.Contains("--- END GAME CONTEXT BOARD ---", prefix);
+        Assert.Contains("\"contents\"", prefix);
+    }
+
+    [Fact]
+    public void BuildChatRequestBody_GradingRepairTurn_KeepsTheBoardInSystemInstructionOnly()
+    {
+        using var doc = JsonDocument.Parse(SerializeGrading(CreateProvider(), 2, repairTurn: true));
+
+        Assert.Equal(2, doc.RootElement.GetProperty("systemInstruction").GetProperty("parts").GetArrayLength());
+        var contents = doc.RootElement.GetProperty("contents");
+        Assert.Equal(3, contents.GetArrayLength());
+        Assert.Equal("model", contents[1].GetProperty("role").GetString());
+        Assert.DoesNotContain("GAME CONTEXT BOARD", contents.GetRawText());
     }
 }

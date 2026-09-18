@@ -238,4 +238,62 @@ public class AnthropicProviderTests
         Assert.True(docNull.RootElement.TryGetProperty("thinking", out var thinkingProp3));
         Assert.False(thinkingProp3.TryGetProperty("display", out _));
     }
+
+    /// <summary>A benchmark grading seed: the grading instructions, the board block, then the question's body.</summary>
+    private static (SegmentedPrompt Prompt, List<object> SeedHistory) GradingSeed()
+    {
+        string? boardBlock = Overseer.Services.Benchmarking.BenchmarkAssessmentPrompt.BuildGradingBoardBlock(
+            "Tommi2", "Dlvl:3  HP:14(14)\na - a blessed +1 quarterstaff (weapon in hands)\nc - 3 fortune cookies");
+        return Overseer.Services.Benchmarking.BenchmarkService.BuildGradingPrompt(
+            Overseer.Services.Benchmarking.BenchmarkService.GradingSystemPrompt,
+            "Grading preamble.",
+            Overseer.Services.Benchmarking.BenchmarkAssessmentPrompt.QuestionBlockMarker + "\nQuestion #2\nRubric and answer.",
+            boardBlock);
+    }
+
+    [Fact]
+    public void BuildChatRequestBody_GradingRequestWithCacheControl_PutsTheBoardInTheSecondCachedSystemBlock()
+    {
+        var provider = new AnthropicProvider(CreateConfig());
+        var (prompt, seed) = GradingSeed();
+
+        var body = provider.BuildChatRequestBody(
+            "claude-opus-5", provider.PrepareMessageHistory(seed), 1024, null, new ToolsForRequest(),
+            segmentedPrompt: prompt, cacheConversationTail: false);
+
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(body));
+        var system = doc.RootElement.GetProperty("system");
+        Assert.Equal(2, system.GetArrayLength());
+        Assert.Equal(prompt.FullPrompt, system[0].GetProperty("text").GetString());
+        Assert.Equal("ephemeral", system[0].GetProperty("cache_control").GetProperty("type").GetString());
+        Assert.StartsWith(
+            Overseer.Services.Benchmarking.BenchmarkAssessmentPrompt.GradingBoardHeading,
+            system[1].GetProperty("text").GetString());
+        Assert.Equal("ephemeral", system[1].GetProperty("cache_control").GetProperty("type").GetString());
+
+        var messages = doc.RootElement.GetProperty("messages");
+        Assert.Equal(1, messages.GetArrayLength());
+        Assert.DoesNotContain("GAME CONTEXT BOARD", messages.GetRawText());
+    }
+
+    [Fact]
+    public void BuildChatRequestBody_GradingRequestWithoutCacheControl_JoinsInstructionsThenBoardIntoSystem()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            { "PromptCacheSettings:EnableAnthropicCacheControl", "false" }
+        }).Build();
+        var provider = new AnthropicProvider(config);
+        var (prompt, seed) = GradingSeed();
+
+        var body = provider.BuildChatRequestBody(
+            "claude-opus-5", provider.PrepareMessageHistory(seed), 1024, null, new ToolsForRequest(),
+            segmentedPrompt: prompt, cacheConversationTail: false);
+
+        string system = Assert.IsType<string>(body["system"]);
+        int board = system.IndexOf(Overseer.Services.Benchmarking.BenchmarkAssessmentPrompt.GradingBoardHeading, StringComparison.Ordinal);
+        Assert.StartsWith(prompt.FullPrompt, system);
+        Assert.True(board > prompt.FullPrompt.Length - 1, "The board must follow the grading instructions.");
+        Assert.DoesNotContain("GAME CONTEXT BOARD", JsonSerializer.Serialize(body["messages"]));
+    }
 }

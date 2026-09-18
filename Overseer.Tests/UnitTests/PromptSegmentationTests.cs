@@ -397,44 +397,137 @@ public class PromptSegmentationTests
         string nl = Environment.NewLine;
 
         string preamble = BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(suite);
+        string? boardBlock = BenchmarkAssessmentPrompt.BuildGradingBoardBlock("BD-UNIQUE-BOARD", "BT-UNIQUE-BOARD text");
+        Assert.NotNull(boardBlock);
         string body = BenchmarkAssessmentPrompt.BuildPerQuestionBody(
             7, question, BenchmarkDifficulty.Advanced, rubric, answer, BenchmarkAnswerStatus.Ok,
-            tools, 5, true, 2, 45, "BD-UNIQUE-BOARD", "Board text");
+            tools, 5, true, 2, 45, boardGivenAbove: true);
         string full = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
             suite, 7, question, BenchmarkDifficulty.Advanced, rubric, answer, BenchmarkAnswerStatus.Ok,
-            tools, 5, true, 2, 45, "BD-UNIQUE-BOARD", "Board text");
+            tools, 5, true, 2, 45, "BD-UNIQUE-BOARD", "BT-UNIQUE-BOARD text");
 
-        Assert.Equal(preamble + nl + body, full);
+        // The order a grader reads: the preamble, the board, then the question's body.
+        Assert.Equal(preamble + nl + boardBlock + nl + body, full);
 
-        // The seam is the blank line between the unverified-claims section and the question block.
+        // The seams are the blank lines after the unverified-claims section and after the board.
         Assert.StartsWith("You are an expert game knowledge and reasoning assessor", preamble);
         Assert.EndsWith("Return an empty list when every claim is adjudicable." + nl, preamble);
+        Assert.StartsWith(BenchmarkAssessmentPrompt.GradingBoardHeading + nl, boardBlock);
+        Assert.EndsWith("--- END GAME CONTEXT BOARD ---" + nl, boardBlock);
         Assert.StartsWith("--- QUESTION AND CANDIDATE ANSWER ---" + nl, body);
-        Assert.Contains("adjudicable." + nl + nl + "--- QUESTION AND CANDIDATE ANSWER ---" + nl, full);
+        Assert.Contains("adjudicable." + nl + nl + BenchmarkAssessmentPrompt.GradingBoardHeading + nl, full);
+        Assert.Contains("--- END GAME CONTEXT BOARD ---" + nl + nl + "--- QUESTION AND CANDIDATE ANSWER ---" + nl, full);
 
-        // The preamble carries the suite and nothing question-specific; the body carries none of the preamble.
+        // The preamble carries the suite and nothing question-specific; the body carries none of the
+        // preamble and none of the board, only the line that points at it.
         Assert.Contains($"Suite: {suite}" + nl, preamble);
         Assert.Equal(preamble, BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(suite));
-        foreach (var marker in new[] { "QX-UNIQUE-QUESTION", "RB-UNIQUE-RUBRIC", "AN-UNIQUE-ANSWER", "BD-UNIQUE-BOARD", "Question #7" })
+        foreach (var marker in new[] { "QX-UNIQUE-QUESTION", "RB-UNIQUE-RUBRIC", "AN-UNIQUE-ANSWER", "Question #7" })
         {
             Assert.DoesNotContain(marker, preamble);
+            Assert.DoesNotContain(marker, boardBlock);
             Assert.Contains(marker, body);
         }
+        foreach (var marker in new[] { "BD-UNIQUE-BOARD", "BT-UNIQUE-BOARD" })
+        {
+            Assert.DoesNotContain(marker, preamble);
+            Assert.DoesNotContain(marker, body);
+            Assert.Contains(marker, boardBlock);
+        }
+        Assert.Contains(BenchmarkAssessmentPrompt.BoardGivenAboveLine, body);
         Assert.DoesNotContain("CRITICAL INSTRUCTIONS:", body);
         Assert.DoesNotContain("--- SCORING DIMENSIONS (BARS 0-6) ---", body);
 
         string secondOpinionBody = BenchmarkAssessmentPrompt.BuildSecondOpinionBody(
             7, question, BenchmarkDifficulty.Advanced, rubric, answer, BenchmarkAnswerStatus.Ok,
-            80, false, "First comment", tools, 5, true, 2, 45, "BD-UNIQUE-BOARD", "Board text",
+            80, false, "First comment", tools, 5, true, 2, 45, boardGivenAbove: true,
             blind: true, triggerLabel: "BelowThreshold");
         string secondOpinion = BenchmarkAssessmentPrompt.BuildSecondOpinionPrompt(
             suite, 7, question, BenchmarkDifficulty.Advanced, rubric, answer, BenchmarkAnswerStatus.Ok,
-            80, false, "First comment", tools, 5, true, 2, 45, "BD-UNIQUE-BOARD", "Board text",
+            80, false, "First comment", tools, 5, true, 2, 45, "BD-UNIQUE-BOARD", "BT-UNIQUE-BOARD text",
             blind: true, triggerLabel: "BelowThreshold");
 
-        Assert.Equal(preamble + nl + secondOpinionBody, secondOpinion);
+        Assert.Equal(preamble + nl + boardBlock + nl + secondOpinionBody, secondOpinion);
         Assert.StartsWith(body + nl, secondOpinionBody);
         Assert.Contains("--- SECOND OPINION ---", secondOpinionBody);
+    }
+
+    // --- Grading requests: the board after the instructions and ahead of the question -----------
+
+    private const string GradingBoardText =
+        "Dlvl:3  HP:14(14)  Pw:5(5)  AC:7  Xp:2/24  T:512\n"
+        + "Inventory:\n"
+        + "a - a blessed +1 quarterstaff (weapon in hands)\n"
+        + "b - an uncursed hooded cloak (being worn)\n"
+        + "c - 3 fortune cookies\n";
+
+    /// <summary>A grading request as the assessor paths build it, with the board and the rubric quoting one of its lines.</summary>
+    private static Overseer.Services.Agents.AgentRunRequest GradingRequest(string providerName, bool withBoard)
+    {
+        string? boardBlock = withBoard ? BenchmarkAssessmentPrompt.BuildGradingBoardBlock("Tommi2", GradingBoardText) : null;
+        string body = BenchmarkAssessmentPrompt.BuildPerQuestionBody(
+            4, "Which of my items is worth reading first?", BenchmarkDifficulty.Simple,
+            "**BOARD FACTS**\n- \"c - 3 fortune cookies\"", "Read the cookies.", BenchmarkAnswerStatus.Ok,
+            boardGivenAbove: withBoard);
+        var (prompt, seed) = Overseer.Services.Benchmarking.BenchmarkService.BuildGradingPrompt(
+            Overseer.Services.Benchmarking.BenchmarkService.GradingSystemPrompt,
+            BenchmarkAssessmentPrompt.BuildPerQuestionPreamble("Snapshot Suite"),
+            body,
+            boardBlock);
+
+        return new Overseer.Services.Agents.AgentRunRequest
+        {
+            ProviderName = providerName,
+            ModelId = "probe",
+            SystemPrompt = prompt.FullPrompt,
+            SegmentedPrompt = prompt,
+            PromptCacheKey = "benchmark:per_question:probe",
+            CacheConversationTail = false,
+            SeedHistory = seed
+        };
+    }
+
+    [Fact]
+    public void AnthropicProvider_GradingRequest_SendsInstructionsThenBoardAsTwoCachedSystemBlocks()
+    {
+        var provider = CreateAnthropicCacheProvider();
+        var request = GradingRequest("Anthropic", withBoard: true);
+
+        var body = provider.BuildChatRequestBody(
+            "claude-opus-5", provider.PrepareMessageHistory(new List<object>(request.SeedHistory)), 1024, null,
+            new ToolsForRequest(), segmentedPrompt: request.SegmentedPrompt, cacheConversationTail: false);
+
+        var systemBlocks = body["system"] as List<object>;
+        Assert.NotNull(systemBlocks);
+        Assert.Equal(2, systemBlocks.Count);
+        Assert.Equal(request.SegmentedPrompt!.FrozenPrefix, ProviderHelper.GetProperty(systemBlocks[0], "text")?.ToString());
+        Assert.StartsWith(BenchmarkAssessmentPrompt.GradingBoardHeading, ProviderHelper.GetProperty(systemBlocks[1], "text")?.ToString());
+        Assert.NotNull(ProviderHelper.GetProperty(systemBlocks[0], "cache_control"));
+        Assert.NotNull(ProviderHelper.GetProperty(systemBlocks[1], "cache_control"));
+
+        // Only the two system blocks are breakpoints; the single-shot user turn carries none.
+        Assert.Equal(2, CountCacheControl(body));
+        string messages = JsonSerializer.Serialize(body["messages"]);
+        Assert.DoesNotContain("GAME CONTEXT BOARD (GROUND", messages);
+        Assert.Contains("QUESTION AND CANDIDATE ANSWER", messages);
+    }
+
+    [Fact]
+    public void GoogleProvider_GradingRequest_OrdersInstructionsThenBoardInSystemInstruction()
+    {
+        var provider = new GoogleProvider(new ConfigurationBuilder().Build());
+        var request = GradingRequest("Google", withBoard: true);
+
+        var body = provider.BuildChatRequestBody(
+            "gemini-3.7-flash", provider.PrepareMessageHistory(new List<object>(request.SeedHistory)), 1024, null,
+            new ToolsForRequest(), segmentedPrompt: request.SegmentedPrompt);
+
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(body));
+        var parts = doc.RootElement.GetProperty("systemInstruction").GetProperty("parts");
+        Assert.Equal(2, parts.GetArrayLength());
+        Assert.Equal(request.SegmentedPrompt!.FrozenPrefix, parts[0].GetProperty("text").GetString());
+        Assert.StartsWith(BenchmarkAssessmentPrompt.GradingBoardHeading, parts[1].GetProperty("text").GetString());
+        Assert.DoesNotContain("GAME CONTEXT BOARD (GROUND", doc.RootElement.GetProperty("contents").GetRawText());
     }
 
     private class DummyToolHandler : IToolHandler

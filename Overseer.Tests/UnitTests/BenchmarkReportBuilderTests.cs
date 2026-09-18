@@ -1176,7 +1176,11 @@ public class BenchmarkReportBuilderTests
             BenchmarkSecondOpinionMode.Off, cleared, clearedWithCriticalError, untouched));
 
         Assert.Contains("**Verification-cleared Accuracy Sensitivity:** 67 / 100", report);
-        Assert.Contains("Accuracy one level higher on the 2 answer(s) above", report);
+
+        // § 2 prints the figure above the Assessor Findings list, so it names where the answers
+        // are; § 7 prints it below that list.
+        Assert.Contains("- **Verification-cleared Accuracy Sensitivity:** 67 / 100 — Intelligence Index recomputed with Accuracy one level higher on the 2 answer(s) listed under Assessor Findings; advisory, changes no score.", report);
+        Assert.Contains("### Verification-cleared Accuracy Sensitivity: 67 / 100 — Intelligence Index recomputed with Accuracy one level higher on the 2 answer(s) above; advisory, changes no score.", report);
 
         // § 2 and § 7 carry one computation, so the two figures cannot drift.
         int finalIndicesStart = report.IndexOf("## 7. Final Indices", StringComparison.Ordinal);
@@ -3309,12 +3313,13 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.Contains("**Contested Accuracy Deductions:** 2 (Q1, Q3)", report);
-        Assert.Contains("checked against the source code/wiki by the claim verifier and **refuted**", report);
+        // No verification items are stored, so neither cause can be read from roles.
+        Assert.Contains("**Contested Accuracy Deductions:** 2 — cause not recorded: Q1, Q3.", report);
+        Assert.Contains("the own-knowledge statement an out-of-rubric Accuracy deduction rests on was **refuted**, or a sentence the assessor quoted as false was **supported**", report);
         Assert.Contains("the deduction stands and no index moved", report);
 
         Assert.Contains("contested accuracy deductions: 2", report);
-        Assert.Contains("Contested out-of-rubric accuracy deduction (advisory, changed no score)", report);
+        Assert.Contains("Contested accuracy deduction (advisory, changed no score) (cause not recorded)", report);
 
         // Carried into the synthesis caveat beside refuted claims and disputed verdicts.
         Assert.Contains("0 refuted claim(s), 0 disputed verdict(s) and 2 contested accuracy deduction(s)", report);
@@ -3604,5 +3609,232 @@ public class BenchmarkReportBuilderTests
         // Unlike Provider error and Failed, the Canceled line never carries an HTTP suffix.
         Assert.DoesNotContain("Canceled (HTTP", report);
         Assert.Contains("*(Note: Excluded from scoring)*", report);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Harness 32: the BOARD FACTS quote check in the manifest, contested deductions split by
+    // cause, accused sentences with their verdicts, and the § 2 order.
+    // -------------------------------------------------------------------------------------
+
+    private static Overseer.Models.BoardFactIssueDto BoardFactIssue(int orderIndex, string? literal = null)
+        => new() { QuestionId = orderIndex * 10, OrderIndex = orderIndex, Literal = literal, LineExcerpt = "excerpt" };
+
+    [Fact]
+    public void BoardFactsManifest_NoneMissing_WithUnquotedLinesCountedPerQuestion()
+    {
+        var check = new Overseer.Models.BoardFactsCheckDto
+        {
+            BulletCount = 84,
+            CheckedLiteralCount = 81,
+            UnquotedBulletCount = 3,
+            UnquotedBullets = { BoardFactIssue(17), BoardFactIssue(5), BoardFactIssue(17) }
+        };
+
+        Assert.Equal(
+            "- **Rubric board quotes:** 81 checked, none missing. 3 BOARD FACTS lines carry no quoted literal and were not checked (Q5 ×1, Q17 ×2).",
+            BenchmarkReportBuilder.BoardFactsManifestLine(check));
+    }
+
+    [Fact]
+    public void BoardFactsManifest_MissingLiterals_AreNamedPerQuestion()
+    {
+        var check = new Overseer.Models.BoardFactsCheckDto
+        {
+            BulletCount = 84,
+            CheckedLiteralCount = 81,
+            MissingLiterals = { BoardFactIssue(6, "T - the Holy Grail (0 charges, 0 rechargings)"), BoardFactIssue(1, "HP:15(15)") }
+        };
+
+        Assert.Equal(
+            "- **Rubric board quotes:** 81 checked, 2 missing (Q1 ×1, Q6 ×1) — these rubrics quote text this board does not contain; grades on them rest on stale facts.",
+            BenchmarkReportBuilder.BoardFactsManifestLine(check));
+    }
+
+    [Fact]
+    public void BoardFactsManifest_OneUnquotedLine_IsSingular()
+    {
+        var check = new Overseer.Models.BoardFactsCheckDto
+        {
+            CheckedLiteralCount = 4,
+            UnquotedBulletCount = 1,
+            UnquotedBullets = { BoardFactIssue(2) }
+        };
+
+        Assert.Equal(
+            "- **Rubric board quotes:** 4 checked, none missing. 1 BOARD FACTS line carries no quoted literal and was not checked (Q2 ×1).",
+            BenchmarkReportBuilder.BoardFactsManifestLine(check));
+    }
+
+    [Fact]
+    public void BoardFactsManifest_PrintedUnderTheGameSnapshotLine_AndNothingForARunWithoutTheColumn()
+    {
+        var legacy = Harness30BoardRun(BoardGradedAnswer(1, 80));
+        legacy.GameSnapshotNameUsed = "tommi2";
+        Assert.DoesNotContain("Rubric board quotes", BenchmarkReportBuilder.BuildMarkdownReport(legacy));
+
+        var run = Harness30BoardRun(BoardGradedAnswer(1, 80));
+        run.HarnessVersion = "32";
+        run.GameSnapshotNameUsed = "tommi2";
+        run.BoardFactsCheckJson = BenchmarkBoardFactsChecker.Serialize(new Overseer.Models.BoardFactsCheckDto
+        {
+            BulletCount = 2,
+            CheckedLiteralCount = 2,
+            MissingLiterals = { BoardFactIssue(1, "T - the Holy Grail (0 charges, 0 rechargings)") }
+        });
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        int snapshotLine = report.IndexOf("- **Game Snapshot:** tommi2", StringComparison.Ordinal);
+        int quotesLine = report.IndexOf("- **Rubric board quotes:** 2 checked, 1 missing (Q1 ×1) — these rubrics quote text this board does not contain; grades on them rest on stale facts.", StringComparison.Ordinal);
+        int totalQuestionsLine = report.IndexOf("- **Total Questions:**", StringComparison.Ordinal);
+        Assert.True(snapshotLine >= 0, "the Game Snapshot line is printed");
+        Assert.True(quotesLine > snapshotLine, "the quote check follows the Game Snapshot line");
+        Assert.True(totalQuestionsLine > quotesLine, "the quote check stays in the manifest");
+    }
+
+    private const string BasisStatement = "The prayer timeout reset is independent of experience level.";
+
+    private static BenchmarkClaimVerification RoleItem(int index, string claim, BenchmarkClaimVerdict verdict, string? citation, string role)
+        => new(index, claim, verdict, citation, "Basis.") { Roles = new[] { role } };
+
+    private static BenchmarkRunAnswer ContestedByCause(int orderIndex, params BenchmarkClaimVerification[] verifications)
+    {
+        var answer = BoardGradedAnswer(orderIndex, 70);
+        answer.AnswerFlags = (int)BenchmarkAnswerFlags.ContestedAccuracyDeduction;
+        answer.ClaimVerificationJson = JsonSerializer.Serialize(verifications);
+        return answer;
+    }
+
+    [Fact]
+    public void ContestedAccuracyDeductions_AreSplitByCause_ReadFromTheVerificationRoles()
+    {
+        var basisRefuted = ContestedByCause(1,
+            RoleItem(0, BasisStatement, BenchmarkClaimVerdict.Refuted, "src/pray.c:1", BenchmarkClaimRoles.OutOfRubricBasis));
+        var accusationSupported = ContestedByCause(2,
+            RoleItem(0, "Charged but true.", BenchmarkClaimVerdict.Supported, "src/objects.c:2889", BenchmarkClaimRoles.AccusedQuote));
+        var both = ContestedByCause(3,
+            RoleItem(0, BasisStatement, BenchmarkClaimVerdict.Refuted, "src/pray.c:1", BenchmarkClaimRoles.OutOfRubricBasis),
+            RoleItem(1, "Also charged but true.", BenchmarkClaimVerdict.Supported, "src/read.c:12", BenchmarkClaimRoles.AccusedQuote));
+        var legacy = ContestedByCause(4,
+            new BenchmarkClaimVerification(0, BasisStatement, BenchmarkClaimVerdict.Refuted, "src/pray.c:1", "False."));
+        var clean = BoardGradedAnswer(5, 90);
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(
+            Harness30BoardRun(basisRefuted, accusationSupported, both, legacy, clean));
+
+        Assert.Contains(
+            "- **Contested Accuracy Deductions:** 4 — own-knowledge basis refuted: Q1, Q3; a sentence the assessor quoted as false was supported: Q2, Q3; cause not recorded: Q4. The claim verifier checked these against the source code/wiki: either the own-knowledge statement an out-of-rubric Accuracy deduction rests on was **refuted**, or a sentence the assessor quoted as false was **supported**. Advisory: the deduction stands and no index moved; re-assess from the run detail.",
+            report);
+
+        // The per-answer Issues entry names its own cause.
+        Assert.Contains("Contested accuracy deduction (advisory, changed no score) (own-knowledge basis refuted)", report);
+        Assert.Contains("Contested accuracy deduction (advisory, changed no score) (a sentence the assessor quoted as false was supported)", report);
+        Assert.Contains("Contested accuracy deduction (advisory, changed no score) (own-knowledge basis refuted and a sentence the assessor quoted as false was supported)", report);
+        Assert.Contains("Contested accuracy deduction (advisory, changed no score) (cause not recorded)", report);
+        Assert.DoesNotContain("Contested out-of-rubric accuracy deduction", report);
+
+        // The Advisory Flags parenthetical is neutral already and unchanged.
+        Assert.Contains("contested accuracy deductions: 4", report);
+    }
+
+    [Fact]
+    public void AccusedSentences_EveryOneAppearsWithItsVerdict_PerAnswerAndAtRunLevel()
+    {
+        var q1 = BoardGradedAnswer(1, 60);
+        q1.AccuracyLevel = 4;
+        q1.ClaimsSupportedCount = 1;
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            RoleItem(0, "Own supported claim.", BenchmarkClaimVerdict.Supported, "src/own.c:1", BenchmarkClaimRoles.UnverifiedClaim),
+            RoleItem(1, "Charged but true.", BenchmarkClaimVerdict.Supported, "src/objects.c:2889", BenchmarkClaimRoles.AccusedQuote),
+            RoleItem(2, "Charged and false.", BenchmarkClaimVerdict.Refuted, "src/zap.c:9", BenchmarkClaimRoles.AccusedQuote),
+            RoleItem(3, "Charged, unsettled.", BenchmarkClaimVerdict.Indeterminate, null, BenchmarkClaimRoles.AccusedQuote)
+        });
+
+        // A record stored before roles existed has no accused sentences to count.
+        var legacy = BoardGradedAnswer(2, 80);
+        legacy.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            new BenchmarkClaimVerification(0, "Legacy claim.", BenchmarkClaimVerdict.Supported, "src/legacy.c:1", "True.")
+        });
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(Harness30BoardRun(q1, legacy));
+
+        Assert.Contains("> - **Accused sentences checked:** 3 — supported 1, refuted 1, indeterminate 1", report);
+        Assert.Single(Regex.Matches(report, Regex.Escape("> - **Accused sentences checked:**")));
+        Assert.Contains("> - **Supported accusation:** a sentence the assessor charged as false was checked by the claim verifier and **supported** — \"Charged but true.\" (src/objects.c:2889). *Advisory; the deduction stands.*", report);
+        Assert.Contains("> - **Accused sentence, refuted:** a sentence the assessor charged as false was checked by the claim verifier and returned **refuted** — \"Charged and false.\" (src/zap.c:9).", report);
+        Assert.Contains("> - **Accused sentence, indeterminate:** a sentence the assessor charged as false was checked by the claim verifier and returned **indeterminate** — \"Charged, unsettled.\" (no citation).", report);
+
+        Assert.Contains("- **Accused Sentences Checked:** 3 across 1 answer(s) (Q1) — supported 1, refuted 1, indeterminate 1.", report);
+        Assert.Contains("- **Supported Accusations:** 1 (Q1)", report);
+    }
+
+    [Fact]
+    public void ClaimVerificationYield_StatesUnverifiedClaimsAndAccusedSentencesApart()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            RoleItem(0, "Charged but true.", BenchmarkClaimVerdict.Supported, "src/objects.c:2889", BenchmarkClaimRoles.AccusedQuote),
+            RoleItem(1, "Charged and false.", BenchmarkClaimVerdict.Refuted, "src/zap.c:9", BenchmarkClaimRoles.AccusedQuote)
+        });
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.TestedModelIdUsed = "gpt-5.6";
+        run.AssessorModelIdUsed = "gemini-3.7-flash";
+        run.ClaimVerifierModelIdUsed = "gpt-5-mini";
+        run.TotalInputTokens = 200_000;
+        run.TotalOutputTokens = 30_000;
+        run.TotalAssessmentInputTokens = 100_000;
+        run.TotalAssessmentOutputTokens = 10_000;
+        run.TotalClaimVerificationInputTokens = 1_300_000;
+        run.TotalClaimVerificationOutputTokens = 100_000;
+
+        // The run's claim columns count the answers' own claims only.
+        run.ClaimsSupportedCount = 7;
+        run.ClaimsRefutedCount = 0;
+        run.ClaimsIndeterminateCount = 1;
+
+        var runPricing = new BenchmarkRunPricing(
+            Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            SecondOpinion: null,
+            ClaimVerifier: new ModelPricing(1.00m, 4.00m, Source: ModelPricingSource.Custom),
+            IsSnapshot: true
+        );
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
+
+        Assert.Contains(
+            "- **Claim Verification Yield:** 8 unverified claim(s) + 2 accused sentence(s) checked — claims: 7 supported, 0 refuted, 1 indeterminate; accused sentences: 1 supported, 1 refuted, 0 indeterminate. $1.70 ($0.17/item over both), 67% of run cost.",
+            report);
+    }
+
+    [Fact]
+    public void Section2_PrintsCriticalErrorsAndSensitivities_AboveTheSpeedIndex()
+    {
+        var cleared = VerificationClearedAnswer(1, BenchmarkDifficulty.Intermediate, 50, 70);
+        var clearedWithCriticalError = VerificationClearedAnswer(2, BenchmarkDifficulty.Intermediate, 50, 25);
+        clearedWithCriticalError.CriticalError = true;
+        var untouched = ScoredAnswer(3, BenchmarkDifficulty.Intermediate, 50, 90);
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off, cleared, clearedWithCriticalError, untouched));
+
+        int finalIndices = report.IndexOf("## 7. Final Indices", StringComparison.Ordinal);
+        int intelligence = report.IndexOf("### **Intelligence Index:", StringComparison.Ordinal);
+        int criticalErrors = report.IndexOf("- **Critical Errors:**", StringComparison.Ordinal);
+        int sensitivity = report.IndexOf("- **Verification-cleared Accuracy Sensitivity:**", StringComparison.Ordinal);
+        int speed = report.IndexOf("### **Speed Index:", StringComparison.Ordinal);
+        if (speed < 0)
+        {
+            speed = report.IndexOf("### **Median Model Time:", StringComparison.Ordinal);
+        }
+
+        Assert.True(intelligence >= 0 && criticalErrors >= 0 && sensitivity >= 0 && speed >= 0);
+        Assert.True(intelligence < criticalErrors, "Critical Errors follows the Intelligence Index.");
+        Assert.True(criticalErrors < sensitivity, "the sensitivities follow Critical Errors.");
+        Assert.True(sensitivity < speed, "the sensitivities come before the Speed Index.");
+        Assert.True(speed < finalIndices, "all of this is § 2, ahead of § 7.");
     }
 }

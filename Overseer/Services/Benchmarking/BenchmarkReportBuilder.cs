@@ -394,18 +394,107 @@ public static class BenchmarkReportBuilder
 
     /// <summary>The sentences the assessor charged as false that the verifier supported with a citation; empty on a legacy record.</summary>
     private static List<BenchmarkClaimVerification> SupportedAccusationsOf(BenchmarkRunAnswer answer)
+        => BenchmarkService.SupportedAccusations(ClaimVerificationsOf(answer));
+
+    /// <summary>Every verification item stored for an answer, with its roles; null when none is stored or the JSON is unreadable.</summary>
+    private static List<BenchmarkClaimVerification>? ClaimVerificationsOf(BenchmarkRunAnswer answer)
     {
-        if (string.IsNullOrWhiteSpace(answer.ClaimVerificationJson)) return new List<BenchmarkClaimVerification>();
+        if (string.IsNullOrWhiteSpace(answer.ClaimVerificationJson)) return null;
         try
         {
-            var verifications = JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(
+            return JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(
                 answer.ClaimVerificationJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            return BenchmarkService.SupportedAccusations(verifications);
         }
         catch (JsonException)
         {
-            return new List<BenchmarkClaimVerification>();
+            return null;
         }
+    }
+
+    /// <summary>
+    /// The sentences of the answer the assessor quoted as false and the harness sent to the claim
+    /// verifier, each with its verdict. Read by role, so a record stored without roles has none.
+    /// </summary>
+    private static List<BenchmarkClaimVerification> AccusedSentencesOf(BenchmarkRunAnswer answer)
+        => (ClaimVerificationsOf(answer) ?? new List<BenchmarkClaimVerification>())
+            .Where(v => BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.AccusedQuote))
+            .ToList();
+
+    /// <summary>Accused sentences by verdict: supported, refuted, indeterminate.</summary>
+    private static (int Supported, int Refuted, int Indeterminate) VerdictCounts(IEnumerable<BenchmarkClaimVerification> verifications)
+    {
+        var list = verifications.ToList();
+        return (
+            list.Count(v => v.Verdict == BenchmarkClaimVerdict.Supported),
+            list.Count(v => v.Verdict == BenchmarkClaimVerdict.Refuted),
+            list.Count(v => v.Verdict == BenchmarkClaimVerdict.Indeterminate));
+    }
+
+    private const string BasisRefutedCause = "own-knowledge basis refuted";
+    private const string AccusationSupportedCause = "a sentence the assessor quoted as false was supported";
+    private const string CauseNotRecorded = "cause not recorded";
+
+    /// <summary>
+    /// Why an answer carries <see cref="BenchmarkAnswerFlags.ContestedAccuracyDeduction"/>, read from
+    /// its verification items by role: the out-of-rubric basis refuted, an accused sentence supported,
+    /// or both. A record stored without roles, or one where neither is found, yields
+    /// <see cref="CauseNotRecorded"/> alone.
+    /// </summary>
+    private static List<string> ContestedDeductionCauses(BenchmarkRunAnswer answer)
+    {
+        var verifications = ClaimVerificationsOf(answer);
+        var causes = new List<string>();
+        if (!BenchmarkClaimRoles.HasRoles(verifications))
+        {
+            causes.Add(CauseNotRecorded);
+            return causes;
+        }
+
+        if (verifications!.Any(v => BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.OutOfRubricBasis)
+            && v.Verdict == BenchmarkClaimVerdict.Refuted))
+        {
+            causes.Add(BasisRefutedCause);
+        }
+        if (BenchmarkService.SupportedAccusations(verifications).Count > 0)
+        {
+            causes.Add(AccusationSupportedCause);
+        }
+        if (causes.Count == 0)
+        {
+            causes.Add(CauseNotRecorded);
+        }
+        return causes;
+    }
+
+    /// <summary>
+    /// The manifest line for the BOARD FACTS quote check stamped at launch, or null for a run that
+    /// carries none. Questions are named by order index, as everywhere else in the report.
+    /// </summary>
+    internal static string? BoardFactsManifestLine(Overseer.Models.BoardFactsCheckDto? check)
+    {
+        if (check == null) return null;
+
+        static string PerQuestion(IEnumerable<Overseer.Models.BoardFactIssueDto> issues)
+            => string.Join(", ", issues
+                .GroupBy(i => i.OrderIndex)
+                .OrderBy(g => g.Key)
+                .Select(g => $"Q{g.Key} ×{g.Count()}"));
+
+        var line = new StringBuilder($"- **Rubric board quotes:** {check.CheckedLiteralCount} checked, ");
+        line.Append(check.MissingLiterals.Count == 0
+            ? "none missing"
+            : $"{check.MissingLiterals.Count} missing ({PerQuestion(check.MissingLiterals)}) — these rubrics quote text this board does not contain; grades on them rest on stale facts");
+        line.Append('.');
+
+        if (check.UnquotedBulletCount > 0)
+        {
+            line.Append(check.UnquotedBulletCount == 1
+                ? " 1 BOARD FACTS line carries no quoted literal and was not checked"
+                : $" {check.UnquotedBulletCount} BOARD FACTS lines carry no quoted literal and were not checked");
+            line.Append($" ({PerQuestion(check.UnquotedBullets)}).");
+        }
+
+        return line.ToString();
     }
 
     /// <summary>
@@ -829,6 +918,11 @@ public static class BenchmarkReportBuilder
                 : (run.GameSnapshotSha256Used ?? "n/a");
             sb.AppendLine($"- **Game Snapshot:** {run.GameSnapshotNameUsed} ({run.GameSnapshotCaptureMethodUsed}, {run.GameSnapshotCharCountUsed} chars, SHA-256 {shaPrefix})");
         }
+        string? boardFactsLine = BoardFactsManifestLine(BenchmarkBoardFactsChecker.Deserialize(run.BoardFactsCheckJson));
+        if (boardFactsLine != null)
+        {
+            sb.AppendLine(boardFactsLine);
+        }
         sb.AppendLine($"- **Total Questions:** {run.TotalQuestionCount}");
         sb.AppendLine($"- **Answered Questions:** {run.AnsweredQuestionCount} of {run.TotalQuestionCount}");
         sb.AppendLine($"- **Answer Rate:** {run.AnsweredQuestionCount} of {run.TotalQuestionCount}"
@@ -1224,41 +1318,6 @@ public static class BenchmarkReportBuilder
             sb.AppendLine();
         }
 
-        // Shared by the saturation notice below and the Model Time Percentiles line further
-        // down; both must report the same median. ModelTimeMs falls back to DurationMs when a
-        // run predates the ToolTimeMs column, so this is available on the whole archive.
-        var okAnswers = answers.Where(a => a.Status == BenchmarkAnswerStatus.Ok).ToList();
-        var modelTimesSorted = okAnswers.Select(a => a.ModelTimeMs).OrderBy(d => d).ToList();
-        long? medianModelTimeMs = modelTimesSorted.Count > 0 ? MedianMs(modelTimesSorted) : (long?)null;
-
-        // A run whose Speed Index sits at the ceiling on most of its answers carries no
-        // discriminating information: every answer at 100 looks identical to the index whether
-        // it finished at the target or well inside it. Median model time still separates them.
-        int speedScoredCount = scoredAnswers.Count;
-        int speedCeilingCount = scoredAnswers.Count(a => a.SpeedScore.HasValue && a.SpeedScore.Value >= 100);
-        bool speedSaturated = speedScoredCount > 0 && speedCeilingCount * 2 >= speedScoredCount;
-
-        // H9. Where the index cannot discriminate, the figure that can leads and the index follows as
-        // advisory. Presentation only: no score, no scoring profile and no method version moves, because
-        // a metric that has run out of resolution is a reporting problem and re-tuning the target would
-        // end the comparable series for every quality dimension as well.
-        bool speedAdvisory = speedSaturated || profileMisfit;
-        if (speedAdvisory && medianModelTimeMs.HasValue)
-        {
-            sb.AppendLine($"### **Median Model Time: {Inv(medianModelTimeMs.Value, "N0")} ms**");
-            sb.AppendLine($"*Speed Index {IndexHeadline(run.SpeedIndex, " / 100", terminalFailureCount, run.TotalQuestionCount, "Not Scored")} — advisory for this run{(run.SpeedMeasurementDegraded ? ", and measured under concurrency" : string.Empty)}.*");
-        }
-        else
-        {
-            sb.AppendLine($"### **Speed Index: {IndexHeadline(run.SpeedIndex, " / 100", terminalFailureCount, run.TotalQuestionCount, "Not Scored")}**" + (run.SpeedMeasurementDegraded ? " *(Advisory — measured under concurrency)*" : ""));
-        }
-        if (speedSaturated)
-        {
-            string medianClause = medianModelTimeMs.HasValue
-                ? $"Compare median model time ({Inv(medianModelTimeMs.Value, "N0")} ms) instead."
-                : "Compare median model time instead.";
-            sb.AppendLine($"*Saturated — {speedCeilingCount} of {speedScoredCount} answers finished inside their difficulty-scaled target, so this index cannot discriminate at this speed. {medianClause}*");
-        }
         // A critical error caps Quality at 25 (see BenchmarkScoring), which the Raw/Intelligence
         // Index pair above already shows as a point delta — but that delta is diluted by every
         // *other* answer's difficulty weight, so a single hallucinated answer can move the index
@@ -1319,6 +1378,9 @@ public static class BenchmarkReportBuilder
 
         // Every critical-error split, in either direction, is resolved at the second reader's score.
         var splitAnswers = disputedBySecondReader.Concat(raisedOnlyBySecondReader).ToList();
+
+        // The critical-error count and the sensitivity figures sit with the Intelligence Index they
+        // qualify, ahead of the Speed Index, in the order § 7 Final Indices prints them.
 
         if (appliedCriticalAnswers.Count > 0 || splitAnswers.Count > 0)
         {
@@ -1438,7 +1500,7 @@ public static class BenchmarkReportBuilder
                 (Math.Min(MaxAssessmentLevel, a.AccuracyLevel!.Value + 1), a.CompletenessLevel!.Value, a.ConcisenessLevel!.Value, a.ReadabilityLevel!.Value));
             if (verificationClearedIndex.HasValue)
             {
-                sb.AppendLine($"- **Verification-cleared Accuracy Sensitivity:** {verificationClearedIndex.Value} / 100 — Intelligence Index recomputed with Accuracy one level higher on the {verificationClearedAnswers.Count} answer(s) above; advisory, changes no score.");
+                sb.AppendLine($"- **Verification-cleared Accuracy Sensitivity:** {verificationClearedIndex.Value} / 100 — Intelligence Index recomputed with Accuracy one level higher on the {verificationClearedAnswers.Count} answer(s) listed under Assessor Findings; advisory, changes no score.");
             }
         }
 
@@ -1455,6 +1517,50 @@ public static class BenchmarkReportBuilder
             {
                 sb.AppendLine($"- **FORM-cleared Readability Sensitivity:** {formClearedIndex.Value} / 100 — Intelligence Index recomputed with Readability one level higher on the {formClearedAnswers.Count} answer(s) whose only Readability basis was a rubric FORM suggestion; advisory, changes no score.");
             }
+        }
+
+        // One blank line before the speed heading whether or not any qualifier printed, so a
+        // sensitivity line appearing or not changes no other line of the report.
+        string blankLine = Environment.NewLine + Environment.NewLine;
+        if (sb.Length < blankLine.Length || sb.ToString(sb.Length - blankLine.Length, blankLine.Length) != blankLine)
+        {
+            sb.AppendLine();
+        }
+
+        // Shared by the saturation notice below and the Model Time Percentiles line further
+        // down; both must report the same median. ModelTimeMs falls back to DurationMs when a
+        // run predates the ToolTimeMs column, so this is available on the whole archive.
+        var okAnswers = answers.Where(a => a.Status == BenchmarkAnswerStatus.Ok).ToList();
+        var modelTimesSorted = okAnswers.Select(a => a.ModelTimeMs).OrderBy(d => d).ToList();
+        long? medianModelTimeMs = modelTimesSorted.Count > 0 ? MedianMs(modelTimesSorted) : (long?)null;
+
+        // A run whose Speed Index sits at the ceiling on most of its answers carries no
+        // discriminating information: every answer at 100 looks identical to the index whether
+        // it finished at the target or well inside it. Median model time still separates them.
+        int speedScoredCount = scoredAnswers.Count;
+        int speedCeilingCount = scoredAnswers.Count(a => a.SpeedScore.HasValue && a.SpeedScore.Value >= 100);
+        bool speedSaturated = speedScoredCount > 0 && speedCeilingCount * 2 >= speedScoredCount;
+
+        // H9. Where the index cannot discriminate, the figure that can leads and the index follows as
+        // advisory. Presentation only: no score, no scoring profile and no method version moves, because
+        // a metric that has run out of resolution is a reporting problem and re-tuning the target would
+        // end the comparable series for every quality dimension as well.
+        bool speedAdvisory = speedSaturated || profileMisfit;
+        if (speedAdvisory && medianModelTimeMs.HasValue)
+        {
+            sb.AppendLine($"### **Median Model Time: {Inv(medianModelTimeMs.Value, "N0")} ms**");
+            sb.AppendLine($"*Speed Index {IndexHeadline(run.SpeedIndex, " / 100", terminalFailureCount, run.TotalQuestionCount, "Not Scored")} — advisory for this run{(run.SpeedMeasurementDegraded ? ", and measured under concurrency" : string.Empty)}.*");
+        }
+        else
+        {
+            sb.AppendLine($"### **Speed Index: {IndexHeadline(run.SpeedIndex, " / 100", terminalFailureCount, run.TotalQuestionCount, "Not Scored")}**" + (run.SpeedMeasurementDegraded ? " *(Advisory — measured under concurrency)*" : ""));
+        }
+        if (speedSaturated)
+        {
+            string medianClause = medianModelTimeMs.HasValue
+                ? $"Compare median model time ({Inv(medianModelTimeMs.Value, "N0")} ms) instead."
+                : "Compare median model time instead.";
+            sb.AppendLine($"*Saturated — {speedCeilingCount} of {speedScoredCount} answers finished inside their difficulty-scaled target, so this index cannot discriminate at this speed. {medianClause}*");
         }
 
         if (unansweredAnswers.Count > 0)
@@ -1720,7 +1826,11 @@ public static class BenchmarkReportBuilder
                     // token budget stopped before a call was made (BenchmarkClaimVerificationNotCheckedReason),
                     // so this line never counts a claim the verifier never saw.
                     int claimsChecked = run.ClaimsSupportedCount + run.ClaimsRefutedCount + run.ClaimsIndeterminateCount;
-                    if (claimsChecked > 0)
+
+                    // The accused sentences the verifier also checked, read by role from each answer's
+                    // ClaimVerificationJson: the run's claim columns count the answers' own claims only.
+                    var accusedChecked = answers.SelectMany(a => AccusedSentencesOf(a)).ToList();
+                    if (claimsChecked > 0 && accusedChecked.Count == 0)
                     {
                         decimal costPerClaim = verifierTotalCost / claimsChecked;
                         decimal verifierCostShare = totalCost > 0 ? verifierTotalCost / totalCost * 100m : 0m;
@@ -1729,6 +1839,20 @@ public static class BenchmarkReportBuilder
                             $"{Inv(run.ClaimsSupportedCount, "N0")} supported, {Inv(run.ClaimsRefutedCount, "N0")} refuted, " +
                             $"{Inv(run.ClaimsIndeterminateCount, "N0")} indeterminate. " +
                             $"${Inv(verifierTotalCost, "F2")} ({PerUnitCost(costPerClaim)}/claim), {Inv(verifierCostShare, "F0")}% of run cost.");
+                    }
+                    else if (accusedChecked.Count > 0)
+                    {
+                        var accusedCounts = VerdictCounts(accusedChecked);
+                        int itemsChecked = claimsChecked + accusedChecked.Count;
+                        decimal costPerItem = verifierTotalCost / itemsChecked;
+                        decimal verifierCostShare = totalCost > 0 ? verifierTotalCost / totalCost * 100m : 0m;
+                        sb.AppendLine(
+                            $"- **Claim Verification Yield:** {Inv(claimsChecked, "N0")} unverified claim(s) + {Inv(accusedChecked.Count, "N0")} accused sentence(s) checked — " +
+                            $"claims: {Inv(run.ClaimsSupportedCount, "N0")} supported, {Inv(run.ClaimsRefutedCount, "N0")} refuted, " +
+                            $"{Inv(run.ClaimsIndeterminateCount, "N0")} indeterminate; " +
+                            $"accused sentences: {Inv(accusedCounts.Supported, "N0")} supported, {Inv(accusedCounts.Refuted, "N0")} refuted, " +
+                            $"{Inv(accusedCounts.Indeterminate, "N0")} indeterminate. " +
+                            $"${Inv(verifierTotalCost, "F2")} ({PerUnitCost(costPerItem)}/item over both), {Inv(verifierCostShare, "F0")}% of run cost.");
                     }
                 }
 
@@ -2013,7 +2137,15 @@ public static class BenchmarkReportBuilder
                 .Where(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedAccuracyDeduction))
                 .OrderBy(a => a.OrderIndex)
                 .ToList();
-            sb.AppendLine($"- **Contested Accuracy Deductions:** {contestedAccuracyDeductionCount} ({string.Join(", ", contestedAccuracyDeductionAnswers.Select(a => $"Q{a.OrderIndex}"))}) — the own-knowledge statement an out-of-rubric Accuracy deduction rests on was checked against the source code/wiki by the claim verifier and **refuted**. Advisory: the deduction stands and no index moved; re-assess from the run detail.");
+            // An answer with both causes is listed under both.
+            var byCause = contestedAccuracyDeductionAnswers
+                .SelectMany(a => ContestedDeductionCauses(a).Select(cause => (Cause: cause, Answer: a)))
+                .ToList();
+            var causeParts = new[] { BasisRefutedCause, AccusationSupportedCause, CauseNotRecorded }
+                .Select(cause => (Cause: cause, Answers: byCause.Where(x => x.Cause == cause).Select(x => $"Q{x.Answer.OrderIndex}").ToList()))
+                .Where(p => p.Answers.Count > 0)
+                .Select(p => $"{p.Cause}: {string.Join(", ", p.Answers)}");
+            sb.AppendLine($"- **Contested Accuracy Deductions:** {contestedAccuracyDeductionCount} — {string.Join("; ", causeParts)}. The claim verifier checked these against the source code/wiki: either the own-knowledge statement an out-of-rubric Accuracy deduction rests on was **refuted**, or a sentence the assessor quoted as false was **supported**. Advisory: the deduction stands and no index moved; re-assess from the run detail.");
         }
         sb.AppendLine($"- **Answers Scrubbed:** {scrubbedAnyCount} of {totalQuestions} (transport payloads: {scrubbedTransportCount}, reasoning narration: {bleedRemoved})");
         sb.AppendLine();
@@ -2060,8 +2192,16 @@ public static class BenchmarkReportBuilder
             .OrderBy(a => a.OrderIndex)
             .SelectMany(a => SupportedAccusationsOf(a).Select(v => (Answer: a, Verification: v)))
             .ToList();
+        // Computed from ClaimVerificationJson by role; the run's claim-count columns count the
+        // answers' own claims only.
+        var accusedByAnswer = answers
+            .Select(a => (Answer: a, Accused: AccusedSentencesOf(a)))
+            .Where(x => x.Accused.Count > 0)
+            .ToList();
+        var accusedRunTotals = VerdictCounts(accusedByAnswer.SelectMany(x => x.Accused));
+        int accusedRunCount = accusedByAnswer.Sum(x => x.Accused.Count);
 
-        if (!claimsRecorded || unverifiedTotal > 0 || contestedAnswers.Count > 0 || omissionAnswers.Count > 0 || dimensionOutlierAnswers.Count > 0 || refutedAnswers.Count > 0 || verificationFailedAnswers.Count > 0 || notCheckedAnswers.Count > 0 || supportedAccusations.Count > 0)
+        if (!claimsRecorded || unverifiedTotal > 0 || contestedAnswers.Count > 0 || omissionAnswers.Count > 0 || dimensionOutlierAnswers.Count > 0 || refutedAnswers.Count > 0 || verificationFailedAnswers.Count > 0 || notCheckedAnswers.Count > 0 || supportedAccusations.Count > 0 || accusedRunCount > 0)
         {
             sb.AppendLine("### Assessor Findings");
             if (!claimsRecorded)
@@ -2115,6 +2255,10 @@ public static class BenchmarkReportBuilder
             if (dimensionOutlierAnswers.Count > 0)
             {
                 sb.AppendLine($"- **Dimension Outliers:** {dimensionOutlierAnswers.Count} ({string.Join(", ", dimensionOutlierAnswers.Select(a => $"Q{a.OrderIndex}"))}) — *one dimension at level ≤ 1 beside three at ≥ 3 with no defect of that kind named. Advisory; routed to a second reader.*");
+            }
+            if (accusedRunCount > 0)
+            {
+                sb.AppendLine($"- **Accused Sentences Checked:** {accusedRunCount} across {accusedByAnswer.Count} answer(s) ({string.Join(", ", accusedByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — supported {accusedRunTotals.Supported}, refuted {accusedRunTotals.Refuted}, indeterminate {accusedRunTotals.Indeterminate}. *Sentences the assessor quoted as false when it docked Accuracy, sent to the claim verifier; counted apart from the answers' own claims.*");
             }
             if (supportedAccusations.Count > 0)
             {
@@ -3131,9 +3275,23 @@ public static class BenchmarkReportBuilder
                     int iCount = a.ClaimsIndeterminateCount ?? 0;
                     sb.AppendLine($"> - **Claim Verification ({verifierName}):** {sCount} supported, {rCount} refuted, {iCount} indeterminate — *checked against source/wiki; advisory, not reflected in the score.*");
                 }
-                foreach (var accusation in SupportedAccusationsOf(a))
+                // Every accused sentence submitted, apart from the answer's own claims counted above.
+                var accusedSentences = AccusedSentencesOf(a);
+                if (accusedSentences.Count > 0)
+                {
+                    var (accusedSupported, accusedRefuted, accusedIndeterminate) = VerdictCounts(accusedSentences);
+                    sb.AppendLine($"> - **Accused sentences checked:** {accusedSentences.Count} — supported {accusedSupported}, refuted {accusedRefuted}, indeterminate {accusedIndeterminate}");
+                }
+                var supportedAccusationsOfAnswer = BenchmarkService.SupportedAccusations(accusedSentences);
+                foreach (var accusation in supportedAccusationsOfAnswer)
                 {
                     sb.AppendLine($"> - **Supported accusation:** a sentence the assessor charged as false was checked by the claim verifier and **supported** — \"{accusation.Claim}\" ({accusation.Citation}). *Advisory; the deduction stands.*");
+                }
+                foreach (var accusation in accusedSentences.Where(v => !supportedAccusationsOfAnswer.Contains(v)))
+                {
+                    string verdictWord = accusation.Verdict.ToString().ToLowerInvariant();
+                    string citation = string.IsNullOrWhiteSpace(accusation.Citation) ? "no citation" : accusation.Citation;
+                    sb.AppendLine($"> - **Accused sentence, {verdictWord}:** a sentence the assessor charged as false was checked by the claim verifier and returned **{verdictWord}** — \"{accusation.Claim}\" ({citation}).");
                 }
                 if (a.EvidenceInformedQualityScore.HasValue)
                 {
@@ -3260,7 +3418,10 @@ public static class BenchmarkReportBuilder
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.UnevidencedDeduction)) flagDescriptions.Add("Unevidenced deduction (advisory, changed no score)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.RefutedClaim)) flagDescriptions.Add("Refuted claim (advisory, changed no score)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.ContestedCriticalError)) flagDescriptions.Add("Contested critical error (advisory, changed no score)");
-                if (iaFlags.HasFlag(BenchmarkAnswerFlags.ContestedAccuracyDeduction)) flagDescriptions.Add("Contested out-of-rubric accuracy deduction (advisory, changed no score)");
+                if (iaFlags.HasFlag(BenchmarkAnswerFlags.ContestedAccuracyDeduction))
+                {
+                    flagDescriptions.Add($"Contested accuracy deduction (advisory, changed no score) ({string.Join(" and ", ContestedDeductionCauses(ia))})");
+                }
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.OmissionAsAccuracy)) flagDescriptions.Add("Omission docked as accuracy (advisory, changed no score)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.DimensionOutlier)) flagDescriptions.Add("Dimension outlier: one level ≤ 1 beside three at ≥ 3, no defect of that kind named (advisory, changed no score)");
                 if (ia.ToolBudgetExhausted)

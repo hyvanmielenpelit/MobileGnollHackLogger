@@ -93,18 +93,88 @@ public class BenchmarkClaimVerificationPromptTests
     }
 
     [Fact]
-    public void BuildPrompt_WithABoard_CarriesItAfterTheRubric()
+    public void BuildPrompt_WithABoard_CarriesItAfterTheInstructionsAndAheadOfTheQuestion()
     {
         string prompt = BuildPromptWithBoard();
 
-        int rubricEnd = prompt.IndexOf("--- END RUBRIC ---", System.StringComparison.Ordinal);
-        int boardStart = prompt.IndexOf("--- GAME BOARD", System.StringComparison.Ordinal);
+        int instruction7 = prompt.IndexOf("7. Output ONLY a valid JSON object", System.StringComparison.Ordinal);
+        int boardStart = prompt.IndexOf(BenchmarkClaimVerificationPrompt.BoardHeading, System.StringComparison.Ordinal);
+        int boardEnd = prompt.IndexOf("--- END GAME BOARD ---", System.StringComparison.Ordinal);
+        int question = prompt.IndexOf(BenchmarkClaimVerificationPrompt.QuestionBlockMarker, System.StringComparison.Ordinal);
+        int rubric = prompt.IndexOf("--- BEGIN RUBRIC ---", System.StringComparison.Ordinal);
+        int claims = prompt.IndexOf("=== START CLAIM 0 ===", System.StringComparison.Ordinal);
 
-        Assert.True(rubricEnd >= 0);
-        Assert.True(boardStart > rubricEnd, "The board block must follow the rubric block.");
+        Assert.True(instruction7 >= 0);
+        Assert.True(boardStart > instruction7, "The board must follow the numbered instructions.");
+        Assert.True(question > boardEnd, "The question must follow the board.");
+        Assert.True(rubric > question && claims > rubric);
+        Assert.Equal(boardStart, prompt.LastIndexOf(BenchmarkClaimVerificationPrompt.BoardHeading, System.StringComparison.Ordinal));
         Assert.Contains("Board Name: Tommi2", prompt);
         Assert.Contains("a - a blessed +1 quarterstaff (weapon in hands)", prompt);
-        Assert.Contains("--- END GAME BOARD ---", prompt);
+    }
+
+    [Fact]
+    public void BuildPrompt_InstructionsAndBoard_AreTheSamePrefixForEveryAnswerOfARun()
+    {
+        // Consecutive verifier calls of one run differ only after the board, so a provider can
+        // cache the instructions and the board as one prefix.
+        string first = BenchmarkClaimVerificationPrompt.BuildPrompt(
+            "GnollHack Suite", 1, "First question?", "Rubric one.",
+            new List<string> { "Claim one." }, new List<string> { "source_code_search" }, 15,
+            boardName: "Tommi2", boardText: BoardText);
+        string second = BenchmarkClaimVerificationPrompt.BuildPrompt(
+            "GnollHack Suite", 9, "Ninth question?", null,
+            new List<string> { "Claim nine." }, new List<string> { "source_code_search" }, 15,
+            isDisputedVerdict: true, isCriticalErrorAdjudication: true, assessorEvidence: "Evidence.",
+            boardName: "Tommi2", boardText: BoardText);
+
+        int boardEnd = first.IndexOf("--- END GAME BOARD ---", System.StringComparison.Ordinal) + "--- END GAME BOARD ---".Length;
+
+        Assert.StartsWith("CRITICAL INSTRUCTIONS:", first);
+        Assert.StartsWith(first.Substring(0, boardEnd), second);
+    }
+
+    [Fact]
+    public void BuildPrompt_WithABoard_OrdersInstructions3bThen3cThen3dThen3e()
+    {
+        string prompt = BuildPromptWithBoard();
+
+        int index3b = prompt.IndexOf("3b. A claim about the magnitude", System.StringComparison.Ordinal);
+        int index3c = prompt.IndexOf("3c. A claim about the hero's", System.StringComparison.Ordinal);
+        int index3d = prompt.IndexOf("3d. Before you cite a function as the code that implements something, confirm it is called", System.StringComparison.Ordinal);
+        int index3e = prompt.IndexOf("3e. A wiki page alone does not settle a claim about a number", System.StringComparison.Ordinal);
+        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
+
+        Assert.True(index3b >= 0);
+        Assert.True(index3c > index3b, "Instruction 3c must follow instruction 3b.");
+        Assert.True(index3d > index3c, "Instruction 3d must follow instruction 3c.");
+        Assert.True(index3e > index3d, "Instruction 3e must follow instruction 3d.");
+        Assert.True(index4 > index3e, "Instruction 4 must follow 3e, unrenumbered.");
+    }
+
+    [Fact]
+    public void BuildPrompt_WithoutABoard_OrdersInstructions3bThen3dThen3e()
+    {
+        string prompt = BuildPrompt();
+
+        int index3b = prompt.IndexOf("3b. A claim about the magnitude", System.StringComparison.Ordinal);
+        int index3d = prompt.IndexOf("3d. Before you cite a function", System.StringComparison.Ordinal);
+        int index3e = prompt.IndexOf("3e. A wiki page alone", System.StringComparison.Ordinal);
+        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
+
+        Assert.True(index3b >= 0);
+        Assert.True(index3d > index3b, "Instruction 3d must follow instruction 3b.");
+        Assert.True(index3e > index3d, "Instruction 3e must follow instruction 3d.");
+        Assert.True(index4 > index3e, "Instruction 4 must follow 3e, unrenumbered.");
+    }
+
+    [Fact]
+    public void BuildPrompt_Instructions3dAnd3e_SayWhatALiveCallSiteAndANumberRequire()
+    {
+        string prompt = BuildPrompt(isDisputedVerdict: true);
+
+        Assert.Contains("3d. Before you cite a function as the code that implements something, confirm it is called: search for its name and check that at least one call site is live. GnollHack keeps superseded NetHack code, and a function whose only callers are commented out decides nothing.", prompt);
+        Assert.Contains("3e. A wiki page alone does not settle a claim about a number — a timer, a count, a price, a probability or a formula — while the source is searchable. Find the code that applies it. If the code and the wiki disagree, the code decides; if you cannot find the code, the verdict is Indeterminate, not Supported.", prompt);
     }
 
     [Fact]

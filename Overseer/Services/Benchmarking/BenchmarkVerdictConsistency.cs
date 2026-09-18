@@ -36,6 +36,37 @@ public static class BenchmarkVerdictConsistency
         @"hallucinat|fabricat|\binvent(?!or)|non-?existent|does not exist|no such|made up",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    /// <summary>
+    /// Words by which accuracy evidence approves of a sentence it quotes ("Correct on the core
+    /// mechanic ("…")"). Whole words, case-insensitive. A clause carrying one and no
+    /// <see cref="AccusationChargeRegex"/> word quotes the answer to agree with it, and the quote
+    /// is not an accusation.
+    /// </summary>
+    internal static readonly Regex AccusationApprovalRegex = new(
+        @"\b(?:correct|correctly|accurate|accurately|right|rightly|matches|match|consistent\s+with|as\s+the\s+rubric)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Words by which accuracy evidence charges a sentence it quotes. Whole words,
+    /// case-insensitive. Wins over <see cref="AccusationApprovalRegex"/> when a clause carries both.
+    /// </summary>
+    internal static readonly Regex AccusationChargeRegex = new(
+        @"\b(?:not|wrong|wrongly|incorrect|incorrectly|false|overstate|overstates|overstated|imprecise|imprecision|invented|fabricated|misstates|misassigns|needless|without|omits|implies)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// The polarity of an evidence clause around a quoted sentence: true when it approves of the
+    /// sentence (an approval word and no charge word), false when it charges it, null when it
+    /// carries neither.
+    /// </summary>
+    internal static bool? AccusationClauseApproves(string clause)
+    {
+        bool charge = AccusationChargeRegex.IsMatch(clause);
+        bool approval = AccusationApprovalRegex.IsMatch(clause);
+        if (charge) return false;
+        return approval ? true : null;
+    }
+
     /// <summary>Question references inside a synthesis sentence: "Question 10", "Q 10", "Q10".</summary>
     private static readonly Regex QuestionReferenceRegex = new(
         @"\b(?:question|q)\s*#?\s*(\d{1,3})\b",

@@ -3,6 +3,7 @@ import { of, throwError } from 'rxjs';
 import {
   AdminBenchmarkService,
   BenchmarkSuiteDto,
+  BoardFactsCheckDto,
   CaptureBenchmarkSnapshotResponse
 } from '../../../services/admin-benchmark.service';
 import {
@@ -136,6 +137,45 @@ describe('SnapshotUploadDialogComponent', () => {
       replaceExisting: false
     });
     expect(emitted).toHaveBeenCalledWith(response);
+    expect(component.dialog.nativeElement.open).toBeFalse();
+  });
+
+  it('stays open with the missing-literal list and a Done button when the check finds one', async () => {
+    const check: BoardFactsCheckDto = {
+      bulletCount: 10, checkedLiteralCount: 9, unquotedBulletCount: 1,
+      unquotedBullets: [],
+      missingLiterals: [{ questionId: 6, orderIndex: 5, literal: 'the uncursed Holy Grail', lineExcerpt: 'T - the Holy Grail' }]
+    };
+    service.uploadSuiteSnapshot.and.returnValue(of({ ...response, boardFactsCheck: check }));
+
+    component.open(bareSuite);
+    await chooseFile('Dlvl:1');
+    uploadButton().click();
+    fixture.detectChanges();
+
+    expect(component.dialog.nativeElement.open).toBeTrue();
+    expect(host.querySelector('.upload-snapshot-btn')).toBeNull();
+    const notice = host.querySelector('.board-facts-notice')!;
+    expect(notice.textContent).toContain('Q6: "the uncursed Holy Grail"');
+    expect(notice.textContent).toContain('server_rubric_handoff');
+    expect(host.querySelector('.board-facts-unquoted')!.textContent).toContain('1 BOARD FACTS line');
+
+    (host.querySelector('.done-upload-btn') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(component.dialog.nativeElement.open).toBeFalse();
+  });
+
+  it('closes as usual when the check finds nothing missing', async () => {
+    const check: BoardFactsCheckDto = {
+      bulletCount: 10, checkedLiteralCount: 10, unquotedBulletCount: 0, unquotedBullets: [], missingLiterals: []
+    };
+    service.uploadSuiteSnapshot.and.returnValue(of({ ...response, boardFactsCheck: check }));
+
+    component.open(bareSuite);
+    await chooseFile('Dlvl:1');
+    uploadButton().click();
+    fixture.detectChanges();
+
     expect(component.dialog.nativeElement.open).toBeFalse();
   });
 

@@ -195,6 +195,17 @@ On top of that format, the checks that run later enforce this:
 - **Every BOARD FACT is a literal, findable string in the board text.** Search the flattened text
   for it before writing it down. Quote status-line values as the board prints them (`HP:14(58)`,
   `Dlvl:11`), not as prose.
+- **Put the literal in double quotes, because only a quoted literal is checked.** From harness 32
+  `BenchmarkBoardFactsChecker` looks up every double-quoted span (straight or `“…”`) inside a BOARD
+  FACTS bullet in the stored board, ordinally, with only line endings normalised. Uploading or
+  replacing a suite's board, editing its text in the snapshot viewer, importing questions, and
+  importing a whole suite each show the result: the literals the board does not contain, and a
+  plain count of bullets with no quoted literal, which were not checked. A run stamps the same
+  check when it starts and prints it in the report manifest. It is advisory and refuses nothing,
+  so a missing literal means a stale rubric that grades on facts the board no longer shows —
+  repair it through `server_rubric_handoff` before the next run. An unquoted bullet is not an
+  error (an absence fact such as *"The status line shows no hunger state."* cannot be quoted),
+  but it is not checked either.
 - **A mechanics fact is not a board fact.** It goes under **REQUIRED** with a citation, never under
   BOARD FACTS. Suite Health's *Snapshot facts* check (`BenchmarkRubricCheckPrompt`) demands a
   verbatim quote from the stored snapshot for every BOARD FACTS claim and will fail one that is

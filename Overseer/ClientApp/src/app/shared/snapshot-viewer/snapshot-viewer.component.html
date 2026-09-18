@@ -157,6 +157,19 @@
           (save)="saveText($event)"
           (download)="downloadText()"
           (dirtyChange)="onTextDirtyChange($event)" />
+        @if (boardFactsCheck && boardFactsCheck.missingLiterals.length > 0) {
+          <div class="board-facts-notice">
+            <ul class="board-facts-missing-list">
+              @for (item of boardFactsCheck.missingLiterals; track item.questionId + ':' + item.orderIndex + ':' + item.literal) {
+                <li>Q{{ item.orderIndex + 1 }}: "{{ item.literal }}"</li>
+              }
+            </ul>
+            <p>These rubrics quote text the board does not contain. Repair them before the next run: download the suite as YAML and hand it to an agent with the <code>server_rubric_handoff</code> skill.</p>
+          </div>
+        }
+        @if (boardFactsCheck && boardFactsCheck.unquotedBulletCount > 0) {
+          <p class="board-facts-unquoted text-muted">{{ boardFactsCheck.unquotedBulletCount }} BOARD FACTS line(s) carry no quoted literal and were not checked.</p>
+        }
       </div>
 
       <div class="snapshot-panel snapshot-panel-metadata" role="tabpanel" tabindex="0"

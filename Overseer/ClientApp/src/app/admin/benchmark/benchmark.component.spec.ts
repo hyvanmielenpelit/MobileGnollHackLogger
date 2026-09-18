@@ -10,6 +10,8 @@ import { MultiRunComponent } from './multi-run/multi-run.component';
 import { AdminBenchmarkService, BenchmarkRunAnswerDto } from '../../services/admin-benchmark.service';
 import { SystemService } from '../../services/system.service';
 import { BenchmarkCompletionSoundService } from '../../services/benchmark-completion-sound.service';
+import { BenchmarkCompletionNotificationService } from '../../services/benchmark-completion-notification.service';
+import { BenchmarkBackgroundActivityService } from '../../services/benchmark-background-activity.service';
 import { serializeQuestionsYaml } from './question-yaml/question-yaml-format';
 
 describe('AdminBenchmarkComponent', () => {
@@ -6012,6 +6014,269 @@ describe('AdminBenchmarkComponent', () => {
       (component as any).pollSeries(8);
 
       expect(playSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Part C: arming the completion signals from a user gesture', () => {
+    let armSpy: jasmine.Spy;
+
+    function buildRun(overrides: Record<string, unknown> = {}): any {
+      return {
+        id: 37, benchmarkSuiteId: 1, suiteName: 'Default Suite',
+        testedModelDisplayNameUsed: 'Test Model', testedModelProviderUsed: 'Anthropic', testedModelIdUsed: 'x',
+        assessorModelDisplayNameUsed: 'Test Assessor', assessorModelProviderUsed: 'Anthropic', assessorModelIdUsed: 'x',
+        startedByUserName: 'admin', status: 'CompletedWithErrors', startedAtUtc: '2026-09-02T00:00:00Z',
+        completedAtUtc: null, totalQuestionCount: 3, answers: [], ...overrides
+      };
+    }
+
+    beforeEach(() => {
+      const soundService = TestBed.inject(BenchmarkCompletionSoundService);
+      armSpy = spyOn(soundService, 'arm').and.returnValue(Promise.resolve());
+    });
+
+    it('arms from startBenchmark', () => {
+      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 99 }));
+      component.selectedSuiteId = 1;
+      component.testedConfigId = 1;
+      component.assessorConfigId = 1;
+
+      component.startBenchmark();
+
+      expect(armSpy).toHaveBeenCalledTimes(1);
+      component.ngOnDestroy();
+    });
+
+    it('arms from resumeActiveSeries', () => {
+      component.activeSeriesId = 5;
+      benchmarkServiceMock.resumeRunSeries.and.returnValue(of({} as any));
+      benchmarkServiceMock.getRunSeries.and.returnValue(of({
+        id: 5, status: 'Running', completedRunCount: 0, requestedRunCount: 2, members: []
+      } as any));
+
+      component.resumeActiveSeries();
+
+      expect(armSpy).toHaveBeenCalledTimes(1);
+      component.ngOnDestroy();
+    });
+
+    it('arms from rerunFailedFromProgress', () => {
+      component.activeRunDetail = buildRun({ id: 37, answers: [] });
+      benchmarkServiceMock.rerunFailedQuestions.and.returnValue(of({ runId: 37 }));
+      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 37 })));
+
+      component.rerunFailedFromProgress();
+
+      expect(armSpy).toHaveBeenCalledTimes(1);
+      component.closeRunProgressDialog();
+    });
+
+    it('arms from rerunFailedFromRunDetail', () => {
+      component.selectedRunDetail = buildRun({ id: 37, answers: [] });
+      benchmarkServiceMock.rerunFailedQuestions.and.returnValue(of({ runId: 37 }));
+      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 37 })));
+
+      component.rerunFailedFromRunDetail(37);
+
+      expect(armSpy).toHaveBeenCalledTimes(1);
+      component.closeRunProgressDialog();
+    });
+
+    it('arms from testCompletionSound, before priming', () => {
+      const soundService = TestBed.inject(BenchmarkCompletionSoundService);
+      const primeSpy = spyOn(soundService, 'prime').and.returnValue(Promise.resolve('played'));
+
+      component.testCompletionSound();
+
+      expect(armSpy).toHaveBeenCalledTimes(1);
+      expect(primeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('does nothing when neither signal is enabled', () => {
+      component.completionSound = false;
+      component.completionNotification = false;
+      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 99 }));
+      component.selectedSuiteId = 1;
+      component.testedConfigId = 1;
+      component.assessorConfigId = 1;
+
+      component.startBenchmark();
+
+      expect(armSpy).not.toHaveBeenCalled();
+      component.ngOnDestroy();
+    });
+  });
+
+  describe('Part C: the desktop notification', () => {
+    let notificationService: BenchmarkCompletionNotificationService;
+    let notifySpy: jasmine.Spy;
+
+    function buildRun(overrides: Record<string, unknown> = {}): any {
+      return {
+        id: 42, benchmarkSuiteId: 1, suiteName: 'Default Suite',
+        testedModelDisplayNameUsed: 'Test Model', testedModelProviderUsed: 'Anthropic', testedModelIdUsed: 'x',
+        assessorModelDisplayNameUsed: 'Test Assessor', assessorModelProviderUsed: 'Anthropic', assessorModelIdUsed: 'x',
+        startedByUserName: 'admin', status: 'Running', startedAtUtc: '2026-09-02T00:00:00Z',
+        completedAtUtc: null, totalQuestionCount: 3, answers: [], ...overrides
+      };
+    }
+
+    beforeEach(() => {
+      notificationService = TestBed.inject(BenchmarkCompletionNotificationService);
+      notifySpy = spyOn(notificationService, 'notify');
+      spyOn(TestBed.inject(BenchmarkCompletionSoundService), 'play').and.returnValue(Promise.resolve('played'));
+    });
+
+    it('persists and restores completionNotification alongside completionSound', () => {
+      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 99 }));
+      component.selectedSuiteId = 1;
+      component.testedConfigId = 1;
+      component.assessorConfigId = 1;
+      component.completionNotification = true;
+
+      component.startBenchmark();
+
+      const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
+      expect(stored.completionNotification).toBeTrue();
+      component.ngOnDestroy();
+
+      const restored = TestBed.createComponent(AdminBenchmarkComponent);
+      restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
+      restored.detectChanges();
+      expect(restored.componentInstance.completionNotification).toBeTrue();
+      restored.componentInstance.ngOnDestroy();
+    });
+
+    it('turns on and clears the status once permission is granted', fakeAsync(() => {
+      spyOn(notificationService, 'requestPermission').and.returnValue(Promise.resolve('granted'));
+
+      component.onCompletionNotificationChange(true);
+      tick();
+
+      expect(component.completionNotification).toBeTrue();
+      expect(component.completionNotificationStatus).toBeNull();
+    }));
+
+    (['denied', 'default', 'unsupported'] as const).forEach(outcome => {
+      it(`unticks the box and explains a "${outcome}" permission result`, fakeAsync(() => {
+        spyOn(notificationService, 'requestPermission').and.returnValue(Promise.resolve(outcome));
+
+        component.onCompletionNotificationChange(true);
+        tick();
+        fixture.detectChanges();
+
+        expect(component.completionNotification).toBeFalse();
+        expect(component.completionNotificationStatus).toBeTruthy();
+        const status = fixture.nativeElement.querySelector('.completion-signals-status') as HTMLElement;
+        expect(status.textContent).toContain(component.completionNotificationStatus);
+      }));
+    });
+
+    it('unticking directly clears the status without requesting permission', () => {
+      const requestSpy = spyOn(notificationService, 'requestPermission');
+      component.completionNotification = true;
+      component.completionNotificationStatus = 'stale';
+
+      component.onCompletionNotificationChange(false);
+
+      expect(component.completionNotification).toBeFalse();
+      expect(component.completionNotificationStatus).toBeNull();
+      expect(requestSpy).not.toHaveBeenCalled();
+    });
+
+    it('notifies once for a hidden completion with the sound off and the notification on', () => {
+      component.completionSound = false;
+      component.completionNotification = true;
+      spyOnProperty(document, 'hidden', 'get').and.returnValue(true);
+      spyOn(document, 'hasFocus').and.returnValue(false);
+
+      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 42, status: 'Running' })));
+      (component as any).pollRunDetail(42);
+      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 42, status: 'Completed' })));
+      (component as any).pollRunDetail(42);
+
+      expect(notifySpy).toHaveBeenCalledTimes(1);
+      expect(notifySpy.calls.mostRecent().args[0]).toBe('run:42');
+    });
+
+    it('does not notify a visible, focused completion', () => {
+      component.completionNotification = true;
+      spyOnProperty(document, 'hidden', 'get').and.returnValue(false);
+      spyOn(document, 'hasFocus').and.returnValue(true);
+
+      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 42, status: 'Running' })));
+      (component as any).pollRunDetail(42);
+      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 42, status: 'Completed' })));
+      (component as any).pollRunDetail(42);
+
+      expect(notifySpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Part C: the second series-resume path and the Web Lock', () => {
+    it('restarts the series poll when the progress dialog resumes a stopped series', () => {
+      benchmarkServiceMock.getRunSeries.and.returnValue(of({
+        id: 11, status: 'Running', completedRunCount: 1, requestedRunCount: 3, members: []
+      } as any));
+
+      component.onSeriesResumedFromDialog(11);
+
+      expect(component.activeSeriesId).toBe(11);
+      expect(benchmarkServiceMock.getRunSeries).toHaveBeenCalledWith(11);
+      component.ngOnDestroy();
+    });
+
+    it('releases the background lock when a run poll errors', () => {
+      const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
+      const releaseSpy = spyOn(lockService, 'release');
+      const acquireSpy = spyOn(lockService, 'acquireForRun');
+
+      (component as any).startPolling(42);
+      expect(acquireSpy).toHaveBeenCalledWith(42);
+
+      benchmarkServiceMock.getRun.and.returnValue(throwError(() => ({ status: 500 })));
+      (component as any).pollRunDetail(42);
+
+      expect(releaseSpy).toHaveBeenCalled();
+      component.ngOnDestroy();
+    });
+
+    it('releases the background lock when a series poll errors', () => {
+      const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
+      const releaseSpy = spyOn(lockService, 'release');
+      const acquireSpy = spyOn(lockService, 'acquireForSeries');
+
+      (component as any).startSeriesPolling(11);
+      expect(acquireSpy).toHaveBeenCalledWith(11);
+
+      benchmarkServiceMock.getRunSeries.and.returnValue(throwError(() => ({ status: 500 })));
+      (component as any).pollSeries(11);
+
+      expect(releaseSpy).toHaveBeenCalled();
+      component.ngOnDestroy();
+    });
+
+    it('keeps the series lock while a member run is polled and when that run poller stops', () => {
+      const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
+      benchmarkServiceMock.getRunSeries.and.returnValue(of({
+        id: 11, status: 'Running', completedRunCount: 0, requestedRunCount: 3, members: []
+      } as any));
+      const acquireSeriesSpy = spyOn(lockService, 'acquireForSeries');
+      const acquireRunSpy = spyOn(lockService, 'acquireForRun');
+      const releaseSpy = spyOn(lockService, 'release');
+
+      (component as any).startSeriesPolling(11);
+      expect(acquireSeriesSpy).toHaveBeenCalledOnceWith(11);
+
+      (component as any).startPolling(42);
+      (component as any).stopPolling();
+
+      expect(acquireRunSpy).not.toHaveBeenCalled();
+      expect(releaseSpy).not.toHaveBeenCalled();
+
+      (component as any).stopSeriesPolling();
+      expect(releaseSpy).toHaveBeenCalledTimes(1);
+      component.ngOnDestroy();
     });
   });
 

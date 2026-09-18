@@ -248,6 +248,7 @@ public static class BenchmarkComparabilityKey
     public const string SuiteKey = "BenchmarkSuiteId";
     public const string ItemRevisionsKey = "SuiteItemRevisions";
     public const string AssessedDifficultiesKey = "SuiteAssessedDifficulties";
+    public const string GameSnapshotKey = "GameSnapshot";
     public const string CandidateProviderKey = "CandidateProvider";
     public const string CandidateModelKey = "CandidateModelId";
     public const string CandidateThinkingLevelKey = "CandidateThinkingLevel";
@@ -292,6 +293,20 @@ public static class BenchmarkComparabilityKey
         => tier == BenchmarkComparabilityTier.Replicate || tier == BenchmarkComparabilityTier.QualityComparable;
 
     /// <summary>
+    /// True when a <see cref="BenchmarkComparabilityKeyKind.Fundamental"/> key carries no value, so
+    /// the exam it identifies cannot be established. <see cref="GameSnapshotKey"/> is exempt: no
+    /// value there is a real condition, a suite with no board, and two such runs do match on it.
+    /// </summary>
+    public static bool IsAbsentIdentity(BenchmarkComparabilityKeyEntry key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+
+        return key.Kind == BenchmarkComparabilityKeyKind.Fundamental
+            && !string.Equals(key.Name, GameSnapshotKey, StringComparison.Ordinal)
+            && string.Equals(key.Value, NoValue, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The label, description and value kind of one key.
     ///
     /// <para>An unrecognised name degrades to itself as the label, an empty description and
@@ -322,6 +337,12 @@ public static class BenchmarkComparabilityKey
                 + "difference means the same answer key was scored under different Intelligence "
                 + "Index weights.",
                 BenchmarkComparabilityValueKind.List),
+
+            GameSnapshotKey => Info(name,
+                "Game snapshot",
+                "The board every answer and grade on a snapshot suite is read against; a difference "
+                + "means the same questions were asked about a different game.",
+                BenchmarkComparabilityValueKind.Hash),
 
             // --- Candidate specification ------------------------------------------------------
             CandidateProviderKey => Info(name,
@@ -498,6 +519,9 @@ public static class BenchmarkComparabilityKey
             Key(ItemRevisionsKey, BenchmarkComparabilityKeyKind.Fundamental, ItemRevisionSignature(run)),
             Key(AssessedDifficultiesKey, BenchmarkComparabilityKeyKind.Fundamental, AssessedDifficultySignature(run)),
 
+            // The SHA-256 of the board text stamped at launch; (none) for a suite with no board.
+            Key(GameSnapshotKey, BenchmarkComparabilityKeyKind.Fundamental, Render(run.GameSnapshotSha256Used)),
+
             // --- Candidate specification ------------------------------------------------------
             Key(CandidateProviderKey, BenchmarkComparabilityKeyKind.Candidate, Render(run.TestedModelProviderUsed)),
             Key(CandidateModelKey, BenchmarkComparabilityKeyKind.Candidate, Render(run.TestedModelIdUsed)),
@@ -670,11 +694,8 @@ public static class BenchmarkComparabilityKey
         var absentFundamental = members.Count < 2
             ? new List<string>()
             : keyNames
-                .Where(n => kinds[n] == BenchmarkComparabilityKeyKind.Fundamental && matched.Contains(n))
-                .Where(n => string.Equals(
-                    extracted[members[0]].First(k => k.Name == n).Value,
-                    NoValue,
-                    StringComparison.Ordinal))
+                .Where(n => matched.Contains(n))
+                .Where(n => IsAbsentIdentity(extracted[members[0]].First(k => k.Name == n)))
                 .ToList();
 
         BenchmarkComparabilityTier tier;

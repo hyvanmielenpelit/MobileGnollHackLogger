@@ -59,8 +59,11 @@ public class AdminBenchmarkSnapshotTextEditTests
         return board;
     }
 
+    private static UpdateBenchmarkSnapshotTextResponse ReadResponse(IActionResult result)
+        => Assert.IsType<UpdateBenchmarkSnapshotTextResponse>(Assert.IsType<OkObjectResult>(result).Value);
+
     private static BenchmarkGameSnapshotDto ReadDto(IActionResult result)
-        => Assert.IsType<BenchmarkGameSnapshotDto>(Assert.IsType<OkObjectResult>(result).Value);
+        => ReadResponse(result).Snapshot;
 
     [Fact]
     public async Task SavesEditedText_NormalizesHashesCountsAndRebuildsTheDigest()
@@ -193,5 +196,64 @@ public class AdminBenchmarkSnapshotTextEditTests
             404, new UpdateBenchmarkGameSnapshotTextRequest { Text = "Dlvl:1" }, TestContext.Current.CancellationToken);
 
         Assert.IsType<NotFoundResult>(result);
+    }
+
+    // --- BOARD FACTS quote check -------------------------------------------------------------
+
+    [Fact]
+    public async Task EditedText_ReturnsTheCheckForTheOwningSuite_AgainstTheNewText()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db) = CreateController();
+        var importer = new BenchmarkSnapshotImporter(db);
+        var (board, suite) = await importer.FromClientTextAsync(
+            "T - the Holy Grail (0 charges, 0 rechargings)", new BoardMetadata("owned_target"), ct);
+        const string rubric = "**BOARD FACTS**\n- The inventory lists \"T - the Holy Grail (0 charges, 0 rechargings)\".";
+        db.BenchmarkQuestions.Add(new BenchmarkQuestion
+        {
+            BenchmarkSuiteId = suite.Id,
+            OrderIndex = 6,
+            QuestionText = "Q6",
+            ExpectedPoints = rubric
+        });
+        await db.SaveChangesAsync(ct);
+
+        var response = ReadResponse(await controller.UpdateSnapshotText(
+            board.Id,
+            new UpdateBenchmarkGameSnapshotTextRequest { Text = "T - the uncursed Holy Grail (0 charges, 0 rechargings)" },
+            ct));
+
+        Assert.Equal(board.Id, response.Snapshot.Id);
+        var check = Assert.IsType<BoardFactsCheckDto>(response.BoardFactsCheck);
+        Assert.Equal(1, check.CheckedLiteralCount);
+        var missing = Assert.Single(check.MissingLiterals);
+        Assert.Equal(6, missing.OrderIndex);
+        Assert.Equal("T - the Holy Grail (0 charges, 0 rechargings)", missing.Literal);
+
+        // Advisory only: the rubric is not touched.
+        Assert.Equal(rubric, (await db.BenchmarkQuestions.AsNoTracking().SingleAsync(ct)).ExpectedPoints);
+    }
+
+    [Fact]
+    public async Task EditedText_OfASnapshotNoSuiteOwns_ReturnsANullCheck()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db) = CreateController();
+        var board = new BenchmarkGameSnapshot
+        {
+            Name = "orphan",
+            SanitizedText = "Dlvl:1",
+            CharCount = 6,
+            Sha256 = "sha",
+            CaptureMethod = "TextUpload"
+        };
+        db.BenchmarkGameSnapshots.Add(board);
+        await db.SaveChangesAsync(ct);
+
+        var response = ReadResponse(await controller.UpdateSnapshotText(
+            board.Id, new UpdateBenchmarkGameSnapshotTextRequest { Text = "Dlvl:2" }, ct));
+
+        Assert.Null(response.Snapshot.SuiteId);
+        Assert.Null(response.BoardFactsCheck);
     }
 }

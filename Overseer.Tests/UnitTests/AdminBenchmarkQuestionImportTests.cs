@@ -193,4 +193,67 @@ public class AdminBenchmarkQuestionImportTests
 
         Assert.IsType<NotFoundResult>(result);
     }
+
+    // --- BOARD FACTS quote check -------------------------------------------------------------
+
+    private const string Board = "T - the uncursed Holy Grail (0 charges, 0 rechargings)\nHP:14(14)";
+
+    [Fact]
+    public async Task ImportIntoASuiteWithABoard_ReturnsTheCheck_AndStillWritesTheRubric()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController();
+        var (suite, _, _, _) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+        suite.GameSnapshot = new BenchmarkGameSnapshot
+        {
+            Name = "board",
+            SanitizedText = Board,
+            CharCount = Board.Length,
+            Sha256 = "sha",
+            CaptureMethod = "TextUpload"
+        };
+        await db.SaveChangesAsync(ct);
+        var q = suite.Questions.Single();
+
+        string rubric = "**BOARD FACTS**\n"
+            + "- The status line reads \"HP:14(14)\".\n"
+            + "- The inventory lists \"T - the Holy Grail (0 charges, 0 rechargings)\".\n"
+            + "- The status line shows no hunger state.\n"
+            + "**REQUIRED**\n"
+            + "- A point.";
+
+        var dto = ReadResult(await controller.ImportQuestions(suite.Id, new ImportBenchmarkQuestionsRequest
+        {
+            Items = { new() { QuestionId = q.Id, ExpectedPoints = rubric, ReplaceExpectedPoints = true } }
+        }, ct));
+
+        // Advisory: the write lands whatever the check finds.
+        Assert.Equal(1, dto.ReplacedCount);
+        Assert.Equal(rubric, (await db.BenchmarkQuestions.AsNoTracking().SingleAsync(x => x.Id == q.Id, ct)).ExpectedPoints);
+
+        var check = Assert.IsType<BoardFactsCheckDto>(dto.BoardFactsCheck);
+        Assert.Equal(3, check.BulletCount);
+        Assert.Equal(2, check.CheckedLiteralCount);
+        Assert.Equal(1, check.UnquotedBulletCount);
+        var missing = Assert.Single(check.MissingLiterals);
+        Assert.Equal(q.Id, missing.QuestionId);
+        Assert.Equal(q.OrderIndex, missing.OrderIndex);
+        Assert.Equal("T - the Holy Grail (0 charges, 0 rechargings)", missing.Literal);
+    }
+
+    [Fact]
+    public async Task ImportIntoASuiteWithoutABoard_ReturnsANullCheck()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db, _) = BenchmarkComplianceGuardTests.CreateTestBenchmarkController();
+        var (suite, _, _, _) = await BenchmarkComplianceGuardTests.SeedConfigsAndSuite(db);
+
+        var dto = ReadResult(await controller.ImportQuestions(suite.Id, new ImportBenchmarkQuestionsRequest
+        {
+            Items = { new() { QuestionText = "New", ExpectedPoints = "**BOARD FACTS**\n- \"x\"", ReplaceExpectedPoints = true } }
+        }, ct));
+
+        Assert.Equal(1, dto.CreatedCount);
+        Assert.Null(dto.BoardFactsCheck);
+    }
 }

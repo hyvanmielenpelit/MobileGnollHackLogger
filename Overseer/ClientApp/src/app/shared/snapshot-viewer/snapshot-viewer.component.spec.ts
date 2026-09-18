@@ -3,9 +3,19 @@ import { By } from '@angular/platform-browser';
 import { SnapshotViewerComponent } from './snapshot-viewer.component';
 import { SnapshotTextEditorComponent } from './snapshot-text-editor.component';
 import { SnapshotDigestEditorComponent } from './snapshot-digest-editor.component';
-import { AdminBenchmarkService, BenchmarkGameSnapshotDto } from '../../services/admin-benchmark.service';
+import { AdminBenchmarkService, BenchmarkGameSnapshotDto, UpdateBenchmarkSnapshotTextResponse } from '../../services/admin-benchmark.service';
 import { Subject, of, throwError } from 'rxjs';
 import { buildBoard, snapshotWith } from './snapshot-viewer.spec-fixtures';
+
+/* What updateSnapshotText resolves to: the stored snapshot beside the board-facts check. Tests
+   that do not care about the check pass none, which reads as "no board" or "nothing missing". */
+function textResponse(
+  text: string,
+  extra: Partial<BenchmarkGameSnapshotDto> = {},
+  boardFactsCheck: UpdateBenchmarkSnapshotTextResponse['boardFactsCheck'] = null
+): UpdateBenchmarkSnapshotTextResponse {
+  return { snapshot: snapshotWith(text, extra), boardFactsCheck };
+}
 
 describe('SnapshotViewerComponent', () => {
   let component: SnapshotViewerComponent;
@@ -462,7 +472,7 @@ describe('SnapshotViewerComponent', () => {
       expect(notice()!.textContent).toContain('holds 2 carriage return characters');
 
       mockBenchmarkService.updateSnapshotText.and.returnValue(
-        of(snapshotWith('Map:\nThe hero is here.\nInventory:\na - an apple', { sha256: 'def0987654321' })));
+        of(textResponse('Map:\nThe hero is here.\nInventory:\na - an apple', { sha256: 'def0987654321' })));
       normalizeButton().click();
       fixture.detectChanges();
 
@@ -490,7 +500,7 @@ describe('SnapshotViewerComponent', () => {
       await openReady();
       editText('one\ntwo\n');
       mockBenchmarkService.updateSnapshotText.and.returnValue(
-        of(snapshotWith('one\ntwo\nthree', { sha256: 'def0987654321', digestText: 'rebuilt digest' })));
+        of(textResponse('one\ntwo\nthree', { sha256: 'def0987654321', digestText: 'rebuilt digest' })));
 
       textEditor().save.emit(textEditor().currentText()!);
       fixture.detectChanges();
@@ -509,12 +519,50 @@ describe('SnapshotViewerComponent', () => {
       expect(updatedSpy).toHaveBeenCalledWith(jasmine.objectContaining({ charCount: 13, sha256: 'def0987654321' }));
     });
 
+    it('lists a missing board-facts literal under the save confirmation, with the repair sentence', async () => {
+      await openReady();
+      editText();
+      mockBenchmarkService.updateSnapshotText.and.returnValue(of(textResponse('saved', {}, {
+        bulletCount: 10,
+        checkedLiteralCount: 9,
+        unquotedBulletCount: 1,
+        unquotedBullets: [],
+        missingLiterals: [{ questionId: 6, orderIndex: 5, literal: 'the uncursed Holy Grail', lineExcerpt: 'T - the Holy Grail' }]
+      })));
+
+      textEditor().save.emit('saved');
+      fixture.detectChanges();
+
+      const notice = host.querySelector('.board-facts-notice')!;
+      expect(notice.textContent).toContain('Q6: "the uncursed Holy Grail"');
+      expect(notice.textContent).toContain('server_rubric_handoff');
+      expect(host.querySelector('.board-facts-unquoted')!.textContent).toContain('1 BOARD FACTS line');
+    });
+
+    it('shows no board-facts notice when nothing is missing', async () => {
+      await openReady();
+      editText();
+      mockBenchmarkService.updateSnapshotText.and.returnValue(of(textResponse('saved', {}, {
+        bulletCount: 10,
+        checkedLiteralCount: 10,
+        unquotedBulletCount: 0,
+        unquotedBullets: [],
+        missingLiterals: []
+      })));
+
+      textEditor().save.emit('saved');
+      fixture.detectChanges();
+
+      expect(host.querySelector('.board-facts-notice')).toBeNull();
+      expect(host.querySelector('.board-facts-unquoted')).toBeNull();
+    });
+
     it('keeps a digest edit in progress when the text is saved', async () => {
       await openReady();
       component.editDigestText = 'my digest edit';
       editText();
       mockBenchmarkService.updateSnapshotText.and.returnValue(
-        of(snapshotWith('saved', { digestText: 'rebuilt digest' })));
+        of(textResponse('saved', { digestText: 'rebuilt digest' })));
 
       textEditor().save.emit('saved');
       fixture.detectChanges();
@@ -667,7 +715,7 @@ describe('SnapshotViewerComponent', () => {
       await openReady();
       editText();
       const buffer = textEditor().currentText()!;
-      mockBenchmarkService.updateSnapshotText.and.returnValue(of(snapshotWith(buffer, { sha256: 'def0987654321' })));
+      mockBenchmarkService.updateSnapshotText.and.returnValue(of(textResponse(buffer, { sha256: 'def0987654321' })));
       clickButtonNamed('Download .snapshot.txt of Emergency Low HP');
 
       clickButtonNamed('Save and download');

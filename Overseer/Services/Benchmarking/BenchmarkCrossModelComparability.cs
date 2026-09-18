@@ -201,7 +201,8 @@ public static class BenchmarkCrossModelComparability
 
     /// <summary>
     /// True when a <see cref="BenchmarkComparabilityKeyKind.Fundamental"/> must-match key has no
-    /// value on this run, so it cannot be charted with anything.
+    /// value on this run, so it cannot be charted with anything. A suite with no board is not an
+    /// absent identity (<see cref="BenchmarkComparabilityKey.IsAbsentIdentity"/>).
     ///
     /// <para>The must-match signature is an equality test, and an absent identity is equal to every
     /// other absent identity: without this, runs from two different deleted suites would share one
@@ -212,9 +213,7 @@ public static class BenchmarkCrossModelComparability
     {
         ArgumentNullException.ThrowIfNull(run);
 
-        return MustMatchKeys(run).Any(k =>
-            k.Kind == BenchmarkComparabilityKeyKind.Fundamental
-            && string.Equals(k.Value, BenchmarkComparabilityKey.NoValue, StringComparison.Ordinal));
+        return MustMatchKeys(run).Any(BenchmarkComparabilityKey.IsAbsentIdentity);
     }
 
     public static bool IsModelAxisKey(string name)

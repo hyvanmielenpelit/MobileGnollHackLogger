@@ -183,6 +183,56 @@ public class BenchmarkEvidenceInformedRegradeTests
         Assert.Contains("the critical error was removed with no valid criticalError withdrawal.", result.Errors);
     }
 
+    // --- The repair turn --------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("{\"accuracyLevel\":3}")]
+    [InlineData("{\"accuracyLevel\":5,\"withdrawn\":\"T2\"}")]
+    public void Repair_FollowsAMissingOrNonArrayList_EvenWhenALevelCheckFailsBesideIt(string raw)
+    {
+        var result = BenchmarkService.ValidateEvidenceInformed(
+            raw, Targets(), primaryAccuracyLevel: 3, primaryCriticalError: true, regradeAccuracyLevel: 5, regradeCriticalError: true);
+
+        Assert.Contains(BenchmarkService.WithdrawnMissingError, result.Errors);
+        Assert.True(BenchmarkService.NeedsWithdrawnRepair(result));
+    }
+
+    [Theory]
+    [InlineData("[{\"targetId\":\"T9\",\"findingIds\":[\"F1\"],\"reason\":\"r\"}]")]
+    [InlineData("[{\"targetId\":\"T2\",\"findingIds\":[\"F2\"],\"reason\":\"An ordinary claim was supported.\"}]")]
+    [InlineData("[]")]
+    public void Repair_NeverFollowsAnyOtherFailure(string withdrawn)
+    {
+        var result = BenchmarkService.ValidateEvidenceInformed(
+            Raw(withdrawn), Targets(), primaryAccuracyLevel: 3, primaryCriticalError: true, regradeAccuracyLevel: 5, regradeCriticalError: false);
+
+        Assert.False(result.Eligible);
+        Assert.False(BenchmarkService.NeedsWithdrawnRepair(result));
+    }
+
+    [Fact]
+    public void Repair_TheRepairTurnQuotesTheError_AndAsksForTheWholeObjectAgain()
+    {
+        Assert.Equal("`withdrawn` is missing or not an array.", BenchmarkService.WithdrawnMissingError);
+        Assert.Contains(BenchmarkService.WithdrawnMissingError, BenchmarkService.WithdrawnRepairMessage);
+        Assert.Contains("including `withdrawn`", BenchmarkService.WithdrawnRepairMessage);
+        Assert.Contains("use [] when you withdraw nothing", BenchmarkService.WithdrawnRepairMessage);
+    }
+
+    [Fact]
+    public void Repair_ARepairedReplyIsValidatedAfresh()
+    {
+        var first = BenchmarkService.ValidateEvidenceInformed(
+            "{\"accuracyLevel\":5}", Targets(), primaryAccuracyLevel: 3, primaryCriticalError: true, regradeAccuracyLevel: 5, regradeCriticalError: true);
+        var repaired = BenchmarkService.ValidateEvidenceInformed(
+            Raw("[{\"targetId\":\"T2\",\"findingIds\":[\"F1\"],\"reason\":\"The basis was refuted.\"}]"),
+            Targets(), primaryAccuracyLevel: 3, primaryCriticalError: true, regradeAccuracyLevel: 5, regradeCriticalError: true);
+
+        Assert.True(BenchmarkService.NeedsWithdrawnRepair(first));
+        Assert.True(repaired.Eligible);
+        Assert.False(BenchmarkService.NeedsWithdrawnRepair(repaired));
+    }
+
     [Fact]
     public void Validation_TheHistoricalReaderStillReadsAStringArray()
     {

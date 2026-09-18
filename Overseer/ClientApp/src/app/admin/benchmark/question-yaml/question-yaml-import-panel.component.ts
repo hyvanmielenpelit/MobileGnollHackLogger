@@ -17,6 +17,7 @@ import {
   AdminBenchmarkService,
   BenchmarkQuestionDto,
   BenchmarkSuiteDto,
+  BoardFactsCheckDto,
   ImportBenchmarkQuestionsResultDto,
   ImportBenchmarkSuiteSnapshot,
   MatchSnapshotResult
@@ -172,6 +173,9 @@ export class QuestionYamlImportPanelComponent implements OnDestroy {
   applyError: string | null = null;
   doneSummary = '';
   intentCheck: ImportIntentCheck | null = null;
+  /** The BOARD FACTS quote check for the imported or newly attached board; null while none applies. */
+  boardFactsCheck: BoardFactsCheckDto | null = null;
+  private boardFactsCheckSub: Subscription | undefined;
 
   get currentText(): string {
     return this.source === 'paste' ? this.pastedText : (this.fileText ?? '');
@@ -557,6 +561,7 @@ export class QuestionYamlImportPanelComponent implements OnDestroy {
           }
           this.suiteImported.emit(suite);
           this.goToStep(3);
+          this.fetchBoardFactsCheck(suite.id);
         },
         error: err => this.onApplyError(err)
       });
@@ -580,10 +585,23 @@ export class QuestionYamlImportPanelComponent implements OnDestroy {
             ? { ok, message: `As intended: created ${expected}, replaced 0.` }
             : { ok, message: `Expected to create ${expected} and replace 0; the server reports created ${result.createdCount}, replaced ${result.replacedCount}.` };
         }
+        this.boardFactsCheck = result.boardFactsCheck ?? null;
         this.imported.emit(result);
         this.goToStep(3);
       },
       error: err => this.onApplyError(err)
+    });
+  }
+
+  /** Suite mode's `importSuite` carries no check of its own; the done step fetches it on demand. */
+  private fetchBoardFactsCheck(suiteId: number): void {
+    this.boardFactsCheckSub?.unsubscribe();
+    this.boardFactsCheckSub = this.benchmarkService.getBoardFactsCheck(suiteId).subscribe({
+      next: check => {
+        this.boardFactsCheck = check;
+        this.changed();
+      },
+      error: () => { /* Advisory only; the done step still reports the import outcome. */ }
     });
   }
 
@@ -669,16 +687,21 @@ export class QuestionYamlImportPanelComponent implements OnDestroy {
     this.applyError = null;
     this.doneSummary = '';
     this.intentCheck = null;
+    this.boardFactsCheck = null;
+    this.boardFactsCheckSub?.unsubscribe();
+    this.boardFactsCheckSub = undefined;
     this.changed();
   }
 
   /** Abandons a preflight in flight; the host calls it when it closes. */
   cancel(): void {
     this.cancelSnapshotCheck();
+    this.boardFactsCheckSub?.unsubscribe();
   }
 
   ngOnDestroy(): void {
     this.cancelSnapshotCheck();
+    this.boardFactsCheckSub?.unsubscribe();
   }
 
   // ---- Internals -----------------------------------------------------------------------------

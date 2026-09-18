@@ -116,6 +116,100 @@ public class BenchmarkAccusedQuoteAdjudicationTests
         Assert.Contains("Applying it heals", quote.Context);
     }
 
+    // --- Single quotes and clause polarity -----------------------------------------------------
+
+    [Fact]
+    public void Extract_Run54Q7_SkipsTheSentenceTheEvidenceApproves_AndKeepsTheOneItCharges()
+    {
+        const string answer =
+            "An uncursed scroll of identify reveals 2 items (and a blessed one reveals 3), so read it first.\n\n"
+            + "Soft glass scratches/crushes differently than real gems, so rub the gray stones before you sell them.";
+        const string evidence =
+            "Correct on the core mechanic (\"an uncursed scroll of identify reveals 2 items (and a blessed one reveals 3)\"). "
+            + "Imprecision: \"Soft glass scratches/crushes differently than real gems\" implies a hardness test the game does not model.";
+
+        var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(answer, evidence));
+
+        Assert.Equal("Soft glass scratches/crushes differently than real gems", quote.Text);
+    }
+
+    [Fact]
+    public void Extract_Run54Q9Shape_ReadsAStraightSingleQuotedGraveMessage()
+    {
+        const string answer = "The headstone reads Here lies Fred, killed by a jackal. That makes this a bones level.";
+        const string evidence = "The answer says the grave reads 'Here lies Fred, killed by a jackal.' which is not what the board shows.";
+
+        var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(answer, evidence));
+
+        Assert.Equal("Here lies Fred, killed by a jackal.", quote.Text);
+    }
+
+    [Fact]
+    public void Extract_ReadsATypographicSingleQuotedSpan()
+    {
+        var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(
+            AnswerText, "Accuracy held at 4: ‘It has no charges and never runs out.’ is wrong."));
+
+        Assert.Equal("It has no charges and never runs out.", quote.Text);
+    }
+
+    [Fact]
+    public void Extract_AnApostropheHeavyEvidenceString_YieldsNothingSpurious()
+    {
+        const string answer = "It's the dwarves' pick-axes, not the gnomes' wands, that dig; rock 'n' roll aside, "
+            + "the '90s-era wiki's claim doesn't apply to GnollHack's Sokoban.";
+        const string evidence = "It's the dwarves' pick-axes, not the gnomes' wands, that dig; rock 'n' roll aside, "
+            + "the '90s-era wiki's claim doesn't apply to GnollHack's Sokoban — that's wrong, and the answer's framing isn't the rubric's.";
+
+        Assert.Empty(BenchmarkService.ExtractAccusedQuotes(answer, evidence));
+    }
+
+    [Fact]
+    public void Extract_AClauseWithBothMarkerKinds_IsKept()
+    {
+        const string answer = "Sacrificing a fresh corpse can grant a gift, even a same-race one.";
+        const string evidence = "Correct that \"Sacrificing a fresh corpse can grant a gift\", but not for a same-race corpse.";
+
+        var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(answer, evidence));
+
+        Assert.Equal("Sacrificing a fresh corpse can grant a gift", quote.Text);
+    }
+
+    [Theory]
+    [InlineData("\"Elbereth scares most monsters away\" matches the rubric.")]
+    [InlineData("The answer rightly says \"Elbereth scares most monsters away\"; the rest is thin.")]
+    [InlineData("Wrong about prayer (though \"Elbereth scares most monsters away\" is correct).")]
+    public void Extract_AClauseThatOnlyApproves_SkipsTheSpan(string evidence)
+    {
+        const string answer = "Elbereth scares most monsters away. Praying at 1 HP always works.";
+
+        Assert.Empty(BenchmarkService.ExtractAccusedQuotes(answer, evidence));
+    }
+
+    [Theory]
+    [InlineData("Correct overall (but \"Praying at 1 HP always works\" is wrong).")]
+    [InlineData("Accuracy held at 4. The answer says \"Praying at 1 HP always works\".")]
+    public void Extract_ACorrectOuterClause_DoesNotApproveAChargedParenthetical_OrAnUnmarkedQuote(string evidence)
+    {
+        const string answer = "Elbereth scares most monsters away. Praying at 1 HP always works.";
+
+        var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(answer, evidence));
+
+        Assert.Equal("Praying at 1 HP always works", quote.Text);
+    }
+
+    [Theory]
+    [InlineData("the answer is correct here", true)]
+    [InlineData("consistent with the source", true)]
+    [InlineData("correct but overstated", false)]
+    [InlineData("this implies more than it says", false)]
+    [InlineData("the answer says", null)]
+    [InlineData("a notable claim", null)]
+    public void AccusationClausePolarity_ChargeWins_WholeWordsOnly(string clause, bool? expected)
+    {
+        Assert.Equal(expected, BenchmarkVerdictConsistency.AccusationClauseApproves(clause));
+    }
+
     [Theory]
     [InlineData(4, BenchmarkAnswerFlags.None, true)]
     [InlineData(2, BenchmarkAnswerFlags.None, true)]

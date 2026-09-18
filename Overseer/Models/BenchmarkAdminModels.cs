@@ -168,6 +168,8 @@ public class ImportBenchmarkQuestionsResult
     public int ReplacedCount { get; set; }
     public int UnchangedCount { get; set; }
     public List<BenchmarkQuestionDto> Questions { get; set; } = new();
+    /// <summary>The BOARD FACTS quote check after the import; null when the suite has no board. Advisory.</summary>
+    public BoardFactsCheckDto? BoardFactsCheck { get; set; }
 }
 
 public class ImportBenchmarkSuiteSnapshot
@@ -854,10 +856,11 @@ public class BenchmarkRunDetailDto
     public int ContestedCriticalErrorAnswerCount { get; set; }
 
     /// <summary>
-    /// Answers whose out-of-rubric Accuracy deduction rests on an own-knowledge statement the claim
-    /// verifier checked against the source code and wiki and refuted. Advisory: the deduction stands
-    /// and no index moved. Null on a run recorded before harness 20, which never adjudicated the
-    /// basis: "not recorded", never zero.
+    /// Answers whose Accuracy deduction the claim verifier contested against the source code and
+    /// wiki: either the own-knowledge statement an out-of-rubric deduction rests on was refuted, or a
+    /// sentence the assessor quoted as false was supported. Advisory: the deduction stands and no
+    /// index moved. Null on a run recorded before harness 20, which never adjudicated the basis:
+    /// "not recorded", never zero.
     /// </summary>
     public int? ContestedAccuracyDeductionAnswerCount { get; set; }
 
@@ -963,6 +966,12 @@ public class BenchmarkRunDetailDto
 
     /// <summary>The default-suite key the run's suite carried at launch; null for a custom suite or an older run.</summary>
     public string? DefaultSuiteKeyUsed { get; set; }
+
+    /// <summary>
+    /// The BOARD FACTS quote check stamped at launch against the board and rubrics the run used; never
+    /// recomputed. Null for a suite with no board and for a run recorded before harness 32.
+    /// </summary>
+    public BoardFactsCheckDto? BoardFactsCheck { get; set; }
 
     /// <summary>
     /// H3. Run-wide tool calls by family, keyed "source", "wiki", "lookup", "knowledgeBase", "other", and
@@ -1554,6 +1563,40 @@ public class CaptureBenchmarkSnapshotResponse
 {
     public BenchmarkGameSnapshotDto Board { get; set; } = default!;
     public BenchmarkSuiteDto Suite { get; set; } = default!;
+    /// <summary>The BOARD FACTS quote check against the board just written. Advisory.</summary>
+    public BoardFactsCheckDto? BoardFactsCheck { get; set; }
+}
+
+public class UpdateBenchmarkSnapshotTextResponse
+{
+    public BenchmarkGameSnapshotDto Snapshot { get; set; } = default!;
+    /// <summary>The BOARD FACTS quote check for the suite that owns the snapshot; null when no suite does.</summary>
+    public BoardFactsCheckDto? BoardFactsCheck { get; set; }
+}
+
+/// <summary>
+/// Result of <c>BenchmarkBoardFactsChecker</c>: every double-quoted literal in a suite's BOARD FACTS
+/// bullets, looked up verbatim in the board text. Only <see cref="MissingLiterals"/> are issues. An
+/// unquoted bullet cannot be checked and is reported as a count, so that "none missing" is never
+/// read as "every fact was checked".
+/// </summary>
+public class BoardFactsCheckDto
+{
+    public int BulletCount { get; set; }
+    public int CheckedLiteralCount { get; set; }
+    public int UnquotedBulletCount { get; set; }
+    public List<BoardFactIssueDto> UnquotedBullets { get; set; } = new();
+    public List<BoardFactIssueDto> MissingLiterals { get; set; } = new();
+}
+
+public class BoardFactIssueDto
+{
+    public long QuestionId { get; set; }
+    public int OrderIndex { get; set; }
+    /// <summary>The quoted literal that is not on the board; null for an unquoted bullet.</summary>
+    public string? Literal { get; set; }
+    /// <summary>The bullet's text, at most 160 characters.</summary>
+    public string LineExcerpt { get; set; } = string.Empty;
 }
 
 /// <summary>What saving a chat's attached game snapshot as a board would store, and the boards

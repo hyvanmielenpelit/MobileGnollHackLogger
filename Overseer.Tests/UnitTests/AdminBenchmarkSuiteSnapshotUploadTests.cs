@@ -217,6 +217,106 @@ public class AdminBenchmarkSuiteSnapshotUploadTests
         Assert.Equal("shared (2)", second.Board.Name);
     }
 
+    // --- BOARD FACTS quote check -------------------------------------------------------------
+
+    private const string BoardFactsRubric = "**BOARD FACTS**\n"
+        + "- The status line reads \"Dlvl:3 $:10\".\n"
+        + "- The inventory lists \"T - the Holy Grail (0 charges, 0 rechargings)\".\n"
+        + "- The status line shows no hunger state.";
+
+    private static async Task<BenchmarkSuite> SeedSuiteWithRubricAsync(ApplicationDbContext db)
+    {
+        var suite = new BenchmarkSuite { Name = "Rubric Target", Description = "Desc" };
+        suite.Questions.Add(new BenchmarkQuestion { QuestionText = "Q1", OrderIndex = 1, ExpectedPoints = BoardFactsRubric });
+        db.BenchmarkSuites.Add(suite);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        return suite;
+    }
+
+    [Fact]
+    public async Task Upload_ReturnsTheBoardFactsCheck_AgainstTheNewBoard_AndLeavesTheQuestionUntouched()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db) = CreateController();
+        var suite = await SeedSuiteWithRubricAsync(db);
+
+        var response = ReadResponse(await controller.UploadSuiteSnapshot(suite.Id, new UploadSuiteSnapshotRequest
+        {
+            Name = "board",
+            Content = "Dlvl:3 $:10 HP:14(14)\nT - the uncursed Holy Grail (0 charges, 0 rechargings)"
+        }, ct));
+
+        var check = Assert.IsType<BoardFactsCheckDto>(response.BoardFactsCheck);
+        Assert.Equal(3, check.BulletCount);
+        Assert.Equal(2, check.CheckedLiteralCount);
+        Assert.Equal(1, check.UnquotedBulletCount);
+        var missing = Assert.Single(check.MissingLiterals);
+        Assert.Equal("T - the Holy Grail (0 charges, 0 rechargings)", missing.Literal);
+        Assert.Equal(1, missing.OrderIndex);
+
+        // Advisory only: the rubric and its revision stand.
+        var question = await db.BenchmarkQuestions.AsNoTracking().SingleAsync(ct);
+        Assert.Equal(BoardFactsRubric, question.ExpectedPoints);
+        Assert.Equal(1, question.ItemRevision);
+    }
+
+    [Fact]
+    public async Task ReplacingTheBoard_ChecksTheReplacement()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db) = CreateController();
+        var suite = await SeedSuiteWithRubricAsync(db);
+        await controller.UploadSuiteSnapshot(suite.Id, new UploadSuiteSnapshotRequest { Name = "old", Content = "Dlvl:1" }, ct);
+
+        var response = ReadResponse(await controller.UploadSuiteSnapshot(suite.Id, new UploadSuiteSnapshotRequest
+        {
+            Name = "new",
+            Content = "Dlvl:3 $:10\nT - the Holy Grail (0 charges, 0 rechargings)",
+            ReplaceExisting = true
+        }, ct));
+
+        var check = Assert.IsType<BoardFactsCheckDto>(response.BoardFactsCheck);
+        Assert.Equal(2, check.CheckedLiteralCount);
+        Assert.Empty(check.MissingLiterals);
+    }
+
+    [Fact]
+    public async Task OnDemandCheck_ReportsTheSuitesCurrentBoardAndRubrics()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db) = CreateController();
+        var suite = await SeedSuiteWithRubricAsync(db);
+        await controller.UploadSuiteSnapshot(suite.Id, new UploadSuiteSnapshotRequest { Name = "board", Content = "Dlvl:3 $:10" }, ct);
+
+        var result = await controller.GetBoardFactsCheck(suite.Id, ct);
+
+        var check = Assert.IsType<BoardFactsCheckDto>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal(2, check.CheckedLiteralCount);
+        Assert.Equal("T - the Holy Grail (0 charges, 0 rechargings)", Assert.Single(check.MissingLiterals).Literal);
+    }
+
+    [Fact]
+    public async Task OnDemandCheck_IsNullForASuiteWithNoBoard()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db) = CreateController();
+        var suite = await SeedSuiteWithRubricAsync(db);
+
+        var result = await controller.GetBoardFactsCheck(suite.Id, ct);
+
+        Assert.Null(Assert.IsType<OkObjectResult>(result).Value);
+    }
+
+    [Fact]
+    public async Task OnDemandCheck_UnknownSuite_Returns404()
+    {
+        var (controller, _) = CreateController();
+
+        var result = await controller.GetBoardFactsCheck(404, TestContext.Current.CancellationToken);
+
+        Assert.IsType<NotFoundResult>(result);
+    }
+
     [Theory]
     [InlineData("<html><body>x</body></html>", true)]
     [InlineData("  <BODY>x</BODY>", true)]

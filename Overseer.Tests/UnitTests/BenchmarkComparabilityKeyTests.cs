@@ -289,6 +289,7 @@ public class BenchmarkComparabilityKeyTests
             BenchmarkComparabilityKey.SuiteKey,
             BenchmarkComparabilityKey.ItemRevisionsKey,
             BenchmarkComparabilityKey.AssessedDifficultiesKey,
+            BenchmarkComparabilityKey.GameSnapshotKey,
             BenchmarkComparabilityKey.CandidateProviderKey,
             BenchmarkComparabilityKey.CandidateModelKey,
             BenchmarkComparabilityKey.CandidateThinkingLevelKey,
@@ -316,6 +317,106 @@ public class BenchmarkComparabilityKeyTests
         }
 
         Assert.Equal(names.Count, names.Distinct().Count());
+    }
+
+    // --- The game snapshot: a Fundamental key ------------------------------------------------
+
+    private const string BoardSha = "3c1f0a9e7b5d2c8f4a6e0b9d3f7c1a5e8b2d6f0a4c9e3b7d1f5a8c2e6b0d4f9a";
+
+    [Fact]
+    public void GameSnapshot_IsFundamental_AndValuedFromTheStampedBoardHash()
+    {
+        var run = Run(13);
+        run.GameSnapshotSha256Used = BoardSha;
+
+        var key = BenchmarkComparabilityKey.Extract(run).Single(k => k.Name == BenchmarkComparabilityKey.GameSnapshotKey);
+
+        Assert.Equal(BenchmarkComparabilityKeyKind.Fundamental, key.Kind);
+        Assert.Equal(BoardSha, key.Value);
+        Assert.False(key.DegradesSpeed);
+        Assert.False(key.DegradesCost);
+
+        var info = BenchmarkComparabilityKey.Describe(BenchmarkComparabilityKey.GameSnapshotKey);
+        Assert.Equal("Game snapshot", info.Label);
+        Assert.False(string.IsNullOrWhiteSpace(info.Description));
+        Assert.Equal(BenchmarkComparabilityValueKind.Hash, info.ValueKind);
+    }
+
+    [Fact]
+    public void GameSnapshot_OnARunWithNoStampedBoard_IsNoValue()
+    {
+        // A suite with no board, and every run recorded before the board hash was stamped.
+        var key = BenchmarkComparabilityKey.Extract(Run(13)).Single(k => k.Name == BenchmarkComparabilityKey.GameSnapshotKey);
+
+        Assert.Equal(BenchmarkComparabilityKey.NoValue, key.Value);
+        Assert.False(BenchmarkComparabilityKey.IsAbsentIdentity(key));
+    }
+
+    [Fact]
+    public void TwoRunsWithNoBoard_StillResolveTierA()
+    {
+        // (none) on the game snapshot is a real condition, not an unidentifiable exam.
+        var result = BenchmarkComparabilityKey.Resolve(new[] { Run(13), Run(14) });
+
+        Assert.Equal(BenchmarkComparabilityTier.Replicate, result.Tier);
+        Assert.Contains(BenchmarkComparabilityKey.GameSnapshotKey, result.MatchedKeys);
+    }
+
+    [Fact]
+    public void TwoRunsOnTheSameBoard_ResolveTierA()
+    {
+        var a = Run(13);
+        var b = Run(14);
+        a.GameSnapshotSha256Used = BoardSha;
+        b.GameSnapshotSha256Used = BoardSha;
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
+
+        Assert.Equal(BenchmarkComparabilityTier.Replicate, result.Tier);
+    }
+
+    [Fact]
+    public void ADifferentBoard_ResolvesBelowTierB_AsAFundamentalDifference()
+    {
+        var a = Run(13);
+        var b = Run(14);
+        a.GameSnapshotSha256Used = BoardSha;
+        b.GameSnapshotSha256Used = "0000000000000000000000000000000000000000000000000000000000000000";
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
+
+        Assert.Equal(BenchmarkComparabilityTier.NotComparable, result.Tier);
+        var difference = Assert.Single(result.Differences);
+        Assert.Equal(BenchmarkComparabilityKey.GameSnapshotKey, difference.Name);
+        Assert.Equal(BenchmarkComparabilityKeyKind.Fundamental, difference.Kind);
+        Assert.Contains(BenchmarkComparabilityKey.GameSnapshotKey, result.Explanation);
+    }
+
+    [Fact]
+    public void ABoardAgainstNoBoard_ResolvesBelowTierB()
+    {
+        var a = Run(13);
+        var b = Run(14);
+        b.GameSnapshotSha256Used = BoardSha;
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
+
+        Assert.Equal(BenchmarkComparabilityTier.NotComparable, result.Tier);
+        Assert.Equal(BenchmarkComparabilityKey.GameSnapshotKey, Assert.Single(result.Differences).Name);
+    }
+
+    [Fact]
+    public void IsAbsentIdentity_HoldsForEveryOtherFundamentalKeyWithNoValue()
+    {
+        var run = Run(13);
+        run.BenchmarkSuiteId = null;
+        run.BenchmarkSuiteIdUsed = null;
+
+        var suiteKey = BenchmarkComparabilityKey.Extract(run).Single(k => k.Name == BenchmarkComparabilityKey.SuiteKey);
+        Assert.True(BenchmarkComparabilityKey.IsAbsentIdentity(suiteKey));
+
+        var instrumentKey = BenchmarkComparabilityKey.Extract(Run(13)).Single(k => k.Name == BenchmarkComparabilityKey.HarnessVersionKey);
+        Assert.False(BenchmarkComparabilityKey.IsAbsentIdentity(instrumentKey));
     }
 
     // --- Describe: the methods-statement metadata --------------------------------------------

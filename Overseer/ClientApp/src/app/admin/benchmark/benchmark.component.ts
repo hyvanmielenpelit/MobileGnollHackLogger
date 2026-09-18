@@ -39,7 +39,8 @@ import {
   DefaultSuiteCatalogEntryDto,
   ImportDefaultSuitesResultDto,
   ImportBenchmarkQuestionsResultDto,
-  CaptureBenchmarkSnapshotResponse
+  CaptureBenchmarkSnapshotResponse,
+  BoardFactsCheckDto
 } from '../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../services/admin.service';
 
@@ -55,6 +56,8 @@ import { SnapshotViewerComponent } from '../../shared/snapshot-viewer/snapshot-v
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import { SystemService } from '../../services/system.service';
 import { BenchmarkCompletionSoundService } from '../../services/benchmark-completion-sound.service';
+import { BenchmarkCompletionNotificationService } from '../../services/benchmark-completion-notification.service';
+import { BenchmarkBackgroundActivityService } from '../../services/benchmark-background-activity.service';
 import { parseServerUtcDate, elapsedMsBetween } from '../../utils/date.util';
 import { formatThinkingLevel, showReasoningBadge, formatServiceTier, formatDifficulty, formatPickerPrice } from '../../utils/model-badge-format.util';
 import { TableState, exactFilter } from '../../shared/data-table/table-state';
@@ -225,6 +228,8 @@ interface BenchmarkRunSettings {
   runCount: number | null;
   /** Whether a run or series completion plays the chime. Defaults to true when absent. */
   completionSound: boolean | null;
+  /** Whether a run or series completion also raises a desktop notification. Defaults to false when absent. */
+  completionNotification: boolean | null;
 }
 
 @Component({
@@ -305,6 +310,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   private benchmarkService = inject(AdminBenchmarkService);
   private systemService = inject(SystemService);
   private completionSoundService = inject(BenchmarkCompletionSoundService);
+  private completionNotificationService = inject(BenchmarkCompletionNotificationService);
+  private backgroundActivity = inject(BenchmarkBackgroundActivityService);
   private cdr = inject(ChangeDetectorRef);
 
   activeSubTab: 'run' | 'history' | 'multirun' | 'suites' | 'profiles' | 'modelcomparison' = 'run';
@@ -511,6 +518,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   activeSeries: BenchmarkRunSeriesDto | null = null;
   private seriesPollInterval: any = null;
   private seriesVisibilityChangeHandler: (() => void) | null = null;
+  /**
+   * The series whose poller is live, set before its first poll. While it is set the series owns the
+   * background lock, and the run poller that follows each member neither takes nor releases it.
+   */
+  private lockedSeriesId: number | null = null;
 
   /** The Multi-Run Progress dialog's visibility. The dialog element itself belongs to that component. */
   multiRunDialogVisible = false;
@@ -545,9 +557,23 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   /** Whether a run or series completion plays the chime. Bound to the Run tab's own checkbox. */
   completionSound = true;
 
-  /** Set only when the last chime attempt was blocked by the browser's autoplay policy. */
+  /** Set only when the last chime attempt was blocked by the browser's autoplay policy, or deferred by it. */
   completionSoundStatus: string | null = null;
-  private lastCompletionSoundOutcome: 'played' | 'blocked' | 'unsupported' | 'duplicate' | null = null;
+  private lastCompletionSoundOutcome: 'played' | 'blocked' | 'unsupported' | 'duplicate' | 'deferred' | null = null;
+
+  /**
+   * Whether a run or series completion also raises a desktop notification. Independent of the
+   * sound: either, both or neither may be on. Bound to the Run tab's second checkbox.
+   */
+  completionNotification = false;
+
+  /** The reason a notification permission request did not end in `completionNotification` being on. */
+  completionNotificationStatus: string | null = null;
+
+  /** Always-rendered status line beside the two checkboxes: whichever of the two has something to say. */
+  get completionSignalsStatusText(): string {
+    return [this.completionSoundStatus, this.completionNotificationStatus].filter((s): s is string => !!s).join(' ');
+  }
 
   private runsSeenLive = new Set<number>();
   private seriesSeenLive = new Set<number>();
@@ -2923,7 +2949,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         scoringProfileId: this.selectedScoringProfileId,
         verboseMode: this.candidateVerboseMode,
         runCount: this.effectiveRunCount,
-        completionSound: this.completionSound
+        completionSound: this.completionSound,
+        completionNotification: this.completionNotification
       };
       localStorage.setItem(
         AdminBenchmarkComponent.RUN_SETTINGS_STORAGE_KEY, JSON.stringify(settings));
@@ -2959,7 +2986,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       scoringProfileId: num(raw.scoringProfileId),
       verboseMode: typeof raw.verboseMode === 'boolean' ? raw.verboseMode : null,
       runCount: num(raw.runCount),
-      completionSound: typeof raw.completionSound === 'boolean' ? raw.completionSound : null
+      completionSound: typeof raw.completionSound === 'boolean' ? raw.completionSound : null,
+      completionNotification: typeof raw.completionNotification === 'boolean' ? raw.completionNotification : null
     };
 
     // These need no list to validate against, so they restore immediately.
@@ -2969,6 +2997,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     // Absent (a blob predating this field, or storage that threw) leaves the true default standing.
     if (this.pendingRunSettings.completionSound !== null) {
       this.completionSound = this.pendingRunSettings.completionSound;
+    }
+    // Restoring the choice does not re-request permission; notify() itself is a no-op once the
+    // browser's own permission state is no longer granted, so restoring optimistically is safe.
+    if (this.pendingRunSettings.completionNotification !== null) {
+      this.completionNotification = this.pendingRunSettings.completionNotification;
     }
     const count = this.pendingRunSettings.runCount;
     if (count !== null && count >= 1) {
@@ -3008,6 +3041,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   startBenchmark(acknowledgeSameProvider: boolean = false) {
     if (!this.canStartRun || this.selectedSuiteId == null || this.testedConfigId == null || this.assessorConfigId == null) return;
 
+    this.armCompletionSignalsFromGesture();
     this.startingRun = true;
     this.runErrorMessage = null;
     this.seriesErrorMessage = null;
@@ -3230,11 +3264,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   private startSeriesPolling(seriesId: number): void {
     this.stopSeriesPolling();
+    this.lockedSeriesId = seriesId;
+    this.backgroundActivity.acquireForSeries(seriesId);
     this.lastSeriesPollAttemptAtMs = Date.now();
     this.pollSeries(seriesId);
     this.seriesPollInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) {
-        const hiddenPollDue = this.completionSound
+        const hiddenPollDue = (this.completionSound || this.completionNotification)
           && (Date.now() - this.lastSeriesPollAttemptAtMs) >= AdminBenchmarkComponent.HIDDEN_POLL_INTERVAL_MS;
         if (!hiddenPollDue) {
           return;
@@ -3262,6 +3298,14 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.seriesVisibilityChangeHandler && typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this.seriesVisibilityChangeHandler);
       this.seriesVisibilityChangeHandler = null;
+    }
+    if (this.lockedSeriesId !== null) {
+      this.lockedSeriesId = null;
+      this.backgroundActivity.release();
+      // A run poller still live after its series stopped keeps the tab's lock for itself.
+      if (this.pollInterval && this.activeRunId != null) {
+        this.backgroundActivity.acquireForRun(this.activeRunId);
+      }
     }
   }
 
@@ -3391,6 +3435,19 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   /**
+   * The dialog's own Continue resumed a stopped series without going through
+   * `resumeActiveSeries`, so this page's series poll — stopped when the series went Stopped —
+   * never restarted on its own. Restarting it here is what lets the series chime again and keeps
+   * the banner and `activeSeries` current.
+   */
+  onSeriesResumedFromDialog(seriesId: number): void {
+    this.activeSeriesId = seriesId;
+    this.seriesSeenLive.add(seriesId);
+    this.startSeriesPolling(seriesId);
+    this.cdr.detectChanges();
+  }
+
+  /**
    * The hand-off the multi-run dialog makes rather than embedding a second per-question view. Two
    * stacked native dialogs trap focus in the inner one, so this closes the multi-run dialog as it
    * opens the single-run one — never both at once.
@@ -3437,6 +3494,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   resumeActiveSeries(acknowledgeInstrumentChange = false): void {
     const seriesId = this.activeSeriesId;
     if (seriesId == null) return;
+    this.armCompletionSignalsFromGesture();
     this.resumingSeries = true;
     this.seriesErrorMessage = null;
     this.benchmarkService.resumeRunSeries(seriesId, { acknowledgeInstrumentChange }).subscribe({
@@ -3486,11 +3544,14 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   private startPolling(runId: number) {
     this.stopPolling();
+    if (this.lockedSeriesId === null) {
+      this.backgroundActivity.acquireForRun(runId);
+    }
     this.lastRunPollAttemptAtMs = Date.now();
     this.pollRunDetail(runId);
     this.pollInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) {
-        const hiddenPollDue = this.completionSound
+        const hiddenPollDue = (this.completionSound || this.completionNotification)
           && (Date.now() - this.lastRunPollAttemptAtMs) >= AdminBenchmarkComponent.HIDDEN_POLL_INTERVAL_MS;
         if (!hiddenPollDue) {
           return;
@@ -3518,6 +3579,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.runVisibilityChangeHandler && typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this.runVisibilityChangeHandler);
       this.runVisibilityChangeHandler = null;
+    }
+    if (this.lockedSeriesId === null) {
+      this.backgroundActivity.release();
     }
   }
 
@@ -3551,19 +3615,92 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   /**
-   * Marks the tab title even when the sound is off, so a hidden tab shows the completion either
-   * way; then, if the setting is on, attempts the chime and records the outcome for the fallback
-   * status line and the diagnostics capture.
+   * Marks the tab title even when both signals are off, so a hidden tab shows the completion
+   * either way. The sound and the notification are then handled independently — either, both or
+   * neither may be on, and the notification does not require the sound to have run.
    */
   private signalCompletion(key: string): void {
     this.markTabTitleForCompletion();
-    if (!this.completionSound) return;
-    this.completionSoundService.play(key).then(outcome => {
-      this.lastCompletionSoundOutcome = outcome;
-      if (outcome === 'played') {
-        this.completionSoundStatus = null;
-      } else if (outcome === 'blocked') {
-        this.completionSoundStatus = 'Playback was blocked by the browser — press Test sound once to allow it.';
+
+    if (this.completionSound) {
+      this.completionSoundService.play(key).then(outcome => {
+        this.lastCompletionSoundOutcome = outcome;
+        if (outcome === 'played') {
+          this.completionSoundStatus = null;
+        } else if (outcome === 'blocked') {
+          this.completionSoundStatus = 'Playback was blocked by the browser — press Test sound once to allow it.';
+        } else if (outcome === 'deferred') {
+          this.completionSoundStatus = 'The browser held the sound until this tab was shown.';
+        }
+        this.cdr.detectChanges();
+      });
+    }
+
+    if (this.completionNotification && this.tabIsBackgrounded) {
+      const body = this.completionNotificationBody(key);
+      if (body) {
+        this.completionNotificationService.notify(key, 'AI Benchmark', body);
+      }
+    }
+  }
+
+  /** Whether the notification should fire: the tab is not the one the operator is looking at. */
+  private get tabIsBackgrounded(): boolean {
+    if (typeof document === 'undefined') return true;
+    return document.hidden || !document.hasFocus();
+  }
+
+  /** `Run #54 — <suite name> — <status>` or `Series #N — k of n runs — <status>`. */
+  private completionNotificationBody(key: string): string | null {
+    if (key.startsWith('run:')) {
+      const run = this.activeRunDetail;
+      if (!run) return null;
+      return `Run #${run.id} — ${run.suiteName} — ${this.formatStatus(run.status)}`;
+    }
+    if (key.startsWith('series:')) {
+      const series = this.activeSeries;
+      if (!series) return null;
+      return `Series #${series.id} — ${series.completedRunCount} of ${series.requestedRunCount} runs — ${series.status}`;
+    }
+    return null;
+  }
+
+  /**
+   * Arms the completion sound under the calling handler's own user gesture, so the browser does
+   * not defer this tab's playback to gesture-less code that later runs while the tab is hidden.
+   * Skipped entirely when neither completion signal is enabled, since there is nothing to arm
+   * for. Every call site is a synchronous `void` method bound directly to a template `(click)`,
+   * never behind an awaited dialog, so the call runs inside the gesture.
+   */
+  private armCompletionSignalsFromGesture(): void {
+    if (!this.completionSound && !this.completionNotification) return;
+    void this.completionSoundService.arm();
+  }
+
+  /**
+   * The desktop-notification checkbox's own change handler. Requests permission only from here,
+   * never on page load. A result other than `granted` unticks the box and explains why in the
+   * status line beside the checkboxes.
+   */
+  onCompletionNotificationChange(checked: boolean): void {
+    if (!checked) {
+      this.completionNotification = false;
+      this.completionNotificationStatus = null;
+      this.cdr.detectChanges();
+      return;
+    }
+
+    this.completionNotificationService.requestPermission().then(outcome => {
+      if (outcome === 'granted') {
+        this.completionNotification = true;
+        this.completionNotificationStatus = null;
+      } else {
+        this.completionNotification = false;
+        this.completionNotificationStatus = outcome === 'denied'
+          ? "Notifications are blocked for this site in the browser's settings."
+          : outcome === 'default'
+            ? 'The permission prompt was dismissed.'
+            : 'This browser does not support desktop notifications here.';
       }
       this.cdr.detectChanges();
     });
@@ -3601,6 +3738,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * programmatic playback on browsers that require one interaction before audio is allowed.
    */
   testCompletionSound(): void {
+    this.armCompletionSignalsFromGesture();
     this.completionSoundStatus = null;
     this.completionSoundService.prime().then(outcome => {
       this.lastCompletionSoundOutcome = outcome;
@@ -4465,8 +4603,18 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.lastRunPollError) {
       lines.push(`Last poll error: ${this.lastRunPollError}`);
     }
-    lines.push(`Document hidden: ${typeof document !== 'undefined' ? document.hidden : false}`);
+    lines.push(`Document hidden: ${typeof document !== 'undefined' ? document.hidden : false}, focused: ${typeof document !== 'undefined' ? document.hasFocus() : false}`);
+    const soundDiag = this.completionSoundService.diagnostics;
     lines.push(`Completion sound: ${this.completionSound ? 'enabled' : 'disabled'}, last outcome ${this.lastCompletionSoundOutcome ?? 'n/a'}`);
+    lines.push(`  armed=${soundDiag.armed}, arming=${soundDiag.arming}, AudioContext state=${soundDiag.audioContextState ?? 'n/a'}, `
+      + `path=${soundDiag.lastPlayPath ?? 'n/a'}, deferred settle=${soundDiag.lastDeferredSettleMs != null ? soundDiag.lastDeferredSettleMs + ' ms' : 'n/a'}`);
+    const notificationSupported = this.completionNotificationService.isSupported();
+    const notificationPermission = notificationSupported && typeof Notification !== 'undefined' ? Notification.permission : 'n/a';
+    lines.push(`Completion notification: ${this.completionNotification ? 'enabled' : 'disabled'}, supported=${notificationSupported}, `
+      + `permission=${notificationPermission}, status=${this.completionNotificationStatus ?? 'n/a'}`);
+    lines.push(`Background lock: ${this.backgroundActivity.state}`
+      + `${this.backgroundActivity.heldName ? ` (${this.backgroundActivity.heldName})` : ''}`
+      + `${this.backgroundActivity.lastError ? `, error: ${this.backgroundActivity.lastError}` : ''}`);
     lines.push('');
 
     // --- ERRORS ---
@@ -4713,6 +4861,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   rerunFailedFromProgress(): void {
     const runId = this.activeRunDetail?.id ?? this.activeRunId;
     if (runId == null) return;
+    this.armCompletionSignalsFromGesture();
     this.launchFailedQuestionRerun(runId, this.runFailedAnswers.map(a => a.orderIndex));
   }
 
@@ -4722,6 +4871,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * shows a run's progress rather than behind a strip whose only other action was Cancel.
    */
   rerunFailedFromRunDetail(runId: number): void {
+    this.armCompletionSignalsFromGesture();
     const failed = (this.selectedRunDetail?.answers ?? [])
       .filter(a => this.isAnswerFailed(a))
       .map(a => a.orderIndex);
@@ -6588,6 +6738,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       .filter(a => (a.answerFlagNames ?? []).includes('ContestedAccuracyDeduction'))
       .map(a => a.orderIndex)
       .join(', ');
+  }
+
+  /** The BOARD FACTS quote check stamped at launch. Null for a run before it existed, or with no board. */
+  get selectedRunBoardFactsCheck(): BoardFactsCheckDto | null {
+    return this.selectedRunDetail?.boardFactsCheck ?? null;
   }
 
   /** Null on a run before the harness version that added the dimension-outlier check. */

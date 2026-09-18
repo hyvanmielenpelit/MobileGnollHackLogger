@@ -485,9 +485,7 @@ public class BenchmarkComparabilityIndexService
         // an entry where only some runs lack identity is already flagged by the loop above.
         if (source.Runs.Any(BenchmarkCrossModelComparability.HasAbsentFundamentalIdentity))
         {
-            foreach (var key in perRun[0].Where(k =>
-                k.Kind == BenchmarkComparabilityKeyKind.Fundamental
-                && string.Equals(k.Value, BenchmarkComparabilityKey.NoValue, StringComparison.Ordinal)))
+            foreach (var key in perRun[0].Where(BenchmarkComparabilityKey.IsAbsentIdentity))
             {
                 if (!state.SelfInconsistentKeys.Contains(key.Name))
                 {

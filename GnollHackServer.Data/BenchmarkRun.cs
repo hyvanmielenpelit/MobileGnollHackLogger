@@ -132,9 +132,11 @@ public enum BenchmarkAnswerFlags
     // already implied by CriticalError itself, so this adds no trigger of its own.
     ContestedCriticalError = 2048,
 
-    // The claim verifier checked the assessor's own-knowledge basis for an ACCURACY deduction (the
-    // text after "Not in rubric:") against the source code and wiki and returned Refuted with a
-    // citation: the statement the deduction rests on is false.
+    // The claim verifier contested an ACCURACY deduction against the source code and wiki, for either
+    // of two causes: it returned Refuted with a citation for the assessor's own-knowledge basis (the
+    // text after "Not in rubric:"), so the statement the deduction rests on is false; or it returned
+    // Supported with a citation for a sentence of the answer the assessor quoted as false, so the
+    // charge rests on a true sentence. The roles in ClaimVerificationJson tell the two apart.
     //
     // Advisory, and grouped here for the same reason as ContestedCriticalError: the deduction and
     // every score stand, and the verifier is a model the rubric never sanctioned as a grader. The flag
@@ -278,6 +280,14 @@ public class BenchmarkRun
 
     [MaxLength(32)]
     public string? GameSnapshotCaptureMethodUsed { get; set; }
+
+    /// <summary>
+    /// The BOARD FACTS quote check (<c>BenchmarkBoardFactsChecker</c>) as it stood when this run
+    /// started, serialized as JSON: which rubric literals were not found on the attached board, and
+    /// how many bullets carried no quoted literal. Advisory, and never recomputed against later
+    /// edits. Null when the suite had no board, and on every run before harness 32.
+    /// </summary>
+    public string? BoardFactsCheckJson { get; set; }
 
     /// <summary>Every question in the suite carried a human review stamp when this run started.</summary>
     public bool SuiteQuestionsReviewed { get; set; }

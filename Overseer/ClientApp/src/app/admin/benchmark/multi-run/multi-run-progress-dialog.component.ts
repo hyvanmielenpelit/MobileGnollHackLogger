@@ -27,6 +27,7 @@ import {
   BenchmarkSecondOpinionMode
 } from '../../../services/admin-benchmark.service';
 import { SystemService } from '../../../services/system.service';
+import { BenchmarkCompletionSoundService } from '../../../services/benchmark-completion-sound.service';
 import { elapsedMsBetween, parseServerUtcDate } from '../../../utils/date.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { formatThinkingLevel, showReasoningBadge, formatServiceTier } from '../../../utils/model-badge-format.util';
@@ -152,6 +153,7 @@ interface GroupComparisonShape {
 export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDestroy {
   private benchmarkService = inject(AdminBenchmarkService);
   private systemService = inject(SystemService);
+  private completionSoundService = inject(BenchmarkCompletionSoundService);
   private cdr = inject(ChangeDetectorRef);
 
   /** Matches the single-run dialog's cadence: the two dialogs poll the same server. */
@@ -177,6 +179,13 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
    * than embedding, because two native modals in the top layer trap focus between them.
    */
   @Output() openGroupAnalysis = new EventEmitter<number>();
+
+  /**
+   * Emitted after `continueSeries` resumes a stopped series from this dialog, so the host can
+   * restart its own series poll — the second resume path, alongside the Run tab's own Continue
+   * button. Without the restart the host would not watch the resumed series and could not chime.
+   */
+  @Output() seriesResumed = new EventEmitter<number>();
 
   @ViewChild('multiRunProgressDialog') dialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('multiRunProgressHeading') heading?: ElementRef<HTMLElement>;
@@ -706,6 +715,9 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
   continueSeries(acknowledgeInstrumentChange = false): void {
     const seriesId = this.series?.id ?? this.seriesId;
     if (seriesId == null || this.resumeInFlight) return;
+    // Arms the completion sound under this click's gesture: a series resumed from here runs on
+    // exactly as one resumed from the Run tab's own Continue button, and must be able to chime.
+    void this.completionSoundService.arm();
     this.resumeInFlight = true;
     this.errorMessage = null;
     if (acknowledgeInstrumentChange) {
@@ -722,6 +734,7 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
         // A resumed series is live again, so the poll and the ticker have to come back with it.
         this.startPolling();
         this.startElapsedTicker();
+        this.seriesResumed.emit(seriesId);
         this.cdr.detectChanges();
       },
       error: (err) => {

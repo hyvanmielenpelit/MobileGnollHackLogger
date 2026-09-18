@@ -2,6 +2,7 @@ namespace Overseer.Tests.UnitTests;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
 using Xunit;
@@ -215,9 +216,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsThirtyOne()
+    public void HarnessVersion_IsThirtyTwo()
     {
-        Assert.Equal("31", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("32", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -239,22 +240,59 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void PerQuestionPrompt_WithBoard_IncludesGroundTruthSection()
+    public void PerQuestionPrompt_WithBoard_SendsTheGroundTruthSectionAsTheSecondSystemMessage()
     {
-        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
-            "Suite",
+        const string boardText = "Dlvl:1 $:0 HP:15(15) Pw:10(10) AC:10";
+        string? boardBlock = BenchmarkAssessmentPrompt.BuildGradingBoardBlock("Test Board", boardText);
+        string body = BenchmarkAssessmentPrompt.BuildPerQuestionBody(
             1,
             "What is the status of the player?",
             BenchmarkDifficulty.Simple,
             "**REQUIRED** - HP 15/15.\n**BOARD FACTS**\n- HP: 15/15",
             "Player is healthy.",
             BenchmarkAnswerStatus.Ok,
+            boardGivenAbove: true);
+
+        var seed = BenchmarkService.BuildGradingPrompt(
+            BenchmarkService.GradingSystemPrompt, BenchmarkAssessmentPrompt.BuildPerQuestionPreamble("Suite"), body, boardBlock).SeedHistory;
+
+        Assert.Equal(3, seed.Count);
+        Assert.Equal(new[] { "system", "system", "user" }, seed.Select(m => Field(m, "role")));
+        string boardMessage = Field(seed[1], "content");
+        Assert.StartsWith("--- GAME CONTEXT BOARD (GROUND TRUTH REFERENCE DATA) ---", boardMessage);
+        Assert.Contains("Board Name: Test Board", boardMessage);
+        Assert.Contains("HP:15(15)", boardMessage);
+        Assert.Contains("--- END GAME CONTEXT BOARD ---", boardMessage);
+
+        // The question's body points at the board and never repeats it; the rubric's BOARD FACTS stay.
+        string userMessage = Field(seed[2], "content");
+        Assert.DoesNotContain("--- GAME CONTEXT BOARD", userMessage);
+        Assert.DoesNotContain("Dlvl:1 $:0", userMessage);
+        Assert.Contains(BenchmarkAssessmentPrompt.BoardGivenAboveLine, userMessage);
+        Assert.Contains("- HP: 15/15", userMessage);
+        Assert.StartsWith(BenchmarkAssessmentPrompt.QuestionBlockMarker, userMessage);
+    }
+
+    [Fact]
+    public void PerQuestionPrompt_WithBoard_ReadsInstructionsThenBoardThenQuestion()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            "Suite",
+            1,
+            "What is the status of the player?",
+            BenchmarkDifficulty.Simple,
+            "**REQUIRED** - HP 15/15.",
+            "Player is healthy.",
+            BenchmarkAnswerStatus.Ok,
             boardName: "Test Board",
             boardText: "Dlvl:1 $:0 HP:15(15) Pw:10(10) AC:10");
 
-        Assert.Contains("--- GAME CONTEXT BOARD (GROUND TRUTH REFERENCE DATA) ---", prompt);
-        Assert.Contains("Test Board", prompt);
-        Assert.Contains("HP:15(15)", prompt);
+        int instructions = prompt.IndexOf("CRITICAL INSTRUCTIONS:", StringComparison.Ordinal);
+        int board = prompt.IndexOf("--- GAME CONTEXT BOARD (GROUND TRUTH REFERENCE DATA) ---", StringComparison.Ordinal);
+        int question = prompt.IndexOf(BenchmarkAssessmentPrompt.QuestionBlockMarker, StringComparison.Ordinal);
+
+        Assert.True(instructions >= 0 && instructions < board && board < question);
+        Assert.Equal(board, prompt.LastIndexOf("--- GAME CONTEXT BOARD (GROUND TRUTH REFERENCE DATA) ---", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -272,7 +310,15 @@ public class BenchmarkAssessmentPromptTests
             boardText: null);
 
         Assert.DoesNotContain("--- GAME CONTEXT BOARD (GROUND TRUTH REFERENCE DATA) ---", prompt);
+        Assert.DoesNotContain(BenchmarkAssessmentPrompt.BoardGivenAboveLine, prompt);
+        Assert.Null(BenchmarkAssessmentPrompt.BuildGradingBoardBlock("Test Board", "  "));
+
+        var seed = BenchmarkService.BuildGradingPrompt(BenchmarkService.GradingSystemPrompt, "Preamble", "Body").SeedHistory;
+        Assert.Equal(new[] { "system", "user" }, seed.Select(m => Field(m, "role")));
     }
+
+    private static string Field(object message, string name) =>
+        message.GetType().GetProperty(name)?.GetValue(message) as string ?? string.Empty;
 
     [Fact]
     public void PerQuestionPrompt_DeclaresUnverifiedClaimsInsteadOfDeductingForThem()
@@ -457,7 +503,7 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void BuildEvidenceInformedBody_CarriesBoardRubricFindingsAndInstruction_ButNotTheFirstVerdict()
+    public void BuildEvidenceInformedBody_PointsAtTheBoard_AndCarriesRubricFindingsAndInstruction_ButNotTheFirstVerdict()
     {
         const string quote = "Peacefuls are never displaced.";
         const string basis = "walking into a peaceful never displaces it";
@@ -475,11 +521,11 @@ public class BenchmarkAssessmentPromptTests
             },
             criticalErrorQuote: quote,
             outOfRubricBasis: basis,
-            boardName: "Tommi2",
-            boardText: "Dungeon Level 3\nd - peaceful dwarf");
+            boardGivenAbove: true);
 
-        Assert.Contains("--- GAME CONTEXT BOARD", body);
-        Assert.Contains("d - peaceful dwarf", body);
+        // The board reaches the re-grade as the second system message, as for every grading role.
+        Assert.DoesNotContain("--- GAME CONTEXT BOARD", body);
+        Assert.Contains(BenchmarkAssessmentPrompt.BoardGivenAboveLine, body);
         Assert.Contains("--- BEGIN RUBRIC ---", body);
         Assert.Contains("- displace_peaceful defaults to on", body);
         Assert.Contains("--- VERIFIER FINDINGS ---", body);
@@ -537,16 +583,126 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs31_ScoringMethodIs11()
+    public void BuildEvidenceInformedBody_TheSchemaBlockCarriesWithdrawn_AndNoTrailingFieldProse()
     {
-        Assert.Equal("31", BenchmarkAssessmentPrompt.HarnessVersion);
+        string body = BenchmarkAssessmentPrompt.BuildEvidenceInformedBody(
+            1, "Question?", BenchmarkDifficulty.Intermediate, "Rubric.", "Answer.", BenchmarkAnswerStatus.Ok,
+            new[] { new BenchmarkClaimVerification(0, "Charged sentence.", BenchmarkClaimVerdict.Supported, "src/b.c:2", "True.") });
+        string nl = Environment.NewLine;
 
-        // Harness 31 moves with scoring method 11: ACCURACY levels 4-6 anchored on what the answer
-        // states. It refuses to grade part of a run graded under another method, checks the
-        // sentences the assessor charged as false, validates the evidence-informed re-grade, and
-        // changes two tool guides, which moves ToolGuidesSha256. A 31-stamped run differs from a
-        // 30-stamped one on HarnessVersion and ScoringMethodVersion, two instrument keys, so the
-        // comparison view does not rank them against each other.
+        int schema = body.IndexOf("--- OUTPUT JSON SCHEMA ---", StringComparison.Ordinal);
+        int findings = body.IndexOf("--- VERIFIER FINDINGS ---", StringComparison.Ordinal);
+        Assert.True(schema >= 0 && schema < findings);
+        string schemaBlock = body.Substring(schema, findings - schema);
+        Assert.Contains("  \"comment\": \"Brief 1-3 sentence evaluation explaining the ratings and noting any specific flaws.\"," + nl
+            + BenchmarkAssessmentPrompt.WithdrawnSchemaField + nl
+            + "}" + nl
+            + BenchmarkAssessmentPrompt.WithdrawnRequiredSentence, schemaBlock);
+
+        Assert.DoesNotContain("with one more field", body);
+        Assert.EndsWith("Output the same JSON schema as above and nothing else." + nl, body);
+    }
+
+    [Fact]
+    public void PerQuestionBody_TheWithdrawnSchemaChangesOnlyTheSchemaBlock()
+    {
+        string Body(bool withWithdrawn) => BenchmarkAssessmentPrompt.BuildPerQuestionBody(
+            3, "Question?", BenchmarkDifficulty.Simple, "Rubric.", "Answer.", BenchmarkAnswerStatus.Ok,
+            new[] { "wiki_search" }, 2, false, 0, 45, boardGivenAbove: true, withWithdrawnField: withWithdrawn);
+
+        string standard = Body(false);
+        string regrade = Body(true);
+
+        Assert.DoesNotContain("withdrawn", standard);
+        string head = standard.Substring(0, standard.LastIndexOf('}')).TrimEnd();
+        Assert.StartsWith(head + ",", regrade);
+        Assert.Contains(BenchmarkAssessmentPrompt.WithdrawnRequiredSentence, regrade);
+    }
+
+    [Fact]
+    public void BuildEvidenceInformedBody_ListsEachFindingUnderTheTargetsItBearsOn_AndTheRestAsContextOnly()
+    {
+        var verifications = new[]
+        {
+            new BenchmarkClaimVerification(0, "Shared sentence.", BenchmarkClaimVerdict.Supported, "src/a.c:1", "True.")
+                { Roles = new[] { BenchmarkClaimRoles.CriticalErrorQuote, BenchmarkClaimRoles.AccusedQuote } },
+            new BenchmarkClaimVerification(1, "Own claim of the answer.", BenchmarkClaimVerdict.Refuted, "src/c.c:3", "False.")
+                { Roles = new[] { BenchmarkClaimRoles.UnverifiedClaim } }
+        };
+
+        string body = BenchmarkAssessmentPrompt.BuildEvidenceInformedBody(
+            1, "Question?", BenchmarkDifficulty.Intermediate, "Rubric.", "Answer.", BenchmarkAnswerStatus.Ok,
+            verifications,
+            targets: new[]
+            {
+                new BenchmarkEvidenceInformedTarget("T1", BenchmarkEvidenceInformedTarget.CriticalErrorKind, BenchmarkClaimRoles.CriticalErrorQuote, "Shared sentence.", new[] { "F0" }),
+                new BenchmarkEvidenceInformedTarget("T2", BenchmarkEvidenceInformedTarget.AccuracyKind, BenchmarkClaimRoles.AccusedQuote, "Shared sentence.", new[] { "F0" })
+            },
+            originalLevels: (4, 5, 6, 5),
+            originalCriticalError: true);
+
+        int deductions = body.IndexOf("--- DEDUCTIONS YOU MAY WITHDRAW ---", StringComparison.Ordinal);
+        int t1 = body.IndexOf("- T1 (Critical error)", StringComparison.Ordinal);
+        int t2 = body.IndexOf("- T2 (Accuracy deduction)", StringComparison.Ordinal);
+        int end = body.IndexOf("--- END DEDUCTIONS YOU MAY WITHDRAW ---", StringComparison.Ordinal);
+        Assert.True(deductions < t1 && t1 < t2 && t2 < end);
+
+        // The shared finding sits under both targets, and nowhere else.
+        string underT1 = body.Substring(t1, t2 - t1);
+        string underT2 = body.Substring(t2, end - t2);
+        Assert.Contains("  - Finding F0", underT1);
+        Assert.Contains("  - Finding F0", underT2);
+        Assert.Contains("Citation: src/a.c:1", underT1);
+        Assert.Equal(2, CountOf(body, "- Finding F0"));
+
+        // A finding no target lists is printed once, as context that may not be cited.
+        int others = body.IndexOf("Other verifier findings (context only — never cite these in `withdrawn`):", StringComparison.Ordinal);
+        int f1 = body.IndexOf("- Finding F1: \"Own claim of the answer.\"", StringComparison.Ordinal);
+        Assert.True(others >= 0 && others < f1 && f1 < deductions);
+        Assert.Equal(1, CountOf(body, "- Finding F1"));
+    }
+
+    [Fact]
+    public void BuildEvidenceInformedBody_WithEveryFindingUnderATarget_PrintsNoContextOnlyList()
+    {
+        string body = BenchmarkAssessmentPrompt.BuildEvidenceInformedBody(
+            1, "Question?", BenchmarkDifficulty.Intermediate, "Rubric.", "Answer.", BenchmarkAnswerStatus.Ok,
+            new[] { new BenchmarkClaimVerification(0, "Quoted sentence.", BenchmarkClaimVerdict.Supported, "src/a.c:1", "True.") },
+            targets: new[]
+            {
+                new BenchmarkEvidenceInformedTarget("T1", BenchmarkEvidenceInformedTarget.CriticalErrorKind, BenchmarkClaimRoles.CriticalErrorQuote, "Quoted sentence.", new[] { "F0" })
+            });
+
+        Assert.DoesNotContain("Other verifier findings", body);
+        Assert.Equal(1, CountOf(body, "- Finding F0"));
+    }
+
+    private static int CountOf(string haystack, string needle)
+    {
+        int count = 0;
+        for (int i = haystack.IndexOf(needle, StringComparison.Ordinal); i >= 0;
+             i = haystack.IndexOf(needle, i + needle.Length, StringComparison.Ordinal))
+        {
+            count++;
+        }
+        return count;
+    }
+
+    [Fact]
+    public void Versions_HarnessIs32_ScoringMethodIs11()
+    {
+        Assert.Equal("32", BenchmarkAssessmentPrompt.HarnessVersion);
+
+        // Harness 32 keeps scoring method 11 and changes the instrument around it: every grading
+        // role reads the whole board ahead of the question — a second system message for the
+        // assessor, second opinion, re-grade, calibration and trial, and directly after the
+        // numbered instructions for the claim verifier, which gains instructions 3d and 3e — and a
+        // probe checks each serialized request for that order before the call. The run records its
+        // rubrics' BOARD FACTS quote check, accused sentences are also read from single quotes and
+        // skipped where the evidence approves them, and the re-grade's schema carries `withdrawn`
+        // with one repair turn when it is missing. A 32-stamped run differs from a 31-stamped one on
+        // HarnessVersion, and on a snapshot suite the board's position makes the two not
+        // grade-comparable.
         Assert.Equal(11, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

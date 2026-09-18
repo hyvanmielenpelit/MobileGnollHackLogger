@@ -1,6 +1,7 @@
 namespace Overseer.Tests.UnitTests;
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -12,7 +13,8 @@ using Xunit;
 /// The board guard, and the loads of the three secondary grading paths it protects: re-assess,
 /// retry failed assessments and assessor calibration. Each load test reads through a fresh
 /// DbContext, because a context that seeded the rows fixes up the navigation whether or not the
-/// query included it, and would pass for a load that forgot the board.
+/// query included it, and would pass for a load that forgot the board. Also the launch-time stamp
+/// of the rubrics' BOARD FACTS check.
 /// </summary>
 public class BenchmarkBoardGuardTests
 {
@@ -107,22 +109,49 @@ public class BenchmarkBoardGuardTests
         return answer.Id;
     }
 
-    private static string AssessorPromptFor(BenchmarkRun run, BenchmarkRunAnswer answer)
+    /// <summary>
+    /// The assessor's seed history as the grading paths build it from <paramref name="run"/>: the
+    /// grading instructions, the board block, then the per-question body.
+    /// </summary>
+    private static List<object> AssessorSeedFor(BenchmarkRun run, BenchmarkRunAnswer answer)
     {
         BenchmarkBoardGuard.RequireBoardLoaded(run);
-        return BenchmarkAssessmentPrompt.BuildPerQuestionBody(
+        string? boardBlock = BenchmarkService.GradingBoardBlock(run);
+        string body = BenchmarkAssessmentPrompt.BuildPerQuestionBody(
             answer.OrderIndex,
             answer.QuestionText,
             BenchmarkDifficulty.Simple,
             run.BenchmarkSuite!.Questions.Single().ExpectedPoints,
             answer.AnswerText,
             BenchmarkAnswerStatus.Ok,
-            boardName: run.BenchmarkSuite.GameSnapshot?.Name,
-            boardText: run.BenchmarkSuite.GameSnapshot?.SanitizedText);
+            boardGivenAbove: boardBlock != null);
+        return BenchmarkService.BuildGradingPrompt(
+            BenchmarkService.GradingSystemPrompt,
+            BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(run.SuiteName),
+            body,
+            boardBlock).SeedHistory;
+    }
+
+    private static string? Role(object message) =>
+        message.GetType().GetProperty("role")?.GetValue(message) as string;
+
+    private static string Content(object message) =>
+        message.GetType().GetProperty("content")?.GetValue(message) as string ?? string.Empty;
+
+    /// <summary>The board is the second system message, whole, and the question's body only points at it.</summary>
+    private static void AssertBoardInTheSecondSystemMessage(List<object> seed)
+    {
+        Assert.Equal(3, seed.Count);
+        Assert.Equal(new[] { "system", "system", "user" }, seed.Select(Role));
+        Assert.StartsWith(BoardLabel, Content(seed[1]));
+        Assert.Contains("a - a blessed +1 quarterstaff (weapon in hands)", Content(seed[1]));
+        Assert.DoesNotContain(BoardLabel, Content(seed[0]));
+        Assert.DoesNotContain(BoardLabel, Content(seed[2]));
+        Assert.Contains(BenchmarkAssessmentPrompt.BoardGivenAboveLine, Content(seed[2]));
     }
 
     [Fact]
-    public async Task ReassessmentLoad_CarriesTheBoardIntoTheAssessorPrompt()
+    public async Task ReassessmentLoad_CarriesTheBoardIntoTheAssessorRequest()
     {
         string name = Guid.NewGuid().ToString();
         long answerId = await SeedAsync(name);
@@ -131,14 +160,11 @@ public class BenchmarkBoardGuardTests
         var answer = await BenchmarkService.ReassessmentAnswerQuery(db)
             .FirstAsync(a => a.Id == answerId, TestContext.Current.CancellationToken);
 
-        string prompt = AssessorPromptFor(answer.BenchmarkRun, answer);
-
-        Assert.Contains(BoardLabel, prompt);
-        Assert.Contains("a - a blessed +1 quarterstaff (weapon in hands)", prompt);
+        AssertBoardInTheSecondSystemMessage(AssessorSeedFor(answer.BenchmarkRun, answer));
     }
 
     [Fact]
-    public async Task RetryAssessmentsLoad_CarriesTheBoardIntoTheAssessorPrompt()
+    public async Task RetryAssessmentsLoad_CarriesTheBoardIntoTheAssessorRequest()
     {
         string name = Guid.NewGuid().ToString();
         await SeedAsync(name);
@@ -147,11 +173,11 @@ public class BenchmarkBoardGuardTests
         var run = await BenchmarkService.RetryAssessmentsRunQuery(db)
             .FirstAsync(TestContext.Current.CancellationToken);
 
-        Assert.Contains(BoardLabel, AssessorPromptFor(run, run.Answers.Single()));
+        AssertBoardInTheSecondSystemMessage(AssessorSeedFor(run, run.Answers.Single()));
     }
 
     [Fact]
-    public async Task CalibrationLoad_CarriesTheBoardIntoTheAssessorPrompt()
+    public async Task CalibrationLoad_CarriesTheBoardIntoTheAssessorRequest()
     {
         string name = Guid.NewGuid().ToString();
         long answerId = await SeedAsync(name);
@@ -162,7 +188,82 @@ public class BenchmarkBoardGuardTests
         var answer = await db.BenchmarkRunAnswers.AsNoTracking()
             .FirstAsync(a => a.Id == answerId, TestContext.Current.CancellationToken);
 
-        Assert.Contains(BoardLabel, AssessorPromptFor(run, answer));
+        AssertBoardInTheSecondSystemMessage(AssessorSeedFor(run, answer));
+    }
+
+    [Fact]
+    public void ASuiteWithoutABoard_SendsNoBoardMessage_AndNoPointerToOne()
+    {
+        var run = RunWith(null, null);
+        run.BenchmarkSuite!.Questions.Add(new BenchmarkQuestion { QuestionText = "Q", ExpectedPoints = "- p", OrderIndex = 1 });
+
+        var seed = AssessorSeedFor(run, new BenchmarkRunAnswer { OrderIndex = 1, QuestionText = "Q", AnswerText = "A." });
+
+        Assert.Equal(new[] { "system", "user" }, seed.Select(Role));
+        Assert.DoesNotContain(BenchmarkAssessmentPrompt.BoardGivenAboveLine, Content(seed[1]));
+        Assert.Null(BenchmarkService.GradingBoardBlock(run));
+    }
+
+    // --- The launch-time BOARD FACTS stamp ------------------------------------------------------
+
+    [Fact]
+    public void LaunchStamp_ASuiteWithoutABoard_RecordsNoCheck()
+    {
+        var run = RunWith(null, null);
+        run.BoardFactsCheckJson = "stale";
+
+        BenchmarkService.StampBoardProvenance(run, new[]
+        {
+            new BenchmarkQuestion { Id = 1, OrderIndex = 1, ExpectedPoints = "**BOARD FACTS**\n- \"HP: 12/60\"" }
+        });
+
+        Assert.Null(run.BoardFactsCheckJson);
+        Assert.Null(run.GameSnapshotSha256Used);
+    }
+
+    [Fact]
+    public void LaunchStamp_ABoardWithNoBoardFacts_RecordsAnEmptyCheck_NotNull()
+    {
+        var run = RunWith(11, Snapshot());
+
+        BenchmarkService.StampBoardProvenance(run, new[]
+        {
+            new BenchmarkQuestion { Id = 1, OrderIndex = 1, ExpectedPoints = "**REQUIRED**\n- the quarterstaff" }
+        });
+
+        Assert.NotNull(run.BoardFactsCheckJson);
+        var check = BenchmarkBoardFactsChecker.Deserialize(run.BoardFactsCheckJson);
+        Assert.NotNull(check);
+        Assert.Equal(0, check!.BulletCount);
+        Assert.Equal(0, check.CheckedLiteralCount);
+        Assert.Empty(check.MissingLiterals);
+        Assert.Equal("board-sha", run.GameSnapshotSha256Used);
+    }
+
+    [Fact]
+    public void LaunchStamp_RecordsTheQuotesThatAreNotOnTheBoard()
+    {
+        var run = RunWith(11, Snapshot());
+
+        BenchmarkService.StampBoardProvenance(run, new[]
+        {
+            new BenchmarkQuestion
+            {
+                Id = 41,
+                OrderIndex = 2,
+                ExpectedPoints = "**BOARD FACTS**\n- \"HP: 12/60\" and \"a - a cursed -1 quarterstaff\"\n- The hero is not hungry.\n**REQUIRED**\n- x"
+            }
+        });
+
+        var check = BenchmarkBoardFactsChecker.Deserialize(run.BoardFactsCheckJson);
+        Assert.NotNull(check);
+        Assert.Equal(2, check!.BulletCount);
+        Assert.Equal(2, check.CheckedLiteralCount);
+        Assert.Equal(1, check.UnquotedBulletCount);
+        var missing = Assert.Single(check.MissingLiterals);
+        Assert.Equal("a - a cursed -1 quarterstaff", missing.Literal);
+        Assert.Equal(41L, missing.QuestionId);
+        Assert.Equal(2, missing.OrderIndex);
     }
 
     [Fact]

@@ -349,9 +349,37 @@ export interface UpdateBenchmarkGameSnapshotTextRequest {
   expectedSha256?: string | null;
 }
 
+/** What replacing a snapshot's text returns: the stored snapshot plus the check run against it. */
+export interface UpdateBenchmarkSnapshotTextResponse {
+  snapshot: BenchmarkGameSnapshotDto;
+  boardFactsCheck: BoardFactsCheckDto | null;
+}
+
 export interface CaptureBenchmarkSnapshotResponse {
   board: BenchmarkGameSnapshotDto;
   suite: BenchmarkSuiteDto;
+  boardFactsCheck?: BoardFactsCheckDto | null;
+}
+
+/** One BOARD FACTS bullet the checker read, kept for the "checked, not missing" count. */
+export interface BoardFactIssueDto {
+  questionId: number;
+  orderIndex: number;
+  /** Only present on a `missingLiterals` entry. */
+  literal?: string | null;
+  lineExcerpt: string;
+}
+
+/**
+ * The deterministic BOARD FACTS quote check run after a snapshot write or an import. Only
+ * `missingLiterals` are issues; `unquotedBullets` is coverage information, never a warning.
+ */
+export interface BoardFactsCheckDto {
+  bulletCount: number;
+  checkedLiteralCount: number;
+  unquotedBulletCount: number;
+  unquotedBullets: BoardFactIssueDto[];
+  missingLiterals: BoardFactIssueDto[];
 }
 
 /* What saving a chat's attached snapshot would store, and the snapshots already saved from it. */
@@ -622,6 +650,7 @@ export interface ImportBenchmarkQuestionsResultDto {
   replacedCount: number;
   unchangedCount: number;
   questions: BenchmarkQuestionDto[];
+  boardFactsCheck?: BoardFactsCheckDto | null;
 }
 
 /** The game snapshot a suite YAML carries; the import attaches it to the new suite. */
@@ -1079,9 +1108,10 @@ export interface BenchmarkRunDetailDto {
    */
   contestedCriticalErrorAnswerCount?: number | null;
   /**
-   * Answers whose out-of-rubric Accuracy deduction rests on a statement the claim verifier refuted
-   * against the source code/wiki. Advisory: the deduction stands and no index moved. Null on a run
-   * before harness 20, which never adjudicated it: "not recorded", never 0.
+   * Answers flagged for either of two causes: an out-of-rubric Accuracy deduction whose
+   * own-knowledge basis the claim verifier refuted, or a sentence the assessor quoted as false
+   * that the verifier supported instead. Advisory: the deduction stands and no index moved. Null
+   * on a run before harness 20, which never adjudicated it: "not recorded", never 0.
    */
   contestedAccuracyDeductionAnswerCount?: number | null;
   /**
@@ -1281,6 +1311,9 @@ export interface BenchmarkRunDetailDto {
   candidateDeliveryVerifiedAtUtc?: string | null;
   /** Board delivery per grading role. Empty for a run with no board, or before harness 30. */
   boardDelivery?: BenchmarkBoardDeliveryDto[];
+
+  /** The BOARD FACTS quote check stamped at launch. Null when the suite had no board. */
+  boardFactsCheck?: BoardFactsCheckDto | null;
 
   answers: BenchmarkRunAnswerDto[];
 }
@@ -2090,10 +2123,16 @@ export class AdminBenchmarkService {
 
   /**
    * Replaces the snapshot text. The server normalizes it, recomputes the SHA-256 and character
-   * count, rebuilds the digest, and returns the stored snapshot with its text.
+   * count, rebuilds the digest, and returns the stored snapshot with its text alongside the
+   * board-facts check run against the new text.
    */
-  updateSnapshotText(id: number, req: UpdateBenchmarkGameSnapshotTextRequest): Observable<BenchmarkGameSnapshotDto> {
-    return this.http.put<BenchmarkGameSnapshotDto>(`/api/admin/benchmark/snapshots/${id}/text`, req);
+  updateSnapshotText(id: number, req: UpdateBenchmarkGameSnapshotTextRequest): Observable<UpdateBenchmarkSnapshotTextResponse> {
+    return this.http.put<UpdateBenchmarkSnapshotTextResponse>(`/api/admin/benchmark/snapshots/${id}/text`, req);
+  }
+
+  /** The BOARD FACTS quote check for a suite's current board, computed on demand. Null when the suite has no board. */
+  getBoardFactsCheck(suiteId: number): Observable<BoardFactsCheckDto | null> {
+    return this.http.get<BoardFactsCheckDto | null>(`/api/admin/benchmark/suites/${suiteId}/board-facts-check`);
   }
 
   /** Rebuilds the digest from the snapshot's own text; the snapshot text itself is untouched. */

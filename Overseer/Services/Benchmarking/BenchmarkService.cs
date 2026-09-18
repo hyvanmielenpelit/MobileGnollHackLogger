@@ -260,6 +260,29 @@ public class BenchmarkService
         return (config, apiKey, null);
     }
 
+    /// <summary>
+    /// Records on the run which board its suite carried at launch and, in
+    /// <see cref="BenchmarkRun.BoardFactsCheckJson"/>, whether the BOARD FACTS quotes of
+    /// <paramref name="questions"/> occur on it. Both describe the run as launched and are never
+    /// recomputed against later edits. The check is advisory: it refuses nothing. A suite without a
+    /// board leaves the board fields as they are and the check null.
+    /// </summary>
+    internal static void StampBoardProvenance(BenchmarkRun run, IEnumerable<BenchmarkQuestion> questions)
+    {
+        var board = run.BenchmarkSuite?.GameSnapshot;
+        if (board != null)
+        {
+            run.GameSnapshotNameUsed = board.Name;
+            run.GameSnapshotSha256Used = board.Sha256;
+            run.GameSnapshotCharCountUsed = board.CharCount;
+            run.GameSnapshotCaptureMethodUsed = board.CaptureMethod;
+        }
+
+        run.BoardFactsCheckJson = board != null
+            ? BenchmarkBoardFactsChecker.Serialize(BenchmarkBoardFactsChecker.Check(board.SanitizedText, questions))
+            : null;
+    }
+
     public async Task RunAsync(long runId, CancellationToken cancellationToken, bool verboseMode = false)
     {
         var runStopwatch = Stopwatch.StartNew();
@@ -359,14 +382,7 @@ public class BenchmarkService
             run.MaxParallelQuestionsUsed = maxParallel;
             run.SpeedMeasurementDegraded = maxParallel > 1;
 
-            var board = run.BenchmarkSuite?.GameSnapshot;
-            if (board != null)
-            {
-                run.GameSnapshotNameUsed = board.Name;
-                run.GameSnapshotSha256Used = board.Sha256;
-                run.GameSnapshotCharCountUsed = board.CharCount;
-                run.GameSnapshotCaptureMethodUsed = board.CaptureMethod;
-            }
+            StampBoardProvenance(run, questions);
 
             int reviewedCount = questions.Count(q => !q.IsGenerated || (q.ReviewedAtRevision != null && q.ReviewedAtRevision == q.ItemRevision));
             run.SuiteReviewedQuestionCountAtStart = reviewedCount;
@@ -1099,13 +1115,20 @@ public class BenchmarkService
 
     /// <summary>
     /// A single-shot grading request's system text as one frozen segment, and a seed history that
-    /// carries the same text as its system message ahead of the user message. Providers that honour
-    /// segments build <c>system</c> from the segment; the others read the history entry.
+    /// carries the same text as its first system message, the board block as a second system
+    /// message when there is one, then the user message. Providers that honour segments build
+    /// <c>system</c> from the segment and hoist the second system message after it — Anthropic as
+    /// the second cached block, Google as the next <c>systemInstruction</c> part — and OpenAI joins
+    /// every history system message into <c>instructions</c>, so on all three the grader reads the
+    /// instructions, then the whole board, then the question, and the first two form a prefix
+    /// shared by every grading call of the run. The shape is the one
+    /// <see cref="BuildCandidateSeedHistory"/> gives the candidate.
     /// </summary>
-    private static (SegmentedPrompt Prompt, List<object> SeedHistory) BuildGradingPrompt(
+    internal static (SegmentedPrompt Prompt, List<object> SeedHistory) BuildGradingPrompt(
         string systemPrompt,
         string? preamble,
-        string userMessage)
+        string userMessage,
+        string? boardBlock = null)
     {
         string frozen = string.IsNullOrEmpty(preamble)
             ? systemPrompt
@@ -1113,11 +1136,84 @@ public class BenchmarkService
         var segmented = new SegmentedPrompt(frozen, "", "");
         var seedHistory = new List<object>
         {
-            new { role = "system", content = segmented.FullPrompt },
-            new { role = "user", content = userMessage }
+            new { role = "system", content = segmented.FullPrompt }
         };
+        if (!string.IsNullOrEmpty(boardBlock))
+        {
+            seedHistory.Add(new { role = "system", content = boardBlock });
+        }
+        seedHistory.Add(new { role = "user", content = userMessage });
         return (segmented, seedHistory);
     }
+
+    /// <summary>The system sentence every per-question grading request opens with.</summary>
+    internal const string GradingSystemPrompt =
+        "You are an objective AI benchmark evaluator. Strictly adhere to the requested JSON response format.";
+
+    /// <summary>The board block every per-question grading role reads ahead of the question; null for a suite without a board.</summary>
+    internal static string? GradingBoardBlock(BenchmarkRun run)
+        => BenchmarkAssessmentPrompt.BuildGradingBoardBlock(
+            run.BenchmarkSuite?.GameSnapshot?.Name, run.BenchmarkSuite?.GameSnapshot?.SanitizedText);
+
+    /// <summary>
+    /// Runs <see cref="BenchmarkGradingRequestProbe"/> against <paramref name="request"/> through
+    /// the provider that will send it, resolved the way <see cref="AgentLoopRunner"/> resolves it.
+    /// Throws <see cref="InvalidOperationException"/> when the request does not carry its
+    /// instructions, the board and the question in that order, or names an unknown provider.
+    /// </summary>
+    private void VerifyGradingDelivery(
+        AgentRunRequest request,
+        string role,
+        string systemText,
+        string? boardBlock,
+        string? boardText,
+        string questionMarker,
+        int questionNumber)
+    {
+        var provider = request.AiProvider;
+        using var scope = provider == null ? _scopeFactory.CreateScope() : null;
+        provider ??= scope!.ServiceProvider.GetServices<IAiProvider>()
+            .FirstOrDefault(p => string.Equals(p.ProviderName, request.ProviderName, StringComparison.OrdinalIgnoreCase));
+
+        if (provider == null)
+        {
+            throw new InvalidOperationException(
+                $"Harness delivery check failed: unknown AI provider '{request.ProviderName}'.");
+        }
+
+        BenchmarkGradingRequestProbe.Verify(
+            provider, request, role, systemText, boardBlock, boardText, questionMarker, questionNumber);
+    }
+
+    /// <summary>
+    /// <see cref="VerifyGradingDelivery"/> for a claim verification request built by
+    /// <see cref="BuildClaimVerificationRequest"/>: its one-sentence system prompt, then the
+    /// verifier message's board block and question context.
+    /// </summary>
+    private void VerifyClaimVerificationDelivery(AgentRunRequest request, BenchmarkRun run, int questionNumber)
+        => VerifyGradingDelivery(
+            request,
+            "claim verifier",
+            request.SystemPrompt ?? string.Empty,
+            BenchmarkClaimVerificationPrompt.BuildBoardBlock(
+                run.BenchmarkSuite?.GameSnapshot?.Name, run.BenchmarkSuite?.GameSnapshot?.SanitizedText),
+            run.BenchmarkSuite?.GameSnapshot?.SanitizedText,
+            BenchmarkClaimVerificationPrompt.QuestionBlockMarker,
+            questionNumber);
+
+    /// <summary>
+    /// <see cref="VerifyGradingDelivery"/> for a per-question grading request built by
+    /// <see cref="BuildGradingPrompt"/> with <see cref="GradingBoardBlock"/>.
+    /// </summary>
+    private void VerifyPerQuestionGradingDelivery(AgentRunRequest request, string role, BenchmarkRun run, int questionNumber)
+        => VerifyGradingDelivery(
+            request,
+            role,
+            request.SegmentedPrompt?.FullPrompt ?? request.SystemPrompt ?? string.Empty,
+            GradingBoardBlock(run),
+            run.BenchmarkSuite?.GameSnapshot?.SanitizedText,
+            BenchmarkAssessmentPrompt.QuestionBlockMarker,
+            questionNumber);
 
     internal async Task<BenchmarkRunAnswer> ExecuteSingleQuestionAsync(
         ApplicationDbContext db,
@@ -1768,7 +1864,10 @@ public class BenchmarkService
         await db.SaveChangesAsync(CancellationToken.None);
 
         var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
+        // Stamped on the answer only with a verdict, which every call reaches only after its
+        // delivery probe passed.
         int? assessorBoardChars = BenchmarkBoardGuard.BoardCharsSent(run);
+        string? boardBlock = GradingBoardBlock(run);
         string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionBody(
             answer.OrderIndex,
             answer.QuestionText,
@@ -1781,12 +1880,12 @@ public class BenchmarkService
             answer.ToolBudgetExhausted,
             answer.ScrubbedArtifactCount,
             answer.ToolCallBudgetUsed,
-            boardName: run.BenchmarkSuite?.GameSnapshot?.Name,
-            boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText);
+            boardGivenAbove: boardBlock != null);
         var (gradingPrompt, gradingSeedHistory) = BuildGradingPrompt(
-            "You are an objective AI benchmark evaluator. Strictly adhere to the requested JSON response format.",
+            GradingSystemPrompt,
             BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(run.SuiteName),
-            prompt);
+            prompt,
+            boardBlock);
 
         int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
 
@@ -1825,6 +1924,9 @@ public class BenchmarkService
         string? terminalError = null;
         try
         {
+            // A request that would not carry the board ahead of the question fails this answer's
+            // assessment, re-runnable, before anything is sent.
+            VerifyPerQuestionGradingDelivery(runRequest, "assessor", run, answer.OrderIndex);
             await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, cancellationToken))
             {
                 if (evt.Type == "error") terminalError = evt.Data?.ToString();
@@ -1855,6 +1957,7 @@ public class BenchmarkService
             var retryResult = new AgentRunResult();
             try
             {
+                VerifyPerQuestionGradingDelivery(runRequest, "assessor", run, answer.OrderIndex);
                 await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, retryResult, cancellationToken))
                 {
                     if (evt.Type == "error") terminalError = evt.Data?.ToString();
@@ -2859,7 +2962,6 @@ public class BenchmarkService
             claimRoles: manifest.Select(m => m.Roles).ToList(),
             claimContexts: manifest.Select(m => m.Context).ToList(),
             toolCallLeads: toolCallLeads);
-        answer.VerifierBoardChars = BenchmarkBoardGuard.BoardCharsSent(run);
 
         var runRequest = BuildClaimVerificationRequest(
             verifierConfig,
@@ -2884,6 +2986,11 @@ public class BenchmarkService
 
         try
         {
+            // A request that would not carry the board ahead of the question is a verification
+            // failure, re-runnable, and nothing is sent. The board figure is recorded only once the
+            // probe passed.
+            VerifyClaimVerificationDelivery(runRequest, run, answer.OrderIndex);
+            answer.VerifierBoardChars = BenchmarkBoardGuard.BoardCharsSent(run);
             await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, verifyCts.Token))
             {
                 if (evt.Type == "error")
@@ -2953,6 +3060,7 @@ public class BenchmarkService
                 var retryResult = new AgentRunResult();
                 try
                 {
+                    VerifyClaimVerificationDelivery(runRequest, run, answer.OrderIndex);
                     await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, retryResult, verifyCts.Token))
                     {
                         if (evt.Type == "error")
@@ -3175,7 +3283,9 @@ public class BenchmarkService
     /// no stored level, score, cap, flag or index changes, and the second-opinion columns are not
     /// touched. Cost is pooled into the answer's assessment fields. An unusable verdict, a timeout
     /// or an exception is logged and leaves the columns null; it never fails the answer or the run.
-    /// Off when <c>Benchmark:EvidenceInformedRegrade:Enabled</c> is false.
+    /// A reply that parses without a <c>withdrawn</c> array gets one repair turn unless
+    /// <c>Benchmark:EvidenceInformedRegrade:ParseRetryEnabled</c> is false, and the stored record
+    /// says so. Off when <c>Benchmark:EvidenceInformedRegrade:Enabled</c> is false.
     /// </summary>
     private async Task RunEvidenceInformedRegradeAsync(
         ApplicationDbContext db,
@@ -3234,21 +3344,68 @@ public class BenchmarkService
                 toolBudgetExhausted: answer.ToolBudgetExhausted,
                 scrubbedArtifactCount: answer.ScrubbedArtifactCount,
                 toolCallBudget: answer.ToolCallBudgetUsed,
-                boardName: run.BenchmarkSuite?.GameSnapshot?.Name,
-                boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText,
+                boardGivenAbove: GradingBoardBlock(run) != null,
                 targets: targets,
                 originalLevels: (answer.AccuracyLevel ?? 0, answer.CompletenessLevel ?? 0, answer.ConcisenessLevel ?? 0, answer.ReadabilityLevel ?? 0),
                 originalCriticalError: answer.CriticalError);
 
             // The one timeout a grading call already has; the primary assessment itself runs unbounded.
+            // It bounds both turns of a repaired re-grade together.
             int timeoutSeconds = _configuration.GetValue<int>("Benchmark:SecondOpinion:TimeoutSeconds", 900);
+            bool repairEnabled = _configuration.GetValue<bool>("Benchmark:EvidenceInformedRegrade:ParseRetryEnabled", true);
             using var regradeCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             regradeCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
             AssessorVerdict verdict;
+            EvidenceInformedValidation? validation = null;
+            EvidenceInformedRepair? repair = null;
             try
             {
-                verdict = await RunAssessorPromptAsync(run, answer, prompt, assessorConfig, assessorApiKey, regradeCts.Token);
+                var runRequest = BuildAssessorRequest(run, prompt, assessorConfig, assessorApiKey);
+                var firstTurn = await RunAssessorTurnAsync(run, answer, runRequest, regradeCts.Token);
+                verdict = ToAssessorVerdict(run, answer, firstTurn);
+                if (verdict.Result != null)
+                {
+                    validation = ValidateEvidenceInformed(
+                        verdict.RawText, targets, answer.AccuracyLevel ?? 0, answer.CriticalError,
+                        verdict.Result.AccuracyLevel, verdict.Result.CriticalError);
+                }
+
+                // One repair turn, for a missing or non-array `withdrawn` only: every other failure
+                // is a judgement the re-grade made and stands as its verdict. The request's budget of
+                // two model calls fits exactly this one.
+                if (repairEnabled && validation != null && NeedsWithdrawnRepair(validation))
+                {
+                    _logger.LogWarning(
+                        "Benchmark run {RunId} answer {OrderIndex}: evidence-informed re-grade returned no `withdrawn` list. Repairing once...",
+                        run.Id, answer.OrderIndex);
+                    runRequest.SeedHistory.Add(new { role = "assistant", content = firstTurn.FinalText ?? string.Empty });
+                    runRequest.SeedHistory.Add(new { role = "user", content = WithdrawnRepairMessage });
+
+                    var repairTurn = await RunAssessorTurnAsync(run, answer, runRequest, regradeCts.Token);
+                    var repaired = ToAssessorVerdict(run, answer, repairTurn);
+                    var firstErrors = validation.Errors;
+                    if (repaired.Result != null)
+                    {
+                        validation = ValidateEvidenceInformed(
+                            repaired.RawText, targets, answer.AccuracyLevel ?? 0, answer.CriticalError,
+                            repaired.Result.AccuracyLevel, repaired.Result.CriticalError);
+                    }
+
+                    repair = new EvidenceInformedRepair(
+                        firstErrors, repaired.Result != null, repaired.Error,
+                        repaired.InputTokens, repaired.OutputTokens, repaired.DurationMs);
+
+                    // The repaired verdict replaces the first only when it parsed; the cost is both turns'.
+                    verdict = (repaired.Result != null ? repaired : verdict) with
+                    {
+                        InputTokens = verdict.InputTokens + repaired.InputTokens,
+                        OutputTokens = verdict.OutputTokens + repaired.OutputTokens,
+                        DurationMs = verdict.DurationMs + repaired.DurationMs,
+                        CacheReadTokens = verdict.CacheReadTokens + repaired.CacheReadTokens,
+                        CacheCreationTokens = verdict.CacheCreationTokens + repaired.CacheCreationTokens
+                    };
+                }
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
@@ -3263,7 +3420,10 @@ public class BenchmarkService
             answer.AssessmentCacheReadTokens = (answer.AssessmentCacheReadTokens ?? 0) + verdict.CacheReadTokens;
             answer.AssessmentCacheCreationTokens = (answer.AssessmentCacheCreationTokens ?? 0) + verdict.CacheCreationTokens;
             answer.AssessmentDurationMs = (answer.AssessmentDurationMs ?? 0) + verdict.DurationMs;
-            answer.AssessorBoardChars = verdict.BoardChars;
+            if (verdict.BoardChars.HasValue)
+            {
+                answer.AssessorBoardChars = verdict.BoardChars;
+            }
 
             try
             {
@@ -3298,7 +3458,7 @@ public class BenchmarkService
                 answer.ConcisenessLevel ?? res.ConcisenessLevel,
                 answer.ReadabilityLevel ?? res.ReadabilityLevel,
                 res.CriticalError, constants);
-            var validation = ValidateEvidenceInformed(
+            validation ??= ValidateEvidenceInformed(
                 verdict.RawText, targets, answer.AccuracyLevel ?? 0, answer.CriticalError, res.AccuracyLevel, res.CriticalError);
 
             answer.EvidenceInformedQualityScore = quality;
@@ -3325,7 +3485,18 @@ public class BenchmarkService
                 accepted = validation.Accepted.Select(a => new { targetId = a.TargetId, kind = a.Kind, findingIds = a.FindingIds, reason = a.Reason }).ToList(),
                 withdrawnDropped = validation.Dropped,
                 validationErrors = validation.Errors,
-                eligibleForSensitivity = validation.Eligible
+                eligibleForSensitivity = validation.Eligible,
+                repairTurns = repair == null ? 0 : 1,
+                repair = repair == null ? null : new
+                {
+                    reason = WithdrawnMissingError,
+                    firstTurnValidationErrors = repair.FirstTurnErrors,
+                    parsed = repair.Parsed,
+                    error = repair.Error,
+                    inputTokens = repair.InputTokens,
+                    outputTokens = repair.OutputTokens,
+                    durationMs = repair.DurationMs
+                }
             });
 
             await db.SaveChangesAsync(CancellationToken.None);
@@ -3509,7 +3680,7 @@ public class BenchmarkService
 
         if (!haveList)
         {
-            errors.Add("`withdrawn` is missing or not an array.");
+            errors.Add(WithdrawnMissingError);
         }
         else
         {
@@ -3599,6 +3770,34 @@ public class BenchmarkService
             errors.Add(message);
         }
     }
+
+    /// <summary>The validation error for a re-grade whose JSON has no <c>withdrawn</c> array; the one error a repair turn follows.</summary>
+    internal const string WithdrawnMissingError = "`withdrawn` is missing or not an array.";
+
+    /// <summary>The user turn that asks a re-grade to return its verdict again with <c>withdrawn</c>.</summary>
+    internal const string WithdrawnRepairMessage =
+        "Your previous response could not be accepted: " + WithdrawnMissingError
+        + " Output the complete JSON object again in the schema above, including `withdrawn` — use [] when you withdraw nothing. "
+        + "Output ONLY the raw JSON object, without markdown wrapping, code fences or extra text.";
+
+    /// <summary>
+    /// Whether a re-grade earns its one repair turn: its JSON parsed but carried no <c>withdrawn</c>
+    /// array. Level checks that fail beside it are made again against the repaired verdict.
+    /// </summary>
+    internal static bool NeedsWithdrawnRepair(EvidenceInformedValidation validation)
+        => validation.Errors.Contains(WithdrawnMissingError, StringComparer.Ordinal);
+
+    /// <summary>
+    /// The repair turn of an evidence-informed re-grade: the first turn's validation errors, whether
+    /// the repaired reply parsed, its error, and what the turn cost.
+    /// </summary>
+    internal sealed record EvidenceInformedRepair(
+        IReadOnlyList<string> FirstTurnErrors,
+        bool Parsed,
+        string? Error,
+        int InputTokens,
+        int OutputTokens,
+        long DurationMs);
 
     /// <summary>Whether the re-grade stored in <paramref name="evidenceInformedJson"/> carries validation provenance.</summary>
     internal static bool HasEvidenceInformedValidation(string? evidenceInformedJson)
@@ -3979,14 +4178,15 @@ public class BenchmarkService
             answer.ToolBudgetExhausted,
             answer.ScrubbedArtifactCount,
             answer.ToolCallBudgetUsed,
-            boardName: run.BenchmarkSuite?.GameSnapshot?.Name,
-            boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText);
+            boardGivenAbove: GradingBoardBlock(run) != null);
         return await RunAssessorPromptAsync(run, answer, prompt, assessorConfig, assessorApiKey, cancellationToken);
     }
 
     /// <summary>
-    /// Sends one per-question assessor body with the shared preamble and parses the verdict,
-    /// writing nothing. <see cref="AssessorVerdict.BoardChars"/> is what the body carried.
+    /// Sends one per-question assessor body with the shared preamble and the board ahead of it, and
+    /// parses the verdict, writing nothing. <see cref="AssessorVerdict.BoardChars"/> is the board's
+    /// length when the delivery probe confirmed the request carried it, and null otherwise or
+    /// without a board.
     /// </summary>
     private async Task<AssessorVerdict> RunAssessorPromptAsync(
         BenchmarkRun run,
@@ -3996,14 +4196,101 @@ public class BenchmarkService
         string assessorApiKey,
         CancellationToken cancellationToken)
     {
+        var runRequest = BuildAssessorRequest(run, prompt, assessorConfig, assessorApiKey);
+        var turn = await RunAssessorTurnAsync(run, answer, runRequest, cancellationToken);
+        return ToAssessorVerdict(run, answer, turn);
+    }
+
+    /// <summary>One sent (or probe-refused) grading turn: the model's raw text, the terminal error, and what it cost.</summary>
+    private sealed record AssessorTurn(
+        string? FinalText,
+        string? Error,
+        int InputTokens,
+        int OutputTokens,
+        int CacheReadTokens,
+        int CacheCreationTokens,
+        long DurationMs,
+        bool DeliveryVerified);
+
+    /// <summary>The parsed verdict of one turn, with that turn's cost.</summary>
+    private static AssessorVerdict ToAssessorVerdict(BenchmarkRun run, BenchmarkRunAnswer answer, AssessorTurn turn)
+    {
+        var parseResult = string.IsNullOrWhiteSpace(turn.Error)
+            ? BenchmarkAssessmentParser.ParsePerQuestion(turn.FinalText, answer.AnswerText)
+            : new PerQuestionAssessmentParseResult { Success = false, ErrorMessage = turn.Error };
+
+        return new AssessorVerdict(
+            parseResult.Success ? parseResult.Result : null,
+            turn.InputTokens,
+            turn.OutputTokens,
+            turn.DurationMs,
+            turn.Error ?? parseResult.ErrorMessage,
+            turn.DeliveryVerified ? BenchmarkBoardGuard.BoardCharsSent(run) : null,
+            parseResult.RawText ?? turn.FinalText,
+            turn.CacheReadTokens,
+            turn.CacheCreationTokens);
+    }
+
+    /// <summary>
+    /// Probes <paramref name="runRequest"/> and, when it carries the instructions, the board and the
+    /// question in that order, sends it once. Writes nothing. A refused probe is the turn's error, and
+    /// nothing reaches the provider.
+    /// </summary>
+    private async Task<AssessorTurn> RunAssessorTurnAsync(
+        BenchmarkRun run,
+        BenchmarkRunAnswer answer,
+        AgentRunRequest runRequest,
+        CancellationToken cancellationToken)
+    {
+        var runResult = new AgentRunResult();
+        var sw = Stopwatch.StartNew();
+        string? terminalError = null;
+        bool deliveryVerified = false;
+        try
+        {
+            VerifyPerQuestionGradingDelivery(runRequest, "assessor", run, answer.OrderIndex);
+            deliveryVerified = true;
+            await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, cancellationToken))
+            {
+                if (evt.Type == "error") terminalError = evt.Data?.ToString();
+            }
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex) { terminalError = ex.Message; }
+
+        sw.Stop();
+
+        return new AssessorTurn(
+            runResult.FinalText,
+            terminalError,
+            runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens,
+            runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens,
+            runResult.CacheReadTokens,
+            runResult.CacheCreationTokens,
+            sw.ElapsedMilliseconds,
+            deliveryVerified);
+    }
+
+    /// <summary>
+    /// The primary assessor's single-shot grading request for one per-question body: the grading
+    /// instructions, the board block when the suite has one, then <paramref name="prompt"/>. Its
+    /// budget of two model calls leaves room for exactly one repair turn.
+    /// </summary>
+    private AgentRunRequest BuildAssessorRequest(
+        BenchmarkRun run,
+        string prompt,
+        SystemAiApiConfiguration assessorConfig,
+        string assessorApiKey)
+    {
         var (gradingPrompt, gradingSeedHistory) = BuildGradingPrompt(
-            "You are an objective AI benchmark evaluator. Strictly adhere to the requested JSON response format.",
+            GradingSystemPrompt,
             BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(run.SuiteName),
-            prompt);
+            prompt,
+            GradingBoardBlock(run));
 
         int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
 
-        var runRequest = new AgentRunRequest
+        return new AgentRunRequest
         {
             ProviderName = assessorConfig.Provider,
             ModelId = assessorConfig.ModelId,
@@ -4032,39 +4319,6 @@ public class BenchmarkService
             },
             SeedHistory = gradingSeedHistory
         };
-
-        var runResult = new AgentRunResult();
-        var sw = Stopwatch.StartNew();
-        string? terminalError = null;
-        try
-        {
-            await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, cancellationToken))
-            {
-                if (evt.Type == "error") terminalError = evt.Data?.ToString();
-            }
-        }
-        catch (OperationCanceledException) { throw; }
-        catch (Exception ex) { terminalError = ex.Message; }
-
-        sw.Stop();
-
-        int inputTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens;
-        int outputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
-
-        var parseResult = string.IsNullOrWhiteSpace(terminalError)
-            ? BenchmarkAssessmentParser.ParsePerQuestion(runResult.FinalText, answer.AnswerText)
-            : new PerQuestionAssessmentParseResult { Success = false, ErrorMessage = terminalError };
-
-        return new AssessorVerdict(
-            parseResult.Success ? parseResult.Result : null,
-            inputTokens,
-            outputTokens,
-            sw.ElapsedMilliseconds,
-            terminalError ?? parseResult.ErrorMessage,
-            BenchmarkBoardGuard.BoardCharsSent(run),
-            parseResult.RawText ?? runResult.FinalText,
-            runResult.CacheReadTokens,
-            runResult.CacheCreationTokens);
     }
 
     /// <summary>
@@ -4489,15 +4743,15 @@ public class BenchmarkService
             answer.ToolBudgetExhausted,
             answer.ScrubbedArtifactCount,
             answer.ToolCallBudgetUsed,
-            boardName: run.BenchmarkSuite?.GameSnapshot?.Name,
-            boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText,
+            boardGivenAbove: GradingBoardBlock(run) != null,
             blind: blind,
             triggerLabel: trigger,
             claimVerifications: claimVerifications);
         var (gradingPrompt, gradingSeedHistory) = BuildGradingPrompt(
-            "You are an objective AI benchmark evaluator. Strictly adhere to the requested JSON response format.",
+            GradingSystemPrompt,
             BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(run.SuiteName),
-            prompt);
+            prompt,
+            GradingBoardBlock(run));
 
         int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
 
@@ -4537,11 +4791,14 @@ public class BenchmarkService
         using var opinionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         opinionCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
+        // Every turn, the retry included, is probed first; a refused probe is that turn's error and
+        // records the second opinion as unavailable.
         async Task<string?> RunOpinionTurnAsync(AgentRunResult result)
         {
             string? error = null;
             try
             {
+                VerifyPerQuestionGradingDelivery(runRequest, "second opinion", run, answer.OrderIndex);
                 await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, result, opinionCts.Token))
                 {
                     if (evt.Type == "error") error = evt.Data?.ToString();
@@ -4624,6 +4881,7 @@ public class BenchmarkService
         answer.SecondOpinionCriticalError = second.CriticalError;
         answer.SecondOpinionByModelDisplayNameUsed = secondConfig.DisplayName ?? secondConfig.ModelId;
         answer.SecondOpinionTrigger = trigger;
+        // A parsed verdict came from a turn whose delivery probe passed.
         answer.SecondOpinionBoardChars = BenchmarkBoardGuard.BoardCharsSent(run);
         answer.SecondOpinionJson = JsonSerializer.Serialize(new
         {
@@ -4868,6 +5126,7 @@ public class BenchmarkService
         }
 
         string synthesisPrompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt(run.SuiteName, summaries, boardName, boardDigest);
+        // No board block: the synthesis reads the board's digest inside its prompt, never the whole board.
         var (gradingPrompt, gradingSeedHistory) = BuildGradingPrompt(
             "You are an objective AI benchmark evaluator synthesizing a final report. Strictly adhere to the requested JSON response format.",
             null,
@@ -6657,6 +6916,12 @@ public class BenchmarkService
 
     private static readonly Regex StraightQuotedSpanRegex = new("\"([^\"]*)\"", RegexOptions.Compiled);
     private static readonly Regex TypographicQuotedSpanRegex = new("“([^”]*)”", RegexOptions.Compiled);
+
+    // Single quotes double as apostrophes, so a span opens only after the start of the text,
+    // whitespace, "(" or an em dash, and closes only before the end of the text, whitespace or
+    // punctuation; a contraction's apostrophe is followed by a letter and never closes one.
+    private static readonly Regex StraightSingleQuotedSpanRegex = new(@"(?<=^|[\s(—])'(?=\S)(.+?)(?<=\S)'(?=$|[\s\p{P}])", RegexOptions.Compiled);
+    private static readonly Regex TypographicSingleQuotedSpanRegex = new(@"(?<=^|[\s(—])‘(?=\S)(.+?)(?<=\S)’(?=$|[\s\p{P}])", RegexOptions.Compiled);
     private static readonly Regex TrailingListMarkerRegex = new(@"(?:^|\n)[ \t]*(?:[-*+•]|\d+[.)])[ \t]*$", RegexOptions.Compiled);
     private static readonly Regex PrecedingSentenceBoundaryRegex = new(@"[.!?](?=\s)|\n", RegexOptions.Compiled | RegexOptions.RightToLeft);
 
@@ -6684,10 +6949,13 @@ public class BenchmarkService
 
     /// <summary>
     /// The sentences of the answer the assessor quoted in its accuracy evidence: each span between
-    /// paired double quotes (straight or typographic) of <see cref="AccusedQuoteMinLength"/> to
-    /// <see cref="AccusedQuoteMaxLength"/> characters that occurs in the answer once Markdown
-    /// emphasis and whitespace runs are ignored. The answer's own span is returned, not the
-    /// assessor's copy; a span not in the answer (a rubric or board quotation) is dropped. At most
+    /// paired double quotes (straight or typographic), or single quotes (straight or typographic)
+    /// under the boundary rules of <see cref="StraightSingleQuotedSpanRegex"/>, of
+    /// <see cref="AccusedQuoteMinLength"/> to <see cref="AccusedQuoteMaxLength"/> characters that
+    /// occurs in the answer once Markdown emphasis and whitespace runs are ignored. A span the
+    /// evidence clause around it approves of (<see cref="IsApprovedInEvidence"/>) is not an
+    /// accusation and is skipped. The answer's own span is returned, not the assessor's copy; a
+    /// span not in the answer (a rubric or board quotation) is dropped. At most
     /// <see cref="MaxAccusedQuotesPerAnswer"/>, longest first, ties in evidence order. A bounded
     /// heuristic: it finds only accusations the assessor quoted.
     /// </summary>
@@ -6705,12 +6973,19 @@ public class BenchmarkService
 
         var matches = StraightQuotedSpanRegex.Matches(accuracyEvidence).Cast<Match>()
             .Concat(TypographicQuotedSpanRegex.Matches(accuracyEvidence).Cast<Match>())
+            .Concat(StraightSingleQuotedSpanRegex.Matches(accuracyEvidence).Cast<Match>())
+            .Concat(TypographicSingleQuotedSpanRegex.Matches(accuracyEvidence).Cast<Match>())
             .OrderBy(m => m.Index);
 
         foreach (var match in matches)
         {
             string quoted = match.Groups[1].Value.Trim();
             if (quoted.Length < AccusedQuoteMinLength || quoted.Length > AccusedQuoteMaxLength)
+            {
+                continue;
+            }
+
+            if (IsApprovedInEvidence(accuracyEvidence, match.Index, match.Index + match.Length - 1))
             {
                 continue;
             }
@@ -6747,6 +7022,90 @@ public class BenchmarkService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Whether the evidence quotes the span delimited at <paramref name="open"/> and
+    /// <paramref name="close"/> to approve of it rather than to charge it. The clause around the
+    /// span runs back to the previous <c>.</c>, <c>;</c> or <c>:</c> followed by whitespace and
+    /// forward to the next; the span itself is not read. A parenthetical that encloses the span
+    /// is read first, innermost outwards, and decides when it carries a marker of either kind; a
+    /// parenthetical with none belongs to the clause around it ("Correct on the core mechanic
+    /// ("…")"). A clause approves when it carries an approval marker and no charge marker
+    /// (<see cref="BenchmarkVerdictConsistency.AccusationClauseApproves"/>); a clause with neither
+    /// keeps the span, so a span is skipped only on positive evidence of approval.
+    /// </summary>
+    internal static bool IsApprovedInEvidence(string evidence, int open, int close)
+    {
+        var enclosingOpeners = new List<int>();
+        int depth = 0;
+        int clauseStart = 0;
+        for (int i = open - 1; i >= 0; i--)
+        {
+            char c = evidence[i];
+            if (c == ')')
+            {
+                depth++;
+            }
+            else if (c == '(')
+            {
+                if (depth > 0) depth--;
+                else enclosingOpeners.Add(i);
+            }
+            else if (depth == 0 && IsClauseBoundary(evidence, i))
+            {
+                clauseStart = i + 1;
+                break;
+            }
+        }
+
+        var enclosingClosers = new List<int>();
+        depth = 0;
+        int clauseEnd = evidence.Length;
+        for (int i = close + 1; i < evidence.Length; i++)
+        {
+            char c = evidence[i];
+            if (c == '(')
+            {
+                depth++;
+            }
+            else if (c == ')')
+            {
+                if (depth > 0) depth--;
+                else enclosingClosers.Add(i);
+            }
+            else if (depth == 0 && IsClauseBoundary(evidence, i))
+            {
+                clauseEnd = i;
+                break;
+            }
+        }
+
+        for (int level = 0; level < enclosingOpeners.Count; level++)
+        {
+            int from = enclosingOpeners[level] + 1;
+            int to = level < enclosingClosers.Count ? enclosingClosers[level] : clauseEnd;
+            bool? parenthetical = BenchmarkVerdictConsistency.AccusationClauseApproves(ClauseAround(evidence, from, to, open, close));
+            if (parenthetical.HasValue)
+            {
+                return parenthetical.Value;
+            }
+        }
+
+        return BenchmarkVerdictConsistency.AccusationClauseApproves(ClauseAround(evidence, clauseStart, clauseEnd, open, close)) == true;
+    }
+
+    private static bool IsClauseBoundary(string text, int index)
+        => text[index] is '.' or ';' or ':'
+            && index + 1 < text.Length
+            && char.IsWhiteSpace(text[index + 1]);
+
+    /// <summary>The text from <paramref name="from"/> to <paramref name="to"/> with the delimited span left out.</summary>
+    private static string ClauseAround(string text, int from, int to, int open, int close)
+    {
+        string before = open > from ? text.Substring(from, open - from) : string.Empty;
+        string after = to > close + 1 ? text.Substring(close + 1, to - close - 1) : string.Empty;
+        return before + " " + after;
     }
 
     /// <summary>

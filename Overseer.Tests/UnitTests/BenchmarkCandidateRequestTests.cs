@@ -289,6 +289,72 @@ public class BenchmarkCandidateRequestTests
         Assert.Equal("user", Role(seed[1]));
     }
 
+    // --- Grading requests on OpenAI ---------------------------------------------------------
+
+    /// <summary>The seed history the assessor paths build for a run of this file's suite.</summary>
+    private static (SegmentedPrompt Prompt, List<object> SeedHistory) GradingSeed(BenchmarkRun run)
+    {
+        string? boardBlock = BenchmarkService.GradingBoardBlock(run);
+        string body = BenchmarkAssessmentPrompt.BuildPerQuestionBody(
+            2, QuestionText, BenchmarkDifficulty.Simple, "**BOARD FACTS**\n- \"c - 3 fortune cookies\"",
+            "Read the cookies first.", BenchmarkAnswerStatus.Ok, boardGivenAbove: boardBlock != null);
+        return BenchmarkService.BuildGradingPrompt(
+            BenchmarkService.GradingSystemPrompt,
+            BenchmarkAssessmentPrompt.BuildPerQuestionPreamble("Snapshot Suite"),
+            body,
+            boardBlock);
+    }
+
+    [Fact]
+    public void OpenAiGradingRequest_JoinsInstructionsThenBoardIntoInstructions_AndKeepsTheQuestionInInput()
+    {
+        var (segments, seed) = GradingSeed(RunWith(withBoard: true));
+        var provider = ProviderNamed("OpenAI");
+
+        var body = provider.BuildChatRequestBody(
+            modelId: "probe",
+            messageHistory: provider.PrepareMessageHistory(new List<object>(seed)),
+            maxOutputTokens: null,
+            thinkingLevel: null,
+            requestTools: new ToolsForRequest(),
+            segmentedPrompt: segments,
+            promptCacheKey: "benchmark:per_question:probe");
+
+        string instructions = Assert.IsType<string>(body["instructions"]);
+        Assert.StartsWith(BenchmarkService.GradingSystemPrompt, instructions);
+        int board = instructions.IndexOf(BenchmarkAssessmentPrompt.GradingBoardHeading, StringComparison.Ordinal);
+        Assert.True(board > 0, "The board must follow the grading instructions inside `instructions`.");
+        Assert.Equal(segments.FullPrompt + "\n\n" + BenchmarkAssessmentPrompt.BuildGradingBoardBlock("Tommi2", BoardText), instructions);
+        Assert.Contains("c - 3 fortune cookies", instructions);
+
+        string input = JsonSerializer.Serialize(body["input"]);
+        Assert.Contains(Escaped(BenchmarkAssessmentPrompt.QuestionBlockMarker), input, StringComparison.Ordinal);
+        Assert.DoesNotContain(Escaped(BenchmarkAssessmentPrompt.GradingBoardHeading), input, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void OpenAiGradingRequest_PassesTheGradingProbe_WithAndWithoutABoard(bool withBoard)
+    {
+        var run = RunWith(withBoard);
+        var (segments, seed) = GradingSeed(run);
+        var request = new Overseer.Services.Agents.AgentRunRequest
+        {
+            ProviderName = "OpenAI",
+            SystemPrompt = segments.FullPrompt,
+            SegmentedPrompt = segments,
+            PromptCacheKey = "benchmark:per_question:probe",
+            CacheConversationTail = false,
+            SeedHistory = seed
+        };
+
+        BenchmarkGradingRequestProbe.Verify(
+            ProviderNamed("OpenAI"), request, "assessor", segments.FullPrompt,
+            BenchmarkService.GradingBoardBlock(run), withBoard ? BoardText : null,
+            BenchmarkAssessmentPrompt.QuestionBlockMarker, questionNumber: 2);
+    }
+
     private static string? Role(object message) =>
         message.GetType().GetProperty("role")?.GetValue(message) as string;
 

@@ -478,12 +478,27 @@ public static class BenchmarkAssessmentPrompt
     ///     CandidateSystemPromptSha256 does not move. A run stamped 31 differs from one stamped 30 on
     ///     HarnessVersion, ScoringMethodVersion and ToolGuidesSha256: two instrument keys, so the
     ///     comparison view does not rank them against each other.
+    /// v32: every grading role reads the whole board ahead of the question. The assessor, second
+    ///     opinion, evidence-informed re-grade, calibration and trial receive it as a second system
+    ///     message after the grading instructions, and the claim verifier's message carries it
+    ///     directly after the numbered instructions, which gain 3d (a cited function must have a
+    ///     live call site) and 3e (a number is settled by the code that applies it, not by a wiki
+    ///     page alone). A probe checks every grading request's serialized body for the
+    ///     instructions, the board and the question, in that order, before the call, and a role's
+    ///     board characters are recorded only when it passed. The run records whether its rubrics'
+    ///     BOARD FACTS quotes occur on the board (advisory). Accused sentences are also read from
+    ///     single-quoted spans and skipped in a clause that approves of them. The re-grade's schema
+    ///     carries `withdrawn`, its findings are grouped under the deduction they bear on, and one
+    ///     repair turn follows a missing or non-array `withdrawn`. ScoringMethodVersion stays 11.
+    ///     Board position is an instrument change: a 32-stamped snapshot-suite run is not
+    ///     grade-comparable with a 31-stamped one.
     /// </summary>
-    public const string HarnessVersion = "31";
+    public const string HarnessVersion = "32";
 
     /// <summary>
-    /// The complete per-question assessor prompt: <see cref="BuildPerQuestionPreamble"/>, a blank
-    /// line, then <see cref="BuildPerQuestionBody"/>.
+    /// The complete per-question assessor prompt in the order a grader reads it:
+    /// <see cref="BuildPerQuestionPreamble"/>, a blank line, then — when there is a board —
+    /// <see cref="BuildGradingBoardBlock"/> and a blank line, then <see cref="BuildPerQuestionBody"/>.
     /// </summary>
     public static string BuildPerQuestionPrompt(
         string suiteName,
@@ -501,8 +516,10 @@ public static class BenchmarkAssessmentPrompt
         string? boardName = null,
         string? boardText = null)
     {
+        string? boardBlock = BuildGradingBoardBlock(boardName, boardText);
         return BuildPerQuestionPreamble(suiteName)
             + Environment.NewLine
+            + (boardBlock == null ? string.Empty : boardBlock + Environment.NewLine)
             + BuildPerQuestionBody(
                 orderIndex,
                 questionText,
@@ -515,8 +532,42 @@ public static class BenchmarkAssessmentPrompt
                 toolBudgetExhausted,
                 scrubbedArtifactCount,
                 toolCallBudget,
-                boardName,
-                boardText);
+                boardGivenAbove: boardBlock != null);
+    }
+
+    /// <summary>The line that opens the question-specific part of every grading body.</summary>
+    public const string QuestionBlockMarker = "--- QUESTION AND CANDIDATE ANSWER ---";
+
+    /// <summary>The grading body's pointer to the board, which reaches the grader ahead of the body.</summary>
+    public const string BoardGivenAboveLine = "The game snapshot for this suite is given above, before this question.";
+
+    /// <summary>The first line of <see cref="BuildGradingBoardBlock"/>.</summary>
+    public const string GradingBoardHeading = "--- GAME CONTEXT BOARD (GROUND TRUTH REFERENCE DATA) ---";
+
+    /// <summary>
+    /// The delimited board every grading role reads ahead of the question, sent as its own system
+    /// message after the grading instructions. Null when there is no board. The board text is
+    /// untrusted data and stays between the delimiters; nothing of it is interpolated into
+    /// instruction prose.
+    /// </summary>
+    public static string? BuildGradingBoardBlock(string? boardName, string? boardText)
+    {
+        if (string.IsNullOrWhiteSpace(boardText))
+        {
+            return null;
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine(GradingBoardHeading);
+        if (!string.IsNullOrWhiteSpace(boardName))
+        {
+            sb.AppendLine($"Board Name: {boardName}");
+        }
+        sb.AppendLine("The candidate was provided with the following game state snapshot board. This board represents the absolute ground truth of the in-game situation. Any claims made by the candidate about the game state, inventory, dungeon, monsters, or attributes MUST be evaluated against this board.");
+        sb.AppendLine();
+        sb.AppendLine(boardText);
+        sb.AppendLine("--- END GAME CONTEXT BOARD ---");
+        return sb.ToString();
     }
 
     /// <summary>
@@ -646,9 +697,15 @@ public static class BenchmarkAssessmentPrompt
     }
 
     /// <summary>
-    /// The question-specific part of the per-question assessor prompt: the question, the board,
-    /// the rubric, the harness context, the candidate answer and the output schema.
+    /// The question-specific part of the per-question assessor prompt: the question, a pointer to
+    /// the board when <paramref name="boardGivenAbove"/>, the rubric, the harness context, the
+    /// candidate answer and the output schema. The board itself is
+    /// <see cref="BuildGradingBoardBlock"/>, which the grader reads ahead of this body.
     /// </summary>
+    /// <param name="withWithdrawnField">
+    /// True for the evidence-informed re-grade: the schema block ends with the required
+    /// <c>withdrawn</c> list. Every other grading body leaves it false.
+    /// </param>
     public static string BuildPerQuestionBody(
         int orderIndex,
         string questionText,
@@ -661,24 +718,16 @@ public static class BenchmarkAssessmentPrompt
         bool toolBudgetExhausted = false,
         int scrubbedArtifactCount = 0,
         int? toolCallBudget = null,
-        string? boardName = null,
-        string? boardText = null)
+        bool boardGivenAbove = false,
+        bool withWithdrawnField = false)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("--- QUESTION AND CANDIDATE ANSWER ---");
+        sb.AppendLine(QuestionBlockMarker);
         sb.AppendLine($"Question #{orderIndex} [Authored Band: {difficulty}]");
         sb.AppendLine($"Question: {questionText}");
-        if (!string.IsNullOrWhiteSpace(boardText))
+        if (boardGivenAbove)
         {
-            sb.AppendLine("--- GAME CONTEXT BOARD (GROUND TRUTH REFERENCE DATA) ---");
-            if (!string.IsNullOrWhiteSpace(boardName))
-            {
-                sb.AppendLine($"Board Name: {boardName}");
-            }
-            sb.AppendLine("The candidate was provided with the following game state snapshot board. This board represents the absolute ground truth of the in-game situation. Any claims made by the candidate about the game state, inventory, dungeon, monsters, or attributes MUST be evaluated against this board.");
-            sb.AppendLine();
-            sb.AppendLine(boardText);
-            sb.AppendLine("--- END GAME CONTEXT BOARD ---");
+            sb.AppendLine(BoardGivenAboveLine);
             sb.AppendLine();
         }
         if (!string.IsNullOrWhiteSpace(expectedPoints))
@@ -716,7 +765,22 @@ public static class BenchmarkAssessmentPrompt
         }
         sb.AppendLine();
         sb.AppendLine("--- OUTPUT JSON SCHEMA ---");
-        sb.AppendLine(@"{
+        if (withWithdrawnField)
+        {
+            sb.AppendLine(OutputSchemaJson.Substring(0, OutputSchemaJson.LastIndexOf('}')).TrimEnd() + ",");
+            sb.AppendLine(WithdrawnSchemaField);
+            sb.AppendLine("}");
+            sb.AppendLine(WithdrawnRequiredSentence);
+        }
+        else
+        {
+            sb.AppendLine(OutputSchemaJson);
+        }
+
+        return sb.ToString();
+    }
+
+    private const string OutputSchemaJson = @"{
   ""accuracyLevel"": 5,
   ""completenessLevel"": 4,
   ""concisenessLevel"": 6,
@@ -728,10 +792,14 @@ public static class BenchmarkAssessmentPrompt
   ""completenessEvidence"": ""Matches rubric."",
   ""readabilityEvidence"": null,
   ""comment"": ""Brief 1-3 sentence evaluation explaining the ratings and noting any specific flaws.""
-}");
+}";
 
-        return sb.ToString();
-    }
+    /// <summary>The last field of the evidence-informed re-grade's schema block.</summary>
+    public const string WithdrawnSchemaField =
+        "  \"withdrawn\": [ { \"targetId\": \"T1\", \"findingIds\": [\"F2\"], \"reason\": \"…\" } ]";
+
+    /// <summary>The sentence that follows the evidence-informed re-grade's schema block.</summary>
+    public const string WithdrawnRequiredSentence = "`withdrawn` is required; use `[]` when you withdraw nothing.";
 
     /// <summary>
     /// The second-opinion prompt: the same rubric, used when an answer is selected for a second
@@ -761,8 +829,10 @@ public static class BenchmarkAssessmentPrompt
         string? triggerLabel = null,
         IReadOnlyList<BenchmarkClaimVerification>? claimVerifications = null)
     {
+        string? boardBlock = BuildGradingBoardBlock(boardName, boardText);
         return BuildPerQuestionPreamble(suiteName)
             + Environment.NewLine
+            + (boardBlock == null ? string.Empty : boardBlock + Environment.NewLine)
             + BuildSecondOpinionBody(
                 orderIndex,
                 questionText,
@@ -778,17 +848,16 @@ public static class BenchmarkAssessmentPrompt
                 toolBudgetExhausted,
                 scrubbedArtifactCount,
                 toolCallBudget,
-                boardName,
-                boardText,
-                blind,
-                triggerLabel,
-                claimVerifications);
+                boardGivenAbove: boardBlock != null,
+                blind: blind,
+                triggerLabel: triggerLabel,
+                claimVerifications: claimVerifications);
     }
 
     /// <summary>
-    /// The second-opinion prompt without <see cref="BuildPerQuestionPreamble"/>: the per-question
-    /// body followed by the second-opinion section. <see cref="BuildSecondOpinionPrompt"/> is the
-    /// preamble, a blank line, then this.
+    /// The second-opinion prompt without <see cref="BuildPerQuestionPreamble"/> and the board: the
+    /// per-question body followed by the second-opinion section. <see cref="BuildSecondOpinionPrompt"/>
+    /// is the preamble, a blank line, the board block and a blank line when there is a board, then this.
     /// </summary>
     public static string BuildSecondOpinionBody(
         int orderIndex,
@@ -805,8 +874,7 @@ public static class BenchmarkAssessmentPrompt
         bool toolBudgetExhausted = false,
         int scrubbedArtifactCount = 0,
         int? toolCallBudget = null,
-        string? boardName = null,
-        string? boardText = null,
+        bool boardGivenAbove = false,
         bool blind = true,
         string? triggerLabel = null,
         IReadOnlyList<BenchmarkClaimVerification>? claimVerifications = null)
@@ -824,8 +892,7 @@ public static class BenchmarkAssessmentPrompt
             toolBudgetExhausted,
             scrubbedArtifactCount,
             toolCallBudget,
-            boardName,
-            boardText));
+            boardGivenAbove));
         sb.AppendLine();
         sb.AppendLine("--- SECOND OPINION ---");
 
@@ -887,11 +954,14 @@ public static class BenchmarkAssessmentPrompt
     }
 
     /// <summary>
-    /// The evidence-informed re-grade body: <see cref="BuildPerQuestionBody"/> unchanged, then the
-    /// claim verifier's findings, each with its id, the first verdict's four levels and critical-error
-    /// state, the targets it may withdraw, and the re-grade instruction. The first verdict's score and
-    /// comment stay absent: the re-grade withdraws listed deductions on listed findings and is
-    /// validated against those, so it needs the levels it is compared with and nothing else.
+    /// The evidence-informed re-grade body: <see cref="BuildPerQuestionBody"/> with the
+    /// <c>withdrawn</c> schema, then the claim verifier's findings, the first verdict's four levels
+    /// and critical-error state, the targets it may withdraw, and the re-grade instruction. With
+    /// targets, each finding is printed under every target it bears on and the rest once, as
+    /// context that may not be cited; without targets, every finding is listed once. The first
+    /// verdict's score and comment stay absent: the re-grade withdraws listed deductions on listed
+    /// findings and is validated against those, so it needs the levels it is compared with and
+    /// nothing else.
     /// </summary>
     public static string BuildEvidenceInformedBody(
         int orderIndex,
@@ -908,12 +978,16 @@ public static class BenchmarkAssessmentPrompt
         bool toolBudgetExhausted = false,
         int scrubbedArtifactCount = 0,
         int? toolCallBudget = null,
-        string? boardName = null,
-        string? boardText = null,
+        bool boardGivenAbove = false,
         IReadOnlyList<BenchmarkEvidenceInformedTarget>? targets = null,
         (int Accuracy, int Completeness, int Conciseness, int Readability)? originalLevels = null,
         bool originalCriticalError = false)
     {
+        bool hasTargets = targets != null && targets.Count > 0;
+        var targetFindingIds = hasTargets
+            ? new HashSet<string>(targets!.SelectMany(t => t.FindingIds), StringComparer.Ordinal)
+            : new HashSet<string>(StringComparer.Ordinal);
+
         var sb = new StringBuilder();
         sb.AppendLine(BuildPerQuestionBody(
             orderIndex,
@@ -927,23 +1001,31 @@ public static class BenchmarkAssessmentPrompt
             toolBudgetExhausted,
             scrubbedArtifactCount,
             toolCallBudget,
-            boardName,
-            boardText));
+            boardGivenAbove,
+            withWithdrawnField: true));
         sb.AppendLine();
         sb.AppendLine("--- VERIFIER FINDINGS ---");
         sb.AppendLine("An automated claim verifier with read-only access to the GnollHack source code and wiki checked the following statements after you graded this answer.");
-        sb.AppendLine();
-        foreach (var v in verifications)
+        if (hasTargets)
         {
-            sb.AppendLine($"- Finding F{v.ClaimIndex}{FindingRoleLabel(v, criticalErrorQuote, outOfRubricBasis)}: \"{v.Claim}\"");
-            sb.AppendLine($"  Verdict: {v.Verdict}");
-            if (!string.IsNullOrWhiteSpace(v.Citation))
+            sb.AppendLine("The findings that bear on a deduction you may withdraw are listed under that deduction below.");
+            var others = verifications.Where(finding => !targetFindingIds.Contains(FindingId(finding))).ToList();
+            if (others.Count > 0)
             {
-                sb.AppendLine($"  Citation: {v.Citation}");
+                sb.AppendLine();
+                sb.AppendLine("Other verifier findings (context only — never cite these in `withdrawn`):");
+                foreach (var v in others)
+                {
+                    AppendFinding(sb, v, criticalErrorQuote, outOfRubricBasis, "");
+                }
             }
-            if (!string.IsNullOrWhiteSpace(v.Basis))
+        }
+        else
+        {
+            sb.AppendLine();
+            foreach (var v in verifications)
             {
-                sb.AppendLine($"  Basis: {v.Basis}");
+                AppendFinding(sb, v, criticalErrorQuote, outOfRubricBasis, "");
             }
         }
         sb.AppendLine("--- END VERIFIER FINDINGS ---");
@@ -956,23 +1038,45 @@ public static class BenchmarkAssessmentPrompt
             sb.AppendLine($"Critical error: {(originalCriticalError ? "yes" : "no")}");
             sb.AppendLine("--- END YOUR FIRST VERDICT ---");
         }
-        if (targets != null && targets.Count > 0)
+        if (hasTargets)
         {
             sb.AppendLine();
             sb.AppendLine("--- DEDUCTIONS YOU MAY WITHDRAW ---");
-            foreach (var target in targets)
+            foreach (var target in targets!)
             {
                 string kind = target.Kind == BenchmarkEvidenceInformedTarget.CriticalErrorKind ? "Critical error" : "Accuracy deduction";
                 sb.AppendLine($"- {target.Id} ({kind}): \"{target.Text}\" — findings that bear on it: {string.Join(", ", target.FindingIds)}");
+                foreach (var v in verifications.Where(finding => target.FindingIds.Contains(FindingId(finding), StringComparer.Ordinal)))
+                {
+                    AppendFinding(sb, v, criticalErrorQuote, outOfRubricBasis, "  ");
+                }
             }
             sb.AppendLine("--- END DEDUCTIONS YOU MAY WITHDRAW ---");
         }
         sb.AppendLine();
         sb.AppendLine(EvidenceInformedInstruction);
         sb.AppendLine();
-        sb.AppendLine("Output the same JSON schema as above, with one more field: \"withdrawn\", a list with one object per deduction you withdrew — \"withdrawn\": [ { \"targetId\": \"T1\", \"findingIds\": [\"F2\"], \"reason\": \"…\" } ] — or an empty list. Output nothing else.");
+        sb.AppendLine("Output the same JSON schema as above and nothing else.");
 
         return sb.ToString();
+    }
+
+    /// <summary>The id a finding is cited by in <c>withdrawn</c>: <c>F</c> + its stored claim index.</summary>
+    private static string FindingId(BenchmarkClaimVerification v) => $"F{v.ClaimIndex}";
+
+    private static void AppendFinding(
+        StringBuilder sb, BenchmarkClaimVerification v, string? criticalErrorQuote, string? outOfRubricBasis, string indent)
+    {
+        sb.AppendLine($"{indent}- Finding {FindingId(v)}{FindingRoleLabel(v, criticalErrorQuote, outOfRubricBasis)}: \"{v.Claim}\"");
+        sb.AppendLine($"{indent}  Verdict: {v.Verdict}");
+        if (!string.IsNullOrWhiteSpace(v.Citation))
+        {
+            sb.AppendLine($"{indent}  Citation: {v.Citation}");
+        }
+        if (!string.IsNullOrWhiteSpace(v.Basis))
+        {
+            sb.AppendLine($"{indent}  Basis: {v.Basis}");
+        }
     }
 
     /// <summary>Why a finding was submitted, from its roles, or for a legacy record by matching its text.</summary>

@@ -3,6 +3,7 @@ import { of, throwError } from 'rxjs';
 import { MultiRunProgressDialogComponent } from './multi-run-progress-dialog.component';
 import { AdminBenchmarkService } from '../../../services/admin-benchmark.service';
 import { SystemService } from '../../../services/system.service';
+import { BenchmarkCompletionSoundService } from '../../../services/benchmark-completion-sound.service';
 import {
   BenchmarkRunSeriesDto,
   BenchmarkRunSeriesMemberDto,
@@ -513,5 +514,42 @@ describe('MultiRunProgressDialogComponent', () => {
     expect(component.copiedSeriesDiagnostics).toBeTrue();
     expect(component.seriesDiagnosticsCopyFailed).toBeFalse();
     expect(component.seriesDiagnosticsCopyStatus).toContain('copied');
+  });
+
+  // --- Part C: resuming a stopped series arms the completion sound and tells the host ----------
+
+  describe('continueSeries', () => {
+    it('arms the completion sound under this click before the resume request is sent', () => {
+      const soundService = TestBed.inject(BenchmarkCompletionSoundService);
+      const armSpy = spyOn(soundService, 'arm').and.returnValue(Promise.resolve());
+      open(buildSeries({ status: 'Stopped', stopReason: 'MemberFailed', resumable: true }));
+
+      component.continueSeries();
+
+      expect(armSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('emits seriesResumed with the series id once the resume succeeds', () => {
+      open(buildSeries({ id: 7, status: 'Stopped', stopReason: 'MemberFailed', resumable: true }));
+      const resumedSpy = jasmine.createSpy('seriesResumed');
+      component.seriesResumed.subscribe(resumedSpy);
+
+      component.continueSeries();
+
+      expect(serviceMock.resumeRunSeries).toHaveBeenCalledWith(7, undefined);
+      expect(resumedSpy).toHaveBeenCalledWith(7);
+    });
+
+    it('does not emit seriesResumed when the resume is refused', () => {
+      open(buildSeries({ id: 7, status: 'Stopped', stopReason: 'MemberFailed', resumable: true }));
+      serviceMock.resumeRunSeries.and.returnValue(throwError(() => ({ status: 500, error: 'boom' })));
+      const resumedSpy = jasmine.createSpy('seriesResumed');
+      component.seriesResumed.subscribe(resumedSpy);
+
+      component.continueSeries();
+
+      expect(resumedSpy).not.toHaveBeenCalled();
+      expect(component.errorMessage).toContain('boom');
+    });
   });
 });
