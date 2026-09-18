@@ -1102,6 +1102,10 @@ namespace Overseer.Services
             return sb.ToString();
         }
 
+        /* Every macro src/monst.c defines a monster with. All five share argument slots 0-26;
+           the variants only append animation, enlargement and replacement slots after them. */
+        private const string MonsterMacroAlternation = "GENERAL_MON|ENLARGED_ANIMATED_MON|ENLARGED_MON|ANIMATED_MON|MON";
+
         public StatsResponse<MonsterStats> GetMonsterStats(string name)
         {
             var response = new StatsResponse<MonsterStats>();
@@ -1114,7 +1118,7 @@ namespace Overseer.Services
 
             int matchLine = -1;
             string escapedName = Regex.Escape(name);
-            var nameRegex = new Regex($@"^\s*(?:ANIMATED_MON|ENLARGED_MON|ENLARGED_ANIMATED_MON|MON)\(\s*""{escapedName}""", RegexOptions.IgnoreCase);
+            var nameRegex = new Regex($@"^\s*(?:{MonsterMacroAlternation})\(\s*""{escapedName}""", RegexOptions.IgnoreCase);
 
             for (int i = 0; i < doc.ContentLines.Length; i++)
             {
@@ -1145,7 +1149,7 @@ namespace Overseer.Services
                 /* ExtractParenBlock includes outer parens; strip them before tokenizing */
                 string innerContent = ExtractInnerArgs(extraction.Content);
                 var tokens = _dataParser.ParseMonsterMacroArgs(innerContent);
-                if (tokens.Count >= 24) /* MON has at least 24 top-level args before soundset fields */
+                if (tokens.Count >= 24) /* every monster macro has at least 24 top-level args before soundset fields */
                 {
                     var stats = new MonsterStats();
 
@@ -1217,7 +1221,7 @@ namespace Overseer.Services
             if (doc == null) return Enumerable.Empty<string>();
 
             var results = new List<string>();
-            var regex = new Regex(@"^\s*(?:ANIMATED_MON|ENLARGED_MON|ENLARGED_ANIMATED_MON|MON)\(\s*""([^""]+)""", RegexOptions.IgnoreCase);
+            var regex = new Regex($@"^\s*(?:{MonsterMacroAlternation})\(\s*""([^""]+)""", RegexOptions.IgnoreCase);
             foreach (var line in doc.ContentLines)
             {
                 var m = regex.Match(line);

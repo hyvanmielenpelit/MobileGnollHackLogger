@@ -659,6 +659,17 @@ message              // string?
 > `Success` nor the presence of an `error` field alone tells you whether the corpus was reachable
 > — you have to read the JSON.
 
+**`get_monster_stats` name match** (`SourceCodeService.MonsterMacroAlternation`, shared with
+`SearchMonsters`): a line of `src/monst.c` opening with any of the five monster macros — `MON`,
+`ANIMATED_MON`, `ENLARGED_MON`, `ENLARGED_ANIMATED_MON`, `GENERAL_MON` — followed by the quoted
+name, case-insensitively. The five share argument slots 0–26 and differ only in the animation,
+enlargement and replacement slots appended after them, so one positional Level 1 parse serves all.
+**Until 2026-09-18 the alternation lacked `GENERAL_MON`**, so its 34 monsters — *little dog*, *dog*,
+*kitten*, *pony*, the unicorns, *long worm*, *Angel*, *aligned priest* among them — returned *"No monster named '…' found in
+the game data."* from a fully working corpus. In a run older than that fix, such a miss is a **tool
+defect**, not a model error and not a corpus defect; confirm with
+`Select-String '^\s*GENERAL_MON\(\s*"<name>"'` against `src/monst.c` at the run's recorded SHA.
+
 **`get_monster_stats` attacks** (`SourceCodeService.ParseAttacks`): `stats.mattk` is a list with
 one object per attack, carrying the `ATTK` slots by name — `aatyp`, `adtyp`, `damn`, `damd`, `damp`,
 `mcadj`, `mlevel`, `range`, `aflags`, `action_tile`. **`damn` is the number of dice and `damd` the die
