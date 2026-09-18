@@ -411,6 +411,8 @@ The columns of that table are defined in the diagnostics skill, so this item **c
 
 Any implementation plan derived from a benchmark run must replicate this section or explicitly state: *"No chat-transferable changes proposed in this plan."*
 
+**All of it goes in one task directory.** The analysis, the server plan, a wiki handoff prompt, and any plan whose work is in another repository — named with that repository's prefix, e.g. `gnollhack_implementation_plan_v<N>.md` — are one document set under `hyvanmielenpelit/MobileGnollHackLogger/YYYY-MM-DD/<task_name>/`, never split across scopes. [`server_implementation_planning`](../server_implementation_planning/SKILL.md) § *One task directory per analysis* owns the rule.
+
 ---
 
 ## 11. Model Behaviour Notes (Accumulated Knowledge)

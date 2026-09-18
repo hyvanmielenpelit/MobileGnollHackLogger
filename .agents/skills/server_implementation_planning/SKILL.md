@@ -216,6 +216,27 @@ chains above are what constrains sequencing here.
 
 Any plan derived from an AI benchmark run analysis, report, or diagnostic review **MUST** include a dedicated **Chat Transfer** section, and **MUST** consult all five skills `.agents/AGENTS.md` § *AI Benchmark Findings* names — `server_benchmark_to_chat_transfer`, `server_benchmark_tool_diagnostics`, `server_tool_data_sources`, `server_tool_parameter_reference` and `server_wiki_handoff` — before drafting. That requirement is unconditional; do not treat the last four as conditional on the shape of a finding.
 
+### One task directory per analysis
+
+**Every document a benchmark analysis produces goes in the same task directory**, under this repository's scope:
+
+```text
+<plans-root>/hyvanmielenpelit/MobileGnollHackLogger/YYYY-MM-DD/<task_name>/
+  benchmark_run_<N>_analysis_v<N>.md
+  implementation_plan_v<N>.md               <- the Overseer / server plan
+  wiki_handoff_prompt_v<N>.md               <- when a finding lands on rung 2
+  gnollhack_implementation_plan_v<N>.md     <- a plan whose work is in another repository
+  task.md, walkthrough.md                   <- the server plan's
+  gnollhack_task.md, gnollhack_walkthrough.md
+```
+
+- **A plan for another repository stays here**, named with that repository's lower-case name as a prefix — `gnollhack_` for GnollHack — and is **not** filed under that repository's own scope. This is the global skill's *"several repositories, one clearly main"* case, decided once: for a benchmark analysis the main repository is always this one, because the analysis is what a reader looks for and the run, the report and the registry entry all live here.
+- **It is a member of the round's document set**: listed in the main plan's `## Document Set`, bumped with every revision, and copied verbatim with the one-line harmonization note when unchanged.
+- **It still has to stand on its own.** It is handed to another developer, possibly in another application, so it says in its own header that the work is in the other repository, that its paths are relative to that repository's root, and that none of its sibling documents is needed to implement it. Its checklist and walkthrough take the same prefix so they do not collide with the server plan's.
+- **The rubric repair YAML and the Snapshot Suite Wizard files are not plans** and stay outside every repository, as `server_rubric_handoff` and `server_snapshot_suite_authoring` say.
+
+Set on 2026-09-18 by the user's instruction, in the run-52 round, after a GnollHack plan was first filed under `hyvanmielenpelit/GnollHack/` and had to be moved: split across two scopes, the round's four documents could not be found, versioned or handed over as one thing.
+
 ### The `Skills consulted:` line
 
 Every plan and every analysis document derived from a benchmark run **MUST** carry a one-line `Skills consulted:` field, near the top with the other metadata, listing the skills actually read — and stating explicitly when a mandatory one was **not** read, and why.
