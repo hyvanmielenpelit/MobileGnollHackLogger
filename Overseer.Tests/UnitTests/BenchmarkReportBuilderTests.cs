@@ -3692,6 +3692,134 @@ public class BenchmarkReportBuilderTests
         Assert.True(totalQuestionsLine > quotesLine, "the quote check stays in the manifest");
     }
 
+    // -------------------------------------------------------------------------------------
+    // Harness 33: each missing board quote named, the board's format, re-run provenance.
+    // -------------------------------------------------------------------------------------
+
+    [Fact]
+    public void BoardFactsManifest_EachMissingLiteralIsListedUnderTheLine()
+    {
+        var run = Harness30BoardRun(BoardGradedAnswer(1, 80));
+        run.HarnessVersion = "33";
+        run.GameSnapshotNameUsed = "tommi2";
+        run.BoardFactsCheckJson = BenchmarkBoardFactsChecker.Serialize(new Overseer.Models.BoardFactsCheckDto
+        {
+            BulletCount = 3,
+            CheckedLiteralCount = 3,
+            MissingLiterals = { BoardFactIssue(6, "T - the Holy Grail (0 charges, 0 rechargings)"), BoardFactIssue(1, "HP:15(15)") }
+        });
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        string expected = string.Join(Environment.NewLine,
+            "- **Rubric board quotes:** 3 checked, 2 missing (Q1 ×1, Q6 ×1) — these rubrics quote text this board does not contain; grades on them rest on stale facts.",
+            "  - Q1: \"HP:15(15)\"",
+            "  - Q6: \"T - the Holy Grail (0 charges, 0 rechargings)\"",
+            "- **Total Questions:**");
+        Assert.Contains(expected, report);
+    }
+
+    [Fact]
+    public void BoardFactsMissingLiteralLines_AreCappedWithACountOfTheRest()
+    {
+        var check = new Overseer.Models.BoardFactsCheckDto();
+        for (int i = 1; i <= 23; i++)
+        {
+            check.MissingLiterals.Add(BoardFactIssue(i, $"quote {i}"));
+        }
+
+        var lines = BenchmarkReportBuilder.BoardFactsMissingLiteralLines(check);
+
+        Assert.Equal(21, lines.Count);
+        Assert.Equal("  - Q20: \"quote 20\"", lines[19]);
+        Assert.Equal("  - and 3 more", lines[20]);
+        Assert.Empty(BenchmarkReportBuilder.BoardFactsMissingLiteralLines(new Overseer.Models.BoardFactsCheckDto()));
+        Assert.Empty(BenchmarkReportBuilder.BoardFactsMissingLiteralLines(null));
+    }
+
+    [Fact]
+    public void GameSnapshotLine_StatesTheFormatFromHarness33Only()
+    {
+        var formatted = Harness30BoardRun(BoardGradedAnswer(1, 80));
+        formatted.HarnessVersion = "33";
+        formatted.GameSnapshotNameUsed = "tommi2";
+        formatted.GameSnapshotFormatVersionUsed = 3;
+        Assert.Contains("SHA-256 8f8c4778d449, format 3)", BenchmarkReportBuilder.BuildMarkdownReport(formatted));
+
+        var unstated = Harness30BoardRun(BoardGradedAnswer(1, 80));
+        unstated.HarnessVersion = "33";
+        unstated.GameSnapshotNameUsed = "tommi2";
+        Assert.Contains("SHA-256 8f8c4778d449, format not stated)", BenchmarkReportBuilder.BuildMarkdownReport(unstated));
+
+        var legacy = Harness30BoardRun(BoardGradedAnswer(1, 80));
+        legacy.HarnessVersion = "32";
+        legacy.GameSnapshotNameUsed = "tommi2";
+        string legacyReport = BenchmarkReportBuilder.BuildMarkdownReport(legacy);
+        Assert.Contains("SHA-256 8f8c4778d449)", legacyReport);
+        Assert.DoesNotContain(", format", legacyReport);
+    }
+
+    [Fact]
+    public void Delivery_Harness33_KeepsThePreRunStampAndAddsTheReRunStamp()
+    {
+        var run = Harness30BoardRun(BoardGradedAnswer(1, 80));
+        run.HarnessVersion = "33";
+        run.CandidateDeliveryVerifiedAtUtc = new DateTime(2026, 9, 18, 21, 1, 30, DateTimeKind.Utc);
+        run.RerunStartedAtUtc = new DateTime(2026, 9, 18, 21, 20, 30, DateTimeKind.Utc);
+        run.RerunCandidateDeliveryVerifiedAtUtc = new DateTime(2026, 9, 18, 21, 20, 41, DateTimeKind.Utc);
+
+        Assert.Contains(
+            "**Delivery:** prompt and board delivery verified against the provider request body before the first question (2026-09-18 21:01:30 UTC); re-verified before the re-run (2026-09-18 21:20:41 UTC).",
+            BenchmarkReportBuilder.BuildMarkdownReport(run));
+    }
+
+    [Fact]
+    public void Delivery_BeforeHarness33_AStampTakenAfterTheReRunBeganIsNamedAsTheReRuns()
+    {
+        var run = Harness30BoardRun(BoardGradedAnswer(1, 80));
+        run.HarnessVersion = "32";
+        run.RerunStartedAtUtc = new DateTime(2026, 9, 18, 21, 20, 30, DateTimeKind.Utc);
+        run.CandidateDeliveryVerifiedAtUtc = new DateTime(2026, 9, 18, 21, 20, 41, DateTimeKind.Utc);
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains(
+            "**Delivery:** prompt and board delivery verified against the provider request body before the re-run (2026-09-18 21:20:41 UTC); the pre-run probe's stamp was overwritten by the re-run, as on every run before harness 33.",
+            report);
+        Assert.DoesNotContain("before the first question", report);
+    }
+
+    [Fact]
+    public void ReExecutedAnswer_NamesWhatItReplaced_InTheRerunBlockAndUnderItsQuestion()
+    {
+        var replaced = BoardGradedAnswer(15, 80);
+        replaced.RerunAtUtc = new DateTime(2026, 9, 18, 21, 21, 5, DateTimeKind.Utc);
+        replaced.RerunOfStatus = BenchmarkAnswerStatus.ProviderError;
+        replaced.RerunOfErrorMessage = "Stream ended\r\nwithout a final message.";
+        var run = Harness30BoardRun(BoardGradedAnswer(1, 80), replaced);
+        run.HarnessVersion = "33";
+        run.RerunStartedAtUtc = new DateTime(2026, 9, 18, 21, 20, 30, DateTimeKind.Utc);
+        run.RerunCompletedAtUtc = new DateTime(2026, 9, 18, 21, 22, 42, DateTimeKind.Utc);
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("> - Q15 re-executed: was ProviderError — Stream ended without a final message.", report);
+        Assert.Contains("> The replaced attempts' tool-call records are not kept.", report);
+        Assert.Contains("- **Re-executed:** 2026-09-18 21:21:05 UTC; was ProviderError — Stream ended without a final message.", report);
+        Assert.DoesNotContain("Q1 re-executed", report);
+    }
+
+    [Fact]
+    public void ReExecutedAnswer_WithoutARecordedOriginalStatus_SaysSo()
+    {
+        var answer = BoardGradedAnswer(3, 80);
+        answer.RerunAtUtc = new DateTime(2026, 9, 18, 21, 21, 5, DateTimeKind.Utc);
+
+        Assert.Equal(
+            new[] { "Q3 re-executed: replaced attempt not recorded" },
+            BenchmarkReportBuilder.ReExecutedAnswerLines(new[] { answer }));
+    }
+
     private const string BasisStatement = "The prayer timeout reset is independent of experience level.";
 
     private static BenchmarkClaimVerification RoleItem(int index, string claim, BenchmarkClaimVerdict verdict, string? citation, string role)
@@ -3808,6 +3936,140 @@ public class BenchmarkReportBuilderTests
         Assert.Contains(
             "- **Claim Verification Yield:** 8 unverified claim(s) + 2 accused sentence(s) checked — claims: 7 supported, 0 refuted, 1 indeterminate; accused sentences: 1 supported, 1 refuted, 0 indeterminate. $1.70 ($0.17/item over both), 67% of run cost.",
             report);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Harness 33 / scoring method 12: assessor statements apart, suspected-false claims,
+    // citation-liveness notes, widened accused sentences.
+    // -------------------------------------------------------------------------------------
+
+    [Fact]
+    public void AssessorStatements_AreCountedApart_AndARefutationIsNotARefutedClaimOfTheAnswer()
+    {
+        var q1 = ContestedByCause(1,
+            RoleItem(0, "The repower time is randomized, about 100 turns.", BenchmarkClaimVerdict.Refuted, "include/artilist.h:335", BenchmarkClaimRoles.AssessorStatement),
+            RoleItem(1, "The Grail heals when invoked.", BenchmarkClaimVerdict.Supported, "src/artifact.c:10", BenchmarkClaimRoles.AssessorStatement));
+        q1.ClaimsRefutedCount = 0;
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(Harness30BoardRun(q1));
+
+        Assert.Contains("> - **Assessor statements checked:** 2 — supported 1, refuted 1, indeterminate 0", report);
+        Assert.Contains("> - **Assessor statement refuted:** a statement of the assessor's own evidence was checked by the claim verifier and **refuted** — \"The repower time is randomized, about 100 turns.\" (include/artilist.h:335).", report);
+        Assert.Contains("- **Assessor Statements Checked:** 2 across 1 answer(s) (Q1) — supported 1, refuted 1, indeterminate 0.", report);
+        Assert.Contains("- **Contested Accuracy Deductions:** 1 — a statement of the assessor's own evidence was refuted: Q1.", report);
+        Assert.Contains("or a statement of the assessor's own accuracy evidence was **refuted**.", report);
+        Assert.DoesNotContain("#### Refuted Claims", report);
+    }
+
+    [Fact]
+    public void SuspectedFalseClaims_AreCountedWithTheAssessorRightOnARefutation()
+    {
+        var suspected = new BenchmarkClaimVerification(0, "Lizard corpses cure confusion.", BenchmarkClaimVerdict.Refuted, "src/eat.c:1670", "Basis.")
+        {
+            Roles = new[] { BenchmarkClaimRoles.UnverifiedClaim },
+            SuspectedFalse = true,
+            Suspicion = "they cure stoning",
+            RecordedClaim = "Suspected false: Lizard corpses cure confusion. — they cure stoning"
+        };
+        var plain = RoleItem(1, "Own claim, supported.", BenchmarkClaimVerdict.Supported, "src/own.c:1", BenchmarkClaimRoles.UnverifiedClaim);
+        var q1 = BoardGradedAnswer(1, 80);
+        q1.UnverifiedClaimCount = 2;
+        q1.UnverifiedClaimsJson = JsonSerializer.Serialize(new[] { suspected.RecordedClaim, plain.Claim });
+        q1.ClaimsSupportedCount = 1;
+        q1.ClaimsRefutedCount = 1;
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[] { suspected, plain });
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(Harness30BoardRun(q1));
+
+        Assert.Contains("> - **Suspected false by the assessor:** 1 — refuted 1 (the assessor was right), supported 0, indeterminate 0", report);
+        Assert.Contains("- **Suspected False by the Assessor:** 1 across 1 answer(s) (Q1) — refuted 1 (the assessor was right), supported 0, indeterminate 0.", report);
+        Assert.Contains("- **Q1:** \"Lizard corpses cure confusion.\" *(suspected false by the assessor)*", report);
+    }
+
+    [Fact]
+    public void CitationNote_DemotesTheVerdictInEveryCount_AndPrintsBoth()
+    {
+        var demoted = new BenchmarkClaimVerification(0, "Charged sentence.", BenchmarkClaimVerdict.Refuted, "src/priest.c:120", "Basis.")
+        {
+            Roles = new[] { BenchmarkClaimRoles.AccusedQuote },
+            CitationNote = "cited function priest_talk has no live call site"
+        };
+        var q1 = BoardGradedAnswer(1, 60);
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[] { demoted });
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(Harness30BoardRun(q1));
+
+        Assert.Contains("> - **Accused sentences checked:** 1 — supported 0, refuted 0, indeterminate 1", report);
+        Assert.Contains("> - **Accused sentence, indeterminate:** a sentence the assessor charged as false was checked by the claim verifier and returned **indeterminate (verifier: refuted; cited function priest_talk has no live call site)** — \"Charged sentence.\" (src/priest.c:120).", report);
+        Assert.Contains("> - **Citation note:** \"Charged sentence.\" — the verifier returned refuted citing src/priest.c:120, but cited function priest_talk has no live call site; the harness reads it as indeterminate.", report);
+    }
+
+    [Fact]
+    public void AccusedSentence_WidenedFromFragments_KeepsTheQuotationsVisible()
+    {
+        var widened = new BenchmarkClaimVerification(0, "Keep a healthy supply of vegan food such as fortune cookies, and candy bars.", BenchmarkClaimVerdict.Refuted, "src/eat.c:5", "Basis.")
+        {
+            Roles = new[] { BenchmarkClaimRoles.AccusedQuote },
+            QuotedFragments = new[] { "healthy supply of vegan food", "cookies, and candy" },
+            Charge = "The answer's \"healthy supply of vegan food\" is wrong."
+        };
+        var q1 = BoardGradedAnswer(1, 60);
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[] { widened });
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(Harness30BoardRun(q1));
+
+        Assert.Contains("— \"Keep a healthy supply of vegan food such as fortune cookies, and candy bars.\" (quoted: \"healthy supply of vegan food\", \"cookies, and candy\") (src/eat.c:5).", report);
+    }
+
+    [Fact]
+    public void ClaimVerificationYield_CountsAssessorStatementsAsAThirdPopulation()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            RoleItem(0, "Charged but true.", BenchmarkClaimVerdict.Supported, "src/objects.c:2889", BenchmarkClaimRoles.AccusedQuote),
+            RoleItem(1, "The assessor's own statement.", BenchmarkClaimVerdict.Refuted, "src/zap.c:9", BenchmarkClaimRoles.AssessorStatement)
+        });
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.TestedModelIdUsed = "gpt-5.6";
+        run.AssessorModelIdUsed = "gemini-3.7-flash";
+        run.ClaimVerifierModelIdUsed = "gpt-5-mini";
+        run.TotalInputTokens = 200_000;
+        run.TotalOutputTokens = 30_000;
+        run.TotalAssessmentInputTokens = 100_000;
+        run.TotalAssessmentOutputTokens = 10_000;
+        run.TotalClaimVerificationInputTokens = 1_300_000;
+        run.TotalClaimVerificationOutputTokens = 100_000;
+        run.ClaimsSupportedCount = 7;
+        run.ClaimsRefutedCount = 0;
+        run.ClaimsIndeterminateCount = 1;
+
+        var runPricing = new BenchmarkRunPricing(
+            Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            SecondOpinion: null,
+            ClaimVerifier: new ModelPricing(1.00m, 4.00m, Source: ModelPricingSource.Custom),
+            IsSnapshot: true
+        );
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
+
+        Assert.Contains(
+            "- **Claim Verification Yield:** 8 unverified claim(s) + 1 accused sentence(s) + 1 assessor statement(s) checked — claims: 7 supported, 0 refuted, 1 indeterminate; accused sentences: 1 supported, 0 refuted, 0 indeterminate; assessor statements: 0 supported, 1 refuted, 0 indeterminate. $1.70 ($0.17/item over all three), 67% of run cost.",
+            report);
+    }
+
+    [Theory]
+    [InlineData(11, "These are Accuracy deductions whose basis is the assessor's own knowledge rather than the rubric or the corpus it was given")]
+    [InlineData(12, "These are Accuracy deductions the assessor made from its own knowledge although scoring method 12 tells it not to")]
+    public void OutOfRubricAccuracyDeductions_AreDescribedByTheRunsScoringMethod(int method, string expected)
+    {
+        var q1 = BoardGradedAnswer(1, 60);
+        q1.AnswerFlags = (int)BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction;
+        var run = Harness30BoardRun(q1);
+        run.ScoringMethodVersion = method;
+
+        Assert.Contains(expected, BenchmarkReportBuilder.BuildMarkdownReport(run));
     }
 
     [Fact]

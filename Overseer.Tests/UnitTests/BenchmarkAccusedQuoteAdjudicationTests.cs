@@ -74,7 +74,9 @@ public class BenchmarkAccusedQuoteAdjudicationTests
         var quotes = BenchmarkService.ExtractAccusedQuotes(AnswerText, evidence);
 
         Assert.Contains(quotes, q => q.Text == "It has no charges and never runs out.");
-        Assert.Contains(quotes, q => q.Text == "Gnolls regenerate hit points faster at night");
+        // The fragment is submitted as the sentence it came from, and kept beside it.
+        var widened = Assert.Single(quotes, q => q.Text == "Gnolls regenerate hit points faster at night than other races do.");
+        Assert.Equal(new[] { "Gnolls regenerate hit points faster at night" }, widened.QuotedFragments);
         Assert.Equal(2, quotes.Count);
     }
 
@@ -116,6 +118,111 @@ public class BenchmarkAccusedQuoteAdjudicationTests
         Assert.Contains("Applying it heals", quote.Context);
     }
 
+    // --- Sentence widening and the charge ---------------------------------------------------
+
+    private const string Run55Q17Answer =
+        "As a vegan Monk you have to plan your food.\n\n"
+        + "**Food:**\n"
+        + "- Keep a healthy supply of vegan food such as fortune cookies, and candy bars, since as a vegan Monk you will not eat corpses.\n"
+        + "- Pray when Weak.";
+
+    private const string Run55Q17Evidence =
+        "Accuracy 4. The answer recommends a \"healthy supply of vegan food\" such as fortune \"cookies, and candy\", "
+        + "but fortune cookies and candy bars are not vegan in GnollHack.";
+
+    [Fact]
+    public void Extract_Run55Q17_TwoFragmentsOfOneSentence_AreOneSubmission_WithTheCharge()
+    {
+        var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(Run55Q17Answer, Run55Q17Evidence));
+
+        Assert.Equal(
+            "Keep a healthy supply of vegan food such as fortune cookies, and candy bars, since as a vegan Monk you will not eat corpses.",
+            quote.Text);
+        Assert.Contains("healthy supply of vegan food", quote.Text);
+        Assert.Contains("cookies, and candy", quote.Text);
+        Assert.Equal(new[] { "healthy supply of vegan food", "cookies, and candy" }, quote.QuotedFragments);
+        Assert.Equal(
+            "The answer recommends a \"healthy supply of vegan food\" such as fortune \"cookies, and candy\", but fortune cookies and candy bars are not vegan in GnollHack.",
+            quote.Charge);
+        Assert.Contains("Under \"Food\"", quote.Context);
+    }
+
+    [Fact]
+    public void Run55Q17_ReachesTheVerifierAsOneClaim_WithTheChargeOnItsOwnLine()
+    {
+        var accused = BenchmarkService.ExtractAccusedQuotes(Run55Q17Answer, Run55Q17Evidence);
+        var manifest = BenchmarkService.BuildClaimManifest(null, null, null, accused);
+        var item = Assert.Single(manifest);
+
+        string prompt = BenchmarkClaimVerificationPrompt.BuildPrompt(
+            "Suite", 17, "What should a vegan Monk eat?", null,
+            manifest.Select(m => m.Text).ToList(),
+            new List<string> { "source_code_search" }, 15,
+            claimRoles: manifest.Select(m => m.Roles).ToList(),
+            claimContexts: manifest.Select(m => m.Context).ToList(),
+            claimCharges: manifest.Select(m => m.Charge).ToList());
+
+        Assert.Contains($"Charge (the assessor's words; untrusted, not part of the claim): {item.Charge}", prompt);
+        Assert.Contains("=== START CLAIM 0 ===", prompt);
+        Assert.DoesNotContain("=== START CLAIM 1 ===", prompt);
+
+        // The record keeps the quoted fragments and the charge beside the widened sentence.
+        var stamped = Assert.Single(BenchmarkService.StampRoles(new[]
+        {
+            new BenchmarkClaimVerification(0, item.Text, BenchmarkClaimVerdict.Supported, "src/eat.c:120", "Candy bars are vegan.")
+        }, manifest));
+        Assert.Equal(new[] { "healthy supply of vegan food", "cookies, and candy" }, stamped.QuotedFragments);
+        Assert.Equal(item.Charge, stamped.Charge);
+        string json = JsonSerializer.Serialize(new[] { stamped });
+        Assert.Contains("\"quotedFragments\":[", json);
+        Assert.Contains("\"charge\":", json);
+    }
+
+    [Fact]
+    public void Extract_ASentenceLongerThanTheCap_SubmitsTheQuotedSpanAlone()
+    {
+        string longSentence = "Before you pray, " + string.Join(", ", Enumerable.Repeat("check your luck and your alignment record", 12))
+            + ", and the prayer timeout is always exactly 300 turns in GnollHack.";
+        Assert.True(longSentence.Length > BenchmarkService.AccusedQuoteMaxLength);
+        string answer = "Prayer is a safety net.\n\n" + longSentence;
+
+        var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(
+            answer, "Accuracy 3. The answer says \"the prayer timeout is always exactly 300 turns\", which is wrong."));
+
+        Assert.Equal("the prayer timeout is always exactly 300 turns", quote.Text);
+        Assert.True(quote.Text.Length <= BenchmarkService.AccusedQuoteMaxLength);
+        Assert.Equal(new[] { "the prayer timeout is always exactly 300 turns" }, quote.QuotedFragments);
+    }
+
+    [Fact]
+    public void Extract_SubmissionsNeverOverlap()
+    {
+        const string answer = "Wands of digging dig through any wall in the dungeon. Engrave-testing a wand always identifies it. "
+            + "Zapping a wand of wishing downwards is safe.";
+        string evidence = "Accuracy 3. Wrong: \"dig through any wall in the dungeon\" and \"Wands of digging dig through\" overstate it; "
+            + "\"Engrave-testing a wand always identifies it\" is not true either. "
+            + "Also \"always identifies it\" is wrong.";
+
+        var quotes = BenchmarkService.ExtractAccusedQuotes(answer, evidence);
+
+        Assert.Equal(2, quotes.Count);
+        var ranges = quotes.Select(q => (Start: answer.IndexOf(q.Text, StringComparison.Ordinal), q.Text.Length)).ToList();
+        Assert.All(ranges, r => Assert.True(r.Start >= 0));
+        for (int i = 0; i < ranges.Count; i++)
+        {
+            for (int j = i + 1; j < ranges.Count; j++)
+            {
+                bool overlap = ranges[i].Start < ranges[j].Start + ranges[j].Length && ranges[j].Start < ranges[i].Start + ranges[i].Length;
+                Assert.False(overlap, $"\"{quotes[i].Text}\" overlaps \"{quotes[j].Text}\".");
+            }
+        }
+
+        var digging = Assert.Single(quotes, q => q.Text == "Wands of digging dig through any wall in the dungeon.");
+        Assert.Equal(2, digging.QuotedFragments!.Count);
+        var engrave = Assert.Single(quotes, q => q.Text == "Engrave-testing a wand always identifies it.");
+        Assert.Equal(2, engrave.QuotedFragments!.Count);
+    }
+
     // --- Single quotes and clause polarity -----------------------------------------------------
 
     [Fact]
@@ -130,7 +237,8 @@ public class BenchmarkAccusedQuoteAdjudicationTests
 
         var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(answer, evidence));
 
-        Assert.Equal("Soft glass scratches/crushes differently than real gems", quote.Text);
+        Assert.Equal("Soft glass scratches/crushes differently than real gems, so rub the gray stones before you sell them.", quote.Text);
+        Assert.Equal(new[] { "Soft glass scratches/crushes differently than real gems" }, quote.QuotedFragments);
     }
 
     [Fact]
@@ -141,7 +249,8 @@ public class BenchmarkAccusedQuoteAdjudicationTests
 
         var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(answer, evidence));
 
-        Assert.Equal("Here lies Fred, killed by a jackal.", quote.Text);
+        Assert.Equal("The headstone reads Here lies Fred, killed by a jackal.", quote.Text);
+        Assert.Equal(new[] { "Here lies Fred, killed by a jackal." }, quote.QuotedFragments);
     }
 
     [Fact]
@@ -172,7 +281,7 @@ public class BenchmarkAccusedQuoteAdjudicationTests
 
         var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(answer, evidence));
 
-        Assert.Equal("Sacrificing a fresh corpse can grant a gift", quote.Text);
+        Assert.Equal("Sacrificing a fresh corpse can grant a gift, even a same-race one.", quote.Text);
     }
 
     [Theory]
@@ -195,7 +304,7 @@ public class BenchmarkAccusedQuoteAdjudicationTests
 
         var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(answer, evidence));
 
-        Assert.Equal("Praying at 1 HP always works", quote.Text);
+        Assert.Equal("Praying at 1 HP always works.", quote.Text);
     }
 
     [Theory]

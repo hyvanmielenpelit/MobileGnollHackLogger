@@ -248,6 +248,8 @@ public class BenchmarkSnapshotImporter
             ModifiedAtUtc = DateTime.UtcNow
         };
 
+        BenchmarkSnapshotHeaderParser.ApplyTo(board, finalText, textReplaced: false);
+
         return (board, counter);
     }
 

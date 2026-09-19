@@ -196,6 +196,24 @@ public class BenchmarkCriticalErrorAdjudicationTests
         Assert.False(BenchmarkService.CriticalErrorQuoteWasSupported(supported, "  "));
     }
 
+    [Fact]
+    public void ASupportedVerdictCitingADeadFunction_DoesNotContestTheCriticalError()
+    {
+        var verifications = new[]
+        {
+            new BenchmarkClaimVerification(0, Quote, BenchmarkClaimVerdict.Supported, "src/priest.c:812", "Found.")
+                { CitationNote = BenchmarkCitationLivenessCheck.NoteText("priest_talk") }
+        };
+        var answer = Answer(criticalError: true, criticalErrorQuote: Quote);
+
+        Assert.False(BenchmarkService.CriticalErrorQuoteWasSupported(verifications, Quote));
+
+        BenchmarkService.ApplyClaimVerificationOutcome(answer, verifications, isCriticalErrorAdjudication: true, outOfRubricBasis: null);
+        Assert.Equal(0, answer.AnswerFlags & (int)BenchmarkAnswerFlags.ContestedCriticalError);
+        Assert.Contains("\"verdict\":\"Supported\"", answer.ClaimVerificationJson);
+        Assert.Contains("\"citationNote\":\"cited function priest_talk has no live call site\"", answer.ClaimVerificationJson);
+    }
+
     // --- The verifier prompt preamble ---
 
     private static string BuildPrompt(bool disputed, bool criticalErrorAdjudication, string? assessorEvidence = null)

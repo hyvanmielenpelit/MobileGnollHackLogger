@@ -91,6 +91,16 @@ public class BenchmarkRunAnswer
     [MaxLength(4000)]
     public string? ProviderErrorDetail { get; set; }
 
+    // When this answer was last re-executed by a failed-question or single-answer re-run, and the
+    // status and error the replaced attempt carried. The replaced attempt's tool-call rows are not
+    // kept. All three are null on an answer never re-executed, and before harness 33.
+    public DateTime? RerunAtUtc { get; set; }
+
+    public BenchmarkAnswerStatus? RerunOfStatus { get; set; }
+
+    [MaxLength(512)]
+    public string? RerunOfErrorMessage { get; set; }
+
     // Superseded by QualityScore and dimensional level scoring
     public int? Score { get; set; }
 

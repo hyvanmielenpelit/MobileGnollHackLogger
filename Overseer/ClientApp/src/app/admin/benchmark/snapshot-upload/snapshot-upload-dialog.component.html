@@ -21,7 +21,7 @@
           <div class="board-facts-notice">
             <ul class="board-facts-missing-list">
               @for (item of boardFactsCheck.missingLiterals; track item.questionId + ':' + item.orderIndex + ':' + item.literal) {
-                <li>Q{{ item.orderIndex + 1 }}: "{{ item.literal }}"</li>
+                <li>Q{{ item.orderIndex }}: "{{ item.literal }}"</li>
               }
             </ul>
             <p>These rubrics quote text the board does not contain. Repair them before the next run: download the suite as YAML and hand it to an agent with the <code>server_rubric_handoff</code> skill.</p>

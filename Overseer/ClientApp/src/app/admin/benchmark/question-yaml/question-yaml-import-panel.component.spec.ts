@@ -212,7 +212,9 @@ describe('QuestionYamlImportPanelComponent', () => {
     fixture.detectChanges();
 
     const notice = host.querySelector('.board-facts-notice')!;
-    expect(notice.textContent).toContain('Q6: "the uncursed Holy Grail"');
+    // OrderIndex is stored 1-based and printed as it is.
+    expect(notice.textContent).toContain('Q5: "the uncursed Holy Grail"');
+    expect(notice.textContent).not.toContain('Q6');
     expect(notice.textContent).toContain('server_rubric_handoff');
     expect(host.querySelector('.board-facts-unquoted')!.textContent).toContain('2 BOARD FACTS line');
     expect(service.getBoardFactsCheck).not.toHaveBeenCalled();
@@ -252,7 +254,7 @@ describe('QuestionYamlImportPanelComponent', () => {
     const check: BoardFactsCheckDto = {
       bulletCount: 4, checkedLiteralCount: 3, unquotedBulletCount: 0,
       unquotedBullets: [],
-      missingLiterals: [{ questionId: 17, orderIndex: 0, literal: 'a level 3 peaceful dwarf', lineExcerpt: 'h - a level 3 peaceful dwarf' }]
+      missingLiterals: [{ questionId: 17, orderIndex: 1, literal: 'a level 3 peaceful dwarf', lineExcerpt: 'h - a level 3 peaceful dwarf' }]
     };
     service.getBoardFactsCheck.and.returnValue(of(check));
 

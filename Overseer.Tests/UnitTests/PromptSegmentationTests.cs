@@ -411,11 +411,11 @@ public class PromptSegmentationTests
 
         // The seams are the blank lines after the unverified-claims section and after the board.
         Assert.StartsWith("You are an expert game knowledge and reasoning assessor", preamble);
-        Assert.EndsWith("Return an empty list when every claim is adjudicable." + nl, preamble);
+        Assert.EndsWith("and the claim verifier checks it against the source." + nl, preamble);
         Assert.StartsWith(BenchmarkAssessmentPrompt.GradingBoardHeading + nl, boardBlock);
         Assert.EndsWith("--- END GAME CONTEXT BOARD ---" + nl, boardBlock);
         Assert.StartsWith("--- QUESTION AND CANDIDATE ANSWER ---" + nl, body);
-        Assert.Contains("adjudicable." + nl + nl + BenchmarkAssessmentPrompt.GradingBoardHeading + nl, full);
+        Assert.Contains("against the source." + nl + nl + BenchmarkAssessmentPrompt.GradingBoardHeading + nl, full);
         Assert.Contains("--- END GAME CONTEXT BOARD ---" + nl + nl + "--- QUESTION AND CANDIDATE ANSWER ---" + nl, full);
 
         // The preamble carries the suite and nothing question-specific; the body carries none of the

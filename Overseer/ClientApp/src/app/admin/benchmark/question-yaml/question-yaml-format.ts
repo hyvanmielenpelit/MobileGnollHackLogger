@@ -68,7 +68,7 @@ export const QUESTION_YAML_VERSION = 1;
 
 const TOP_LEVEL_KEYS = ['format', 'version', 'suite', 'questions'];
 const SUITE_KEYS = ['name', 'description', 'suggested_description', 'snapshot'];
-const SNAPSHOT_KEYS = ['name', 'gnollhack_version', 'captured_at', 'notes', 'sha256', 'text'];
+const SNAPSHOT_KEYS = ['name', 'gnollhack_version', 'captured_at', 'snapshot_format', 'notes', 'sha256', 'text'];
 const QUESTION_KEYS = ['id', 'difficulty', 'question', 'rubric'];
 export const MAX_SUITE_NAME_LENGTH = 128;
 export const MAX_SNAPSHOT_NAME_LENGTH = 128;
@@ -82,6 +82,8 @@ export interface SnapshotExport {
   notes: string | null;
   sha256: string | null;
   text: string;
+  /** The board's `Snapshot format: N` at capture; informational, ignored on import. */
+  snapshotFormat: number | null;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -135,6 +137,9 @@ function serialize(
       }
       if (s.capturedAtUtc) {
         out.push(`    captured_at: ${quoted(s.capturedAtUtc)}`);
+      }
+      if (s.snapshotFormat != null) {
+        out.push(`    snapshot_format: ${s.snapshotFormat}`);
       }
       if (s.notes && s.notes.trim() !== '') {
         out.push(...blockScalar('notes', s.notes, 4));
@@ -281,6 +286,15 @@ function checkSnapshot(value: unknown, errors: ParseIssue[]): ParsedSnapshot | n
       errors.push({ line: null, message: '`suite.snapshot.captured_at` must be a date, for example 2026-09-16T18:04:11Z.' });
     } else {
       parsed.capturedAt = date.toISOString();
+    }
+  }
+
+  // Informational only: the server derives the format from the board text on import, so a valid
+  // value is accepted and discarded rather than carried on `ParsedSnapshot`.
+  if ('snapshot_format' in value && value['snapshot_format'] !== null) {
+    const format = value['snapshot_format'];
+    if (typeof format !== 'number' || !Number.isInteger(format) || format < 1) {
+      errors.push({ line: null, message: '`suite.snapshot.snapshot_format` must be a positive integer.' });
     }
   }
 

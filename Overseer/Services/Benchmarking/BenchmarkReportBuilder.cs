@@ -87,9 +87,23 @@ public static class BenchmarkReportBuilder
         if (int.TryParse(run.HarnessVersion, out int harness) && harness >= 30)
         {
             // From harness 30 the sentence rests on the recorded probe, not on the version stamp.
-            return run.CandidateDeliveryVerifiedAtUtc.HasValue
-                ? $"prompt and board delivery verified against the provider request body before the first question ({Stamp(run.CandidateDeliveryVerifiedAtUtc.Value)} UTC)."
-                : "not recorded — no pre-run delivery probe is on record for this run.";
+            DateTime? preRun = run.CandidateDeliveryVerifiedAtUtc;
+
+            // Before harness 33 a re-run overwrote the pre-run stamp; one taken after the re-run
+            // began is the re-run's own and says nothing about the first question.
+            if (harness < 33 && preRun.HasValue && run.RerunStartedAtUtc.HasValue && preRun.Value >= run.RerunStartedAtUtc.Value)
+            {
+                return $"prompt and board delivery verified against the provider request body before the re-run ({Stamp(preRun.Value)} UTC); the pre-run probe's stamp was overwritten by the re-run, as on every run before harness 33.";
+            }
+
+            string statement = preRun.HasValue
+                ? $"prompt and board delivery verified against the provider request body before the first question ({Stamp(preRun.Value)} UTC)"
+                : "not recorded — no pre-run delivery probe is on record for this run";
+            if (run.RerunCandidateDeliveryVerifiedAtUtc.HasValue)
+            {
+                statement += $"; re-verified before the re-run ({Stamp(run.RerunCandidateDeliveryVerifiedAtUtc.Value)} UTC)";
+            }
+            return statement + ".";
         }
 
         if (harness >= 29)
@@ -420,25 +434,64 @@ public static class BenchmarkReportBuilder
             .Where(v => BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.AccusedQuote))
             .ToList();
 
-    /// <summary>Accused sentences by verdict: supported, refuted, indeterminate.</summary>
+    /// <summary>
+    /// The statements of the assessor's own evidence the harness sent to the claim verifier, each with
+    /// its verdict; a Refuted one means the assessor, not the answer, was wrong. None before harness 33.
+    /// </summary>
+    private static List<BenchmarkClaimVerification> AssessorStatementsOf(BenchmarkRunAnswer answer)
+        => (ClaimVerificationsOf(answer) ?? new List<BenchmarkClaimVerification>())
+            .Where(v => BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.AssessorStatement))
+            .ToList();
+
+    /// <summary>The answer sentences the assessor reported as <c>Suspected false:</c> (scoring method 12), each with its verdict.</summary>
+    private static List<BenchmarkClaimVerification> SuspectedFalseClaimsOf(BenchmarkRunAnswer answer)
+        => (ClaimVerificationsOf(answer) ?? new List<BenchmarkClaimVerification>())
+            .Where(v => v.SuspectedFalse == true)
+            .ToList();
+
+    /// <summary>Verifications by the verdict the harness reads (<see cref="BenchmarkClaimVerification.EffectiveVerdict"/>): supported, refuted, indeterminate.</summary>
     private static (int Supported, int Refuted, int Indeterminate) VerdictCounts(IEnumerable<BenchmarkClaimVerification> verifications)
     {
         var list = verifications.ToList();
         return (
-            list.Count(v => v.Verdict == BenchmarkClaimVerdict.Supported),
-            list.Count(v => v.Verdict == BenchmarkClaimVerdict.Refuted),
-            list.Count(v => v.Verdict == BenchmarkClaimVerdict.Indeterminate));
+            list.Count(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Supported),
+            list.Count(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Refuted),
+            list.Count(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Indeterminate));
+    }
+
+    /// <summary>
+    /// The verdict word as the harness reads it, with the verifier's own verdict beside it when a
+    /// citation note demoted it, e.g. <c>indeterminate (verifier: refuted; cited function priest_talk has no live call site)</c>.
+    /// </summary>
+    private static string VerdictText(BenchmarkClaimVerification v)
+    {
+        string effective = v.EffectiveVerdict.ToString().ToLowerInvariant();
+        return string.IsNullOrWhiteSpace(v.CitationNote)
+            ? effective
+            : $"{effective} (verifier: {v.Verdict.ToString().ToLowerInvariant()}; {v.CitationNote})";
+    }
+
+    /// <summary>The quoted fragments an accused sentence was widened from, when they differ from it; empty otherwise.</summary>
+    private static string QuotedFragmentsText(BenchmarkClaimVerification v)
+    {
+        var fragments = (v.QuotedFragments ?? Array.Empty<string>())
+            .Where(f => !string.IsNullOrWhiteSpace(f) && !string.Equals(f.Trim(), v.Claim?.Trim(), StringComparison.Ordinal))
+            .ToList();
+        return fragments.Count == 0
+            ? string.Empty
+            : $" (quoted: {string.Join(", ", fragments.Select(f => $"\"{f}\""))})";
     }
 
     private const string BasisRefutedCause = "own-knowledge basis refuted";
     private const string AccusationSupportedCause = "a sentence the assessor quoted as false was supported";
+    private const string AssessorStatementRefutedCause = "a statement of the assessor's own evidence was refuted";
     private const string CauseNotRecorded = "cause not recorded";
 
     /// <summary>
     /// Why an answer carries <see cref="BenchmarkAnswerFlags.ContestedAccuracyDeduction"/>, read from
     /// its verification items by role: the out-of-rubric basis refuted, an accused sentence supported,
-    /// or both. A record stored without roles, or one where neither is found, yields
-    /// <see cref="CauseNotRecorded"/> alone.
+    /// or a statement of the assessor's own evidence refuted, in any combination. A record stored
+    /// without roles, or one where none is found, yields <see cref="CauseNotRecorded"/> alone.
     /// </summary>
     private static List<string> ContestedDeductionCauses(BenchmarkRunAnswer answer)
     {
@@ -451,13 +504,17 @@ public static class BenchmarkReportBuilder
         }
 
         if (verifications!.Any(v => BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.OutOfRubricBasis)
-            && v.Verdict == BenchmarkClaimVerdict.Refuted))
+            && v.EffectiveVerdict == BenchmarkClaimVerdict.Refuted))
         {
             causes.Add(BasisRefutedCause);
         }
         if (BenchmarkService.SupportedAccusations(verifications).Count > 0)
         {
             causes.Add(AccusationSupportedCause);
+        }
+        if (BenchmarkService.RefutedAssessorStatements(verifications).Count > 0)
+        {
+            causes.Add(AssessorStatementRefutedCause);
         }
         if (causes.Count == 0)
         {
@@ -495,6 +552,51 @@ public static class BenchmarkReportBuilder
         }
 
         return line.ToString();
+    }
+
+    /// <summary>What a re-executed answer replaced, one line per answer, e.g. <c>Q15 re-executed: was ProviderError — …</c>.</summary>
+    internal static IEnumerable<string> ReExecutedAnswerLines(IEnumerable<BenchmarkRunAnswer> answers)
+        => answers
+            .Where(a => a.RerunAtUtc.HasValue)
+            .OrderBy(a => a.OrderIndex)
+            .Select(a => $"Q{a.OrderIndex} re-executed: {ReplacedAttemptText(a)}");
+
+    /// <summary><c>was ProviderError — message</c>, or <c>replaced attempt not recorded</c>.</summary>
+    private static string ReplacedAttemptText(BenchmarkRunAnswer a)
+    {
+        if (!a.RerunOfStatus.HasValue)
+        {
+            return "replaced attempt not recorded";
+        }
+        string text = $"was {a.RerunOfStatus.Value}";
+        if (!string.IsNullOrWhiteSpace(a.RerunOfErrorMessage))
+        {
+            text += $" — {a.RerunOfErrorMessage.ReplaceLineEndings(" ").Trim()}";
+        }
+        return text;
+    }
+
+    internal const int MissingBoardQuoteListCap = 20;
+
+    /// <summary>
+    /// The sub-bullets under <see cref="BoardFactsManifestLine"/> that name each missing literal,
+    /// capped at <see cref="MissingBoardQuoteListCap"/>. Empty when nothing is missing.
+    /// </summary>
+    internal static IReadOnlyList<string> BoardFactsMissingLiteralLines(Overseer.Models.BoardFactsCheckDto? check)
+    {
+        if (check == null || check.MissingLiterals.Count == 0) return Array.Empty<string>();
+
+        var lines = check.MissingLiterals
+            .OrderBy(i => i.OrderIndex)
+            .Take(MissingBoardQuoteListCap)
+            .Select(i => $"  - Q{i.OrderIndex}: \"{i.Literal}\"")
+            .ToList();
+        int more = check.MissingLiterals.Count - MissingBoardQuoteListCap;
+        if (more > 0)
+        {
+            lines.Add($"  - and {more} more");
+        }
+        return lines;
     }
 
     /// <summary>
@@ -916,12 +1018,24 @@ public static class BenchmarkReportBuilder
             string shaPrefix = run.GameSnapshotSha256Used?.Length >= 12
                 ? run.GameSnapshotSha256Used[..12]
                 : (run.GameSnapshotSha256Used ?? "n/a");
-            sb.AppendLine($"- **Game Snapshot:** {run.GameSnapshotNameUsed} ({run.GameSnapshotCaptureMethodUsed}, {run.GameSnapshotCharCountUsed} chars, SHA-256 {shaPrefix})");
+            // The format is recorded from harness 33; an earlier run's null is "not recorded", not
+            // "not stated", so nothing is printed for it.
+            string formatText = int.TryParse(run.HarnessVersion, out int manifestHarness) && manifestHarness >= 33
+                ? (run.GameSnapshotFormatVersionUsed.HasValue
+                    ? $", format {run.GameSnapshotFormatVersionUsed.Value}"
+                    : ", format not stated")
+                : string.Empty;
+            sb.AppendLine($"- **Game Snapshot:** {run.GameSnapshotNameUsed} ({run.GameSnapshotCaptureMethodUsed}, {run.GameSnapshotCharCountUsed} chars, SHA-256 {shaPrefix}{formatText})");
         }
-        string? boardFactsLine = BoardFactsManifestLine(BenchmarkBoardFactsChecker.Deserialize(run.BoardFactsCheckJson));
+        var boardFactsCheck = BenchmarkBoardFactsChecker.Deserialize(run.BoardFactsCheckJson);
+        string? boardFactsLine = BoardFactsManifestLine(boardFactsCheck);
         if (boardFactsLine != null)
         {
             sb.AppendLine(boardFactsLine);
+            foreach (string missing in BoardFactsMissingLiteralLines(boardFactsCheck))
+            {
+                sb.AppendLine(missing);
+            }
         }
         sb.AppendLine($"- **Total Questions:** {run.TotalQuestionCount}");
         sb.AppendLine($"- **Answered Questions:** {run.AnsweredQuestionCount} of {run.TotalQuestionCount}");
@@ -1058,6 +1172,21 @@ public static class BenchmarkReportBuilder
             {
                 sb.AppendLine($"> **Repaired by a failed-question re-run** from {rerunSpan} under harness {rerunHarness} (this run: {runHarness}). Candidate System Prompt and ToolGuides SHA-256 matched the run's own, so the answers are on one prompt instrument; the harness build differs where the versions differ.");
             }
+        }
+
+        // What each re-executed answer replaced; recorded from harness 33.
+        var reExecutedAnswers = answers.Where(a => a.RerunAtUtc.HasValue).ToList();
+        if (reExecutedAnswers.Count > 0)
+        {
+            if (!(run.RerunStartedAtUtc.HasValue || rerunPromptDiffers || rerunToolGuidesDiffers))
+            {
+                sb.AppendLine();
+            }
+            foreach (string line in ReExecutedAnswerLines(reExecutedAnswers))
+            {
+                sb.AppendLine($"> - {line}");
+            }
+            sb.AppendLine("> The replaced attempts' tool-call records are not kept.");
         }
         sb.AppendLine();
 
@@ -1830,7 +1959,8 @@ public static class BenchmarkReportBuilder
                     // The accused sentences the verifier also checked, read by role from each answer's
                     // ClaimVerificationJson: the run's claim columns count the answers' own claims only.
                     var accusedChecked = answers.SelectMany(a => AccusedSentencesOf(a)).ToList();
-                    if (claimsChecked > 0 && accusedChecked.Count == 0)
+                    var assessorChecked = answers.SelectMany(a => AssessorStatementsOf(a)).ToList();
+                    if (claimsChecked > 0 && accusedChecked.Count == 0 && assessorChecked.Count == 0)
                     {
                         decimal costPerClaim = verifierTotalCost / claimsChecked;
                         decimal verifierCostShare = totalCost > 0 ? verifierTotalCost / totalCost * 100m : 0m;
@@ -1840,19 +1970,29 @@ public static class BenchmarkReportBuilder
                             $"{Inv(run.ClaimsIndeterminateCount, "N0")} indeterminate. " +
                             $"${Inv(verifierTotalCost, "F2")} ({PerUnitCost(costPerClaim)}/claim), {Inv(verifierCostShare, "F0")}% of run cost.");
                     }
-                    else if (accusedChecked.Count > 0)
+                    else if (accusedChecked.Count > 0 || assessorChecked.Count > 0)
                     {
-                        var accusedCounts = VerdictCounts(accusedChecked);
-                        int itemsChecked = claimsChecked + accusedChecked.Count;
+                        int itemsChecked = claimsChecked + accusedChecked.Count + assessorChecked.Count;
                         decimal costPerItem = verifierTotalCost / itemsChecked;
                         decimal verifierCostShare = totalCost > 0 ? verifierTotalCost / totalCost * 100m : 0m;
+                        var heads = new List<string> { $"{Inv(claimsChecked, "N0")} unverified claim(s)" };
+                        var parts = new List<string>
+                        {
+                            $"claims: {Inv(run.ClaimsSupportedCount, "N0")} supported, {Inv(run.ClaimsRefutedCount, "N0")} refuted, {Inv(run.ClaimsIndeterminateCount, "N0")} indeterminate"
+                        };
+                        void AddPopulation(string head, string label, List<BenchmarkClaimVerification> items)
+                        {
+                            if (items.Count == 0) return;
+                            var counts = VerdictCounts(items);
+                            heads.Add($"{Inv(items.Count, "N0")} {head}");
+                            parts.Add($"{label}: {Inv(counts.Supported, "N0")} supported, {Inv(counts.Refuted, "N0")} refuted, {Inv(counts.Indeterminate, "N0")} indeterminate");
+                        }
+                        AddPopulation("accused sentence(s)", "accused sentences", accusedChecked);
+                        AddPopulation("assessor statement(s)", "assessor statements", assessorChecked);
+                        string over = heads.Count == 2 ? "both" : "all three";
                         sb.AppendLine(
-                            $"- **Claim Verification Yield:** {Inv(claimsChecked, "N0")} unverified claim(s) + {Inv(accusedChecked.Count, "N0")} accused sentence(s) checked — " +
-                            $"claims: {Inv(run.ClaimsSupportedCount, "N0")} supported, {Inv(run.ClaimsRefutedCount, "N0")} refuted, " +
-                            $"{Inv(run.ClaimsIndeterminateCount, "N0")} indeterminate; " +
-                            $"accused sentences: {Inv(accusedCounts.Supported, "N0")} supported, {Inv(accusedCounts.Refuted, "N0")} refuted, " +
-                            $"{Inv(accusedCounts.Indeterminate, "N0")} indeterminate. " +
-                            $"${Inv(verifierTotalCost, "F2")} ({PerUnitCost(costPerItem)}/item over both), {Inv(verifierCostShare, "F0")}% of run cost.");
+                            $"- **Claim Verification Yield:** {string.Join(" + ", heads)} checked — {string.Join("; ", parts)}. " +
+                            $"${Inv(verifierTotalCost, "F2")} ({PerUnitCost(costPerItem)}/item over {over}), {Inv(verifierCostShare, "F0")}% of run cost.");
                     }
                 }
 
@@ -2141,11 +2281,15 @@ public static class BenchmarkReportBuilder
             var byCause = contestedAccuracyDeductionAnswers
                 .SelectMany(a => ContestedDeductionCauses(a).Select(cause => (Cause: cause, Answer: a)))
                 .ToList();
-            var causeParts = new[] { BasisRefutedCause, AccusationSupportedCause, CauseNotRecorded }
+            var causeParts = new[] { BasisRefutedCause, AccusationSupportedCause, AssessorStatementRefutedCause, CauseNotRecorded }
                 .Select(cause => (Cause: cause, Answers: byCause.Where(x => x.Cause == cause).Select(x => $"Q{x.Answer.OrderIndex}").ToList()))
                 .Where(p => p.Answers.Count > 0)
                 .Select(p => $"{p.Cause}: {string.Join(", ", p.Answers)}");
-            sb.AppendLine($"- **Contested Accuracy Deductions:** {contestedAccuracyDeductionCount} — {string.Join("; ", causeParts)}. The claim verifier checked these against the source code/wiki: either the own-knowledge statement an out-of-rubric Accuracy deduction rests on was **refuted**, or a sentence the assessor quoted as false was **supported**. Advisory: the deduction stands and no index moved; re-assess from the run detail.");
+            // The third cause is named only where it occurs, so a report without one reads as before.
+            string assessorStatementClause = byCause.Any(x => x.Cause == AssessorStatementRefutedCause)
+                ? ", or a statement of the assessor's own accuracy evidence was **refuted**"
+                : string.Empty;
+            sb.AppendLine($"- **Contested Accuracy Deductions:** {contestedAccuracyDeductionCount} — {string.Join("; ", causeParts)}. The claim verifier checked these against the source code/wiki: either the own-knowledge statement an out-of-rubric Accuracy deduction rests on was **refuted**, or a sentence the assessor quoted as false was **supported**{assessorStatementClause}. Advisory: the deduction stands and no index moved; re-assess from the run detail.");
         }
         sb.AppendLine($"- **Answers Scrubbed:** {scrubbedAnyCount} of {totalQuestions} (transport payloads: {scrubbedTransportCount}, reasoning narration: {bleedRemoved})");
         sb.AppendLine();
@@ -2200,8 +2344,20 @@ public static class BenchmarkReportBuilder
             .ToList();
         var accusedRunTotals = VerdictCounts(accusedByAnswer.SelectMany(x => x.Accused));
         int accusedRunCount = accusedByAnswer.Sum(x => x.Accused.Count);
+        var assessorStatementsByAnswer = answers
+            .Select(a => (Answer: a, Statements: AssessorStatementsOf(a)))
+            .Where(x => x.Statements.Count > 0)
+            .ToList();
+        var assessorStatementTotals = VerdictCounts(assessorStatementsByAnswer.SelectMany(x => x.Statements));
+        int assessorStatementRunCount = assessorStatementsByAnswer.Sum(x => x.Statements.Count);
+        var suspectedFalseByAnswer = answers
+            .Select(a => (Answer: a, Claims: SuspectedFalseClaimsOf(a)))
+            .Where(x => x.Claims.Count > 0)
+            .ToList();
+        var suspectedFalseTotals = VerdictCounts(suspectedFalseByAnswer.SelectMany(x => x.Claims));
+        int suspectedFalseRunCount = suspectedFalseByAnswer.Sum(x => x.Claims.Count);
 
-        if (!claimsRecorded || unverifiedTotal > 0 || contestedAnswers.Count > 0 || omissionAnswers.Count > 0 || dimensionOutlierAnswers.Count > 0 || refutedAnswers.Count > 0 || verificationFailedAnswers.Count > 0 || notCheckedAnswers.Count > 0 || supportedAccusations.Count > 0 || accusedRunCount > 0)
+        if (!claimsRecorded || unverifiedTotal > 0 || contestedAnswers.Count > 0 || omissionAnswers.Count > 0 || dimensionOutlierAnswers.Count > 0 || refutedAnswers.Count > 0 || verificationFailedAnswers.Count > 0 || notCheckedAnswers.Count > 0 || supportedAccusations.Count > 0 || accusedRunCount > 0 || assessorStatementRunCount > 0)
         {
             sb.AppendLine("### Assessor Findings");
             if (!claimsRecorded)
@@ -2260,6 +2416,14 @@ public static class BenchmarkReportBuilder
             {
                 sb.AppendLine($"- **Accused Sentences Checked:** {accusedRunCount} across {accusedByAnswer.Count} answer(s) ({string.Join(", ", accusedByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — supported {accusedRunTotals.Supported}, refuted {accusedRunTotals.Refuted}, indeterminate {accusedRunTotals.Indeterminate}. *Sentences the assessor quoted as false when it docked Accuracy, sent to the claim verifier; counted apart from the answers' own claims.*");
             }
+            if (assessorStatementRunCount > 0)
+            {
+                sb.AppendLine($"- **Assessor Statements Checked:** {assessorStatementRunCount} across {assessorStatementsByAnswer.Count} answer(s) ({string.Join(", ", assessorStatementsByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — supported {assessorStatementTotals.Supported}, refuted {assessorStatementTotals.Refuted}, indeterminate {assessorStatementTotals.Indeterminate}. *Sentences of the assessor's own accuracy evidence, sent to the claim verifier on a contested answer. A refuted one means the **assessor** was wrong; none is counted as a claim of the answer.*");
+            }
+            if (suspectedFalseRunCount > 0)
+            {
+                sb.AppendLine($"- **Suspected False by the Assessor:** {suspectedFalseRunCount} across {suspectedFalseByAnswer.Count} answer(s) ({string.Join(", ", suspectedFalseByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — refuted {suspectedFalseTotals.Refuted} (the assessor was right), supported {suspectedFalseTotals.Supported}, indeterminate {suspectedFalseTotals.Indeterminate}. *Answer sentences the assessor believed false from its own knowledge, which neither the rubric nor the board settles; under scoring method 12 they lower no level and are checked by the claim verifier instead. Included in the unverified claims above.*");
+            }
             if (supportedAccusations.Count > 0)
             {
                 sb.AppendLine($"- **Supported Accusations:** {supportedAccusations.Count} ({string.Join(", ", supportedAccusations.Select(s => $"Q{s.Answer.OrderIndex}").Distinct())}) — *a sentence the assessor quoted when it docked Accuracy was checked by the claim verifier and supported. The harness finds only accusations the assessor quoted, so this is a bounded count. Advisory; the deduction stands and no score moves.*");
@@ -2281,13 +2445,15 @@ public static class BenchmarkReportBuilder
                         var vers = JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(ans.ClaimVerificationJson!, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                         if (vers != null)
                         {
-                            // The out-of-rubric basis, the critical-error quote and an accused
-                            // sentence are the assessor's statements or charges, not claims the answer
-                            // left unverified; a refutation of any of them is reported elsewhere.
+                            // The out-of-rubric basis, the critical-error quote, an accused sentence
+                            // and an assessor statement are the assessor's statements or charges, not
+                            // claims the answer left unverified; a refutation of any of them is
+                            // reported elsewhere.
                             foreach (var v in BenchmarkService.OrdinaryClaimVerifications(vers, ans)
-                                         .Where(x => x.Verdict == BenchmarkClaimVerdict.Refuted))
+                                         .Where(x => x.EffectiveVerdict == BenchmarkClaimVerdict.Refuted))
                             {
-                                sb.AppendLine($"- **Q{ans.OrderIndex}:** \"{v.Claim}\"");
+                                string suspectedTag = v.SuspectedFalse == true ? " *(suspected false by the assessor)*" : string.Empty;
+                                sb.AppendLine($"- **Q{ans.OrderIndex}:** \"{v.Claim}\"{suspectedTag}");
                                 if (!string.IsNullOrWhiteSpace(v.Citation))
                                 {
                                     sb.AppendLine($"  - **Citation:** {v.Citation}");
@@ -2577,7 +2743,7 @@ public static class BenchmarkReportBuilder
             {
                 string questionList = string.Join(", ", outOfRubricAccuracyAnswers.Select(a => $"Q{a.OrderIndex}"));
                 sb.AppendLine($"- **Out-of-rubric Accuracy deductions:** {run.OutOfRubricAccuracyAnswerCount} ({questionList})");
-                sb.AppendLine($"  - These are Accuracy deductions whose basis is the assessor's own knowledge rather than the rubric or the corpus it was given: recorded under the `{BenchmarkAssessmentParser.OutOfRubricAccuracyMarker}` marker, or grounded only in a claim the assessor could not verify. Routed to a second reader rather than trusted outright.");
+                sb.AppendLine($"  - These are {BenchmarkVerdictConsistency.OutOfRubricAccuracyDeductionDescription(run.ScoringMethodVersion)}");
             }
 
             sb.AppendLine();
@@ -3019,6 +3185,10 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"**Question:** {a.QuestionText}");
             sb.AppendLine();
             sb.AppendLine($"- **Status:** {a.Status}" + (a.HttpStatusCode.HasValue ? $" (HTTP {a.HttpStatusCode.Value})" : ""));
+            if (a.RerunAtUtc.HasValue)
+            {
+                sb.AppendLine($"- **Re-executed:** {Stamp(a.RerunAtUtc.Value)} UTC; {ReplacedAttemptText(a)}");
+            }
             string timingSuffix = a.ToolTimeMs.HasValue
                 ? $", model {a.ModelTimeMs} ms, tools {a.ToolTimeMs.Value} ms"
                 : string.Empty;
@@ -3285,13 +3455,37 @@ public static class BenchmarkReportBuilder
                 var supportedAccusationsOfAnswer = BenchmarkService.SupportedAccusations(accusedSentences);
                 foreach (var accusation in supportedAccusationsOfAnswer)
                 {
-                    sb.AppendLine($"> - **Supported accusation:** a sentence the assessor charged as false was checked by the claim verifier and **supported** — \"{accusation.Claim}\" ({accusation.Citation}). *Advisory; the deduction stands.*");
+                    sb.AppendLine($"> - **Supported accusation:** a sentence the assessor charged as false was checked by the claim verifier and **supported** — \"{accusation.Claim}\"{QuotedFragmentsText(accusation)} ({accusation.Citation}). *Advisory; the deduction stands.*");
                 }
                 foreach (var accusation in accusedSentences.Where(v => !supportedAccusationsOfAnswer.Contains(v)))
                 {
-                    string verdictWord = accusation.Verdict.ToString().ToLowerInvariant();
+                    string verdictWord = accusation.EffectiveVerdict.ToString().ToLowerInvariant();
                     string citation = string.IsNullOrWhiteSpace(accusation.Citation) ? "no citation" : accusation.Citation;
-                    sb.AppendLine($"> - **Accused sentence, {verdictWord}:** a sentence the assessor charged as false was checked by the claim verifier and returned **{verdictWord}** — \"{accusation.Claim}\" ({citation}).");
+                    sb.AppendLine($"> - **Accused sentence, {verdictWord}:** a sentence the assessor charged as false was checked by the claim verifier and returned **{VerdictText(accusation)}** — \"{accusation.Claim}\"{QuotedFragmentsText(accusation)} ({citation}).");
+                }
+                // The assessor's own evidence sentences: a refutation clears the answer, not convicts it.
+                var assessorStatements = AssessorStatementsOf(a);
+                if (assessorStatements.Count > 0)
+                {
+                    var (statementSupported, statementRefuted, statementIndeterminate) = VerdictCounts(assessorStatements);
+                    sb.AppendLine($"> - **Assessor statements checked:** {assessorStatements.Count} — supported {statementSupported}, refuted {statementRefuted}, indeterminate {statementIndeterminate}");
+                    foreach (var statement in assessorStatements.Where(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Refuted))
+                    {
+                        string citation = string.IsNullOrWhiteSpace(statement.Citation) ? "no citation" : statement.Citation;
+                        sb.AppendLine($"> - **Assessor statement refuted:** a statement of the assessor's own evidence was checked by the claim verifier and **refuted** — \"{statement.Claim}\" ({citation}). *The assessor, not the answer, was wrong on this point; advisory, the deduction stands.*");
+                    }
+                }
+                var suspectedFalse = SuspectedFalseClaimsOf(a);
+                if (suspectedFalse.Count > 0)
+                {
+                    var (suspectedSupported, suspectedRefuted, suspectedIndeterminate) = VerdictCounts(suspectedFalse);
+                    sb.AppendLine($"> - **Suspected false by the assessor:** {suspectedFalse.Count} — refuted {suspectedRefuted} (the assessor was right), supported {suspectedSupported}, indeterminate {suspectedIndeterminate}");
+                }
+                // A verdict the harness demoted: the verifier cited a function nothing calls.
+                foreach (var noted in (ClaimVerificationsOf(a) ?? new List<BenchmarkClaimVerification>())
+                             .Where(v => !string.IsNullOrWhiteSpace(v.CitationNote)))
+                {
+                    sb.AppendLine($"> - **Citation note:** \"{noted.Claim}\" — the verifier returned {noted.Verdict.ToString().ToLowerInvariant()} citing {noted.Citation}, but {noted.CitationNote}; the harness reads it as indeterminate.");
                 }
                 if (a.EvidenceInformedQualityScore.HasValue)
                 {

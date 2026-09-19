@@ -40,7 +40,8 @@ import {
   ImportDefaultSuitesResultDto,
   ImportBenchmarkQuestionsResultDto,
   CaptureBenchmarkSnapshotResponse,
-  BoardFactsCheckDto
+  BoardFactsCheckDto,
+  BoardFactIssueDto
 } from '../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../services/admin.service';
 
@@ -88,7 +89,7 @@ import {
 } from './question-yaml/question-yaml-format';
 import { SnapshotUploadDialogComponent } from './snapshot-upload/snapshot-upload-dialog.component';
 import { copyTextFromPromise, copyToClipboard } from '../../utils/clipboard.util';
-import { downloadTextFile } from '../../utils/download.util';
+import { downloadTextFile, safeFileName } from '../../utils/download.util';
 
 const COPY_STATUS_MS = 3000;
 const SNAPSHOT_TEXT_EXPORT_FAILED = 'Exported without the snapshot text: it could not be loaded.';
@@ -3038,10 +3039,72 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   // --- Run Execution ---
 
-  startBenchmark(acknowledgeSameProvider: boolean = false) {
+  startBenchmark(acknowledgeSameProvider: boolean = false, boardQuotesAcknowledged: boolean = false) {
     if (!this.canStartRun || this.selectedSuiteId == null || this.testedConfigId == null || this.assessorConfigId == null) return;
 
     this.armCompletionSignalsFromGesture();
+
+    // A same-provider acknowledgement follows a request that already passed this gate.
+    if (!acknowledgeSameProvider && !boardQuotesAcknowledged && this.selectedSuite?.gameSnapshotId != null) {
+      this.checkBoardQuotesBeforeStart(this.selectedSuiteId);
+      return;
+    }
+    this.sendStartRequest(acknowledgeSameProvider);
+  }
+
+  @ViewChild('boardQuoteWarningDialog') boardQuoteWarningDialog?: ElementRef<HTMLDialogElement>;
+
+  /** The suite's BOARD FACTS quote check, fetched when Start is pressed; set only while it reports missing quotes. */
+  launchBoardFactsCheck: BoardFactsCheckDto | null = null;
+
+  get launchMissingBoardQuotes(): BoardFactIssueDto[] {
+    return (this.launchBoardFactsCheck?.missingLiterals ?? [])
+      .slice(0, AdminBenchmarkComponent.MISSING_BOARD_QUOTE_LIST_CAP);
+  }
+
+  get launchMissingBoardQuotesOverflow(): number {
+    const total = this.launchBoardFactsCheck?.missingLiterals.length ?? 0;
+    return Math.max(0, total - AdminBenchmarkComponent.MISSING_BOARD_QUOTE_LIST_CAP);
+  }
+
+  /**
+   * Advisory: missing quotes open a warning the operator may acknowledge, and a failed check
+   * starts the run as if it were clean. Nothing here refuses a run.
+   */
+  private checkBoardQuotesBeforeStart(suiteId: number): void {
+    this.startingRun = true;
+    this.runErrorMessage = null;
+    this.benchmarkService.getBoardFactsCheck(suiteId).subscribe({
+      next: (check) => {
+        if (check && check.missingLiterals.length > 0) {
+          this.startingRun = false;
+          this.launchBoardFactsCheck = check;
+          this.cdr.detectChanges();
+          this.boardQuoteWarningDialog?.nativeElement.showModal();
+          return;
+        }
+        this.sendStartRequest(false);
+      },
+      error: (err) => {
+        console.warn('Board facts check before start failed; starting without it', err);
+        this.sendStartRequest(false);
+      }
+    });
+  }
+
+  closeBoardQuoteWarningDialog(): void {
+    this.boardQuoteWarningDialog?.nativeElement.close();
+    this.launchBoardFactsCheck = null;
+  }
+
+  confirmBoardQuoteWarningRun(): void {
+    this.closeBoardQuoteWarningDialog();
+    this.startBenchmark(false, true);
+  }
+
+  private sendStartRequest(acknowledgeSameProvider: boolean): void {
+    if (this.selectedSuiteId == null || this.testedConfigId == null || this.assessorConfigId == null) return;
+
     this.startingRun = true;
     this.runErrorMessage = null;
     this.seriesErrorMessage = null;
@@ -4358,11 +4421,22 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       const startedParsed = run.startedAtUtc ? parseServerUtcDate(run.startedAtUtc).toISOString() : 'n/a';
       lines.push(`Started (parsed): ${startedParsed}`);
       lines.push(`Completed:        ${run.completedAtUtc ?? 'n/a'}`);
-      if (this.runElapsedIsRerun) {
+      if (run.rerunStartedAtUtc) {
         lines.push(`Re-run started:   ${run.rerunStartedAtUtc}`);
         lines.push(`Re-run completed: ${run.rerunCompletedAtUtc ?? 'n/a'}`);
       }
-      lines.push(`Elapsed:          ${this.runElapsedLabel}`);
+      // The run's own span and the re-run's are separate lines: CompletedAtUtc stays fixed across a
+      // re-run, so either figure printed alone under one label misstates the other.
+      const runSpan = run.startedAtUtc
+        ? this.formatElapsed(elapsedMsBetween(run.startedAtUtc, run.completedAtUtc))
+        : '—';
+      lines.push(`Elapsed (run):    ${runSpan}`);
+      if (run.rerunStartedAtUtc) {
+        const rerunSpan = this.runElapsedIsRerun
+          ? this.runElapsedLabel
+          : this.formatElapsed(elapsedMsBetween(run.rerunStartedAtUtc, run.rerunCompletedAtUtc));
+        lines.push(`Re-run elapsed:   ${rerunSpan}`);
+      }
       lines.push('');
 
       // --- MODELS ---
@@ -4396,13 +4470,22 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       }
       lines.push(`Second opinion: ${secondOpinionParts.join(', ')}`);
       lines.push(`Tool call budget: ${run.maxToolCallsPerQuestionUsed ?? 'not recorded'}`);
-      lines.push(`Candidate delivery probe: ${run.candidateDeliveryVerifiedAtUtc ? `verified at ${run.candidateDeliveryVerifiedAtUtc}` : 'not recorded'}`);
+      const preRunProbe = run.candidateDeliveryVerifiedAtUtc ? `verified at ${run.candidateDeliveryVerifiedAtUtc}` : 'not recorded';
+      const reRunProbe = run.rerunCandidateDeliveryVerifiedAtUtc ? `; re-verified before the re-run at ${run.rerunCandidateDeliveryVerifiedAtUtc}` : '';
+      lines.push(`Candidate delivery probe: ${preRunProbe}${reRunProbe}`);
       const boardDelivery = this.boardDeliveryLine(run);
       if (boardDelivery) {
         lines.push(boardDelivery);
         for (const gap of this.boardDeliveryGaps(run)) {
           lines.push(`Board not delivered — ${gap}`);
         }
+      }
+      if (run.boardFactsCheck != null) {
+        // Recorded from harness 33; an earlier run's null is not a board that states no format.
+        const formatRecorded = Number.parseInt(run.harnessVersion ?? '', 10) >= 33;
+        const format = run.gameSnapshotFormatVersionUsed
+          ?? (formatRecorded ? 'not stated' : 'not recorded (before harness 33)');
+        lines.push(`Board format: ${format}`);
       }
       lines.push('');
 
@@ -4418,9 +4501,17 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       const verifyingNow = run.inFlightVerificationOrderIndexes ?? [];
       const secondOpinionNow = run.inFlightSecondOpinionOrderIndexes ?? [];
       lines.push(`Verifying now: ${verifyingNow.length > 0 ? verifyingNow.map(i => `Q${i}`).join(', ') : 'none'}; second opinion now: ${secondOpinionNow.length > 0 ? secondOpinionNow.map(i => `Q${i}`).join(', ') : 'none'}`);
-      lines.push(`Verified ${this.runVerifiedCount}, second-graded ${this.runSecondOpinionCount}`);
+      // Run-wide figures are the finalizer's once the run is terminal; before that they are stale or
+      // absent, so the answer rows are counted instead. The meters' re-run-scoped pair follows.
+      const answersVerified = run.answers.filter(a => a.claimVerificationJson != null || a.claimVerificationError != null).length;
+      const answersSecondGraded = run.answers.filter(a => a.secondOpinionQualityScore != null || a.secondOpinionError != null).length;
+      const verifiedRunWide = this.runIsTerminal ? (run.claimVerifiedAnswerCount ?? answersVerified) : answersVerified;
+      const secondGradedRunWide = this.runIsTerminal ? (run.secondOpinionGradedAnswerCount ?? answersSecondGraded) : answersSecondGraded;
+      const scopedPair = this.runHasRerunScope ? ` (re-run scope: ${this.runVerifiedCount}, ${this.runSecondOpinionCount})` : '';
+      lines.push(`Verified ${verifiedRunWide}, second-graded ${secondGradedRunWide}${scopedPair}`);
       if (this.runHasRerunScope) {
-        lines.push(`Failed-question re-run in progress over: ${this.effectiveRerunScope.map(i => `Q${i}`).join(', ')}`);
+        const scopeLabel = this.runIsTerminal ? 'Failed-question re-run covered' : 'Failed-question re-run in progress over';
+        lines.push(`${scopeLabel}: ${this.effectiveRerunScope.map(i => `Q${i}`).join(', ')}`);
         const reAnswered = run.rerunAnsweredOrderIndexes ?? [];
         const reScored = run.rerunScoredOrderIndexes ?? [];
         const qList = (xs: number[]) => xs.length > 0 ? xs.map(i => `Q${i}`).join(', ') : 'none';
@@ -4733,6 +4824,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           const assessor = `${ans.assessedByModelDisplayNameUsed || 'unknown'} (${ans.assessedByModelProviderUsed || 'unknown'} / ${ans.assessedByModelIdUsed || 'unknown'})`;
           lines.push(`     assessed by: ${assessor} at ${ans.assessedAtUtc ?? 'unknown'}`);
         }
+        if (ans.rerunAtUtc) {
+          const rerunError = ans.rerunOfErrorMessage ? ` — ${ans.rerunOfErrorMessage}` : '';
+          lines.push(`     re-executed at ${ans.rerunAtUtc}: was ${ans.rerunOfStatus ?? 'unknown'}${rerunError}`);
+        }
       }
     }
 
@@ -4792,6 +4887,18 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       this.runDiagnosticsCopyFailed = true;
       this.runErrorMessage = 'Could not copy the benchmark run diagnostics to the clipboard.';
     }
+  }
+
+  /** Suite, model and run, in the order of the server's report and tool-call-log file names. */
+  get runDiagnosticsFileName(): string {
+    const run = this.activeRunDetail;
+    if (!run) return 'overseer-benchmark-run-diagnostics.txt';
+    return `${safeFileName(run.suiteName)}_${safeFileName(run.testedModelDisplayNameUsed)}_run${run.id}_diagnostics.txt`;
+  }
+
+  /** Saves the text the copy button copies; the browser's own download UI is the feedback. */
+  downloadRunDiagnostics(): void {
+    downloadTextFile(this.runDiagnosticsFileName, this.runDiagnosticsText, 'text/plain;charset=utf-8');
   }
 
   openRunProgressDialog(fromSeries = false): void {
@@ -6772,6 +6879,20 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return this.selectedRunDetail?.boardFactsCheck ?? null;
   }
 
+  static readonly MISSING_BOARD_QUOTE_LIST_CAP = 20;
+
+  /** The run's missing board quotes as listed in its notice, capped. */
+  get selectedRunMissingBoardQuotes(): BoardFactIssueDto[] {
+    return (this.selectedRunBoardFactsCheck?.missingLiterals ?? [])
+      .slice(0, AdminBenchmarkComponent.MISSING_BOARD_QUOTE_LIST_CAP);
+  }
+
+  /** How many missing board quotes the capped list leaves out. */
+  get selectedRunMissingBoardQuotesOverflow(): number {
+    const total = this.selectedRunBoardFactsCheck?.missingLiterals.length ?? 0;
+    return Math.max(0, total - AdminBenchmarkComponent.MISSING_BOARD_QUOTE_LIST_CAP);
+  }
+
   /** Null on a run before the harness version that added the dimension-outlier check. */
   get dimensionOutlierAnswerCount(): number | null {
     return this.selectedRunDetail?.dimensionOutlierAnswerCount ?? null;
@@ -7180,7 +7301,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           capturedAtUtc: board.capturedAtUtc ?? null,
           notes: board.notes ?? null,
           sha256: board.sha256 ?? null,
-          text: board.sanitizedText ?? ''
+          text: board.sanitizedText ?? '',
+          snapshotFormat: board.snapshotFormatVersion ?? null
         } as SnapshotExport,
         failed: false
       })),

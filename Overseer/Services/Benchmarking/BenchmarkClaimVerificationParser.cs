@@ -31,11 +31,59 @@ public record BenchmarkClaimVerification(
     [JsonPropertyName("roles")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<string>? Roles { get; init; }
+
+    /// <summary>
+    /// Set by <see cref="BenchmarkCitationLivenessCheck"/> when the cited source function has no live
+    /// call site. The stored <see cref="Verdict"/> is left as the verifier gave it; every flag and
+    /// count reads <see cref="EffectiveVerdict"/>.
+    /// </summary>
+    [JsonPropertyName("citationNote")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CitationNote { get; init; }
+
+    /// <summary>
+    /// True on an unverified claim the assessor recorded as <c>Suspected false: </c>; <see cref="Claim"/>
+    /// is then the answer's sentence alone, as the verifier received it. Null otherwise.
+    /// </summary>
+    [JsonPropertyName("suspectedFalse")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? SuspectedFalse { get; init; }
+
+    /// <summary>The assessor's reason for a suspected-false claim, the text after its em dash. Null otherwise.</summary>
+    [JsonPropertyName("suspicion")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Suspicion { get; init; }
+
+    /// <summary>
+    /// The <c>UnverifiedClaimsJson</c> entry this item was submitted for, verbatim, when it differs from
+    /// <see cref="Claim"/> (a suspected-false entry). Null otherwise.
+    /// </summary>
+    [JsonPropertyName("recordedClaim")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RecordedClaim { get; init; }
+
+    /// <summary>
+    /// On an accused sentence: the spans the assessor quoted, as they occur in the answer. <see cref="Claim"/>
+    /// is the sentence or list item that encloses them. Null otherwise.
+    /// </summary>
+    [JsonPropertyName("quotedFragments")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? QuotedFragments { get; init; }
+
+    /// <summary>On an accused sentence: the assessor's evidence sentence(s) quoting it. Null otherwise.</summary>
+    [JsonPropertyName("charge")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Charge { get; init; }
+
+    /// <summary>The verdict every flag and count reads: Indeterminate when a <see cref="CitationNote"/> is set.</summary>
+    [JsonIgnore]
+    public BenchmarkClaimVerdict EffectiveVerdict
+        => string.IsNullOrWhiteSpace(CitationNote) ? Verdict : BenchmarkClaimVerdict.Indeterminate;
 }
 
 /// <summary>
 /// The reasons an item is submitted to the claim verifier. <see cref="UnverifiedClaim"/> is a claim
-/// of the answer; the other three are the assessor's statements or accusations, checked to test the
+/// of the answer; the others are the assessor's statements or accusations, checked to test the
 /// assessor rather than the answer.
 /// </summary>
 public static class BenchmarkClaimRoles
@@ -44,6 +92,9 @@ public static class BenchmarkClaimRoles
     public const string CriticalErrorQuote = "criticalErrorQuote";
     public const string OutOfRubricBasis = "outOfRubricBasis";
     public const string AccusedQuote = "accusedQuote";
+
+    /// <summary>A sentence of the assessor's own accuracy evidence or comment; Supported means the assessor was right.</summary>
+    public const string AssessorStatement = "assessorStatement";
 
     /// <summary>A claim of the answer's own: a legacy record without roles, or one carrying <see cref="UnverifiedClaim"/>.</summary>
     public static bool IsOrdinaryClaim(BenchmarkClaimVerification verification)
@@ -55,6 +106,113 @@ public static class BenchmarkClaimRoles
     /// <summary>True when any record in the list carries roles, which makes roles, not text, the rule for the whole list.</summary>
     public static bool HasRoles(IReadOnlyList<BenchmarkClaimVerification>? verifications)
         => verifications != null && verifications.Any(v => v.Roles != null);
+}
+
+/// <summary>
+/// An <c>unverifiedClaims</c> entry of the form <c>Suspected false: &lt;sentence&gt; — &lt;reason&gt;</c>:
+/// a sentence of the answer the assessor believes false from its own knowledge. The entry is stored
+/// verbatim; the verifier receives the sentence alone.
+/// </summary>
+public static class BenchmarkSuspectedFalseClaim
+{
+    public const string Prefix = "Suspected false: ";
+
+    private static readonly Regex PrefixRegex = new(
+        @"^\s*suspected\s+false\s*:\s*",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly Regex ReasonSeparatorRegex = new(@"\s*—\s*|\s+–\s+|\s+--\s+", RegexOptions.Compiled);
+
+    private static readonly Regex QuoteNormalizationRegex = new(@"[*_`>#]", RegexOptions.Compiled);
+    private static readonly Regex WhitespaceRunRegex = new(@"\s+", RegexOptions.Compiled);
+
+    public static bool IsSuspectedFalse(string? entry)
+        => !string.IsNullOrWhiteSpace(entry) && PrefixRegex.IsMatch(entry);
+
+    /// <summary>
+    /// Splits a suspected-false entry into the answer's sentence and the assessor's reason. The
+    /// sentence may itself hold a dash, so with <paramref name="answerText"/> the longest head that
+    /// occurs in the answer (emphasis and whitespace ignored) wins; without it, or when no head
+    /// occurs, the split is at the last separator. Surrounding quotation marks are removed. False
+    /// when the entry lacks the prefix or leaves an empty sentence.
+    /// </summary>
+    public static bool TryParse(string? entry, string? answerText, out string sentence, out string? reason)
+    {
+        sentence = entry?.Trim() ?? string.Empty;
+        reason = null;
+        if (string.IsNullOrWhiteSpace(entry)) return false;
+
+        var prefix = PrefixRegex.Match(entry);
+        if (!prefix.Success) return false;
+
+        string rest = entry.Substring(prefix.Length).Trim();
+        var separators = ReasonSeparatorRegex.Matches(rest).Cast<Match>().ToList();
+
+        string? head = null;
+        string? tail = null;
+        if (!string.IsNullOrWhiteSpace(answerText))
+        {
+            string normalizedAnswer = Normalize(answerText);
+            if (Occurs(Unquote(rest), normalizedAnswer))
+            {
+                head = rest;
+            }
+            else
+            {
+                for (int i = separators.Count - 1; i >= 0; i--)
+                {
+                    string candidate = rest.Substring(0, separators[i].Index);
+                    if (Occurs(Unquote(candidate), normalizedAnswer))
+                    {
+                        head = candidate;
+                        tail = rest.Substring(separators[i].Index + separators[i].Length);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (head == null)
+        {
+            if (separators.Count > 0)
+            {
+                var last = separators[^1];
+                head = rest.Substring(0, last.Index);
+                tail = rest.Substring(last.Index + last.Length);
+            }
+            else
+            {
+                head = rest;
+            }
+        }
+
+        string trimmedHead = Unquote(head);
+        if (trimmedHead.Length == 0) return false;
+
+        sentence = trimmedHead;
+        reason = string.IsNullOrWhiteSpace(tail) ? null : tail.Trim();
+        return true;
+    }
+
+    private static bool Occurs(string text, string normalizedAnswer)
+    {
+        string normalized = Normalize(text);
+        return normalized.Length > 0 && normalizedAnswer.Contains(normalized, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string Normalize(string text)
+        => WhitespaceRunRegex.Replace(QuoteNormalizationRegex.Replace(text, string.Empty), " ").Trim();
+
+    private static string Unquote(string text)
+    {
+        string t = text.Trim();
+        if (t.Length >= 2
+            && ((t[0] == '"' && t[^1] == '"') || (t[0] == '“' && t[^1] == '”') || (t[0] == '\'' && t[^1] == '\'')))
+        {
+            t = t.Substring(1, t.Length - 2).Trim();
+        }
+        return t;
+    }
 }
 
 public class BenchmarkClaimVerificationParseResult

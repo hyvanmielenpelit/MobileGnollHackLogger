@@ -333,12 +333,16 @@ public static class BenchmarkAssessmentParser
             // made. Dropping it silently would let a paraphrase accumulate across runs and be
             // read later as cross-model corroboration of a rubric gap that nobody actually
             // asserted. The graded answer is not always available (re-parsing a stored verdict),
-            // in which case the claims are taken as given.
+            // in which case the claims are taken as given. A "Suspected false:" entry is kept
+            // verbatim and checked on its quoted sentence alone.
             var unverifiedClaims = new List<string>();
             int unverifiedClaimsDropped = 0;
             foreach (string claim in GetStringArrayProperty(root, "unverifiedClaims", "unverified_claims"))
             {
-                if (gradedAnswerText != null && !QuoteAppearsInAnswer(claim, gradedAnswerText))
+                string quoted = BenchmarkSuspectedFalseClaim.TryParse(claim, gradedAnswerText, out string sentence, out _)
+                    ? sentence
+                    : claim;
+                if (gradedAnswerText != null && !QuoteAppearsInAnswer(quoted, gradedAnswerText))
                 {
                     unverifiedClaimsDropped++;
                     continue;
@@ -594,9 +598,10 @@ public static class BenchmarkAssessmentParser
         => BenchmarkVerdictConsistency.HasFormOnlyMarker(readabilityEvidence);
 
     /// <summary>
-    /// The prefix the prompt asks the assessor to put in front of an accuracy deduction that does
-    /// not come from the rubric. Public because the prompt, the parser and the tests must all mean
-    /// the same string by it.
+    /// The prefix scoring method 11 asks the assessor to put in front of an accuracy deduction that
+    /// does not come from the rubric. Method 12 asks for no such deduction, so there the marker
+    /// records one made anyway; a method-11 record still parses and renders by it. Public because the
+    /// prompt, the parser and the tests must all mean the same string by it.
     /// </summary>
     public const string OutOfRubricAccuracyMarker = "Not in rubric:";
 

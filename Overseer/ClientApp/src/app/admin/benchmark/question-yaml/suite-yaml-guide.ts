@@ -122,6 +122,7 @@ suite:
 | \`name\` | no | 1–${MAX_SNAPSHOT_NAME_LENGTH} characters. Left out, the snapshot is named after the suite. |
 | \`gnollhack_version\` | no | At most ${MAX_GNOLLHACK_VERSION_LENGTH} characters: the version identifier from the banner line, not the whole banner. |
 | \`captured_at\` | no | A date, for example \`"2026-09-16T18:04:11Z"\`. |
+| \`snapshot_format\` | no | Informational; derived from the board text on import. |
 | \`notes\` | no | One or two lines about where the board came from. |
 | \`sha256\` | no | 64 hexadecimal characters: the hash of the board this file was exported from. Every export writes it. A mismatch is only a **warning** on the review step — editing the board in the file is legitimate — and an agent-authored file simply leaves it out. |
 | \`text\` | **yes** | The board itself: flattened snapshot text, or a raw HTML dump, which the server flattens. It is cut at 60,000 characters, and the review step says so when it is. |
@@ -479,7 +480,7 @@ questions:
     id: 'suite-exported',
     title: 'A downloaded suite, exactly as it comes',
     mode: 'suite',
-    intro: 'What **Download Suite as YAML** writes for a snapshot suite: the leading comments, the question ids, and all six snapshot keys including `sha256`. The ids are ignored on a suite import, and the review step reports whether this snapshot is created, or an identical stored one is reused.',
+    intro: 'What **Download Suite as YAML** writes for a snapshot suite: the leading comments, the question ids, and all seven snapshot keys including `sha256`. The ids are ignored on a suite import, and the review step reports whether this snapshot is created, or an identical stored one is reused.',
     yaml: `# Overseer benchmark questions. Edit freely; keep every \`id\` you were given.
 # A question without \`id\` is created as new. Omit \`rubric\` to keep the current rubric.
 # suite.snapshot is the board the questions are written against. A suite import attaches it; a questions import ignores it.
@@ -494,6 +495,7 @@ suite:
     name: "Valkyrie dlvl 11"
     gnollhack_version: "4.2.0 Build 47"
     captured_at: "2026-09-16T18:04:11Z"
+    snapshot_format: 3
     notes: |
       Exported with Export AI Snapshot.
     sha256: "9f2ca4d1b8e73c05a6f419d2be80c37514a9d6e2f0b3c81746d9a2e5c0f83b71"

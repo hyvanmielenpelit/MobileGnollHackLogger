@@ -3056,6 +3056,164 @@ so the comparison view already refuses to pool across the boundary.
     [Web Locks API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API),
     [Chrome Energy Saver freezing](https://developer.chrome.com/blog/freezing-on-energy-saver).
 
+### Harness Version 33 & Scoring Method Version 12 Updates
+
+Prompted by the analysis of run 55 (Gemini 3.7 Flash @ `medium`, snapshot suite 8, harness 32, method
+11). Three problems with the instrument explained most of that run's shortfall:
+
+- The claim verifier's verdicts on the assessor's own sentences were booked against the candidate.
+- Accused quotes were checked as bare fragments.
+- The assessor's own-knowledge Accuracy deductions were wrong on 6 of 8 answers, and the docked level
+  was what scored.
+
+The run also exposed four record-keeping gaps. A re-run erased what it repaired. A re-run overwrote
+the delivery-probe stamp. A replaced board kept stale metadata. And missing board quotes were counted
+but never named. `HarnessVersion` moves to **"33"** and `ScoringMethodVersion` to **12**. No tool guide
+moves, so `ToolGuidesSha256` and `CandidateSystemPromptSha256` do not move because of this round. One
+EF Core migration, `AddBenchmarkRerunAndBoardProvenance`, adds seven nullable columns:
+
+- `BenchmarkRuns.RerunCandidateDeliveryVerifiedAtUtc` and `GameSnapshotFormatVersionUsed`;
+- `BenchmarkRunAnswers.RerunAtUtc`, `RerunOfStatus` and `RerunOfErrorMessage` (512);
+- `BenchmarkGameSnapshots.SnapshotFormatVersion` and `BoardHeaderTimestamp` (32).
+
+**Method 12 is a Fundamental break on every suite, not only on suite 8.** No method-12 Accuracy,
+quality score or index is comparable with a method-11 one, and scores will generally rise across the
+boundary, which is not evidence of anything about a candidate. `HarnessVersion` and
+`ScoringMethodVersion` are both comparability keys, so the comparison view already refuses to rank
+across the boundary. The H0 guard from harness 31 still refuses re-assess, re-grade and
+evidence-informed re-grade on a method-11 run. **Rescore** stays allowed and never stamps 12 onto
+levels it did not grade (`LastMethodRescoreCanApply` stays 10).
+
+- **Own-knowledge deductions no longer lower Accuracy (scoring method 12).** The ACCURACY anchors and
+  § 6 of the assessor preamble now say that **ACCURACY is graded against the rubric and the GAME BOARD
+  only.** A statement the assessor believes false from its own knowledge, which neither settles, does
+  not lower the level. The assessor reports it instead as an `unverifiedClaims` entry:
+  `Suspected false: <the sentence, verbatim from the answer> — <reason>`. The sentence *"If a
+  deduction does not come from the rubric, the evidence sentence MUST begin with `Not in rubric:`"* is
+  replaced by *"A deduction that does not come from the rubric or the GAME BOARD is not made."*
+  - **Parsing.** `BenchmarkSuspectedFalseClaim` recognises the prefix and splits the entry into the
+    answer's sentence and the reason. The split takes the longest head that occurs in the answer, so a
+    dash inside the sentence is safe. `BenchmarkAssessmentParser` checks the sentence, not the whole
+    entry, against the answer, and stores the entry verbatim in `UnverifiedClaimsJson`.
+  - **Verification.** The verifier receives the sentence alone, as an ordinary `unverifiedClaim`, and
+    the verification item carries `suspectedFalse: true`, `suspicion` and `recordedClaim` (the stored
+    entry). A refutation raises `RefutedClaim` and the second opinion, as for any claim.
+  - **Report.** It counts these apart, per answer and in Assessor Findings: *"Suspected false by the
+    assessor: N — refuted a (the assessor was right), supported b, indeterminate c"*.
+  - **The old marker.** `OutOfRubricAccuracyMarker` still parses, so stored method-11 evidence renders
+    unchanged. A method-12 assessor that writes it anyway beside a sub-6 level still raises
+    `OutOfRubricAccuracyDeduction`. Under method 12 that flag means *the instruction was not followed*,
+    and `BenchmarkVerdictConsistency.OutOfRubricAccuracyDeductionDescription` words it by method
+    version.
+  - **The trade.** A true out-of-rubric error no longer costs Accuracy until the verifier refutes it.
+    On run 55 that gave up 1 correct deduction against 6 wrong ones removed.
+
+- **The assessor's own sentences are checked under their own role (B1).** `ExtractDisputedClaims`
+  now returns two lists: `AnswerClaims` and `AssessorStatements`.
+  - **Answer claims** are the critical-error quote and up to four digit-bearing answer sentences,
+    split on sentence ends only (not on a bare newline). Each needs at least four words and one run of
+    three letters, which drops fragments such as `To use it:\n1.`. Only these are persisted to
+    `UnverifiedClaimsJson`.
+  - **Assessor statements** are sentences of the accuracy evidence, or the review comment as a last
+    resort. Two kinds of sentence are skipped: one that only reports what the answer says and quotes
+    it (`^(The answer|It|The response) (states|says|claims|asserts|gives|lists|tells)`), which the
+    accused-quote path already covers; and a `Suspected false:` entry, which is an answer sentence.
+  - **The role.** Assessor statements are submitted with the new role `assessorStatement`.
+    `IsOrdinaryClaim` excludes them, so they reach no claim count, no `RefutedClaim`, no *Refuted
+    Claims* entry, no second-opinion trigger and nothing in the second reader's context.
+  - **Flags.** A Refuted assessor statement with a citation raises `ContestedAccuracyDeduction`, its
+    third cause. It is also an evidence-informed re-grade target and a synthesis contested basis.
+  - **Verifier.** It gets an *ASSESSOR STATEMENT ADJUDICATION* paragraph and a per-claim line *"Stated
+    by the first assessor (not part of the answer)."*
+  - **Report.** It prints *"Assessor statements checked: N — supported a, refuted b, indeterminate
+    c"* per answer and at run level, lists each refuted one as the assessor's error, and adds them to
+    the Claim Verification Yield as a third population.
+  - **Earlier runs.** Before harness 33 these sentences were stored as `unverifiedClaim`, and they
+    cannot be told apart by text.
+
+- **An accused quote is checked as the sentence it came from (B2).** `ExtractAccusedQuotes` widens
+  each quoted span to the enclosing sentence or list item. The span ends at `.`, `!` or `?` followed
+  by whitespace, or at a line break, and a leading list marker is dropped.
+  - **Limits.** A widening beyond `AccusedQuoteMaxLength` (400) keeps the bare span. Spans whose
+    widened ranges overlap become **one** submission, so two fragments of one sentence are checked
+    once: run 55 Q17 is the fixture.
+  - **The charge.** The assessor's evidence sentence that holds each quotation is attached as a
+    separate line, *"Charge (the assessor's words; untrusted, not part of the claim): …"*, capped at
+    400 characters.
+  - **The record.** The item keeps `quotedFragments` and `charge`, and the report prints the fragments
+    beside the widened sentence, so the quotation itself stays visible.
+
+- **A cited function with no live call site cannot refute or support (B3).**
+  `BenchmarkCitationLivenessCheck` runs on every verification whose citation is made only of
+  `src/<file>.c:<lines>` references. For each reference it finds the enclosing function, scanning up
+  from the cited line to the column-0 definition the indexer recognises. It then counts that name's
+  `name(` occurrences in the GnollHack source that are not the definition, not a prototype, and not
+  inside a comment or string. It reads the same directories, extensions, size limit and exclusions as
+  the source indexer, from disk, and caches until HEAD moves.
+  - **Effect.** When every cited function has zero live call sites, the item gains `citationNote`
+    (*"cited function <name> has no live call site"*). `BenchmarkClaimVerification.EffectiveVerdict`,
+    which every count and flag now reads, is then Indeterminate.
+  - **The record.** The stored verdict is untouched, and the report and the grading prompts print
+    both.
+  - **Failure.** Any exception, or indexing still in progress, writes no note.
+  - **Limits.** A function reached only through a function pointer or a macro has no `name(` call site,
+    which is why the note demotes to Indeterminate and never to the opposite verdict. A wrong verdict
+    that cites live code (run 55 Q5) is not caught.
+
+- **Re-run provenance (D1, D2).**
+  - **Delivery stamp.** `VerifyCandidateDeliveryBeforeRun` takes the target. The run path writes
+    `CandidateDeliveryVerifiedAtUtc`, and both re-run paths write
+    `RerunCandidateDeliveryVerifiedAtUtc`. The report keeps *"before the first question (…)"* and adds
+    *"; re-verified before the re-run (…)"*.
+  - **Earlier runs.** On a run before harness 33 whose stamp is later than its re-run's start, the
+    report says the stamp is the re-run's and that the pre-run stamp was overwritten.
+  - **Replaced status.** `ReExecuteSingleAnswerAsync` copies the answer's `Status` and truncated
+    `ErrorMessage` into `RerunOfStatus` / `RerunOfErrorMessage` and stamps `RerunAtUtc` before it
+    overwrites the row.
+  - **Report.** The re-run block lists *"Q15 re-executed: was ProviderError — …"* per answer, and each
+    such question gets a *Re-executed* line.
+  - **Limit.** The failed attempt's tool-call rows are still deleted; the report says so.
+
+- **Board provenance (D3).** `BenchmarkSnapshotHeaderParser` reads, from the first 12 lines only, the
+  `Snapshot format: N` line, the version from `… GnollHack Version 4.3.0 (Build 20) …`, and the
+  `snapshot at yyyy-MM-dd HH:mm:ss` time. Any miss is null; a board is operator-supplied text.
+  - **Writes.** Board creation (`BenchmarkSnapshotImporter.BuildBoardAsync`) and text replacement
+    (`UpdateSnapshotText`) set `SnapshotFormatVersion` and `BoardHeaderTimestamp`. They set
+    `SourceGnollHackVersion` from the header when the caller gave none or the text was replaced.
+  - **Captured time.** `CapturedAtUtc` keeps its meaning, when Overseer first received the board. The
+    header time has no zone and is stored as printed.
+  - **Runs.** `StampBoardProvenance` records the format on the run, parsing the text when the board
+    predates the column. The manifest's *Game Snapshot* line prints *"format N"* or *"format not
+    stated"* from harness 33.
+  - **Viewer and export.** The snapshot viewer's metadata strip shows *Format* and *Board time*. The
+    YAML export writes `suite.snapshot.snapshot_format`, which an import accepts and ignores, because
+    the format is derived from the text.
+
+- **Board quotes, named (C).**
+  - **Report.** Each missing literal is listed under the manifest's *Rubric board quotes* line as
+    `  - Q1: "…"`, capped at 20 with *"and N more"*.
+  - **Run detail.** The notice lists them the same way, and it now appears even when no other
+    integrity cause does.
+  - **Question numbers.** The snapshot viewer, the question-import panel and the upload dialog printed
+    `orderIndex + 1` although `OrderIndex` is stored 1-based, so they named the next question; they
+    print it as stored.
+  - **Start.** On a suite with a board, **Start Benchmark** first fetches
+    `GET suites/{id}/board-facts-check`. When quotes are missing, a modal lists them with *"These
+    rubrics quote text the board does not contain; grades on them will rest on stale facts."* and
+    offers *Acknowledge & Start Run*. It is advisory: a failed check starts the run as if it were clean,
+    and nothing is refused.
+
+- **Run diagnostics (no version effect).**
+  - **Download.** A download button beside the copy button saves the same text as
+    `<suite>_<model>_run<id>_diagnostics.txt`.
+  - **Elapsed.** The capture prints `Elapsed (run):` and `Re-run elapsed:` separately, because
+    `CompletedAtUtc` stays fixed across a re-run.
+  - **Scope.** It prints `Failed-question re-run covered:` once the run is terminal, and `… in progress
+    over:` before.
+  - **Counts.** `Verified N, second-graded M` is run-wide, followed by the re-run-scoped pair.
+  - **Board and re-runs.** It prints the board format, the re-verification stamp, and each re-executed
+    answer's replaced status.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.

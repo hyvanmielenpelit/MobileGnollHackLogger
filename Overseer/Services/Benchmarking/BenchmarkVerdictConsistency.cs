@@ -875,4 +875,21 @@ public static class BenchmarkVerdictConsistency
             .OrderBy(i => i)
             .ToList();
     }
+
+    /// <summary>
+    /// The first scoring method under which an own-knowledge Accuracy deduction is not asked for: the
+    /// assessor reports the suspicion as a <c>Suspected false: </c> unverified claim instead.
+    /// </summary>
+    public const int FirstMethodWithoutOwnKnowledgeDeductions = 12;
+
+    /// <summary>
+    /// What the <c>OutOfRubricAccuracyDeduction</c> flag means on a run graded under
+    /// <paramref name="scoringMethodVersion"/>: up to method 11 a deduction the prompt allowed, from
+    /// <see cref="FirstMethodWithoutOwnKnowledgeDeductions"/> on one the prompt told the assessor not
+    /// to make.
+    /// </summary>
+    public static string OutOfRubricAccuracyDeductionDescription(int scoringMethodVersion)
+        => scoringMethodVersion >= FirstMethodWithoutOwnKnowledgeDeductions
+            ? $"Accuracy deductions the assessor made from its own knowledge although scoring method {scoringMethodVersion} tells it not to: such a statement belongs in unverifiedClaims prefixed `{BenchmarkSuspectedFalseClaim.Prefix.TrimEnd()}` and does not lower the level. The instruction was not followed. Marked `{BenchmarkAssessmentParser.OutOfRubricAccuracyMarker}`, or grounded only in a claim the assessor could not verify; the basis is still sent to the claim verifier and the answer routed to a second reader."
+            : $"Accuracy deductions whose basis is the assessor's own knowledge rather than the rubric or the corpus it was given: recorded under the `{BenchmarkAssessmentParser.OutOfRubricAccuracyMarker}` marker, or grounded only in a claim the assessor could not verify. Routed to a second reader rather than trusted outright.";
 }

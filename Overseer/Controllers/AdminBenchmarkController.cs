@@ -146,6 +146,8 @@ public class AdminBenchmarkController : ControllerBase
         Sha256 = s.Sha256,
         CaptureMethod = s.CaptureMethod,
         SourceGnollHackVersion = s.SourceGnollHackVersion,
+        SnapshotFormatVersion = s.SnapshotFormatVersion,
+        BoardHeaderTimestamp = s.BoardHeaderTimestamp,
         Notes = s.Notes,
         SourceChatSessionId = s.SourceChatSessionId,
         CapturedAtUtc = s.CapturedAtUtc,
@@ -1092,6 +1094,12 @@ public class AdminBenchmarkController : ControllerBase
                             if (!string.IsNullOrWhiteSpace(v.Claim) && BenchmarkClaimRoles.IsOrdinaryClaim(v))
                             {
                                 verificationsByClaim[v.Claim.Trim()] = v;
+                                // A suspected-false item was sent as its sentence alone; the stored
+                                // entry it came from is kept beside it.
+                                if (!string.IsNullOrWhiteSpace(v.RecordedClaim))
+                                {
+                                    verificationsByClaim[v.RecordedClaim.Trim()] = v;
+                                }
                             }
                         }
                     }
@@ -1109,11 +1117,20 @@ public class AdminBenchmarkController : ControllerBase
                 BenchmarkClaimVerdict? verdict = null;
                 string? citation = null;
                 string? basis = null;
+                // A suspected-false entry clusters as the answer's sentence, without the assessor's
+                // prefix and reason.
+                string sampleClaim = BenchmarkSuspectedFalseClaim.TryParse(claim, null, out string suspectedSentence, out _)
+                    ? suspectedSentence
+                    : claim;
                 if (verificationsByClaim != null && verificationsByClaim.TryGetValue(claim.Trim(), out var v))
                 {
-                    verdict = v.Verdict;
+                    verdict = v.EffectiveVerdict;
                     citation = v.Citation;
                     basis = v.Basis;
+                    if (v.SuspectedFalse == true)
+                    {
+                        sampleClaim = v.Claim;
+                    }
                 }
 
                 samples.Add(new BenchmarkUnverifiedClaimSample
@@ -1124,7 +1141,7 @@ public class AdminBenchmarkController : ControllerBase
                     RunId = row.BenchmarkRunId,
                     Provider = row.Provider,
                     ModelId = row.ModelId,
-                    Claim = claim,
+                    Claim = sampleClaim,
                     VerificationVerdict = verdict,
                     Citation = citation,
                     Basis = basis
@@ -1869,6 +1886,8 @@ public class AdminBenchmarkController : ControllerBase
                 Sha256 = s.Sha256,
                 CaptureMethod = s.CaptureMethod,
                 SourceGnollHackVersion = s.SourceGnollHackVersion,
+                SnapshotFormatVersion = s.SnapshotFormatVersion,
+                BoardHeaderTimestamp = s.BoardHeaderTimestamp,
                 Notes = s.Notes,
                 SourceChatSessionId = s.SourceChatSessionId,
                 CapturedAtUtc = s.CapturedAtUtc,
@@ -2038,6 +2057,7 @@ public class AdminBenchmarkController : ControllerBase
         board.CharCount = finalText.Length;
         board.Sha256 = sha256;
         board.DigestText = BenchmarkSnapshotDigestBuilder.Build(finalText);
+        BenchmarkSnapshotHeaderParser.ApplyTo(board, finalText, textReplaced: true);
         board.ModifiedAtUtc = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync(ct);
 
@@ -3056,6 +3076,7 @@ public class AdminBenchmarkController : ControllerBase
             SourceCodeHeadSha = run.SourceCodeHeadSha,
             DefaultSuiteKeyUsed = run.DefaultSuiteKeyUsed,
             BoardFactsCheck = BenchmarkBoardFactsChecker.Deserialize(run.BoardFactsCheckJson),
+            GameSnapshotFormatVersionUsed = run.GameSnapshotFormatVersionUsed,
             ToolFamilyCounts = toolRouting.FamilyCalls.ToDictionary(
                 kv => kv.Key switch
                 {
@@ -3139,6 +3160,7 @@ public class AdminBenchmarkController : ControllerBase
             RerunCompletedAtUtc = run.RerunCompletedAtUtc,
 
             CandidateDeliveryVerifiedAtUtc = run.CandidateDeliveryVerifiedAtUtc,
+            RerunCandidateDeliveryVerifiedAtUtc = run.RerunCandidateDeliveryVerifiedAtUtc,
             BoardDelivery = string.IsNullOrWhiteSpace(run.GameSnapshotSha256Used)
                 ? new List<BenchmarkBoardDeliveryDto>()
                 : BenchmarkReportBuilder.BoardDeliveryFigures(run, run.Answers.ToList())
@@ -3258,7 +3280,10 @@ public class AdminBenchmarkController : ControllerBase
                     ReassessedAtUtc = a.ReassessedAtUtc,
                     ReassessedByModelDisplayNameUsed = a.ReassessedByModelDisplayNameUsed,
                     PreviousQualityScore = a.PreviousQualityScore,
-                    ReassessmentCount = a.ReassessmentCount
+                    ReassessmentCount = a.ReassessmentCount,
+                    RerunAtUtc = a.RerunAtUtc,
+                    RerunOfStatus = a.RerunOfStatus?.ToString(),
+                    RerunOfErrorMessage = a.RerunOfErrorMessage
                 };
             }).ToList()
         };

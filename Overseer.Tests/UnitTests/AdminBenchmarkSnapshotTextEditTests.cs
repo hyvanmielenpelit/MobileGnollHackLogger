@@ -198,6 +198,67 @@ public class AdminBenchmarkSnapshotTextEditTests
         Assert.IsType<NotFoundResult>(result);
     }
 
+    // --- Snapshot header parsing --------------------------------------------------------------
+
+    [Fact]
+    public async Task ReplacingText_WithAFormat3Header_SetsVersionFormatAndTimestamp_AndLeavesCapturedAtUtcAlone()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db) = CreateController();
+        var board = await SeedSnapshotAsync(db, "header_target", "Dlvl:1 $:0 HP:12(12)");
+        board.SourceGnollHackVersion = "4.3.0 (Build 19)";
+        var capturedAtUtc = board.CapturedAtUtc;
+        await db.SaveChangesAsync(ct);
+
+        const string headerText =
+            "GnollHack AI Snapshot\n" +
+            "\n" +
+            "Snapshot format: 3\n" +
+            "Windows GnollHack Version 4.3.0 (Build 20) - last build Fri Sep 18 14:52:42 2026.\n" +
+            "Game began 2026-07-12 22:56:18, snapshot at 2026-09-18 15:09:58\n" +
+            "Tommi2, lawful male human Monk\n" +
+            "Map:\n";
+
+        var result = await controller.UpdateSnapshotText(
+            board.Id, new UpdateBenchmarkGameSnapshotTextRequest { Text = headerText }, ct);
+
+        var dto = ReadDto(result);
+        Assert.Equal(3, dto.SnapshotFormatVersion);
+        Assert.Equal("4.3.0 (Build 20)", dto.SourceGnollHackVersion);
+        Assert.Equal("2026-09-18 15:09:58", dto.BoardHeaderTimestamp);
+
+        var stored = await db.BenchmarkGameSnapshots.SingleAsync(s => s.Id == board.Id, ct);
+        Assert.Equal(3, stored.SnapshotFormatVersion);
+        Assert.Equal("4.3.0 (Build 20)", stored.SourceGnollHackVersion);
+        Assert.Equal("2026-09-18 15:09:58", stored.BoardHeaderTimestamp);
+        Assert.Equal(capturedAtUtc, stored.CapturedAtUtc);
+    }
+
+    [Fact]
+    public async Task ReplacingText_WithNoHeader_KeepsTheStoredVersion_AndClearsFormatAndTimestamp()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db) = CreateController();
+        var board = await SeedSnapshotAsync(db, "headerless_target", "Dlvl:1 $:0 HP:12(12)");
+        board.SourceGnollHackVersion = "4.3.0 (Build 19)";
+        board.SnapshotFormatVersion = 3;
+        board.BoardHeaderTimestamp = "2026-09-11 15:09:58";
+        await db.SaveChangesAsync(ct);
+
+        var result = await controller.UpdateSnapshotText(
+            board.Id, new UpdateBenchmarkGameSnapshotTextRequest { Text = "Dlvl:2 $:50 HP:20(20)" }, ct);
+
+        var dto = ReadDto(result);
+        Assert.Equal("4.3.0 (Build 19)", dto.SourceGnollHackVersion);
+        Assert.Null(dto.SnapshotFormatVersion);
+        Assert.Null(dto.BoardHeaderTimestamp);
+
+        var stored = await db.BenchmarkGameSnapshots.SingleAsync(s => s.Id == board.Id, ct);
+        Assert.Equal("4.3.0 (Build 19)", stored.SourceGnollHackVersion);
+        Assert.Null(stored.SnapshotFormatVersion);
+        Assert.Null(stored.BoardHeaderTimestamp);
+    }
+
     // --- BOARD FACTS quote check -------------------------------------------------------------
 
     [Fact]

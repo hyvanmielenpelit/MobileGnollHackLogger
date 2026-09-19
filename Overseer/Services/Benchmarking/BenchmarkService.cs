@@ -31,6 +31,7 @@ public class BenchmarkService
     private readonly BenchmarkScoringProfileService _scoringProfileService;
     private readonly IConfiguration _configuration;
     private readonly ILogger<BenchmarkService> _logger;
+    private BenchmarkCitationLivenessCheck? _citationLivenessCheck;
 
     private readonly List<string> _defaultAllowedTools = new()
     {
@@ -85,8 +86,8 @@ public class BenchmarkService
 
     /// <summary>
     /// The newest scoring method whose changes a rescore applies. Methods up to 10 changed how stored
-    /// levels are turned into points and indices, which a rescore recomputes; method 11 changed only the
-    /// anchors the assessor grades by, which a rescore cannot apply because it grades nothing.
+    /// levels are turned into points and indices, which a rescore recomputes; methods 11 and 12 changed
+    /// only the rules the assessor grades by, which a rescore cannot apply because it grades nothing.
     /// </summary>
     internal const int LastMethodRescoreCanApply = 10;
 
@@ -276,6 +277,10 @@ public class BenchmarkService
             run.GameSnapshotSha256Used = board.Sha256;
             run.GameSnapshotCharCountUsed = board.CharCount;
             run.GameSnapshotCaptureMethodUsed = board.CaptureMethod;
+            // A board stored before the column existed carries no parsed format until its text is
+            // next written, so the header is read here instead.
+            run.GameSnapshotFormatVersionUsed = board.SnapshotFormatVersion
+                ?? BenchmarkSnapshotHeaderParser.Parse(board.SanitizedText).SnapshotFormatVersion;
         }
 
         run.BoardFactsCheckJson = board != null
@@ -422,7 +427,7 @@ public class BenchmarkService
             PopulateInstrumentFingerprint(run, systemPrompt);
 
             VerifyCandidateDeliveryBeforeRun(
-                run, testedConfig, systemPrompt, segmentedPrompt, questions.FirstOrDefault()?.QuestionText);
+                run, testedConfig, systemPrompt, segmentedPrompt, questions.FirstOrDefault()?.QuestionText, isRerun: false);
 
             // Check credential collision between candidate and assessor
             string testedKey = AiRequestGovernor.GetCredentialKey(testedConfig.Provider, null, testedConfig.Id);
@@ -758,7 +763,7 @@ public class BenchmarkService
             PopulateRerunInstrumentFingerprint(run, systemPrompt);
 
             VerifyCandidateDeliveryBeforeRun(
-                run, testedConfig, systemPrompt, segmentedPrompt, failedAnswers.FirstOrDefault()?.QuestionText);
+                run, testedConfig, systemPrompt, segmentedPrompt, failedAnswers.FirstOrDefault()?.QuestionText, isRerun: true);
 
             var suiteQuestions = (run.BenchmarkSuite?.Questions ?? new List<BenchmarkQuestion>())
                 .ToDictionary(q => q.OrderIndex, q => q.ExpectedPoints);
@@ -1081,14 +1086,16 @@ public class BenchmarkService
     /// The once-per-execution delivery check, run before the first question so that a candidate
     /// that would receive neither the prompt nor the board costs nothing: the throw reaches the
     /// caller's terminal handler, which marks the run failed with this message and creates no
-    /// answers.
+    /// answers. A re-run stamps <see cref="BenchmarkRun.RerunCandidateDeliveryVerifiedAtUtc"/> and
+    /// leaves the pre-run stamp alone.
     /// </summary>
     private void VerifyCandidateDeliveryBeforeRun(
         BenchmarkRun run,
         SystemAiApiConfiguration testedConfig,
         string systemPrompt,
         SegmentedPrompt? segmentedPrompt,
-        string? firstQuestionText)
+        string? firstQuestionText,
+        bool isRerun)
     {
         VerifyCandidateDelivery(
             run,
@@ -1098,7 +1105,14 @@ public class BenchmarkService
             segmentedPrompt,
             systemPrompt,
             questionNumber: null);
-        run.CandidateDeliveryVerifiedAtUtc = DateTime.UtcNow;
+        if (isRerun)
+        {
+            run.RerunCandidateDeliveryVerifiedAtUtc = DateTime.UtcNow;
+        }
+        else
+        {
+            run.CandidateDeliveryVerifiedAtUtc = DateTime.UtcNow;
+        }
     }
 
     /// <summary>
@@ -1671,6 +1685,12 @@ public class BenchmarkService
         // to empty rather than null.
         bool isTerminalFailure = status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed
             or BenchmarkAnswerStatus.Canceled;
+
+        // The replaced attempt's outcome, kept before the row is overwritten: nothing else records
+        // why this answer was re-executed.
+        answer.RerunOfStatus = answer.Status;
+        answer.RerunOfErrorMessage = BenchmarkAssessmentFailure.Truncate(answer.ErrorMessage, 512);
+        answer.RerunAtUtc = DateTime.UtcNow;
 
         answer.AnswerText = isTerminalFailure ? string.Empty : sanitized.AnswerText;
         answer.ThoughtText = isTerminalFailure ? null : sanitized.ThoughtText;
@@ -2881,13 +2901,27 @@ public class BenchmarkService
             }
         }
 
-        if ((claims == null || claims.Count == 0) && isDisputed)
+        // Only the answer's own sentences are persisted as its unverified claims; the assessor's
+        // sentences are carried in the manifest alone. A retry finds the answer claims this branch
+        // persisted earlier and recovers the assessor statements from the same deterministic
+        // extraction.
+        List<string> assessorStatements = new();
+        if (isDisputed)
         {
-            claims = ExtractDisputedClaims(answer, accuracyEvidence);
-            if (claims.Count > 0)
+            var disputed = ExtractDisputedClaims(answer, accuracyEvidence);
+            if (claims == null || claims.Count == 0)
             {
-                answer.UnverifiedClaimCount = claims.Count;
-                answer.UnverifiedClaimsJson = JsonSerializer.Serialize(claims);
+                claims = disputed.AnswerClaims;
+                assessorStatements = disputed.AssessorStatements;
+                if (claims.Count > 0)
+                {
+                    answer.UnverifiedClaimCount = claims.Count;
+                    answer.UnverifiedClaimsJson = JsonSerializer.Serialize(claims);
+                }
+            }
+            else if (claims.SequenceEqual(disputed.AnswerClaims, StringComparer.Ordinal))
+            {
+                assessorStatements = disputed.AssessorStatements;
             }
         }
 
@@ -2895,8 +2929,8 @@ public class BenchmarkService
         // the prompt only and never lands in the unadjudicable-claims columns. The out-of-rubric
         // basis is carried the same way. Fixed order: the critical-error quote is claim 0 and the
         // basis claim 1; alone, the basis is claim 0. The verifier preamble names the basis by that
-        // position. Accused quotes follow; each item's roles come from this manifest, never from
-        // model output.
+        // position. Assessor statements and accused quotes follow; each item's roles come from this
+        // manifest, never from model output.
         bool isCriticalErrorAdjudication = IsCriticalErrorAdjudication(answer);
         string? outOfRubricBasis = OutOfRubricBasisOf(answer);
         bool isOutOfRubricAdjudication = outOfRubricBasis != null;
@@ -2904,7 +2938,9 @@ public class BenchmarkService
             claims,
             isCriticalErrorAdjudication ? answer.CriticalErrorQuote : null,
             outOfRubricBasis,
-            AccusedQuotesFor(answer));
+            AccusedQuotesFor(answer),
+            assessorStatements,
+            answer.AnswerText);
         claims = manifest.Select(m => m.Text).ToList();
 
         if (claims.Count == 0) return;
@@ -2961,7 +2997,8 @@ public class BenchmarkService
                 : null,
             claimRoles: manifest.Select(m => m.Roles).ToList(),
             claimContexts: manifest.Select(m => m.Context).ToList(),
-            toolCallLeads: toolCallLeads);
+            toolCallLeads: toolCallLeads,
+            claimCharges: manifest.Select(m => m.Charge).ToList());
 
         var runRequest = BuildClaimVerificationRequest(
             verifierConfig,
@@ -3130,57 +3167,11 @@ public class BenchmarkService
                 answer.ClaimVerificationError = null;
                 answer.ClaimVerificationRawText = null;
 
-                // The out-of-rubric basis, the critical-error quote and an accused quote are the
-                // assessor's statements or charges, not claims the answer left unverified, so their
-                // verdicts stay out of the answer's claim counts and the RefutedClaim flag; the counts
-                // then total the unverified claims the answer actually made, each once. All are kept
-                // in ClaimVerificationJson with their roles, where their citations are the record,
-                // and the contested-verdict decisions below read that full list.
+                // The liveness note is added before anything is derived from the verdicts, so every
+                // count and flag below reads the demoted verdict.
                 var verifications = StampRoles(parseResult.Verifications, manifest);
-                var answerClaimVerifications = verifications.Where(BenchmarkClaimRoles.IsOrdinaryClaim).ToList();
-                answer.ClaimsSupportedCount = answerClaimVerifications.Count(v => v.Verdict == BenchmarkClaimVerdict.Supported);
-                answer.ClaimsRefutedCount = answerClaimVerifications.Count(v => v.Verdict == BenchmarkClaimVerdict.Refuted);
-                answer.ClaimsIndeterminateCount = answerClaimVerifications.Count(v => v.Verdict == BenchmarkClaimVerdict.Indeterminate);
-                answer.ClaimVerificationJson = JsonSerializer.Serialize(verifications);
-
-                if (answer.ClaimsRefutedCount > 0)
-                {
-                    answer.AnswerFlags |= (int)BenchmarkAnswerFlags.RefutedClaim;
-                }
-                else
-                {
-                    answer.AnswerFlags &= ~(int)BenchmarkAnswerFlags.RefutedClaim;
-                }
-
-                // The quote the critical error rests on was checked against the source and stood.
-                // Advisory: the cap stays, the index does not move, and the flag says the finding
-                // is contested so a reader argues it from the record rather than from the verdict.
-                // Cleared in the negative case so a re-verification cannot leave a stale flag.
-                if (isCriticalErrorAdjudication &&
-                    CriticalErrorQuoteWasSupported(verifications, answer.CriticalErrorQuote))
-                {
-                    answer.AnswerFlags |= (int)BenchmarkAnswerFlags.ContestedCriticalError;
-                }
-                else
-                {
-                    answer.AnswerFlags &= ~(int)BenchmarkAnswerFlags.ContestedCriticalError;
-                }
-
-                // The statement the out-of-rubric Accuracy deduction rests on was checked against
-                // the source and refuted, or a sentence the assessor charged as false was checked and
-                // supported with a citation. Advisory in the same way: the deduction stays, no index
-                // moves, and the flag says the deduction is contested. A refuted accused sentence
-                // leaves the deduction standing and adds no refutation of the answer. Cleared
-                // otherwise, so a re-verification cannot leave a stale flag.
-                if ((isOutOfRubricAdjudication && OutOfRubricBasisWasRefuted(verifications, outOfRubricBasis))
-                    || SupportedAccusations(verifications).Count > 0)
-                {
-                    answer.AnswerFlags |= (int)BenchmarkAnswerFlags.ContestedAccuracyDeduction;
-                }
-                else
-                {
-                    answer.AnswerFlags &= ~(int)BenchmarkAnswerFlags.ContestedAccuracyDeduction;
-                }
+                verifications = AnnotateCitationLiveness(verifications);
+                ApplyClaimVerificationOutcome(answer, verifications, isCriticalErrorAdjudication, outOfRubricBasis);
 
                 verdictsPersisted = true;
             }
@@ -3208,6 +3199,98 @@ public class BenchmarkService
         if (verdictsPersisted)
         {
             await RunEvidenceInformedRegradeAsync(db, configService, run, answer, expectedPoints, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Stores a parsed, role-stamped verification on the answer with its counts and the three flags
+    /// derived from it, each read from <see cref="BenchmarkClaimVerification.EffectiveVerdict"/>.
+    ///
+    /// The out-of-rubric basis, the critical-error quote, an accused quote and an assessor statement
+    /// are the assessor's statements or charges, not claims the answer left unverified, so their
+    /// verdicts stay out of the answer's claim counts and the RefutedClaim flag; the counts then total
+    /// the unverified claims the answer actually made, each once. All are kept in
+    /// ClaimVerificationJson with their roles, where their citations are the record, and the
+    /// contested-verdict decisions read that full list.
+    /// </summary>
+    internal static void ApplyClaimVerificationOutcome(
+        BenchmarkRunAnswer answer,
+        IReadOnlyList<BenchmarkClaimVerification> verifications,
+        bool isCriticalErrorAdjudication,
+        string? outOfRubricBasis)
+    {
+        var answerClaimVerifications = verifications.Where(BenchmarkClaimRoles.IsOrdinaryClaim).ToList();
+        answer.ClaimsSupportedCount = answerClaimVerifications.Count(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Supported);
+        answer.ClaimsRefutedCount = answerClaimVerifications.Count(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Refuted);
+        answer.ClaimsIndeterminateCount = answerClaimVerifications.Count(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Indeterminate);
+        answer.ClaimVerificationJson = JsonSerializer.Serialize(verifications);
+
+        if (answer.ClaimsRefutedCount > 0)
+        {
+            answer.AnswerFlags |= (int)BenchmarkAnswerFlags.RefutedClaim;
+        }
+        else
+        {
+            answer.AnswerFlags &= ~(int)BenchmarkAnswerFlags.RefutedClaim;
+        }
+
+        // The quote the critical error rests on was checked against the source and stood.
+        // Advisory: the cap stays, the index does not move, and the flag says the finding
+        // is contested so a reader argues it from the record rather than from the verdict.
+        // Cleared in the negative case so a re-verification cannot leave a stale flag.
+        if (isCriticalErrorAdjudication &&
+            CriticalErrorQuoteWasSupported(verifications, answer.CriticalErrorQuote))
+        {
+            answer.AnswerFlags |= (int)BenchmarkAnswerFlags.ContestedCriticalError;
+        }
+        else
+        {
+            answer.AnswerFlags &= ~(int)BenchmarkAnswerFlags.ContestedCriticalError;
+        }
+
+        // The statement the out-of-rubric Accuracy deduction rests on was checked against the
+        // source and refuted, a sentence the assessor charged as false was checked and supported
+        // with a citation, or a statement of the assessor's own evidence was refuted with one.
+        // Advisory in the same way: the deduction stays, no index moves, and the flag says the
+        // deduction is contested. A refuted accused sentence, or a supported or indeterminate
+        // assessor statement, leaves the deduction standing and adds no refutation of the answer.
+        // Cleared otherwise, so a re-verification cannot leave a stale flag.
+        if ((outOfRubricBasis != null && OutOfRubricBasisWasRefuted(verifications, outOfRubricBasis))
+            || SupportedAccusations(verifications).Count > 0
+            || RefutedAssessorStatements(verifications).Count > 0)
+        {
+            answer.AnswerFlags |= (int)BenchmarkAnswerFlags.ContestedAccuracyDeduction;
+        }
+        else
+        {
+            answer.AnswerFlags &= ~(int)BenchmarkAnswerFlags.ContestedAccuracyDeduction;
+        }
+    }
+
+    /// <summary>
+    /// The verifications with a <see cref="BenchmarkClaimVerification.CitationNote"/> where the cited
+    /// GnollHack function has no live call site; unchanged when the source index is unavailable.
+    /// </summary>
+    private List<BenchmarkClaimVerification> AnnotateCitationLiveness(List<BenchmarkClaimVerification> verifications)
+    {
+        try
+        {
+            if (_citationLivenessCheck == null)
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var sourceCode = scope.ServiceProvider.GetService<SourceCodeService>();
+                if (sourceCode == null) return verifications;
+
+                int maxFileSizeKB = int.TryParse(_configuration["MaxSourceFileSizeKB"], out int kb) ? kb : 800;
+                _citationLivenessCheck = BenchmarkCitationLivenessCheck.ForSourceCodeService(sourceCode, maxFileSizeKB);
+            }
+
+            return _citationLivenessCheck.Annotate(verifications);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Citation liveness check skipped.");
+            return verifications;
         }
     }
 
@@ -3578,8 +3661,10 @@ public class BenchmarkService
     /// <summary>
     /// The deductions an evidence-informed re-grade may withdraw, each with the findings that bear on
     /// it: the critical error, when its quote was Supported with a citation; the out-of-rubric
-    /// Accuracy deduction, when its basis was Refuted with a citation; and one Accuracy target per
-    /// accused sentence Supported with a citation. An ordinary Supported claim creates none. Finding
+    /// Accuracy deduction, when its basis was Refuted with a citation; one Accuracy target per
+    /// accused sentence Supported with a citation; and one per assessor statement Refuted with a
+    /// citation. Verdicts are read as <see cref="BenchmarkClaimVerification.EffectiveVerdict"/>. An
+    /// ordinary Supported claim creates none. Finding
     /// ids are <c>F</c> + the stored claim index. A legacy record without roles is matched by text.
     /// </summary>
     internal static List<BenchmarkEvidenceInformedTarget> BuildEvidenceInformedTargets(
@@ -3597,7 +3682,7 @@ public class BenchmarkService
                 .Where(v => (withRoles
                         ? BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.CriticalErrorQuote)
                         : string.Equals(v.Claim?.Trim(), quote, StringComparison.Ordinal))
-                    && v.Verdict == BenchmarkClaimVerdict.Supported && HasCitation(v))
+                    && v.EffectiveVerdict == BenchmarkClaimVerdict.Supported && HasCitation(v))
                 .Select(v => $"F{v.ClaimIndex}")
                 .ToList();
             if (findings.Count > 0)
@@ -3615,7 +3700,7 @@ public class BenchmarkService
                 .Where(v => (withRoles
                         ? BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.OutOfRubricBasis)
                         : string.Equals(v.Claim?.Trim(), trimmed, StringComparison.Ordinal))
-                    && v.Verdict == BenchmarkClaimVerdict.Refuted && HasCitation(v))
+                    && v.EffectiveVerdict == BenchmarkClaimVerdict.Refuted && HasCitation(v))
                 .Select(v => $"F{v.ClaimIndex}")
                 .ToList();
             if (findings.Count > 0)
@@ -3630,6 +3715,13 @@ public class BenchmarkService
             targets.Add(new BenchmarkEvidenceInformedTarget(
                 Next(), BenchmarkEvidenceInformedTarget.AccuracyKind, BenchmarkClaimRoles.AccusedQuote,
                 accused.Claim.Trim(), new[] { $"F{accused.ClaimIndex}" }));
+        }
+
+        foreach (var statement in RefutedAssessorStatements(verifications))
+        {
+            targets.Add(new BenchmarkEvidenceInformedTarget(
+                Next(), BenchmarkEvidenceInformedTarget.AccuracyKind, BenchmarkClaimRoles.AssessorStatement,
+                statement.Claim.Trim(), new[] { $"F{statement.ClaimIndex}" }));
         }
 
         return targets;
@@ -4715,11 +4807,11 @@ public class BenchmarkService
             }
         }
 
-        // The out-of-rubric basis, the critical-error quote and an accused sentence are the first
-        // assessor's statements or charges, not claims the answer left unverified, and this context
-        // is presented to the second reader as claims from the candidate answer: a blind reader gets
-        // no assessor accusation and no assessor quote. A legacy list without roles strips the
-        // basis only, as it always did.
+        // The out-of-rubric basis, the critical-error quote, an accused sentence and an assessor
+        // statement are the first assessor's statements or charges, not claims the answer left
+        // unverified, and this context is presented to the second reader as claims from the
+        // candidate answer: a blind reader gets no assessor accusation and no assessor quote. A
+        // legacy list without roles strips the basis only, as it always did.
         if (claimVerifications != null)
         {
             claimVerifications = BenchmarkClaimRoles.HasRoles(claimVerifications)
@@ -5007,6 +5099,7 @@ public class BenchmarkService
             var refutedList = new List<(string Claim, string? Citation, string? Basis)>();
             var supportedList = new List<string>();
             var supportedAccusations = new List<(string Claim, string? Citation)>();
+            var refutedAssessorStatements = new List<string>();
             bool basisRefuted = false;
             if (!string.IsNullOrWhiteSpace(a.ClaimVerificationJson))
             {
@@ -5018,21 +5111,23 @@ public class BenchmarkService
                     if (verifications != null)
                     {
                         // The assessor's own statements and charges — the out-of-rubric basis, the
-                        // critical-error quote and an accused sentence — are excluded from both lists:
-                        // a verdict on any of them is a statement about the grading, and the synthesis
-                        // prints those separately.
+                        // critical-error quote, an accused sentence and an assessor statement — are
+                        // excluded from both lists: a verdict on any of them is a statement about the
+                        // grading, and the synthesis prints those separately.
                         var ownClaims = OrdinaryClaimVerifications(verifications, a);
                         basisRefuted = OutOfRubricBasisWasRefuted(verifications, outOfRubricBasis);
                         supportedAccusations.AddRange(SupportedAccusations(verifications)
                             .Select(v => (v.Claim.Trim(), v.Citation)));
+                        refutedAssessorStatements.AddRange(RefutedAssessorStatements(verifications)
+                            .Select(v => v.Claim.Trim()));
 
-                        foreach (var v in ownClaims.Where(x => x.Verdict == BenchmarkClaimVerdict.Refuted))
+                        foreach (var v in ownClaims.Where(x => x.EffectiveVerdict == BenchmarkClaimVerdict.Refuted))
                         {
                             refutedList.Add((v.Claim, v.Citation, v.Basis));
                         }
 
                         foreach (var v in ownClaims
-                                     .Where(x => x.Verdict == BenchmarkClaimVerdict.Supported
+                                     .Where(x => x.EffectiveVerdict == BenchmarkClaimVerdict.Supported
                                                  && !string.IsNullOrWhiteSpace(x.Claim))
                                      .Take(SupportedClaimsPerAnswer))
                         {
@@ -5078,13 +5173,14 @@ public class BenchmarkService
                      && !string.IsNullOrWhiteSpace(a.CriticalErrorQuote)
                         ? new[] { a.CriticalErrorQuote!.Trim() }
                         : Array.Empty<string>(),
-                // A refuted assessor statement only; a supported accusation sets the same flag and is
-                // listed on its own.
+                // A refuted out-of-rubric basis or assessor statement only; a supported accusation
+                // sets the same flag and is listed on its own.
                 ContestedAccuracyDeductionBases =
                     (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedAccuracyDeduction) != 0
-                     && outOfRubricBasis != null
-                     && basisRefuted
-                        ? new[] { outOfRubricBasis }
+                        ? (outOfRubricBasis != null && basisRefuted ? new[] { outOfRubricBasis } : Array.Empty<string>())
+                            .Concat(refutedAssessorStatements)
+                            .Distinct(StringComparer.Ordinal)
+                            .ToArray()
                         : Array.Empty<string>(),
                 SupportedAccusations = supportedAccusations,
                 // A rejected or unprovenanced re-grade never reaches the synthesis as a withdrawal.
@@ -5959,7 +6055,7 @@ public class BenchmarkService
             PopulateInstrumentFingerprint(run, systemPrompt);
 
             VerifyCandidateDeliveryBeforeRun(
-                run, testedConfig, systemPrompt, segmentedPrompt, answer.QuestionText);
+                run, testedConfig, systemPrompt, segmentedPrompt, answer.QuestionText, isRerun: true);
 
             string? expectedPoints = MatchSuiteQuestion(run, answer)?.ExpectedPoints;
 
@@ -6782,7 +6878,7 @@ public class BenchmarkService
         var match = verifications.FirstOrDefault(
             v => string.Equals(v.Claim?.Trim(), trimmed, StringComparison.Ordinal));
 
-        return match != null && match.Verdict == BenchmarkClaimVerdict.Refuted;
+        return match != null && match.EffectiveVerdict == BenchmarkClaimVerdict.Refuted;
     }
 
     /// <summary>
@@ -6832,84 +6928,145 @@ public class BenchmarkService
         match ??= verifications.FirstOrDefault(
             v => string.Equals(v.Claim?.Trim(), quote, StringComparison.Ordinal));
 
-        return match != null && match.Verdict == BenchmarkClaimVerdict.Supported;
+        return match != null && match.EffectiveVerdict == BenchmarkClaimVerdict.Supported;
     }
 
-    internal static List<string> ExtractDisputedClaims(BenchmarkRunAnswer answer, string? accuracyEvidence)
-    {
-        var claims = new List<string>();
+    /// <summary>
+    /// What a contested answer with no unverified claims submits to the verifier: sentences of the
+    /// answer, which are persisted as its unverified claims, and statements of the assessor, which
+    /// are submitted as <see cref="BenchmarkClaimRoles.AssessorStatement"/> and never persisted.
+    /// </summary>
+    internal sealed record DisputedClaims(List<string> AnswerClaims, List<string> AssessorStatements);
 
-        // 1. Critical error quote if identified by the assessor
+    internal const int MaxDisputedAnswerNumericClaims = 4;
+    internal const int MaxDisputedClaims = 8;
+    internal const int MinDisputedAnswerClaimWords = 4;
+
+    private static readonly Regex AnswerSentenceSplitRegex = new(@"(?<=[.!?])\s+", RegexOptions.Compiled);
+    private static readonly Regex EvidenceSentenceSplitRegex = new(@"(?<=[.!?\n])\s+", RegexOptions.Compiled);
+    private static readonly Regex LetterRunRegex = new(@"\p{L}{3,}", RegexOptions.Compiled);
+
+    /// <summary>A sentence that only reports what the answer says; paired with a quotation, the accused-quote path checks that quotation.</summary>
+    private static readonly Regex AnswerReportRegex = new(
+        @"^(?:The answer|It|The response)\s+(?:states|says|claims|asserts|gives|lists|tells)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// 1. The critical-error quote, when there is one (an answer claim). 2. Up to
+    /// <see cref="MaxDisputedAnswerNumericClaims"/> digit-bearing sentences of the answer, split on
+    /// sentence ends only, each of at least <see cref="MinDisputedAnswerClaimWords"/> words and one
+    /// run of three letters (answer claims). 3. Sentences of the accuracy evidence, or the whole
+    /// evidence when nothing else was found, skipping a sentence that only reports what the answer
+    /// says and quotes it, and a <c>Suspected false:</c> entry, which is a sentence of the answer
+    /// (assessor statements). 4. The review comment when nothing at all was found (an assessor
+    /// statement). At most <see cref="MaxDisputedClaims"/> in all.
+    /// </summary>
+    internal static DisputedClaims ExtractDisputedClaims(BenchmarkRunAnswer answer, string? accuracyEvidence)
+    {
+        var answerClaims = new List<string>();
+        var assessorStatements = new List<string>();
+        bool Seen(string text) => answerClaims.Contains(text, StringComparer.OrdinalIgnoreCase)
+            || assessorStatements.Contains(text, StringComparer.OrdinalIgnoreCase);
+        int Total() => answerClaims.Count + assessorStatements.Count;
+
         if (!string.IsNullOrWhiteSpace(answer.CriticalErrorQuote))
         {
             var quote = answer.CriticalErrorQuote.Trim();
-            if (quote.Length >= 5 && !claims.Contains(quote, StringComparer.OrdinalIgnoreCase))
+            if (quote.Length >= 5)
             {
-                claims.Add(quote);
+                answerClaims.Add(quote);
             }
         }
 
-        // 2. Candidate answer numeric assertions
         if (!string.IsNullOrWhiteSpace(answer.AnswerText))
         {
-            var rawSentences = Regex.Split(answer.AnswerText, @"(?<=[.!?\n])\s+");
             int numericClaimsCount = 0;
-            foreach (var raw in rawSentences)
+            foreach (var raw in AnswerSentenceSplitRegex.Split(answer.AnswerText))
             {
                 var trimmed = raw.Trim();
-                if (trimmed.Length >= 10 && trimmed.Length <= 300 && Regex.IsMatch(trimmed, @"\d"))
+                if (trimmed.Length >= 10 && trimmed.Length <= 300 && Regex.IsMatch(trimmed, @"\d")
+                    && IsSubstantiveAnswerSentence(trimmed) && !Seen(trimmed))
                 {
-                    if (!claims.Contains(trimmed, StringComparer.OrdinalIgnoreCase))
-                    {
-                        claims.Add(trimmed);
-                        numericClaimsCount++;
-                        if (numericClaimsCount >= 4) break;
-                    }
+                    answerClaims.Add(trimmed);
+                    numericClaimsCount++;
+                    if (numericClaimsCount >= MaxDisputedAnswerNumericClaims) break;
                 }
             }
         }
 
-        // 3. Counter-claims from assessor accuracy evidence
         if (!string.IsNullOrWhiteSpace(accuracyEvidence))
         {
-            var evidenceSentences = Regex.Split(accuracyEvidence, @"(?<=[.!?\n])\s+");
-            foreach (var raw in evidenceSentences)
+            foreach (var raw in EvidenceSentenceSplitRegex.Split(accuracyEvidence))
             {
                 var trimmed = raw.Trim();
-                if (trimmed.Length >= 15 && trimmed.Length <= 300 && !claims.Contains(trimmed, StringComparer.OrdinalIgnoreCase))
+                if (trimmed.Length >= 15 && trimmed.Length <= 300 && IsAssessorStatementCandidate(trimmed) && !Seen(trimmed))
                 {
-                    claims.Add(trimmed);
-                    if (claims.Count >= 8) break;
+                    assessorStatements.Add(trimmed);
+                    if (Total() >= MaxDisputedClaims) break;
                 }
             }
 
-            if (claims.Count == 0 && accuracyEvidence.Trim().Length <= 400)
+            string whole = accuracyEvidence.Trim();
+            if (Total() == 0 && whole.Length <= 400 && IsAssessorStatementCandidate(whole))
             {
-                claims.Add(accuracyEvidence.Trim());
+                assessorStatements.Add(whole);
             }
         }
 
-        // 4. Fallback to review comment if still empty
-        if (claims.Count == 0 && !string.IsNullOrWhiteSpace(answer.ReviewComment))
+        if (Total() == 0 && !string.IsNullOrWhiteSpace(answer.ReviewComment))
         {
             var comment = answer.ReviewComment.Trim();
             if (comment.Length <= 400)
             {
-                claims.Add(comment);
+                assessorStatements.Add(comment);
             }
         }
 
-        return claims;
+        return new DisputedClaims(answerClaims, assessorStatements);
     }
 
-    /// <summary>One item submitted to the claim verifier: its text, why it was submitted, and the answer context it is read in.</summary>
-    internal sealed record ClaimSubmission(string Text, IReadOnlyList<string> Roles, string? Context);
+    /// <summary>At least <see cref="MinDisputedAnswerClaimWords"/> words carrying a letter, and one run of three letters.</summary>
+    private static bool IsSubstantiveAnswerSentence(string sentence)
+        => sentence.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Count(w => w.Any(char.IsLetter)) >= MinDisputedAnswerClaimWords
+            && LetterRunRegex.IsMatch(sentence);
 
-    /// <summary>A sentence of the answer the assessor quoted in its accuracy evidence: the answer's own span, and its context.</summary>
-    internal sealed record AccusedQuote(string Text, string? Context);
+    /// <summary>False for a sentence that reports what the answer says and quotes it, and for a suspected-false entry.</summary>
+    private static bool IsAssessorStatementCandidate(string sentence)
+    {
+        if (BenchmarkSuspectedFalseClaim.IsSuspectedFalse(sentence)) return false;
+        return !(AnswerReportRegex.IsMatch(sentence) && ContainsQuotation(sentence));
+    }
+
+    private static bool ContainsQuotation(string text)
+        => StraightQuotedSpanRegex.IsMatch(text)
+            || TypographicQuotedSpanRegex.IsMatch(text)
+            || StraightSingleQuotedSpanRegex.IsMatch(text)
+            || TypographicSingleQuotedSpanRegex.IsMatch(text);
+
+    /// <summary>
+    /// One item submitted to the claim verifier: its text, why it was submitted, and the answer
+    /// context it is read in; for an accused sentence the assessor's quoted fragments and charge, and
+    /// for a suspected-false claim the assessor's reason and the entry it was recorded as.
+    /// </summary>
+    internal sealed record ClaimSubmission(string Text, IReadOnlyList<string> Roles, string? Context)
+    {
+        public IReadOnlyList<string>? QuotedFragments { get; init; }
+        public string? Charge { get; init; }
+        public bool SuspectedFalse { get; init; }
+        public string? Suspicion { get; init; }
+        public string? RecordedClaim { get; init; }
+    }
+
+    /// <summary>
+    /// A sentence of the answer the assessor quoted in its accuracy evidence: the sentence or list
+    /// item of the answer that encloses the quotation, its context, the quoted spans as they occur in
+    /// the answer, and the assessor's evidence sentence(s) that quote it.
+    /// </summary>
+    internal sealed record AccusedQuote(string Text, string? Context, IReadOnlyList<string>? QuotedFragments = null, string? Charge = null);
 
     internal const int AccusedQuoteMinLength = 15;
     internal const int AccusedQuoteMaxLength = 400;
+    internal const int AccusedQuoteChargeMaxLength = 400;
     internal const int MaxAccusedQuotesPerAnswer = 3;
     internal const int AccusedQuoteEligibleMaxAccuracyLevel = 4;
     private const int AccusedQuoteContextMaxLength = 300;
@@ -6954,8 +7111,11 @@ public class BenchmarkService
     /// <see cref="AccusedQuoteMinLength"/> to <see cref="AccusedQuoteMaxLength"/> characters that
     /// occurs in the answer once Markdown emphasis and whitespace runs are ignored. A span the
     /// evidence clause around it approves of (<see cref="IsApprovedInEvidence"/>) is not an
-    /// accusation and is skipped. The answer's own span is returned, not the assessor's copy; a
-    /// span not in the answer (a rubric or board quotation) is dropped. At most
+    /// accusation and is skipped; a span not in the answer (a rubric or board quotation) is dropped.
+    /// The answer's own span is widened to the sentence or list item enclosing it
+    /// (<see cref="EnclosingSentence"/>), or kept alone when that exceeds
+    /// <see cref="AccusedQuoteMaxLength"/>; spans whose widened ranges overlap become one submission
+    /// carrying every quoted fragment and the evidence sentence of each. At most
     /// <see cref="MaxAccusedQuotesPerAnswer"/>, longest first, ties in evidence order. A bounded
     /// heuristic: it finds only accusations the assessor quoted.
     /// </summary>
@@ -6968,14 +7128,15 @@ public class BenchmarkService
         }
 
         var (normalizedAnswer, map) = NormalizeWithMap(answerText);
-        var candidates = new List<(int SourceIndex, int Start, string Span)>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var candidates = new List<AccusedCandidate>();
 
         var matches = StraightQuotedSpanRegex.Matches(accuracyEvidence).Cast<Match>()
             .Concat(TypographicQuotedSpanRegex.Matches(accuracyEvidence).Cast<Match>())
             .Concat(StraightSingleQuotedSpanRegex.Matches(accuracyEvidence).Cast<Match>())
             .Concat(TypographicSingleQuotedSpanRegex.Matches(accuracyEvidence).Cast<Match>())
-            .OrderBy(m => m.Index);
+            .OrderBy(m => m.Index)
+            .ToList();
+        var quotedRanges = matches.Select(m => (Open: m.Index, Close: m.Index + m.Length - 1)).ToList();
 
         foreach (var match in matches)
         {
@@ -7005,24 +7166,191 @@ public class BenchmarkService
             int start = map[at];
             int end = map[at + normalizedQuote.Length - 1];
             string span = answerText.Substring(start, end - start + 1).Trim();
-            if (span.Length == 0 || !seen.Add(NormalizeWithMap(span).Normalized))
+            if (span.Length == 0)
             {
                 continue;
             }
 
-            candidates.Add((match.Index, start, span));
+            var (sentenceStart, sentenceEnd) = EnclosingSentence(answerText, start, end);
+            if (sentenceEnd - sentenceStart + 1 > AccusedQuoteMaxLength)
+            {
+                sentenceStart = start;
+                sentenceEnd = end;
+            }
+
+            string? charge = EvidenceSentenceAround(accuracyEvidence, match.Index, match.Index + match.Length - 1, quotedRanges);
+
+            var overlapping = candidates.FirstOrDefault(c => c.Start <= sentenceEnd && sentenceStart <= c.End);
+            if (overlapping != null)
+            {
+                int unionStart = Math.Min(overlapping.Start, sentenceStart);
+                int unionEnd = Math.Max(overlapping.End, sentenceEnd);
+                if (unionEnd - unionStart + 1 > AccusedQuoteMaxLength)
+                {
+                    continue;
+                }
+
+                overlapping.Start = unionStart;
+                overlapping.End = unionEnd;
+                if (!overlapping.Fragments.Contains(span, StringComparer.OrdinalIgnoreCase))
+                {
+                    overlapping.Fragments.Add(span);
+                }
+                if (charge != null && !overlapping.Charges.Contains(charge, StringComparer.Ordinal))
+                {
+                    overlapping.Charges.Add(charge);
+                }
+                continue;
+            }
+
+            var candidate = new AccusedCandidate(match.Index, sentenceStart, sentenceEnd);
+            candidate.Fragments.Add(span);
+            if (charge != null)
+            {
+                candidate.Charges.Add(charge);
+            }
+            candidates.Add(candidate);
         }
 
         foreach (var candidate in candidates
-            .OrderByDescending(c => c.Span.Length)
+            .OrderByDescending(c => c.End - c.Start)
             .ThenBy(c => c.SourceIndex)
             .Take(MaxAccusedQuotesPerAnswer))
         {
-            result.Add(new AccusedQuote(candidate.Span, AccusedQuoteContext(answerText, candidate.Start, candidate.Span)));
+            string text = answerText.Substring(candidate.Start, candidate.End - candidate.Start + 1);
+            string? charge = candidate.Charges.Count > 0 ? CapWithEllipsis(string.Join(" ", candidate.Charges), AccusedQuoteChargeMaxLength) : null;
+            result.Add(new AccusedQuote(
+                text,
+                AccusedQuoteContext(answerText, candidate.Start, text),
+                candidate.Fragments.ToList(),
+                charge));
         }
 
         return result;
     }
+
+    /// <summary>One accused submission while it is assembled: the answer range it covers, and what it collected.</summary>
+    private sealed class AccusedCandidate
+    {
+        public AccusedCandidate(int sourceIndex, int start, int end)
+        {
+            SourceIndex = sourceIndex;
+            Start = start;
+            End = end;
+        }
+
+        public int SourceIndex { get; }
+        public int Start { get; set; }
+        public int End { get; set; }
+        public List<string> Fragments { get; } = new();
+        public List<string> Charges { get; } = new();
+    }
+
+    private static readonly Regex LeadingListMarkerRegex = new(@"^(?:[-*+•]|\d+[.)])[ \t]+", RegexOptions.Compiled);
+
+    private static bool IsSentenceTerminator(string text, int index)
+        => text[index] is '.' or '!' or '?'
+            && (index + 1 == text.Length || char.IsWhiteSpace(text[index + 1]));
+
+    /// <summary>
+    /// The sentence or list item of <paramref name="text"/> that encloses the characters from
+    /// <paramref name="start"/> to <paramref name="end"/>: back to the previous line break or
+    /// <c>.</c>, <c>!</c> or <c>?</c> followed by whitespace, and forward to the next line break or
+    /// such a terminator, which is kept. Surrounding whitespace and a leading list marker are left
+    /// out. Inclusive indexes.
+    /// </summary>
+    internal static (int Start, int End) EnclosingSentence(string text, int start, int end)
+    {
+        int s = 0;
+        for (int i = start - 1; i >= 0; i--)
+        {
+            if (text[i] is '\n' or '\r' || IsSentenceTerminator(text, i))
+            {
+                s = i + 1;
+                break;
+            }
+        }
+
+        int e = text.Length - 1;
+        if (text[end] is '.' or '!' or '?')
+        {
+            e = end;
+        }
+        else
+        {
+            for (int i = end + 1; i < text.Length; i++)
+            {
+                if (text[i] is '\n' or '\r')
+                {
+                    e = i - 1;
+                    break;
+                }
+                if (IsSentenceTerminator(text, i))
+                {
+                    e = i;
+                    break;
+                }
+            }
+        }
+
+        while (s < start && char.IsWhiteSpace(text[s])) s++;
+        var marker = LeadingListMarkerRegex.Match(text.Substring(s, start - s));
+        if (marker.Success)
+        {
+            s += marker.Length;
+        }
+        while (e > end && char.IsWhiteSpace(text[e])) e--;
+
+        return (s, e);
+    }
+
+    /// <summary>
+    /// The sentence of the evidence that holds the quotation delimited at <paramref name="open"/> and
+    /// <paramref name="close"/>, ignoring terminators inside any quotation, trimmed; a sentence longer
+    /// than <see cref="AccusedQuoteChargeMaxLength"/> is cut to a window around the quotation.
+    /// </summary>
+    private static string? EvidenceSentenceAround(
+        string evidence, int open, int close, IReadOnlyList<(int Open, int Close)> quotedRanges)
+    {
+        bool InQuotation(int i) => quotedRanges.Any(r => i > r.Open && i < r.Close);
+        bool IsEnd(int i) => evidence[i] is '\n' or '\r' || (IsSentenceTerminator(evidence, i) && !InQuotation(i));
+
+        int s = 0;
+        for (int i = open - 1; i >= 0; i--)
+        {
+            if (IsEnd(i))
+            {
+                s = i + 1;
+                break;
+            }
+        }
+
+        int e = evidence.Length - 1;
+        for (int i = close + 1; i < evidence.Length; i++)
+        {
+            if (IsEnd(i))
+            {
+                e = evidence[i] is '\n' or '\r' ? i - 1 : i;
+                break;
+            }
+        }
+
+        string sentence = evidence.Substring(s, e - s + 1);
+        if (sentence.Length > AccusedQuoteChargeMaxLength)
+        {
+            int windowStart = Math.Clamp(open - s - AccusedQuoteChargeMaxLength / 4, 0, sentence.Length - AccusedQuoteChargeMaxLength);
+            string window = sentence.Substring(windowStart, AccusedQuoteChargeMaxLength).Trim();
+            sentence = (windowStart > 0 ? "…" : string.Empty)
+                + window
+                + (windowStart + AccusedQuoteChargeMaxLength < sentence.Length ? "…" : string.Empty);
+        }
+
+        sentence = sentence.Trim();
+        return sentence.Length > 0 ? sentence : null;
+    }
+
+    private static string CapWithEllipsis(string text, int maxLength)
+        => text.Length <= maxLength ? text : text.Substring(0, maxLength).TrimEnd() + "…";
 
     /// <summary>
     /// Whether the evidence quotes the span delimited at <paramref name="open"/> and
@@ -7189,17 +7517,39 @@ public class BenchmarkService
     /// <summary>
     /// The ordered submission manifest. Texts and their order are exactly what
     /// <see cref="WithCriticalErrorQuoteFirst"/> and <see cref="WithOutOfRubricBasis"/> make of the
-    /// answer's claims; accused quotes follow, de-duplicated by trimmed text. An accused quote equal
-    /// to an item already listed adds its role to that item. A critical-error quote or basis equal
-    /// to an unverified claim takes that item's place, as the text-matching filters always read it.
+    /// answer's claims, a <c>Suspected false:</c> entry standing as its sentence alone
+    /// (<see cref="BenchmarkSuspectedFalseClaim.TryParse"/>, split against
+    /// <paramref name="answerText"/>); assessor statements follow, then accused quotes. An assessor
+    /// statement equal to an item already listed, or containing the out-of-rubric basis, is not
+    /// submitted: it never takes a role on an answer sentence. An accused quote equal to an item
+    /// already listed adds its role, fragments and charge to that item. A critical-error quote or
+    /// basis equal to an unverified claim takes that item's place, as the text-matching filters
+    /// always read it.
     /// </summary>
     internal static List<ClaimSubmission> BuildClaimManifest(
         IReadOnlyList<string>? unverifiedClaims,
         string? criticalErrorQuote,
         string? outOfRubricBasis,
-        IReadOnlyList<AccusedQuote>? accusedQuotes)
+        IReadOnlyList<AccusedQuote>? accusedQuotes,
+        IReadOnlyList<string>? assessorStatements = null,
+        string? answerText = null)
     {
-        List<string> texts = unverifiedClaims?.ToList() ?? new List<string>();
+        var suspected = new Dictionary<string, (string Entry, string? Reason)>(StringComparer.Ordinal);
+        var claimTexts = new List<string>();
+        foreach (string entry in unverifiedClaims ?? Array.Empty<string>())
+        {
+            if (BenchmarkSuspectedFalseClaim.TryParse(entry, answerText, out string sentence, out string? reason))
+            {
+                claimTexts.Add(sentence);
+                suspected.TryAdd(sentence, (entry, reason));
+            }
+            else
+            {
+                claimTexts.Add(entry);
+            }
+        }
+
+        List<string> texts = claimTexts;
         if (!string.IsNullOrWhiteSpace(criticalErrorQuote))
         {
             texts = WithCriticalErrorQuoteFirst(texts, criticalErrorQuote);
@@ -7211,8 +7561,7 @@ public class BenchmarkService
 
         string? quote = criticalErrorQuote?.Trim();
         string? basis = outOfRubricBasis?.Trim();
-        var roles = new List<List<string>>();
-        var contexts = new List<string?>();
+        var items = new List<ClaimSubmission>();
         foreach (string text in texts)
         {
             string trimmed = text.Trim();
@@ -7225,46 +7574,91 @@ public class BenchmarkService
             {
                 itemRoles.Add(BenchmarkClaimRoles.OutOfRubricBasis);
             }
+
+            var item = new ClaimSubmission(text, itemRoles, null);
             if (itemRoles.Count == 0)
             {
                 itemRoles.Add(BenchmarkClaimRoles.UnverifiedClaim);
+                if (suspected.TryGetValue(text, out var recorded))
+                {
+                    item = item with { SuspectedFalse = true, Suspicion = recorded.Reason, RecordedClaim = recorded.Entry };
+                }
             }
-            roles.Add(itemRoles);
-            contexts.Add(null);
+            items.Add(item);
+        }
+
+        foreach (string statement in assessorStatements ?? Array.Empty<string>())
+        {
+            string trimmed = statement.Trim();
+            if (trimmed.Length == 0) continue;
+            if (items.Any(i => string.Equals(i.Text.Trim(), trimmed, StringComparison.OrdinalIgnoreCase))) continue;
+            if (!string.IsNullOrEmpty(basis) && trimmed.Contains(basis, StringComparison.OrdinalIgnoreCase)) continue;
+
+            items.Add(new ClaimSubmission(trimmed, new List<string> { BenchmarkClaimRoles.AssessorStatement }, null));
         }
 
         foreach (var accused in accusedQuotes ?? Array.Empty<AccusedQuote>())
         {
             string trimmed = accused.Text.Trim();
-            int existing = texts.FindIndex(t => string.Equals(t.Trim(), trimmed, StringComparison.Ordinal));
+            int existing = items.FindIndex(i => string.Equals(i.Text.Trim(), trimmed, StringComparison.Ordinal));
             if (existing >= 0)
             {
-                if (!roles[existing].Contains(BenchmarkClaimRoles.AccusedQuote))
+                var item = items[existing];
+                if (item.Roles.Contains(BenchmarkClaimRoles.AssessorStatement))
                 {
-                    roles[existing].Add(BenchmarkClaimRoles.AccusedQuote);
+                    continue;
                 }
-                contexts[existing] ??= accused.Context;
+
+                var roles = item.Roles.ToList();
+                if (!roles.Contains(BenchmarkClaimRoles.AccusedQuote))
+                {
+                    roles.Add(BenchmarkClaimRoles.AccusedQuote);
+                }
+                items[existing] = item with
+                {
+                    Roles = roles,
+                    Context = item.Context ?? accused.Context,
+                    QuotedFragments = item.QuotedFragments ?? accused.QuotedFragments,
+                    Charge = item.Charge ?? accused.Charge
+                };
                 continue;
             }
 
-            texts.Add(trimmed);
-            roles.Add(new List<string> { BenchmarkClaimRoles.AccusedQuote });
-            contexts.Add(accused.Context);
+            items.Add(new ClaimSubmission(trimmed, new List<string> { BenchmarkClaimRoles.AccusedQuote }, accused.Context)
+            {
+                QuotedFragments = accused.QuotedFragments,
+                Charge = accused.Charge
+            });
         }
 
-        return texts.Select((t, i) => new ClaimSubmission(t, roles[i], contexts[i])).ToList();
+        return items;
     }
 
-    /// <summary>Each verification stamped with the roles of the manifest item at its claim index.</summary>
+    /// <summary>
+    /// Each verification stamped with the manifest item at its claim index: its roles, and the
+    /// fragments, charge and suspected-false record that item carries.
+    /// </summary>
     internal static List<BenchmarkClaimVerification> StampRoles(
         IReadOnlyList<BenchmarkClaimVerification> verifications,
         IReadOnlyList<ClaimSubmission> manifest)
         => verifications
-            .Select(v => v with
+            .Select(v =>
             {
-                Roles = v.ClaimIndex >= 0 && v.ClaimIndex < manifest.Count
-                    ? manifest[v.ClaimIndex].Roles.ToList()
-                    : null
+                if (v.ClaimIndex < 0 || v.ClaimIndex >= manifest.Count)
+                {
+                    return v with { Roles = null };
+                }
+
+                var item = manifest[v.ClaimIndex];
+                return v with
+                {
+                    Roles = item.Roles.ToList(),
+                    QuotedFragments = item.QuotedFragments?.ToList(),
+                    Charge = item.Charge,
+                    SuspectedFalse = item.SuspectedFalse ? true : null,
+                    Suspicion = item.Suspicion,
+                    RecordedClaim = item.RecordedClaim
+                };
             })
             .ToList();
 
@@ -7295,7 +7689,19 @@ public class BenchmarkService
     internal static List<BenchmarkClaimVerification> SupportedAccusations(IReadOnlyList<BenchmarkClaimVerification>? verifications)
         => (verifications ?? Array.Empty<BenchmarkClaimVerification>())
             .Where(v => BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.AccusedQuote)
-                && v.Verdict == BenchmarkClaimVerdict.Supported
+                && v.EffectiveVerdict == BenchmarkClaimVerdict.Supported
+                && !string.IsNullOrWhiteSpace(v.Citation))
+            .ToList();
+
+    /// <summary>
+    /// The statements of the assessor's own evidence that the verifier refuted with a citation: the
+    /// assessor was wrong, so the Accuracy deduction they belong to is contested. Empty for a legacy
+    /// list, which never carries the role.
+    /// </summary>
+    internal static List<BenchmarkClaimVerification> RefutedAssessorStatements(IReadOnlyList<BenchmarkClaimVerification>? verifications)
+        => (verifications ?? Array.Empty<BenchmarkClaimVerification>())
+            .Where(v => BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.AssessorStatement)
+                && v.EffectiveVerdict == BenchmarkClaimVerdict.Refuted
                 && !string.IsNullOrWhiteSpace(v.Citation))
             .ToList();
 }

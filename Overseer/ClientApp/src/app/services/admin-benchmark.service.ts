@@ -320,6 +320,10 @@ export interface BenchmarkGameSnapshotDto {
   modifiedAtUtc?: string | null;
   suiteId?: number | null;
   suiteName?: string | null;
+  /** The board's `Snapshot format: N` at capture. Null when the board text does not state one. */
+  snapshotFormatVersion?: number | null;
+  /** The board header's `snapshot at yyyy-MM-dd HH:mm:ss`, local game time with no zone, kept as text. */
+  boardHeaderTimestamp?: string | null;
 }
 
 export interface SaveAttachedSnapshotRequest {
@@ -988,6 +992,13 @@ export interface BenchmarkRunAnswerDto {
   reassessedByModelDisplayNameUsed?: string | null;
   previousQualityScore?: number | null;
   reassessmentCount?: number;
+
+  /** When a failed-question re-run replaced this attempt. Null for an attempt that was never re-run. */
+  rerunAtUtc?: string | null;
+  /** Enum name of the replaced attempt's status, e.g. `ProviderError`. Set only alongside rerunAtUtc. */
+  rerunOfStatus?: string | null;
+  /** The replaced attempt's error message, truncated to 512 characters. */
+  rerunOfErrorMessage?: string | null;
 }
 
 export interface BenchmarkRunDetailDto {
@@ -1257,14 +1268,15 @@ export interface BenchmarkRunDetailDto {
   inFlightOrderIndexes?: number[];
 
   /**
-   * Order indexes the current failed-question re-run is scoped to. Same contract as
-   * inFlightOrderIndexes: empty unless this process is executing a re-run right now.
+   * Order indexes the run's most recent failed-question re-run is scoped to. Reported while the
+   * re-run executes and still after it finishes, until this process starts another run or
+   * restarts; empty for a run it never re-ran.
    */
   rerunScopeOrderIndexes?: number[];
 
   /**
-   * Order indexes the current re-run has produced an answer or a score for. Same contract as
-   * inFlightOrderIndexes: empty unless this process is executing a re-run right now.
+   * Order indexes that re-run has produced an answer or a score for. Same contract as
+   * rerunScopeOrderIndexes.
    */
   rerunAnsweredOrderIndexes?: number[];
   rerunScoredOrderIndexes?: number[];
@@ -1309,11 +1321,15 @@ export interface BenchmarkRunDetailDto {
 
   /** When the pre-run candidate delivery probe passed. Null when not recorded. */
   candidateDeliveryVerifiedAtUtc?: string | null;
+  /** When the candidate delivery probe passed again before the run's most recent re-run. Null when not recorded. */
+  rerunCandidateDeliveryVerifiedAtUtc?: string | null;
   /** Board delivery per grading role. Empty for a run with no board, or before harness 30. */
   boardDelivery?: BenchmarkBoardDeliveryDto[];
 
   /** The BOARD FACTS quote check stamped at launch. Null when the suite had no board. */
   boardFactsCheck?: BoardFactsCheckDto | null;
+  /** The board's `Snapshot format: N` at launch. Null when the board text did not state one. */
+  gameSnapshotFormatVersionUsed?: number | null;
 
   answers: BenchmarkRunAnswerDto[];
 }

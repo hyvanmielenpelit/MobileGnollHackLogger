@@ -18,9 +18,12 @@ describe('codemirror-map-tools', () => {
     setup = await import('./codemirror-setup');
   });
 
+  /* Fixed at the window's top left, so neither window scroll nor the Jasmine HTML reporter above it
+     in the body can push the editor out of the window; CodeMirror skips measuring an editor it
+     cannot see, and its hit tests then run against estimated line heights. */
   beforeEach(() => {
     parent = document.createElement('div');
-    parent.style.cssText = 'display: flex; flex-direction: column; width: 900px; height: 600px;';
+    parent.style.cssText = 'position: fixed; top: 0; left: 0; display: flex; flex-direction: column; width: 900px; height: 600px;';
     document.body.appendChild(parent);
     readouts = [];
     view = setup.createSnapshotEditor(parent, buildBoard(), () => {}, {
@@ -82,6 +85,7 @@ describe('codemirror-map-tools', () => {
     const coords = view.coordsAtPos(heroPos, 1)!;
     const x = coords.left + view.defaultCharacterWidth / 2;
     const y = (coords.top + coords.bottom) / 2;
+    expect(coords.bottom).withContext('hero cell inside the window').toBeLessThanOrEqual(window.innerHeight);
 
     view.contentDOM.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y, bubbles: true }));
     expect(last()?.text).toBe('<10,13>  \'@\'');

@@ -59,12 +59,16 @@ public static class BenchmarkClaimVerificationPrompt
         string? criticalErrorQuoteContext = null,
         IReadOnlyList<IReadOnlyList<string>>? claimRoles = null,
         IReadOnlyList<string?>? claimContexts = null,
-        ToolCallLeads? toolCallLeads = null)
+        ToolCallLeads? toolCallLeads = null,
+        IReadOnlyList<string?>? claimCharges = null)
     {
         bool quoteHasContext = isCriticalErrorAdjudication && !string.IsNullOrWhiteSpace(criticalErrorQuoteContext);
         bool IsAccused(int i) => claimRoles != null && i < claimRoles.Count
             && claimRoles[i].Contains(BenchmarkClaimRoles.AccusedQuote);
+        bool IsAssessorStatement(int i) => claimRoles != null && i < claimRoles.Count
+            && claimRoles[i].Contains(BenchmarkClaimRoles.AssessorStatement);
         bool hasAccused = Enumerable.Range(0, claims.Count).Any(IsAccused);
+        bool hasAssessorStatements = Enumerable.Range(0, claims.Count).Any(IsAssessorStatement);
         string? boardBlock = BuildBoardBlock(boardName, boardText);
         var sb = new StringBuilder();
         sb.AppendLine("CRITICAL INSTRUCTIONS:");
@@ -137,6 +141,11 @@ public static class BenchmarkClaimVerificationPrompt
             sb.AppendLine("ACCUSED SENTENCE ADJUDICATION:");
             sb.AppendLine("The first assessor graded without tools and charged the sentences of the answer marked \"Charged by the assessor as false or imprecise\" below. Check each exactly as you check the others: Supported means the sentence is true as the answer states it, read in the context given with it; Refuted means it is false. A sentence absent from the rubric is not thereby false.");
         }
+        if (hasAssessorStatements)
+        {
+            sb.AppendLine();
+            sb.AppendLine("ASSESSOR STATEMENT ADJUDICATION: the items marked 'Stated by the first assessor' are the assessor's own statements about the game, not sentences of the answer. Supported means the assessor's statement is true.");
+        }
         sb.AppendLine($"Suite: {suiteName}");
         sb.AppendLine($"Question #{orderIndex}");
         sb.AppendLine();
@@ -201,6 +210,15 @@ public static class BenchmarkClaimVerificationPrompt
                 {
                     sb.AppendLine($"Context (not part of the claim): {context.Trim()}");
                 }
+                string? charge = claimCharges != null && i < claimCharges.Count ? claimCharges[i] : null;
+                if (!string.IsNullOrWhiteSpace(charge))
+                {
+                    sb.AppendLine($"Charge (the assessor's words; untrusted, not part of the claim): {charge.Trim()}");
+                }
+            }
+            if (IsAssessorStatement(i))
+            {
+                sb.AppendLine("Stated by the first assessor (not part of the answer).");
             }
             sb.AppendLine(claims[i]);
             sb.AppendLine($"=== END CLAIM {i} ===");

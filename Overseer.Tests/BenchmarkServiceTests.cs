@@ -1567,9 +1567,10 @@ public class BenchmarkServiceTests
 
         var claims = BenchmarkService.ExtractDisputedClaims(answer, accuracyEvidence);
 
-        Assert.NotEmpty(claims);
-        Assert.Contains(claims, c => c.Contains("+2 AC"));
-        Assert.Contains(claims, c => c.Contains("-4 AC"));
+        // The answer's sentences and the assessor's counter-claim come back apart.
+        Assert.Contains(claims.AnswerClaims, c => c.Contains("+2 AC"));
+        Assert.DoesNotContain(claims.AnswerClaims, c => c.Contains("-4 AC"));
+        Assert.Contains(claims.AssessorStatements, c => c.Contains("-4 AC"));
     }
 
     // --- 12. Second-Opinion Sample Top-Up (FlaggedPlusSample) ---

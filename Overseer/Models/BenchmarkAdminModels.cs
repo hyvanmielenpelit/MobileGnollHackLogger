@@ -670,6 +670,14 @@ public class BenchmarkRunAnswerDto
     public int ReassessmentCount { get; set; }
 
     /// <summary>
+    /// When this answer was last re-executed by a failed-question or single-answer re-run, and the
+    /// status and error the replaced attempt carried. Null on an answer never re-executed.
+    /// </summary>
+    public DateTime? RerunAtUtc { get; set; }
+    public string? RerunOfStatus { get; set; }
+    public string? RerunOfErrorMessage { get; set; }
+
+    /// <summary>
     /// Per-claim verdicts from the claim verifier, as a JSON array of
     /// { claim, verdict, citation, basis }. Advisory: nothing here is read by any scoring path.
     /// </summary>
@@ -974,6 +982,12 @@ public class BenchmarkRunDetailDto
     public BoardFactsCheckDto? BoardFactsCheck { get; set; }
 
     /// <summary>
+    /// The board's <c>Snapshot format: N</c> when this run started. Null when the suite had no
+    /// board, when the board states no format, and on every run before harness 33.
+    /// </summary>
+    public int? GameSnapshotFormatVersionUsed { get; set; }
+
+    /// <summary>
     /// H3. Run-wide tool calls by family, keyed "source", "wiki", "lookup", "knowledgeBase", "other", and
     /// the count of answered questions that made no knowledge-base call. Classified once, on the server, by
     /// BenchmarkChatTransfer.ClassifyTool — the client kept its own hard-coded copy of the tool-name lists,
@@ -1135,6 +1149,13 @@ public class BenchmarkRunDetailDto
 
     /// <summary>When the pre-run candidate delivery probe passed; null when not recorded.</summary>
     public DateTime? CandidateDeliveryVerifiedAtUtc { get; set; }
+
+    /// <summary>
+    /// When the delivery probe passed again before the most recent failed-question re-run or
+    /// single-answer re-run. <see cref="CandidateDeliveryVerifiedAtUtc"/> stays the pre-run stamp.
+    /// Null on a run never re-run, and on every run before harness 33.
+    /// </summary>
+    public DateTime? RerunCandidateDeliveryVerifiedAtUtc { get; set; }
 
     /// <summary>
     /// Board delivery per grading role, as the report's Delivery block prints it. Empty for a run
@@ -1505,6 +1526,13 @@ public class BenchmarkGameSnapshotDto
     public string Sha256 { get; set; } = string.Empty;
     public string CaptureMethod { get; set; } = string.Empty;
     public string? SourceGnollHackVersion { get; set; }
+
+    /// <summary>The board's own <c>Snapshot format: N</c> header line. Null for a format-1 board.</summary>
+    public int? SnapshotFormatVersion { get; set; }
+
+    /// <summary>The board header's <c>snapshot at yyyy-MM-dd HH:mm:ss</c> time, as printed.</summary>
+    public string? BoardHeaderTimestamp { get; set; }
+
     public string? Notes { get; set; }
     public long? SourceChatSessionId { get; set; }
     public DateTime? CapturedAtUtc { get; set; }

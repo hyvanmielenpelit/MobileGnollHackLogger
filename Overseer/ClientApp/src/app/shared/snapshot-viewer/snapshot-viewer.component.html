@@ -161,7 +161,7 @@
           <div class="board-facts-notice">
             <ul class="board-facts-missing-list">
               @for (item of boardFactsCheck.missingLiterals; track item.questionId + ':' + item.orderIndex + ':' + item.literal) {
-                <li>Q{{ item.orderIndex + 1 }}: "{{ item.literal }}"</li>
+                <li>Q{{ item.orderIndex }}: "{{ item.literal }}"</li>
               }
             </ul>
             <p>These rubrics quote text the board does not contain. Repair them before the next run: download the suite as YAML and hand it to an agent with the <code>server_rubric_handoff</code> skill.</p>
@@ -183,6 +183,26 @@
             @if (showLastModified) {
               <div class="fact last-modified"><dt>Modified</dt><dd>{{ snapshot.modifiedAtUtc | date:'medium' }}</dd></div>
             }
+            <div class="fact">
+              <dt>Format</dt>
+              <dd>
+                @if (snapshot.snapshotFormatVersion != null) {
+                  {{ snapshot.snapshotFormatVersion }}
+                } @else {
+                  <span class="meta-empty">Not stated</span>
+                }
+              </dd>
+            </div>
+            <div class="fact">
+              <dt>Board time</dt>
+              <dd>
+                @if (snapshot.boardHeaderTimestamp) {
+                  {{ snapshot.boardHeaderTimestamp }}
+                } @else {
+                  <span class="meta-empty">Not stated</span>
+                }
+              </dd>
+            </div>
             <div class="fact">
               <dt>Source chat</dt>
               <dd>

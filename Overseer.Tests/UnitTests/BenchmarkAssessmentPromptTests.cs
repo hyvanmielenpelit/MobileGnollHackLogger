@@ -3,6 +3,7 @@ namespace Overseer.Tests.UnitTests;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
 using Xunit;
@@ -193,7 +194,7 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void ScoringMethodVersion_IsEleven()
+    public void ScoringMethodVersion_IsTwelve()
     {
         // v4 was the artifact scrubbing and speed recalibration. v5 changed what a critical
         // error is — an omission can no longer be one, and the claim must be quoted. v6 changed
@@ -209,16 +210,18 @@ public class BenchmarkAssessmentPromptTests
         // instead of excluding it, so a candidate can no longer raise its index by not answering.
         // v11 re-anchors ACCURACY levels 4-6 on what the answer states rather than on source-level
         // depth, which the production concise prompt tells the candidate not to produce; a level
-        // below 6 must name a wrong or imprecise statement. It moves every index.
+        // below 6 must name a wrong or imprecise statement. It moves every index. v12 grades
+        // ACCURACY against the rubric and the board only: an own-knowledge suspicion is reported as a
+        // "Suspected false: " unverified claim for the verifier instead of lowering the level.
         // Scores are not comparable across any of those boundaries on the answers they touch, and
         // the report prints the version so a mixed comparison is visible rather than silent.
-        Assert.Equal(11, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        Assert.Equal(12, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 
     [Fact]
-    public void HarnessVersion_IsThirtyTwo()
+    public void HarnessVersion_IsThirtyThree()
     {
-        Assert.Equal("32", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("33", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -689,21 +692,20 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs32_ScoringMethodIs11()
+    public void Versions_HarnessIs33_ScoringMethodIs12()
     {
-        Assert.Equal("32", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("33", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 32 keeps scoring method 11 and changes the instrument around it: every grading
-        // role reads the whole board ahead of the question — a second system message for the
-        // assessor, second opinion, re-grade, calibration and trial, and directly after the
-        // numbered instructions for the claim verifier, which gains instructions 3d and 3e — and a
-        // probe checks each serialized request for that order before the call. The run records its
-        // rubrics' BOARD FACTS quote check, accused sentences are also read from single quotes and
-        // skipped where the evidence approves them, and the re-grade's schema carries `withdrawn`
-        // with one repair turn when it is missing. A 32-stamped run differs from a 31-stamped one on
-        // HarnessVersion, and on a snapshot suite the board's position makes the two not
-        // grade-comparable.
-        Assert.Equal(11, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        // Harness 33 carries scoring method 12, under which ACCURACY is graded against the rubric and
+        // the board only and an own-knowledge suspicion becomes a "Suspected false: " unverified
+        // claim. Around it the claim verifier tests the right party: the assessor's own evidence
+        // sentences are submitted as assessorStatement items that stay out of the answer's claim
+        // counts, an accused quote is submitted as its enclosing sentence with the charge beside it,
+        // and a citation into a function with no live call site is read as Indeterminate. A re-run
+        // records its provenance and its own delivery-probe stamp, the board's snapshot format is
+        // recorded, and the report lists each missing board quote. A 33-stamped run differs from a
+        // 32-stamped one on HarnessVersion and ScoringMethodVersion.
+        Assert.Equal(12, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 
     [Fact]
@@ -900,7 +902,7 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void PerQuestionPrompt_RequiresTheOutOfRubricMarkerOnADeductionTheRubricDoesNotCarry()
+    public void PerQuestionPrompt_GradesAccuracyOnTheRubricAndBoardOnly_AndRoutesASuspicionToUnverifiedClaims()
     {
         string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
             "Suite",
@@ -911,12 +913,65 @@ public class BenchmarkAssessmentPromptTests
             "Answer.",
             BenchmarkAnswerStatus.Ok);
 
-        // The marker is what routes the basis to the claim verifier, so the instruction names it
-        // verbatim from the constant the parser matches on.
+        // Scoring method 12: an own-knowledge suspicion does not lower the level; it is reported with
+        // the prefix the harness strips before the claim verifier sees the sentence.
         Assert.Contains(
-            $"- If a deduction does not come from the rubric, the evidence sentence MUST begin with `{BenchmarkAssessmentParser.OutOfRubricAccuracyMarker}` followed by the basis — the harness sends that basis to the claim verifier, and a deduction written without the marker is never checked.",
+            "- **ACCURACY is graded against the rubric and the GAME BOARD only.** A statement you believe false from your own knowledge, which neither the rubric nor the board settles, **does not lower the level**. Report it instead as an entry of `unverifiedClaims`, quoted verbatim from the answer and prefixed `Suspected false: `, with your reason after an em dash (section 7).",
             prompt);
+        Assert.Contains(
+            "- A deduction that does not come from the rubric or the GAME BOARD is not made. A statement you believe false from your own knowledge goes to `unverifiedClaims` prefixed `Suspected false: ` — the harness sends the quoted sentence to the claim verifier — and leaves the ACCURACY level where the rubric and the board put it.",
+            prompt);
+        Assert.Contains(
+            "A sentence you believe false from your own knowledge, which neither the rubric nor the board settles, is also an entry here, written `Suspected false: <the sentence, verbatim from the answer> — <your reason>`.",
+            prompt);
+
+        // The method-11 instruction to mark an own-knowledge deduction is gone; the constant stays so
+        // stored method-11 evidence still parses and renders.
+        Assert.DoesNotContain("the evidence sentence MUST begin with", prompt);
+        Assert.DoesNotContain(BenchmarkAssessmentParser.OutOfRubricAccuracyMarker, prompt);
         Assert.Equal("Not in rubric:", BenchmarkAssessmentParser.OutOfRubricAccuracyMarker);
+        Assert.Equal("Suspected false: ", BenchmarkSuspectedFalseClaim.Prefix);
+    }
+
+    [Fact]
+    public void OutOfRubricAccuracyDeductionDescription_SaysTheInstructionWasNotFollowed_FromMethodTwelve()
+    {
+        string method11 = BenchmarkVerdictConsistency.OutOfRubricAccuracyDeductionDescription(11);
+        string method12 = BenchmarkVerdictConsistency.OutOfRubricAccuracyDeductionDescription(12);
+
+        Assert.StartsWith("Accuracy deductions whose basis is the assessor's own knowledge", method11);
+        Assert.DoesNotContain("not followed", method11);
+        Assert.Contains("The instruction was not followed.", method12);
+        Assert.Contains("Suspected false:", method12);
+    }
+
+    [Fact]
+    public void ASuspectedFalseEntry_SurvivesTheParserVerbatim_AndReachesTheVerifierWithoutPrefixOrReason()
+    {
+        const string answer = "Monks are vegan in GnollHack. Fortune cookies are vegan food — eat them freely.";
+        const string entry = "Suspected false: Fortune cookies are vegan food — eat them freely. — fortune cookies are vegetarian, not vegan.";
+        string raw = "{\"accuracyLevel\":6,\"completenessLevel\":5,\"concisenessLevel\":5,\"readabilityLevel\":5,"
+            + "\"criticalError\":false,\"criticalErrorQuote\":null,"
+            + "\"unverifiedClaims\":[" + JsonSerializer.Serialize(entry) + ",\"Suspected false: A sentence the answer never wrote at all. — invented\"],"
+            + "\"accuracyEvidence\":\"Matches rubric.\",\"completenessEvidence\":\"Complete.\",\"readabilityEvidence\":null,\"comment\":\"Fine.\"}";
+
+        var parsed = BenchmarkAssessmentParser.ParsePerQuestion(raw, answer);
+
+        Assert.True(parsed.Success);
+        var stored = Assert.Single(parsed.Result!.UnverifiedClaims);
+        Assert.Equal(entry, stored);
+        Assert.Equal(1, parsed.Result.UnverifiedClaimsDropped);
+
+        // The persisted column round-trips the entry as written.
+        string json = JsonSerializer.Serialize(parsed.Result.UnverifiedClaims);
+        var roundTrip = JsonSerializer.Deserialize<List<string>>(json)!;
+
+        var item = Assert.Single(BenchmarkService.BuildClaimManifest(roundTrip, null, null, null, null, answer));
+        Assert.Equal("Fortune cookies are vegan food — eat them freely.", item.Text);
+        Assert.Equal(new[] { BenchmarkClaimRoles.UnverifiedClaim }, item.Roles);
+        Assert.True(item.SuspectedFalse);
+        Assert.Equal("fortune cookies are vegetarian, not vegan.", item.Suspicion);
+        Assert.Equal(entry, item.RecordedClaim);
     }
 
     [Fact]

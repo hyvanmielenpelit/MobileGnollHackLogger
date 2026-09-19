@@ -43,7 +43,7 @@ describe('suite-yaml-guide', () => {
   it('states the format rules the parser enforces on the Format tab', () => {
     const format = SUITE_GUIDE_TABS.find(t => t.id === 'format')!.markdown;
     expect(format).toContain(QUESTION_YAML_FORMAT);
-    for (const key of ['name', 'gnollhack_version', 'captured_at', 'notes', 'sha256', 'text']) {
+    for (const key of ['name', 'gnollhack_version', 'captured_at', 'snapshot_format', 'notes', 'sha256', 'text']) {
       expect(format).withContext(`snapshot key ${key}`).toContain(key);
     }
     expect(format).toContain('Simple');
@@ -95,8 +95,9 @@ describe('suite-yaml-guide', () => {
     expect(quoteCount).toBeGreaterThan(3);
   });
 
-  it('parses all six snapshot keys and reports the ignored ids in the exported example', async () => {
+  it('parses all seven snapshot keys and reports the ignored ids in the exported example', async () => {
     const example = SUITE_YAML_EXAMPLES.find(e => e.id === 'suite-exported')!;
+    expect(example.yaml).toContain('snapshot_format: 3');
     const result = await parseQuestionYaml(example.yaml);
     expect(result.errors).toEqual([]);
 

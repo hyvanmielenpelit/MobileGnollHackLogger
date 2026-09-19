@@ -282,6 +282,12 @@ public class BenchmarkRun
     public string? GameSnapshotCaptureMethodUsed { get; set; }
 
     /// <summary>
+    /// The board's <c>Snapshot format: N</c> when this run started. Null when the suite had no
+    /// board, when the board states no format, and on every run before harness 33.
+    /// </summary>
+    public int? GameSnapshotFormatVersionUsed { get; set; }
+
+    /// <summary>
     /// The BOARD FACTS quote check (<c>BenchmarkBoardFactsChecker</c>) as it stood when this run
     /// started, serialized as JSON: which rubric literals were not found on the attached board, and
     /// how many bullets carried no quoted literal. Advisory, and never recomputed against later
@@ -634,6 +640,13 @@ public class BenchmarkRun
     /// recorded — a run before harness 30, or one that never reached the probe.
     /// </summary>
     public DateTime? CandidateDeliveryVerifiedAtUtc { get; set; }
+
+    /// <summary>
+    /// When the delivery probe passed again before the most recent failed-question re-run or
+    /// single-answer re-run. <see cref="CandidateDeliveryVerifiedAtUtc"/> stays the pre-run stamp.
+    /// Null on a run never re-run, and on every run before harness 33.
+    /// </summary>
+    public DateTime? RerunCandidateDeliveryVerifiedAtUtc { get; set; }
 
     /// <summary>
     /// SHA-256 of the exact candidate system prompt string (lower-case hex).

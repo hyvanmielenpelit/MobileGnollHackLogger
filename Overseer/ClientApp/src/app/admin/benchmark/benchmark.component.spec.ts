@@ -95,10 +95,12 @@ describe('AdminBenchmarkComponent', () => {
       'uploadSuiteSnapshot',
       'deleteSnapshot',
       'getSnapshot',
-      'getActiveQuestionGeneration'
+      'getActiveQuestionGeneration',
+      'getBoardFactsCheck'
     ]);
 
     benchmarkServiceMock.getActiveQuestionGeneration.and.returnValue(of(null));
+    benchmarkServiceMock.getBoardFactsCheck.and.returnValue(of(null));
 
     benchmarkServiceMock.getActiveDifficultyAssessment.and.returnValue(of(null));
     benchmarkServiceMock.getActiveRun.and.returnValue(of(null));
@@ -1977,6 +1979,102 @@ describe('AdminBenchmarkComponent', () => {
       component.closeRunProgressDialog();
     });
 
+    describe('board quote check before start', () => {
+      function selectSuiteWithBoard(): void {
+        fixture.detectChanges();
+        component.suites = [{
+          id: 1, name: 'Snapshot Suite', description: null, createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null,
+          questionCount: 3, assessedQuestionCount: 3, difficultyFullyAssessed: true, gameSnapshotId: 7
+        }];
+        component.selectedSuiteId = 1;
+        component.testedConfigId = 1;
+        component.assessorConfigId = 1;
+        spyOn(component.runProgressDialog.nativeElement, 'showModal');
+        benchmarkServiceMock.startRun.and.returnValue(of({ runId: 42 }));
+        benchmarkServiceMock.getRun.and.returnValue(of(buildRun()));
+      }
+
+      const missingCheck = {
+        bulletCount: 10, checkedLiteralCount: 10, unquotedBulletCount: 0, unquotedBullets: [],
+        missingLiterals: [{ questionId: 9, orderIndex: 3, literal: 'a blessed +1 long sword', lineExcerpt: 'x' }]
+      };
+
+      it('should warn and wait for acknowledgement when the suite rubrics quote text the board lacks', () => {
+        selectSuiteWithBoard();
+        const showWarning = spyOn(component.boardQuoteWarningDialog!.nativeElement, 'showModal');
+        benchmarkServiceMock.getBoardFactsCheck.and.returnValue(of(missingCheck));
+
+        component.startBenchmark();
+
+        expect(benchmarkServiceMock.getBoardFactsCheck).toHaveBeenCalledWith(1);
+        expect(benchmarkServiceMock.startRun).not.toHaveBeenCalled();
+        expect(showWarning).toHaveBeenCalled();
+        expect(component.startingRun).toBeFalse();
+        const text = (component.boardQuoteWarningDialog!.nativeElement.textContent || '').replace(/\s+/g, ' ');
+        expect(text).toContain('These rubrics quote text the board does not contain; grades on them will rest on stale facts.');
+        expect(text).toContain('Q3: "a blessed +1 long sword"');
+
+        const buttons = Array.from(component.boardQuoteWarningDialog!.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+        for (const btn of buttons) {
+          expect(btn.getAttribute('type')).toBe('button');
+          expect((btn.textContent || '').trim() || btn.getAttribute('aria-label')).toBeTruthy();
+        }
+        const acknowledge = buttons.find(b => (b.textContent || '').includes('Acknowledge & Start Run'))!;
+        acknowledge.click();
+
+        expect(benchmarkServiceMock.getBoardFactsCheck).toHaveBeenCalledTimes(1);
+        expect(benchmarkServiceMock.startRun).toHaveBeenCalledTimes(1);
+        expect(component.launchBoardFactsCheck).toBeNull();
+        component.closeRunProgressDialog();
+      });
+
+      it('should start nothing when the warning is cancelled', () => {
+        selectSuiteWithBoard();
+        spyOn(component.boardQuoteWarningDialog!.nativeElement, 'showModal');
+        benchmarkServiceMock.getBoardFactsCheck.and.returnValue(of(missingCheck));
+
+        component.startBenchmark();
+        component.closeBoardQuoteWarningDialog();
+
+        expect(benchmarkServiceMock.startRun).not.toHaveBeenCalled();
+        expect(component.launchBoardFactsCheck).toBeNull();
+      });
+
+      it('should start straight away when every quote is on the board', () => {
+        selectSuiteWithBoard();
+        const showWarning = spyOn(component.boardQuoteWarningDialog!.nativeElement, 'showModal');
+        benchmarkServiceMock.getBoardFactsCheck.and.returnValue(of({ ...missingCheck, missingLiterals: [] }));
+
+        component.startBenchmark();
+
+        expect(showWarning).not.toHaveBeenCalled();
+        expect(benchmarkServiceMock.startRun).toHaveBeenCalledTimes(1);
+        component.closeRunProgressDialog();
+      });
+
+      it('should start anyway when the check itself fails, since it is advisory', () => {
+        selectSuiteWithBoard();
+        spyOn(console, 'warn');
+        benchmarkServiceMock.getBoardFactsCheck.and.returnValue(throwError(() => ({ status: 500 })));
+
+        component.startBenchmark();
+
+        expect(benchmarkServiceMock.startRun).toHaveBeenCalledTimes(1);
+        component.closeRunProgressDialog();
+      });
+
+      it('should not check a suite that has no board', () => {
+        selectSuiteWithBoard();
+        component.suites = [{ ...component.suites[0], gameSnapshotId: null }];
+
+        component.startBenchmark();
+
+        expect(benchmarkServiceMock.getBoardFactsCheck).not.toHaveBeenCalled();
+        expect(benchmarkServiceMock.startRun).toHaveBeenCalledTimes(1);
+        component.closeRunProgressDialog();
+      });
+    });
+
     it('should derive the run stage from the run detail', () => {
       component.activeRunDetail = buildRun({ answers: [buildAnswer(1)] });
       expect(component.runStage).toBe('answering');
@@ -2108,6 +2206,61 @@ describe('AdminBenchmarkComponent', () => {
       expect(tooltip!.getAttribute('popover')).toBe('hint');
       expect(copyButton.getAttribute('style')).toContain(`anchor-name: --${tooltipId}`);
       expect(tooltip!.getAttribute('style')).toContain(`position-anchor: --${tooltipId}`);
+
+      // So must the icon-only download button beside it.
+      const downloadButton = dialog.querySelector('button[aria-label="Download benchmark run diagnostics as a text file"]') as HTMLButtonElement;
+      expect(downloadButton).toBeTruthy();
+      const downloadTipId = downloadButton.getAttribute('interestfor')!;
+      expect(downloadTipId).toBe('tip-download-run-diagnostics');
+      const downloadTip = dialog.querySelector(`#${downloadTipId}`);
+      expect(downloadTip).toBeTruthy();
+      expect(downloadTip!.getAttribute('popover')).toBe('hint');
+      expect(downloadTip!.textContent!.trim()).toBe('Download diagnostics');
+      expect(downloadButton.getAttribute('style')).toContain(`anchor-name: --${downloadTipId}`);
+      expect(downloadTip!.getAttribute('style')).toContain(`position-anchor: --${downloadTipId}`);
+      expect(copyButton.nextElementSibling!.nextElementSibling).toBe(downloadButton);
+    });
+
+    /** The diagnostics text without its capture timestamp, which differs between two reads. */
+    function withoutCaptureTime(text: string): string {
+      return text.replace(/^Captured:.*$/m, '');
+    }
+
+    it('should download the run diagnostics as a text file named for suite, model and run', async () => {
+      component.activeRunDetail = buildRun({
+        status: 'CompletedWithErrors',
+        suiteName: 'Snapshot: Tommi2 2026-09-17',
+        testedModelDisplayNameUsed: 'Gemini 3.7 Flash',
+        id: 55,
+        completedAtUtc: '2026-09-02T00:05:00Z',
+        answers: [buildAnswer(1), buildAnswer(2, { status: 'ProviderError', httpStatusCode: 429, errorMessage: 'Rate limited' })]
+      });
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      const create = spyOn(URL, 'createObjectURL').and.returnValue('blob:test-url');
+      spyOn(URL, 'revokeObjectURL');
+      const click = spyOn(HTMLAnchorElement.prototype, 'click');
+      const expectedText = component.runDiagnosticsText;
+
+      const downloadButton = fixture.nativeElement.querySelector(
+        'button[aria-label="Download benchmark run diagnostics as a text file"]'
+      ) as HTMLButtonElement;
+      downloadButton.click();
+
+      expect(click).toHaveBeenCalledTimes(1);
+      const anchor = click.calls.mostRecent().object as HTMLAnchorElement;
+      expect(anchor.download).toBe('snapshot-tommi2-2026-09-17_gemini-3.7-flash_run55_diagnostics.txt');
+      expect(create).toHaveBeenCalledTimes(1);
+      const blob = create.calls.mostRecent().args[0] as Blob;
+      expect(blob.type).toBe('text/plain;charset=utf-8');
+      expect(withoutCaptureTime(await blob.text())).toBe(withoutCaptureTime(expectedText));
+    });
+
+    it('should fall back to a generic diagnostics file name when no run is loaded', () => {
+      component.activeRunDetail = null;
+
+      expect(component.runDiagnosticsFileName).toBe('overseer-benchmark-run-diagnostics.txt');
     });
 
     it('should copy the run diagnostics, announce it, and reset after the timeout', fakeAsync(() => {
@@ -2758,6 +2911,50 @@ describe('AdminBenchmarkComponent', () => {
       const text = integrityNoticeText().replace(/\s+/g, ' ').trim();
       expect(text).toContain('1 answer(s) were re-graded by a second assessor');
       expect(fixture.nativeElement.querySelector('.disputed-badge')).toBeTruthy();
+    });
+
+    function missingQuote(orderIndex: number, literal: string): any {
+      return { questionId: 100 + orderIndex, orderIndex, literal, lineExcerpt: `- "${literal}"` };
+    }
+
+    it('should list each missing board quote by its 1-based question number, even with no other integrity cause', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        boardFactsCheck: {
+          bulletCount: 40, checkedLiteralCount: 38, unquotedBulletCount: 0, unquotedBullets: [],
+          missingLiterals: [missingQuote(1, 'a +2 elven mithril-coat'), missingQuote(15, 'Dlvl:12')]
+        }
+      });
+      fixture.detectChanges();
+
+      const notice = fixture.nativeElement.querySelector('.board-facts-notice') as HTMLElement;
+      expect(notice).toBeTruthy();
+      const items = Array.from(notice.querySelectorAll('li')).map(li => (li.textContent || '').trim());
+      expect(items).toEqual(['Q1: "a +2 elven mithril-coat"', 'Q15: "Dlvl:12"']);
+    });
+
+    it('should cap the missing board quote list at 20 and say how many more there are', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        boardFactsCheck: {
+          bulletCount: 40, checkedLiteralCount: 40, unquotedBulletCount: 0, unquotedBullets: [],
+          missingLiterals: Array.from({ length: 23 }, (_, i) => missingQuote(i + 1, `quote ${i + 1}`))
+        }
+      });
+      fixture.detectChanges();
+
+      const items = Array.from(fixture.nativeElement.querySelectorAll('.board-facts-notice li'))
+        .map(li => ((li as HTMLElement).textContent || '').trim());
+      expect(items.length).toBe(21);
+      expect(items[19]).toBe('Q20: "quote 20"');
+      expect(items[20]).toBe('and 3 more');
+    });
+
+    it('should show no board quote notice when the check found every quote', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        boardFactsCheck: { bulletCount: 4, checkedLiteralCount: 4, unquotedBulletCount: 0, unquotedBullets: [], missingLiterals: [] }
+      });
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.board-facts-notice')).toBeNull();
     });
 
     it('should show the assessor evidence and the second opinion as plain text when expanded', () => {
@@ -3492,6 +3689,60 @@ describe('AdminBenchmarkComponent', () => {
       expect(diagnostics).toContain('Re-run answered: Q4 (1 of 1); re-run scored: none (0 of 1)');
       expect(diagnostics).toContain(`Re-run started:   ${ninetySecondsAgo}`);
       expect(diagnostics).toContain('Re-run completed: n/a');
+      expect(diagnostics).toContain('Elapsed (run):    1h 00m 00s');
+      expect(diagnostics).toMatch(/Re-run elapsed: {3}1m 3\ds/);
+      expect(diagnostics).toContain('Failed-question re-run in progress over: Q4');
+      expect(diagnostics).not.toContain('re-run covered');
+    });
+
+    it('should print the run span, the re-run span, the covered scope and the run-wide counts for a terminal re-run', () => {
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Completed',
+        totalQuestionCount: 3,
+        startedAtUtc: '2026-09-18T21:01:24Z',
+        completedAtUtc: '2026-09-18T21:19:44Z',
+        rerunStartedAtUtc: '2026-09-18T21:30:00Z',
+        rerunCompletedAtUtc: '2026-09-18T21:32:12Z',
+        rerunScopeOrderIndexes: [2],
+        rerunAnsweredOrderIndexes: [2],
+        rerunScoredOrderIndexes: [2],
+        // The finalizer's run-wide figures, which the scoped meters must not replace.
+        claimVerifiedAnswerCount: 3,
+        secondOpinionGradedAnswerCount: 2,
+        answers: [
+          buildScoredAnswer(1, { claimVerificationJson: '[]', secondOpinionQualityScore: 70 }),
+          buildScoredAnswer(2, { claimVerificationJson: '[]' }),
+          buildScoredAnswer(3, { claimVerificationJson: '[]', secondOpinionQualityScore: 60 })
+        ]
+      });
+      component.rerunScopeOrderIndexes = [];
+
+      const diagnostics = component.runDiagnosticsText;
+      expect(diagnostics).toContain('Elapsed (run):    18m 20s');
+      expect(diagnostics).toContain('Re-run elapsed:   2m 12s');
+      expect(diagnostics).toContain('Failed-question re-run covered: Q2');
+      expect(diagnostics).not.toContain('in progress over');
+      expect(diagnostics).toContain('Verified 3, second-graded 2 (re-run scope: 1, 0)');
+    });
+
+    it('should print the re-run span from its stamps once the process no longer reports a scope', () => {
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Completed',
+        startedAtUtc: '2026-09-18T21:01:24Z',
+        completedAtUtc: '2026-09-18T21:19:44Z',
+        rerunStartedAtUtc: '2026-09-18T21:30:00Z',
+        rerunCompletedAtUtc: '2026-09-18T21:32:12Z',
+        rerunScopeOrderIndexes: [],
+        claimVerifiedAnswerCount: 18,
+        secondOpinionGradedAnswerCount: 13
+      });
+      component.rerunScopeOrderIndexes = [];
+
+      const diagnostics = component.runDiagnosticsText;
+      expect(diagnostics).toContain('Elapsed (run):    18m 20s');
+      expect(diagnostics).toContain('Re-run elapsed:   2m 12s');
+      expect(diagnostics).toContain('Verified 18, second-graded 13');
+      expect(diagnostics).not.toContain('re-run scope:');
     });
 
     it("should keep counting Re-run elapsed when a previous re-run's completion stamp is still on the row", () => {
@@ -4705,6 +4956,48 @@ describe('AdminBenchmarkComponent', () => {
       expect(text).toContain('Candidate delivery probe: verified at 2026-09-18T07:11:00Z');
       expect(text).toContain('Board delivered — assessor 18 of 18 graded, second opinion 13 of 14, claim verifier 9 of 9; synthesis: yes; difficulty assessment: digest (no map).');
       expect(text).toContain('Board not delivered — second opinion: Q6');
+    });
+
+    it('should append the re-verified stamp when the candidate delivery probe was re-checked before the re-run', () => {
+      component.activeRunDetail = buildDiagnosticsRun({
+        candidateDeliveryVerifiedAtUtc: '2026-09-18T07:11:00Z',
+        rerunCandidateDeliveryVerifiedAtUtc: '2026-09-19T09:00:00Z'
+      });
+      expect(component.runDiagnosticsText).toContain(
+        'Candidate delivery probe: verified at 2026-09-18T07:11:00Z; re-verified before the re-run at 2026-09-19T09:00:00Z'
+      );
+    });
+
+    it('should record the board format when the run had a board', () => {
+      const boardFactsCheck = { bulletCount: 1, checkedLiteralCount: 1, unquotedBulletCount: 0, unquotedBullets: [], missingLiterals: [] };
+
+      component.activeRunDetail = buildDiagnosticsRun({ boardFactsCheck, gameSnapshotFormatVersionUsed: 3 });
+      expect(component.runDiagnosticsText).toContain('Board format: 3');
+
+      component.activeRunDetail = buildDiagnosticsRun({ boardFactsCheck, harnessVersion: '33', gameSnapshotFormatVersionUsed: null });
+      expect(component.runDiagnosticsText).toContain('Board format: not stated');
+
+      component.activeRunDetail = buildDiagnosticsRun({ boardFactsCheck, harnessVersion: '32', gameSnapshotFormatVersionUsed: null });
+      expect(component.runDiagnosticsText).toContain('Board format: not recorded (before harness 33)');
+    });
+
+    it('should omit the board format line for a board-less run', () => {
+      component.activeRunDetail = buildDiagnosticsRun();
+      expect(component.runDiagnosticsText).not.toContain('Board format:');
+    });
+
+    it('should add a continuation line for a re-executed answer', () => {
+      const run = buildDiagnosticsRun();
+      run.answers[0] = {
+        ...run.answers[0],
+        rerunAtUtc: '2026-09-19T10:00:00Z',
+        rerunOfStatus: 'ProviderError',
+        rerunOfErrorMessage: 'HTTP 529: overloaded'
+      };
+      component.activeRunDetail = run;
+      const text = component.runDiagnosticsText;
+
+      expect(text).toContain('     re-executed at 2026-09-19T10:00:00Z: was ProviderError — HTTP 529: overloaded');
     });
 
     it('should extend a question line with its board characters and evidence-informed re-grade', () => {

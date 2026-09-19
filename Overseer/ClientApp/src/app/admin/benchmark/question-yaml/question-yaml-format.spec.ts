@@ -407,7 +407,8 @@ describe('question-yaml-format', () => {
       capturedAtUtc: '2026-09-16T18:04:11Z',
       notes: 'Exported from the developer menu.',
       sha256: 'a'.repeat(64),
-      text: BOARD
+      text: BOARD,
+      snapshotFormat: 3
     };
 
     it('round-trips the whole board and every metadata key', async () => {
@@ -446,14 +447,25 @@ describe('question-yaml-format', () => {
     });
 
     it('omits the metadata keys that are null', async () => {
-      const bare: SnapshotExport = { name: null, gnollhackVersion: null, capturedAtUtc: null, notes: null, sha256: null, text: BOARD };
+      const bare: SnapshotExport = { name: null, gnollhackVersion: null, capturedAtUtc: null, notes: null, sha256: null, text: BOARD, snapshotFormat: null };
       const yaml = serializeSuiteYaml(SNAPSHOT_SUITE, FIXTURE, bare);
       expect(yaml).not.toContain('gnollhack_version');
       expect(yaml).not.toContain('sha256');
+      expect(yaml).not.toContain('snapshot_format');
       const result = await parseQuestionYaml(yaml);
       expect(result.errors).toEqual([]);
       expect(result.suite?.snapshot?.text).toBe(BOARD);
       expect(result.suite?.snapshot?.name).toBeNull();
+    });
+
+    it('writes snapshot_format as an unquoted integer right after captured_at, omitted when null', async () => {
+      const yaml = serializeSuiteYaml(SNAPSHOT_SUITE, FIXTURE, SNAPSHOT);
+      expect(yaml).toContain('    captured_at: "2026-09-16T18:04:11Z"\n    snapshot_format: 3\n');
+      const result = await parseQuestionYaml(yaml);
+      expect(result.errors).toEqual([]);
+
+      const withoutFormat = serializeSuiteYaml(SNAPSHOT_SUITE, FIXTURE, { ...SNAPSHOT, snapshotFormat: null });
+      expect(withoutFormat).not.toContain('snapshot_format');
     });
 
     it('writes one question comment per question without changing the parsed result', async () => {
@@ -481,7 +493,7 @@ describe('question-yaml-format', () => {
 
       it('rejects an unknown key, a bad name, version, date and hash', async () => {
         expect(await messages('suite:\n  snapshot:\n    owner: me\n    text: a board\n')).toContain(
-          'Unknown key `suite.snapshot.owner`; allowed: name, gnollhack_version, captured_at, notes, sha256, text.'
+          'Unknown key `suite.snapshot.owner`; allowed: name, gnollhack_version, captured_at, snapshot_format, notes, sha256, text.'
         );
         expect(await messages(`suite:\n  snapshot:\n    name: ${'x'.repeat(129)}\n    text: a board\n`)).toContain(
           '`suite.snapshot.name` must be 1–128 characters.'
@@ -494,6 +506,18 @@ describe('question-yaml-format', () => {
         );
         expect(await messages('suite:\n  snapshot:\n    sha256: "abc"\n    text: a board\n')).toContain(
           '`suite.snapshot.sha256` must be 64 hexadecimal characters.'
+        );
+      });
+
+      it('accepts a valid snapshot_format and ignores it, and rejects a non-integer or zero', async () => {
+        const ok = await parseQuestionYaml(header + 'suite:\n  snapshot:\n    snapshot_format: 3\n    text: a board\n' + tail);
+        expect(ok.errors).toEqual([]);
+
+        expect(await messages('suite:\n  snapshot:\n    snapshot_format: "x"\n    text: a board\n')).toContain(
+          '`suite.snapshot.snapshot_format` must be a positive integer.'
+        );
+        expect(await messages('suite:\n  snapshot:\n    snapshot_format: 0\n    text: a board\n')).toContain(
+          '`suite.snapshot.snapshot_format` must be a positive integer.'
         );
       });
 

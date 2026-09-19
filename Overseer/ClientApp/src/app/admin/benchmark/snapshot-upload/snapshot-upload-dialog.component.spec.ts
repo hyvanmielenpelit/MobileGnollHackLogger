@@ -156,7 +156,9 @@ describe('SnapshotUploadDialogComponent', () => {
     expect(component.dialog.nativeElement.open).toBeTrue();
     expect(host.querySelector('.upload-snapshot-btn')).toBeNull();
     const notice = host.querySelector('.board-facts-notice')!;
-    expect(notice.textContent).toContain('Q6: "the uncursed Holy Grail"');
+    // OrderIndex is stored 1-based and printed as it is.
+    expect(notice.textContent).toContain('Q5: "the uncursed Holy Grail"');
+    expect(notice.textContent).not.toContain('Q6');
     expect(notice.textContent).toContain('server_rubric_handoff');
     expect(host.querySelector('.board-facts-unquoted')!.textContent).toContain('1 BOARD FACTS line');
 

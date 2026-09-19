@@ -327,12 +327,34 @@ describe('SnapshotViewerComponent', () => {
       const strip = host.querySelector<HTMLElement>('.meta-strip')!;
       expect(strip).toBeTruthy();
       const facts = Array.from(strip.querySelectorAll('dt')).map(dt => (dt.textContent ?? '').trim());
-      expect(facts).toEqual(['Capture', 'Size', 'Captured', 'Source chat', 'SHA-256']);
+      expect(facts).toEqual(['Capture', 'Size', 'Captured', 'Format', 'Board time', 'Source chat', 'SHA-256']);
       expect(strip.textContent).toContain('client_refresh_snapshot');
       expect(strip.textContent).toContain('12,345 chars');
       expect(strip.querySelector('.sha-box')!.textContent).toBe('feedface1234');
       expect(strip.querySelector('button[aria-label="Copy SHA-256"]')).toBeTruthy();
       expect(nameInput().value).toBe('Emergency Low HP');
+    });
+
+    it('shows the board format and board header timestamp when recorded', async () => {
+      await openReady(snapshotWith(buildBoard(), { snapshotFormatVersion: 3, boardHeaderTimestamp: '2026-09-18 07:11:00' }));
+      await fixture.whenStable();
+      const strip = host.querySelector<HTMLElement>('.meta-strip')!;
+      expect(strip.textContent).toContain('3');
+      expect(strip.textContent).toContain('2026-09-18 07:11:00');
+      const notStated = Array.from(strip.querySelectorAll('.meta-empty')).filter(el => (el.textContent ?? '').trim() === 'Not stated');
+      expect(notStated.length).toBe(0);
+    });
+
+    it('shows "Not stated" for the board format and board header timestamp when absent', async () => {
+      await openReady(snapshotWith(buildBoard(), { snapshotFormatVersion: null, boardHeaderTimestamp: null }));
+      await fixture.whenStable();
+      const strip = host.querySelector<HTMLElement>('.meta-strip')!;
+      const factText = (label: string) => {
+        const dt = Array.from(strip.querySelectorAll('dt')).find(d => (d.textContent ?? '').trim() === label)!;
+        return (dt.nextElementSibling?.textContent ?? '').trim();
+      };
+      expect(factText('Format')).toBe('Not stated');
+      expect(factText('Board time')).toBe('Not stated');
     });
 
     it('announces a SHA-256 copy', async () => {
@@ -534,7 +556,9 @@ describe('SnapshotViewerComponent', () => {
       fixture.detectChanges();
 
       const notice = host.querySelector('.board-facts-notice')!;
-      expect(notice.textContent).toContain('Q6: "the uncursed Holy Grail"');
+      // OrderIndex is stored 1-based and printed as it is.
+      expect(notice.textContent).toContain('Q5: "the uncursed Holy Grail"');
+      expect(notice.textContent).not.toContain('Q6');
       expect(notice.textContent).toContain('server_rubric_handoff');
       expect(host.querySelector('.board-facts-unquoted')!.textContent).toContain('1 BOARD FACTS line');
     });

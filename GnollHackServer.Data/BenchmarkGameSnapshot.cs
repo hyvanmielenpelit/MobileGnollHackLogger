@@ -32,6 +32,20 @@ public class BenchmarkGameSnapshot
     [MaxLength(64)]
     public string? SourceGnollHackVersion { get; set; }
 
+    /// <summary>
+    /// The board's own <c>Snapshot format: N</c> header line. Null for a format-1 board, which
+    /// states no format.
+    /// </summary>
+    public int? SnapshotFormatVersion { get; set; }
+
+    /// <summary>
+    /// The board header's <c>snapshot at yyyy-MM-dd HH:mm:ss</c> time, as printed. The game writes
+    /// it in local time with no zone, so it is kept as text; <see cref="CapturedAtUtc"/> is when
+    /// Overseer first received the board.
+    /// </summary>
+    [MaxLength(32)]
+    public string? BoardHeaderTimestamp { get; set; }
+
     public string? Notes { get; set; }
 
     /// <summary>
