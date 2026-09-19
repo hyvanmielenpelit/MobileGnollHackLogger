@@ -74,7 +74,15 @@ namespace Overseer.Services.Tools
                 return Task.FromResult(new ToolResult { Success = false, ErrorMessage = guardMessage });
             }
 
-            string name = arguments.GetProperty("name").GetString() ?? string.Empty;
+            string? name = arguments.TryGetProperty("name", out var nameElement) && nameElement.ValueKind == JsonValueKind.String
+                ? nameElement.GetString()
+                : null;
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing name parameter" });
+            }
+
             string kind = "any";
             
             if (arguments.TryGetProperty("type", out var typeElement) && typeElement.ValueKind == JsonValueKind.String)

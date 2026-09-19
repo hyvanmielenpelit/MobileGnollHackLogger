@@ -46,7 +46,14 @@ namespace Overseer.Services.Tools
                 return Task.FromResult(new ToolResult { Success = false, ErrorMessage = ToolGuardMessages.SourceCodeIndexingInProgress });
             }
 
-            string name = arguments.GetProperty("name").GetString() ?? string.Empty;
+            string? name = arguments.TryGetProperty("name", out var nameElement) && nameElement.ValueKind == JsonValueKind.String
+                ? nameElement.GetString()
+                : null;
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing name parameter" });
+            }
             
             var result = _sourceCodeService.GetMonsterStats(name);
             

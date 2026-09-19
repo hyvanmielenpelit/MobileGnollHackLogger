@@ -704,7 +704,8 @@ written in the source: `src/monst.c`, `src/objects.c`, `include/artilist.h` resp
 an optional **`object_class`** (`WAND_CLASS`, `SCROLL_CLASS`, …) which selects among the object
 classes that hold an entry of that name; the other two take `name` only.
 All three guard on `SourceCodeService.IsIndexingComplete`
-(`ToolGuardMessages.SourceCodeIndexingInProgress`). All three serialize a
+(`ToolGuardMessages.SourceCodeIndexingInProgress`). A missing, non-string or blank `name` returns
+`Success = false` with `"Missing name parameter"`. All three serialize a
 `StatsResponse<T>` (`Overseer/Services/SourceCodeModels.cs`):
 
 ```

@@ -36,7 +36,7 @@ Sentry logs in Overseer capture user-submitted chat prompts, error bodies, URLs,
 > When fixing a Sentry-reported issue in Overseer, you MUST follow this sequence:
 > 1. **Retrieve Data** using Sentry MCP tools.
 > 2. **Analyze Root Cause** without altering source code.
-> 3. **Create Implementation Plan** (`implementation_plan.md`) and request feedback (`request_feedback = true`).
+> 3. **Create Implementation Plan** (`implementation_plan_v1.md` in the shared plans repository, per `server_implementation_planning` and the global `agent-implementation-planning`) and report it to the user as a clickable link.
 > 4. **STOP and wait for user approval**.
 > 5. **Execute and Verify** only after the user explicitly approves.
 
@@ -47,8 +47,9 @@ Sentry logs in Overseer capture user-submitted chat prompts, error bodies, URLs,
 Overseer strictly separates **Application Error Handling** from **Sentry Crash Reporting**:
 
 1. **Application Error Handling**:
-   - Operational issues (e.g., AI provider 5xx outages, 429 rate limits, invalid user API keys, wrong model names, quota limits) are **handled normally in code** by `ChatService.cs` and controllers.
-   - The application retries transient network errors with exponential backoff and streams clear error events to the UI via SignalR.
+   - Operational issues (e.g., AI provider 5xx outages, 429 rate limits, invalid user API keys, wrong model names, quota limits) are **handled normally in code** by the agent loop (`Services/Agents/AgentLoopRunner.cs`), `ChatService.cs` and controllers.
+   - The application retries transient provider errors with backoff and streams clear error events to the UI via SignalR.
+   - A malformed tool call from a model (a missing or wrongly typed argument) is also operational: the tool returns `Success = false` with a "Missing … parameter" message. A tool that **throws** on one instead is a bug, because `ToolExecutor` logs the exception at error level and it reaches Sentry.
 2. **Sentry Error Logging**:
    - Sentry is reserved **exclusively for unexpected bugs, runtime crashes, and unhandled software defects** (e.g., `NullReferenceException`, unhandled database exceptions, controller crashes).
    - Upstream AI provider outages and expected user misconfigurations are normal operational events and **must be dropped from Sentry**.
@@ -82,13 +83,17 @@ search_issues(
 ```
 
 ### 2.3 Fetching Issue Details & Breadcrumbs
-For each issue, retrieve both the issue resource and breadcrumbs:
+For each issue, retrieve both the issue resource and breadcrumbs.
+
+Only a few Sentry operations are top-level MCP tools (`search_issues`, `search_events`,
+`get_sentry_resource`). The rest live in a catalog: find them with `search_sentry_tools` and
+call them with `execute_sentry_tool(name, arguments)`. Breadcrumbs and per-issue event search
+are catalog tools. `get_sentry_resource` does **not** accept a `breadcrumbs` resource type.
 
 1. **Issue Details (Stack trace, tags, error info):**
    ```
    get_sentry_resource(
        organizationSlug = "hyvan-mielen-pelit-ry",
-       regionUrl        = "https://de.sentry.io",
        resourceType     = "issue",
        resourceId       = "<ISSUE-ID>"
    )
@@ -96,24 +101,33 @@ For each issue, retrieve both the issue resource and breadcrumbs:
 
 2. **Breadcrumbs (Chronological user and system events leading to error):**
    ```
-   get_sentry_resource(
-       organizationSlug = "hyvan-mielen-pelit-ry",
-       regionUrl        = "https://de.sentry.io",
-       resourceType     = "breadcrumbs",
-       resourceId       = "<ISSUE-ID>"
+   execute_sentry_tool(
+       name      = "get_issue_breadcrumbs",
+       arguments = {
+           organizationSlug: "hyvan-mielen-pelit-ry",
+           regionUrl:        "https://de.sentry.io",
+           issueId:          "<ISSUE-ID>"
+       }
    )
    ```
+   Defaults to the latest event; pass `eventId` for another one.
 
 3. **Multi-Event Investigation (if occurrences > 1):**
    ```
-   search_events(
-       organizationSlug = "hyvan-mielen-pelit-ry",
-       regionUrl        = "https://de.sentry.io",
-       dataset          = "errors",
-       query            = "issue:<ISSUE-ID>",
-       limit            = 10
+   execute_sentry_tool(
+       name      = "search_issue_events",
+       arguments = {
+           organizationSlug: "hyvan-mielen-pelit-ry",
+           regionUrl:        "https://de.sentry.io",
+           issueId:          "<ISSUE-ID>",
+           limit:            10
+       }
    )
    ```
+
+If a catalog tool named here is missing or its arguments have changed, run
+`search_sentry_tools` with a short description of the operation. Its results carry the
+current schema.
 
 ---
 
@@ -125,10 +139,11 @@ For each issue, retrieve both the issue resource and breadcrumbs:
 |---|---|---|---|
 | **Real Application Bug (Backend)** | `NullReferenceException`, `InvalidOperationException`, unhandled 500 in controller/service | Global exception handler logs crash | **Logged to Sentry ✅** → Create implementation plan with code fix and unit test |
 | **Real Application Bug (Frontend)** | `TypeError`, `ChunkLoadError`, Angular component rendering crash | Angular global ErrorHandler captures error | **Logged to Sentry ✅** → Create implementation plan with TypeScript fix |
-| **Transient AI Provider Error** | `429`, `500`, `501`, `502`, `503`, `504`, `529`, or any 5xx targeting AI providers | `ChatService.cs` retries up to 6×; streams friendly `ChatEvent` to user | **Dropped from Sentry ❌** (Filtered by `AuthSentryEventProcessor`) |
+| **Transient AI Provider Error** | `429`, `502`, `503`, `504`, `529` and similar transient statuses targeting AI provider or external tool hosts | `AgentLoopRunner.cs` retries (429 up to `AiRateLimitSettings:Max429RetriesPerCall`, default 4; overload and 503 on their own schedules); streams friendly `ChatEvent` to user | **Dropped from Sentry ❌** (Filtered by `Services/AuthSentryEventProcessor.cs`; its `IsTransientApiOverloadException` and `IsTransientHttpFailedRequestEvent` hold the current status list) |
 | **Expected User Misconfiguration** | `400` (bad params/model name), `401`/`403` (bad API key), `404` (model not found) | Handled inline by `ChatService.cs` / `SettingsController.cs`; returned to UI | **Not in Sentry ❌** (4xx ignored by Sentry; application handles gracefully) |
 | **Unauthenticated Bot / Probe** | `401`/`403` on protected endpoints, scanners hitting non-existent routes | Authentication middleware rejects request | **Dropped from Sentry ❌** (Filtered by `AuthSentryEventProcessor`) |
-| **Frontend HTTP Failure & Network Drops** | `HttpErrorResponse` (4xx/5xx), `TypeError: Failed to fetch`, `DOMException: AbortError`, `NetworkError` | Client shows toast/banner; RxJS subscriptions provide `error:` callbacks | **Dropped from Sentry ❌** (Filtered by Angular `beforeSend` in `main.ts`). *Note: If seen in Sentry, identify the missing RxJS `.subscribe({ error: ... })` callback or unhandled fetch promise.* |
+| **Confidential Session** | Any event raised inside a confidential session | — | **Dropped from Sentry ❌** (Filtered by `AuthSentryEventProcessor` on three signals; see `server_data_privacy_framework`) |
+| **Frontend HTTP Failure & Network Drops** | `HttpErrorResponse` (4xx/5xx), `TypeError: Failed to fetch`, `DOMException: AbortError`, `NetworkError` | Client shows toast/banner; RxJS subscriptions provide `error:` callbacks | **Dropped from Sentry ❌** (Filtered by `sentryBeforeSend` in `ClientApp/src/app/utils/sentry-filter.util.ts`, registered as `beforeSend` in `main.ts`). *Note: If seen in Sentry, identify the missing RxJS `.subscribe({ error: ... })` callback or unhandled fetch promise.* |
 
 ---
 
@@ -137,15 +152,17 @@ For each issue, retrieve both the issue resource and breadcrumbs:
 1. **Inspect Mechanism & Tags**:
    - Check if `mechanism` is `SentryHttpFailedRequestHandler`. This indicates an outgoing HTTP call failed. Check the URL and HTTP status code.
    - Check if the error is `TypeError: Failed to fetch`, `AbortError`, or `HttpErrorResponse`. These are client-side network disconnects or HTTP responses that bypassed local handling (often due to a missing RxJS `error:` callback in a component).
-   - Check `handled` flag (handled vs unhandled).
-   - Check `release` tag (compare against latest version in `Overseer.csproj`).
+   - Check `handled` flag (handled vs unhandled). `mechanism: SentryLogger` means an `ILogger.LogError` call raised the event. Find the logger category in the `logger` tag. The `Error executing tool …` message comes from `ToolExecutor`'s catch-all.
+   - Check `release` tag (compare against `<Version>` in `Overseer/Overseer.csproj`). Its `+<sha>` suffix is the commit the process was built from. Read source at that commit with `git show <sha>:<path>` if the tree has moved on.
+   - Do not take a `Uri` tag as the failing call without checking. Scope tags carry over from earlier work in the same request, so a tool exception can carry the AI provider's streaming URL.
 
 2. **Trace the Breadcrumbs**:
    - Look at the last 10–15 breadcrumbs to understand what action the user performed (e.g. sending a chat message, loading models, updating settings).
    - Note any database queries or outgoing HTTP requests.
 
 3. **Locate Source Code**:
-   - Use `grep_search` and `view_file` to locate the exact controller, service, or Angular component involved.
+   - Use the harness's content-search and file-read tools to locate the exact controller, service, or Angular component involved.
+   - Search for the same defect elsewhere. A pattern that failed once, such as `JsonElement.GetProperty` on a model-supplied argument, usually appears in sibling tools too.
    - Trace data flow and identify why the failure occurred.
 
 ---
@@ -153,8 +170,8 @@ For each issue, retrieve both the issue resource and breadcrumbs:
 ## Section 5: Implementing and Verifying the Fix for Sentry Issues
 
 1. **Draft Implementation Plan**:
-   - Write or update `implementation_plan.md` artifact.
-   - Set `RequestFeedback: true` and `UserFacing: true`.
+   - Write `implementation_plan_v<N>.md` to `<plans-root>/hyvanmielenpelit/MobileGnollHackLogger/YYYY-MM-DD/<task_name>/`, following `server_implementation_planning` (mandatory sections, versioning, the `.plans/` fallback, and the plans-repository commit).
+   - Report it as a clickable link with its absolute path. Harness mechanics (plan mode, artifacts) are in `claude-plan-mode` or `gemini-antigravity-conventions`.
    - **STOP** and request user approval.
 
 2. **Execute Changes (Post-Approval)**:
@@ -163,22 +180,24 @@ For each issue, retrieve both the issue resource and breadcrumbs:
    - If styling changes, modify `.scss` and run `npx sass` (never edit `.css` directly).
 
 3. **Automated Verification**:
-   - Run the test suite:
+   - Use the commands in `.agents/AGENTS.md` § *Testing and Verification Commands* verbatim. Build from the repository root:
      ```bash
-     dotnet test c:\hmp\MobileGnollHackLogger\Overseer.Tests\Overseer.Tests.csproj
+     dotnet build MobileGnollHackLogger.slnx
      ```
-   - If Angular frontend was modified, ensure it builds:
+   - Run the test suite from the repository root. The `--filter-not-trait` is **not optional**: without it the run calls live OpenAI, Anthropic and Google APIs and spends real quota, and a typo in it fails open (see `testing_guidelines`):
      ```bash
-     cd Overseer/ClientApp && npx ng build
+     dotnet test Overseer.Tests --filter-not-trait "Category=UsesExternalApi"
      ```
+   - If the Angular frontend was modified, run from `Overseer/ClientApp/`:
+     ```bash
+     npm run test:headless
+     ```
+     ```bash
+     npm run build
+     ```
+     Never plain `npm test` or `ng test`: Karma stays in watch mode and never returns.
 
-4. **Resolve Sentry Issue via MCP (Optional/After Deployment)**:
-   - Once verified, you can resolve the issue in Sentry:
-     ```
-     update_issue(
-         organizationSlug = "hyvan-mielen-pelit-ry",
-         regionUrl        = "https://de.sentry.io",
-         issueId          = "<ISSUE-ID>",
-         status           = "resolved"
-     )
-     ```
+4. **Resolve the Sentry Issue (User's Call, After Deployment)**:
+   - Resolving an issue is an outward-facing change. Do it only when the user asks.
+   - The preferred route is `Fixes <ISSUE-ID>` in the commit description the walkthrough carries. Sentry closes the issue when that commit is merged.
+   - Otherwise the user resolves it in the Sentry UI. The Sentry MCP connector may expose no issue-update tool; it is read-only in some sessions. Check with `search_sentry_tools` before offering to resolve an issue through MCP.
