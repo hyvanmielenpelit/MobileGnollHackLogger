@@ -578,6 +578,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   private runsSeenLive = new Set<number>();
   private seriesSeenLive = new Set<number>();
+  /** Live-watched runs this page asked the server to cancel; consumed at their terminal poll. */
+  private readonly operatorCancelledRunIds = new Set<number>();
 
   /** Last time either poller actually polled, hidden or not — what the hidden-tab cadence gates on. */
   private lastRunPollAttemptAtMs = 0;
@@ -3379,12 +3381,15 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         // Chimes once per series actually watched live: seriesIsLive keeps re-adding the id while
         // it runs, and the transition into Completed/Cancelled/Failed or Stopped (which needs the
         // operator to continue it) fires the chime only for an id this poller has seen live —
-        // never for a series opened from history already finished.
+        // never for a series opened from history already finished, nor for one the operator
+        // cancelled.
         if (this.seriesIsLive) {
           this.seriesSeenLive.add(series.id);
         } else if (this.seriesSeenLive.has(series.id) && (this.seriesIsFinished || this.seriesIsStopped)) {
           this.seriesSeenLive.delete(series.id);
-          this.signalCompletion(`series:${series.id}`);
+          if (series.status !== 'Cancelled') {
+            this.signalCompletion(`series:${series.id}`);
+          }
         }
         // The member currently running is what the single-run banner and dialog describe, so the
         // run poller follows the series rather than being started again per member.
@@ -3597,12 +3602,27 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   cancelActiveRun() {
     if (!this.activeRunId) return;
-    this.benchmarkService.cancelRun(this.activeRunId).subscribe({
+    const runId = this.activeRunId;
+    this.noteOperatorCancel(runId);
+    this.benchmarkService.cancelRun(runId).subscribe({
       next: () => {
         this.pollRunDetail(this.activeRunId!);
       },
-      error: (err) => console.error('Failed to cancel run', err)
+      error: (err) => {
+        this.operatorCancelledRunIds.delete(runId);
+        console.error('Failed to cancel run', err);
+      }
     });
+  }
+
+  /**
+   * Recorded before the request, because the interval poll can see the terminal status before the
+   * cancel response arrives. Only a run watched live is recorded, so every entry is consumed.
+   */
+  private noteOperatorCancel(runId: number): void {
+    if (this.runsSeenLive.has(runId)) {
+      this.operatorCancelledRunIds.add(runId);
+    }
   }
 
   private startPolling(runId: number) {
@@ -3668,13 +3688,26 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   /**
    * The run half of transition detection: chimes only for an id this poller watched Running, and
    * only when it is not a member of a series still live — a series chimes once for the whole
-   * group instead, via `signalCompletion` in `pollSeries`.
+   * group instead, via `signalCompletion` in `pollSeries`. A run ended by cancellation does not
+   * signal at all.
    */
-  private maybeSignalRunCompletion(runId: number): void {
-    if (!this.runsSeenLive.has(runId)) return;
-    this.runsSeenLive.delete(runId);
+  private maybeSignalRunCompletion(run: BenchmarkRunDetailDto): void {
+    if (!this.runsSeenLive.has(run.id)) return;
+    this.runsSeenLive.delete(run.id);
+    const cancelledByOperator = this.operatorCancelledRunIds.delete(run.id);
     if (this.activeSeries != null && this.seriesIsLive) return;
-    this.signalCompletion(`run:${runId}`);
+    if (cancelledByOperator || this.runEndedByCancellation(run)) return;
+    this.signalCompletion(`run:${run.id}`);
+  }
+
+  /**
+   * `Canceled`, or a member of a series the operator cancelled: a member finishing just as its
+   * series is cancelled can end `Completed`, after the live-series guard no longer applies.
+   */
+  private runEndedByCancellation(run: BenchmarkRunDetailDto): boolean {
+    if (this.formatStatus(run.status) === 'Canceled') return true;
+    const series = this.activeSeries;
+    return series?.status === 'Cancelled' && series.members.some(m => m.runId === run.id);
   }
 
   /**
@@ -3871,7 +3904,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
             this.stopPolling();
             this.stopRunElapsedTicker();
             this.loadHistory();
-            this.maybeSignalRunCompletion(run.id);
+            this.maybeSignalRunCompletion(run);
           } else {
             this.cdr.detectChanges();
             return;
@@ -3880,7 +3913,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           this.stopPolling();
           this.stopRunElapsedTicker();
           this.loadHistory();
-          this.maybeSignalRunCompletion(run.id);
+          this.maybeSignalRunCompletion(run);
         }
         this.cdr.detectChanges();
       },
@@ -5042,6 +5075,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * actually started.
    */
   private launchFailedQuestionRerun(runId: number, failedOrderIndexes: number[]): void {
+    this.operatorCancelledRunIds.delete(runId);
     this.rerunScopeOrderIndexes = failedOrderIndexes;
     this.rerunLaunchPending = true;
     this.rerunLaunchedAtMs = Date.now();
@@ -5366,11 +5400,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   cancelRunById(runId: number) {
+    this.noteOperatorCancel(runId);
     this.benchmarkService.cancelRun(runId).subscribe({
       next: () => {
         this.refreshRunDetail(runId);
       },
       error: (err) => {
+        this.operatorCancelledRunIds.delete(runId);
         console.error('Failed to cancel run', err);
         this.refreshRunDetail(runId);
       }

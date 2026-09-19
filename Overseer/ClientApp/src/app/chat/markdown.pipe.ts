@@ -145,6 +145,13 @@ function createKatexExtension(options: KatexOptions = {}): MarkedExtension {
 // Register KaTeX extension once at module load
 marked.use(createKatexExtension());
 
+/**
+ * "word.Next" glued together by the model. The character before the stop is never whitespace,
+ * Markdown markup, an opening bracket, a capital (ASP.NET), a slash, a backslash or a quote
+ * (WinUI/.NET, ".NET"); the capital after it never starts NET followed by a non-letter (.NET).
+ */
+const SQUISHED_SENTENCE_REGEX = /([^\s*_`(\[{<A-Z\/\\'"][.!?])(?!NET(?![A-Za-z]))([A-Z])/g;
+
 /* ─────────────────────────────────────────────────────────────────────────────
    External-image defang.
 
@@ -319,7 +326,7 @@ export class MarkdownPipe implements PipeTransform {
           if (line.includes('|')) {
             // Table row or line with pipe. Do NOT inject double newlines (\n\n) as that terminates table parsing.
             // Fix squished sentences using a space instead of double newlines
-            line = line.replace(/([^\s\*\_\`\(\[\{\<A-Z][\.\!\?])([A-Z])/g, '$1 $2');
+            line = line.replace(SQUISHED_SENTENCE_REGEX, '$1 $2');
           } else {
             // Normal non-table line
 
@@ -349,8 +356,8 @@ export class MarkdownPipe implements PipeTransform {
 
             // Fix squished sentences (e.g., LLM outputs "word.Next word" without a space)
             // Matches any non-whitespace (excluding markdown formatting characters *, _, `, opening brackets (, [, {, <, and uppercase letters A-Z), a punctuation mark (., !, ?), and a capital letter
-            // This prevents splitting terms like "**.NET", "(.NET", or "ASP.NET" into "**.\n\nNET"
-            line = line.replace(/([^\s\*\_\`\(\[\{\<A-Z][\.\!\?])([A-Z])/g, '$1\n\n$2');
+            // This prevents splitting terms like "**.NET", "(.NET", "WinUI/.NET", or "ASP.NET" into "**.\n\nNET"
+            line = line.replace(SQUISHED_SENTENCE_REGEX, '$1\n\n$2');
           }
 
           lines[j] = line;

@@ -3047,6 +3047,11 @@ so the comparison view already refuses to pool across the boundary.
   - **A series resumed from the series dialog now chimes.** The dialog's *Continue series* arms the
     signals and emits `seriesResumed`, and the page restarts its series poll, which had stopped at
     *Stopped*.
+  - **A cancelled run or series signals nothing.** An operator cancellation plays no chime, raises no
+    notification and leaves the tab title alone: a series that ends `Cancelled`, a run that ends
+    `Canceled`, a member of a cancelled series, and a run this page asked to cancel — even when the
+    server returns a cancelled retry of a complete run to `Completed`. `Failed`, `Stopped` and every
+    `Completed…` end still signal. Client-only; no harness bump.
   - Both choices are remembered in the run-settings blob, which is written when a run is started, so a
     changed checkbox is remembered from the next Start, exactly as the sound's has always been.
   - The run diagnostics' *Completion sound* line adds arming and armed state, the `AudioContext` state,

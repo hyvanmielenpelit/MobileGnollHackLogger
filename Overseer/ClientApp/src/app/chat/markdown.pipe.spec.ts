@@ -267,6 +267,55 @@ The largest mechanical advantage is that priests can pray sooner.`;
     expect(cells[0].textContent).toContain('First cell. Next sentence in same cell');
   });
 
+  describe('dotted names and the squished sentence heuristic', () => {
+    const render = (input: string): HTMLDivElement => {
+      const container = document.createElement('div');
+      container.innerHTML = pipe.transform(input) as string;
+      return container;
+    };
+
+    it('keeps a bold WinUI/.NET 10 in one strong element and one paragraph', () => {
+      const container = render('**WinUI/.NET 10**');
+      expect(container.querySelectorAll('p').length).toBe(1);
+      const strong = container.querySelectorAll('strong');
+      expect(strong.length).toBe(1);
+      expect(strong[0].textContent).toBe('WinUI/.NET 10');
+      expect(container.innerHTML).not.toContain('**');
+    });
+
+    it('keeps a sentence mentioning WinUI/.NET 10 in one paragraph', () => {
+      const container = render('running on **WinUI/.NET 10**, with Developer Mode');
+      expect(container.querySelectorAll('p').length).toBe(1);
+      expect(container.querySelector('strong')!.textContent).toBe('WinUI/.NET 10');
+    });
+
+    for (const input of ['C#/.NET', 'built on.NET 8', '".NET"', "the .NET's runtime", 'ASP.NET', '**.NET** runtime', '(.NET)', 'WinUI.NET10']) {
+      it(`does not split ${input}`, () => {
+        const container = render(input);
+        expect(container.querySelectorAll('p').length).toBe(1);
+        expect(container.textContent).toContain('NET');
+      });
+    }
+
+    it('still splits a glued sentence', () => {
+      expect(render('word.Next word').querySelectorAll('p').length).toBe(2);
+    });
+
+    it('still splits a glued sentence that starts with a word beginning NET', () => {
+      const paragraphs = render('was fine.NETWORK errors followed').querySelectorAll('p');
+      expect(paragraphs.length).toBe(2);
+      expect(paragraphs[1].textContent).toBe('NETWORK errors followed');
+    });
+
+    it('does not space WinUI/.NET inside a table cell', () => {
+      const container = render(`| Platform | Status |
+|---|---|
+| WinUI/.NET 10 | Active |`);
+      expect(container.querySelectorAll('table').length).toBe(1);
+      expect(container.querySelectorAll('table td')[0].textContent).toBe('WinUI/.NET 10');
+    });
+  });
+
   /* External-image defang.
 
      What is being defended: a prompt injection inside an uploaded document can induce the

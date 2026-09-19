@@ -6308,6 +6308,138 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(playSpy).not.toHaveBeenCalled();
     });
+
+    describe('cancellation', () => {
+      let notifySpy: jasmine.Spy;
+
+      function series(status: string, members: { runId: number }[] = []): any {
+        return { id: 8, status, completedRunCount: 1, requestedRunCount: 2, members };
+      }
+
+      function seeRunLive(id = 42): void {
+        benchmarkServiceMock.getRun.and.returnValue(of(makeRun({ id, status: 'Running' })));
+        (component as any).pollRunDetail(id);
+      }
+
+      function pollRun(id: number, status: string | number): void {
+        benchmarkServiceMock.getRun.and.returnValue(of(makeRun({ id, status })));
+        (component as any).pollRunDetail(id);
+      }
+
+      beforeEach(() => {
+        const notificationService = TestBed.inject(BenchmarkCompletionNotificationService);
+        notifySpy = spyOn(notificationService, 'notify');
+        spyOn(notificationService, 'permission').and.returnValue('granted');
+        component.completionSound = true;
+        component.completionNotification = true;
+        spyOnProperty(document, 'hidden', 'get').and.returnValue(true);
+        spyOn(document, 'hasFocus').and.returnValue(false);
+      });
+
+      it('does not chime or notify for a run that ends Canceled', () => {
+        seeRunLive();
+        pollRun(42, 'Canceled');
+
+        expect(playSpy).not.toHaveBeenCalled();
+        expect(notifySpy).not.toHaveBeenCalled();
+      });
+
+      it('does not chime for a run whose numeric status is Canceled', () => {
+        seeRunLive();
+        pollRun(42, 5);
+
+        expect(playSpy).not.toHaveBeenCalled();
+      });
+
+      it('does not chime for a run cancelled here that the server returns to Completed', () => {
+        seeRunLive();
+        component.activeRunId = 42;
+        benchmarkServiceMock.cancelRun.and.returnValue(of({ success: true }));
+        benchmarkServiceMock.getRun.and.returnValue(of(makeRun({ id: 42, status: 'Completed' })));
+
+        component.cancelActiveRun();
+
+        expect(benchmarkServiceMock.cancelRun).toHaveBeenCalledWith(42);
+        expect(playSpy).not.toHaveBeenCalled();
+        expect(notifySpy).not.toHaveBeenCalled();
+      });
+
+      it('still chimes when the cancel request fails and the run then completes', () => {
+        spyOn(console, 'error');
+        seeRunLive();
+        component.activeRunId = 42;
+        benchmarkServiceMock.cancelRun.and.returnValue(throwError(() => ({ status: 500 })));
+
+        component.cancelActiveRun();
+        pollRun(42, 'Completed');
+
+        expect(playSpy).toHaveBeenCalledOnceWith('run:42');
+      });
+
+      it('does not chime for a run cancelled from the run detail view', () => {
+        seeRunLive();
+        benchmarkServiceMock.cancelRun.and.returnValue(new Subject<{ success: boolean }>());
+
+        component.cancelRunById(42);
+        pollRun(42, 'Completed');
+
+        expect(playSpy).not.toHaveBeenCalled();
+      });
+
+      it('chimes for a failed-question re-run launched after a cancel of the same run', () => {
+        seeRunLive();
+        benchmarkServiceMock.cancelRun.and.returnValue(new Subject<{ success: boolean }>());
+        component.cancelRunById(42);
+
+        benchmarkServiceMock.rerunFailedQuestions.and.returnValue(of({ runId: 42 }));
+        benchmarkServiceMock.getRun.and.returnValue(of(makeRun({ id: 42, status: 'Running' })));
+        (component as any).launchFailedQuestionRerun(42, [0]);
+        pollRun(42, 'Completed');
+
+        expect(playSpy).toHaveBeenCalledOnceWith('run:42');
+        component.closeRunProgressDialog();
+      });
+
+      it('does not chime or notify for a series that ends Cancelled, then or later', () => {
+        benchmarkServiceMock.getRunSeries.and.returnValue(of(series('Running')));
+        (component as any).pollSeries(8);
+        benchmarkServiceMock.getRunSeries.and.returnValue(of(series('Cancelled')));
+        (component as any).pollSeries(8);
+        (component as any).pollSeries(8);
+
+        expect(playSpy).not.toHaveBeenCalled();
+        expect(notifySpy).not.toHaveBeenCalled();
+      });
+
+      it('does not chime for a member that completes as its series is cancelled', () => {
+        seeRunLive();
+        component.activeSeries = series('Cancelled', [{ runId: 42 }]);
+        component.activeSeriesId = 8;
+
+        pollRun(42, 'Completed');
+
+        expect(playSpy).not.toHaveBeenCalled();
+      });
+
+      it('still chimes for a run that ends Failed', () => {
+        seeRunLive();
+        pollRun(42, 'Failed');
+
+        expect(playSpy).toHaveBeenCalledOnceWith('run:42');
+        expect(notifySpy).toHaveBeenCalledTimes(1);
+      });
+
+      for (const status of ['Stopped', 'Failed']) {
+        it(`still chimes for a series that ends ${status}`, () => {
+          benchmarkServiceMock.getRunSeries.and.returnValue(of(series('Running')));
+          (component as any).pollSeries(8);
+          benchmarkServiceMock.getRunSeries.and.returnValue(of(series(status)));
+          (component as any).pollSeries(8);
+
+          expect(playSpy).toHaveBeenCalledOnceWith('series:8');
+        });
+      }
+    });
   });
 
   describe('Part C: arming the completion signals from a user gesture', () => {
