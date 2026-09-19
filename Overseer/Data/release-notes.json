@@ -1,5 +1,84 @@
 [
   {
+    "version": "1.1.1",
+    "date": "2026-09-19T17:48:56Z",
+    "summary": "A follow-up release that makes the Overseer's game research faster and more reliable: the source code and wiki tools now steer the AI to the right answer in fewer steps, and several lookups that silently failed now work. The AI Intelligence Benchmark gains question suites built around a real game snapshot, together with YAML import and export, a guided suite wizard and more rigorous grading.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Benchmark question suites can now be built around a saved GnollHack game snapshot, so questions are asked about a real game in progress, just as a player would ask them in the chat."
+      },
+      {
+        "type": "feature",
+        "text": "Added import and export of benchmark suites and questions as YAML files, with a built-in format guide, a preview of what an import will change, and a Snapshot Suite Wizard that walks through creating a suite from a game snapshot with the help of an external AI assistant."
+      },
+      {
+        "type": "feature",
+        "text": "Added AI-generated descriptions for benchmark question suites, and reworked the question generation dialog."
+      },
+      {
+        "type": "feature",
+        "text": "A finished benchmark run can now announce itself with a sound and a browser notification, even while the Admin panel is in a background tab."
+      },
+      {
+        "type": "improvement",
+        "text": "Benchmark grading is more rigorous: answers are checked against the facts on the game board, cited source code is verified to exist, graders can re-grade with the evidence the model actually saw, runs can be re-run, and reasoning token usage is recorded for every answer."
+      },
+      {
+        "type": "improvement",
+        "text": "The game snapshot viewer was rebuilt with a clearer layout and better map and text tools."
+      },
+      {
+        "type": "improvement",
+        "text": "Wiki searches now rank articles that match more of your question's key words first, include an item's or spell's stat block in the excerpt, and return short articles whole, so the Overseer needs fewer follow-up lookups."
+      },
+      {
+        "type": "improvement",
+        "text": "When the Overseer finds a function in the game's source code, it is now pointed straight to the tool that shows the whole function at once, which makes source-based answers faster."
+      },
+      {
+        "type": "improvement",
+        "text": "Source code that is disabled in the game (inside #if 0 blocks) is now clearly marked, so the Overseer no longer describes removed code as current game behaviour."
+      },
+      {
+        "type": "improvement",
+        "text": "Lookups that find nothing now suggest what to try next: similar item names, candidate NetHack wiki articles, and whether a source search filter hid the match. An unidentified item appearance, such as an orange potion, is now explained as randomized per game."
+      },
+      {
+        "type": "improvement",
+        "text": "The Overseer now looks up how an item, monster or game mechanic works instead of guessing from the game snapshot, and finds an artifact's base item effects more reliably."
+      },
+      {
+        "type": "improvement",
+        "text": "Game snapshots sent by current GnollHack app versions are now used as the app prepared them, keeping the board exactly as the game shows it."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed monster lookups that could not find 34 monsters, including the little dog, kitten, pony, the unicorns and Angels."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed monster and item properties written in parentheses in the game data being read incorrectly."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed an error when the AI asked for monster, item, artifact or function details without naming one; it now receives a clear message and can retry."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed the estimated cost of Gemini responses, which left out the model's thinking tokens and so showed too low a figure."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed chat formatting that could break a line in terms such as \"WinUI/.NET\" and could break a heading apart."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed benchmark runs of OpenAI models being sent without the Overseer's system prompt, and fixed importing suites from YAML."
+      }
+    ]
+  },
+  {
     "version": "1.1.0",
     "date": "2026-09-15T12:30:00Z",
     "summary": "A major release built on two new pillars: a complete AI Intelligence Benchmark system in the Admin panel for measuring and comparing AI model quality, and a full data privacy framework bringing confidential chats, incognito chats, document attachments and outbound data masking. The chat now shows per-response cost and context window usage, the database maintenance dashboard was rebuilt, and three new AI models are supported.",
