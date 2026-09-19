@@ -1961,7 +1961,17 @@ public static class BenchmarkReportBuilder
                 if (hasVerifier && verifierPricing != null)
                 {
                     sb.AppendLine($"  - Claim Verifier ({run.ClaimVerifierModelIdUsed}): ${Inv(verifierTotalCost, "F2")} ({CostParts(roleParts.ClaimVerifier, verifierPricing)})");
+                }
 
+                if (hasSynthesis && assessorPricing != null)
+                {
+                    sb.AppendLine($"  - Synthesis ({run.AssessorModelIdUsed}): ${Inv(synthesisTotalCost, "F2")} ({CostParts(roleParts.Synthesis, assessorPricing)})");
+                }
+
+                // Printed after the five role lines, so they stay contiguous, rather than between
+                // the Claim Verifier and Synthesis lines.
+                if (hasVerifier && verifierPricing != null)
+                {
                     // H4. The verifier's own yield — what its dollars actually bought — was
                     // previously unreported: run 13 to run 14 alone it grew from 36% to 67% of run
                     // cost with no figure an operator could steer by. "Checked" excludes answers the
@@ -2007,11 +2017,6 @@ public static class BenchmarkReportBuilder
                             $"- **Claim Verification Yield:** {string.Join(" + ", heads)} checked — {string.Join("; ", parts)}. " +
                             $"${Inv(verifierTotalCost, "F2")} ({PerUnitCost(costPerItem)}/item over {over}), {Inv(verifierCostShare, "F0")}% of run cost.");
                     }
-                }
-
-                if (hasSynthesis && assessorPricing != null)
-                {
-                    sb.AppendLine($"  - Synthesis ({run.AssessorModelIdUsed}): ${Inv(synthesisTotalCost, "F2")} ({CostParts(roleParts.Synthesis, assessorPricing)})");
                 }
 
                 if (hasAssessor || hasSecondOpinion || hasVerifier || hasSynthesis)
@@ -2282,7 +2287,10 @@ public static class BenchmarkReportBuilder
                 .Where(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedCriticalError))
                 .OrderBy(a => a.OrderIndex)
                 .ToList();
-            sb.AppendLine($"- **Contested Critical Errors:** {contestedCriticalErrorCount} (question(s) {string.Join(", ", contestedCriticalErrorAnswers.Select(a => $"Q{a.OrderIndex}"))}) — the critical-error quote was checked against the source code/wiki by the claim verifier and **supported**. Advisory: the cap stands and no index moved; re-assess from the run detail.");
+            string secondReaderDisputeNote = disputedBySecondReader.Count > 0
+                ? " — counts quotes the claim verifier supported; second-reader disputes are counted on the Critical Errors line."
+                : string.Empty;
+            sb.AppendLine($"- **Contested Critical Errors:** {contestedCriticalErrorCount} (question(s) {string.Join(", ", contestedCriticalErrorAnswers.Select(a => $"Q{a.OrderIndex}"))}) — the critical-error quote was checked against the source code/wiki by the claim verifier and **supported** as a standalone sentence; the error may lie in its context, so read the verdict's basis before treating the critical error as overturned. Advisory: the cap stands and no index moved; re-assess from the run detail.{secondReaderDisputeNote}");
         }
         if (contestedAccuracyDeductionCount > 0)
         {
@@ -2438,7 +2446,7 @@ public static class BenchmarkReportBuilder
             }
             if (suspectedFalseRunCount > 0)
             {
-                sb.AppendLine($"- **Suspected False by the Assessor:** {suspectedFalseRunCount} across {suspectedFalseByAnswer.Count} answer(s) ({string.Join(", ", suspectedFalseByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — refuted {suspectedFalseTotals.Refuted} (the assessor was right), supported {suspectedFalseTotals.Supported}, indeterminate {suspectedFalseTotals.Indeterminate}. *Answer sentences the assessor believed false from its own knowledge, which neither the rubric nor the board settles; under scoring method 12 they lower no level and are checked by the claim verifier instead. Included in the unverified claims above.*");
+                sb.AppendLine($"- **Suspected False by the Assessor:** {suspectedFalseRunCount} across {suspectedFalseByAnswer.Count} answer(s) ({string.Join(", ", suspectedFalseByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — refuted {suspectedFalseTotals.Refuted} (the assessor was right), supported {suspectedFalseTotals.Supported} (the assessor was wrong), indeterminate {suspectedFalseTotals.Indeterminate}. *Answer sentences the assessor believed false from its own knowledge, which neither the rubric nor the board settles; under scoring method 12 they lower no level and are checked by the claim verifier instead. Included in the unverified claims above.*");
             }
             if (supportedAccusations.Count > 0)
             {
@@ -3414,7 +3422,7 @@ public static class BenchmarkReportBuilder
                         }
                         else if (BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(a.AccuracyLevel.Value, accuracyEvidence, a.UnverifiedClaimCount ?? unverifiedClaims.Count))
                         {
-                            flaggedDims.Add($"Accuracy to {a.AccuracyLevel.Value}/6 while its stated evidence rests only on claims it could not verify, which scoring method v7 does not permit as an accuracy deduction");
+                            flaggedDims.Add($"Accuracy to {a.AccuracyLevel.Value}/6 while its stated evidence rests only on claims it could not verify, which the scoring method does not permit as an accuracy deduction");
                         }
                         else if (BenchmarkVerdictConsistency.IsPrecisionGroundedAccuracyDeduction(a.AccuracyLevel.Value, accuracyEvidence))
                         {
@@ -3496,7 +3504,7 @@ public static class BenchmarkReportBuilder
                 if (suspectedFalse.Count > 0)
                 {
                     var (suspectedSupported, suspectedRefuted, suspectedIndeterminate) = VerdictCounts(suspectedFalse);
-                    sb.AppendLine($"> - **Suspected false by the assessor:** {suspectedFalse.Count} — refuted {suspectedRefuted} (the assessor was right), supported {suspectedSupported}, indeterminate {suspectedIndeterminate}");
+                    sb.AppendLine($"> - **Suspected false by the assessor:** {suspectedFalse.Count} — refuted {suspectedRefuted} (the assessor was right), supported {suspectedSupported} (the assessor was wrong), indeterminate {suspectedIndeterminate}");
                 }
                 // A verdict the harness demoted: the verifier cited a function nothing calls.
                 foreach (var noted in (ClaimVerificationsOf(a) ?? new List<BenchmarkClaimVerification>())

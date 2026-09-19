@@ -12,6 +12,7 @@ import { SystemService } from '../../services/system.service';
 import { BenchmarkCompletionSoundService } from '../../services/benchmark-completion-sound.service';
 import { BenchmarkCompletionNotificationService } from '../../services/benchmark-completion-notification.service';
 import { BenchmarkBackgroundActivityService } from '../../services/benchmark-background-activity.service';
+import { BenchmarkPollTickerService } from '../../services/benchmark-poll-ticker.service';
 import { serializeQuestionsYaml } from './question-yaml/question-yaml-format';
 
 describe('AdminBenchmarkComponent', () => {
@@ -164,6 +165,19 @@ describe('AdminBenchmarkComponent', () => {
 
     systemServiceMock = jasmine.createSpyObj('SystemService', ['getVersion']);
     systemServiceMock.getVersion.and.returnValue(of('1.0.29'));
+
+    // BenchmarkPollTickerService prefers a real Worker when one exists, which ChromeHeadless does,
+    // but a worker fetching '/workers/benchmark-poll-ticker.js' from the Karma server is not the
+    // same thing this suite's many fakeAsync/tick()-driven polling specs need: a deterministic,
+    // zone-visible timer. Every spec in this file gets the plain setInterval fallback instead, so
+    // polling behaves exactly as it did before the ticker existed; BenchmarkPollTickerService's own
+    // spec file is what actually exercises the worker path and its post-start fallback.
+    spyOn(BenchmarkPollTickerService.prototype, 'start').and.callFake((intervalMs: number, onTick: () => void) => {
+      const id = setInterval(onTick, intervalMs);
+      const handle = (() => clearInterval(id)) as any;
+      Object.defineProperty(handle, 'mode', { value: 'timer', enumerable: true });
+      return handle;
+    });
 
     await TestBed.configureTestingModule({
       imports: [AdminBenchmarkComponent],
@@ -2339,6 +2353,28 @@ describe('AdminBenchmarkComponent', () => {
       expect(text).toContain('Started (parsed):');
     });
 
+    it('prints the ticker mode on the Run poll line, and an attempts section for the sound and the notification', () => {
+      component.activeRunDetail = buildRun({ answers: [] });
+      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 42, status: 'Running', answers: [] })));
+      (component as any).startPolling(42);
+
+      // Pushed directly rather than exercised through a real play() call, so this spec does not
+      // depend on the actual browser audio stack; the sound service's own spec exercises play().
+      const soundService = TestBed.inject(BenchmarkCompletionSoundService);
+      (soundService as any).attempts.push({
+        atUtc: '2026-09-19T00:00:00.000Z', key: 'run:999', hidden: false, focused: true,
+        path: 'element', contextStateBefore: null, contextStateAfter: null,
+        clockAdvanced: null, rebuilt: false, outcome: 'played'
+      });
+
+      const text = component.runDiagnosticsText;
+      expect(text).toContain('Run poll: active every 2000 ms (timer)');
+      expect(text).toContain('  attempts:');
+      expect(text).toContain('key=run:999');
+
+      (component as any).stopPolling();
+    });
+
     it('should reattach to a run already in progress without opening the dialog', () => {
       benchmarkServiceMock.getActiveRun.and.returnValue(of({ runId: 77 }));
       benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 77 })));
@@ -2633,7 +2669,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.rerunLaunchPending).toBeTrue();
       expect(component.runIsTerminal).toBeFalse();
       expect(component.runStageLabel).toContain('Starting');
-      expect((component as any).pollInterval).not.toBeNull();
+      expect((component as any).pollTickerHandle).not.toBeNull();
 
       fixture.detectChanges();
       const footer = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog .dialog-footer') as HTMLElement;
@@ -3722,7 +3758,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(diagnostics).toContain('Re-run elapsed:   2m 12s');
       expect(diagnostics).toContain('Failed-question re-run covered: Q2');
       expect(diagnostics).not.toContain('in progress over');
-      expect(diagnostics).toContain('Verified 3, second-graded 2 (re-run scope: 1, 0)');
+      expect(diagnostics).toContain('Answers with verified claims: 3, second-graded 2 (re-run scope: 1, 0)');
     });
 
     it('should print the re-run span from its stamps once the process no longer reports a scope', () => {
@@ -3741,7 +3777,7 @@ describe('AdminBenchmarkComponent', () => {
       const diagnostics = component.runDiagnosticsText;
       expect(diagnostics).toContain('Elapsed (run):    18m 20s');
       expect(diagnostics).toContain('Re-run elapsed:   2m 12s');
-      expect(diagnostics).toContain('Verified 18, second-graded 13');
+      expect(diagnostics).toContain('Answers with verified claims: 18, second-graded 13');
       expect(diagnostics).not.toContain('re-run scope:');
     });
 
@@ -6709,7 +6745,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(notifySpy.calls.mostRecent().args[0]).toBe('run:42');
     });
 
-    it('does not notify a visible, focused completion', () => {
+    it('notifies a visible, focused completion too — the ticked box no longer checks focus', () => {
       component.completionNotification = true;
       spyOnProperty(document, 'hidden', 'get').and.returnValue(false);
       spyOn(document, 'hasFocus').and.returnValue(true);
@@ -6719,7 +6755,30 @@ describe('AdminBenchmarkComponent', () => {
       benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 42, status: 'Completed' })));
       (component as any).pollRunDetail(42);
 
-      expect(notifySpy).not.toHaveBeenCalled();
+      expect(notifySpy).toHaveBeenCalledTimes(1);
+      expect(notifySpy.calls.mostRecent().args[0]).toBe('run:42');
+    });
+
+    it('records a notification attempt with the tab focused, surfaced in diagnostics', () => {
+      component.completionNotification = true;
+      spyOnProperty(document, 'hidden', 'get').and.returnValue(false);
+      spyOn(document, 'hasFocus').and.returnValue(true);
+      notifySpy.and.returnValue('shown');
+
+      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 42, status: 'Running' })));
+      (component as any).pollRunDetail(42);
+      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 42, status: 'Completed' })));
+      (component as any).pollRunDetail(42);
+
+      const attempts = (component as any).notificationAttempts;
+      expect(attempts.length).toBe(1);
+      expect(attempts[0].key).toBe('run:42');
+      expect(attempts[0].hidden).toBeFalse();
+      expect(attempts[0].focused).toBeTrue();
+      expect(attempts[0].outcome).toBe('shown');
+
+      const diagnostics = component.runDiagnosticsText;
+      expect(diagnostics).toContain('key=run:42 hidden=false focused=true outcome=shown');
     });
   });
 
@@ -6736,33 +6795,105 @@ describe('AdminBenchmarkComponent', () => {
       component.ngOnDestroy();
     });
 
-    it('releases the background lock when a run poll errors', () => {
+    it('does not release the background lock on a single run poll error, and stays polling', () => {
       const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
       const releaseSpy = spyOn(lockService, 'release');
       const acquireSpy = spyOn(lockService, 'acquireForRun');
 
+      // startPolling's own poll is the first failure; its stopPolling() of any previous poller
+      // may release, so the spy is reset once polling has started.
+      benchmarkServiceMock.getRun.and.returnValue(throwError(() => ({ status: 500 })));
       (component as any).startPolling(42);
       expect(acquireSpy).toHaveBeenCalledWith(42);
+      releaseSpy.calls.reset();
 
-      benchmarkServiceMock.getRun.and.returnValue(throwError(() => ({ status: 500 })));
       (component as any).pollRunDetail(42);
 
-      expect(releaseSpy).toHaveBeenCalled();
+      expect(releaseSpy).not.toHaveBeenCalled();
+      expect((component as any).pollTickerHandle).not.toBeNull();
+      (component as any).stopPolling();
       component.ngOnDestroy();
     });
 
-    it('releases the background lock when a series poll errors', () => {
+    it('releases the background lock only on the 5th consecutive run poll error', () => {
+      const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
+      const releaseSpy = spyOn(lockService, 'release');
+
+      benchmarkServiceMock.getRun.and.returnValue(throwError(() => ({ status: 500 })));
+      (component as any).startPolling(42);
+      releaseSpy.calls.reset();
+
+      // startPolling's own poll was the first failure; three more make four.
+      for (let i = 0; i < 3; i++) {
+        (component as any).pollRunDetail(42);
+      }
+      expect(releaseSpy).not.toHaveBeenCalled();
+      expect((component as any).pollTickerHandle).not.toBeNull();
+
+      (component as any).pollRunDetail(42);
+      expect(releaseSpy).toHaveBeenCalled();
+      expect((component as any).pollTickerHandle).toBeNull();
+      component.ngOnDestroy();
+    });
+
+    it('resets the consecutive run poll failure count on a successful poll', () => {
+      const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
+      const releaseSpy = spyOn(lockService, 'release');
+
+      benchmarkServiceMock.getRun.and.returnValue(throwError(() => ({ status: 500 })));
+      (component as any).startPolling(42);
+      releaseSpy.calls.reset();
+      for (let i = 0; i < 3; i++) {
+        (component as any).pollRunDetail(42);
+      }
+
+      benchmarkServiceMock.getRun.and.returnValue(of({ id: 42, status: 'Running', answers: [] } as any));
+      (component as any).pollRunDetail(42);
+
+      benchmarkServiceMock.getRun.and.returnValue(throwError(() => ({ status: 500 })));
+      for (let i = 0; i < 4; i++) {
+        (component as any).pollRunDetail(42);
+      }
+
+      expect(releaseSpy).not.toHaveBeenCalled();
+      (component as any).stopPolling();
+      component.ngOnDestroy();
+    });
+
+    it('does not release the background lock on a single series poll error, and stays polling', () => {
       const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
       const releaseSpy = spyOn(lockService, 'release');
       const acquireSpy = spyOn(lockService, 'acquireForSeries');
 
       (component as any).startSeriesPolling(11);
       expect(acquireSpy).toHaveBeenCalledWith(11);
+      releaseSpy.calls.reset();
 
       benchmarkServiceMock.getRunSeries.and.returnValue(throwError(() => ({ status: 500 })));
       (component as any).pollSeries(11);
 
+      expect(releaseSpy).not.toHaveBeenCalled();
+      expect((component as any).seriesPollTickerHandle).not.toBeNull();
+      (component as any).stopSeriesPolling();
+      component.ngOnDestroy();
+    });
+
+    it('releases the background lock only on the 5th consecutive series poll error', () => {
+      const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
+      const releaseSpy = spyOn(lockService, 'release');
+
+      (component as any).startSeriesPolling(11);
+      releaseSpy.calls.reset();
+      benchmarkServiceMock.getRunSeries.and.returnValue(throwError(() => ({ status: 500 })));
+
+      for (let i = 0; i < 4; i++) {
+        (component as any).pollSeries(11);
+      }
+      expect(releaseSpy).not.toHaveBeenCalled();
+
+      (component as any).pollSeries(11);
       expect(releaseSpy).toHaveBeenCalled();
+      expect((component as any).seriesPollTickerHandle).toBeNull();
       component.ngOnDestroy();
     });
 

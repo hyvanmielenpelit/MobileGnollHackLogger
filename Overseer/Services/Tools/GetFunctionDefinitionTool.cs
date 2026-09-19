@@ -108,14 +108,46 @@ namespace Overseer.Services.Tools
                     if (!anyResult.StartsWith(SourceMissContentBuilder.MissPrefix, StringComparison.Ordinal))
                     {
                         string note = $"[No {kind} named '{name}' in the indexed {repository} source; showing the {DescribeHitKind(anyResult, name)} definition instead.]\n";
-                        return Task.FromResult(new ToolResult { Success = true, Content = note + anyResult });
+                        string hitContent = InsertCompiledOutNote(anyResult, service.GetIndexedLines, context.MaxResultLength);
+                        return Task.FromResult(new ToolResult { Success = true, Content = note + hitContent });
                     }
                 }
 
                 result = SourceMissContentBuilder.Build(service, result, name, repository, HitGuidance, NoHitGuidance);
+                return Task.FromResult(new ToolResult { Success = true, Content = result });
             }
 
+            result = InsertCompiledOutNote(result, service.GetIndexedLines, context.MaxResultLength);
             return Task.FromResult(new ToolResult { Success = true, Content = result });
+        }
+
+        /// <summary>Characters held back from the whole-line budget for the compiled-out note and its line breaks.</summary>
+        internal const int CompiledOutNoteReserve = SourceCompiledOutNote.MaxLength + 8;
+
+        /// <summary>
+        /// Adds the <see cref="SourceCompiledOutNote"/> line after the body, ahead of its
+        /// <c>[Output truncated at line …]</c> notice when there is one. Placed first, ahead of the
+        /// body, when the body already fills the result budget, so ToolExecutor's character cut
+        /// cannot remove it.
+        /// </summary>
+        internal static string InsertCompiledOutNote(string content, Func<string, string[]?> lineLookup, int maxResultLength)
+        {
+            string? note = SourceCompiledOutNote.ForFunctionDefinitionResult(content, lineLookup);
+            if (note == null) return content;
+
+            string nl = Environment.NewLine;
+            string body = content.TrimEnd();
+            int cap = maxResultLength > 0 ? maxResultLength : int.MaxValue;
+
+            if ((long)body.Length + CompiledOutNoteReserve > cap)
+            {
+                return note + nl + nl + body + nl;
+            }
+
+            int notice = body.LastIndexOf("\n[Output truncated at line ", StringComparison.Ordinal);
+            return notice >= 0
+                ? body.Substring(0, notice).TrimEnd() + nl + nl + note + nl + body.Substring(notice + 1) + nl
+                : body + nl + nl + note + nl;
         }
 
         /// <summary>

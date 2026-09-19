@@ -141,6 +141,14 @@ the place named in the item.
   GnollHack source at the recorded HEAD.
 - **Do not accept a verdict without a citation**: every CONFIRMED and REFUTED carries `path:line`
   evidence at that HEAD.
+- **Do not let the wording critique become a style review.** The validator checks facts. Its
+  critique may block only on wording that **states or clearly implies a mechanic the source
+  contradicts or does not support** — a false fact, a wrong condition, a missing exception that
+  would make a player act wrongly. Tone, brevity, a phrasing the validator would have preferred, a
+  detail that could be added, and a condition the text does not assert are not defects: they go
+  under *Optional suggestions* and never change the verdict. How a page reads is owned by the wiki's
+  own skills (`wiki_editing`) and settled by the execution session, which may reword as long as no
+  mechanic changes. The § 4.2 template carries this rule; do not tighten it in a handoff.
 
 ### The Execution Prompt
 
@@ -262,6 +270,10 @@ user's instruction, not by an incident. Its purpose is that the one action that 
 compete for attention with steps the agent could have taken itself. The three-step shape was set
 on 2026-09-18 by the user's instruction, so that every mechanic reaching a player-facing page is
 checked against the GnollHack source by a session that did not write it, before the page changes.
+The limit on the wording critique — blocking issues are factual and carry a citation, everything
+else is an optional suggestion — was set on 2026-09-19 by the user's instruction, after validations
+failed on wording that was true and within the wiki's guidelines, and one second-round validator
+dismissed the first round's critique outright.
 
 ## 4. Templates
 
@@ -364,16 +376,27 @@ Task:
    - REFUTED: the source contradicts it. Cite exact path:line and state the correct mechanic
      in a player's vocabulary.
    - UNVERIFIABLE: you could not find source that settles it. Say where you looked.
-3. Critique the proposed page text against what you confirmed: name any wording that implies
-   more than the source supports (an over-generalization, a missing monster or item exception,
-   a wrong condition). List the issues, or write "None".
+3. Check the proposed page text against what you confirmed, for factual problems only. A
+   BLOCKING ISSUE is wording that states, or clearly implies, a game mechanic that the source
+   contradicts or does not support: a false fact, a wrong condition, or a missing exception
+   that would make a player act wrongly. Judge the text as written; do not fail it for
+   something it does not say. The following are NOT blocking issues and must not cause a FAIL:
+   tone, style, length, a phrasing you would have preferred, a detail that could be added, a
+   simplification that stays true, and anything about how wiki pages are written — the wiki
+   has its own editing rules, and the session that makes the edit applies them. If you have
+   such remarks, put them under "Optional suggestions"; they are advice and do not affect the
+   verdict. When in doubt whether a wording point is blocking, ask: would a player who
+   believes this sentence be wrong about the game? If not, it is a suggestion.
 
 Report format:
 - A table: | Claim | Verdict | GnollHack source citation (path:line) | Notes / corrected statement |
-- Wording critique: <the issues, or "None">
+- Blocking wording issues: <each with the source citation that shows the text is wrong, or "None">
+- Optional suggestions: <remarks that do not affect the verdict, or "None">
 - The very last line of your response must be exactly "VALIDATION: PASS" or "VALIDATION: FAIL",
   with nothing after it — no explanation, no closing remark.
-  VALIDATION: PASS is permitted ONLY if every claim is CONFIRMED and the wording critique is "None".
+  VALIDATION: PASS is required when every claim is CONFIRMED and "Blocking wording issues" is
+  "None", whatever "Optional suggestions" contains. VALIDATION: FAIL is permitted only for a
+  claim that is REFUTED or UNVERIFIABLE, or for a blocking wording issue that carries a citation.
 ````
 
 ### 4.3 Execution Prompt
@@ -461,6 +484,15 @@ analyst revises the claims and the proposed text, writes the next `_v<V>` of the
 set, and hands off again; nothing dependent starts. A set member with no content change is copied
 verbatim with the one-line harmonization note, and a plan already approved stays approved when
 its copy is verbatim.
+
+**A FAIL that rests on wording alone is read before it is obeyed.** When every claim came back
+CONFIRMED and the FAIL cites only the page text, check the cited issue against § 3's test — would
+a player who believes the sentence be wrong about the game? If it names a real factual problem,
+revise as above. If it is a style remark (no citation, or a preference), say so to the user and
+ask whether to re-run Step 2 on the unchanged document or to hand Step 3 over as it stands; do
+not rewrite validated text to satisfy a style opinion, because the rewrite is what then needs
+validating. *Optional suggestions* on a PASS need no action; mention them in the round's chat
+message only when one is worth the wiki session's attention.
 
 **Do not poll, do not proceed on a timer, and do not read a clean `C:\hmp\GnollHackWiki` working
 tree as confirmation.** The wiki session leaves its changes uncommitted (§ 3), so a clean tree is

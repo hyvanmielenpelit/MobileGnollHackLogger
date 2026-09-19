@@ -82,3 +82,5 @@ Search tips:
 4. **Deep Dive**: If the context lines aren't enough or the output gets truncated, use `source_code_view` to read the entire function or file.
 
 After finding relevant code, use source_code_view to see more context around the match.
+
+A result may end with a `[Not compiled: …]` line naming lines that sit inside `#if 0`; they are not part of the game.

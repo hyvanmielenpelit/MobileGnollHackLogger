@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { TestBed, fakeAsync, flush, tick } from '@angular/core/testing';
 
 import { BenchmarkCompletionSoundService } from './benchmark-completion-sound.service';
 
@@ -72,7 +72,7 @@ describe('BenchmarkCompletionSoundService', () => {
     expect(fakeAudio.currentTime).toBe(0);
   });
 
-  it('should resolve "played" on a successful play', async () => {
+  it('should resolve "played" on a successful play, via the element on a visible tab', async () => {
     const outcome = await service.play('run:1');
     expect(outcome).toBe('played');
     expect(fakeAudio.playCallCount).toBe(1);
@@ -242,7 +242,34 @@ describe('BenchmarkCompletionSoundService', () => {
       await expectAsync(service.arm()).toBeResolved();
     });
 
-    it('plays through the decoded buffer once armed, never touching the fallback element', async () => {
+    it('on a visible tab, tries the element first and never touches the armed buffer when the element succeeds', async () => {
+      fetchSpy.and.returnValue(Promise.resolve(okResponse()));
+      await service.arm();
+      const buffersBeforePlay = fakeCtx.createdBufferSources.length;
+      const resumesBeforePlay = fakeCtx.resumeCalls;
+
+      const outcome = await service.play('run:1');
+
+      expect(outcome).toBe('played');
+      expect(fakeAudio.playCallCount).toBe(1);
+      // Only the silent buffer arm() itself started; play() never created another.
+      expect(fakeCtx.createdBufferSources.length).toBe(buffersBeforePlay);
+      expect(fakeCtx.resumeCalls).toBe(resumesBeforePlay);
+    });
+
+    it('falls back to the armed buffer when the element is blocked on a visible tab', async () => {
+      fetchSpy.and.returnValue(Promise.resolve(okResponse()));
+      await service.arm();
+      fakeAudio.playResult = new DOMException('autoplay refused', 'NotAllowedError');
+
+      const outcome = await service.play('run:1');
+
+      expect(outcome).toBe('played');
+      expect(fakeCtx.createdBufferSources.some(s => s.started)).toBeTrue();
+    });
+
+    it('plays through the decoded buffer first on a hidden tab, never touching the fallback element', async () => {
+      spyOnProperty(document, 'hidden', 'get').and.returnValue(true);
       fetchSpy.and.returnValue(Promise.resolve(okResponse()));
 
       await service.arm();
@@ -253,7 +280,8 @@ describe('BenchmarkCompletionSoundService', () => {
       expect(fakeAudio.playCallCount).toBe(0);
     });
 
-    it('resumes a suspended context before playing the buffer', async () => {
+    it('resumes a suspended context before playing the buffer on a hidden tab', async () => {
+      spyOnProperty(document, 'hidden', 'get').and.returnValue(true);
       fetchSpy.and.returnValue(Promise.resolve(okResponse()));
       await service.arm();
       fakeCtx.state = 'suspended';
@@ -262,6 +290,80 @@ describe('BenchmarkCompletionSoundService', () => {
       await service.play('run:1');
 
       expect(fakeCtx.resumeCalls).toBe(1);
+    });
+  });
+
+  describe('the resume timeout', () => {
+    let fakeCtx: FakeAudioContext;
+
+    beforeEach(() => {
+      fakeCtx = new FakeAudioContext();
+      fakeCtx.state = 'suspended';
+      spyOn(window as any, 'AudioContext').and.returnValue(fakeCtx);
+    });
+
+    it('falls through to the element within 1000 ms when ctx.resume() never settles', fakeAsync(() => {
+      // A visible tab tries the element first; it is blocked here so the buffer path — the one
+      // under test — actually runs. The buffer's own decodedBuffer is set directly, bypassing
+      // arm()'s fetch/decode, since only the resume race matters to this spec.
+      fakeAudio.playResult = new DOMException('autoplay refused', 'NotAllowedError');
+      (service as any).audioContext = fakeCtx;
+      (service as any).decodedBuffer = {} as AudioBuffer;
+      fakeCtx.resume = () => new Promise<void>(() => { /* never settles */ });
+
+      let outcome: string | undefined;
+      service.play('run:1').then(o => { outcome = o; });
+      tick(999);
+      expect(outcome).toBeUndefined();
+      tick(1);
+      flush();
+
+      // The buffer never got past the stuck resume(), so play() resolves with the element's own
+      // (blocked) outcome rather than hanging.
+      expect(outcome).toBe('blocked');
+      expect(fakeCtx.createdBufferSources.length).toBe(0);
+    }));
+  });
+
+  describe('the clock-liveness check', () => {
+    let fakeCtx1: FakeAudioContext;
+    let fakeCtx2: FakeAudioContext;
+    let ctorSpy: jasmine.Spy;
+
+    beforeEach(() => {
+      spyOnProperty(document, 'hidden', 'get').and.returnValue(true);
+      fakeCtx1 = new FakeAudioContext();
+      fakeCtx2 = new FakeAudioContext();
+      // fakeCtx1 is wired in directly, bypassing construction, so the constructor spy is only
+      // ever consulted for the rebuild — the single call every test here expects.
+      ctorSpy = spyOn(window as any, 'AudioContext').and.returnValue(fakeCtx2);
+      (service as any).audioContext = fakeCtx1;
+      (service as any).decodedBuffer = {} as AudioBuffer;
+    });
+
+    it('rebuilds the context once and plays on the rebuilt context when the first clock never advances', async () => {
+      fakeCtx1.stallClock = true;
+
+      const outcome = await service.play('run:1');
+
+      expect(outcome).toBe('played');
+      expect(fakeCtx1.closeCalls).toBe(1);
+      expect(fakeCtx1.createdBufferSources[0].stopped).toBeTrue();
+      expect(ctorSpy).toHaveBeenCalledTimes(1);
+      expect(fakeCtx2.createdBufferSources.some(s => s.started)).toBeTrue();
+      expect(fakeAudio.playCallCount).toBe(0);
+    });
+
+    it('stops the stalled source and falls back to the element when the rebuilt context also stalls', async () => {
+      fakeCtx1.stallClock = true;
+      fakeCtx2.stallClock = true;
+
+      const outcome = await service.play('run:1');
+
+      expect(outcome).toBe('played');
+      expect(fakeCtx1.createdBufferSources[0].stopped).toBeTrue();
+      expect(fakeCtx2.createdBufferSources[0].stopped).toBeTrue();
+      expect(fakeAudio.playCallCount).toBe(1);
     });
   });
 
@@ -323,20 +425,64 @@ describe('BenchmarkCompletionSoundService', () => {
       expect(outcome).toBe('played');
     });
   });
+
+  describe('diagnostics attempts', () => {
+    it('records an attempt for play(), visible on diagnostics.attempts', async () => {
+      await service.play('run:1');
+
+      const attempts = service.diagnostics.attempts;
+      expect(attempts.length).toBe(1);
+      expect(attempts[0].key).toBe('run:1');
+      expect(attempts[0].path).toBe('element');
+      expect(attempts[0].outcome).toBe('played');
+      expect(attempts[0].hidden).toBeFalse();
+    });
+
+    it('records an attempt for prime(), keyed "test"', async () => {
+      await service.prime();
+
+      const attempts = service.diagnostics.attempts;
+      expect(attempts.length).toBe(1);
+      expect(attempts[0].key).toBe('test');
+    });
+
+    it('keeps only the last 10 attempts', async () => {
+      for (let i = 0; i < 12; i++) {
+        await service.play(`run:${i}`);
+      }
+
+      const attempts = service.diagnostics.attempts;
+      expect(attempts.length).toBe(10);
+      expect(attempts[0].key).toBe('run:2');
+      expect(attempts[9].key).toBe('run:11');
+    });
+  });
 });
 
 /** Stands in for the Web Audio graph `arm()` and the buffer playback path build. */
 class FakeAudioContext {
   state: 'running' | 'suspended' | 'closed' = 'running';
   sampleRate = 44100;
+  currentTime = 0;
   resumeCalls = 0;
+  closeCalls = 0;
+  onstatechange: (() => void) | null = null;
   readonly createdBufferSources: FakeBufferSource[] = [];
   readonly decodeAudioDataCalls: ArrayBuffer[] = [];
   readonly destination = {} as AudioDestinationNode;
 
+  /** When true, a buffer source created here never advances `currentTime` — simulates a stalled clock. */
+  stallClock = false;
+
   resume(): Promise<void> {
     this.resumeCalls++;
     this.state = 'running';
+    return Promise.resolve();
+  }
+
+  close(): Promise<void> {
+    this.closeCalls++;
+    this.state = 'closed';
     return Promise.resolve();
   }
 
@@ -345,7 +491,7 @@ class FakeAudioContext {
   }
 
   createBufferSource(): FakeBufferSource {
-    const source = new FakeBufferSource();
+    const source = new FakeBufferSource(this);
     this.createdBufferSources.push(source);
     return source;
   }
@@ -363,8 +509,20 @@ class FakeAudioContext {
 class FakeBufferSource {
   buffer: AudioBuffer | null = null;
   started = false;
+  stopped = false;
+
+  constructor(private readonly ctx: FakeAudioContext) {}
+
   connect(node: any): any { return node; }
-  start(): void { this.started = true; }
+
+  start(): void {
+    this.started = true;
+    if (!this.ctx.stallClock) {
+      this.ctx.currentTime += 1;
+    }
+  }
+
+  stop(): void { this.stopped = true; }
 }
 
 class FakeGainNode {

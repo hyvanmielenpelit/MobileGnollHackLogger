@@ -535,8 +535,18 @@ public static class BenchmarkAssessmentPrompt
     ///     quantity in another notation) and 3h (read the function the cited one hands the effect
     ///     to). ScoringMethodVersion stays 12; CandidateSystemPromptSha256 and ToolGuidesSha256 do not
     ///     move. Verification counts and Gemini cost are not comparable across 33 and 34.
+    /// v35: the flag detectors read "imprecise", "understates", "overstates", "inaccurate" and "the
+    ///     rubric's point" as a stated defect, "opposite", "contrary", "denies" and "inverts" as a
+    ///     stated falsehood, and "beyond the verified" as out-of-rubric. A verdict citing a src/ file
+    ///     not in the indexed source carries a citation note and counts as Indeterminate. An answer's
+    ///     duplicate unverified claims are verified once, the "Suspected false: " form kept. Report
+    ///     wording on the scoring method, accused-sentence outcomes, contested critical errors and the
+    ///     cost block's order; the synthesis receives per-dimension level counts and is told contested
+    ///     findings are advisory. Chat and benchmark alike: the source tools mark lines inside
+    ///     "#if 0", wiki_search.md describes its categories and _policy.md gains one sentence, so
+    ///     ToolGuidesSha256 and CandidateSystemPromptSha256 move. ScoringMethodVersion stays 12.
     /// </summary>
-    public const string HarnessVersion = "34";
+    public const string HarnessVersion = "35";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:
@@ -1218,6 +1228,22 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine("2. Note any refuted claims, second-opinion verdicts, and accuracy deductions. These findings are advisory and did not change any per-question score or level, so do not attempt to re-derive finalScore from them. However, a run containing refuted claims, critical-error splits, or **any answer marked `Accuracy defect recorded: yes` below** must NOT be described as free of factual errors, as having weaknesses confined to omissions, or in any equivalent wording — and the synthesis MUST name those questions in `weaknesses`. An accuracy deduction whose evidence names what the answer got wrong is a factual error this run's own grader found, regardless of the level it was left at. A claim listed as verifier-supported is a fact of the game, whatever the rubric omitted; naming it as embellishment is a grading error, not a finding.");
         sb.AppendLine("3. Produce a holistic finalScore (1-100), key strengths, key weaknesses, and a comprehensive overall review commentary.");
         sb.AppendLine("4. Output ONLY a valid JSON object matching the exact schema specified at the end.");
+        // A refuted claim or a contested critical error is a disagreement between graders, not a
+        // settled fact about the answer — the second reader or the claim verifier may be the one
+        // who is wrong. Naming it as a confirmed defect overstates what the run actually found.
+        sb.AppendLine("5. A refuted claim, and a critical error the second reader or the claim verifier contested, are advisory findings, not confirmed defects: report them as advisory, exactly as the finding is phrased below.");
+        // The level distribution below exists because a synthesis asked to count eighteen "Levels:"
+        // lines itself gets the arithmetic wrong; every count anyone can name a number for belongs to
+        // one of these data blocks, not to counting sentences.
+        sb.AppendLine("6. Every count you state — how many answers sit at a given level, how many claims were supported, refuted or indeterminate — is copied from the data blocks below, never recomputed by rereading or recounting the per-question verdicts. This synthesis feeds no score.");
+        sb.AppendLine();
+        // The distribution the model would otherwise have to derive itself by counting "Levels:"
+        // lines below; handing it over pre-counted is what instruction 6 tells the model to rely on.
+        sb.AppendLine("--- LEVEL DISTRIBUTION (counted by the harness; copy these figures rather than recounting the verdicts below) ---");
+        AppendLevelDistributionLine(sb, "Accuracy", verdicts.Select(v => v.AccuracyLevel));
+        AppendLevelDistributionLine(sb, "Completeness", verdicts.Select(v => v.CompletenessLevel));
+        AppendLevelDistributionLine(sb, "Conciseness", verdicts.Select(v => v.ConcisenessLevel));
+        AppendLevelDistributionLine(sb, "Readability", verdicts.Select(v => v.ReadabilityLevel));
         sb.AppendLine();
         // The digest, not the full board: the synthesis judges no map coordinates, and the digest
         // carries the hero's state that a cross-question finding about board reading turns on.
@@ -1360,5 +1386,23 @@ public static class BenchmarkAssessmentPrompt
 }");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// One line of the LEVEL DISTRIBUTION block: <paramref name="dimension"/> against how many
+    /// answers sit at each of its levels, highest level first, over the non-null values of
+    /// <paramref name="levels"/> — an excluded or ungraded answer contributes nothing. "no scored
+    /// answers" when every value is null, so the line is never empty.
+    /// </summary>
+    private static void AppendLevelDistributionLine(StringBuilder sb, string dimension, IEnumerable<int?> levels)
+    {
+        var byLevel = levels
+            .Where(l => l.HasValue)
+            .GroupBy(l => l!.Value)
+            .OrderByDescending(g => g.Key)
+            .Select(g => $"{g.Count()} answer(s) at level {g.Key}")
+            .ToList();
+        string line = byLevel.Count > 0 ? string.Join(", ", byLevel) : "no scored answers";
+        sb.AppendLine($"{dimension}: {line}");
     }
 }

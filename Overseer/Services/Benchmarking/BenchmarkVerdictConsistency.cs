@@ -171,8 +171,9 @@ public static class BenchmarkVerdictConsistency
     /// keeps that marker sentence from also matching here.
     ///
     /// Run 41's assessor's forms are matched too: the bare "unconfirmed"; "beyond verifiable ..."
-    /// with no following "rubric", which the "beyond ... rubric" alternative requires; "beyond what
-    /// can be verified/confirmed"; "without rubric support", inside the "without support" group
+    /// (and its "beyond verified ..." counterpart) with no following "rubric", which the
+    /// "beyond ... rubric" alternative requires; "beyond what can be verified/confirmed"; "without
+    /// rubric support", inside the "without support" group
     /// because that group otherwise needs "support" directly after "without"; "adjudicab" beside
     /// "adjudicat" for "adjudicable"; and "not established/supported by the source/rubric" beside
     /// the narrower "supported by the rubric" alternative.
@@ -196,7 +197,7 @@ public static class BenchmarkVerdictConsistency
         + @"|without\s+(?:any\s+)?(?:basis|support|source\s+support|corroboration|rubric\s+corroboration|rubric\s+support)"
         + @"|adjudicat|adjudicab"
         + @"|beyond\s+(?:the\s+)?(?:verifiable\s+)?rubric"
-        + @"|beyond\s+(?:the\s+)?verifiable"
+        + @"|beyond\s+(?:the\s+)?(?:verifiable|verified)"
         + @"|beyond\s+what\s+can\s+be\s+(?:verified|confirmed)"
         + @"|outside\s+(?:the\s+)?rubric"
         + @"|not\s+(?:in|from|covered\s+by|supported\s+by|given\s+in)\s+(?:the\s+)?rubric(?!\s*:)"
@@ -215,7 +216,7 @@ public static class BenchmarkVerdictConsistency
     /// evidence naming a real defect alongside an unverifiable claim is a legitimate deduction and must not flag.
     /// </summary>
     private static readonly Regex DefectRegex = new(
-        @"omit|missing|wrong|incorrect|inaccurat|contradic|error|misstat|conflat|false|mischaracteris|mischaracteriz|fails to|does not (?:state|mention|include)|rubric point",
+        @"omit|missing|wrong|incorrect|inaccurat|inaccura\w*|contradic|error|misstat|conflat|false|mischaracteris|mischaracteriz|fails to|does not (?:state|mention|include)|rubric(?:'s)? point|imprecis\w*|understat\w*|overstat\w*",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>
@@ -431,7 +432,7 @@ public static class BenchmarkVerdictConsistency
     // Words that assert the answer said something untrue. Their presence means the deduction has a
     // genuine accuracy basis and must not flag, even if the same string also names an omission.
     private static readonly Regex FalsehoodRegex = new(
-        @"\bwrong|\bincorrect|\binaccurat|\bfalse|contradic|misstat|conflat|mischaracteris|mischaracteriz|reverses|inverts|hallucinat|fabricat|\binvent(?!or)|does not exist|no such|overstate|understate",
+        @"\bwrong|\bincorrect|\binaccurat|\bfalse|contradic|misstat|conflat|mischaracteris|mischaracteriz|reverses|invert\w*|hallucinat|fabricat|\binvent(?!or)|does not exist|no such|overstate|understate|opposite|contrar\w+|den(?:y|ies|ied)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>

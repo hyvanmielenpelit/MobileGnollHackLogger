@@ -96,18 +96,26 @@ describe('BenchmarkCompletionNotificationService', () => {
   });
 
   describe('notify', () => {
-    it('does nothing without permission granted', () => {
+    it('resolves "not-granted" and raises nothing without permission granted', () => {
       FakeNotification.permission = 'default';
-      service.notify('run:1', 'Run finished', 'Suite X — Completed');
+      const outcome = service.notify('run:1', 'Run finished', 'Suite X — Completed');
+      expect(outcome).toBe('not-granted');
       expect(FakeNotification.instances.length).toBe(0);
     });
 
-    it('raises one notification with the key as its tag, and focuses the window on click', () => {
+    it('resolves "unsupported" without touching Notification.permission when the API does not exist', () => {
+      delete (window as any).Notification;
+      const outcome = service.notify('run:1', 'Run finished', 'Suite X — Completed');
+      expect(outcome).toBe('unsupported');
+    });
+
+    it('resolves "shown", raises one notification with the key as its tag, and focuses the window on click', () => {
       FakeNotification.permission = 'granted';
       const focusSpy = spyOn(window, 'focus');
 
-      service.notify('run:1', 'Run finished', 'Suite X — Completed');
+      const outcome = service.notify('run:1', 'Run finished', 'Suite X — Completed');
 
+      expect(outcome).toBe('shown');
       expect(FakeNotification.instances.length).toBe(1);
       const notification = FakeNotification.instances[0];
       expect(notification.title).toBe('Run finished');
@@ -122,10 +130,10 @@ describe('BenchmarkCompletionNotificationService', () => {
       expect(notification.closeCalls).toBe(1);
     });
 
-    it('deduplicates per key, without raising a second notification', () => {
+    it('resolves "duplicate" per key, without raising a second notification', () => {
       FakeNotification.permission = 'granted';
-      service.notify('run:1', 'First', 'Body');
-      service.notify('run:1', 'Second', 'Body');
+      expect(service.notify('run:1', 'First', 'Body')).toBe('shown');
+      expect(service.notify('run:1', 'Second', 'Body')).toBe('duplicate');
       expect(FakeNotification.instances.length).toBe(1);
       expect(FakeNotification.instances[0].title).toBe('First');
     });
@@ -137,7 +145,7 @@ describe('BenchmarkCompletionNotificationService', () => {
       expect(FakeNotification.instances.length).toBe(2);
     });
 
-    it('swallows a constructor exception, such as a platform that requires a service worker', () => {
+    it('resolves "error" and keeps the message in lastError on a constructor exception, such as a platform that requires a service worker', () => {
       FakeNotification.permission = 'granted';
       class ThrowingNotification {
         static permission: NotificationPermission = 'granted';
@@ -147,7 +155,27 @@ describe('BenchmarkCompletionNotificationService', () => {
       }
       (window as any).Notification = ThrowingNotification;
 
-      expect(() => service.notify('run:1', 'Title', 'Body')).not.toThrow();
+      let outcome: string | undefined;
+      expect(() => { outcome = service.notify('run:1', 'Title', 'Body'); }).not.toThrow();
+      expect(outcome).toBe('error');
+      expect(service.lastError).toBe('this platform needs a service worker');
+    });
+
+    it('resets lastError to null on a later successful notify', () => {
+      FakeNotification.permission = 'granted';
+      class ThrowingNotification {
+        static permission: NotificationPermission = 'granted';
+        constructor() {
+          throw new Error('boom');
+        }
+      }
+      (window as any).Notification = ThrowingNotification;
+      service.notify('run:1', 'Title', 'Body');
+      expect(service.lastError).toBe('boom');
+
+      (window as any).Notification = FakeNotification;
+      service.notify('run:2', 'Title', 'Body');
+      expect(service.lastError).toBeNull();
     });
   });
 });

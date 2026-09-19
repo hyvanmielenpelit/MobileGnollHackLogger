@@ -57,8 +57,9 @@ import { SnapshotViewerComponent } from '../../shared/snapshot-viewer/snapshot-v
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import { SystemService } from '../../services/system.service';
 import { BenchmarkCompletionSoundService } from '../../services/benchmark-completion-sound.service';
-import { BenchmarkCompletionNotificationService, BenchmarkNotificationPermissionOutcome } from '../../services/benchmark-completion-notification.service';
+import { BenchmarkCompletionNotificationService, BenchmarkNotificationPermissionOutcome, BenchmarkNotifyOutcome } from '../../services/benchmark-completion-notification.service';
 import { BenchmarkBackgroundActivityService } from '../../services/benchmark-background-activity.service';
+import { BenchmarkPollTickerService, BenchmarkPollTickerHandle } from '../../services/benchmark-poll-ticker.service';
 import { parseServerUtcDate, elapsedMsBetween } from '../../utils/date.util';
 import { formatThinkingLevel, showReasoningBadge, formatServiceTier, formatDifficulty, formatPickerPrice } from '../../utils/model-badge-format.util';
 import { TableState, exactFilter } from '../../shared/data-table/table-state';
@@ -313,6 +314,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   private completionSoundService = inject(BenchmarkCompletionSoundService);
   private completionNotificationService = inject(BenchmarkCompletionNotificationService);
   private backgroundActivity = inject(BenchmarkBackgroundActivityService);
+  private pollTicker = inject(BenchmarkPollTickerService);
   private cdr = inject(ChangeDetectorRef);
 
   activeSubTab: 'run' | 'history' | 'multirun' | 'suites' | 'profiles' | 'modelcomparison' = 'run';
@@ -462,15 +464,23 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   // Active Run Tracking
   private static readonly RUN_POLL_INTERVAL_MS = 2000;
   private static readonly RUN_ELAPSED_TICK_MS = 1000;
+  /**
+   * A single failed poll is noise — a dropped request, a momentary 502 — and stopping the tab's
+   * only view of a run over one of those is worse than the failure itself. Five in a row, at the
+   * run poller's 2 s cadence, is ~10 s of the server genuinely not answering, which is when
+   * polling gives up rather than looping silently forever.
+   */
+  private static readonly MAX_CONSECUTIVE_POLL_FAILURES = 5;
   private runElapsedInterval: any = null;
   lastRunPollAtUtc: string | null = null;
   lastRunPollError: string | null = null;
+  private runPollFailureCount = 0;
   runQuestionsLoadError: string | null = null;
   overseerBuildVersion: string | null = null;
 
   activeRunId: number | null = null;
   activeRunDetail: BenchmarkRunDetailDto | null = null;
-  private pollInterval: any = null;
+  private pollTickerHandle: BenchmarkPollTickerHandle | null = null;
   /**
    * Kept separate from visibilityChangeHandler, which belongs to difficulty polling.
    * One shared field would let whichever poller stops last detach the other's listener.
@@ -517,7 +527,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   activeSeriesId: number | null = null;
   activeSeries: BenchmarkRunSeriesDto | null = null;
-  private seriesPollInterval: any = null;
+  private seriesPollTickerHandle: BenchmarkPollTickerHandle | null = null;
+  private seriesPollFailureCount = 0;
   private seriesVisibilityChangeHandler: (() => void) | null = null;
   /**
    * The series whose poller is live, set before its first poll. While it is set the series owns the
@@ -570,6 +581,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** The reason a notification permission request did not end in `completionNotification` being on. */
   completionNotificationStatus: string | null = null;
+
+  /** One `notify()` call per record, kept for the run diagnostics capture; last 10, oldest dropped first. */
+  private readonly notificationAttempts: {
+    atUtc: string; key: string; hidden: boolean; focused: boolean; outcome: BenchmarkNotifyOutcome;
+  }[] = [];
+  private static readonly MAX_NOTIFICATION_ATTEMPTS = 10;
 
   /** Always-rendered status line beside the two checkboxes: whichever of the two has something to say. */
   get completionSignalsStatusText(): string {
@@ -3329,11 +3346,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   private startSeriesPolling(seriesId: number): void {
     this.stopSeriesPolling();
+    this.seriesPollFailureCount = 0;
     this.lockedSeriesId = seriesId;
     this.backgroundActivity.acquireForSeries(seriesId);
     this.lastSeriesPollAttemptAtMs = Date.now();
     this.pollSeries(seriesId);
-    this.seriesPollInterval = setInterval(() => {
+    this.seriesPollTickerHandle = this.pollTicker.start(AdminBenchmarkComponent.SERIES_POLL_INTERVAL_MS, () => {
       if (typeof document !== 'undefined' && document.hidden) {
         const hiddenPollDue = (this.completionSound || this.completionNotification)
           && (Date.now() - this.lastSeriesPollAttemptAtMs) >= AdminBenchmarkComponent.HIDDEN_POLL_INTERVAL_MS;
@@ -3343,7 +3361,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       }
       this.lastSeriesPollAttemptAtMs = Date.now();
       this.pollSeries(seriesId);
-    }, AdminBenchmarkComponent.SERIES_POLL_INTERVAL_MS);
+    });
 
     if (typeof document !== 'undefined') {
       this.seriesVisibilityChangeHandler = () => {
@@ -3356,9 +3374,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   private stopSeriesPolling(): void {
-    if (this.seriesPollInterval) {
-      clearInterval(this.seriesPollInterval);
-      this.seriesPollInterval = null;
+    if (this.seriesPollTickerHandle) {
+      this.seriesPollTickerHandle();
+      this.seriesPollTickerHandle = null;
     }
     if (this.seriesVisibilityChangeHandler && typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this.seriesVisibilityChangeHandler);
@@ -3368,7 +3386,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       this.lockedSeriesId = null;
       this.backgroundActivity.release();
       // A run poller still live after its series stopped keeps the tab's lock for itself.
-      if (this.pollInterval && this.activeRunId != null) {
+      if (this.pollTickerHandle && this.activeRunId != null) {
         this.backgroundActivity.acquireForRun(this.activeRunId);
       }
     }
@@ -3377,6 +3395,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   private pollSeries(seriesId: number): void {
     this.benchmarkService.getRunSeries(seriesId).subscribe({
       next: (series) => {
+        this.seriesPollFailureCount = 0;
         this.activeSeries = series;
         // Chimes once per series actually watched live: seriesIsLive keeps re-adding the id while
         // it runs, and the transition into Completed/Cancelled/Failed or Stopped (which needs the
@@ -3408,7 +3427,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       },
       error: (err) => {
         console.error('Failed to poll benchmark run series', err);
-        this.stopSeriesPolling();
+        this.seriesPollFailureCount++;
+        if (this.seriesPollFailureCount >= AdminBenchmarkComponent.MAX_CONSECUTIVE_POLL_FAILURES) {
+          this.stopSeriesPolling();
+        }
       }
     });
   }
@@ -3627,12 +3649,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   private startPolling(runId: number) {
     this.stopPolling();
+    this.runPollFailureCount = 0;
     if (this.lockedSeriesId === null) {
       this.backgroundActivity.acquireForRun(runId);
     }
     this.lastRunPollAttemptAtMs = Date.now();
     this.pollRunDetail(runId);
-    this.pollInterval = setInterval(() => {
+    this.pollTickerHandle = this.pollTicker.start(AdminBenchmarkComponent.RUN_POLL_INTERVAL_MS, () => {
       if (typeof document !== 'undefined' && document.hidden) {
         const hiddenPollDue = (this.completionSound || this.completionNotification)
           && (Date.now() - this.lastRunPollAttemptAtMs) >= AdminBenchmarkComponent.HIDDEN_POLL_INTERVAL_MS;
@@ -3642,7 +3665,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       }
       this.lastRunPollAttemptAtMs = Date.now();
       this.pollRunDetail(runId);
-    }, AdminBenchmarkComponent.RUN_POLL_INTERVAL_MS);
+    });
 
     if (typeof document !== 'undefined') {
       this.runVisibilityChangeHandler = () => {
@@ -3655,9 +3678,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   private stopPolling() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = null;
+    if (this.pollTickerHandle) {
+      this.pollTickerHandle();
+      this.pollTickerHandle = null;
     }
     if (this.runVisibilityChangeHandler && typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this.runVisibilityChangeHandler);
@@ -3713,7 +3736,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   /**
    * Marks the tab title even when both signals are off, so a hidden tab shows the completion
    * either way. The sound and the notification are then handled independently — either, both or
-   * neither may be on, and the notification does not require the sound to have run.
+   * neither may be on, and the notification does not require the sound to have run. The
+   * notification fires whenever the checkbox is ticked, whatever the tab's own focus: a completion
+   * is worth surfacing on the desktop even for an operator looking straight at the tab, and a tab
+   * that merely lacks focus (another window in front, not actually hidden) is not a case worth
+   * special-casing away.
    */
   private signalCompletion(key: string): void {
     this.markTabTitleForCompletion();
@@ -3732,18 +3759,25 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       });
     }
 
-    if (this.completionNotification && this.tabIsBackgrounded) {
+    if (this.completionNotification) {
       const body = this.completionNotificationBody(key);
       if (body) {
-        this.completionNotificationService.notify(key, 'AI Benchmark', body);
+        const hidden = typeof document !== 'undefined' ? document.hidden : false;
+        const focused = typeof document !== 'undefined' ? document.hasFocus() : true;
+        const outcome = this.completionNotificationService.notify(key, 'AI Benchmark', body);
+        this.recordNotificationAttempt({ atUtc: new Date().toISOString(), key, hidden, focused, outcome });
       }
     }
   }
 
-  /** Whether the notification should fire: the tab is not the one the operator is looking at. */
-  private get tabIsBackgrounded(): boolean {
-    if (typeof document === 'undefined') return true;
-    return document.hidden || !document.hasFocus();
+  /** Keeps the last {@link MAX_NOTIFICATION_ATTEMPTS} notification attempts for the diagnostics capture. */
+  private recordNotificationAttempt(attempt: {
+    atUtc: string; key: string; hidden: boolean; focused: boolean; outcome: BenchmarkNotifyOutcome;
+  }): void {
+    this.notificationAttempts.push(attempt);
+    if (this.notificationAttempts.length > AdminBenchmarkComponent.MAX_NOTIFICATION_ATTEMPTS) {
+      this.notificationAttempts.shift();
+    }
   }
 
   /** `Run #54 — <suite name> — <status>` or `Series #N — k of n runs — <status>`. */
@@ -3877,6 +3911,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       next: (run) => {
         this.lastRunPollAtUtc = new Date().toISOString();
         this.lastRunPollError = null;
+        this.runPollFailureCount = 0;
         this.activeRunDetail = run;
         const statusStr = this.formatStatus(run.status);
         if (statusStr === 'Running') {
@@ -3923,9 +3958,15 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         const msg = typeof err?.error === 'string' ? err.error : (err?.error?.message || err?.message || 'Polling failed');
         this.lastRunPollError = `${msg}${httpStatus}`;
         console.error('Failed to poll run detail', err);
-        this.rerunLaunchPending = false;
-        this.rerunLaunchedAtMs = null;
-        this.stopPolling();
+        this.runPollFailureCount++;
+        // One failed poll is noise; only a run of MAX_CONSECUTIVE_POLL_FAILURES actually stops the
+        // tab's only view of the run, and rerunLaunchPending is cleared at the same moment, not
+        // on every transient failure.
+        if (this.runPollFailureCount >= AdminBenchmarkComponent.MAX_CONSECUTIVE_POLL_FAILURES) {
+          this.rerunLaunchPending = false;
+          this.rerunLaunchedAtMs = null;
+          this.stopPolling();
+        }
       }
     });
   }
@@ -4541,7 +4582,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       const verifiedRunWide = this.runIsTerminal ? (run.claimVerifiedAnswerCount ?? answersVerified) : answersVerified;
       const secondGradedRunWide = this.runIsTerminal ? (run.secondOpinionGradedAnswerCount ?? answersSecondGraded) : answersSecondGraded;
       const scopedPair = this.runHasRerunScope ? ` (re-run scope: ${this.runVerifiedCount}, ${this.runSecondOpinionCount})` : '';
-      lines.push(`Verified ${verifiedRunWide}, second-graded ${secondGradedRunWide}${scopedPair}`);
+      lines.push(`Answers with verified claims: ${verifiedRunWide}, second-graded ${secondGradedRunWide}${scopedPair}`);
       if (this.runHasRerunScope) {
         const scopeLabel = this.runIsTerminal ? 'Failed-question re-run covered' : 'Failed-question re-run in progress over';
         lines.push(`${scopeLabel}: ${this.effectiveRerunScope.map(i => `Q${i}`).join(', ')}`);
@@ -4743,7 +4784,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
     // --- POLLING ---
     lines.push('--- POLLING ---');
-    const runPollStr = this.pollInterval ? `active every ${AdminBenchmarkComponent.RUN_POLL_INTERVAL_MS} ms` : 'stopped';
+    const runPollStr = this.pollTickerHandle
+      ? `active every ${AdminBenchmarkComponent.RUN_POLL_INTERVAL_MS} ms (${this.pollTickerHandle.mode})`
+      : 'stopped';
     lines.push(`Run poll: ${runPollStr}`);
     const tickerStr = this.runElapsedInterval ? `active every ${AdminBenchmarkComponent.RUN_ELAPSED_TICK_MS} ms` : 'stopped';
     lines.push(`Elapsed ticker: ${tickerStr}`);
@@ -4752,17 +4795,31 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       lines.push(`Last poll: ${this.lastRunPollAtUtc} (${pollAgoSec}s ago)`);
     }
     if (this.lastRunPollError) {
-      lines.push(`Last poll error: ${this.lastRunPollError}`);
+      lines.push(`Last poll error: ${this.lastRunPollError} (consecutive failures: ${this.runPollFailureCount})`);
     }
     lines.push(`Document hidden: ${typeof document !== 'undefined' ? document.hidden : false}, focused: ${typeof document !== 'undefined' ? document.hasFocus() : false}`);
     const soundDiag = this.completionSoundService.diagnostics;
     lines.push(`Completion sound: ${this.completionSound ? 'enabled' : 'disabled'}, last outcome ${this.lastCompletionSoundOutcome ?? 'n/a'}`);
     lines.push(`  armed=${soundDiag.armed}, arming=${soundDiag.arming}, AudioContext state=${soundDiag.audioContextState ?? 'n/a'}, `
       + `path=${soundDiag.lastPlayPath ?? 'n/a'}, deferred settle=${soundDiag.lastDeferredSettleMs != null ? soundDiag.lastDeferredSettleMs + ' ms' : 'n/a'}`);
+    lines.push('  attempts:');
+    for (const a of soundDiag.attempts) {
+      lines.push(`    ${a.atUtc} key=${a.key} hidden=${a.hidden} focused=${a.focused} path=${a.path} `
+        + `ctxBefore=${a.contextStateBefore ?? 'n/a'} ctxAfter=${a.contextStateAfter ?? 'n/a'} `
+        + `clockAdvanced=${a.clockAdvanced ?? 'n/a'} rebuilt=${a.rebuilt} outcome=${a.outcome}`);
+    }
+    lines.push(`  context states: ${soundDiag.contextStateEvents.length
+      ? soundDiag.contextStateEvents.map(e => `${e.atUtc} ${e.state}`).join(', ')
+      : 'none'}`);
     const notificationSupported = this.completionNotificationService.isSupported();
     const notificationPermission = notificationSupported && typeof Notification !== 'undefined' ? Notification.permission : 'n/a';
     lines.push(`Completion notification: ${this.completionNotification ? 'enabled' : 'disabled'}, supported=${notificationSupported}, `
-      + `permission=${notificationPermission}, status=${this.completionNotificationStatus ?? 'n/a'}`);
+      + `permission=${notificationPermission}, status=${this.completionNotificationStatus ?? 'n/a'}`
+      + `${this.completionNotificationService.lastError ? `, last error: ${this.completionNotificationService.lastError}` : ''}`);
+    lines.push('  attempts:');
+    for (const a of this.notificationAttempts) {
+      lines.push(`    ${a.atUtc} key=${a.key} hidden=${a.hidden} focused=${a.focused} outcome=${a.outcome}`);
+    }
     lines.push(`Background lock: ${this.backgroundActivity.state}`
       + `${this.backgroundActivity.heldName ? ` (${this.backgroundActivity.heldName})` : ''}`
       + `${this.backgroundActivity.lastError ? `, error: ${this.backgroundActivity.lastError}` : ''}`);

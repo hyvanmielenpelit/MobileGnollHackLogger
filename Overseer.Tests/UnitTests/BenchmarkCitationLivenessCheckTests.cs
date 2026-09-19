@@ -96,11 +96,25 @@ public class BenchmarkCitationLivenessCheckTests
     [InlineData("NetHack src/priest.c:10")]
     [InlineData("src/priest.c:2")]
     [InlineData("src/priest.c:500")]
-    [InlineData("src/missing.c:10")]
     [InlineData(null)]
     public void ACitationThatIsNotASingleLiveCheckableSourceLine_GetsNoNote(string? citation)
     {
         Assert.Null(Check().NoteFor(citation));
+    }
+
+    [Fact]
+    public void ACitationOfAFileNotInTheIndex_GetsTheMissingFileNote()
+    {
+        // The file is absent from the corpus entirely — never indexed, or dropped for exceeding
+        // the indexer's per-file size limit; the note's wording is the same for both.
+        Assert.Equal("cited file src/mattackm.c is not in the indexed source", Check().NoteFor("src/mattackm.c:40"));
+    }
+
+    [Fact]
+    public void ACitationOfAnIndexedFile_DoesNotGetTheMissingFileNote()
+    {
+        Assert.Equal("cited function priest_talk has no live call site", Check().NoteFor("src/priest.c:10"));
+        Assert.Null(Check().NoteFor("src/priest.c:18"));
     }
 
     [Fact]

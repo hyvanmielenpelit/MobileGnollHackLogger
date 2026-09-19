@@ -172,6 +172,7 @@ namespace Overseer.Services.Tools
             if (!filenamesOnly)
             {
                 content = AppendDefinitionHint(content, service is NetHackSourceCodeService ? "nethack" : "gnollhack", context.MaxResultLength);
+                content = AppendCompiledOutNote(content, service.GetIndexedLines, context.MaxResultLength);
             }
 
             if (context.SpoilerFreeMode)
@@ -196,6 +197,22 @@ namespace Overseer.Services.Tools
             return (long)content.Length + 2 + hint.Length <= cap
                 ? content + "\n\n" + hint
                 : hint + "\n\n" + content;
+        }
+
+        /// <summary>
+        /// Adds the <see cref="SourceCompiledOutNote"/> pointer after the result, or before it when
+        /// the result would otherwise push the note past the <paramref name="maxResultLength"/> cut
+        /// that ToolExecutor applies.
+        /// </summary>
+        internal static string AppendCompiledOutNote(string content, Func<string, string[]?> lineLookup, int maxResultLength)
+        {
+            string? note = SourceCompiledOutNote.ForSearchMatches(content, lineLookup);
+            if (note == null) return content;
+
+            int cap = maxResultLength > 0 ? maxResultLength : int.MaxValue;
+            return (long)content.Length + 2 + note.Length <= cap
+                ? content + "\n\n" + note
+                : note + "\n\n" + content;
         }
 
         private const int ProbeMaxResults = 3;

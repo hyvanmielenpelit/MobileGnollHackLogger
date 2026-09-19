@@ -3,6 +3,9 @@ import { Injectable } from '@angular/core';
 /** What `requestPermission` resolves to; `'unsupported'` covers a browser or context with no API at all. */
 export type BenchmarkNotificationPermissionOutcome = 'granted' | 'denied' | 'default' | 'unsupported';
 
+/** What `notify` resolves to. `'not-granted'` covers both an unprompted and a denied permission. */
+export type BenchmarkNotifyOutcome = 'shown' | 'duplicate' | 'not-granted' | 'unsupported' | 'error';
+
 /**
  * The optional desktop notification the AI Benchmark run tab raises alongside, or instead of,
  * the completion sound (`BenchmarkCompletionSoundService`). The two are independent by design:
@@ -18,6 +21,9 @@ export type BenchmarkNotificationPermissionOutcome = 'granted' | 'denied' | 'def
 })
 export class BenchmarkCompletionNotificationService {
   private readonly notifiedKeys = new Set<string>();
+
+  /** The constructor's exception message from the most recent `'error'` outcome; `null` otherwise. */
+  lastError: string | null = null;
 
   isSupported(): boolean {
     return typeof window !== 'undefined' && 'Notification' in window && window.isSecureContext;
@@ -48,11 +54,19 @@ export class BenchmarkCompletionNotificationService {
    * only while permission is already `granted` — this never itself prompts. The constructor is
    * wrapped in `try/catch` because it throws on platforms that require a service worker
    * (`showNotification` on a `ServiceWorkerRegistration` instead); the application has none and
-   * must not gain one solely for this.
+   * must not gain one solely for this. `lastError` carries that exception's message for a caller
+   * that wants to report it; every other outcome resets it to `null`.
    */
-  notify(key: string, title: string, body: string): void {
-    if (!this.isSupported() || Notification.permission !== 'granted') return;
-    if (this.notifiedKeys.has(key)) return;
+  notify(key: string, title: string, body: string): BenchmarkNotifyOutcome {
+    if (!this.isSupported()) {
+      this.lastError = null;
+      return 'unsupported';
+    }
+    if (Notification.permission !== 'granted') {
+      this.lastError = null;
+      return 'not-granted';
+    }
+    if (this.notifiedKeys.has(key)) return 'duplicate';
     this.notifiedKeys.add(key);
 
     try {
@@ -61,8 +75,12 @@ export class BenchmarkCompletionNotificationService {
         window.focus();
         notification.close();
       };
-    } catch {
+      this.lastError = null;
+      return 'shown';
+    } catch (err) {
       // A platform that requires a service worker for notifications gets none, silently.
+      this.lastError = err instanceof Error ? err.message : String(err);
+      return 'error';
     }
   }
 }

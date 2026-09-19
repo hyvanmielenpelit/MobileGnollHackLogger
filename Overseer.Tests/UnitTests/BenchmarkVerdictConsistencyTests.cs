@@ -308,6 +308,32 @@ public class BenchmarkVerdictConsistencyTests
             unverifiedClaimCount: 1));
     }
 
+    [Fact]
+    public void IsUnverifiabilityGroundedDeduction_UnderstatesTheRubricsPoint_DoesNotFlag()
+    {
+        // "adjudicable" alone would read as an ungrounded withholding; the widened DefectRegex
+        // ("understat\w*", "rubric(?:'s)? point") must recognise this as a named defect instead.
+        const string evidence =
+            "Everything adjudicable in the answer is correct, but it understates the rubric's point.";
+        Assert.False(BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
+            accuracyLevel: 5,
+            accuracyEvidence: evidence,
+            unverifiedClaimCount: 1));
+    }
+
+    [Fact]
+    public void IsUnverifiabilityGroundedDeduction_BeyondVerifiedVariant_Flags()
+    {
+        // The out-of-rubric vocabulary that matches "beyond ... verifiable" also matches
+        // "beyond ... verified".
+        const string evidence =
+            "The answer lists a component set broader than, and beyond the verified, component list the rubric gives.";
+        Assert.True(BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(
+            accuracyLevel: 5,
+            accuracyEvidence: evidence,
+            unverifiedClaimCount: 1));
+    }
+
     [Theory]
     // Assessor evidence naming unverifiability through forms that carry no "verif" root at all: a
     // bare denial of support or of established standing, a claim the source entry itself does not
@@ -437,6 +463,18 @@ public class BenchmarkVerdictConsistencyTests
         Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(3, null));
         Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(3, ""));
         Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(3, "   "));
+    }
+
+    [Fact]
+    public void IsOmissionGroundedAccuracyDeduction_StatesTheOpposite_DoesNotFlag()
+    {
+        // "omits" alone would read as a pure omission; the widened FalsehoodRegex ("opposite") must
+        // recognise the sentence as a genuine falsehood instead.
+        const string evidence =
+            "The answer states the opposite of what the rubric says about the prayer timeout, and omits nothing but that.";
+        Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
+            accuracyLevel: 4,
+            accuracyEvidence: evidence));
     }
 
     [Fact]

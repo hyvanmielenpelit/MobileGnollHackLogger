@@ -1052,6 +1052,16 @@ namespace Overseer.Services
             return sb.ToString();
         }
 
+        /// <summary>The indexed content lines for a file, resolved the same way as <see cref="GetFileExcerpt"/>, or null when not indexed.</summary>
+        public string[]? GetIndexedLines(string relativePath)
+        {
+            relativePath = relativePath.Replace('\\', '/');
+            if (_documents.TryGetValue(relativePath, out var doc)) return doc.ContentLines;
+
+            doc = _documents.Values.FirstOrDefault(d => d.RelativePath.Equals(relativePath, StringComparison.OrdinalIgnoreCase));
+            return doc?.ContentLines;
+        }
+
         public IEnumerable<ConstantInfo> GetConstants(string namePattern, string? prefixFilter)
         {
             var results = _constants.Values.AsEnumerable();

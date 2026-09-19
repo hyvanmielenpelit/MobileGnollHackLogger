@@ -182,6 +182,33 @@ guide, so `ToolGuidesSha256` does not fingerprint it, and it reaches chat and be
 line-pattern heuristic: a missed definition yields no pointer, and a false one sends the model to
 `get_function_definition`, whose miss payload redirects it.
 
+**The compiled-out note, from harness 35 (the runs 57 and 59 round, 2026-09-19).** A result of
+`get_function_definition`, `source_code_view` or `source_code_search` may carry one extra line opening
+`[Not compiled: `, written by `Overseer/Services/Tools/SourceCompiledOutNote.cs` for a `.c` or `.h`
+file of either repository:
+
+- **`get_function_definition` and `source_code_view`** append, after the body and ahead of any
+  `[Output truncated at line …]` notice, *"[Not compiled: file lines A-B (and C-D) are inside #if 0 ...
+  #endif. They show removed or disabled code, not what the game does; the live code is outside
+  them.]"* (*"file line A is"* for a single line), naming up to three ranges and then `and N more`,
+  never longer than **300 characters**. `source_code_view` holds 308 characters back from its
+  whole-line budget for it, as for the definition pointer, and places it after that pointer;
+  `get_function_definition`, whose body is chunked by lines rather than characters, places the note
+  first instead when the body already fills `ToolExecutor`'s cap.
+- **`source_code_search`** appends *"[Not compiled: the match at <file>:<line> is inside #if 0 ...
+  #endif.]"* (*"the matches at … and … are"* for two) when a `>>>`-marked line lies in such a region,
+  naming at most two matches — never on
+  the miss payload and never with `filenames_only: true` — and places it first when the result would
+  push it past `ToolExecutor`'s cap, as the definition pointer does.
+
+A region is opened only by a literal `#if 0` (whitespace-tolerant, `# if 0` included) and ends at its
+matching `#endif`, `#else` or `#elif`; nesting is tracked across every `#if`, `#ifdef` and `#ifndef`,
+and the scan starts at the top of the file, so a range that begins inside a region is recognised. No
+other condition — `#ifdef SOME_FLAG` included — is ever treated as compiled out. The note is an
+**ordinary success**, tool output and not a tool guide, so `ToolGuidesSha256` does not fingerprint it;
+the helper never throws into the tool, and on any exception the result carries no note. A result that
+shows `#if 0` lines with no note is either a run from before this round or a regression.
+
 **Result shape and ranking** (`SourceCodeService.SearchFiles`): matches are grouped by file,
 files are **ordered by descending match-line count and then `Take(maxResults)`** — `max_results`
 caps files, not individual matches, but files *are* ranked, contrary to a "no ranking" reading of
@@ -469,6 +496,17 @@ advice is to replace a generic word with a more distinctive one.
 > `TermQuery` against a `namespace` field parsed from each file's YAML-style frontmatter
 > (default `"article"` when a file has no frontmatter or no `namespace:` key) — the two "category"
 > concepts are not the same mechanism despite the similar name.
+
+**What `wiki_search.md` tells the model about `category`, from harness 35 (the runs 57 and 59 round,
+2026-09-19).** The guide lists the directories and says two things the corpus layout makes true:
+`Guides` holds only the articles about the Gnoll Overseer app itself (introduction, advanced guide,
+technological overview) and no gameplay guide; and the game-mechanics articles — spell casting, saving
+throws, praying, skills in general, eating — sit at the wiki root, in no directory, so **any**
+`category` excludes them and a mechanics question omits it. Run 59 made five `category: Guides`
+calls on game questions, and about 20 of its 45 `wiki_search` calls returned topically irrelevant
+articles (Q1, Q9, Q11, Q13, Q15, Q16) while `Spell Casting.md` sat at the root. The guide names only subjects that exist at the root on disk; re-check that list against the wiki
+before editing it, since the wiki moves independently of this repository. The sentence moves
+`ToolGuidesSha256`, not `CandidateSystemPromptSha256`.
 
 **`nethack_wiki_view` article resolution prefers an exact title from harness 27, and a non-exact
 resolution has been announced rather than silent since the run-36 round (2026-09-11).**

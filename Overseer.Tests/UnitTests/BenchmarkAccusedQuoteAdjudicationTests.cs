@@ -515,6 +515,51 @@ public class BenchmarkAccusedQuoteAdjudicationTests
         Assert.Equal(new[] { BenchmarkClaimRoles.CriticalErrorQuote }, item.Roles);
     }
 
+    // --- De-duplication of unverified claims ------------------------------------------------
+
+    [Fact]
+    public void Manifest_APlainDuplicateOfASuspectedFalseClaim_IsDroppedInFavorOfThePrefixedOne()
+    {
+        const string sentence = "The Grail heals 500 mana when invoked.";
+        var manifest = BenchmarkService.BuildClaimManifest(
+            new[] { sentence, $"Suspected false: {sentence} — the rubric gives 250" },
+            criticalErrorQuote: null,
+            outOfRubricBasis: null,
+            accusedQuotes: null,
+            answerText: sentence);
+
+        var item = Assert.Single(manifest);
+        Assert.Equal(sentence, item.Text);
+        Assert.True(item.SuspectedFalse);
+        Assert.Equal("the rubric gives 250", item.Suspicion);
+    }
+
+    [Fact]
+    public void DeduplicateUnverifiedClaims_APlainDuplicateThatComesFirst_IsReplacedByTheSuspectedFalseOne()
+    {
+        const string entry = "Suspected false: Candy bars restore 100 nutrition each. — the source gives 100 only for a fresh bar.";
+        var claims = new[] { "Candy bars   restore 100 nutrition each.", entry };
+
+        var deduplicated = BenchmarkService.DeduplicateUnverifiedClaims(claims, "Candy bars restore 100 nutrition each.");
+
+        Assert.Equal(new[] { entry }, deduplicated);
+    }
+
+    [Fact]
+    public void DeduplicateUnverifiedClaims_DistinctClaims_AreAllKept()
+    {
+        var claims = new[] { "Candy bars restore 100 nutrition each.", "Lembas wafers give 800 nutrition." };
+
+        Assert.Equal(claims, BenchmarkService.DeduplicateUnverifiedClaims(claims, null));
+    }
+
+    [Fact]
+    public void DeduplicateUnverifiedClaims_NullOrEmpty_ReturnsAnEmptyList()
+    {
+        Assert.Empty(BenchmarkService.DeduplicateUnverifiedClaims(null, null));
+        Assert.Empty(BenchmarkService.DeduplicateUnverifiedClaims(Array.Empty<string>(), null));
+    }
+
     [Fact]
     public void ARefutedAccusedOnlyItem_IsNotCounted_AndContestsNothing()
     {

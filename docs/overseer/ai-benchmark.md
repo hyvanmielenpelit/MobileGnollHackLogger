@@ -3014,9 +3014,16 @@ so the comparison view already refuses to pool across the boundary.
     silent buffer, so the gesture's activation is not spent waiting on the network. It then creates and
     loads the fallback element, and fetches and decodes the Opus chime (the M4A on a failed fetch,
     non-OK response or failed decode). Concurrent calls share one attempt; a failed arm may retry.
-  - **Playback.** With a decoded buffer the chime plays through the `AudioContext` at gain 0.6, resuming
-    a suspended context first; otherwise, or on failure, the element plays as before. `'played'` means
-    the browser accepted the playback, not that anyone heard it. A new outcome, **`'deferred'`**,
+  - **Playback.** The path order follows visibility. In a **visible** tab the element plays first, since
+    it opens a fresh output stream on every play, and the buffer is the fallback when the element is
+    blocked or unsupported. In a **hidden** tab, where an element's `play()` can be deferred, a decoded
+    buffer plays first through the `AudioContext` at gain 0.6 and the element is the fallback. *Test
+    sound* follows the same order. On the buffer path `resume()` is raced against 1,000 ms, and a
+    timeout falls through to the element. After `start(0)` the context clock must advance within 250 ms;
+    if it does not, the stalled source is stopped, the context is closed and rebuilt once with the same
+    decoded buffer, and a second stall stops that source and falls through to the element. A stalled
+    source is always stopped before another path plays, so one completion never chimes twice.
+    `'played'` means the browser accepted the playback, not that anyone heard it. A new outcome, **`'deferred'`**,
     means the element's `play()` had not settled 2 seconds into a hidden tab. The status then reads
     *"The browser held the sound until this tab was shown."* A late fulfilment still marks the key
     played, so a retry cannot chime twice.
@@ -3028,14 +3035,23 @@ so the comparison view already refuses to pool across the boundary.
     in a notification that silently never fires. It is never requested on page load, and never again
     once the browser has decided. A refused, dismissed or unsupported result unticks the box and says
     why in a status line under the two checkboxes; that line is always in the DOM for screen readers,
-    and taken out of the layout while it is empty. A notification is raised
-    only while the tab is hidden or unfocused, once per run or series, and clicking it focuses the tab.
+    and taken out of the layout while it is empty. A ticked box raises a notification whatever the
+    focus — with the tab in front too — once per run or series, and clicking it focuses the tab.
     Whether it makes a sound is up to the browser and the operating system, so it is not a guaranteed
     audio fallback. A platform whose `Notification` constructor requires a service worker gets none;
     the application has no service worker and does not gain one for this.
   - **Hidden-tab polling** continues at the 15-second cadence when **either** signal is on; with both
-    off a hidden tab pauses as before. Browsers slow background timers further over time, so a signal
-    can arrive up to a minute late.
+    off a hidden tab pauses as before. The run and series pollers take their tick from a dedicated
+    worker (`public/workers/benchmark-poll-ticker.js`, one worker per poller), whose timers are not
+    subject to the main-thread throttling that slows a hidden, occluded or minimized window's
+    `setInterval` to once a minute. Where a worker cannot be created — no `Worker`, a construction
+    failure, an `onerror` — the poller falls back to `setInterval` and the signal can arrive up to a
+    minute late. The worker is a same-origin file, which the CSP's `default-src 'self'` admits; a
+    `blob:` worker would be refused.
+  - **Poll errors.** A poller stops only after **5 consecutive** failed polls, and every successful poll
+    resets the count: 10 seconds of outage at the visible cadence, over a minute at the hidden one, so a
+    development server restart is survived and a dead server still stops the poller. The error text is
+    shown from the first failure.
   - **Web Lock.** While a run or series poller is live the tab holds a Web Lock named
     `overseer-benchmark-live:run:<id>` or `…:series:<id>` (unique per operation, so two tabs on
     different runs never queue), acquired when polling starts and released when it stops — terminal
@@ -3055,8 +3071,16 @@ so the comparison view already refuses to pool across the boundary.
   - Both choices are remembered in the run-settings blob, which is written when a run is started, so a
     changed checkbox is remembered from the next Start, exactly as the sound's has always been.
   - The run diagnostics' *Completion sound* line adds arming and armed state, the `AudioContext` state,
-    the path taken and its outcome, visibility and focus at the attempt, the milliseconds a deferred
-    play took to settle, notification support, permission and outcome, and the lock state.
+    the path taken and its outcome, visibility and focus at capture time, the milliseconds a deferred
+    play took to settle, notification support, permission and outcome, and the lock state. Beneath it an
+    `attempts:` list prints the last 10 play and test attempts, each with its time, key, visibility and
+    focus **at the attempt**, path, context state before and after, whether the clock advanced, whether
+    the context was rebuilt, and the outcome; a `context states:` line lists the context's recorded
+    state changes. The *Completion notification* line names the last notification error, if any, and
+    is followed by the last 10 notification attempts (time, key, visibility, focus, outcome: `shown`,
+    `duplicate`, `not-granted`, `unsupported` or `error`). The
+    *Run poll* line names the ticker mode (`worker` or `timer`), and the *Last poll error* line the count
+    of consecutive failed polls.
   - No CSP change: the fetch is same-origin (`connect-src 'self'`), and `Permissions-Policy` restricts
     neither autoplay nor notifications. References: [Web Audio best practices](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API/Best_practices),
     [Notification.requestPermission](https://developer.mozilla.org/docs/Web/API/Notification/requestPermission_static),
@@ -3297,6 +3321,90 @@ adds the nullable column `BenchmarkRunAnswers.ReasoningTokens`.
   another notation and recompute the claim's own worked example; **3h** read the function the cited one
   hands the effect to before concluding that an effect is absent. Verification counts are not
   comparable across 33 → 34.
+
+### Harness Version 35 Updates
+
+Prompted by the analysis of runs 57 (Gemini 3.7 Flash @ `medium`) and 59 (GPT-5.6 Luna @ `high`),
+snapshot suite 8, harness 34, method 12. All tool calls of both runs succeeded and no corpus defect was
+found; the round corrects two tool-layer habits, adds one policy sentence, and repairs the grading
+instrument. `HarnessVersion` moves to **"35"**; `ScoringMethodVersion` stays **12**. Four tool guides
+and `_policy.md` change, so `ToolGuidesSha256` and `CandidateSystemPromptSha256` both move. No EF Core
+migration.
+
+- **`wiki_search` category guidance (T1).** `wiki_search.md` now says that `Guides` holds only the
+  articles about the Gnoll Overseer app, and that the game-mechanics articles — spell casting, saving
+  throws, praying, skills in general, eating — sit at the wiki root, where any `category` excludes
+  them, so a mechanics question omits it. Run 59 set `category: Guides` on game questions and about 20
+  of its 45 `wiki_search` calls returned topically irrelevant articles.
+
+- **A compiled-out note in the source readers (T2).** `get_function_definition` and
+  `source_code_view` end a result that shows lines inside a literal `#if 0` region with
+  *"[Not compiled: file lines A-B are inside #if 0 ... #endif. They show removed or disabled code, not
+  what the game does; the live code is outside them.]"* (up to three ranges, at most 300 characters,
+  ahead of any truncation notice; `source_code_view` holds 308 characters back from its whole-line
+  budget for it, and `get_function_definition` puts the note first when its body already fills
+  `ToolExecutor`'s cap).
+  `source_code_search` names up to two `>>>` matches in such a region. `SourceCompiledOutNote` tracks
+  nesting across `#if`/`#ifdef`/`#ifndef`, ends a region at its matching `#endif`, `#else` or `#elif`,
+  scans from the top of the file, and never guesses at any other condition. Run 59 Q16 read
+  `study_book`'s `#if 0` body (`src/spell.c:933-960`) as live and earned a critical error for it. The
+  note is tool output and an ordinary success; the three guides gained one sentence saying what it
+  means.
+
+- **One `_policy.md` sentence (T3, prompt-visible).** After the rule against looking up what is
+  already in context: the snapshot says what the hero has and where things are, not how an item, a
+  monster or a mechanic works, and a fact the advice depends on that neither the snapshot nor an earlier
+  result states is looked up first. Run 57 stated five such mechanics wrongly without a lookup, the
+  third observation after runs 52 and 56. It reaches every chat user and may add tool calls; its
+  criterion and rollback trigger are pre-declared in the round's analysis (unlooked-up false mechanics
+  at most 2; median model time above 13,200 ms, or mean tool calls per question above 4.5 without the
+  count improving, or Conciseness below 90 → remove the sentence).
+
+- **Flag-detector vocabulary (H1).** `BenchmarkVerdictConsistency.DefectRegex` recognises
+  *imprecise*, *understates*, *overstates*, *inaccurate* and *the rubric's point* as a stated defect,
+  so *"everything adjudicable … is correct, but it understates the rubric's point"* no longer raises
+  `UnevidencedDeduction`; `FalsehoodRegex` recognises *opposite*, *contrary*, *denies* and *inverts*,
+  so a stated falsehood is not read as an omission (`OmissionAsAccuracy`); and the out-of-rubric
+  vocabulary accepts *beyond the verified* beside *beyond the verifiable*. Each misfire had cost a
+  wasted second opinion and a wrong *Verification-cleared* entry on runs 57 and 59.
+
+- **A cited file that is not in the index (H2).** `BenchmarkCitationLivenessCheck` adds the note
+  *"cited file <path> is not in the indexed source"* when a verdict cites a `src/<file>` the indexed
+  GnollHack source does not hold, and counts the verdict as Indeterminate, as the liveness note does.
+  A file over `MaxSourceFileSizeKB` is also not in the index, and the wording is true for both. Run
+  57 Q1 cited `src/mattackm.c:40`, a file that does not exist.
+
+- **Duplicate claims removed before verification (H2).** An unverified claim whose text, without a
+  leading `Suspected false:` prefix and with whitespace trimmed and collapsed, equals an earlier one's
+  (ordinal, ignoring case) is verified once; the prefixed form is kept, since its role carries more.
+  The report's unverified-claim count uses the same list, so it agrees with the *Claim Verification
+  Yield* line. Run 57 Q9 listed one sentence twice.
+
+- **Report wording (H3, H4).** The out-of-rubric line says *"which the scoring method does not permit
+  as an accuracy deduction"* instead of naming method v7. The accused-sentence summary reads
+  *"refuted n (the assessor was right), supported m (the assessor was wrong), indeterminate k"*. The
+  *Claim Verification Yield* line follows the *Synthesis* cost line, so the five role cost lines are
+  contiguous. When the second reader disputed a critical error, *Contested critical errors* adds that it
+  counts quotes the claim verifier supported, while second-reader disputes are counted on the *Critical
+  Errors* line. A `ContestedCriticalError` is described as supported *"as a standalone sentence; the
+  error may lie in its context, so read the verdict's basis before treating the critical error as
+  overturned"* — run 59 Q11's quoted sentence was true in isolation and the error was its context. The
+  client's run diagnostics print *"Answers with verified claims: n"* instead of *"Verified n"*.
+
+- **The synthesis gets its counts as data (H5).** `BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt`
+  receives, per dimension, the number of answers at each level and, per answer, the verifier's outcome
+  counts, and is told that a refuted claim and a critical error contested by the second reader or the
+  verifier are advisory and reported as such, and that every count it states comes from that data.
+  Run 57's synthesis repeated two wrong verdicts as defects and run 59's wrote *"Two questions (Q4, Q8,
+  Q10, Q14, Q16)"*. The synthesis feeds no score.
+
+- **Client-only, no version effect.** The completion sound and desktop notification were made robust
+  in a visible, hidden, unfocused or minimized tab — see *Completion signals in a background tab*
+  under Harness Version 32.
+
+- **Comparability.** With `HarnessVersion`, `ToolGuidesSha256` and `CandidateSystemPromptSha256` all
+  moving, and the round's rubric repair imported, the next suite-8 run is NotComparable with runs 57
+  and 59.
 
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).

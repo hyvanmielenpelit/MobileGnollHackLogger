@@ -2280,6 +2280,54 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
+    public void HarnessCost_PrintsTheFiveRoleLinesContiguously_ThenTheClaimVerificationYieldLine()
+    {
+        // H4 follow-up: the Yield line used to sit between the Claim Verifier and Synthesis cost
+        // lines, splitting the five role lines apart. It now prints after Synthesis, so a reader
+        // can read the cost of every role in one unbroken block before the yield commentary.
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.All, q1);
+        run.TestedModelIdUsed = "gpt-5.6";
+        run.AssessorModelIdUsed = "gemini-3.7-flash";
+        run.SecondOpinionAssessorModelIdUsed = "gemini-3.7-pro";
+        run.ClaimVerifierModelIdUsed = "gpt-5-mini";
+        run.TotalInputTokens = 200_000;
+        run.TotalOutputTokens = 30_000;
+        run.TotalAssessmentInputTokens = 100_000;
+        run.TotalAssessmentOutputTokens = 10_000;
+        run.TotalSecondOpinionInputTokens = 50_000;
+        run.TotalSecondOpinionOutputTokens = 5_000;
+        run.TotalClaimVerificationInputTokens = 1_300_000;
+        run.TotalClaimVerificationOutputTokens = 100_000;
+        run.TotalSynthesisInputTokens = 50_000;
+        run.TotalSynthesisOutputTokens = 2_000;
+        run.ClaimsSupportedCount = 7;
+        run.ClaimsRefutedCount = 0;
+        run.ClaimsIndeterminateCount = 3;
+
+        var runPricing = new BenchmarkRunPricing(
+            Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            SecondOpinion: new ModelPricing(1.25m, 5.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+            ClaimVerifier: new ModelPricing(1.00m, 4.00m, Source: ModelPricingSource.Custom),
+            IsSnapshot: true
+        );
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
+
+        int candidateAt = report.IndexOf("Candidate (gpt-5.6):", StringComparison.Ordinal);
+        int assessorAt = report.IndexOf("Assessor (gemini-3.7-flash):", StringComparison.Ordinal);
+        int secondOpinionAt = report.IndexOf("Second Opinion (gemini-3.7-pro):", StringComparison.Ordinal);
+        int verifierAt = report.IndexOf("Claim Verifier (gpt-5-mini):", StringComparison.Ordinal);
+        int synthesisAt = report.IndexOf("Synthesis (gemini-3.7-flash):", StringComparison.Ordinal);
+        int yieldAt = report.IndexOf("**Claim Verification Yield:**", StringComparison.Ordinal);
+
+        Assert.True(candidateAt >= 0 && assessorAt > candidateAt && secondOpinionAt > assessorAt
+            && verifierAt > secondOpinionAt && synthesisAt > verifierAt && yieldAt > synthesisAt,
+            "Expected Candidate, Assessor, Second Opinion, Claim Verifier and Synthesis to print contiguously, with the Yield line after all five.");
+    }
+
+    [Fact]
     public void ClaimVerificationYield_IsOmitted_WhenNoClaimWasChecked()
     {
         // A verifier that was configured, billed, and checked nothing must not render a yield line
@@ -3207,6 +3255,26 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
+    public void AccuracyWithheldForUnverifiedClaims_NamesTheDeductionWithoutNamingAHarnessVersion()
+    {
+        // The wording used to cite "scoring method v7" as if that were still the current one; the
+        // rule is not version-specific, so the harness note no longer names one.
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Advanced, 60, 70);
+        q1.AccuracyLevel = 4;
+        q1.UnverifiedClaimCount = 1;
+        q1.UnverifiedClaimsJson = JsonSerializer.Serialize(new[] { "The prayer timeout is 400 turns." });
+        q1.AssessmentEvidenceJson = EvidenceJson(
+            "Docked to 4 because the claim cannot be verified from the provided context.",
+            "Matches rubric.");
+        q1.AnswerFlags = (int)BenchmarkAnswerFlags.UnevidencedDeduction;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV6Run(q1));
+
+        Assert.Contains("rests only on claims it could not verify, which the scoring method does not permit as an accuracy deduction", report);
+        Assert.DoesNotContain("scoring method v7 does not permit", report);
+    }
+
+    [Fact]
     public void AccuracyWithheldForPrecision_IsAbsent_WhenNoAnswerMatches()
     {
         var answer = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
@@ -3260,8 +3328,11 @@ public class BenchmarkReportBuilderTests
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
         Assert.Contains("**Contested Critical Errors:** 1 (question(s) Q1)", report);
-        Assert.Contains("checked against the source code/wiki by the claim verifier and **supported**", report);
+        Assert.Contains("checked against the source code/wiki by the claim verifier and **supported** as a standalone sentence; the error may lie in its context, so read the verdict's basis before treating the critical error as overturned.", report);
         Assert.Contains("the cap stands and no index moved", report);
+
+        // No second opinion was run, so nothing disputes the cap, and the line says nothing about it.
+        Assert.DoesNotContain("second-reader disputes are counted on the Critical Errors line", report);
 
         // Counted in the advisory breakdown, and named in section 5 as changing no score.
         Assert.Contains("contested critical errors: 1", report);
@@ -3269,6 +3340,29 @@ public class BenchmarkReportBuilderTests
 
         // And carried into the synthesis caveat's third clause.
         Assert.Contains("and 1 contested critical error(s)", report);
+    }
+
+    [Fact]
+    public void RunIntegrity_ContestedCriticalErrors_NotesWhenTheSecondReaderAlsoDisputedTheCap()
+    {
+        // The two counts can diverge: this line counts quotes the claim verifier supported, while
+        // the second reader's dispute is counted on the separate Critical Errors line — the note
+        // exists so a reader does not read one figure as covering the other.
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Advanced, 78, 25);
+        q1.CriticalError = true;
+        q1.CriticalErrorQuote = "Gnolls are immune to lycanthropy.";
+        q1.AnswerFlags = (int)BenchmarkAnswerFlags.ContestedCriticalError;
+        q1.SecondOpinionQualityScore = 80;
+        q1.SecondOpinionCriticalError = false;
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.All, q1);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains(
+            "**Contested Critical Errors:** 1 (question(s) Q1) — the critical-error quote was checked against the source code/wiki by the claim verifier and **supported** as a standalone sentence; the error may lie in its context, so read the verdict's basis before treating the critical error as overturned. Advisory: the cap stands and no index moved; re-assess from the run detail. — counts quotes the claim verifier supported; second-reader disputes are counted on the Critical Errors line.",
+            report);
     }
 
     [Fact]
@@ -3981,9 +4075,34 @@ public class BenchmarkReportBuilderTests
 
         string report = BenchmarkReportBuilder.BuildMarkdownReport(Harness30BoardRun(q1));
 
-        Assert.Contains("> - **Suspected false by the assessor:** 1 — refuted 1 (the assessor was right), supported 0, indeterminate 0", report);
-        Assert.Contains("- **Suspected False by the Assessor:** 1 across 1 answer(s) (Q1) — refuted 1 (the assessor was right), supported 0, indeterminate 0.", report);
+        Assert.Contains("> - **Suspected false by the assessor:** 1 — refuted 1 (the assessor was right), supported 0 (the assessor was wrong), indeterminate 0", report);
+        Assert.Contains("- **Suspected False by the Assessor:** 1 across 1 answer(s) (Q1) — refuted 1 (the assessor was right), supported 0 (the assessor was wrong), indeterminate 0.", report);
         Assert.Contains("- **Q1:** \"Lizard corpses cure confusion.\" *(suspected false by the assessor)*", report);
+    }
+
+    [Fact]
+    public void SuspectedFalseClaims_AreCountedWithTheAssessorWrongOnASupport()
+    {
+        // The other side of the pair: a claim the assessor suspected false that the verifier
+        // instead supported. "Supported" alone reads as a success; the annotation says whose.
+        var suspected = new BenchmarkClaimVerification(0, "Fortune cookies are vegan.", BenchmarkClaimVerdict.Supported, "src/food.c:10", "Basis.")
+        {
+            Roles = new[] { BenchmarkClaimRoles.UnverifiedClaim },
+            SuspectedFalse = true,
+            Suspicion = "they contain gelatin",
+            RecordedClaim = "Suspected false: Fortune cookies are vegan. — they contain gelatin"
+        };
+        var q1 = BoardGradedAnswer(1, 80);
+        q1.UnverifiedClaimCount = 1;
+        q1.UnverifiedClaimsJson = JsonSerializer.Serialize(new[] { suspected.RecordedClaim });
+        q1.ClaimsSupportedCount = 1;
+        q1.ClaimsRefutedCount = 0;
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[] { suspected });
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(Harness30BoardRun(q1));
+
+        Assert.Contains("> - **Suspected false by the assessor:** 1 — refuted 0 (the assessor was right), supported 1 (the assessor was wrong), indeterminate 0", report);
+        Assert.Contains("- **Suspected False by the Assessor:** 1 across 1 answer(s) (Q1) — refuted 0 (the assessor was right), supported 1 (the assessor was wrong), indeterminate 0.", report);
     }
 
     [Fact]

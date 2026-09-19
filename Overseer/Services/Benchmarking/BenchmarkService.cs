@@ -2039,10 +2039,13 @@ public class BenchmarkService
 
             // Scoring method v6: recorded, never deducted for. The count is set even when the
             // list is empty, because for these runs "the assessor found none" is a real finding;
-            // null is reserved for runs that predate the field and were never asked.
-            answer.UnverifiedClaimCount = res.UnverifiedClaims.Count;
-            answer.UnverifiedClaimsJson = res.UnverifiedClaims.Count > 0
-                ? JsonSerializer.Serialize(res.UnverifiedClaims)
+            // null is reserved for runs that predate the field and were never asked. A plain
+            // duplicate of a "Suspected false:" entry is dropped first, so this count agrees with
+            // what BuildClaimManifest actually submits and the Claim Verification Yield line reports.
+            var dedupedUnverifiedClaims = DeduplicateUnverifiedClaims(res.UnverifiedClaims, answer.AnswerText);
+            answer.UnverifiedClaimCount = dedupedUnverifiedClaims.Count;
+            answer.UnverifiedClaimsJson = dedupedUnverifiedClaims.Count > 0
+                ? JsonSerializer.Serialize(dedupedUnverifiedClaims)
                 : null;
 
             var flags = (BenchmarkAnswerFlags)answer.AnswerFlags;
@@ -7741,6 +7744,48 @@ public class BenchmarkService
     }
 
     /// <summary>
+    /// <paramref name="claims"/> with a later entry dropped when its text — the answer sentence
+    /// <see cref="BenchmarkSuspectedFalseClaim.TryParse"/> extracts from it, or the entry itself when
+    /// it carries no <c>Suspected false:</c> marker — equals an earlier kept entry's under
+    /// ordinal-ignore-case comparison once trimmed and its whitespace collapsed. A plain duplicate of
+    /// a <c>Suspected false:</c> entry is replaced by the marked one rather than dropped, since the
+    /// marker carries a reason the plain sentence does not. Order is otherwise preserved.
+    /// </summary>
+    internal static List<string> DeduplicateUnverifiedClaims(IReadOnlyList<string>? claims, string? answerText)
+    {
+        if (claims == null || claims.Count == 0)
+        {
+            return new List<string>();
+        }
+
+        var kept = new List<string>();
+        var suspectedKept = new List<bool>();
+        var indexByKey = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (string claim in claims)
+        {
+            bool isSuspectedFalse = BenchmarkSuspectedFalseClaim.TryParse(claim, answerText, out string sentence, out _);
+            string normalized = isSuspectedFalse ? sentence : claim;
+            string key = string.Join(' ', normalized.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+            if (indexByKey.TryGetValue(key, out int index))
+            {
+                if (isSuspectedFalse && !suspectedKept[index])
+                {
+                    kept[index] = claim;
+                    suspectedKept[index] = true;
+                }
+                continue;
+            }
+
+            indexByKey[key] = kept.Count;
+            kept.Add(claim);
+            suspectedKept.Add(isSuspectedFalse);
+        }
+
+        return kept;
+    }
+
+    /// <summary>
     /// The ordered submission manifest. Texts and their order are exactly what
     /// <see cref="WithCriticalErrorQuoteFirst"/> and <see cref="WithOutOfRubricBasis"/> make of the
     /// answer's claims, a <c>Suspected false:</c> entry standing as its sentence alone
@@ -7762,7 +7807,7 @@ public class BenchmarkService
     {
         var suspected = new Dictionary<string, (string Entry, string? Reason)>(StringComparer.Ordinal);
         var claimTexts = new List<string>();
-        foreach (string entry in unverifiedClaims ?? Array.Empty<string>())
+        foreach (string entry in DeduplicateUnverifiedClaims(unverifiedClaims, answerText))
         {
             if (BenchmarkSuspectedFalseClaim.TryParse(entry, answerText, out string sentence, out string? reason))
             {

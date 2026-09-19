@@ -19,6 +19,8 @@ exists but a definition of another kind does (a macro under a function's name
 is the common case), the tool returns that definition behind a one-line note
 saying so.
 
+A result may end with a `[Not compiled: …]` line naming lines that sit inside `#if 0`; they are not part of the game.
+
 Use this tool when you need to understand the full logic of a function.
 Use search_definitions when you only need to see the signature or a quick look.
 Use source_code_view when you need to read arbitrary file regions.

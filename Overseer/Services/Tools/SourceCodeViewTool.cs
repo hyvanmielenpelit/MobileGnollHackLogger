@@ -136,14 +136,15 @@ namespace Overseer.Services.Tools
             }
 
             // The excerpt stops one whole line ahead of the cap ToolExecutor applies afterwards, so
-            // the result ends on a line boundary rather than mid-line; the definition pointer's room
-            // is held back from that budget.
+            // the result ends on a line boundary rather than mid-line; the definition pointer's and
+            // the compiled-out note's room is held back from that budget.
             int maxChars = context.MaxResultLength > 0
-                ? Math.Max(1, context.MaxResultLength - DefinitionHintReserve)
+                ? Math.Max(1, context.MaxResultLength - DefinitionHintReserve - CompiledOutNoteReserve)
                 : 0;
 
             var content = service.GetFileExcerpt(file, startLine, lineCount, searchTerm, maxChars: maxChars);
             content = InsertDefinitionHint(content, service is NetHackSourceCodeService ? "nethack" : "gnollhack");
+            content = InsertCompiledOutNote(content, service.GetIndexedLines);
 
             if (context.SpoilerFreeMode)
             {
@@ -155,6 +156,9 @@ namespace Overseer.Services.Tools
 
         /// <summary>Characters held back from the excerpt budget for the definition pointer and its line breaks.</summary>
         internal const int DefinitionHintReserve = SourceDefinitionHint.MaxLength + 8;
+
+        /// <summary>Characters held back from the excerpt budget for the compiled-out note and its line breaks.</summary>
+        internal const int CompiledOutNoteReserve = SourceCompiledOutNote.MaxLength + 8;
 
         /// <summary>
         /// Adds the <see cref="SourceDefinitionHint"/> pointer after the excerpt's last line, ahead of
@@ -171,6 +175,23 @@ namespace Overseer.Services.Tools
             return notice >= 0
                 ? body.Substring(0, notice).TrimEnd() + nl + nl + hint + nl + body.Substring(notice + 1) + nl
                 : body + nl + nl + hint + nl;
+        }
+
+        /// <summary>
+        /// Adds the <see cref="SourceCompiledOutNote"/> line after the excerpt's last line, ahead of
+        /// its <c>[Output truncated at line …]</c> notice when there is one.
+        /// </summary>
+        internal static string InsertCompiledOutNote(string content, Func<string, string[]?> lineLookup)
+        {
+            string? note = SourceCompiledOutNote.ForViewResult(content, lineLookup);
+            if (note == null) return content;
+
+            string nl = Environment.NewLine;
+            string body = content.TrimEnd();
+            int notice = body.LastIndexOf("\n[Output truncated at line ", StringComparison.Ordinal);
+            return notice >= 0
+                ? body.Substring(0, notice).TrimEnd() + nl + nl + note + nl + body.Substring(notice + 1) + nl
+                : body + nl + nl + note + nl;
         }
     }
 }

@@ -12,8 +12,11 @@ The query is matched word by word against article titles (weighted 5×) and bodi
 
 `category` is **not** a taxonomy field. It is a case-insensitive substring of the article's
 path inside the wiki, so it selects a directory — `Monsters`, `Items`, `Spells`, `Skills`,
-`Races`, `Artifacts`, `Guides`, `Rooms`, `Roles`, `Dungeon`, `Difficulties`, `Conducts`,
-`Development` — and a value that names no directory excludes every hit rather than narrowing
+`Races`, `Artifacts`, `Rooms`, `Roles`, `Dungeon`, `Difficulties`, `Conducts`, `Development`,
+and `Guides`, which holds only the articles about the Gnoll Overseer app itself and no
+gameplay guide. Articles on game mechanics — spell casting, saving throws, praying, skills in
+general, eating — are in no directory, so any `category` excludes them: omit `category` for a
+mechanics question. A value that names no directory excludes every hit rather than narrowing
 them. Omit it unless you know the directory; a miss with a category set is more often the
 filter than the query.
 

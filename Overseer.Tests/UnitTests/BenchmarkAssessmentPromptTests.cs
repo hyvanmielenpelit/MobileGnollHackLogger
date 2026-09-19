@@ -219,9 +219,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsThirtyFour()
+    public void HarnessVersion_IsThirtyFive()
     {
-        Assert.Equal("34", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("35", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -392,6 +392,39 @@ public class BenchmarkAssessmentPromptTests
         // Assessor Score reintroduced the same bias one level up.
         Assert.DoesNotContain("Duration:", prompt);
         Assert.DoesNotContain("165068", prompt);
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_IncludesTheLevelDistributionAndTheAdvisoryInstructions()
+    {
+        // H5: the model used to have to count eighteen "Levels:" lines itself to state how many
+        // answers sat at a given level; the harness now hands over the count pre-computed.
+        var q1 = Verdict(1, accuracyLevel: 6, accuracyEvidence: "Matches rubric.");
+        var q2 = Verdict(2, accuracyLevel: 4, accuracyEvidence: "Misstates the AC.");
+        q2.CompletenessLevel = 6;
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { q1, q2 });
+
+        Assert.Contains(
+            "--- LEVEL DISTRIBUTION (counted by the harness; copy these figures rather than recounting the verdicts below) ---",
+            prompt);
+        Assert.Contains("Accuracy: 1 answer(s) at level 6, 1 answer(s) at level 4", prompt);
+        Assert.Contains("Completeness: 1 answer(s) at level 6, 1 answer(s) at level 5", prompt);
+        Assert.Contains("Conciseness: 2 answer(s) at level 5", prompt);
+        Assert.Contains("Readability: 2 answer(s) at level 5", prompt);
+
+        // Printed ahead of the per-question verdicts, so the model reads the pre-counted figures
+        // before it ever sees a "Levels:" line to (mis)count itself.
+        int distributionAt = prompt.IndexOf("--- LEVEL DISTRIBUTION", StringComparison.Ordinal);
+        int verdictsAt = prompt.IndexOf("--- PER-QUESTION VERDICTS AND ASSESSMENTS ---", StringComparison.Ordinal);
+        Assert.True(distributionAt >= 0 && distributionAt < verdictsAt);
+
+        Assert.Contains(
+            "A refuted claim, and a critical error the second reader or the claim verifier contested, are advisory findings, not confirmed defects",
+            prompt);
+        Assert.Contains(
+            "is copied from the data blocks below, never recomputed by rereading or recounting the per-question verdicts. This synthesis feeds no score.",
+            prompt);
     }
 
     [Fact]
@@ -692,19 +725,19 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs34_ScoringMethodIs12()
+    public void Versions_HarnessIs35_ScoringMethodIs12()
     {
-        Assert.Equal("34", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("35", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 34 keeps scoring method 12, under which ACCURACY is graded against the rubric and
+        // Harness 35 keeps scoring method 12, under which ACCURACY is graded against the rubric and
         // the board only and an own-knowledge suspicion becomes a "Suspected false: " unverified
-        // claim. A Gemini call's output tokens include its thinking tokens and each answer stores
-        // its reasoning tokens; the source tools point at get_function_definition when a result
-        // shows a definition; the citation-liveness note needs a definition with a body and counts a
-        // function-pointer reference as live; the approval scan reads past a boundary inside an
-        // enclosing parenthetical; an Accuracy level below 6 that quotes a "Suspected false: "
-        // sentence is flagged; and the claim verifier gains instructions 3f-3h. A 34-stamped run
-        // differs from a 33-stamped one on HarnessVersion alone.
+        // claim. The flag detectors gain defect, falsehood and out-of-rubric vocabulary; a verdict
+        // citing a source file that is not indexed carries a citation note; duplicate unverified
+        // claims are verified once; the report's wording and cost-block order change; and the
+        // synthesis receives per-dimension level counts and treats contested findings as advisory.
+        // The source tools' compiled-out note and the wiki_search.md and _policy.md sentences move
+        // ToolGuidesSha256 and CandidateSystemPromptSha256 as well, so a 35-stamped run differs
+        // from a 34-stamped one on three instrument keys.
         Assert.Equal(12, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

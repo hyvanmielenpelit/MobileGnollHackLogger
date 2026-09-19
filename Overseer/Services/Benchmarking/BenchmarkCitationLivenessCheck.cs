@@ -20,6 +20,11 @@ using System.Text.RegularExpressions;
 /// A function reached only through a macro that builds its name also has no reference, so the
 /// note never argues the opposite verdict — it only withdraws the cited code as evidence. A citation
 /// with any other reference (wiki, board, another file) gets no note, nor does a NetHack citation.
+///
+/// A citation of a <c>src/&lt;file&gt;</c> the index does not carry at all — never indexed, or
+/// dropped for exceeding the indexer's per-file size limit — gets the same Indeterminate treatment
+/// under a note naming the file rather than a function.
+///
 /// Pure over the corpus it is given; any failure yields no note.
 /// </summary>
 public sealed class BenchmarkCitationLivenessCheck
@@ -41,6 +46,8 @@ public sealed class BenchmarkCitationLivenessCheck
         => new(new SourceCodeServiceCorpus(sourceCode, maxFileSizeKB).Load);
 
     public static string NoteText(string functionName) => $"cited function {functionName} has no live call site";
+
+    public static string MissingFileNoteText(string path) => $"cited file {path} is not in the indexed source";
 
     private static readonly Regex SourceReferenceRegex = new(
         @"(?<![\w/.-])src/([\w./-]+?\.c):(\d+)(?:\s*[-–]\s*\d+)?",
@@ -101,18 +108,26 @@ public sealed class BenchmarkCitationLivenessCheck
         if (OtherReferenceRegex.IsMatch(SourceReferenceRegex.Replace(text, " "))) return null;
 
         var view = View();
-        var names = new List<string>();
+        var notes = new List<string>();
         foreach (var reference in references)
         {
             string path = "src/" + reference.Groups[1].Value;
             if (!int.TryParse(reference.Groups[2].Value, out int line)) return null;
 
+            if (!view.Stripped.ContainsKey(path))
+            {
+                string missingNote = MissingFileNoteText(path);
+                if (!notes.Contains(missingNote, StringComparer.Ordinal)) notes.Add(missingNote);
+                continue;
+            }
+
             string? name = EnclosingFunction(view, path, line);
             if (name == null || HasLiveCallSite(view, name)) return null;
-            if (!names.Contains(name, StringComparer.Ordinal)) names.Add(name);
+            string functionNote = NoteText(name);
+            if (!notes.Contains(functionNote, StringComparer.Ordinal)) notes.Add(functionNote);
         }
 
-        return string.Join("; ", names.Select(NoteText));
+        return notes.Count == 0 ? null : string.Join("; ", notes);
     }
 
     /// <summary>
