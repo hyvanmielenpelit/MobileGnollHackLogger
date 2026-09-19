@@ -190,7 +190,12 @@ public static class WikiSnippetExtractor
         bool anyPositive = scored.Any(x => x.Score > 0);
 
         List<WikiSection> selected;
-        if (!anyPositive)
+        if (header.Length + sections.Sum(FormatSectionLength) <= perResultChars / 2)
+        {
+            // A short article is returned whole: a follow-up wiki_view would cost a round for it.
+            selected = new List<WikiSection>(sections);
+        }
+        else if (!anyPositive)
         {
             selected = new List<WikiSection>();
             if (sections[0].Level == 0)
@@ -205,11 +210,6 @@ public static class WikiSnippetExtractor
             {
                 selected.Add(sections[0]);
             }
-        }
-        else if (header.Length + sections.Sum(FormatSectionLength) <= perResultChars / 2)
-        {
-            // A short article is returned whole: a follow-up wiki_view would cost a round for it.
-            selected = new List<WikiSection>(sections);
         }
         else
         {

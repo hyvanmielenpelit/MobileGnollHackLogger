@@ -219,9 +219,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsThirtySix()
+    public void HarnessVersion_IsThirtySeven()
     {
-        Assert.Equal("36", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("37", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -725,19 +725,18 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs36_ScoringMethodIs12()
+    public void Versions_HarnessIs37_ScoringMethodIs12()
     {
-        Assert.Equal("36", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("37", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 36 keeps scoring method 12, under which ACCURACY is graded against the rubric and
+        // Harness 37 keeps scoring method 12, under which ACCURACY is graded against the rubric and
         // the board only and an own-knowledge suspicion becomes a "Suspected false: " unverified
-        // claim. A verdict citing a source file without a line, or only a function's definition
-        // line, carries a citation note and counts as Indeterminate; the verifier's instruction 5
-        // says what a citation is and 3i asks for every place an effect could be applied before
-        // absence is concluded; the report says which side the verifier took on a suspected-false
-        // claim. A categorised wiki_search names a best match outside its category, and the
-        // wiki_search.md sentence describing that moves ToolGuidesSha256, so a 36-stamped run
-        // differs from a 35-stamped one on HarnessVersion and ToolGuidesSha256.
+        // claim. A wiki_search snippet returns a short article whole whatever scored, and a
+        // categorised wiki_search no longer names a best match outside its category; the
+        // wiki_search.md sentence that described that line is gone, which moves ToolGuidesSha256.
+        // The verifier gains 3j, and the report prints verifier spend and the head of a failed
+        // verification's raw response. A 37-stamped run differs from a 36-stamped one on
+        // HarnessVersion and ToolGuidesSha256.
         Assert.Equal(12, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

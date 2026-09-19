@@ -3493,6 +3493,78 @@ stayed silent when a `category` hid the article the model needed. `HarnessVersio
   Verification counts are not comparable across 35 and 36: a verdict the new notes demote was counted
   under 35.
 
+### Harness Version 37 Updates
+
+Prompted by the analysis of runs 62 (Gemini 3.7 Flash @ `medium`) and 63 (GPT-5.6 Luna @ `high`),
+snapshot suite 8 on the format 8 board, harness 36, method 12, graded with Gemini 3.8 Flash @ `medium`
+as second reader and claim verifier. All 106 tool calls of the two runs succeeded. The harness-36
+*Without category* line was followed once in seven chances and its pre-declared rollback tripped, and
+`wiki_search` returned three short articles as their stat blocks alone when only their titles matched.
+`HarnessVersion` moves to **"37"**; `ScoringMethodVersion` stays **12**. One tool guide changes, so
+`ToolGuidesSha256` moves; `CandidateSystemPromptSha256` does not. No EF Core migration.
+
+- **A short article comes back whole whatever scored (T4, chat and benchmark alike).**
+  `WikiSnippetExtractor.BuildSnippet` tests the short-article rule first: an article whose formatted
+  length, header included, is at or under `PerResultChars / 2` (1,250 characters at the default) is
+  returned whole, ending *— complete*, whether or not any section shares a term with the query. The
+  lead-sections fallback for a query that scores no section now applies to longer articles only, and
+  the ranked selection is unchanged. Run 63 Q18 searched *"garlic sulfurous ash ginseng sporal
+  powder"*, got three articles of under 600 characters as their stat blocks only, and spent its next
+  round on four `wiki_view` calls.
+
+- **The *Without category* line is removed (T5, chat and benchmark alike).** A categorised non-empty
+  `wiki_search` result is again the joined snippets followed by the *Showing N of M* line, as under
+  harness 35; `BuildOutsideCategoryHint` is gone. The empty-result miss payload (`BuildMissContent`)
+  still names the unfiltered match. `wiki_search.md` loses the sentence that described the line, which
+  moves `ToolGuidesSha256` back to `f0c53b98…`, the value harness 35 recorded, so that fingerprint
+  alone does not tell a 37 run from a 35 one; `HarnessVersion` does. Per-tool guides are not inlined
+  into the system prompt, so `CandidateSystemPromptSha256` stays. A *[Without category …]* line in a
+  result therefore dates a run to harness 36 exactly.
+
+- **`get_artifact_stats` is Structured Lookup (H1).** `BenchmarkChatTransfer.ClassifyTool` puts it
+  beside `get_monster_stats` and `get_item_stats`, so no tool in `Benchmark:AllowedTools` falls into
+  *Other*. Runs 62 and 63 counted four such calls as *Other*; re-rendering their reports moves them.
+
+- **Synthesis Divergence reads a denial (H2).** `QuestionsNamedWithFabrication` counts a sentence only
+  when it holds a fabrication word that is not denied: a match is denied when the text before it in
+  the same sentence ends with *rather than*, *instead of*, *not*, *never*, *no* or *without*, followed
+  by at most two words and no punctuation. *"supported rather than invented"* and *"not an invented
+  item"* name no question; *"inventing an automatic regeneration"* does. `FabricationRegex` and
+  `MentionsFabrication`, which other detectors use, are unchanged. Run 63 listed Q13 and Q18 from a
+  sentence that praised them.
+
+- **Every second-opinion trigger prints in words (H3).** The report's `TriggerLabel` gains
+  *out-of-rubric accuracy deduction* and *dimension outlier*; the client's
+  `secondOpinionTriggerLabel` gains those two and *sample top-up*.
+
+- **Instruction 3j, passed values are settled where they are assigned (H4).** After 3i:
+
+  > 3j. Values passed are settled where they are assigned. When the code you cite only passes
+  > variables on (for example a `case` block that calls a function with `duration` or `cures_sick`),
+  > read where those variables are computed, and the object's data entry they come from, before you
+  > refute a number, a die roll or a cure.
+
+  Run 63 Q6 refuted a potion's 12d6 and its cures from the `case POT_HEALING:` block, which only
+  passes values computed at the top of the function.
+
+- **Verifier spend and a failed verification's raw text in the report (H5, H6).** Each answer's
+  *Claim Verification* line ends with *"— N tool call(s), X input tokens, Y s"* from
+  `ClaimVerificationToolCallCount`, `ClaimVerificationInputTokens` and `ClaimVerificationDurationMs`,
+  naming only the columns present. *Harness Cost* adds *Verifier spend by answer*: the three answers
+  with the most verifier input tokens, the first with its count, and the mean input tokens and tool
+  calls per verified answer; it prints under *Claim Verification Yield* when the verifier is priced,
+  and after the cost block otherwise. A failed verification's line adds the first 600 characters of
+  `ClaimVerificationRawText`, on one line and with backticks replaced by apostrophes. All of it is
+  computed at render time from stored columns, so a re-rendered report of an earlier run shows it too.
+
+- **What does not move.** `ScoringMethodVersion` (12), `CandidateSystemPromptSha256`, the chat system
+  prompt and `_policy.md`, and every `BenchmarkAnswerFlags` member.
+
+- **Comparability.** `HarnessVersion` and `ToolGuidesSha256` move, and the round's rubric repair (Q1,
+  Q5, Q6, Q11, Q16, Q17) is imported, so the next suite-8 run is NotComparable with runs 62 and 63.
+  `wiki_search` result sizes and `wiki_view` counts are not comparable across 36 and 37 on questions
+  whose searches return short articles.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.

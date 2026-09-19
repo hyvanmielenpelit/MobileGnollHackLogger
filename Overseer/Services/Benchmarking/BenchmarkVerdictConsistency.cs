@@ -109,7 +109,7 @@ public static class BenchmarkVerdictConsistency
         var found = new HashSet<int>();
         foreach (string sentence in SplitSentences(synthesisText))
         {
-            if (!FabricationRegex.IsMatch(sentence)) continue;
+            if (!HasUndeniedFabrication(sentence)) continue;
 
             foreach (Match m in QuestionReferenceRegex.Matches(sentence))
             {
@@ -121,6 +121,32 @@ public static class BenchmarkVerdictConsistency
         }
 
         return found.OrderBy(i => i).ToList();
+    }
+
+    /// <summary>
+    /// A denial word ending the text before a <see cref="FabricationRegex"/> match, followed by at
+    /// most two words: "supported rather than invented", "not an invented item", "never fabricated".
+    /// Punctuation between the two breaks it, so a denial in one clause does not reach the next.
+    /// </summary>
+    private static readonly Regex FabricationDenialPrefixRegex = new(
+        @"\b(?:rather\s+than|instead\s+of|not|never|no|without)(?:\s+[\w'-]+){0,2}\s*$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// True when <paramref name="sentence"/> holds a <see cref="FabricationRegex"/> match that
+    /// <see cref="FabricationDenialPrefixRegex"/> does not deny.
+    /// </summary>
+    private static bool HasUndeniedFabrication(string sentence)
+    {
+        foreach (Match m in FabricationRegex.Matches(sentence))
+        {
+            if (!FabricationDenialPrefixRegex.IsMatch(sentence.Substring(0, m.Index)))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

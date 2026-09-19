@@ -190,6 +190,22 @@ public class BenchmarkClaimVerificationPromptTests
         Assert.True(index4 > index3i, "Instruction 4 must follow 3i, unrenumbered.");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildPrompt_Instruction3j_SitsBetween3iAnd4_WithAndWithoutABoard(bool withBoard)
+    {
+        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
+
+        int index3i = prompt.IndexOf("3i. Absence needs more than one place.", System.StringComparison.Ordinal);
+        int index3j = prompt.IndexOf("3j. Values passed are settled where they are assigned.", System.StringComparison.Ordinal);
+        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
+
+        Assert.Contains("3j.", prompt);
+        Assert.True(index3j > index3i, "Instruction 3j must follow instruction 3i.");
+        Assert.True(index4 > index3j, "Instruction 4 must follow 3j, unrenumbered.");
+    }
+
     [Fact]
     public void BuildPrompt_Instructions3dAnd3e_SayWhatALiveCallSiteAndANumberRequire()
     {

@@ -101,6 +101,48 @@ public class BenchmarkVerdictConsistencyTests
     }
 
     [Fact]
+    public void QuestionsNamedWithFabrication_DeniedFabricationNamesNoQuestion()
+    {
+        // Run 63's synthesis praised Q13 and Q18 in this sentence.
+        const string synthesis =
+            "The verifier confirmed the component analysis in Q13, and the reagent associations in Q18 " +
+            "were verified as supported rather than invented.";
+
+        Assert.Empty(BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
+            synthesis, Enumerable.Range(1, 18)));
+    }
+
+    [Theory]
+    [InlineData("Q9 names a real item, not an invented item.")]
+    [InlineData("Q9 never fabricated a number.")]
+    [InlineData("Q9 cites the source instead of inventing a rule.")]
+    public void QuestionsNamedWithFabrication_DenialWithinTwoWords_NamesNoQuestion(string sentence)
+    {
+        Assert.Empty(BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
+            sentence, Enumerable.Range(1, 18)));
+    }
+
+    [Fact]
+    public void QuestionsNamedWithFabrication_UndeniedInventing_NamesTheQuestion()
+    {
+        const string synthesis =
+            "Q15 loses accuracy for inventing an automatic regeneration of the spell's charges.";
+
+        Assert.Equal(new[] { 15 }, BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
+            synthesis, Enumerable.Range(1, 18)));
+    }
+
+    [Fact]
+    public void QuestionsNamedWithFabrication_OneDeniedAndOnePlainMatch_NamesItsQuestions()
+    {
+        const string synthesis =
+            "Q12's table was supported rather than invented, but Q14 fabricated a cooldown.";
+
+        Assert.Equal(new[] { 12, 14 }, BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
+            synthesis, Enumerable.Range(1, 18)));
+    }
+
+    [Fact]
     public void QuestionsNamedWithFabrication_HandlesEmptyInput()
     {
         Assert.Empty(BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(null, Enumerable.Range(1, 5)));

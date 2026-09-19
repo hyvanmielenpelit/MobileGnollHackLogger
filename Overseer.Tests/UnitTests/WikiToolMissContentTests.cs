@@ -143,6 +143,24 @@ Spell{i} requires no material components to cast.
     }
 
     [Fact]
+    public async Task WikiSearchTool_CategorisedHit_CarriesNoOutsideCategoryLine()
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new WikiSearchTool(service, BuildConfig());
+
+        // Unfiltered, the root article Object Materials.md is the best match for "material";
+        // category="Spells" keeps only the spell articles, and the result names nothing outside it.
+        var jsonParams = JsonDocument.Parse("{\"query\": \"material\", \"category\": \"Spells\"}").RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Contains("--- Spells/Spell", result.Content);
+        Assert.DoesNotContain("Object Materials.md", result.Content);
+        Assert.DoesNotContain("[Without category", result.Content);
+    }
+
+    [Fact]
     public async Task WikiSearchTool_Miss_NoCategory_NamesQueryAndNextAction()
     {
         using var service = new WikiService(BuildConfig());
@@ -1060,100 +1078,5 @@ public class WikiSearchCoverageRankingTests : IDisposable
 
         Assert.Equal(new[] { "Guides/Beekeeping.md", "Items/Honey.md" }, Headers(results));
         Assert.Equal(2, totalHits);
-    }
-}
-
-/// <summary>
-/// Covers BuildOutsideCategoryHint through wiki_search's real execution path. Torch.md's title
-/// match on "torch" outranks Items/Oil Flask.md's body-only match, so a category="Items" search
-/// keeps the weaker in-category hit and hides the stronger root one; the result names it back.
-/// Its own corpus keeps this ranking untouched by the shared WikiToolMissContentTests fixtures.
-/// </summary>
-public class WikiSearchOutsideCategoryHintTests : IDisposable
-{
-    private readonly string _tempDir;
-
-    public WikiSearchOutsideCategoryHintTests()
-    {
-        _tempDir = Path.Combine(Path.GetTempPath(), "WikiSearchOutsideCategoryHintTests_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_tempDir);
-
-        Write("Torch.md", "A torch is a light source that burns for a limited number of turns.\n");
-        Write("Items/Oil Flask.md", "An oil flask can be used to refuel a torch or thrown at an enemy.\n");
-    }
-
-    private void Write(string relativePath, string content)
-    {
-        string fullPath = Path.Combine(_tempDir, relativePath.Replace('/', Path.DirectorySeparatorChar));
-        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-        File.WriteAllText(fullPath, content);
-    }
-
-    public void Dispose()
-    {
-        if (Directory.Exists(_tempDir))
-        {
-            try
-            {
-                Directory.Delete(_tempDir, true);
-            }
-            catch { }
-        }
-    }
-
-    private IConfiguration BuildConfig()
-    {
-        return new ConfigurationBuilder()
-            .AddInMemoryCollection(new List<KeyValuePair<string, string?>> { new("WikiPath", _tempDir) })
-            .Build();
-    }
-
-    private static ToolExecutionContext Context() => new()
-    {
-        SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1),
-        SpoilerFreeMode = false
-    };
-
-    private async Task<string?> SearchAsync(string query, string? category = null)
-    {
-        using var service = new WikiService(BuildConfig());
-        await service.InitializationTask;
-        var tool = new WikiSearchTool(service, BuildConfig());
-
-        var jsonParams = category == null
-            ? JsonDocument.Parse(JsonSerializer.Serialize(new { query })).RootElement
-            : JsonDocument.Parse(JsonSerializer.Serialize(new { query, category })).RootElement;
-        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
-
-        Assert.True(result.Success);
-        Assert.Null(result.ErrorMessage);
-        return result.Content;
-    }
-
-    [Fact]
-    public async Task CategoryHidesStrongerRootMatch_ResultNamesIt()
-    {
-        string? content = await SearchAsync("torch", "Items");
-
-        Assert.Contains("--- Items/Oil Flask.md ---", content);
-        Assert.Contains("[Without category, the best match for this query is Torch.md", content);
-    }
-
-    [Fact]
-    public async Task NoCategory_NeverCarriesTheHint()
-    {
-        string? content = await SearchAsync("torch");
-
-        Assert.Contains("--- Torch.md ---", content);
-        Assert.DoesNotContain("[Without category, the best match for this query is", content);
-    }
-
-    [Fact]
-    public async Task BestMatchAlreadyInsideCategory_NoHint()
-    {
-        string? content = await SearchAsync("flask", "Items");
-
-        Assert.Contains("--- Items/Oil Flask.md ---", content);
-        Assert.DoesNotContain("[Without category, the best match for this query is", content);
     }
 }

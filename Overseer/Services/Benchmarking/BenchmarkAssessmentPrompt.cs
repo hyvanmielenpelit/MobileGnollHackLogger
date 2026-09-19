@@ -553,8 +553,18 @@ public static class BenchmarkAssessmentPrompt
     ///     wiki_search whose best unfiltered match lies outside the category names that article, and
     ///     wiki_search.md says so, which moves ToolGuidesSha256. ScoringMethodVersion stays 12 and
     ///     CandidateSystemPromptSha256 does not move. Stored runs are not re-annotated.
+    /// v37: chat and benchmark alike, a wiki_search snippet returns an article at or under
+    ///     PerResultChars / 2 whole whether or not any section scored, and a categorised non-empty
+    ///     wiki_search carries no line naming a match outside the category; wiki_search.md drops the
+    ///     sentence describing that line, which moves ToolGuidesSha256. get_artifact_stats counts as
+    ///     Structured Lookup. The synthesis-divergence check skips a fabrication word the sentence
+    ///     denies ("rather than invented", "not an invented item"). Two further second-opinion
+    ///     triggers print in words. The verifier gains 3j (read where passed values are assigned).
+    ///     The report prints each answer's verifier spend, the answers the verifier spent most on,
+    ///     and the head of a failed verification's raw response, all from stored columns.
+    ///     ScoringMethodVersion stays 12 and CandidateSystemPromptSha256 does not move.
     /// </summary>
-    public const string HarnessVersion = "36";
+    public const string HarnessVersion = "37";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

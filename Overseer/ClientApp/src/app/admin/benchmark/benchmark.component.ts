@@ -7125,11 +7125,14 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       case 'CriticalError': return 'critical error';
       case 'RefutedClaim': return 'refuted claim';
       case 'ContestedVerdict': return 'contested verdict';
+      case 'OutOfRubricAccuracy': return 'out-of-rubric accuracy deduction';
       case 'UnevidencedDeduction': return 'unevidenced deduction';
       case 'OmissionAsAccuracy': return 'omission docked as accuracy';
+      case 'DimensionOutlier': return 'dimension outlier';
       case 'UnverifiedClaims': return 'unverifiable claims';
       case 'BelowThreshold': return 'below profile threshold';
       case 'Outlier': return 'outlier below run median';
+      case 'Sample': return 'sample top-up';
       case 'All': return 'double grading';
       case 'Manual': return 'manual trial';
       default: return trigger ?? '';

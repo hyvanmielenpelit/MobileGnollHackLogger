@@ -508,26 +508,22 @@ articles (Q1, Q9, Q11, Q13, Q15, Q16) while `Spell Casting.md` sat at the root. 
 before editing it, since the wiki moves independently of this repository. The sentence moves
 `ToolGuidesSha256`, not `CandidateSystemPromptSha256`.
 
-**A categorised `wiki_search` names what its category hid, from harness 36 (the runs 60 and 61
-round, 2026-09-19).** When `category` is set and the result is not empty,
-`WikiSearchTool.BuildOutsideCategoryHint` probes once for the single best match of the same query
-without the category (`SafeProbe(query, null, 1)`, the probe the miss payload already uses). It adds
-nothing when there is no such match, when that match's path, forward-slashed, contains the category
-(ordinal, ignoring case), or when one of the returned results opens with that article's
-`--- <path> ---` header. Otherwise the result carries
+**A categorised `wiki_search` named what its category hid under harness 36 only (added in the runs 60
+and 61 round, removed in the runs 62 and 63 round, both 2026-09-19).** Under harness 36, when
+`category` was set and the result was not empty, `WikiSearchTool.BuildOutsideCategoryHint` probed once
+for the single best match of the same query without the category and, when that match lay outside the
+category and was not among the results, appended
 
 `[Without category, the best match for this query is <path>, which is outside '<category>'. Omit category to see it.]`
 
-with the path cut at 120 characters, the category at 40 and the whole line at 240. It sits after the
-snippets, separated by a blank line and ahead of the *Showing N of M* line; when the result is within
-400 characters of `wiki_search`'s 13,000-character cap it goes first instead, as `source_code_search`'s
-definition pointer does. The probe never throws — any exception yields no line — and the call stays an
-ordinary success. The empty-result miss payload (`BuildMissContent`) is unchanged and already names
-the unfiltered match. `wiki_search.md` ends its `category` paragraph with one sentence describing the
-line (call again without `category`, or open the article with `wiki_view`), which moves
-`ToolGuidesSha256`. The line points at the *best* unfiltered match, which may be a weak one; it is not
-a verdict that the category was wrong. Run 61 set a category on about 20 of 37 searches, and five of
-them (Q3, Q11 ×2, Q16 ×2) hid the root-level mechanics article with no word from the tool.
+after the snippets (or first, within 400 characters of the 13,000-character cap), and `wiki_search.md`
+carried one sentence describing it. **From harness 37 neither exists**: a categorised non-empty result
+is the joined snippets followed by the *Showing N of M* line, as under harness 35, and the guide
+sentence is gone, which moved `ToolGuidesSha256`. The line's presence therefore dates a run to harness
+36 exactly, and a line in a run stamped 37 or later means the removal did not deploy. The empty-result
+miss payload (`BuildMissContent`) names the unfiltered match under every harness. Run 63 carried the
+line on 10 of 17 categorised searches and the model followed it once in seven chances, which tripped
+the change's pre-declared rollback.
 
 **`nethack_wiki_view` article resolution prefers an exact title from harness 27, and a non-exact
 resolution has been announced rather than silent since the run-36 round (2026-09-11).**
@@ -640,7 +636,15 @@ to ≤ `WikiSnippetExtractor.LeadBlockMaxChars` (600), ahead of the ranked secti
 or item article could come back as its one-line *Description* with the level / mana / components
 block omitted, because that block rarely shares a term with the query (run 52, Q11,
 `Spells/Cure petrification.md`). On a harness-30 run, a *Description*-only snippet of an article
-whose lead block is 600 characters or shorter is a defect, not the documented shape. **`nethack_wiki_search` returned full article
+whose lead block is 600 characters or shorter is a defect, not the documented shape. **From harness
+37 an article that formats to ≤ `PerResultChars / 2` (1,250 characters at the default) comes back whole
+whatever scored**, including when no section shares a term with the query; the lead-sections fallback
+for a query that scores no section (section 0, plus section 1 when section 0 is a heading-less
+preamble) applies to longer articles only. Under harness 30–36 that fallback was tested first, so a
+short article matched only through its title came back as its stat block alone, footer *further
+section(s) omitted* — run 63 Q18's garlic, ash and ginseng, each under 600 characters, then re-fetched
+with four `wiki_view` calls. On a run stamped 37 or later, an omitted-sections footer on an article of
+1,250 characters or fewer is a defect. **`nethack_wiki_search` returned full article
 bodies with no per-result cap of its own up to harness 17**, bounded only by the generic per-tool
 `MaxResultLength` truncation in `ToolExecutor` — which cuts the *last* article mid-sentence and
 drops the ones after it, so which articles the model saw depended on Lucene's ordering. **From

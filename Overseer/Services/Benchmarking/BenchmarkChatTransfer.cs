@@ -59,7 +59,8 @@ public static class BenchmarkChatTransfer
             "source_code_search" or "source_code_view" or "search_definitions"
                 or "get_function_definition" or "get_constants" or "list_indexed_files" => BenchmarkToolFamily.SourceCode,
             "wiki_search" or "wiki_view" or "nethack_wiki_search" or "nethack_wiki_view" => BenchmarkToolFamily.Wiki,
-            "monster_lookup" or "item_lookup" or "get_monster_stats" or "get_item_stats" => BenchmarkToolFamily.StructuredLookup,
+            "monster_lookup" or "item_lookup" or "get_monster_stats" or "get_item_stats"
+                or "get_artifact_stats" =>BenchmarkToolFamily.StructuredLookup,
             "get_knowledge_article" => BenchmarkToolFamily.KnowledgeBase,
             _ => BenchmarkToolFamily.Other
         };

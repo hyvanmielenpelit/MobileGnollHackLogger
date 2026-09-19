@@ -5617,6 +5617,20 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.secondOpinionTriggerLabel('OmissionAsAccuracy')).toBe('omission docked as accuracy');
     });
 
+    it('should map every second-opinion trigger to words, never to its raw name', () => {
+      // SecondOpinionTriggers in Overseer/Services/Benchmarking/BenchmarkService.cs.
+      const triggers = [
+        'CriticalError', 'RefutedClaim', 'ContestedVerdict', 'OutOfRubricAccuracy',
+        'UnevidencedDeduction', 'OmissionAsAccuracy', 'DimensionOutlier', 'UnverifiedClaims',
+        'BelowThreshold', 'Outlier', 'All', 'Manual', 'Sample'
+      ];
+      for (const trigger of triggers) {
+        const label = component.secondOpinionTriggerLabel(trigger);
+        expect(label).not.toBe(trigger);
+        expect(label.includes(' ') || /^[a-z]/.test(label)).withContext(trigger).toBeTrue();
+      }
+    });
+
     it('should render 95% CI score note under Intelligence Index tile and blind label in Assessor Agreement', () => {
       component.selectedRunDetail = {
         id: 1,

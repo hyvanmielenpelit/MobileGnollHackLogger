@@ -146,13 +146,14 @@ Relevant content about special artifacts.
     [Fact]
     public void BuildSnippet_EmptyMatchFallback_ReturnsPreamblePlusFirstSection()
     {
+        // Longer than half the budget, so the short-article rule does not apply.
         string markdown = @"Intro text about mechanics.
 
 ## Section 1
 First section content.
 
 ## Section 2
-Second section content.";
+Second section content. " + new string('z', 1300);
 
         // Query terms that match nothing in the document
         string snippet = WikiSnippetExtractor.BuildSnippet("Test.md", markdown, new[] { "nonexistentterm" }, 2500);
@@ -162,6 +163,36 @@ Second section content.";
         Assert.Contains("### Section 1", snippet);
         Assert.DoesNotContain("### Section 2", snippet);
         Assert.Contains("further section(s) omitted", snippet);
+    }
+
+    [Fact]
+    public void BuildSnippet_ShortArticleWithNoScoringSection_IsReturnedWhole()
+    {
+        string markdown = @"## Movement
+Spells that move the caster or a target.
+
+## Components
+None of them needs a gesture.";
+
+        string snippet = WikiSnippetExtractor.BuildSnippet("Spells/Movement.md", markdown, new[] { "somatic" }, 2500);
+
+        Assert.Contains("### Movement", snippet);
+        Assert.Contains("None of them needs a gesture.", snippet);
+        Assert.EndsWith("[article: Spells/Movement.md — complete]", snippet);
+    }
+
+    [Fact]
+    public void BuildSnippet_LongArticleWithNoScoringSection_ReturnsItsLeadSections()
+    {
+        string markdown = "## Overview\nThe lead section.\n\n"
+            + "## History\n" + new string('h', 900) + "\n\n"
+            + "## Trivia\n" + new string('t', 900);
+
+        string snippet = WikiSnippetExtractor.BuildSnippet("Long.md", markdown, new[] { "somatic" }, 2500);
+
+        Assert.Contains("The lead section.", snippet);
+        Assert.DoesNotContain("### Trivia", snippet);
+        Assert.Contains("[article: Long.md — 2 further section(s) omitted; use wiki_view for the full text]", snippet);
     }
 
     [Fact]

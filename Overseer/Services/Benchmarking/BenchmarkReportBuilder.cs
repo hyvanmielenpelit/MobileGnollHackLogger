@@ -904,13 +904,15 @@ public static class BenchmarkReportBuilder
     };
 
     /// <summary>Trigger names as stored, in the words the report uses for them.</summary>
-    private static string TriggerLabel(string trigger) => trigger switch
+    internal static string TriggerLabel(string trigger) => trigger switch
     {
         "CriticalError" => "critical error",
         "RefutedClaim" => "refuted claim",
         "ContestedVerdict" => "contested verdict",
+        "OutOfRubricAccuracy" => "out-of-rubric accuracy deduction",
         "UnevidencedDeduction" => "unevidenced deduction",
         "OmissionAsAccuracy" => "omission docked as accuracy",
+        "DimensionOutlier" => "dimension outlier",
         "UnverifiedClaims" => "unverifiable claims",
         "BelowThreshold" => "score below the profile threshold",
         "Outlier" => "outlier below the run median",
@@ -919,6 +921,56 @@ public static class BenchmarkReportBuilder
         "Manual" => "manual re-grade",
         _ => trigger
     };
+
+    /// <summary>
+    /// " — N tool call(s), X input tokens, Y s" from the answer's stored verifier columns, naming
+    /// only those present; empty when none is.
+    /// </summary>
+    internal static string ClaimVerificationSpendText(BenchmarkRunAnswer a)
+    {
+        var parts = new List<string>();
+        if (a.ClaimVerificationToolCallCount.HasValue) parts.Add($"{Inv(a.ClaimVerificationToolCallCount.Value, "N0")} tool call(s)");
+        if (a.ClaimVerificationInputTokens.HasValue) parts.Add($"{Inv(a.ClaimVerificationInputTokens.Value, "N0")} input tokens");
+        if (a.ClaimVerificationDurationMs.HasValue) parts.Add($"{Inv(a.ClaimVerificationDurationMs.Value / 1000.0, "N1")} s");
+        return parts.Count == 0 ? string.Empty : " — " + string.Join(", ", parts);
+    }
+
+    /// <summary>
+    /// The first 600 characters of a failed verification's raw response, on one line and with
+    /// backticks replaced so the Markdown around it holds; empty when no raw text was stored.
+    /// </summary>
+    internal static string ClaimVerificationRawTextHead(BenchmarkRunAnswer a)
+    {
+        if (string.IsNullOrWhiteSpace(a.ClaimVerificationRawText)) return string.Empty;
+
+        string head = a.ClaimVerificationRawText.Length > 600 ? a.ClaimVerificationRawText.Substring(0, 600) : a.ClaimVerificationRawText;
+        head = Regex.Replace(head, @"\s*[\r\n]+\s*", " ").Replace('`', '\'').Trim();
+        return $" Raw response, first 600 characters: {head}";
+    }
+
+    /// <summary>
+    /// "Verifier spend by answer: highest Q.. (… input tokens), Q.., Q..; mean … input tokens and …
+    /// tool calls per verified answer." over the answers with a stored verifier input-token count;
+    /// null when there is none.
+    /// </summary>
+    internal static string? VerifierSpendByAnswerLine(IEnumerable<BenchmarkRunAnswer> answers)
+    {
+        var verified = answers.Where(a => a.ClaimVerificationInputTokens.HasValue && a.ClaimVerificationInputTokens.Value > 0).ToList();
+        if (verified.Count == 0) return null;
+
+        var ranked = verified
+            .OrderByDescending(a => a.ClaimVerificationInputTokens!.Value)
+            .ThenBy(a => a.OrderIndex)
+            .Take(3)
+            .ToList();
+        var named = new List<string> { $"Q{ranked[0].OrderIndex} ({Inv(ranked[0].ClaimVerificationInputTokens!.Value, "N0")} input tokens)" };
+        named.AddRange(ranked.Skip(1).Select(a => $"Q{a.OrderIndex}"));
+
+        double meanInput = verified.Average(a => (double)a.ClaimVerificationInputTokens!.Value);
+        double meanCalls = verified.Average(a => (double)(a.ClaimVerificationToolCallCount ?? 0));
+        return $"- **Verifier spend by answer:** highest {string.Join(", ", named)}; " +
+            $"mean {Inv(meanInput, "N0")} input tokens and {Inv(meanCalls, "N1")} tool calls per verified answer.";
+    }
 
     /// <summary>
     /// The assessor's unverifiable claims. Empty for a run graded before the field existed, and
@@ -1878,6 +1930,10 @@ public static class BenchmarkReportBuilder
             bool hasVerifier = run.TotalClaimVerificationInputTokens > 0 || run.TotalClaimVerificationOutputTokens > 0;
             bool hasSynthesis = run.TotalSynthesisInputTokens > 0 || run.TotalSynthesisOutputTokens > 0;
 
+            // Printed under the Claim Verification Yield line when the verifier is priced, otherwise
+            // after the cost block.
+            string? verifierSpendLine = VerifierSpendByAnswerLine(answers);
+
             var candidatePricing = runPricing?.Candidate;
             // Synthesis is priced on the assessor's own card, so its pricing requirement folds into
             // the assessor's rather than needing a card of its own.
@@ -2017,6 +2073,12 @@ public static class BenchmarkReportBuilder
                             $"- **Claim Verification Yield:** {string.Join(" + ", heads)} checked — {string.Join("; ", parts)}. " +
                             $"${Inv(verifierTotalCost, "F2")} ({PerUnitCost(costPerItem)}/item over {over}), {Inv(verifierCostShare, "F0")}% of run cost.");
                     }
+
+                    if (verifierSpendLine != null)
+                    {
+                        sb.AppendLine(verifierSpendLine);
+                        verifierSpendLine = null;
+                    }
                 }
 
                 if (hasAssessor || hasSecondOpinion || hasVerifier || hasSynthesis)
@@ -2087,6 +2149,11 @@ public static class BenchmarkReportBuilder
                 if (missingRoles.Count == 0) missingRoles.Add("participating models");
 
                 sb.AppendLine($"- **Estimated Cost:** not available — no price is known for {string.Join(", ", missingRoles)}. Set a price in Admin → System AI Configs (Custom), or add `pricing` to the model's catalog entry.");
+            }
+
+            if (verifierSpendLine != null)
+            {
+                sb.AppendLine(verifierSpendLine);
             }
 
 
@@ -3460,7 +3527,7 @@ public static class BenchmarkReportBuilder
                 {
                     string verifierName = a.ClaimVerificationByModelDisplayNameUsed ?? run.ClaimVerifierDisplayNameUsed ?? "claim verifier";
                     string err = BenchmarkAssessmentFailure.Truncate(a.ClaimVerificationError, 200) ?? a.ClaimVerificationError;
-                    sb.AppendLine($"> - **Claim Verification ({verifierName}):** failed — {err}. The unverified claims above were not checked.");
+                    sb.AppendLine($"> - **Claim Verification ({verifierName}):** failed — {err}. The unverified claims above were not checked{ClaimVerificationSpendText(a)}.{ClaimVerificationRawTextHead(a)}");
                 }
                 if (!string.IsNullOrWhiteSpace(a.ClaimVerificationJson) || a.ClaimsSupportedCount.HasValue || a.ClaimsRefutedCount.HasValue || a.ClaimsIndeterminateCount.HasValue)
                 {
@@ -3468,7 +3535,7 @@ public static class BenchmarkReportBuilder
                     int sCount = a.ClaimsSupportedCount ?? 0;
                     int rCount = a.ClaimsRefutedCount ?? 0;
                     int iCount = a.ClaimsIndeterminateCount ?? 0;
-                    sb.AppendLine($"> - **Claim Verification ({verifierName}):** {sCount} supported, {rCount} refuted, {iCount} indeterminate — *checked against source/wiki; advisory, not reflected in the score.*");
+                    sb.AppendLine($"> - **Claim Verification ({verifierName}):** {sCount} supported, {rCount} refuted, {iCount} indeterminate — *checked against source/wiki; advisory, not reflected in the score.*{ClaimVerificationSpendText(a)}");
                 }
                 // Every accused sentence submitted, apart from the answer's own claims counted above.
                 var accusedSentences = AccusedSentencesOf(a);

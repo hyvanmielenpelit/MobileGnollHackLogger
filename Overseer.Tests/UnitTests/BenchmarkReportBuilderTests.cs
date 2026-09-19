@@ -1238,6 +1238,29 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("(trigger: score below the profile threshold)", report);
     }
 
+    [Theory]
+    [InlineData("CriticalError")]
+    [InlineData("RefutedClaim")]
+    [InlineData("ContestedVerdict")]
+    [InlineData("OutOfRubricAccuracy")]
+    [InlineData("UnevidencedDeduction")]
+    [InlineData("OmissionAsAccuracy")]
+    [InlineData("DimensionOutlier")]
+    [InlineData("UnverifiedClaims")]
+    [InlineData("BelowThreshold")]
+    [InlineData("Outlier")]
+    [InlineData("All")]
+    [InlineData("Manual")]
+    [InlineData("Sample")]
+    public void TriggerLabel_MapsEverySecondOpinionTriggerToWords(string trigger)
+    {
+        // The constants of BenchmarkService.SecondOpinionTriggers.
+        string label = BenchmarkReportBuilder.TriggerLabel(trigger);
+
+        Assert.NotEqual(trigger, label);
+        Assert.True(label.Contains(' ') || char.IsLower(label[0]), label);
+    }
+
     [Fact]
     public void AssessorAgreement_DropsTheCaveat_WhenEveryAnswerWasGradedTwice()
     {
@@ -2390,6 +2413,60 @@ public class BenchmarkReportBuilderTests
 
         Assert.Contains("**Claim Verification Failed:**", report);
         Assert.DoesNotContain("**Claim Verification Not Checked (budget):**", report);
+    }
+
+    [Fact]
+    public void ClaimVerification_CarriesEachAnswersSpend_AndTheRunListsTheHighest()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.UnverifiedClaimCount = 2;
+        q1.ClaimsSupportedCount = 2;
+        q1.ClaimVerificationToolCallCount = 6;
+        q1.ClaimVerificationInputTokens = 40_000;
+        q1.ClaimVerificationDurationMs = 12_500;
+        var q2 = ScoredAnswer(2, BenchmarkDifficulty.Simple, 30, 75);
+        q2.UnverifiedClaimCount = 1;
+        q2.ClaimsRefutedCount = 1;
+        q2.ClaimVerificationToolCallCount = 14;
+        q2.ClaimVerificationInputTokens = 120_000;
+        q2.ClaimVerificationDurationMs = 30_000;
+        var q3 = ScoredAnswer(3, BenchmarkDifficulty.Advanced, 85, 90);
+        q3.UnverifiedClaimCount = 1;
+        q3.ClaimsIndeterminateCount = 1;
+        q3.ClaimVerificationToolCallCount = 10;
+        q3.ClaimVerificationInputTokens = 80_000;
+        q3.ClaimVerificationDurationMs = 20_000;
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1, q2, q3);
+        run.TotalInputTokens = 200_000;
+        run.TotalOutputTokens = 30_000;
+        run.TotalClaimVerificationInputTokens = 240_000;
+        run.TotalClaimVerificationOutputTokens = 10_000;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("advisory, not reflected in the score.* — 14 tool call(s), 120,000 input tokens, 30.0 s", report);
+        Assert.Contains(
+            "- **Verifier spend by answer:** highest Q2 (120,000 input tokens), Q3, Q1; mean 80,000 input tokens and 10.0 tool calls per verified answer.",
+            report);
+    }
+
+    [Fact]
+    public void ClaimVerificationFailure_ShowsTheHeadOfTheRawResponse_OnOneLineWithoutBackticks()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.UnverifiedClaimCount = 2;
+        q1.ClaimVerificationError = "The verifier returned no parsable verdict.";
+        q1.ClaimVerificationRawText = "```json\n{\"verdicts\": [\n  {\"claim\": \"x\"" + new string('z', 700);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(
+            HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
+
+        string line = report.Split('\n').Single(l => l.Contains("Raw response, first 600 characters:"));
+        Assert.Contains("failed — The verifier returned no parsable verdict.", line);
+        Assert.Contains("Raw response, first 600 characters: '''json {\"verdicts\": [ {\"claim\": \"x\"", line);
+        Assert.DoesNotContain("`", line.Substring(line.IndexOf("Raw response", StringComparison.Ordinal)));
+        Assert.DoesNotContain(new string('z', 600), line);
     }
 
     // -------------------------------------------------------------------------------------

@@ -31,6 +31,30 @@ public class BenchmarkChatTransferTests
     }
 
     [Fact]
+    public void ClassifyTool_StatsAndLookupTools_AreStructuredLookup_AndNoAllowedToolIsOther()
+    {
+        foreach (var name in new[] { "get_monster_stats", "get_item_stats", "get_artifact_stats", "monster_lookup", "item_lookup" })
+        {
+            Assert.Equal(BenchmarkToolFamily.StructuredLookup, BenchmarkChatTransfer.ClassifyTool(name));
+        }
+
+        // Benchmark:AllowedTools as Overseer/appsettings.json and BenchmarkService's default list carry it.
+        var allowedTools = new[]
+        {
+            "wiki_search", "wiki_view", "get_knowledge_article",
+            "nethack_wiki_search", "nethack_wiki_view",
+            "monster_lookup", "item_lookup", "get_monster_stats",
+            "get_item_stats", "get_artifact_stats", "get_constants",
+            "get_function_definition", "search_definitions",
+            "source_code_search", "source_code_view", "list_indexed_files"
+        };
+        foreach (var name in allowedTools)
+        {
+            Assert.NotEqual(BenchmarkToolFamily.Other, BenchmarkChatTransfer.ClassifyTool(name));
+        }
+    }
+
+    [Fact]
     public void AggregateToolCounts_CalculatesRun11ToolDistributionAccurately()
     {
         // Simulate a run with 208 source, 77 wiki, 7 lookup, 1 knowledge base = 293 total
