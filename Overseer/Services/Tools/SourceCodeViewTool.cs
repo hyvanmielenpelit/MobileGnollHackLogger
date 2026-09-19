@@ -136,10 +136,14 @@ namespace Overseer.Services.Tools
             }
 
             // The excerpt stops one whole line ahead of the cap ToolExecutor applies afterwards, so
-            // the result ends on a line boundary rather than mid-line.
-            int maxChars = context.MaxResultLength > 0 ? context.MaxResultLength : 0;
+            // the result ends on a line boundary rather than mid-line; the definition pointer's room
+            // is held back from that budget.
+            int maxChars = context.MaxResultLength > 0
+                ? Math.Max(1, context.MaxResultLength - DefinitionHintReserve)
+                : 0;
 
             var content = service.GetFileExcerpt(file, startLine, lineCount, searchTerm, maxChars: maxChars);
+            content = InsertDefinitionHint(content, service is NetHackSourceCodeService ? "nethack" : "gnollhack");
 
             if (context.SpoilerFreeMode)
             {
@@ -147,6 +151,26 @@ namespace Overseer.Services.Tools
             }
 
             return Task.FromResult(new ToolResult { Success = true, Content = content });
+        }
+
+        /// <summary>Characters held back from the excerpt budget for the definition pointer and its line breaks.</summary>
+        internal const int DefinitionHintReserve = SourceDefinitionHint.MaxLength + 8;
+
+        /// <summary>
+        /// Adds the <see cref="SourceDefinitionHint"/> pointer after the excerpt's last line, ahead of
+        /// its <c>[Output truncated at line …]</c> notice when there is one.
+        /// </summary>
+        internal static string InsertDefinitionHint(string content, string repository)
+        {
+            string? hint = SourceDefinitionHint.ForViewResult(content, repository);
+            if (hint == null) return content;
+
+            string nl = Environment.NewLine;
+            string body = content.TrimEnd();
+            int notice = body.LastIndexOf("\n[Output truncated at line ", StringComparison.Ordinal);
+            return notice >= 0
+                ? body.Substring(0, notice).TrimEnd() + nl + nl + hint + nl + body.Substring(notice + 1) + nl
+                : body + nl + nl + hint + nl;
         }
     }
 }

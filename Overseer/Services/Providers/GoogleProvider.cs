@@ -375,7 +375,8 @@ public class GoogleProvider : IAiProvider
                             CacheReadTokens = cachedTokens,
                             CacheCreationTokens = 0,
                             UncachedInputTokens = uncached,
-                            OutputTokens = outputTokens,
+                            // candidatesTokenCount excludes thoughtsTokenCount; both are billed at the output rate.
+                            OutputTokens = outputTokens + thoughtTokens,
                             ReasoningTokens = thoughtTokens
                         };
 

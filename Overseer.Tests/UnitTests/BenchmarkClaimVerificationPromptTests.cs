@@ -168,6 +168,26 @@ public class BenchmarkClaimVerificationPromptTests
         Assert.True(index4 > index3e, "Instruction 4 must follow 3e, unrenumbered.");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildPrompt_Instructions3fThen3gThen3h_FollowInstruction3e_WithAndWithoutABoard(bool withBoard)
+    {
+        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
+
+        int index3e = prompt.IndexOf("3e. A wiki page alone", System.StringComparison.Ordinal);
+        int index3f = prompt.IndexOf("3f. You judge facts, not advice.", System.StringComparison.Ordinal);
+        int index3g = prompt.IndexOf("3g. Before refuting a formula, a table or a number, check whether the claim and the code state the same quantity in different notation", System.StringComparison.Ordinal);
+        int index3h = prompt.IndexOf("3h. When the function you cite hands the effect to another function, read that function before concluding that an effect is absent.", System.StringComparison.Ordinal);
+        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
+
+        Assert.True(index3e >= 0);
+        Assert.True(index3f > index3e, "Instruction 3f must follow instruction 3e.");
+        Assert.True(index3g > index3f, "Instruction 3g must follow instruction 3f.");
+        Assert.True(index3h > index3g, "Instruction 3h must follow instruction 3g.");
+        Assert.True(index4 > index3h, "Instruction 4 must follow 3h, unrenumbered.");
+    }
+
     [Fact]
     public void BuildPrompt_Instructions3dAnd3e_SayWhatALiveCallSiteAndANumberRequire()
     {

@@ -157,6 +157,31 @@ call reads `NetHackSourceCodeService`, a corpus `BenchmarkRun` does not fingerpr
 | `get_constants` | `name` **or** `prefix_filter` (handler requires at least one; schema only requires `name`) | `prefix_filter`, `repository` | result capped at **100 constants, hardcoded** | none |
 | `list_indexed_files` | none | `path_filter`, `repository` | none | none |
 
+**The definition pointer, from harness 34 (the run-56 round, 2026-09-19).** A result of
+`source_code_search` or `source_code_view` may carry one extra line that opens with `[Definition: `
+and names up to two function definitions it shows, with `get_function_definition` arguments to read
+one whole, e.g. *"[Definition: learn() at src/spell.c:398. get_function_definition {"name": "learn"}
+returns the whole body in one call; paging it with source_code_view costs one model round per
+page.]"* — a `nethack` result adds `"repository": "nethack"`. It is written by
+`Overseer/Services/Tools/SourceDefinitionHint.cs`, never longer than **300 characters**, and only for a
+`.c` file:
+
+- **`source_code_search`** appends it on a hit (never on the miss payload, never with
+  `filenames_only: true`) when a `>>>`-marked line is a column-0 definition — `name(` or type tokens
+  then `name(`, not a C keyword, the trimmed line ending in `)` or `{`. A prototype (`;`) or a
+  data-table row (`,`) is not one. When the result would push the pointer past `ToolExecutor`'s cap,
+  the pointer is placed **first** instead of last.
+- **`source_code_view`** appends it when one of the view's first three lines is such a definition and
+  its last non-blank line is not a column-0 `}` — the view opened on a function and stopped inside
+  it. It sits after the last source line and ahead of the `[Output truncated at line …]` notice when
+  both apply, and 308 characters are held back from the whole-line budget for it, so a truncated view
+  shows a few lines fewer than before.
+
+A result carrying the pointer is an **ordinary success**; the pointer is tool output, not a tool
+guide, so `ToolGuidesSha256` does not fingerprint it, and it reaches chat and benchmark alike. It is a
+line-pattern heuristic: a missed definition yields no pointer, and a false one sends the model to
+`get_function_definition`, whose miss payload redirects it.
+
 **Result shape and ranking** (`SourceCodeService.SearchFiles`): matches are grouped by file,
 files are **ordered by descending match-line count and then `Take(maxResults)`** — `max_results`
 caps files, not individual matches, but files *are* ranked, contrary to a "no ranking" reading of

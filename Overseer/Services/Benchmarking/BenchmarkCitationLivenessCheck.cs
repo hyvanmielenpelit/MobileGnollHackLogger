@@ -9,15 +9,18 @@ using System.Text.RegularExpressions;
 
 /// <summary>
 /// Notes a claim verification whose citation, <c>src/&lt;file&gt;.c:&lt;line&gt;</c>, points into a
-/// GnollHack function that nothing calls: the function enclosing the cited line has no
-/// <c>name(</c> occurrence in the indexed GnollHack source outside its own definition, a prototype
-/// and comments. Such a verification is read as Indeterminate for every flag and count
-/// (<see cref="BenchmarkClaimVerification.EffectiveVerdict"/>); its stored verdict is not touched.
+/// GnollHack function that nothing references: the function enclosing the cited line — a column-0
+/// definition whose parameter list is followed by a body, so a macro-table row such as
+/// <c>SCROLL(…),</c> is no function — has no <c>name(</c> call and no value reference to
+/// <c>name</c> (a function pointer passed or stored) in the indexed GnollHack source outside its own
+/// definition, a prototype, a <c>#define</c> and comments. Such a verification is read as
+/// Indeterminate for every flag and count (<see cref="BenchmarkClaimVerification.EffectiveVerdict"/>);
+/// its stored verdict is not touched.
 ///
-/// A function reached only through a function pointer or a macro also has no <c>name(</c> call
-/// site, so the note never argues the opposite verdict — it only withdraws the cited code as
-/// evidence. A citation with any other reference (wiki, board, another file) gets no note, nor
-/// does a NetHack citation. Pure over the corpus it is given; any failure yields no note.
+/// A function reached only through a macro that builds its name also has no reference, so the
+/// note never argues the opposite verdict — it only withdraws the cited code as evidence. A citation
+/// with any other reference (wiki, board, another file) gets no note, nor does a NetHack citation.
+/// Pure over the corpus it is given; any failure yields no note.
 /// </summary>
 public sealed class BenchmarkCitationLivenessCheck
 {
@@ -128,18 +131,77 @@ public sealed class BenchmarkCitationLivenessCheck
             if (current.TrimEnd().EndsWith(';')) continue;
 
             var bare = BareDefinitionRegex.Match(current);
-            if (bare.Success && !Keywords.Contains(bare.Groups[1].Value)) return bare.Groups[1].Value;
+            if (bare.Success && !Keywords.Contains(bare.Groups[1].Value) && OpensABody(lines, i, bare.Groups[1].Index + bare.Groups[1].Length))
+            {
+                return bare.Groups[1].Value;
+            }
 
             var typed = TypedDefinitionRegex.Match(current);
-            if (typed.Success && !Keywords.Contains(typed.Groups[1].Value)) return typed.Groups[1].Value;
+            if (typed.Success && !Keywords.Contains(typed.Groups[1].Value) && OpensABody(lines, i, typed.Groups[1].Index + typed.Groups[1].Length))
+            {
+                return typed.Groups[1].Value;
+            }
         }
 
         return null;
     }
 
+    private const int MaxParameterListLines = 40;
+
     /// <summary>
-    /// Whether <c>name(</c> occurs outside comments and string literals on a line that is neither a
-    /// definition of <paramref name="name"/>, a prototype of it, nor a <c>#define</c> of it.
+    /// Whether the parameter list opening at or after <paramref name="column"/> of line
+    /// <paramref name="row"/> closes within 40 lines and is followed by <c>{</c>, directly or after
+    /// K&amp;R parameter declarations (lines ending in <c>;</c>). A macro invocation in a data table
+    /// (<c>SCROLL(…),</c>) and a call statement are no function.
+    /// </summary>
+    private static bool OpensABody(string[] lines, int row, int column)
+    {
+        int last = Math.Min(lines.Length - 1, row + MaxParameterListLines);
+        int depth = 0;
+        bool opened = false;
+        for (int r = row; r <= last; r++)
+        {
+            string text = lines[r];
+            for (int c = r == row ? column : 0; c < text.Length; c++)
+            {
+                char ch = text[c];
+                if (ch == '(')
+                {
+                    depth++;
+                    opened = true;
+                }
+                else if (ch == ')' && opened)
+                {
+                    depth--;
+                    if (depth == 0) return FollowedByBody(lines, r, c + 1, last);
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static bool FollowedByBody(string[] lines, int row, int column, int last)
+    {
+        string rest = lines[row].Substring(column).Trim();
+        if (rest.Length > 0) return rest.StartsWith('{');
+
+        for (int r = row + 1; r <= last; r++)
+        {
+            string text = lines[r].Trim();
+            if (text.Length == 0) continue;
+            if (text.StartsWith('{')) return true;
+            if (!text.EndsWith(';') || lines[r].StartsWith('}')) return false;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="name"/> is referenced outside comments and string literals: as a call,
+    /// <c>name(</c>, on a line that is neither a definition of it, a prototype of it, nor a
+    /// <c>#define</c> of it; or as a value, the whole token not followed by <c>(</c> (a function
+    /// pointer passed or stored), on a line that is not a <c>#define</c> of it.
     /// </summary>
     private static bool HasLiveCallSite(CorpusView view, string name)
     {
@@ -153,12 +215,14 @@ public sealed class BenchmarkCitationLivenessCheck
             $@"^\s*(?!(?:return|else|if|while|for|switch|case|goto|sizeof|do)\b)(?:[A-Za-z_]\w*\s+|\*\s*)+\**{escaped}\s*\(",
             RegexOptions.CultureInvariant);
         var define = new Regex($@"^\s*#\s*define\s+{escaped}\b", RegexOptions.CultureInvariant);
+        var valueReference = new Regex($@"(?<![\w.])(?<!->){escaped}(?!\w)(?!\s*\()", RegexOptions.CultureInvariant);
 
         foreach (var file in view.Stripped.Values)
         {
             foreach (string line in file)
             {
                 if (!line.Contains(name, StringComparison.Ordinal)) continue;
+                if (valueReference.IsMatch(line) && !define.IsMatch(line)) return true;
                 if (!call.IsMatch(line)) continue;
                 if (define.IsMatch(line)) continue;
                 if (bareDefinition.IsMatch(line) && !line.TrimEnd().EndsWith(';')) continue;

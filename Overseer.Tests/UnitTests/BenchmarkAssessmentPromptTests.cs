@@ -219,9 +219,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsThirtyThree()
+    public void HarnessVersion_IsThirtyFour()
     {
-        Assert.Equal("33", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("34", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -692,19 +692,19 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs33_ScoringMethodIs12()
+    public void Versions_HarnessIs34_ScoringMethodIs12()
     {
-        Assert.Equal("33", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("34", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 33 carries scoring method 12, under which ACCURACY is graded against the rubric and
+        // Harness 34 keeps scoring method 12, under which ACCURACY is graded against the rubric and
         // the board only and an own-knowledge suspicion becomes a "Suspected false: " unverified
-        // claim. Around it the claim verifier tests the right party: the assessor's own evidence
-        // sentences are submitted as assessorStatement items that stay out of the answer's claim
-        // counts, an accused quote is submitted as its enclosing sentence with the charge beside it,
-        // and a citation into a function with no live call site is read as Indeterminate. A re-run
-        // records its provenance and its own delivery-probe stamp, the board's snapshot format is
-        // recorded, and the report lists each missing board quote. A 33-stamped run differs from a
-        // 32-stamped one on HarnessVersion and ScoringMethodVersion.
+        // claim. A Gemini call's output tokens include its thinking tokens and each answer stores
+        // its reasoning tokens; the source tools point at get_function_definition when a result
+        // shows a definition; the citation-liveness note needs a definition with a body and counts a
+        // function-pointer reference as live; the approval scan reads past a boundary inside an
+        // enclosing parenthetical; an Accuracy level below 6 that quotes a "Suspected false: "
+        // sentence is flagged; and the claim verifier gains instructions 3f-3h. A 34-stamped run
+        // differs from a 33-stamped one on HarnessVersion alone.
         Assert.Equal(12, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

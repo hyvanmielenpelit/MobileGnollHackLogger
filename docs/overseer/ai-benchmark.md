@@ -3216,6 +3216,83 @@ levels it did not grade (`LastMethodRescoreCanApply` stays 10).
   - **Board and re-runs.** It prints the board format, the re-verification stamp, and each re-executed
     answer's replaced status.
 
+### Harness Version 34 Updates
+
+Prompted by the analysis of run 56 (Gemini 3.7 Flash @ `medium`, snapshot suite 8, harness 33, method
+12). It found one defect in the chat system's cost accounting, one expensive tool-use habit that a tool
+result can correct, and four defects in the grading instrument. `HarnessVersion` moves to **"34"**;
+`ScoringMethodVersion` stays **12**. No tool guide changes, so `ToolGuidesSha256` and
+`CandidateSystemPromptSha256` do not move. One EF Core migration, `AddBenchmarkAnswerReasoningTokens`,
+adds the nullable column `BenchmarkRunAnswers.ReasoningTokens`.
+
+- **Gemini thinking tokens are output tokens (C1).** Google's `usageMetadata.candidatesTokenCount`
+  excludes `thoughtsTokenCount`, and Google bills both at the output rate. `GoogleProvider` now reports
+  `OutputTokens` = candidates + thoughts and `ReasoningTokens` = thoughts, which is the contract
+  `TokenUsageReport` states and `OpenAiResponsesProvider` already met (`output_tokens` includes
+  reasoning).
+  - **Comparability.** Gemini output-token and cost figures before harness 34, in chat and in the
+    benchmark alike, **exclude thinking tokens** and are not comparable on cost with later ones. Stored
+    figures are not rewritten.
+  - **Context occupancy.** The chat's context-occupancy figure reads the last call's output tokens, so
+    for Gemini it now over-states by that call's thoughts, as it already did for OpenAI.
+  - **Record.** Each candidate answer stores `ReasoningTokens` (null on answers recorded before the
+    migration). The report adds `, Reasoning=N` to each question's *Tokens* line and a
+    *Of Which Reasoning Tokens* line under *Total Output Tokens*, with *"(not recorded on k
+    answer(s))"* when some are null.
+
+- **A definition pointer in source tool results (T1).** `source_code_search` (on a hit, not with
+  `filenames_only`) and `source_code_view` append one line when the result shows a column-0 C function
+  definition in a `.c` file — a `>>>`-marked line for the search, one of the first three lines of a
+  view that does not end in a column-0 `}`:
+  *"[Definition: learn() at src/spell.c:398. get_function_definition {"name": "learn"} returns the
+  whole body in one call; paging it with source_code_view costs one model round per page.]"*
+  - **Shape.** At most two names and 300 characters; a `nethack` result names the `repository`
+    argument. A prototype (`;`), a data-table row (`,`) and a macro are no definition.
+  - **Budget.** `source_code_view` holds 308 characters back from its whole-line budget and puts the
+    pointer ahead of its truncation notice. A search result that would push the pointer past
+    `ToolExecutor`'s cap carries it first instead of last.
+  - **Scope.** The pointer reaches chat and benchmark alike. It is tool output, not a tool guide, so
+    `ToolGuidesSha256` does not fingerprint it. Run 56's Q16 read `learn()` in `src/spell.c` with
+    repeated `source_code_view` pages; that is what the pointer is for.
+
+- **Citation liveness, two blind spots closed (H1).** `BenchmarkCitationLivenessCheck` accepts a
+  column-0 definition line only when its parameter list closes within 40 lines and is followed by `{`,
+  directly or after K&R parameter declarations; a macro row in a data table (`SCROLL("mail", …),`) is
+  no function, and the scan walks on upward. A **value reference** — the whole token `name` not
+  followed by `(`, outside comments and strings, on a line that is not a `#define` of it — now counts as
+  live, so a function reached through a function pointer (`set_occupation(learn, "studying")`) gets no
+  note. The note still only ever demotes to Indeterminate, and it now errs toward silence: a dead
+  function whose name is also a variable gets none.
+
+- **The approval scan reaches the enclosing parenthesis (H2).** `IsApprovedInEvidence` used to stop at
+  the first clause boundary even when that boundary lay inside a parenthetical enclosing the span, so
+  *"Core claims match the rubric (items lie on the floor, not buried; … the exact '…' message; …)"*
+  accused the approved quote. When the boundary lies inside such a parenthetical the scan reads, in
+  order and the first with a marker deciding: the span's own clause; each further enclosing
+  parenthetical outwards; then the clause holding the outermost opener, without the parenthetical.
+  The innermost parenthetical is not read whole, since its other clauses judge other statements. A
+  charge marker in the span's own clause still wins.
+
+- **A docked `Suspected false:` sentence is flagged (H3).** Under method 12 an own-knowledge suspicion
+  goes to `unverifiedClaims` and must not lower Accuracy; run 56 Q18 did both, unflagged, because its
+  quoted span (*"Flame Burst"*) was under `AccusedQuoteMinLength`.
+  - **Detection.** `DocksSuspectedFalse` takes every quoted span of the accuracy evidence of at least
+    4 characters that the evidence does not approve of, and reports true when one occurs in the
+    sentence of a `Suspected false:` entry, at an Accuracy level below 6. It raises
+    `OutOfRubricAccuracyDeduction`, so the answer goes to the second reader as a marked out-of-rubric
+    deduction does.
+  - **Contest.** Such a sentence that the verifier **supports** with a citation raises
+    `ContestedAccuracyDeduction`. The report names the cause *"docked suspected-false sentence
+    supported"*, and the synthesis lists the sentence among the supported accusations. Advisory: no
+    score moves.
+
+- **Claim-verification instructions 3f–3h (H4).** After 3e the verifier reads: **3f** facts, not
+  advice — a recommendation is refuted only through a false mechanic it states, otherwise
+  Indeterminate; **3g** before refuting a formula, a table or a number, check for the same quantity in
+  another notation and recompute the claim's own worked example; **3h** read the function the cited one
+  hands the effect to before concluding that an effect is absent. Verification counts are not
+  comparable across 33 → 34.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.

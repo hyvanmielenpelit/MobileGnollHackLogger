@@ -211,7 +211,7 @@ public class GoogleProviderParseStreamTests
         Assert.Equal(3500, usage.UsageReport!.TotalPromptTokens);
         Assert.Equal(1000, usage.UsageReport.CacheReadTokens);
         Assert.Equal(2500, usage.UsageReport.UncachedInputTokens);
-        Assert.Equal(210, usage.UsageReport.OutputTokens);
+        Assert.Equal(1110, usage.UsageReport.OutputTokens);
         Assert.Equal(900, usage.UsageReport.ReasoningTokens);
     }
 
@@ -239,8 +239,51 @@ public class GoogleProviderParseStreamTests
         Assert.NotNull(usage.UsageReport);
         Assert.Equal(3500, usage.UsageReport!.TotalPromptTokens);
         Assert.Equal(1000, usage.UsageReport.CacheReadTokens);
-        Assert.Equal(210, usage.UsageReport.OutputTokens);
+        Assert.Equal(1110, usage.UsageReport.OutputTokens);
         Assert.Equal(900, usage.UsageReport.ReasoningTokens);
+    }
+
+    /// <summary>
+    /// candidatesTokenCount excludes thoughtsTokenCount, and Google bills both at the output rate,
+    /// so OutputTokens is their sum and ReasoningTokens the thoughts alone.
+    /// </summary>
+    [Fact]
+    public async Task ParseStreamAsync_WithThoughtsTokenCount_AddsThoughtsToOutputTokens()
+    {
+        var provider = CreateProvider();
+        var sse = "data: {\"candidates\": [{\"finishReason\": \"STOP\", \"content\": {\"parts\": [{\"text\": \"Done\"}]}}], \"usageMetadata\": {\"promptTokenCount\": 1000, \"candidatesTokenCount\": 50, \"thoughtsTokenCount\": 400, \"cachedContentTokenCount\": 600}}\n\n";
+        using var response = CreateSseResponse(sse);
+
+        var events = new List<ChatEvent>();
+        await foreach (var evt in provider.ParseStreamAsync(response, showDebugLog: false, CancellationToken.None))
+        {
+            events.Add(evt);
+        }
+
+        var usage = Assert.Single(events, e => e.Type == "usage");
+        Assert.NotNull(usage.UsageReport);
+        Assert.Equal(450, usage.UsageReport!.OutputTokens);
+        Assert.Equal(400, usage.UsageReport.ReasoningTokens);
+        Assert.Equal(600, usage.UsageReport.CacheReadTokens);
+    }
+
+    [Fact]
+    public async Task ParseStreamAsync_WithoutThoughtsTokenCount_ReportsCandidatesAsOutputTokens()
+    {
+        var provider = CreateProvider();
+        var sse = "data: {\"candidates\": [{\"finishReason\": \"STOP\", \"content\": {\"parts\": [{\"text\": \"Done\"}]}}], \"usageMetadata\": {\"promptTokenCount\": 1000, \"candidatesTokenCount\": 50}}\n\n";
+        using var response = CreateSseResponse(sse);
+
+        var events = new List<ChatEvent>();
+        await foreach (var evt in provider.ParseStreamAsync(response, showDebugLog: false, CancellationToken.None))
+        {
+            events.Add(evt);
+        }
+
+        var usage = Assert.Single(events, e => e.Type == "usage");
+        Assert.NotNull(usage.UsageReport);
+        Assert.Equal(50, usage.UsageReport!.OutputTokens);
+        Assert.Equal(0, usage.UsageReport.ReasoningTokens);
     }
 
     [Fact]

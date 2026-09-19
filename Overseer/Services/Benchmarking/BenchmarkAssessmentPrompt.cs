@@ -521,8 +521,22 @@ public static class BenchmarkAssessmentPrompt
     ///     do not move. A run stamped 33 differs from one stamped 32 on HarnessVersion and
     ///     ScoringMethodVersion: two instrument keys, so the comparison view does not rank them
     ///     against each other.
+    /// v34: a Gemini call's OutputTokens counts thoughtsTokenCount as well as candidatesTokenCount,
+    ///     as OpenAI's output_tokens already counts reasoning, so Gemini output and cost figures of
+    ///     earlier runs exclude thinking; each answer stores ReasoningTokens and the report prints them.
+    ///     source_code_search and source_code_view append a one-line pointer to
+    ///     get_function_definition when a result shows a function definition (chat and benchmark
+    ///     alike; no tool guide changes). The citation-liveness note needs a definition followed by a
+    ///     body, and a value reference (a function pointer passed or stored) counts as live. The
+    ///     approval scan reads past a clause boundary inside a parenthetical that encloses the span.
+    ///     An ACCURACY level below 6 whose evidence quotes a "Suspected false: " sentence raises
+    ///     OutOfRubricAccuracyDeduction, and that sentence supported with a citation raises
+    ///     ContestedAccuracyDeduction. The claim verifier gains 3f (facts, not advice), 3g (same
+    ///     quantity in another notation) and 3h (read the function the cited one hands the effect
+    ///     to). ScoringMethodVersion stays 12; CandidateSystemPromptSha256 and ToolGuidesSha256 do not
+    ///     move. Verification counts and Gemini cost are not comparable across 33 and 34.
     /// </summary>
-    public const string HarnessVersion = "33";
+    public const string HarnessVersion = "34";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

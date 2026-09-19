@@ -6,7 +6,11 @@ public record TokenUsageReport
     public int CacheReadTokens { get; init; }
     public int CacheCreationTokens { get; init; }
     public int UncachedInputTokens { get; init; }
+
+    /// <summary>Every token billed at the output rate for the call, reasoning tokens included.</summary>
     public int OutputTokens { get; init; }
+
+    /// <summary>The part of <see cref="OutputTokens"/> spent on reasoning; 0 when the provider does not report it.</summary>
     public int ReasoningTokens { get; init; }
 
     /// <summary>

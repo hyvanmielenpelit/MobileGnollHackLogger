@@ -169,12 +169,33 @@ namespace Overseer.Services.Tools
                 return Task.FromResult(new ToolResult { Success = true, Content = BuildMissContent(service, query, fileFilter, includeNetCode, isRegex) });
             }
 
+            if (!filenamesOnly)
+            {
+                content = AppendDefinitionHint(content, service is NetHackSourceCodeService ? "nethack" : "gnollhack", context.MaxResultLength);
+            }
+
             if (context.SpoilerFreeMode)
             {
                 content += "\n\n[SPOILER-FREE MODE ACTIVE: Review the spoiler_policy before sharing this information. Only share mechanics, not unrevealed content.]";
             }
 
             return Task.FromResult(new ToolResult { Success = true, Content = content });
+        }
+
+        /// <summary>
+        /// Adds the <see cref="SourceDefinitionHint"/> pointer after the result, or before it when the
+        /// result would otherwise push the pointer past the <paramref name="maxResultLength"/> cut
+        /// that ToolExecutor applies.
+        /// </summary>
+        internal static string AppendDefinitionHint(string content, string repository, int maxResultLength)
+        {
+            string? hint = SourceDefinitionHint.ForSearchResult(content, repository);
+            if (hint == null) return content;
+
+            int cap = maxResultLength > 0 ? maxResultLength : int.MaxValue;
+            return (long)content.Length + 2 + hint.Length <= cap
+                ? content + "\n\n" + hint
+                : hint + "\n\n" + content;
         }
 
         private const int ProbeMaxResults = 3;

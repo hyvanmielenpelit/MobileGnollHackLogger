@@ -403,6 +403,10 @@ public class BenchmarkRunAnswer
 
     public int? InputTokens { get; set; }
     public int? OutputTokens { get; set; }
+
+    // The part of OutputTokens spent on reasoning; null when not recorded.
+    public int? ReasoningTokens { get; set; }
+
     public int? CacheReadInputTokens { get; set; }
     public int? CacheCreationInputTokens { get; set; }
 

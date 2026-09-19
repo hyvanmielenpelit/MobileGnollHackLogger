@@ -485,13 +485,15 @@ public static class BenchmarkReportBuilder
     private const string BasisRefutedCause = "own-knowledge basis refuted";
     private const string AccusationSupportedCause = "a sentence the assessor quoted as false was supported";
     private const string AssessorStatementRefutedCause = "a statement of the assessor's own evidence was refuted";
+    private const string DockedSuspicionSupportedCause = "docked suspected-false sentence supported";
     private const string CauseNotRecorded = "cause not recorded";
 
     /// <summary>
     /// Why an answer carries <see cref="BenchmarkAnswerFlags.ContestedAccuracyDeduction"/>, read from
     /// its verification items by role: the out-of-rubric basis refuted, an accused sentence supported,
-    /// or a statement of the assessor's own evidence refuted, in any combination. A record stored
-    /// without roles, or one where none is found, yields <see cref="CauseNotRecorded"/> alone.
+    /// a statement of the assessor's own evidence refuted, or a <c>Suspected false:</c> sentence the
+    /// Accuracy evidence docks supported, in any combination. A record stored without roles, or one
+    /// where none is found, yields <see cref="CauseNotRecorded"/> alone.
     /// </summary>
     private static List<string> ContestedDeductionCauses(BenchmarkRunAnswer answer)
     {
@@ -515,6 +517,10 @@ public static class BenchmarkReportBuilder
         if (BenchmarkService.RefutedAssessorStatements(verifications).Count > 0)
         {
             causes.Add(AssessorStatementRefutedCause);
+        }
+        if (BenchmarkService.SupportedDockedSuspicions(answer, verifications).Count > 0)
+        {
+            causes.Add(DockedSuspicionSupportedCause);
         }
         if (causes.Count == 0)
         {
@@ -1741,6 +1747,13 @@ public static class BenchmarkReportBuilder
 
         sb.AppendLine($"- **Total Input Tokens:** {Inv(run.TotalInputTokens, "N0")}");
         sb.AppendLine($"- **Total Output Tokens:** {Inv(run.TotalOutputTokens, "N0")}");
+        if (answers.Any(a => a.ReasoningTokens.HasValue))
+        {
+            long reasoningTotal = answers.Sum(a => (long)(a.ReasoningTokens ?? 0));
+            int unrecorded = answers.Count(a => !a.ReasoningTokens.HasValue);
+            string unrecordedNote = unrecorded > 0 ? $" (not recorded on {unrecorded} answer(s))" : string.Empty;
+            sb.AppendLine($"- **Of Which Reasoning Tokens:** {Inv(reasoningTotal, "N0")}{unrecordedNote}");
+        }
         sb.AppendLine($"- **Total Cache Read Tokens:** {Inv(run.TotalCacheReadTokens, "N0")}");
         // A real zero and "this provider does not report the counter" are different facts, and
         // printing 0 beside four million cache reads reads as a cache that never warmed. OpenAI
@@ -2281,7 +2294,7 @@ public static class BenchmarkReportBuilder
             var byCause = contestedAccuracyDeductionAnswers
                 .SelectMany(a => ContestedDeductionCauses(a).Select(cause => (Cause: cause, Answer: a)))
                 .ToList();
-            var causeParts = new[] { BasisRefutedCause, AccusationSupportedCause, AssessorStatementRefutedCause, CauseNotRecorded }
+            var causeParts = new[] { BasisRefutedCause, AccusationSupportedCause, AssessorStatementRefutedCause, DockedSuspicionSupportedCause, CauseNotRecorded }
                 .Select(cause => (Cause: cause, Answers: byCause.Where(x => x.Cause == cause).Select(x => $"Q{x.Answer.OrderIndex}").ToList()))
                 .Where(p => p.Answers.Count > 0)
                 .Select(p => $"{p.Cause}: {string.Join(", ", p.Answers)}");
@@ -2289,7 +2302,10 @@ public static class BenchmarkReportBuilder
             string assessorStatementClause = byCause.Any(x => x.Cause == AssessorStatementRefutedCause)
                 ? ", or a statement of the assessor's own accuracy evidence was **refuted**"
                 : string.Empty;
-            sb.AppendLine($"- **Contested Accuracy Deductions:** {contestedAccuracyDeductionCount} — {string.Join("; ", causeParts)}. The claim verifier checked these against the source code/wiki: either the own-knowledge statement an out-of-rubric Accuracy deduction rests on was **refuted**, or a sentence the assessor quoted as false was **supported**{assessorStatementClause}. Advisory: the deduction stands and no index moved; re-assess from the run detail.");
+            string dockedSuspicionClause = byCause.Any(x => x.Cause == DockedSuspicionSupportedCause)
+                ? ", or a sentence the assessor reported as suspected false and docked Accuracy for was **supported**"
+                : string.Empty;
+            sb.AppendLine($"- **Contested Accuracy Deductions:** {contestedAccuracyDeductionCount} — {string.Join("; ", causeParts)}. The claim verifier checked these against the source code/wiki: either the own-knowledge statement an out-of-rubric Accuracy deduction rests on was **refuted**, or a sentence the assessor quoted as false was **supported**{assessorStatementClause}{dockedSuspicionClause}. Advisory: the deduction stands and no index moved; re-assess from the run detail.");
         }
         sb.AppendLine($"- **Answers Scrubbed:** {scrubbedAnyCount} of {totalQuestions} (transport payloads: {scrubbedTransportCount}, reasoning narration: {bleedRemoved})");
         sb.AppendLine();
@@ -3193,7 +3209,8 @@ public static class BenchmarkReportBuilder
                 ? $", model {a.ModelTimeMs} ms, tools {a.ToolTimeMs.Value} ms"
                 : string.Empty;
             sb.AppendLine($"- **Duration:** {a.DurationMs} ms (TTFT: {(a.TimeToFirstTokenMs.HasValue ? $"{a.TimeToFirstTokenMs.Value} ms" : "N/A")}{timingSuffix})");
-            sb.AppendLine($"- **Tokens:** In={a.InputTokens ?? 0}, Out={a.OutputTokens ?? 0}, CacheRead={a.CacheReadInputTokens ?? 0}");
+            string reasoningSuffix = a.ReasoningTokens.HasValue ? $", Reasoning={a.ReasoningTokens.Value}" : string.Empty;
+            sb.AppendLine($"- **Tokens:** In={a.InputTokens ?? 0}, Out={a.OutputTokens ?? 0}, CacheRead={a.CacheReadInputTokens ?? 0}{reasoningSuffix}");
             if (!string.IsNullOrWhiteSpace(a.ActualServiceTierUsed))
             {
                 sb.AppendLine($"- **Served Service Tier:** {a.ActualServiceTierUsed}");

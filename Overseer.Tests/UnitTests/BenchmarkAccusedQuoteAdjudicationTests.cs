@@ -307,6 +307,110 @@ public class BenchmarkAccusedQuoteAdjudicationTests
         Assert.Equal("Praying at 1 HP always works.", quote.Text);
     }
 
+    [Fact]
+    public void Extract_Run56_AnApprovedQuoteInsideAParentheticalListOfClauses_IsSkipped()
+    {
+        const string answer =
+            "Items from the grave lie on the floor, not buried. Digging up a grave as a lawful character costs alignment, "
+            + "and you see 'You have violated the sanctity of this grave!' when you do. Bones gear is often cursed, "
+            + "so test them with your Holy Grail before wearing anything.";
+        const string evidence =
+            "Core claims match the rubric (items lie on the floor, not buried; lawful alignment loss and the exact "
+            + "'You have violated the sanctity of this grave!' message; bones gear often cursed). The suggestion to "
+            + "'test them with your Holy Grail' is an imprecise/unsupported BUC-testing method, keeping this below 6.";
+
+        var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(answer, evidence));
+
+        Assert.Equal(new[] { "test them with your Holy Grail" }, quote.QuotedFragments);
+    }
+
+    [Fact]
+    public void Extract_AChargeInsideTheSpansOwnClauseOfAParentheticalList_StillWins()
+    {
+        const string answer = "Items lie on the floor. You see 'You have violated the sanctity of this grave!' when digging.";
+        const string evidence =
+            "Core claims match the rubric (items lie on the floor; the exact 'You have violated the sanctity of this grave!' "
+            + "message is wrong; bones gear often cursed).";
+
+        var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(answer, evidence));
+
+        Assert.Equal(new[] { "You have violated the sanctity of this grave!" }, quote.QuotedFragments);
+    }
+
+    // --- A docked Suspected-false sentence (run 56, Q18) -------------------------------------
+
+    private const string Run56Q18Answer =
+        "* **Sulfurous ash:** Used for offensive fire spells (*Fireball*, *Flame Burst*). You don't have fire spells yet, "
+        + "but at 0.1 lbs, you can safely tuck it inside your oriental silk sack for later.\n\n"
+        + "Ore nuggets are crafting materials used by the **Blacksmith** inside a **Smithy**. "
+        + "They can also be sold for gold (copper: 100gp, silver: 150gp, iron: 50gp).";
+
+    private const string Run56Q18Evidence =
+        "The answer names \"Flame Burst\" as a sulfurous-ash fire spell; the rubric's fire spells are flame strike and fireball. "
+        + "Otherwise the reagent-to-spell mappings it gives (ginseng/minor healing, garlic/protection from lycanthropy, "
+        + "sporal powder/create food) match the board.";
+
+    private static readonly string[] Run56Q18UnverifiedClaims =
+    {
+        "Suspected false: Used for offensive fire spells (*Fireball*, *Flame Burst*). — the fire spell taking sulfurous ash is flame strike; \"Flame Burst\" does not appear to be a GnollHack spell name.",
+        "Suspected false: They can also be sold for gold (copper: 100gp, silver: 150gp, iron: 50gp). — specific per-nugget prices not supported by the board or rubric and look invented."
+    };
+
+    [Fact]
+    public void DocksSuspectedFalse_Run56Q18_AShortQuotedSpellNameInsideASuspectedSentence_IsDetected()
+    {
+        Assert.True(BenchmarkService.DocksSuspectedFalse(Run56Q18Answer, Run56Q18Evidence, Run56Q18UnverifiedClaims, 4));
+    }
+
+    [Fact]
+    public void DocksSuspectedFalse_AtAccuracySix_IsFalse()
+    {
+        Assert.False(BenchmarkService.DocksSuspectedFalse(Run56Q18Answer, Run56Q18Evidence, Run56Q18UnverifiedClaims, 6));
+        Assert.False(BenchmarkService.DocksSuspectedFalse(Run56Q18Answer, Run56Q18Evidence, Run56Q18UnverifiedClaims, null));
+    }
+
+    [Fact]
+    public void DocksSuspectedFalse_AnApprovedQuote_OrNoSuspectedEntry_IsFalse()
+    {
+        Assert.False(BenchmarkService.DocksSuspectedFalse(Run56Q18Answer, "Correct: \"Flame Burst\" is right.", Run56Q18UnverifiedClaims, 4));
+        Assert.False(BenchmarkService.DocksSuspectedFalse(Run56Q18Answer, Run56Q18Evidence, new[] { "Ore nuggets are crafting materials." }, 4));
+        Assert.False(BenchmarkService.DocksSuspectedFalse(Run56Q18Answer, "Minor naming slip; ore prices are unsupported.", Run56Q18UnverifiedClaims, 4));
+    }
+
+    private static BenchmarkRunAnswer Run56Q18Graded() => new()
+    {
+        AnswerText = Run56Q18Answer,
+        AccuracyLevel = 4,
+        AssessmentEvidenceJson = JsonSerializer.Serialize(new { accuracy = Run56Q18Evidence })
+    };
+
+    private static BenchmarkClaimVerification FlameBurstVerdict(BenchmarkClaimVerdict verdict) =>
+        new(0, "Used for offensive fire spells (*Fireball*, *Flame Burst*).", verdict, "src/spell.c:120", "Flame burst is a spell.")
+        {
+            Roles = new[] { BenchmarkClaimRoles.UnverifiedClaim },
+            SuspectedFalse = true
+        };
+
+    [Fact]
+    public void ASupportedDockedSuspicion_ContestsTheAccuracyDeduction()
+    {
+        var answer = Run56Q18Graded();
+
+        BenchmarkService.ApplyClaimVerificationOutcome(answer, new[] { FlameBurstVerdict(BenchmarkClaimVerdict.Supported) }, false, null);
+
+        Assert.NotEqual(0, answer.AnswerFlags & (int)BenchmarkAnswerFlags.ContestedAccuracyDeduction);
+    }
+
+    [Fact]
+    public void ARefutedDockedSuspicion_ContestsNothing()
+    {
+        var answer = Run56Q18Graded();
+
+        BenchmarkService.ApplyClaimVerificationOutcome(answer, new[] { FlameBurstVerdict(BenchmarkClaimVerdict.Refuted) }, false, null);
+
+        Assert.Equal(0, answer.AnswerFlags & (int)BenchmarkAnswerFlags.ContestedAccuracyDeduction);
+    }
+
     [Theory]
     [InlineData("the answer is correct here", true)]
     [InlineData("consistent with the source", true)]

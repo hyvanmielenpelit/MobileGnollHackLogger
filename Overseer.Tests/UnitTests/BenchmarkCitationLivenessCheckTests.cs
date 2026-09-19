@@ -168,6 +168,62 @@ public class BenchmarkCitationLivenessCheckTests
     }
 
     [Fact]
+    public void AFunctionReachedOnlyThroughAFunctionPointer_GetsNoNote()
+    {
+        // Run 56: learn() is never called by name; it is passed to set_occupation().
+        var corpus = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["src/spell.c"] = new[]
+            {
+                "static int learn(void);",                       // 1
+                "",                                              // 2
+                "static int",                                    // 3
+                "learn(void)",                                   // 4
+                "{",                                             // 5
+                "    int i = 0;",                                // 6
+                "    return i;",                                 // 7
+                "}",                                             // 8
+                "",                                              // 9
+                "int",                                           // 10
+                "study_book(struct obj *spellbook)",             // 11
+                "{",                                             // 12
+                "    set_occupation(learn, \"studying\");",      // 13
+                "    return 1;",                                 // 14
+                "}"                                              // 15
+            }
+        };
+        var check = new BenchmarkCitationLivenessCheck(() => corpus);
+
+        Assert.Null(check.NoteFor("src/spell.c:6"));
+    }
+
+    [Fact]
+    public void ACitationIntoAMacroTableRow_GetsNoNote()
+    {
+        var corpus = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["src/objects.c"] = new[]
+            {
+                "void",                                                             // 1
+                "objects_init(void)",                                               // 2
+                "{",                                                                // 3
+                "    return;",                                                      // 4
+                "}",                                                                // 5
+                "",                                                                 // 6
+                "#define SCROLL(name,text,prob,cost) \\",                           // 7
+                "        OBJECT(OBJ(name, text), prob, cost)",                      // 8
+                "SCROLL(\"mail\",          \"stamped\",   0,  0),",                 // 9
+                "SCROLL(\"blank paper\", \"unlabeled\",  25, 60),",                 // 10
+                "#undef SCROLL"                                                     // 11
+            }
+        };
+        var check = new BenchmarkCitationLivenessCheck(() => corpus);
+
+        Assert.Null(check.NoteFor("src/objects.c:10"));
+        Assert.Null(check.NoteFor("src/objects.c:9"));
+    }
+
+    [Fact]
     public void CommentsAndLiterals_AreBlankedInPlace_AcrossLines()
     {
         var stripped = BenchmarkCitationLivenessCheck.StripCommentsAndLiterals(new[]

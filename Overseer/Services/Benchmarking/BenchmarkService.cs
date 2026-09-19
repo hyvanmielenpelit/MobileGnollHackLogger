@@ -1466,6 +1466,7 @@ public class BenchmarkService
             OutputTokens = isTerminalFailure
                 ? (runResult.OutputTokens > 0 ? runResult.OutputTokens : 0)
                 : (runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens),
+            ReasoningTokens = BenchmarkDescriptionService.SumReasoningTokens(runResult),
             CacheReadInputTokens = runResult.CacheReadTokens,
             CacheCreationInputTokens = runResult.CacheCreationTokens,
             LongContextInputTokens = longContextBuckets.InputTokens,
@@ -1707,6 +1708,7 @@ public class BenchmarkService
         answer.OutputTokens = isTerminalFailure
             ? (runResult.OutputTokens > 0 ? runResult.OutputTokens : 0)
             : (runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens);
+        answer.ReasoningTokens = BenchmarkDescriptionService.SumReasoningTokens(runResult);
         answer.CacheReadInputTokens = runResult.CacheReadTokens;
         answer.CacheCreationInputTokens = runResult.CacheCreationTokens;
         answer.LongContextInputTokens = longContextBuckets.InputTokens;
@@ -2073,7 +2075,11 @@ public class BenchmarkService
                 flags &= ~BenchmarkAnswerFlags.OmissionAsAccuracy;
             }
 
-            if (res.AccuracyOutOfRubric)
+            // Also set when the Accuracy evidence docks a sentence the assessor reported as
+            // "Suspected false:" — an own-knowledge deduction without the marker.
+            bool docksSuspectedFalse = !res.AccuracyOutOfRubric
+                && DocksSuspectedFalse(answer.AnswerText, res.AccuracyEvidence, res.UnverifiedClaims, res.AccuracyLevel);
+            if (res.AccuracyOutOfRubric || docksSuspectedFalse)
             {
                 flags |= BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction;
             }
@@ -2154,6 +2160,12 @@ public class BenchmarkService
                 _logger.LogInformation(
                     "Benchmark run {RunId} answer {OrderIndex}: assessor marked an accuracy deduction \"{Marker}\"; recorded as an out-of-rubric deduction.",
                     run.Id, answer.OrderIndex, BenchmarkAssessmentParser.OutOfRubricAccuracyMarker);
+            }
+            else if (docksSuspectedFalse)
+            {
+                _logger.LogInformation(
+                    "Benchmark run {RunId} answer {OrderIndex}: accuracy evidence quotes a sentence the assessor reported as suspected false; recorded as an out-of-rubric deduction.",
+                    run.Id, answer.OrderIndex);
             }
 
             if (dimensionOutlier)
@@ -3250,14 +3262,16 @@ public class BenchmarkService
 
         // The statement the out-of-rubric Accuracy deduction rests on was checked against the
         // source and refuted, a sentence the assessor charged as false was checked and supported
-        // with a citation, or a statement of the assessor's own evidence was refuted with one.
+        // with a citation, a statement of the assessor's own evidence was refuted with one, or a
+        // "Suspected false:" sentence the Accuracy evidence docks was supported with one.
         // Advisory in the same way: the deduction stays, no index moves, and the flag says the
         // deduction is contested. A refuted accused sentence, or a supported or indeterminate
         // assessor statement, leaves the deduction standing and adds no refutation of the answer.
         // Cleared otherwise, so a re-verification cannot leave a stale flag.
         if ((outOfRubricBasis != null && OutOfRubricBasisWasRefuted(verifications, outOfRubricBasis))
             || SupportedAccusations(verifications).Count > 0
-            || RefutedAssessorStatements(verifications).Count > 0)
+            || RefutedAssessorStatements(verifications).Count > 0
+            || SupportedDockedSuspicions(answer, verifications).Count > 0)
         {
             answer.AnswerFlags |= (int)BenchmarkAnswerFlags.ContestedAccuracyDeduction;
         }
@@ -5116,8 +5130,12 @@ public class BenchmarkService
                         // grading, and the synthesis prints those separately.
                         var ownClaims = OrdinaryClaimVerifications(verifications, a);
                         basisRefuted = OutOfRubricBasisWasRefuted(verifications, outOfRubricBasis);
+                        // A docked "Suspected false:" sentence the verifier supported is, to the
+                        // synthesis, a sentence the assessor charged as false and the source bore out.
                         supportedAccusations.AddRange(SupportedAccusations(verifications)
-                            .Select(v => (v.Claim.Trim(), v.Citation)));
+                            .Concat(SupportedDockedSuspicions(a, verifications))
+                            .Select(v => (Claim: v.Claim.Trim(), v.Citation))
+                            .DistinctBy(x => x.Claim, StringComparer.Ordinal));
                         refutedAssessorStatements.AddRange(RefutedAssessorStatements(verifications)
                             .Select(v => v.Claim.Trim()));
 
@@ -7229,6 +7247,103 @@ public class BenchmarkService
         return result;
     }
 
+    internal const int DockedSpanMinLength = 4;
+
+    /// <summary>
+    /// The quoted spans of the accuracy evidence (<see cref="ExtractAccusedQuotes"/>'s four quote
+    /// forms) of at least <see cref="DockedSpanMinLength"/> characters that the evidence does not
+    /// approve of (<see cref="IsApprovedInEvidence"/>), normalised as <see cref="NormalizeWithMap"/>
+    /// normalises; no upper bound.
+    /// </summary>
+    internal static List<string> DockedQuotedSpans(string? accuracyEvidence)
+    {
+        var result = new List<string>();
+        if (string.IsNullOrWhiteSpace(accuracyEvidence)) return result;
+
+        var matches = StraightQuotedSpanRegex.Matches(accuracyEvidence).Cast<Match>()
+            .Concat(TypographicQuotedSpanRegex.Matches(accuracyEvidence).Cast<Match>())
+            .Concat(StraightSingleQuotedSpanRegex.Matches(accuracyEvidence).Cast<Match>())
+            .Concat(TypographicSingleQuotedSpanRegex.Matches(accuracyEvidence).Cast<Match>())
+            .OrderBy(m => m.Index);
+
+        foreach (var match in matches)
+        {
+            string quoted = match.Groups[1].Value.Trim();
+            if (quoted.Length < DockedSpanMinLength) continue;
+            if (IsApprovedInEvidence(accuracyEvidence, match.Index, match.Index + match.Length - 1)) continue;
+
+            string normalized = NormalizeWithMap(quoted).Normalized;
+            if (normalized.Length >= DockedSpanMinLength && !result.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+            {
+                result.Add(normalized);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Whether an Accuracy level below 6 quotes, in its evidence, a sentence the assessor also
+    /// reported as <c>Suspected false:</c> — a deduction on its own knowledge, which scoring method 12
+    /// does not allow. True when a <see cref="DockedQuotedSpans"/> span occurs, ignoring case, in the
+    /// sentence part (<see cref="BenchmarkSuspectedFalseClaim.TryParse"/>) of any such entry. Unlike
+    /// <see cref="ExtractAccusedQuotes"/> it takes a span as short as a spell name.
+    /// </summary>
+    internal static bool DocksSuspectedFalse(string? answerText, string? accuracyEvidence, IEnumerable<string> unverifiedClaims, int? accuracyLevel)
+    {
+        if (accuracyLevel is not int level || level >= 6) return false;
+
+        var suspectedSentences = SuspectedFalseSentences(answerText, unverifiedClaims);
+        if (suspectedSentences.Count == 0) return false;
+
+        return DockedQuotedSpans(accuracyEvidence)
+            .Any(span => suspectedSentences.Any(s => s.Contains(span, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static List<string> SuspectedFalseSentences(string? answerText, IEnumerable<string>? unverifiedClaims)
+    {
+        var sentences = new List<string>();
+        foreach (string entry in unverifiedClaims ?? Array.Empty<string>())
+        {
+            if (BenchmarkSuspectedFalseClaim.TryParse(entry, answerText, out string sentence, out _))
+            {
+                string normalized = NormalizeWithMap(sentence).Normalized;
+                if (normalized.Length > 0) sentences.Add(normalized);
+            }
+        }
+        return sentences;
+    }
+
+    /// <summary>
+    /// The <c>Suspected false:</c> sentences the verifier supported with a citation whose text holds
+    /// a span the answer's Accuracy evidence quotes to dock it (<see cref="DockedQuotedSpans"/>): the
+    /// deduction rests on a statement the source bears out. Empty at Accuracy 6 or above.
+    /// </summary>
+    internal static List<BenchmarkClaimVerification> SupportedDockedSuspicions(
+        BenchmarkRunAnswer answer,
+        IReadOnlyList<BenchmarkClaimVerification>? verifications)
+    {
+        if (verifications == null || answer.AccuracyLevel is not int level || level >= 6)
+        {
+            return new List<BenchmarkClaimVerification>();
+        }
+
+        var spans = DockedQuotedSpans(ReadEvidence(answer.AssessmentEvidenceJson, "accuracy"));
+        if (spans.Count == 0) return new List<BenchmarkClaimVerification>();
+
+        return verifications
+            .Where(v => v.SuspectedFalse == true
+                && v.EffectiveVerdict == BenchmarkClaimVerdict.Supported
+                && !string.IsNullOrWhiteSpace(v.Citation)
+                && !string.IsNullOrWhiteSpace(v.Claim))
+            .Where(v =>
+            {
+                string claim = NormalizeWithMap(v.Claim).Normalized;
+                return spans.Any(span => claim.Contains(span, StringComparison.OrdinalIgnoreCase));
+            })
+            .ToList();
+    }
+
     /// <summary>One accused submission while it is assembled: the answer range it covers, and what it collected.</summary>
     private sealed class AccusedCandidate
     {
@@ -7362,12 +7477,19 @@ public class BenchmarkService
     /// ("…")"). A clause approves when it carries an approval marker and no charge marker
     /// (<see cref="BenchmarkVerdictConsistency.AccusationClauseApproves"/>); a clause with neither
     /// keeps the span, so a span is skipped only on positive evidence of approval.
+    ///
+    /// When the clause boundary before the span lies inside a parenthetical that encloses it — a
+    /// list of clauses in parentheses, "Core claims match (a; the exact '…' message; b)" — see
+    /// <see cref="IsApprovedAcrossParentheses"/>.
     /// </summary>
     internal static bool IsApprovedInEvidence(string evidence, int open, int close)
     {
         var enclosingOpeners = new List<int>();
         int depth = 0;
         int clauseStart = 0;
+        int innerStart = -1;
+        int outerStart = 0;
+        bool outerStartFound = false;
         for (int i = open - 1; i >= 0; i--)
         {
             char c = evidence[i];
@@ -7377,14 +7499,44 @@ public class BenchmarkService
             }
             else if (c == '(')
             {
-                if (depth > 0) depth--;
-                else enclosingOpeners.Add(i);
+                if (depth > 0)
+                {
+                    depth--;
+                }
+                else
+                {
+                    enclosingOpeners.Add(i);
+                    outerStartFound = false;
+                }
             }
             else if (depth == 0 && IsClauseBoundary(evidence, i))
             {
-                clauseStart = i + 1;
-                break;
+                if (innerStart < 0 && enclosingOpeners.Count > 0)
+                {
+                    clauseStart = i + 1;
+                    break;
+                }
+
+                if (innerStart < 0)
+                {
+                    // The first boundary lies before any enclosing opener: the walk goes on to the
+                    // start of the sentence for a parenthetical enclosing that boundary too.
+                    innerStart = i + 1;
+                    clauseStart = innerStart;
+                }
+                else if (enclosingOpeners.Count > 0 && !outerStartFound)
+                {
+                    outerStart = i + 1;
+                    outerStartFound = true;
+                }
+
+                if (evidence[i] == '.') break;
             }
+        }
+
+        if (innerStart >= 0 && enclosingOpeners.Count > 0)
+        {
+            return IsApprovedAcrossParentheses(evidence, open, close, innerStart, enclosingOpeners, outerStart);
         }
 
         var enclosingClosers = new List<int>();
@@ -7421,6 +7573,80 @@ public class BenchmarkService
         }
 
         return BenchmarkVerdictConsistency.AccusationClauseApproves(ClauseAround(evidence, clauseStart, clauseEnd, open, close)) == true;
+    }
+
+    /// <summary>
+    /// <see cref="IsApprovedInEvidence"/> for a span whose clause lies inside a parenthetical among
+    /// other clauses (<paramref name="innerStart"/> is after a boundary inside the innermost
+    /// enclosing parenthetical, whose openers are <paramref name="enclosingOpeners"/>, innermost
+    /// first). Read in order, the first to carry a marker deciding: the span's own clause, bounded by
+    /// the innermost parenthetical; each further enclosing parenthetical outwards, without the one it
+    /// encloses; then the clause holding the outermost opener, from <paramref name="outerStart"/> to
+    /// the boundary after its closer, without the parenthetical. The innermost parenthetical is not
+    /// read whole: its other clauses judge other statements.
+    /// </summary>
+    private static bool IsApprovedAcrossParentheses(
+        string evidence, int open, int close, int innerStart, IReadOnlyList<int> enclosingOpeners, int outerStart)
+    {
+        var closers = new List<int>();
+        int depth = 0;
+        int innerEnd = -1;
+        int outerEnd = evidence.Length;
+        for (int i = close + 1; i < evidence.Length; i++)
+        {
+            char c = evidence[i];
+            if (c == '(')
+            {
+                depth++;
+            }
+            else if (c == ')')
+            {
+                if (depth > 0) depth--;
+                else closers.Add(i);
+            }
+            else if (depth == 0 && IsClauseBoundary(evidence, i))
+            {
+                if (innerEnd < 0 && closers.Count == 0) innerEnd = i;
+                if (closers.Count >= enclosingOpeners.Count || evidence[i] == '.')
+                {
+                    outerEnd = i;
+                    break;
+                }
+            }
+        }
+
+        int innerTo = innerEnd >= 0 ? innerEnd : closers.Count > 0 ? closers[0] : outerEnd;
+        bool? inner = BenchmarkVerdictConsistency.AccusationClauseApproves(ClauseAround(evidence, innerStart, innerTo, open, close));
+        if (inner.HasValue)
+        {
+            return inner.Value;
+        }
+
+        int CloserAt(int level) => level < closers.Count ? closers[level] : outerEnd;
+
+        for (int level = 1; level < enclosingOpeners.Count; level++)
+        {
+            int from = enclosingOpeners[level] + 1;
+            int to = CloserAt(level);
+            bool? parenthetical = BenchmarkVerdictConsistency.AccusationClauseApproves(
+                TextOutside(evidence, from, to, enclosingOpeners[level - 1], CloserAt(level - 1)));
+            if (parenthetical.HasValue)
+            {
+                return parenthetical.Value;
+            }
+        }
+
+        int outermost = enclosingOpeners.Count - 1;
+        return BenchmarkVerdictConsistency.AccusationClauseApproves(
+            TextOutside(evidence, outerStart, outerEnd, enclosingOpeners[outermost], CloserAt(outermost))) == true;
+    }
+
+    /// <summary>The text from <paramref name="from"/> to <paramref name="to"/> without the parenthetical from <paramref name="opener"/> to <paramref name="closer"/>, both included.</summary>
+    private static string TextOutside(string text, int from, int to, int opener, int closer)
+    {
+        string before = opener > from ? text.Substring(from, opener - from) : string.Empty;
+        string after = to > closer + 1 ? text.Substring(closer + 1, to - closer - 1) : string.Empty;
+        return before + " " + after;
     }
 
     private static bool IsClauseBoundary(string text, int index)
