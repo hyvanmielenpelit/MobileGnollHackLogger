@@ -4075,8 +4075,8 @@ public class BenchmarkReportBuilderTests
 
         string report = BenchmarkReportBuilder.BuildMarkdownReport(Harness30BoardRun(q1));
 
-        Assert.Contains("> - **Suspected false by the assessor:** 1 — refuted 1 (the assessor was right), supported 0 (the assessor was wrong), indeterminate 0", report);
-        Assert.Contains("- **Suspected False by the Assessor:** 1 across 1 answer(s) (Q1) — refuted 1 (the assessor was right), supported 0 (the assessor was wrong), indeterminate 0.", report);
+        Assert.Contains("> - **Suspected false by the assessor:** 1 — refuted 1 (the verifier sided with the assessor), supported 0 (the verifier sided with the answer), indeterminate 0", report);
+        Assert.Contains("- **Suspected False by the Assessor:** 1 across 1 answer(s) (Q1) — refuted 1 (the verifier sided with the assessor), supported 0 (the verifier sided with the answer), indeterminate 0.", report);
         Assert.Contains("- **Q1:** \"Lizard corpses cure confusion.\" *(suspected false by the assessor)*", report);
     }
 
@@ -4101,8 +4101,8 @@ public class BenchmarkReportBuilderTests
 
         string report = BenchmarkReportBuilder.BuildMarkdownReport(Harness30BoardRun(q1));
 
-        Assert.Contains("> - **Suspected false by the assessor:** 1 — refuted 0 (the assessor was right), supported 1 (the assessor was wrong), indeterminate 0", report);
-        Assert.Contains("- **Suspected False by the Assessor:** 1 across 1 answer(s) (Q1) — refuted 0 (the assessor was right), supported 1 (the assessor was wrong), indeterminate 0.", report);
+        Assert.Contains("> - **Suspected false by the assessor:** 1 — refuted 0 (the verifier sided with the assessor), supported 1 (the verifier sided with the answer), indeterminate 0", report);
+        Assert.Contains("- **Suspected False by the Assessor:** 1 across 1 answer(s) (Q1) — refuted 0 (the verifier sided with the assessor), supported 1 (the verifier sided with the answer), indeterminate 0.", report);
     }
 
     [Fact]

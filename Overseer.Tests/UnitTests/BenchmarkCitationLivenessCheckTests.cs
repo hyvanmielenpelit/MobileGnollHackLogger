@@ -77,7 +77,15 @@ public class BenchmarkCitationLivenessCheckTests
         // and the rest are its definition and two prototypes.
         Assert.Equal("cited function priest_talk has no live call site", Check().NoteFor("src/priest.c:10"));
         Assert.Equal("cited function priest_talk has no live call site", Check().NoteFor("src/priest.c:10-11"));
-        Assert.Equal("cited function priest_talk has no live call site", Check().NoteFor("src/priest.c:7 (priest_talk)"));
+    }
+
+    [Fact]
+    public void ACitationOfTheDefinitionLineItself_GetsTheDefinitionLineNote_NotTheLivenessNote()
+    {
+        // Line 7 is "priest_talk(priest)" itself, not a line inside the body.
+        Assert.Equal(
+            "cited line src/priest.c:7 is only the definition line of priest_talk",
+            Check().NoteFor("src/priest.c:7 (priest_talk)"));
     }
 
     [Fact]
@@ -88,8 +96,6 @@ public class BenchmarkCitationLivenessCheckTests
 
     [Theory]
     [InlineData("wiki:Priest")]
-    [InlineData("src/priest.c")]
-    [InlineData("src/priest.c:priest_talk")]
     [InlineData("include/extern.h:1")]
     [InlineData("src/priest.c:10; wiki:Priest")]
     [InlineData("board: \"a - a blessed +1 quarterstaff\"")]
@@ -100,6 +106,87 @@ public class BenchmarkCitationLivenessCheckTests
     public void ACitationThatIsNotASingleLiveCheckableSourceLine_GetsNoNote(string? citation)
     {
         Assert.Null(Check().NoteFor(citation));
+    }
+
+    [Theory]
+    [InlineData("src/priest.c", "cited file src/priest.c without a line")]
+    [InlineData("src/priest.c:priest_talk", "cited file src/priest.c without a line")]
+    public void ACitationNamingAFileWithoutALine_GetsTheLinelessNote(string citation, string expected)
+    {
+        // "src/priest.c" names no line at all; "src/priest.c:priest_talk" names a symbol, not a
+        // line number — the colon is not followed by a digit, so neither is a checkable source line.
+        Assert.Equal(expected, Check().NoteFor(citation));
+    }
+
+    [Fact]
+    public void ALinelessSourceFile_GetsTheLinelessNote_RegardlessOfWhetherItIsIndexed()
+    {
+        // The lineless check is purely textual; "src/shk.c" need not be in the corpus for it to fire.
+        Assert.Equal("cited file src/shk.c without a line", Check().NoteFor("src/shk.c"));
+    }
+
+    [Fact]
+    public void ALinelessSourceFileAlongsideAWikiPage_GetsNoNote()
+    {
+        Assert.Null(Check().NoteFor("src/shk.c; wiki:Shops"));
+    }
+
+    [Fact]
+    public void ALinelessNetHackSourceFile_GetsNoNote()
+    {
+        Assert.Null(Check().NoteFor("nethack/src/x.c"));
+    }
+
+    [Fact]
+    public void AnIndeterminateVerdictWithALinelessCitation_IsNeverAnnotated()
+    {
+        var verification = new BenchmarkClaimVerification(0, "Claim.", BenchmarkClaimVerdict.Indeterminate, "src/shk.c", "Basis.");
+
+        var annotated = Assert.Single(Check().Annotate(new[] { verification }));
+
+        Assert.Null(annotated.CitationNote);
+    }
+
+    private static BenchmarkCitationLivenessCheck SpellCheck()
+    {
+        var corpus = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["src/spell.c"] = new[]
+            {
+                "/* spell.c */",                                     // 1
+                "#include \"hack.h\"",                                // 2
+                "",                                                   // 3
+                "STATIC_DCL int percent_success(struct obj *, boolean);", // 4
+                "",                                                   // 5
+                "int",                                                // 6
+                "study_book(spellbook)",                              // 7
+                "struct obj *spellbook;",                             // 8
+                "{",                                                  // 9
+                "    percent_success(spellbook, FALSE);",             // 10
+                "}",                                                  // 11
+                "percent_success(spell, limited)",                    // 12
+                "{",                                                  // 13
+                "    return 50;",                                     // 14
+                "}"                                                   // 15
+            }
+        };
+        return new BenchmarkCitationLivenessCheck(() => corpus);
+    }
+
+    [Fact]
+    public void ACitationOfOnlyTheDefinitionLine_GetsTheDefinitionLineNote()
+    {
+        Assert.Equal(
+            "cited line src/spell.c:12 is only the definition line of percent_success",
+            SpellCheck().NoteFor("src/spell.c:12"));
+    }
+
+    [Fact]
+    public void ARangeStartingOnTheDefinitionLine_GetsNoDefinitionLineNote()
+    {
+        // The range also reaches into the body, and percent_success has a live call site (line 10),
+        // so the ordinary liveness check applies instead — and finds nothing to note.
+        Assert.Null(SpellCheck().NoteFor("src/spell.c:12-40"));
     }
 
     [Fact]

@@ -25,6 +25,13 @@ using System.Text.RegularExpressions;
 /// dropped for exceeding the indexer's per-file size limit — gets the same Indeterminate treatment
 /// under a note naming the file rather than a function.
 ///
+/// A citation naming a <c>src/</c> or <c>include/</c> file but no line — including one that names a
+/// symbol instead of a line number — gets a note saying so, unless the rest of the citation also
+/// names a wiki page or a board line. A single-line, unranged reference whose cited line is itself
+/// only a column-0 function definition — nothing inside the body — gets a note naming the function
+/// instead of the usual liveness check; a range starting on that same line is exempt, since it also
+/// reaches inside the body.
+///
 /// Pure over the corpus it is given; any failure yields no note.
 /// </summary>
 public sealed class BenchmarkCitationLivenessCheck
@@ -49,9 +56,22 @@ public sealed class BenchmarkCitationLivenessCheck
 
     public static string MissingFileNoteText(string path) => $"cited file {path} is not in the indexed source";
 
+    public static string LinelessCitationNoteText(string path) => $"cited file {path} without a line";
+
+    public static string DefinitionLineNoteText(string path, int line, string functionName)
+        => $"cited line {path}:{line} is only the definition line of {functionName}";
+
     private static readonly Regex SourceReferenceRegex = new(
-        @"(?<![\w/.-])src/([\w./-]+?\.c):(\d+)(?:\s*[-–]\s*\d+)?",
+        @"(?<![\w/.-])src/([\w./-]+?\.c):(\d+)(?:\s*[-–]\s*(\d+))?",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>A <c>src/</c> or <c>include/</c> file named without a line: no <c>:&lt;digit&gt;</c> follows it.</summary>
+    private static readonly Regex LinelessSourceFileRegex = new(
+        @"(?<![\w/.-])((?:src|include)/[\w./-]+?\.(?:c|h))\b(?!\s*:\s*\d)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly Regex OtherEvidenceRegex = new(
+        @"\bwiki\s*:|\bboard\s*:", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static readonly Regex OtherReferenceRegex = new(
         @"\bwiki\s*:|\bboard\s*:|[\w-]+/[\w./-]*\.(?:c|h|txt|des|md|cs)\b|\b[\w-]+\.(?:c|h)\b",
@@ -104,7 +124,13 @@ public sealed class BenchmarkCitationLivenessCheck
         if (text.Contains("nethack", StringComparison.OrdinalIgnoreCase)) return null;
 
         var references = SourceReferenceRegex.Matches(text).Cast<Match>().ToList();
-        if (references.Count == 0) return null;
+        if (references.Count == 0)
+        {
+            var linelessFiles = LinelessSourceFileRegex.Matches(text).Cast<Match>().ToList();
+            if (linelessFiles.Count == 0) return null;
+            if (OtherEvidenceRegex.IsMatch(LinelessSourceFileRegex.Replace(text, " "))) return null;
+            return LinelessCitationNoteText(linelessFiles[0].Groups[1].Value);
+        }
         if (OtherReferenceRegex.IsMatch(SourceReferenceRegex.Replace(text, " "))) return null;
 
         var view = View();
@@ -113,12 +139,24 @@ public sealed class BenchmarkCitationLivenessCheck
         {
             string path = "src/" + reference.Groups[1].Value;
             if (!int.TryParse(reference.Groups[2].Value, out int line)) return null;
+            bool hasRange = reference.Groups[3].Success;
 
-            if (!view.Stripped.ContainsKey(path))
+            if (!view.Stripped.TryGetValue(path, out var lines))
             {
                 string missingNote = MissingFileNoteText(path);
                 if (!notes.Contains(missingNote, StringComparer.Ordinal)) notes.Add(missingNote);
                 continue;
+            }
+
+            if (!hasRange && line >= 1 && line <= lines.Length)
+            {
+                string? definitionName = DefinitionNameAt(lines, line - 1, lines[line - 1]);
+                if (definitionName != null)
+                {
+                    string definitionNote = DefinitionLineNoteText(path, line, definitionName);
+                    if (!notes.Contains(definitionNote, StringComparer.Ordinal)) notes.Add(definitionNote);
+                    continue;
+                }
             }
 
             string? name = EnclosingFunction(view, path, line);
@@ -145,17 +183,31 @@ public sealed class BenchmarkCitationLivenessCheck
             if (i < line - 1 && current.StartsWith('}')) return null;
             if (current.TrimEnd().EndsWith(';')) continue;
 
-            var bare = BareDefinitionRegex.Match(current);
-            if (bare.Success && !Keywords.Contains(bare.Groups[1].Value) && OpensABody(lines, i, bare.Groups[1].Index + bare.Groups[1].Length))
-            {
-                return bare.Groups[1].Value;
-            }
+            string? name = DefinitionNameAt(lines, i, current);
+            if (name != null) return name;
+        }
 
-            var typed = TypedDefinitionRegex.Match(current);
-            if (typed.Success && !Keywords.Contains(typed.Groups[1].Value) && OpensABody(lines, i, typed.Groups[1].Index + typed.Groups[1].Length))
-            {
-                return typed.Groups[1].Value;
-            }
+        return null;
+    }
+
+    /// <summary>
+    /// <paramref name="current"/> (line <paramref name="row"/>, 0-based) as a column-0 function
+    /// definition: its name, when <see cref="BareDefinitionRegex"/> or <see cref="TypedDefinitionRegex"/>
+    /// matches, the name is not a <see cref="Keywords"/> entry, and <see cref="OpensABody"/> holds for
+    /// it; null otherwise.
+    /// </summary>
+    private static string? DefinitionNameAt(string[] lines, int row, string current)
+    {
+        var bare = BareDefinitionRegex.Match(current);
+        if (bare.Success && !Keywords.Contains(bare.Groups[1].Value) && OpensABody(lines, row, bare.Groups[1].Index + bare.Groups[1].Length))
+        {
+            return bare.Groups[1].Value;
+        }
+
+        var typed = TypedDefinitionRegex.Match(current);
+        if (typed.Success && !Keywords.Contains(typed.Groups[1].Value) && OpensABody(lines, row, typed.Groups[1].Index + typed.Groups[1].Length))
+        {
+            return typed.Groups[1].Value;
         }
 
         return null;

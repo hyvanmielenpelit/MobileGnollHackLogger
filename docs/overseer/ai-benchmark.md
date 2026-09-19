@@ -3130,7 +3130,8 @@ levels it did not grade (`LastMethodRescoreCanApply` stays 10).
     the verification item carries `suspectedFalse: true`, `suspicion` and `recordedClaim` (the stored
     entry). A refutation raises `RefutedClaim` and the second opinion, as for any claim.
   - **Report.** It counts these apart, per answer and in Assessor Findings: *"Suspected false by the
-    assessor: N — refuted a (the assessor was right), supported b, indeterminate c"*.
+    assessor: N — refuted a (the verifier sided with the assessor), supported b, indeterminate c"*
+    (harness 36 wording).
   - **The old marker.** `OutOfRubricAccuracyMarker` still parses, so stored method-11 evidence renders
     unchanged. A method-12 assessor that writes it anyway beside a sub-6 level still raises
     `OutOfRubricAccuracyDeduction`. Under method 12 that flag means *the instruction was not followed*,
@@ -3382,7 +3383,8 @@ migration.
 
 - **Report wording (H3, H4).** The out-of-rubric line says *"which the scoring method does not permit
   as an accuracy deduction"* instead of naming method v7. The accused-sentence summary reads
-  *"refuted n (the assessor was right), supported m (the assessor was wrong), indeterminate k"*. The
+  *"refuted n (the verifier sided with the assessor), supported m (the verifier sided with the
+  answer), indeterminate k"* (harness 36 wording; see below). The
   *Claim Verification Yield* line follows the *Synthesis* cost line, so the five role cost lines are
   contiguous. When the second reader disputed a critical error, *Contested critical errors* adds that it
   counts quotes the claim verifier supported, while second-reader disputes are counted on the *Critical
@@ -3405,6 +3407,91 @@ migration.
 - **Comparability.** With `HarnessVersion`, `ToolGuidesSha256` and `CandidateSystemPromptSha256` all
   moving, and the round's rubric repair imported, the next suite-8 run is NotComparable with runs 57
   and 59.
+
+### Harness Version 36 Updates
+
+Prompted by the analysis of runs 60 (Gemini 3.7 Flash @ `medium`) and 61 (GPT-5.6 Luna @ `high`),
+snapshot suite 8, harness 35, method 12, both graded with Gemini 3.8 Flash @ `medium` as second reader
+and claim verifier. All 115 tool calls of the two runs succeeded. The claim verifier gave seven wrong
+verdicts, four of them resting on a citation that could not have been evidence, and `wiki_search`
+stayed silent when a `category` hid the article the model needed. `HarnessVersion` moves to
+**"36"**; `ScoringMethodVersion` stays **12**. One tool guide changes, so `ToolGuidesSha256` moves;
+`CandidateSystemPromptSha256` does not. No EF Core migration.
+
+- **Two more citation notes (H1).** `BenchmarkCitationLivenessCheck` adds, beside the liveness note
+  and the not-in-the-index note:
+  - *"cited file <path> without a line"* when a verdict's only source citation names a `src/` or
+    `include/` `.c` or `.h` file with no line, and nothing else in the citation names a wiki page
+    (`wiki:`) or a board line (`board:`). A NetHack source path (`nethack/…`) is exempt, as for the
+    other notes.
+  - *"cited line <path>:<line> is only the definition line of <function>"* when a single cited line
+    (not a range) in an indexed file is itself a function's definition line — it matches the
+    definition patterns, names no keyword, and is followed by a body. A range is never noted this
+    way, even one that starts on the definition line, and a citation with any reference inside a live
+    function carries no note.
+
+  A note reads as Indeterminate for every flag and count, exactly as the liveness note does
+  (`BenchmarkCitationLivenessCheck.EffectiveVerdict`); the verdict is never turned into its opposite.
+  A right verdict with a bad citation therefore loses its count — the accepted cost. The note is
+  written when a verdict is stored and never recomputed, so **stored runs are not re-annotated**.
+  Runs 60 and 61 had three verdicts citing a bare `src/shk.c` or `src/spell.c` and one citing
+  `src/spell.c:5186`, the definition line of `percent_success`; one of them, a wrong *Supported*,
+  drove a validated evidence-informed re-grade (run 60 Q7).
+
+- **Instruction 5 says what a citation is (H1).** With a board it reads:
+
+  > 5. CITATION REQUIREMENT: Every Supported or Refuted verdict MUST include a citation: a source file
+  > with the line or line range that shows it, such as 'src/weapon.c:450' or 'src/spell.c:640-646'; a
+  > wiki page title such as 'wiki:Yeenoghu'; or a game board line such as 'board: "a - a blessed +1
+  > quarterstaff (weapon in hands)"'. A source file without a line is not a citation, and neither is
+  > the line on which a function merely begins: cite the lines inside it that decide the claim. A
+  > verdict without a citation, or with only such a citation, is read by the harness as Indeterminate.
+
+  Without a board, the same text without the board clause. The old example of a bare file name
+  (`'src/mon.c'`) is gone.
+
+- **Instruction 3i, absence needs more than one place (H1).** After 3h:
+
+  > 3i. Absence needs more than one place. Before you refute a claim that something has an effect, or
+  > support a claim that it has none, search for every place the item, monster or function is handled:
+  > an effect is often applied in a function that runs earlier or later than the one you found first —
+  > a pre-effect and a post-effect, a caller, a shared check at the top of the attack routine. One
+  > function that lacks the effect does not show that the effect is absent; if you cannot rule the
+  > other places out, the verdict is Indeterminate.
+
+  Run 61 Q11 refuted a lizard corpse's 13 turns of resistance from the post-effect, and magic
+  cancellation against a cockatrice's touch from one function of the attack path.
+
+- **Report wording (H3).** Both *Suspected false by the assessor* lines — per answer and in Assessor
+  Findings — read *"refuted n (the verifier sided with the assessor), supported m (the verifier sided
+  with the answer), indeterminate k"*. The earlier *"(the assessor was right)"* stated a verifier
+  verdict as fact; run 61 Q11 printed it over two wrong refutations.
+
+- **`wiki_search` names what a category hid (T1, chat and benchmark alike).** When `category` is set,
+  the result is not empty, and the single best match for the query without the category lies outside
+  it and is not among the results, the result carries
+
+  > [Without category, the best match for this query is <path>, which is outside '<category>'. Omit
+  > category to see it.]
+
+  with the path cut at 120 characters, the category at 40 and the line at 240. It sits after the
+  snippets, separated by a blank line and ahead of the *Showing N of M* line, unless the result is
+  within 400 characters of its 13,000-character cap, in which case it goes first. Any failure of the
+  probe yields no line. The empty-result miss payload (`BuildMissContent`) is unchanged; it already
+  named the unfiltered match. `wiki_search.md` gains one sentence describing the line, which moves
+  `ToolGuidesSha256`; per-tool guides are not inlined into the system prompt, so
+  `CandidateSystemPromptSha256` stays. Run 61 set a category on about 20 of 37 searches, and five of
+  them excluded the root-level mechanics article the question needed.
+
+- **What does not move.** `ScoringMethodVersion` (12), `CandidateSystemPromptSha256`, the chat system
+  prompt and `_policy.md`, and every `BenchmarkAnswerFlags` member. The grader roster is the user's
+  choice: Gemini 3.8 Flash @ `medium` as second reader and claim verifier, because it is a different
+  model from the candidates.
+
+- **Comparability.** `HarnessVersion` and `ToolGuidesSha256` move, and the round's rubric repair
+  (Q7, Q11, Q16, Q18) is imported, so the next suite-8 run is NotComparable with runs 60 and 61.
+  Verification counts are not comparable across 35 and 36: a verdict the new notes demote was counted
+  under 35.
 
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).

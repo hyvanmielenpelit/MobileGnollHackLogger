@@ -508,6 +508,27 @@ articles (Q1, Q9, Q11, Q13, Q15, Q16) while `Spell Casting.md` sat at the root. 
 before editing it, since the wiki moves independently of this repository. The sentence moves
 `ToolGuidesSha256`, not `CandidateSystemPromptSha256`.
 
+**A categorised `wiki_search` names what its category hid, from harness 36 (the runs 60 and 61
+round, 2026-09-19).** When `category` is set and the result is not empty,
+`WikiSearchTool.BuildOutsideCategoryHint` probes once for the single best match of the same query
+without the category (`SafeProbe(query, null, 1)`, the probe the miss payload already uses). It adds
+nothing when there is no such match, when that match's path, forward-slashed, contains the category
+(ordinal, ignoring case), or when one of the returned results opens with that article's
+`--- <path> ---` header. Otherwise the result carries
+
+`[Without category, the best match for this query is <path>, which is outside '<category>'. Omit category to see it.]`
+
+with the path cut at 120 characters, the category at 40 and the whole line at 240. It sits after the
+snippets, separated by a blank line and ahead of the *Showing N of M* line; when the result is within
+400 characters of `wiki_search`'s 13,000-character cap it goes first instead, as `source_code_search`'s
+definition pointer does. The probe never throws — any exception yields no line — and the call stays an
+ordinary success. The empty-result miss payload (`BuildMissContent`) is unchanged and already names
+the unfiltered match. `wiki_search.md` ends its `category` paragraph with one sentence describing the
+line (call again without `category`, or open the article with `wiki_view`), which moves
+`ToolGuidesSha256`. The line points at the *best* unfiltered match, which may be a weak one; it is not
+a verdict that the category was wrong. Run 61 set a category on about 20 of 37 searches, and five of
+them (Q3, Q11 ×2, Q16 ×2) hid the root-level mechanics article with no word from the tool.
+
 **`nethack_wiki_view` article resolution prefers an exact title from harness 27, and a non-exact
 resolution has been announced rather than silent since the run-36 round (2026-09-11).**
 `NetHackWikiService.GetArticleResolved` scans the title/filename hits in order and takes the first

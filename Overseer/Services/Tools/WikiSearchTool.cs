@@ -85,6 +85,18 @@ namespace Overseer.Services.Tools
                 return Task.FromResult(new ToolResult { Success = true, Content = BuildMissContent(query, category, maxResults) });
             }
 
+            string? outsideHint = BuildOutsideCategoryHint(query, category, results);
+            bool hintLeadsContent = outsideHint != null && content.Length + 400 > MaxResultLengthOverride;
+
+            if (hintLeadsContent)
+            {
+                content = outsideHint + "\n\n" + content;
+            }
+            else if (outsideHint != null)
+            {
+                content += "\n\n" + outsideHint;
+            }
+
             if (totalHits > results.Count)
             {
                 content += $"\n\n[Showing {results.Count} of {totalHits} matching articles — narrow the query, or add a distinctive word from the article's title, to see others.]";
@@ -157,6 +169,44 @@ namespace Overseer.Services.Tools
             catch
             {
                 return "No relevant information found in the GnollHack wiki.";
+            }
+        }
+
+        private const int OutsideCategoryPathMaxChars = 120;
+        private const int OutsideCategoryValueMaxChars = 40;
+        private const int OutsideCategoryHintMaxChars = 240;
+
+        /// <summary>
+        /// Points at the best unfiltered match when a <paramref name="category"/> filter may be
+        /// hiding it from a non-empty result set. Probes the query with no category, and returns
+        /// null when there is no category, when the probe finds nothing, when its best match's
+        /// path already lies inside <paramref name="category"/>, or when that match is already
+        /// one of <paramref name="results"/>. Never throws — falls back to null.
+        /// </summary>
+        internal string? BuildOutsideCategoryHint(string query, string? category, List<string> results)
+        {
+            if (string.IsNullOrWhiteSpace(category)) return null;
+
+            try
+            {
+                var unfiltered = SafeProbe(query, null, 1);
+                if (unfiltered.Count == 0) return null;
+
+                string path = unfiltered[0];
+                string normalizedPath = path.Replace('\\', '/');
+                if (normalizedPath.IndexOf(category, StringComparison.OrdinalIgnoreCase) >= 0) return null;
+
+                string header = $"--- {path} ---";
+                if (results.Any(r => r.StartsWith(header, StringComparison.Ordinal))) return null;
+
+                string truncatedPath = path.Length > OutsideCategoryPathMaxChars ? path.Substring(0, OutsideCategoryPathMaxChars) : path;
+                string truncatedCategory = category.Length > OutsideCategoryValueMaxChars ? category.Substring(0, OutsideCategoryValueMaxChars) : category;
+                string hint = $"[Without category, the best match for this query is {truncatedPath}, which is outside '{truncatedCategory}'. Omit category to see it.]";
+                return hint.Length > OutsideCategoryHintMaxChars ? hint.Substring(0, OutsideCategoryHintMaxChars) : hint;
+            }
+            catch
+            {
+                return null;
             }
         }
 

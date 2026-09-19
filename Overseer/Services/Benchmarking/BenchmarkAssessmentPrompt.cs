@@ -545,8 +545,16 @@ public static class BenchmarkAssessmentPrompt
     ///     findings are advisory. Chat and benchmark alike: the source tools mark lines inside
     ///     "#if 0", wiki_search.md describes its categories and _policy.md gains one sentence, so
     ///     ToolGuidesSha256 and CandidateSystemPromptSha256 move. ScoringMethodVersion stays 12.
+    /// v36: a verdict whose only source citation is a file without a line, or a single line that is
+    ///     a function's definition line, carries a citation note and counts as Indeterminate; the
+    ///     verifier's instruction 5 says what a citation is and 3i requires every place an effect
+    ///     could be applied to be ruled out before absence is concluded. The report's suspected-false
+    ///     outcomes say which side the verifier took. Chat and benchmark alike: a categorised
+    ///     wiki_search whose best unfiltered match lies outside the category names that article, and
+    ///     wiki_search.md says so, which moves ToolGuidesSha256. ScoringMethodVersion stays 12 and
+    ///     CandidateSystemPromptSha256 does not move. Stored runs are not re-annotated.
     /// </summary>
-    public const string HarnessVersion = "35";
+    public const string HarnessVersion = "36";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

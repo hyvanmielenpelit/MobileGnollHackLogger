@@ -2446,7 +2446,7 @@ public static class BenchmarkReportBuilder
             }
             if (suspectedFalseRunCount > 0)
             {
-                sb.AppendLine($"- **Suspected False by the Assessor:** {suspectedFalseRunCount} across {suspectedFalseByAnswer.Count} answer(s) ({string.Join(", ", suspectedFalseByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — refuted {suspectedFalseTotals.Refuted} (the assessor was right), supported {suspectedFalseTotals.Supported} (the assessor was wrong), indeterminate {suspectedFalseTotals.Indeterminate}. *Answer sentences the assessor believed false from its own knowledge, which neither the rubric nor the board settles; under scoring method 12 they lower no level and are checked by the claim verifier instead. Included in the unverified claims above.*");
+                sb.AppendLine($"- **Suspected False by the Assessor:** {suspectedFalseRunCount} across {suspectedFalseByAnswer.Count} answer(s) ({string.Join(", ", suspectedFalseByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — refuted {suspectedFalseTotals.Refuted} (the verifier sided with the assessor), supported {suspectedFalseTotals.Supported} (the verifier sided with the answer), indeterminate {suspectedFalseTotals.Indeterminate}. *Answer sentences the assessor believed false from its own knowledge, which neither the rubric nor the board settles; under scoring method 12 they lower no level and are checked by the claim verifier instead. Included in the unverified claims above.*");
             }
             if (supportedAccusations.Count > 0)
             {
@@ -3504,7 +3504,7 @@ public static class BenchmarkReportBuilder
                 if (suspectedFalse.Count > 0)
                 {
                     var (suspectedSupported, suspectedRefuted, suspectedIndeterminate) = VerdictCounts(suspectedFalse);
-                    sb.AppendLine($"> - **Suspected false by the assessor:** {suspectedFalse.Count} — refuted {suspectedRefuted} (the assessor was right), supported {suspectedSupported} (the assessor was wrong), indeterminate {suspectedIndeterminate}");
+                    sb.AppendLine($"> - **Suspected false by the assessor:** {suspectedFalse.Count} — refuted {suspectedRefuted} (the verifier sided with the assessor), supported {suspectedSupported} (the verifier sided with the answer), indeterminate {suspectedIndeterminate}");
                 }
                 // A verdict the harness demoted: the verifier cited a function nothing calls.
                 foreach (var noted in (ClaimVerificationsOf(a) ?? new List<BenchmarkClaimVerification>())

@@ -171,7 +171,7 @@ public class BenchmarkClaimVerificationPromptTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void BuildPrompt_Instructions3fThen3gThen3h_FollowInstruction3e_WithAndWithoutABoard(bool withBoard)
+    public void BuildPrompt_Instructions3fThen3gThen3hThen3i_FollowInstruction3e_WithAndWithoutABoard(bool withBoard)
     {
         string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
 
@@ -179,13 +179,15 @@ public class BenchmarkClaimVerificationPromptTests
         int index3f = prompt.IndexOf("3f. You judge facts, not advice.", System.StringComparison.Ordinal);
         int index3g = prompt.IndexOf("3g. Before refuting a formula, a table or a number, check whether the claim and the code state the same quantity in different notation", System.StringComparison.Ordinal);
         int index3h = prompt.IndexOf("3h. When the function you cite hands the effect to another function, read that function before concluding that an effect is absent.", System.StringComparison.Ordinal);
+        int index3i = prompt.IndexOf("3i. Absence needs more than one place.", System.StringComparison.Ordinal);
         int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
 
         Assert.True(index3e >= 0);
         Assert.True(index3f > index3e, "Instruction 3f must follow instruction 3e.");
         Assert.True(index3g > index3f, "Instruction 3g must follow instruction 3f.");
         Assert.True(index3h > index3g, "Instruction 3h must follow instruction 3g.");
-        Assert.True(index4 > index3h, "Instruction 4 must follow 3h, unrenumbered.");
+        Assert.True(index3i > index3h, "Instruction 3i must follow instruction 3h.");
+        Assert.True(index4 > index3i, "Instruction 4 must follow 3i, unrenumbered.");
     }
 
     [Fact]
@@ -222,6 +224,17 @@ public class BenchmarkClaimVerificationPromptTests
         Assert.DoesNotContain("--- GAME BOARD", prompt);
         Assert.DoesNotContain("3c.", prompt);
         Assert.DoesNotContain("board:", prompt);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildPrompt_Instruction5_RequiresALineAndDropsTheOldMonCExample_WithAndWithoutABoard(bool withBoard)
+    {
+        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
+
+        Assert.Contains("A source file without a line is not a citation", prompt);
+        Assert.DoesNotContain("'src/mon.c'", prompt);
     }
 
     // Run 52 Q5: the list item's meaning ("these are safe to eat") comes from its heading.

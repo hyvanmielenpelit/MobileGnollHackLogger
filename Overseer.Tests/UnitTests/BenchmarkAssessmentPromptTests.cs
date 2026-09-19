@@ -219,9 +219,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsThirtyFive()
+    public void HarnessVersion_IsThirtySix()
     {
-        Assert.Equal("35", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("36", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -725,19 +725,19 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs35_ScoringMethodIs12()
+    public void Versions_HarnessIs36_ScoringMethodIs12()
     {
-        Assert.Equal("35", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("36", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 35 keeps scoring method 12, under which ACCURACY is graded against the rubric and
+        // Harness 36 keeps scoring method 12, under which ACCURACY is graded against the rubric and
         // the board only and an own-knowledge suspicion becomes a "Suspected false: " unverified
-        // claim. The flag detectors gain defect, falsehood and out-of-rubric vocabulary; a verdict
-        // citing a source file that is not indexed carries a citation note; duplicate unverified
-        // claims are verified once; the report's wording and cost-block order change; and the
-        // synthesis receives per-dimension level counts and treats contested findings as advisory.
-        // The source tools' compiled-out note and the wiki_search.md and _policy.md sentences move
-        // ToolGuidesSha256 and CandidateSystemPromptSha256 as well, so a 35-stamped run differs
-        // from a 34-stamped one on three instrument keys.
+        // claim. A verdict citing a source file without a line, or only a function's definition
+        // line, carries a citation note and counts as Indeterminate; the verifier's instruction 5
+        // says what a citation is and 3i asks for every place an effect could be applied before
+        // absence is concluded; the report says which side the verifier took on a suspected-false
+        // claim. A categorised wiki_search names a best match outside its category, and the
+        // wiki_search.md sentence describing that moves ToolGuidesSha256, so a 36-stamped run
+        // differs from a 35-stamped one on HarnessVersion and ToolGuidesSha256.
         Assert.Equal(12, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

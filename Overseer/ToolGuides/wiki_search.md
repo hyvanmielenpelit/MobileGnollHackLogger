@@ -18,7 +18,9 @@ gameplay guide. Articles on game mechanics — spell casting, saving throws, pra
 general, eating — are in no directory, so any `category` excludes them: omit `category` for a
 mechanics question. A value that names no directory excludes every hit rather than narrowing
 them. Omit it unless you know the directory; a miss with a category set is more often the
-filter than the query.
+filter than the query. When a `category` is set and the best match for the query lies outside
+it, the result ends with a line naming that article: call again without `category`, or open it
+with `wiki_view`.
 
 Monster articles returned by this tool use the same `## Level N …` header as `monster_lookup`;
 that number is the difficulty rating, and the `Hit dice` line is the level.
