@@ -3,7 +3,7 @@
    CodeMirror builds that DOM outside this component's template.
 
    The frame is size-contained, so the component's minimum height is its toolbar, the frame's
-   min-height, the status bar and the footer, never the document's height; overflow: clip rather
+   min-height and the status bar, never the document's height; overflow: clip rather
    than hidden keeps that automatic minimum in force. */
 :host {
   display: flex;
@@ -198,50 +198,9 @@
   color: #e57373;
 }
 
-.editor-footer {
-  flex-shrink: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 16px;
-  padding: 10px 12px;
-  background: var(--bg-glass);
-  border-top: 1px solid var(--border-glass);
-}
-
-.editor-error {
-  flex: 1 1 16em;
-  min-width: 0;
-  font-size: 0.85rem;
-}
-
-.editor-error-text {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: 6px;
-  color: #e57373;
-  overflow-wrap: anywhere;
-
-  .warning-icon {
-    margin-top: 2px;
-  }
-}
-
-.editor-error .is-ok {
-  color: var(--primary-color);
-}
-
-.editor-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-inline-start: auto;
-}
-
 @media (max-width: 600px) {
   .editor-toolbar,
-  .editor-status,
-  .editor-footer {
+  .editor-status {
     padding-inline: 8px;
   }
 

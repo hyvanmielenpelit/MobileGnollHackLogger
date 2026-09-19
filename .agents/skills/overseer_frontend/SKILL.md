@@ -243,7 +243,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     keeps its progress in `localStorage['overseer.snapshotSuiteWizard']`.
   - `#snapshotUploadDialog` (`app-snapshot-upload-dialog`, `snapshot-upload/`): Upload Snapshot from
     a suite card, with a nested `#replaceConfirmDialog` when the suite already has a snapshot.
-    Delete Snapshot lives in the snapshot viewer's Metadata tab (`#deleteConfirmDialog` in
+    Delete Snapshot lives in the snapshot viewer's Delete tab (`#deleteConfirmDialog` in
     `snapshot-viewer.component.html`).
 
 - **Comparison Source Picker (`comparison-source-picker.component.html`, Admin → AI Benchmark →

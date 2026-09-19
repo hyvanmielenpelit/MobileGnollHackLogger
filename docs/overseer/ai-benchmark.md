@@ -4461,19 +4461,26 @@ replaces the previous dedicated "View Board" row button.
 `SnapshotViewerComponent` (`Overseer/ClientApp/src/app/shared/snapshot-viewer/`) is a full-screen
 dialog for reading a 60,000-character fixed-width dump, checking claims about it — the
 administrator's own, the AI's in a chat, and the rubric checker's verbatim quotes — and editing it
-and its metadata directly. It has two tabs, each a single editor page. The DOM-free text logic (map
-detection, sections, line-number formatting) lives in `reader-text.ts` beside it.
-- **Layout**: A `.gh-dialog-fullscreen` dialog whose body sits under a tab row — **Game Snapshot**
-  and **Metadata** — built on the shared `.gh-tabs` widget with its full ARIA contract (`tablist` /
-  `tab` / `tabpanel`, roving `tabindex`) and keyboard model (arrow keys wrap, Home and End jump). Both
-  panels stay in the DOM and the inactive one is `hidden`, so an edit on either tab survives switching
-  to the other, and switching never asks. The dialog body itself never scrolls: only the CodeMirror
-  scrollers do, so each page's footer stays in view. Each editor frame is size-contained
-  (`contain: size`) with a minimum height, so a page's minimum height is its fixed parts plus that
-  minimum, never the document's length; only a viewport shorter than that makes the panel scroll as a
-  whole. The dialog has no footer; the header close button and Escape are the ways out. The dialog
-  opens on **Game Snapshot** every time, and closing it destroys both editors, so a reopened snapshot
-  always gets fresh ones.
+and its metadata directly. It has three tabs: two editor pages and a page for deleting the snapshot.
+The DOM-free text logic (map detection, sections, line-number formatting) lives in `reader-text.ts`
+beside it.
+- **Layout**: A `.gh-dialog-fullscreen` dialog whose body sits under a tab row — **Game Snapshot**,
+  **Metadata** and **Delete** — built on the shared `.gh-tabs` widget with its full ARIA contract
+  (`tablist` / `tab` / `tabpanel`, roving `tabindex`) and keyboard model (arrow keys wrap, Home and End
+  jump). All three panels stay in the DOM and the inactive ones are `hidden`, so an edit on either
+  editing tab survives switching to another, and switching never asks. The dialog body itself never
+  scrolls: only the CodeMirror scrollers do, so the dialog footer stays in view. Each editor frame is
+  size-contained (`contain: size`) with a minimum height, so a page's minimum height is its fixed parts
+  plus that minimum, never the document's length; only a viewport shorter than that makes the panel
+  scroll as a whole. The dialog opens on **Game Snapshot** every time, and closing it destroys both
+  editors, so a reopened snapshot always gets fresh ones.
+- **Footer**: One footer under the body, shown on the two editing tabs and absent on **Delete**,
+  serves both editing tabs. On the left a single polite live region (`role="status"`) shows, in
+  priority order, the last error, a success message for two seconds, or what is unsaved (*Unsaved
+  changes: snapshot text*, *…: metadata*, or *…: snapshot text and metadata*). On the right,
+  **Revert** and **Save Changes** act on everything unsaved on both tabs, whichever tab is showing;
+  both are `aria-disabled` until something is unsaved, and while a save is in flight. The header close
+  button and Escape are the ways out of the dialog.
 - **Game Snapshot page**: `SnapshotTextEditorComponent` (`snapshot-text-editor.component.*`), a
   lazily-loaded **CodeMirror 6** editor. `codemirror-setup.ts` and `codemirror-map-tools.ts`, which
   only it imports, are the only modules that import `@codemirror/*`; the editor components
@@ -4514,14 +4521,26 @@ detection, sections, line-number formatting) lives in `reader-text.ts` beside it
     screen. *Copy with line numbers* copies the lines of the selection, or every line when nothing is
     selected, as `L{n}: text` with the numbers padded so the colons align; a selection ending at the
     very start of a line does not include that line. Both announce the result in the status bar.
-  - **Saving**: **Ctrl+S**, or **Save Text** (disabled until the buffer is dirty), calls
-    `PUT snapshots/{id}/text` with the `sha256` the dialog loaded as `expectedSha256`. The editor
-    stays on the tab: the server's normalized text becomes the new saved document (replacing the
-    buffer, unless it was edited again while the save was in flight), the footer shows *Saved.
-    SHA-256 and digest updated.* for two seconds, and the Metadata page's SHA-256 and digest field
-    follow — the digest field only if it holds no unsaved edit of its own. A failed save leaves the
-    buffer untouched and shows the server's message in the footer. **Revert** restores the saved
-    document.
+  - **Saving**: **Save Changes** in the footer, or **Ctrl+S** in the editor (which acts only while
+    the buffer is dirty, and then saves the metadata too), saves everything unsaved on both tabs. The
+    metadata is validated first — a name is required, and the digest must fit 6,000 characters — and
+    when that fails nothing is sent: the Metadata tab opens with focus on the offending field and the
+    footer names the problem (*Metadata: Snapshot name is required.*). Then, in this order, a dirty
+    buffer is sent to `PUT snapshots/{id}/text` with the `sha256` the dialog loaded as
+    `expectedSha256`, and dirty metadata to `PUT snapshots/{id}`. The order matters: the text save
+    rebuilds the digest server-side, and the metadata save writes the digest the form holds, so a
+    hand-edited digest overwrites the rebuilt one instead of being lost to it; with no digest edit the
+    form already holds the rebuilt digest and sends it back unchanged. After a text save the editor
+    stays on the tab, the server's normalized text becomes the new saved document (replacing the
+    buffer, unless it was edited again while the save was in flight), and the Metadata page's SHA-256
+    and digest field follow — the digest field only if it holds no unsaved edit of its own. The footer
+    then shows *Saved. SHA-256 and digest updated.*, or *Saved.* when only metadata was saved. The
+    two requests are not atomic, and there are three ways the save can stop part-way: a failed text
+    save (a `409` when someone else changed the text, say) sends no metadata request and shows
+    *Snapshot text: <message>*, leaving both edits in place; a metadata save that fails after the text
+    save succeeded shows *Snapshot text saved. Metadata: <message>* — a name already taken by another
+    snapshot is the usual case — and leaves the metadata edit in place, so Save Changes retries only
+    that; and a failed metadata-only save shows *Metadata: <message>*.
   - **Download**: *Download .snapshot.txt* always serves the text saved on the server, through a
     same-origin link with a `download` attribute (`<name>.snapshot.txt`, the name reduced to
     `[A-Za-z0-9._-]`), so no tab opens. When the editor holds unsaved changes it first asks in a nested
@@ -4529,28 +4548,40 @@ detection, sections, line-number formatting) lives in `reader-text.ts` beside it
     saves the buffer and downloads once the save succeeds; on a failed save nothing is downloaded and
     the footer shows the error. The link click, unlike `window.open`, is not treated as a popup when it
     runs after the save's response.
-- **Metadata page**: One form with a fixed footer. At the top, a compact provenance strip: capture
+- **Metadata page**: One form. At the top, a compact provenance strip: capture
   method, size, capture time, **Modified** (once the snapshot has actually been edited, not merely
   stamped at creation), source chat, and the SHA-256 with its copy button. Below it the editable
   fields — **Snapshot Name**, **GnollHack Version**, **Notes** (an autosizing textarea capped at six
   lines) — and the **Snapshot digest** CodeMirror field, which takes the remaining height and scrolls
   internally. The digest field's **Regenerate from snapshot** button rebuilds the extract
   server-side and puts it straight into the field; it is disabled while the request is in flight and
-  the snapshot text is never touched. The footer's **Revert** and **Save Changes** are enabled only
-  while a field differs from the saved snapshot; a successful save shows *Saved.* for two seconds.
-  Below the form, a **Remove snapshot** fieldset holds **Delete Snapshot** (`.btn-ghost-danger`),
-  hidden while either tab is saving. It opens a nested confirmation stating that the snapshot is
-  deleted permanently and detached from its suite, that questions and runs are kept with the
-  snapshot facts they recorded, and that Generate Questions and Check Rubrics are unavailable until a
-  new snapshot is uploaded. A confirmed delete calls `DELETE snapshots/{id}`, emits
-  `snapshotDeleted`, and closes the viewer without asking about unsaved edits; a failure keeps the
-  confirmation open with the server's message. While a question generation job runs on the suite the
-  button is replaced by that explanation.
-- **Unsaved changes**: Closing the dialog — the header close button or Escape — with unsaved changes
-  on either tab shows an inline strip under the tab row in place of a `confirm()` popup, naming what
-  is unsaved (*Discard unsaved changes to the snapshot text?*, *…to the metadata?*, or *…to the
-  snapshot text and metadata?*), with **Keep editing**, which returns focus to the active tab's
-  editor, and **Discard**, which closes the dialog. A save in flight on either tab blocks closing.
+  the snapshot text is never touched. A field that differs from the saved snapshot makes the
+  metadata unsaved; the dialog footer saves and reverts it.
+- **Delete page**: A *Delete snapshot* card holding a static `.alert-danger` warning (no
+  `role="alert"`: it is content, not an event) — *This cannot be undone.* — and a list of what
+  deleting does: the snapshot, by name, is deleted permanently; it is detached from its suite, when it
+  has one; questions and runs are kept, and runs keep the snapshot facts they recorded; Generate
+  Questions and Check Rubrics are unavailable for the suite until a new snapshot is uploaded. While
+  either editing tab holds unsaved changes a line says they will be lost (*Unsaved changes to the
+  snapshot text and metadata will be lost.*). Below it, **Delete Snapshot** (a full `.btn-gh-delete`,
+  the page's only action) is `aria-disabled` while a save is in flight, so it stays discoverable. It
+  opens a nested confirmation, with focus on **Cancel**, restating the consequences in one paragraph.
+  A confirmed delete calls `DELETE snapshots/{id}`, emits `snapshotDeleted`, and closes the viewer
+  without asking about unsaved edits; a failure keeps the confirmation open with the server's
+  message. While a question generation job runs on the suite the button is replaced by that
+  explanation. The page has no footer.
+- **Unsaved changes**: A tab holding unsaved changes shows a small gold dot after its label, and
+  *(unsaved changes)* in visually hidden text, so the state is part of the tab's accessible name and
+  does not rest on colour and shape alone. Closing the dialog — the header close button or Escape —
+  with unsaved changes on either tab shows an inline strip under the tab row in place of a
+  `confirm()` popup, naming what is unsaved (*Discard unsaved changes to the snapshot text?*, *…to
+  the metadata?*, or *…to the snapshot text and metadata?*), with **Keep editing**, which returns
+  focus to the active tab's editor, and **Discard**, which closes the dialog. The footer's **Revert**
+  acts at once when only the tab in view is unsaved; when it would also discard something on another
+  tab, the same strip asks first (*Revert unsaved changes to the snapshot text and metadata?*), with
+  **Keep editing** and **Revert**, which restores both tabs and returns focus to the active tab's
+  editor. One strip serves both questions, so opening one replaces the other, and any save clears it.
+  A save in flight on either tab blocks closing.
 - **Truncation Notice**: If the snapshot contains the truncation marker, a prominent alert above the
   editor informs the administrator that tail sections of the dump were omitted — at capture, or at a
   later text edit that itself exceeded the cap. Leaving the marker line in place when editing keeps

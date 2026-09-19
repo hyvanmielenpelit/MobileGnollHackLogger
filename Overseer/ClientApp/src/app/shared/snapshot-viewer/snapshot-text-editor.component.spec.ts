@@ -37,14 +37,6 @@ describe('SnapshotTextEditorComponent', () => {
     return new Promise(resolve => setTimeout(resolve));
   }
 
-  function saveButton(): HTMLButtonElement {
-    return host.querySelector<HTMLButtonElement>('.save-text-btn')!;
-  }
-
-  function revertButton(): HTMLButtonElement {
-    return host.querySelector<HTMLButtonElement>('.revert-text-btn')!;
-  }
-
   function counterText(): string {
     return (host.querySelector('.editor-counter')?.textContent ?? '').trim();
   }
@@ -75,31 +67,30 @@ describe('SnapshotTextEditorComponent', () => {
     component.view!.dispatch({ changes: { from: 0, insert: 'X' } });
     fixture.detectChanges();
     expect(component.dirty).toBeTrue();
-    expect(saveButton().getAttribute('aria-disabled')).toBeNull();
-    expect(revertButton().getAttribute('aria-disabled')).toBeNull();
+    expect(component.canSave).toBeTrue();
+    expect(component.canRevert).toBeTrue();
     expect(component.currentText()!.startsWith('XMap:')).toBeTrue();
 
     component.view!.dispatch({ changes: { from: 0, to: 1 } });
     fixture.detectChanges();
     expect(component.dirty).toBeFalse();
-    expect(saveButton().getAttribute('aria-disabled')).toBe('true');
-    expect(revertButton().getAttribute('aria-disabled')).toBe('true');
+    expect(component.canSave).toBeFalse();
+    expect(component.canRevert).toBeFalse();
 
     expect(emitted).toEqual([true, false]);
   });
 
-  it('emits the current document from Save Text only when there are changes', async () => {
+  it('emits the current document from a save request only when there are changes', async () => {
     await mount(buildBoard());
     const saved: string[] = [];
     component.save.subscribe(value => saved.push(value));
 
-    expect(saveButton().getAttribute('aria-disabled')).toBe('true');
-    saveButton().click();
+    component.requestSave();
     expect(saved).toEqual([]);
 
     component.view!.dispatch({ changes: { from: 0, insert: 'Edited ' } });
     fixture.detectChanges();
-    saveButton().click();
+    component.requestSave();
 
     expect(saved.length).toBe(1);
     expect(saved[0].startsWith('Edited Map:\n')).toBeTrue();
@@ -113,24 +104,29 @@ describe('SnapshotTextEditorComponent', () => {
     fixture.componentRef.setInput('saving', true);
     fixture.detectChanges();
 
-    expect(saveButton().getAttribute('aria-busy')).toBe('true');
-    expect(saveButton().textContent!.trim()).toBe('Saving...');
-    saveButton().click();
+    component.requestSave();
     expect(saved).toEqual([]);
   });
 
-  it('restores the loaded text from Revert and clears dirty', async () => {
+  it('has no save or revert buttons of its own', async () => {
+    await mount(buildBoard());
+    const names = Array.from(host.querySelectorAll('button')).map(b => (b.textContent ?? '').trim());
+    expect(names).not.toContain('Save Text');
+    expect(names).not.toContain('Revert');
+  });
+
+  it('restores the loaded text on revert and clears dirty', async () => {
     const board = buildBoard();
     await mount(board);
     component.view!.dispatch({ changes: { from: 0, insert: 'Edited ' } });
     fixture.detectChanges();
 
-    revertButton().click();
+    component.revert();
     fixture.detectChanges();
 
     expect(component.currentText()).toBe(board);
     expect(component.dirty).toBeFalse();
-    expect(revertButton().getAttribute('aria-disabled')).toBe('true');
+    expect(component.canRevert).toBeFalse();
   });
 
   it('takes the saved text as the new clean state', async () => {
@@ -144,7 +140,7 @@ describe('SnapshotTextEditorComponent', () => {
     expect(component.dirty).toBeFalse();
 
     component.view!.dispatch({ changes: { from: 0, insert: 'More ' } });
-    revertButton().click();
+    component.revert();
     expect(component.currentText()).toBe('Normalized by the server');
   });
 
@@ -286,17 +282,5 @@ describe('SnapshotTextEditorComponent', () => {
     expect(writeText).toHaveBeenCalledWith('<10,13>');
     expect(statusText()).toBe('Copied <10,13>');
     expect(host.querySelector('.copy-coordinate-btn')).toBeTruthy();
-  });
-
-  it('shows the status input in the footer, and an error in its place', async () => {
-    await mount(buildBoard());
-    fixture.componentRef.setInput('status', 'Saved. SHA-256 and digest updated.');
-    fixture.detectChanges();
-    expect(host.querySelector('.editor-error .is-ok')!.textContent).toContain('Saved. SHA-256 and digest updated.');
-
-    fixture.componentRef.setInput('error', 'Failed to save the snapshot text.');
-    fixture.detectChanges();
-    expect(host.querySelector('.editor-error .is-ok')).toBeNull();
-    expect(host.querySelector('.editor-error')!.textContent).toContain('Failed to save the snapshot text.');
   });
 });

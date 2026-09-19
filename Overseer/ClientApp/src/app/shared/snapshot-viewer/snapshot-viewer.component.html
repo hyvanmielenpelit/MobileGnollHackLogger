@@ -30,11 +30,11 @@
                 [attr.aria-selected]="activeTab === section.id"
                 [attr.tabindex]="activeTab === section.id ? 0 : -1"
                 (keydown)="onTabKeydown($event, i)"
-                (click)="selectTab(section.id)">{{ section.label }}</button>
+                (click)="selectTab(section.id)">{{ section.label }}@if (sectionDirty(section.id)) {<span class="tab-dirty-dot" aria-hidden="true"></span><span class="visually-hidden"> (unsaved changes)</span>}</button>
       }
     </div>
 
-    @if (showDiscardPrompt && unsavedKinds.length > 0) {
+    @if (prompt && dirty) {
       <div class="discard-strip" role="group" [attr.aria-labelledby]="'snapshot-discard-label-' + uid">
         <svg class="discard-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
@@ -44,7 +44,7 @@
         <span class="discard-label" [id]="'snapshot-discard-label-' + uid" role="alert">{{ discardLabel }}</span>
         <div class="discard-actions">
           <button #keepEditingButton type="button" class="btn-ghost" (click)="keepEditing()">Keep editing</button>
-          <button type="button" class="btn-ghost btn-ghost-danger" (click)="discardAll()">Discard</button>
+          <button type="button" class="btn-ghost btn-ghost-danger" (click)="confirmPrompt()">{{ prompt === 'revert' ? 'Revert' : 'Discard' }}</button>
         </div>
       </div>
     }
@@ -151,10 +151,8 @@
           [text]="snapshot.sanitizedText ?? ''"
           [sha256]="snapshot.sha256"
           [snapshotName]="snapshot.name"
-          [saving]="savingText"
-          [error]="editTextError"
-          [status]="textStatus"
-          (save)="saveText($event)"
+          [saving]="saving"
+          (save)="saveAll()"
           (download)="downloadText()"
           (dirtyChange)="onTextDirtyChange($event)" />
         @if (boardFactsCheck && boardFactsCheck.missingLiterals.length > 0) {
@@ -271,42 +269,78 @@
                                         [disabled]="savingEdit"
                                         (regenerate)="regenerateDigest()" />
           </div>
+        </section>
+      </div>
 
-          <div class="form-footer">
-            <div class="form-status" aria-live="polite">
-              @if (editError) {
-                <span class="is-error">{{ editError }}</span>
-              } @else if (metadataStatus) {
-                <span class="is-ok">{{ metadataStatus }}</span>
-              }
-            </div>
-            <div class="form-actions">
-              <button type="button" class="btn-gh btn-gh-cancel revert-metadata-btn" (click)="revertMetadata()"
-                      [attr.aria-disabled]="metadataDirty && !savingEdit ? null : 'true'">Revert</button>
-              <button type="button" class="btn-gh save-metadata-btn" (click)="saveEdit()"
-                      [attr.aria-disabled]="metadataDirty && !savingEdit ? null : 'true'"
-                      [attr.aria-busy]="savingEdit ? 'true' : null">
-                {{ savingEdit ? 'Saving...' : 'Save Changes' }}
-              </button>
+      <div class="snapshot-panel snapshot-panel-delete" role="tabpanel" tabindex="0"
+           [id]="'snapshot-panel-delete-' + uid" [attr.aria-labelledby]="'snapshot-tab-delete-' + uid"
+           [hidden]="activeTab !== 'delete'">
+        <section class="delete-panel" [attr.aria-labelledby]="'snapshot-delete-heading-' + uid">
+          <h4 [id]="'snapshot-delete-heading-' + uid">Delete snapshot</h4>
+          <div class="alert alert-danger delete-warning">
+            <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+            <div class="alert-content">
+              <p class="alert-heading">This cannot be undone.</p>
+              <ul class="delete-consequences">
+                <li>The snapshot <strong>{{ snapshot.name }}</strong> is deleted permanently.</li>
+                @if (snapshot.suiteName) {
+                  <li>It is detached from suite <strong>{{ snapshot.suiteName }}</strong>.</li>
+                }
+                <li>Questions and runs are kept, and runs keep the snapshot facts they recorded.</li>
+                <li>Generate Questions and Check Rubrics are unavailable for the suite until a new snapshot is uploaded.</li>
+              </ul>
             </div>
           </div>
-
-          @if (!savingText && !savingEdit) {
-            <fieldset class="gh-fieldset remove-snapshot">
-              <legend>Remove snapshot</legend>
-              @if (deleteBlockedReason) {
-                <p class="gh-fieldset-hint">{{ deleteBlockedReason }}</p>
-              } @else {
-                <p class="gh-fieldset-hint">{{ deleteConsequenceText }}</p>
-                <button type="button" class="btn-ghost btn-ghost-danger delete-snapshot-btn" (click)="requestDelete()">
-                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                  Delete Snapshot
-                </button>
-              }
-            </fieldset>
+          @if (dirty) {
+            <p class="delete-unsaved">{{ unsavedLossText }}</p>
+          }
+          @if (deleteBlockedReason) {
+            <p class="delete-blocked">{{ deleteBlockedReason }}</p>
+          } @else {
+            <div class="delete-actions">
+              <button #deleteSnapshotButton type="button" class="btn-gh btn-gh-delete delete-snapshot-btn" (click)="requestDelete()"
+                      [attr.aria-disabled]="saving ? 'true' : null">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                Delete Snapshot
+              </button>
+            </div>
           }
         </section>
       </div>
     }
   </div>
+
+  @if (!loading && !error && snapshot && activeTab !== 'delete') {
+    <div class="viewer-footer">
+      <div class="viewer-status" role="status" aria-live="polite">
+        @if (saveError) {
+          <span class="is-error">
+            <svg class="status-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            {{ saveError }}
+          </span>
+        } @else if (saveStatus) {
+          <span class="is-ok">{{ saveStatus }}</span>
+        } @else {
+          {{ unsavedSummary }}
+        }
+      </div>
+      <div class="viewer-actions">
+        <button type="button" class="btn-gh btn-gh-cancel revert-all-btn" (click)="revertAll()"
+                [attr.aria-disabled]="dirty && !saving ? null : 'true'">Revert</button>
+        <button type="button" class="btn-gh save-all-btn" (click)="saveAll()"
+                [attr.aria-disabled]="dirty && !saving ? null : 'true'"
+                [attr.aria-busy]="saving ? 'true' : null">
+          {{ saving ? 'Saving...' : 'Save Changes' }}
+        </button>
+      </div>
+    </div>
+  }
 </dialog>

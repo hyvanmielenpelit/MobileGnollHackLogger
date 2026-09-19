@@ -133,6 +133,23 @@ describe('SnapshotViewerComponent', () => {
     return (host.querySelector('.discard-label')?.textContent ?? '').trim();
   }
 
+  function footerStatus(): string {
+    return (host.querySelector('.viewer-status')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+  }
+
+  function saveAllButton(): HTMLButtonElement {
+    return host.querySelector<HTMLButtonElement>('.viewer-footer .save-all-btn')!;
+  }
+
+  function revertAllButton(): HTMLButtonElement {
+    return host.querySelector<HTMLButtonElement>('.viewer-footer .revert-all-btn')!;
+  }
+
+  function clickTab(id: string) {
+    tab(id).click();
+    fixture.detectChanges();
+  }
+
   it('should create', () => {
     expect(component).toBeTruthy();
   });
@@ -157,20 +174,21 @@ describe('SnapshotViewerComponent', () => {
   });
 
   describe('the tabs', () => {
-    it('exposes a tab list of two tabs, each controlling a panel, with one panel shown', () => {
+    it('exposes a tab list of three tabs, each controlling a panel, with one panel shown', () => {
       openWith(snapshotWith(buildBoard()));
       const list = host.querySelector('[role="tablist"]')!;
       expect(list.getAttribute('aria-label')).toBe('Game snapshot sections');
-      expect(tabs().map(t => (t.textContent ?? '').trim())).toEqual(['Game Snapshot', 'Metadata']);
+      expect(tabs().map(t => (t.textContent ?? '').trim())).toEqual(['Game Snapshot', 'Metadata', 'Delete']);
 
       const selected = tabs().filter(t => t.getAttribute('aria-selected') === 'true');
       expect(selected.length).toBe(1);
       expect(selected[0]).toBe(tab('snapshot'));
       expect(selected[0].getAttribute('tabindex')).toBe('0');
       expect(tab('metadata').getAttribute('tabindex')).toBe('-1');
+      expect(tab('delete').getAttribute('tabindex')).toBe('-1');
 
       const panels = Array.from(host.querySelectorAll<HTMLElement>('[role="tabpanel"]'));
-      expect(panels.length).toBe(2);
+      expect(panels.length).toBe(3);
       for (const t of tabs()) {
         const panel = document.getElementById(t.getAttribute('aria-controls')!)!;
         expect(panels).toContain(panel);
@@ -180,7 +198,9 @@ describe('SnapshotViewerComponent', () => {
       const shown = panels.filter(p => !p.hidden);
       expect(shown.length).toBe(1);
       expect(shown[0].getAttribute('aria-labelledby')).toBe(selected[0].id);
-      expect(getComputedStyle(panels.find(p => p.hidden)!).display).toBe('none');
+      for (const hidden of panels.filter(p => p.hidden)) {
+        expect(getComputedStyle(hidden).display).toBe('none');
+      }
     });
 
     it('moves selection and focus with the arrow, Home and End keys', () => {
@@ -192,19 +212,23 @@ describe('SnapshotViewerComponent', () => {
       expect(document.activeElement).toBe(tab('metadata'));
 
       key(tab('metadata'), 'ArrowRight');
+      expect(component.activeTab).toBe('delete');
+      expect(document.activeElement).toBe(tab('delete'));
+
+      key(tab('delete'), 'ArrowRight');
       expect(component.activeTab).toBe('snapshot');
       expect(document.activeElement).toBe(tab('snapshot'));
 
       key(tab('snapshot'), 'ArrowLeft');
-      expect(component.activeTab).toBe('metadata');
+      expect(component.activeTab).toBe('delete');
 
-      key(tab('metadata'), 'Home');
+      key(tab('delete'), 'Home');
       expect(component.activeTab).toBe('snapshot');
       expect(document.activeElement).toBe(tab('snapshot'));
 
       key(tab('snapshot'), 'End');
-      expect(component.activeTab).toBe('metadata');
-      expect(document.activeElement).toBe(tab('metadata'));
+      expect(component.activeTab).toBe('delete');
+      expect(document.activeElement).toBe(tab('delete'));
     });
 
     it('shows the Game Snapshot tab again when reopened', () => {
@@ -236,7 +260,7 @@ describe('SnapshotViewerComponent', () => {
       expect(editor.currentText()!.startsWith('Edited Map:')).toBeTrue();
     });
 
-    it('names every action in words, with no emoji, on both tabs and in the download confirmation', async () => {
+    it('names every action in words, with no emoji, on every tab and in the download confirmation', async () => {
       await openReady();
 
       function expectNoEmoji() {
@@ -245,18 +269,29 @@ describe('SnapshotViewerComponent', () => {
         }
       }
 
+      function countNamed(name: string): number {
+        return buttons().filter(b => (b.textContent ?? '').replace(/\s+/g, ' ').trim() === name).length;
+      }
+
       for (const name of ['Close game snapshot', 'Find', 'Copy Text', 'Copy with line numbers',
-                          'Download .snapshot.txt of Emergency Low HP', 'Revert', 'Save Text']) {
+                          'Download .snapshot.txt of Emergency Low HP', 'Revert', 'Save Changes']) {
         expect(buttonNamed(name)).withContext(name).toBeTruthy();
       }
+      expect(countNamed('Save Changes')).toBe(1);
+      expect(countNamed('Revert')).toBe(1);
+      expect(buttonNamed('Save Text')).toBeUndefined();
       expectNoEmoji();
 
-      component.selectTab('metadata');
-      fixture.detectChanges();
-      for (const name of ['Copy SHA-256', 'Regenerate digest from snapshot', 'Save Changes']) {
+      clickTab('metadata');
+      for (const name of ['Copy SHA-256', 'Regenerate digest from snapshot', 'Revert', 'Save Changes']) {
         expect(buttonNamed(name)).withContext(name).toBeTruthy();
       }
+      expect(countNamed('Save Changes')).toBe(1);
       expect(buttonNamed('Edit Metadata')).toBeUndefined();
+      expectNoEmoji();
+
+      clickTab('delete');
+      expect(host.querySelector('.snapshot-panel-delete .delete-snapshot-btn')!.textContent!.trim()).toBe('Delete Snapshot');
       expectNoEmoji();
 
       for (const name of ['Cancel', 'Download saved text', 'Save and download']) {
@@ -266,19 +301,86 @@ describe('SnapshotViewerComponent', () => {
   });
 
   describe('deleting the snapshot', () => {
-    it('offers Delete Snapshot on the Metadata tab, or the blocked reason instead', async () => {
-      await openReady(snapshotWith(buildBoard(), { suiteName: 'Board Suite' }));
-      component.selectTab('metadata');
-      fixture.detectChanges();
+    function deletePanel(): HTMLElement {
+      return host.querySelector<HTMLElement>('.snapshot-panel-delete')!;
+    }
 
-      const panel = host.querySelector('.snapshot-panel-metadata')!;
-      expect(panel.querySelector('.delete-snapshot-btn')!.textContent!.trim()).toBe('Delete Snapshot');
-      expect(panel.querySelector('.remove-snapshot')!.textContent).toContain('detaches it from suite Board Suite');
+    it('offers Delete Snapshot on the Delete tab under a warning, or the blocked reason instead', async () => {
+      await openReady(snapshotWith(buildBoard(), { suiteName: 'Board Suite' }));
+      expect(host.querySelector('.snapshot-panel-metadata .delete-snapshot-btn')).toBeNull();
+      clickTab('delete');
+
+      const panel = deletePanel();
+      expect(panel.hidden).toBeFalse();
+      expect(panel.querySelector('h4')!.textContent!.trim()).toBe('Delete snapshot');
+      const warning = panel.querySelector('.alert-danger')!;
+      expect(warning.getAttribute('role')).toBeNull();
+      expect(warning.textContent).toContain('This cannot be undone.');
+      const items = Array.from(warning.querySelectorAll('li')).map(li => (li.textContent ?? '').replace(/\s+/g, ' ').trim());
+      expect(items).toEqual([
+        'The snapshot Emergency Low HP is deleted permanently.',
+        'It is detached from suite Board Suite.',
+        'Questions and runs are kept, and runs keep the snapshot facts they recorded.',
+        'Generate Questions and Check Rubrics are unavailable for the suite until a new snapshot is uploaded.'
+      ]);
+      const button = panel.querySelector<HTMLButtonElement>('.delete-snapshot-btn')!;
+      expect(button.textContent!.trim()).toBe('Delete Snapshot');
+      expect(button.classList).toContain('btn-gh-delete');
+      expect(button.getAttribute('aria-disabled')).toBeNull();
 
       fixture.componentRef.setInput('deleteBlockedReason', 'A question generation job is running on this suite.');
       fixture.detectChanges();
       expect(panel.querySelector('.delete-snapshot-btn')).toBeNull();
-      expect(panel.querySelector('.remove-snapshot')!.textContent).toContain('generation job is running');
+      expect(panel.querySelector('.delete-blocked')!.textContent).toContain('generation job is running');
+    });
+
+    it('names no suite when the snapshot is not bound to one', async () => {
+      await openReady();
+      clickTab('delete');
+      expect(deletePanel().textContent).not.toContain('detached from suite');
+    });
+
+    it('says which unsaved changes a delete would lose', async () => {
+      await openReady();
+      clickTab('delete');
+      expect(deletePanel().querySelector('.delete-unsaved')).toBeNull();
+
+      editText();
+      await fixture.whenStable();
+      typeInto(nameInput(), 'Renamed');
+      expect(deletePanel().querySelector('.delete-unsaved')!.textContent!.trim())
+        .toBe('Unsaved changes to the snapshot text and metadata will be lost.');
+    });
+
+    it('keeps Delete Snapshot on the tab but unavailable while a save is in flight', async () => {
+      await openReady();
+      const pending = new Subject<UpdateBenchmarkSnapshotTextResponse>();
+      mockBenchmarkService.updateSnapshotText.and.returnValue(pending.asObservable());
+      editText();
+      saveAllButton().click();
+      fixture.detectChanges();
+      clickTab('delete');
+
+      const button = deletePanel().querySelector<HTMLButtonElement>('.delete-snapshot-btn')!;
+      expect(button).toBeTruthy();
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      button.click();
+      fixture.detectChanges();
+      expect(component.deleteConfirmDialog.nativeElement.open).toBeFalse();
+
+      pending.next(textResponse('saved'));
+      pending.complete();
+      fixture.detectChanges();
+      expect(button.getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('has no Save Changes footer on the Delete tab', async () => {
+      await openReady();
+      expect(host.querySelector('.viewer-footer')).toBeTruthy();
+      clickTab('delete');
+      expect(host.querySelector('.viewer-footer')).toBeNull();
+      clickTab('metadata');
+      expect(host.querySelector('.viewer-footer')).toBeTruthy();
     });
 
     it('deletes on confirm, emits the id and closes', async () => {
@@ -286,12 +388,12 @@ describe('SnapshotViewerComponent', () => {
       const deleted = jasmine.createSpy('snapshotDeleted');
       component.snapshotDeleted.subscribe(deleted);
       await openReady();
-      component.selectTab('metadata');
-      fixture.detectChanges();
+      clickTab('delete');
 
-      host.querySelector<HTMLButtonElement>('.delete-snapshot-btn')!.click();
+      deletePanel().querySelector<HTMLButtonElement>('.delete-snapshot-btn')!.click();
       fixture.detectChanges();
       expect(component.deleteConfirmDialog.nativeElement.open).toBeTrue();
+      expect(document.activeElement?.textContent?.trim()).toBe('Cancel');
       expect(mockBenchmarkService.deleteSnapshot).not.toHaveBeenCalled();
 
       host.querySelector<HTMLButtonElement>('.confirm-delete-snapshot-btn')!.click();
@@ -371,8 +473,9 @@ describe('SnapshotViewerComponent', () => {
     it('enables Save Changes and Revert once a field changes, and Revert restores it', async () => {
       await openReady();
       await fixture.whenStable();
-      const save = buttonNamed('Save Changes')!;
-      const revert = host.querySelector<HTMLButtonElement>('.revert-metadata-btn')!;
+      clickTab('metadata');
+      const save = saveAllButton();
+      const revert = revertAllButton();
       expect(save.getAttribute('aria-disabled')).toBe('true');
       expect(revert.getAttribute('aria-disabled')).toBe('true');
 
@@ -406,7 +509,8 @@ describe('SnapshotViewerComponent', () => {
       expect(component.snapshot!.name).toBe('Renamed');
       expect(component.editName).toBe('Renamed');
       expect(component.metadataDirty).toBeFalse();
-      expect(host.querySelector('.form-status .is-ok')!.textContent).toContain('Saved.');
+      expect(host.querySelector('.viewer-status .is-ok')!.textContent!.trim()).toBe('Saved.');
+      expect(mockBenchmarkService.updateSnapshotText).not.toHaveBeenCalled();
       expect(updatedSpy).toHaveBeenCalledWith(jasmine.objectContaining({ name: 'Renamed' }));
     });
 
@@ -417,7 +521,7 @@ describe('SnapshotViewerComponent', () => {
       buttonNamed('Save Changes')!.click();
       fixture.detectChanges();
       expect(mockBenchmarkService.updateSnapshot).not.toHaveBeenCalled();
-      expect(host.querySelector('.form-status .is-error')!.textContent).toContain('Snapshot name is required.');
+      expect(host.querySelector('.viewer-status .is-error')!.textContent!.trim()).toBe('Metadata: Snapshot name is required.');
     });
   });
 
@@ -535,7 +639,8 @@ describe('SnapshotViewerComponent', () => {
       expect(textEditor().currentText()).toBe('one\ntwo\nthree');
       expect(textEditor().dirty).toBeFalse();
       expect(component.editingTextDirty).toBeFalse();
-      expect(host.querySelector('.editor-error .is-ok')!.textContent).toContain('Saved. SHA-256 and digest updated.');
+      expect(host.querySelector('.viewer-status .is-ok')!.textContent!.trim()).toBe('Saved. SHA-256 and digest updated.');
+      expect(mockBenchmarkService.updateSnapshot).not.toHaveBeenCalled();
       expect(component.editDigestText).toBe('rebuilt digest');
       expect(host.querySelector('.sha-box')!.textContent).toContain('def0987654321');
       expect(updatedSpy).toHaveBeenCalledWith(jasmine.objectContaining({ charCount: 13, sha256: 'def0987654321' }));
@@ -581,16 +686,20 @@ describe('SnapshotViewerComponent', () => {
       expect(host.querySelector('.board-facts-unquoted')).toBeNull();
     });
 
-    it('keeps a digest edit in progress when the text is saved', async () => {
+    it('saves a digest edit in progress over the digest the text save rebuilt', async () => {
       await openReady();
       component.editDigestText = 'my digest edit';
       editText();
       mockBenchmarkService.updateSnapshotText.and.returnValue(
         of(textResponse('saved', { digestText: 'rebuilt digest' })));
+      mockBenchmarkService.updateSnapshot.and.returnValue(of(snapshotWith('saved', { digestText: 'my digest edit' })));
 
       textEditor().save.emit('saved');
       fixture.detectChanges();
+      expect(mockBenchmarkService.updateSnapshot).toHaveBeenCalledWith(1, jasmine.objectContaining({ digestText: 'my digest edit' }));
       expect(component.editDigestText).toBe('my digest edit');
+      expect(component.snapshot!.digestText).toBe('my digest edit');
+      expect(component.metadataDirty).toBeFalse();
     });
 
     it('keeps the buffer and shows the server message when the save fails', async () => {
@@ -602,9 +711,191 @@ describe('SnapshotViewerComponent', () => {
       textEditor().save.emit(textEditor().currentText()!);
       fixture.detectChanges();
 
-      expect(host.querySelector('.editor-error')!.textContent).toContain(message);
+      expect(footerStatus()).toBe(`Snapshot text: ${message}`);
       expect(textEditor().dirty).toBeTrue();
       expect(component.savingText).toBeFalse();
+    });
+  });
+
+  describe('Save Changes and Revert across both tabs', () => {
+    function requestLog(): string[] {
+      const log: string[] = [];
+      mockBenchmarkService.updateSnapshotText.and.callFake(() => {
+        log.push('text');
+        return of(textResponse('saved text', { sha256: 'def0987654321' }));
+      });
+      mockBenchmarkService.updateSnapshot.and.callFake(() => {
+        log.push('metadata');
+        return of(snapshotWith('saved text', { name: 'Renamed' }));
+      });
+      return log;
+    }
+
+    async function editBoth() {
+      editText();
+      await fixture.whenStable();
+      typeInto(nameInput(), 'Renamed');
+    }
+
+    it('saves the text and then the metadata from one click, and both end clean', async () => {
+      await openReady();
+      const log = requestLog();
+      await editBoth();
+      expect(footerStatus()).toBe('Unsaved changes: snapshot text and metadata');
+
+      saveAllButton().click();
+      fixture.detectChanges();
+
+      expect(log).toEqual(['text', 'metadata']);
+      expect(mockBenchmarkService.updateSnapshot).toHaveBeenCalledWith(1, jasmine.objectContaining({ name: 'Renamed' }));
+      expect(component.editingTextDirty).toBeFalse();
+      expect(component.metadataDirty).toBeFalse();
+      expect(footerStatus()).toBe('Saved. SHA-256 and digest updated.');
+      expect(saveAllButton().getAttribute('aria-disabled')).toBe('true');
+    });
+
+    it('sends no metadata request when the text save fails, and keeps the metadata edit', async () => {
+      await openReady();
+      await editBoth();
+      mockBenchmarkService.updateSnapshotText.and.returnValue(
+        throwError(() => ({ status: 409, error: { error: 'Changed by someone else.' } })));
+
+      saveAllButton().click();
+      fixture.detectChanges();
+
+      expect(mockBenchmarkService.updateSnapshot).not.toHaveBeenCalled();
+      expect(component.metadataDirty).toBeTrue();
+      expect(component.editingTextDirty).toBeTrue();
+      expect(footerStatus()).toBe('Snapshot text: Changed by someone else.');
+    });
+
+    it('says the text was saved when the metadata save after it fails', async () => {
+      await openReady();
+      await editBoth();
+      mockBenchmarkService.updateSnapshotText.and.returnValue(of(textResponse('saved text')));
+      mockBenchmarkService.updateSnapshot.and.returnValue(
+        throwError(() => ({ status: 409, error: { message: 'A benchmark snapshot named "Renamed" already exists.' } })));
+
+      saveAllButton().click();
+      fixture.detectChanges();
+
+      expect(footerStatus()).toBe('Snapshot text saved. Metadata: A benchmark snapshot named "Renamed" already exists.');
+      expect(component.editingTextDirty).toBeFalse();
+      expect(component.metadataDirty).toBeTrue();
+      expect(saveAllButton().getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('sends nothing when the name is empty, and opens the Metadata tab on the name', async () => {
+      await openReady();
+      editText();
+      await fixture.whenStable();
+      typeInto(nameInput(), '  ');
+
+      saveAllButton().click();
+      fixture.detectChanges();
+
+      expect(mockBenchmarkService.updateSnapshotText).not.toHaveBeenCalled();
+      expect(mockBenchmarkService.updateSnapshot).not.toHaveBeenCalled();
+      expect(component.activeTab).toBe('metadata');
+      expect(tab('metadata').getAttribute('aria-selected')).toBe('true');
+      expect(document.activeElement).toBe(nameInput());
+      expect(footerStatus()).toBe('Metadata: Snapshot name is required.');
+      expect(component.editingTextDirty).toBeTrue();
+    });
+
+    it('saves a text-only edit from the Metadata tab', async () => {
+      await openReady();
+      const log = requestLog();
+      editText();
+      clickTab('metadata');
+      expect(footerStatus()).toBe('Unsaved changes: snapshot text');
+
+      saveAllButton().click();
+      fixture.detectChanges();
+
+      expect(log).toEqual(['text']);
+      expect(component.editingTextDirty).toBeFalse();
+    });
+
+    it('saves the metadata too from Ctrl+S in the text editor', async () => {
+      await openReady();
+      const log = requestLog();
+      await editBoth();
+
+      textEditor().view!.contentDOM.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 's', code: 'KeyS', keyCode: 83, ctrlKey: true, bubbles: true, cancelable: true }));
+      fixture.detectChanges();
+
+      expect(log).toEqual(['text', 'metadata']);
+      expect(component.metadataDirty).toBeFalse();
+    });
+
+    it('reverts at once when only the tab in view is dirty', async () => {
+      await openReady();
+      const board = textEditor().currentText();
+      editText();
+      revertAllButton().click();
+      fixture.detectChanges();
+      expect(host.querySelector('.discard-strip')).toBeNull();
+      expect(textEditor().currentText()).toBe(board);
+      expect(component.editingTextDirty).toBeFalse();
+
+      await fixture.whenStable();
+      clickTab('metadata');
+      typeInto(nameInput(), 'Renamed');
+      revertAllButton().click();
+      fixture.detectChanges();
+      expect(host.querySelector('.discard-strip')).toBeNull();
+      expect(component.editName).toBe('Emergency Low HP');
+      expect(component.metadataDirty).toBeFalse();
+    });
+
+    it('asks before reverting an edit on the other tab; Keep editing keeps it, Revert reverts both', async () => {
+      await openReady();
+      const board = textEditor().currentText();
+      editText();
+      clickTab('metadata');
+
+      revertAllButton().click();
+      fixture.detectChanges();
+      expect(discardLabel()).toBe('Revert unsaved changes to the snapshot text?');
+      expect((document.activeElement?.textContent ?? '').trim()).toBe('Keep editing');
+      expect(component.editingTextDirty).toBeTrue();
+
+      clickButtonNamed('Keep editing');
+      expect(host.querySelector('.discard-strip')).toBeNull();
+      expect(component.editingTextDirty).toBeTrue();
+      expect(document.activeElement).toBe(nameInput());
+
+      await fixture.whenStable();
+      typeInto(nameInput(), 'Renamed');
+      revertAllButton().click();
+      fixture.detectChanges();
+      expect(discardLabel()).toBe('Revert unsaved changes to the snapshot text and metadata?');
+      host.querySelector<HTMLButtonElement>('.discard-strip .btn-ghost-danger')!.click();
+      fixture.detectChanges();
+
+      expect(host.querySelector('.discard-strip')).toBeNull();
+      expect(textEditor().currentText()).toBe(board);
+      expect(component.editingTextDirty).toBeFalse();
+      expect(component.metadataDirty).toBeFalse();
+      expect(component.viewerDialog.nativeElement.open).toBeTrue();
+    });
+
+    it('marks a tab holding unsaved changes in its accessible name, until it is saved', async () => {
+      await openReady();
+      requestLog();
+      expect(tab('snapshot').querySelector('.tab-dirty-dot')).toBeNull();
+
+      editText();
+      expect(tab('snapshot').querySelector('.tab-dirty-dot')!.getAttribute('aria-hidden')).toBe('true');
+      expect((tab('snapshot').textContent ?? '').trim()).toBe('Game Snapshot (unsaved changes)');
+      expect((tab('metadata').textContent ?? '').trim()).toBe('Metadata');
+
+      saveAllButton().click();
+      fixture.detectChanges();
+      expect(tab('snapshot').querySelector('.tab-dirty-dot')).toBeNull();
+      expect((tab('snapshot').textContent ?? '').trim()).toBe('Game Snapshot');
     });
   });
 
@@ -758,7 +1049,7 @@ describe('SnapshotViewerComponent', () => {
       clickButtonNamed('Save and download');
       expect(confirmOpen()).toBeFalse();
       expect(clickSpy).not.toHaveBeenCalled();
-      expect(host.querySelector('.editor-error')!.textContent).toContain('Server exploded.');
+      expect(footerStatus()).toBe('Snapshot text: Server exploded.');
       expect(textEditor().dirty).toBeTrue();
     });
   });

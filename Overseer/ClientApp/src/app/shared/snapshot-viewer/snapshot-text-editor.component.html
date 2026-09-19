@@ -122,30 +122,4 @@
            [attr.style]="'position-anchor: --snapshot-coordinate-tip-' + uid">Copy coordinate {{ coordinate }}</div>
     }
   </div>
-
-  <div class="editor-footer">
-    <div class="editor-error" aria-live="polite">
-      @if (error) {
-        <span class="editor-error-text">
-          <svg class="warning-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="12"></line>
-            <line x1="12" y1="16" x2="12.01" y2="16"></line>
-          </svg>
-          {{ error }}
-        </span>
-      } @else if (status) {
-        <span class="is-ok">{{ status }}</span>
-      }
-    </div>
-    <div class="editor-actions">
-      <button type="button" class="btn-gh btn-gh-cancel revert-text-btn" (click)="revert()"
-              [attr.aria-disabled]="canRevert ? null : 'true'">Revert</button>
-      <button type="button" class="btn-gh save-text-btn" (click)="requestSave()"
-              [attr.aria-disabled]="canSave ? null : 'true'"
-              [attr.aria-busy]="saving ? 'true' : null">
-        {{ saving ? 'Saving...' : 'Save Text' }}
-      </button>
-    </div>
-  </div>
 </section>

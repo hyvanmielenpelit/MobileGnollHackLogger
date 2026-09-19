@@ -53,9 +53,6 @@ export class SnapshotTextEditorComponent implements OnInit, AfterViewInit, OnDes
   @Input() sha256 = '';
   @Input() snapshotName = '';
   @Input() saving = false;
-  @Input() error: string | null = null;
-  /** A transient success line from the host, shown in the footer when there is no error. */
-  @Input() status: string | null = null;
 
   @Output() save = new EventEmitter<string>();
   @Output() download = new EventEmitter<{ dirty: boolean }>();

@@ -8,9 +8,12 @@ import { DIGEST_MAX_CHARS, SnapshotDigestEditorComponent } from './snapshot-dige
 
 const STATUS_MS = 2000;
 const MODIFIED_AFTER_CREATE_MS = 60_000;
+const TEXT_SAVED_STATUS = 'Saved. SHA-256 and digest updated.';
 
-export type SnapshotSection = 'snapshot' | 'metadata';
+export type SnapshotSection = 'snapshot' | 'metadata' | 'delete';
 export type UnsavedKind = 'text' | 'metadata';
+/** What the strip under the tab row is asking: to close the dialog, or to revert both tabs. */
+export type StripPrompt = 'close' | 'revert';
 
 @Component({
   selector: 'app-snapshot-viewer',
@@ -31,6 +34,7 @@ export class SnapshotViewerComponent implements OnDestroy {
   @ViewChild('downloadConfirmDialog') downloadConfirmDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('deleteConfirmDialog') deleteConfirmDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('deleteCancelButton') deleteCancelButton?: ElementRef<HTMLButtonElement>;
+  @ViewChild('deleteSnapshotButton') deleteSnapshotButton?: ElementRef<HTMLButtonElement>;
   @ViewChild('viewerTitle') viewerTitle?: ElementRef<HTMLElement>;
   @ViewChild('keepEditingButton') keepEditingButton?: ElementRef<HTMLButtonElement>;
   @ViewChild('editNameInput') editNameInput?: ElementRef<HTMLInputElement>;
@@ -53,7 +57,8 @@ export class SnapshotViewerComponent implements OnDestroy {
   /** Tab order for the row; rendered with @for, so an attribute is set in one place. */
   readonly sections: ReadonlyArray<{ id: SnapshotSection; label: string }> = [
     { id: 'snapshot', label: 'Game Snapshot' },
-    { id: 'metadata', label: 'Metadata' }
+    { id: 'metadata', label: 'Metadata' },
+    { id: 'delete', label: 'Delete' }
   ];
   activeTab: SnapshotSection = 'snapshot';
 
@@ -62,16 +67,15 @@ export class SnapshotViewerComponent implements OnDestroy {
   editGnollHackVersion = '';
   editDigestText = '';
   savingEdit = false;
-  editError: string | null = null;
-  metadataStatus: string | null = null;
   regeneratingDigest = false;
   regenerateStatus = '';
 
   editingTextDirty = false;
   savingText = false;
-  editTextError: string | null = null;
-  textStatus: string | null = null;
-  showDiscardPrompt = false;
+  /** The footer's message for both tabs; an error names the part it concerns. */
+  saveError: string | null = null;
+  saveStatus: string | null = null;
+  prompt: StripPrompt | null = null;
   /** The BOARD FACTS quote check from the most recent text save. Cleared on load and on reset. */
   boardFactsCheck: BoardFactsCheckDto | null = null;
 
@@ -81,8 +85,7 @@ export class SnapshotViewerComponent implements OnDestroy {
   /** Set by Save and download; cleared when the confirmation is dismissed first. */
   private downloadAfterSave = false;
   private copiedShaTimer: ReturnType<typeof setTimeout> | undefined;
-  private textStatusTimer: ReturnType<typeof setTimeout> | undefined;
-  private metadataStatusTimer: ReturnType<typeof setTimeout> | undefined;
+  private saveStatusTimer: ReturnType<typeof setTimeout> | undefined;
 
   open(snapshotId?: number) {
     if (snapshotId != null) {
@@ -102,21 +105,21 @@ export class SnapshotViewerComponent implements OnDestroy {
 
   /* The header close button; unsaved edits on either tab ask first. */
   requestClose() {
-    if (this.savingText || this.savingEdit) return;
+    if (this.saving) return;
     if (this.guardUnsaved()) return;
     this.close();
   }
 
   /* Escape on the dialog. */
   onDialogCancel(event: Event) {
-    if (this.savingText || this.savingEdit || this.guardUnsaved()) {
+    if (this.saving || this.guardUnsaved()) {
       event.preventDefault();
       return;
     }
     this.close();
   }
 
-  /* Clearing the snapshot destroys both panels and the CodeMirror instances inside them. */
+  /* Clearing the snapshot destroys every panel and the CodeMirror instances inside them. */
   close() {
     this.closeDownloadConfirm();
     this.closeDeleteConfirm();
@@ -129,8 +132,7 @@ export class SnapshotViewerComponent implements OnDestroy {
 
   ngOnDestroy() {
     clearTimeout(this.copiedShaTimer);
-    clearTimeout(this.textStatusTimer);
-    clearTimeout(this.metadataStatusTimer);
+    clearTimeout(this.saveStatusTimer);
   }
 
   loadSnapshot() {
@@ -202,7 +204,7 @@ export class SnapshotViewerComponent implements OnDestroy {
 
   // ---- Tabs ----------------------------------------------------------------------------------
 
-  /* Both panels stay mounted, so switching never loses an edit and never asks. */
+  /* Every panel stays mounted, so switching never loses an edit and never asks. */
   selectTab(tab: SnapshotSection) {
     if (tab === this.activeTab) return;
     this.activeTab = tab;
@@ -210,7 +212,7 @@ export class SnapshotViewerComponent implements OnDestroy {
     /* An editor cannot measure while its panel is display: none. */
     if (tab === 'snapshot') {
       this.textEditor?.refreshLayout();
-    } else {
+    } else if (tab === 'metadata') {
       this.digestEditor?.view?.requestMeasure();
     }
   }
@@ -230,6 +232,97 @@ export class SnapshotViewerComponent implements OnDestroy {
     const next = this.sections[nextIndex].id;
     this.selectTab(next);
     document.getElementById(`snapshot-tab-${next}-${this.uid}`)?.focus();
+  }
+
+  sectionDirty(section: SnapshotSection): boolean {
+    if (section === 'snapshot') return this.editingTextDirty;
+    if (section === 'metadata') return this.metadataDirty;
+    return false;
+  }
+
+  // ---- Saving and reverting both tabs --------------------------------------------------------
+
+  get saving(): boolean {
+    return this.savingText || this.savingEdit;
+  }
+
+  get dirty(): boolean {
+    return this.unsavedKinds.length > 0;
+  }
+
+  get unsavedKinds(): UnsavedKind[] {
+    const kinds: UnsavedKind[] = [];
+    if (this.editingTextDirty) kinds.push('text');
+    if (this.metadataDirty) kinds.push('metadata');
+    return kinds;
+  }
+
+  /** 'snapshot text', 'metadata', 'snapshot text and metadata', or '' when nothing is unsaved. */
+  private get unsavedParts(): string {
+    const kinds = this.unsavedKinds;
+    if (kinds.length === 2) return 'snapshot text and metadata';
+    if (kinds.length === 0) return '';
+    return kinds[0] === 'metadata' ? 'metadata' : 'snapshot text';
+  }
+
+  get unsavedSummary(): string {
+    return this.dirty ? `Unsaved changes: ${this.unsavedParts}` : '';
+  }
+
+  get unsavedLossText(): string {
+    return `Unsaved changes to the ${this.unsavedParts} will be lost.`;
+  }
+
+  /* Text first, then metadata: the text save rebuilds the digest server-side, and the metadata
+     save then writes the digest the form holds, so a hand-edited digest survives. The metadata is
+     validated before either request, so text is never saved ahead of metadata that cannot follow. */
+  saveAll() {
+    if (!this.snapshot || !this.dirty || this.saving) return;
+    if (this.metadataDirty) {
+      const invalid = this.metadataValidationError();
+      if (invalid) {
+        this.showMetadataError(invalid.message, invalid.field);
+        return;
+      }
+    }
+    const text = this.editingTextDirty ? this.textEditor?.currentText() ?? null : null;
+    if (text !== null) {
+      this.saveText(text, () => {
+        if (this.metadataDirty) this.saveEdit(true);
+      });
+    } else {
+      this.saveEdit(false);
+    }
+  }
+
+  /* Asks first when the revert would discard something not on screen. */
+  revertAll() {
+    if (!this.snapshot || !this.dirty || this.saving) return;
+    const hiddenDirty = this.activeTab === 'delete'
+      || (this.activeTab === 'snapshot' ? this.metadataDirty : this.editingTextDirty);
+    if (hiddenDirty) {
+      this.openPrompt('revert');
+      return;
+    }
+    this.revertNow();
+  }
+
+  private revertNow() {
+    if (!this.snapshot) return;
+    if (this.editingTextDirty) this.textEditor?.revert();
+    if (this.metadataDirty) this.initMetadataForm(this.snapshot);
+    this.saveError = null;
+    this.cdr.detectChanges();
+  }
+
+  private flashSaveStatus(message: string) {
+    this.saveStatus = message;
+    this.cdr.detectChanges();
+    clearTimeout(this.saveStatusTimer);
+    this.saveStatusTimer = setTimeout(() => {
+      this.saveStatus = null;
+      this.cdr.detectChanges();
+    }, STATUS_MS);
   }
 
   // ---- Metadata ------------------------------------------------------------------------------
@@ -254,20 +347,13 @@ export class SnapshotViewerComponent implements OnDestroy {
     return this.editDigestText.trim() !== (this.snapshot?.digestText ?? '').trim();
   }
 
-  revertMetadata() {
-    if (!this.snapshot || this.savingEdit || !this.metadataDirty) return;
-    this.initMetadataForm(this.snapshot);
-    this.editError = null;
-    this.cdr.detectChanges();
-  }
-
   /* The rebuilt digest is saved server-side, so it is put on the snapshot as well as in the field,
      and the field stays clean. */
   regenerateDigest() {
     if (!this.snapshot || this.regeneratingDigest) return;
     this.regeneratingDigest = true;
     this.regenerateStatus = '';
-    this.editError = null;
+    this.saveError = null;
 
     this.benchmarkService.regenerateSnapshotDigest(this.snapshot.id).subscribe({
       next: (updated) => {
@@ -281,27 +367,50 @@ export class SnapshotViewerComponent implements OnDestroy {
       error: (err) => {
         this.regeneratingDigest = false;
         this.regenerateStatus = '';
-        this.editError = err?.error?.message || err?.error || 'Failed to regenerate the snapshot digest.';
+        this.saveError = `Metadata: ${err?.error?.message || err?.error || 'Failed to regenerate the snapshot digest.'}`;
         this.cdr.detectChanges();
       }
     });
   }
 
-  saveEdit() {
-    if (!this.snapshot || this.savingEdit || !this.metadataDirty) return;
+  private metadataValidationError(): { message: string; field: 'name' | 'digest' } | null {
     if (!this.editName.trim()) {
-      this.editError = 'Snapshot name is required.';
-      return;
+      return { message: 'Metadata: Snapshot name is required.', field: 'name' };
     }
     /* The server truncates silently at this cap, so an over-long digest is refused here instead
        of being saved short. */
     if (this.editDigestText.trim().length > DIGEST_MAX_CHARS) {
-      this.editError = `The digest is over ${DIGEST_MAX_CHARS.toLocaleString('en-US')} characters.`;
+      return { message: `Metadata: The digest is over ${DIGEST_MAX_CHARS.toLocaleString('en-US')} characters.`, field: 'digest' };
+    }
+    return null;
+  }
+
+  private showMetadataError(message: string, field: 'name' | 'digest') {
+    this.saveError = message;
+    this.saveStatus = null;
+    this.selectTab('metadata');
+    this.cdr.detectChanges();
+    if (field === 'name') {
+      this.editNameInput?.nativeElement.focus();
+    } else {
+      this.digestEditor?.view?.focus();
+    }
+  }
+
+  /* afterText: the snapshot text was saved by the same Save Changes, which the messages say. */
+  private saveEdit(afterText: boolean) {
+    if (!this.snapshot || this.savingEdit || !this.metadataDirty) return;
+    const textSaved = afterText ? 'Snapshot text saved. ' : '';
+    const invalid = this.metadataValidationError();
+    if (invalid) {
+      this.showMetadataError(textSaved + invalid.message, invalid.field);
       return;
     }
     this.savingEdit = true;
-    this.editError = null;
-    this.metadataStatus = null;
+    this.saveError = null;
+    this.saveStatus = null;
+    this.prompt = null;
+    this.cdr.detectChanges();
 
     this.benchmarkService.updateSnapshot(this.snapshot.id, {
       name: this.editName.trim(),
@@ -320,24 +429,14 @@ export class SnapshotViewerComponent implements OnDestroy {
         this.initMetadataForm(this.snapshot);
         this.savingEdit = false;
         this.snapshotUpdated.emit(this.snapshot);
-        this.flashMetadataStatus('Saved.');
+        this.flashSaveStatus(afterText ? TEXT_SAVED_STATUS : 'Saved.');
       },
       error: (err) => {
-        this.editError = err?.error?.message || err?.error || 'Failed to update game snapshot.';
+        this.saveError = `${textSaved}Metadata: ${err?.error?.message || err?.error || 'Failed to update game snapshot.'}`;
         this.savingEdit = false;
         this.cdr.detectChanges();
       }
     });
-  }
-
-  private flashMetadataStatus(message: string) {
-    this.metadataStatus = message;
-    this.cdr.detectChanges();
-    clearTimeout(this.metadataStatusTimer);
-    this.metadataStatusTimer = setTimeout(() => {
-      this.metadataStatus = null;
-      this.cdr.detectChanges();
-    }, STATUS_MS);
   }
 
   // ---- Text editing --------------------------------------------------------------------------
@@ -352,9 +451,9 @@ export class SnapshotViewerComponent implements OnDestroy {
   saveText(text: string, afterSave?: () => void) {
     if (!this.snapshot || this.savingText) return;
     this.savingText = true;
-    this.editTextError = null;
-    this.textStatus = null;
-    this.showDiscardPrompt = false;
+    this.saveError = null;
+    this.saveStatus = null;
+    this.prompt = null;
     this.cdr.detectChanges();
 
     this.benchmarkService.updateSnapshotText(this.snapshot.id, {
@@ -363,7 +462,8 @@ export class SnapshotViewerComponent implements OnDestroy {
     }).subscribe({
       next: (response) => {
         const updated = response.snapshot;
-        /* A digest edit in progress is kept; a later Save Changes overwrites the rebuilt one. */
+        /* A digest edit in progress is kept; the metadata save that follows writes it over the
+           rebuilt one. */
         const keepDigestEdit = this.digestDirty;
         this.snapshot = { ...this.snapshot!, ...updated, sanitizedText: updated.sanitizedText ?? text };
         if (!keepDigestEdit) this.editDigestText = this.snapshot.digestText || '';
@@ -371,29 +471,20 @@ export class SnapshotViewerComponent implements OnDestroy {
         this.savingText = false;
         this.textEditor?.markSaved(this.snapshot.sanitizedText ?? '', text);
         this.snapshotUpdated.emit(this.snapshot);
-        this.flashTextStatus('Saved. SHA-256 and digest updated.');
+        this.flashSaveStatus(TEXT_SAVED_STATUS);
         afterSave?.();
       },
       error: (err) => {
         this.savingText = false;
         const body = err?.error;
-        this.editTextError = body?.error || body?.message || (typeof body === 'string' && body)
+        const message = body?.error || body?.message || (typeof body === 'string' && body)
           || 'Failed to save the snapshot text.';
+        this.saveError = `Snapshot text: ${message}`;
         this.downloadAfterSave = false;
         this.closeDownloadConfirm();
         this.cdr.detectChanges();
       }
     });
-  }
-
-  private flashTextStatus(message: string) {
-    this.textStatus = message;
-    this.cdr.detectChanges();
-    clearTimeout(this.textStatusTimer);
-    this.textStatusTimer = setTimeout(() => {
-      this.textStatus = null;
-      this.cdr.detectChanges();
-    }, STATUS_MS);
   }
 
   // ---- Download ------------------------------------------------------------------------------
@@ -466,7 +557,7 @@ export class SnapshotViewerComponent implements OnDestroy {
   }
 
   requestDelete() {
-    if (!this.snapshot || this.deleteBlockedReason || this.savingText || this.savingEdit) return;
+    if (!this.snapshot || this.deleteBlockedReason || this.saving) return;
     this.deleteError = null;
     const dialog = this.deleteConfirmDialog?.nativeElement;
     if (dialog && !dialog.open) {
@@ -514,30 +605,27 @@ export class SnapshotViewerComponent implements OnDestroy {
     this.deleteError = null;
   }
 
-  // ---- Close guard ---------------------------------------------------------------------------
-
-  get unsavedKinds(): UnsavedKind[] {
-    const kinds: UnsavedKind[] = [];
-    if (this.editingTextDirty) kinds.push('text');
-    if (this.metadataDirty) kinds.push('metadata');
-    return kinds;
-  }
+  // ---- The strip: close guard and revert prompt ----------------------------------------------
 
   get discardLabel(): string {
-    const kinds = this.unsavedKinds;
-    const subject = kinds.length === 2
-      ? 'the snapshot text and metadata'
-      : kinds[0] === 'metadata' ? 'the metadata' : 'the snapshot text';
-    return `Discard unsaved changes to ${subject}?`;
+    const verb = this.prompt === 'revert' ? 'Revert' : 'Discard';
+    return `${verb} unsaved changes to the ${this.unsavedParts}?`;
   }
 
   keepEditing() {
-    this.showDiscardPrompt = false;
+    this.prompt = null;
     this.cdr.detectChanges();
-    if (this.activeTab === 'snapshot') {
-      this.textEditor?.focus();
+    this.focusActiveTab();
+  }
+
+  /* Discard closes the dialog; Revert restores both tabs and stays. */
+  confirmPrompt() {
+    if (this.prompt === 'revert') {
+      this.prompt = null;
+      this.revertNow();
+      this.focusActiveTab();
     } else {
-      this.editNameInput?.nativeElement.focus();
+      this.discardAll();
     }
   }
 
@@ -545,26 +633,41 @@ export class SnapshotViewerComponent implements OnDestroy {
     this.close();
   }
 
-  /* True when either tab holds unsaved changes; the discard prompt is then shown instead. */
-  private guardUnsaved(): boolean {
-    if (this.unsavedKinds.length === 0) return false;
-    this.showDiscardPrompt = true;
+  private focusActiveTab() {
+    if (this.activeTab === 'snapshot') {
+      this.textEditor?.focus();
+    } else if (this.activeTab === 'metadata') {
+      this.editNameInput?.nativeElement.focus();
+    } else {
+      const target = this.deleteSnapshotButton?.nativeElement
+        ?? document.getElementById(`snapshot-tab-delete-${this.uid}`);
+      target?.focus();
+    }
+  }
+
+  private openPrompt(prompt: StripPrompt) {
+    this.prompt = prompt;
     this.cdr.detectChanges();
     this.keepEditingButton?.nativeElement.focus();
+  }
+
+  /* True when either tab holds unsaved changes; the discard prompt is then shown instead. */
+  private guardUnsaved(): boolean {
+    if (!this.dirty) return false;
+    this.openPrompt('close');
     return true;
   }
 
   private resetState() {
     this.activeTab = 'snapshot';
-    this.editError = null;
-    this.metadataStatus = null;
+    this.saveError = null;
+    this.saveStatus = null;
+    clearTimeout(this.saveStatusTimer);
     this.regenerateStatus = '';
     this.editingTextDirty = false;
     this.savingText = false;
     this.savingEdit = false;
-    this.editTextError = null;
-    this.textStatus = null;
-    this.showDiscardPrompt = false;
+    this.prompt = null;
     this.boardFactsCheck = null;
     this.downloadAfterSave = false;
     this.deleting = false;
