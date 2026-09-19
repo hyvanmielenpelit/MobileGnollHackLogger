@@ -230,7 +230,7 @@ else if (evt.type === 'ttft') {
 
 ## 7. Context Window & Whole-Turn Cost Accounting
 
-For the full specification, see [docs/overseer/chat-response-telemetry.md](../../docs/overseer/chat-response-telemetry.md).
+For the full specification, see [docs/overseer/chat-response-telemetry.md](../../../docs/overseer/chat-response-telemetry.md).
 
 ### Whole-Turn Costing Basis
 Chat turn costs are computed from the **summed token counts across all tool iterations**:

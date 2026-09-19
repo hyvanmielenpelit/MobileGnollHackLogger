@@ -224,6 +224,7 @@ Any plan derived from an AI benchmark run analysis, report, or diagnostic review
 <plans-root>/hyvanmielenpelit/MobileGnollHackLogger/YYYY-MM-DD/<task_name>/
   benchmark_run_<N>_analysis_v<N>.md
   implementation_plan_v<N>.md               <- the Overseer / server plan
+  developer_runbook_v<N>.md                 <- ordered fix steps and the next runs, for the human
   wiki_handoff_prompt_v<N>.md               <- the three-step handoff, when a finding lands on rung 2
   gnollhack_implementation_plan_v<N>.md     <- a plan whose work is in another repository
   task.md, walkthrough.md                   <- the server plan's
@@ -232,6 +233,7 @@ Any plan derived from an AI benchmark run analysis, report, or diagnostic review
 
 - **A plan for another repository stays here**, named with that repository's lower-case name as a prefix — `gnollhack_` for GnollHack — and is **not** filed under that repository's own scope. This is the global skill's *"several repositories, one clearly main"* case, decided once: for a benchmark analysis the main repository is always this one, because the analysis is what a reader looks for and the run, the report and the registry entry all live here.
 - **It is a member of the round's document set**: listed in the main plan's `## Document Set`, bumped with every revision, and copied verbatim with the one-line harmonization note when unchanged.
+- **The Developer Runbook is a set member too** — `developer_runbook_v<N>.md`, in the format `server_benchmark_runbook` defines. It is the one document of the round written for a reader who has opened none of the others, and it is versioned with them.
 - **It still has to stand on its own.** It is handed to another developer, possibly in another application, so it says in its own header that the work is in the other repository, that its paths are relative to that repository's root, and that none of its sibling documents is needed to implement it. Its checklist and walkthrough take the same prefix so they do not collide with the server plan's.
 - **The rubric repair YAML and the Snapshot Suite Wizard files are not plans** and stay outside every repository, as `server_rubric_handoff` and `server_snapshot_suite_authoring` say.
 
@@ -252,6 +254,37 @@ What stays available, and is where a snapshot improvement goes instead:
 If a finding can only be served by a layout change, **say so and defer it**: list it in the plan under a heading *Deferred to the next major GnollHack upgrade (needs a save-file layout change)*, with the finding and the smallest field that would serve it, and schedule nothing. Do not present it for a decision in *User Review Required* — the answer is already known.
 
 Set on 2026-09-18 by the user's instruction, in the run-54 round, after a snapshot plan offered a new turn-number field as an optional item.
+
+### The plan runs uninterrupted; the developer's jobs come last
+
+**A plan derived from a benchmark analysis implements every one of its changes in one uninterrupted pass, and hands the developer's manual jobs over at the very end.** Building and starting Overseer, importing a rubric repair, running the wiki sessions, changing a grader roster and launching the runs are not plan steps: they are Part A of the round's Developer Runbook (`server_benchmark_runbook`), and they begin when the plan's last step and its verification are done. Do not write a plan that stops after a stage so the developer can "try it in Overseer" — verify with the build and the tests instead, which the agent runs itself.
+
+**Exports from and imports into Overseer go at the start or at the end.** An export the agent needs as input — the suite's **Download All as YAML**, a database query result — is asked for *before* the plan is written, normally while the analysis is still in progress. An import — the rubric repair YAML, a questions file — is an end-of-plan job. Only a **very big plan**, where a later stage genuinely consumes what an earlier stage makes Overseer produce, may place one between stages, and then it is a pause under the rules below.
+
+**A mid-plan pause is a special case, and the plan has to earn it.** It is allowed only when a later *agent* step needs something that only the running application can produce or take in, and that cannot be moved to the start or the end. The plan says so under its own heading, `## Mid-Plan Pauses`, naming for each pause (`P1`, `P2`, …) the stage boundary it falls on, what the developer does, what the agent needs back, and why it cannot wait. A plan without that heading has no pause, and the agent does not invent one during execution; a need discovered while executing is a plan revision.
+
+At a pause the agent owes four things, in this order:
+
+1. **The tree compiles, proven, not assumed.** The developer starts Overseer from Visual Studio, which builds the working tree as it stands — with only part of the plan applied. So the pause falls on a **stage boundary** the plan designed to be compilable: no renamed member with callers still to be updated, no DTO changed on one side only, no migration generated and not applied. Every subagent of the stage has returned. Then the orchestrator runs, from the repository root,
+   ```bash
+   dotnet build MobileGnollHackLogger.slnx
+   ```
+   and, from `Overseer/ClientApp/` when the client changed,
+   ```bash
+   npm run build
+   ```
+   and both must finish with **0 errors** before the developer is asked for anything. If the stage added a migration, `dotnet ef database update -p GnollHackServer.Data -s MobileGnollHackLogger` has been run too. A build that fails **only** on locked output files (`MSB3021` / `MSB3027`) means Overseer is still running in Visual Studio: ask the developer to stop it, and build again — that is not a compile error, and it is not a pass either.
+2. **Step cards**, in the runbook's card format (`server_benchmark_runbook` § 3), under the pause's `P<n>` name: start Overseer in Visual Studio, the exact clicks, what to expect, what to bring back.
+3. **A plain statement that the work is not finished.** The pause message opens with it:
+
+   > **I have not finished. This is pause P1, after stage 2 of 5.** The solution builds at this point (`dotnet build MobileGnollHackLogger.slnx`: 0 errors). Please do the steps below and reply with `<what is needed>`. When you do, I will continue with stages 3–5: `<one line each>`. Until then nothing else in this plan can proceed.
+
+   A pause message that reads like a handoff is the defect this rule exists to prevent: the developer commits half a plan and launches a run on it.
+4. **`task.md` shows it.** The pause step is marked `[/]` with *waiting for the developer*, and is ticked only after the agent has checked what came back — never on the developer's word alone.
+
+**The wiki confirmation gate (`server_wiki_handoff` § 4a) is a pause under these rules only when an agent step waits behind it.** When what waits is the developer's own work — the restart, the next run — there is no pause: the wiki sessions are simply end-of-plan jobs in the runbook, in their place in the order.
+
+Set on 2026-09-19 by the user's instruction.
 
 ### The `Skills consulted:` line
 
@@ -274,6 +307,7 @@ The benchmark evaluates the production chat system prompt (`ChatService.BuildSys
 5. State the pre-declared acceptance criterion and the rollback trigger for any proposed change, per the skill's Verification and Rollback section.
 6. Carry the **tool-diagnostics table** and the **"Limits of this pass"** statement that `server_benchmark_to_chat_transfer` § 10 requires, with columns as `server_benchmark_tool_diagnostics` § 10 defines them.
 7. For any rung-2 wiki finding, name the wiki handoff document, state its validation verdict if validation has been run, and state whether the plan has a **confirmation gate** before the steps that depend on the wiki change, per `server_wiki_handoff` § 4a — or that nothing in the plan depends on it.
+8. Name the round's **Developer Runbook** (`developer_runbook_v<N>.md`, `server_benchmark_runbook`). The developer's jobs are **not** plan steps: they follow the plan's last step and live in the runbook (§ *The plan runs uninterrupted* below). The one thing the two documents share is a **pause** — when the plan has one, it is a step of its own in Proposed Changes and carries the same `P<n>` name as its runbook card. After execution, `walkthrough.md` carries a **Runbook status** section: each runbook step marked done or remaining, plus every value that only became known during execution (the new `HarnessVersion`, the `ToolGuidesSha256` the next run should show).
 
 If the plan addresses only harness or suite infrastructure, it must explicitly state: *"No chat-transferable changes proposed in this plan."*
 
@@ -286,4 +320,5 @@ If the plan addresses only harness or suite infrastructure, it must explicitly s
 - `server_tool_data_sources` (the corpora behind each tool, and what each index excludes)
 - `server_tool_parameter_reference` (the per-tool parameter and result contract)
 - `server_wiki_handoff` (the rung-2 three-step handoff document — proposed changes, source validation, execution — and the confirmation gate)
+- `server_benchmark_runbook` (the Developer Runbook: ordered fix steps and run cards for the following runs)
 - `testing_guidelines` (test classification and execution)

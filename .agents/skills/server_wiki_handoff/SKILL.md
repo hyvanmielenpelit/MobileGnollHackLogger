@@ -492,6 +492,12 @@ dependent steps listed beneath it, so a resumed session can see it has not been 
 Rung 2 is exempt from the re-run requirement (`server_benchmark_to_chat_transfer` § 9), so this
 is the common case; the defect is silence about the check, not the absence of a gate.
 
+**The gate and both closing messages also appear in the round's Developer Runbook**
+([`server_benchmark_runbook`](../server_benchmark_runbook/SKILL.md)) as numbered steps — Step 2,
+Step 3, the commit and push, and the wait for the 10-minute wiki re-index or the restart — so
+the developer sees where the wiki work falls relative to the rubric import and the next run.
+This section still owns the gate's wording and its read-only verification.
+
 ## 5. After the Wiki Session
 
 When the user has committed and pushed the wiki change, record in

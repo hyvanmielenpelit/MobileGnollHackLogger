@@ -275,6 +275,14 @@ Verified in `AdminBenchmarkController` (the question editor, `AcceptRubricAdditi
 
 ## 6. The Human Steps (Admin UI)
 
+**These steps are also repeated, inline and in full, in the round's Developer Runbook**
+([`server_benchmark_runbook`](../server_benchmark_runbook/SKILL.md)), at the position the
+round's dependency order gives them — normally after the Overseer restart and before the first
+run, and deliberately *between* two runs when the round uses the import as the isolated
+variable of a pair. The runbook repeats them rather than linking here because a repair file
+that was handed over and never imported is invisible to Overseer: nothing records it as
+pending, and the launcher does not warn.
+
 **By import — the default, for the § 4 deliverable:**
 
 1. Admin → **AI Benchmark** → the suite → **Manage Questions** → **Import Questions from YAML** →

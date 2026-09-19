@@ -125,6 +125,16 @@ A plan is **not** required for single-file fixes, typo and comment corrections, 
 
 ## AI Benchmark Findings
 
+### What AI benchmarking is for
+
+In this order of importance:
+
+1. **Improving the main AI chat of the Overseer** — that the system and its tools work correctly, that the models perform at maximum efficiency, and that there are no bugs or other problems. **This is the most important.**
+2. **Improving the AI benchmarking system itself**, so that it works rigorously and correctly and its results help both to improve the main chat and to benchmark AI models rigorously and scientifically.
+3. **The benchmark results themselves** — how well different models perform as the Overseer assistant.
+
+AI benchmarking therefore has two uses: **(1)** debugging and fixing the main AI chat and improving its quality in all aspects, and **(2)** benchmarking AI models so that we know which models to use in the chat. **Both aim at the best possible AI assistant experience for regular users of the Overseer.** Every analysis, plan and proposed run follows this order; the `server-benchmark-to-chat-transfer` skill § *What the Benchmark Is For* says what it decides in practice.
+
 Any analysis of an AI benchmark run — its report, diagnostics, or assessments — and any implementation plan derived from one **MUST** read **all five** of these skills, in this order, **before the first finding is written**:
 
 1. `server-benchmark-to-chat-transfer`
@@ -136,6 +146,10 @@ Any analysis of an AI benchmark run — its report, diagnostics, or assessments 
 This is **unconditional**. There is no finding-shaped condition to evaluate first, and none of the five is reached through any of the others. The earlier form of this rule made the last three conditional on *"any finding [that] turns on what a tool returned"* — a test an agent can only apply **after** the research those skills were meant to inform — and nested two of them inside the third, so a requirement lived inside a skill nobody had loaded. The run-28 analysis on 2026-09-09 read only the first and shipped with its tool layer un-audited, spending roughly 138,000 subagent tokens rediscovering a contract `server-tool-parameter-reference` already documented verbatim, and still filing the finding against the wrong contract.
 
 The analysis **MUST** produce the **Chat Transfer** section `server-benchmark-to-chat-transfer` § 10 specifies, including the tool-diagnostics table and "Limits of this pass" statement that section requires. The benchmark grades the production chat system prompt, so a benchmark analysis that yields no conclusion about the chat assistant is incomplete, not merely brief. Both skills are living documents: every analysis appends its run to the model behaviour notes.
+
+The analysis **MUST** also end in a **Developer Runbook** — `developer_runbook_v<N>.md`, in the format the `server-benchmark-runbook` skill defines: every action the round leaves to a human as one dependency-ordered list of steps, each easy enough to follow without opening any other document, followed by one or more **run cards** for the runs to make next. The runs validate the round's fixes and follow the priority order above: first improving the main Overseer chat, then the benchmarking system, then determining which models perform best as the Overseer AI on intelligence, speed and cost; one run can be enough. That skill is **not** one of the five: it is read once the findings are triaged, before the plan is written, and the agent never launches a run itself.
+
+**The implementation plan of such a round runs uninterrupted and leaves the developer's manual jobs for the very end.** Exports from and imports into Overseer go at the start or the end; a mid-plan pause in which the developer must build and run Overseer is a special case the plan has to justify, and before asking, the agent proves the partly changed solution compiles and says plainly that it has not finished and will continue afterwards. `server_implementation_planning` § *The plan runs uninterrupted; the developer's jobs come last* has the rules.
 
 **Every document of one benchmark analysis goes in one task directory**, under this repository's scope: `<plans-root>/hyvanmielenpelit/MobileGnollHackLogger/YYYY-MM-DD/<task_name>/`. That includes a plan whose work is in **another repository** — a GnollHack snapshot change, say — which is named with that repository's prefix (`gnollhack_implementation_plan_v<N>.md`, and later `gnollhack_task.md`, `gnollhack_walkthrough.md`) instead of being filed under that repository's own scope. It is a member of the round's document set and is versioned with it. The analysis, not the repository a finding lands in, is the unit a reader looks for; `server_implementation_planning` § *AI Benchmark Plans and Chat Transfer* has the details.
 
@@ -156,6 +170,8 @@ Skills in this repository use the **`server_`** prefix. Canonical bodies live in
 **generated** by `SharedAgentSkills\tools\sync_stubs.ps1` and must never be hand-edited.
 Notable project skills include `server_implementation_planning`, `server_benchmark_to_chat_transfer`, `server_wiki_handoff`,
 `server_rubric_handoff` (the YAML repair file a Suite Defect finding hands off for one-action import),
+`server_benchmark_runbook` (the Developer Runbook every benchmark analysis ends in: ordered fix
+steps and the run cards for the following runs),
 `server_data_privacy_framework`, `server_snapshot_suite_authoring` (turning an exported GnollHack
 AI snapshot into a one-file benchmark suite YAML, offline), and the tool-layer trio
 `server_tool_data_sources`, `server_tool_parameter_reference` and

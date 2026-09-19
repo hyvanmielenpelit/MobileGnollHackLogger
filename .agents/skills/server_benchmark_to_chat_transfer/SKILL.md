@@ -21,6 +21,28 @@ This skill defines the mandatory protocol for translating empirical findings fro
 
 ---
 
+## What the Benchmark Is For
+
+AI benchmarking in Overseer has a fixed order of importance. Every analysis, plan and proposed run follows it.
+
+1. **Improving the main AI chat of the Overseer — most important.** The benchmark runs the production chat prompt (§ 1) and the production tool registry (§ 4a), which makes it the instrument for **debugging and fixing the chat**: that the system and its tools work correctly, that the models perform at maximum efficiency, and that there are no bugs or other problems — and for improving the chat's quality in every respect. A tool that returns the wrong thing, a prompt instruction that misleads, a corpus that was not indexed, a request that reached the provider without its system prompt: these are what a run is read for first.
+2. **Improving the AI benchmarking system itself — second.** The harness, the graders, the suites and the reports must work rigorously and correctly, because everything learned about the chat and about the models is only as sound as the instrument it was read from.
+3. **The benchmark results themselves — third.** How well different models perform as the Overseer assistant, on intelligence, speed and cost.
+
+**Two uses follow from this:** (1) debugging and fixing the main AI chat and improving its quality in all aspects, and (2) benchmarking AI models so that we know which models to use in the chat. **Both serve one aim: the best possible AI assistant experience for regular users of the Overseer.**
+
+What the order decides in practice:
+
+- **An analysis leads with the chat.** Its summary states, in this order: what the run shows about the chat system and its tools; what it shows about the benchmarking system; and only then how the candidate scored. A run whose score is unusable — cancelled, prompt-less, graded on a broken rubric — can still be a first-rate run for purposes 1 and 2, and is analysed as one.
+- **A defect in the chat system or its tools outranks everything else in the round**, whatever the score was. It is fixed by the round's plan, or the plan says why it cannot be.
+- **A model ranking is taken only on a system believed to be sound.** A ranking made while a known chat or harness defect is open measures the defect. The registry's prompt-less OpenAI runs (§ 11, the 2026-09-17 correction) are the standing example: seven runs whose indexes described a wire defect rather than a model.
+- **A higher score is never the goal.** A score is evidence about the assistant a user gets; § 8's anti-overfitting rules exist because the two can be pulled apart.
+- **The Developer Runbook's runs follow the same order** ([`server_benchmark_runbook`](../server_benchmark_runbook/SKILL.md) § 4).
+
+Set on 2026-09-19 by the user's instruction.
+
+---
+
 ## 1. The Structural Fact
 
 The benchmark does not use a bespoke question-answering prompt. It builds the candidate's system prompt from the production chat builder, through a snapshotted configuration record:
@@ -393,11 +415,14 @@ A protocol that authorises production prompt edits but specifies no way to detec
 
 Rungs 1 and 2 — knowledge base and wiki content — are exempt from the re-run requirement, because they add facts rather than change instructions. They are still recorded in § 11, since rung 1 alters the frozen prompt segment (§ 7). **Exemption from re-running is not exemption from sequencing**: whenever another step of the round reads the edited pages, see [`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) § 4a for the gate that holds it until the user confirms that the change passed validation against the GnollHack source and the wiki session has finished.
 
+**The re-run is specified, not just required.** Obligation 1 above is discharged by a run card in the round's Developer Runbook ([`server_benchmark_runbook`](../server_benchmark_runbook/SKILL.md) § 5): the exact launcher values, what must stay unchanged from the motivating run, the comparability tier the pair will land in, and each pre-declared criterion with the place in the report where it is read. "Re-run under the same configuration" without that card has been followed wrongly before.
+
 ---
 
 ## 10. Required Output
 
 Any formal analysis of an AI benchmark run report or diagnostics **MUST** include a dedicated **Chat Transfer** section containing:
+- **A summary in priority order** (§ *What the Benchmark Is For*): first what the run shows about the chat system and its tools, then what it shows about the benchmarking system, then the candidate's result.
 - Table of triaged chat-transferable findings.
 - Evidence from the report (dimensions, tool counts, Pearson $r$, or citations) — with every quoted prompt sentence verified against source per § 2.
 - The proposed ladder rung (1 to 7).
@@ -413,6 +438,14 @@ It **MUST** also include the tool-layer output that [`server_benchmark_tool_diag
 The columns of that table are defined in the diagnostics skill, so this item **cannot be satisfied without loading it** — which is the point. A prose cross-reference can be read and set aside; a required section of the deliverable cannot. Deliverable-shaped requirements survive context pressure and cross-references do not, which is exactly how the run-28 analysis shipped with its tool layer un-audited.
 
 **The only escape** is an analysis that makes no tool, corpus or retrieval claim whatsoever. Note that a run report always contains a Tool Usage Profile, so this escape is close to theoretical; taking it requires saying so explicitly rather than omitting the section.
+
+It **MUST** end in a **Developer Runbook** — `developer_runbook_v<N>.md`, a member of the round's document set, in the format [`server_benchmark_runbook`](../server_benchmark_runbook/SKILL.md) defines — and the chat message that delivers the round repeats its step list in short form. The runbook carries:
+
+- **every action the round leaves to a human, in one dependency-ordered numbered list** — plan approval, the rubric repair import, the wiki handoff's Steps 2 and 3, a `gnollhack_` plan, a knowledge-base push, the Overseer restart, roster or profile changes — each as a step card;
+- **one or more run cards** — one can be enough — each tagged with the purposes it serves, which are ranked (§ *What the Benchmark Is For*) and proposed, ordered and marked Required in that rank: **C** improve the main chat, **B** improve the benchmarking system, **M** decide which models perform best as the Overseer AI on intelligence, speed and cost — and **V**, validate this round's fixes, which takes the rank of the fixes it validates; and
+- **what to hand back after each run**, including a ready-to-paste prompt for the next analysis.
+
+The step-card and run-card fields are defined in that skill, so this item cannot be satisfied without loading it. Read it **once the findings are triaged and before the plan is written** — it is not one of the five up-front reads, because nothing in it can be applied before the findings exist. **An analysis with no fix to apply still owes a runbook**: its Part A says so in one line and its Part B proposes the next run on purposes C, B or M, in that order of preference.
 
 Any implementation plan derived from a benchmark run must replicate this section or explicitly state: *"No chat-transferable changes proposed in this plan."*
 
@@ -724,3 +757,4 @@ breakdown, and the wire-level check now in place.
 - [`server_tool_data_sources`](../server_tool_data_sources/SKILL.md) — the corpora, their paths and what each index excludes
 - [`server_tool_parameter_reference`](../server_tool_parameter_reference/SKILL.md) — the per-tool parameter and result contract
 - [`server_wiki_handoff`](../server_wiki_handoff/SKILL.md) — pre-flight checklist, the three-step handoff document (proposed changes, source validation, execution) and its templates
+- [`server_benchmark_runbook`](../server_benchmark_runbook/SKILL.md) — the Developer Runbook every analysis ends in: ordered fix steps and the run cards for the following runs

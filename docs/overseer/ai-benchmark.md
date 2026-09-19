@@ -2,6 +2,8 @@
 
 The AI Intelligence Benchmark subsystem in Overseer provides automated, reproducible evaluation of AI models against domain-specific roguelike game knowledge, spoilers, monster/item stats, and C codebase logic for GnollHack.
 
+**Purpose and priorities.** AI benchmarking serves, in this order of importance: **(1) improving the main AI chat of the Overseer** — the benchmark runs the production chat prompt and the production tools, so it is how the chat is debugged and fixed: that the system and its tools work correctly, that the models perform at maximum efficiency, and that there are no bugs or other problems; **(2) improving the benchmarking system itself**, so that it works rigorously and correctly and its results serve both the chat and a scientific comparison of models; and **(3) the results themselves** — how well different models perform as the Overseer assistant. It therefore has two uses — debugging and improving the chat, and deciding which models the chat should use — and both aim at the best possible AI assistant experience for regular users of the Overseer. § 9.1 *What the Benchmark Tells the Chat* describes the first use in detail.
+
 ---
 
 ## 1. Architectural Overview
