@@ -4,8 +4,9 @@ using Xunit;
 
 namespace Overseer.Tests.UnitTests;
 
-/// <summary>Covers the path that carries the GnollHack host's game state from the
-/// OverseerSettings JSON stored on the handoff session to the SPA's gameOn parameter.</summary>
+/// <summary>Covers the reader as a whole: the value readers behind the path that carries the
+/// GnollHack host's game state from the OverseerSettings JSON stored on the handoff session to
+/// the SPA's gameOn parameter, and the input method resolved from that same JSON.</summary>
 public class ClientSettingsReaderTests
 {
     /* The shape the GnollHack client actually posts, so a key is read out of a realistic
@@ -131,6 +132,76 @@ public class ClientSettingsReaderTests
         string? capped = ClientSettingsReader.ReadGnollHackVersion(
             "{ \"StringData\": { \"GHVersion\": \"" + longVersion + "\" } }");
         Assert.Equal(new string('9', ClientSettingsReader.MaxGnollHackVersionLength), capped);
+    }
+
+    /* The realistic payload with the two keys the input method is resolved from, so each is
+       read out of a full settings object rather than a one-key one. A null argument leaves
+       the key out, as an older client does; the keyboard flag is spliced in as raw JSON so a
+       non-boolean value can be given. */
+    private static string InputSettings(string? keyboardConnectedJson, string? platform)
+    {
+        string bools = "\"allowSpoilers\": true, \"verboseResponses\": false, \"isGameOn\": true";
+        if (keyboardConnectedJson != null)
+            bools += ", \"" + ClientSettingsReader.KeyboardConnectedKey + "\": " + keyboardConnectedJson;
+
+        string strings = "\"version\": \"4.5.1\", \"GHVersion\": \"0.9.4\"";
+        if (platform != null)
+            strings += ", \"" + ClientSettingsReader.PlatformKey + "\": \"" + platform + "\"";
+
+        return "{ \"BoolData\": { " + bools + " }, \"IntData\": { \"overseerMode\": 0 },"
+            + " \"StringData\": { " + strings + " } }";
+    }
+
+    [Theory]
+    // The flag decides whenever it is a boolean, whatever the platform says.
+    [InlineData("true", "Android", ClientInputMethod.Keyboard)]
+    [InlineData("true", "WinUI", ClientInputMethod.Keyboard)]
+    [InlineData("true", null, ClientInputMethod.Keyboard)]
+    [InlineData("false", "Android", ClientInputMethod.TouchOnly)]
+    [InlineData("false", "WinUI", ClientInputMethod.TouchOnly)]
+    [InlineData("false", null, ClientInputMethod.TouchOnly)]
+    // Without it, the platform decides, case-insensitively.
+    [InlineData(null, "Android", ClientInputMethod.TouchOnly)]
+    [InlineData(null, "android", ClientInputMethod.TouchOnly)]
+    [InlineData(null, "iOS", ClientInputMethod.TouchOnly)]
+    [InlineData(null, "IOS", ClientInputMethod.TouchOnly)]
+    [InlineData(null, "WinUI", ClientInputMethod.Keyboard)]
+    [InlineData(null, "winui", ClientInputMethod.Keyboard)]
+    [InlineData(null, "MacCatalyst", ClientInputMethod.Keyboard)]
+    [InlineData(null, "macOS", ClientInputMethod.Keyboard)]
+    [InlineData(null, null, ClientInputMethod.Unknown)]
+    [InlineData(null, "", ClientInputMethod.Unknown)]
+    [InlineData(null, "   ", ClientInputMethod.Unknown)]
+    [InlineData(null, "Tizen", ClientInputMethod.Unknown)]
+    // A number or a string is not a boolean, so the platform decides for those too.
+    [InlineData("\"true\"", "Android", ClientInputMethod.TouchOnly)]
+    [InlineData("\"true\"", "WinUI", ClientInputMethod.Keyboard)]
+    [InlineData("1", null, ClientInputMethod.Unknown)]
+    [InlineData("null", null, ClientInputMethod.Unknown)]
+    public void ResolveInputMethod_FollowsTheDecisionTable(
+        string? keyboardConnectedJson, string? platform, ClientInputMethod expected)
+    {
+        Assert.Equal(expected, ClientSettingsReader.ResolveInputMethod(InputSettings(keyboardConnectedJson, platform)));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("not json at all")]
+    [InlineData("{ \"BoolData\": {")]
+    [InlineData("[1, 2, 3]")]
+    [InlineData("{ \"StringData\": [] }")]
+    public void ResolveInputMethod_ReturnsUnknown_WhenNothingCanBeRead(string? json)
+    {
+        Assert.Equal(ClientInputMethod.Unknown, ClientSettingsReader.ResolveInputMethod(json));
+    }
+
+    /* The web client and benchmark prompts send neither key. */
+    [Fact]
+    public void ResolveInputMethod_ReturnsUnknown_ForAPayloadWithNeitherKey()
+    {
+        Assert.Equal(ClientInputMethod.Unknown, ClientSettingsReader.ResolveInputMethod(RealisticSettings));
     }
 }
 

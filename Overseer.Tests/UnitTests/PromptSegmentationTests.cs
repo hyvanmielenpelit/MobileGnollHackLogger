@@ -86,6 +86,31 @@ public class PromptSegmentationTests
         return provider.GetRequiredService<ChatService>();
     }
 
+    /* The segments for one set of session flags, with the arguments the prompt-content tests
+       do not vary held at their least interesting values. */
+    private static (string frozen, string session, string volatileSuffix) BuildPrompt(
+        ChatService chatService,
+        bool spoilerFreeMode = false,
+        bool isGameOn = true,
+        int overseerMode = 0,
+        bool hasGameSnapshot = true,
+        string? clientSettings = null)
+    {
+        return chatService.BuildSegmentedSystemPrompt(
+            new List<string>(),
+            spoilerFreeMode: spoilerFreeMode,
+            verboseMode: false,
+            isGameOn: isGameOn,
+            developerMode: false,
+            overseerMode: overseerMode,
+            hasGameSnapshot: hasGameSnapshot,
+            hasMessageHistory: false,
+            clientSettings: clientSettings,
+            enableToolUse: true,
+            enableWebSearch: false,
+            allowSourceCodeReferences: false);
+    }
+
     [Fact]
     public void BuildSegmentedSystemPrompt_DividesSectionsCorrectly()
     {
@@ -127,6 +152,92 @@ public class PromptSegmentationTests
         Assert.Contains("Vorpal Blade", volatileSuffix);
         Assert.DoesNotContain("Tool Usage Policy", volatileSuffix);
         Assert.DoesNotContain("## Response Style", volatileSuffix);
+    }
+
+    [Theory]
+    [InlineData("{\"StringData\":{\"Platform\":\"Android\"},\"BoolData\":{\"KeyboardConnected\":false}}",
+        "Do not mention keyboard keys")]
+    [InlineData("{\"StringData\":{\"Platform\":\"Android\"},\"BoolData\":{\"KeyboardConnected\":true}}",
+        "The player has a keyboard")]
+    [InlineData("{\"StringData\":{\"Platform\":\"WinUI\"}}", "The player has a keyboard")]
+    [InlineData(null, "is not known")]
+    public void BuildSegmentedSystemPrompt_PutsTheControlsVariantInTheSessionSegment(
+        string? clientSettings, string expectedSentence)
+    {
+        var chatService = CreateChatService();
+
+        var (frozen, session, _) = BuildPrompt(chatService, clientSettings: clientSettings);
+
+        Assert.Contains("## Controls", session);
+        Assert.Contains(expectedSentence, session);
+        Assert.DoesNotContain("## Controls", frozen);
+    }
+
+    /* The interpretation follows the raw settings it interprets. */
+    [Fact]
+    public void BuildSegmentedSystemPrompt_PutsControlsAfterClientEnvironment()
+    {
+        var chatService = CreateChatService();
+
+        var (_, session, _) = BuildPrompt(
+            chatService, clientSettings: "{\"StringData\":{\"Platform\":\"Android\"}}");
+
+        Assert.True(session.IndexOf("## Client Environment", StringComparison.Ordinal)
+            < session.IndexOf("## Controls", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void BuildSegmentedSystemPrompt_DescribesLocationsOnlyWithAGame()
+    {
+        var chatService = CreateChatService();
+
+        var (withGame, _, _) = BuildPrompt(chatService, isGameOn: false, hasGameSnapshot: true);
+        var (withoutGame, _, _) = BuildPrompt(chatService, isGameOn: false, hasGameSnapshot: false);
+
+        Assert.Contains("## Describing Locations", withGame);
+        Assert.Contains("The player does not see map coordinates", withGame);
+        Assert.DoesNotContain("## Describing Locations", withoutGame);
+    }
+
+    /* Which key a command has is the Controls section's decision, so the frozen prefix names
+       none. */
+    [Fact]
+    public void BuildSegmentedSystemPrompt_NamesNoKeyForFarLook()
+    {
+        var chatService = CreateChatService();
+
+        var (frozen, _, _) = BuildPrompt(chatService);
+
+        Assert.DoesNotContain("far look with ';'", frozen);
+    }
+
+    [Fact]
+    public void BuildSegmentedSystemPrompt_CarriesTheElberethRule_InSpoilerFreeMode()
+    {
+        var chatService = CreateChatService();
+
+        var (frozen, _, _) = BuildPrompt(chatService, spoilerFreeMode: true, overseerMode: 0);
+
+        Assert.Contains("**Elbereth IS a spoiler**", frozen);
+
+        // The detailed policy is served from the copy of ToolGuides in the test output.
+        int policyIndex = frozen.IndexOf("### Detailed Spoiler Policy", StringComparison.Ordinal);
+        Assert.True(policyIndex >= 0);
+        Assert.True(frozen.IndexOf("## Elbereth", policyIndex, StringComparison.Ordinal) > policyIndex);
+    }
+
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(false, 2)]
+    [InlineData(true, 2)]
+    public void BuildSegmentedSystemPrompt_OmitsTheElberethRule_WhenSpoilerControlIsOff(
+        bool spoilerFreeMode, int overseerMode)
+    {
+        var chatService = CreateChatService();
+
+        var (frozen, _, _) = BuildPrompt(chatService, spoilerFreeMode: spoilerFreeMode, overseerMode: overseerMode);
+
+        Assert.DoesNotContain("Elbereth", frozen);
     }
 
     [Fact]

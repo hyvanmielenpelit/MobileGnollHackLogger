@@ -9,6 +9,14 @@ public static class ClientSettingsReader
     /// <summary>StringData key under which the client reports its game version.</summary>
     public const string GnollHackVersionKey = "GHVersion";
 
+    /// <summary>StringData key under which the client reports its MAUI platform
+    /// (Android, iOS, WinUI).</summary>
+    public const string PlatformKey = "Platform";
+
+    /// <summary>BoolData key under which the client reports whether a hardware keyboard
+    /// is connected.</summary>
+    public const string KeyboardConnectedKey = "KeyboardConnected";
+
     /// <summary>Length of BenchmarkGameSnapshot.SourceGnollHackVersion.</summary>
     public const int MaxGnollHackVersionLength = 64;
 
@@ -52,6 +60,28 @@ public static class ClientSettingsReader
             : trimmed;
     }
 
+    /// <summary>How the player is expected to enter commands, from the keyboard flag when the
+    /// client sends one and from the platform otherwise. Clients that report neither, including
+    /// the web client and benchmark prompts, give <see cref="ClientInputMethod.Unknown"/>.</summary>
+    public static ClientInputMethod ResolveInputMethod(string? clientSettingsJson)
+    {
+        bool? keyboardConnected = ReadBool(clientSettingsJson, KeyboardConnectedKey);
+        if (keyboardConnected.HasValue)
+        {
+            return keyboardConnected.Value ? ClientInputMethod.Keyboard : ClientInputMethod.TouchOnly;
+        }
+
+        /* An app too old to send the flag: a mobile platform is touch-only, because a player
+           there has a keyboard only by attaching one, which is what the flag would have said. */
+        string? platform = ReadString(clientSettingsJson, PlatformKey);
+        return platform?.ToLowerInvariant() switch
+        {
+            "android" or "ios" => ClientInputMethod.TouchOnly,
+            "winui" or "maccatalyst" or "macos" => ClientInputMethod.Keyboard,
+            _ => ClientInputMethod.Unknown
+        };
+    }
+
     private static T? ReadValue<T>(string? clientSettingsJson, string section, string key, System.Func<JsonElement, T?> read)
     {
         if (string.IsNullOrWhiteSpace(clientSettingsJson)) return default;
@@ -70,4 +100,12 @@ public static class ClientSettingsReader
             return default;
         }
     }
+}
+
+/// <summary>Whether the player can press keys, as far as the client's settings reveal.</summary>
+public enum ClientInputMethod
+{
+    Unknown,
+    TouchOnly,
+    Keyboard
 }

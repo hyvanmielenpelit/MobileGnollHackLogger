@@ -9,16 +9,18 @@ dungeon overview.
 
 ## The `Pets` section
 `Pets` is the authoritative, complete roster of every tame monster on the hero's
-**current level**. It opens with a roll call — one line per pet with name, `<x,y>`
-position, distance from the hero, and current/maximum HP — followed by full statistics
-blocks (level, AC, magic cancellation, magic resistance, attacks, attribute scores,
-intrinsics, worn and wielded equipment, status marks, conditions and buffs) for the
-first few pets.
+**current level**. It opens with a roll call — one line per pet with name, location as
+`<x,y>, 5 squares away (2n,5e)` (the distance in moves and the compass offset from the
+hero, in snapshot format 12 and later; earlier snapshots give `<x,y>` and the distance
+only), and current/maximum HP — followed by full statistics blocks (level, AC, magic
+cancellation, magic resistance, attacks, attribute scores, intrinsics, worn and wielded
+equipment, status marks, conditions and buffs) for the first few pets.
 
 These are the same animals the map legend's `Notable locations` already describes: a
-pet shown on the map appears there too, as a `Creature <x,y>` line reading
-`level N tame <species>, HP:n(m) AC:n <alignment>` plus hunger and status. Coordinates
-are identical in both, so cross-reference by `<x,y>` and never count a pet twice.
+pet shown on the map appears there too, as a `Creature <x,y>, ...` line carrying the same
+location text as the roll call, whose description reads `level N tame <species>, HP:n(m)
+AC:n <alignment>` plus hunger and status. Coordinates are identical in both, so
+cross-reference by `<x,y>` and never count a pet twice.
 Where they disagree, prefer `Pets`: the legend caps its coordinate lines and describes
 the hero's *memory* of the map, so it can omit a pet or place it where it used to be.
 

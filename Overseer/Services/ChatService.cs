@@ -1887,6 +1887,17 @@ public class ChatService
             sbFrozen.AppendLine();
         }
 
+        // SECTION 4b: Describing Locations
+        if (isGameOn || hasGameSnapshot)
+        {
+            sbFrozen.AppendLine("## Describing Locations");
+            sbFrozen.AppendLine("- The player does not see map coordinates: GnollHack does not normally show them. The <x,y> coordinates in the game snapshot are for your own cross-referencing.");
+            sbFrozen.AppendLine("- When you tell the player where something is, describe it relative to the hero: direction and distance in words, such as \"three squares north and two east\" or \"right next to you, to the northwest\". North is up on the screen and east is to the right. A nearby landmark (a door, a fountain, the stairs) helps too.");
+            sbFrozen.AppendLine("- Take the distance and direction from what the snapshot prints with each location, such as \"<34,7>, 5 squares away (2n,5e)\", rather than working them out from coordinates, and put them in words; do not quote the (2n,5e) shorthand either. Older snapshots print only the offset, at the end of each notable location's line.");
+            sbFrozen.AppendLine("- Give <x,y> coordinates only if the player asks for them.");
+            sbFrozen.AppendLine();
+        }
+
         // SECTION 5: Capabilities
         sbFrozen.AppendLine("## Your Capabilities");
         sbFrozen.AppendLine("- **Player Assistance**: Tactical advice, item identification, strategy tips, monster info, spell recommendations, dungeon navigation");
@@ -1981,7 +1992,7 @@ public class ChatService
         sbFrozen.AppendLine("- Give the safest recommendation supported by available data.");
         if (isGameOn || hasGameSnapshot)
         {
-            sbFrozen.AppendLine("- If a critical piece of information is missing (e.g., monster resistances, item properties), suggest the player use in-game commands to discover it (e.g., far look with ';', check inventory, cast identify).");
+            sbFrozen.AppendLine("- If a critical piece of information is missing (e.g., monster resistances, item properties), suggest the player use in-game commands to discover it (e.g., far look at it, check the inventory, cast identify).");
         }
         sbFrozen.AppendLine("- Do not guess or fill in gaps with assumptions.");
         sbFrozen.AppendLine();
@@ -2005,6 +2016,8 @@ public class ChatService
             sbFrozen.AppendLine("### The Core Rule");
             sbFrozen.AppendLine("- **NOT a spoiler**: Explaining HOW game mechanics work — formulas, probabilities, damage calculations, skill effects.");
             sbFrozen.AppendLine("- **IS a spoiler**: Revealing WHAT the player has not yet encountered — future dungeon branches, unmet bosses, undiscovered item identities.");
+            sbFrozen.AppendLine("- **Familiar from NetHack does not mean safe.** Judge by what this player has met in this GnollHack game, not by how widely known something is among NetHack players.");
+            sbFrozen.AppendLine("- **Elbereth IS a spoiler** until the hero has learned of it in this game, even though it is common NetHack knowledge: do not name it, hint at it, or list it among options. Check the game snapshot's `Elbereth:` line, and see *Elbereth* in the detailed policy below.");
             sbFrozen.AppendLine();
             sbFrozen.AppendLine("### Tools for Spoiler Checking");
             sbFrozen.AppendLine("Before revealing conditional information, use these tools to check what the player already knows:");
@@ -2016,7 +2029,7 @@ public class ChatService
             sbFrozen.AppendLine("### Quick Reference");
             sbFrozen.AppendLine("✅ SAFE: Combat formulas, probability tables, general mechanics, status effects, UI help, visible threats");
             sbFrozen.AppendLine("⚠️ CHECK FIRST: Specific item identities, monster abilities, artifact powers, level features");
-            sbFrozen.AppendLine("🚫 NEVER: Future branches, hidden levels, boss encounters, quest details, optimal strategies, endgame content");
+            sbFrozen.AppendLine("🚫 NEVER: Future branches, hidden levels, boss encounters, quest details, optimal strategies, endgame content, Elbereth (until the hero has learned of it)");
             sbFrozen.AppendLine();
 
             var spoilerPolicy = _toolRegistry.GetSpoilerPolicyText();
@@ -2131,6 +2144,24 @@ public class ChatService
             }
             catch { }
         }
+
+        // SECTION 13b: Controls
+        switch (ClientSettingsReader.ResolveInputMethod(clientSettings))
+        {
+            case ClientInputMethod.Keyboard:
+                sbSession.AppendLine("## Controls");
+                sbSession.AppendLine("The player has a keyboard. When you tell the player to use a game command, name the command; you may add its key in parentheses. Take keys from the Keys line of the game snapshot, which reflects the player's own bindings and number_pad setting, rather than from NetHack's defaults.");
+                break;
+            case ClientInputMethod.TouchOnly:
+                sbSession.AppendLine("## Controls");
+                sbSession.AppendLine("The player is using a touch screen with no keyboard connected. Do not mention keyboard keys, key combinations or shortcuts, not even in parentheses, and do not quote the Keys line of the game snapshot. Refer to commands by the names the game shows on its command buttons and menus. If the player asks about keyboard shortcuts, answer the question.");
+                break;
+            default:
+                sbSession.AppendLine("## Controls");
+                sbSession.AppendLine("Whether the player has a keyboard is not known. Name commands by name; a key may follow in parentheses as a secondary hint.");
+                break;
+        }
+        sbSession.AppendLine();
 
         // ──────────────────────────────────────────────
         // SEGMENT C: Volatile Turn Suffix (Section 14)
