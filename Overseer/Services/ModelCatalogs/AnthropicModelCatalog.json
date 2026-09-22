@@ -126,6 +126,22 @@
       "cacheWritePerMillion": 12.50,
       "asOf": "2026-09-05"
     }
+  },
+  {
+    "prefixes": ["claude-opus-5-5"],
+    "displayName": "Claude 5.5 Opus",
+    "releaseDate": "2026-09-22",
+    "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
+    "reasoningSummaries": ["summarized", "omitted"],
+    "contextWindowSize": 1000000,
+    "maxOutputTokens": 128000,
+    "pricing": {
+      "inputPerMillion": 4.00,
+      "outputPerMillion": 20.00,
+      "cachedInputPerMillion": 0.20,
+      "cacheWritePerMillion": 5.00,
+      "asOf": "2026-09-22"
+    }
   }
 ]
 
