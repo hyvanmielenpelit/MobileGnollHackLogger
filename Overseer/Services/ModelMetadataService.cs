@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -11,6 +13,21 @@ public class ModelMetadataService
 {
     private readonly Dictionary<string, List<ModelCatalogEntry>> _providerCatalogs = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger<ModelMetadataService>? _logger;
+    private readonly ConcurrentDictionary<string, byte> _warnedUnknownVersions = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>How a model ID relates to the catalog prefix it matched.</summary>
+    private enum MatchKind
+    {
+        None,
+        /* claude-opus-5-5 for claude-opus-5-5 */
+        Exact,
+        /* gpt-5.4-2026-03-05 for gpt-5.4: the same model, pinned */
+        Snapshot,
+        /* gemini-3.5-flash-preview for gemini-3.5-flash: never offered, but described by its family */
+        Variant,
+        /* claude-opus-5-6 for claude-opus-5: a different model with no entry of its own */
+        UnknownVersion
+    }
 
     public ModelMetadataService(ILogger<ModelMetadataService>? logger = null)
     {
@@ -60,45 +77,100 @@ public class ModelMetadataService
             : Array.Empty<ModelCatalogEntry>();
     }
 
+    /// <summary>
+    /// Whether the model picker offers the model: an exact catalog prefix, or one followed by a
+    /// dated snapshot suffix. A model that looks like a newer version of a catalogued one is
+    /// refused and logged once, so a missing catalog entry is visible rather than mislabelled.
+    /// </summary>
     public bool IsWhitelisted(string provider, string modelId)
     {
-        if (string.IsNullOrEmpty(provider) || string.IsNullOrEmpty(modelId))
-            return false;
+        var (entry, prefix, kind) = Match(provider, modelId);
 
-        if (!_providerCatalogs.TryGetValue(provider, out var catalogEntries))
-            return false;
+        if (kind == MatchKind.UnknownVersion && _warnedUnknownVersions.TryAdd($"{provider}|{modelId}", 0))
+        {
+            _logger?.LogWarning(
+                "Model {ModelId} from {Provider} looks like a new version of catalog entry {Prefix} ({DisplayName}) and is hidden from the model picker until it has its own catalog entry.",
+                modelId, provider, prefix, entry?.DisplayName);
+        }
+
+        return kind is MatchKind.Exact or MatchKind.Snapshot;
+    }
+
+    /// <summary>
+    /// The longest catalog prefix that ends where the model ID ends or at a hyphen, and how the rest
+    /// of the ID relates to it. A shorter prefix is never used instead of the longest one.
+    /// </summary>
+    private (ModelCatalogEntry? Entry, string? Prefix, MatchKind Kind) Match(string provider, string modelId)
+    {
+        if (string.IsNullOrEmpty(provider) || string.IsNullOrEmpty(modelId)
+            || !_providerCatalogs.TryGetValue(provider, out var catalogEntries))
+        {
+            return (null, null, MatchKind.None);
+        }
+
+        ModelCatalogEntry? bestEntry = null;
+        string? bestPrefix = null;
 
         foreach (var entry in catalogEntries)
         {
             if (entry.Prefixes == null) continue;
             foreach (var prefix in entry.Prefixes)
             {
-                if (modelId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    var suffix = modelId.Substring(prefix.Length);
-                    if (IsVersionSuffix(suffix))
-                        return true;
-                }
+                if (string.IsNullOrEmpty(prefix) || prefix.Length <= (bestPrefix?.Length ?? 0))
+                    continue; /* on a tie the first entry in file order wins */
+
+                if (!modelId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (modelId.Length > prefix.Length && modelId[prefix.Length] != '-')
+                    continue; /* gpt-5.4 must not match gpt-5.45 */
+
+                bestEntry = entry;
+                bestPrefix = prefix;
             }
         }
-        return false;
+
+        if (bestEntry == null || bestPrefix == null)
+            return (null, null, MatchKind.None);
+
+        return (bestEntry, bestPrefix, Classify(modelId.Substring(bestPrefix.Length)));
     }
 
-    private static bool IsVersionSuffix(string suffix)
+    /// <param name="suffix">Empty, or starting with '-'.</param>
+    private static MatchKind Classify(string suffix)
     {
         if (suffix.Length == 0)
-            return true; /* exact match */
+            return MatchKind.Exact;
 
-        if (suffix[0] != '-')
-            return false;
+        var body = suffix.Substring(1);
+        if (IsSnapshot(body))
+            return MatchKind.Snapshot;
 
-        if (suffix.Length == 1)
-            return false; /* lone hyphen */
+        int end = body.IndexOf('-');
+        var firstSegment = end < 0 ? body : body.Substring(0, end);
+        if (firstSegment.Length > 0 && firstSegment.All(c => char.IsAsciiDigit(c) || c == '.'))
+            return MatchKind.UnknownVersion;
 
-        for (int i = 1; i < suffix.Length; i++)
+        return MatchKind.Variant;
+    }
+
+    /* YYYYMMDD (Anthropic), YYYY-MM-DD (OpenAI) or NNN (Google) */
+    private static bool IsSnapshot(string body)
+    {
+        return body.Length switch
         {
-            char c = suffix[i];
-            if (!char.IsDigit(c) && c != '-' && c != '.')
+            8 => AllDigits(body, 0, 8),
+            10 => AllDigits(body, 0, 4) && body[4] == '-' && AllDigits(body, 5, 2) && body[7] == '-' && AllDigits(body, 8, 2),
+            3 => AllDigits(body, 0, 3),
+            _ => false
+        };
+    }
+
+    private static bool AllDigits(string s, int start, int length)
+    {
+        for (int i = start; i < start + length; i++)
+        {
+            if (!char.IsAsciiDigit(s[i]))
                 return false;
         }
         return true;
@@ -118,29 +190,10 @@ public class ModelMetadataService
             return metadata;
         }
 
-        ModelCatalogEntry? bestEntry = null;
-        int maxPrefixLength = 0;
+        var (bestEntry, _, kind) = Match(provider, modelId);
 
-        if (!string.IsNullOrEmpty(provider) && _providerCatalogs.TryGetValue(provider, out var catalogEntries))
-        {
-            foreach (var entry in catalogEntries)
-            {
-                if (entry.Prefixes == null) continue;
-                foreach (var prefix in entry.Prefixes)
-                {
-                    if (modelId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (prefix.Length > maxPrefixLength)
-                        {
-                            maxPrefixLength = prefix.Length;
-                            bestEntry = entry;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (bestEntry != null)
+        // Variant is accepted so hand-typed and custom-endpoint IDs keep their family's metadata.
+        if (bestEntry != null && kind is MatchKind.Exact or MatchKind.Snapshot or MatchKind.Variant)
         {
             metadata.DisplayName = bestEntry.DisplayName;
             metadata.Description = bestEntry.DisplayName;

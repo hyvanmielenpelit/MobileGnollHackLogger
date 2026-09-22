@@ -7,7 +7,8 @@ description: How to add a single new AI model (Anthropic Claude, Google Gemini, 
 
 Adding a model to Overseer is a **data change, not a code change**. You add one JSON object to
 one catalog file and rebuild. If you find yourself editing `ModelMetadataService.cs`, stop —
-you have misread the problem.
+you have misread the problem. The one exception is a new dated-snapshot shape (Trap 1), which is
+a matching rule, not a model.
 
 ## Scope
 
@@ -118,38 +119,55 @@ Read the convention off the catalog, not off the vendor's marketing page:
 
 ## The Prefix-Matching Contract, and Its Two Traps
 
-`ModelMetadataService` matches a model ID against catalog `prefixes` in two different ways.
-Understanding both prevents the two mistakes this skill exists to stop.
+`ModelMetadataService` runs one matching routine for both of its questions:
 
-**`IsWhitelisted`** — decides whether the model is offered at all. It accepts a prefix match
-where the remaining suffix is empty, or is a hyphen followed only by digits, dots, and hyphens
-(`IsVersionSuffix`).
+- **`IsWhitelisted`** decides whether the model picker offers the model at all.
+- **`GetMetadata`** decides which catalog entry describes it: name, release date, effort levels,
+  limits and pricing. It is also called for model IDs a user or admin typed by hand through
+  **Custom…**, which no save endpoint checks against the whitelist.
 
-**`GetMetadata`** — decides which entry describes the model. It scans every prefix and keeps the
-**longest** match.
+The routine takes the **longest** catalog prefix that the ID starts with (case-insensitive)
+**and** that ends at a boundary, meaning the ID ends there or continues with `-`. So `gpt-5.4`
+never matches `gpt-5.45`. A shorter prefix is never used instead of the longest one. The rest of
+the ID is then classified:
 
-### Trap 1 — a point release is silently already whitelisted, under the wrong name
+| Kind | Rest of the ID | Example (prefix → ID) | Whitelisted | Metadata |
+|------|----------------|-----------------------|-------------|----------|
+| Exact | empty | `claude-opus-5-5` → `claude-opus-5-5` | yes | the entry |
+| Snapshot | `-` plus exactly 8 digits, `dddd-dd-dd`, or exactly 3 digits | `gpt-5.4` → `gpt-5.4-2026-03-05`; `gemini-3.7-flash` → `gemini-3.7-flash-001` | yes | the entry |
+| Unknown version | first `-`-separated segment is only digits and dots, and not a snapshot | `claude-opus-5` → `claude-opus-5-6` | **no**, and a warning is logged | **none** |
+| Variant | anything else | `gemini-3.5-flash` → `gemini-3.5-flash-preview` | no | the entry |
 
-`claude-fable-5-1` leaves the suffix `-1` against the `claude-fable-5` prefix. That is all
-digits, so `IsVersionSuffix` returns `true` and the model **passes the whitelist with no entry
-of its own** — then `GetMetadata` labels it with its predecessor's name and release date.
+The `Variant` row is why a hand-typed `gpt-5.4-mydeployment` still gets GPT-5.4's limits and
+price. The `Unknown version` row is why a new point release never inherits its predecessor's.
+`ModelMetadataServiceTests` pins every row.
 
-> **Never conclude from "it already appears in the model picker" that no catalog entry is
-> needed.** Check the *display name and release date*, not mere presence. A point release that
-> shows up under the previous version's name is exactly the bug this trap produces.
+### Trap 1 — an uncatalogued point release is invisible, not mislabelled
+
+A new `claude-sonnet-5-1` is an unknown version of `claude-sonnet-5`. It does **not** appear in
+the model picker until it has a catalog entry of its own, and a hand-typed one gets no name, no
+price and no effort levels. The first time the picker's listing meets it, Overseer logs a warning
+that contains `looks like a new version of catalog entry` and names both IDs.
+
+> **A new model missing from the picker is the expected symptom, not a provider problem.** Add
+> the entry. Afterwards, still check that the picker shows the intended *display name and
+> release date*.
+
+If the warning names an ID that is really a dated snapshot in a shape the table does not know,
+extend the `Snapshot` check in `ModelMetadataService` and add a test row. Do not add a catalog
+entry for a snapshot.
 
 ### Trap 2 — order does not matter, but strict prefixes do
 
-Array position is irrelevant, because `GetMetadata` takes the longest match. `gpt-5.4` and
-`gpt-5.4-pro` coexist correctly wherever they sit in the file, and so do `gemini-3.5-flash` and
+Array position is irrelevant, because the longest match wins. `gpt-5.4` and `gpt-5.4-pro`
+coexist correctly wherever they sit in the file, and so do `gemini-3.5-flash` and
 `gemini-3.5-flash-lite`.
 
-What does matter: an entry whose prefix is a **strict prefix of a different model's ID** will
-capture that model whenever the more specific entry is missing. Add the specific entry and the
-capture stops.
-
-Note the asymmetry between the two methods: `gpt-5.4-pro` is *not* whitelisted by the `gpt-5.4`
-entry, because `-pro` is not a version suffix. Only numeric suffixes leak.
+What does matter: an entry whose prefix is a **strict prefix of a different model's ID**, up to a
+`-` boundary, describes that model through the `Variant` row whenever the more specific entry is
+missing. The picker still does not offer it, because a variant is not whitelisted, but a
+hand-typed `gpt-5.4-pro` would get GPT-5.4's metadata. Add the specific entry and the capture
+stops.
 
 ## Workflow
 
@@ -158,7 +176,9 @@ entry, because `-pro` is not a version suffix. Only numeric suffixes leak.
 2. **Get the exact model ID and specs** from the provider (see below). The ID must be the one the
    provider's API accepts — for Anthropic that is the bare ID with **no date suffix**
    (`claude-sonnet-5`, never `claude-sonnet-5-20260630`, which returns `404`).
-3. **Check for an existing entry**, including one that would capture the new ID through Trap 1.
+3. **Check for an existing entry**, and search the Overseer log for the model ID's
+   `looks like a new version of catalog entry` warning (Trap 1). An entry whose prefix the new ID
+   extends with a numeric segment does not describe it.
 4. **Append the entry** to the end of the provider's catalog array, matching the file's existing
    grouping and indentation (two spaces).
 5. **Preserve the file's encoding**: UTF-8 **without BOM**. Match the line endings the file
@@ -190,11 +210,14 @@ Always parse the file after editing.
 
 ```powershell
 dotnet build Overseer\Overseer.csproj
-dotnet test Overseer.Tests\Overseer.Tests.csproj
+dotnet test Overseer.Tests --filter-not-trait "Category=UsesExternalApi"
 ```
 
-`SubAgentCatalogTests` and `DelegateToSubAgentToolTests` exercise `ModelMetadataService` against
-the real catalogs.
+The filter is mandatory: without it the run calls live provider APIs and spends real quota (see
+`testing_guidelines`). `ModelMetadataServiceTests`, `SubAgentCatalogTests` and
+`DelegateToSubAgentToolTests` exercise `ModelMetadataService` against the real catalogs;
+`ModelMetadataServiceTests` checks that every prefix resolves to its own entry and that no prefix
+is repeated, so a new entry is covered with no test change.
 
 Then, in the running app: open the **Models** page, pick the provider, and open the model picker.
 Confirm the new model shows the intended display name, sorts by its release date, and reports the
@@ -205,23 +228,12 @@ appears separately under its own name — proof that the new entry did not captu
 > the catalog. A model absent from the provider's API will not appear no matter what the catalog
 > says, and no frontend file needs changing to add a model.
 
-## Optional: Token Pricing for Benchmark Cost Estimation
+## Token Pricing
 
-Pricing lives in configuration (`Overseer/appsettings.json` or user secrets), **never in the catalog JSON files** — prices change without a release, and a hardcoded roster in source drifts silently.
-
-To enable estimated cost reporting in the AI Benchmark for the new model, add an entry under `ModelPricing`:
-
-```json
-"ModelPricing": {
-  "<model-id-prefix>": {
-    "InputPerMillion": 2.50,
-    "OutputPerMillion": 10.00,
-    "CachedInputPerMillion": 0.25
-  }
-}
-```
-
-Prefixes match by longest prefix against model IDs (e.g. `gpt-5.6` matches `gpt-5.6-luna`). `CachedInputPerMillion` is optional (omit if the model does not support prompt caching). If pricing is not configured, benchmark reports display that pricing is not configured and continue normally.
+Pricing is part of the catalog entry, in its `pricing` object (see § The `pricing` Object above).
+There is no pricing configuration section. The conditional rate cards (`longContext`,
+`serviceTierMultipliers`, `scheduledChange`) are documented in
+`docs/overseer/adding-ai-models.md` § *Optional: Configure Token Pricing*.
 
 ## What NOT to Do
 

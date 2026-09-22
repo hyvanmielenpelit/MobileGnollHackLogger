@@ -15,10 +15,13 @@ Two things catch people out:
 
 - **The catalogs are embedded resources.** Editing the JSON changes nothing until the Overseer project
   is rebuilt (`dotnet build Overseer\Overseer.csproj`) and the service restarted.
-- **A point release is often already whitelisted under the previous version's name.** The whitelist
-  accepts a numeric version suffix, so `claude-fable-5-1` passes through the `claude-fable-5` entry and
-  appears in the picker labelled "Claude 5 Fable". Presence in the picker does **not** mean an entry is
-  unnecessary — check the display name and release date.
+- **A new point release is missing from the picker until it has its own entry.** An ID that extends a
+  catalogued one with a version number, such as `claude-sonnet-5-1` beside `claude-sonnet-5`, is treated
+  as a different model: it is not offered, it borrows none of its predecessor's name, limits or price,
+  and Overseer's log carries a warning containing `looks like a new version of catalog entry` that
+  names it. Adding the catalog entry is what makes it appear. Dated snapshots (`-YYYYMMDD`,
+  `-YYYY-MM-DD`, `-NNN`, as in `gpt-5.4-2026-03-05` or `gemini-3.7-flash-001`) still appear under
+  their base model's name.
 
 The AI skill **`overseer_adding_ai_models`** documents the full field reference, the per-provider
 conventions for thinking levels and reasoning summaries, and the prefix-matching rules. Use it for any
