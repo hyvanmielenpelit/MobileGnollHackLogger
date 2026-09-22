@@ -219,11 +219,31 @@ public class PromptSegmentationTests
         var (frozen, _, _) = BuildPrompt(chatService, spoilerFreeMode: true, overseerMode: 0);
 
         Assert.Contains("**Elbereth IS a spoiler**", frozen);
+        Assert.Contains("even when the player asks about it by name", frozen);
+        Assert.Contains("**Asking is not permission.**", frozen);
+        Assert.Contains("Elbereth allows no hint.", frozen);
 
         // The detailed policy is served from the copy of ToolGuides in the test output.
         int policyIndex = frozen.IndexOf("### Detailed Spoiler Policy", StringComparison.Ordinal);
         Assert.True(policyIndex >= 0);
         Assert.True(frozen.IndexOf("## Elbereth", policyIndex, StringComparison.Ordinal) > policyIndex);
+        Assert.True(frozen.IndexOf("## Asking Is Not Permission", policyIndex, StringComparison.Ordinal) > policyIndex);
+    }
+
+    /* SECTION 12 is gated on spoiler-free mode and the Overseer mode alone, so a session with
+       no game still carries the rule — which is what makes "no snapshot means not learned"
+       work. */
+    [Fact]
+    public void BuildSegmentedSystemPrompt_CarriesTheElberethRule_WithNoGame()
+    {
+        var chatService = CreateChatService();
+
+        var (frozen, _, _) = BuildPrompt(
+            chatService, spoilerFreeMode: true, isGameOn: false, overseerMode: 1, hasGameSnapshot: false);
+
+        Assert.Contains("**Elbereth IS a spoiler**", frozen);
+        Assert.Contains("with no game snapshot in this conversation", frozen);
+        Assert.Contains("**Asking is not permission.**", frozen);
     }
 
     [Theory]
@@ -238,6 +258,9 @@ public class PromptSegmentationTests
         var (frozen, _, _) = BuildPrompt(chatService, spoilerFreeMode: spoilerFreeMode, overseerMode: overseerMode);
 
         Assert.DoesNotContain("Elbereth", frozen);
+
+        // The asking-is-not-permission bullet never says "Elbereth", so it needs its own check.
+        Assert.DoesNotContain("**Asking is not permission.**", frozen);
     }
 
     [Fact]
