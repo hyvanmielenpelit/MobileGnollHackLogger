@@ -18,7 +18,7 @@
     <PackageReference Include="Lucene.Net" Version="4.8.0-beta00016" />
     <PackageReference Include="Lucene.Net.Analysis.Common" Version="4.8.0-beta00016" />
     <PackageReference Include="Lucene.Net.QueryParser" Version="4.8.0-beta00016" />
-    <PackageReference Include="Sentry.AspNetCore" Version="6.11.0" />
+    <PackageReference Include="Sentry.AspNetCore" Version="6.11.1" />
   </ItemGroup>
 
   <!-- Document ingestion and local retrieval. Pinned deliberately rather than floated: a
