@@ -211,6 +211,56 @@
       },
       "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 2.0, "fast": 2.0 }
     }
+  },
+  {
+    "prefixes": ["gpt-6-sol"],
+    "displayName": "GPT-6 Sol",
+    "releaseDate": "2026-09-22",
+    "thinkingLevels": ["none", "low", "medium", "high", "xhigh", "max"],
+    "reasoningModes": ["standard", "pro"],
+    "reasoningSummaries": ["auto", "concise", "detailed"],
+    "contextWindowSize": 1050000,
+    "maxOutputTokens": 128000,
+    "pricing": {
+      "inputPerMillion": 2.00,
+      "outputPerMillion": 10.00,
+      "cachedInputPerMillion": 0.20,
+      "cacheWritePerMillion": 2.50,
+      "asOf": "2026-09-23",
+      "longContext": {
+        "thresholdInputTokens": 272000,
+        "inputPerMillion": 4.00,
+        "outputPerMillion": 15.00,
+        "cachedInputPerMillion": 0.40,
+        "cacheWritePerMillion": 5.00
+      },
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 2.0, "fast": 2.0 }
+    }
+  },
+  {
+    "prefixes": ["gpt-6-luna"],
+    "displayName": "GPT-6 Luna",
+    "releaseDate": "2026-09-22",
+    "thinkingLevels": ["none", "low", "medium", "high", "xhigh", "max"],
+    "reasoningModes": ["standard", "pro"],
+    "reasoningSummaries": ["auto", "concise", "detailed"],
+    "contextWindowSize": 1050000,
+    "maxOutputTokens": 128000,
+    "pricing": {
+      "inputPerMillion": 0.10,
+      "outputPerMillion": 0.50,
+      "cachedInputPerMillion": 0.01,
+      "cacheWritePerMillion": 0.125,
+      "asOf": "2026-09-23",
+      "longContext": {
+        "thresholdInputTokens": 272000,
+        "inputPerMillion": 0.20,
+        "outputPerMillion": 0.75,
+        "cachedInputPerMillion": 0.02,
+        "cacheWritePerMillion": 0.25
+      },
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 2.0, "fast": 2.0 }
+    }
   }
 ]
 
