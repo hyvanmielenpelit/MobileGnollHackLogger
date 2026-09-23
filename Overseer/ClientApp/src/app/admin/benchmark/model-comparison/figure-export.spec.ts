@@ -10,6 +10,7 @@ import {
   FIGURE_EXPORT_MIN_DIMENSION,
   FIGURE_EXPORT_PRESETS,
   FIGURE_EXPORT_PRESET_GROUPS,
+  FIGURE_FONT_STACK,
   FigureExportLayout,
   FigureExportResolution,
   WEBP_QUALITY_OPTIONS,
@@ -54,7 +55,7 @@ describe('figure-export', () => {
       title: 'P1 — Quality, speed and cost',
       badges: [
         { text: 'Current catalog prices', tone: 'pricing' },
-        { text: 'Higher is better', tone: 'direction' }
+        { text: 'Higher is better', tone: 'neutral' }
       ],
       detail: '18 items per run, current catalog as of 2026-09-07',
       key: [
@@ -250,7 +251,7 @@ describe('figure-export', () => {
         badges: [
           { text: '2 models', tone: 'neutral' },
           { text: 'Current catalog prices', tone: 'pricing' },
-          { text: 'Higher is better', tone: 'direction' }
+          { text: 'Higher is better', tone: 'neutral' }
         ]
       }),
       footer: figureFooter(emptyFooter)
@@ -259,7 +260,7 @@ describe('figure-export', () => {
     const expected = [
       { text: '2 models', border: 'rgba(255, 255, 255, 0.25)', fill: 'rgba(255, 255, 255, 0.04)', ink: '#e0ba6d' },
       { text: 'Current catalog prices', border: 'rgba(16, 185, 129, 0.3)', fill: 'rgba(16, 185, 129, 0.1)', ink: '#6ee7b7' },
-      { text: 'Higher is better', border: 'rgba(224, 186, 109, 0.45)', fill: 'rgba(224, 186, 109, 0.08)', ink: '#e0ba6d' }
+      { text: 'Higher is better', border: 'rgba(255, 255, 255, 0.25)', fill: 'rgba(255, 255, 255, 0.04)', ink: '#e0ba6d' }
     ];
     for (const badge of expected) {
       const textIndex = events.findIndex(event => event.op === 'fillText' && event.text === badge.text);
@@ -274,6 +275,113 @@ describe('figure-export', () => {
     }
     // The neutral pill reads gold, as on the card, not the body grey.
     expect(normalized(expected[0].ink)).not.toBe(normalized('#d4d4d8'));
+  });
+
+  describe('direction marker', () => {
+    const topLeft = { x: 'left', y: 'top', label: 'Better' } as const;
+    const bottomLeft = { x: 'left', y: 'bottom', label: 'Better' } as const;
+
+    it('measures exactly the height the composition draws, with a direction marker', () => {
+      const canvas = sourceCanvas();
+      const figure = request({
+        canvas,
+        chrome: figureChrome({ ...headerOnlyChrome(), direction: topLeft }),
+        footer: figureFooter(emptyFooter)
+      });
+      const measured = measureFigureChrome(figure, 400);
+
+      let composed!: HTMLCanvasElement;
+      const plotTop = plotTopOf(canvas, () => { composed = composeFigureImage({ ...figure, density: 1 }); });
+
+      expect(measured.direction).not.toBeNull();
+      expect(composed.height).toBe(measured.height + onScreen.height);
+      expect(plotTop + onScreen.height + 20).toBe(composed.height);
+    });
+
+    it('gives a header shorter than the marker the marker\'s height', () => {
+      const canvas = sourceCanvas();
+      const figure = request({
+        canvas,
+        chrome: figureChrome({ ...headerOnlyChrome(), title: 'S1', badges: [], direction: topLeft }),
+        footer: figureFooter(emptyFooter)
+      });
+
+      const plotTop = plotTopOf(canvas, () => composeFigureImage(figure));
+
+      // Padding, the 28 px marker, then the gap above the plot.
+      expect(plotTop).toBeGreaterThanOrEqual(20 + 28 + 16);
+    });
+
+    it('wraps the title and badges in the column left of the marker', () => {
+      const title = 'Intelligence against speed across every model in the comparable set';
+      const measured = measureFigureChrome(
+        sourceOf({ ...headerOnlyChrome(), title, direction: topLeft }, emptyFooter),
+        400
+      );
+      const columnWidth = 400 - measured.direction!.width - 12;
+
+      const scratch = document.createElement('canvas').getContext('2d')!;
+      scratch.font = `600 18px ${FIGURE_FONT_STACK}`;
+      expect(measured.titleLines.length).toBeGreaterThan(1);
+      for (const line of measured.titleLines) {
+        expect(scratch.measureText(line).width).withContext(line).toBeLessThanOrEqual(columnWidth + 0.5);
+      }
+      for (const row of measured.badgeRows) {
+        const rowWidth = row.badges.reduce((sum, { width }) => sum + width, 0) + (row.badges.length - 1) * 6;
+        expect(rowWidth).toBeLessThanOrEqual(columnWidth + 0.5);
+      }
+    });
+
+    it('draws the marker right-aligned to the plot, above it', () => {
+      const canvas = sourceCanvas();
+      const figure = request({
+        canvas,
+        chrome: figureChrome({ ...headerOnlyChrome(), direction: topLeft }),
+        footer: figureFooter(emptyFooter)
+      });
+      const measured = measureFigureChrome(figure, 400);
+
+      const labels: { x: number; y: number }[] = [];
+      const realFillText = CanvasRenderingContext2D.prototype.fillText;
+      spyOn(CanvasRenderingContext2D.prototype, 'fillText').and.callFake(function (
+        this: CanvasRenderingContext2D,
+        ...args: any[]
+      ) {
+        if (args[0] === 'Better') {
+          labels.push({ x: args[1], y: args[2] });
+        }
+        return (realFillText as any).apply(this, args);
+      } as any);
+
+      const plotTop = plotTopOf(canvas, () => composeFigureImage(figure));
+
+      expect(labels.length).toBe(1);
+      // The pill's right edge meets the plot's right edge; the label follows its padding, arrow and gap.
+      const pillLeft = 20 + 400 - measured.direction!.width;
+      expect(labels[0].x).toBeCloseTo(pillLeft + 6 + 20 + 6, 5);
+      expect(pillLeft).toBeGreaterThanOrEqual(20 + 200);
+      expect(labels[0].y + 13).toBeLessThanOrEqual(plotTop - 16);
+    });
+
+    it('strokes the arrow rotated toward the better corner', () => {
+      const rotate = spyOn(CanvasRenderingContext2D.prototype, 'rotate').and.callThrough();
+
+      composeFigureImage(request({ chrome: figureChrome({ direction: topLeft }) }));
+      const topLeftAngles = rotate.calls.allArgs().map(args => args[0]);
+      rotate.calls.reset();
+      composeFigureImage(request({ chrome: figureChrome({ direction: bottomLeft }) }));
+      const bottomLeftAngles = rotate.calls.allArgs().map(args => args[0]);
+
+      expect(topLeftAngles.length).toBe(1);
+      expect(topLeftAngles[0]).toBeCloseTo((3 * Math.PI) / 2, 6);
+      expect(bottomLeftAngles.length).toBe(1);
+      expect(bottomLeftAngles[0]).toBeCloseTo(Math.PI, 6);
+    });
+
+    it('draws no marker and reserves no column without a direction', () => {
+      const measured = measureFigureChrome(sourceOf(headerOnlyChrome(), emptyFooter), 400);
+      expect(measured.direction).toBeNull();
+    });
   });
 
   describe('measureFigureChrome', () => {
@@ -293,7 +401,7 @@ describe('figure-export', () => {
     it('wraps five badges at a 360 px content width onto more than one row', () => {
       const badges: FigureBadge[] = [
         { text: 'Current catalog prices', tone: 'pricing' },
-        { text: 'Higher is better', tone: 'direction' },
+        { text: 'Higher is better', tone: 'neutral' },
         { text: '4 of 5 entries charted', tone: 'neutral' },
         { text: 'Speed degraded', tone: 'neutral' },
         { text: 'Cost degraded', tone: 'neutral' }

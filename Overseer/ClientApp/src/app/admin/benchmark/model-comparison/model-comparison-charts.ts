@@ -14,7 +14,7 @@ import type { Chart, ChartConfiguration, ChartType, DefaultDataPoint, Plugin, Po
 import { chooseScaleType, formatTick, linearDomain, logDomain, timeUnitFor } from './axis-domain';
 import type { AxisBounds, AxisTickKind, ScaleType, TimeUnit } from './axis-domain';
 import { pricingBadge, pricingNote, runsBadge } from './figure-chrome';
-import type { FigureBadge, FigureChrome, FigureKeyItem, FigureNote } from './figure-chrome';
+import type { FigureBadge, FigureChrome, FigureDirection, FigureKeyItem, FigureNote } from './figure-chrome';
 
 // ---------------------------------------------------------------------------------------------
 // Input model
@@ -694,12 +694,8 @@ export const dominatedRegionPlugin: Plugin = {
 // Figure plumbing
 // ---------------------------------------------------------------------------------------------
 
-/** Which corner of a scatter is the good one. Rendered as the direction badge, never as a reversed axis. */
-export interface PreferredCorner {
-  readonly x: 'left' | 'right';
-  readonly y: 'top' | 'bottom';
-  readonly label: string;
-}
+/** Which corner of a scatter is the good one. Rendered as the direction marker, never as a reversed axis. */
+export type PreferredCorner = FigureDirection;
 
 /**
  * One figure: its chart.js configuration plus the chrome the component renders as HTML.
@@ -1641,12 +1637,6 @@ function resolveAxis(spec: ScatterAxisSpec, plotted: readonly ModelComparisonEnt
   };
 }
 
-/** The direction badge: an arrow to the better corner, spelled out for assistive technology. */
-function directionBadge(corner: PreferredCorner): FigureBadge {
-  const arrow = corner.y === 'top' ? (corner.x === 'left' ? '↖' : '↗') : corner.x === 'left' ? '↙' : '↘';
-  return { text: `${arrow} ${corner.label}`, tone: 'direction', ariaLabel: `${corner.label}: ${corner.y} ${corner.x}` };
-}
-
 /**
  * True when the two entries' 95 % intervals overlap on every axis that carries one, and at least one
  * axis does. An axis carries an interval here when either entry has a whisker on it.
@@ -1846,7 +1836,6 @@ function buildScatter(
   const badges: FigureBadge[] = [
     ...countBadges(plotted, context),
     ...(hasCostAxis ? [pricingBadge(context.pricingBasis, context.pricedOn)] : []),
-    directionBadge(preferredCorner),
   ];
 
   // The key explains only the marks this figure actually draws.
@@ -1887,6 +1876,7 @@ function buildScatter(
   const chrome: FigureChrome = {
     title,
     badges,
+    direction: preferredCorner,
     detail: hasCostAxis ? pricingNote(context.pricingBasis) : '',
     key,
     highlight,

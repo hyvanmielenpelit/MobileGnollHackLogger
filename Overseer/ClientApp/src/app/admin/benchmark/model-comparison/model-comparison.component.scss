@@ -500,12 +500,6 @@
     background: rgba(16, 185, 129, 0.1);
     border-color: rgba(16, 185, 129, 0.3);
   }
-
-  &.mc-badge--direction {
-    color: #e0ba6d;
-    border-color: rgba(224, 186, 109, 0.45);
-    background: rgba(224, 186, 109, 0.08);
-  }
 }
 
 .mc-card-detail {
@@ -525,6 +519,45 @@
   display: flex;
   align-items: center;
   gap: 2px;
+}
+
+/* The scatter head's control column: the buttons at the top, the direction marker at the bottom,
+   so the marker sits directly above the plot's top-right corner. The column stretches the head's
+   full height, and the card subgrid gives every head in a row the same height, so the markers
+   line up across a row. */
+.mc-card-side {
+  grid-column: 2;
+  grid-row: 1 / -1;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Which corner is better: an arrow that points at it, and the word. The figure export draws the
+   same pill (figure-export.ts, DIRECTION_*), so a change to one is a change to both. */
+.mc-direction {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  block-size: 28px;
+  padding: 4px 10px 4px 6px;
+  border: 1px solid rgba(224, 186, 109, 0.55);
+  border-radius: 999px;
+  background: rgba(224, 186, 109, 0.1);
+  color: #e0ba6d;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.mc-direction-arrow {
+  flex: none;
 }
 
 /*

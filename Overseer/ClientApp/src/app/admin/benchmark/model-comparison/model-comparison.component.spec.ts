@@ -489,6 +489,42 @@ describe('ModelComparisonComponent', () => {
     expect(scatterFigures[1].queryAll(By.css('.mc-badge--pricing')).length).toBeGreaterThan(0);
   });
 
+  it('marks the better corner above each scatter, apart from its badges', () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    const scatterFigures = fixture.debugElement.queryAll(By.css('.mc-grid .mc-card'));
+    const markers = scatterFigures.map(figure => figure.queryAll(By.css('.mc-card-side .mc-direction')));
+    expect(markers.map(found => found.length)).toEqual([1, 1, 1]);
+
+    const text = (index: number): string =>
+      (markers[index][0].nativeElement as HTMLElement).textContent!.replace(/\s+/g, ' ').trim();
+    expect(text(0)).toBe('Better toward the top left');
+    expect(text(1)).toBe('Better toward the top left');
+    expect(text(2)).toBe('Better toward the bottom left');
+
+    const arrow = (index: number): SVGElement =>
+      markers[index][0].query(By.css('.mc-direction-arrow')).nativeElement as SVGElement;
+    expect(arrow(0).style.rotate).toBe('270deg');
+    expect(arrow(2).style.rotate).toBe('180deg');
+    expect(arrow(0).getAttribute('aria-hidden')).toBe('true');
+
+    for (const figure of scatterFigures) {
+      const badgeTexts = figure.queryAll(By.css('.mc-badge')).map(badge => (badge.nativeElement as HTMLElement).textContent!);
+      expect(badgeTexts.some(badgeText => badgeText.includes('Better'))).toBeFalse();
+    }
+
+    const s1Canvas = scatterFigures[0].query(By.css('canvas')).nativeElement as HTMLCanvasElement;
+    expect(s1Canvas.getAttribute('aria-label')).toContain('Better toward the top left');
+  });
+
+  it('draws no direction marker on the panels or the profile', () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    expect(fixture.debugElement.queryAll(By.css('.mc-panels .mc-direction')).length).toBe(0);
+    expect(fixture.debugElement.queryAll(By.css('.mc-charts > .mc-card .mc-direction')).length).toBe(0);
+    expect(fixture.debugElement.queryAll(By.css('.mc-direction')).length).toBe(3);
+  });
+
   // -------------------------------------------------------------------------------------------
   // The filter row
   // -------------------------------------------------------------------------------------------

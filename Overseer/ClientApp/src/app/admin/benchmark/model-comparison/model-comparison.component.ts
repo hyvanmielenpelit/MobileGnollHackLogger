@@ -22,7 +22,7 @@ import { BaseChartDirective } from 'ng2-charts';
 import type { ChartConfiguration, ChartType, Plugin } from 'chart.js';
 
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
-import { FigureChrome, FigureFooter, FigureNote, figureSummary, formatComputedAt } from './figure-chrome';
+import { FigureChrome, FigureFooter, FigureNote, figureDirectionRotation, figureSummary, formatComputedAt } from './figure-chrome';
 import { exactFilter, TableState } from '../../../shared/data-table/table-state';
 import { SortHeaderComponent } from '../../../shared/data-table/sort-header.component';
 import { TablePagerComponent } from '../../../shared/data-table/table-pager.component';
@@ -1080,7 +1080,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   // ---------------------------------------------------------------------------------------------
   // Figure export
   //
-  // The composited image carries the card's chrome — title, badges, detail, key, highlight and
+  // The composited image carries the card's chrome — title, badges, direction, detail, key, highlight and
   // notes — and a footer naming the suite and the time the comparison was computed. That is the
   // point of exporting through a composer rather than reading the canvas directly: a bare plot
   // pasted into a document would drop exactly the caveats that stop it being misread.
@@ -2378,6 +2378,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     const chrome = spec.chrome;
     return `${chrome.title}: ${figureSummary(chrome)}. Values for every entry are in the comparison table below.`;
   }
+
+  /** The direction marker arrow's rotation, for the template. */
+  readonly directionRotation = figureDirectionRotation;
 
   /** A DOM id and anchor name derived from an entry key, which carries a `run:12` style colon. */
   tipId(prefix: string, key: string): string {

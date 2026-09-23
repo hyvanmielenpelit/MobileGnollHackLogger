@@ -6,8 +6,15 @@
  * Pure TypeScript with no Chart.js, Angular or DOM dependency.
  */
 
-export type FigureBadgeTone = 'neutral' | 'pricing' | 'direction';
+export type FigureBadgeTone = 'neutral' | 'pricing';
 export interface FigureBadge { readonly text: string; readonly tone: FigureBadgeTone; readonly ariaLabel?: string; }
+
+/** Which corner of a trade-off plot is better, and the word the marker shows. */
+export interface FigureDirection {
+  readonly x: 'left' | 'right';
+  readonly y: 'top' | 'bottom';
+  readonly label: string;
+}
 
 export type FigureNoteTone = 'info' | 'warning';
 export interface FigureNote { readonly text: string; readonly tone: FigureNoteTone; }
@@ -19,6 +26,8 @@ export interface FigureKeyItem { readonly glyph: FigureKeyGlyph; readonly text: 
 export interface FigureChrome {
   readonly title: string;
   readonly badges: readonly FigureBadge[];
+  /** The better corner of a two-axis plot, drawn as a marker above the plot's top-right corner, apart from the badges. */
+  readonly direction?: FigureDirection;
   /** One short sentence under the badges, or ''. Used only for the pricing basis on cost figures. */
   readonly detail: string;
   readonly key: readonly FigureKeyItem[];
@@ -30,9 +39,28 @@ export interface FigureChrome {
 /** The export's last line: suite on the left, computation time on the right. */
 export interface FigureFooter { readonly suite: string; readonly computedAt: string; }
 
-/** The badges' texts joined with `, `, plus the detail: the figure's one-line summary for assistive technology. */
+/** Clockwise rotation, in degrees, that turns the marker's up-right arrow toward the better corner. */
+export function figureDirectionRotation(direction: FigureDirection): number {
+  if (direction.y === 'top') {
+    return direction.x === 'right' ? 0 : 270;
+  }
+  return direction.x === 'right' ? 90 : 180;
+}
+
+/** The marker spelled out, e.g. `Better toward the top left`. */
+export function figureDirectionText(direction: FigureDirection): string {
+  return `${direction.label} toward the ${direction.y} ${direction.x}`;
+}
+
+/**
+ * The badges' texts and the direction joined with `, `, plus the detail: the figure's one-line
+ * summary for assistive technology.
+ */
 export function figureSummary(chrome: FigureChrome): string {
-  const badges = chrome.badges.map((badge) => badge.ariaLabel ?? badge.text).join(', ');
+  const badges = [
+    ...chrome.badges.map((badge) => badge.ariaLabel ?? badge.text),
+    ...(chrome.direction ? [figureDirectionText(chrome.direction)] : []),
+  ].join(', ');
   if (chrome.detail === '') {
     return badges;
   }

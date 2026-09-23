@@ -9,8 +9,8 @@
  * 1. **The caveats are composited into the image.** The whole reason the comparison view refuses to
  *    hide what it could not compare is that a chart is more persuasive than a table. A figure
  *    exported as a bare canvas and pasted into a document would drop exactly the notices that stop
- *    it being misread, so the title, badges, detail, key, highlight, every note and the footer are
- *    drawn into the same bitmap as the plot.
+ *    it being misread, so the title, badges, direction marker, detail, key, highlight, every note
+ *    and the footer are drawn into the same bitmap as the plot.
  * 2. **The background is opaque.** Chart.js canvases are transparent; a PNG of one dropped into a
  *    light document renders as dark-on-dark and is unreadable.
  * 3. **An explicit resolution buys sharpness, not more content.** Every explicit size composes in
@@ -26,10 +26,12 @@
 import { Chart } from 'chart.js';
 import type { ChartConfiguration, ChartType, Plugin } from 'chart.js';
 
+import { figureDirectionRotation } from './figure-chrome';
 import type {
   FigureBadge,
   FigureBadgeTone,
   FigureChrome,
+  FigureDirection,
   FigureFooter,
   FigureKeyGlyph,
   FigureKeyItem,
@@ -262,7 +264,7 @@ export interface FigureExportLayout {
 export interface FigureExportRequest {
   /** The live chart canvas, or one rendered by {@link renderPlotOffscreen}. Read, never mutated. */
   readonly canvas: HTMLCanvasElement;
-  /** Title, badges, detail, key, highlight and notes: everything the card and the export share. */
+  /** Title, badges, direction, detail, key, highlight and notes: everything the card and the export share. */
   readonly chrome: FigureChrome;
   /** The export's last line: suite on the left, computation time on the right. */
   readonly footer: FigureFooter;
@@ -304,6 +306,18 @@ const BADGE_PAD_X = 7;
 const BADGE_PAD_Y = 3;
 const BADGE_GAP = 6;
 const BADGE_HEIGHT = BADGE_TEXT_SIZE + BADGE_PAD_Y * 2;
+
+/** The direction marker: a pill holding a rotated arrow and its label, above the plot's top-right corner. */
+const DIRECTION_HEIGHT = 28;
+const DIRECTION_TEXT_SIZE = 13;
+const DIRECTION_ARROW_SIZE = 20;
+const DIRECTION_ARROW_STROKE = 2.5;
+const DIRECTION_PAD_START = 6;
+const DIRECTION_PAD_END = 10;
+const DIRECTION_GAP = 6;
+const DIRECTION_BORDER_WIDTH = 1;
+/** The gap between the header's text column and the marker's column. */
+const DIRECTION_SIDE_GAP = 12;
 
 /** The detail line under the badge row. */
 const DETAIL_SIZE = 12;
@@ -351,9 +365,11 @@ const FIGURE_DOMINATED_FILL = 'rgba(255, 255, 255, 0.12)';
 /** Badge pill colors by tone: border, fill, then text. Match the step-4 card badges (`.mc-badge` and its tone modifiers). */
 const BADGE_TONE_COLORS: Record<FigureBadgeTone, { readonly border: string; readonly fill: string; readonly text: string }> = {
   neutral: { border: 'rgba(255, 255, 255, 0.25)', fill: 'rgba(255, 255, 255, 0.04)', text: FIGURE_TITLE_COLOR },
-  pricing: { border: 'rgba(16, 185, 129, 0.3)', fill: 'rgba(16, 185, 129, 0.1)', text: '#6ee7b7' },
-  direction: { border: 'rgba(224, 186, 109, 0.45)', fill: 'rgba(224, 186, 109, 0.08)', text: FIGURE_TITLE_COLOR }
+  pricing: { border: 'rgba(16, 185, 129, 0.3)', fill: 'rgba(16, 185, 129, 0.1)', text: '#6ee7b7' }
 };
+
+/** The direction marker's colors. Match `.mc-direction` on the step-4 card. */
+const DIRECTION_COLORS = { border: 'rgba(224, 186, 109, 0.55)', fill: 'rgba(224, 186, 109, 0.1)', text: FIGURE_TITLE_COLOR };
 
 /** Note colors by tone: left rule, then text. */
 const NOTE_TONE_COLORS: Record<FigureNoteTone, { readonly rule: string; readonly text: string }> = {
@@ -549,6 +565,13 @@ export function composeFigureImage(request: FigureExportRequest): HTMLCanvasElem
   if (chrome.detailLines.length > 0) {
     y += LINE_GAP;
     y = drawBlock(context, chrome.detailLines, PADDING, y, DETAIL_SIZE, '400', FIGURE_MUTED_COLOR);
+  }
+
+  // The marker's bottom sits on the header's bottom, right-aligned to the plot below it.
+  if (chrome.direction) {
+    const headerBottom = Math.max(y, PADDING + DIRECTION_HEIGHT);
+    drawDirection(context, chrome.direction, PADDING + contentWidth - chrome.direction.width, headerBottom - DIRECTION_HEIGHT);
+    y = headerBottom;
   }
 
   y += PLOT_GAP;
@@ -816,6 +839,13 @@ interface MeasuredBadgeRow {
   readonly badges: readonly { readonly badge: FigureBadge; readonly width: number }[];
 }
 
+/** The direction marker: its label, the arrow's rotation in degrees, and the pill's width. */
+interface MeasuredDirection {
+  readonly label: string;
+  readonly rotation: number;
+  readonly width: number;
+}
+
 /** One row of wrapped key items, each with the width it measured at. */
 interface MeasuredKeyRow {
   readonly items: readonly { readonly item: FigureKeyItem; readonly width: number }[];
@@ -841,6 +871,8 @@ interface MeasuredFooter {
 export interface MeasuredChrome {
   readonly titleLines: string[];
   readonly badgeRows: readonly MeasuredBadgeRow[];
+  /** Null when the figure has no better corner. */
+  readonly direction: MeasuredDirection | null;
   readonly detailLines: string[];
   readonly keyRows: readonly MeasuredKeyRow[];
   readonly highlightLines: string[];
@@ -858,18 +890,24 @@ type FigureChromeSource = Omit<FigureExportRequest, 'canvas' | 'format' | 'layou
  * The single source of both the drawn content and the height {@link resolveFigureLayout} subtracts
  * from a target box; duplicating either would let a figure be accepted at a height it cannot be
  * drawn at. An empty `detail`, `highlight` or `key` measures to no lines and adds no height.
+ *
+ * A direction marker takes a column of its own at the header's right, so the title, badges and
+ * detail wrap in what is left, and the header is as tall as the taller of the two columns.
  */
 export function measureFigureChrome(source: FigureChromeSource, contentWidth: number): MeasuredChrome {
   const measure = document.createElement('canvas').getContext('2d');
-  const wrap = (text: string, size: number, weight: string): string[] =>
-    measure ? wrapText(measure, text, contentWidth, size, weight) : (text ? [text] : []);
+  const wrapAt = (width: number, text: string, size: number, weight: string): string[] =>
+    measure ? wrapText(measure, text, width, size, weight) : (text ? [text] : []);
+  const wrap = (text: string, size: number, weight: string): string[] => wrapAt(contentWidth, text, size, weight);
 
   const chrome = source.chrome;
-  const titleLines = wrap(chrome.title, TITLE_SIZE, '600');
+  const direction = chrome.direction ? measureDirection(measure, chrome.direction) : null;
+  const headerWidth = direction ? contentWidth - direction.width - DIRECTION_SIDE_GAP : contentWidth;
+  const titleLines = wrapAt(headerWidth, chrome.title, TITLE_SIZE, '600');
   const badgeRows: MeasuredBadgeRow[] = measure
-    ? wrapBadges(measure, chrome.badges, contentWidth)
+    ? wrapBadges(measure, chrome.badges, headerWidth)
     : (chrome.badges.length > 0 ? [{ badges: chrome.badges.map(badge => ({ badge, width: 0 })) }] : []);
-  const detailLines = wrap(chrome.detail, DETAIL_SIZE, '400');
+  const detailLines = wrapAt(headerWidth, chrome.detail, DETAIL_SIZE, '400');
   const keyRows: MeasuredKeyRow[] = measure
     ? wrapKeyItems(measure, chrome.key, contentWidth)
     : (chrome.key.length > 0 ? [{ items: chrome.key.map(item => ({ item, width: 0 })) }] : []);
@@ -878,14 +916,19 @@ export function measureFigureChrome(source: FigureChromeSource, contentWidth: nu
     chrome.notes.map(note => ({ tone: note.tone, lines: wrap(note.text, NOTE_SIZE, '400') }));
   const footer = measureFooter(measure, source.footer, contentWidth);
 
-  let height = PADDING * 2;
-  height += blockHeight(titleLines, TITLE_SIZE);
+  let headerHeight = blockHeight(titleLines, TITLE_SIZE);
   if (badgeRows.length > 0) {
-    height += LINE_GAP + badgeRows.length * BADGE_HEIGHT + (badgeRows.length - 1) * BADGE_GAP;
+    headerHeight += LINE_GAP + badgeRows.length * BADGE_HEIGHT + (badgeRows.length - 1) * BADGE_GAP;
   }
   if (detailLines.length > 0) {
-    height += LINE_GAP + blockHeight(detailLines, DETAIL_SIZE);
+    headerHeight += LINE_GAP + blockHeight(detailLines, DETAIL_SIZE);
   }
+  if (direction) {
+    headerHeight = Math.max(headerHeight, DIRECTION_HEIGHT);
+  }
+
+  let height = PADDING * 2;
+  height += headerHeight;
   height += PLOT_GAP;
   if (keyRows.length > 0) {
     height += LINE_GAP + keyRows.length * KEY_ROW_HEIGHT + (keyRows.length - 1) * LINE_GAP;
@@ -900,7 +943,21 @@ export function measureFigureChrome(source: FigureChromeSource, contentWidth: nu
     height += RULE_GAP + footer.height;
   }
 
-  return { titleLines, badgeRows, detailLines, keyRows, highlightLines, noteBlocks, footer, height };
+  return { titleLines, badgeRows, direction, detailLines, keyRows, highlightLines, noteBlocks, footer, height };
+}
+
+/** The marker pill's width: arrow, gap and label between its paddings. */
+function measureDirection(context: CanvasRenderingContext2D | null, direction: FigureDirection): MeasuredDirection {
+  let labelWidth = direction.label.length * 7;
+  if (context) {
+    context.font = fontOf(DIRECTION_TEXT_SIZE, '700');
+    labelWidth = context.measureText(direction.label).width;
+  }
+  return {
+    label: direction.label,
+    rotation: figureDirectionRotation(direction),
+    width: DIRECTION_PAD_START + DIRECTION_ARROW_SIZE + DIRECTION_GAP + labelWidth + DIRECTION_PAD_END
+  };
 }
 
 /** Wraps badge pills into rows that fit `maxWidth`, greedily, in the order given. */
@@ -1189,6 +1246,45 @@ function pathRoundedRect(
   } else {
     context.rect(x, y, width, height);
   }
+}
+
+/**
+ * The direction marker: a rounded pill, the up-right arrow of `.mc-direction-arrow` rotated toward
+ * the better corner, and the label. The arrow is stroked in its own 24-unit viewBox, scaled to size.
+ */
+function drawDirection(context: CanvasRenderingContext2D, direction: MeasuredDirection, x: number, y: number): void {
+  pathRoundedRect(context, x, y, direction.width, DIRECTION_HEIGHT, DIRECTION_HEIGHT / 2);
+  context.fillStyle = DIRECTION_COLORS.fill;
+  context.fill();
+  context.strokeStyle = DIRECTION_COLORS.border;
+  context.lineWidth = DIRECTION_BORDER_WIDTH;
+  context.stroke();
+
+  context.save();
+  context.translate(x + DIRECTION_PAD_START + DIRECTION_ARROW_SIZE / 2, y + DIRECTION_HEIGHT / 2);
+  context.rotate((direction.rotation * Math.PI) / 180);
+  context.scale(DIRECTION_ARROW_SIZE / 24, DIRECTION_ARROW_SIZE / 24);
+  context.translate(-12, -12);
+  context.beginPath();
+  context.moveTo(7, 17);
+  context.lineTo(17, 7);
+  context.moveTo(8, 7);
+  context.lineTo(17, 7);
+  context.lineTo(17, 16);
+  context.strokeStyle = DIRECTION_COLORS.text;
+  context.lineWidth = DIRECTION_ARROW_STROKE;
+  context.lineCap = 'round';
+  context.lineJoin = 'round';
+  context.stroke();
+  context.restore();
+
+  context.font = fontOf(DIRECTION_TEXT_SIZE, '700');
+  context.fillStyle = DIRECTION_COLORS.text;
+  context.fillText(
+    direction.label,
+    x + DIRECTION_PAD_START + DIRECTION_ARROW_SIZE + DIRECTION_GAP,
+    y + (DIRECTION_HEIGHT - DIRECTION_TEXT_SIZE) / 2
+  );
 }
 
 /** Draws every key row: each item's glyph, then its text. Returns the y past the last row. */

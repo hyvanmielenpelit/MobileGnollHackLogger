@@ -1023,19 +1023,38 @@ describe('model-comparison-charts', () => {
       expect(spec.chrome.key.map((item) => item.glyph)).toEqual(['hollow', 'interval', 'frontier', 'dominated']);
     });
 
-    it('orders the scatter badges and ends them with the direction', () => {
+    it('orders the scatter badges and carries the direction apart from them', () => {
       const s1 = buildQualitySpeedScatter(SCREENSHOT, SCREENSHOT_OPTIONS);
       expect(s1.chrome.badges.map((badge) => badge.text)).toEqual([
         '2 models',
         '1 run each',
         '18 questions',
-        '↖ Better',
       ]);
-      expect(s1.chrome.badges[3]).toEqual({ text: '↖ Better', tone: 'direction', ariaLabel: 'Better: top left' });
+      expect(s1.chrome.direction).toEqual({ x: 'left', y: 'top', label: 'Better' });
       expect(s1.chrome.title).toBe(s1.title);
 
+      const s2 = buildQualityCostScatter(SCREENSHOT, SCREENSHOT_OPTIONS);
+      expect(s2.chrome.direction).toEqual({ x: 'left', y: 'top', label: 'Better' });
+      expect(s2.chrome.badges[s2.chrome.badges.length - 1].tone).toBe('pricing');
+
       const s3 = buildSpeedCostScatter(SCREENSHOT, SCREENSHOT_OPTIONS);
-      expect(s3.chrome.badges[s3.chrome.badges.length - 1].text).toBe('↙ Better');
+      expect(s3.chrome.direction).toEqual({ x: 'left', y: 'bottom', label: 'Better' });
+    });
+
+    it('puts the direction on the scatters only, and never in a badge', () => {
+      const figures = buildComparisonFigures(SCREENSHOT, { context: SCREENSHOT_CONTEXT });
+      const { quality, speed, cost } = figures.smallMultiples;
+      const undirected = [quality, speed, cost, figures.profile];
+      const scatters = [figures.qualitySpeed, figures.qualityCost, figures.speedCost];
+      for (const figure of [...undirected, ...scatters]) {
+        expect(figure.chrome.badges.some((badge) => badge.text.includes('Better'))).withContext(figure.id).toBeFalse();
+      }
+      for (const figure of undirected) {
+        expect(figure.chrome.direction).withContext(figure.id).toBeUndefined();
+      }
+      for (const figure of scatters) {
+        expect(figure.chrome.direction).withContext(figure.id).toBeDefined();
+      }
     });
 
     it('puts the pricing badge on S2, S3, P1 cost and P2 only', () => {
