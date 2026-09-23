@@ -984,7 +984,13 @@
                 </div>
                 <div class="mr-stat">
                   <dt>Per question</dt>
-                  <dd>{{ formatCost(costStats.costPerQuestion) }}</dd>
+                  <dd>{{ formatCost(costStats.costPerQuestion) }}
+                    @if (costStats.questionsAskedPerRun != null) {
+                      <span class="text-muted"> over {{ formatQuestionsAsked(costStats.questionsAskedPerRun) }} asked per run</span>
+                    } @else if (costStats.costPerQuestion != null) {
+                      <span class="text-muted"> over scored items; recompute for per question asked</span>
+                    }
+                  </dd>
                 </div>
                 <div class="mr-stat">
                   <dt>Per index point</dt>

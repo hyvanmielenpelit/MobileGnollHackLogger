@@ -136,6 +136,8 @@ export interface MultiRunCostStatistics {
   minCostByRole?: { [role: string]: number };
   maxCostByRole?: { [role: string]: number };
   costPerQuestion?: number | null;
+  /** Answer rows per costed run, averaged — the per-question cost's denominator. Absent on analyses stored before it existed. */
+  questionsAskedPerRun?: number | null;
   costPerIndexPoint?: number | null;
   degraded?: boolean;
   degradedReason?: string | null;
@@ -1166,6 +1168,15 @@ export class MultiRunComponent implements OnInit, OnChanges {
     if (value == null) return '—';
     const pipe = new DecimalPipe('en-US');
     return `$${pipe.transform(value, '1.4-4')}`;
+  }
+
+  /**
+   * `1 question`, `18 questions`, `17.5 questions`. Kept apart from Model Comparison's copy: the two
+   * admin views share no module.
+   */
+  formatQuestionsAsked(n: number): string {
+    const number = Number.isInteger(n) ? String(n) : n.toFixed(1);
+    return `${number} ${n === 1 ? 'question' : 'questions'}`;
   }
 
   /** The first eight hex characters of an instrument hash, as the run list shows them. */

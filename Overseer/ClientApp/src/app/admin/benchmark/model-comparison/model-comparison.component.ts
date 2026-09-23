@@ -46,6 +46,7 @@ import {
   SortDirection,
   SpeedMeasure,
   buildComparisonFigures,
+  formatQuestionsAsked,
   glyphFor,
   normalizeProfile
 } from './model-comparison-charts';
@@ -406,7 +407,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   entries: readonly BenchmarkModelComparisonEntryDto[] = [];
   figures: ComparisonFigureSet | null = null;
   context: ModelComparisonContext = {
-    scoredItemsMin: 0, scoredItemsMax: 0, suiteItemCount: 0,
+    scoredItemsMin: 0, scoredItemsMax: 0, suiteItemCount: 0, questionsAskedPerRun: null,
     pricingBasisLabel: '', pricingBasis: '', pricedOn: '', suiteName: ''
   };
   orientation: BarOrientation = 'vertical';
@@ -1100,6 +1101,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         label: 'Candidate cost per question',
         value: this.formatUsd(entry.cost?.candidateCostPerQuestionUsd ?? null),
         detail: `${this.comparison?.pricingBasisLabel ?? ''} — candidate spend only, grading roles excluded`
+          + (entry.cost?.questionsAskedPerRun != null
+            ? ` — over ${formatQuestionsAsked(entry.cost.questionsAskedPerRun)} asked per run`
+            : '')
       }
     ];
   }

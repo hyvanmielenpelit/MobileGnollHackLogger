@@ -95,6 +95,8 @@ export interface ModelComparisonContext {
   readonly scoredItemsMax: number;
   /** Questions the suite holds, or 0 when unknown. */
   readonly suiteItemCount: number;
+  /** The asked count every charted entry shares, or null when they differ. Labels only; no arithmetic reads it. */
+  readonly questionsAskedPerRun: number | null;
   /** The pricing basis and its date, as the view's header, methods block and table name it. */
   readonly pricingBasisLabel: string;
   /** The pricing basis key: `'Current'`, `'AsRun'` or `''`. Drives the pricing badge and note on cost figures. */
@@ -243,6 +245,12 @@ export const DEFAULT_MODEL_SORT: ModelSort = { key: 'intelligenceIndex', directi
 /** Candidate cost of one suite run: the entry's own mean run cost, independent of any item count. */
 export function suiteCostUsd(entry: ModelComparisonEntry): number {
   return entry.candidateCostPerRunUsd;
+}
+
+/** `1 question`, `18 questions`, `17.5 questions`: an averaged asked count, as labels print it. */
+export function formatQuestionsAsked(n: number): string {
+  const number = Number.isInteger(n) ? String(n) : n.toFixed(1);
+  return `${number} ${n === 1 ? 'question' : 'questions'}`;
 }
 
 /** The per-question SD scaled by the same factor that turns the per-question cost into the run cost. */
@@ -2454,7 +2462,9 @@ export function buildSmallMultiples(
           : `Time to first token, median (${speedUnit})`;
   const costTitle =
     costMeasure === 'candidateSuite'
-      ? 'Candidate cost of one suite run (USD)'
+      ? context.questionsAskedPerRun != null
+        ? `Candidate cost of one suite run (USD, ${formatQuestionsAsked(context.questionsAskedPerRun)} asked)`
+        : 'Candidate cost of one suite run (USD)'
       : 'Total run cost including grading roles (USD)';
 
   // One label list for all three panels. A two-line tick block on one panel alone would shrink

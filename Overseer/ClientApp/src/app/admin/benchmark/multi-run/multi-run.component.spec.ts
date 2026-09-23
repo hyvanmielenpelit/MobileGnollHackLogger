@@ -793,6 +793,34 @@ describe('MultiRunComponent', () => {
     expect(component.widestCostRole?.role).toBe('claimVerifier');
   });
 
+  it('should name the questions asked beside the cost per question', () => {
+    const base = buildAnalysis().result as { cost: Record<string, unknown> };
+    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis({
+      result: {
+        ...(buildAnalysis().result as object),
+        cost: { ...base.cost, questionsAskedPerRun: 18 }
+      }
+    })));
+    open();
+    component.openGroup(component.groups[0]);
+    fixture.detectChanges();
+
+    const body = text('.mr-dialog-body');
+    expect(body).toContain('over 18 questions asked per run');
+    expect(body).not.toContain('over scored items');
+  });
+
+  it('should mark a stored analysis whose cost per question predates the asked count', () => {
+    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis()));
+    open();
+    component.openGroup(component.groups[0]);
+    fixture.detectChanges();
+
+    const body = text('.mr-dialog-body');
+    expect(body).toContain('over scored items; recompute for per question asked');
+    expect(body).not.toContain('asked per run');
+  });
+
   it('should mark a combined interval that was truncated at the score bound', () => {
     const base = buildAnalysis().result as { index: Record<string, unknown> };
     serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis({

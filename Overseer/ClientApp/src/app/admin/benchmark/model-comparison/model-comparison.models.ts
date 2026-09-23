@@ -105,7 +105,7 @@ export interface BenchmarkModelComparisonSpeedDto {
 }
 
 /**
- * The cost axis: candidate spend per question, in USD.
+ * The cost axis: candidate spend per question asked, in USD.
  *
  * Candidate-only by design — grading-role spend is most of a run's cost and none of it transfers to
  * the chat assistant — which is why no field here totals a run including its graders.
@@ -115,6 +115,8 @@ export interface BenchmarkModelComparisonCostDto {
   candidateCostPerQuestionUsd?: number | null;
   candidateCostPerRunUsd?: number | null;
   candidateTotalCostUsd?: number | null;
+  /** Questions each run behind the entry asked, averaged: the denominator of the per-question cost. */
+  questionsAskedPerRun?: number | null;
   /** `AsRun` or `Current`, echoing the basis the whole comparison was computed on. */
   basis: string;
   pricingAsOf?: string | null;
@@ -1117,15 +1119,20 @@ export function toChartEntries(dto: BenchmarkModelComparisonDto | null): ModelCo
  * `scoredItemsMin` and `scoredItemsMax` span the charted entries' scored item counts, which can
  * differ: an entry's failed, skipped or ungraded answers leave questions out of its index alone.
  * `suiteItemCount` is shared, because the suite is a Fundamental key; the max tolerates a payload
- * without the field, which reads as 0 (unknown).
+ * without the field, which reads as 0 (unknown). `questionsAskedPerRun` is null when the charted
+ * entries asked different numbers of questions, or none reported it.
  */
 export function toChartContext(dto: BenchmarkModelComparisonDto | null): ModelComparisonContext {
   const charted = dto?.entries.filter(entry => !entry.excluded && entry.quality != null) ?? [];
   const scored = charted.map(entry => entry.quality?.itemCount ?? 0);
+  const asked = charted
+    .map(entry => entry.cost?.questionsAskedPerRun)
+    .filter((n): n is number => n != null);
   return {
     scoredItemsMin: scored.length > 0 ? Math.min(...scored) : 0,
     scoredItemsMax: scored.length > 0 ? Math.max(...scored) : 0,
     suiteItemCount: charted.reduce((max, entry) => Math.max(max, entry.quality?.suiteItemCount ?? 0), 0),
+    questionsAskedPerRun: asked.length > 0 && asked.every(n => Math.abs(n - asked[0]) <= 1e-9) ? asked[0] : null,
     pricingBasisLabel: dto?.pricingBasisLabel || dto?.pricingBasis || 'Unknown pricing basis',
     pricingBasis: dto?.pricingBasis ?? '',
     pricedOn: dto?.computedAtUtc ?? '',

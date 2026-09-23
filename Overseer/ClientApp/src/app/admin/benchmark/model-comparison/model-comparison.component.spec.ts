@@ -3262,6 +3262,30 @@ describe('ModelComparisonComponent', () => {
     expect(toasts[1].notice).toBe(component.exportNotice);
   });
 
+  // -------------------------------------------------------------------------------------------
+  // Questions asked, the per-question cost's denominator
+  // -------------------------------------------------------------------------------------------
+
+  it('shares the asked count only when every charted entry asked the same number of questions', () => {
+    const asked = (counts: number[]) => comparableSet(counts.length).map((entry, index) =>
+      ({ ...entry, cost: { ...entry.cost!, questionsAskedPerRun: counts[index] } }));
+
+    expect(toChartContext(buildDto(asked([18, 18]))).questionsAskedPerRun).toBe(18);
+    expect(toChartContext(buildDto(asked([18, 17]))).questionsAskedPerRun).toBeNull();
+    expect(toChartContext(buildDto(comparableSet(2))).questionsAskedPerRun).toBeNull();
+  });
+
+  it('names the questions asked on the single-entry cost tile, and nothing when the payload lacks it', () => {
+    const [entry] = comparableSet(1);
+    render(buildDto([{ ...entry, cost: { ...entry.cost!, questionsAskedPerRun: 18 } }]));
+    const costTile = () => component.singleEntryTiles.find(tile => tile.label === 'Candidate cost per question');
+
+    expect(costTile()?.detail).toContain('over 18 questions asked per run');
+
+    render(buildDto(comparableSet(1)));
+    expect(costTile()?.detail).not.toContain('asked per run');
+  });
+
 });
 
 describe('selectionNotices', () => {
@@ -3638,5 +3662,6 @@ describe('model-comparison adapter', () => {
     expect(context.pricingBasisLabel).toBe('Unknown pricing basis');
     expect(context.pricingBasis).toBe('');
     expect(context.pricedOn).toBe('');
+    expect(context.questionsAskedPerRun).toBeNull();
   });
 });

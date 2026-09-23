@@ -2432,6 +2432,49 @@ here grades anything: `HarnessVersion`, `ScoringMethodVersion`, `CandidateSystem
 - **The cost axis title** reads *Candidate cost of one suite run (USD)*, without a question count:
   the run paid for every question it asked, not only for the scored ones.
 
+### Cost per Question Denominator (2026-09-23) — No Version Bump
+
+*Prompted by the Model Comparison question-count fix, which found that `$ / question` divided by
+scored items.* Nothing here grades anything: `HarnessVersion`, `ScoringMethodVersion`,
+`CandidateSystemPromptSha256` and `ToolGuidesSha256` do not move. Both views compute on request
+from stored data.
+
+- **The defect.** `BenchmarkGroupStatistics.ComputeCost` divided the mean cost per run by the number
+  of items with at least one scored answer. The numerator is a different population: run token
+  totals are summed over **every** answer row, whatever its status, so the spend on a
+  `ProviderError`, a `Canceled` or an ungraded answer, and on an answer graded under an older rubric
+  revision, was in the numerator while its question was out of the denominator. 18 asked and 16
+  scored overstated `$ / question` by 18/16 = 12.5 %. It reached the Model Comparison table, detail
+  row, scatters and table exports, the Multi-Run *Per question* stat, and the Multi-Run report's
+  *Cost per question* line.
+- **The denominator is questions asked.** `CostPerQuestion = MeanCostPerRun / QuestionsAskedPerRun`,
+  where `QuestionsAskedPerRun` is the answer rows of the costed runs (the runs with a
+  `BenchmarkGroupRunCost` row, whose spend is the numerator) divided by their number. A run has one
+  row per question it asked: a failed-question re-run overwrites its row in place, `Skipped` is
+  never assigned, a deleted question's rows keep their tokens with a null question id, and a run
+  cancelled part-way has rows only for the questions it reached. The ratio of totals, rather than a
+  mean of per-run ratios, keeps `CostPerQuestion × QuestionsAskedPerRun == MeanCostPerRun` exact.
+  The value is null when a cost row names no member run, or when the costed runs have no rows.
+  Rejected: the suite's question count (wrong for a cancelled run and for a suite that changed after
+  its runs), and answers that count toward the index (today's defect over answers instead of items).
+  A separate *cost per usable answer* would be a new metric, and is out of scope.
+- **New fields.** `BenchmarkGroupCostStatistics.QuestionsAskedPerRun` and
+  `BenchmarkModelComparisonCostDto.QuestionsAskedPerRun`; the latter is null whenever pricing did not
+  resolve, as the other cost fields are.
+- **Labels.** The report line reads *Cost per question: $0.0183 — $0.3300 mean per run over 18
+  questions asked per run.* The Multi-Run *Per question* stat adds *over 18 questions asked per
+  run*; the Model Comparison single-entry cost tile adds *— over 18 questions asked per run*. P1's
+  cost axis reads *Candidate cost of one suite run (USD, 18 questions asked)* when every charted
+  entry asked the same number of questions, and *(USD)* otherwise.
+- **Stored analyses keep their old figure and say so.** A Multi-Run analysis stored before this
+  change has no `QuestionsAskedPerRun`, so its `CostPerQuestion` is still over scored items. The
+  report says *divided by items with a scored answer, not by questions asked. Recompute the analysis
+  for the per-question-asked figure.* and the view says *over scored items; recompute for per
+  question asked*. Stored blobs are not rewritten: they are a record of what was computed, and
+  recomputing is one click.
+- **What moves.** `$ / question` drops wherever answers were lost or rubrics revised, by the ratio of
+  scored to asked. Whole-suite cost does not change: it is each entry's own mean run cost.
+
 ### Harness Version 29 Updates
 
 Prompted by the analysis of runs 50 and 51, the first two runs of a game-snapshot suite, which showed that

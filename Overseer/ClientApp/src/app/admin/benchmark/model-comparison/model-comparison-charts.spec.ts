@@ -30,6 +30,7 @@ import {
   directionMarkerPlugin,
   dominatedRegionPlugin,
   errorBarPlugin,
+  formatQuestionsAsked,
   glyphFor,
   measureDirectLabelBlock,
   normalizeProfile,
@@ -119,6 +120,7 @@ const CONTEXT: ModelComparisonContext = {
   scoredItemsMin: 10,
   scoredItemsMax: 10,
   suiteItemCount: 10,
+  questionsAskedPerRun: 10,
   pricingBasisLabel: 'Current catalog, 2026-09-07',
   pricingBasis: 'Current',
   pricedOn: '2026-09-07T10:00:00Z',
@@ -560,7 +562,7 @@ describe('model-comparison-charts', () => {
       const suite = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ costMeasure: 'candidateSuite' }));
       const total = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ costMeasure: 'totalRun' }));
 
-      expect(titleLines(scaleOf(suite.cost.config, 'y'))[0]).toBe('Candidate cost of one suite run (USD)');
+      expect(titleLines(scaleOf(suite.cost.config, 'y'))[0]).toBe('Candidate cost of one suite run (USD, 10 questions asked)');
       expect(pointsOf(suite.cost.config)[0]['y'] as number)
         .toBeCloseTo(suiteCostUsd(PROFILE_FIXTURE[0]), 10);
       expect(suiteCostUsd(PROFILE_FIXTURE[0])).toBeCloseTo(0.3, 10);
@@ -583,6 +585,26 @@ describe('model-comparison-charts', () => {
       expect(suiteCostUsd(partial)).toBe(0.27);
       const plotted = pointsOf(figure.cost.config).map((point) => point['y'] as number).sort((a, b) => a - b);
       expectClose(plotted, [0.18, 0.27]);
+    });
+
+    it('names the shared asked count on the candidate cost title, and drops it when entries differ', () => {
+      const asked = buildSmallMultiples(PROFILE_FIXTURE, {
+        ...smallMultiplesOptions({ costMeasure: 'candidateSuite' }),
+        context: { ...CONTEXT, questionsAskedPerRun: 18 },
+      });
+      const mixed = buildSmallMultiples(PROFILE_FIXTURE, {
+        ...smallMultiplesOptions({ costMeasure: 'candidateSuite' }),
+        context: { ...CONTEXT, questionsAskedPerRun: null },
+      });
+
+      expect(titleLines(scaleOf(asked.cost.config, 'y'))[0]).toBe('Candidate cost of one suite run (USD, 18 questions asked)');
+      expect(titleLines(scaleOf(mixed.cost.config, 'y'))[0]).toBe('Candidate cost of one suite run (USD)');
+    });
+
+    it('formats an averaged asked count without a decimal when it is whole', () => {
+      expect(formatQuestionsAsked(1)).toBe('1 question');
+      expect(formatQuestionsAsked(18)).toBe('18 questions');
+      expect(formatQuestionsAsked(17.5)).toBe('17.5 questions');
     });
 
     it('scales the per-question SD by the run-to-question cost ratio, and keeps a null SD null', () => {
@@ -1032,6 +1054,7 @@ describe('model-comparison-charts', () => {
       scoredItemsMin: 18,
       scoredItemsMax: 18,
       suiteItemCount: 18,
+      questionsAskedPerRun: 18,
     };
     const SCREENSHOT_OPTIONS = {
       context: SCREENSHOT_CONTEXT,

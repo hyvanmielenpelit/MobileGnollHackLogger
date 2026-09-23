@@ -347,6 +347,7 @@ public class BenchmarkModelComparisonServiceTests
         Assert.Equal(3.28, cost.CandidateCostPerRunUsd!.Value, 6);
         Assert.Equal(3.28, cost.CandidateTotalCostUsd!.Value, 6);
         Assert.Equal(3.28 / 3.0, cost.CandidateCostPerQuestionUsd!.Value, 6);
+        Assert.Equal(3.0, cost.QuestionsAskedPerRun!.Value, 9);
 
         // Per question rather than per run, because run cost scales with suite size.
         Assert.Contains("2026-09-08", dto.PricingBasisLabel);
@@ -375,10 +376,43 @@ public class BenchmarkModelComparisonServiceTests
         Assert.False(cost.PricingResolved);
         Assert.Null(cost.CandidateCostPerQuestionUsd);
         Assert.Null(cost.CandidateCostPerRunUsd);
+        Assert.Null(cost.QuestionsAskedPerRun);
 
         // Quality and speed are unaffected: an unknown price is not an unknown score.
         Assert.NotNull(Entry(dto, "a").Quality);
         Assert.NotNull(Entry(dto, "a").Speed);
+    }
+
+    [Fact]
+    public void CostPerQuestion_DividesByQuestionsAsked_WhenAnAnswerFailed()
+    {
+        // The $3.28 run above with its third answer failed. Two items are scored, but the run
+        // paid for three questions: $3.28 / 3, not $3.28 / 2.
+        var run = Run(1, inputTokens: 1_000_000, outputTokens: 200_000, cacheReadTokens: 400_000);
+        run.Answers[2].Status = BenchmarkAnswerStatus.ProviderError;
+        run.Answers[2].QualityScore = null;
+
+        var entry = Entry(Build(new[] { Source("a", Card(), run) }), "a");
+
+        Assert.Equal(2, entry.Quality!.ItemCount);
+        Assert.Equal(3.28 / 3.0, entry.Cost!.CandidateCostPerQuestionUsd!.Value, 6);
+        Assert.Equal(3.0, entry.Cost.QuestionsAskedPerRun!.Value, 9);
+    }
+
+    [Fact]
+    public void CostPerQuestion_DividesByQuestionsAsked_AfterARubricRevision()
+    {
+        // A rubric repair on Q3 after the run removes its grade from the index, not its spend.
+        var questions = Questions();
+        questions[2].ItemRevision = 2;
+        var source = Source("a", Card(),
+            Run(1, inputTokens: 1_000_000, outputTokens: 200_000, cacheReadTokens: 400_000)) with { Questions = questions };
+
+        var entry = Entry(Build(new[] { source }), "a");
+
+        Assert.Equal(2, entry.Quality!.ItemCount);
+        Assert.Equal(3.28 / 3.0, entry.Cost!.CandidateCostPerQuestionUsd!.Value, 6);
+        Assert.Equal(3.0, entry.Cost.QuestionsAskedPerRun!.Value, 9);
     }
 
     [Fact]

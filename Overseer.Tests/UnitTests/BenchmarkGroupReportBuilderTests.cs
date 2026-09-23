@@ -554,6 +554,49 @@ public class BenchmarkGroupReportBuilderTests
         Assert.Contains($"Cost dispersion sits mostly in `{BenchmarkGroupAnalysisService.ClaimVerifierRole}`", md);
     }
 
+    private static (BenchmarkRunGroup Group, BenchmarkGroupStatisticsResult Result, List<BenchmarkRun> Runs) CostPerQuestionFixture()
+    {
+        var questions = Questions(50, 50);
+        var runs = new List<BenchmarkRun>
+        {
+            Run(1, questions, new[] { 90, 90 }),
+            Run(2, questions, new[] { 90, 90 })
+        };
+
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, runs, new[]
+        {
+            new BenchmarkGroupRunCost { RunId = 1, CostByRole = new Dictionary<string, double> { [BenchmarkGroupAnalysisService.CandidateRole] = 1.00 } },
+            new BenchmarkGroupRunCost { RunId = 2, CostByRole = new Dictionary<string, double> { [BenchmarkGroupAnalysisService.CandidateRole] = 3.00 } }
+        });
+
+        return (new BenchmarkRunGroup { Id = 1, Name = "G", BenchmarkSuiteId = 5 }, result, runs);
+    }
+
+    [Fact]
+    public void Report_CostPerQuestion_NamesQuestionsAsked()
+    {
+        // Mean per run (1.00 + 3.00) / 2 = 2.00, over 2 questions asked per run = 1.00.
+        var (group, result, runs) = CostPerQuestionFixture();
+
+        string md = BenchmarkGroupReportBuilder.BuildMarkdownReport(
+            group, result, BenchmarkComparabilityKey.Resolve(runs), runs);
+
+        Assert.Contains("- **Cost per question:** $1.00 — $2.00 mean per run over 2 questions asked per run.", md);
+    }
+
+    [Fact]
+    public void Report_CostPerQuestion_OnAStoredAnalysis_SaysWhichDenominatorItUsed()
+    {
+        // An analysis stored before QuestionsAskedPerRun existed deserialises with it null.
+        var (group, result, runs) = CostPerQuestionFixture();
+        result = result with { Cost = result.Cost! with { QuestionsAskedPerRun = null } };
+
+        string md = BenchmarkGroupReportBuilder.BuildMarkdownReport(
+            group, result, BenchmarkComparabilityKey.Resolve(runs), runs);
+
+        Assert.Contains("- **Cost per question:** $1.00 — divided by items with a scored answer, not by questions asked. Recompute the analysis for the per-question-asked figure.", md);
+    }
+
     // --- Tracing an unstable item to the run that produced it -------------------------------------
 
     /// <summary>

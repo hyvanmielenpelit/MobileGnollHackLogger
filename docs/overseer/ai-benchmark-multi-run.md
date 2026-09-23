@@ -292,6 +292,13 @@ token behaviour as well as wall time.
 Total across the runs; mean ± sample SD per run; the per-role split (candidate / assessor / claim
 verifier); cost per question; and cost per index point.
 
+**Cost per question** is the mean cost per run divided by the questions the costed runs asked: their
+answer rows, averaged over the runs whose pricing resolved. Failed, canceled and ungraded answers are
+included, and so are answers graded under an older rubric revision, because run token totals are
+summed over every answer row. It is therefore *not* divided by the item count the index uses.
+Analyses stored before 2026-09-23 carry the old scored-items figure and say so; to update one,
+recompute it.
+
 Per-run costs are resolved from each run's **own pricing snapshot**, with the same arithmetic the
 single-run report uses — including the long-context buckets and the service tier the provider
 **actually served** rather than the one requested — so a group total is the sum of the figures an

@@ -574,7 +574,130 @@ public class BenchmarkGroupStatisticsTests
         Assert.Equal(5.1, cost.TotalCostByRole["claimVerifier"], 9);
         Assert.Equal(1.7, cost.MeanCostByRole["claimVerifier"], 9);
         Assert.Equal(1.25, cost.CostPerQuestion!.Value, 9);
+        Assert.Equal(2.0, cost.QuestionsAskedPerRun!.Value, 9);
         Assert.Equal(2.5 / 80.0, cost.CostPerIndexPoint!.Value, 9);
+    }
+
+    private static List<BenchmarkGroupRunCost> CandidateCosts(params (long RunId, double Candidate)[] rows)
+        => rows.Select(r => new BenchmarkGroupRunCost
+        {
+            RunId = r.RunId,
+            CostByRole = new Dictionary<string, double> { ["candidate"] = r.Candidate }
+        }).ToList();
+
+    [Fact]
+    public void CostPerQuestion_DividesByQuestionsAsked_NotByScoredItems()
+    {
+        // Run 3's answer to Q1 failed, and Q3's rubric moved to revision 2 after the runs. Scored
+        // items: Q1 (runs 1-2) and Q2 (all three) = 2. Every run still asked, and paid for, 3.
+        //   mean per run = 0.9; per question = 0.9 / 3 = 0.3 (divided by scored items: 0.45).
+        var questions = Questions(50, 50, 50);
+        var runs = new[]
+        {
+            Run(1, questions, new[] { 80, 80, 80 }),
+            Run(2, questions, new[] { 80, 80, 80 }),
+            Run(3, questions, new[] { 80, 80, 80 })
+        };
+        runs[2].Answers[0].Status = BenchmarkAnswerStatus.ProviderError;
+        runs[2].Answers[0].QualityScore = null;
+        questions[2].ItemRevision = 2;
+
+        var result = BenchmarkGroupStatistics.Compute(
+            Suite(), questions, runs, CandidateCosts((1, 0.9), (2, 0.9), (3, 0.9)));
+        var cost = result.Cost!;
+
+        Assert.Equal(2, result.ItemCount);
+        Assert.Equal(3.0, cost.QuestionsAskedPerRun!.Value, 9);
+        Assert.Equal(0.3, cost.CostPerQuestion!.Value, 9);
+        Assert.Equal(cost.MeanCostPerRun, cost.CostPerQuestion!.Value * cost.QuestionsAskedPerRun!.Value, 9);
+    }
+
+    [Fact]
+    public void CostPerQuestion_PoolsUnequalAskedCounts_AsARatioOfTotals()
+    {
+        // Run 2 was cancelled after two questions. Rows 3 + 2 = 5 over 2 runs = 2.5 asked per run.
+        //   mean per run = (0.6 + 0.2) / 2 = 0.4; per question = 0.4 / 2.5 = 0.16 = 0.8 / 5.
+        // The mean of per-run ratios would be (0.2 + 0.1) / 2 = 0.15, which breaks the identity.
+        var questions = Questions(50, 50, 50);
+        var runs = new[]
+        {
+            Run(1, questions, new[] { 80, 80, 80 }),
+            Run(2, questions, new[] { 80, 80, 80 })
+        };
+        runs[1].Answers.RemoveAt(2);
+
+        var cost = BenchmarkGroupStatistics.Compute(
+            Suite(), questions, runs, CandidateCosts((1, 0.6), (2, 0.2))).Cost!;
+
+        Assert.Equal(2.5, cost.QuestionsAskedPerRun!.Value, 9);
+        Assert.Equal(0.16, cost.CostPerQuestion!.Value, 9);
+        Assert.Equal(cost.MeanCostPerRun, cost.CostPerQuestion!.Value * cost.QuestionsAskedPerRun!.Value, 9);
+    }
+
+    [Fact]
+    public void CostPerQuestion_CountsOnlyTheCostedRuns()
+    {
+        // Run 3 has no cost row, so its 2 rows stay out of the denominator as its spend stays out
+        // of the numerator: (3 + 3) / 2 = 3 asked per run, not (3 + 3 + 2) / 2 = 4.
+        var questions = Questions(50, 50, 50);
+        var runs = new[]
+        {
+            Run(1, questions, new[] { 80, 80, 80 }),
+            Run(2, questions, new[] { 80, 80, 80 }),
+            Run(3, questions, new[] { 80, 80, 80 })
+        };
+        runs[2].Answers.RemoveAt(2);
+
+        var cost = BenchmarkGroupStatistics.Compute(
+            Suite(), questions, runs, CandidateCosts((1, 0.9), (2, 0.9))).Cost!;
+
+        Assert.Equal(3.0, cost.QuestionsAskedPerRun!.Value, 9);
+        Assert.Equal(0.3, cost.CostPerQuestion!.Value, 9);
+    }
+
+    [Fact]
+    public void CostPerQuestion_IsUnknown_WhenACostRowNamesNoMember()
+    {
+        // Run 99 is not a member, so the questions its spend paid for cannot be counted.
+        var questions = Questions(50, 50);
+        var runs = new[] { Run(1, questions, new[] { 80, 80 }) };
+
+        var cost = BenchmarkGroupStatistics.Compute(
+            Suite(), questions, runs, CandidateCosts((1, 1.0), (99, 3.0))).Cost!;
+
+        Assert.Null(cost.QuestionsAskedPerRun);
+        Assert.Null(cost.CostPerQuestion);
+        Assert.Equal(2.0, cost.MeanCostPerRun, 9);
+    }
+
+    [Fact]
+    public void CostPerQuestion_CountsAnAnswerWhoseQuestionWasDeleted()
+    {
+        // Deleting a question nulls the row's question id and keeps its tokens: still 3 asked.
+        var questions = Questions(50, 50, 50);
+        var runs = new[] { Run(1, questions, new[] { 80, 80, 80 }) };
+        runs[0].Answers[1].BenchmarkQuestionId = null;
+
+        var cost = BenchmarkGroupStatistics.Compute(
+            Suite(), questions, runs, CandidateCosts((1, 0.9))).Cost!;
+
+        Assert.Equal(3.0, cost.QuestionsAskedPerRun!.Value, 9);
+        Assert.Equal(0.3, cost.CostPerQuestion!.Value, 9);
+    }
+
+    [Fact]
+    public void CostPerQuestion_IsUnknown_WhenNoAnswerRowsExist()
+    {
+        var questions = Questions(50, 50);
+        var runs = new[] { Run(1, questions, new[] { 80, 80 }), Run(2, questions, new[] { 80, 80 }) };
+        runs[0].Answers.Clear();
+        runs[1].Answers.Clear();
+
+        var cost = BenchmarkGroupStatistics.Compute(
+            Suite(), questions, runs, CandidateCosts((1, 0.5), (2, 0.5))).Cost!;
+
+        Assert.Null(cost.QuestionsAskedPerRun);
+        Assert.Null(cost.CostPerQuestion);
     }
 
     [Fact]

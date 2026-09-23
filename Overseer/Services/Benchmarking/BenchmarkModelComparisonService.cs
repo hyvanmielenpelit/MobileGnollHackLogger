@@ -466,6 +466,7 @@ public static class BenchmarkModelComparison
             CandidateCostPerQuestionUsd = pricingResolved ? cost?.CostPerQuestion : null,
             CandidateCostPerRunUsd = pricingResolved ? cost?.MeanCostPerRun : null,
             CandidateTotalCostUsd = pricingResolved ? cost?.TotalCost : null,
+            QuestionsAskedPerRun = pricingResolved ? cost?.QuestionsAskedPerRun : null,
             Basis = basis.ToString(),
             PricingAsOf = card?.AsOf,
             PricingResolved = pricingResolved && cost != null,

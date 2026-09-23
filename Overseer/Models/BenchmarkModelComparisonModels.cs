@@ -162,12 +162,16 @@ public class BenchmarkModelComparisonCostDto
     /// <summary>
     /// Null unless a price card was resolved for <b>every</b> run behind the entry. A total over the
     /// priced subset would understate the spend without saying so, and an unknown cost is reported
-    /// as unknown, never as zero.
+    /// as unknown, never as zero. Per question asked: the run's candidate spend over its answer rows,
+    /// failed and ungraded answers included.
     /// </summary>
     public double? CandidateCostPerQuestionUsd { get; set; }
 
     public double? CandidateCostPerRunUsd { get; set; }
     public double? CandidateTotalCostUsd { get; set; }
+
+    /// <summary>Questions each run behind the entry asked, averaged: the denominator of <see cref="CandidateCostPerQuestionUsd"/>.</summary>
+    public double? QuestionsAskedPerRun { get; set; }
 
     /// <summary>`AsRun` or `Current`, echoing the basis the whole comparison was computed on.</summary>
     public string Basis { get; set; } = string.Empty;

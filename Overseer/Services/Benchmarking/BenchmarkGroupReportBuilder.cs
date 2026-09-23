@@ -34,6 +34,15 @@ public static class BenchmarkGroupReportBuilder
     private static string Money(double? value)
         => value.HasValue ? "$" + Inv(value.Value, value.Value >= 1.0 ? "F2" : "F4") : "—";
 
+    /// <summary><c>1 question</c>, <c>18 questions</c>, <c>17.5 questions</c>.</summary>
+    private static string FormatQuestionsAsked(double count)
+    {
+        string number = count == Math.Floor(count)
+            ? count.ToString("F0", CultureInfo.InvariantCulture)
+            : count.ToString("F1", CultureInfo.InvariantCulture);
+        return number + (count == 1.0 ? " question" : " questions");
+    }
+
     /// <summary>
     /// Token counts, abbreviated. A benchmark set runs to millions of input tokens, and eight raw
     /// digits in a bullet list is a number nobody reads.
@@ -667,7 +676,18 @@ public static class BenchmarkGroupReportBuilder
         sb.AppendLine($"- **Total across {cost.RunCount} runs:** {Money(cost.TotalCost)}");
         sb.AppendLine($"- **Mean per run:** {Money(cost.MeanCostPerRun)}" +
                       (cost.CostStandardDeviation.HasValue ? $" ± {Money(cost.CostStandardDeviation)} (SD)" : string.Empty));
-        sb.AppendLine($"- **Cost per question:** {Money(cost.CostPerQuestion)}");
+        if (cost.QuestionsAskedPerRun.HasValue)
+        {
+            sb.AppendLine($"- **Cost per question:** {Money(cost.CostPerQuestion)} — {Money(cost.MeanCostPerRun)} mean per run over {FormatQuestionsAsked(cost.QuestionsAskedPerRun.Value)} asked per run.");
+        }
+        else if (cost.CostPerQuestion.HasValue)
+        {
+            sb.AppendLine($"- **Cost per question:** {Money(cost.CostPerQuestion)} — divided by items with a scored answer, not by questions asked. Recompute the analysis for the per-question-asked figure.");
+        }
+        else
+        {
+            sb.AppendLine($"- **Cost per question:** {Money(cost.CostPerQuestion)}");
+        }
         sb.AppendLine($"- **Cost per index point:** {Money(cost.CostPerIndexPoint)}");
         if (cost.PerRunTotals.Count > 0)
         {

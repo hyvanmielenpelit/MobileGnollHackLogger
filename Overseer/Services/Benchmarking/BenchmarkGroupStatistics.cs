@@ -462,8 +462,17 @@ public sealed record BenchmarkGroupCostStatistics
     public IReadOnlyDictionary<string, double> MaxCostByRole { get; init; }
         = new Dictionary<string, double>();
 
-    /// <summary>Mean cost per run divided by the number of items. Null when there are no items.</summary>
+    /// <summary>
+    /// Mean cost per run divided by <see cref="QuestionsAskedPerRun"/>: the spend on one question
+    /// asked, whatever became of its answer. Null when that denominator is unknown or zero.
+    /// </summary>
     public double? CostPerQuestion { get; init; }
+
+    /// <summary>
+    /// Answer rows per costed run, averaged — the questions the costed spend paid for. Null when a
+    /// cost row names no member run, and on analyses stored before the field existed.
+    /// </summary>
+    public double? QuestionsAskedPerRun { get; init; }
 
     /// <summary>
     /// Mean cost per run divided by the multi-run Intelligence Index. Null at a non-positive
@@ -1023,7 +1032,7 @@ public static class BenchmarkGroupStatistics
 
         var index = ComputeIndex(items, members);
         var speed = ComputeSpeed(members, items, cfg);
-        var cost = ComputeCost(costs, items.Count, index.PointEstimate, cfg);
+        var cost = ComputeCost(costs, members, index.PointEstimate, cfg);
         var dimensions = ComputeDimensions(members, items);
         var usage = ComputeUsage(members, items);
         var promptUnderTest = ComputePromptUnderTest(members);
@@ -1566,7 +1575,7 @@ public static class BenchmarkGroupStatistics
 
     private static BenchmarkGroupCostStatistics? ComputeCost(
         IReadOnlyCollection<BenchmarkGroupRunCost>? costs,
-        int itemCount,
+        IReadOnlyList<BenchmarkRun> members,
         double pointEstimate,
         BenchmarkGroupStatisticsOptions cfg)
     {
@@ -1601,6 +1610,19 @@ public static class BenchmarkGroupStatistics
             maxByRole[role] = perRun.Max();
         }
 
+        // Run token totals are summed over every answer row, whatever its status, so the
+        // denominator counts every answer row of the costed runs.
+        var askedByRun = members
+            .GroupBy(r => r.Id)
+            .ToDictionary(g => g.Key, g => g.First().Answers?.Count ?? 0);
+
+        double? askedPerRun = null;
+        if (costs.All(c => askedByRun.ContainsKey(c.RunId)))
+        {
+            int asked = costs.Sum(c => askedByRun[c.RunId]);
+            if (asked > 0) askedPerRun = (double)asked / costs.Count;
+        }
+
         return new BenchmarkGroupCostStatistics
         {
             RunCount = costs.Count,
@@ -1613,7 +1635,8 @@ public static class BenchmarkGroupStatistics
             CostStandardDeviationByRole = sdByRole,
             MinCostByRole = minByRole,
             MaxCostByRole = maxByRole,
-            CostPerQuestion = itemCount > 0 ? meanPerRun / itemCount : null,
+            CostPerQuestion = askedPerRun.HasValue ? meanPerRun / askedPerRun.Value : null,
+            QuestionsAskedPerRun = askedPerRun,
             CostPerIndexPoint = pointEstimate > 0.0 ? meanPerRun / pointEstimate : null,
             Degraded = cfg.CostDegraded,
             DegradedReason = cfg.CostDegradedReason
