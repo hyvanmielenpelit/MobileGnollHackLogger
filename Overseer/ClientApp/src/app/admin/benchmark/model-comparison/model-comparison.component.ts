@@ -22,6 +22,7 @@ import { BaseChartDirective } from 'ng2-charts';
 import type { ChartConfiguration, ChartType, Plugin } from 'chart.js';
 
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
+import { FigureChrome, FigureFooter, FigureNote, figureSummary, formatComputedAt } from './figure-chrome';
 import { exactFilter, TableState } from '../../../shared/data-table/table-state';
 import { SortHeaderComponent } from '../../../shared/data-table/sort-header.component';
 import { TablePagerComponent } from '../../../shared/data-table/table-pager.component';
@@ -158,17 +159,13 @@ export interface ComparisonStatTile {
  *
  * The chart core types each figure by its own chart type and datum shape, which is what makes its
  * builders type-safe; a template renders them in one loop, so the card widens them back to the
- * directive's own erased inputs. Titles, captions and notices stay strings rather than chart.js
- * plugins, so they are selectable text a screen reader reaches without touching the canvas.
+ * directive's own erased inputs. The chrome stays structured data rather than a chart.js plugin,
+ * so it is selectable text a screen reader reaches without touching the canvas.
  */
 export interface ComparisonFigureCard {
   readonly id: string;
   readonly title: string;
-  readonly subtitle: string;
-  readonly caption: string;
-  readonly notices: readonly string[];
-  /** Which corner of a scatter is the good one, as a caption. Never a reversed axis. */
-  readonly cornerLabel: string;
+  readonly chrome: FigureChrome;
   readonly ariaLabel: string;
   readonly type: ChartType;
   readonly data: ChartConfiguration['data'];
@@ -340,7 +337,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   entries: readonly BenchmarkModelComparisonEntryDto[] = [];
   figures: ComparisonFigureSet | null = null;
-  context: ModelComparisonContext = { itemsPerRun: 0, pricingBasisLabel: '', suiteName: '' };
+  context: ModelComparisonContext = {
+    itemsPerRun: 0, pricingBasisLabel: '', pricingBasis: '', pricedOn: '', suiteName: ''
+  };
   orientation: BarOrientation = 'vertical';
 
   /** The profile's axis endpoints, printed beside P2 so its normalized heights stay anchored. */
@@ -964,10 +963,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     spec: {
       id: string;
       title: string;
-      subtitle: string;
-      caption?: string;
-      notices: readonly string[];
-      preferredCorner?: { x: string; y: string; label: string };
+      chrome: FigureChrome;
       config: { type: string; data: unknown; options?: unknown };
       plugins: Plugin[];
     },
@@ -976,12 +972,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return {
       id: spec.id,
       title: spec.title,
-      subtitle: spec.subtitle,
-      caption: spec.caption ?? '',
-      notices: spec.notices,
-      cornerLabel: spec.preferredCorner
-        ? `${spec.preferredCorner.label}: ${spec.preferredCorner.y} ${spec.preferredCorner.x}`
-        : '',
+      chrome: spec.chrome,
       ariaLabel: this.chartAriaLabel(spec),
       type: spec.config.type as ChartType,
       data: spec.config.data as ChartConfiguration['data'],
@@ -994,10 +985,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   // ---------------------------------------------------------------------------------------------
   // Figure export
   //
-  // The composited image carries the title, the subtitle, the caption, every notice and a footer
-  // naming the suite, the pricing basis, the entry count and the time the comparison was computed.
-  // That is the point of exporting through a composer rather than reading the canvas directly: a
-  // bare plot pasted into a document would drop exactly the caveats that stop it being misread.
+  // The composited image carries the card's chrome — title, badges, detail, key, highlight and
+  // notes — and a footer naming the suite and the time the comparison was computed. That is the
+  // point of exporting through a composer rather than reading the canvas directly: a bare plot
+  // pasted into a document would drop exactly the caveats that stop it being misread.
   // ---------------------------------------------------------------------------------------------
 
   exportFormat: FigureExportFormat = 'png';
@@ -1306,7 +1297,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /**
    * Puts one figure on the system clipboard, composed exactly as the on-screen download composes
-   * it — caption, notices and footer inside the same bitmap.
+   * it — chrome and footer inside the same bitmap.
    *
    * There is deliberately no *Copy all figures*: an operating-system clipboard holds one image, so
    * a batch would appear to copy six and silently keep the last.
@@ -1508,10 +1499,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** One card's chrome: everything the exported image carries besides the plot itself. */
   private exportChrome(card: ComparisonFigureCard): FigureExportChrome {
     return {
-      title: card.title,
-      subtitle: card.subtitle,
-      caption: card.caption,
-      notices: [...card.notices, ...this.setNotices],
+      chrome: { ...card.chrome, notes: [...card.chrome.notes, ...this.setFigureNotes] },
       footer: this.exportFooter()
     };
   }
@@ -1554,12 +1542,12 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /**
    * Suite, pricing basis, entry count, the reference condition and the computation time — the
-   * provenance of this comparison, in the one place both exports read it from.
+   * table export's provenance of this comparison.
    *
-   * The condition segment is twelve hex characters of the baseline's must-match signature, which is
-   * what a reader holding only an exported PNG or spreadsheet matches against the methods block in
-   * the wizard. A comparison that reached no baseline carries no signature, and the segment is
-   * omitted rather than printed empty.
+   * The condition segment is twelve hex characters of the baseline's must-match signature. It
+   * travels in the table export files, where a reader holding only one exported file can compare it
+   * against another export's own segment. A comparison that reached no baseline carries no
+   * signature, and the segment is omitted rather than printed empty.
    */
   get tableProvenance(): ComparisonTableProvenance {
     const dto = this.comparison;
@@ -1573,26 +1561,19 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     };
   }
 
-  /** The same provenance as one line, rendered above the table so the screen carries what a file does. */
+  /** The same provenance as one line, carrying the suite, the pricing basis and the computation time. */
   get tableProvenanceLine(): string {
     const provenance = this.tableProvenance;
-    const parts = [provenance.suite, provenance.pricingBasis];
-    if (provenance.conditionSignature !== '') {
-      parts.push(`condition ${provenance.conditionSignature}`);
-    }
-    parts.push(`computed at ${provenance.computedAt}`);
-    return parts.join(' · ');
+    return [provenance.suite, provenance.pricingBasis, `computed at ${provenance.computedAt}`].join(' · ');
   }
 
-  /** The figure footer: the same facts, with the charted count, in the composer's own separator. */
-  private exportFooter(): string {
-    const provenance = this.tableProvenance;
-    const parts = [provenance.suite, provenance.pricingBasis, provenance.plottedOfTotal];
-    if (provenance.conditionSignature !== '') {
-      parts.push(`condition ${provenance.conditionSignature}`);
-    }
-    parts.push(`computed ${provenance.computedAt}`);
-    return parts.join(' — ');
+  /** The figure footer: the suite and the computation time, in the composer's own two-sided layout. */
+  private exportFooter(): FigureFooter {
+    const dto = this.comparison;
+    return {
+      suite: dto?.baselineSuiteName || 'Suite not set',
+      computedAt: formatComputedAt(dto?.computedAtUtc ?? '')
+    };
   }
 
   /**
@@ -2219,24 +2200,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * rather than about one chart.
    */
   get setNotices(): string[] {
-    const notices = [...(this.figures?.selection.notices ?? [])];
-
-    const withheld = this.strictlyWithheldEntries;
-    if (withheld.length > 0) {
-      notices.push(
-        `Strict comparability is on: ${withheld.length} degraded ` +
-        `${withheld.length === 1 ? 'entry is' : 'entries are'} in the table only ` +
-        `(${withheld.map(e => e.label).join(', ')}).`
-      );
-    }
-
-    const deselected = this.deselectedEntries;
-    if (deselected.length > 0) {
-      notices.push(
-        `${deselected.length} ${deselected.length === 1 ? 'entry is' : 'entries are'} deselected and ` +
-        `not plotted: ${deselected.map(e => e.label).join(', ')}.`
-      );
-    }
+    const notices = this.setFigureNotes.map(note => note.text);
 
     const unmeasured = this.entries
       .filter(entry => !entry.excluded)
@@ -2264,6 +2228,37 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return notices;
   }
 
+  /**
+   * The set-level facts that qualify every figure, tagged for the figure chrome: the cap and the
+   * exclusions are warnings, strict withholding and deselection are informational. Appended to every
+   * card's own notes on export and on preview, and the first of {@link setNotices}.
+   */
+  get setFigureNotes(): FigureNote[] {
+    const notes: FigureNote[] = (this.figures?.selection.notices ?? [])
+      .map(text => ({ text, tone: 'warning' as const }));
+
+    const withheld = this.strictlyWithheldEntries;
+    if (withheld.length > 0) {
+      notes.push({
+        text: `Strict comparability is on: ${withheld.length} degraded ` +
+          `${withheld.length === 1 ? 'entry is' : 'entries are'} in the table only ` +
+          `(${withheld.map(e => e.label).join(', ')}).`,
+        tone: 'info'
+      });
+    }
+
+    const deselected = this.deselectedEntries;
+    if (deselected.length > 0) {
+      notes.push({
+        text: `${deselected.length} ${deselected.length === 1 ? 'entry is' : 'entries are'} deselected and ` +
+          `not plotted: ${deselected.map(e => e.label).join(', ')}.`,
+        tone: 'info'
+      });
+    }
+
+    return notes;
+  }
+
   // ---------------------------------------------------------------------------------------------
   // Rendering helpers
   // ---------------------------------------------------------------------------------------------
@@ -2282,11 +2277,12 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * The canvas is a `role="img"` summary and nothing more — the table below carries the values, so
    * this says what the picture shows rather than trying to enumerate it.
    */
-  chartAriaLabel(spec: { title: string; subtitle: string } | null | undefined): string {
+  chartAriaLabel(spec: { chrome: FigureChrome } | null | undefined): string {
     if (!spec) {
       return '';
     }
-    return `${spec.title}: ${spec.subtitle}. Values for every entry are in the comparison table below.`;
+    const chrome = spec.chrome;
+    return `${chrome.title}: ${figureSummary(chrome)}. Values for every entry are in the comparison table below.`;
   }
 
   /** A DOM id and anchor name derived from an entry key, which carries a `run:12` style colon. */

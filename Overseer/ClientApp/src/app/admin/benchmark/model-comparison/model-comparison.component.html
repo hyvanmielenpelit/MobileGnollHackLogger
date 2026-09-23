@@ -1018,8 +1018,16 @@
                 @for (card of panelCards; track card.id) {
                   <figure class="mc-card" [attr.aria-labelledby]="card.id + '-title'">
                     <figcaption class="mc-card-head">
-                      <h5 class="mc-card-title" [id]="card.id + '-title'">{{ card.title }}</h5>
-                      <p class="mc-card-subtitle">{{ card.subtitle }}</p>
+                      <h5 class="mc-card-title" [id]="card.id + '-title'">{{ card.chrome.title }}</h5>
+                      <ul class="mc-meta" aria-label="About this figure">
+                        @for (badge of card.chrome.badges; track $index) {
+                          <li [class]="'mc-badge mc-badge--' + badge.tone"
+                              [attr.aria-label]="badge.ariaLabel ?? null">{{ badge.text }}</li>
+                        }
+                      </ul>
+                      @if (card.chrome.detail) {
+                        <p class="mc-card-detail">{{ card.chrome.detail }}</p>
+                      }
                       <div class="mc-card-actions">
                         <button type="button" class="action-btn mc-download" [disabled]="!canExport"
                                 [attr.aria-label]="'Download ' + card.title"
@@ -1064,13 +1072,27 @@
                               [type]="card.type" [data]="card.data" [options]="card.options"
                               [plugins]="card.plugins"></canvas>
                     </div>
-                    @if (card.notices.length > 0) {
-                      <ul class="mc-card-notices">
-                        @for (notice of card.notices; track $index) {
-                          <li>{{ notice }}</li>
-                        }
-                      </ul>
-                    }
+                    <div class="mc-card-foot">
+                      @if (card.chrome.key.length > 0) {
+                        <ul class="mc-key" aria-label="Key">
+                          @for (item of card.chrome.key; track item.glyph) {
+                            <li><span [class]="'mc-key-glyph mc-key-glyph--' + item.glyph" aria-hidden="true"></span>{{ item.text }}</li>
+                          }
+                        </ul>
+                      }
+                      @if (card.chrome.highlight) {
+                        <p class="mc-card-highlight">{{ card.chrome.highlight }}</p>
+                      }
+                      @if (card.chrome.notes.length > 0) {
+                        <ul class="mc-notes">
+                          @for (note of card.chrome.notes; track $index) {
+                            <li [class]="'mc-note mc-note--' + note.tone">
+                              <span class="visually-hidden">{{ note.tone === 'warning' ? 'Warning: ' : 'Note: ' }}</span>{{ note.text }}
+                            </li>
+                          }
+                        </ul>
+                      }
+                    </div>
                   </figure>
                 }
               </div>
@@ -1079,8 +1101,16 @@
               @if (profileCard; as profile) {
                 <figure class="mc-card" [attr.aria-labelledby]="profile.id + '-title'">
                   <figcaption class="mc-card-head">
-                    <h5 class="mc-card-title" [id]="profile.id + '-title'">{{ profile.title }}</h5>
-                    <p class="mc-card-subtitle">{{ profile.subtitle }}</p>
+                    <h5 class="mc-card-title" [id]="profile.id + '-title'">{{ profile.chrome.title }}</h5>
+                    <ul class="mc-meta" aria-label="About this figure">
+                      @for (badge of profile.chrome.badges; track $index) {
+                        <li [class]="'mc-badge mc-badge--' + badge.tone"
+                            [attr.aria-label]="badge.ariaLabel ?? null">{{ badge.text }}</li>
+                      }
+                    </ul>
+                    @if (profile.chrome.detail) {
+                      <p class="mc-card-detail">{{ profile.chrome.detail }}</p>
+                    }
                     <div class="mc-card-actions">
                       <button type="button" class="action-btn mc-download" [disabled]="!canExport"
                               [attr.aria-label]="'Download ' + profile.title"
@@ -1125,25 +1155,38 @@
                             [type]="profile.type" [data]="profile.data" [options]="profile.options"
                             [plugins]="profile.plugins"></canvas>
                   </div>
-                  @if (profileAxes) {
-                    <!-- The real endpoints, printed beside a normalized plot so a height stays anchored. -->
-                    <dl class="mc-axis-ends">
-                      @for (axis of profileAxes.axes; track axis.id) {
-                        <div>
-                          <dt>{{ axis.title }}</dt>
-                          <dd>{{ axis.minLabel }} to {{ axis.maxLabel }}{{ axis.lowerIsBetter ? ' (inverted: lower is better)' : '' }}</dd>
-                        </div>
-                      }
-                    </dl>
-                  }
-                  <p class="mc-card-caption">{{ profile.caption }}</p>
-                  @if (profile.notices.length > 0) {
-                    <ul class="mc-card-notices">
-                      @for (notice of profile.notices; track $index) {
-                        <li>{{ notice }}</li>
-                      }
-                    </ul>
-                  }
+                  <div class="mc-card-foot">
+                    @if (profileAxes) {
+                      <!-- The real endpoints, printed beside a normalized plot so a height stays anchored. -->
+                      <dl class="mc-axis-ends">
+                        @for (axis of profileAxes.axes; track axis.id) {
+                          <div>
+                            <dt>{{ axis.title }}</dt>
+                            <dd>{{ axis.minLabel }} to {{ axis.maxLabel }}{{ axis.lowerIsBetter ? ' (inverted: lower is better)' : '' }}</dd>
+                          </div>
+                        }
+                      </dl>
+                    }
+                    @if (profile.chrome.key.length > 0) {
+                      <ul class="mc-key" aria-label="Key">
+                        @for (item of profile.chrome.key; track item.glyph) {
+                          <li><span [class]="'mc-key-glyph mc-key-glyph--' + item.glyph" aria-hidden="true"></span>{{ item.text }}</li>
+                        }
+                      </ul>
+                    }
+                    @if (profile.chrome.highlight) {
+                      <p class="mc-card-highlight">{{ profile.chrome.highlight }}</p>
+                    }
+                    @if (profile.chrome.notes.length > 0) {
+                      <ul class="mc-notes">
+                        @for (note of profile.chrome.notes; track $index) {
+                          <li [class]="'mc-note mc-note--' + note.tone">
+                            <span class="visually-hidden">{{ note.tone === 'warning' ? 'Warning: ' : 'Note: ' }}</span>{{ note.text }}
+                          </li>
+                        }
+                      </ul>
+                    }
+                  </div>
                 </figure>
               } @else if (shape === 'pair') {
                 <p class="section-note">
@@ -1178,10 +1221,15 @@
                 @for (card of scatterCards; track card.id) {
                   <figure class="mc-card" [attr.aria-labelledby]="card.id + '-title'">
                     <figcaption class="mc-card-head">
-                      <h5 class="mc-card-title" [id]="card.id + '-title'">{{ card.title }}</h5>
-                      <p class="mc-card-subtitle">{{ card.subtitle }}</p>
-                      @if (card.cornerLabel) {
-                        <p class="mc-card-corner">{{ card.cornerLabel }}</p>
+                      <h5 class="mc-card-title" [id]="card.id + '-title'">{{ card.chrome.title }}</h5>
+                      <ul class="mc-meta" aria-label="About this figure">
+                        @for (badge of card.chrome.badges; track $index) {
+                          <li [class]="'mc-badge mc-badge--' + badge.tone"
+                              [attr.aria-label]="badge.ariaLabel ?? null">{{ badge.text }}</li>
+                        }
+                      </ul>
+                      @if (card.chrome.detail) {
+                        <p class="mc-card-detail">{{ card.chrome.detail }}</p>
                       }
                       <div class="mc-card-actions">
                         <button type="button" class="action-btn mc-download" [disabled]="!canExport"
@@ -1227,14 +1275,27 @@
                               [type]="card.type" [data]="card.data" [options]="card.options"
                               [plugins]="card.plugins"></canvas>
                     </div>
-                    <p class="mc-card-caption">{{ card.caption }}</p>
-                    @if (card.notices.length > 0) {
-                      <ul class="mc-card-notices">
-                        @for (notice of card.notices; track $index) {
-                          <li>{{ notice }}</li>
-                        }
-                      </ul>
-                    }
+                    <div class="mc-card-foot">
+                      @if (card.chrome.key.length > 0) {
+                        <ul class="mc-key" aria-label="Key">
+                          @for (item of card.chrome.key; track item.glyph) {
+                            <li><span [class]="'mc-key-glyph mc-key-glyph--' + item.glyph" aria-hidden="true"></span>{{ item.text }}</li>
+                          }
+                        </ul>
+                      }
+                      @if (card.chrome.highlight) {
+                        <p class="mc-card-highlight">{{ card.chrome.highlight }}</p>
+                      }
+                      @if (card.chrome.notes.length > 0) {
+                        <ul class="mc-notes">
+                          @for (note of card.chrome.notes; track $index) {
+                            <li [class]="'mc-note mc-note--' + note.tone">
+                              <span class="visually-hidden">{{ note.tone === 'warning' ? 'Warning: ' : 'Note: ' }}</span>{{ note.text }}
+                            </li>
+                          }
+                        </ul>
+                      }
+                    </div>
                   </figure>
                 }
               </div>

@@ -406,7 +406,11 @@
 .mc-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 16px;
+  /* The three rows every card spans: head, canvas, foot. Repeats per card-row, so a card two
+     columns wide can subgrid its own three rows onto the row group its siblings share. */
+  grid-auto-rows: auto auto 1fr;
+  column-gap: 16px;
+  row-gap: 10px;
 }
 
 /*
@@ -431,15 +435,20 @@
   }
 }
 
+/* Head, canvas and foot align across every card sharing a row: the subgrid inherits the three
+   row tracks `.mc-panels`/`.mc-grid` lay out per card-row, so a longer badge list or note list in
+   one card does not leave its neighbours' canvases sitting at different heights. The first
+   `grid-template-rows` is the same-cascade fallback for an engine without subgrid support. */
 .mc-card {
   margin: 0;
   padding: 14px 16px 16px;
   border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
   border-radius: 8px;
   background: rgba(17, 17, 17, 0.65);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
   min-width: 0;
 }
 
@@ -453,8 +462,8 @@
 }
 
 .mc-card-title,
-.mc-card-subtitle,
-.mc-card-corner {
+.mc-meta,
+.mc-card-detail {
   grid-column: 1;
 }
 
@@ -463,20 +472,48 @@
   font-family: "Cinzel", serif;
   font-size: 15px;
   color: #ffffff;
+  text-wrap: balance;
 }
 
-.mc-card-subtitle {
+.mc-meta {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mc-badge {
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #c3c2b7;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+
+  &.mc-badge--pricing {
+    color: #6ee7b7;
+    background: rgba(16, 185, 129, 0.1);
+    border-color: rgba(16, 185, 129, 0.3);
+  }
+
+  &.mc-badge--direction {
+    color: #e0ba6d;
+    border-color: rgba(224, 186, 109, 0.45);
+    background: rgba(224, 186, 109, 0.08);
+  }
+}
+
+.mc-card-detail {
   margin: 0;
   font-size: 12px;
-  color: #c3c2b7;
-}
-
-.mc-card-corner {
-  margin: 0;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  line-height: 1.45;
   color: #898781;
+  text-wrap: pretty;
 }
 
 /* Download and Copy, side by side. Spans every text row, so the pair stays top-aligned beside a
@@ -501,15 +538,18 @@
   min-width: 0;
 }
 
-.mc-card-caption,
+.mc-card-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
 .mc-axis-ends {
   margin: 0;
   font-size: 12px;
   line-height: 1.5;
   color: #898781;
-}
-
-.mc-axis-ends {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 20px;
@@ -524,25 +564,118 @@
   }
 }
 
-.mc-card-notices {
+.mc-key {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 12px;
+  color: #c3c2b7;
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+}
+
+/* One 12 × 12 px box per glyph, matching what the export composer draws for the same key. */
+.mc-key-glyph {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+
+  &.mc-key-glyph--hollow {
+    border-radius: 50%;
+    border: 2px solid #c3c2b7;
+  }
+
+  &.mc-key-glyph--solid {
+    border-radius: 50%;
+    background: #c3c2b7;
+  }
+
+  &.mc-key-glyph--frontier {
+    width: 14px;
+    height: 2px;
+    background: #c3c2b7;
+    align-self: center;
+  }
+
+  &.mc-key-glyph--dominated {
+    width: 10px;
+    height: 10px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid #c3c2b7;
+    align-self: center;
+  }
+
+  &.mc-key-glyph--interval {
+    position: relative;
+    width: 2px;
+    height: 12px;
+    background: #c3c2b7;
+    align-self: center;
+
+    &::before,
+    &::after {
+      content: "";
+      position: absolute;
+      left: -3px;
+      width: 8px;
+      height: 2px;
+      background: #c3c2b7;
+    }
+
+    &::before {
+      top: 0;
+    }
+
+    &::after {
+      bottom: 0;
+    }
+  }
+}
+
+.mc-card-highlight {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.mc-notes {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
 
-  li {
-    font-size: 12px;
-    line-height: 1.45;
+.mc-note {
+  font-size: 12px;
+  line-height: 1.45;
+  padding-left: 8px;
+  border-left: 2px solid;
+  text-wrap: pretty;
+
+  &.mc-note--warning {
     color: #e0ba6d;
-    border-left: 2px solid rgba(224, 186, 109, 0.5);
-    padding-left: 8px;
+    border-left-color: rgba(224, 186, 109, 0.5);
+  }
+
+  &.mc-note--info {
+    color: #a1a1aa;
+    border-left-color: #4a4a46;
   }
 }
 
 /* Every plotted entry rests on one run, so the intervals are the part worth looking at. */
-.mc-single-run .mc-card-notices li {
+.mc-single-run .mc-note--warning {
   color: #ffffff;
 }
 

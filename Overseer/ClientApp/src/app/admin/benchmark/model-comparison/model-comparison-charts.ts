@@ -1,7 +1,7 @@
 /**
  * Chart core for the cross-model benchmark comparison view: the palette, the per-model identity
- * glyphs, the measure definitions, the Pareto-frontier computation, the error-bar plugin and the
- * configurations for the six figures (S1-S3 scatters, P1's three linked panels, P2's profile plot).
+ * glyphs, the measure definitions, the Pareto-frontier computation, the error-bar and
+ * dominated-region plugins and the configurations for the six figures (S1-S3 scatters, P1's three linked panels, P2's profile plot).
  *
  * The module is pure TypeScript: it constructs no components, touches no DOM node and imports
  * nothing from Angular, so its spec runs without a TestBed fixture. The one browser API it reaches
@@ -11,6 +11,10 @@
 
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 import type { Chart, ChartConfiguration, ChartType, DefaultDataPoint, Plugin, Point } from 'chart.js';
+import { chooseScaleType, formatTick, linearDomain, logDomain, timeUnitFor } from './axis-domain';
+import type { AxisBounds, AxisTickKind, ScaleType, TimeUnit } from './axis-domain';
+import { pricingBadge, pricingNote, runsBadge } from './figure-chrome';
+import type { FigureBadge, FigureChrome, FigureKeyItem, FigureNote } from './figure-chrome';
 
 // ---------------------------------------------------------------------------------------------
 // Input model
@@ -79,12 +83,16 @@ export interface ModelComparisonEntry {
   readonly excludedReasonKeys: readonly string[];
 }
 
-/** Facts shared by every entry in a comparable set, used for subtitles and the suite-cost rescale. */
+/** Facts shared by every entry in a comparable set, used for figure chrome and the suite-cost rescale. */
 export interface ModelComparisonContext {
   /** Items per run. Constant across a comparable set, because every Fundamental key must match. */
   readonly itemsPerRun: number;
-  /** The pricing basis and its date, named on every cost figure. */
+  /** The pricing basis and its date, as the view's header, methods block and table name it. */
   readonly pricingBasisLabel: string;
+  /** The pricing basis key: `'Current'`, `'AsRun'` or `''`. Drives the pricing badge and note on cost figures. */
+  readonly pricingBasis: string;
+  /** ISO timestamp the comparison was priced on (the DTO's `computedAtUtc`), or `''`. */
+  readonly pricedOn: string;
   /** Suite name, for figure titles. */
   readonly suiteName: string;
 }
@@ -553,6 +561,17 @@ export interface ParetoResult {
   readonly frontier: readonly ParetoCandidate[];
   /** The staircase bounding the dominated region, ready to draw as a polyline. */
   readonly steps: readonly PlotPoint[];
+  /**
+   * The staircase extended to the axis ends: from the worst-x edge at the first member's y, through
+   * every step, down to the worst-y edge at the last member's x. Empty without bounds or members.
+   */
+  readonly boundary: readonly PlotPoint[];
+}
+
+/** The axis-domain ends on the unfavourable side of each axis. */
+export interface ParetoBounds {
+  readonly xWorst: number;
+  readonly yWorst: number;
 }
 
 /**
@@ -566,6 +585,7 @@ export function computeParetoFrontier(
   candidates: readonly ParetoCandidate[],
   xBetter: BetterDirection,
   yBetter: BetterDirection,
+  bounds?: ParetoBounds,
 ): ParetoResult {
   // Work in maximisation space so one dominance test covers all four corner orientations.
   const u = (c: ParetoCandidate): number => (xBetter === 'higher' ? c.x : -c.x);
@@ -603,14 +623,78 @@ export function computeParetoFrontier(
     push({ x: current.x, y: current.y });
   }
 
-  return { frontier: ordered, steps };
+  // `ordered` runs from the least favourable x to the most favourable, so the first member closes
+  // the region against the worst-x edge and the last against the worst-y edge. A one-member
+  // frontier becomes an L through that model.
+  const boundary: PlotPoint[] = [];
+  if (bounds && ordered.length > 0) {
+    const first = ordered[0];
+    const last = ordered[ordered.length - 1];
+    for (const point of [{ x: bounds.xWorst, y: first.y }, ...steps, { x: last.x, y: bounds.yWorst }]) {
+      const previous = boundary[boundary.length - 1];
+      if (!previous || previous.x !== point.x || previous.y !== point.y) {
+        boundary.push(point);
+      }
+    }
+  }
+
+  return { frontier: ordered, steps, boundary };
 }
+
+/** The dominated region's fill: faint enough that marks and gridlines read straight through it. */
+export const DOMINATED_REGION_FILL = 'rgba(255, 255, 255, 0.04)';
+
+/**
+ * Shades the region every frontier member beats on both axes. The polygon is the frontier dataset's
+ * own boundary closed through the worst corner, which is the first vertex's x and the last vertex's
+ * y, so the shading always matches the drawn line. It runs before the datasets draw, so every mark
+ * and whisker sits on top of it.
+ */
+export const dominatedRegionPlugin: Plugin = {
+  id: 'overseerDominatedRegion',
+  beforeDatasetsDraw(chart): void {
+    const ctx = chart.ctx;
+    const area = chart.chartArea;
+    if (!ctx || !area) {
+      return;
+    }
+    const index = chart.data.datasets.findIndex((dataset) => dataset.label === PARETO_FRONTIER_LABEL);
+    if (index < 0) {
+      return;
+    }
+    const meta = chart.getDatasetMeta(index);
+    if (meta.hidden) {
+      return;
+    }
+    const vertices = meta.data
+      .filter((element) => Number.isFinite(element.x) && Number.isFinite(element.y))
+      .map((element) => ({ x: element.x, y: element.y }));
+    if (vertices.length < 2) {
+      return;
+    }
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(area.left, area.top, area.right - area.left, area.bottom - area.top);
+    ctx.clip();
+    ctx.beginPath();
+    ctx.moveTo(vertices[0].x, vertices[0].y);
+    for (let i = 1; i < vertices.length; i += 1) {
+      ctx.lineTo(vertices[i].x, vertices[i].y);
+    }
+    ctx.lineTo(vertices[0].x, vertices[vertices.length - 1].y);
+    ctx.closePath();
+    ctx.fillStyle = DOMINATED_REGION_FILL;
+    ctx.fill();
+    ctx.restore();
+  },
+};
 
 // ---------------------------------------------------------------------------------------------
 // Figure plumbing
 // ---------------------------------------------------------------------------------------------
 
-/** Which corner of a scatter is the good one. Rendered as a caption, never as a reversed axis. */
+/** Which corner of a scatter is the good one. Rendered as the direction badge, never as a reversed axis. */
 export interface PreferredCorner {
   readonly x: 'left' | 'right';
   readonly y: 'top' | 'bottom';
@@ -620,9 +704,9 @@ export interface PreferredCorner {
 /**
  * One figure: its chart.js configuration plus the chrome the component renders as HTML.
  *
- * Titles, subtitles and captions are strings rather than chart.js title plugins so they render as
- * real text in the page - selectable, translatable, and readable by a screen reader that never sees
- * the canvas.
+ * The chrome is structured data rather than chart.js title plugins so it renders as real text in the
+ * page - selectable, translatable, and readable by a screen reader that never sees the canvas - and
+ * so the export composer draws the same content.
  */
 export interface ChartSpec<
   TType extends ChartType = ChartType,
@@ -631,10 +715,8 @@ export interface ChartSpec<
 > {
   readonly id: string;
   readonly title: string;
-  /** States n: models plotted, runs behind them, items per run, and the pricing basis. */
-  readonly subtitle: string;
-  readonly caption?: string;
-  readonly notices: readonly string[];
+  /** Badges, detail, key, highlight and notes; `chrome.title` equals `title`. */
+  readonly chrome: FigureChrome;
   readonly preferredCorner?: PreferredCorner;
   readonly config: ChartConfiguration<TType, TData, TLabel>;
   readonly plugins: Plugin[];
@@ -694,13 +776,17 @@ function axisTitle(text: string | string[], better?: BetterDirection) {
   };
 }
 
-function subtitleFor(plotted: readonly ModelComparisonEntry[], context: ModelComparisonContext): string {
-  const runs = plotted.reduce((sum, e) => sum + e.runCount, 0);
-  return (
-    `${plotted.length} ${plotted.length === 1 ? 'model' : 'models'} · ` +
-    `${runs} ${runs === 1 ? 'run' : 'runs'} · ` +
-    `${context.itemsPerRun} items per run · ${context.pricingBasisLabel}`
-  );
+/** The badges every figure opens with: how many models, how many runs behind each, how many questions. */
+function countBadges(plotted: readonly ModelComparisonEntry[], context: ModelComparisonContext): FigureBadge[] {
+  return [
+    { text: `${plotted.length} ${plotted.length === 1 ? 'model' : 'models'}`, tone: 'neutral' },
+    runsBadge(plotted),
+    { text: `${context.itemsPerRun} ${context.itemsPerRun === 1 ? 'question' : 'questions'}`, tone: 'neutral' },
+  ];
+}
+
+function warningNotes(texts: readonly string[]): FigureNote[] {
+  return texts.map((text): FigureNote => ({ text, tone: 'warning' }));
 }
 
 function formatMs(value: number): string {
@@ -1326,44 +1412,64 @@ export const directLabelPlugin: Plugin = {
 // S1-S3: the scatters
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * One scatter axis's measure. The scale type, domain, ticks and unit are not fixed here: they are
+ * resolved from the plotted entries by {@link resolveAxis}.
+ */
 interface ScatterAxisSpec {
-  readonly title: string;
+  /**
+   * The measure's name. Time and cost axes append their unit, and `log scale` when logarithmic, in
+   * parentheses; an index axis prints it as is.
+   */
+  readonly baseTitle: string;
   /** The name a tooltip line is prefixed with: the measure without its unit parenthetical. */
   readonly tooltipLabel: string;
   /** The measure name a value plate prints, short enough that two fit beside a mark. */
   readonly shortLabel: string;
-  readonly type: 'linear' | 'logarithmic';
+  readonly kind: AxisTickKind;
   readonly better: BetterDirection;
-  readonly min?: number;
-  readonly max?: number;
+  /** Hard limits of a linear domain. */
+  readonly bounds: AxisBounds;
+  /** The narrowest linear domain allowed, given the largest plotted value. */
+  readonly minSpan: (largest: number) => number;
   readonly format: (value: number) => string;
   readonly value: (entry: ModelComparisonEntry) => number;
   readonly errLow: (entry: ModelComparisonEntry) => number | undefined;
   readonly errHigh: (entry: ModelComparisonEntry) => number | undefined;
 }
 
+/** Both indices: 0-100, never narrower than 20 points. */
+const INDEX_BOUNDS: AxisBounds = { min: 0, max: 100 };
+const INDEX_MIN_SPAN = (): number => 20;
+/** Time and cost: non-negative, never narrower than 30 % of the largest value. */
+const MEASURE_BOUNDS: AxisBounds = { min: 0 };
+const MEASURE_MIN_SPAN = (largest: number): number => 0.3 * Math.abs(largest);
+
 const QUALITY_AXIS: ScatterAxisSpec = {
-  title: 'Intelligence Index (0-100)',
+  baseTitle: 'Intelligence Index (0-100)',
   tooltipLabel: 'Intelligence Index',
   shortLabel: 'Intelligence',
-  type: 'linear',
+  kind: 'index',
   better: 'higher',
-  min: 0,
-  max: 100,
+  bounds: INDEX_BOUNDS,
+  minSpan: INDEX_MIN_SPAN,
   format: (v) => v.toFixed(1),
   value: (e) => e.intelligenceIndex,
   errLow: (e) => e.intelligenceIndexCi95HalfWidth,
   errHigh: (e) => e.intelligenceIndexCi95HalfWidth,
 };
 
-// The axis is logarithmic because known runs span 7 s to 200 s; on a linear axis every fast model
-// collapses into the left edge. The word is in the title because an unannounced log axis deceives.
+// Known runs can span 7 s to 200 s, where a linear axis collapses every fast model into the left
+// edge, so a time or cost axis turns logarithmic once the plotted values span a factor of ten. The
+// title then says so, because an unannounced log axis deceives.
 const TTFT_AXIS: ScatterAxisSpec = {
-  title: 'Time to first token, P50 (ms, logarithmic scale)',
-  tooltipLabel: 'Time to first token, P50',
+  baseTitle: 'Time to first token, median',
+  tooltipLabel: 'Time to first token, median',
   shortLabel: 'TTFT P50',
-  type: 'logarithmic',
+  kind: 'time',
   better: 'lower',
+  bounds: MEASURE_BOUNDS,
+  minSpan: MEASURE_MIN_SPAN,
   format: formatMs,
   value: (e) => e.ttftP50Ms,
   // Latency is right-skewed, so the spread is the P50-to-P90 whisker, never a symmetric SD.
@@ -1372,11 +1478,13 @@ const TTFT_AXIS: ScatterAxisSpec = {
 };
 
 const COST_AXIS: ScatterAxisSpec = {
-  title: 'Candidate cost per question (USD, logarithmic scale)',
-  tooltipLabel: 'Candidate cost per question',
+  baseTitle: 'Cost per question',
+  tooltipLabel: 'Cost per question',
   shortLabel: 'Cost / question',
-  type: 'logarithmic',
+  kind: 'usd',
   better: 'lower',
+  bounds: MEASURE_BOUNDS,
+  minSpan: MEASURE_MIN_SPAN,
   format: formatUsd,
   value: (e) => e.candidateCostPerQuestionUsd,
   errLow: (e) => e.candidateCostPerQuestionSdUsd ?? undefined,
@@ -1384,28 +1492,30 @@ const COST_AXIS: ScatterAxisSpec = {
 };
 
 const SPEED_INDEX_AXIS: ScatterAxisSpec = {
-  title: 'Speed Index (0-100)',
+  baseTitle: 'Speed Index (0-100)',
   tooltipLabel: 'Speed Index',
   shortLabel: 'Speed Index',
-  type: 'linear',
+  kind: 'index',
   better: 'higher',
-  min: 0,
-  max: 100,
+  bounds: INDEX_BOUNDS,
+  minSpan: INDEX_MIN_SPAN,
   format: (v) => v.toFixed(1),
   value: (e) => speedValue(e, 'speedIndex') ?? Number.NaN,
   errLow: (e) => e.speedIndexSd ?? undefined,
   errHigh: (e) => e.speedIndexSd ?? undefined,
 };
 
-// Model time shares TTFT's order of magnitude (known runs span seconds to minutes), so the same
-// logarithmic treatment that keeps TTFT legible on a scatter carries over to it. No per-answer
-// dispersion is returned at the DTO level, so the mean draws no whisker at all.
+// Model time shares TTFT's order of magnitude (known runs span seconds to minutes), so it takes the
+// same scale-type rule. No per-answer dispersion is returned at the DTO level, so the mean draws no
+// whisker at all.
 const MEAN_MODEL_TIME_AXIS: ScatterAxisSpec = {
-  title: 'Model time per question, mean (ms, logarithmic scale)',
-  tooltipLabel: 'Model time per question, mean',
+  baseTitle: 'Mean time per question',
+  tooltipLabel: 'Mean time per question',
   shortLabel: 'Mean time',
-  type: 'logarithmic',
+  kind: 'time',
   better: 'lower',
+  bounds: MEASURE_BOUNDS,
+  minSpan: MEASURE_MIN_SPAN,
   format: formatMs,
   value: (e) => speedValue(e, 'meanModelTime') ?? Number.NaN,
   errLow: () => undefined,
@@ -1415,11 +1525,13 @@ const MEAN_MODEL_TIME_AXIS: ScatterAxisSpec = {
 // Unlike the mean, the per-run total carries a genuine run-to-run SD once R >= 2 - the same
 // dispersion the small-multiples panel draws as a whisker.
 const TOTAL_MODEL_TIME_AXIS: ScatterAxisSpec = {
-  title: 'Candidate model time for the whole suite (ms, logarithmic scale)',
-  tooltipLabel: 'Candidate model time for the whole suite',
+  baseTitle: 'Total time for the suite',
+  tooltipLabel: 'Total time for the suite',
   shortLabel: 'Suite time',
-  type: 'logarithmic',
+  kind: 'time',
   better: 'lower',
+  bounds: MEASURE_BOUNDS,
+  minSpan: MEASURE_MIN_SPAN,
   format: formatMs,
   value: (e) => speedValue(e, 'totalModelTime') ?? Number.NaN,
   errLow: (e) => e.totalModelTimeSdMs ?? undefined,
@@ -1450,6 +1562,122 @@ function scatterPoint(entry: ModelComparisonEntry, x: ScatterAxisSpec, y: Scatte
     yErrHigh: y.errHigh(entry),
   };
 }
+
+/** A whisker length that is drawn: positive and finite, otherwise zero. */
+function drawnWhisker(err: number | undefined): number {
+  return err !== undefined && Number.isFinite(err) && err > 0 ? err : 0;
+}
+
+/** True when both coordinates are measured, so the entry is drawn and can take part in the frontier. */
+function isMeasured(entry: ModelComparisonEntry, x: ScatterAxisSpec, y: ScatterAxisSpec): boolean {
+  return Number.isFinite(x.value(entry)) && Number.isFinite(y.value(entry));
+}
+
+/**
+ * A scatter axis resolved against the plotted entries: its scale type, domain, ticks, unit and title,
+ * and the Chart.js scale options that draw them.
+ *
+ * The result depends only on the entries and the measure, so every scatter plotting the same measure
+ * over the same entries gets the same axis. Whiskers count towards the domain, so no interval is
+ * clipped. The ticks are set outright in `afterBuildTicks`; `autoSkip` is only a safety net.
+ */
+function resolveAxis(spec: ScatterAxisSpec, plotted: readonly ModelComparisonEntry[]) {
+  const values: number[] = [];
+  const lows: number[] = [];
+  const highs: number[] = [];
+  for (const entry of plotted) {
+    const value = spec.value(entry);
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+    values.push(value);
+    lows.push(value - drawnWhisker(spec.errLow(entry)));
+    highs.push(value + drawnWhisker(spec.errHigh(entry)));
+  }
+
+  // The indices are bounded 0-100 and always linear.
+  const type: ScaleType = spec.kind === 'index'
+    ? 'linear'
+    : chooseScaleType([...values, ...highs, ...lows.filter((low) => low > 0)]);
+
+  const largest = values.length > 0 ? Math.max(...values.map((value) => Math.abs(value))) : 0;
+  // A lower whisker reaching zero cannot sit on a log axis, so the log domain takes the value there;
+  // the error-bar plugin clamps that whisker to the axis end.
+  const domain: { readonly min: number; readonly max: number; readonly ticks: readonly number[]; readonly step?: number } =
+    type === 'logarithmic'
+      ? logDomain({ lows: lows.map((low, i) => (low > 0 ? low : values[i])), highs })
+      : linearDomain({ lows, highs, bounds: spec.bounds, minSpan: spec.minSpan(largest) });
+  const { min, max, ticks, step } = domain;
+
+  const unit: TimeUnit | undefined = spec.kind === 'time' ? timeUnitFor(max) : undefined;
+  const parenthetical = [spec.kind === 'time' ? unit : 'USD', ...(type === 'logarithmic' ? ['log scale'] : [])];
+  const title = spec.kind === 'index' ? spec.baseTitle : `${spec.baseTitle} (${parenthetical.join(', ')})`;
+  const format = (value: number): string => formatTick(value, { kind: spec.kind, unit, step });
+
+  return {
+    type,
+    min,
+    max,
+    ticks,
+    title,
+    scale: {
+      type,
+      min,
+      max,
+      title: axisTitle(title, spec.better),
+      grid: gridOptions(),
+      border: { color: CHART_INK.baseline },
+      afterBuildTicks: (scale: { ticks: { value: number }[] }): void => {
+        scale.ticks = ticks.map((value) => ({ value }));
+      },
+      ticks: {
+        ...tickOptions(),
+        autoSkip: true,
+        autoSkipPadding: 10,
+        maxRotation: 0,
+        callback: (value: string | number) => format(Number(value)),
+      },
+    },
+  };
+}
+
+/** The direction badge: an arrow to the better corner, spelled out for assistive technology. */
+function directionBadge(corner: PreferredCorner): FigureBadge {
+  const arrow = corner.y === 'top' ? (corner.x === 'left' ? '↖' : '↗') : corner.x === 'left' ? '↙' : '↘';
+  return { text: `${arrow} ${corner.label}`, tone: 'direction', ariaLabel: `${corner.label}: ${corner.y} ${corner.x}` };
+}
+
+/**
+ * True when the two entries' 95 % intervals overlap on every axis that carries one, and at least one
+ * axis does. An axis carries an interval here when either entry has a whisker on it.
+ */
+function intervalsOverlap(
+  a: ModelComparisonEntry,
+  b: ModelComparisonEntry,
+  axes: readonly ScatterAxisSpec[],
+): boolean {
+  let carried = 0;
+  for (const axis of axes) {
+    const aLow = drawnWhisker(axis.errLow(a));
+    const aHigh = drawnWhisker(axis.errHigh(a));
+    const bLow = drawnWhisker(axis.errLow(b));
+    const bHigh = drawnWhisker(axis.errHigh(b));
+    if (aLow + aHigh + bLow + bHigh === 0) {
+      continue;
+    }
+    carried += 1;
+    const aValue = axis.value(a);
+    const bValue = axis.value(b);
+    if (aValue + aHigh < bValue - bLow || bValue + bHigh < aValue - aLow) {
+      return false;
+    }
+  }
+  return carried > 0;
+}
+
+/** The info note a scatter carries when a dominated model is within the intervals of a frontier model. */
+const FRONTIER_UNCERTAINTY_NOTE =
+  'Some differences are within the 95 % intervals, so treat the frontier as indicative rather than a clear win.';
 
 /**
  * What one mark's plate carries, from the two toggles the wizard offers.
@@ -1514,15 +1742,26 @@ function buildScatter(
     };
   });
 
+  const xResolved = resolveAxis(xAxis, plotted);
+  const yResolved = resolveAxis(yAxis, plotted);
+
+  // An unmeasured coordinate draws no mark, so it can neither beat a model nor be beaten by one.
+  const measured = plotted.filter((entry) => isMeasured(entry, xAxis, yAxis));
   const pareto = computeParetoFrontier(
-    plotted.map((e) => ({ key: e.key, x: xAxis.value(e), y: yAxis.value(e) })),
+    measured.map((e) => ({ key: e.key, x: xAxis.value(e), y: yAxis.value(e) })),
     xAxis.better,
     yAxis.better,
+    {
+      xWorst: xAxis.better === 'lower' ? xResolved.max : xResolved.min,
+      yWorst: yAxis.better === 'higher' ? yResolved.min : yResolved.max,
+    },
   );
-  if (pareto.steps.length > 1) {
+  // Drawn whenever the frontier has a member: a lone member draws an L to the two worst edges.
+  const frontierDrawn = pareto.boundary.length >= 2;
+  if (frontierDrawn) {
     datasets.push({
       label: PARETO_FRONTIER_LABEL,
-      data: pareto.steps.map((p) => ({ x: p.x, y: p.y })),
+      data: pareto.boundary.map((p) => ({ x: p.x, y: p.y })),
       pointStyle: 'circle',
       backgroundColor: 'transparent',
       borderColor: CHART_INK.secondary,
@@ -1548,24 +1787,8 @@ function buildScatter(
     options: {
       ...baseOptions(reducedMotion),
       scales: {
-        x: {
-          type: xAxis.type,
-          min: xAxis.min,
-          max: xAxis.max,
-          title: axisTitle(xAxis.title, xAxis.better),
-          grid: gridOptions(),
-          border: { color: CHART_INK.baseline },
-          ticks: { ...tickOptions(), callback: (value) => xAxis.format(Number(value)) },
-        },
-        y: {
-          type: yAxis.type,
-          min: yAxis.min,
-          max: yAxis.max,
-          title: axisTitle(yAxis.title, yAxis.better),
-          grid: gridOptions(),
-          border: { color: CHART_INK.baseline },
-          ticks: { ...tickOptions(), callback: (value) => yAxis.format(Number(value)) },
-        },
+        x: xResolved.scale,
+        y: yResolved.scale,
       },
       plugins: {
         legend: {
@@ -1619,19 +1842,67 @@ function buildScatter(
     },
   };
 
+  const hasCostAxis = xAxis.kind === 'usd' || yAxis.kind === 'usd';
+  const badges: FigureBadge[] = [
+    ...countBadges(plotted, context),
+    ...(hasCostAxis ? [pricingBadge(context.pricingBasis, context.pricedOn)] : []),
+    directionBadge(preferredCorner),
+  ];
+
+  // The key explains only the marks this figure actually draws.
+  const key: FigureKeyItem[] = [];
+  if (measured.some((entry) => entry.runCount === 1)) {
+    key.push({ glyph: 'hollow', text: 'Single run' });
+  }
+  if (measured.some((entry) => entry.runCount >= 2)) {
+    key.push({ glyph: 'solid', text: 'Mean of 2+ runs' });
+  }
+  const whiskered = (entry: ModelComparisonEntry): boolean =>
+    [xAxis.errLow, xAxis.errHigh, yAxis.errLow, yAxis.errHigh].some((err) => drawnWhisker(err(entry)) > 0);
+  if (measured.some(whiskered)) {
+    key.push({ glyph: 'interval', text: '95 % interval' });
+  }
+  if (frontierDrawn) {
+    key.push({ glyph: 'frontier', text: 'Pareto frontier: models nothing beats on both axes' });
+    key.push({ glyph: 'dominated', text: 'Shaded: beaten on both axes' });
+  }
+
+  const labels = new Map(measured.map((entry): [string, string] => [entry.key, entry.label]));
+  const frontierLabels = pareto.frontier.map((member) => labels.get(member.key) ?? member.key);
+  const highlight = frontierLabels.length === 0
+    ? ''
+    : `${frontierLabels.length === 1 ? 'Best trade-off' : 'Best trade-offs'}: ${frontierLabels.join(', ')}`;
+
+  const frontierKeys = new Set(pareto.frontier.map((member) => member.key));
+  const frontierEntries = measured.filter((entry) => frontierKeys.has(entry.key));
+  const withinIntervals = measured
+    .filter((entry) => !frontierKeys.has(entry.key))
+    .some((dominated) => frontierEntries.some((member) => intervalsOverlap(dominated, member, [xAxis, yAxis])));
+
+  const notes: FigureNote[] = [
+    ...warningNotes(extraNotices),
+    ...(withinIntervals ? [{ text: FRONTIER_UNCERTAINTY_NOTE, tone: 'info' } satisfies FigureNote] : []),
+  ];
+
+  const chrome: FigureChrome = {
+    title,
+    badges,
+    detail: hasCostAxis ? pricingNote(context.pricingBasis) : '',
+    key,
+    highlight,
+    notes,
+  };
+
   return {
     id,
     title,
-    subtitle: subtitleFor(plotted, context),
-    caption:
-      'Hollow marks are single runs (R = 1); solid marks aggregate two or more. The stepped line ' +
-      'is the Pareto frontier — the models nothing else beats on both axes. No trend line is ' +
-      'drawn: a regression over eight heterogeneous models is a claim the data cannot support.',
-    notices: [...extraNotices],
+    chrome,
     preferredCorner,
     config,
-    // After the error bars, so a leader line draws over a whisker rather than under it.
-    plugins: annotate ? [errorBarPlugin, directLabelPlugin] : [errorBarPlugin],
+    // The shading goes under everything; a leader line draws over a whisker rather than under it.
+    plugins: annotate
+      ? [dominatedRegionPlugin, errorBarPlugin, directLabelPlugin]
+      : [dominatedRegionPlugin, errorBarPlugin],
   };
 }
 
@@ -1747,11 +2018,13 @@ function buildPanel(
   better: BetterDirection,
   axisMax: number | undefined,
   format: (value: number) => string,
+  tick: { readonly kind: AxisTickKind; readonly unit?: TimeUnit },
   values: readonly (number | null)[],
   errLows: readonly (number | undefined)[],
   errHighs: readonly (number | undefined)[],
   options: SmallMultiplesOptions,
-  notices: readonly string[],
+  notes: readonly FigureNote[],
+  costPanel: boolean,
 ): ChartSpec<'bar', ErrorBarPoint[], PanelCategoryLabel> {
   const { context, reducedMotion, highlightedKey, selectedKeys, orientation } = options;
   const emphasised = new Set<string>(selectedKeys ?? []);
@@ -1809,7 +2082,16 @@ function buildPanel(
     title: axisTitle(axisTitleText, better),
     grid: gridOptions(),
     border: { color: CHART_INK.baseline },
-    ticks: { ...tickOptions(), callback: (value: string | number) => format(Number(value)) },
+    // The tick decimals follow Chart.js's own step, read off the first two ticks. The unit is the
+    // axis title's, so a zero tick reads `0 s` on a seconds axis.
+    ticks: {
+      ...tickOptions(),
+      callback: (value: string | number, _index: number, ticks: readonly { value: number }[]) =>
+        formatTick(Number(value), {
+          ...tick,
+          step: ticks.length > 1 ? Math.abs(ticks[1].value - ticks[0].value) : undefined,
+        }),
+    },
     // Headroom for the value label every bar carries. Only reached where axisMax is undefined -
     // grace is ignored once max is explicit, and the label is clamped into the area there instead.
     ...(axisMax === undefined ? { grace: '12%' } : {}),
@@ -1872,11 +2154,22 @@ function buildPanel(
 
   const plugins: Plugin[] = [errorBarPlugin, ChartDataLabels as Plugin];
 
+  const chrome: FigureChrome = {
+    title,
+    badges: [
+      ...countBadges(plotted, context),
+      ...(costPanel ? [pricingBadge(context.pricingBasis, context.pricedOn)] : []),
+    ],
+    detail: costPanel ? pricingNote(context.pricingBasis) : '',
+    key: [],
+    highlight: '',
+    notes: [...notes],
+  };
+
   return {
     id,
     title,
-    subtitle: subtitleFor(plotted, context),
-    notices: [...notices],
+    chrome,
     config,
     plugins,
   };
@@ -1932,38 +2225,45 @@ export function buildSmallMultiples(
   );
 
   const saturated = plotted.filter((e) => e.speedIndexSaturated);
-  const speedNotices = degradedNotices(plotted, ['speed']);
+  const speedNotes = warningNotes(degradedNotices(plotted, ['speed']));
   if (speedMeasure === 'speedIndex' && saturated.length > 0) {
-    speedNotices.push(
-      `Speed Index is saturated for ${saturated.length} of ${plotted.length} plotted ` +
+    speedNotes.push({
+      text:
+        `Speed Index is saturated for ${saturated.length} of ${plotted.length} plotted ` +
         `${plotted.length === 1 ? 'entry' : 'entries'}: several models sit at the ceiling and are not ` +
         'distinguishable on this panel even when their real latency differs severalfold. Switch the ' +
         'measure to TTFT P50 to separate them.',
-    );
+      tone: 'warning',
+    });
   }
   const missingIndex = plotted.filter((e) => e.speedIndex === null);
   if (speedMeasure === 'speedIndex' && missingIndex.length > 0) {
-    speedNotices.push(
-      `No Speed Index for ${missingIndex.map((e) => e.label).join(', ')}; those bars are drawn at zero.`,
-    );
+    speedNotes.push({
+      text: `No Speed Index for ${missingIndex.map((e) => e.label).join(', ')}; those bars are drawn at zero.`,
+      tone: 'warning',
+    });
   }
   if (speedMeasure === 'meanModelTime') {
-    speedNotices.push(
-      'Mean model time carries no interval: no per-answer dispersion is returned at the DTO level.',
-    );
+    speedNotes.push({
+      text: 'Mean time per question has no uncertainty bar: the spread across questions is not recorded.',
+      tone: 'info',
+    });
   }
 
+  // The unit follows the largest plotted time, and the title and the ticks both carry it.
+  const measuredSpeeds = speedValues.filter((v): v is number => v !== null && Number.isFinite(v));
+  const speedUnit = timeUnitFor(measuredSpeeds.length > 0 ? Math.max(...measuredSpeeds) : 0);
   const speedTitle =
     speedMeasure === 'speedIndex'
       ? 'Speed Index (0-100)'
       : speedMeasure === 'meanModelTime'
-        ? 'Model time per question, mean (ms)'
+        ? `Mean time per question (${speedUnit})`
         : speedMeasure === 'totalModelTime'
-          ? 'Candidate model time for the whole suite (ms)'
-          : 'Time to first token, P50 (ms)';
+          ? `Total time for the suite (${speedUnit})`
+          : `Time to first token, median (${speedUnit})`;
   const costTitle =
     costMeasure === 'candidateSuite'
-      ? `Candidate cost for the whole suite (USD, ${context.itemsPerRun} items)`
+      ? `Candidate cost for the whole suite (USD, ${context.itemsPerRun} questions)`
       : 'Total run cost including grading roles (USD)';
 
   // One label list for all three panels. A two-line tick block on one panel alone would shrink
@@ -1984,11 +2284,13 @@ export function buildSmallMultiples(
       'higher',
       100,
       (v) => v.toFixed(0),
+      { kind: 'index' },
       qualityValues,
       qualityErr,
       qualityErr,
       options,
       [],
+      false,
     ),
     speed: buildPanel(
       'p1b-speed',
@@ -2000,11 +2302,13 @@ export function buildSmallMultiples(
       speedLowerIsBetter(speedMeasure) ? 'lower' : 'higher',
       speedMeasure === 'speedIndex' ? 100 : undefined,
       speedMeasure === 'speedIndex' ? (v) => v.toFixed(0) : formatMs,
+      speedMeasure === 'speedIndex' ? { kind: 'index' } : { kind: 'time', unit: speedUnit },
       speedValues,
       speedErrLow,
       speedErrHigh,
       options,
-      speedNotices,
+      speedNotes,
+      false,
     ),
     cost: buildPanel(
       'p1c-cost',
@@ -2016,11 +2320,13 @@ export function buildSmallMultiples(
       'lower',
       undefined,
       formatUsd,
+      { kind: 'usd' },
       costValues,
       costSd,
       costSd,
       options,
-      degradedNotices(plotted, ['cost']),
+      warningNotes(degradedNotices(plotted, ['cost'])),
+      true,
     ),
     order: plotted.map((e) => e.key),
     notices: [],
@@ -2249,16 +2555,28 @@ export function buildProfilePlot(
     },
   };
 
+  const title = 'Model profiles';
+  const chrome: FigureChrome = {
+    title,
+    badges: [...countBadges(plotted, context), pricingBadge(context.pricingBasis, context.pricedOn)],
+    detail: pricingNote(context.pricingBasis),
+    key: [],
+    highlight: '',
+    notes: [
+      ...warningNotes(degradedNotices(plotted, ['speed', 'cost'])),
+      {
+        text:
+          'Normalized view: compare shapes and crossings, not values. Up is better on every axis; ' +
+          'real ranges are listed below the plot.',
+        tone: 'info',
+      },
+    ],
+  };
+
   return {
     id: 'p2-profile',
-    title: 'Model profiles',
-    subtitle: subtitleFor(plotted, context),
-    caption:
-      'Normalized — read shape and crossings, not values. Each axis is min-max scaled across the ' +
-      'plotted set and oriented so up is better; the real minimum and maximum are printed at its ' +
-      'ends. Values are read from the panels above and from the table. No error bars: a normalized ' +
-      'axis cannot express an interval honestly.',
-    notices: degradedNotices(plotted, ['speed', 'cost']),
+    title,
+    chrome,
     config,
     // No error-bar plugin here, by design.
     plugins: [],

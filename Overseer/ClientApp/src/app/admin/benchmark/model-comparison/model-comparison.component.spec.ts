@@ -10,6 +10,8 @@ import {
 } from './model-comparison.component';
 import { MAX_PLOTTED_ENTRIES, P1_STACK_BREAKPOINT_PX, directLabelPlugin } from './model-comparison-charts';
 import type { DirectLabelBlock, DirectLabelPluginOptions } from './model-comparison-charts';
+import { formatComputedAt } from './figure-chrome';
+import type { FigureChrome, FigureFooter } from './figure-chrome';
 import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 import {
   BenchmarkComparabilityIndexDto,
@@ -450,7 +452,19 @@ describe('ModelComparisonComponent', () => {
 
     expect(component.shape).toBe('full');
     expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(7);
-    expect(component.profileCard?.caption).toContain('read shape and crossings, not values');
+    // The normalization caveat's exact wording belongs to the chart builder; this only checks the
+    // profile figure carries some explanatory note rather than none.
+    expect(component.profileCard?.chrome.notes.length).toBeGreaterThan(0);
+  });
+
+  it('renders a pricing badge on the cost scatter and withholds it from the quality-speed one', () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    const scatterFigures = fixture.debugElement.queryAll(By.css('.mc-grid .mc-card'));
+    expect(scatterFigures.length).toBe(3);
+    // S1 is quality vs. speed, which carries no cost axis; S2 is quality vs. cost.
+    expect(scatterFigures[0].queryAll(By.css('.mc-badge--pricing')).length).toBe(0);
+    expect(scatterFigures[1].queryAll(By.css('.mc-badge--pricing')).length).toBeGreaterThan(0);
   });
 
   // -------------------------------------------------------------------------------------------
@@ -549,20 +563,21 @@ describe('ModelComparisonComponent', () => {
     // own "no per-answer dispersion" notice, which would otherwise pollute this assertion.
     component.onSpeedMeasureChange('ttftP50');
     fixture.detectChanges();
-    expect(component.figures?.smallMultiples.speed.notices.length).toBe(0);
+    expect(component.figures?.smallMultiples.speed.chrome.notes.length).toBe(0);
 
     component.onSpeedMeasureChange('speedIndex');
     fixture.detectChanges();
 
-    expect(component.figures?.smallMultiples.speed.notices.join(' ')).toContain('saturated');
+    expect(component.figures?.smallMultiples.speed.chrome.notes.map(note => note.text).join(' '))
+      .toContain('saturated');
   });
 
   it('carries no interval for mean model time, the default measure, and says so', () => {
     render(buildDto(comparableSet(3)));
 
     expect(component.speedMeasure).toBe('meanModelTime');
-    expect(component.figures?.smallMultiples.speed.notices.join(' '))
-      .toContain('no per-answer dispersion');
+    expect(component.figures?.smallMultiples.speed.chrome.notes.map(note => note.text).join(' '))
+      .toContain('has no uncertainty bar');
   });
 
   it('offers no total-run cost measure, because the endpoint carries candidate spend only', () => {
@@ -1821,11 +1836,11 @@ describe('ModelComparisonComponent', () => {
         .repeat(6);
     spyOn(component as unknown as { exportChrome(card: ComparisonFigureCard): unknown }, 'exportChrome')
       .and.returnValue({
-        title: card.title,
-        subtitle: card.subtitle,
-        caption: card.caption,
-        notices: [1, 2, 3, 4, 5, 6].map(notice),
-        footer: 'Suite A — Current catalog — 3 of 3 entries charted'
+        chrome: {
+          ...card.chrome,
+          notes: [1, 2, 3, 4, 5, 6].map(index => ({ text: notice(index), tone: 'warning' as const }))
+        },
+        footer: { suite: 'Suite A', computedAt: 'Current catalog, 3 Sep 2026' }
       });
     openPreview(card);
 
@@ -2034,7 +2049,8 @@ describe('ModelComparisonComponent', () => {
     expect(textOf('.mc-table-export')).toContain('Download table');
     expect(textOf('.mc-table-export')).toContain('Copy as Markdown');
     expect(textOf('.mc-table-provenance')).toContain('Current catalog, as of 2026-09-07');
-    expect(textOf('.mc-table-provenance')).toContain('condition 9c79137965e4');
+    expect(textOf('.mc-table-provenance')).not.toContain('condition');
+    expect(component.tableProvenance.conditionSignature).toBe('9c79137965e4');
   });
 
   it('offers a WebP quality for the table only while WebP is the chosen format', async () => {
@@ -2277,6 +2293,28 @@ describe('ModelComparisonComponent', () => {
     expect(zip.names[0].every(name => name.includes(stamp))).toBeTrue();
   });
 
+  it('composes a figure export from the suite and the computation time, and nothing else in the footer', () => {
+    render(buildDto(comparableSet(3)), 4);
+    const card = component.panelCards[0];
+
+    const { chrome, footer } = (component as unknown as {
+      exportChrome(card: ComparisonFigureCard): { chrome: FigureChrome; footer: FigureFooter };
+    }).exportChrome(card);
+
+    expect(footer).toEqual({
+      suite: 'GnollHack Player Assistance Benchmark Suite',
+      computedAt: formatComputedAt('2026-09-07T12:00:00Z')
+    });
+    expect(footer.computedAt).not.toBe('2026-09-07T12:00:00Z');
+    expect(footer.computedAt).toContain('2026');
+    const footerText = JSON.stringify(footer);
+    expect(footerText).not.toContain('condition');
+    expect(footerText).not.toContain('entries charted');
+    const chromeText = chrome.notes.map(note => note.text).join(' ');
+    expect(chromeText).not.toContain('condition');
+    expect(chromeText).not.toContain('entries charted');
+  });
+
   it('writes one image and no archive for a single figure from the preview', async () => {
     render(buildDto(comparableSet(3)), 4);
     const saved = captureSaves();
@@ -2316,11 +2354,11 @@ describe('ModelComparisonComponent', () => {
         .repeat(6);
     spyOn(component as unknown as { exportChrome(card: ComparisonFigureCard): unknown }, 'exportChrome')
       .and.returnValue({
-        title: 'Figure',
-        subtitle: '',
-        caption: '',
-        notices: [1, 2, 3, 4, 5, 6].map(notice),
-        footer: 'Suite A — Current catalog — 3 of 3 entries charted'
+        chrome: {
+          title: 'Figure', badges: [], detail: '', key: [], highlight: '',
+          notes: [1, 2, 3, 4, 5, 6].map(index => ({ text: notice(index), tone: 'warning' as const }))
+        },
+        footer: { suite: 'Suite A', computedAt: 'Current catalog, 3 Sep 2026' }
       });
 
     component.onExportResolutionChange('custom');
@@ -2739,5 +2777,7 @@ describe('model-comparison adapter', () => {
     const context = toChartContext(null);
     expect(context.itemsPerRun).toBe(0);
     expect(context.pricingBasisLabel).toBe('Unknown pricing basis');
+    expect(context.pricingBasis).toBe('');
+    expect(context.pricedOn).toBe('');
   });
 });

@@ -7,6 +7,7 @@ import {
   CHART_SURFACE,
   DEFAULT_MODEL_SORT,
   DE_EMPHASIS_FILL,
+  DOMINATED_REGION_FILL,
   IDENTITY_SHAPES,
   MAX_PLOTTED_ENTRIES,
   PALETTE_VALIDATION_INPUT,
@@ -22,6 +23,7 @@ import {
   buildSpeedCostScatter,
   computeParetoFrontier,
   directLabelPlugin,
+  dominatedRegionPlugin,
   errorBarPlugin,
   glyphFor,
   measureDirectLabelBlock,
@@ -35,6 +37,7 @@ import {
   suiteCostUsd,
 } from './model-comparison-charts';
 import type {
+  ChartSpec,
   DirectLabelAnchor,
   DirectLabelBlock,
   DirectLabelBox,
@@ -55,6 +58,28 @@ interface ScaleProbe {
   beginAtZero?: boolean;
   grace?: string;
   title?: { text?: string | string[] };
+  afterBuildTicks?: (scale: { ticks: { value: number }[] }) => void;
+  ticks?: { callback?: (value: number | string, index: number, ticks: { value: number }[]) => string };
+}
+
+/** The tick values a scatter axis sets, read by running its `afterBuildTicks` on a fake scale. */
+function ticksOf(scale: ScaleProbe): number[] {
+  const fake = { ticks: [] as { value: number }[] };
+  scale.afterBuildTicks?.(fake);
+  return fake.ticks.map((tick) => tick.value);
+}
+
+/** Every figure the set builds, flattened, so chrome assertions can cover all seven at once. */
+function allSpecs(figures: ReturnType<typeof buildComparisonFigures>): ChartSpec[] {
+  return [
+    figures.qualitySpeed,
+    figures.qualityCost,
+    figures.speedCost,
+    figures.smallMultiples.quality,
+    figures.smallMultiples.speed,
+    figures.smallMultiples.cost,
+    figures.profile,
+  ] as unknown as ChartSpec[];
 }
 
 function scaleOf(config: unknown, axis: 'x' | 'y'): ScaleProbe {
@@ -84,6 +109,8 @@ function expectClose(actual: readonly number[], expected: readonly number[]): vo
 const CONTEXT: ModelComparisonContext = {
   itemsPerRun: 10,
   pricingBasisLabel: 'Current catalog, 2026-09-07',
+  pricingBasis: 'Current',
+  pricedOn: '2026-09-07T10:00:00Z',
   suiteName: 'Fundamental',
 };
 
@@ -243,28 +270,33 @@ describe('model-comparison-charts', () => {
   });
 
   describe('scatter scales', () => {
-    it('S1 defaults to mean model time, logarithmic and lower is better', () => {
+    it('S1 defaults to mean model time, linear over a narrow range and lower is better', () => {
       const spec = buildQualitySpeedScatter(PROFILE_FIXTURE, BASE_FIGURE_OPTIONS);
       const x = scaleOf(spec.config, 'x');
       const y = scaleOf(spec.config, 'y');
 
-      expect(x.type).toBe('logarithmic');
-      expect(titleLines(x)[0]).toContain('Model time per question, mean');
-      expect(titleLines(x)[0]).toContain('logarithmic');
+      expect(x.type).toBe('linear');
+      expect(titleLines(x)[0]).toBe('Mean time per question (s)');
       expect(x.title?.text).toContain('lower is better');
       expect(y.type).toBe('linear');
+      // The fixture's intervals reach from 26 to 94, so the padded domain clamps to the full index.
       expect(y.min).toBe(0);
       expect(y.max).toBe(100);
-      expect(titleLines(y)[0]).not.toContain('logarithmic');
+      expect(titleLines(y)[0]).toBe('Intelligence Index (0-100)');
     });
 
-    it('S1 puts TTFT on a logarithmic x axis and says so in the axis title, when TTFT is selected', () => {
+    it('S1 puts TTFT on a logarithmic x axis and says so in the axis title, when it spans a factor of ten', () => {
+      // P50 100-500 ms with P90 whiskers up to 1800 ms: the axis must show a range of eighteen.
       const spec = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, speedMeasure: 'ttftP50' });
       const x = scaleOf(spec.config, 'x');
 
       expect(x.type).toBe('logarithmic');
-      expect(titleLines(x)[0]).toContain('Time to first token');
-      expect(titleLines(x)[0]).toContain('logarithmic');
+      expect(titleLines(x)[0]).toBe('Time to first token, median (s, log scale)');
+      const ticks = ticksOf(x);
+      expect(ticks.length).toBeGreaterThanOrEqual(3);
+      expect(ticks.length).toBeLessThanOrEqual(7);
+      expect(x.min!).toBeLessThan(100);
+      expect(x.max!).toBeGreaterThan(1800);
     });
 
     it('S1 switches to Speed Index, linear 0-100, when that measure is selected', () => {
@@ -278,20 +310,19 @@ describe('model-comparison-charts', () => {
       expect(pointsOf(spec.config)[0]['x']).toBe(PROFILE_FIXTURE[0].speedIndex!);
     });
 
-    it('S2 puts cost on a logarithmic x axis and keeps quality linear', () => {
+    it('S2 keeps a cost range under a factor of ten linear, and quality linear', () => {
       const spec = buildQualityCostScatter(PROFILE_FIXTURE, BASE_FIGURE_OPTIONS);
-      expect(scaleOf(spec.config, 'x').type).toBe('logarithmic');
-      expect(titleLines(scaleOf(spec.config, 'x'))[0]).toContain('logarithmic');
+      expect(scaleOf(spec.config, 'x').type).toBe('linear');
+      expect(titleLines(scaleOf(spec.config, 'x'))[0]).toBe('Cost per question (USD)');
       expect(scaleOf(spec.config, 'y').type).toBe('linear');
     });
 
-    it('S3 is logarithmic on both axes and labels both, on the selected speed measure', () => {
+    it('S3 labels both axes in their units, on the selected speed measure', () => {
       const spec = buildSpeedCostScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, speedMeasure: 'totalModelTime' });
-      expect(scaleOf(spec.config, 'x').type).toBe('logarithmic');
-      expect(scaleOf(spec.config, 'y').type).toBe('logarithmic');
-      expect(titleLines(scaleOf(spec.config, 'x'))[0]).toContain('Candidate model time for the whole suite');
-      expect(titleLines(scaleOf(spec.config, 'x'))[0]).toContain('logarithmic');
-      expect(titleLines(scaleOf(spec.config, 'y'))[0]).toContain('logarithmic');
+      expect(scaleOf(spec.config, 'x').type).toBe('linear');
+      expect(scaleOf(spec.config, 'y').type).toBe('linear');
+      expect(titleLines(scaleOf(spec.config, 'x'))[0]).toBe('Total time for the suite (s)');
+      expect(titleLines(scaleOf(spec.config, 'y'))[0]).toBe('Cost per question (USD)');
     });
 
     it('keeps the axes ascending and states the preferred corner instead of reversing them', () => {
@@ -359,7 +390,7 @@ describe('model-comparison-charts', () => {
       expect(point['xErrHigh']).toBe(5000);
     });
 
-    it('leaves a single-run mark unannotated: the caption and P1 are where the run count is stated', () => {
+    it('leaves a single-run mark unannotated: the key and P1 are where the run count is stated', () => {
       const entry = makeEntry({ key: 'once', runCount: 1, candidateCostPerQuestionSdUsd: null });
       const spec = buildQualityCostScatter([entry], {
         ...BASE_FIGURE_OPTIONS,
@@ -368,10 +399,11 @@ describe('model-comparison-charts', () => {
       const point = pointsOf(spec.config)[0];
       expect(point['note']).toBeUndefined();
       expect(point['xErrLow']).toBeUndefined();
-      expect(spec.caption).toContain('Hollow marks are single runs (R = 1)');
+      expect(spec.chrome.key).toContain({ glyph: 'hollow', text: 'Single run' });
+      expect(spec.chrome.key.map((item) => item.glyph)).not.toContain('solid');
     });
 
-    it('draws the Pareto frontier and keeps it out of the identity legend', () => {
+    it('draws the Pareto frontier, keys it once and keeps it out of the identity legend', () => {
       // Distinguishing x values, on TTFT: the fixture's model time is tied across all three entries.
       const spec = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, speedMeasure: 'ttftP50' });
       const labels = datasetsOf(spec.config).map((d) => d['label']);
@@ -379,7 +411,9 @@ describe('model-comparison-charts', () => {
 
       const filter = spec.config.options?.plugins?.legend?.labels?.filter;
       expect(filter).toBeDefined();
-      expect(spec.caption).toContain('No trend line');
+      expect(spec.chrome.key.map((item) => item.glyph)).toEqual(['solid', 'interval', 'frontier', 'dominated']);
+      expect(spec.plugins).toContain(dominatedRegionPlugin);
+      expect(spec.plugins.indexOf(dominatedRegionPlugin)).toBeLessThan(spec.plugins.indexOf(errorBarPlugin));
     });
 
     it('leaves identity text to the direct-label toggle, whatever the entry count', () => {
@@ -413,7 +447,7 @@ describe('model-comparison-charts', () => {
 
       expect(tooltip.callbacks?.title?.([{ dataset: { label: 'Model A' } }])).toBe('Model A');
       expect(tooltip.callbacks?.label?.({ parsed: { x: 2000, y: 80.1 } })).toEqual([
-        'Time to first token, P50: 2.00 s',
+        'Time to first token, median: 2.00 s',
         'Intelligence Index: 80.1',
       ]);
 
@@ -479,20 +513,28 @@ describe('model-comparison-charts', () => {
       expect(ttftPoint['y']).toBe(500);
       expect(ttftPoint['yErrHigh']).toBe(1300);
 
+      // 900 ms is the largest mean, so the panel stays in milliseconds.
       expect(scaleOf(mean.speed.config, 'y').title?.text).toEqual([
-        'Model time per question, mean (ms)',
+        'Mean time per question (ms)',
         'lower is better',
       ]);
       const meanPoint = pointsOf(mean.speed.config)[0];
       expect(meanPoint['y']).toBe(PROFILE_FIXTURE[0].modelTimeMeanMs);
       expect(meanPoint['yErrLow']).toBeUndefined();
       expect(meanPoint['yErrHigh']).toBeUndefined();
-      expect(mean.speed.notices.join(' ')).toContain('no per-answer dispersion');
+      expect(mean.speed.chrome.notes).toContain({
+        text: 'Mean time per question has no uncertainty bar: the spread across questions is not recorded.',
+        tone: 'info',
+      });
 
+      // 9000 ms is past a second, so the title and the ticks switch to seconds together.
       expect(scaleOf(total.speed.config, 'y').title?.text).toEqual([
-        'Candidate model time for the whole suite (ms)',
+        'Total time for the suite (s)',
         'lower is better',
       ]);
+      const totalTick = scaleOf(total.speed.config, 'y').ticks?.callback;
+      expect(totalTick?.(0, 0, [{ value: 0 }, { value: 2000 }])).toBe('0 s');
+      expect(totalTick?.(2000, 1, [{ value: 0 }, { value: 2000 }])).toBe('2 s');
       const totalPoint = pointsOf(total.speed.config)[0];
       expect(totalPoint['y']).toBe(PROFILE_FIXTURE[0].totalModelTimeMs);
       expect(totalPoint['yErrLow']).toBe(PROFILE_FIXTURE[0].totalModelTimeSdMs!);
@@ -539,11 +581,12 @@ describe('model-comparison-charts', () => {
         ...smallMultiplesOptions(),
         glyphs: buildIdentityGlyphs(saturated),
       });
-      expect(figure.speed.notices.join(' ')).toContain('saturated');
-      expect(figure.speed.notices.join(' ')).toContain('TTFT P50');
+      const saturation = figure.speed.chrome.notes.find((note) => note.text.includes('saturated'));
+      expect(saturation?.tone).toBe('warning');
+      expect(saturation?.text).toContain('TTFT P50');
 
       const clean = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions());
-      expect(clean.speed.notices.join(' ')).not.toContain('saturated');
+      expect(clean.speed.chrome.notes.map((note) => note.text).join(' ')).not.toContain('saturated');
     });
 
     it('never ramps a bar by value, and mutes the rest only when something is emphasised', () => {
@@ -572,14 +615,21 @@ describe('model-comparison-charts', () => {
       expect(figure.quality.config.options?.plugins?.legend?.display).toBeFalse();
     });
 
-    it('states n in every panel subtitle', () => {
+    it('states n in every panel\'s badges, and the pricing basis on the cost panel only', () => {
       const figure = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions());
       for (const panel of [figure.quality, figure.speed, figure.cost]) {
-        expect(panel.subtitle).toContain('3 models');
-        expect(panel.subtitle).toContain('9 runs');
-        expect(panel.subtitle).toContain('10 items per run');
-        expect(panel.subtitle).toContain(CONTEXT.pricingBasisLabel);
+        const texts = panel.chrome.badges.map((badge) => badge.text);
+        expect(texts.slice(0, 3)).withContext(panel.id).toEqual(['3 models', '3 runs each', '10 questions']);
+        expect(panel.chrome.title).withContext(panel.id).toBe(panel.title);
+        expect(panel.chrome.key).withContext(panel.id).toEqual([]);
+        expect(panel.chrome.highlight).withContext(panel.id).toBe('');
       }
+      expect(figure.cost.chrome.badges.length).toBe(4);
+      expect(figure.cost.chrome.badges[3].tone).toBe('pricing');
+      expect(figure.cost.chrome.badges[3].text.startsWith('Catalog prices')).toBeTrue();
+      expect(figure.cost.chrome.detail).not.toBe('');
+      expect(figure.quality.chrome.detail).toBe('');
+      expect(figure.speed.chrome.detail).toBe('');
     });
 
     it('gives every panel scriptable value labels, past the SD whisker with a grace margin', () => {
@@ -680,7 +730,7 @@ describe('model-comparison-charts', () => {
       expectClose(normalization.rows[0].values, [0.5, 0.5, 0.5]);
     });
 
-    it('is a shape view: normalized 0-1 axis, no error bars and a caption that says so', () => {
+    it('is a shape view: normalized 0-1 axis, no error bars and an info note that says so', () => {
       const spec = buildProfilePlot(PROFILE_FIXTURE, {
         ...BASE_FIGURE_OPTIONS,
         speedMeasure: 'speedIndex',
@@ -690,7 +740,10 @@ describe('model-comparison-charts', () => {
       expect(y.min).toBe(0);
       expect(y.max).toBe(1);
       expect(spec.plugins).toEqual([]);
-      expect(spec.caption).toContain('read shape and crossings, not values');
+      const shapeNote = spec.chrome.notes.find((note) => note.text.includes('compare shapes and crossings, not values'));
+      expect(shapeNote?.tone).toBe('info');
+      expect(spec.chrome.notes.map((note) => note.text).join(' ')).not.toContain('error bars');
+      expect(spec.chrome.badges.some((badge) => badge.tone === 'pricing')).toBeTrue();
       expect(spec.config.data.labels).toEqual(['Intelligence', 'Speed Index', 'Cost (candidate, suite)']);
     });
 
@@ -780,9 +833,280 @@ describe('model-comparison-charts', () => {
     });
 
     it('returns nothing to draw for an empty set', () => {
-      const result = computeParetoFrontier([], 'lower', 'higher');
+      const result = computeParetoFrontier([], 'lower', 'higher', { xWorst: 600, yWorst: 0 });
       expect(result.frontier).toEqual([]);
       expect(result.steps).toEqual([]);
+      expect(result.boundary).toEqual([]);
+    });
+
+    it('extends the staircase from the worst-x edge to the worst-y edge when given the bounds', () => {
+      const candidates = [
+        { key: 'A', x: 500, y: 90 },
+        { key: 'B', x: 300, y: 60 },
+        { key: 'C', x: 100, y: 30 },
+        { key: 'D', x: 400, y: 50 },
+      ];
+      expect(computeParetoFrontier(candidates, 'lower', 'higher').boundary).toEqual([]);
+
+      const result = computeParetoFrontier(candidates, 'lower', 'higher', { xWorst: 600, yWorst: 0 });
+      expect(result.boundary).toEqual([
+        { x: 600, y: 90 },
+        { x: 500, y: 90 },
+        { x: 500, y: 60 },
+        { x: 300, y: 60 },
+        { x: 300, y: 30 },
+        { x: 100, y: 30 },
+        { x: 100, y: 0 },
+      ]);
+    });
+
+    it('draws a one-member frontier as an L through that model', () => {
+      const result = computeParetoFrontier(
+        [
+          { key: 'A', x: 100, y: 50 },
+          { key: 'B', x: 200, y: 40 },
+        ],
+        'lower',
+        'higher',
+        { xWorst: 250, yWorst: 0 },
+      );
+      expect(result.frontier.map((c) => c.key)).toEqual(['A']);
+      expect(result.steps).toEqual([{ x: 100, y: 50 }]);
+      expect(result.boundary).toEqual([
+        { x: 250, y: 50 },
+        { x: 100, y: 50 },
+        { x: 100, y: 0 },
+      ]);
+    });
+
+    it('orients the boundary on a both-lower-is-better pair of axes', () => {
+      const result = computeParetoFrontier(
+        [
+          { key: 'P', x: 100, y: 0.03 },
+          { key: 'Q', x: 300, y: 0.01 },
+          { key: 'R', x: 500, y: 0.05 },
+        ],
+        'lower',
+        'lower',
+        { xWorst: 600, yWorst: 0.06 },
+      );
+      expect(result.boundary).toEqual([
+        { x: 600, y: 0.01 },
+        { x: 300, y: 0.01 },
+        { x: 300, y: 0.03 },
+        { x: 100, y: 0.03 },
+        { x: 100, y: 0.06 },
+      ]);
+    });
+  });
+
+  describe('the dominated-region plugin', () => {
+    function runRegionPlugin(datasets: { label?: string }[], vertices: { x: number; y: number }[]) {
+      const calls: { op: string; args: unknown[] }[] = [];
+      const record = (op: string) => (...args: unknown[]) => calls.push({ op, args });
+      const ctx = {
+        save: record('save'),
+        restore: record('restore'),
+        beginPath: record('beginPath'),
+        rect: record('rect'),
+        clip: record('clip'),
+        moveTo: record('moveTo'),
+        lineTo: record('lineTo'),
+        closePath: record('closePath'),
+        fill: () => calls.push({ op: 'fill', args: [ctx.fillStyle] }),
+        fillStyle: '',
+      };
+      const chart = {
+        ctx,
+        chartArea: { left: 0, top: 0, right: 400, bottom: 300 },
+        data: { datasets },
+        getDatasetMeta: () => ({ hidden: false, data: vertices }),
+      };
+      dominatedRegionPlugin.beforeDatasetsDraw?.(chart as unknown as Chart, {} as never, {} as never);
+      return calls;
+    }
+
+    it('fills the boundary closed through the worst corner, clipped to the plot area', () => {
+      const calls = runRegionPlugin(
+        [{ label: 'A' }, { label: 'Pareto frontier' }],
+        [{ x: 400, y: 50 }, { x: 100, y: 50 }, { x: 100, y: 300 }],
+      );
+      expect(calls.some((c) => c.op === 'clip')).toBeTrue();
+      const lines = calls.filter((c) => c.op === 'lineTo').map((c) => c.args);
+      // The corner is the first vertex's x and the last vertex's y.
+      expect(lines[lines.length - 1]).toEqual([400, 300]);
+      expect(calls.find((c) => c.op === 'fill')?.args).toEqual([DOMINATED_REGION_FILL]);
+    });
+
+    it('draws nothing on a figure without a frontier', () => {
+      const calls = runRegionPlugin([{ label: 'A' }], [{ x: 100, y: 50 }]);
+      expect(calls.length).toBe(0);
+    });
+  });
+
+  describe('axis domains and chrome on the scatters', () => {
+    /** The two models of the reported screenshot: GPT-5.6 Luna beats GPT-6 Luna on both S1 axes. */
+    const SCREENSHOT: ModelComparisonEntry[] = [
+      makeEntry({
+        key: 'gpt-5.6-luna',
+        label: 'GPT-5.6 Luna',
+        runCount: 1,
+        modelTimeMeanMs: 21250,
+        intelligenceIndex: 74.8,
+        intelligenceIndexCi95HalfWidth: 8,
+        candidateCostPerQuestionUsd: 0.0042,
+        candidateCostPerQuestionSdUsd: null,
+        totalModelTimeSdMs: null,
+        totalRunCostSdUsd: null,
+      }),
+      makeEntry({
+        key: 'gpt-6-luna',
+        label: 'GPT-6 Luna',
+        runCount: 1,
+        modelTimeMeanMs: 29990,
+        intelligenceIndex: 74.6,
+        intelligenceIndexCi95HalfWidth: 8,
+        candidateCostPerQuestionUsd: 0.0024,
+        candidateCostPerQuestionSdUsd: null,
+        totalModelTimeSdMs: null,
+        totalRunCostSdUsd: null,
+      }),
+    ];
+    const SCREENSHOT_CONTEXT: ModelComparisonContext = { ...CONTEXT, itemsPerRun: 18 };
+    const SCREENSHOT_OPTIONS = {
+      context: SCREENSHOT_CONTEXT,
+      glyphs: buildIdentityGlyphs(SCREENSHOT),
+      reducedMotion: false,
+    };
+
+    it('gives S1 a linear speed axis in seconds, with a handful of ticks inside the domain', () => {
+      const spec = buildQualitySpeedScatter(SCREENSHOT, SCREENSHOT_OPTIONS);
+      const x = scaleOf(spec.config, 'x');
+
+      expect(x.type).toBe('linear');
+      expect(titleLines(x)[0]).toMatch(/\(s\)$/);
+      expect(titleLines(x)[0]).not.toContain('log');
+
+      const ticks = ticksOf(x);
+      expect(ticks.length).toBeGreaterThanOrEqual(3);
+      expect(ticks.length).toBeLessThanOrEqual(7);
+      for (const tick of ticks) {
+        expect(tick).toBeGreaterThanOrEqual(x.min!);
+        expect(tick).toBeLessThanOrEqual(x.max!);
+      }
+    });
+
+    it('keeps both screenshot models at least 5 % of the span inside every edge', () => {
+      const spec = buildQualitySpeedScatter(SCREENSHOT, SCREENSHOT_OPTIONS);
+      for (const axis of ['x', 'y'] as const) {
+        const scale = scaleOf(spec.config, axis);
+        const span = scale.max! - scale.min!;
+        for (const entry of SCREENSHOT) {
+          const value = axis === 'x' ? entry.modelTimeMeanMs : entry.intelligenceIndex;
+          expect((value - scale.min!) / span).withContext(`${entry.label} on ${axis}`).toBeGreaterThanOrEqual(0.05);
+          expect((scale.max! - value) / span).withContext(`${entry.label} on ${axis}`).toBeGreaterThanOrEqual(0.05);
+        }
+      }
+    });
+
+    it('draws S1\'s one-member frontier as an L, names it, and flags the overlapping intervals', () => {
+      const spec = buildQualitySpeedScatter(SCREENSHOT, SCREENSHOT_OPTIONS);
+      const frontier = datasetsOf(spec.config).find((d) => d['label'] === 'Pareto frontier');
+
+      expect(frontier).toBeDefined();
+      expect((frontier!['data'] as unknown[]).length).toBe(3);
+      expect(spec.chrome.highlight).toBe('Best trade-off: GPT-5.6 Luna');
+      expect(spec.chrome.notes).toContain({
+        text: 'Some differences are within the 95 % intervals, so treat the frontier as indicative rather than a clear win.',
+        tone: 'info',
+      });
+      expect(spec.chrome.key.map((item) => item.glyph)).toEqual(['hollow', 'interval', 'frontier', 'dominated']);
+    });
+
+    it('orders the scatter badges and ends them with the direction', () => {
+      const s1 = buildQualitySpeedScatter(SCREENSHOT, SCREENSHOT_OPTIONS);
+      expect(s1.chrome.badges.map((badge) => badge.text)).toEqual([
+        '2 models',
+        '1 run each',
+        '18 questions',
+        '↖ Better',
+      ]);
+      expect(s1.chrome.badges[3]).toEqual({ text: '↖ Better', tone: 'direction', ariaLabel: 'Better: top left' });
+      expect(s1.chrome.title).toBe(s1.title);
+
+      const s3 = buildSpeedCostScatter(SCREENSHOT, SCREENSHOT_OPTIONS);
+      expect(s3.chrome.badges[s3.chrome.badges.length - 1].text).toBe('↙ Better');
+    });
+
+    it('puts the pricing badge on S2, S3, P1 cost and P2 only', () => {
+      const figures = buildComparisonFigures(SCREENSHOT, { context: SCREENSHOT_CONTEXT });
+      const priced = (spec: { chrome: { badges: readonly { tone: string }[] } }): boolean =>
+        spec.chrome.badges.some((badge) => badge.tone === 'pricing');
+
+      expect(priced(figures.qualitySpeed)).toBeFalse();
+      expect(priced(figures.qualityCost)).toBeTrue();
+      expect(priced(figures.speedCost)).toBeTrue();
+      expect(priced(figures.smallMultiples.quality)).toBeFalse();
+      expect(priced(figures.smallMultiples.speed)).toBeFalse();
+      expect(priced(figures.smallMultiples.cost)).toBeTrue();
+      expect(priced(figures.profile)).toBeTrue();
+
+      const badge = figures.qualityCost.chrome.badges.find((b) => b.tone === 'pricing');
+      expect(badge?.text.startsWith('Catalog prices')).toBeTrue();
+      expect(figures.qualitySpeed.chrome.detail).toBe('');
+      expect(figures.qualityCost.chrome.detail).not.toBe('');
+    });
+
+    it('gives S1 and S2 an identical Intelligence Index domain', () => {
+      const s1 = scaleOf(buildQualitySpeedScatter(SCREENSHOT, SCREENSHOT_OPTIONS).config, 'y');
+      const s2 = scaleOf(buildQualityCostScatter(SCREENSHOT, SCREENSHOT_OPTIONS).config, 'y');
+
+      expect(s1.min).toBe(s2.min);
+      expect(s1.max).toBe(s2.max);
+      expect(ticksOf(s1)).toEqual(ticksOf(s2));
+      expect(s1.min).toBe(60);
+      expect(s1.max).toBe(90);
+    });
+
+    it('turns a 7 s to 200 s speed axis logarithmic and says so', () => {
+      const wide = [
+        makeEntry({ key: 'fast', modelTimeMeanMs: 7000 }),
+        makeEntry({ key: 'slow', modelTimeMeanMs: 200000 }),
+      ];
+      const spec = buildQualitySpeedScatter(wide, { ...BASE_FIGURE_OPTIONS, glyphs: buildIdentityGlyphs(wide) });
+      const x = scaleOf(spec.config, 'x');
+
+      expect(x.type).toBe('logarithmic');
+      expect(titleLines(x)[0]).toBe('Mean time per question (s, log scale)');
+      const ticks = ticksOf(x);
+      expect(ticks.length).toBeGreaterThanOrEqual(3);
+      expect(ticks.length).toBeLessThanOrEqual(7);
+    });
+
+    it('writes the P1 speed panel\'s title and ticks in the same unit', () => {
+      const figure = buildSmallMultiples(SCREENSHOT, {
+        ...smallMultiplesOptions({ speedMeasure: 'meanModelTime' }),
+        context: SCREENSHOT_CONTEXT,
+        glyphs: buildIdentityGlyphs(SCREENSHOT),
+      });
+      const y = scaleOf(figure.speed.config, 'y');
+      expect(titleLines(y)[0]).toBe('Mean time per question (s)');
+      expect(y.ticks?.callback?.(0, 0, [{ value: 0 }, { value: 5000 }])).toBe('0 s');
+      expect(y.ticks?.callback?.(25000, 5, [{ value: 0 }, { value: 5000 }])).toBe('25 s');
+    });
+
+    it('sets a chrome on every figure, titled as the figure, and never mentions the DTO', () => {
+      for (const set of [
+        buildComparisonFigures(SCREENSHOT, { context: SCREENSHOT_CONTEXT }),
+        buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT, speedMeasure: 'speedIndex' }),
+      ]) {
+        for (const spec of allSpecs(set)) {
+          expect(spec.chrome.title).withContext(spec.id).toBe(spec.title);
+          for (const note of spec.chrome.notes) {
+            expect(note.text).withContext(spec.id).not.toContain('DTO');
+          }
+        }
+      }
     });
   });
 
@@ -1283,15 +1607,11 @@ describe('model-comparison-charts', () => {
       const figures = buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT });
 
       expect(scaleOf(figures.smallMultiples.speed.config, 'y').title?.text).toEqual([
-        'Model time per question, mean (ms)',
+        'Mean time per question (ms)',
         'lower is better',
       ]);
-      expect(titleLines(scaleOf(figures.qualitySpeed.config, 'x'))[0]).toContain(
-        'Model time per question, mean',
-      );
-      expect(titleLines(scaleOf(figures.speedCost.config, 'x'))[0]).toContain(
-        'Model time per question, mean',
-      );
+      expect(titleLines(scaleOf(figures.qualitySpeed.config, 'x'))[0]).toContain('Mean time per question');
+      expect(titleLines(scaleOf(figures.speedCost.config, 'x'))[0]).toContain('Mean time per question');
       expect(figures.profile.config.data.labels).toContain('Speed (mean model time)');
     });
   });

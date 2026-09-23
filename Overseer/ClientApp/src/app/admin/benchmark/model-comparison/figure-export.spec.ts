@@ -25,11 +25,13 @@ import {
   figureArchiveFilename,
   figureExportFilename,
   layoutBoxFor,
+  measureFigureChrome,
   previewLayoutFor,
   renderPlotOffscreen,
   resolveFigureLayout,
   webpEncoderQuality
 } from './figure-export';
+import type { FigureBadge, FigureChrome, FigureFooter, FigureNote } from './figure-chrome';
 import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 
 describe('figure-export', () => {
@@ -46,22 +48,50 @@ describe('figure-export', () => {
     return canvas;
   }
 
-  /** The chrome half of a request: everything `resolveFigureLayout` measures. */
-  function chromeOf(overrides: Partial<Parameters<typeof resolveFigureLayout>[0]> = {}) {
+  /** The card chrome a figure carries besides its plot. */
+  function figureChrome(overrides: Partial<FigureChrome> = {}): FigureChrome {
     return {
       title: 'P1 — Quality, speed and cost',
-      subtitle: '18 items per run, current catalog as of 2026-09-07',
-      caption: 'Read the whiskers before the bar tops.',
-      notices: ['Cost bars carry no interval at any R.'],
-      footer: 'Suite A — Current catalog — 4 of 5 entries charted — computed 2026-09-07',
+      badges: [
+        { text: 'Current catalog prices', tone: 'pricing' },
+        { text: 'Higher is better', tone: 'direction' }
+      ],
+      detail: '18 items per run, current catalog as of 2026-09-07',
+      key: [
+        { glyph: 'solid', text: 'Comparable' },
+        { glyph: 'hollow', text: 'Degraded' }
+      ],
+      highlight: 'Best trade-offs: GPT-5.6 Luna',
+      notes: [{ text: 'Cost bars carry no interval at any R.', tone: 'info' }],
       ...overrides
+    };
+  }
+
+  /** The export's last line. */
+  function figureFooter(overrides: Partial<FigureFooter> = {}): FigureFooter {
+    return {
+      suite: 'Suite A',
+      computedAt: '7 Sep 2026, 14:03',
+      ...overrides
+    };
+  }
+
+  /** The chrome half of a request: everything `resolveFigureLayout` and `measureFigureChrome` measure. */
+  function sourceOf(
+    chromeOverrides: Partial<FigureChrome> = {},
+    footerOverrides: Partial<FigureFooter> = {}
+  ) {
+    return {
+      chrome: figureChrome(chromeOverrides),
+      footer: figureFooter(footerOverrides)
     };
   }
 
   function request(overrides: Partial<Parameters<typeof composeFigureImage>[0]> = {}) {
     return {
       canvas: sourceCanvas(),
-      ...chromeOf(),
+      chrome: figureChrome(),
+      footer: figureFooter(),
       format: 'png' as const,
       ...overrides
     };
@@ -94,7 +124,7 @@ describe('figure-export', () => {
     expect(pixel[3]).toBe(255);
   });
 
-  it('draws the title, the caption, every notice and the footer into the image', () => {
+  it('draws the title, badges, detail, key, highlight, every note and the footer into the image', () => {
     const drawn: string[] = [];
     const real = HTMLCanvasElement.prototype.getContext;
     spyOn(HTMLCanvasElement.prototype, 'getContext').and.callFake(function (
@@ -114,21 +144,81 @@ describe('figure-export', () => {
     } as any);
 
     composeFigureImage(request({
-      notices: ['Speed is degraded for Gemini 2.5 Flash.', 'Charts plot at most 8 models.']
+      chrome: figureChrome({
+        notes: [
+          { text: 'Speed is degraded for Gemini 2.5 Flash.', tone: 'warning' },
+          { text: 'Charts plot at most 8 models.', tone: 'info' }
+        ]
+      })
     }));
 
     const composited = drawn.join(' ');
     expect(composited).toContain('Quality, speed and cost');
-    expect(composited).toContain('Read the whiskers');
+    expect(composited).toContain('Current catalog prices');
+    expect(composited).toContain('18 items per run');
+    expect(composited).toContain('Comparable');
+    expect(composited).toContain('Best trade-offs');
     expect(composited).toContain('Speed is degraded');
     expect(composited).toContain('Charts plot at most 8 models');
-    expect(composited).toContain('4 of 5 entries charted');
+    expect(composited).toContain('Suite A');
+    expect(composited).toContain('Computed');
+    expect(composited).toContain('7 Sep 2026, 14:03');
+    // The footer is composed by the caller now: no pricing basis, count or condition string of its
+    // own is assembled here.
+    expect(composited).not.toContain('entries charted');
+    expect(composited).not.toContain('condition');
+  });
+
+  describe('measureFigureChrome', () => {
+    it('wraps five badges at a 360 px content width onto more than one row', () => {
+      const badges: FigureBadge[] = [
+        { text: 'Current catalog prices', tone: 'pricing' },
+        { text: 'Higher is better', tone: 'direction' },
+        { text: '4 of 5 entries charted', tone: 'neutral' },
+        { text: 'Speed degraded', tone: 'neutral' },
+        { text: 'Cost degraded', tone: 'neutral' }
+      ];
+
+      const measured = measureFigureChrome(sourceOf({ badges }), 360);
+
+      expect(measured.badgeRows.length).toBeGreaterThan(1);
+    });
+
+    it('adds no height for an empty detail, highlight or key', () => {
+      const bare = measureFigureChrome(
+        sourceOf({ badges: [], detail: '', key: [], highlight: '', notes: [] }, { suite: '', computedAt: '' }),
+        400
+      );
+      expect(bare.detailLines).toEqual([]);
+      expect(bare.highlightLines).toEqual([]);
+      expect(bare.keyRows).toEqual([]);
+
+      const withDetail = measureFigureChrome(
+        sourceOf({ badges: [], detail: 'One short sentence.', key: [], highlight: '', notes: [] },
+          { suite: '', computedAt: '' }),
+        400
+      );
+      const withHighlight = measureFigureChrome(
+        sourceOf({ badges: [], detail: '', key: [], highlight: 'Best trade-offs: GPT-5.6 Luna', notes: [] },
+          { suite: '', computedAt: '' }),
+        400
+      );
+      const withKey = measureFigureChrome(
+        sourceOf({ badges: [], detail: '', key: [{ glyph: 'solid', text: 'Comparable' }], highlight: '', notes: [] },
+          { suite: '', computedAt: '' }),
+        400
+      );
+
+      expect(withDetail.height).toBeGreaterThan(bare.height);
+      expect(withHighlight.height).toBeGreaterThan(bare.height);
+      expect(withKey.height).toBeGreaterThan(bare.height);
+    });
   });
 
   describe('resolveFigureLayout', () => {
     it('returns exactly the requested pixel size for every preset', () => {
       for (const resolution of explicitPresets) {
-        const { layout, refusal } = resolveFigureLayout(chromeOf(), resolution, onScreen, 1);
+        const { layout, refusal } = resolveFigureLayout(sourceOf(), resolution, onScreen, 1);
 
         expect(refusal).withContext(resolution.id).toBeNull();
         expect(layout!.pixelWidth).withContext(resolution.id).toBe(resolution.widthPx!);
@@ -139,7 +229,7 @@ describe('figure-export', () => {
     it('lays every explicit size out at least 960 wide and 540 tall, in the target’s ratio', () => {
       const epsilon = 1e-9;
       for (const resolution of explicitPresets) {
-        const { layout } = resolveFigureLayout(chromeOf(), resolution, onScreen, 1);
+        const { layout } = resolveFigureLayout(sourceOf(), resolution, onScreen, 1);
 
         expect(layout!.layoutWidth)
           .withContext(resolution.id)
@@ -163,7 +253,7 @@ describe('figure-export', () => {
     });
 
     it('composes an explicit size to exactly the requested bitmap', () => {
-      const { layout } = resolveFigureLayout(chromeOf(), preset('fullhd'), onScreen, 1);
+      const { layout } = resolveFigureLayout(sourceOf(), preset('fullhd'), onScreen, 1);
 
       const composed = composeFigureImage(request({ layout }));
 
@@ -174,7 +264,7 @@ describe('figure-export', () => {
     it('reproduces the on-screen composition exactly', () => {
       const composed = composeFigureImage(request({ density: 2 }));
 
-      const { layout, refusal } = resolveFigureLayout(chromeOf(), preset('onscreen'), onScreen, 2);
+      const { layout, refusal } = resolveFigureLayout(sourceOf(), preset('onscreen'), onScreen, 2);
 
       expect(refusal).toBeNull();
       expect(layout!.density).toBe(2);
@@ -185,16 +275,19 @@ describe('figure-export', () => {
     });
 
     it('refuses a figure whose caveats leave no room for the plot, and names a height that fits', () => {
-      const notice = (index: number): string =>
-        `Notice ${index}: ` +
-        'the speed axis is degraded for this entry, so its bar is drawn from a partial sample. '
-          .repeat(6);
-      const chrome = chromeOf({ notices: [1, 2, 3, 4, 5, 6].map(notice) });
+      const note = (index: number): FigureNote => ({
+        text: `Notice ${index}: ` +
+          'the speed axis is degraded for this entry, so its bar is drawn from a partial sample. '
+            .repeat(6),
+        tone: 'info'
+      });
+      const source = sourceOf({ notes: [1, 2, 3, 4, 5, 6].map(note) });
 
-      const { layout, refusal } = resolveFigureLayout(chrome, preset('hd'), onScreen, 1);
+      const { layout, refusal } = resolveFigureLayout(source, preset('hd'), onScreen, 1);
 
       expect(layout).toBeNull();
       expect(refusal).toContain('Quality, speed and cost');
+      expect(refusal).toContain('header, key and notes');
 
       // The named minimum is a promise: the same figure must resolve at it.
       const named = /(\d+) px tall or more/.exec(refusal!);
@@ -203,7 +296,7 @@ describe('figure-export', () => {
       expect(minimumHeight).toBeGreaterThan(720);
 
       const retry = resolveFigureLayout(
-        chrome,
+        source,
         { id: 'custom', label: 'Custom', group: 'Custom', widthPx: 1280, heightPx: minimumHeight },
         onScreen,
         1
@@ -228,11 +321,11 @@ describe('figure-export', () => {
 
     it('multiplies the bitmap by the density and leaves the composition alone', () => {
       for (const resolution of explicitPresets) {
-        const base = resolveFigureLayout(chromeOf(), resolution, onScreen, 1).layout!;
+        const base = resolveFigureLayout(sourceOf(), resolution, onScreen, 1).layout!;
 
         for (const density of FIGURE_EXPORT_DENSITY_PRESETS) {
           const context = `${resolution.id} at ${density}`;
-          const { layout, refusal } = resolveFigureLayout(chromeOf(), resolution, onScreen, density);
+          const { layout, refusal } = resolveFigureLayout(sourceOf(), resolution, onScreen, density);
 
           expect(refusal).withContext(context).toBeNull();
           expect(layout!.pixelWidth).withContext(context).toBe(Math.round(resolution.widthPx! * density));
@@ -249,7 +342,7 @@ describe('figure-export', () => {
     });
 
     it('composes Full HD at 200 % to a 3840 × 2160 bitmap of the same figure', () => {
-      const { layout } = resolveFigureLayout(chromeOf(), preset('fullhd'), onScreen, 2);
+      const { layout } = resolveFigureLayout(sourceOf(), preset('fullhd'), onScreen, 2);
 
       const composed = composeFigureImage(request({ layout }));
 
@@ -260,7 +353,7 @@ describe('figure-export', () => {
     });
 
     it('writes the on-screen size at the chosen density', () => {
-      const { layout, refusal } = resolveFigureLayout(chromeOf(), preset('onscreen'), onScreen, 1.5);
+      const { layout, refusal } = resolveFigureLayout(sourceOf(), preset('onscreen'), onScreen, 1.5);
 
       expect(refusal).toBeNull();
       expect(layout!.density).toBe(1.5);
@@ -277,13 +370,13 @@ describe('figure-export', () => {
         heightPx: 8000
       };
 
-      const refused = resolveFigureLayout(chromeOf(), custom, onScreen, 3);
+      const refused = resolveFigureLayout(sourceOf(), custom, onScreen, 3);
       expect(refused.layout).toBeNull();
       expect(refused.refusal).toContain('24000 × 24000');
       expect(refused.refusal).toContain(String(FIGURE_EXPORT_MAX_BITMAP_DIMENSION));
 
       // 16 000 px a side is under the cap, so the same size at 200 % is written rather than refused.
-      const accepted = resolveFigureLayout(chromeOf(), custom, onScreen, 2);
+      const accepted = resolveFigureLayout(sourceOf(), custom, onScreen, 2);
       expect(accepted.refusal).toBeNull();
       expect(accepted.layout!.pixelWidth).toBe(16000);
     });
@@ -297,7 +390,7 @@ describe('figure-export', () => {
         heightPx: 720
       };
 
-      const { layout, refusal } = resolveFigureLayout(chromeOf(), custom, onScreen, 1);
+      const { layout, refusal } = resolveFigureLayout(sourceOf(), custom, onScreen, 1);
 
       expect(layout).toBeNull();
       expect(refusal).toContain(String(FIGURE_EXPORT_MIN_DIMENSION));
@@ -405,7 +498,7 @@ describe('figure-export', () => {
   describe('previewLayoutFor', () => {
     /** The export layout a preview is fitted from. */
     function target(id: string): FigureExportLayout {
-      return resolveFigureLayout(chromeOf(), preset(id), onScreen, 1).layout!;
+      return resolveFigureLayout(sourceOf(), preset(id), onScreen, 1).layout!;
     }
 
     it('keeps the export’s composition and changes only its density', () => {

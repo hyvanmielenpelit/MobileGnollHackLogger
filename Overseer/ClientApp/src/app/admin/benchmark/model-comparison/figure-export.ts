@@ -9,8 +9,8 @@
  * 1. **The caveats are composited into the image.** The whole reason the comparison view refuses to
  *    hide what it could not compare is that a chart is more persuasive than a table. A figure
  *    exported as a bare canvas and pasted into a document would drop exactly the notices that stop
- *    it being misread, so the title, subtitle, caption, every notice and the footer are drawn into
- *    the same bitmap as the plot.
+ *    it being misread, so the title, badges, detail, key, highlight, every note and the footer are
+ *    drawn into the same bitmap as the plot.
  * 2. **The background is opaque.** Chart.js canvases are transparent; a PNG of one dropped into a
  *    light document renders as dark-on-dark and is unreadable.
  * 3. **An explicit resolution buys sharpness, not more content.** Every explicit size composes in
@@ -25,6 +25,16 @@
 
 import { Chart } from 'chart.js';
 import type { ChartConfiguration, ChartType, Plugin } from 'chart.js';
+
+import type {
+  FigureBadge,
+  FigureBadgeTone,
+  FigureChrome,
+  FigureFooter,
+  FigureKeyGlyph,
+  FigureKeyItem,
+  FigureNoteTone
+} from './figure-chrome';
 
 export type FigureExportFormat = 'png' | 'webp';
 
@@ -252,13 +262,10 @@ export interface FigureExportLayout {
 export interface FigureExportRequest {
   /** The live chart canvas, or one rendered by {@link renderPlotOffscreen}. Read, never mutated. */
   readonly canvas: HTMLCanvasElement;
-  readonly title: string;
-  readonly subtitle: string;
-  readonly caption: string;
-  /** Degraded axes, saturation warnings, cap notices — every caveat the card renders. */
-  readonly notices: readonly string[];
-  /** Suite, pricing basis, entry count and the time the comparison was computed. */
-  readonly footer: string;
+  /** Title, badges, detail, key, highlight and notes: everything the card and the export share. */
+  readonly chrome: FigureChrome;
+  /** The export's last line: suite on the left, computation time on the right. */
+  readonly footer: FigureFooter;
   readonly format: FigureExportFormat;
   /** From {@link resolveFigureLayout}. Absent composes at the on-screen size and density. */
   readonly layout?: FigureExportLayout | null;
@@ -279,13 +286,48 @@ export interface FigureExportResult {
 /** Layout constants, in CSS pixels before the density transform is applied. */
 const PADDING = 20;
 const TITLE_SIZE = 18;
-const SUBTITLE_SIZE = 13;
 const BODY_SIZE = 12;
 const LINE_GAP = 6;
 const RULE_GAP = 12;
 
 /** The narrowest content column a figure is laid out in. */
 const MIN_CONTENT_WIDTH = 360;
+
+/** Badge pill geometry and typography. */
+const BADGE_TEXT_SIZE = 11;
+const BADGE_RADIUS = 4;
+const BADGE_BORDER_WIDTH = 1;
+const BADGE_PAD_X = 7;
+const BADGE_PAD_Y = 3;
+const BADGE_GAP = 6;
+const BADGE_HEIGHT = BADGE_TEXT_SIZE + BADGE_PAD_Y * 2;
+
+/** The detail line under the badge row. */
+const DETAIL_SIZE = 12;
+
+/** Key row geometry and typography. */
+const KEY_GLYPH_SIZE = 12;
+const KEY_TEXT_SIZE = 12;
+const KEY_GLYPH_TEXT_GAP = 6;
+const KEY_ITEM_GAP = 16;
+const KEY_ROW_HEIGHT = Math.round(KEY_TEXT_SIZE * 1.4);
+const KEY_FRONTIER_LENGTH = 14;
+const KEY_DOMINATED_SIDE = 10;
+
+/** The highlight line under the key row. */
+const HIGHLIGHT_SIZE = 12;
+
+/** One note's rule and indent. */
+const NOTE_SIZE = 12;
+const NOTE_RULE_WIDTH = 2;
+const NOTE_INDENT = 10;
+
+/** The footer's eyebrow label and the gap it leaves before the suite name and the right column. */
+const FOOTER_LABEL_TEXT = 'SUITE';
+const FOOTER_LABEL_SIZE = 10;
+const FOOTER_LABEL_GAP = 8;
+const FOOTER_LABEL_LETTER_SPACING = 1;
+const FOOTER_MIN_GAP = 16;
 
 /**
  * The card ground the comparison view draws on, so an exported figure matches what was on screen.
@@ -299,13 +341,30 @@ export const FIGURE_BODY_COLOR = '#d4d4d8';
 export const FIGURE_MUTED_COLOR = '#a1a1aa';
 export const FIGURE_RULE_COLOR = '#2a2a2a';
 
+/** The key glyphs' ink, and the dominated glyph's fill. Match `.price-badge` and the gold accent. */
+const FIGURE_KEY_INK = '#c3c2b7';
+const FIGURE_DOMINATED_FILL = 'rgba(255, 255, 255, 0.12)';
+
+/** Badge pill colors by tone: border, then text. */
+const BADGE_TONE_COLORS: Record<FigureBadgeTone, { readonly border: string; readonly text: string }> = {
+  neutral: { border: '#3a3a38', text: FIGURE_BODY_COLOR },
+  pricing: { border: 'rgba(16, 185, 129, 0.4)', text: '#6ee7b7' },
+  direction: { border: 'rgba(224, 186, 109, 0.5)', text: FIGURE_TITLE_COLOR }
+};
+
+/** Note colors by tone: left rule, then text. */
+const NOTE_TONE_COLORS: Record<FigureNoteTone, { readonly rule: string; readonly text: string }> = {
+  warning: { rule: '#e0ba6d', text: '#e0ba6d' },
+  info: { rule: '#6b6b66', text: FIGURE_MUTED_COLOR }
+};
+
 export const FIGURE_FONT_STACK = '"Segoe UI", "Helvetica Neue", Arial, sans-serif';
 
 /**
  * The composition box for one target bitmap.
  *
  * Typography is fixed in layout px, so the box decides how much plot a size gets. Anchoring the
- * width alone gives a 21:9 image a 405 px tall composition and a plot shorter than its caption;
+ * width alone gives a 21:9 image a 405 px tall composition and a plot shorter than its chrome;
  * anchoring both minimums lets a wide image grow wider and a tall image grow taller, at the same
  * type size. Density is what maps the box onto the bitmap and is the same on both axes, so the
  * box always has the target's exact aspect ratio.
@@ -371,8 +430,8 @@ export function resolveFigureLayout(
     return {
       layout: null,
       refusal:
-        `${figureName(request.title)} does not fit ${pixelWidth} × ${pixelHeight} px: its title, ` +
-        `caption and notices leave too little room for the plot. Export it at ` +
+        `${figureName(request.chrome.title)} does not fit ${pixelWidth} × ${pixelHeight} px: its ` +
+        `header, key and notes leave too little room for the plot. Export it at ` +
         `${minimumHeight} px tall or more at this width.`
     };
   }
@@ -478,9 +537,15 @@ export function composeFigureImage(request: FigureExportRequest): HTMLCanvasElem
   let y = PADDING;
 
   y = drawBlock(context, chrome.titleLines, PADDING, y, TITLE_SIZE, '600', FIGURE_TITLE_COLOR);
-  y = drawBlock(context, chrome.subtitleLines, PADDING, y, SUBTITLE_SIZE, '400', FIGURE_MUTED_COLOR);
-  if (chrome.titleLines.length > 0 || chrome.subtitleLines.length > 0) {
+
+  if (chrome.badgeRows.length > 0) {
     y += LINE_GAP;
+    y = drawBadgeRows(context, chrome.badgeRows, PADDING, y);
+  }
+
+  if (chrome.detailLines.length > 0) {
+    y += LINE_GAP;
+    y = drawBlock(context, chrome.detailLines, PADDING, y, DETAIL_SIZE, '400', FIGURE_MUTED_COLOR);
   }
 
   if (chartWidth > 0 && chartHeight > 0 && plotWidth > 0 && plotHeight > 0) {
@@ -488,16 +553,22 @@ export function composeFigureImage(request: FigureExportRequest): HTMLCanvasElem
   }
   y += plotHeight;
 
-  if (chrome.captionLines.length > 0) {
+  if (chrome.keyRows.length > 0) {
     y += LINE_GAP;
-    y = drawBlock(context, chrome.captionLines, PADDING, y, BODY_SIZE, '400', FIGURE_BODY_COLOR);
-  }
-  for (const lines of chrome.noticeLines) {
-    y += LINE_GAP;
-    y = drawBlock(context, lines, PADDING, y, BODY_SIZE, '400', FIGURE_MUTED_COLOR);
+    y = drawKeyRows(context, chrome.keyRows, PADDING, y);
   }
 
-  if (chrome.footerLines.length > 0) {
+  if (chrome.highlightLines.length > 0) {
+    y += LINE_GAP;
+    y = drawBlock(context, chrome.highlightLines, PADDING, y, HIGHLIGHT_SIZE, '600', FIGURE_BODY_COLOR);
+  }
+
+  for (const note of chrome.noteBlocks) {
+    y += LINE_GAP;
+    y = drawNote(context, note, PADDING, y);
+  }
+
+  if (chrome.footer.height > 0) {
     y += RULE_GAP / 2;
     context.strokeStyle = FIGURE_RULE_COLOR;
     context.lineWidth = 1;
@@ -506,7 +577,7 @@ export function composeFigureImage(request: FigureExportRequest): HTMLCanvasElem
     context.lineTo(width - PADDING, Math.round(y) + 0.5);
     context.stroke();
     y += RULE_GAP / 2;
-    drawBlock(context, chrome.footerLines, PADDING, y, BODY_SIZE, '400', FIGURE_MUTED_COLOR);
+    drawFooter(context, chrome.footer, PADDING, y, width - PADDING * 2);
   }
 
   return target;
@@ -736,14 +807,42 @@ function exportTimestamp(now: Date): string {
   );
 }
 
+/** One row of wrapped badge pills, each with the width it measured at. */
+interface MeasuredBadgeRow {
+  readonly badges: readonly { readonly badge: FigureBadge; readonly width: number }[];
+}
+
+/** One row of wrapped key items, each with the width it measured at. */
+interface MeasuredKeyRow {
+  readonly items: readonly { readonly item: FigureKeyItem; readonly width: number }[];
+}
+
+/** One note, wrapped to the content column less its indent. */
+interface MeasuredNote {
+  readonly tone: FigureNoteTone;
+  readonly lines: readonly string[];
+}
+
+/** The footer's two texts, and whether the right one wrapped onto a second line. */
+interface MeasuredFooter {
+  readonly labelText: string;
+  readonly suiteText: string;
+  readonly computedText: string;
+  readonly twoLines: boolean;
+  /** 0 when both `suite` and `computedAt` are empty: the footer draws nothing and takes no height. */
+  readonly height: number;
+}
+
 /** Everything the composition draws around the plot, wrapped to a content column and summed. */
-interface FigureChrome {
+export interface MeasuredChrome {
   readonly titleLines: string[];
-  readonly subtitleLines: string[];
-  readonly captionLines: string[];
-  readonly noticeLines: string[][];
-  readonly footerLines: string[];
-  /** The composition's height less the plot box: padding, every text block and the gaps between. */
+  readonly badgeRows: readonly MeasuredBadgeRow[];
+  readonly detailLines: string[];
+  readonly keyRows: readonly MeasuredKeyRow[];
+  readonly highlightLines: string[];
+  readonly noteBlocks: readonly MeasuredNote[];
+  readonly footer: MeasuredFooter;
+  /** The composition's height less the plot box: padding, every block and the gaps between. */
   readonly height: number;
 }
 
@@ -752,38 +851,147 @@ type FigureChromeSource = Omit<FigureExportRequest, 'canvas' | 'format' | 'layou
 /**
  * Wraps and sums the chrome for one content width.
  *
- * The single source of both the drawn text and the height {@link resolveFigureLayout} subtracts
+ * The single source of both the drawn content and the height {@link resolveFigureLayout} subtracts
  * from a target box; duplicating either would let a figure be accepted at a height it cannot be
- * drawn at.
+ * drawn at. An empty `detail`, `highlight` or `key` measures to no lines and adds no height.
  */
-function measureFigureChrome(source: FigureChromeSource, contentWidth: number): FigureChrome {
+export function measureFigureChrome(source: FigureChromeSource, contentWidth: number): MeasuredChrome {
   const measure = document.createElement('canvas').getContext('2d');
   const wrap = (text: string, size: number, weight: string): string[] =>
     measure ? wrapText(measure, text, contentWidth, size, weight) : (text ? [text] : []);
 
-  const titleLines = wrap(source.title, TITLE_SIZE, '600');
-  const subtitleLines = wrap(source.subtitle, SUBTITLE_SIZE, '400');
-  const captionLines = wrap(source.caption, BODY_SIZE, '400');
-  const noticeLines = source.notices.map(notice => wrap(notice, BODY_SIZE, '400'));
-  const footerLines = wrap(source.footer, BODY_SIZE, '400');
+  const chrome = source.chrome;
+  const titleLines = wrap(chrome.title, TITLE_SIZE, '600');
+  const badgeRows: MeasuredBadgeRow[] = measure
+    ? wrapBadges(measure, chrome.badges, contentWidth)
+    : (chrome.badges.length > 0 ? [{ badges: chrome.badges.map(badge => ({ badge, width: 0 })) }] : []);
+  const detailLines = wrap(chrome.detail, DETAIL_SIZE, '400');
+  const keyRows: MeasuredKeyRow[] = measure
+    ? wrapKeyItems(measure, chrome.key, contentWidth)
+    : (chrome.key.length > 0 ? [{ items: chrome.key.map(item => ({ item, width: 0 })) }] : []);
+  const highlightLines = wrap(chrome.highlight, HIGHLIGHT_SIZE, '600');
+  const noteBlocks: MeasuredNote[] =
+    chrome.notes.map(note => ({ tone: note.tone, lines: wrap(note.text, NOTE_SIZE, '400') }));
+  const footer = measureFooter(measure, source.footer, contentWidth);
 
   let height = PADDING * 2;
   height += blockHeight(titleLines, TITLE_SIZE);
-  height += blockHeight(subtitleLines, SUBTITLE_SIZE);
-  if (titleLines.length > 0 || subtitleLines.length > 0) {
-    height += LINE_GAP;
+  if (badgeRows.length > 0) {
+    height += LINE_GAP + badgeRows.length * BADGE_HEIGHT + (badgeRows.length - 1) * BADGE_GAP;
   }
-  if (captionLines.length > 0) {
-    height += LINE_GAP + blockHeight(captionLines, BODY_SIZE);
+  if (detailLines.length > 0) {
+    height += LINE_GAP + blockHeight(detailLines, DETAIL_SIZE);
   }
-  for (const lines of noticeLines) {
-    height += LINE_GAP + blockHeight(lines, BODY_SIZE);
+  if (keyRows.length > 0) {
+    height += LINE_GAP + keyRows.length * KEY_ROW_HEIGHT + (keyRows.length - 1) * LINE_GAP;
   }
-  if (footerLines.length > 0) {
-    height += RULE_GAP + blockHeight(footerLines, BODY_SIZE);
+  if (highlightLines.length > 0) {
+    height += LINE_GAP + blockHeight(highlightLines, HIGHLIGHT_SIZE);
+  }
+  for (const note of noteBlocks) {
+    height += LINE_GAP + blockHeight(note.lines, NOTE_SIZE);
+  }
+  if (footer.height > 0) {
+    height += RULE_GAP + footer.height;
   }
 
-  return { titleLines, subtitleLines, captionLines, noticeLines, footerLines, height };
+  return { titleLines, badgeRows, detailLines, keyRows, highlightLines, noteBlocks, footer, height };
+}
+
+/** Wraps badge pills into rows that fit `maxWidth`, greedily, in the order given. */
+function wrapBadges(
+  context: CanvasRenderingContext2D,
+  badges: readonly FigureBadge[],
+  maxWidth: number
+): MeasuredBadgeRow[] {
+  context.font = fontOf(BADGE_TEXT_SIZE, '400');
+  const rows: MeasuredBadgeRow[] = [];
+  let current: { badge: FigureBadge; width: number }[] = [];
+  let rowWidth = 0;
+  for (const badge of badges) {
+    const width = context.measureText(badge.text).width + BADGE_PAD_X * 2;
+    const advanced = current.length === 0 ? width : rowWidth + BADGE_GAP + width;
+    if (current.length > 0 && advanced > maxWidth) {
+      rows.push({ badges: current });
+      current = [{ badge, width }];
+      rowWidth = width;
+    } else {
+      current.push({ badge, width });
+      rowWidth = advanced;
+    }
+  }
+  if (current.length > 0) {
+    rows.push({ badges: current });
+  }
+  return rows;
+}
+
+/** Wraps key items into rows that fit `maxWidth`, greedily, in the order given. */
+function wrapKeyItems(
+  context: CanvasRenderingContext2D,
+  items: readonly FigureKeyItem[],
+  maxWidth: number
+): MeasuredKeyRow[] {
+  context.font = fontOf(KEY_TEXT_SIZE, '400');
+  const rows: MeasuredKeyRow[] = [];
+  let current: { item: FigureKeyItem; width: number }[] = [];
+  let rowWidth = 0;
+  for (const item of items) {
+    const width = KEY_GLYPH_SIZE + KEY_GLYPH_TEXT_GAP + context.measureText(item.text).width;
+    const advanced = current.length === 0 ? width : rowWidth + KEY_ITEM_GAP + width;
+    if (current.length > 0 && advanced > maxWidth) {
+      rows.push({ items: current });
+      current = [{ item, width }];
+      rowWidth = width;
+    } else {
+      current.push({ item, width });
+      rowWidth = advanced;
+    }
+  }
+  if (current.length > 0) {
+    rows.push({ items: current });
+  }
+  return rows;
+}
+
+/**
+ * The footer's two texts and whether they fit one line.
+ *
+ * The same measurement {@link drawFooter} draws with, so a footer accepted at a height is the
+ * footer drawn at it. `suite` and `computedAt` are independently optional: either alone still
+ * draws, and both empty draws nothing.
+ */
+function measureFooter(
+  context: CanvasRenderingContext2D | null,
+  footer: FigureFooter,
+  contentWidth: number
+): MeasuredFooter {
+  const suite = (footer.suite ?? '').trim();
+  const computedText = footer.computedAt ? `Computed ${footer.computedAt}` : '';
+  if (suite === '' && computedText === '') {
+    return { labelText: '', suiteText: '', computedText: '', twoLines: false, height: 0 };
+  }
+  const labelText = suite === '' ? '' : FOOTER_LABEL_TEXT;
+  const lineHeight = Math.round(BODY_SIZE * 1.4);
+  if (!context) {
+    return { labelText, suiteText: suite, computedText, twoLines: false, height: lineHeight };
+  }
+
+  const labelWidth = labelText === '' ? 0 : letterSpacedWidth(context, labelText, FOOTER_LABEL_SIZE);
+  context.font = fontOf(BODY_SIZE, '400');
+  const suiteWidth = suite === '' ? 0 : context.measureText(suite).width;
+  const computedWidth = computedText === '' ? 0 : context.measureText(computedText).width;
+  const gapAfterLabel = labelText !== '' && suite !== '' ? FOOTER_LABEL_GAP : 0;
+  const leftWidth = labelWidth + gapAfterLabel + suiteWidth;
+  const fitsOneLine = computedText === '' || leftWidth + FOOTER_MIN_GAP + computedWidth <= contentWidth;
+
+  return {
+    labelText,
+    suiteText: suite,
+    computedText,
+    twoLines: !fitsOneLine,
+    height: fitsOneLine ? lineHeight : lineHeight * 2
+  };
 }
 
 /** The box the live canvas is already laid out in, written at the chosen density. */
@@ -919,6 +1127,230 @@ function drawBlock(
     cursor += lineHeight;
   }
   return cursor;
+}
+
+/** Draws every badge row, wrapping tones and borders per pill. Returns the y past the last row. */
+function drawBadgeRows(
+  context: CanvasRenderingContext2D,
+  rows: readonly MeasuredBadgeRow[],
+  x: number,
+  y: number
+): number {
+  let cursorY = y;
+  for (const row of rows) {
+    let cursorX = x;
+    for (const { badge, width } of row.badges) {
+      drawBadge(context, badge, cursorX, cursorY, width, BADGE_HEIGHT);
+      cursorX += width + BADGE_GAP;
+    }
+    cursorY += BADGE_HEIGHT + BADGE_GAP;
+  }
+  return cursorY - BADGE_GAP;
+}
+
+/** One badge pill: a rounded, bordered rect in the tone's colors, with its text inset. */
+function drawBadge(
+  context: CanvasRenderingContext2D,
+  badge: FigureBadge,
+  x: number,
+  y: number,
+  width: number,
+  height: number
+): void {
+  const tone = BADGE_TONE_COLORS[badge.tone];
+  pathRoundedRect(context, x, y, width, height, BADGE_RADIUS);
+  context.strokeStyle = tone.border;
+  context.lineWidth = BADGE_BORDER_WIDTH;
+  context.stroke();
+  context.font = fontOf(BADGE_TEXT_SIZE, '400');
+  context.fillStyle = tone.text;
+  context.fillText(badge.text, x + BADGE_PAD_X, y + BADGE_PAD_Y);
+}
+
+/** A rectangular path, rounded where `roundRect` is available and square otherwise. */
+function pathRoundedRect(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number
+): void {
+  context.beginPath();
+  if (typeof context.roundRect === 'function') {
+    context.roundRect(x, y, width, height, radius);
+  } else {
+    context.rect(x, y, width, height);
+  }
+}
+
+/** Draws every key row: each item's glyph, then its text. Returns the y past the last row. */
+function drawKeyRows(
+  context: CanvasRenderingContext2D,
+  rows: readonly MeasuredKeyRow[],
+  x: number,
+  y: number
+): number {
+  let cursorY = y;
+  for (const row of rows) {
+    let cursorX = x;
+    for (const { item, width } of row.items) {
+      drawKeyGlyph(context, item.glyph, cursorX, cursorY, KEY_GLYPH_SIZE);
+      context.font = fontOf(KEY_TEXT_SIZE, '400');
+      context.fillStyle = FIGURE_BODY_COLOR;
+      context.fillText(item.text, cursorX + KEY_GLYPH_SIZE + KEY_GLYPH_TEXT_GAP, cursorY);
+      cursorX += width + KEY_ITEM_GAP;
+    }
+    cursorY += KEY_ROW_HEIGHT + LINE_GAP;
+  }
+  return cursorY - LINE_GAP;
+}
+
+/** One key glyph in its `size` × `size` slot: a hollow or solid circle, a frontier, a dominated square, or a whisker. */
+function drawKeyGlyph(context: CanvasRenderingContext2D, glyph: FigureKeyGlyph, x: number, y: number, size: number): void {
+  const mid = y + size / 2;
+  switch (glyph) {
+    case 'hollow':
+      context.strokeStyle = FIGURE_KEY_INK;
+      context.lineWidth = 1;
+      context.beginPath();
+      context.arc(x + size / 2, mid, size / 2 - 0.5, 0, Math.PI * 2);
+      context.stroke();
+      break;
+    case 'solid':
+      context.fillStyle = FIGURE_KEY_INK;
+      context.beginPath();
+      context.arc(x + size / 2, mid, size / 2, 0, Math.PI * 2);
+      context.fill();
+      break;
+    case 'frontier': {
+      const overhang = (KEY_FRONTIER_LENGTH - size) / 2;
+      context.strokeStyle = FIGURE_KEY_INK;
+      context.lineWidth = 1;
+      context.beginPath();
+      context.moveTo(x - overhang, mid);
+      context.lineTo(x + size + overhang, mid);
+      context.stroke();
+      break;
+    }
+    case 'dominated': {
+      const side = KEY_DOMINATED_SIDE;
+      const top = mid - side / 2;
+      const left = x + (size - side) / 2;
+      context.fillStyle = FIGURE_DOMINATED_FILL;
+      context.fillRect(left, top, side, side);
+      context.strokeStyle = FIGURE_KEY_INK;
+      context.lineWidth = 1;
+      context.strokeRect(left + 0.5, top + 0.5, side - 1, side - 1);
+      break;
+    }
+    case 'interval': {
+      const capHalf = size / 3;
+      const centerX = x + size / 2;
+      context.strokeStyle = FIGURE_KEY_INK;
+      context.lineWidth = 1;
+      context.beginPath();
+      context.moveTo(centerX, y);
+      context.lineTo(centerX, y + size);
+      context.moveTo(centerX - capHalf, y);
+      context.lineTo(centerX + capHalf, y);
+      context.moveTo(centerX - capHalf, y + size);
+      context.lineTo(centerX + capHalf, y + size);
+      context.stroke();
+      break;
+    }
+  }
+}
+
+/** One note: a left rule in the tone's color, and its wrapped text indented past it. */
+function drawNote(context: CanvasRenderingContext2D, note: MeasuredNote, x: number, y: number): number {
+  const tone = NOTE_TONE_COLORS[note.tone];
+  const height = blockHeight(note.lines, NOTE_SIZE);
+  context.fillStyle = tone.rule;
+  context.fillRect(x, y, NOTE_RULE_WIDTH, height);
+  drawBlock(context, note.lines, x + NOTE_INDENT, y, NOTE_SIZE, '400', tone.text);
+  return y + height;
+}
+
+/**
+ * The footer's one or two lines: the `SUITE` label and the suite name on the left, and
+ * `Computed …` right-aligned when it fits beside them or left-aligned on its own line otherwise.
+ */
+function drawFooter(
+  context: CanvasRenderingContext2D,
+  footer: MeasuredFooter,
+  x: number,
+  y: number,
+  contentWidth: number
+): number {
+  if (footer.height === 0) {
+    return y;
+  }
+  const lineHeight = Math.round(BODY_SIZE * 1.4);
+  let cursorX = x;
+  if (footer.labelText !== '') {
+    context.fillStyle = FIGURE_MUTED_COLOR;
+    cursorX += drawLetterSpacedText(context, footer.labelText, cursorX, y, FOOTER_LABEL_SIZE) + FOOTER_LABEL_GAP;
+  }
+  if (footer.suiteText !== '') {
+    context.font = fontOf(BODY_SIZE, '400');
+    context.fillStyle = FIGURE_BODY_COLOR;
+    context.fillText(footer.suiteText, cursorX, y);
+  }
+  if (footer.computedText !== '') {
+    context.font = fontOf(BODY_SIZE, '400');
+    context.fillStyle = FIGURE_MUTED_COLOR;
+    const computedWidth = context.measureText(footer.computedText).width;
+    const computedY = footer.twoLines ? y + lineHeight : y;
+    const computedX = footer.twoLines ? x : x + contentWidth - computedWidth;
+    context.fillText(footer.computedText, computedX, computedY);
+  }
+  return y + footer.height;
+}
+
+/** Whether this context implements the `letterSpacing` property, rather than silently ignoring it. */
+function supportsLetterSpacing(context: CanvasRenderingContext2D): boolean {
+  return typeof context.letterSpacing === 'string';
+}
+
+/** The width of `text` set at `${FOOTER_LABEL_LETTER_SPACING}px` letter-spacing, at `size`. */
+function letterSpacedWidth(context: CanvasRenderingContext2D, text: string, size: number): number {
+  context.font = fontOf(size, '400');
+  if (supportsLetterSpacing(context)) {
+    context.letterSpacing = `${FOOTER_LABEL_LETTER_SPACING}px`;
+    const width = context.measureText(text).width;
+    context.letterSpacing = '0px';
+    return width;
+  }
+  if (text.length === 0) {
+    return 0;
+  }
+  let width = 0;
+  for (const char of text) {
+    width += context.measureText(char).width + FOOTER_LABEL_LETTER_SPACING;
+  }
+  return width - FOOTER_LABEL_LETTER_SPACING;
+}
+
+/** Draws `text` letter-spaced at `(x, y)`, by the same method {@link letterSpacedWidth} measures with. */
+function drawLetterSpacedText(context: CanvasRenderingContext2D, text: string, x: number, y: number, size: number): number {
+  context.font = fontOf(size, '400');
+  if (supportsLetterSpacing(context)) {
+    context.letterSpacing = `${FOOTER_LABEL_LETTER_SPACING}px`;
+    context.fillText(text, x, y);
+    const width = context.measureText(text).width;
+    context.letterSpacing = '0px';
+    return width;
+  }
+  if (text.length === 0) {
+    return 0;
+  }
+  let cursor = x;
+  for (const char of text) {
+    context.fillText(char, cursor, y);
+    cursor += context.measureText(char).width + FOOTER_LABEL_LETTER_SPACING;
+  }
+  return cursor - x - FOOTER_LABEL_LETTER_SPACING;
 }
 
 /**

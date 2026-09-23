@@ -926,7 +926,7 @@ export function toChartEntries(dto: BenchmarkModelComparisonDto | null): ModelCo
 }
 
 /**
- * The set-level facts the figures put in their subtitles.
+ * The set-level facts the figures put in their chrome.
  *
  * `itemsPerRun` comes from the first charted entry's item count rather than from a set-level field,
  * because the server carries it per entry; every Fundamental key must match for an entry to be
@@ -937,6 +937,8 @@ export function toChartContext(dto: BenchmarkModelComparisonDto | null): ModelCo
   return {
     itemsPerRun: charted[0]?.quality?.itemCount ?? 0,
     pricingBasisLabel: dto?.pricingBasisLabel || dto?.pricingBasis || 'Unknown pricing basis',
+    pricingBasis: dto?.pricingBasis ?? '',
+    pricedOn: dto?.computedAtUtc ?? '',
     suiteName: dto?.baselineSuiteName ?? '',
   };
 }
