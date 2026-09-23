@@ -461,7 +461,7 @@ public class BenchmarkModelComparisonServiceTests
     // --- The measures that are deliberately not axes ------------------------------------------------------
 
     [Fact]
-    public void SpeedIndexAndCostPerIndexPoint_AreTableColumns_AndTheirExclusionIsStated()
+    public void SpeedIndexAndCostPerIndexPoint_AreComputedOnTheTableDto()
     {
         var dto = Build(new[]
         {
@@ -477,12 +477,55 @@ public class BenchmarkModelComparisonServiceTests
 
         // $3.28 per run over an index of 80.
         Assert.Equal(3.28 / 80.0, table.CostPerIndexPointUsd!.Value, 6);
+    }
 
-        var measures = dto.ExcludedMeasures.Select(m => m.Measure).ToList();
-        Assert.Contains("Speed Index", measures);
-        Assert.Contains("Cost per index point", measures);
-        Assert.Contains("Pairwise significance", measures);
-        Assert.All(dto.ExcludedMeasures, m => Assert.False(string.IsNullOrWhiteSpace(m.Summary)));
+    [Fact]
+    public void ExcludedMeasures_NeverListTheSpeedIndex_WhichIsAChartableMeasure()
+    {
+        var dto = Build(new[]
+        {
+            Source("a", Card(), Run(1, "gpt-5.6-luna")),
+            Source("b", Card(), Run(2, "gemini-3.8-flash-lite"))
+        });
+
+        Assert.Equal(
+            new[] { "Cost per index point", "Pairwise significance" },
+            dto.ExcludedMeasures.Select(m => m.Measure));
+        Assert.All(dto.ExcludedMeasures, m =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(m.Summary));
+            Assert.False(string.IsNullOrWhiteSpace(m.Reason));
+            Assert.False(string.IsNullOrWhiteSpace(m.Instead));
+        });
+    }
+
+    [Fact]
+    public void ExcludedMeasures_AreEmpty_BelowTwoChartableEntries()
+    {
+        var dto = Build(new[] { Source("a", Card(), Run(1)) });
+
+        Assert.Empty(dto.ExcludedMeasures);
+    }
+
+    [Fact]
+    public void PairwiseSignificance_IsWordedForTheChartedCount()
+    {
+        var pair = Build(new[]
+        {
+            Source("a", Card(), Run(1, "gpt-5.6-luna")),
+            Source("b", Card(), Run(2, "gemini-3.8-flash-lite"))
+        });
+        var trio = Build(new[]
+        {
+            Source("a", Card(), Run(1, "gpt-5.6-luna")),
+            Source("b", Card(), Run(2, "gemini-3.8-flash-lite")),
+            Source("c", Card(), Run(3, "claude-sonnet-5"))
+        });
+
+        Assert.Contains("the two models",
+            pair.ExcludedMeasures.Single(m => m.Measure == "Pairwise significance").Summary);
+        Assert.Contains("these 3 models",
+            trio.ExcludedMeasures.Single(m => m.Measure == "Pairwise significance").Summary);
     }
 
     [Fact]

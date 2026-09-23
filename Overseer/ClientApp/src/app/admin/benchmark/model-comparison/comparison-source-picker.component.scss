@@ -697,6 +697,12 @@
     text-align: left;
     min-width: 180px;
   }
+
+  /* Body rows only: the header's padding sits on its sort button, and the filter row sets its own. */
+  tbody > tr > td,
+  tbody > tr > th {
+    padding-block: 6px;
+  }
 }
 
 .csp-row-selected > * {
@@ -717,7 +723,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 40px;
+  min-height: 32px;
   cursor: pointer;
 
   &:has(input:disabled) {

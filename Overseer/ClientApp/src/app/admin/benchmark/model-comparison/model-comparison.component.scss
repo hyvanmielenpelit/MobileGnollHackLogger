@@ -1404,12 +1404,20 @@
 
 /* --- The table step --- */
 
-/* The suite, the basis, the reference condition and the computation time, on screen in the same
-   words every exported file carries them in. Muted: it qualifies the table rather than titling it. */
-.mc-table-provenance {
+/* The computation time, in the same words every exported file carries it in. Muted: it qualifies
+   the table rather than titling it. */
+.mc-table-computed {
   margin: 0;
   font-size: 12px;
   color: #8b8b90;
+}
+
+/* Pager, scroll wrapper, pager: the pagers stay outside the horizontal scroll. The gap is the step 1
+   source picker's panel rhythm. */
+.mc-table-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 /* The table's own toolbar is a block in the section column rather than a row beside the heading:

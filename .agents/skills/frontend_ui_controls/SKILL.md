@@ -733,8 +733,8 @@ and the range itself.
 - **The page buttons are a labelled `role="group"`** (*Pages of runs*), **not a `<nav>`.** Several
   tables carry two pagers, and a page full of identically named navigation landmarks is
   landmark overuse.
-- **Above and below is the default; one pager below is allowed** where the view must start high
-  — the model comparison's step 1 source picker is the case. Never fewer than one.
+- **Above and below, always** — one pager above the table and one below, outside the scroll
+  wrapper, the second with `[announce]="false"`.
 - **Pagers go outside `.gh-datatable-scroll`, never inside it**, or they scroll sideways with a
   wide table.
 

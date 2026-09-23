@@ -248,7 +248,7 @@ To find specific popups, look in the corresponding component's `.html` template:
 
 - **Comparison Source Picker (`comparison-source-picker.component.html`, Admin → AI Benchmark →
   Run History → Cross-model comparison, step 1)** — single runs and analysis groups on two
-  kind tabs (`csp-src-tab-runs` / `csp-src-tab-groups`), one table and one pager per tab.
+  kind tabs (`csp-src-tab-runs` / `csp-src-tab-groups`), one table per tab, with a pager above and below it.
   - `#legendDialog`: About conditions — full-screen: what a condition is, which one the charts
     use, the three kinds of key as plain-language cards with technical names collapsed, and
     every condition as an exclusive accordion (`<details name="csp-conditions">`, only the open

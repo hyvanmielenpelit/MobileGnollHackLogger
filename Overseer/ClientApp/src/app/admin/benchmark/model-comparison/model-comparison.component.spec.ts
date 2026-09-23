@@ -178,10 +178,14 @@ describe('ModelComparisonComponent', () => {
       explanation: `${entries.length - excluded} of ${entries.length} entries may be charted.`,
       excludedMeasures: [
         {
-          measure: 'Speed Index',
-          reason: 'It saturates: several models sit at the ceiling while their real latency differs.',
-          summary: 'Fast models tie at the top, so the chart would hide real latency gaps.',
-          instead: 'Time to first token, P50.'
+          measure: 'Cost per index point',
+          reason: 'A ratio of two noisy estimators. It has no simple confidence interval and '
+            + 'inverts its meaning as the index approaches zero, which is why the group cost '
+            + 'statistics already guard it against a non-positive index.',
+          summary: 'Dividing cost by a noisy score gives a number with no reliable error bars, '
+            + 'and it swings wildly as the score nears zero.',
+          instead: 'Candidate $ / question in the step 3 table, read beside the Intelligence '
+            + 'Index and its ± interval.'
         }
       ],
       ...overrides
@@ -275,6 +279,13 @@ describe('ModelComparisonComponent', () => {
       .queryAll(By.css('button'))
       .map(element => (element.nativeElement as HTMLElement).getAttribute('aria-label') ?? '');
     expect(toggles.some(label => /show table|hide table|table view/i.test(label))).toBeFalse();
+  });
+
+  it('keeps both table pagers outside the horizontal scroll wrapper', () => {
+    render(buildDto(comparableSet(4)), 3);
+
+    expect(fixture.debugElement.queryAll(By.css('.gh-datatable-scroll app-table-pager')).length).toBe(0);
+    expect(fixture.debugElement.queryAll(By.css('.mc-table-block > app-table-pager')).length).toBe(2);
   });
 
   it('carries the three timings in one labelled column, after Speed Index', () => {
@@ -498,8 +509,8 @@ describe('ModelComparisonComponent', () => {
     render(buildDto(comparableSet(4)));
 
     expect(fixture.debugElement.query(By.css('#mc-suite'))).toBeNull();
-    // The suite the figures describe stays on screen, read off the payload itself.
-    expect(textOf('.mc-meta')).toContain('GnollHack Player Assistance Benchmark Suite');
+    // The suite the figures describe stays on screen in the wizard header, read off the payload itself.
+    expect(textOf('.dialog-subtitle')).toContain('GnollHack Player Assistance Benchmark Suite');
   });
 
   it('scopes every one of the six figures with one entry selection', () => {
@@ -711,15 +722,15 @@ describe('ModelComparisonComponent', () => {
   // Set-level caveats
   // -------------------------------------------------------------------------------------------
 
-  it('renders the thinking-level caveat and the measures left off every axis', () => {
+  it('renders the thinking-level caveat and the measures that are not charted', () => {
     render(buildDto(comparableSet(3), {
       thinkingLevelsDiffer: true,
       speedAxisCaveat: 'Speed is not comparable across thinking levels.'
     }));
 
     expect(textOf('.alert-body')).toContain('Speed is not comparable across thinking levels.');
-    expect(textOf('.mc-measures')).toContain('Speed Index');
-    expect(textOf('.mc-measures')).toContain('Time to first token, P50.');
+    expect(textOf('.mc-measures')).toContain('Cost per index point');
+    expect(textOf('.mc-measures')).not.toContain('Speed Index');
   });
 
   it('leads each refused measure with its plain-language summary, the reason behind a disclosure', () => {
@@ -727,15 +738,36 @@ describe('ModelComparisonComponent', () => {
 
     // The summary is the visible line; the specialist reason is one click away rather than absent.
     expect(textOf('.mc-measure-summary'))
-      .toContain('Fast models tie at the top, so the chart would hide real latency gaps.');
-    expect(textOf('.mc-measures-lead')).toContain('The catch, in one line');
+      .toContain('Dividing cost by a noisy score gives a number with no reliable error bars');
+    expect(textOf('.mc-measures-lead')).toContain('would mislead as a chart');
 
     const detail = fixture.debugElement.query(By.css('.mc-measure-detail'))
       .nativeElement as HTMLDetailsElement;
     expect(detail.open).toBeFalse();
     expect(detail.querySelector('summary')?.textContent?.trim()).toBe('Why, in full');
-    expect(detail.textContent).toContain('It saturates');
-    expect(textOf('.mc-measure-instead')).toContain('Time to first token, P50.');
+    expect(detail.textContent).toContain('A ratio of two noisy estimators');
+    expect(textOf('.mc-measure-instead')).toContain('Candidate $ / question in the step 3 table');
+  });
+
+  it('shows no refused-measure cards over a set the figures cannot draw', () => {
+    render(buildDto(comparableSet(1)));
+
+    expect(component.shape).toBe('single');
+    expect(fixture.debugElement.query(By.css('.mc-measures'))).toBeNull();
+  });
+
+  it('names Speed Index saturation in the speed hint only where an entry is saturated', () => {
+    const entries = comparableSet(2);
+    entries[0] = { ...entries[0], table: { ...entries[0].table!, speedIndexSaturated: true } };
+    render(buildDto(entries));
+
+    expect(component.speedIndexSaturatedCount).toBe(1);
+    expect(textOf('.mc-speed-hint')).toContain('saturated for 1 of 2');
+
+    render(buildDto(comparableSet(2)));
+
+    expect(component.speedIndexSaturatedCount).toBe(0);
+    expect(textOf('.mc-speed-hint')).not.toContain('saturated');
   });
 
   // -------------------------------------------------------------------------------------------
@@ -2237,8 +2269,10 @@ describe('ModelComparisonComponent', () => {
     expect(fixture.debugElement.query(By.css('label[for="mc-table-export-format"]'))).toBeTruthy();
     expect(textOf('.mc-table-export')).toContain('Download table');
     expect(textOf('.mc-table-export')).toContain('Copy as Markdown');
-    expect(textOf('.mc-table-provenance')).toContain('Current catalog, as of 2026-09-07');
-    expect(textOf('.mc-table-provenance')).not.toContain('condition');
+    // The suite and the pricing basis are in the wizard header; the line under the intro carries
+    // only the computation time.
+    expect(textOf('.mc-table-computed')).toContain('Computed');
+    expect(textOf('.mc-table-computed')).not.toContain('Current catalog');
     expect(component.tableProvenance.conditionSignature).toBe('9c79137965e4');
   });
 

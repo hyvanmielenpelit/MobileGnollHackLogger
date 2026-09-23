@@ -80,44 +80,45 @@ public static class BenchmarkModelComparison
     public const int ScheduledPriceChangeHorizonMonths = 12;
 
     /// <summary>
-    /// The three measures this view refuses to chart, each with the reason and where to look
-    /// instead. Carried into the DTO rather than left as comments, because a reader who cannot see
-    /// why a measure is missing will eventually add it back.
+    /// The measures this view refuses to chart for a set of <paramref name="chartableCount"/>
+    /// chartable entries, each with the reason and where to look instead. Carried into the DTO
+    /// rather than left as comments, because a reader who cannot see why a measure is missing will
+    /// eventually add it back. Empty below two chartable entries: with no figures, nothing is left
+    /// off an axis.
     /// </summary>
-    public static IReadOnlyList<BenchmarkModelComparisonExcludedMeasureDto> ExcludedMeasures()
-        => new[]
+    public static IReadOnlyList<BenchmarkModelComparisonExcludedMeasureDto> ExcludedMeasures(int chartableCount)
+    {
+        if (chartableCount < 2) return Array.Empty<BenchmarkModelComparisonExcludedMeasureDto>();
+
+        return new[]
         {
-            new BenchmarkModelComparisonExcludedMeasureDto
-            {
-                Measure = "Speed Index",
-                Reason = "Saturated — nearly every answer sits at the ceiling — and comparable only "
-                    + "within one thinking level. As a bar chart it would show several models tied at "
-                    + "100 that differ severalfold in the latency a user perceives.",
-                Summary = "Most models score the maximum, so the chart would show a tie between "
-                    + "models that actually differ several-fold in how long a user waits.",
-                Instead = "Time to first token P50, which is the speed axis."
-            },
             new BenchmarkModelComparisonExcludedMeasureDto
             {
                 Measure = "Cost per index point",
                 Reason = "A ratio of two noisy estimators. It has no simple confidence interval and "
                     + "inverts its meaning as the index approaches zero, which is why the group cost "
                     + "statistics already guard it against a non-positive index.",
-                Summary = "Dividing cost by a noisy score gives a number whose error bars cannot be "
-                    + "computed and which flips meaning near zero.",
-                Instead = "The table column, read beside the quality interval."
+                Summary = "Dividing cost by a noisy score gives a number with no reliable error bars, "
+                    + "and it swings wildly as the score nears zero.",
+                Instead = "Candidate $ / question in the step 3 table, read beside the Intelligence "
+                    + "Index and its ± interval."
             },
             new BenchmarkModelComparisonExcludedMeasureDto
             {
                 Measure = "Pairwise significance",
-                Reason = "An overview of several models must not sprout an unadjusted pairwise test "
-                    + "matrix. Wilcoxon signed-rank, the paired t-test, Cohen's dz and "
-                    + "Benjamini-Hochberg control already exist for a chosen pair.",
-                Summary = "Testing every pair at once produces false \"significant\" results; a proper "
-                    + "test exists for one chosen pair.",
-                Instead = "The two-group comparison, run on the pair you care about."
+                Reason = "A proper test compares two models question by question. The Multi-Run "
+                    + "Analysis comparison does that with Wilcoxon signed-rank (primary), a paired "
+                    + "t-test and Cohen's dz, and controls the per-question differences with "
+                    + "Benjamini-Hochberg.",
+                Summary = chartableCount == 2
+                    ? "This view runs no significance test, so a gap between the two models may be noise."
+                    : $"Testing every pair among these {chartableCount} models at once would flag "
+                        + "chance differences as significant, so this view tests none.",
+                Instead = "Put each model's runs in an analysis group, open one in the Multi-Run "
+                    + "Analysis tab and choose the other under Compare with group."
             }
         };
+    }
 
     /// <summary>
     /// Builds the comparison.
@@ -162,6 +163,8 @@ public static class BenchmarkModelComparison
         var baselineSource = measurable
             .FirstOrDefault(s => comparability.BaselineEntryKeys.Contains(s.Key, StringComparer.Ordinal));
 
+        int comparableCount = entries.Count(e => !e.Excluded);
+
         return new BenchmarkModelComparisonDto
         {
             PricingBasis = basis.ToString(),
@@ -174,12 +177,12 @@ public static class BenchmarkModelComparison
             BaselineSignature = comparability.BaselineSignature,
             ModelAxisKeys = BenchmarkCrossModelComparability.ModelAxisKeys.ToList(),
             Entries = entries,
-            ComparableCount = entries.Count(e => !e.Excluded),
+            ComparableCount = comparableCount,
             ExcludedCount = entries.Count(e => e.Excluded),
             ThinkingLevelsDiffer = comparability.ThinkingLevelsDiffer,
             SpeedAxisCaveat = comparability.SpeedAxisCaveat,
             Explanation = comparability.Explanation,
-            ExcludedMeasures = ExcludedMeasures().ToList()
+            ExcludedMeasures = ExcludedMeasures(comparableCount).ToList()
         };
     }
 

@@ -1091,6 +1091,26 @@ describe('ComparisonSourcePickerComponent', () => {
       expect(component.runTable.page).toBe(2);
     });
 
+    it('puts a pager above and below each kind table, and only one of them announces', () => {
+      render({ runs: runs(15), groups: [buildGroup({ id: 1 })] });
+
+      const expectPagerPair = (): void => {
+        const pagers = fixture.debugElement.queryAll(By.css('app-table-pager'));
+        expect(pagers.length).toBe(2);
+        const statuses = pagers.map(pager =>
+          pager.query(By.css('.gh-pager-status')).nativeElement as HTMLElement);
+        expect(statuses.filter(status => status.getAttribute('role') === 'status').length).toBe(1);
+        expect(statuses.filter(status => status.getAttribute('aria-hidden') === 'true').length).toBe(1);
+      };
+
+      expectPagerPair();
+
+      tabButtons()[1].click();
+      fixture.detectChanges();
+
+      expectPagerPair();
+    });
+
     it('moves between the kind tabs with the arrow keys, wrapping, and focus follows', () => {
       render();
       const runsTab = tabButtons()[0];

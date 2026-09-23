@@ -956,6 +956,16 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return this.entries.filter(entry => entry.excluded);
   }
 
+  /** Entries that carry measures: every entry that is not excluded. */
+  get measuredEntryCount(): number {
+    return this.entries.filter(entry => !entry.excluded).length;
+  }
+
+  /** Measured entries whose Speed Index sits at the ceiling. */
+  get speedIndexSaturatedCount(): number {
+    return this.entries.filter(entry => !entry.excluded && entry.table?.speedIndexSaturated).length;
+  }
+
   /** Comparable entries the strictness control is holding out of the figures. */
   get strictlyWithheldEntries(): BenchmarkModelComparisonEntryDto[] {
     return this.strictness === 'comparableOnly'
@@ -1646,10 +1656,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     };
   }
 
-  /** The same provenance as one line, carrying the suite, the pricing basis and the computation time. */
-  get tableProvenanceLine(): string {
-    const provenance = this.tableProvenance;
-    return [provenance.suite, provenance.pricingBasis, `computed at ${provenance.computedAt}`].join(' · ');
+  /** The computation time, the one part of the provenance the wizard header does not show. */
+  get tableComputedAtLine(): string {
+    return `Computed ${this.tableProvenance.computedAt}`;
   }
 
   /** The figure footer: the suite and the computation time, in the composer's own two-sided layout. */

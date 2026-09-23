@@ -87,6 +87,8 @@
           Benchmark tab.
         </p>
       } @else {
+        <app-table-pager [state]="runTable" [rows]="runs" noun="runs"
+                         (changed)="onTableChanged()"></app-table-pager>
         <div class="gh-datatable-scroll">
           <table class="gh-table gh-datatable csp-table">
             <caption class="visually-hidden">
@@ -207,7 +209,7 @@
             </tbody>
           </table>
         </div>
-        <app-table-pager [state]="runTable" [rows]="runs" noun="runs"
+        <app-table-pager [state]="runTable" [rows]="runs" noun="runs" [announce]="false"
                          (changed)="onTableChanged()"></app-table-pager>
       }
     </div>
@@ -243,6 +245,8 @@
           Multi-Run Analysis tab.
         </p>
       } @else {
+        <app-table-pager [state]="groupTable" [rows]="groups" noun="groups"
+                         (changed)="onTableChanged()"></app-table-pager>
         <div class="gh-datatable-scroll">
           <table class="gh-table gh-datatable csp-table">
             <caption class="visually-hidden">
@@ -351,7 +355,7 @@
             </tbody>
           </table>
         </div>
-        <app-table-pager [state]="groupTable" [rows]="groups" noun="groups"
+        <app-table-pager [state]="groupTable" [rows]="groups" noun="groups" [announce]="false"
                          (changed)="onTableChanged()"></app-table-pager>
       }
     </div>

@@ -103,27 +103,7 @@
               <div popover="hint" class="gh-tooltip" id="mc-tip-refresh"
                    style="position-anchor: --mc-tip-refresh">Recompute this comparison</div>
             </div>
-
-            <p class="section-note">
-              Six charts are more persuasive than a table, so this view never hides what it could not
-              compare.
-            </p>
           </div>
-
-          <!-- Three points, one per line, rather than one paragraph carrying all three: the rule
-               about must-match keys is the one a reader has to hold, and it was the middle clause
-               of a five-line block. -->
-          <ul class="mc-howto" role="list" aria-label="How to read this comparison">
-            <li><strong>One point per candidate model.</strong></li>
-            <li>
-              <strong>Charted together only where every must-match comparability key agrees.</strong>
-              Where one does not, the entry carries no measures at all.
-            </li>
-            <li>
-              <strong>Nothing is hidden.</strong> An entry that cannot be charted still appears in
-              the table, with the differing keys named.
-            </li>
-          </ul>
 
           @if (comparison) {
             <!-- The outcome, as a result rather than as more prose: a tick where nothing was
@@ -143,15 +123,29 @@
               }
               <span>{{ comparison.explanation }}</span>
             </p>
+          }
+
+          <!-- Three bold-led points, one per line: how an entry becomes a point, which points are
+               charted, and where the rest are. -->
+          <ul class="mc-howto" role="list" aria-label="How to read this comparison">
+            <li>
+              <strong>Each run or analysis group is one model.</strong> A group counts as one point:
+              the average of its runs.
+            </li>
+            <li>
+              <strong>Only comparable entries are charted.</strong> An entry measured under
+              different conditions, such as another suite, scoring version or setting, is left out
+              of the figures.
+            </li>
+            <li>
+              <strong>Nothing disappears.</strong> Every entry, charted or not, is in the table on
+              step 3 with the reason.
+            </li>
+          </ul>
+
+          @if (comparison) {
+            <!-- The suite and the pricing basis are in the wizard header on every step. -->
             <dl class="mc-meta mc-meta-tiles">
-              <div>
-                <dt>Suite</dt>
-                <dd>{{ comparison.baselineSuiteName || 'Not set' }}</dd>
-              </div>
-              <div>
-                <dt>Pricing basis</dt>
-                <dd>{{ comparison.pricingBasisLabel || comparison.pricingBasis }}</dd>
-              </div>
               <div>
                 <dt>Charted</dt>
                 <dd>{{ comparison.comparableCount }} of {{ comparison.entries.length }}</dd>
@@ -174,7 +168,7 @@
         <section class="mc-section" aria-labelledby="mc-filters-heading">
           <div class="mc-section-intro">
             <h4 id="mc-filters-heading" class="mc-section-title">Filters</h4>
-            <p class="section-note">Every control here scopes all six figures and the table at once.</p>
+            <p class="section-note">These controls shape the figures on step 4. Pricing basis also reprices the table on step 3.</p>
           </div>
 
           <!-- The wrapper is the query container, and nothing else: it holds no popover, because a
@@ -248,7 +242,15 @@
                     <option value="ttftP50">Time to first token, P50</option>
                     <option value="speedIndex">Speed Index (0-100)</option>
                   </select>
-                  <p class="mc-field-hint">Model time is the turn duration with tool I/O removed; time to first token remains the perceived-latency figure a chat user experiences. Speed Index saturates, so several models can sit tied at the ceiling while their real latency differs severalfold.</p>
+                  <p class="mc-field-hint mc-speed-hint">
+                    Model time is the turn duration with tool I/O removed. Time to first token is how
+                    long a chat user waits for the answer to start.
+                    @if (speedIndexSaturatedCount > 0) {
+                      Speed Index is saturated for {{ speedIndexSaturatedCount }} of
+                      {{ measuredEntryCount }} entries here, so those may tie at the top while their
+                      real latency differs.
+                    }
+                  </p>
                 </div>
 
                 <div class="mc-field">
@@ -439,14 +441,13 @@
         <!-- ===================================================================================
              WHAT THIS VIEW DELIBERATELY DOES NOT CHART
              =================================================================================== -->
-        @if (comparison && comparison.excludedMeasures.length > 0) {
+        @if (showFigures && comparison && comparison.excludedMeasures.length > 0) {
           <section class="mc-section" aria-labelledby="mc-measures-heading">
             <div class="mc-section-intro">
-              <h4 id="mc-measures-heading" class="mc-section-title">Measures deliberately left off every axis</h4>
+              <h4 id="mc-measures-heading" class="mc-section-title">Not charted, and why</h4>
               <p class="section-note mc-measures-lead">
-                <strong>The catch, in one line:</strong> these numbers exist in the data but are not
-                plotted, because each one would mislead as a chart. Each card says what to read
-                instead.
+                These numbers are in the data but would mislead as a chart. Each card says where to
+                read them instead.
               </p>
             </div>
             <!-- The summary is the visible line and the full reason sits behind a native
@@ -541,14 +542,15 @@
           <div class="mc-section-intro">
             <h4 id="mc-table-heading" class="mc-section-title">Comparison table</h4>
             <p class="section-note">
-              Every entry, charted or not, with its state, its measures and the keys it differs on. This is
-              the accessible record of the figures on the next step.
+              <strong>Every entry is listed here, charted or not.</strong> Point at a State badge to
+              see why an entry is or is not charted. A download holds every row that passes the
+              filters, across all pages.
             </p>
           </div>
 
-          <!-- The provenance a reader needs to check the numbers, on screen as well as in every
-               exported file: costs read without their pricing basis compare price cards. -->
-          <p class="mc-table-provenance">{{ tableProvenanceLine }}</p>
+          <!-- The wizard header carries the suite and the pricing basis, and every export carries
+               the full provenance; only the computation time is left to state here. -->
+          <p class="mc-table-computed">{{ tableComputedAtLine }}</p>
 
           <!--
             Export. The scope is every entry passing the current filters, in the current sort,
@@ -604,208 +606,212 @@
           @if (entries.length === 0) {
             <p class="text-muted">Nothing to compare yet.</p>
           } @else {
-            <div class="gh-datatable-scroll mc-table-scroll">
+            <!-- The pagers sit outside the scroll wrapper, so they stay put when the table scrolls
+                 sideways. -->
+            <div class="mc-table-block">
               <app-table-pager [state]="entryTable" [rows]="entries" noun="entries"
                                (changed)="onTableChanged()"></app-table-pager>
-              <table class="gh-table gh-datatable mc-table">
-                <caption class="visually-hidden">
-                  Cross-model comparison entries: model, runs behind the point, comparability state,
-                  Intelligence Index, Speed Index, the timings behind it — model time per question,
-                  suite total and time to first token — candidate cost, and the comparability keys
-                  each entry differs on.
-                </caption>
-                <thead>
-                  <tr>
-                    <th app-sort-header [state]="entryTable" column="label" label="Model" (changed)="onTableChanged()"></th>
-                    <th app-sort-header [state]="entryTable" column="runCount" label="R" class="col-center" (changed)="onTableChanged()"></th>
-                    <th app-sort-header [state]="entryTable" column="state" label="State" (changed)="onTableChanged()"></th>
-                    <th app-sort-header [state]="entryTable" column="intelligenceIndex" label="Intelligence Index" (changed)="onTableChanged()"></th>
-                    <th app-sort-header [state]="entryTable" column="speedIndex" label="Speed Index" (changed)="onTableChanged()"></th>
-                    <th app-sort-header [state]="entryTable" column="modelTimeMeanMs" label="Timings" (changed)="onTableChanged()"></th>
-                    <th app-sort-header [state]="entryTable" column="costPerQuestion" label="Candidate $ / question" (changed)="onTableChanged()"></th>
-                    <th scope="col">Notes</th>
-                  </tr>
-                  <tr class="gh-filter-row">
-                    <td>
-                      <label class="visually-hidden" for="mc-f-label">Filter by model name</label>
-                      <input id="mc-f-label" type="text" class="gh-input gh-filter-input" placeholder="Model"
-                             [ngModel]="entryTable.filters['label']" [ngModelOptions]="{ standalone: true }"
-                             (ngModelChange)="entryTable.setFilter('label', $event); onTableChanged()">
-                    </td>
-                    <td></td>
-                    <td>
-                      <label class="visually-hidden" for="mc-f-state">Filter by comparability state</label>
-                      <select id="mc-f-state" class="gh-input gh-filter-select"
-                              [ngModel]="entryTable.filters['state']" [ngModelOptions]="{ standalone: true }"
-                              (ngModelChange)="entryTable.setFilter('state', $event); onTableChanged()">
-                        <option value="">All</option>
-                        <option value="Comparable">Comparable</option>
-                        <option value="Degraded">Degraded</option>
-                        <option value="Excluded">Excluded</option>
-                      </select>
-                    </td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td></td>
-                    <td>
-                      @if (entryTable.hasActiveFilters) {
-                        <button type="button" class="gh-filter-clear"
-                                (click)="entryTable.clearFilters(); onTableChanged()">Clear filters</button>
-                      }
-                    </td>
-                  </tr>
-                </thead>
-                <tbody>
-                  @if (entryTable.noMatches(entries)) {
-                    <tr><td colspan="8" class="text-muted">No entries match these filters.</td></tr>
-                  }
-                  @for (entry of entryTable.view(entries); track entry.key) {
-                    <tr [class.mc-row-highlighted]="highlightedKey === entry.key"
-                        (mouseenter)="setHighlight(entry.key)" (mouseleave)="setHighlight(null)">
-                      <th scope="row" class="col-name">
-                        <!-- The name, its badges and the source line, stacked. The flex lives on
-                             the inner divs: a flex <th> drops out of the column grid entirely.
-                             The cell shows the display name and the thinking level rides beside it
-                             as a badge, so the level is not printed twice. The name is plain text:
-                             emphasis is chosen on step 4, where its effect is visible. -->
-                        <div class="mc-model-cell">
-                          <div class="mc-model-row">
-                            @if (glyph(entry.key); as g) {
-                              <span [class]="'mc-glyph mc-glyph-' + g.shape"
-                                    [style.background-color]="g.hue" aria-hidden="true"></span>
-                            }
-                            <span class="mc-model-name">{{ entry.modelDisplayName || entry.label }}</span>
-                            <app-provider-badge [provider]="entry.provider"></app-provider-badge>
-                            @if (entry.thinkingLevel) {
-                              <span class="thinking-badge">{{ entry.thinkingLevel }}</span>
-                            }
-                          </div>
-                          <span class="mc-source">{{ sourceLabel(entry) }}</span>
-                        </div>
-                      </th>
-                      <td class="col-center">
-                        <div class="mc-cell-stack mc-cell-stack-center">
-                          {{ entry.runCount }}
-                          @if (entry.runCount === 1) {
-                            <span class="mc-badge mc-n1">n = 1</span>
-                          }
-                        </div>
-                      </td>
+              <div class="gh-datatable-scroll mc-table-scroll">
+                <table class="gh-table gh-datatable mc-table">
+                  <caption class="visually-hidden">
+                    Cross-model comparison entries: model, runs behind the point, comparability state,
+                    Intelligence Index, Speed Index, the timings behind it — model time per question,
+                    suite total and time to first token — candidate cost, and the comparability keys
+                    each entry differs on.
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th app-sort-header [state]="entryTable" column="label" label="Model" (changed)="onTableChanged()"></th>
+                      <th app-sort-header [state]="entryTable" column="runCount" label="R" class="col-center" (changed)="onTableChanged()"></th>
+                      <th app-sort-header [state]="entryTable" column="state" label="State" (changed)="onTableChanged()"></th>
+                      <th app-sort-header [state]="entryTable" column="intelligenceIndex" label="Intelligence Index" (changed)="onTableChanged()"></th>
+                      <th app-sort-header [state]="entryTable" column="speedIndex" label="Speed Index" (changed)="onTableChanged()"></th>
+                      <th app-sort-header [state]="entryTable" column="modelTimeMeanMs" label="Timings" (changed)="onTableChanged()"></th>
+                      <th app-sort-header [state]="entryTable" column="costPerQuestion" label="Candidate $ / question" (changed)="onTableChanged()"></th>
+                      <th scope="col">Notes</th>
+                    </tr>
+                    <tr class="gh-filter-row">
                       <td>
-                        <div class="mc-cell-stack">
-                          <!-- Text plus icon, never colour alone: the badge names its state in words. -->
-                          <span [class]="'mc-state ' + stateClass(entry)"
-                                [attr.interestfor]="tipId('state', entry.key)"
-                                [attr.style]="'anchor-name: --' + tipId('state', entry.key)">
-                            @if (entry.excluded) {
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <circle cx="12" cy="12" r="10"></circle>
-                                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
-                              </svg>
-                            } @else if (entry.state === 'Degraded') {
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                                <line x1="12" y1="9" x2="12" y2="13"></line>
-                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                              </svg>
-                            } @else {
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <polyline points="20 6 9 17 4 12"></polyline>
-                              </svg>
-                            }
-                            {{ stateLabel(entry) }}
-                          </span>
-                          <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('state', entry.key)"
-                               [attr.style]="'position-anchor: --' + tipId('state', entry.key)">{{ entry.explanation }}</div>
-                          @if (degradedAxes(entry).length > 0) {
-                            <span class="mc-degraded-axes">Degraded: {{ degradedAxes(entry).join(', ') }}</span>
-                          }
-                        </div>
+                        <label class="visually-hidden" for="mc-f-label">Filter by model name</label>
+                        <input id="mc-f-label" type="text" class="gh-input gh-filter-input" placeholder="Model"
+                               [ngModel]="entryTable.filters['label']" [ngModelOptions]="{ standalone: true }"
+                               (ngModelChange)="entryTable.setFilter('label', $event); onTableChanged()">
                       </td>
+                      <td></td>
                       <td>
-                        <div class="mc-cell-stack">
-                          <span class="mc-nowrap">
-                            {{ formatIndex(entry.quality?.pointEstimate) }}
-                            @if (entry.quality?.intervalHalfWidth != null) {
-                              <span class="mc-interval">± {{ formatIndex(entry.quality?.intervalHalfWidth) }}</span>
-                            }
-                          </span>
-                          @if (entry.quality?.intervalHalfWidth != null) {
-                            <!-- The basis runs to a sentence, so the cell shows one clipped line and the
-                                 whole of it in the popover. The exported table carries it in full. -->
-                            <button type="button" class="mc-basis-btn"
-                                    [attr.interestfor]="tipId('basis', entry.key)"
-                                    [attr.style]="'anchor-name: --' + tipId('basis', entry.key)">{{ entry.quality?.intervalBasis }}</button>
-                            <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('basis', entry.key)"
-                                 [attr.style]="'position-anchor: --' + tipId('basis', entry.key)">{{ entry.quality?.intervalBasis }}</div>
-                          } @else if (!entry.excluded) {
-                            <span class="mc-interval-basis">No interval available</span>
-                          }
-                        </div>
+                        <label class="visually-hidden" for="mc-f-state">Filter by comparability state</label>
+                        <select id="mc-f-state" class="gh-input gh-filter-select"
+                                [ngModel]="entryTable.filters['state']" [ngModelOptions]="{ standalone: true }"
+                                (ngModelChange)="entryTable.setFilter('state', $event); onTableChanged()">
+                          <option value="">All</option>
+                          <option value="Comparable">Comparable</option>
+                          <option value="Degraded">Degraded</option>
+                          <option value="Excluded">Excluded</option>
+                        </select>
                       </td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
+                      <td></td>
                       <td>
-                        <div class="mc-cell-stack">
-                          <span class="mc-nowrap">{{ formatIndex(entry.table?.meanSpeedIndex) }}</span>
-                          @if (entry.table?.speedIndexSaturated) {
-                            <span class="mc-badge mc-saturated"
-                                  [attr.interestfor]="tipId('sat', entry.key)"
-                                  [attr.style]="'anchor-name: --' + tipId('sat', entry.key)">Saturated</span>
-                            <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('sat', entry.key)"
-                                 [attr.style]="'position-anchor: --' + tipId('sat', entry.key)">
-                              At least half the scored answers finished inside their difficulty-scaled target, so
-                              the index cannot discriminate at this speed. Read time to first token instead.
-                            </div>
-                          }
-                        </div>
-                      </td>
-                      <td>
-                        <!-- Three timings in one column, each named beside its value: a column apiece
-                             costs more width than three short numbers are worth. -->
-                        <dl class="mc-timings">
-                          <div>
-                            <dt>Model time / question</dt>
-                            <dd>{{ formatMs(entry.speed?.modelTimeMeanMs) }}</dd>
-                          </div>
-                          <div>
-                            <dt>Suite total</dt>
-                            <dd>{{ formatMs(entry.speed?.totalModelTimePerRunMeanMs) }}@if (entry.speed?.totalModelTimeSdMs != null) {<span class="mc-interval">± {{ formatMs(entry.speed?.totalModelTimeSdMs) }}</span>}</dd>
-                          </div>
-                          <div>
-                            <dt>TTFT P50 / P90</dt>
-                            <dd>{{ formatMs(entry.speed?.ttftP50Ms) }} / {{ formatMs(entry.speed?.ttftP90Ms) }}</dd>
-                          </div>
-                        </dl>
-                      </td>
-                      <td>
-                        <div class="mc-cell-stack">
-                          <span class="mc-nowrap">{{ formatUsd(entry.cost?.candidateCostPerQuestionUsd) }}</span>
-                          @if (entry.cost && !entry.cost.pricingResolved) {
-                            <span class="mc-badge mc-unpriced">Unpriced</span>
-                          }
-                          @if (entry.cost?.scheduledChangeEffectiveFrom) {
-                            <span class="mc-badge mc-scheduled">Price change {{ entry.cost?.scheduledChangeEffectiveFrom }}</span>
-                          }
-                        </div>
-                      </td>
-                      <td class="mc-notes">
-                        @if (entry.excludingKeys.length > 0) {
-                          <span class="mc-note-line">Differs on: {{ entry.excludingKeys.join(', ') }}</span>
-                        }
-                        @if (entry.speedDegradingKeys.length > 0) {
-                          <span class="mc-note-line">Speed degraded by: {{ entry.speedDegradingKeys.join(', ') }}</span>
-                        }
-                        @if (entry.costDegradingKeys.length > 0) {
-                          <span class="mc-note-line">Cost degraded by: {{ entry.costDegradingKeys.join(', ') }}</span>
-                        }
-                        @if (entry.table && entry.table.unstableItemCount > 0) {
-                          <span class="mc-note-line">{{ entry.table.unstableItemCount }} unstable items</span>
+                        @if (entryTable.hasActiveFilters) {
+                          <button type="button" class="gh-filter-clear"
+                                  (click)="entryTable.clearFilters(); onTableChanged()">Clear filters</button>
                         }
                       </td>
                     </tr>
-                  }
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    @if (entryTable.noMatches(entries)) {
+                      <tr><td colspan="8" class="text-muted">No entries match these filters.</td></tr>
+                    }
+                    @for (entry of entryTable.view(entries); track entry.key) {
+                      <tr [class.mc-row-highlighted]="highlightedKey === entry.key"
+                          (mouseenter)="setHighlight(entry.key)" (mouseleave)="setHighlight(null)">
+                        <th scope="row" class="col-name">
+                          <!-- The name, its badges and the source line, stacked. The flex lives on
+                               the inner divs: a flex <th> drops out of the column grid entirely.
+                               The cell shows the display name and the thinking level rides beside it
+                               as a badge, so the level is not printed twice. The name is plain text:
+                               emphasis is chosen on step 4, where its effect is visible. -->
+                          <div class="mc-model-cell">
+                            <div class="mc-model-row">
+                              @if (glyph(entry.key); as g) {
+                                <span [class]="'mc-glyph mc-glyph-' + g.shape"
+                                      [style.background-color]="g.hue" aria-hidden="true"></span>
+                              }
+                              <span class="mc-model-name">{{ entry.modelDisplayName || entry.label }}</span>
+                              <app-provider-badge [provider]="entry.provider"></app-provider-badge>
+                              @if (entry.thinkingLevel) {
+                                <span class="thinking-badge">{{ entry.thinkingLevel }}</span>
+                              }
+                            </div>
+                            <span class="mc-source">{{ sourceLabel(entry) }}</span>
+                          </div>
+                        </th>
+                        <td class="col-center">
+                          <div class="mc-cell-stack mc-cell-stack-center">
+                            {{ entry.runCount }}
+                            @if (entry.runCount === 1) {
+                              <span class="mc-badge mc-n1">n = 1</span>
+                            }
+                          </div>
+                        </td>
+                        <td>
+                          <div class="mc-cell-stack">
+                            <!-- Text plus icon, never colour alone: the badge names its state in words. -->
+                            <span [class]="'mc-state ' + stateClass(entry)"
+                                  [attr.interestfor]="tipId('state', entry.key)"
+                                  [attr.style]="'anchor-name: --' + tipId('state', entry.key)">
+                              @if (entry.excluded) {
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                  <circle cx="12" cy="12" r="10"></circle>
+                                  <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
+                                </svg>
+                              } @else if (entry.state === 'Degraded') {
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                  <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                  <line x1="12" y1="9" x2="12" y2="13"></line>
+                                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                </svg>
+                              } @else {
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                  <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                              }
+                              {{ stateLabel(entry) }}
+                            </span>
+                            <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('state', entry.key)"
+                                 [attr.style]="'position-anchor: --' + tipId('state', entry.key)">{{ entry.explanation }}</div>
+                            @if (degradedAxes(entry).length > 0) {
+                              <span class="mc-degraded-axes">Degraded: {{ degradedAxes(entry).join(', ') }}</span>
+                            }
+                          </div>
+                        </td>
+                        <td>
+                          <div class="mc-cell-stack">
+                            <span class="mc-nowrap">
+                              {{ formatIndex(entry.quality?.pointEstimate) }}
+                              @if (entry.quality?.intervalHalfWidth != null) {
+                                <span class="mc-interval">± {{ formatIndex(entry.quality?.intervalHalfWidth) }}</span>
+                              }
+                            </span>
+                            @if (entry.quality?.intervalHalfWidth != null) {
+                              <!-- The basis runs to a sentence, so the cell shows one clipped line and the
+                                   whole of it in the popover. The exported table carries it in full. -->
+                              <button type="button" class="mc-basis-btn"
+                                      [attr.interestfor]="tipId('basis', entry.key)"
+                                      [attr.style]="'anchor-name: --' + tipId('basis', entry.key)">{{ entry.quality?.intervalBasis }}</button>
+                              <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('basis', entry.key)"
+                                   [attr.style]="'position-anchor: --' + tipId('basis', entry.key)">{{ entry.quality?.intervalBasis }}</div>
+                            } @else if (!entry.excluded) {
+                              <span class="mc-interval-basis">No interval available</span>
+                            }
+                          </div>
+                        </td>
+                        <td>
+                          <div class="mc-cell-stack">
+                            <span class="mc-nowrap">{{ formatIndex(entry.table?.meanSpeedIndex) }}</span>
+                            @if (entry.table?.speedIndexSaturated) {
+                              <span class="mc-badge mc-saturated"
+                                    [attr.interestfor]="tipId('sat', entry.key)"
+                                    [attr.style]="'anchor-name: --' + tipId('sat', entry.key)">Saturated</span>
+                              <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('sat', entry.key)"
+                                   [attr.style]="'position-anchor: --' + tipId('sat', entry.key)">
+                                At least half the scored answers finished inside their difficulty-scaled target, so
+                                the index cannot discriminate at this speed. Read time to first token instead.
+                              </div>
+                            }
+                          </div>
+                        </td>
+                        <td>
+                          <!-- Three timings in one column, each named beside its value: a column apiece
+                               costs more width than three short numbers are worth. -->
+                          <dl class="mc-timings">
+                            <div>
+                              <dt>Model time / question</dt>
+                              <dd>{{ formatMs(entry.speed?.modelTimeMeanMs) }}</dd>
+                            </div>
+                            <div>
+                              <dt>Suite total</dt>
+                              <dd>{{ formatMs(entry.speed?.totalModelTimePerRunMeanMs) }}@if (entry.speed?.totalModelTimeSdMs != null) {<span class="mc-interval">± {{ formatMs(entry.speed?.totalModelTimeSdMs) }}</span>}</dd>
+                            </div>
+                            <div>
+                              <dt>TTFT P50 / P90</dt>
+                              <dd>{{ formatMs(entry.speed?.ttftP50Ms) }} / {{ formatMs(entry.speed?.ttftP90Ms) }}</dd>
+                            </div>
+                          </dl>
+                        </td>
+                        <td>
+                          <div class="mc-cell-stack">
+                            <span class="mc-nowrap">{{ formatUsd(entry.cost?.candidateCostPerQuestionUsd) }}</span>
+                            @if (entry.cost && !entry.cost.pricingResolved) {
+                              <span class="mc-badge mc-unpriced">Unpriced</span>
+                            }
+                            @if (entry.cost?.scheduledChangeEffectiveFrom) {
+                              <span class="mc-badge mc-scheduled">Price change {{ entry.cost?.scheduledChangeEffectiveFrom }}</span>
+                            }
+                          </div>
+                        </td>
+                        <td class="mc-notes">
+                          @if (entry.excludingKeys.length > 0) {
+                            <span class="mc-note-line">Differs on: {{ entry.excludingKeys.join(', ') }}</span>
+                          }
+                          @if (entry.speedDegradingKeys.length > 0) {
+                            <span class="mc-note-line">Speed degraded by: {{ entry.speedDegradingKeys.join(', ') }}</span>
+                          }
+                          @if (entry.costDegradingKeys.length > 0) {
+                            <span class="mc-note-line">Cost degraded by: {{ entry.costDegradingKeys.join(', ') }}</span>
+                          }
+                          @if (entry.table && entry.table.unstableItemCount > 0) {
+                            <span class="mc-note-line">{{ entry.table.unstableItemCount }} unstable items</span>
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
               <app-table-pager [state]="entryTable" [rows]="entries" noun="entries" [announce]="false"
                                (changed)="onTableChanged()"></app-table-pager>
             </div>
