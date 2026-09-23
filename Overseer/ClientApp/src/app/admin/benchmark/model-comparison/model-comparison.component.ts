@@ -46,11 +46,7 @@ import {
   glyphFor,
   normalizeProfile
 } from './model-comparison-charts';
-import {
-  GROUP_SECTION_TITLE,
-  MAX_COMPARISON_SOURCES,
-  RUN_SECTION_TITLE
-} from './comparison-source-picker.component';
+import { MAX_COMPARISON_SOURCES } from './comparison-source-picker.component';
 import {
   BenchmarkModelComparisonDto,
   BenchmarkModelComparisonEntryDto,
@@ -253,6 +249,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /** One chip's remove button, emitted for the host to drop from its selection. */
   @Output() removeSource = new EventEmitter<ComparisonSelectedSource>();
+
+  /** The selection band's Clear selection button, emitted for the host to drop every source at once. */
+  @Output() clearSelection = new EventEmitter<void>();
 
   /** The two counts together, which is what both caps and Next are judged on. */
   get selectedSourceCount(): number {
@@ -618,27 +617,20 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * Which of the two source tables the current selection draws from, titled as they are titled in
-   * the picker, so the notice band names the control its notices are about.
-   *
-   * Both counts zero is reachable while the band is rendered: an index that failed or is still
-   * computing raises a notice over an empty selection. The runs table is the last case rather than
-   * a claim about the selection, and the count beside it reads zero, which is the fact.
+   * The band's headline count, in words, from the two selection counts rather than the chip
+   * array — it does not mention the request cap; `nextBlockedReason` already does.
    */
-  get selectionScopeLabel(): string {
-    if (this.selectedRunCount > 0 && this.selectedGroupCount > 0) {
-      return `${RUN_SECTION_TITLE} and ${GROUP_SECTION_TITLE}`;
-    }
-    return this.selectedGroupCount > 0 ? GROUP_SECTION_TITLE : RUN_SECTION_TITLE;
-  }
-
-  /** The band's headline count, in words — it does not mention the request cap; `nextBlockedReason` already does. */
   get selectionSummary(): string {
-    const count = this.selectedSources.length;
-    if (count === 0) {
+    const runs = this.selectedRunCount;
+    const groups = this.selectedGroupCount;
+    if (runs === 0 && groups === 0) {
       return 'Nothing selected yet';
     }
-    return count === 1 ? '1 source selected' : `${count} sources selected`;
+    const parts = [
+      runs > 0 ? `${runs} ${runs === 1 ? 'run' : 'runs'}` : '',
+      groups > 0 ? `${groups} ${groups === 1 ? 'group' : 'groups'}` : ''
+    ].filter(part => part !== '');
+    return `${parts.join(' and ')} selected`;
   }
 
   /** One chip's tooltip anchor id, for its remove button's `interestfor` / `position-anchor` pair. */

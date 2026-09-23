@@ -237,13 +237,14 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
 
   @Output() suiteIdChange = new EventEmitter<number | null>();
   @Output() selectionChange = new EventEmitter<ModelComparisonSelection>();
-  @Output() clear = new EventEmitter<void>();
 
   /** The hard cap, exposed so the template names the same number the guard enforces. */
   readonly maxSources = MAX_COMPARISON_SOURCES;
 
-  readonly runSectionTitle = RUN_SECTION_TITLE;
-  readonly groupSectionTitle = GROUP_SECTION_TITLE;
+  /** The two source-kind tabs, in display order. */
+  readonly sourceTabs = ['runs', 'groups'] as const;
+
+  activeSourceTab: 'runs' | 'groups' = 'runs';
 
   readonly runTable = new TableState<BenchmarkRunSummaryDto>('id', 'desc').registerAccessors(
     {
@@ -297,6 +298,68 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
   }
 
   // ---------------------------------------------------------------------------------------------
+  // The source-kind tabs
+  // ---------------------------------------------------------------------------------------------
+
+  selectSourceTab(tab: 'runs' | 'groups'): void {
+    this.activeSourceTab = tab;
+    this.cdr.detectChanges();
+  }
+
+  /**
+   * Left/Right move and wrap, Home/End jump to the ends. Focus follows selection in the same
+   * turn, or the tab holding focus becomes `tabindex="-1"` and the next Tab press jumps
+   * somewhere unexpected.
+   */
+  onSourceTabKeydown(event: KeyboardEvent, index: number): void {
+    const targets: Record<string, number> = {
+      ArrowRight: index + 1,
+      ArrowLeft: index - 1,
+      Home: 0,
+      End: this.sourceTabs.length - 1
+    };
+    const requested = targets[event.key];
+    if (requested === undefined) {
+      return;
+    }
+
+    event.preventDefault();
+    const next = (requested + this.sourceTabs.length) % this.sourceTabs.length;
+    const tab = this.sourceTabs[next];
+    this.selectSourceTab(tab);
+    document.getElementById('csp-src-tab-' + tab)?.focus();
+  }
+
+  /** The section title a tab names, exported so the wizard's notice band can cite the same string. */
+  sourceTabTitle(tab: 'runs' | 'groups'): string {
+    return tab === 'runs' ? RUN_SECTION_TITLE : GROUP_SECTION_TITLE;
+  }
+
+  /** The tab's row count — what its table actually lists, unselectable rows included. */
+  sourceTabRowCount(tab: 'runs' | 'groups'): number {
+    return tab === 'runs' ? this.runs.length : this.groups.length;
+  }
+
+  /** The noun after the tab's row count, singular for one. */
+  sourceTabNoun(tab: 'runs' | 'groups'): string {
+    const singular = tab === 'runs' ? 'run' : 'group';
+    return this.sourceTabRowCount(tab) === 1 ? singular : `${singular}s`;
+  }
+
+  /** The tab's own selected count, so each tab's badge names only its own kind. */
+  sourceTabSelectedCount(tab: 'runs' | 'groups'): number {
+    return tab === 'runs' ? this.selectedRunCount : this.selectedGroupCount;
+  }
+
+  get selectedRunCount(): number {
+    return this.selectedRunIds.length;
+  }
+
+  get selectedGroupCount(): number {
+    return this.selectedGroupIds.length;
+  }
+
+  // ---------------------------------------------------------------------------------------------
   // Suite scope
   // ---------------------------------------------------------------------------------------------
 
@@ -335,10 +398,6 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
       ? this.selectedGroupIds.filter(id => id !== group.id)
       : [...this.selectedGroupIds, group.id];
     this.emitSelection([...this.selectedRunIds], groupIds);
-  }
-
-  onClear(): void {
-    this.clear.emit();
   }
 
   get selectedCount(): number {
@@ -656,12 +715,12 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
       trigger.focus();
       return;
     }
-    // The row has been paged, filtered or refreshed away; the heading of the table it was in is
-    // the nearest place a reader can carry on from.
-    const headingId = this.conditionDetail?.sourceKind === 'Group'
-      ? 'csp-groups-heading'
-      : 'csp-runs-heading';
-    document.getElementById(headingId)?.focus();
+    // The row has been paged, filtered or refreshed away; the kind tab it was opened from is the
+    // nearest place a reader can carry on from.
+    const tabId = this.conditionDetail?.sourceKind === 'Group'
+      ? 'csp-src-tab-groups'
+      : 'csp-src-tab-runs';
+    document.getElementById(tabId)?.focus();
   }
 
   // ---------------------------------------------------------------------------------------------

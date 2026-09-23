@@ -1311,8 +1311,8 @@
     Always rendered on step 1, whatever the selection: the summary line and, below it, either the
     chips naming every selected source or a hint to tick something above. Each chip carries a
     remove button, so a source can be dropped without scrolling back up to the table it was ticked
-    in. The titles the summary names come from the picker's own exported constants, so the label
-    cannot name a heading the picker no longer uses.
+    in. Clear selection sits beside the summary and appears only once something is selected, next
+    to the per-chip removal the chips already carry.
 
     The notices this band used to gate its own presence on are still here, unchanged, beneath the
     chips whenever there are any. Errors above warnings above information, and none of them
@@ -1337,8 +1337,11 @@
     <div class="mc-wizard-notice mc-wizard-selection" role="region" aria-labelledby="mc-selection-label">
       <div class="mc-selection-head">
         <p class="mc-wizard-notice-label" id="mc-selection-label" role="status">
-          Your selection in {{ selectionScopeLabel }} — {{ selectionSummary }}
+          Your selection — {{ selectionSummary }}
         </p>
+        @if (selectedSources.length > 0) {
+          <button type="button" class="btn-ghost mc-selection-clear" (click)="clearSelection.emit()">Clear selection</button>
+        }
         @if (selectedSources.length > 0) {
           <ul class="mc-selection-chips" aria-label="Selected sources">
             @for (source of selectedSources; track source.kind + source.id) {
@@ -1362,7 +1365,7 @@
             }
           </ul>
         } @else {
-          <p class="mc-wizard-selection-hint">Tick runs or analysis groups above; they are listed here.</p>
+          <p class="mc-wizard-selection-hint">Tick runs or groups above — they appear here.</p>
         }
       </div>
       @if (bandNotices.length > 0) {

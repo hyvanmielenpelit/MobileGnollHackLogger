@@ -446,7 +446,8 @@ a:hover {
   .btn-icon-action,
   .gh-th-sort,
   .gh-sort-caret,
-  .gh-page-btn {
+  .gh-page-btn,
+  .gh-filter-toggle {
     transition: none;
   }
   .gh-datatable thead > tr:first-child > th::after {
@@ -1864,6 +1865,63 @@ label.checkbox-label,
   }
 }
 
+/* Pill toggle for an on/off view filter — "Show selected only" and similar. aria-pressed
+   drives both the colour and a leading check glyph, so the state is never colour-only. */
+.gh-filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  background: transparent;
+  border: 1px solid var(--border-glass);
+  border-radius: 999px;
+  color: #c3c2b7;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+
+  &::before {
+    content: '';
+    display: none;
+    flex-shrink: 0;
+    width: 12px;
+    height: 12px;
+    background-color: currentColor;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E") center / contain no-repeat;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E") center / contain no-repeat;
+  }
+
+  &[aria-pressed="true"] {
+    border-color: var(--primary-color);
+    background: rgba(224, 186, 109, 0.14);
+    color: var(--primary-color);
+
+    &::before {
+      display: block;
+    }
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+/* The pager's own width decides its density, not the viewport's: it sits in dialogs and
+   columns as well as full-width tables. */
+app-table-pager {
+  display: block;
+  container: gh-pager / inline-size;
+}
+
 .gh-pager {
   display: flex;
   flex-wrap: wrap;
@@ -1892,7 +1950,7 @@ label.checkbox-label,
 
 .gh-pager-buttons {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;         /* the row never breaks in two */
   gap: 4px;
   padding: 4px;
   background: rgba(0, 0, 0, 0.2);
@@ -1913,6 +1971,7 @@ label.checkbox-label,
   color: #a0a0a0;
   font-size: 14px;
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
   cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease;
 
@@ -1969,6 +2028,69 @@ label.checkbox-label,
   margin-inline-start: auto;
   font-size: 13px;
   color: #a0a0a0;
+}
+
+/* Stands in for the numbered slots and ellipses under the gh-pager (width < 40rem) query
+   below; inline-flex there. */
+.gh-page-compact {
+  display: none;
+  align-items: center;
+  height: 32px;
+  padding: 0 8px;
+  color: #a0a0a0;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.gh-pager-jump {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  label {
+    font-size: 13px;
+    color: #a0a0a0;
+    white-space: nowrap;
+  }
+}
+
+.gh-pager-jump-input {
+  width: 76px;
+  height: 32px;
+  padding: 0 6px;
+}
+
+/* Below this width the numbered slots would either wrap or jitter as the page count changes
+   digit width, so the row collapses to its step buttons plus a fixed "Page N of M" readout. */
+@container gh-pager (width < 40rem) {
+  .gh-pager-buttons > .gh-page-btn:not(.gh-page-btn-step),
+  .gh-pager-buttons > .gh-page-ellipsis {
+    display: none;
+  }
+  .gh-page-compact {
+    display: inline-flex;
+  }
+  .gh-pager-status {
+    flex-basis: 100%;
+    margin-inline-start: 0;
+  }
+}
+
+/* Narrower still, the size and jump labels give up their visible space but stay readable to
+   assistive technology, same clip-path rule as .visually-hidden. */
+@container gh-pager (width < 24rem) {
+  .gh-pager-size label,
+  .gh-pager-jump label {
+    position: absolute;
+    clip-path: inset(50%);
+    overflow: hidden;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    white-space: nowrap;
+  }
 }
 
 /* Inline text button, for a secondary action inside a table row or a card.

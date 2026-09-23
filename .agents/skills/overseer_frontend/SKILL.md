@@ -247,9 +247,11 @@ To find specific popups, look in the corresponding component's `.html` template:
     `snapshot-viewer.component.html`).
 
 - **Comparison Source Picker (`comparison-source-picker.component.html`, Admin → AI Benchmark →
-  Run History → Cross-model comparison, step 1)**
+  Run History → Cross-model comparison, step 1)** — single runs and analysis groups on two
+  kind tabs (`csp-src-tab-runs` / `csp-src-tab-groups`), one table and one pager per tab.
   - `#legendDialog`: Comparability legend — what each must-match key is and the value the
-    reference condition holds for it.
+    reference condition holds for it. Opened by the help icon (`#csp-legend-trigger`) at the
+    end of the step's condition line.
   - `#conditionDetailDialog`: Comparability detail for one source — one row per key it differs
     from the reference condition on, with this source's value beside the reference's, a
     `key=value;` configuration split into fields with the changed ones marked, and a copy-as-

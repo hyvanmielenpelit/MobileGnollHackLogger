@@ -10,13 +10,13 @@
 .csp {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
 }
 
-.csp-section {
+.csp-intro {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
 
   h3 {
     margin: 0;
@@ -26,14 +26,15 @@
   }
 }
 
-.csp-subheading {
-  margin: 0;
-  font-family: "Cinzel", serif;
-  font-size: 16px;
-  color: var(--primary-color);
+.csp-intro-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
 }
 
-.section-note {
+.csp-lead {
   margin: 0;
   font-size: 13px;
   line-height: 1.5;
@@ -41,42 +42,88 @@
   max-width: 90ch;
 }
 
-.csp-hint {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: #a1a1aa;
-  max-width: 70ch;
-}
-
-/* A single-model reference in prose keeps the R upright rather than italic. */
-.csp-r {
-  white-space: nowrap;
+/* Aligns the trailing info button with the surrounding prose rather than with the line's cap
+   height, and separates it from the sentence that names it. */
+.csp-condition-note .action-btn {
+  vertical-align: middle;
+  margin-inline-start: 4px;
 }
 
 /* --- Suite scope --- */
 
 .csp-scope {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-width: 420px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 
   label {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     letter-spacing: 0.02em;
     color: #c3c2b7;
   }
+
+  select {
+    height: 32px;
+    min-width: 12rem;
+    max-width: 18rem;
+  }
 }
 
-/* --- Selection actions: the condition legend launcher, and Clear selection beside it --- */
+/* --- The kind-of-source tabs --- */
 
-.csp-actions {
+.csp-tab-total {
+  margin-inline-start: 6px;
+  font-size: 12px;
+  color: #8b8b90;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The one bright element in the tab row, so a tab carrying a selection is found at a glance. */
+.csp-tab-selected {
+  margin-inline-start: 8px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(224, 186, 109, 0.5);
+  background: rgba(224, 186, 109, 0.16);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary-color, #e0ba6d);
+}
+
+/* --- The active tab's panel --- */
+
+.csp-panel {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
+  }
+}
+
+.csp-panel-toolbar {
+  display: flex;
   flex-wrap: wrap;
-  gap: 12px 16px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.csp-panel-note {
+  margin: 0;
+  font-size: 13px;
+  color: #c3c2b7;
+}
+
+.csp-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
 }
 
 /* --- Legend: what a condition is --- */
@@ -527,7 +574,11 @@
 }
 
 .csp-row-selected > * {
-  background: rgba(224, 186, 109, 0.08);
+  background: rgba(224, 186, 109, 0.12);
+}
+
+.csp-row-selected > :first-child {
+  box-shadow: inset 3px 0 0 var(--primary-color);
 }
 
 /* Dimmed, but still readable: the row is present so its status can be read. */
@@ -535,14 +586,20 @@
   opacity: 0.62;
 }
 
-/* --- Selection summary --- */
-
-.csp-selection {
+/* The whole cell is the hit target: the label wraps the checkbox rather than sitting beside it. */
+.csp-check {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 14px;
+  justify-content: center;
+  min-height: 40px;
+  cursor: pointer;
+
+  &:has(input:disabled) {
+    cursor: default;
+  }
 }
+
+/* --- Selection summary --- */
 
 .csp-selection-count {
   margin: 0;

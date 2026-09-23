@@ -56,6 +56,9 @@ export const PAGE_SIZES = [10, 20, 50, 100] as const;
 /** The elision marker `pageNumbers()` puts between page runs. */
 export const PAGE_ELLIPSIS = '…';
 
+/** The pager never renders more numbered slots than this, whatever the page count. */
+export const MAX_PAGE_SLOTS = 7;
+
 /** Optional construction settings for a `TableState`. */
 export interface TableStateOptions {
   /** The page sizes the pager offers; the first is the initial size. Defaults to `PAGE_SIZES`. */
@@ -187,13 +190,13 @@ export class TableState<T> {
     return Math.min(this.clampPage(count) * this.pageSize, count);
   }
 
-  /** Page numbers with `…` elision, at most seven slots wide. */
+  /** Page numbers with `…` elision, at most `MAX_PAGE_SLOTS` slots wide. */
   pageNumbers(rows: readonly T[]): (number | '…')[] {
     const total = this.totalPages(rows);
     const current = this.clampPage(this.filteredCount(rows));
-    const sibling = 1;
+    const sibling = (MAX_PAGE_SLOTS - 5) / 2;
 
-    if (total <= 7) {
+    if (total <= MAX_PAGE_SLOTS) {
       return Array.from({ length: total }, (_, i) => i + 1);
     }
 

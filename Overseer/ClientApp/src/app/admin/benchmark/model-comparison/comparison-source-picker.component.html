@@ -1,34 +1,40 @@
 <div class="csp">
 
-  <section class="csp-section" aria-labelledby="csp-heading">
-    <h3 id="csp-heading">What to compare</h3>
-    <p class="section-note">
-      A single run contributes one point at <span class="csp-r">R = 1</span>; an analysis group
-      contributes one point pooled over its members. Compare is explicit rather than live: every
-      request re-prices each entry server-side, so a refetch per checkbox would be a request per
-      click.
-    </p>
+  <section class="csp-intro" aria-labelledby="csp-heading">
+    <div class="csp-intro-head">
+      <h3 id="csp-heading">Choose what to compare</h3>
 
-    <!-- Suite scope: a selection-stage control, so it sits above the two tables it scopes rather
-         than in the comparison view's filter row, which holds presentation controls only. -->
-    <div class="csp-scope">
-      <label for="csp-suite">Suite scope</label>
-      <select id="csp-suite" class="gh-input" [disabled]="suites.length === 0"
-              [ngModel]="suiteId" [ngModelOptions]="{ standalone: true }"
-              (ngModelChange)="onSuiteChange($event)">
-        <option [ngValue]="null">Every suite</option>
-        @for (suite of suites; track suite.id) {
-          <option [ngValue]="suite.id">{{ suite.name }}</option>
-        }
-      </select>
-      <p class="csp-hint">Scopes which runs and groups are offered below.</p>
+      <!-- Suite scope: a selection-stage control, so it sits above the two tables it scopes rather
+           than in the comparison view's filter row, which holds presentation controls only. -->
+      <div class="csp-scope">
+        <label for="csp-suite">Suite<span class="visually-hidden"> — show runs and groups from</span></label>
+        <select id="csp-suite" class="gh-input" [disabled]="suites.length === 0"
+                [ngModel]="suiteId" [ngModelOptions]="{ standalone: true }"
+                (ngModelChange)="onSuiteChange($event)">
+          <option [ngValue]="null">All suites</option>
+          @for (suite of suites; track suite.id) {
+            <option [ngValue]="suite.id">{{ suite.name }}</option>
+          }
+        </select>
+      </div>
     </div>
+
+    <p class="csp-lead">
+      Tick the runs or analysis groups you want on the charts, then press <strong>Compare</strong>
+      (bottom right). Nothing is calculated until you do.
+    </p>
 
     <!-- A dialog rather than an inline disclosure: the largest condition's values include a
          serialized prompt-options JSON with no break opportunity in it, which overflows any
          column this panel can give it, and expanding in place displaces both source tables. -->
-    <div class="csp-actions">
-      <button type="button" class="btn-gh" (click)="legendDialog.showModal()">
+    <p class="csp-lead csp-condition-note">
+      The <strong>Condition</strong> column shows which rows were measured the same way. Only rows
+      with the same condition can be charted together.
+      <button type="button" class="action-btn" id="csp-legend-trigger"
+              aria-label="What a condition is"
+              [attr.style]="'anchor-name: --csp-tip-legend'"
+              interestfor="csp-tip-legend"
+              (click)="legendDialog.showModal()">
         <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
              viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -36,312 +42,338 @@
           <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
           <line x1="12" y1="17" x2="12.01" y2="17"></line>
         </svg>
-        What a condition is
       </button>
-      <button type="button" class="btn-gh btn-gh-cancel" [disabled]="selectedCount === 0"
-              (click)="onClear()">Clear selection</button>
-    </div>
+    </p>
+    <div popover="hint" class="gh-tooltip" id="csp-tip-legend"
+         [attr.style]="'position-anchor: --csp-tip-legend'">What a condition is</div>
   </section>
+
+  <!-- ===================================================================================
+       KIND OF SOURCE
+       =================================================================================== -->
+  <div class="gh-tabs gh-tabs-secondary csp-source-tabs" role="tablist" aria-label="Kind of source">
+    @for (tab of sourceTabs; track tab; let i = $index) {
+      <button type="button" role="tab" class="gh-tab"
+              [id]="'csp-src-tab-' + tab"
+              [attr.aria-controls]="'csp-src-panel-' + tab"
+              [attr.aria-selected]="activeSourceTab === tab"
+              [attr.tabindex]="activeSourceTab === tab ? 0 : -1"
+              (keydown)="onSourceTabKeydown($event, i)"
+              (click)="selectSourceTab(tab)">
+        {{ sourceTabTitle(tab) }}
+        <span class="csp-tab-total"><span class="visually-hidden">, </span>{{ sourceTabRowCount(tab) }}<span class="visually-hidden"> {{ sourceTabNoun(tab) }},</span></span>
+        @if (sourceTabSelectedCount(tab) > 0) {
+          <span class="csp-tab-selected">{{ sourceTabSelectedCount(tab) }} selected</span>
+        }
+      </button>
+    }
+  </div>
 
   <!-- ===================================================================================
        SINGLE RUNS
        =================================================================================== -->
-  <section class="csp-section" aria-labelledby="csp-runs-heading">
-    <!-- tabindex="-1" makes the heading a programmatic focus target and nothing more: it is where
-         the condition-detail dialog returns focus when the row it was opened from has been paged
-         or filtered away. It stays out of the Tab order. -->
-    <h4 id="csp-runs-heading" class="csp-subheading" tabindex="-1">{{ runSectionTitle }}</h4>
+  @if (activeSourceTab === 'runs') {
+    <div role="tabpanel" id="csp-src-panel-runs" aria-labelledby="csp-src-tab-runs" tabindex="0"
+         class="csp-panel">
+      <div class="csp-panel-toolbar">
+        <p class="csp-panel-note">
+          Each run you tick becomes one point on the charts. Only completed runs can be ticked.
+        </p>
+        <div class="csp-panel-actions">
+          @if (selectedRunIds.length > 0) {
+            <p class="csp-selection-count" role="status">
+              {{ selectedRunIds.length }} {{ selectedRunIds.length === 1 ? 'run' : 'runs' }} selected@if (offPageRunCount > 0) {<span> — {{ offPageRunCount }} not on this page</span>}
+            </p>
+            <button type="button" class="gh-filter-toggle"
+                    [attr.aria-pressed]="showSelectedRunsOnly"
+                    (click)="toggleShowSelectedRunsOnly()">Show selected only</button>
+          }
+          <button type="button" class="gh-filter-toggle"
+                  [disabled]="indexLoading || !comparabilityIndex"
+                  [attr.aria-pressed]="showCompatibleRunsOnly"
+                  (click)="toggleShowCompatibleRunsOnly()">Show comparable only</button>
+        </div>
+      </div>
 
-    @if (runs.length === 0) {
-      <p class="text-muted">
-        No runs for this suite scope — pick another suite scope, or run a benchmark from the
-        Run Benchmark tab.
-      </p>
-    } @else {
-      <div class="gh-datatable-scroll">
+      @if (runs.length === 0) {
+        <p class="text-muted">
+          No runs in this suite yet. Choose another suite above, or run a benchmark from the Run
+          Benchmark tab.
+        </p>
+      } @else {
+        <div class="gh-datatable-scroll">
+          <table class="gh-table gh-datatable csp-table">
+            <caption class="visually-hidden">
+              Benchmark runs offered as comparison points: compare, id, suite, tested model, status,
+              comparability condition, Intelligence Index and start time. Only a completed run may be
+              compared.
+            </caption>
+            <thead>
+              <tr>
+                <th app-sort-header [state]="runTable" column="selected" label="Compare"
+                    class="col-center col-selected" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runTable" column="id" label="ID"
+                    class="col-center col-id" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runTable" column="suiteName" label="Suite" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runTable" column="testedModel" label="Tested Model" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runTable" column="status" label="Status" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runTable" column="condition" label="Condition"
+                    class="col-center" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runTable" column="qualityIndex" label="Intelligence Index"
+                    class="col-center" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="runTable" column="startedAtUtc" label="Started" (changed)="onTableChanged()"></th>
+              </tr>
+              <tr class="gh-filter-row">
+                <td>
+                  @if (runTable.hasActiveFilters) {
+                    <button type="button" class="gh-filter-clear"
+                            (click)="runTable.clearFilters(); onTableChanged()">Clear filters</button>
+                  }
+                </td>
+                <td></td>
+                <td>
+                  <label class="visually-hidden" for="csp-f-run-suite">Filter by suite</label>
+                  <input id="csp-f-run-suite" type="text" class="gh-input gh-filter-input" placeholder="Suite"
+                         [ngModel]="runTable.filters['suiteName']" [ngModelOptions]="{ standalone: true }"
+                         (ngModelChange)="runTable.setFilter('suiteName', $event); onTableChanged()">
+                </td>
+                <td>
+                  <label class="visually-hidden" for="csp-f-run-model">Filter by tested model</label>
+                  <input id="csp-f-run-model" type="text" class="gh-input gh-filter-input" placeholder="Tested model"
+                         [ngModel]="runTable.filters['testedModel']" [ngModelOptions]="{ standalone: true }"
+                         (ngModelChange)="runTable.setFilter('testedModel', $event); onTableChanged()">
+                </td>
+                <td>
+                  <label class="visually-hidden" for="csp-f-run-status">Filter by status</label>
+                  <select id="csp-f-run-status" class="gh-input gh-filter-select"
+                          [ngModel]="runTable.filters['status']" [ngModelOptions]="{ standalone: true }"
+                          (ngModelChange)="runTable.setFilter('status', $event); onTableChanged()">
+                    <option value="">All</option>
+                    @for (status of runStatusOptions; track status) {
+                      <option [value]="status">{{ status }}</option>
+                    }
+                  </select>
+                </td>
+                <td>
+                  <label class="visually-hidden" for="csp-f-run-condition">Filter by condition</label>
+                  <select id="csp-f-run-condition" class="gh-input gh-filter-select"
+                          [disabled]="indexLoading || !comparabilityIndex"
+                          [ngModel]="runTable.filters['condition']" [ngModelOptions]="{ standalone: true }"
+                          (ngModelChange)="runTable.setFilter('condition', $event); onTableChanged()">
+                    <option value="">All conditions</option>
+                    @for (label of conditionFilterOptions; track label) {
+                      <option [value]="label">{{ label }}</option>
+                    }
+                  </select>
+                </td>
+                <td></td>
+                <td></td>
+              </tr>
+            </thead>
+            <tbody>
+              @if (runTable.noMatches(runs)) {
+                <tr><td colspan="8" class="text-muted">No runs match these filters.</td></tr>
+              } @else {
+                @for (run of runTable.view(runs); track run.id) {
+                  <tr [class.csp-row-selected]="isRunSelected(run.id)"
+                      [class.csp-row-unselectable]="!isRunSelectable(run)">
+                    <td class="col-center col-selected">
+                      <!-- Disabled, not hidden: an operator who ran a benchmark should be able to see
+                           why it cannot be charted. -->
+                      <label class="csp-check" [for]="'csp-run-' + run.id">
+                        <input type="checkbox" [id]="'csp-run-' + run.id"
+                               [disabled]="!isRunSelectable(run)"
+                               [attr.aria-label]="isRunSelectable(run)
+                                 ? 'Compare run ' + run.id
+                                 : runUnselectableReason(run)"
+                               [checked]="isRunSelected(run.id)" (change)="toggleRun(run)">
+                      </label>
+                    </td>
+                    <td class="col-center col-id">#{{ run.id }}</td>
+                    <td>{{ run.suiteName }}</td>
+                    <td>{{ run.testedModelDisplayNameUsed }}</td>
+                    <td>{{ runStatus(run) }}</td>
+                    <td class="col-center">
+                      <span class="csp-condition-cell">
+                        <span [class]="conditionBadgeClass('run:' + run.id)">{{ conditionLabel('run:' + run.id) }}</span>
+                        @if (hasConditionDetail('run:' + run.id)) {
+                          <button type="button" class="action-btn csp-condition-detail"
+                                  [attr.aria-label]="'Comparability detail for run ' + run.id"
+                                  [attr.interestfor]="conditionTipId('run:' + run.id)"
+                                  [attr.style]="'anchor-name: --' + conditionTipId('run:' + run.id)"
+                                  (click)="openConditionDetail('run:' + run.id, $event)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <circle cx="12" cy="12" r="10"></circle>
+                              <line x1="12" y1="16" x2="12" y2="12"></line>
+                              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                            </svg>
+                          </button>
+                          <div popover="hint" class="gh-tooltip" [id]="conditionTipId('run:' + run.id)"
+                               [attr.style]="'position-anchor: --' + conditionTipId('run:' + run.id)">Show comparability detail</div>
+                        }
+                      </span>
+                    </td>
+                    <td class="col-center">{{ formatIndex(run.qualityIndex ?? run.finalScore) }}</td>
+                    <td>{{ formatDate(run.startedAtUtc) }}</td>
+                  </tr>
+                }
+              }
+            </tbody>
+          </table>
+        </div>
         <app-table-pager [state]="runTable" [rows]="runs" noun="runs"
                          (changed)="onTableChanged()"></app-table-pager>
-        <table class="gh-table gh-datatable csp-table">
-          <caption class="visually-hidden">
-            Benchmark runs offered as comparison points: selection, id, suite, tested model, status,
-            comparability condition, Intelligence Index and start time. Only a completed run may be
-            selected.
-          </caption>
-          <thead>
-            <tr>
-              <th app-sort-header [state]="runTable" column="selected" label="Selected"
-                  class="col-center col-selected" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="runTable" column="id" label="ID"
-                  class="col-center col-id" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="runTable" column="suiteName" label="Suite" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="runTable" column="testedModel" label="Tested Model" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="runTable" column="status" label="Status" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="runTable" column="condition" label="Condition"
-                  class="col-center" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="runTable" column="qualityIndex" label="Intelligence Index"
-                  class="col-center" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="runTable" column="startedAtUtc" label="Started" (changed)="onTableChanged()"></th>
-            </tr>
-            <tr class="gh-filter-row">
-              <td>
-                @if (runTable.hasActiveFilters) {
-                  <button type="button" class="gh-filter-clear"
-                          (click)="runTable.clearFilters(); onTableChanged()">Clear filters</button>
-                }
-              </td>
-              <td></td>
-              <td>
-                <label class="visually-hidden" for="csp-f-run-suite">Filter by suite</label>
-                <input id="csp-f-run-suite" type="text" class="gh-input gh-filter-input" placeholder="Suite"
-                       [ngModel]="runTable.filters['suiteName']" [ngModelOptions]="{ standalone: true }"
-                       (ngModelChange)="runTable.setFilter('suiteName', $event); onTableChanged()">
-              </td>
-              <td>
-                <label class="visually-hidden" for="csp-f-run-model">Filter by tested model</label>
-                <input id="csp-f-run-model" type="text" class="gh-input gh-filter-input" placeholder="Tested model"
-                       [ngModel]="runTable.filters['testedModel']" [ngModelOptions]="{ standalone: true }"
-                       (ngModelChange)="runTable.setFilter('testedModel', $event); onTableChanged()">
-              </td>
-              <td>
-                <label class="visually-hidden" for="csp-f-run-status">Filter by status</label>
-                <select id="csp-f-run-status" class="gh-input gh-filter-select"
-                        [ngModel]="runTable.filters['status']" [ngModelOptions]="{ standalone: true }"
-                        (ngModelChange)="runTable.setFilter('status', $event); onTableChanged()">
-                  <option value="">All</option>
-                  @for (status of runStatusOptions; track status) {
-                    <option [value]="status">{{ status }}</option>
-                  }
-                </select>
-              </td>
-              <td>
-                <label class="visually-hidden" for="csp-f-run-condition">Filter by condition</label>
-                <select id="csp-f-run-condition" class="gh-input gh-filter-select"
-                        [disabled]="indexLoading || !comparabilityIndex"
-                        [ngModel]="runTable.filters['condition']" [ngModelOptions]="{ standalone: true }"
-                        (ngModelChange)="runTable.setFilter('condition', $event); onTableChanged()">
-                  <option value="">All conditions</option>
-                  @for (label of conditionFilterOptions; track label) {
-                    <option [value]="label">{{ label }}</option>
-                  }
-                </select>
-              </td>
-              <td></td>
-              <td></td>
-            </tr>
-          </thead>
-          <tbody>
-            @if (runTable.noMatches(runs)) {
-              <tr><td colspan="8" class="text-muted">No runs match these filters.</td></tr>
-            } @else {
-              @for (run of runTable.view(runs); track run.id) {
-                <tr [class.csp-row-selected]="isRunSelected(run.id)"
-                    [class.csp-row-unselectable]="!isRunSelectable(run)">
-                  <td class="col-center col-selected">
-                    <!-- Disabled, not hidden: an operator who ran a benchmark should be able to see
-                         why it cannot be charted. -->
-                    <input type="checkbox" [id]="'csp-run-' + run.id"
-                           [disabled]="!isRunSelectable(run)"
-                           [attr.aria-label]="isRunSelectable(run)
-                             ? 'Compare run ' + run.id
-                             : runUnselectableReason(run)"
-                           [checked]="isRunSelected(run.id)" (change)="toggleRun(run)">
-                  </td>
-                  <td class="col-center col-id">#{{ run.id }}</td>
-                  <td>{{ run.suiteName }}</td>
-                  <td>{{ run.testedModelDisplayNameUsed }}</td>
-                  <td>{{ runStatus(run) }}</td>
-                  <td class="col-center">
-                    <span class="csp-condition-cell">
-                      <span [class]="conditionBadgeClass('run:' + run.id)">{{ conditionLabel('run:' + run.id) }}</span>
-                      @if (hasConditionDetail('run:' + run.id)) {
-                        <button type="button" class="action-btn csp-condition-detail"
-                                [attr.aria-label]="'Comparability detail for run ' + run.id"
-                                [attr.interestfor]="conditionTipId('run:' + run.id)"
-                                [attr.style]="'anchor-name: --' + conditionTipId('run:' + run.id)"
-                                (click)="openConditionDetail('run:' + run.id, $event)">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <line x1="12" y1="16" x2="12" y2="12"></line>
-                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                          </svg>
-                        </button>
-                        <div popover="hint" class="gh-tooltip" [id]="conditionTipId('run:' + run.id)"
-                             [attr.style]="'position-anchor: --' + conditionTipId('run:' + run.id)">Show comparability detail</div>
-                      }
-                    </span>
-                  </td>
-                  <td class="col-center">{{ formatIndex(run.qualityIndex ?? run.finalScore) }}</td>
-                  <td>{{ formatDate(run.startedAtUtc) }}</td>
-                </tr>
-              }
-            }
-          </tbody>
-        </table>
-        <app-table-pager [state]="runTable" [rows]="runs" noun="runs" [announce]="false"
-                         (changed)="onTableChanged()"></app-table-pager>
-      </div>
-
-      <div class="csp-selection">
-        @if (selectedRunIds.length > 0) {
-          <p class="csp-selection-count" role="status">
-            {{ selectedRunIds.length }} {{ selectedRunIds.length === 1 ? 'run' : 'runs' }} selected@if (offPageRunCount > 0) {<span> — {{ offPageRunCount }} not on this page</span>}
-          </p>
-          <button type="button" class="gh-filter-clear"
-                  [attr.aria-pressed]="showSelectedRunsOnly"
-                  (click)="toggleShowSelectedRunsOnly()">Show selected only</button>
-        }
-        <button type="button" class="gh-filter-clear"
-                [disabled]="indexLoading || !comparabilityIndex"
-                [attr.aria-pressed]="showCompatibleRunsOnly"
-                (click)="toggleShowCompatibleRunsOnly()">Show compatible only</button>
-      </div>
-    }
-  </section>
+      }
+    </div>
+  }
 
   <!-- ===================================================================================
        ANALYSIS GROUPS
        =================================================================================== -->
-  <section class="csp-section" aria-labelledby="csp-groups-heading">
-    <h4 id="csp-groups-heading" class="csp-subheading" tabindex="-1">{{ groupSectionTitle }}</h4>
-    <p class="section-note">
-      Every group is offered, whatever its tier. A group whose members do not pool comes back
-      <strong>excluded with the keys it differs on named</strong>, which is more informative than a
-      picker that quietly omitted it.
-    </p>
+  @if (activeSourceTab === 'groups') {
+    <div role="tabpanel" id="csp-src-panel-groups" aria-labelledby="csp-src-tab-groups" tabindex="0"
+         class="csp-panel">
+      <div class="csp-panel-toolbar">
+        <p class="csp-panel-note">
+          Each group you tick becomes one point, averaged over the runs in it. If a group's runs
+          were not measured the same way, the comparison leaves it out and names the settings that
+          differ.
+        </p>
+        <div class="csp-panel-actions">
+          @if (selectedGroupIds.length > 0) {
+            <p class="csp-selection-count" role="status">
+              {{ selectedGroupIds.length }} {{ selectedGroupIds.length === 1 ? 'group' : 'groups' }} selected@if (offPageGroupCount > 0) {<span> — {{ offPageGroupCount }} not on this page</span>}
+            </p>
+            <button type="button" class="gh-filter-toggle"
+                    [attr.aria-pressed]="showSelectedGroupsOnly"
+                    (click)="toggleShowSelectedGroupsOnly()">Show selected only</button>
+          }
+          <button type="button" class="gh-filter-toggle"
+                  [disabled]="indexLoading || !comparabilityIndex"
+                  [attr.aria-pressed]="showCompatibleGroupsOnly"
+                  (click)="toggleShowCompatibleGroupsOnly()">Show comparable only</button>
+        </div>
+      </div>
 
-    @if (groups.length === 0) {
-      <p class="text-muted">
-        No analysis groups for this suite scope — pick another suite scope, or build a group from
-        the Multi-Run Analysis tab.
-      </p>
-    } @else {
-      <div class="gh-datatable-scroll">
+      @if (groups.length === 0) {
+        <p class="text-muted">
+          No analysis groups in this suite yet. Choose another suite above, or build a group in the
+          Multi-Run Analysis tab.
+        </p>
+      } @else {
+        <div class="gh-datatable-scroll">
+          <table class="gh-table gh-datatable csp-table">
+            <caption class="visually-hidden">
+              Analysis groups offered as comparison points: compare, name, comparability tier,
+              comparability condition, run count, creation date and analysis state.
+            </caption>
+            <thead>
+              <tr>
+                <th app-sort-header [state]="groupTable" column="selected" label="Compare"
+                    class="col-center col-selected" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="groupTable" column="name" label="Group" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="groupTable" column="tier" label="Tier" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="groupTable" column="condition" label="Condition"
+                    class="col-center" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="groupTable" column="runCount" label="R"
+                    class="col-center" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="groupTable" column="createdAtUtc" label="Created" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="groupTable" column="analysis" label="Analysis" (changed)="onTableChanged()"></th>
+              </tr>
+              <tr class="gh-filter-row">
+                <td>
+                  @if (groupTable.hasActiveFilters) {
+                    <button type="button" class="gh-filter-clear"
+                            (click)="groupTable.clearFilters(); onTableChanged()">Clear filters</button>
+                  }
+                </td>
+                <td>
+                  <label class="visually-hidden" for="csp-f-group-name">Filter by group name</label>
+                  <input id="csp-f-group-name" type="text" class="gh-input gh-filter-input" placeholder="Name"
+                         [ngModel]="groupTable.filters['name']" [ngModelOptions]="{ standalone: true }"
+                         (ngModelChange)="groupTable.setFilter('name', $event); onTableChanged()">
+                </td>
+                <td>
+                  <label class="visually-hidden" for="csp-f-group-tier">Filter by tier</label>
+                  <select id="csp-f-group-tier" class="gh-input gh-filter-select"
+                          [ngModel]="groupTable.filters['tier']" [ngModelOptions]="{ standalone: true }"
+                          (ngModelChange)="groupTable.setFilter('tier', $event); onTableChanged()">
+                    <option value="">All</option>
+                    <option value="Replicate">{{ tierName('Replicate') }}</option>
+                    <option value="QualityComparable">{{ tierName('QualityComparable') }}</option>
+                    <option value="CrossCondition">{{ tierName('CrossCondition') }}</option>
+                  </select>
+                </td>
+                <td>
+                  <label class="visually-hidden" for="csp-f-group-condition">Filter by condition</label>
+                  <select id="csp-f-group-condition" class="gh-input gh-filter-select"
+                          [disabled]="indexLoading || !comparabilityIndex"
+                          [ngModel]="groupTable.filters['condition']" [ngModelOptions]="{ standalone: true }"
+                          (ngModelChange)="groupTable.setFilter('condition', $event); onTableChanged()">
+                    <option value="">All conditions</option>
+                    @for (label of conditionFilterOptions; track label) {
+                      <option [value]="label">{{ label }}</option>
+                    }
+                  </select>
+                </td>
+                <td></td>
+                <td></td>
+                <td></td>
+              </tr>
+            </thead>
+            <tbody>
+              @if (groupTable.noMatches(groups)) {
+                <tr><td colspan="7" class="text-muted">No groups match these filters.</td></tr>
+              } @else {
+                @for (group of groupTable.view(groups); track group.id) {
+                  <tr [class.csp-row-selected]="isGroupSelected(group.id)">
+                    <td class="col-center col-selected">
+                      <label class="csp-check" [for]="'csp-group-' + group.id">
+                        <input type="checkbox" [id]="'csp-group-' + group.id"
+                               [attr.aria-label]="'Compare analysis group ' + group.name"
+                               [checked]="isGroupSelected(group.id)" (change)="toggleGroup(group)">
+                      </label>
+                    </td>
+                    <th scope="row" class="col-name">{{ group.name }}</th>
+                    <td>
+                      <span [class]="'csp-tier ' + tierClass(group.tier)">
+                        {{ group.tierLabel || tierName(group.tier) }}
+                      </span>
+                    </td>
+                    <td class="col-center">
+                      <span class="csp-condition-cell">
+                        <span [class]="conditionBadgeClass('group:' + group.id)">{{ conditionLabel('group:' + group.id) }}</span>
+                        @if (hasConditionDetail('group:' + group.id)) {
+                          <button type="button" class="action-btn csp-condition-detail"
+                                  [attr.aria-label]="'Comparability detail for group ' + group.name"
+                                  [attr.interestfor]="conditionTipId('group:' + group.id)"
+                                  [attr.style]="'anchor-name: --' + conditionTipId('group:' + group.id)"
+                                  (click)="openConditionDetail('group:' + group.id, $event)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <circle cx="12" cy="12" r="10"></circle>
+                              <line x1="12" y1="16" x2="12" y2="12"></line>
+                              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                            </svg>
+                          </button>
+                          <div popover="hint" class="gh-tooltip" [id]="conditionTipId('group:' + group.id)"
+                               [attr.style]="'position-anchor: --' + conditionTipId('group:' + group.id)">Show comparability detail</div>
+                        }
+                      </span>
+                    </td>
+                    <td class="col-center">{{ group.runCount }}</td>
+                    <td>{{ formatDate(group.createdAtUtc) }}</td>
+                    <td>{{ analysisState(group) }}</td>
+                  </tr>
+                }
+              }
+            </tbody>
+          </table>
+        </div>
         <app-table-pager [state]="groupTable" [rows]="groups" noun="groups"
                          (changed)="onTableChanged()"></app-table-pager>
-        <table class="gh-table gh-datatable csp-table">
-          <caption class="visually-hidden">
-            Analysis groups offered as comparison points: selection, name, comparability tier,
-            comparability condition, run count, creation date and analysis state.
-          </caption>
-          <thead>
-            <tr>
-              <th app-sort-header [state]="groupTable" column="selected" label="Selected"
-                  class="col-center col-selected" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="groupTable" column="name" label="Group" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="groupTable" column="tier" label="Tier" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="groupTable" column="condition" label="Condition"
-                  class="col-center" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="groupTable" column="runCount" label="R"
-                  class="col-center" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="groupTable" column="createdAtUtc" label="Created" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="groupTable" column="analysis" label="Analysis" (changed)="onTableChanged()"></th>
-            </tr>
-            <tr class="gh-filter-row">
-              <td>
-                @if (groupTable.hasActiveFilters) {
-                  <button type="button" class="gh-filter-clear"
-                          (click)="groupTable.clearFilters(); onTableChanged()">Clear filters</button>
-                }
-              </td>
-              <td>
-                <label class="visually-hidden" for="csp-f-group-name">Filter by group name</label>
-                <input id="csp-f-group-name" type="text" class="gh-input gh-filter-input" placeholder="Name"
-                       [ngModel]="groupTable.filters['name']" [ngModelOptions]="{ standalone: true }"
-                       (ngModelChange)="groupTable.setFilter('name', $event); onTableChanged()">
-              </td>
-              <td>
-                <label class="visually-hidden" for="csp-f-group-tier">Filter by tier</label>
-                <select id="csp-f-group-tier" class="gh-input gh-filter-select"
-                        [ngModel]="groupTable.filters['tier']" [ngModelOptions]="{ standalone: true }"
-                        (ngModelChange)="groupTable.setFilter('tier', $event); onTableChanged()">
-                  <option value="">All</option>
-                  <option value="Replicate">{{ tierName('Replicate') }}</option>
-                  <option value="QualityComparable">{{ tierName('QualityComparable') }}</option>
-                  <option value="CrossCondition">{{ tierName('CrossCondition') }}</option>
-                </select>
-              </td>
-              <td>
-                <label class="visually-hidden" for="csp-f-group-condition">Filter by condition</label>
-                <select id="csp-f-group-condition" class="gh-input gh-filter-select"
-                        [disabled]="indexLoading || !comparabilityIndex"
-                        [ngModel]="groupTable.filters['condition']" [ngModelOptions]="{ standalone: true }"
-                        (ngModelChange)="groupTable.setFilter('condition', $event); onTableChanged()">
-                  <option value="">All conditions</option>
-                  @for (label of conditionFilterOptions; track label) {
-                    <option [value]="label">{{ label }}</option>
-                  }
-                </select>
-              </td>
-              <td></td>
-              <td></td>
-              <td></td>
-            </tr>
-          </thead>
-          <tbody>
-            @if (groupTable.noMatches(groups)) {
-              <tr><td colspan="7" class="text-muted">No groups match these filters.</td></tr>
-            } @else {
-              @for (group of groupTable.view(groups); track group.id) {
-                <tr [class.csp-row-selected]="isGroupSelected(group.id)">
-                  <td class="col-center col-selected">
-                    <input type="checkbox" [id]="'csp-group-' + group.id"
-                           [attr.aria-label]="'Compare analysis group ' + group.name"
-                           [checked]="isGroupSelected(group.id)" (change)="toggleGroup(group)">
-                  </td>
-                  <th scope="row" class="col-name">{{ group.name }}</th>
-                  <td>
-                    <span [class]="'csp-tier ' + tierClass(group.tier)">
-                      {{ group.tierLabel || tierName(group.tier) }}
-                    </span>
-                  </td>
-                  <td class="col-center">
-                    <span class="csp-condition-cell">
-                      <span [class]="conditionBadgeClass('group:' + group.id)">{{ conditionLabel('group:' + group.id) }}</span>
-                      @if (hasConditionDetail('group:' + group.id)) {
-                        <button type="button" class="action-btn csp-condition-detail"
-                                [attr.aria-label]="'Comparability detail for group ' + group.name"
-                                [attr.interestfor]="conditionTipId('group:' + group.id)"
-                                [attr.style]="'anchor-name: --' + conditionTipId('group:' + group.id)"
-                                (click)="openConditionDetail('group:' + group.id, $event)">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <line x1="12" y1="16" x2="12" y2="12"></line>
-                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                          </svg>
-                        </button>
-                        <div popover="hint" class="gh-tooltip" [id]="conditionTipId('group:' + group.id)"
-                             [attr.style]="'position-anchor: --' + conditionTipId('group:' + group.id)">Show comparability detail</div>
-                      }
-                    </span>
-                  </td>
-                  <td class="col-center">{{ group.runCount }}</td>
-                  <td>{{ formatDate(group.createdAtUtc) }}</td>
-                  <td>{{ analysisState(group) }}</td>
-                </tr>
-              }
-            }
-          </tbody>
-        </table>
-        <app-table-pager [state]="groupTable" [rows]="groups" noun="groups" [announce]="false"
-                         (changed)="onTableChanged()"></app-table-pager>
-      </div>
-
-      <div class="csp-selection">
-        @if (selectedGroupIds.length > 0) {
-          <p class="csp-selection-count" role="status">
-            {{ selectedGroupIds.length }} {{ selectedGroupIds.length === 1 ? 'group' : 'groups' }} selected@if (offPageGroupCount > 0) {<span> — {{ offPageGroupCount }} not on this page</span>}
-          </p>
-          <button type="button" class="gh-filter-clear"
-                  [attr.aria-pressed]="showSelectedGroupsOnly"
-                  (click)="toggleShowSelectedGroupsOnly()">Show selected only</button>
-        }
-        <button type="button" class="gh-filter-clear"
-                [disabled]="indexLoading || !comparabilityIndex"
-                [attr.aria-pressed]="showCompatibleGroupsOnly"
-                (click)="toggleShowCompatibleGroupsOnly()">Show compatible only</button>
-      </div>
-    }
-  </section>
+      }
+    </div>
+  }
 
 </div>
 
@@ -376,9 +408,10 @@
 
   <div class="csp-legend-body" tabindex="-1" autofocus>
     <p class="csp-legend-lead">
-      A comparison can only chart sources that agree on every must-match key — that cohort is a
-      <strong>condition</strong>. Only the largest condition on offer can be charted; every
-      source outside it is excluded from the comparison rather than plotted beside it.
+      A <strong>condition</strong> is a set of runs that were measured the same way: the same
+      questions, the same grading and the same settings. Only one condition can be charted at a
+      time: the charts use the largest one, and runs or groups in other conditions are left out
+      rather than drawn beside it.
     </p>
 
     @if (comparabilityIndex) {

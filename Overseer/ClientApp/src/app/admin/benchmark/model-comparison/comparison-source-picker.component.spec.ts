@@ -312,18 +312,17 @@ describe('ComparisonSourcePickerComponent', () => {
   // Compare moved to the wizard footer
   // -------------------------------------------------------------------------------------------
 
-  it('offers no Compare button of its own, and still emits clear on Clear selection', () => {
+  it('offers neither a Compare nor a Clear selection button of its own', () => {
     render({ selectedRunIds: [1] });
 
-    expect(fixture.debugElement.queryAll(By.css('button')).map(el => (el.nativeElement as HTMLElement).textContent)
-      .some(text => (text ?? '').trim() === 'Compare')).toBeFalse();
+    // The table's first sortable header is also labelled Compare; only actions count here.
+    const texts = fixture.debugElement.queryAll(By.css('button'))
+      .map(el => el.nativeElement as HTMLElement)
+      .filter(el => el.closest('th') === null)
+      .map(el => (el.textContent ?? '').trim());
 
-    let cleared = 0;
-    component.clear.subscribe(() => cleared++);
-    const clearButton = fixture.debugElement.query(By.css('.csp-actions .btn-gh-cancel'));
-    (clearButton.nativeElement as HTMLButtonElement).click();
-
-    expect(cleared).toBe(1);
+    expect(texts).not.toContain('Compare');
+    expect(texts).not.toContain('Clear selection');
   });
 
   // -------------------------------------------------------------------------------------------
@@ -348,11 +347,17 @@ describe('ComparisonSourcePickerComponent', () => {
   it('renders both empty states naming the fix rather than a bare "nothing here"', () => {
     render({ runs: [], groups: [] });
 
-    const text = fixture.debugElement.queryAll(By.css('.text-muted'))
-      .map(element => (element.nativeElement as HTMLElement).textContent ?? '').join(' ');
-    expect(text).toContain('pick another suite scope');
-    expect(text).toContain('run a benchmark');
-    expect(text).toContain('build a group');
+    const runsText = (fixture.debugElement.query(By.css('.text-muted'))
+      .nativeElement as HTMLElement).textContent ?? '';
+    expect(runsText).toContain('Choose another suite');
+    expect(runsText).toContain('run a benchmark');
+
+    component.selectSourceTab('groups');
+    fixture.detectChanges();
+    const groupsText = (fixture.debugElement.query(By.css('.text-muted'))
+      .nativeElement as HTMLElement).textContent ?? '';
+    expect(groupsText).toContain('Choose another suite');
+    expect(groupsText).toContain('build a group');
   });
 
   // -------------------------------------------------------------------------------------------
@@ -366,11 +371,15 @@ describe('ComparisonSourcePickerComponent', () => {
     expect(component.conditionLabel('run:3')).toBe('Condition B');
     expect(component.conditionLabel('group:1')).toBe('Condition A');
 
-    const runBadges = fixture.debugElement.queryAll(By.css('.csp-table')).map(table =>
-      table.queryAll(By.css('.csp-condition')).map(el => (el.nativeElement as HTMLElement).textContent?.trim())
-    );
-    expect(runBadges[0]).toContain('Condition A');
-    expect(runBadges[1]).toContain('Condition A');
+    const runBadges = fixture.debugElement.queryAll(By.css('.csp-table .csp-condition'))
+      .map(el => (el.nativeElement as HTMLElement).textContent?.trim());
+    expect(runBadges).toContain('Condition A');
+
+    component.selectSourceTab('groups');
+    fixture.detectChanges();
+    const groupBadges = fixture.debugElement.queryAll(By.css('.csp-table .csp-condition'))
+      .map(el => (el.nativeElement as HTMLElement).textContent?.trim());
+    expect(groupBadges).toContain('Condition A');
   });
 
   it('narrows both tables through the condition filter', () => {
@@ -579,8 +588,10 @@ describe('ComparisonSourcePickerComponent', () => {
           })
         ]
       });
-      // No runs, so the group's own control is the only one on the page.
+      // No runs, so the group's own control is the only one on the groups tab.
       render({ runs: [], groups: [buildGroup({ id: 2 })], comparabilityIndex: index });
+      component.selectSourceTab('groups');
+      fixture.detectChanges();
       spyOn(conditionDialog(), 'showModal');
 
       detailButtons()[0].click();
@@ -615,7 +626,7 @@ describe('ComparisonSourcePickerComponent', () => {
       .nativeElement as HTMLDialogElement;
     const showModal = spyOn(dialog, 'showModal');
 
-    (fixture.debugElement.query(By.css('.csp-actions .btn-gh'))
+    (fixture.debugElement.query(By.css('#csp-legend-trigger'))
       .nativeElement as HTMLButtonElement).click();
 
     expect(showModal).toHaveBeenCalled();
@@ -867,12 +878,109 @@ describe('ComparisonSourcePickerComponent', () => {
     expect(stopPropagation).toHaveBeenCalled();
   });
 
-  it('titles both source sections from the exported constants', () => {
-    render();
+  // -------------------------------------------------------------------------------------------
+  // The source-kind tabs
+  // -------------------------------------------------------------------------------------------
 
-    expect((fixture.debugElement.query(By.css('#csp-runs-heading'))
-      .nativeElement as HTMLElement).textContent?.trim()).toBe(RUN_SECTION_TITLE);
-    expect((fixture.debugElement.query(By.css('#csp-groups-heading'))
-      .nativeElement as HTMLElement).textContent?.trim()).toBe(GROUP_SECTION_TITLE);
+  describe('the source-kind tabs', () => {
+    function tabButtons(): HTMLButtonElement[] {
+      return fixture.debugElement.queryAll(By.css('.csp-source-tabs .gh-tab'))
+        .map(element => element.nativeElement as HTMLButtonElement);
+    }
+
+    it('titles both kind tabs from the exported constants', () => {
+      render();
+      const [runsTab, groupsTab] = tabButtons();
+
+      expect(runsTab.textContent).toContain(RUN_SECTION_TITLE);
+      expect(groupsTab.textContent).toContain(GROUP_SECTION_TITLE);
+    });
+
+    it("renders only the active kind's table, and keeps each table's own page across a tab switch", () => {
+      render({ runs: runs(15), groups: [buildGroup({ id: 1 })] });
+
+      expect(fixture.debugElement.queryAll(By.css('table.csp-table')).length).toBe(1);
+      expect(fixture.debugElement.query(By.css('#csp-src-panel-runs'))).toBeTruthy();
+      expect(fixture.debugElement.query(By.css('#csp-src-panel-groups'))).toBeFalsy();
+
+      component.runTable.setPage(2, component.runs);
+      fixture.detectChanges();
+
+      tabButtons()[1].click();
+      fixture.detectChanges();
+
+      expect(fixture.debugElement.queryAll(By.css('table.csp-table')).length).toBe(1);
+      expect(fixture.debugElement.query(By.css('#csp-src-panel-groups'))).toBeTruthy();
+      expect(fixture.debugElement.query(By.css('#csp-src-panel-runs'))).toBeFalsy();
+
+      tabButtons()[0].click();
+      fixture.detectChanges();
+
+      // The TableState lives on the component, not the template, so it survives the panel
+      // being removed from the DOM and rendered again.
+      expect(component.runTable.page).toBe(2);
+    });
+
+    it('moves between the kind tabs with the arrow keys, wrapping, and focus follows', () => {
+      render();
+      const runsTab = tabButtons()[0];
+      runsTab.focus();
+
+      component.onSourceTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 0);
+      fixture.detectChanges();
+      expect(component.activeSourceTab).toBe('groups');
+      expect(document.activeElement).toBe(fixture.nativeElement.querySelector('#csp-src-tab-groups'));
+
+      // Two tabs: a second ArrowRight wraps back to the first.
+      component.onSourceTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 1);
+      fixture.detectChanges();
+      expect(component.activeSourceTab).toBe('runs');
+      expect(document.activeElement).toBe(fixture.nativeElement.querySelector('#csp-src-tab-runs'));
+
+      component.onSourceTabKeydown(new KeyboardEvent('keydown', { key: 'End' }), 0);
+      fixture.detectChanges();
+      expect(component.activeSourceTab).toBe('groups');
+
+      component.onSourceTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 1);
+      fixture.detectChanges();
+      expect(component.activeSourceTab).toBe('runs');
+    });
+
+    it('gives exactly one tab a roving tabindex of 0, and marks it aria-selected', () => {
+      render();
+      const buttons = tabButtons();
+
+      expect(buttons.filter(b => b.getAttribute('tabindex') === '0').length).toBe(1);
+      expect(buttons.filter(b => b.getAttribute('tabindex') === '-1').length).toBe(1);
+      expect(buttons.find(b => b.id === 'csp-src-tab-runs')?.getAttribute('aria-selected')).toBe('true');
+      expect(buttons.find(b => b.id === 'csp-src-tab-groups')?.getAttribute('aria-selected')).toBe('false');
+    });
+
+    it('shows the selected count on each tab, only where it has a selection', () => {
+      render({ selectedRunIds: [1, 2], selectedGroupIds: [] });
+      const buttons = tabButtons();
+
+      const runsBadge = buttons.find(b => b.id === 'csp-src-tab-runs')
+        ?.querySelector('.csp-tab-selected') as HTMLElement | null;
+      expect(runsBadge?.textContent?.trim()).toBe('2 selected');
+      expect(buttons.find(b => b.id === 'csp-src-tab-groups')
+        ?.querySelector('.csp-tab-selected')).toBeNull();
+    });
+
+    it('returns focus to the kind tab when the row a detail was opened from is gone', () => {
+      render({ runs: runs(3), comparabilityIndex: buildIndex() });
+      const dialog = fixture.debugElement.query(By.css('dialog.csp-condition-dialog'))
+        .nativeElement as HTMLDialogElement;
+      spyOn(dialog, 'showModal');
+      const trigger = document.createElement('button');
+      // Detached from the document: the row it named has since been paged, filtered or
+      // refreshed away.
+      component.openConditionDetail('run:3', { currentTarget: trigger } as unknown as Event);
+      fixture.detectChanges();
+
+      component.onConditionDialogClose(new Event('close'));
+
+      expect(document.activeElement?.id).toBe('csp-src-tab-runs');
+    });
   });
 });

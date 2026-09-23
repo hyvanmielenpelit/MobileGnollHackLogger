@@ -1,4 +1,4 @@
-import { exactFilter, PAGE_ELLIPSIS, PAGE_SIZES, TableState } from './table-state';
+import { exactFilter, MAX_PAGE_SLOTS, PAGE_ELLIPSIS, PAGE_SIZES, TableState } from './table-state';
 
 interface Row {
   id: string;
@@ -353,6 +353,40 @@ describe('TableState', () => {
     it('elides on both sides in the middle', () => {
       expect(pagesOf(200, 10, 10))
         .toEqual([1, PAGE_ELLIPSIS, 9, 10, 11, PAGE_ELLIPSIS, 20]);
+    });
+
+    it('stays within MAX_PAGE_SLOTS and never places two ellipses side by side, at any total or page', () => {
+      const totals = [
+        ...Array.from({ length: 60 }, (_, i) => i + 1),
+        99, 100, 101, 999, 1000, 5000, 10000
+      ];
+      const pageSize = 10;
+
+      for (const total of totals) {
+        const rows = Array.from({ length: total * pageSize }, (_, i) => row(`#${i}`, 'x', 'Completed', i));
+        // setPage clamps, so a candidate outside 1..total (e.g. total - 2 when total is small)
+        // is exercised as its clamped value rather than skipped.
+        const candidates = [1, 2, 3, Math.ceil(total / 2), total - 2, total - 1, total];
+
+        for (const candidate of candidates) {
+          const state = stateFor();
+          state.pageSize = pageSize;
+          state.setPage(candidate, rows);
+          const current = state.page;
+          const slots = state.pageNumbers(rows);
+          const context = `total=${total} candidate=${candidate} current=${current}`;
+
+          expect(slots.length).withContext(context).toBeLessThanOrEqual(MAX_PAGE_SLOTS);
+          expect(slots).withContext(context).toContain(1);
+          expect(slots).withContext(context).toContain(total);
+          expect(slots).withContext(context).toContain(current);
+
+          for (let i = 1; i < slots.length; i++) {
+            expect(slots[i] === PAGE_ELLIPSIS && slots[i - 1] === PAGE_ELLIPSIS)
+              .withContext(context).toBeFalse();
+          }
+        }
+      }
     });
   });
 

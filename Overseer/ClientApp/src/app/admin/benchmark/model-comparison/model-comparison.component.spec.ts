@@ -25,7 +25,6 @@ import {
   toChartContext,
   toChartEntries
 } from './model-comparison.models';
-import { GROUP_SECTION_TITLE, RUN_SECTION_TITLE } from './comparison-source-picker.component';
 import { TableExportFormat, xlsxWriterModule } from './table-export';
 import { zipWriterModule } from './figure-export';
 import { ToastComponent } from '../../../shared/toast/toast.component';
@@ -1027,30 +1026,54 @@ describe('ModelComparisonComponent', () => {
     expect(component.selectedSourceCount).toBe(7);
   });
 
-  it('names the runs table in the band label when only runs are selected', () => {
+  it('states the run count in the band label when only runs are selected', () => {
     band({ runs: 3, sources: runSources(3) });
 
     const label = textOf('.mc-wizard-notice-label');
-    expect(label).toContain(RUN_SECTION_TITLE);
-    expect(label).toContain('3 sources selected');
-    expect(label).not.toContain(GROUP_SECTION_TITLE);
+    expect(label).toContain('3 runs selected');
   });
 
-  it('names the groups table when only groups are selected', () => {
+  it('states the group count in the band label when only groups are selected', () => {
     band({ groups: 2, sources: groupSources(2) });
 
     const label = textOf('.mc-wizard-notice-label');
-    expect(label).toContain(GROUP_SECTION_TITLE);
-    expect(label).toContain('2 sources selected');
-    expect(label).not.toContain(RUN_SECTION_TITLE);
+    expect(label).toContain('2 groups selected');
   });
 
-  it('names both tables when the selection spans them', () => {
+  it('states both counts when the selection spans runs and groups', () => {
     band({ runs: 2, groups: 1, sources: [...runSources(2), ...groupSources(1)] });
 
     const label = textOf('.mc-wizard-notice-label');
-    expect(label).toContain(`${RUN_SECTION_TITLE} and ${GROUP_SECTION_TITLE}`);
-    expect(label).toContain('3 sources selected');
+    expect(label).toContain('2 runs and 1 group selected');
+  });
+
+  it('pluralises the selection summary across all four forms', () => {
+    fixture.componentRef.setInput('selectedRunCount', 0);
+    fixture.componentRef.setInput('selectedGroupCount', 0);
+    expect(component.selectionSummary).toBe('Nothing selected yet');
+
+    fixture.componentRef.setInput('selectedRunCount', 1);
+    expect(component.selectionSummary).toBe('1 run selected');
+
+    fixture.componentRef.setInput('selectedRunCount', 2);
+    expect(component.selectionSummary).toBe('2 runs selected');
+
+    fixture.componentRef.setInput('selectedRunCount', 0);
+    fixture.componentRef.setInput('selectedGroupCount', 1);
+    expect(component.selectionSummary).toBe('1 group selected');
+
+    fixture.componentRef.setInput('selectedGroupCount', 3);
+    expect(component.selectionSummary).toBe('3 groups selected');
+
+    fixture.componentRef.setInput('selectedRunCount', 1);
+    expect(component.selectionSummary).toBe('1 run and 3 groups selected');
+
+    fixture.componentRef.setInput('selectedGroupCount', 2);
+    expect(component.selectionSummary).toBe('1 run and 2 groups selected');
+
+    fixture.componentRef.setInput('selectedRunCount', 2);
+    fixture.componentRef.setInput('selectedGroupCount', 1);
+    expect(component.selectionSummary).toBe('2 runs and 1 group selected');
   });
 
   it('labels the band for assistive technology', () => {
@@ -1101,8 +1124,25 @@ describe('ModelComparisonComponent', () => {
 
     expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeTruthy();
     expect(textOf('.mc-wizard-notice-label')).toContain('Nothing selected yet');
-    expect(textOf('.mc-wizard-selection-hint')).toContain('Tick runs or analysis groups above');
+    expect(textOf('.mc-wizard-selection-hint')).toContain('Tick runs or groups above');
     expect(fixture.debugElement.query(By.css('.mc-selection-chips'))).toBeNull();
+  });
+
+  it('offers Clear selection only when something is selected, and emits clearSelection', () => {
+    band({ notices: [] });
+    expect(fixture.debugElement.query(By.css('.mc-selection-clear'))).toBeNull();
+
+    band({ runs: 2, sources: runSources(2), notices: [] });
+
+    const cleared: void[] = [];
+    component.clearSelection.subscribe(() => cleared.push(undefined));
+
+    const button = fixture.debugElement.query(By.css('.mc-selection-clear'))
+      .nativeElement as HTMLButtonElement;
+    expect(button.textContent?.trim()).toBe('Clear selection');
+    button.click();
+
+    expect(cleared.length).toBe(1);
   });
 
   it('keeps the notices below the chip row when the selection carries both', () => {

@@ -4323,6 +4323,7 @@
       (compare)="runComparison()"
       (cancelCompare)="cancelComparison()"
       (removeSource)="onComparisonRemoveSource($event)"
+      (clearSelection)="clearComparisonSelection()"
       (closeRequested)="closeComparisonWizard()">
       <app-comparison-source-picker
         [runs]="comparisonRunOptions"
@@ -4335,8 +4336,7 @@
         [comparabilityIndex]="comparabilityIndex"
         [indexLoading]="comparabilityIndexLoading"
         (suiteIdChange)="onComparisonSuiteChange($event)"
-        (selectionChange)="onComparisonSelectionChange($event)"
-        (clear)="clearComparisonSelection()">
+        (selectionChange)="onComparisonSelectionChange($event)">
       </app-comparison-source-picker>
     </app-benchmark-model-comparison>
   }

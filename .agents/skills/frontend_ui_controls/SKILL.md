@@ -682,7 +682,12 @@ empty where a column is not filterable.
   a label; it disappears the moment typing starts and several screen readers never announce it.
 - Build a `<select>`'s options from the values **actually present** where you can, so an option
   the backend stops emitting disappears from the control on its own.
-- A **Clear filters** control renders only when `state.hasActiveFilters`.
+- A **Clear filters** control renders only when `state.hasActiveFilters`. It is the link-style
+  `.gh-filter-clear`.
+- **On/off view filters** — *Show selected only*, *Show comparable only* — are
+  `<button type="button" class="gh-filter-toggle" [attr.aria-pressed]="…">`: a 28px pill that
+  turns gold with a leading check glyph when pressed, so the state is carried by shape as well as
+  colour. Not a checkbox, and not `.gh-filter-clear`, which is an action rather than a state.
 - **Two empty states, not one.** `rows.length === 0` means nothing has been recorded yet;
   `state.noMatches(rows)` means the filters hide everything. They want different messages, and
   the second one offers *Clear filters*. One message for both causes is a support ticket.
@@ -712,6 +717,26 @@ and the range itself.
   than twice. Many noisy live regions become spam.
 - The page-size `<select>` has a real `<label for>`, and the icon-only step buttons carry
   `aria-label` plus the `interestfor` + `popover="hint"` tooltip pattern of §4 — never `title`.
+- **The numbered slots never exceed `MAX_PAGE_SLOTS` (7)**, exported from `table-state.ts`:
+  `TableState.pageNumbers()` collapses the rest into ellipses (`1 … 9 10 11 … 20`) at any page
+  count, and `table-state.spec.ts` pins the bound. A pager cannot grow with the row count.
+- **The button row does not wrap.** `app-table-pager` is a size container (`container:
+  gh-pager / inline-size`), so the pager's **own** width decides its density, not the
+  viewport's — it sits in dialogs and narrow columns. Below 40rem of that width the numbered
+  slots give way to a *Page X of Y* label (`.gh-page-compact`, `aria-hidden` because the status
+  line already announces the range); below 24rem the page-size and jump labels are hidden
+  visually but kept for assistive technology.
+- **A *Go to page* field appears above `MAX_PAGE_SLOTS` pages.** Enter or `change` moves there
+  through `state.setPage`, which clamps, so there is no error state: an out-of-range number lands
+  on the nearest valid page and the status line announces it. Server-paged tables work the same
+  way, since `setPage` counts `remoteTotal` and the host refetches on `(changed)`.
+- **The page buttons are a labelled `role="group"`** (*Pages of runs*), **not a `<nav>`.** Several
+  tables carry two pagers, and a page full of identically named navigation landmarks is
+  landmark overuse.
+- **Above and below is the default; one pager below is allowed** where the view must start high
+  — the model comparison's step 1 source picker is the case. Never fewer than one.
+- **Pagers go outside `.gh-datatable-scroll`, never inside it**, or they scroll sideways with a
+  wide table.
 
 ### 8f. Selection and lookup in a paged table
 
@@ -721,7 +746,8 @@ A paged, filtered table can hide the operator's own selection. The rules that ke
   filtering and a reload.
 - **Say what is off-screen.** Whenever the selection is non-empty, a line under the table reads
   *"3 selected — 2 not on this page"*, with a **Show selected only** toggle (an
-  `aria-pressed` button backed by a filter over the selected ids) beside *Clear Selection*.
+  `aria-pressed` `.gh-filter-toggle` backed by a filter over the selected ids) beside *Clear
+  Selection*.
   Without it an operator filters the list, sees one tick, and builds a three-row set they never
   inspected.
 - **No header "select all" checkbox.** Over a filtered, paged list it means one of three
@@ -739,9 +765,10 @@ recorded there: emulated encapsulation rewrites a component selector to
 never receive it.
 
 - The classes are `.gh-datatable`, `.gh-datatable-scroll`, `.gh-datatable-toolbar`,
-  `.gh-filter-row` / `.gh-filter-input` / `.gh-filter-select` / `.gh-filter-clear`,
-  `.gh-th-sortable` / `.gh-th-sort` / `.gh-sort-caret`, `.gh-pager` / `.gh-pager-size` /
-  `.gh-pager-buttons` / `.gh-pager-status`, `.gh-page-btn` and `.gh-page-ellipsis`.
+  `.gh-filter-row` / `.gh-filter-input` / `.gh-filter-select` / `.gh-filter-clear` /
+  `.gh-filter-toggle`, `.gh-th-sortable` / `.gh-th-sort` / `.gh-sort-caret`, `.gh-pager` /
+  `.gh-pager-size` / `.gh-pager-buttons` / `.gh-pager-status` / `.gh-pager-jump` /
+  `.gh-pager-jump-input`, `.gh-page-btn`, `.gh-page-ellipsis` and `.gh-page-compact`.
 - **Sticky header.** `position: sticky; top: 0` on the header cells, whose sticky context is
   the table's own scroll container (`.gh-datatable-scroll`), not the page. `border-collapse:
   collapse` on `.gh-table` makes a sticky header's *borders* vanish in some engines, so the
@@ -805,6 +832,8 @@ Diff this against your markup before calling button, tab or table work finished.
 - [ ] "Nothing recorded yet" and "nothing matches these filters" are distinct empty states.
 - [ ] Pager end buttons are `aria-disabled`, not `disabled`, and each handler refuses on its own.
 - [ ] Exactly one pager per table has `[announce]="true"`.
+- [ ] No pager inside `.gh-datatable-scroll`.
+- [ ] On/off view filters are `.gh-filter-toggle` with `aria-pressed`.
 - [ ] Selection is held by id; the off-page selection count and **Show selected only** are
       present; there is no header "select all"; every lookup searches the source list.
 - [ ] New styles are scoped under `.gh-datatable` or a `.gh-`-prefixed class in `styles.scss`.

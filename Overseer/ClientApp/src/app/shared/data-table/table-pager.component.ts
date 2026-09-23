@@ -1,6 +1,6 @@
 import { AfterViewInit, Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { PAGE_ELLIPSIS, TableState } from './table-state';
+import { MAX_PAGE_SLOTS, PAGE_ELLIPSIS, TableState } from './table-state';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 
 /** Distinguishes the ids and tooltip anchors of the several pagers a page may hold. */
@@ -30,7 +30,7 @@ let pagerSequence = 0;
         </select>
       </div>
 
-      <div class="gh-pager-buttons">
+      <div class="gh-pager-buttons" role="group" [attr.aria-label]="'Pages of ' + noun">
         <button type="button" class="gh-page-btn gh-page-btn-step"
                 [attr.aria-disabled]="hasPrevious ? null : 'true'"
                 [attr.aria-label]="'First page of ' + noun"
@@ -73,6 +73,8 @@ let pagerSequence = 0;
           }
         }
 
+        <span class="gh-page-compact" aria-hidden="true">Page {{ state.page }} of {{ totalPages }}</span>
+
         <button type="button" class="gh-page-btn gh-page-btn-step"
                 [attr.aria-disabled]="hasNext ? null : 'true'"
                 [attr.aria-label]="'Next page of ' + noun"
@@ -105,6 +107,16 @@ let pagerSequence = 0;
              [attr.style]="'position-anchor: --' + idPrefix + '-last'">Last page</div>
       </div>
 
+      @if (totalPages > maxSlots) {
+        <div class="gh-pager-jump">
+          <label [attr.for]="jumpInputId">Go to page</label>
+          <input type="number" class="gh-input gh-pager-jump-input" [attr.id]="jumpInputId"
+                 inputmode="numeric" enterkeyhint="go" min="1" [attr.max]="totalPages"
+                 [attr.placeholder]="state.page" #jump
+                 (keydown.enter)="jumpTo(jump)" (change)="jumpTo(jump)">
+        </div>
+      }
+
       <p class="gh-pager-status"
          [attr.role]="announce ? 'status' : null"
          [attr.aria-live]="announce ? 'polite' : null"
@@ -133,8 +145,10 @@ export class TablePagerComponent implements OnInit, AfterViewInit {
   @Output() changed = new EventEmitter<void>();
 
   readonly ellipsis = PAGE_ELLIPSIS;
+  readonly maxSlots = MAX_PAGE_SLOTS;
   readonly idPrefix = `gh-pager-${++pagerSequence}`;
   readonly sizeSelectId = `${this.idPrefix}-size`;
+  readonly jumpInputId = `${this.idPrefix}-jump`;
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
@@ -152,6 +166,10 @@ export class TablePagerComponent implements OnInit, AfterViewInit {
 
   get hasNext(): boolean {
     return this.state.hasNext(this.rows);
+  }
+
+  get totalPages(): number {
+    return this.state.totalPages(this.rows);
   }
 
   get summary(): string {
@@ -210,6 +228,21 @@ export class TablePagerComponent implements OnInit, AfterViewInit {
       return;
     }
     this.state.setPage(this.state.totalPages(this.rows), this.rows);
+    this.changed.emit();
+  }
+
+  // Enter fires keydown.enter and may be followed by a native change event on the same
+  // field. Clearing the value here first means that second call sees an empty field and
+  // returns before setPage or changed run a second time.
+  jumpTo(input: HTMLInputElement): void {
+    const value = input.value;
+    const n = Math.trunc(Number(value));
+    if (value === '' || !Number.isFinite(n)) {
+      input.value = '';
+      return;
+    }
+    this.state.setPage(n, this.rows);
+    input.value = '';
     this.changed.emit();
   }
 }
