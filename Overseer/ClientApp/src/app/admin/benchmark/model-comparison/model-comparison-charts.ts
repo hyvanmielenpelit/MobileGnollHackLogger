@@ -2197,11 +2197,12 @@ function buildPanel(
   // A panel is one hue for every bar. Bars are never ramped by value: darker-where-bigger would
   // re-encode the length the bar already shows and fail the categorical checks by construction.
   // Identity here is axis position and label, so the hue is free to mark the measure instead.
+  const hollow = (entry: ModelComparisonEntry): boolean => entry.runCount === 1 && !style.filledBars;
   const fills = plotted.map((entry) => {
     if (!hasEmphasis) {
-      return entry.runCount === 1 ? 'transparent' : panelHue;
+      return hollow(entry) ? 'transparent' : panelHue;
     }
-    return emphasised.has(entry.key) ? (entry.runCount === 1 ? 'transparent' : ACCENT) : DE_EMPHASIS_FILL;
+    return emphasised.has(entry.key) ? (hollow(entry) ? 'transparent' : ACCENT) : DE_EMPHASIS_FILL;
   });
   const strokes = plotted.map((entry) => {
     if (!hasEmphasis) {

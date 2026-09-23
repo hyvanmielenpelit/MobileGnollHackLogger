@@ -896,6 +896,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.schedulePreview();
   }
 
+  /** The page's copy of the Style tab's *Filled bars*: one field, so the two stay in step. */
+  onBarFilledChange(on: boolean): void {
+    this.onFigureStyleChange({ ...this.figureStyle, bar: { ...this.figureStyle.bar, filledBars: on } });
+  }
+
   /**
    * Stores the style at once, so the panel's own controls follow it, persists it, and rebuilds the
    * six figures once the change pauses: a range drag fires on every step.

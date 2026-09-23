@@ -870,7 +870,8 @@
 
 /* The one control that belongs to the scatters rather than to the whole figure set, so it sits
    with them rather than in the filter row above every figure. */
-.mc-scatter-options {
+.mc-scatter-options,
+.mc-bar-options {
   margin: 12px 0 8px;
 
   /* 30px = the global checkbox's 20px box plus `.checkbox-label`'s 10px gap, so the hint starts

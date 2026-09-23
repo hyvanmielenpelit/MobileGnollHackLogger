@@ -1015,6 +1015,18 @@
           @if (showFigures) {
             <div class="mc-charts" #chartsHost [class.mc-single-run]="allSingleRun">
 
+              <div class="mc-bar-options">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="mc-bar-filled" [checked]="figureStyle.bar.filledBars"
+                         aria-describedby="mc-bar-filled-hint"
+                         (change)="onBarFilledChange($any($event.target).checked)">
+                  Filled bars in the Intelligence, Speed and Cost charts
+                </label>
+                <p class="mc-field-hint" id="mc-bar-filled-hint">On, a bar backed by a single run is
+                   drawn solid like the rest; the n = 1 under the model's name still marks it. Applies
+                   to the page, the preview and every export.</p>
+              </div>
+
               <!-- P1 — three linked panels, one shared model order, one unit each. -->
               <div class="mc-panels">
                 @for (card of panelCards; track card.id) {

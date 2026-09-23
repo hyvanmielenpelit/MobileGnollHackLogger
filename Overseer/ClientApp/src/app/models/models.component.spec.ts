@@ -85,6 +85,7 @@ describe('ModelsComponent', () => {
     });
 
     it('should catch TypeError: Failed to fetch on deleteUserModel, close modal, and reset saving to false', () => {
+      const consoleError = spyOn(console, 'error');
       component.modelToDeleteId = 42;
 
       spyOn(settingsService, 'deleteUserModel').and.returnValue(
@@ -97,6 +98,7 @@ describe('ModelsComponent', () => {
 
       expect(component.saving).toBeFalse();
       expect(mockDialog.close).toHaveBeenCalled();
+      expect(consoleError).toHaveBeenCalledWith('Failed to delete model', jasmine.any(TypeError));
     });
   });
 

@@ -17,6 +17,8 @@ export interface BarFigureStyle {
   readonly maxBarWidthPx: number | null;
   readonly cornerRadiusPx: number;
   readonly outlineWidthPx: number;
+  /** Single-run bars drawn solid rather than as an outline; multi-run bars are always solid. */
+  readonly filledBars: boolean;
   /** Uncertainty bars (whiskers). */
   readonly intervals: boolean;
   /** Caption note while the intervals are hidden. */
@@ -62,6 +64,7 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
     maxBarWidthPx: 24,
     cornerRadiusPx: 4,
     outlineWidthPx: 2,
+    filledBars: false,
     intervals: true,
     hiddenIntervalsNote: true,
     meanTimeNoIntervalNote: true,
@@ -110,7 +113,7 @@ export const BAR_RANGE_CONTROLS: readonly RangeControl<NumericBarStyleKey>[] = [
   {
     key: 'outlineWidthPx',
     label: 'Outline width',
-    hint: 'A single-run bar is drawn as an outline only, so the outline never goes below 1 px.',
+    hint: 'Unless the bars are filled, a single-run bar is drawn as an outline only, so the outline never goes below 1 px.',
     min: 1,
     max: 6,
     step: 1,
@@ -168,6 +171,7 @@ function normalizeBar(value: unknown): BarFigureStyle {
     maxBarWidthPx: v['maxBarWidthPx'] === null ? null : numeric('maxBarWidthPx'),
     cornerRadiusPx: numeric('cornerRadiusPx'),
     outlineWidthPx: numeric('outlineWidthPx'),
+    filledBars: booleanOr(v['filledBars'], d.filledBars),
     intervals: booleanOr(v['intervals'], d.intervals),
     hiddenIntervalsNote: booleanOr(v['hiddenIntervalsNote'], d.hiddenIntervalsNote),
     meanTimeNoIntervalNote: booleanOr(v['meanTimeNoIntervalNote'], d.meanTimeNoIntervalNote),

@@ -2533,6 +2533,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should record lastRunPollError on failed poll and report it in diagnostics text', () => {
+      const consoleError = spyOn(console, 'error');
       benchmarkServiceMock.getRun.and.returnValue(throwError(() => ({
         status: 500,
         message: 'Internal Server Error'
@@ -2543,6 +2544,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.lastRunPollError).toContain('500');
       expect(component.runDiagnosticsText).toContain('Last poll error:');
       expect(component.runDiagnosticsText).toContain('500');
+      expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', jasmine.any(Object));
     });
 
     it('should produce non-empty diagnostics text when activeRunDetail is null', () => {
@@ -4228,6 +4230,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should send the mode only when an assessor is selected', fakeAsync(() => {
+      const consoleError = spyOn(console, 'error');
       component.selectedSuiteId = 1;
       component.testedConfigId = 1;
       component.assessorConfigId = 2;
@@ -4243,6 +4246,7 @@ describe('AdminBenchmarkComponent', () => {
       component.secondOpinionMode = 3;
       component.startBenchmark();
       expect(benchmarkServiceMock.startRun.calls.mostRecent().args[0].secondOpinionMode).toBe(3);
+      expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', jasmine.any(Object));
 
       (component as any).stopPolling();
       discardPeriodicTasks();
@@ -6811,6 +6815,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('does not release the background lock on a single run poll error, and stays polling', () => {
+      const consoleError = spyOn(console, 'error');
       const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
       const releaseSpy = spyOn(lockService, 'release');
       const acquireSpy = spyOn(lockService, 'acquireForRun');
@@ -6826,11 +6831,13 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(releaseSpy).not.toHaveBeenCalled();
       expect((component as any).pollTickerHandle).not.toBeNull();
+      expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', jasmine.any(Object));
       (component as any).stopPolling();
       component.ngOnDestroy();
     });
 
     it('releases the background lock only on the 5th consecutive run poll error', () => {
+      const consoleError = spyOn(console, 'error');
       const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
       const releaseSpy = spyOn(lockService, 'release');
 
@@ -6848,10 +6855,12 @@ describe('AdminBenchmarkComponent', () => {
       (component as any).pollRunDetail(42);
       expect(releaseSpy).toHaveBeenCalled();
       expect((component as any).pollTickerHandle).toBeNull();
+      expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', jasmine.any(Object));
       component.ngOnDestroy();
     });
 
     it('resets the consecutive run poll failure count on a successful poll', () => {
+      const consoleError = spyOn(console, 'error');
       const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
       const releaseSpy = spyOn(lockService, 'release');
 
@@ -6871,11 +6880,13 @@ describe('AdminBenchmarkComponent', () => {
       }
 
       expect(releaseSpy).not.toHaveBeenCalled();
+      expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', jasmine.any(Object));
       (component as any).stopPolling();
       component.ngOnDestroy();
     });
 
     it('does not release the background lock on a single series poll error, and stays polling', () => {
+      const consoleError = spyOn(console, 'error');
       const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
       const releaseSpy = spyOn(lockService, 'release');
       const acquireSpy = spyOn(lockService, 'acquireForSeries');
@@ -6889,11 +6900,13 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(releaseSpy).not.toHaveBeenCalled();
       expect((component as any).seriesPollTickerHandle).not.toBeNull();
+      expect(consoleError).toHaveBeenCalledWith('Failed to poll benchmark run series', jasmine.any(Object));
       (component as any).stopSeriesPolling();
       component.ngOnDestroy();
     });
 
     it('releases the background lock only on the 5th consecutive series poll error', () => {
+      const consoleError = spyOn(console, 'error');
       const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
       const releaseSpy = spyOn(lockService, 'release');
 
@@ -6909,6 +6922,7 @@ describe('AdminBenchmarkComponent', () => {
       (component as any).pollSeries(11);
       expect(releaseSpy).toHaveBeenCalled();
       expect((component as any).seriesPollTickerHandle).toBeNull();
+      expect(consoleError).toHaveBeenCalledWith('Failed to poll benchmark run series', jasmine.any(Object));
       component.ngOnDestroy();
     });
 

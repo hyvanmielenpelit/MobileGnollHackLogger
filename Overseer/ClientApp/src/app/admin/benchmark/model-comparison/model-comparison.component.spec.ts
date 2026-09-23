@@ -2122,6 +2122,30 @@ describe('ModelComparisonComponent', () => {
     expect(scatterBlocks()!.every(b => b.values.length === 0)).toBeTrue();
   });
 
+  it('fills single-run bars from the step 4 checkbox, persists it, and mirrors the Style tab', () => {
+    render(buildDto(comparableSet(3).map(entry => ({ ...entry, runCount: 1 }))), 4);
+
+    const fills = (): unknown[] =>
+      (component.panelCards[0].data.datasets[0] as unknown as Record<string, unknown[]>)['backgroundColor'];
+    expect(fills().every(fill => fill === 'transparent')).toBeTrue();
+
+    const pageToggle = (): HTMLInputElement => styleControl('mc-bar-filled');
+    expect(pageToggle().checked).toBeFalse();
+
+    withStyleDebounce(() => setChecked(pageToggle(), true));
+    expect(component.figureStyle.bar.filledBars).toBeTrue();
+    expect(JSON.parse(localStorage.getItem(FIGURE_STYLE_STORAGE_KEY)!).bar.filledBars).toBeTrue();
+    expect(fills().some(fill => fill === 'transparent')).toBeFalse();
+
+    openStyleTab(component.panelCards[0]);
+    const styleToggle = styleControl('mc-style-bar-filledBars');
+    expect(styleToggle.checked).toBeTrue();
+
+    withStyleDebounce(() => setChecked(styleToggle, false));
+    expect(pageToggle().checked).toBeFalse();
+    expect(fills().every(fill => fill === 'transparent')).toBeTrue();
+  });
+
   it('re-composes the preview when a trade-off toggle is changed in the Style tab', () => {
     render(buildDto(comparableSet(3)), 4);
 

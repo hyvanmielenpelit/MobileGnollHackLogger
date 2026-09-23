@@ -983,6 +983,7 @@ describe('ChatComponent session loading and exclusivity', () => {
     });
 
     it('should fail tool request immediately when not embedded', () => {
+      const consoleError = spyOn(console, 'error');
       const bridge = TestBed.inject(ClientBridgeService);
       spyOn(bridge, 'isEmbedded').and.returnValue(false);
       const sendResultSpy = spyOn(component, 'sendToolResult');
@@ -997,6 +998,7 @@ describe('ChatComponent session loading and exclusivity', () => {
       component.forwardToolRequest(request);
 
       expect(sendResultSpy).toHaveBeenCalledWith('req-2', false, null, 'Client bridge not available');
+      expect(consoleError).toHaveBeenCalledWith('No client bridge available');
     });
   });
 
@@ -2571,6 +2573,7 @@ describe('ChatComponent confidential chats', () => {
 
   describe('an incognito chat the server no longer holds', () => {
     it('should return to a new chat and say the content is gone', async () => {
+      const consoleError = spyOn(console, 'error');
       spyOn(settingsService, 'getSettings').and.returnValue(of({} as UserAiSettings));
       spyOn(component, 'loadSessions');
       spyOn(chatService, 'sendMessage').and.returnValue(throwError(() => ({ status: 404 })));
@@ -2587,6 +2590,7 @@ describe('ChatComponent confidential chats', () => {
       expect(component.messages.length).toBe(0);
       expect(component.privacyNotice).toContain('has expired or was closed');
       expect(navSpy).toHaveBeenCalled();
+      expect(consoleError).toHaveBeenCalledWith(jasmine.objectContaining({ status: 404 }));
     });
   });
 

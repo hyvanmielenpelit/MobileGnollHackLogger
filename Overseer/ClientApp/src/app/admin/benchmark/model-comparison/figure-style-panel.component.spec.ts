@@ -104,6 +104,22 @@ describe('FigureStylePanelComponent', () => {
     expect(emitted[1].bar.maxBarWidthPx).toBe(24);
   });
 
+  it('switches filled bars and resets it', () => {
+    render('bar');
+    const filled = control('mc-style-bar-filledBars');
+    expect(filled.checked).toBeFalse();
+    expect(hintOf(filled)).toContain('n = 1');
+
+    setChecked(filled, true);
+    expect(emitted[0].bar).toEqual({ ...DEFAULT_FIGURE_STYLE.bar, filledBars: true });
+    expect(emitted[0].scatter).toBe(DEFAULT_FIGURE_STYLE.scatter);
+    acceptLast();
+    expect(control('mc-style-bar-filledBars').checked).toBeTrue();
+
+    fixture.componentInstance.resetBar();
+    expect(emitted[emitted.length - 1].bar.filledBars).toBeFalse();
+  });
+
   it('switches the uncertainty bars of one family only', () => {
     render('bar');
     setChecked(control('mc-style-bar-intervals'), false);

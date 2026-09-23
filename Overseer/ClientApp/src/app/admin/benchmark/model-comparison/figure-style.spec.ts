@@ -14,6 +14,7 @@ describe('figure-style', () => {
       maxBarWidthPx: 24,
       cornerRadiusPx: 4,
       outlineWidthPx: 2,
+      filledBars: false,
       intervals: true,
       hiddenIntervalsNote: true,
       meanTimeNoIntervalNote: true,
@@ -126,13 +127,19 @@ describe('figure-style', () => {
     expect(older.bar.intervals).toBeFalse();
   });
 
+  it('reads a stored style without filledBars as outlined, and keeps it when set', () => {
+    expect(normalizeFigureStyle({ version: 1, bar: {} }).bar.filledBars).toBeFalse();
+    expect(normalizeFigureStyle({ version: 1, bar: { filledBars: true } }).bar.filledBars).toBeTrue();
+  });
+
   it('accepts only real booleans for a checkbox', () => {
     const style = normalizeFigureStyle({
-      bar: { intervals: 'false', valueLabels: 0 },
+      bar: { intervals: 'false', valueLabels: 0, filledBars: 'true' },
       scatter: { dominatedShading: 'false', gridlines: null }
     });
     expect(style.bar.intervals).toBeTrue();
     expect(style.bar.valueLabels).toBeTrue();
+    expect(style.bar.filledBars).toBeFalse();
     expect(style.scatter.dominatedShading).toBeTrue();
     expect(style.scatter.gridlines).toBeTrue();
   });

@@ -39,6 +39,13 @@
             </label>
           }
         }
+        <label class="checkbox-label">
+          <input type="checkbox" id="mc-style-bar-filledBars" [checked]="bar.filledBars"
+                 aria-describedby="mc-style-bar-filledBars-hint"
+                 (change)="setBar('filledBars', checkedOf($event))">
+          Filled bars
+        </label>
+        <p class="gh-fieldset-hint" id="mc-style-bar-filledBars-hint">A bar backed by a single run is otherwise drawn as an outline; bars backed by several runs are always filled. The n = 1 under the model's name marks a single run either way.</p>
         <p class="gh-fieldset-hint">A bar fills its model's slot less the space, up to the maximum width; past that width the space grows.</p>
       </fieldset>
 

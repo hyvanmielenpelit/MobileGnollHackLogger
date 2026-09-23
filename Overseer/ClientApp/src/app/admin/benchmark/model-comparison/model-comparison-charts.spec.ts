@@ -1722,6 +1722,26 @@ describe('model-comparison-charts', () => {
         expect(dataset['borderWidth']).toBe(3);
       });
 
+      it('draws single-run bars as outlines by default and solid when filledBars is on', () => {
+        const entries = [makeEntry({ key: 'once', runCount: 1 }), makeEntry({ key: 'thrice', runCount: 3 })];
+        const hue = CATEGORICAL_PALETTE_DARK[0];
+        const quality = (options: Partial<SmallMultiplesOptions>) =>
+          datasetsOf(buildSmallMultiples(entries, smallMultiplesOptions(options)).quality.config)[0];
+
+        const outlined = quality({});
+        expect(outlined['backgroundColor']).toEqual(['transparent', hue]);
+
+        const filled = quality({ style: style({ filledBars: true }) });
+        expect(filled['backgroundColor']).toEqual([hue, hue]);
+        expect(filled['borderColor']).toEqual(outlined['borderColor']);
+
+        const emphasisedOutlined = quality({ highlightedKey: 'once' });
+        expect(emphasisedOutlined['backgroundColor']).toEqual(['transparent', DE_EMPHASIS_FILL]);
+        const emphasisedFilled = quality({ style: style({ filledBars: true }), highlightedKey: 'once' });
+        expect(emphasisedFilled['backgroundColor']).toEqual([ACCENT, DE_EMPHASIS_FILL]);
+        expect(emphasisedFilled['borderColor']).toEqual(emphasisedOutlined['borderColor']);
+      });
+
       it('hides the value labels and the value-axis grid on request, and sizes the text', () => {
         const figure = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({
           style: style({ valueLabels: false, gridlines: false, axisTextSizePx: 16, valueLabelSizePx: 18 }),

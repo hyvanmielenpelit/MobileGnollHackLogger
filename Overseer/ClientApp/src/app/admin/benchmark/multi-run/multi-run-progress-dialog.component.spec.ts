@@ -421,12 +421,14 @@ describe('MultiRunProgressDialogComponent', () => {
   });
 
   it('should say so plainly when no series detail has arrived yet', () => {
+    const consoleError = spyOn(console, 'error');
     serviceMock.getRunSeries.and.returnValue(throwError(() => ({ status: 500 })));
     fixture.componentRef.setInput('seriesId', 3);
     fixture.componentRef.setInput('visible', true);
     fixture.detectChanges();
 
     expect(component.seriesDiagnosticsText).toContain('No series detail received yet');
+    expect(consoleError).toHaveBeenCalledWith('Failed to poll benchmark run series', jasmine.any(Object));
   });
 
   // --- Group analysis diagnostics --------------------------------------------------------------
