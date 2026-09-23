@@ -237,7 +237,7 @@ public static class BenchmarkModelComparison
         var statistics = BenchmarkGroupStatistics.Compute(
             source.Suite!, source.Questions, source.Runs, costs, options);
 
-        entry.Quality = BuildQuality(statistics);
+        entry.Quality = BuildQuality(source, statistics);
         entry.Speed = BuildSpeed(statistics);
         entry.Cost = BuildCost(statistics, basis, card, pricingResolved, today);
         entry.Table = BuildTable(source, statistics);
@@ -367,14 +367,19 @@ public static class BenchmarkModelComparison
         };
     }
 
-    private static BenchmarkModelComparisonQualityDto BuildQuality(BenchmarkGroupStatisticsResult statistics)
+    private static BenchmarkModelComparisonQualityDto BuildQuality(
+        BenchmarkModelComparisonSource source, BenchmarkGroupStatisticsResult statistics)
     {
         var index = statistics.Index;
+        var (revised, unscored) = ClassifyUnscoredItems(source.Questions, source.Runs, statistics);
 
         return new BenchmarkModelComparisonQualityDto
         {
             PointEstimate = index.PointEstimate,
             ItemCount = statistics.ItemCount,
+            SuiteItemCount = source.Questions.Count,
+            RevisedItemCount = revised,
+            UnscoredItemCount = unscored,
             IntervalHalfWidth = index.CombinedHalfWidth,
             IntervalLower = index.CombinedLower,
             IntervalUpper = index.CombinedUpper,
@@ -389,6 +394,40 @@ public static class BenchmarkModelComparison
                   + "there is no reproducibility estimate, so this interval covers one source of "
                   + "variation rather than two."
         };
+    }
+
+    /// <summary>
+    /// Sorts the suite questions missing from <paramref name="statistics"/> into those left out only
+    /// because their answers were graded under an older rubric revision, and those with no scored
+    /// answer at all. Both counts are over questions not in the statistics, so together with its
+    /// item count they always sum to the suite size.
+    /// </summary>
+    private static (int Revised, int Unscored) ClassifyUnscoredItems(
+        IReadOnlyList<BenchmarkQuestion> questions,
+        IReadOnlyList<BenchmarkRun> runs,
+        BenchmarkGroupStatisticsResult statistics)
+    {
+        var scored = statistics.Items.Select(i => i.QuestionId).ToHashSet();
+        int revised = 0;
+        int unscored = 0;
+
+        foreach (var question in questions)
+        {
+            if (scored.Contains(question.Id)) continue;
+
+            // A sample in every respect but the revision check in BenchmarkItemAnalysis.Samples.
+            bool gradedUnderOlderRevision = runs.Any(r => (r.Answers ?? new List<BenchmarkRunAnswer>())
+                .Any(a => a.BenchmarkQuestionId == question.Id
+                          && BenchmarkRunFinalizer.CountsTowardQualityIndex(a)
+                          && a.QualityScore.HasValue
+                          && a.ItemRevisionUsed != null
+                          && a.ItemRevisionUsed != question.ItemRevision));
+
+            if (gradedUnderOlderRevision) revised++;
+            else unscored++;
+        }
+
+        return (revised, unscored);
     }
 
     private static BenchmarkModelComparisonSpeedDto BuildSpeed(BenchmarkGroupStatisticsResult statistics)

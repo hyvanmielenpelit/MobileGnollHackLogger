@@ -57,6 +57,7 @@ import {
   ComparisonSelectedSource,
   ComparisonSelectionNotice,
   orderedNotices,
+  questionCoverageNotes,
   sourceLabel,
   toChartContext,
   toChartEntries,
@@ -405,7 +406,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   entries: readonly BenchmarkModelComparisonEntryDto[] = [];
   figures: ComparisonFigureSet | null = null;
   context: ModelComparisonContext = {
-    itemsPerRun: 0, pricingBasisLabel: '', pricingBasis: '', pricedOn: '', suiteName: ''
+    scoredItemsMin: 0, scoredItemsMax: 0, suiteItemCount: 0,
+    pricingBasisLabel: '', pricingBasis: '', pricedOn: '', suiteName: ''
   };
   orientation: BarOrientation = 'vertical';
 
@@ -2841,7 +2843,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /**
    * The set-level facts that qualify every figure, tagged for the figure chrome: the cap and the
-   * exclusions are warnings, strict withholding and deselection are informational. Appended to every
+   * exclusions are warnings, strict withholding and deselection are informational, and the plotted
+   * entries' question coverage closes the list (see {@link questionCoverageNotes}). Appended to every
    * card's own notes on export and on preview, and the first of {@link setNotices}.
    */
   get setFigureNotes(): FigureNote[] {
@@ -2866,6 +2869,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         tone: 'info'
       });
     }
+
+    const plottedKeys = new Set(this.plotted.map(entry => entry.key));
+    notes.push(...questionCoverageNotes(this.entries.filter(entry => plottedKeys.has(entry.key))));
 
     return notes;
   }

@@ -13,7 +13,7 @@ import ChartDataLabels from 'chartjs-plugin-datalabels';
 import type { Chart, ChartConfiguration, ChartType, DefaultDataPoint, Plugin, Point } from 'chart.js';
 import { chooseScaleType, formatTick, linearDomain, logDomain, timeUnitFor } from './axis-domain';
 import type { AxisBounds, AxisTickKind, ScaleType, TimeUnit } from './axis-domain';
-import { figureDirectionRotation, pricingBadge, pricingNote, runsBadge, visibleBadges } from './figure-chrome';
+import { figureDirectionRotation, pricingBadge, pricingNote, questionsBadge, runsBadge, visibleBadges } from './figure-chrome';
 import type { FigureBadge, FigureChrome, FigureDirection, FigureKeyItem, FigureNote } from './figure-chrome';
 import { DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
 import type { FigureStyle } from './figure-style';
@@ -70,6 +70,8 @@ export interface ModelComparisonEntry {
   readonly candidateCostPerQuestionUsd: number;
   /** SD of that cost across runs. Null at R = 1, where P1's category tick says `n = 1` instead. */
   readonly candidateCostPerQuestionSdUsd: number | null;
+  /** Candidate-only mean cost of one run, in USD. UNMEASURED when absent. */
+  readonly candidateCostPerRunUsd: number;
   /** Cost of the whole run including grading roles, in USD. */
   readonly totalRunCostUsd: number;
   /** SD of the total run cost across runs. Null at R = 1. */
@@ -85,10 +87,14 @@ export interface ModelComparisonEntry {
   readonly excludedReasonKeys: readonly string[];
 }
 
-/** Facts shared by every entry in a comparable set, used for figure chrome and the suite-cost rescale. */
+/** Facts shared by every entry in a comparable set, used for figure chrome. */
 export interface ModelComparisonContext {
-  /** Items per run. Constant across a comparable set, because every Fundamental key must match. */
-  readonly itemsPerRun: number;
+  /** Fewest scored questions behind any charted entry's index. */
+  readonly scoredItemsMin: number;
+  /** Most scored questions behind any charted entry's index. */
+  readonly scoredItemsMax: number;
+  /** Questions the suite holds, or 0 when unknown. */
+  readonly suiteItemCount: number;
   /** The pricing basis and its date, as the view's header, methods block and table name it. */
   readonly pricingBasisLabel: string;
   /** The pricing basis key: `'Current'`, `'AsRun'` or `''`. Drives the pricing badge and note on cost figures. */
@@ -234,15 +240,21 @@ export interface ModelSort {
 /** One order control drives all three P1 panels; this is where it starts. */
 export const DEFAULT_MODEL_SORT: ModelSort = { key: 'intelligenceIndex', direction: 'desc' };
 
-/** Candidate cost of the whole question suite: per-question cost times the shared item count. */
-export function suiteCostUsd(entry: ModelComparisonEntry, context: ModelComparisonContext): number {
-  return entry.candidateCostPerQuestionUsd * context.itemsPerRun;
+/** Candidate cost of one suite run: the entry's own mean run cost, independent of any item count. */
+export function suiteCostUsd(entry: ModelComparisonEntry): number {
+  return entry.candidateCostPerRunUsd;
 }
 
-function suiteCostSdUsd(entry: ModelComparisonEntry, context: ModelComparisonContext): number | null {
-  return entry.candidateCostPerQuestionSdUsd === null
-    ? null
-    : entry.candidateCostPerQuestionSdUsd * context.itemsPerRun;
+/** The per-question SD scaled by the same factor that turns the per-question cost into the run cost. */
+export function suiteCostSdUsd(entry: ModelComparisonEntry): number | null {
+  const perRun = entry.candidateCostPerRunUsd;
+  const perQuestion = entry.candidateCostPerQuestionUsd;
+  if (entry.candidateCostPerQuestionSdUsd === null
+    || !Number.isFinite(perRun) || perRun <= 0
+    || !Number.isFinite(perQuestion) || perQuestion <= 0) {
+    return null;
+  }
+  return entry.candidateCostPerQuestionSdUsd * perRun / perQuestion;
 }
 
 /** The value P1's speed panel, the scatters and the profile plot read under the selected measure. */
@@ -263,9 +275,9 @@ export function speedValue(entry: ModelComparisonEntry, measure: SpeedMeasure): 
 export function costValue(
   entry: ModelComparisonEntry,
   measure: CostMeasure,
-  context: ModelComparisonContext,
+  _context: ModelComparisonContext,
 ): number {
-  return measure === 'candidateSuite' ? suiteCostUsd(entry, context) : entry.totalRunCostUsd;
+  return measure === 'candidateSuite' ? suiteCostUsd(entry) : entry.totalRunCostUsd;
 }
 
 /** True when lower is the better direction for the measure - drives axis markers and the frontier. */
@@ -789,11 +801,7 @@ function countBadges(plotted: readonly ModelComparisonEntry[], context: ModelCom
   return [
     { text: `${plotted.length} ${plotted.length === 1 ? 'model' : 'models'}`, tone: 'neutral', kind: 'models' },
     runsBadge(plotted),
-    {
-      text: `${context.itemsPerRun} ${context.itemsPerRun === 1 ? 'question' : 'questions'}`,
-      tone: 'neutral',
-      kind: 'questions',
-    },
+    questionsBadge(context.scoredItemsMin, context.scoredItemsMax, context.suiteItemCount),
   ];
 }
 
@@ -2407,7 +2415,7 @@ export function buildSmallMultiples(
   // read as certainty, which is why the category tick says `n = 1` under the model's name unless the
   // style hides it.
   const costSd = plotted.map((e) =>
-    costMeasure === 'candidateSuite' ? suiteCostSdUsd(e, context) ?? undefined : e.totalRunCostSdUsd ?? undefined,
+    costMeasure === 'candidateSuite' ? suiteCostSdUsd(e) ?? undefined : e.totalRunCostSdUsd ?? undefined,
   );
 
   const saturated = plotted.filter((e) => e.speedIndexSaturated);
@@ -2446,7 +2454,7 @@ export function buildSmallMultiples(
           : `Time to first token, median (${speedUnit})`;
   const costTitle =
     costMeasure === 'candidateSuite'
-      ? `Candidate cost for the whole suite (USD, ${context.itemsPerRun} questions)`
+      ? 'Candidate cost of one suite run (USD)'
       : 'Total run cost including grading roles (USD)';
 
   // One label list for all three panels. A two-line tick block on one panel alone would shrink

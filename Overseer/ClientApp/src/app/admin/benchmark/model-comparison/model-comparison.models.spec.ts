@@ -2,13 +2,20 @@ import {
   buildConditionLegend,
   conditionDetailFor,
   parseConfigurationValue,
-  summarizeConditionDifference
+  questionCoverageNotes,
+  summarizeConditionDifference,
+  toChartContext,
+  toChartEntries
 } from './model-comparison.models';
 import type {
   BenchmarkComparabilityConditionDto,
   BenchmarkComparabilityIndexDto,
   BenchmarkComparabilityIndexEntryDto,
   BenchmarkComparabilityKeyValueDto,
+  BenchmarkModelComparisonCostDto,
+  BenchmarkModelComparisonDto,
+  BenchmarkModelComparisonEntryDto,
+  BenchmarkModelComparisonQualityDto,
   ConditionDetailRow
 } from './model-comparison.models';
 
@@ -479,5 +486,118 @@ describe('summarizeConditionDifference', () => {
   it('says so when either side could not be attributed', () => {
     expect(summarizeConditionDifference(row({ thisValue: null })).kind).toBe('unattributed');
     expect(summarizeConditionDifference(row({ referenceValue: null })).kind).toBe('unattributed');
+  });
+});
+
+/**
+ * A comparison entry carrying only what the question-coverage and cost adapters read. The rest of
+ * the wire shape is irrelevant to them, so the cast keeps the fixture to the fields under test.
+ */
+function buildComparisonEntry(
+  key: string,
+  quality: Partial<BenchmarkModelComparisonQualityDto> | null,
+  overrides: Partial<BenchmarkModelComparisonEntryDto> = {}
+): BenchmarkModelComparisonEntryDto {
+  return {
+    key,
+    label: key,
+    modelDisplayName: key,
+    modelId: key,
+    runCount: 1,
+    excluded: false,
+    excludingKeys: [],
+    speedDegraded: false,
+    costDegraded: false,
+    quality: quality === null
+      ? null
+      : { pointEstimate: 80, itemCount: 18, suiteItemCount: 18, revisedItemCount: 0, unscoredItemCount: 0, ...quality },
+    cost: null,
+    ...overrides
+  } as unknown as BenchmarkModelComparisonEntryDto;
+}
+
+function buildComparison(entries: BenchmarkModelComparisonEntryDto[]): BenchmarkModelComparisonDto {
+  return { entries, pricingBasis: 'Current', pricingBasisLabel: 'Current catalog' } as unknown as BenchmarkModelComparisonDto;
+}
+
+describe('toChartContext', () => {
+  it('spans the charted entries\' scored counts against the suite', () => {
+    const same = toChartContext(buildComparison([
+      buildComparisonEntry('a', { itemCount: 16 }),
+      buildComparisonEntry('b', { itemCount: 16 })
+    ]));
+    expect([same.scoredItemsMin, same.scoredItemsMax, same.suiteItemCount]).toEqual([16, 16, 18]);
+
+    const differing = toChartContext(buildComparison([
+      buildComparisonEntry('a', { itemCount: 16 }),
+      buildComparisonEntry('b', { itemCount: 15 })
+    ]));
+    expect([differing.scoredItemsMin, differing.scoredItemsMax, differing.suiteItemCount]).toEqual([15, 16, 18]);
+  });
+
+  it('is all zeros with no charted entry, and ignores excluded ones', () => {
+    const none = toChartContext(buildComparison([
+      buildComparisonEntry('x', null, { excluded: true })
+    ]));
+    expect([none.scoredItemsMin, none.scoredItemsMax, none.suiteItemCount]).toEqual([0, 0, 0]);
+  });
+});
+
+describe('questionCoverageNotes', () => {
+  it('is empty when every charted entry scored every suite question', () => {
+    expect(questionCoverageNotes([buildComparisonEntry('a', {}), buildComparisonEntry('b', {})])).toEqual([]);
+  });
+
+  it('adds one info note for rubrics revised after the runs', () => {
+    const notes = questionCoverageNotes([
+      buildComparisonEntry('a', { itemCount: 16, revisedItemCount: 2 }),
+      buildComparisonEntry('b', { itemCount: 16, revisedItemCount: 2 })
+    ]);
+    expect(notes).toEqual([{
+      text: "2 of the suite's 18 questions are left out: their rubrics were revised after these runs, " +
+        'so the stored grades are for the old rubrics. Runs made from now on include them.',
+      tone: 'info'
+    }]);
+
+    const single = questionCoverageNotes([buildComparisonEntry('a', { itemCount: 17, revisedItemCount: 1 })]);
+    expect(single[0].text).toBe(
+      "1 of the suite's 18 questions is left out: its rubric was revised after these runs, " +
+      'so the stored grades are for the old rubric. Runs made from now on include it.'
+    );
+  });
+
+  it('warns once per entry with unscored questions, naming the entry', () => {
+    const notes = questionCoverageNotes([
+      buildComparisonEntry('GPT-5.6 Luna (max)', { itemCount: 17, unscoredItemCount: 1 }),
+      buildComparisonEntry('Gemini 3.7 Flash (medium)', {})
+    ]);
+    expect(notes).toEqual([{
+      text: 'GPT-5.6 Luna (max): 1 question has no scored answer (failed, skipped or ungraded) and is left out of its index.',
+      tone: 'warning'
+    }]);
+  });
+
+  it('lists the revised note before the per-entry warnings when both apply', () => {
+    const notes = questionCoverageNotes([
+      buildComparisonEntry('a', { itemCount: 13, revisedItemCount: 2, unscoredItemCount: 3 }),
+      buildComparisonEntry('b', { itemCount: 16, revisedItemCount: 2 })
+    ]);
+    expect(notes.map(note => note.tone)).toEqual(['info', 'warning']);
+    expect(notes[1].text).toBe(
+      'a: 3 questions have no scored answer (failed, skipped or ungraded) and are left out of its index.'
+    );
+  });
+});
+
+describe('toChartEntries candidate run cost', () => {
+  it('reads the run cost off the cost object, and is UNMEASURED without one', () => {
+    const [priced, unpriced] = toChartEntries(buildComparison([
+      buildComparisonEntry('priced', {}, {
+        cost: { candidateCostPerQuestionUsd: 0.01, candidateCostPerRunUsd: 0.18 } as BenchmarkModelComparisonCostDto
+      }),
+      buildComparisonEntry('unpriced', {})
+    ]));
+    expect(priced.candidateCostPerRunUsd).toBe(0.18);
+    expect(Number.isNaN(unpriced.candidateCostPerRunUsd)).toBeTrue();
   });
 });

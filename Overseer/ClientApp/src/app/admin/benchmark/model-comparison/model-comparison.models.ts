@@ -12,6 +12,7 @@
  */
 
 import type { BenchmarkComparabilityDifferenceDto } from '../../../services/admin-benchmark.service';
+import type { FigureNote } from './figure-chrome';
 import type { ModelComparisonContext, ModelComparisonEntry } from './model-comparison-charts';
 
 export type { BenchmarkComparabilityDifferenceDto };
@@ -60,8 +61,14 @@ export function modelComparisonQueryParams(query: BenchmarkModelComparisonQuery)
 /** The quality axis: the Intelligence Index with its 95 % interval and the two components behind it. */
 export interface BenchmarkModelComparisonQualityDto {
   pointEstimate: number;
-  /** Items behind the estimate, and the set's items-per-run once every Fundamental key matches. */
+  /** Items behind the estimate: suite questions with a scored answer. */
   itemCount: number;
+  /** Questions the suite holds now: `itemCount + revisedItemCount + unscoredItemCount`. */
+  suiteItemCount: number;
+  /** Questions whose every otherwise-scored answer was graded under an older rubric revision. */
+  revisedItemCount: number;
+  /** Questions with no scored answer at all: failed, skipped, canceled, ungraded or never asked. */
+  unscoredItemCount: number;
   intervalHalfWidth?: number | null;
   intervalLower?: number | null;
   intervalUpper?: number | null;
@@ -1093,6 +1100,7 @@ export function toChartEntries(dto: BenchmarkModelComparisonDto | null): ModelCo
 
     candidateCostPerQuestionUsd: entry.cost?.candidateCostPerQuestionUsd ?? UNMEASURED,
     candidateCostPerQuestionSdUsd: null,
+    candidateCostPerRunUsd: entry.cost?.candidateCostPerRunUsd ?? UNMEASURED,
     totalRunCostUsd: UNMEASURED,
     totalRunCostSdUsd: null,
 
@@ -1106,17 +1114,62 @@ export function toChartEntries(dto: BenchmarkModelComparisonDto | null): ModelCo
 /**
  * The set-level facts the figures put in their chrome.
  *
- * `itemsPerRun` comes from the first charted entry's item count rather than from a set-level field,
- * because the server carries it per entry; every Fundamental key must match for an entry to be
- * charted at all, and the suite is one of them, so the charted entries agree on it by construction.
+ * `scoredItemsMin` and `scoredItemsMax` span the charted entries' scored item counts, which can
+ * differ: an entry's failed, skipped or ungraded answers leave questions out of its index alone.
+ * `suiteItemCount` is shared, because the suite is a Fundamental key; the max tolerates a payload
+ * without the field, which reads as 0 (unknown).
  */
 export function toChartContext(dto: BenchmarkModelComparisonDto | null): ModelComparisonContext {
   const charted = dto?.entries.filter(entry => !entry.excluded && entry.quality != null) ?? [];
+  const scored = charted.map(entry => entry.quality?.itemCount ?? 0);
   return {
-    itemsPerRun: charted[0]?.quality?.itemCount ?? 0,
+    scoredItemsMin: scored.length > 0 ? Math.min(...scored) : 0,
+    scoredItemsMax: scored.length > 0 ? Math.max(...scored) : 0,
+    suiteItemCount: charted.reduce((max, entry) => Math.max(max, entry.quality?.suiteItemCount ?? 0), 0),
     pricingBasisLabel: dto?.pricingBasisLabel || dto?.pricingBasis || 'Unknown pricing basis',
     pricingBasis: dto?.pricingBasis ?? '',
     pricedOn: dto?.computedAtUtc ?? '',
     suiteName: dto?.baselineSuiteName ?? '',
   };
+}
+
+/**
+ * Why the charted entries' indices cover fewer questions than the suite holds. Revised rubrics are
+ * one info note, since the item revisions are a Fundamental key and every charted entry loses the
+ * same questions; an entry's own unscored questions are a warning each, because indices over
+ * different item sets are not strictly the same exam. Empty when every suite question is scored.
+ */
+export function questionCoverageNotes(entries: readonly BenchmarkModelComparisonEntryDto[]): FigureNote[] {
+  const notes: FigureNote[] = [];
+  const suite = entries.reduce((max, entry) => Math.max(max, entry.quality?.suiteItemCount ?? 0), 0);
+
+  const revised = entries.reduce((max, entry) => Math.max(max, entry.quality?.revisedItemCount ?? 0), 0);
+  if (revised > 0) {
+    const one = revised === 1;
+    const scope = suite > 0
+      ? `${revised} of the suite's ${suite} questions ${one ? 'is' : 'are'}`
+      : `${revised} ${one ? 'question is' : 'questions are'}`;
+    notes.push({
+      text: `${scope} left out: ${one ? 'its rubric was' : 'their rubrics were'} revised after these runs, ` +
+        `so the stored grades are for the old ${one ? 'rubric' : 'rubrics'}. ` +
+        `Runs made from now on include ${one ? 'it' : 'them'}.`,
+      tone: 'info',
+    });
+  }
+
+  for (const entry of entries) {
+    const unscored = entry.quality?.unscoredItemCount ?? 0;
+    if (unscored <= 0) {
+      continue;
+    }
+    const one = unscored === 1;
+    notes.push({
+      text: `${entry.label || entry.modelDisplayName || entry.modelId}: ${unscored} ` +
+        `${one ? 'question has' : 'questions have'} no scored answer (failed, skipped or ungraded) and ` +
+        `${one ? 'is' : 'are'} left out of its index.`,
+      tone: 'warning',
+    });
+  }
+
+  return notes;
 }

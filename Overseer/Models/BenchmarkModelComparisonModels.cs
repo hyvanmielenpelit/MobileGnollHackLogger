@@ -66,8 +66,17 @@ public class BenchmarkModelComparisonQualityDto
 {
     public double PointEstimate { get; set; }
 
-    /// <summary>Items behind the estimate.</summary>
+    /// <summary>Items behind the estimate: suite questions with at least one scored answer.</summary>
     public int ItemCount { get; set; }
+
+    /// <summary>Questions the suite holds now. <see cref="ItemCount"/> + <see cref="RevisedItemCount"/> + <see cref="UnscoredItemCount"/>.</summary>
+    public int SuiteItemCount { get; set; }
+
+    /// <summary>Questions whose every otherwise-scored answer was graded under an older rubric revision.</summary>
+    public int RevisedItemCount { get; set; }
+
+    /// <summary>Questions with no scored answer at all: failed, skipped, canceled, ungraded or never asked.</summary>
+    public int UnscoredItemCount { get; set; }
 
     /// <summary>
     /// The combined half-width: item sampling alone at <i>R</i> &lt; 3, item sampling and

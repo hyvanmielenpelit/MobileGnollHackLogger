@@ -200,6 +200,59 @@ public class BenchmarkModelComparisonServiceTests
         Assert.Equal(3, Entry(dto, "a").RunCount);
     }
 
+    // --- Question coverage ---------------------------------------------------------------------------
+
+    private static void AssertCoverageSumsToSuite(BenchmarkModelComparisonQualityDto quality)
+        => Assert.Equal(quality.SuiteItemCount,
+            quality.ItemCount + quality.RevisedItemCount + quality.UnscoredItemCount);
+
+    [Fact]
+    public void EveryQuestionScoredAgainstItsCurrentRubric_CoversTheWholeSuite()
+    {
+        var quality = Entry(Build(new[] { Source("a", Card(), Run(1)) }), "a").Quality!;
+
+        Assert.Equal(3, quality.SuiteItemCount);
+        Assert.Equal(3, quality.ItemCount);
+        Assert.Equal(0, quality.RevisedItemCount);
+        Assert.Equal(0, quality.UnscoredItemCount);
+        AssertCoverageSumsToSuite(quality);
+    }
+
+    [Fact]
+    public void RubricsRevisedAfterTheRuns_AreCountedAsRevised_NotUnscored()
+    {
+        // A rubric repair imported after the run bumps ItemRevision on questions 2 and 3, so the
+        // stored grades for them no longer count.
+        var questions = Questions();
+        questions[1].ItemRevision = 2;
+        questions[2].ItemRevision = 2;
+        var source = Source("a", Card(), Run(1)) with { Questions = questions };
+
+        var quality = Entry(Build(new[] { source }), "a").Quality!;
+
+        Assert.Equal(3, quality.SuiteItemCount);
+        Assert.Equal(2, quality.RevisedItemCount);
+        Assert.Equal(quality.SuiteItemCount - 2, quality.ItemCount);
+        Assert.Equal(0, quality.UnscoredItemCount);
+        AssertCoverageSumsToSuite(quality);
+    }
+
+    [Fact]
+    public void AProviderErrorInTheOnlyRun_LeavesThatQuestionUnscored()
+    {
+        var run = Run(1);
+        var failed = run.Answers.Single(a => a.BenchmarkQuestionId == 2);
+        failed.Status = BenchmarkAnswerStatus.ProviderError;
+
+        var quality = Entry(Build(new[] { Source("a", Card(), run) }), "a").Quality!;
+
+        Assert.Equal(3, quality.SuiteItemCount);
+        Assert.Equal(2, quality.ItemCount);
+        Assert.Equal(0, quality.RevisedItemCount);
+        Assert.Equal(1, quality.UnscoredItemCount);
+        AssertCoverageSumsToSuite(quality);
+    }
+
     // --- Exclusion withholds the measures ------------------------------------------------------------
 
     [Fact]

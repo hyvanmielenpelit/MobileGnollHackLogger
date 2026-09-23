@@ -2399,6 +2399,39 @@ below is carried by a file no fingerprint covers.
   with their columns — sorting by *Timings* sorts on model time per question. **The exported table
   still carries all 26 columns**, so nothing is lost from the artefact, only from the screen.
 
+### Model Comparison Question Count (2026-09-23) — No Version Bump
+
+*Prompted by a figure preview whose badge read "16 questions" for an 18-question suite.* Nothing
+here grades anything: `HarnessVersion`, `ScoringMethodVersion`, `CandidateSystemPromptSha256` and
+`ToolGuidesSha256` do not move. The comparison is computed on request from stored data.
+
+- **The questions badge counts scored questions against the suite.** It reads `18 questions` when
+  every charted entry scored every suite question, `16 of 18 questions` when fewer are scored, and
+  `15–16 of 18 questions` when the entries differ; the accessible label spells it out as *16 of the
+  suite's 18 questions scored*. The scored count is the Intelligence Index's real denominator: an
+  answer counts only when it is `Ok` (or a model-produced empty answer), graded, and graded against
+  the question's **current** rubric revision. Before, the badge showed the first charted entry's
+  scored count as though it were the suite size. The *Number of questions* style toggle still hides
+  it.
+- **Three new fields on `BenchmarkModelComparisonQualityDto`.** `SuiteItemCount` is the suite's
+  question count now; `RevisedItemCount` counts questions whose every otherwise-scored answer was
+  graded under an older rubric revision (a rubric edit or rubric-repair import after the run);
+  `UnscoredItemCount` counts questions with no scored answer at all — failed, skipped, canceled,
+  ungraded or never asked. `ItemCount + RevisedItemCount + UnscoredItemCount == SuiteItemCount`
+  always, because both new counts are taken over questions missing from the statistics.
+  `BenchmarkGroupStatistics` and Multi-Run Analysis are unchanged.
+- **Coverage notes on every figure.** When questions are left out, the set-level notes — shown above
+  the figures, in the preview dialog and in every export — say why: one *info* note for revised
+  rubrics (*2 of the suite's 18 questions are left out: their rubrics were revised after these
+  runs…*), and one *warning* per plotted entry with unscored questions, naming it, since two indices
+  over different item sets are not strictly the same exam.
+- **The whole-suite cost is each entry's own mean run cost** (`cost.candidateCostPerRunUsd`), not
+  `$ / question` multiplied by the first entry's count. It no longer depends on any item count, so
+  entries with different scored counts are no longer rescaled by the wrong one. Where the counts
+  agree the values are unchanged.
+- **The cost axis title** reads *Candidate cost of one suite run (USD)*, without a question count:
+  the run paid for every question it asked, not only for the scored ones.
+
 ### Harness Version 29 Updates
 
 Prompted by the analysis of runs 50 and 51, the first two runs of a game-snapshot suite, which showed that

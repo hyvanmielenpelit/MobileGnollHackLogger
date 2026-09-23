@@ -86,6 +86,9 @@ describe('ModelComparisonComponent', () => {
       quality: {
         pointEstimate: 68,
         itemCount: 18,
+        suiteItemCount: 18,
+        revisedItemCount: 0,
+        unscoredItemCount: 0,
         intervalHalfWidth: 6.4,
         intervalLower: 61.6,
         intervalUpper: 74.4,
@@ -2331,6 +2334,35 @@ describe('ModelComparisonComponent', () => {
     }
   });
 
+  it('states the scored questions in the badge and says why the rest are left out, in the export too', () => {
+    const entries = comparableSet(2).map(entry => ({
+      ...entry,
+      quality: { ...entry.quality!, itemCount: 16, revisedItemCount: 2 }
+    }));
+    render(buildDto(entries), 4);
+
+    const revisedNote = "2 of the suite's 18 questions are left out: their rubrics were revised after these runs, " +
+      'so the stored grades are for the old rubrics. Runs made from now on include them.';
+    expect(component.setFigureNotes).toContain({ text: revisedNote, tone: 'info' });
+
+    const s1 = component.scatterCards[0];
+    expect(s1.chrome.badges.find(badge => badge.kind === 'questions')?.text).toBe('16 of 18 questions');
+    expect(exportNotesOf(s1)).toContain(revisedNote);
+  });
+
+  it('warns only about the plotted entries\' unscored questions', () => {
+    const entries = comparableSet(3).map((entry, index) => index === 2
+      ? { ...entry, quality: { ...entry.quality!, itemCount: 17, unscoredItemCount: 1 } }
+      : entry);
+    render(buildDto(entries), 4);
+
+    const warning = 'Model 3: 1 question has no scored answer (failed, skipped or ungraded) and is left out of its index.';
+    expect(component.setFigureNotes).toContain({ text: warning, tone: 'warning' });
+
+    component.toggleEntry('run:3');
+    expect(component.setFigureNotes.map(note => note.text)).not.toContain(warning);
+  });
+
   it('drops the mean-time note from the Speed card and its export on request, keeping the set notes', () => {
     render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringVersion'])]), 4);
     expect(component.speedMeasure).toBe('meanModelTime');
@@ -3591,15 +3623,18 @@ describe('model-comparison adapter', () => {
     expect(Number.isNaN(entry.modelTimeMeanMs)).toBeTrue();
     expect(Number.isNaN(entry.totalModelTimeMs)).toBeTrue();
     expect(Number.isNaN(entry.candidateCostPerQuestionUsd)).toBeTrue();
+    expect(Number.isNaN(entry.candidateCostPerRunUsd)).toBeTrue();
     expect(Number.isNaN(entry.totalRunCostUsd)).toBeTrue();
     expect(entry.candidateCostPerQuestionSdUsd).toBeNull();
     expect(entry.speedIndexSd).toBeNull();
     expect(entry.totalModelTimeSdMs).toBeNull();
   });
 
-  it('reads items per run and the pricing label off the payload header', () => {
+  it('reads the question counts and the pricing label off the payload header', () => {
     const context = toChartContext(null);
-    expect(context.itemsPerRun).toBe(0);
+    expect(context.scoredItemsMin).toBe(0);
+    expect(context.scoredItemsMax).toBe(0);
+    expect(context.suiteItemCount).toBe(0);
     expect(context.pricingBasisLabel).toBe('Unknown pricing basis');
     expect(context.pricingBasis).toBe('');
     expect(context.pricedOn).toBe('');

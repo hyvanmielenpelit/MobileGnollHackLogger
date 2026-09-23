@@ -39,6 +39,7 @@ import {
   selectPlottedEntries,
   speedLowerIsBetter,
   speedValue,
+  suiteCostSdUsd,
   suiteCostUsd,
 } from './model-comparison-charts';
 import type {
@@ -115,7 +116,9 @@ function expectClose(actual: readonly number[], expected: readonly number[]): vo
 }
 
 const CONTEXT: ModelComparisonContext = {
-  itemsPerRun: 10,
+  scoredItemsMin: 10,
+  scoredItemsMax: 10,
+  suiteItemCount: 10,
   pricingBasisLabel: 'Current catalog, 2026-09-07',
   pricingBasis: 'Current',
   pricedOn: '2026-09-07T10:00:00Z',
@@ -138,6 +141,7 @@ function makeEntry(overrides: Partial<ModelComparisonEntry> & { key: string }): 
     totalModelTimeSdMs: 1200,
     candidateCostPerQuestionUsd: 0.002,
     candidateCostPerQuestionSdUsd: 0.0003,
+    candidateCostPerRunUsd: 0.02,
     totalRunCostUsd: 0.4,
     totalRunCostSdUsd: 0.05,
     speedDegraded: false,
@@ -159,6 +163,7 @@ const PROFILE_FIXTURE: ModelComparisonEntry[] = [
     speedIndex: 100,
     ttftP50Ms: 500,
     candidateCostPerQuestionUsd: 0.03,
+    candidateCostPerRunUsd: 0.3,
   }),
   makeEntry({
     key: 'B',
@@ -166,6 +171,7 @@ const PROFILE_FIXTURE: ModelComparisonEntry[] = [
     speedIndex: 50,
     ttftP50Ms: 300,
     candidateCostPerQuestionUsd: 0.02,
+    candidateCostPerRunUsd: 0.2,
   }),
   makeEntry({
     key: 'C',
@@ -173,6 +179,7 @@ const PROFILE_FIXTURE: ModelComparisonEntry[] = [
     speedIndex: 0,
     ttftP50Ms: 100,
     candidateCostPerQuestionUsd: 0.01,
+    candidateCostPerRunUsd: 0.1,
   }),
 ];
 
@@ -553,13 +560,41 @@ describe('model-comparison-charts', () => {
       const suite = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ costMeasure: 'candidateSuite' }));
       const total = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ costMeasure: 'totalRun' }));
 
-      expect(titleLines(scaleOf(suite.cost.config, 'y'))[0]).toContain('whole suite');
+      expect(titleLines(scaleOf(suite.cost.config, 'y'))[0]).toBe('Candidate cost of one suite run (USD)');
       expect(pointsOf(suite.cost.config)[0]['y'] as number)
-        .toBeCloseTo(suiteCostUsd(PROFILE_FIXTURE[0], CONTEXT), 10);
-      expect(suiteCostUsd(PROFILE_FIXTURE[0], CONTEXT)).toBeCloseTo(0.3, 10);
+        .toBeCloseTo(suiteCostUsd(PROFILE_FIXTURE[0]), 10);
+      expect(suiteCostUsd(PROFILE_FIXTURE[0])).toBeCloseTo(0.3, 10);
 
       expect(titleLines(scaleOf(total.cost.config, 'y'))[0]).toContain('Total run cost');
       expect(pointsOf(total.cost.config)[0]['y']).toBe(0.4);
+    });
+
+    it('plots each entry\'s own run cost as its suite cost, whatever the context\'s item counts', () => {
+      const full = makeEntry({ key: 'full', candidateCostPerQuestionUsd: 0.01, candidateCostPerRunUsd: 0.18 });
+      const partial = makeEntry({ key: 'partial', candidateCostPerQuestionUsd: 0.015, candidateCostPerRunUsd: 0.27 });
+      const entries = [full, partial];
+      const figure = buildSmallMultiples(entries, {
+        ...smallMultiplesOptions({ costMeasure: 'candidateSuite' }),
+        context: { ...CONTEXT, scoredItemsMin: 12, scoredItemsMax: 18, suiteItemCount: 18 },
+        glyphs: buildIdentityGlyphs(entries),
+      });
+
+      expect(suiteCostUsd(full)).toBe(0.18);
+      expect(suiteCostUsd(partial)).toBe(0.27);
+      const plotted = pointsOf(figure.cost.config).map((point) => point['y'] as number).sort((a, b) => a - b);
+      expectClose(plotted, [0.18, 0.27]);
+    });
+
+    it('scales the per-question SD by the run-to-question cost ratio, and keeps a null SD null', () => {
+      expect(suiteCostSdUsd(makeEntry({ key: 'none', candidateCostPerQuestionSdUsd: null }))).toBeNull();
+      expect(suiteCostSdUsd(makeEntry({
+        key: 'sd',
+        candidateCostPerQuestionUsd: 0.01,
+        candidateCostPerQuestionSdUsd: 0.002,
+        candidateCostPerRunUsd: 0.18,
+      }))).toBeCloseTo(0.036, 10);
+      expect(suiteCostSdUsd(makeEntry({ key: 'unmeasured', candidateCostPerRunUsd: Number.NaN }))).toBeNull();
+      expect(suiteCostSdUsd(makeEntry({ key: 'zero', candidateCostPerQuestionUsd: 0 }))).toBeNull();
     });
 
     it('drops the cost interval and marks n = 1 on the category tick of all three panels', () => {
@@ -638,6 +673,16 @@ describe('model-comparison-charts', () => {
       expect(figure.cost.chrome.detail).not.toBe('');
       expect(figure.quality.chrome.detail).toBe('');
       expect(figure.speed.chrome.detail).toBe('');
+    });
+
+    it('states the scored questions against the suite when fewer than all are scored', () => {
+      const figure = buildSmallMultiples(PROFILE_FIXTURE, {
+        ...smallMultiplesOptions(),
+        context: { ...CONTEXT, scoredItemsMin: 16, scoredItemsMax: 16, suiteItemCount: 18 },
+      });
+      const badge = figure.quality.chrome.badges.find((b) => b.kind === 'questions');
+      expect(badge?.text).toBe('16 of 18 questions');
+      expect(badge?.ariaLabel).toBe("16 of the suite's 18 questions scored");
     });
 
     it('gives every panel scriptable value labels, past the SD whisker with a grace margin', () => {
@@ -964,6 +1009,7 @@ describe('model-comparison-charts', () => {
         intelligenceIndexCi95HalfWidth: 8,
         candidateCostPerQuestionUsd: 0.0042,
         candidateCostPerQuestionSdUsd: null,
+        candidateCostPerRunUsd: 0.0756,
         totalModelTimeSdMs: null,
         totalRunCostSdUsd: null,
       }),
@@ -976,11 +1022,17 @@ describe('model-comparison-charts', () => {
         intelligenceIndexCi95HalfWidth: 8,
         candidateCostPerQuestionUsd: 0.0024,
         candidateCostPerQuestionSdUsd: null,
+        candidateCostPerRunUsd: 0.0432,
         totalModelTimeSdMs: null,
         totalRunCostSdUsd: null,
       }),
     ];
-    const SCREENSHOT_CONTEXT: ModelComparisonContext = { ...CONTEXT, itemsPerRun: 18 };
+    const SCREENSHOT_CONTEXT: ModelComparisonContext = {
+      ...CONTEXT,
+      scoredItemsMin: 18,
+      scoredItemsMax: 18,
+      suiteItemCount: 18,
+    };
     const SCREENSHOT_OPTIONS = {
       context: SCREENSHOT_CONTEXT,
       glyphs: buildIdentityGlyphs(SCREENSHOT),
