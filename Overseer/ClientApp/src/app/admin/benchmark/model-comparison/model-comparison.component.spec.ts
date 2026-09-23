@@ -37,6 +37,7 @@ import {
 } from './model-comparison.models';
 import { TableExportFormat, xlsxWriterModule } from './table-export';
 import { zipWriterModule } from './figure-export';
+import { previewZoomRange, zoomToSlider } from './preview-view';
 import { ToastComponent } from '../../../shared/toast/toast.component';
 
 describe('ModelComparisonComponent', () => {
@@ -2461,6 +2462,248 @@ describe('ModelComparisonComponent', () => {
     expect(parseFloat(stage.style.height)).toBeCloseTo(600, 6);
     expect(stage.height).toBeGreaterThan(stage.width);
     expect(Math.abs(stage.width - stage.height * (2480 / 3508))).toBeLessThan(1);
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // Preview zoom and pan
+  // -------------------------------------------------------------------------------------------
+
+  /** One of the zoom row's controls, by its accessible name. */
+  function zoomButton(name: string): HTMLButtonElement {
+    return fixture.debugElement.query(By.css(`.mc-preview-zoom button[aria-label="${name}"]`))
+      .nativeElement as HTMLButtonElement;
+  }
+
+  /** One of the three text view buttons, by its visible label. */
+  function viewButton(label: string): HTMLButtonElement {
+    return fixture.debugElement.queryAll(By.css('.mc-preview-zoom-views button'))
+      .map(button => button.nativeElement as HTMLButtonElement)
+      .find(button => button.textContent!.trim() === label)!;
+  }
+
+  function previewViewport(): HTMLElement {
+    return fixture.debugElement.query(By.css('.mc-preview-viewport')).nativeElement as HTMLElement;
+  }
+
+  function clickAndRefresh(button: HTMLButtonElement): void {
+    button.click();
+    refresh();
+  }
+
+  function stageCanvas(): HTMLCanvasElement {
+    return component.previewCanvas!.nativeElement;
+  }
+
+  /** Full HD at 100 % density on an 800 × 600 stage at DPR 2: the screen fit is 5/6. */
+  async function openFullHdPreview(): Promise<void> {
+    render(buildDto(comparableSet(3)), 4);
+    spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
+    openPreview();
+    component.onExportDensityChange(1);
+    component.onExportResolutionChange('fullhd');
+    await composePreview();
+  }
+
+  /** A custom 800 × 600 at 100 % density on the same stage: the screen fit is 2. */
+  async function openCustomPreview(): Promise<void> {
+    render(buildDto(comparableSet(3)), 4);
+    spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
+    openPreview();
+    component.onExportDensityChange(1);
+    component.onExportResolutionChange('custom');
+    component.onCustomWidthChange(800);
+    component.onCustomHeightChange(600);
+    await composePreview();
+  }
+
+  it('opens the preview in the default view, shrunk to fit', async () => {
+    await openFullHdPreview();
+
+    expect(component.previewView).toBe('default');
+    expect(textOf('.mc-preview-zoom-value')).toBe('83%');
+    const slider = fixture.debugElement.query(By.css('#mc-preview-zoom')).nativeElement as HTMLInputElement;
+    expect(+slider.value).toBe(zoomToSlider(5 / 6, previewZoomRange(5 / 6)));
+    expect(slider.getAttribute('aria-valuetext')).toBe('83 percent, default view');
+    expect(parseFloat(stageCanvas().style.width)).toBeCloseTo(800, 6);
+  });
+
+  it('zooms in from the button, rasterising the export’s own pixels at 100 %', async () => {
+    await openFullHdPreview();
+
+    clickAndRefresh(zoomButton('Zoom the preview in'));
+
+    expect(component.previewZoomValue).toBe(1);
+    expect(textOf('.mc-preview-zoom-value')).toBe('100%');
+    // The old bitmap is stretched at once; the composition that follows sharpens it.
+    expect(parseFloat(stageCanvas().style.width)).toBeCloseTo(960, 6);
+    await composePreview();
+    expect(stageCanvas().width).toBe(1920);
+    expect(stageCanvas().height).toBe(1080);
+    expect(parseFloat(stageCanvas().style.width)).toBeCloseTo(960, 6);
+    expect(stageCanvas().classList).not.toContain('is-pixelated');
+  });
+
+  it('enlarges past 100 % by CSS alone, square-edged from 200 %', async () => {
+    await openFullHdPreview();
+    clickAndRefresh(zoomButton('Zoom the preview in'));
+    await composePreview();
+
+    const schedule = spyOn(
+      component as unknown as { schedulePreview(): void }, 'schedulePreview').and.callThrough();
+    clickAndRefresh(zoomButton('Zoom the preview in'));
+    expect(component.previewZoomValue).toBe(1.5);
+    expect(stageCanvas().classList).not.toContain('is-pixelated');
+    clickAndRefresh(zoomButton('Zoom the preview in'));
+
+    expect(component.previewZoomValue).toBe(2);
+    expect(parseFloat(stageCanvas().style.width)).toBeCloseTo(1920, 6);
+    expect(stageCanvas().classList).toContain('is-pixelated');
+    expect(stageCanvas().width).toBe(1920);
+    expect(schedule).not.toHaveBeenCalled();
+  });
+
+  it('returns to the default view on Reset view', async () => {
+    await openFullHdPreview();
+    component.setPreviewView(3);
+    refresh();
+
+    clickAndRefresh(viewButton('Reset view'));
+
+    expect(component.previewView).toBe('default');
+    expect(parseFloat(stageCanvas().style.width)).toBeCloseTo(800, 6);
+    expect(stageCanvas().classList).not.toContain('is-pixelated');
+  });
+
+  it('keeps an explicit zoom across a style change and resets it on a new pixel size', async () => {
+    await openFullHdPreview();
+    component.setPreviewView(1.5);
+
+    component.onFigureStyleChange({ ...component.figureStyle });
+    await composePreview();
+    expect(component.previewView).toBe(1.5);
+
+    component.onExportResolutionChange('a4p');
+    await composePreview();
+    expect(component.previewView).toBe('default');
+    expect(parseFloat(stageCanvas().style.height)).toBeCloseTo(600, 6);
+  });
+
+  it('fills the stage on Fit to screen, past 100 % for a small export', async () => {
+    await openCustomPreview();
+    expect(component.previewZoomValue).toBe(1);
+    expect(parseFloat(stageCanvas().style.width)).toBeCloseTo(400, 6);
+
+    clickAndRefresh(viewButton('Fit to screen'));
+
+    expect(parseFloat(stageCanvas().style.width)).toBeCloseTo(800, 6);
+    expect(textOf('.mc-preview-zoom-value')).toBe('200% · Fit to screen');
+    expect(stageCanvas().classList).toContain('is-pixelated');
+    await composePreview();
+    expect(stageCanvas().width).toBe(800);
+    expect(stageCanvas().height).toBe(600);
+  });
+
+  it('keeps Fit to screen across a new size, refitting it, until Reset view', async () => {
+    await openCustomPreview();
+    clickAndRefresh(viewButton('Fit to screen'));
+
+    component.onCustomWidthChange(640);
+    component.onCustomHeightChange(480);
+    await composePreview();
+
+    expect(component.previewView).toBe('fitScreen');
+    expect(component.previewZoomValue).toBeCloseTo(2.5, 9);
+    expect(parseFloat(stageCanvas().style.width)).toBeCloseTo(800, 6);
+
+    clickAndRefresh(viewButton('Reset view'));
+    expect(component.previewZoomValue).toBe(1);
+    expect(parseFloat(stageCanvas().style.width)).toBeCloseTo(320, 6);
+  });
+
+  it('shows the target’s own size over the display ratio at 100 %', async () => {
+    await openCustomPreview();
+    clickAndRefresh(viewButton('Fit to screen'));
+
+    const actual = viewButton('100%');
+    expect(actual.getAttribute('aria-label')).toBe('Actual pixels, 100 percent');
+    clickAndRefresh(actual);
+
+    expect(component.previewView).toBe(1);
+    expect(parseFloat(stageCanvas().style.width)).toBeCloseTo(400, 6);
+  });
+
+  it('answers + − 0 1 on the focused viewport, and leaves them to the browser with Ctrl', async () => {
+    await openFullHdPreview();
+    const press = (key: string, init: KeyboardEventInit = {}): KeyboardEvent => {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+      previewViewport().dispatchEvent(event);
+      refresh();
+      return event;
+    };
+
+    expect(press('+').defaultPrevented).toBeTrue();
+    expect(component.previewZoomValue).toBe(1);
+    press('=');
+    expect(component.previewZoomValue).toBe(1.5);
+    press('-');
+    expect(component.previewZoomValue).toBe(1);
+    press('0');
+    expect(component.previewView).toBe('fitScreen');
+    press('1');
+    expect(component.previewView).toBe(1);
+
+    const withCtrl = press('+', { ctrlKey: true });
+    expect(withCtrl.defaultPrevented).toBeFalse();
+    expect(component.previewZoomValue).toBe(1);
+    const arrow = press('ArrowDown');
+    expect(arrow.defaultPrevented).toBeFalse();
+  });
+
+  it('marks zoom in unavailable at 800 %, and refuses it there', async () => {
+    await openFullHdPreview();
+    component.setPreviewView(8);
+    refresh();
+
+    const zoomIn = zoomButton('Zoom the preview in');
+    expect(zoomIn.getAttribute('aria-disabled')).toBe('true');
+    expect(zoomIn.disabled).toBeFalse();
+    expect(zoomButton('Zoom the preview out').getAttribute('aria-disabled')).toBeNull();
+    clickAndRefresh(zoomIn);
+
+    expect(component.previewZoomValue).toBe(8);
+  });
+
+  it('writes the same pixels whatever the preview’s zoom', async () => {
+    await openFullHdPreview();
+    const saved = captureSaves();
+    const sizeOf = async (blob: Blob): Promise<[number, number]> => {
+      const bitmap = await createImageBitmap(blob);
+      const size: [number, number] = [bitmap.width, bitmap.height];
+      bitmap.close();
+      return size;
+    };
+
+    await component.downloadPreviewedFigure();
+    component.setPreviewView(4);
+    await component.downloadPreviewedFigure();
+    component.setPreviewView('fitScreen');
+    await component.downloadPreviewedFigure();
+
+    expect(saved.blobs.length).toBe(3);
+    const sizes = await Promise.all(saved.blobs.map(sizeOf));
+    expect(sizes[0]).toEqual([1920, 1080]);
+    expect(sizes[1]).toEqual(sizes[0]);
+    expect(sizes[2]).toEqual(sizes[0]);
+  });
+
+  it('reopens in the default view', async () => {
+    await openFullHdPreview();
+    component.setPreviewView(4);
+
+    component.onFigurePreviewClosed();
+    openPreview();
+
+    expect(component.previewView).toBe('default');
   });
 
   it('stops watching the stage when the preview closes', () => {

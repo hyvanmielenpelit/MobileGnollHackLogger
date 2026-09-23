@@ -751,6 +751,74 @@ describe('figure-export', () => {
       expect(previewLayoutFor(target('fullhd'), { width: 900, height: 0, devicePixelRatio: 2 }))
         .toBeNull();
     });
+
+    it('reports the zoom that fills the stage for landscape and portrait targets', () => {
+      const stage = { width: 800, height: 600, devicePixelRatio: 2 };
+
+      expect(previewLayoutFor(target('fullhd'), stage)!.screenFitZoom).toBeCloseTo(1600 / 1920, 12);
+      expect(previewLayoutFor(target('a4p'), stage)!.screenFitZoom).toBeCloseTo(1200 / 3508, 12);
+    });
+
+    it('enlarges a small target to fill the stage only when fitted to the screen', () => {
+      const hd = target('hd');
+      const stage = { width: 3000, height: 2000, devicePixelRatio: 1 };
+
+      const fitted = previewLayoutFor(hd, stage, 'fitScreen')!;
+      const standard = previewLayoutFor(hd, stage, 'default')!;
+
+      expect(fitted.zoom).toBeCloseTo(3000 / 1280, 12);
+      expect(fitted.cssWidth).toBeCloseTo(3000, 9);
+      // Above 100 % the raster is the export's own pixels, magnified by CSS.
+      expect(fitted.layout.pixelWidth).toBe(1280);
+      expect(fitted.layout.pixelHeight).toBe(720);
+      expect(standard.zoom).toBe(1);
+      expect(standard.cssWidth).toBe(1280);
+    });
+
+    it('shows the target’s own raster at twice its CSS size at 200 %', () => {
+      const full = target('fullhd');
+
+      const fit = previewLayoutFor(full, { width: 800, height: 600, devicePixelRatio: 2 }, 2)!;
+
+      expect(fit.zoom).toBe(2);
+      expect(fit.cssWidth).toBe(1920);
+      expect(fit.cssHeight).toBeCloseTo(1080, 9);
+      expect(fit.layout.pixelWidth).toBe(1920);
+      expect(fit.layout.pixelHeight).toBe(1080);
+      expect(fit.rasterZoom).toBe(1);
+      expect(fit.rasterCapped).toBeFalse();
+      expect(fit.layout.layoutWidth).toBe(full.layoutWidth);
+      expect(fit.layout.plotHeight).toBe(full.plotHeight);
+    });
+
+    it('rasterises half the target at 50 %', () => {
+      const fit = previewLayoutFor(
+        target('fullhd'), { width: 800, height: 600, devicePixelRatio: 2 }, 0.5)!;
+
+      expect(fit.cssWidth).toBe(480);
+      expect(fit.layout.pixelWidth).toBe(960);
+      expect(fit.layout.pixelHeight).toBe(540);
+    });
+
+    it('caps the raster of a target above the budget, keeping its aspect ratio', () => {
+      const huge: FigureExportLayout = { ...target('fullhd'), pixelWidth: 8000, pixelHeight: 8000 };
+
+      const fit = previewLayoutFor(huge, { width: 800, height: 600, devicePixelRatio: 1 }, 4)!;
+
+      expect(fit.rasterCapped).toBeTrue();
+      expect(fit.layout.pixelWidth * fit.layout.pixelHeight).toBeLessThanOrEqual(7680 * 4320 + 8000);
+      expect(fit.layout.pixelWidth).toBe(fit.layout.pixelHeight);
+      expect(fit.cssWidth).toBe(32000);
+    });
+
+    it('clamps the screen fit to 800 % for a tiny target in a huge stage', () => {
+      const tiny: FigureExportLayout = { ...target('hd'), pixelWidth: 100, pixelHeight: 50 };
+
+      const fit = previewLayoutFor(tiny, { width: 4000, height: 3000, devicePixelRatio: 1 }, 'fitScreen')!;
+
+      expect(fit.screenFitZoom).toBe(8);
+      expect(fit.cssWidth).toBe(800);
+    });
   });
 
   it('reports a PNG fallback rather than naming a PNG file .webp', async () => {

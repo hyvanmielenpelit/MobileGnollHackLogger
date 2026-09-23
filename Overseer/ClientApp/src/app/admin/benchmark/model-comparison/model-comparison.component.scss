@@ -1628,23 +1628,112 @@
   color: #d4d4d8;
 }
 
+/* The zoom row above the stage, in the body grid's second column. */
+.mc-preview-stage-column {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Wraps on a narrow stage, the view buttons dropping under the slider. */
+.mc-preview-zoom {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+
+  .action-btn {
+    margin-left: 0;
+
+    &[aria-disabled="true"] {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    &[aria-disabled="true"]:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--border-glass);
+      color: #ccc;
+    }
+  }
+}
+
+.mc-preview-zoom-slider {
+  flex: 1 1 auto;
+  min-width: 80px;
+  max-width: 280px;
+  margin: 0;
+  accent-color: var(--primary-color);
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 3px;
+  }
+}
+
+/* Wide enough for "800% · Fit to screen" without the row reflowing as the zoom changes. */
+.mc-preview-zoom-value {
+  min-width: 9.5em;
+  text-align: left;
+}
+
+.mc-preview-zoom-views {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
 /* Near-black rather than the card ground: the composition carries its own opaque background, and a
-   stage in the same colour would hide where the image ends. */
+   stage in the same colour would hide where the image ends. The stage does not scroll; the viewport
+   inside it does, so a scrollbar never changes the measured box. */
 .mc-preview-stage {
   position: relative;
-  display: grid;
-  place-items: center;
+  flex: 1;
   min-height: 0;
-  padding: 12px;
   overflow: hidden;
   border: 1px solid var(--border-glass);
   border-radius: 8px;
   background: #0f0f0f;
 }
 
-/* The component sets this canvas's CSS width and height directly. */
+.mc-preview-viewport {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  padding: 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--border-glass) transparent;
+
+  &.is-pannable {
+    cursor: grab;
+  }
+
+  &.is-panning {
+    cursor: grabbing;
+    user-select: none;
+  }
+
+  /* Inset: the viewport sits flush against the stage's edge. */
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
+  }
+}
+
+/* The component sets this canvas's CSS width and height directly. Auto margins centre it while it
+   is smaller than the viewport and, unlike `place-items: center`, never clip its start edge once it
+   overflows. */
 .mc-preview-canvas {
   display: block;
+  margin: auto;
+
+  &.is-pixelated {
+    image-rendering: pixelated;
+  }
 }
 
 .mc-preview-spinner {
@@ -1681,7 +1770,9 @@
     overflow-y: visible;
   }
 
+  /* A fixed height rather than a flex share: the stacked column is content-sized. */
   .mc-preview-stage {
+    flex: none;
     height: min(60dvh, 520px);
   }
 }

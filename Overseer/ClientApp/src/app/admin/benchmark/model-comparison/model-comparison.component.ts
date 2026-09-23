@@ -6,6 +6,7 @@ import {
   ElementRef,
   EventEmitter,
   Input,
+  NgZone,
   OnChanges,
   OnDestroy,
   OnInit,
@@ -98,6 +99,24 @@ import {
   resolveFigureLayout,
   saveFigureBlob
 } from './figure-export';
+import {
+  PREVIEW_SLIDER_STEPS,
+  PreviewViewRequest,
+  PreviewZoomRange,
+  anchoredScrollDelta,
+  canZoomPreviewIn,
+  canZoomPreviewOut,
+  clampPreviewZoom,
+  formatPreviewZoom,
+  nextPreviewZoomStop,
+  previewRasterZoom,
+  previewZoomRange,
+  previousPreviewZoomStop,
+  resolvePreviewZoom,
+  sliderToZoom,
+  wheelZoomFactor,
+  zoomToSlider
+} from './preview-view';
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
 import { ToastComponent, ToastNotice } from '../../../shared/toast/toast.component';
 import {
@@ -1858,6 +1877,41 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** Long enough that a held arrow key in a size field composes once, short enough to feel live. */
   private readonly previewDebounceMs = 150;
 
+  /** The scroller inside the stage. The stage measures; this pans. */
+  @ViewChild('previewViewport') previewViewport?: ElementRef<HTMLElement>;
+
+  private zone = inject(NgZone);
+
+  /** What the reader asked the stage to show. Never reaches an export. */
+  previewView: PreviewViewRequest = 'default';
+
+  /** The zoom that fills the stage, from the last fitted layout. */
+  previewScreenFitZoom = 1;
+
+  /** True where the raster budget, not the zoom, set the stage's bitmap size. */
+  previewRasterCapped = false;
+
+  readonly previewSliderSteps = PREVIEW_SLIDER_STEPS;
+
+  /** `"<width>x<height>"` of the last composed target; a new one resets an explicit zoom. */
+  private previewTargetKey: string | null = null;
+
+  /** The last composed target's pixels and ratio, so a zoom resizes the stage before it recomposes. */
+  private previewTargetPixels: { width: number; height: number } | null = null;
+  private previewDpr = 1;
+
+  /** The fraction of the target the painted bitmap carries; a zoom needing another one recomposes. */
+  private previewPaintedRasterZoom: number | null = null;
+
+  private previewWheelFactor = 1;
+  private previewWheelAnchor: { clientX: number; clientY: number } | null = null;
+  private previewWheelFrame: number | null = null;
+
+  private previewPan: { pointerId: number; x: number; y: number; left: number; top: number } | null = null;
+
+  /** Registered outside Angular on open and removed on close. */
+  private previewViewportListeners: [string, EventListener, AddEventListenerOptions?][] = [];
+
   /** The card the stage is showing, or null where the current slice no longer draws it. */
   get previewCard(): ComparisonFigureCard | null {
     return this.exportableCards.find(card => card.id === this.previewCardId) ?? null;
@@ -1917,6 +1971,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.previewCardId = target.id;
     this.previewRefusal = '';
     this.previewOpen = true;
+    this.previewView = 'default';
 
     // The figure select and the stage render from state this method has just changed, so they have
     // to hold it before the dialog is promoted to the top layer.
@@ -1944,6 +1999,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.disconnectStageObserver();
     this.previewSeq++;
     this.previewBusy = false;
+    this.previewView = 'default';
+    this.previewTargetKey = null;
+    this.previewTargetPixels = null;
+    this.previewPaintedRasterZoom = null;
+    this.previewRasterCapped = false;
     this.blankPreview();
     this.cdr.markForCheck();
   }
@@ -1979,6 +2039,133 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   async downloadAllFromPreview(): Promise<void> {
     await this.downloadAllFigures();
+  }
+
+  get previewZoomRange(): PreviewZoomRange {
+    return previewZoomRange(this.previewScreenFitZoom);
+  }
+
+  /** The requested view as device pixels per export pixel: 1 is 100 %. */
+  get previewZoomValue(): number {
+    return resolvePreviewZoom(this.previewView, this.previewScreenFitZoom);
+  }
+
+  get previewSliderValue(): number {
+    return zoomToSlider(this.previewZoomValue, this.previewZoomRange);
+  }
+
+  get previewZoomLabel(): string {
+    const zoom = formatPreviewZoom(this.previewZoomValue);
+    return this.previewView === 'fitScreen' ? `${zoom} · Fit to screen` : zoom;
+  }
+
+  get previewZoomValueText(): string {
+    const percent = `${formatPreviewZoom(this.previewZoomValue).replace('%', '')} percent`;
+    if (this.previewView === 'fitScreen') {
+      return `${percent}, fitted to the screen`;
+    }
+    return this.previewView === 'default' ? `${percent}, default view` : percent;
+  }
+
+  get canZoomPreviewIn(): boolean {
+    return canZoomPreviewIn(this.previewZoomValue, this.previewZoomRange);
+  }
+
+  get canZoomPreviewOut(): boolean {
+    return canZoomPreviewOut(this.previewZoomValue, this.previewZoomRange);
+  }
+
+  zoomPreviewIn(): void {
+    if (this.canZoomPreviewIn) {
+      this.setPreviewView(
+        nextPreviewZoomStop(this.previewZoomValue, this.previewScreenFitZoom, this.previewZoomRange));
+    }
+  }
+
+  zoomPreviewOut(): void {
+    if (this.canZoomPreviewOut) {
+      this.setPreviewView(
+        previousPreviewZoomStop(this.previewZoomValue, this.previewScreenFitZoom, this.previewZoomRange));
+    }
+  }
+
+  onPreviewSliderInput(value: number): void {
+    this.setPreviewView(sliderToZoom(value, this.previewZoomRange));
+  }
+
+  fitPreviewToScreen(): void {
+    this.setPreviewView('fitScreen');
+  }
+
+  showPreviewActualPixels(): void {
+    this.setPreviewView(1);
+  }
+
+  /** The default view always fits, so CSS centres it once the scroll is back at the origin. */
+  resetPreviewView(): void {
+    this.setPreviewView('default');
+    this.previewViewport?.nativeElement.scrollTo(0, 0);
+  }
+
+  /** Unmodified keys only: Ctrl / ⌘ / Alt with + − 0 stay the browser's own zoom. */
+  onPreviewViewportKeydown(event: KeyboardEvent): void {
+    if (event.ctrlKey || event.metaKey || event.altKey) {
+      return;
+    }
+    const actions: Record<string, () => void> = {
+      '+': () => this.zoomPreviewIn(),
+      '=': () => this.zoomPreviewIn(),
+      '-': () => this.zoomPreviewOut(),
+      '0': () => this.fitPreviewToScreen(),
+      '1': () => this.showPreviewActualPixels()
+    };
+    const action = actions[event.key];
+    if (action) {
+      event.preventDefault();
+      action();
+    }
+  }
+
+  /**
+   * Applies a view at once, stretching the bitmap already painted, and recomposes only where the
+   * new zoom needs a different raster.
+   *
+   * The point under `anchor` — the viewport's centre where none is given — stays under it.
+   */
+  setPreviewView(request: PreviewViewRequest, anchor?: { clientX: number; clientY: number }): void {
+    const range = this.previewZoomRange;
+    const next = typeof request === 'number' ? clampPreviewZoom(request, range) : request;
+    const before = this.previewZoomValue;
+    const after = resolvePreviewZoom(next, this.previewScreenFitZoom);
+    const sameKind = typeof next === typeof this.previewView &&
+      (typeof next === 'number' || next === this.previewView);
+    if (sameKind && Math.abs(after - before) <= before * 1e-9) {
+      return;
+    }
+
+    const viewport = this.previewViewport?.nativeElement;
+    const canvas = this.previewCanvas?.nativeElement;
+    const beforeRect = canvas?.getBoundingClientRect();
+    const point = anchor ?? this.viewportCentre();
+
+    this.previewView = next;
+    this.applyPreviewViewSize();
+
+    if (viewport && canvas && beforeRect && point) {
+      const afterRect = canvas.getBoundingClientRect();
+      viewport.scrollLeft += anchoredScrollDelta(
+        beforeRect.left, beforeRect.width, afterRect.left, afterRect.width, point.clientX);
+      viewport.scrollTop += anchoredScrollDelta(
+        beforeRect.top, beforeRect.height, afterRect.top, afterRect.height, point.clientY);
+    }
+
+    const pixels = this.previewTargetPixels;
+    const raster = pixels ? previewRasterZoom(after, pixels.width, pixels.height).zoom : null;
+    if (raster === null || this.previewPaintedRasterZoom === null ||
+        Math.abs(raster - this.previewPaintedRasterZoom) > this.previewPaintedRasterZoom * 1e-9) {
+      this.schedulePreview();
+    }
+    this.cdr.markForCheck();
   }
 
   /** Wrapping: seven figures in a ring, so neither end of the set is a dead control. */
@@ -2045,8 +2232,17 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         return;
       }
 
+      // A new pixel size makes an explicit zoom meaningless; the two fitted views follow the stage.
+      const targetKey = `${target.layout.pixelWidth}x${target.layout.pixelHeight}`;
+      if (targetKey !== this.previewTargetKey) {
+        this.previewTargetKey = targetKey;
+        if (typeof this.previewView === 'number') {
+          this.previewView = 'default';
+        }
+      }
+
       const stage = this.measureStage();
-      const fit = stage ? previewLayoutFor(target.layout, stage) : null;
+      const fit = stage ? previewLayoutFor(target.layout, stage, this.previewView) : null;
       if (!fit) {
         this.blankPreview();
         return;
@@ -2057,7 +2253,21 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         return;
       }
       if (composed) {
-        this.paintPreview(composed, fit.cssWidth, fit.cssHeight);
+        const centre = this.captureViewCentre();
+        this.previewScreenFitZoom = fit.screenFitZoom;
+        this.previewTargetPixels = { width: target.layout.pixelWidth, height: target.layout.pixelHeight };
+        this.previewDpr = Math.min(4, Math.max(1, stage!.devicePixelRatio));
+        this.previewPaintedRasterZoom = fit.rasterZoom;
+        this.previewRasterCapped = fit.rasterCapped;
+        this.paintPreview(composed);
+        this.applyPreviewViewSize();
+        this.restoreViewCentre(centre);
+        // The reader may have zoomed while this composed, past what its raster serves.
+        const wanted = previewRasterZoom(
+          this.previewZoomValue, target.layout.pixelWidth, target.layout.pixelHeight).zoom;
+        if (Math.abs(wanted - fit.rasterZoom) > fit.rasterZoom * 1e-9) {
+          this.schedulePreview();
+        }
       } else {
         this.blankPreview();
       }
@@ -2099,9 +2309,12 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /**
    * The stage's content box and the ratio to rasterise at, or null where the element is absent.
    *
-   * The padding is subtracted from the border box rather than read as a content box, because that
-   * is the number the canvas actually has to fit inside; `window.devicePixelRatio` is read here on
-   * every composition, so a window dragged to another display re-rasterises instead of softening.
+   * The stage is measured rather than the viewport inside it, because the stage never scrolls: a
+   * scrollbar appearing on zoom cannot change the fit and feed back into the observer. The
+   * viewport's padding is subtracted from the stage's box rather than read as a content box,
+   * because that is the number the canvas actually has to fit inside; `window.devicePixelRatio` is
+   * read here on every composition, so a window dragged to another display re-rasterises instead
+   * of softening.
    */
   measureStage(): PreviewStage | null {
     const element = this.previewStage?.nativeElement;
@@ -2109,7 +2322,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       return null;
     }
     const box = element.getBoundingClientRect();
-    const style = getComputedStyle(element);
+    const style = getComputedStyle(this.previewViewport?.nativeElement ?? element);
     const horizontal = parseFloat(style.paddingLeft || '0') + parseFloat(style.paddingRight || '0');
     const vertical = parseFloat(style.paddingTop || '0') + parseFloat(style.paddingBottom || '0');
     return {
@@ -2128,36 +2341,209 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    */
   private observeStage(): void {
     this.disconnectStageObserver();
+    this.listenOnViewport();
     const element = this.previewStage?.nativeElement;
     if (!element || typeof ResizeObserver === 'undefined') {
       return;
     }
-    this.previewResizeObserver = new ResizeObserver(() => this.schedulePreview());
+    this.previewResizeObserver = new ResizeObserver(() => {
+      this.updatePannable();
+      this.schedulePreview();
+    });
     this.previewResizeObserver.observe(element);
   }
 
   private disconnectStageObserver(): void {
     this.previewResizeObserver?.disconnect();
     this.previewResizeObserver = null;
+    const viewport = this.previewViewport?.nativeElement;
+    for (const [type, listener, options] of this.previewViewportListeners) {
+      viewport?.removeEventListener(type, listener, options);
+    }
+    this.previewViewportListeners = [];
+    if (this.previewWheelFrame !== null) {
+      cancelAnimationFrame(this.previewWheelFrame);
+      this.previewWheelFrame = null;
+    }
+    this.previewWheelFactor = 1;
+    this.previewWheelAnchor = null;
+    this.endPreviewPan();
   }
 
   /**
-   * Draws the composition at its own bitmap size and states the CSS box it occupies.
+   * Pointer panning and Ctrl + wheel zoom on the viewport, outside Angular.
    *
-   * Both are stated: the canvas carries the composed pixels one for one, and the box it is shown in
-   * is the fitted size in CSS px, so nothing about the stage is left to a percentage rule that
-   * would resample what was just rasterised to fit it.
+   * A pan is pure DOM, so no change detection runs per pointer move; a wheel zoom re-enters Angular
+   * once per animation frame. Touch keeps the browser's own scrolling, and a plain wheel scrolls.
    */
-  private paintPreview(composed: HTMLCanvasElement, cssWidth: number, cssHeight: number): void {
+  private listenOnViewport(): void {
+    const viewport = this.previewViewport?.nativeElement;
+    if (!viewport) {
+      return;
+    }
+
+    const onPointerDown = (event: PointerEvent): void => {
+      if (event.pointerType === 'touch' || (event.button !== 0 && event.button !== 1) ||
+          !this.isViewportPannable(viewport)) {
+        return;
+      }
+      // A press on a scrollbar is the scrollbar's own.
+      const box = viewport.getBoundingClientRect();
+      if (event.clientX - box.left - viewport.clientLeft >= viewport.clientWidth ||
+          event.clientY - box.top - viewport.clientTop >= viewport.clientHeight) {
+        return;
+      }
+      // Also keeps a middle press from starting the browser's autoscroll.
+      event.preventDefault();
+      viewport.setPointerCapture?.(event.pointerId);
+      this.previewPan = {
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        left: viewport.scrollLeft,
+        top: viewport.scrollTop
+      };
+      viewport.classList.add('is-panning');
+    };
+
+    const onPointerMove = (event: PointerEvent): void => {
+      const pan = this.previewPan;
+      if (!pan || pan.pointerId !== event.pointerId) {
+        return;
+      }
+      viewport.scrollLeft = pan.left - (event.clientX - pan.x);
+      viewport.scrollTop = pan.top - (event.clientY - pan.y);
+    };
+
+    const onPointerEnd = (event: PointerEvent): void => {
+      if (this.previewPan?.pointerId === event.pointerId) {
+        this.endPreviewPan();
+      }
+    };
+
+    // Chromium and Firefox deliver a trackpad pinch as a Ctrl + wheel.
+    const onWheel = (event: WheelEvent): void => {
+      if (!event.ctrlKey && !event.metaKey) {
+        return;
+      }
+      event.preventDefault();
+      this.previewWheelFactor *= wheelZoomFactor(event.deltaY, event.deltaMode);
+      this.previewWheelAnchor = { clientX: event.clientX, clientY: event.clientY };
+      if (this.previewWheelFrame === null) {
+        this.previewWheelFrame = requestAnimationFrame(() => {
+          this.previewWheelFrame = null;
+          const factor = this.previewWheelFactor;
+          const anchor = this.previewWheelAnchor ?? undefined;
+          this.previewWheelFactor = 1;
+          this.previewWheelAnchor = null;
+          this.zone.run(() => this.setPreviewView(this.previewZoomValue * factor, anchor));
+        });
+      }
+    };
+
+    const listeners: [string, EventListener, AddEventListenerOptions?][] = [
+      ['pointerdown', onPointerDown as EventListener],
+      ['pointermove', onPointerMove as EventListener],
+      ['pointerup', onPointerEnd as EventListener],
+      ['pointercancel', onPointerEnd as EventListener],
+      ['lostpointercapture', onPointerEnd as EventListener],
+      ['wheel', onWheel as EventListener, { passive: false }]
+    ];
+    this.zone.runOutsideAngular(() => {
+      for (const [type, listener, options] of listeners) {
+        viewport.addEventListener(type, listener, options);
+      }
+    });
+    this.previewViewportListeners = listeners;
+  }
+
+  private endPreviewPan(): void {
+    const pan = this.previewPan;
+    if (!pan) {
+      return;
+    }
+    this.previewPan = null;
+    const viewport = this.previewViewport?.nativeElement;
+    viewport?.classList.remove('is-panning');
+    if (viewport?.hasPointerCapture?.(pan.pointerId)) {
+      viewport.releasePointerCapture(pan.pointerId);
+    }
+  }
+
+  private isViewportPannable(viewport: HTMLElement): boolean {
+    return viewport.scrollWidth > viewport.clientWidth || viewport.scrollHeight > viewport.clientHeight;
+  }
+
+  private updatePannable(): void {
+    const viewport = this.previewViewport?.nativeElement;
+    viewport?.classList.toggle('is-pannable', this.isViewportPannable(viewport));
+  }
+
+  /** The viewport's centre in client px, or null where it has no layout. */
+  private viewportCentre(): { clientX: number; clientY: number } | null {
+    const viewport = this.previewViewport?.nativeElement;
+    if (!viewport) {
+      return null;
+    }
+    const box = viewport.getBoundingClientRect();
+    return { clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 };
+  }
+
+  /** The canvas's box and the viewport's centre before a repaint, for {@link restoreViewCentre}. */
+  private captureViewCentre(): { rect: DOMRect; point: { clientX: number; clientY: number } } | null {
+    const canvas = this.previewCanvas?.nativeElement;
+    const point = this.viewportCentre();
+    return canvas && point ? { rect: canvas.getBoundingClientRect(), point } : null;
+  }
+
+  /** Scrolls so the part of the figure that was at the viewport's centre is there again. */
+  private restoreViewCentre(
+    before: { rect: DOMRect; point: { clientX: number; clientY: number } } | null
+  ): void {
+    const viewport = this.previewViewport?.nativeElement;
+    const canvas = this.previewCanvas?.nativeElement;
+    if (!before || !viewport || !canvas) {
+      return;
+    }
+    const after = canvas.getBoundingClientRect();
+    viewport.scrollLeft += anchoredScrollDelta(
+      before.rect.left, before.rect.width, after.left, after.width, before.point.clientX);
+    viewport.scrollTop += anchoredScrollDelta(
+      before.rect.top, before.rect.height, after.top, after.height, before.point.clientY);
+  }
+
+  /** Draws the composition at its own bitmap size; {@link applyPreviewViewSize} states its box. */
+  private paintPreview(composed: HTMLCanvasElement): void {
     const stage = this.previewCanvas?.nativeElement;
     if (!stage) {
       return;
     }
     stage.width = composed.width;
     stage.height = composed.height;
+    stage.getContext('2d')?.drawImage(composed, 0, 0);
+  }
+
+  /**
+   * Sizes the canvas's CSS box for the view requested now, whatever zoom its bitmap was composed
+   * for, so a composition that lands late is still shown at the current zoom.
+   *
+   * The box is stated in CSS px rather than left to a percentage rule. From two displayed device
+   * pixels per bitmap pixel the canvas is drawn nearest-neighbour, so single export pixels can be
+   * inspected; below that, smoothing avoids uneven pixel widths.
+   */
+  private applyPreviewViewSize(): void {
+    const stage = this.previewCanvas?.nativeElement;
+    const pixels = this.previewTargetPixels;
+    if (!stage || !pixels || stage.width === 0) {
+      return;
+    }
+    const zoom = this.previewZoomValue;
+    const cssWidth = pixels.width / this.previewDpr * zoom;
+    const cssHeight = cssWidth * pixels.height / pixels.width;
     stage.style.width = `${cssWidth}px`;
     stage.style.height = `${cssHeight}px`;
-    stage.getContext('2d')?.drawImage(composed, 0, 0);
+    stage.classList.toggle('is-pixelated', pixels.width * zoom / stage.width >= 2 - 1e-9);
+    this.updatePannable();
   }
 
   /** A refused size shows no image at all: the last one that fitted is not what was asked for. */
@@ -2172,6 +2558,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     // The CSS box goes with the bitmap, or a blanked stage keeps the footprint of the last figure.
     stage.style.width = '';
     stage.style.height = '';
+    stage.classList.remove('is-pixelated');
+    this.previewViewport?.nativeElement.classList.remove('is-pannable');
   }
 
   // ---------------------------------------------------------------------------------------------

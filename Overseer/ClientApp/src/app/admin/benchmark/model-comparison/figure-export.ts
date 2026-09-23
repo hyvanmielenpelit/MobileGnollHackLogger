@@ -35,6 +35,12 @@ import type {
   FigureKeyItem,
   FigureNoteTone
 } from './figure-chrome';
+import {
+  PREVIEW_MAX_ZOOM,
+  PreviewViewRequest,
+  previewRasterZoom,
+  resolvePreviewZoom
+} from './preview-view';
 
 export type FigureExportFormat = 'png' | 'webp';
 
@@ -478,36 +484,71 @@ export interface PreviewStage {
   readonly devicePixelRatio: number;
 }
 
+/** What {@link previewLayoutFor} fitted: the raster to compose, and the box to show it in. */
+export interface PreviewLayout {
+  readonly layout: FigureExportLayout;
+  /** The CSS box at the requested zoom; it may exceed the stage. */
+  readonly cssWidth: number;
+  readonly cssHeight: number;
+  /** The zoom that fills the stage, at most {@link PREVIEW_MAX_ZOOM}. */
+  readonly screenFitZoom: number;
+  /** The requested view, resolved: device pixels per export pixel. */
+  readonly zoom: number;
+  /** The fraction of the target's pixels the raster carries. */
+  readonly rasterZoom: number;
+  /** True where the raster budget, not the zoom, set the raster's size. */
+  readonly rasterCapped: boolean;
+}
+
 /**
- * The export's own layout, rasterised at the density that fits the stage.
+ * The export's own layout, rasterised for the stage at the requested view.
  *
  * Every field that shapes the composition — layoutWidth, layoutHeight, plotWidth, plotHeight —
- * is carried over unchanged, so the preview is the export re-rendered, never a scaled copy of it:
- * only density, pixelWidth and pixelHeight differ. Letterboxed to the target's aspect ratio, and
- * never larger than the target itself. Returns null for a stage with no usable area.
+ * is carried over unchanged, so the preview is the export re-rendered, never a different
+ * composition: only density, pixelWidth and pixelHeight differ. The raster is the displayed pixels
+ * below 100 % and the target's own at and above it, so an enlarged view shows the export's pixels
+ * magnified rather than a sharper rendering the file would not contain; past
+ * `PREVIEW_MAX_RASTER_PIXELS` it is scaled down further. `'default'` letterboxes the figure
+ * into the stage and never enlarges it. Returns null for a stage with no usable area.
  */
 export function previewLayoutFor(
   target: FigureExportLayout,
-  stage: PreviewStage
-): { layout: FigureExportLayout; cssWidth: number; cssHeight: number } | null {
+  stage: PreviewStage,
+  view: PreviewViewRequest = 'default'
+): PreviewLayout | null {
   const dpr = Math.min(4, Math.max(1, stage.devicePixelRatio));
   const aspect = target.pixelWidth / target.pixelHeight;
   if (!Number.isFinite(aspect) || aspect <= 0) {
     return null;
   }
 
-  const cssWidth = Math.min(stage.width, stage.height * aspect, target.pixelWidth / dpr);
+  const screenFitZoom = Math.min(
+    PREVIEW_MAX_ZOOM,
+    stage.width * dpr / target.pixelWidth,
+    stage.height * dpr / target.pixelHeight
+  );
+  if (!(stage.width >= 1) || !(stage.height >= 1) || !(screenFitZoom > 0)) {
+    return null;
+  }
+
+  const zoom = resolvePreviewZoom(view, screenFitZoom);
+  const cssWidth = target.pixelWidth / dpr * zoom;
   const cssHeight = cssWidth / aspect;
   if (!(cssWidth >= 1) || !(cssHeight >= 1)) {
     return null;
   }
 
-  const pixelWidth = Math.round(cssWidth * dpr);
-  const pixelHeight = Math.round(cssHeight * dpr);
+  const raster = previewRasterZoom(zoom, target.pixelWidth, target.pixelHeight);
+  const pixelWidth = Math.max(1, Math.round(target.pixelWidth * raster.zoom));
+  const pixelHeight = Math.max(1, Math.round(target.pixelHeight * raster.zoom));
   return {
     layout: { ...target, density: pixelWidth / target.layoutWidth, pixelWidth, pixelHeight },
     cssWidth,
-    cssHeight
+    cssHeight,
+    screenFitZoom,
+    zoom,
+    rasterZoom: raster.zoom,
+    rasterCapped: raster.capped
   };
 }
 
