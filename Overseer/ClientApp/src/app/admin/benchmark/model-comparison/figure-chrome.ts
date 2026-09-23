@@ -26,7 +26,10 @@ export interface FigureKeyItem { readonly glyph: FigureKeyGlyph; readonly text: 
 export interface FigureChrome {
   readonly title: string;
   readonly badges: readonly FigureBadge[];
-  /** The better corner of a two-axis plot, drawn as a marker above the plot's top-right corner, apart from the badges. */
+  /**
+   * The better corner of a two-axis plot. The plot draws the marker itself; the chrome keeps it for
+   * the text summary.
+   */
   readonly direction?: FigureDirection;
   /** One short sentence under the badges, or ''. Used only for the pricing basis on cost figures. */
   readonly detail: string;

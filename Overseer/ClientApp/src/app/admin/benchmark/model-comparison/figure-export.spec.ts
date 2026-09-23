@@ -277,11 +277,41 @@ describe('figure-export', () => {
     expect(normalized(expected[0].ink)).not.toBe(normalized('#d4d4d8'));
   });
 
-  describe('direction marker', () => {
+  describe('direction', () => {
     const topLeft = { x: 'left', y: 'top', label: 'Better' } as const;
-    const bottomLeft = { x: 'left', y: 'bottom', label: 'Better' } as const;
 
-    it('measures exactly the height the composition draws, with a direction marker', () => {
+    it('draws no Better marker: the plot carries it', () => {
+      const texts: string[] = [];
+      const realFillText = CanvasRenderingContext2D.prototype.fillText;
+      spyOn(CanvasRenderingContext2D.prototype, 'fillText').and.callFake(function (
+        this: CanvasRenderingContext2D,
+        ...args: any[]
+      ) {
+        texts.push(String(args[0]));
+        return (realFillText as any).apply(this, args);
+      } as any);
+      const rotate = spyOn(CanvasRenderingContext2D.prototype, 'rotate').and.callThrough();
+
+      composeFigureImage(request({ chrome: figureChrome({ direction: topLeft }) }));
+
+      expect(texts).not.toContain('Better');
+      expect(rotate).not.toHaveBeenCalled();
+    });
+
+    it('wraps the header at the full content width with a direction present', () => {
+      const title = 'Intelligence against speed across every model in the comparable set';
+      const withDirection = measureFigureChrome(
+        sourceOf({ ...headerOnlyChrome(), title, direction: topLeft }, emptyFooter),
+        400
+      );
+      const without = measureFigureChrome(sourceOf({ ...headerOnlyChrome(), title }, emptyFooter), 400);
+
+      expect(withDirection.titleLines).toEqual(without.titleLines);
+      expect(withDirection.badgeRows.length).toBe(without.badgeRows.length);
+      expect(withDirection.height).toBe(without.height);
+    });
+
+    it('measures exactly the height the composition draws, with a direction present', () => {
       const canvas = sourceCanvas();
       const figure = request({
         canvas,
@@ -293,94 +323,8 @@ describe('figure-export', () => {
       let composed!: HTMLCanvasElement;
       const plotTop = plotTopOf(canvas, () => { composed = composeFigureImage({ ...figure, density: 1 }); });
 
-      expect(measured.direction).not.toBeNull();
       expect(composed.height).toBe(measured.height + onScreen.height);
       expect(plotTop + onScreen.height + 20).toBe(composed.height);
-    });
-
-    it('gives a header shorter than the marker the marker\'s height', () => {
-      const canvas = sourceCanvas();
-      const figure = request({
-        canvas,
-        chrome: figureChrome({ ...headerOnlyChrome(), title: 'S1', badges: [], direction: topLeft }),
-        footer: figureFooter(emptyFooter)
-      });
-
-      const plotTop = plotTopOf(canvas, () => composeFigureImage(figure));
-
-      // Padding, the 28 px marker, then the gap above the plot.
-      expect(plotTop).toBeGreaterThanOrEqual(20 + 28 + 16);
-    });
-
-    it('wraps the title and badges in the column left of the marker', () => {
-      const title = 'Intelligence against speed across every model in the comparable set';
-      const measured = measureFigureChrome(
-        sourceOf({ ...headerOnlyChrome(), title, direction: topLeft }, emptyFooter),
-        400
-      );
-      const columnWidth = 400 - measured.direction!.width - 12;
-
-      const scratch = document.createElement('canvas').getContext('2d')!;
-      scratch.font = `600 18px ${FIGURE_FONT_STACK}`;
-      expect(measured.titleLines.length).toBeGreaterThan(1);
-      for (const line of measured.titleLines) {
-        expect(scratch.measureText(line).width).withContext(line).toBeLessThanOrEqual(columnWidth + 0.5);
-      }
-      for (const row of measured.badgeRows) {
-        const rowWidth = row.badges.reduce((sum, { width }) => sum + width, 0) + (row.badges.length - 1) * 6;
-        expect(rowWidth).toBeLessThanOrEqual(columnWidth + 0.5);
-      }
-    });
-
-    it('draws the marker right-aligned to the plot, above it', () => {
-      const canvas = sourceCanvas();
-      const figure = request({
-        canvas,
-        chrome: figureChrome({ ...headerOnlyChrome(), direction: topLeft }),
-        footer: figureFooter(emptyFooter)
-      });
-      const measured = measureFigureChrome(figure, 400);
-
-      const labels: { x: number; y: number }[] = [];
-      const realFillText = CanvasRenderingContext2D.prototype.fillText;
-      spyOn(CanvasRenderingContext2D.prototype, 'fillText').and.callFake(function (
-        this: CanvasRenderingContext2D,
-        ...args: any[]
-      ) {
-        if (args[0] === 'Better') {
-          labels.push({ x: args[1], y: args[2] });
-        }
-        return (realFillText as any).apply(this, args);
-      } as any);
-
-      const plotTop = plotTopOf(canvas, () => composeFigureImage(figure));
-
-      expect(labels.length).toBe(1);
-      // The pill's right edge meets the plot's right edge; the label follows its padding, arrow and gap.
-      const pillLeft = 20 + 400 - measured.direction!.width;
-      expect(labels[0].x).toBeCloseTo(pillLeft + 6 + 20 + 6, 5);
-      expect(pillLeft).toBeGreaterThanOrEqual(20 + 200);
-      expect(labels[0].y + 13).toBeLessThanOrEqual(plotTop - 16);
-    });
-
-    it('strokes the arrow rotated toward the better corner', () => {
-      const rotate = spyOn(CanvasRenderingContext2D.prototype, 'rotate').and.callThrough();
-
-      composeFigureImage(request({ chrome: figureChrome({ direction: topLeft }) }));
-      const topLeftAngles = rotate.calls.allArgs().map(args => args[0]);
-      rotate.calls.reset();
-      composeFigureImage(request({ chrome: figureChrome({ direction: bottomLeft }) }));
-      const bottomLeftAngles = rotate.calls.allArgs().map(args => args[0]);
-
-      expect(topLeftAngles.length).toBe(1);
-      expect(topLeftAngles[0]).toBeCloseTo((3 * Math.PI) / 2, 6);
-      expect(bottomLeftAngles.length).toBe(1);
-      expect(bottomLeftAngles[0]).toBeCloseTo(Math.PI, 6);
-    });
-
-    it('draws no marker and reserves no column without a direction', () => {
-      const measured = measureFigureChrome(sourceOf(headerOnlyChrome(), emptyFooter), 400);
-      expect(measured.direction).toBeNull();
     });
   });
 
@@ -446,7 +390,7 @@ describe('figure-export', () => {
   describe('resolveFigureLayout', () => {
     it('returns exactly the requested pixel size for every preset', () => {
       for (const resolution of explicitPresets) {
-        const { layout, refusal } = resolveFigureLayout(sourceOf(), resolution, onScreen, 1);
+        const { layout, refusal } = resolveFigureLayout(sourceOf(), resolution, onScreen, 1, 1);
 
         expect(refusal).withContext(resolution.id).toBeNull();
         expect(layout!.pixelWidth).withContext(resolution.id).toBe(resolution.widthPx!);
@@ -457,7 +401,7 @@ describe('figure-export', () => {
     it('lays every explicit size out at least 960 wide and 540 tall, in the target’s ratio', () => {
       const epsilon = 1e-9;
       for (const resolution of explicitPresets) {
-        const { layout } = resolveFigureLayout(sourceOf(), resolution, onScreen, 1);
+        const { layout } = resolveFigureLayout(sourceOf(), resolution, onScreen, 1, 1);
 
         expect(layout!.layoutWidth)
           .withContext(resolution.id)
@@ -481,7 +425,7 @@ describe('figure-export', () => {
     });
 
     it('composes an explicit size to exactly the requested bitmap', () => {
-      const { layout } = resolveFigureLayout(sourceOf(), preset('fullhd'), onScreen, 1);
+      const { layout } = resolveFigureLayout(sourceOf(), preset('fullhd'), onScreen, 1, 1);
 
       const composed = composeFigureImage(request({ layout }));
 
@@ -492,7 +436,7 @@ describe('figure-export', () => {
     it('reproduces the on-screen composition exactly', () => {
       const composed = composeFigureImage(request({ density: 2 }));
 
-      const { layout, refusal } = resolveFigureLayout(sourceOf(), preset('onscreen'), onScreen, 2);
+      const { layout, refusal } = resolveFigureLayout(sourceOf(), preset('onscreen'), onScreen, 2, 1);
 
       expect(refusal).toBeNull();
       expect(layout!.density).toBe(2);
@@ -511,7 +455,7 @@ describe('figure-export', () => {
       });
       const source = sourceOf({ notes: [1, 2, 3, 4, 5, 6].map(note) });
 
-      const { layout, refusal } = resolveFigureLayout(source, preset('hd'), onScreen, 1);
+      const { layout, refusal } = resolveFigureLayout(source, preset('hd'), onScreen, 1, 1);
 
       expect(layout).toBeNull();
       expect(refusal).toContain('Quality, speed and cost');
@@ -527,6 +471,7 @@ describe('figure-export', () => {
         source,
         { id: 'custom', label: 'Custom', group: 'Custom', widthPx: 1280, heightPx: minimumHeight },
         onScreen,
+        1,
         1
       );
       expect(retry.refusal).toBeNull();
@@ -549,11 +494,11 @@ describe('figure-export', () => {
 
     it('multiplies the bitmap by the density and leaves the composition alone', () => {
       for (const resolution of explicitPresets) {
-        const base = resolveFigureLayout(sourceOf(), resolution, onScreen, 1).layout!;
+        const base = resolveFigureLayout(sourceOf(), resolution, onScreen, 1, 1).layout!;
 
         for (const density of FIGURE_EXPORT_DENSITY_PRESETS) {
           const context = `${resolution.id} at ${density}`;
-          const { layout, refusal } = resolveFigureLayout(sourceOf(), resolution, onScreen, density);
+          const { layout, refusal } = resolveFigureLayout(sourceOf(), resolution, onScreen, density, 1);
 
           expect(refusal).withContext(context).toBeNull();
           expect(layout!.pixelWidth).withContext(context).toBe(Math.round(resolution.widthPx! * density));
@@ -570,7 +515,7 @@ describe('figure-export', () => {
     });
 
     it('composes Full HD at 200 % to a 3840 × 2160 bitmap of the same figure', () => {
-      const { layout } = resolveFigureLayout(sourceOf(), preset('fullhd'), onScreen, 2);
+      const { layout } = resolveFigureLayout(sourceOf(), preset('fullhd'), onScreen, 2, 1);
 
       const composed = composeFigureImage(request({ layout }));
 
@@ -581,7 +526,7 @@ describe('figure-export', () => {
     });
 
     it('writes the on-screen size at the chosen density', () => {
-      const { layout, refusal } = resolveFigureLayout(sourceOf(), preset('onscreen'), onScreen, 1.5);
+      const { layout, refusal } = resolveFigureLayout(sourceOf(), preset('onscreen'), onScreen, 1.5, 1);
 
       expect(refusal).toBeNull();
       expect(layout!.density).toBe(1.5);
@@ -598,13 +543,13 @@ describe('figure-export', () => {
         heightPx: 8000
       };
 
-      const refused = resolveFigureLayout(sourceOf(), custom, onScreen, 3);
+      const refused = resolveFigureLayout(sourceOf(), custom, onScreen, 3, 1);
       expect(refused.layout).toBeNull();
       expect(refused.refusal).toContain('24000 × 24000');
       expect(refused.refusal).toContain(String(FIGURE_EXPORT_MAX_BITMAP_DIMENSION));
 
       // 16 000 px a side is under the cap, so the same size at 200 % is written rather than refused.
-      const accepted = resolveFigureLayout(sourceOf(), custom, onScreen, 2);
+      const accepted = resolveFigureLayout(sourceOf(), custom, onScreen, 2, 1);
       expect(accepted.refusal).toBeNull();
       expect(accepted.layout!.pixelWidth).toBe(16000);
     });
@@ -618,10 +563,49 @@ describe('figure-export', () => {
         heightPx: 720
       };
 
-      const { layout, refusal } = resolveFigureLayout(sourceOf(), custom, onScreen, 1);
+      const { layout, refusal } = resolveFigureLayout(sourceOf(), custom, onScreen, 1, 1);
 
       expect(layout).toBeNull();
       expect(refusal).toContain(String(FIGURE_EXPORT_MIN_DIMENSION));
+    });
+
+    it('composes in a smaller box at a larger text size, at the same pixel size', () => {
+      expect(layoutBoxFor(1080, 1080, 2)).toEqual({ layoutWidth: 480, layoutHeight: 480, density: 2.25 });
+      expect(layoutBoxFor(1080, 1080)).toEqual(layoutBoxFor(1080, 1080, 1));
+      expect(layoutBoxFor(1080, 1080).layoutWidth).toBeCloseTo(960, 9);
+
+      const scaled = resolveFigureLayout(sourceOf(), preset('square1080'), onScreen, 1, 1.5).layout!;
+      const base = resolveFigureLayout(sourceOf(), preset('square1080'), onScreen, 1, 1).layout!;
+      expect(scaled.pixelWidth).toBe(1080);
+      expect(scaled.pixelHeight).toBe(1080);
+      expect(scaled.layoutWidth).toBeCloseTo(base.layoutWidth / 1.5, 9);
+      expect(scaled.density).toBeCloseTo(base.density * 1.5, 9);
+    });
+
+    it('refuses a text size that leaves the caption column narrower than 360 px', () => {
+      const custom: FigureExportResolution = {
+        id: 'custom',
+        label: 'Custom',
+        group: 'Custom',
+        widthPx: 640,
+        heightPx: 640
+      };
+
+      const refused = resolveFigureLayout(sourceOf(), custom, onScreen, 1, 2.5);
+      expect(refused.layout).toBeNull();
+      expect(refused.refusal).toContain('At 250% text');
+      expect(refused.refusal).toContain('Quality, speed and cost');
+      expect(refused.refusal).toContain('caption column would be narrower than 360 px');
+
+      const accepted = resolveFigureLayout(sourceOf(), custom, onScreen, 1, 1);
+      expect(accepted.refusal).toBeNull();
+      expect(accepted.layout!.pixelWidth).toBe(640);
+    });
+
+    it('ignores the text size for the on-screen preset', () => {
+      const scaled = resolveFigureLayout(sourceOf(), preset('onscreen'), onScreen, 2, 2.5);
+      const base = resolveFigureLayout(sourceOf(), preset('onscreen'), onScreen, 2, 1);
+      expect(scaled).toEqual(base);
     });
   });
 
@@ -726,7 +710,7 @@ describe('figure-export', () => {
   describe('previewLayoutFor', () => {
     /** The export layout a preview is fitted from. */
     function target(id: string): FigureExportLayout {
-      return resolveFigureLayout(sourceOf(), preset(id), onScreen, 1).layout!;
+      return resolveFigureLayout(sourceOf(), preset(id), onScreen, 1, 1).layout!;
     }
 
     it('keeps the export’s composition and changes only its density', () => {

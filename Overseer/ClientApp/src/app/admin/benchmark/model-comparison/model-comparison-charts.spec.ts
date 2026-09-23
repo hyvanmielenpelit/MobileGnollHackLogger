@@ -7,8 +7,11 @@ import {
   CHART_SURFACE,
   DEFAULT_MODEL_SORT,
   DE_EMPHASIS_FILL,
+  DIRECTION_MARKER_GAP,
   DOMINATED_REGION_FILL,
+  FRONTIER_UNCERTAINTY_NOTE,
   IDENTITY_SHAPES,
+  MEAN_TIME_NO_INTERVAL_NOTE,
   MAX_PLOTTED_ENTRIES,
   PALETTE_VALIDATION_INPUT,
   PROFILE_AXIS_ORDER,
@@ -23,6 +26,8 @@ import {
   buildSpeedCostScatter,
   computeParetoFrontier,
   directLabelPlugin,
+  directionMarkerMetrics,
+  directionMarkerPlugin,
   dominatedRegionPlugin,
   errorBarPlugin,
   glyphFor,
@@ -43,10 +48,13 @@ import type {
   DirectLabelBox,
   DirectLabelPluginOptions,
   DirectLabelValue,
+  DirectionMarkerPluginOptions,
   ModelComparisonContext,
   ModelComparisonEntry,
   SmallMultiplesOptions,
 } from './model-comparison-charts';
+import { DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
+import type { BarFigureStyle, FigureStyle, ScatterFigureStyle } from './figure-style';
 import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 import { CONFIG_ANALYTICS_CHART_TYPE } from '../../config-analytics/config-analytics.component';
 
@@ -1655,6 +1663,318 @@ describe('model-comparison-charts', () => {
       expect(speedLowerIsBetter('totalModelTime')).toBeTrue();
       expect(speedLowerIsBetter('ttftP50')).toBeTrue();
       expect(speedLowerIsBetter('speedIndex')).toBeFalse();
+    });
+  });
+
+  describe('figure style', () => {
+    const style = (bar: Partial<BarFigureStyle> = {}, scatter: Partial<ScatterFigureStyle> = {}): FigureStyle => ({
+      bar: { ...DEFAULT_FIGURE_STYLE.bar, ...bar },
+      scatter: { ...DEFAULT_FIGURE_STYLE.scatter, ...scatter },
+    });
+
+    const noteTexts = (spec: { chrome: { notes: readonly { text: string }[] } }): string[] =>
+      spec.chrome.notes.map((note) => note.text);
+
+    /** Two models on one mean time, the weaker dominated but within the stronger one's interval. */
+    const WITHIN = [
+      makeEntry({ key: 'P', intelligenceIndex: 62 }),
+      makeEntry({ key: 'Q', intelligenceIndex: 60, speedDegraded: true }),
+    ];
+    const withinOptions = (figureStyle: FigureStyle = DEFAULT_FIGURE_STYLE) => ({
+      ...BASE_FIGURE_OPTIONS,
+      glyphs: buildIdentityGlyphs(WITHIN),
+      style: figureStyle,
+    });
+
+    describe('bars', () => {
+      it('reproduces the unstyled panel with the default style', () => {
+        const figure = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions());
+        const dataset = datasetsOf(figure.quality.config)[0];
+        expect(dataset['maxBarThickness']).toBe(24);
+        expect((dataset['categoryPercentage'] as number) * (dataset['barPercentage'] as number)).toBeCloseTo(0.72, 9);
+        expect(dataset['borderRadius']).toBe(4);
+        expect(dataset['borderWidth']).toBe(2);
+
+        const value = scaleOf(figure.quality.config, 'y') as ScaleProbe & {
+          ticks?: { font?: { size?: number } };
+          title?: { font?: { size?: number } };
+          grid?: { display?: boolean };
+        };
+        expect(value.ticks?.font?.size).toBe(11);
+        expect(value.title?.font?.size).toBe(12);
+        expect(value.grid?.display).toBeTrue();
+        expect(figure.quality.plugins).toEqual([errorBarPlugin, ChartDataLabels]);
+        expect(noteTexts(figure.quality)).not.toContain(HIDDEN_INTERVALS_NOTE);
+
+        const explicit = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ style: DEFAULT_FIGURE_STYLE }));
+        expect(datasetsOf(explicit.quality.config)[0]).toEqual(dataset);
+      });
+
+      it('maps the space, the width limit and the outline onto the dataset', () => {
+        const figure = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({
+          style: style({ gapPercent: 10, maxBarWidthPx: null, cornerRadiusPx: 0, outlineWidthPx: 3 }),
+        }));
+        const dataset = datasetsOf(figure.quality.config)[0];
+        expect(dataset['categoryPercentage']).toBe(1);
+        expect(dataset['barPercentage']).toBeCloseTo(0.9, 9);
+        expect('maxBarThickness' in dataset).toBeFalse();
+        expect(dataset['borderRadius']).toBe(0);
+        expect(dataset['borderWidth']).toBe(3);
+      });
+
+      it('hides the value labels and the value-axis grid on request, and sizes the text', () => {
+        const figure = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({
+          style: style({ valueLabels: false, gridlines: false, axisTextSizePx: 16, valueLabelSizePx: 18 }),
+        }));
+        const datalabels = figure.quality.config.options?.plugins?.datalabels as {
+          display?: unknown;
+          font?: { size?: number };
+        };
+        expect(datalabels.display).toBeFalse();
+        expect(datalabels.font?.size).toBe(18);
+        const value = scaleOf(figure.quality.config, 'y') as ScaleProbe & {
+          ticks?: { font?: { size?: number } };
+          title?: { font?: { size?: number } };
+          grid?: { display?: boolean };
+        };
+        expect(value.grid?.display).toBeFalse();
+        expect(value.ticks?.font?.size).toBe(16);
+        expect(value.title?.font?.size).toBe(17);
+      });
+
+      it('hides the whiskers, moves the labels to the bar ends and says so, but not where none would draw', () => {
+        const figure = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({
+          speedMeasure: 'meanModelTime',
+          style: style({ intervals: false }),
+        }));
+        expect(figure.quality.plugins).not.toContain(errorBarPlugin);
+        expect(figure.quality.plugins).toContain(ChartDataLabels);
+
+        const datalabels = figure.quality.config.options?.plugins?.datalabels as {
+          offset: (ctx: { dataIndex: number; chart: { scales: Record<string, { getPixelForValue(v: number): number }> } }) => number;
+        };
+        const chart = { scales: { y: { getPixelForValue: (v: number) => 300 - v * 2 } } };
+        for (let index = 0; index < PROFILE_FIXTURE.length; index += 1) {
+          expect(datalabels.offset({ dataIndex: index, chart })).withContext(String(index)).toBe(4);
+        }
+        expect(noteTexts(figure.quality)).toContain(HIDDEN_INTERVALS_NOTE);
+        // Mean model time per question draws no whisker anyway.
+        expect(noteTexts(figure.speed)).not.toContain(HIDDEN_INTERVALS_NOTE);
+      });
+
+      it('leaves out the hidden-intervals note when it is switched off, and changes nothing while the bars show', () => {
+        const off = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({
+          style: style({ intervals: false, hiddenIntervalsNote: false }),
+        }));
+        expect(off.quality.plugins).not.toContain(errorBarPlugin);
+        expect(noteTexts(off.quality)).not.toContain(HIDDEN_INTERVALS_NOTE);
+
+        const shown = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({
+          style: style({ hiddenIntervalsNote: false }),
+        }));
+        const plain = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions());
+        expect(shown.quality.plugins).toEqual(plain.quality.plugins);
+        expect(shown.quality.chrome).toEqual(plain.quality.chrome);
+        expect(datasetsOf(shown.quality.config)).toEqual(datasetsOf(plain.quality.config));
+      });
+
+      it('adds the mean-time note only on mean time, and only while its switch is on', () => {
+        const degraded = [makeEntry({ key: 'A' }), makeEntry({ key: 'B', speedDegraded: true })];
+        const options = (figureStyle: FigureStyle, speedMeasure: SmallMultiplesOptions['speedMeasure'] = 'meanModelTime') =>
+          smallMultiplesOptions({ glyphs: buildIdentityGlyphs(degraded), speedMeasure, style: figureStyle });
+        const warning = (texts: string[]): boolean => texts.some((text) => text.startsWith('Speed is not comparable'));
+
+        const on = buildSmallMultiples(degraded, options(DEFAULT_FIGURE_STYLE));
+        expect(noteTexts(on.speed)).toContain(MEAN_TIME_NO_INTERVAL_NOTE);
+        expect(noteTexts(on.quality)).not.toContain(MEAN_TIME_NO_INTERVAL_NOTE);
+        expect(noteTexts(on.cost)).not.toContain(MEAN_TIME_NO_INTERVAL_NOTE);
+        expect(warning(noteTexts(on.speed))).toBeTrue();
+
+        for (const intervals of [true, false]) {
+          const off = buildSmallMultiples(degraded, options(style({ intervals, meanTimeNoIntervalNote: false })));
+          expect(noteTexts(off.speed)).withContext(`intervals ${intervals}`).not.toContain(MEAN_TIME_NO_INTERVAL_NOTE);
+          expect(warning(noteTexts(off.speed))).withContext(`intervals ${intervals}`).toBeTrue();
+        }
+
+        for (const figureStyle of [DEFAULT_FIGURE_STYLE, style({ meanTimeNoIntervalNote: false })]) {
+          const ttft = buildSmallMultiples(degraded, options(figureStyle, 'ttftP50'));
+          expect(noteTexts(ttft.speed)).not.toContain(MEAN_TIME_NO_INTERVAL_NOTE);
+        }
+      });
+    });
+
+    describe('trade-off charts', () => {
+      it('maps the mark size, the frontier width, the legend and the text sizes', () => {
+        const spec = buildQualitySpeedScatter(PROFILE_FIXTURE, {
+          ...BASE_FIGURE_OPTIONS,
+          speedMeasure: 'ttftP50',
+          style: style({}, { markRadiusPx: 10, frontierWidthPx: 4, legendPosition: 'right', axisTextSizePx: 16, gridlines: false }),
+        });
+        const datasets = datasetsOf(spec.config);
+        expect(datasets[0]['radius']).toBe(10);
+        expect(datasets[0]['hoverRadius']).toBe(13);
+        expect(datasets[0]['hitRadius']).toBe(12);
+        const frontier = datasets.find((dataset) => dataset['label'] === 'Pareto frontier')!;
+        expect(frontier['borderWidth']).toBe(4);
+        expect(spec.config.options?.plugins?.legend?.position).toBe('right');
+
+        const x = scaleOf(spec.config, 'x') as ScaleProbe & {
+          ticks?: { font?: { size?: number } };
+          title?: { font?: { size?: number } };
+          grid?: { display?: boolean };
+        };
+        expect(x.ticks?.font?.size).toBe(16);
+        expect(x.title?.font?.size).toBe(17);
+        expect(x.grid?.display).toBeFalse();
+
+        const small = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, style: style({}, { markRadiusPx: 3 }) });
+        expect(datasetsOf(small.config)[0]['hitRadius']).toBe(15);
+        const plain = buildQualitySpeedScatter(PROFILE_FIXTURE, BASE_FIGURE_OPTIONS);
+        expect(datasetsOf(plain.config)[0]['radius']).toBe(6);
+        expect(datasetsOf(plain.config)[0]['hoverRadius']).toBe(9);
+        expect(datasetsOf(plain.config)[0]['hitRadius']).toBe(12);
+      });
+
+      it('hides the whiskers, fits the axes to the values alone and says so', () => {
+        const hidden = buildQualityCostScatter(PROFILE_FIXTURE, {
+          ...BASE_FIGURE_OPTIONS,
+          style: style({}, { intervals: false }),
+        });
+        const stripped = PROFILE_FIXTURE.map((entry) => ({
+          ...entry,
+          intelligenceIndexCi95HalfWidth: 0,
+          candidateCostPerQuestionSdUsd: null,
+        }));
+        const bare = buildQualityCostScatter(stripped, BASE_FIGURE_OPTIONS);
+        const shown = buildQualityCostScatter(PROFILE_FIXTURE, BASE_FIGURE_OPTIONS);
+
+        expect(hidden.plugins).not.toContain(errorBarPlugin);
+        for (const axis of ['x', 'y'] as const) {
+          expect(scaleOf(hidden.config, axis).min).withContext(axis).toBe(scaleOf(bare.config, axis).min!);
+          expect(scaleOf(hidden.config, axis).max).withContext(axis).toBe(scaleOf(bare.config, axis).max!);
+        }
+        expect(shown.chrome.key.map((item) => item.glyph)).toContain('interval');
+        expect(hidden.chrome.key.map((item) => item.glyph)).not.toContain('interval');
+        expect(noteTexts(hidden)).toContain(HIDDEN_INTERVALS_NOTE);
+        expect(noteTexts(bare)).not.toContain(HIDDEN_INTERVALS_NOTE);
+        const bareHidden = buildQualityCostScatter(stripped, { ...BASE_FIGURE_OPTIONS, style: style({}, { intervals: false }) });
+        // Nothing would have drawn, so nothing is said.
+        expect(noteTexts(bareHidden)).not.toContain(HIDDEN_INTERVALS_NOTE);
+
+        const labelled = buildQualityCostScatter(PROFILE_FIXTURE, {
+          ...BASE_FIGURE_OPTIONS,
+          directLabels: true,
+          style: style({}, { intervals: false, labelTextSizePx: 14, markRadiusPx: 8 }),
+        });
+        const pluginOptions = (labelled.config.options?.plugins as Record<string, DirectLabelPluginOptions>)[directLabelPlugin.id];
+        expect(pluginOptions.avoidWhiskers).toBeFalse();
+        expect(pluginOptions.fontSizePx).toBe(14);
+        expect(pluginOptions.markRadiusPx).toBe(8);
+        const defaultLabelled = buildQualityCostScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, directLabels: true });
+        expect((defaultLabelled.config.options?.plugins as Record<string, DirectLabelPluginOptions>)[directLabelPlugin.id].avoidWhiskers)
+          .toBeTrue();
+      });
+
+      it('keeps the frontier note whatever the whiskers, and drops each note only on its own switch', () => {
+        const plain = buildQualitySpeedScatter(WITHIN, withinOptions());
+        expect(noteTexts(plain)).toContain(FRONTIER_UNCERTAINTY_NOTE);
+
+        const hidden = buildQualitySpeedScatter(WITHIN, withinOptions(style({}, { intervals: false })));
+        const texts = noteTexts(hidden);
+        // Warnings first, then the frontier note, then the hidden-intervals note.
+        expect(hidden.chrome.notes[0].tone).toBe('warning');
+        expect(texts.indexOf(FRONTIER_UNCERTAINTY_NOTE)).toBe(1);
+        expect(texts.indexOf(HIDDEN_INTERVALS_NOTE)).toBe(2);
+
+        const quiet = buildQualitySpeedScatter(WITHIN, withinOptions(style({}, { intervals: false, hiddenIntervalsNote: false })));
+        expect(noteTexts(quiet)).not.toContain(HIDDEN_INTERVALS_NOTE);
+        expect(noteTexts(quiet)).toContain(FRONTIER_UNCERTAINTY_NOTE);
+
+        for (const intervals of [true, false]) {
+          const spec = buildQualitySpeedScatter(WITHIN, withinOptions(style({}, { intervals, frontierIntervalsNote: false })));
+          expect(noteTexts(spec)).withContext(`intervals ${intervals}`).not.toContain(FRONTIER_UNCERTAINTY_NOTE);
+          expect(spec.chrome.notes.some((note) => note.tone === 'warning')).withContext(`intervals ${intervals}`).toBeTrue();
+        }
+        const silent = buildQualitySpeedScatter(WITHIN, withinOptions(style({}, {
+          intervals: false,
+          hiddenIntervalsNote: false,
+          frontierIntervalsNote: false,
+        })));
+        expect(silent.chrome.notes.map((note) => note.tone)).toEqual(['warning']);
+      });
+
+      it('drops the shading and its key item, keeping the frontier', () => {
+        const spec = buildQualitySpeedScatter(PROFILE_FIXTURE, {
+          ...BASE_FIGURE_OPTIONS,
+          speedMeasure: 'ttftP50',
+          style: style({}, { dominatedShading: false }),
+        });
+        expect(spec.plugins).not.toContain(dominatedRegionPlugin);
+        expect(spec.plugins).toContain(errorBarPlugin);
+        const glyphs = spec.chrome.key.map((item) => item.glyph);
+        expect(glyphs).toContain('frontier');
+        expect(glyphs).not.toContain('dominated');
+        expect(datasetsOf(spec.config).map((d) => d['label'])).toContain('Pareto frontier');
+      });
+    });
+
+    describe('the direction marker', () => {
+      it('is registered last on every scatter, with the figure direction, over reserved padding', () => {
+        const figures = buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT });
+        for (const spec of [figures.qualitySpeed, figures.qualityCost, figures.speedCost]) {
+          expect(spec.plugins[spec.plugins.length - 1]).withContext(spec.id).toBe(directionMarkerPlugin);
+          const options = (spec.config.options?.plugins as Record<string, DirectionMarkerPluginOptions>)[directionMarkerPlugin.id];
+          expect(options.direction).withContext(spec.id).toEqual(spec.chrome.direction!);
+          expect(options.fontSizePx).withContext(spec.id).toBe(11);
+          const padding = (spec.config.options as { layout?: { padding?: { top?: number } } }).layout?.padding?.top;
+          expect(padding).withContext(spec.id).toBe(directionMarkerMetrics(11).height + DIRECTION_MARKER_GAP + 4);
+        }
+        expect(figures.qualitySpeed.plugins).toEqual([dominatedRegionPlugin, errorBarPlugin, directionMarkerPlugin]);
+        for (const spec of [figures.smallMultiples.quality, figures.smallMultiples.speed, figures.smallMultiples.cost, figures.profile]) {
+          expect((spec as unknown as ChartSpec).plugins).withContext(spec.id).not.toContain(directionMarkerPlugin);
+        }
+
+        const large = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, style: style({}, { axisTextSizePx: 16 }) });
+        const largePadding = (large.config.options as { layout?: { padding?: { top?: number } } }).layout?.padding?.top;
+        expect(largePadding).toBe(directionMarkerMetrics(16).height + DIRECTION_MARKER_GAP + 4);
+        expect(directionMarkerMetrics(11).height).toBe(22);
+      });
+
+      it('draws a pill whose right edge is the plot area\'s and whose bottom sits above it', () => {
+        const rects: number[][] = [];
+        const texts: string[] = [];
+        const noop = (): void => undefined;
+        const ctx = {
+          save: noop, restore: noop, beginPath: noop, fill: noop, stroke: noop, translate: noop, rotate: noop,
+          scale: noop, moveTo: noop, lineTo: noop, rect: noop,
+          roundRect: (...args: number[]) => rects.push(args),
+          measureText: (text: string) => ({ width: text.length * 6 }),
+          fillText: (text: string) => texts.push(text),
+          font: '', fillStyle: '', strokeStyle: '', lineWidth: 0, lineCap: '', lineJoin: '', textAlign: '', textBaseline: '',
+        };
+        const chart = { ctx, chartArea: { left: 50, top: 40, right: 400, bottom: 300 } };
+        directionMarkerPlugin.afterDraw?.(
+          chart as unknown as Chart,
+          {} as never,
+          { direction: { x: 'left', y: 'top', label: 'Better' }, fontSizePx: 11 } as never,
+        );
+
+        expect(rects.length).toBe(1);
+        const [x, y, width, height] = rects[0];
+        expect(x + width).toBe(400);
+        expect(y + height).toBe(40 - DIRECTION_MARKER_GAP);
+        expect(height).toBe(22);
+        expect(texts).toEqual(['Better']);
+      });
+    });
+
+    it('measures a taller plate at a larger label size', () => {
+      const ctx = { font: '', measureText: (text: string) => ({ width: text.length * 6 }) };
+      const block = { name: 'Model A', values: [{ label: 'Intelligence', text: '82.4' }], hue: '#3987e5' };
+      const normal = measureDirectLabelBlock(ctx as unknown as CanvasRenderingContext2D, block);
+      const large = measureDirectLabelBlock(ctx as unknown as CanvasRenderingContext2D, block, 14);
+      expect(large.height).toBeGreaterThan(normal.height);
+      expect(normal.height).toBe(4 + 12 + 12);
     });
   });
 });

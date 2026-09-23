@@ -1,7 +1,7 @@
 /**
  * Chart core for the cross-model benchmark comparison view: the palette, the per-model identity
- * glyphs, the measure definitions, the Pareto-frontier computation, the error-bar and
- * dominated-region plugins and the configurations for the six figures (S1-S3 scatters, P1's three linked panels, P2's profile plot).
+ * glyphs, the measure definitions, the Pareto-frontier computation, the error-bar, dominated-region,
+ * direct-label and direction-marker plugins and the configurations for the six figures (S1-S3 scatters, P1's three linked panels, P2's profile plot).
  *
  * The module is pure TypeScript: it constructs no components, touches no DOM node and imports
  * nothing from Angular, so its spec runs without a TestBed fixture. The one browser API it reaches
@@ -13,8 +13,10 @@ import ChartDataLabels from 'chartjs-plugin-datalabels';
 import type { Chart, ChartConfiguration, ChartType, DefaultDataPoint, Plugin, Point } from 'chart.js';
 import { chooseScaleType, formatTick, linearDomain, logDomain, timeUnitFor } from './axis-domain';
 import type { AxisBounds, AxisTickKind, ScaleType, TimeUnit } from './axis-domain';
-import { pricingBadge, pricingNote, runsBadge } from './figure-chrome';
+import { figureDirectionRotation, pricingBadge, pricingNote, runsBadge } from './figure-chrome';
 import type { FigureBadge, FigureChrome, FigureDirection, FigureKeyItem, FigureNote } from './figure-chrome';
+import { DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
+import type { FigureStyle } from './figure-style';
 
 // ---------------------------------------------------------------------------------------------
 // Input model
@@ -694,7 +696,10 @@ export const dominatedRegionPlugin: Plugin = {
 // Figure plumbing
 // ---------------------------------------------------------------------------------------------
 
-/** Which corner of a scatter is the good one. Rendered as the direction marker, never as a reversed axis. */
+/**
+ * Which corner of a scatter is the good one. Drawn on the plot by {@link directionMarkerPlugin},
+ * never as a reversed axis.
+ */
 export type PreferredCorner = FigureDirection;
 
 /**
@@ -734,12 +739,19 @@ export interface FigureOptions {
   readonly directLabels?: boolean;
   /** Draws each scatter mark's two measured values on the canvas, beside it. Off unless the caller asks. */
   readonly inlineValues?: boolean;
+  /** Bar and trade-off styling. Defaults to {@link DEFAULT_FIGURE_STYLE}. */
+  readonly style?: FigureStyle;
 }
 
 /** Effective hit radius is `radius + hitRadius`, so the target is 36 px across - well over the 24 px floor. */
 const POINT_RADIUS = 6;
 const POINT_HOVER_RADIUS = 9;
 const POINT_HIT_RADIUS = 12;
+
+/** A scatter mark's hover and hit radii for its drawn radius; the hit target never shrinks below 36 px. */
+function scatterPointRadii(radius: number): { radius: number; hoverRadius: number; hitRadius: number } {
+  return { radius, hoverRadius: radius + 3, hitRadius: Math.max(POINT_HIT_RADIUS, 18 - radius) };
+}
 
 function baseOptions(reducedMotion: boolean) {
   return {
@@ -752,23 +764,23 @@ function baseOptions(reducedMotion: boolean) {
   };
 }
 
-function gridOptions() {
-  return { color: CHART_INK.gridline, lineWidth: 1, drawTicks: false };
+function gridOptions(display = true) {
+  return { display, color: CHART_INK.gridline, lineWidth: 1, drawTicks: false };
 }
 
-function tickOptions() {
-  return { color: CHART_INK.muted, font: { family: '"Lato", system-ui, sans-serif', size: 11 } };
+function tickOptions(size = 11) {
+  return { color: CHART_INK.muted, font: { family: '"Lato", system-ui, sans-serif', size } };
 }
 
 /** Draws the axis label on its own line and, when given a direction, a "lower/higher is better" second line. */
-function axisTitle(text: string | string[], better?: BetterDirection) {
+function axisTitle(text: string | string[], better?: BetterDirection, size = 12) {
   return {
     display: true,
     text: better
       ? [...(Array.isArray(text) ? text : [text]), better === 'lower' ? 'lower is better' : 'higher is better']
       : text,
     color: CHART_INK.secondary,
-    font: { size: 12 },
+    font: { size },
   };
 }
 
@@ -820,8 +832,26 @@ function degradedNotices(plotted: readonly ModelComparisonEntry[], axes: readonl
 // Direct labels on a scatter
 // ---------------------------------------------------------------------------------------------
 
-/** The label font, matching the axis ticks so a direct label reads as chart chrome. */
-const DIRECT_LABEL_FONT = '11px "Lato", system-ui, sans-serif';
+/** The default label size, matching the axis ticks so a direct label reads as chart chrome. */
+const DIRECT_LABEL_DEFAULT_SIZE = 11;
+
+/**
+ * Fonts and line boxes of a plate at name size `size`: the value lines a step under the name so the
+ * name stays the plate's headline, and both line boxes `size + 1`, since measured text carries no height.
+ */
+function directLabelMetrics(size: number): {
+  nameFont: string;
+  valueFont: string;
+  nameLineHeight: number;
+  valueLineHeight: number;
+} {
+  return {
+    nameFont: `${size}px "Lato", system-ui, sans-serif`,
+    valueFont: `${size - 1}px "Lato", system-ui, sans-serif`,
+    nameLineHeight: size + 1,
+    valueLineHeight: size + 1,
+  };
+}
 
 /** Rings tried in turn, in pixels out from the mark. Past the last one the fallback applies. */
 const DIRECT_LABEL_RINGS = [14, 28, 42] as const;
@@ -830,17 +860,8 @@ const DIRECT_LABEL_RINGS = [14, 28, 42] as const;
 const DIRECT_LABEL_PAD_X = 3;
 const DIRECT_LABEL_PAD_Y = 2;
 
-/** Line box of one label at {@link DIRECT_LABEL_FONT}. Measured text carries no height. */
-const DIRECT_LABEL_LINE_HEIGHT = 12;
-
 /** How much of the surface the backing plate keeps, so a gridline behind the text stays subdued. */
 const DIRECT_LABEL_PLATE_ALPHA = 0.85;
-
-/** The value lines' font: a step under the name so the name stays the plate's headline. */
-const DIRECT_LABEL_VALUE_FONT = '10px "Lato", system-ui, sans-serif';
-
-/** Line box of one value line at {@link DIRECT_LABEL_VALUE_FONT}. */
-const DIRECT_LABEL_VALUE_LINE_HEIGHT = 12;
 
 /** Between the measure column and the value column. */
 const DIRECT_LABEL_COLUMN_GAP = 8;
@@ -1179,6 +1200,12 @@ export interface DirectLabelPluginOptions {
   readonly blocks: readonly DirectLabelBlock[];
   /** The emphasised model, whose plate wears the accent its mark already does. */
   readonly highlightedIndex?: number;
+  /** The name's font size; value lines are one smaller. Defaults to 11. */
+  readonly fontSizePx?: number;
+  /** The drawn mark radius, which plates and leaders keep clear of. Defaults to 6. */
+  readonly markRadiusPx?: number;
+  /** Whether plates avoid the drawn whiskers. False when the figure hides them. Defaults to true. */
+  readonly avoidWhiskers?: boolean;
 }
 
 /**
@@ -1191,11 +1218,13 @@ export interface DirectLabelPluginOptions {
 export function measureDirectLabelBlock(
   ctx: CanvasRenderingContext2D,
   block: DirectLabelBlock,
+  size: number = DIRECT_LABEL_DEFAULT_SIZE,
 ): { width: number; height: number; labelColumn: number; valueColumn: number } {
-  ctx.font = DIRECT_LABEL_FONT;
+  const metrics = directLabelMetrics(size);
+  ctx.font = metrics.nameFont;
   const nameWidth = block.name ? ctx.measureText(block.name).width : 0;
 
-  ctx.font = DIRECT_LABEL_VALUE_FONT;
+  ctx.font = metrics.valueFont;
   let labelColumn = 0;
   let valueColumn = 0;
   for (const value of block.values) {
@@ -1212,8 +1241,8 @@ export function measureDirectLabelBlock(
       Math.max(nameWidth, valuesWidth),
     height:
       DIRECT_LABEL_PAD_Y * 2 +
-      (block.name ? DIRECT_LABEL_LINE_HEIGHT : 0) +
-      block.values.length * DIRECT_LABEL_VALUE_LINE_HEIGHT,
+      (block.name ? metrics.nameLineHeight : 0) +
+      block.values.length * metrics.valueLineHeight,
     labelColumn,
     valueColumn,
   };
@@ -1313,6 +1342,10 @@ export const directLabelPlugin: Plugin = {
     if (!ctx || !area || blocks.length === 0) {
       return;
     }
+    const size = options?.fontSizePx ?? DIRECT_LABEL_DEFAULT_SIZE;
+    const text = directLabelMetrics(size);
+    const markRadius = (options?.markRadiusPx ?? POINT_RADIUS) + 3;
+    const avoidWhiskers = options?.avoidWhiskers ?? true;
 
     ctx.save();
     ctx.textBaseline = 'middle';
@@ -1336,17 +1369,17 @@ export const directLabelPlugin: Plugin = {
         return;
       }
       const key = String(datasetIndex);
-      const metrics = measureDirectLabelBlock(ctx, block);
+      const metrics = measureDirectLabelBlock(ctx, block, size);
       anchors.push({ key, x: element.x, y: element.y, width: metrics.width, height: metrics.height });
       plates.set(key, { block, labelColumn: metrics.labelColumn, valueColumn: metrics.valueColumn });
       // The whiskers `errorBarPlugin` has already drawn, so a plate does not land on one.
       const raw = chart.data.datasets[datasetIndex]?.data[0];
-      if (isErrorBarPoint(raw)) {
+      if (avoidWhiskers && isErrorBarPoint(raw)) {
         obstacleRects.push(...whiskerRects(chart, meta, raw, element));
       }
     });
 
-    const boxes = placeDirectLabels(anchors, area, POINT_HOVER_RADIUS, {
+    const boxes = placeDirectLabels(anchors, area, markRadius, {
       rects: obstacleRects,
       polylines: frontierPolylines(chart, blocks.length),
     });
@@ -1356,7 +1389,7 @@ export const directLabelPlugin: Plugin = {
     ctx.strokeStyle = CHART_INK.muted;
     ctx.lineWidth = 1;
     for (const box of boxes) {
-      strokeLeader(ctx, box, POINT_HOVER_RADIUS);
+      strokeLeader(ctx, box, markRadius);
     }
 
     for (const box of boxes) {
@@ -1380,26 +1413,129 @@ export const directLabelPlugin: Plugin = {
       let lineTop = box.y + DIRECT_LABEL_PAD_Y;
 
       if (plate.block.name) {
-        ctx.font = DIRECT_LABEL_FONT;
+        ctx.font = text.nameFont;
         ctx.textAlign = 'left';
         ctx.fillStyle = accented ? ACCENT : CHART_INK.secondary;
-        ctx.fillText(plate.block.name, textLeft, lineTop + DIRECT_LABEL_LINE_HEIGHT / 2);
-        lineTop += DIRECT_LABEL_LINE_HEIGHT;
+        ctx.fillText(plate.block.name, textLeft, lineTop + text.nameLineHeight / 2);
+        lineTop += text.nameLineHeight;
       }
 
-      ctx.font = DIRECT_LABEL_VALUE_FONT;
+      ctx.font = text.valueFont;
       for (const value of plate.block.values) {
-        const middle = lineTop + DIRECT_LABEL_VALUE_LINE_HEIGHT / 2;
+        const middle = lineTop + text.valueLineHeight / 2;
         ctx.textAlign = 'left';
         ctx.fillStyle = CHART_INK.muted;
         ctx.fillText(value.label, textLeft, middle);
         ctx.textAlign = 'right';
         ctx.fillStyle = CHART_INK.secondary;
         ctx.fillText(value.text, textRight, middle);
-        lineTop += DIRECT_LABEL_VALUE_LINE_HEIGHT;
+        lineTop += text.valueLineHeight;
       }
     }
 
+    ctx.restore();
+  },
+};
+
+// ---------------------------------------------------------------------------------------------
+// The direction marker on a scatter
+// ---------------------------------------------------------------------------------------------
+
+/** The gap between the marker's bottom edge and the plot area's top. */
+export const DIRECTION_MARKER_GAP = 6;
+
+/** The marker's colours: border, fill, then ink. */
+const DIRECTION_MARKER_COLORS = { border: 'rgba(224, 186, 109, 0.55)', fill: 'rgba(224, 186, 109, 0.1)', text: '#e0ba6d' } as const;
+
+/** What the marker plugin reads off the chart options. */
+export interface DirectionMarkerPluginOptions {
+  readonly direction: FigureDirection;
+  readonly fontSizePx: number;
+}
+
+/** The marker pill's geometry at text size `size`; the pill height is what the scatter reserves above the plot. */
+export function directionMarkerMetrics(size: number): {
+  height: number;
+  arrowSize: number;
+  arrowStroke: number;
+  padStart: number;
+  padEnd: number;
+  arrowGap: number;
+  borderWidth: number;
+  font: string;
+} {
+  return {
+    height: Math.round(size * 2),
+    arrowSize: Math.round(size * 1.3),
+    arrowStroke: 2,
+    padStart: 5,
+    padEnd: 9,
+    arrowGap: 5,
+    borderWidth: 1,
+    font: `700 ${size}px "Lato", system-ui, sans-serif`,
+  };
+}
+
+/**
+ * Draws the "Better" pill, its arrow turned toward the better corner, just above the plot's
+ * top-right corner, in the top padding the scatter reserves for it. Drawing it on the canvas is what
+ * carries it into every export path with no composer code.
+ */
+export const directionMarkerPlugin: Plugin = {
+  id: 'overseerDirectionMarker',
+  afterDraw(chart, _args, pluginOptions): void {
+    const options = pluginOptions as unknown as DirectionMarkerPluginOptions | undefined;
+    const ctx = chart.ctx;
+    const area = chart.chartArea;
+    if (!ctx || !area || !options?.direction) {
+      return;
+    }
+    const metrics = directionMarkerMetrics(options.fontSizePx ?? 11);
+    const label = options.direction.label;
+
+    ctx.save();
+    ctx.font = metrics.font;
+    const width = metrics.padStart + metrics.arrowSize + metrics.arrowGap + ctx.measureText(label).width + metrics.padEnd;
+    const x = area.right - width;
+    const y = area.top - DIRECTION_MARKER_GAP - metrics.height;
+
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') {
+      ctx.roundRect(x, y, width, metrics.height, metrics.height / 2);
+    } else {
+      ctx.rect(x, y, width, metrics.height);
+    }
+    ctx.fillStyle = DIRECTION_MARKER_COLORS.fill;
+    ctx.fill();
+    ctx.strokeStyle = DIRECTION_MARKER_COLORS.border;
+    ctx.lineWidth = metrics.borderWidth;
+    ctx.stroke();
+
+    // The up-right arrow in its own 24-unit box, rotated toward the better corner.
+    ctx.save();
+    ctx.translate(x + metrics.padStart + metrics.arrowSize / 2, y + metrics.height / 2);
+    ctx.rotate((figureDirectionRotation(options.direction) * Math.PI) / 180);
+    ctx.scale(metrics.arrowSize / 24, metrics.arrowSize / 24);
+    ctx.translate(-12, -12);
+    ctx.beginPath();
+    ctx.moveTo(7, 17);
+    ctx.lineTo(17, 7);
+    ctx.moveTo(8, 7);
+    ctx.lineTo(17, 7);
+    ctx.lineTo(17, 16);
+    ctx.strokeStyle = DIRECTION_MARKER_COLORS.text;
+    // The context is scaled, so the stroke is restated in box units.
+    ctx.lineWidth = (metrics.arrowStroke * 24) / metrics.arrowSize;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.font = metrics.font;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = DIRECTION_MARKER_COLORS.text;
+    ctx.fillText(label, x + metrics.padStart + metrics.arrowSize + metrics.arrowGap, y + metrics.height / 2);
     ctx.restore();
   },
 };
@@ -1574,10 +1710,16 @@ function isMeasured(entry: ModelComparisonEntry, x: ScatterAxisSpec, y: ScatterA
  * and the Chart.js scale options that draw them.
  *
  * The result depends only on the entries and the measure, so every scatter plotting the same measure
- * over the same entries gets the same axis. Whiskers count towards the domain, so no interval is
- * clipped. The ticks are set outright in `afterBuildTicks`; `autoSkip` is only a safety net.
+ * over the same entries gets the same axis. Drawn whiskers count towards the domain, so no interval
+ * is clipped; hidden ones do not, so the axis fits what is drawn. The ticks are set outright in
+ * `afterBuildTicks`; `autoSkip` is only a safety net.
  */
-function resolveAxis(spec: ScatterAxisSpec, plotted: readonly ModelComparisonEntry[]) {
+function resolveAxis(
+  spec: ScatterAxisSpec,
+  plotted: readonly ModelComparisonEntry[],
+  axisStyle: { readonly whiskers: boolean; readonly textSizePx: number; readonly gridlines: boolean } =
+    { whiskers: true, textSizePx: 11, gridlines: true },
+) {
   const values: number[] = [];
   const lows: number[] = [];
   const highs: number[] = [];
@@ -1587,8 +1729,8 @@ function resolveAxis(spec: ScatterAxisSpec, plotted: readonly ModelComparisonEnt
       continue;
     }
     values.push(value);
-    lows.push(value - drawnWhisker(spec.errLow(entry)));
-    highs.push(value + drawnWhisker(spec.errHigh(entry)));
+    lows.push(value - (axisStyle.whiskers ? drawnWhisker(spec.errLow(entry)) : 0));
+    highs.push(value + (axisStyle.whiskers ? drawnWhisker(spec.errHigh(entry)) : 0));
   }
 
   // The indices are bounded 0-100 and always linear.
@@ -1620,14 +1762,14 @@ function resolveAxis(spec: ScatterAxisSpec, plotted: readonly ModelComparisonEnt
       type,
       min,
       max,
-      title: axisTitle(title, spec.better),
-      grid: gridOptions(),
+      title: axisTitle(title, spec.better, axisStyle.textSizePx + 1),
+      grid: gridOptions(axisStyle.gridlines),
       border: { color: CHART_INK.baseline },
       afterBuildTicks: (scale: { ticks: { value: number }[] }): void => {
         scale.ticks = ticks.map((value) => ({ value }));
       },
       ticks: {
-        ...tickOptions(),
+        ...tickOptions(axisStyle.textSizePx),
         autoSkip: true,
         autoSkipPadding: 10,
         maxRotation: 0,
@@ -1666,7 +1808,7 @@ function intervalsOverlap(
 }
 
 /** The info note a scatter carries when a dominated model is within the intervals of a frontier model. */
-const FRONTIER_UNCERTAINTY_NOTE =
+export const FRONTIER_UNCERTAINTY_NOTE =
   'Some differences are within the 95 % intervals, so treat the frontier as indicative rather than a clear win.';
 
 /**
@@ -1708,10 +1850,12 @@ function buildScatter(
   extraNotices: readonly string[],
 ): ChartSpec<'scatter', ErrorBarPoint[]> {
   const { context, glyphs, reducedMotion, highlightedKey } = options;
+  const style = (options.style ?? DEFAULT_FIGURE_STYLE).scatter;
   const directLabels = options.directLabels ?? false;
   const inlineValues = options.inlineValues ?? false;
   // One plugin carries both: names and values share a plate, and so share its placement.
   const annotate = directLabels || inlineValues;
+  const radii = scatterPointRadii(style.markRadiusPx);
 
   const datasets = plotted.map((entry) => {
     const glyph = glyphFor(glyphs, entry.key);
@@ -1725,15 +1869,14 @@ function buildScatter(
       backgroundColor: hollow ? 'transparent' : glyph.hue,
       borderColor: highlighted ? ACCENT : hollow ? glyph.hue : CHART_SURFACE,
       borderWidth: 2,
-      radius: POINT_RADIUS,
-      hoverRadius: POINT_HOVER_RADIUS,
-      hitRadius: POINT_HIT_RADIUS,
+      ...radii,
       showLine: false,
     };
   });
 
-  const xResolved = resolveAxis(xAxis, plotted);
-  const yResolved = resolveAxis(yAxis, plotted);
+  const axisStyle = { whiskers: style.intervals, textSizePx: style.axisTextSizePx, gridlines: style.gridlines };
+  const xResolved = resolveAxis(xAxis, plotted, axisStyle);
+  const yResolved = resolveAxis(yAxis, plotted, axisStyle);
 
   // An unmeasured coordinate draws no mark, so it can neither beat a model nor be beaten by one.
   const measured = plotted.filter((entry) => isMeasured(entry, xAxis, yAxis));
@@ -1755,7 +1898,7 @@ function buildScatter(
       pointStyle: 'circle',
       backgroundColor: 'transparent',
       borderColor: CHART_INK.secondary,
-      borderWidth: 2,
+      borderWidth: style.frontierWidthPx,
       radius: 0,
       hoverRadius: 0,
       hitRadius: 0,
@@ -1770,12 +1913,15 @@ function buildScatter(
   };
 
   const highlightedIndex = plotted.findIndex((entry) => entry.key === highlightedKey);
+  const marker = directionMarkerMetrics(style.axisTextSizePx);
 
   const config: ChartConfiguration<'scatter', ErrorBarPoint[]> = {
     type: 'scatter',
     data: { datasets },
     options: {
       ...baseOptions(reducedMotion),
+      // A band of its own above the plot for the direction marker, clear of every tick and plate.
+      layout: { padding: { top: marker.height + DIRECTION_MARKER_GAP + 4 } },
       scales: {
         x: xResolved.scale,
         y: yResolved.scale,
@@ -1784,7 +1930,7 @@ function buildScatter(
         legend: {
           // The direct labels name every mark on the canvas, so a legend would say it all twice.
           display: !directLabels,
-          position: 'bottom',
+          position: style.legendPosition,
           labels: {
             color: CHART_INK.secondary,
             usePointStyle: true,
@@ -1825,9 +1971,17 @@ function buildScatter(
                   valued: inlineValues,
                 })),
                 highlightedIndex: highlightedIndex < 0 ? undefined : highlightedIndex,
+                fontSizePx: style.labelTextSizePx,
+                markRadiusPx: style.markRadiusPx,
+                // A hidden whisker must not push a plate away from empty space.
+                avoidWhiskers: style.intervals,
               } satisfies DirectLabelPluginOptions,
             }
           : {}),
+        [directionMarkerPlugin.id]: {
+          direction: preferredCorner,
+          fontSizePx: style.axisTextSizePx,
+        } satisfies DirectionMarkerPluginOptions,
       },
     },
   };
@@ -1848,12 +2002,15 @@ function buildScatter(
   }
   const whiskered = (entry: ModelComparisonEntry): boolean =>
     [xAxis.errLow, xAxis.errHigh, yAxis.errLow, yAxis.errHigh].some((err) => drawnWhisker(err(entry)) > 0);
-  if (measured.some(whiskered)) {
+  const anyWhisker = measured.some(whiskered);
+  if (style.intervals && anyWhisker) {
     key.push({ glyph: 'interval', text: '95 % interval' });
   }
   if (frontierDrawn) {
     key.push({ glyph: 'frontier', text: 'Pareto frontier: models nothing beats on both axes' });
-    key.push({ glyph: 'dominated', text: 'Shaded: beaten on both axes' });
+    if (style.dominatedShading) {
+      key.push({ glyph: 'dominated', text: 'Shaded: beaten on both axes' });
+    }
   }
 
   const labels = new Map(measured.map((entry): [string, string] => [entry.key, entry.label]));
@@ -1870,7 +2027,12 @@ function buildScatter(
 
   const notes: FigureNote[] = [
     ...warningNotes(extraNotices),
-    ...(withinIntervals ? [{ text: FRONTIER_UNCERTAINTY_NOTE, tone: 'info' } satisfies FigureNote] : []),
+    ...(withinIntervals && style.frontierIntervalsNote
+      ? [{ text: FRONTIER_UNCERTAINTY_NOTE, tone: 'info' } satisfies FigureNote]
+      : []),
+    ...(!style.intervals && style.hiddenIntervalsNote && anyWhisker
+      ? [{ text: HIDDEN_INTERVALS_NOTE, tone: 'info' } satisfies FigureNote]
+      : []),
   ];
 
   const chrome: FigureChrome = {
@@ -1889,10 +2051,14 @@ function buildScatter(
     chrome,
     preferredCorner,
     config,
-    // The shading goes under everything; a leader line draws over a whisker rather than under it.
-    plugins: annotate
-      ? [dominatedRegionPlugin, errorBarPlugin, directLabelPlugin]
-      : [dominatedRegionPlugin, errorBarPlugin],
+    // The shading goes under everything; a leader line draws over a whisker rather than under it;
+    // the marker sits outside the plot area and goes last.
+    plugins: [
+      ...(style.dominatedShading ? [dominatedRegionPlugin] : []),
+      ...(style.intervals ? [errorBarPlugin] : []),
+      ...(annotate ? [directLabelPlugin] : []),
+      directionMarkerPlugin,
+    ],
   };
 }
 
@@ -2017,6 +2183,7 @@ function buildPanel(
   costPanel: boolean,
 ): ChartSpec<'bar', ErrorBarPoint[], PanelCategoryLabel> {
   const { context, reducedMotion, highlightedKey, selectedKeys, orientation } = options;
+  const style = (options.style ?? DEFAULT_FIGURE_STYLE).bar;
   const emphasised = new Set<string>(selectedKeys ?? []);
   if (highlightedKey) {
     emphasised.add(highlightedKey);
@@ -2044,11 +2211,11 @@ function buildPanel(
   });
 
   // Places a value label past the SD whisker rather than on top of it: zero when the entry carries
-  // no errHigh, so an unmeasured or interval-free bar's label sits directly past its own end.
+  // no errHigh or the whiskers are hidden, so the label sits directly past the bar's own end.
   const whiskerLength = (ctx: DataLabelCtx): number => {
     const value = values[ctx.dataIndex];
     const errHigh = errHighs[ctx.dataIndex];
-    if (value === null || errHigh === undefined) {
+    if (!style.intervals || value === null || errHigh === undefined) {
       return 0;
     }
     const scale = ctx.chart.scales[orientation === 'vertical' ? 'y' : 'x'];
@@ -2057,10 +2224,14 @@ function buildPanel(
 
   const categoryScale = {
     type: 'category' as const,
-    title: axisTitle('Model'),
+    title: axisTitle('Model', undefined, style.axisTextSizePx + 1),
     grid: { display: false },
     border: { color: CHART_INK.baseline },
-    ticks: { ...tickOptions(), color: CHART_INK.secondary, maxRotation: orientation === 'vertical' ? 45 : 0 },
+    ticks: {
+      ...tickOptions(style.axisTextSizePx),
+      color: CHART_INK.secondary,
+      maxRotation: orientation === 'vertical' ? 45 : 0,
+    },
   };
   // Bars require a zero baseline, always: a truncated bar axis misstates the ratio that is the
   // entire reason to draw a bar.
@@ -2069,13 +2240,13 @@ function buildPanel(
     beginAtZero: true,
     min: 0,
     max: axisMax,
-    title: axisTitle(axisTitleText, better),
-    grid: gridOptions(),
+    title: axisTitle(axisTitleText, better, style.axisTextSizePx + 1),
+    grid: gridOptions(style.gridlines),
     border: { color: CHART_INK.baseline },
     // The tick decimals follow Chart.js's own step, read off the first two ticks. The unit is the
     // axis title's, so a zero tick reads `0 s` on a seconds axis.
     ticks: {
-      ...tickOptions(),
+      ...tickOptions(style.axisTextSizePx),
       callback: (value: string | number, _index: number, ticks: readonly { value: number }[]) =>
         formatTick(Number(value), {
           ...tick,
@@ -2097,13 +2268,14 @@ function buildPanel(
           data,
           backgroundColor: fills,
           borderColor: strokes,
-          borderWidth: 2,
-          borderRadius: 4,
+          borderWidth: style.outlineWidthPx,
+          borderRadius: style.cornerRadiusPx,
           // Only the far end is rounded; the end sitting on the baseline stays square.
           borderSkipped: orientation === 'vertical' ? 'bottom' : 'left',
-          maxBarThickness: 24,
-          categoryPercentage: 0.8,
-          barPercentage: 0.9,
+          // The bar fills its slot less the space, up to the maximum width; past it the space grows.
+          ...(style.maxBarWidthPx === null ? {} : { maxBarThickness: style.maxBarWidthPx }),
+          categoryPercentage: 1,
+          barPercentage: 1 - style.gapPercent / 100,
         },
       ],
     },
@@ -2129,20 +2301,32 @@ function buildPanel(
         // solid bar and a hollow one would carry secondary ink differently, and on the panel hue
         // it would fail contrast outright.
         datalabels: {
-          display: (ctx: DataLabelCtx) => values[ctx.dataIndex] !== null,
+          display: style.valueLabels ? (ctx: DataLabelCtx) => values[ctx.dataIndex] !== null : false,
           formatter: (_v: unknown, ctx: DataLabelCtx) => format(values[ctx.dataIndex] ?? 0),
           anchor: 'end' as const,
           align: orientation === 'vertical' ? ('top' as const) : ('right' as const),
           clamp: true,
           offset: (ctx: DataLabelCtx) => whiskerLength(ctx) + 4,
           color: CHART_INK.secondary,
-          font: { size: 11 },
+          font: { size: style.valueLabelSizePx },
         },
       },
     },
   };
 
-  const plugins: Plugin[] = [errorBarPlugin, ChartDataLabels as Plugin];
+  const plugins: Plugin[] = style.intervals
+    ? [errorBarPlugin, ChartDataLabels as Plugin]
+    : [ChartDataLabels as Plugin];
+
+  const drawsWhisker = plotted.some((_entry, index) =>
+    [errLows[index], errHighs[index]].some((err) => drawnWhisker(err) > 0),
+  );
+  const panelNotes: FigureNote[] = [
+    ...notes,
+    ...(!style.intervals && style.hiddenIntervalsNote && drawsWhisker
+      ? [{ text: HIDDEN_INTERVALS_NOTE, tone: 'info' } satisfies FigureNote]
+      : []),
+  ];
 
   const chrome: FigureChrome = {
     title,
@@ -2153,7 +2337,7 @@ function buildPanel(
     detail: costPanel ? pricingNote(context.pricingBasis) : '',
     key: [],
     highlight: '',
-    notes: [...notes],
+    notes: panelNotes,
   };
 
   return {
@@ -2164,6 +2348,10 @@ function buildPanel(
     plugins,
   };
 }
+
+/** The Speed panel's info note under mean model time per question, which carries no dispersion. */
+export const MEAN_TIME_NO_INTERVAL_NOTE =
+  'Mean time per question has no uncertainty bar: the spread across questions is not recorded.';
 
 /**
  * P1 — three aligned bar panels sharing one model order, so a row is one model and a column is one
@@ -2233,11 +2421,8 @@ export function buildSmallMultiples(
       tone: 'warning',
     });
   }
-  if (speedMeasure === 'meanModelTime') {
-    speedNotes.push({
-      text: 'Mean time per question has no uncertainty bar: the spread across questions is not recorded.',
-      tone: 'info',
-    });
+  if (speedMeasure === 'meanModelTime' && (options.style ?? DEFAULT_FIGURE_STYLE).bar.meanTimeNoIntervalNote) {
+    speedNotes.push({ text: MEAN_TIME_NO_INTERVAL_NOTE, tone: 'info' });
   }
 
   // The unit follows the largest plotted time, and the title and the ticks both carry it.
@@ -2600,6 +2785,8 @@ export interface FigureSetOptions {
   readonly inlineValues?: boolean;
   readonly highlightedKey?: string | null;
   readonly selectedKeys?: readonly string[];
+  /** Bar and trade-off styling. Defaults to {@link DEFAULT_FIGURE_STYLE}. */
+  readonly style?: FigureStyle;
   /**
    * The complete, unfiltered set the glyphs were assigned from. Pass it whenever the caller draws a
    * subset, so filtering a model out never repaints the survivors.
@@ -2631,6 +2818,7 @@ export function buildComparisonFigures(
     speedMeasure,
     directLabels: options.directLabels ?? false,
     inlineValues: options.inlineValues ?? false,
+    style: options.style ?? DEFAULT_FIGURE_STYLE,
   };
   const smallMultiplesOptions: SmallMultiplesOptions = {
     ...figureOptions,

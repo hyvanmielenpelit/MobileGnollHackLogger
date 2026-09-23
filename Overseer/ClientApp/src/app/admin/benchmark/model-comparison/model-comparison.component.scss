@@ -458,6 +458,8 @@
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: start;
+  /* A head shorter than the tallest in its row keeps its rows packed at the top. */
+  align-content: start;
   gap: 3px 10px;
 }
 
@@ -510,54 +512,15 @@
   text-wrap: pretty;
 }
 
-/* Download and Copy, side by side. Spans every text row, so the pair stays top-aligned beside a
-   one-line or a three-line head. */
+/* Download, Copy and Preview, side by side. Shares the title and badge rows, so the buttons stay
+   top-aligned beside a one-line or a three-line head without making the title row taller. */
 .mc-card-actions {
   grid-column: 2;
-  grid-row: 1 / -1;
+  grid-row: 1 / span 2;
   align-self: start;
   display: flex;
   align-items: center;
   gap: 2px;
-}
-
-/* The scatter head's control column: the buttons at the top, the direction marker at the bottom,
-   so the marker sits directly above the plot's top-right corner. The column stretches the head's
-   full height, and the card subgrid gives every head in a row the same height, so the markers
-   line up across a row. */
-.mc-card-side {
-  grid-column: 2;
-  grid-row: 1 / -1;
-  align-self: stretch;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-/* Which corner is better: an arrow that points at it, and the word. The figure export draws the
-   same pill (figure-export.ts, DIRECTION_*), so a change to one is a change to both. */
-.mc-direction {
-  margin: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  box-sizing: border-box;
-  block-size: 28px;
-  padding: 4px 10px 4px 6px;
-  border: 1px solid rgba(224, 186, 109, 0.55);
-  border-radius: 999px;
-  background: rgba(224, 186, 109, 0.1);
-  color: #e0ba6d;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.mc-direction-arrow {
-  flex: none;
 }
 
 /*
@@ -1598,10 +1561,71 @@
     margin: 0;
   }
 
-  /* A second heading in the column needs clearing off the error line that can precede it. */
-  .mc-preview-group-title {
-    margin-top: 8px;
+}
+
+/* The Export / Style strip stays put while the panel under it scrolls with the aside. */
+.mc-preview-tabs {
+  flex: none;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  /* Opaque, over the dialog's own ground, so the scrolled panel does not show through. */
+  background: rgb(20, 20, 20);
+}
+
+.mc-preview-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
   }
+}
+
+.mc-style-scope {
+  margin-bottom: 2px;
+}
+
+/* A range with its value beside it, as the Style tab lays out its own. */
+.mc-range {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mc-range-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+
+  input[type="range"] {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    accent-color: var(--primary-color);
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 3px;
+    }
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.mc-range-value {
+  min-width: 4em;
+  text-align: right;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: #d4d4d8;
 }
 
 /* Near-black rather than the card ground: the composition carries its own opaque background, and a

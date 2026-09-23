@@ -22,7 +22,9 @@ import { BaseChartDirective } from 'ng2-charts';
 import type { ChartConfiguration, ChartType, Plugin } from 'chart.js';
 
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
-import { FigureChrome, FigureFooter, FigureNote, figureDirectionRotation, figureSummary, formatComputedAt } from './figure-chrome';
+import { FigureChrome, FigureFooter, FigureNote, figureSummary, formatComputedAt } from './figure-chrome';
+import { DEFAULT_FIGURE_STYLE, FigureStyle, normalizeFigureStyle } from './figure-style';
+import { FigureStylePanelComponent, FigureStylePanelKind } from './figure-style-panel.component';
 import { exactFilter, TableState } from '../../../shared/data-table/table-state';
 import { SortHeaderComponent } from '../../../shared/data-table/sort-header.component';
 import { TablePagerComponent } from '../../../shared/data-table/table-pager.component';
@@ -64,8 +66,10 @@ import {
   FIGURE_EXPORT_DENSITY_PRESETS,
   FIGURE_EXPORT_MAX_DENSITY_PERCENT,
   FIGURE_EXPORT_MAX_DIMENSION,
+  FIGURE_EXPORT_MAX_TEXT_SCALE_PERCENT,
   FIGURE_EXPORT_MIN_DENSITY_PERCENT,
   FIGURE_EXPORT_MIN_DIMENSION,
+  FIGURE_EXPORT_MIN_TEXT_SCALE_PERCENT,
   FIGURE_EXPORT_PRESETS,
   FIGURE_EXPORT_PRESET_GROUPS,
   FigureArchiveEntry,
@@ -136,6 +140,12 @@ export const COMPARISON_WIZARD_STEPS: readonly {
 
 /** How long a comparison may run before the footer offers the ways out. */
 const SLOW_COMPARISON_MS = 15_000;
+
+/** Where the figure style is kept, per browser. Read and written in `try/catch`; never required. */
+export const FIGURE_STYLE_STORAGE_KEY = 'overseer.modelComparison.figureStyle';
+
+/** The preview dialog's two settings tabs, in order. */
+export type FigurePreviewTab = 'export' | 'style';
 
 /** One figure's chrome, as the export composer and the layout resolver both take it. */
 type FigureExportChrome = Omit<FigureExportRequest, 'canvas' | 'format' | 'layout'>;
@@ -219,7 +229,7 @@ export interface ComparisonFigureCard {
 @Component({
   selector: 'app-benchmark-model-comparison',
   standalone: true,
-  imports: [CommonModule, FormsModule, BaseChartDirective, SortHeaderComponent, TablePagerComponent, ProviderBadgeComponent, ToastComponent],
+  imports: [CommonModule, FormsModule, BaseChartDirective, SortHeaderComponent, TablePagerComponent, ProviderBadgeComponent, ToastComponent, FigureStylePanelComponent],
   templateUrl: './model-comparison.component.html',
   styleUrls: ['./model-comparison.component.scss']
 })
@@ -359,6 +369,12 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** Draws each scatter mark's two measured values beside it, so an exported figure states them. */
   scatterInlineValues = true;
 
+  /** Bar and trade-off styling, applied to the page and to every export alike. */
+  figureStyle: FigureStyle = DEFAULT_FIGURE_STYLE;
+
+  /** Pending rebuild after a style change, so a range drag rebuilds once it pauses. */
+  private styleTimer: ReturnType<typeof setTimeout> | null = null;
+
   /** The model under the pointer or the keyboard, highlighted in every panel and in the profile. */
   highlightedKey: string | null = null;
 
@@ -414,6 +430,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
+    this.figureStyle = this.readStoredFigureStyle();
     this.unsubscribeReducedMotion = this.reducedMotion.subscribe(() => this.rebuild());
     this.rebuild();
   }
@@ -475,6 +492,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.resizeObserver = null;
     this.disconnectStageObserver();
     this.cancelScheduledPreview();
+    this.cancelScheduledStyle();
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -857,6 +875,53 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.scatterInlineValues = on;
     this.rebuild();
     this.schedulePreview();
+  }
+
+  /**
+   * Stores the style at once, so the panel's own controls follow it, persists it, and rebuilds the
+   * six figures once the change pauses: a range drag fires on every step.
+   */
+  onFigureStyleChange(style: FigureStyle): void {
+    this.figureStyle = normalizeFigureStyle(style);
+    this.writeStoredFigureStyle(this.figureStyle);
+    this.cancelScheduledStyle();
+    this.styleTimer = setTimeout(() => {
+      this.styleTimer = null;
+      this.rebuild();
+      this.schedulePreview();
+    }, this.previewDebounceMs);
+    this.cdr.markForCheck();
+  }
+
+  /** The forced orientation, or the container-driven one while the style says Automatic. */
+  get effectiveOrientation(): BarOrientation {
+    const choice = this.figureStyle.bar.orientation;
+    return choice === 'auto' ? this.orientation : choice;
+  }
+
+  private cancelScheduledStyle(): void {
+    if (this.styleTimer !== null) {
+      clearTimeout(this.styleTimer);
+      this.styleTimer = null;
+    }
+  }
+
+  /** The stored style, repaired field by field; the default wherever storage is absent or unreadable. */
+  private readStoredFigureStyle(): FigureStyle {
+    try {
+      const raw = localStorage.getItem(FIGURE_STYLE_STORAGE_KEY);
+      return raw === null ? DEFAULT_FIGURE_STYLE : normalizeFigureStyle(JSON.parse(raw));
+    } catch {
+      return DEFAULT_FIGURE_STYLE;
+    }
+  }
+
+  private writeStoredFigureStyle(style: FigureStyle): void {
+    try {
+      localStorage.setItem(FIGURE_STYLE_STORAGE_KEY, JSON.stringify({ version: 1, ...style }));
+    } catch {
+      // Private mode or blocked storage: the style still applies for this session.
+    }
   }
 
   /** Hover and keyboard focus light the same model in all three panels and in the profile. */
@@ -1298,7 +1363,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         'rendered in.';
     }
     const density = this.exportDensity;
-    const box = layoutBoxFor(resolution.widthPx, resolution.heightPx);
+    const box = layoutBoxFor(resolution.widthPx, resolution.heightPx, this.exportTextScale);
     const written = `${Math.round(resolution.widthPx * density)} × ` +
       `${Math.round(resolution.heightPx * density)} px`;
     // At 100 % the requested size and the written one are the same number, and printing it twice
@@ -1361,6 +1426,31 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   onFigureWebpQualityChange(value: WebpQuality): void {
     this.figureWebpQuality = value;
+    this.schedulePreview();
+  }
+
+  /** Composition text size as a percentage: larger composes in a smaller box, at the same pixel size. */
+  exportTextScalePercent = 100;
+
+  readonly minExportTextScalePercent = FIGURE_EXPORT_MIN_TEXT_SCALE_PERCENT;
+  readonly maxExportTextScalePercent = FIGURE_EXPORT_MAX_TEXT_SCALE_PERCENT;
+
+  /** The text size as the factor the layout resolver takes. */
+  get exportTextScale(): number {
+    return this.exportTextScalePercent / 100;
+  }
+
+  /** On-screen exports follow the live canvas, whose text is the page's own. */
+  get exportTextScaleDisabled(): boolean {
+    return this.exportResolution.widthPx === null || this.exportResolution.heightPx === null;
+  }
+
+  onExportTextScaleChange(percent: number): void {
+    const value = Number.isFinite(percent) ? Math.round(percent) : 100;
+    this.exportTextScalePercent = Math.min(
+      this.maxExportTextScalePercent,
+      Math.max(this.minExportTextScalePercent, value)
+    );
     this.schedulePreview();
   }
 
@@ -1531,7 +1621,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     }
 
     const { layout, refusal } = resolveFigureLayout(
-      chrome, resolution, this.onScreenSizeOf(canvas), this.exportDensity);
+      chrome, resolution, this.onScreenSizeOf(canvas), this.exportDensity, this.exportTextScale);
     if (!layout) {
       return { result: null, refusal, liveFallback: false, pixels: '' };
     }
@@ -1773,9 +1863,43 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return this.exportableCards.find(card => card.id === this.previewCardId) ?? null;
   }
 
-  /** The two trade-off toggles change nothing a reader can see on a panel or on the profile. */
-  get previewIsScatter(): boolean {
-    return this.previewCard?.type === 'scatter';
+  /** Which settings tab the preview aside shows. Kept across figures and across openings. */
+  previewTab: FigurePreviewTab = 'export';
+
+  readonly previewTabs: readonly { readonly id: FigurePreviewTab; readonly label: string }[] = [
+    { id: 'export', label: 'Export' },
+    { id: 'style', label: 'Style' }
+  ];
+
+  selectPreviewTab(tab: FigurePreviewTab): void {
+    this.previewTab = tab;
+    this.cdr.markForCheck();
+  }
+
+  /** Left/Right move and wrap, Home/End jump to the ends; focus follows selection. */
+  onPreviewTabKeydown(event: KeyboardEvent, index: number): void {
+    const targets: Record<string, number> = {
+      ArrowRight: index + 1,
+      ArrowLeft: index - 1,
+      Home: 0,
+      End: this.previewTabs.length - 1
+    };
+    const requested = targets[event.key];
+    if (requested === undefined) {
+      return;
+    }
+    event.preventDefault();
+    const next = (requested + this.previewTabs.length) % this.previewTabs.length;
+    const tab = this.previewTabs[next].id;
+    this.selectPreviewTab(tab);
+    this.cdr.detectChanges();
+    document.getElementById(`mc-preview-tab-${tab}`)?.focus();
+  }
+
+  /** The Style tab's control set for the previewed figure. */
+  get previewStyleKind(): FigureStylePanelKind {
+    const type = this.previewCard?.type;
+    return type === 'bar' ? 'bar' : type === 'scatter' ? 'scatter' : 'profile';
   }
 
   /** The stage is a `role="img"`, so it carries the card's own summary rather than a bare noun. */
@@ -1914,7 +2038,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       const chrome = this.exportChrome(card);
       const onScreen = this.onScreenSizeOf(canvas);
       const target = resolveFigureLayout(
-        chrome, this.exportResolution, onScreen, this.exportDensity);
+        chrome, this.exportResolution, onScreen, this.exportDensity, this.exportTextScale);
       if (!target.layout) {
         this.previewRefusal = target.refusal ?? '';
         this.blankPreview();
@@ -2379,9 +2503,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return `${chrome.title}: ${figureSummary(chrome)}. Values for every entry are in the comparison table below.`;
   }
 
-  /** The direction marker arrow's rotation, for the template. */
-  readonly directionRotation = figureDirectionRotation;
-
   /** A DOM id and anchor name derived from an entry key, which carries a `run:12` style colon. */
   tipId(prefix: string, key: string): string {
     return `mc-tip-${prefix}-${key.replace(/[^A-Za-z0-9_-]/g, '-')}`;
@@ -2434,7 +2555,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * grow with the entry count, because eight horizontal bars in a fixed 320 px box are unreadable.
    */
   panelHeight(): number {
-    return this.orientation === 'horizontal'
+    return this.effectiveOrientation === 'horizontal'
       ? Math.max(260, 140 + 36 * this.plotted.length)
       : 340;
   }
@@ -2484,13 +2605,14 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       sort: this.sort,
       speedMeasure: this.speedMeasure,
       costMeasure: this.costMeasure,
-      orientation: this.orientation,
+      orientation: this.effectiveOrientation,
       directLabels: this.scatterDirectLabels,
       inlineValues: this.scatterInlineValues,
       reducedMotion: this.reducedMotion.matches,
       highlightedKey: this.highlightedKey,
       selectedKeys: this.emphasisKeys,
-      glyphSource: this.chartEntries
+      glyphSource: this.chartEntries,
+      style: this.figureStyle
     });
 
     this.profileAxes = this.figures.selection.plotted.length >= 2

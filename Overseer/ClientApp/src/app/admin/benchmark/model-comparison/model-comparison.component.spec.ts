@@ -6,9 +6,19 @@ import { provideCharts } from 'ng2-charts';
 import {
   ComparisonFigureCard,
   ComparisonWizardStep,
+  FIGURE_STYLE_STORAGE_KEY,
   ModelComparisonComponent
 } from './model-comparison.component';
-import { MAX_PLOTTED_ENTRIES, P1_STACK_BREAKPOINT_PX, directLabelPlugin } from './model-comparison-charts';
+import {
+  FRONTIER_UNCERTAINTY_NOTE,
+  MAX_PLOTTED_ENTRIES,
+  MEAN_TIME_NO_INTERVAL_NOTE,
+  P1_STACK_BREAKPOINT_PX,
+  directLabelPlugin,
+  directionMarkerPlugin,
+  errorBarPlugin
+} from './model-comparison-charts';
+import { DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
 import type { DirectLabelBlock, DirectLabelPluginOptions } from './model-comparison-charts';
 import { formatComputedAt } from './figure-chrome';
 import type { FigureChrome, FigureFooter } from './figure-chrome';
@@ -253,6 +263,8 @@ describe('ModelComparisonComponent', () => {
   }
 
   beforeEach(async () => {
+    // The figure style is remembered per browser, so one spec's style must not reach the next.
+    localStorage.removeItem(FIGURE_STYLE_STORAGE_KEY);
     await TestBed.configureTestingModule({
       imports: [ModelComparisonComponent],
       providers: [provideCharts({ registerables: APP_CHART_REGISTRABLES })]
@@ -260,6 +272,10 @@ describe('ModelComparisonComponent', () => {
 
     fixture = TestBed.createComponent(ModelComparisonComponent);
     component = fixture.componentInstance;
+  });
+
+  afterEach(() => {
+    localStorage.removeItem(FIGURE_STYLE_STORAGE_KEY);
   });
 
   // -------------------------------------------------------------------------------------------
@@ -489,40 +505,47 @@ describe('ModelComparisonComponent', () => {
     expect(scatterFigures[1].queryAll(By.css('.mc-badge--pricing')).length).toBeGreaterThan(0);
   });
 
-  it('marks the better corner above each scatter, apart from its badges', () => {
+  it('draws the better corner on each scatter plot, not in its card head', () => {
     render(buildDto(comparableSet(3)), 4);
 
+    expect(fixture.debugElement.queryAll(By.css('.mc-direction')).length).toBe(0);
+
     const scatterFigures = fixture.debugElement.queryAll(By.css('.mc-grid .mc-card'));
-    const markers = scatterFigures.map(figure => figure.queryAll(By.css('.mc-card-side .mc-direction')));
-    expect(markers.map(found => found.length)).toEqual([1, 1, 1]);
+    expect(scatterFigures.length).toBe(3);
+    const label = (index: number): string =>
+      (scatterFigures[index].query(By.css('canvas')).nativeElement as HTMLCanvasElement).getAttribute('aria-label') ?? '';
+    expect(label(0)).toContain('Better toward the top left');
+    expect(label(1)).toContain('Better toward the top left');
+    expect(label(2)).toContain('Better toward the bottom left');
 
-    const text = (index: number): string =>
-      (markers[index][0].nativeElement as HTMLElement).textContent!.replace(/\s+/g, ' ').trim();
-    expect(text(0)).toBe('Better toward the top left');
-    expect(text(1)).toBe('Better toward the top left');
-    expect(text(2)).toBe('Better toward the bottom left');
-
-    const arrow = (index: number): SVGElement =>
-      markers[index][0].query(By.css('.mc-direction-arrow')).nativeElement as SVGElement;
-    expect(arrow(0).style.rotate).toBe('270deg');
-    expect(arrow(2).style.rotate).toBe('180deg');
-    expect(arrow(0).getAttribute('aria-hidden')).toBe('true');
-
+    for (const card of component.scatterCards) {
+      expect(card.plugins).withContext(card.id).toContain(directionMarkerPlugin);
+    }
     for (const figure of scatterFigures) {
       const badgeTexts = figure.queryAll(By.css('.mc-badge')).map(badge => (badge.nativeElement as HTMLElement).textContent!);
       expect(badgeTexts.some(badgeText => badgeText.includes('Better'))).toBeFalse();
     }
+  });
 
-    const s1Canvas = scatterFigures[0].query(By.css('canvas')).nativeElement as HTMLCanvasElement;
-    expect(s1Canvas.getAttribute('aria-label')).toContain('Better toward the top left');
+  it('gives the scatter heads the same action block as the panels, with no side column', () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    const heads = fixture.debugElement.queryAll(By.css('.mc-grid .mc-card .mc-card-head'));
+    expect(heads.length).toBe(3);
+    for (const head of heads) {
+      expect(head.queryAll(By.css('.mc-card-actions')).length).toBe(1);
+      expect(head.queryAll(By.css('.mc-card-side')).length).toBe(0);
+    }
+    expect(fixture.debugElement.queryAll(By.css('.mc-card-side')).length).toBe(0);
   });
 
   it('draws no direction marker on the panels or the profile', () => {
     render(buildDto(comparableSet(3)), 4);
 
-    expect(fixture.debugElement.queryAll(By.css('.mc-panels .mc-direction')).length).toBe(0);
-    expect(fixture.debugElement.queryAll(By.css('.mc-charts > .mc-card .mc-direction')).length).toBe(0);
-    expect(fixture.debugElement.queryAll(By.css('.mc-direction')).length).toBe(3);
+    for (const card of component.panelCards) {
+      expect(card.plugins).withContext(card.id).not.toContain(directionMarkerPlugin);
+    }
+    expect(component.profileCard!.plugins).not.toContain(directionMarkerPlugin);
   });
 
   // -------------------------------------------------------------------------------------------
@@ -2017,53 +2040,102 @@ describe('ModelComparisonComponent', () => {
     expect(component.previewCardId).toBe(cards[0].id);
   });
 
-  /**
-   * The two trade-off checkboxes inside the dialog's own controls, in template order.
-   *
-   * Classed rather than matched by type: the custom-size panel above them carries a checkbox of its
-   * own, and a bare `input[type="checkbox"]` would pick it up whenever that size is selected.
-   */
-  function dialogScatterToggles(): DebugElement[] {
-    return fixture.debugElement.queryAll(By.css('.mc-preview-controls .mc-preview-scatter-toggle'));
+  /** The preview aside's two settings tabs, in order. */
+  function previewTabButtons(): HTMLButtonElement[] {
+    return fixture.debugElement.queryAll(By.css('.mc-preview-tabs [role="tab"]'))
+      .map(tab => tab.nativeElement as HTMLButtonElement);
   }
 
-  it('mirrors both trade-off toggles in the dialog and drives the page from them', () => {
+  /** Opens the preview on a card and switches the aside to its Style tab through the real tab. */
+  function openStyleTab(card?: ComparisonFigureCard): void {
+    openPreview(card);
+    previewTabButtons()[1].click();
+    refresh();
+  }
+
+  function styleControl(id: string): HTMLInputElement {
+    const element = (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>(`#${id}`);
+    expect(element).withContext(id).not.toBeNull();
+    return element!;
+  }
+
+  function setChecked(input: HTMLInputElement, on: boolean): void {
+    input.checked = on;
+    input.dispatchEvent(new Event('change'));
+    refresh();
+  }
+
+  function setRange(input: HTMLInputElement, value: number): void {
+    input.value = String(value);
+    input.dispatchEvent(new Event('input'));
+    refresh();
+  }
+
+  /**
+   * The text of every note drawn on the page under one card, found by its place in a group, as one
+   * string: each note carries a visually hidden tone prefix before its own text.
+   */
+  function pageNotes(group: '.mc-panels' | '.mc-grid', index: number): string {
+    const card = fixture.debugElement.queryAll(By.css(`${group} .mc-card`))[index];
+    return card.queryAll(By.css('.mc-note'))
+      .map(note => ((note.nativeElement as HTMLElement).textContent ?? '').replace(/\s+/g, ' ').trim())
+      .join(' | ');
+  }
+
+  function exportNotesOf(card: ComparisonFigureCard): string[] {
+    const chrome = (component as unknown as { exportChrome(card: ComparisonFigureCard): { chrome: FigureChrome } })
+      .exportChrome(card);
+    return chrome.chrome.notes.map(note => note.text);
+  }
+
+  /** Runs `act` with a fake clock and lets the style debounce fire. */
+  function withStyleDebounce(act: () => void): void {
+    jasmine.clock().install();
+    try {
+      act();
+      jasmine.clock().tick(200);
+      refresh();
+    } finally {
+      jasmine.clock().uninstall();
+    }
+  }
+
+  it('mirrors both trade-off toggles in the Style tab and drives the page from them', () => {
     render(buildDto(comparableSet(3)), 4);
-    openPreview(component.scatterCards[0]);
+    openStyleTab(component.scatterCards[0]);
 
-    expect(textOf('.mc-preview-group-title')).toContain('Trade-off charts');
-    const toggles = dialogScatterToggles();
-    expect(toggles.length).toBe(2);
-    expect((toggles[0].nativeElement as HTMLInputElement).checked).toBe(component.scatterDirectLabels);
-    expect((toggles[1].nativeElement as HTMLInputElement).checked).toBe(component.scatterInlineValues);
+    const named = styleControl('mc-style-scatter-directLabels');
+    const valued = styleControl('mc-style-scatter-inlineValues');
+    expect(named.checked).toBe(component.scatterDirectLabels);
+    expect(valued.checked).toBe(component.scatterInlineValues);
 
-    tick(toggles[0], true);
+    setChecked(named, true);
     expect(component.scatterDirectLabels).toBeTrue();
     // The page's own checkbox above the scatters reads the same field, so both stay in step.
     expect((scatterToggle(0).nativeElement as HTMLInputElement).checked).toBeTrue();
     expect(scatterLegendDisplays()).toEqual([false, false, false]);
 
-    tick(dialogScatterToggles()[1], false);
+    setChecked(styleControl('mc-style-scatter-inlineValues'), false);
     expect(component.scatterInlineValues).toBeFalse();
     expect((scatterToggle(1).nativeElement as HTMLInputElement).checked).toBeFalse();
     expect(scatterBlocks()!.every(b => b.values.length === 0)).toBeTrue();
   });
 
-  it('re-composes the preview when a trade-off toggle is changed in the dialog', () => {
+  it('re-composes the preview when a trade-off toggle is changed in the Style tab', () => {
     render(buildDto(comparableSet(3)), 4);
 
     // The clock is installed before the dialog is opened, so the composition the open itself
     // schedules is a fake timer this test drains rather than a real one outliving it.
     jasmine.clock().install();
     try {
-      openPreview(component.scatterCards[0]);
+      openStyleTab(component.scatterCards[0]);
       const renderPreview = spyOn(
         component as unknown as { renderPreview(): Promise<void> }, 'renderPreview'
       ).and.returnValue(Promise.resolve());
       jasmine.clock().tick(200);
       renderPreview.calls.reset();
 
-      tick(dialogScatterToggles()[1], false);
+      setChecked(styleControl('mc-style-scatter-inlineValues'), false);
       expect(renderPreview).not.toHaveBeenCalled();
       jasmine.clock().tick(200);
       expect(renderPreview).toHaveBeenCalled();
@@ -2072,13 +2144,212 @@ describe('ModelComparisonComponent', () => {
     }
   });
 
-  it('hides the trade-off group on a card the two toggles cannot change', () => {
+  it('offers Export and Style as tabs with the full tab contract', () => {
     render(buildDto(comparableSet(3)), 4);
     openPreview(component.panelCards[0]);
 
-    expect(component.previewIsScatter).toBeFalse();
-    expect(fixture.debugElement.query(By.css('.mc-preview-group-title'))).toBeNull();
-    expect(dialogScatterToggles().length).toBe(0);
+    const tablist = fixture.debugElement.query(By.css('.mc-preview-tabs')).nativeElement as HTMLElement;
+    expect(tablist.getAttribute('role')).toBe('tablist');
+    expect(tablist.getAttribute('aria-label')).toBe('Preview settings');
+
+    const [exportTab, styleTab] = previewTabButtons();
+    expect(previewTabButtons().map(tab => tab.textContent!.trim())).toEqual(['Export', 'Style']);
+    expect(exportTab.getAttribute('aria-selected')).toBe('true');
+    expect(exportTab.getAttribute('tabindex')).toBe('0');
+    expect(styleTab.getAttribute('aria-selected')).toBe('false');
+    expect(styleTab.getAttribute('tabindex')).toBe('-1');
+    expect(exportTab.getAttribute('aria-controls')).toBe('mc-preview-panel-export');
+    expect(styleTab.getAttribute('aria-controls')).toBe('mc-preview-panel-style');
+
+    const exportPanel = fixture.debugElement.query(By.css('#mc-preview-panel-export')).nativeElement as HTMLElement;
+    expect(exportPanel.getAttribute('role')).toBe('tabpanel');
+    expect(exportPanel.getAttribute('aria-labelledby')).toBe(exportTab.id);
+    expect(exportPanel.getAttribute('tabindex')).toBe('0');
+    expect(fixture.debugElement.query(By.css('#mc-preview-panel-style'))).toBeNull();
+
+    exportTab.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    refresh();
+    expect(component.previewTab).toBe('style');
+    expect(previewTabButtons()[1].getAttribute('aria-selected')).toBe('true');
+    expect(previewTabButtons()[1].getAttribute('tabindex')).toBe('0');
+    expect(fixture.debugElement.query(By.css('#mc-preview-panel-export'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('#mc-preview-panel-style'))).not.toBeNull();
+
+    previewTabButtons()[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+    refresh();
+    expect(component.previewTab).toBe('export');
+    previewTabButtons()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+    refresh();
+    expect(component.previewTab).toBe('style');
+  });
+
+  it('shows the bar set on a panel, the trade-off set on a scatter and the note on the profile', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openStyleTab(component.panelCards[0]);
+
+    const has = (selector: string): boolean => fixture.debugElement.query(By.css(selector)) !== null;
+    expect(has('#mc-style-bar-heading')).toBeTrue();
+    expect(has('#mc-style-scatter-heading')).toBeFalse();
+    expect(textOf('#mc-preview-panel-style')).toContain('Changes apply to the figures on the page and to every export.');
+
+    // Switching figure keeps the tab, and the set follows the figure's kind.
+    component.selectPreviewCard(component.scatterCards[0].id);
+    refresh();
+    expect(component.previewTab).toBe('style');
+    expect(has('#mc-style-scatter-heading')).toBeTrue();
+    expect(has('#mc-style-bar-heading')).toBeFalse();
+
+    component.selectPreviewCard(component.profileCard!.id);
+    refresh();
+    expect(has('#mc-style-bar-heading')).toBeFalse();
+    expect(has('#mc-style-scatter-heading')).toBeFalse();
+    expect(textOf('.fsp-note')).toContain('The profile plot has no style controls of its own.');
+  });
+
+  it('stores a style change at once, persists it, and rebuilds the figures after the debounce', () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    jasmine.clock().install();
+    try {
+      openStyleTab(component.panelCards[0]);
+      const renderPreview = spyOn(
+        component as unknown as { renderPreview(): Promise<void> }, 'renderPreview'
+      ).and.returnValue(Promise.resolve());
+      jasmine.clock().tick(200);
+      renderPreview.calls.reset();
+
+      const barPercentage = (): unknown =>
+        (component.panelCards[0].data.datasets[0] as unknown as Record<string, unknown>)['barPercentage'];
+      expect(barPercentage()).toBeCloseTo(0.72, 9);
+
+      setRange(styleControl('mc-style-bar-gapPercent'), 10);
+      expect(component.figureStyle.bar.gapPercent).toBe(10);
+      const stored = JSON.parse(localStorage.getItem(FIGURE_STYLE_STORAGE_KEY)!);
+      expect(stored.version).toBe(1);
+      expect(stored.bar.gapPercent).toBe(10);
+      // Not yet: a drag rebuilds once it pauses.
+      expect(barPercentage()).toBeCloseTo(0.72, 9);
+
+      jasmine.clock().tick(150);
+      expect(barPercentage()).toBeCloseTo(0.9, 9);
+      expect(renderPreview).not.toHaveBeenCalled();
+      jasmine.clock().tick(150);
+      expect(renderPreview).toHaveBeenCalled();
+    } finally {
+      jasmine.clock().uninstall();
+    }
+  });
+
+  it('adds the hidden-intervals note to the Intelligence card when its bars are hidden, and drops it on request', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openStyleTab(component.panelCards[0]);
+
+    const noteToggle = styleControl('mc-style-bar-hiddenIntervalsNote');
+    expect(noteToggle.disabled).toBeTrue();
+    expect(pageNotes('.mc-panels', 0)).not.toContain(HIDDEN_INTERVALS_NOTE);
+
+    withStyleDebounce(() => setChecked(styleControl('mc-style-bar-intervals'), false));
+    expect(pageNotes('.mc-panels', 0)).toContain(HIDDEN_INTERVALS_NOTE);
+    // The Speed panel on mean time draws no whisker anyway, so it gains nothing.
+    expect(pageNotes('.mc-panels', 1)).not.toContain(HIDDEN_INTERVALS_NOTE);
+    expect(component.panelCards[0].plugins).not.toContain(errorBarPlugin);
+
+    expect(styleControl('mc-style-bar-hiddenIntervalsNote').disabled).toBeFalse();
+    withStyleDebounce(() => setChecked(styleControl('mc-style-bar-hiddenIntervalsNote'), false));
+    expect(pageNotes('.mc-panels', 0)).not.toContain(HIDDEN_INTERVALS_NOTE);
+  });
+
+  it('drops the frontier note from the scatter card and its export on request, keeping the set notes', () => {
+    render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringVersion'])]), 4);
+    const setNotes = component.setFigureNotes.map(note => note.text);
+    expect(setNotes.length).toBeGreaterThan(0);
+
+    const s1 = (): ComparisonFigureCard => component.scatterCards[0];
+    expect(s1().chrome.notes.map(note => note.text)).toContain(FRONTIER_UNCERTAINTY_NOTE);
+    expect(exportNotesOf(s1())).toContain(FRONTIER_UNCERTAINTY_NOTE);
+
+    openStyleTab(s1());
+    withStyleDebounce(() => setChecked(styleControl('mc-style-scatter-frontierIntervalsNote'), false));
+
+    expect(s1().chrome.notes.map(note => note.text)).not.toContain(FRONTIER_UNCERTAINTY_NOTE);
+    expect(pageNotes('.mc-grid', 0)).not.toContain(FRONTIER_UNCERTAINTY_NOTE);
+    expect(exportNotesOf(s1())).not.toContain(FRONTIER_UNCERTAINTY_NOTE);
+    for (const text of setNotes) {
+      expect(exportNotesOf(s1())).toContain(text);
+    }
+  });
+
+  it('drops the mean-time note from the Speed card and its export on request, keeping the set notes', () => {
+    render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringVersion'])]), 4);
+    expect(component.speedMeasure).toBe('meanModelTime');
+    const setNotes = component.setFigureNotes.map(note => note.text);
+    const speed = (): ComparisonFigureCard => component.panelCards[1];
+    expect(pageNotes('.mc-panels', 1)).toContain(MEAN_TIME_NO_INTERVAL_NOTE);
+
+    openStyleTab(speed());
+    const toggle = styleControl('mc-style-bar-meanTimeNoIntervalNote');
+    expect(toggle.disabled).toBeFalse();
+    withStyleDebounce(() => setChecked(toggle, false));
+
+    expect(pageNotes('.mc-panels', 1)).not.toContain(MEAN_TIME_NO_INTERVAL_NOTE);
+    expect(exportNotesOf(speed())).not.toContain(MEAN_TIME_NO_INTERVAL_NOTE);
+    for (const text of setNotes) {
+      expect(exportNotesOf(speed())).toContain(text);
+    }
+  });
+
+  it('lets a forced horizontal orientation size the panels in a wide container', () => {
+    render(buildDto(comparableSet(3)), 4);
+    component.applyContainerWidth(P1_STACK_BREAKPOINT_PX + 400);
+    expect(component.orientation).toBe('vertical');
+    expect(component.panelHeight()).toBe(340);
+
+    openStyleTab(component.panelCards[0]);
+    withStyleDebounce(() => setChecked(styleControl('mc-style-bar-orientation-horizontal'), true));
+
+    expect(component.effectiveOrientation).toBe('horizontal');
+    expect(component.orientation).toBe('vertical');
+    expect(component.panelHeight()).toBe(260);
+    expect((component.panelCards[0].options as { indexAxis?: string }).indexAxis).toBe('y');
+  });
+
+  it('applies a stored style and falls back to the default on unreadable storage', () => {
+    localStorage.setItem(FIGURE_STYLE_STORAGE_KEY, JSON.stringify({ version: 1, bar: { gapPercent: 10 } }));
+    render(buildDto(comparableSet(3)), 4);
+    expect(component.figureStyle.bar.gapPercent).toBe(10);
+    expect(component.figureStyle.scatter).toEqual(DEFAULT_FIGURE_STYLE.scatter);
+
+    localStorage.setItem(FIGURE_STYLE_STORAGE_KEY, '{not json');
+    const second = TestBed.createComponent(ModelComparisonComponent);
+    expect(() => second.detectChanges()).not.toThrow();
+    expect(second.componentInstance.figureStyle).toEqual(DEFAULT_FIGURE_STYLE);
+    second.destroy();
+  });
+
+  it('feeds the Text size range into the export layout, and disables it for On-screen', async () => {
+    render(buildDto(comparableSet(3)), 4);
+    openPreview(component.panelCards[0]);
+
+    const range = styleControl('mc-export-text-scale');
+    expect(component.exportResolutionId).toBe('onscreen');
+    expect(range.disabled).toBeTrue();
+
+    component.onExportResolutionChange('square1080');
+    refresh();
+    expect(styleControl('mc-export-text-scale').disabled).toBeFalse();
+    expect(component.exportDimensionsLabel).toContain('laid out at 960 × 960');
+
+    setRange(styleControl('mc-export-text-scale'), 200);
+    expect(component.exportTextScalePercent).toBe(200);
+    expect(component.exportDimensionsLabel).toContain('laid out at 480 × 480');
+
+    component.onExportResolutionChange('custom');
+    component.lockCustomRatio(false);
+    component.onCustomWidthChange(640);
+    component.onCustomHeightChange(640);
+    setRange(styleControl('mc-export-text-scale'), 250);
+    await composePreview();
+    expect(component.previewRefusal).toContain('caption column would be narrower than 360 px');
   });
 
   it('refuses a size the figure does not fit, naming it, and leaves the stage blank', async () => {

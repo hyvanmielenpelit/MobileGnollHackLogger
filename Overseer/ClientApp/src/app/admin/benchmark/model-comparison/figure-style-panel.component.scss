@@ -1,0 +1,132 @@
+:host {
+  display: block;
+}
+
+.fsp {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fsp-heading {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary-color, #d4af37);
+}
+
+.fsp-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fsp-indent {
+  margin-left: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fsp-range {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  > label {
+    font-size: 13px;
+  }
+
+  .gh-fieldset-hint {
+    font-size: 12px;
+  }
+}
+
+.fsp-range-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+
+  input[type="range"] {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    accent-color: var(--primary-color, #d4af37);
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color, #d4af37);
+      outline-offset: 3px;
+    }
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.fsp-range-value {
+  min-width: 5.5em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: #d4d4d8;
+}
+
+.fsp-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+
+  > legend {
+    width: 100%;
+    margin-bottom: 4px;
+    padding: 0;
+    font-size: 13px;
+  }
+
+  &:disabled {
+    opacity: 0.55;
+  }
+}
+
+.fsp-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+
+  input[type="radio"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--primary-color, #d4af37);
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color, #d4af37);
+      outline-offset: 2px;
+    }
+  }
+}
+
+.checkbox-label input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.fsp-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.fsp-note {
+  margin: 0;
+  color: #aaa;
+  line-height: 1.45;
+}

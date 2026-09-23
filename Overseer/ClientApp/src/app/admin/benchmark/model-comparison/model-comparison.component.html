@@ -1233,53 +1233,37 @@
                       @if (card.chrome.detail) {
                         <p class="mc-card-detail">{{ card.chrome.detail }}</p>
                       }
-                      <!-- The buttons at the top of the column, the direction marker at its bottom,
-                           directly above the plot's top-right corner. -->
-                      <div class="mc-card-side">
-                        <div class="mc-card-actions">
-                          <button type="button" class="action-btn mc-download" [disabled]="!canExport"
-                                  [attr.aria-label]="'Download ' + card.title"
-                                  [attr.interestfor]="tipId('dl', card.id)"
-                                  [attr.style]="'anchor-name: --' + tipId('dl', card.id)"
-                                  (click)="downloadFigure(card)">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                              <polyline points="7 10 12 15 17 10"></polyline>
-                              <line x1="12" y1="15" x2="12" y2="3"></line>
-                            </svg>
-                          </button>
-                          <button type="button" class="action-btn mc-copy" [disabled]="!canExport"
-                                  [attr.aria-label]="'Copy ' + card.title + ' to the clipboard'"
-                                  [attr.interestfor]="tipId('copy', card.id)"
-                                  [attr.style]="'anchor-name: --' + tipId('copy', card.id)"
-                                  (click)="copyFigure(card)">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                            </svg>
-                          </button>
-                          <button type="button" class="action-btn mc-preview-open" [disabled]="!canExport"
-                                  [attr.aria-label]="'Preview ' + card.title + ' at export size'"
-                                  [attr.interestfor]="tipId('prev', card.id)"
-                                  [attr.style]="'anchor-name: --' + tipId('prev', card.id)"
-                                  (click)="openFigurePreview(card)">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                              <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path>
-                            </svg>
-                          </button>
-                        </div>
-                        @if (card.chrome.direction; as direction) {
-                          <p class="mc-direction">
-                            <svg class="mc-direction-arrow" xmlns="http://www.w3.org/2000/svg" width="20" height="20"
-                                 viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
-                                 [style.rotate.deg]="directionRotation(direction)">
-                              <path d="M7 17 17 7"></path>
-                              <path d="M8 7h9v9"></path>
-                            </svg>
-                            <span>{{ direction.label }}</span><span class="visually-hidden"> toward the {{ direction.y }} {{ direction.x }}</span>
-                          </p>
-                        }
+                      <div class="mc-card-actions">
+                        <button type="button" class="action-btn mc-download" [disabled]="!canExport"
+                                [attr.aria-label]="'Download ' + card.title"
+                                [attr.interestfor]="tipId('dl', card.id)"
+                                [attr.style]="'anchor-name: --' + tipId('dl', card.id)"
+                                (click)="downloadFigure(card)">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                          </svg>
+                        </button>
+                        <button type="button" class="action-btn mc-copy" [disabled]="!canExport"
+                                [attr.aria-label]="'Copy ' + card.title + ' to the clipboard'"
+                                [attr.interestfor]="tipId('copy', card.id)"
+                                [attr.style]="'anchor-name: --' + tipId('copy', card.id)"
+                                (click)="copyFigure(card)">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                          </svg>
+                        </button>
+                        <button type="button" class="action-btn mc-preview-open" [disabled]="!canExport"
+                                [attr.aria-label]="'Preview ' + card.title + ' at export size'"
+                                [attr.interestfor]="tipId('prev', card.id)"
+                                [attr.style]="'anchor-name: --' + tipId('prev', card.id)"
+                                (click)="openFigurePreview(card)">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path>
+                          </svg>
+                        </button>
                       </div>
                       <div popover="hint" class="gh-tooltip" [id]="tipId('dl', card.id)"
                            [attr.style]="'position-anchor: --' + tipId('dl', card.id)">Download this figure with its caption and notices</div>
@@ -1538,111 +1522,143 @@
     <div class="mc-preview-body">
       <!-- Visible labels, not `visually-hidden` ones: the panel has the room a header row did not,
            and a labelled form is what a reader configuring four settings at once needs. -->
-      <aside class="mc-preview-controls" aria-labelledby="mc-preview-controls-title">
-        <h4 id="mc-preview-controls-title" class="mc-section-title">Size and format</h4>
+      <aside class="mc-preview-controls" aria-label="Figure settings">
+        <div class="gh-tabs mc-preview-tabs" role="tablist" aria-label="Preview settings">
+          @for (tab of previewTabs; track tab.id; let i = $index) {
+            <button type="button" role="tab" class="gh-tab"
+                    [id]="'mc-preview-tab-' + tab.id"
+                    [attr.aria-controls]="'mc-preview-panel-' + tab.id"
+                    [attr.aria-selected]="previewTab === tab.id"
+                    [attr.tabindex]="previewTab === tab.id ? 0 : -1"
+                    (keydown)="onPreviewTabKeydown($event, i)"
+                    (click)="selectPreviewTab(tab.id)">{{ tab.label }}</button>
+          }
+        </div>
 
-        <label for="mc-export-resolution">Size and aspect ratio</label>
-        <select id="mc-export-resolution" class="gh-input"
-                [ngModel]="exportResolutionId" [ngModelOptions]="{ standalone: true }"
-                (ngModelChange)="onExportResolutionChange($event)">
-          @for (group of exportPresetGroups; track group.label) {
-            <optgroup [label]="group.label">
-              @for (preset of group.presets; track preset.id) {
-                <option [value]="preset.id">{{ preset.label }}</option>
+        @if (previewTab === 'export') {
+          <div class="mc-preview-panel" role="tabpanel" id="mc-preview-panel-export"
+               aria-labelledby="mc-preview-tab-export" tabindex="0">
+            <h4 id="mc-preview-controls-title" class="mc-section-title">Size and format</h4>
+
+            <label for="mc-export-resolution">Size and aspect ratio</label>
+            <select id="mc-export-resolution" class="gh-input"
+                    [ngModel]="exportResolutionId" [ngModelOptions]="{ standalone: true }"
+                    (ngModelChange)="onExportResolutionChange($event)">
+              @for (group of exportPresetGroups; track group.label) {
+                <optgroup [label]="group.label">
+                  @for (preset of group.presets; track preset.id) {
+                    <option [value]="preset.id">{{ preset.label }}</option>
+                  }
+                </optgroup>
               }
-            </optgroup>
-          }
-          <optgroup label="Custom">
-            <option value="custom">Custom…</option>
-          </optgroup>
-        </select>
+              <optgroup label="Custom">
+                <option value="custom">Custom…</option>
+              </optgroup>
+            </select>
 
-        @if (isCustomResolution) {
-          <label for="mc-export-width">Width in pixels</label>
-          <input id="mc-export-width" type="number" class="gh-input mc-export-dimension"
-                 [min]="minExportDimension" [max]="maxExportDimension" step="10"
-                 aria-describedby="mc-export-resolution-error"
-                 [ngModel]="customExportWidth" [ngModelOptions]="{ standalone: true }"
-                 (ngModelChange)="onCustomWidthChange($event)">
-          <label for="mc-export-height">Height in pixels</label>
-          <input id="mc-export-height" type="number" class="gh-input mc-export-dimension"
-                 [min]="minExportDimension" [max]="maxExportDimension" step="10"
-                 aria-describedby="mc-export-resolution-error"
-                 [ngModel]="customExportHeight" [ngModelOptions]="{ standalone: true }"
-                 (ngModelChange)="onCustomHeightChange($event)">
-          <label class="checkbox-label">
-            <input type="checkbox" [ngModel]="customRatioLocked"
-                   [ngModelOptions]="{ standalone: true }"
-                   (ngModelChange)="lockCustomRatio($event)">
-            Keep {{ exportAspectLabel }}
-          </label>
-        }
-
-        <!-- One density for every size, defaulting to the display's own: the read-out below is
-             what keeps that single rule honest about what an explicit size will write. -->
-        <label for="mc-export-density">Pixel density</label>
-        <select id="mc-export-density" class="gh-input mc-export-quality"
-                aria-describedby="mc-export-resolution-error"
-                [ngModel]="exportDensitySelection" [ngModelOptions]="{ standalone: true }"
-                (ngModelChange)="onExportDensityChange($event)">
-          @for (d of exportDensityPresets; track d) {
-            <option [ngValue]="d">{{ densityOptionLabel(d) }}</option>
-          }
-          <option [ngValue]="'custom'">Custom…</option>
-        </select>
-        @if (isCustomDensity) {
-          <label for="mc-export-density-custom">Density in percent</label>
-          <input id="mc-export-density-custom" type="number" class="gh-input mc-export-dimension"
-                 [min]="minExportDensityPercent" [max]="maxExportDensityPercent" step="5"
-                 aria-describedby="mc-export-resolution-error"
-                 [ngModel]="customExportDensityPercent" [ngModelOptions]="{ standalone: true }"
-                 (ngModelChange)="onCustomDensityChange($event)">
-        }
-
-        <label for="mc-export-format">Format</label>
-        <select id="mc-export-format" class="gh-input mc-export-format"
-                [ngModel]="exportFormat" [ngModelOptions]="{ standalone: true }"
-                (ngModelChange)="onExportFormatChange($event)">
-          <option value="png">PNG</option>
-          <option value="webp">WebP</option>
-        </select>
-        <!-- Quality after the format rather than before it, so choosing WebP never shifts the
-             control the reader has just used. -->
-        @if (exportFormat === 'webp') {
-          <label for="mc-export-webp-quality">WebP quality</label>
-          <select id="mc-export-webp-quality" class="gh-input mc-export-quality"
-                  [ngModel]="figureWebpQuality" [ngModelOptions]="{ standalone: true }"
-                  (ngModelChange)="onFigureWebpQualityChange($event)">
-            @for (q of webpQualityOptions; track q) {
-              <option [ngValue]="q">{{ q }}</option>
+            @if (isCustomResolution) {
+              <label for="mc-export-width">Width in pixels</label>
+              <input id="mc-export-width" type="number" class="gh-input mc-export-dimension"
+                     [min]="minExportDimension" [max]="maxExportDimension" step="10"
+                     aria-describedby="mc-export-resolution-error"
+                     [ngModel]="customExportWidth" [ngModelOptions]="{ standalone: true }"
+                     (ngModelChange)="onCustomWidthChange($event)">
+              <label for="mc-export-height">Height in pixels</label>
+              <input id="mc-export-height" type="number" class="gh-input mc-export-dimension"
+                     [min]="minExportDimension" [max]="maxExportDimension" step="10"
+                     aria-describedby="mc-export-resolution-error"
+                     [ngModel]="customExportHeight" [ngModelOptions]="{ standalone: true }"
+                     (ngModelChange)="onCustomHeightChange($event)">
+              <label class="checkbox-label">
+                <input type="checkbox" [ngModel]="customRatioLocked"
+                       [ngModelOptions]="{ standalone: true }"
+                       (ngModelChange)="lockCustomRatio($event)">
+                Keep {{ exportAspectLabel }}
+              </label>
             }
-          </select>
+
+            <!-- One density for every size, defaulting to the display's own: the read-out below is
+                 what keeps that single rule honest about what an explicit size will write. -->
+            <label for="mc-export-density">Pixel density</label>
+            <select id="mc-export-density" class="gh-input mc-export-quality"
+                    aria-describedby="mc-export-resolution-error"
+                    [ngModel]="exportDensitySelection" [ngModelOptions]="{ standalone: true }"
+                    (ngModelChange)="onExportDensityChange($event)">
+              @for (d of exportDensityPresets; track d) {
+                <option [ngValue]="d">{{ densityOptionLabel(d) }}</option>
+              }
+              <option [ngValue]="'custom'">Custom…</option>
+            </select>
+            @if (isCustomDensity) {
+              <label for="mc-export-density-custom">Density in percent</label>
+              <input id="mc-export-density-custom" type="number" class="gh-input mc-export-dimension"
+                     [min]="minExportDensityPercent" [max]="maxExportDensityPercent" step="5"
+                     aria-describedby="mc-export-resolution-error"
+                     [ngModel]="customExportDensityPercent" [ngModelOptions]="{ standalone: true }"
+                     (ngModelChange)="onCustomDensityChange($event)">
+            }
+
+            <label for="mc-export-format">Format</label>
+            <select id="mc-export-format" class="gh-input mc-export-format"
+                    [ngModel]="exportFormat" [ngModelOptions]="{ standalone: true }"
+                    (ngModelChange)="onExportFormatChange($event)">
+              <option value="png">PNG</option>
+              <option value="webp">WebP</option>
+            </select>
+            <!-- Quality after the format rather than before it, so choosing WebP never shifts the
+                 control the reader has just used. -->
+            @if (exportFormat === 'webp') {
+              <label for="mc-export-webp-quality">WebP quality</label>
+              <select id="mc-export-webp-quality" class="gh-input mc-export-quality"
+                      [ngModel]="figureWebpQuality" [ngModelOptions]="{ standalone: true }"
+                      (ngModelChange)="onFigureWebpQualityChange($event)">
+                @for (q of webpQualityOptions; track q) {
+                  <option [ngValue]="q">{{ q }}</option>
+                }
+              </select>
+            }
+
+            <!-- Text size composes the export in a smaller or larger box at the same pixel size, so the
+                 caption, notes and the plot's own text scale together. -->
+            <div class="mc-range">
+              <label for="mc-export-text-scale">Text size</label>
+              <div class="mc-range-row">
+                <input id="mc-export-text-scale" type="range"
+                       [min]="minExportTextScalePercent" [max]="maxExportTextScalePercent" step="5"
+                       [value]="exportTextScalePercent" [disabled]="exportTextScaleDisabled"
+                       [attr.aria-valuetext]="exportTextScalePercent + ' percent'"
+                       aria-describedby="mc-export-text-scale-hint"
+                       (input)="onExportTextScaleChange(+$any($event.target).value)">
+                <output class="mc-range-value" aria-hidden="true" for="mc-export-text-scale">{{ exportTextScalePercent }} %</output>
+              </div>
+              <p class="mc-field-hint" id="mc-export-text-scale-hint">@if (exportTextScaleDisabled) {On-screen exports follow the page's own text.} @else {Scales the caption, notes and chart text together without changing the pixel size. Raise it for a small export.}</p>
+            </div>
+
+            <p class="mc-export-dimensions">{{ exportDimensionsLabel }}@if (exportAspectLabel) { · {{ exportAspectLabel }}}</p>
+            @if (exportSizeError) {
+              <p class="mc-export-error" id="mc-export-resolution-error" role="alert">{{ exportSizeError }}</p>
+            }
+            @if (previewRefusal) {
+              <p class="mc-export-error" role="alert">{{ previewRefusal }}</p>
+            }
+          </div>
         }
 
-        <p class="mc-export-dimensions">{{ exportDimensionsLabel }}@if (exportAspectLabel) { · {{ exportAspectLabel }}}</p>
-        @if (exportSizeError) {
-          <p class="mc-export-error" id="mc-export-resolution-error" role="alert">{{ exportSizeError }}</p>
-        }
-        @if (previewRefusal) {
-          <p class="mc-export-error" role="alert">{{ previewRefusal }}</p>
-        }
-
-        <!-- The same two handlers the page's own checkboxes call, so the dialog owns no second
-             copy of the state. Only for a scatter: on a panel or the profile they change nothing
-             the reader can see. -->
-        @if (previewIsScatter) {
-          <h4 class="mc-section-title mc-preview-group-title">Trade-off charts</h4>
-          <label class="checkbox-label">
-            <input type="checkbox" class="mc-preview-scatter-toggle" [checked]="scatterDirectLabels"
-                   (change)="onScatterDirectLabelsChange($any($event.target).checked)">
-            Label models inside the chart
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" class="mc-preview-scatter-toggle" [checked]="scatterInlineValues"
-                   (change)="onScatterInlineValuesChange($any($event.target).checked)">
-            Show values in the chart
-          </label>
-          <p class="mc-field-hint">Applies to all three trade-off charts, here and on the page.</p>
+        @if (previewTab === 'style') {
+          <div class="mc-preview-panel" role="tabpanel" id="mc-preview-panel-style"
+               aria-labelledby="mc-preview-tab-style" tabindex="0">
+            <p class="mc-field-hint mc-style-scope">Changes apply to the figures on the page and to every export.</p>
+            <!-- The trade-off toggles call the page's own handlers, so the dialog owns no second copy
+                 of that state. -->
+            <app-figure-style-panel [kind]="previewStyleKind" [figureStyle]="figureStyle"
+                                    [directLabels]="scatterDirectLabels" [inlineValues]="scatterInlineValues"
+                                    (figureStyleChange)="onFigureStyleChange($event)"
+                                    (directLabelsChange)="onScatterDirectLabelsChange($event)"
+                                    (inlineValuesChange)="onScatterInlineValuesChange($event)"></app-figure-style-panel>
+            @if (previewRefusal) {
+              <p class="mc-export-error" role="alert">{{ previewRefusal }}</p>
+            }
+          </div>
         }
       </aside>
 
