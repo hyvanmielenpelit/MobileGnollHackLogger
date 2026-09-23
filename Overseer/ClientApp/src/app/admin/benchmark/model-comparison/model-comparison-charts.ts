@@ -13,7 +13,7 @@ import ChartDataLabels from 'chartjs-plugin-datalabels';
 import type { Chart, ChartConfiguration, ChartType, DefaultDataPoint, Plugin, Point } from 'chart.js';
 import { chooseScaleType, formatTick, linearDomain, logDomain, timeUnitFor } from './axis-domain';
 import type { AxisBounds, AxisTickKind, ScaleType, TimeUnit } from './axis-domain';
-import { figureDirectionRotation, pricingBadge, pricingNote, runsBadge } from './figure-chrome';
+import { figureDirectionRotation, pricingBadge, pricingNote, runsBadge, visibleBadges } from './figure-chrome';
 import type { FigureBadge, FigureChrome, FigureDirection, FigureKeyItem, FigureNote } from './figure-chrome';
 import { DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
 import type { FigureStyle } from './figure-style';
@@ -787,9 +787,13 @@ function axisTitle(text: string | string[], better?: BetterDirection, size = 12)
 /** The badges every figure opens with: how many models, how many runs behind each, how many questions. */
 function countBadges(plotted: readonly ModelComparisonEntry[], context: ModelComparisonContext): FigureBadge[] {
   return [
-    { text: `${plotted.length} ${plotted.length === 1 ? 'model' : 'models'}`, tone: 'neutral' },
+    { text: `${plotted.length} ${plotted.length === 1 ? 'model' : 'models'}`, tone: 'neutral', kind: 'models' },
     runsBadge(plotted),
-    { text: `${context.itemsPerRun} ${context.itemsPerRun === 1 ? 'question' : 'questions'}`, tone: 'neutral' },
+    {
+      text: `${context.itemsPerRun} ${context.itemsPerRun === 1 ? 'question' : 'questions'}`,
+      tone: 'neutral',
+      kind: 'questions',
+    },
   ];
 }
 
@@ -1987,10 +1991,10 @@ function buildScatter(
   };
 
   const hasCostAxis = xAxis.kind === 'usd' || yAxis.kind === 'usd';
-  const badges: FigureBadge[] = [
+  const badges: FigureBadge[] = visibleBadges([
     ...countBadges(plotted, context),
     ...(hasCostAxis ? [pricingBadge(context.pricingBasis, context.pricedOn)] : []),
-  ];
+  ], style.hiddenBadges);
 
   // The key explains only the marks this figure actually draws.
   const key: FigureKeyItem[] = [];
@@ -2138,7 +2142,8 @@ export interface SmallMultiplesFigure {
 }
 
 /**
- * A panel's category tick: the model name, or the name over `n = 1` where one run backs it.
+ * A panel's category tick: the model name, or the name over `n = 1` where one run backs it and the
+ * style shows the marker.
  *
  * Chart.js renders a string array as a multi-line tick on either axis orientation, which is where
  * the single-run marker lives: beside the bar it collided with the value label, and on the axis it
@@ -2331,10 +2336,10 @@ function buildPanel(
 
   const chrome: FigureChrome = {
     title,
-    badges: [
+    badges: visibleBadges([
       ...countBadges(plotted, context),
       ...(costPanel ? [pricingBadge(context.pricingBasis, context.pricedOn)] : []),
-    ],
+    ], style.hiddenBadges),
     detail: costPanel ? pricingNote(context.pricingBasis) : '',
     key: [],
     highlight: '',
@@ -2365,6 +2370,7 @@ export function buildSmallMultiples(
   options: SmallMultiplesOptions,
 ): SmallMultiplesFigure {
   const { context, speedMeasure, costMeasure } = options;
+  const barStyle = (options.style ?? DEFAULT_FIGURE_STYLE).bar;
 
   const qualityValues = plotted.map((e) => e.intelligenceIndex);
   const qualityErr = plotted.map((e) => e.intelligenceIndexCi95HalfWidth);
@@ -2398,7 +2404,8 @@ export function buildSmallMultiples(
 
   const costValues = plotted.map((e) => costValue(e, costMeasure, context));
   // At R = 1 there is no reproducibility SD, so the bar carries no interval at all - silence would
-  // read as certainty, which is why the category tick says `n = 1` under the model's name instead.
+  // read as certainty, which is why the category tick says `n = 1` under the model's name unless the
+  // style hides it.
   const costSd = plotted.map((e) =>
     costMeasure === 'candidateSuite' ? suiteCostSdUsd(e, context) ?? undefined : e.totalRunCostSdUsd ?? undefined,
   );
@@ -2422,7 +2429,7 @@ export function buildSmallMultiples(
       tone: 'warning',
     });
   }
-  if (speedMeasure === 'meanModelTime' && (options.style ?? DEFAULT_FIGURE_STYLE).bar.meanTimeNoIntervalNote) {
+  if (speedMeasure === 'meanModelTime' && barStyle.meanTimeNoIntervalNote) {
     speedNotes.push({ text: MEAN_TIME_NO_INTERVAL_NOTE, tone: 'info' });
   }
 
@@ -2446,7 +2453,7 @@ export function buildSmallMultiples(
   // that panel's plot area and put its bars out of line with the other two, which share a height
   // and a model order.
   const categoryLabels: PanelCategoryLabel[] = plotted.map((e) =>
-    e.runCount === 1 ? [e.label, 'n = 1'] : e.label,
+    e.runCount === 1 && barStyle.singleRunMarker ? [e.label, 'n = 1'] : e.label,
   );
 
   return {
@@ -2734,7 +2741,10 @@ export function buildProfilePlot(
   const title = 'Model profiles';
   const chrome: FigureChrome = {
     title,
-    badges: [...countBadges(plotted, context), pricingBadge(context.pricingBasis, context.pricedOn)],
+    badges: visibleBadges(
+      [...countBadges(plotted, context), pricingBadge(context.pricingBasis, context.pricedOn)],
+      (options.style ?? DEFAULT_FIGURE_STYLE).profile.hiddenBadges,
+    ),
     detail: pricingNote(context.pricingBasis),
     key: [],
     highlight: '',

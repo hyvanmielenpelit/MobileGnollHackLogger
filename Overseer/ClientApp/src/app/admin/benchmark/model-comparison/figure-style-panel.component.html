@@ -21,6 +21,26 @@
   </div>
 </ng-template>
 
+<!-- One family's badge checkboxes: every badge kind, each shown or hidden on its own. -->
+<ng-template #badges let-family="family">
+  <fieldset class="gh-fieldset fsp-group">
+    <legend>Badges</legend>
+    @for (c of badgeControls; track c.kind) {
+      <label class="checkbox-label">
+        <input type="checkbox" [id]="badgeControlId(family, c.kind)"
+               [checked]="badgeShown(family, c.kind)"
+               [attr.aria-describedby]="c.hint ? badgeControlId(family, c.kind) + '-hint' : null"
+               (change)="setBadgeShown(family, c.kind, checkedOf($event))">
+        Show {{ c.label }}
+      </label>
+      @if (c.hint) {
+        <p class="gh-fieldset-hint" [id]="badgeControlId(family, c.kind) + '-hint'">{{ c.hint }}</p>
+      }
+    }
+    <p class="gh-fieldset-hint">A hidden badge is left out of the figure on the page, in the preview and in every export.</p>
+  </fieldset>
+</ng-template>
+
 @switch (kind) {
   @case ('bar') {
     <section class="fsp" aria-labelledby="mc-style-bar-heading">
@@ -45,7 +65,7 @@
                  (change)="setBar('filledBars', checkedOf($event))">
           Filled bars
         </label>
-        <p class="gh-fieldset-hint" id="mc-style-bar-filledBars-hint">A bar backed by a single run is otherwise drawn as an outline; bars backed by several runs are always filled. The n = 1 under the model's name marks a single run either way.</p>
+        <p class="gh-fieldset-hint" id="mc-style-bar-filledBars-hint">{{ filledBarsHint }}</p>
         <p class="gh-fieldset-hint">A bar fills its model's slot less the space, up to the maximum width; past that width the space grows.</p>
       </fieldset>
 
@@ -80,6 +100,11 @@
         <legend>Text</legend>
         <ng-container *ngTemplateOutlet="range; context: { family: 'bar', control: barAxisControl }"></ng-container>
         <label class="checkbox-label">
+          <input type="checkbox" id="mc-style-bar-singleRunMarker" [checked]="bar.singleRunMarker"
+                 (change)="setBar('singleRunMarker', checkedOf($event))">
+          Show n = 1 under single-run model names
+        </label>
+        <label class="checkbox-label">
           <input type="checkbox" id="mc-style-bar-valueLabels" [checked]="bar.valueLabels"
                  (change)="setBar('valueLabels', checkedOf($event))">
           Show values on bars
@@ -108,6 +133,8 @@
           Gridlines
         </label>
       </fieldset>
+
+      <ng-container *ngTemplateOutlet="badges; context: { family: 'bar' }"></ng-container>
 
       <div class="fsp-actions">
         <button type="button" class="btn-ghost" id="mc-style-bar-reset" (click)="resetBar()">Reset bar style</button>
@@ -202,6 +229,8 @@
         </label>
       </fieldset>
 
+      <ng-container *ngTemplateOutlet="badges; context: { family: 'scatter' }"></ng-container>
+
       <div class="fsp-actions">
         <button type="button" class="btn-ghost" id="mc-style-scatter-reset" (click)="resetScatter()">Reset trade-off style</button>
       </div>
@@ -209,6 +238,16 @@
   }
 
   @default {
-    <p class="fsp-note">The profile plot has no style controls of its own. Text size on the Export tab applies to it.</p>
+    <section class="fsp" aria-labelledby="mc-style-profile-heading">
+      <h5 class="fsp-heading" id="mc-style-profile-heading">Profile plot</h5>
+
+      <ng-container *ngTemplateOutlet="badges; context: { family: 'profile' }"></ng-container>
+
+      <p class="fsp-note">The profile plot has no other style controls. Text size on the Export tab applies to it.</p>
+
+      <div class="fsp-actions">
+        <button type="button" class="btn-ghost" id="mc-style-profile-reset" (click)="resetProfile()">Reset profile style</button>
+      </div>
+    </section>
   }
 }

@@ -1,10 +1,12 @@
 /**
  * The admin-adjustable style of the comparison figures: one set for the three bar panels, one for
- * the three trade-off scatters. The chart builders read it, so the page, the preview and every
- * export draw from the same values.
+ * the three trade-off scatters and one for the profile. The chart builders read it, so the page,
+ * the preview and every export draw from the same values.
  *
  * Pure TypeScript with no Chart.js, Angular or DOM dependency.
  */
+
+import type { FigureBadgeKind } from './figure-chrome';
 
 export type BarOrientationChoice = 'auto' | 'vertical' | 'horizontal';
 export type ScatterLegendPosition = 'bottom' | 'right';
@@ -29,7 +31,10 @@ export interface BarFigureStyle {
   readonly valueLabelSizePx: number;
   /** Ticks; axis titles are this + 1. */
   readonly axisTextSizePx: number;
+  /** `n = 1` under a single-run model's name. */
+  readonly singleRunMarker: boolean;
   readonly gridlines: boolean;
+  readonly hiddenBadges: readonly FigureBadgeKind[];
 }
 
 export interface ScatterFigureStyle {
@@ -49,11 +54,18 @@ export interface ScatterFigureStyle {
   readonly axisTextSizePx: number;
   readonly legendPosition: ScatterLegendPosition;
   readonly gridlines: boolean;
+  readonly hiddenBadges: readonly FigureBadgeKind[];
 }
 
+export interface ProfileFigureStyle {
+  readonly hiddenBadges: readonly FigureBadgeKind[];
+}
+
+/** Three families: the bar panels, the trade-off scatters and the profile. */
 export interface FigureStyle {
   readonly bar: BarFigureStyle;
   readonly scatter: ScatterFigureStyle;
+  readonly profile: ProfileFigureStyle;
 }
 
 /** Equal to the values the figures were drawn with before any control existed. */
@@ -71,7 +83,9 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
     valueLabels: true,
     valueLabelSizePx: 11,
     axisTextSizePx: 11,
+    singleRunMarker: true,
     gridlines: true,
+    hiddenBadges: [],
   },
   scatter: {
     markRadiusPx: 6,
@@ -84,6 +98,10 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
     axisTextSizePx: 11,
     legendPosition: 'bottom',
     gridlines: true,
+    hiddenBadges: [],
+  },
+  profile: {
+    hiddenBadges: [],
   },
 };
 
@@ -130,6 +148,20 @@ export const SCATTER_RANGE_CONTROLS: readonly RangeControl<NumericScatterStyleKe
   { key: 'axisTextSizePx', label: 'Axis text size', hint: 'Also sizes the Better marker.', min: 8, max: 28, step: 1, unit: 'px' },
 ];
 
+/** One badge's *Show* checkbox, which the style panel's template loops over. */
+export interface BadgeControl {
+  readonly kind: FigureBadgeKind;
+  readonly label: string;
+  readonly hint?: string;
+}
+
+export const BADGE_CONTROLS: readonly BadgeControl[] = [
+  { kind: 'models', label: 'Number of models' },
+  { kind: 'runs', label: 'Runs behind each model' },
+  { kind: 'questions', label: 'Number of questions' },
+  { kind: 'pricing', label: 'Pricing basis', hint: 'Only figures with a cost axis carry it.' },
+];
+
 /** The descriptor for one key, which every numeric field has. */
 export function barRangeControl(key: NumericBarStyleKey): RangeControl<NumericBarStyleKey> {
   return BAR_RANGE_CONTROLS.find((control) => control.key === key)!;
@@ -160,6 +192,14 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback
   return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
 }
 
+/** Known kinds only, each once, in {@link BADGE_CONTROLS} order, so equal selections serialise alike. */
+function normalizeBadgeKinds(value: unknown): FigureBadgeKind[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return BADGE_CONTROLS.map((control) => control.kind).filter((kind) => value.includes(kind));
+}
+
 function normalizeBar(value: unknown): BarFigureStyle {
   const d = DEFAULT_FIGURE_STYLE.bar;
   const v = isRecord(value) ? value : {};
@@ -178,7 +218,9 @@ function normalizeBar(value: unknown): BarFigureStyle {
     valueLabels: booleanOr(v['valueLabels'], d.valueLabels),
     valueLabelSizePx: numeric('valueLabelSizePx'),
     axisTextSizePx: numeric('axisTextSizePx'),
+    singleRunMarker: booleanOr(v['singleRunMarker'], d.singleRunMarker),
     gridlines: booleanOr(v['gridlines'], d.gridlines),
+    hiddenBadges: normalizeBadgeKinds(v['hiddenBadges']),
   };
 }
 
@@ -198,7 +240,13 @@ function normalizeScatter(value: unknown): ScatterFigureStyle {
     axisTextSizePx: numeric('axisTextSizePx'),
     legendPosition: oneOf(v['legendPosition'], ['bottom', 'right'] as const, d.legendPosition),
     gridlines: booleanOr(v['gridlines'], d.gridlines),
+    hiddenBadges: normalizeBadgeKinds(v['hiddenBadges']),
   };
+}
+
+function normalizeProfile(value: unknown): ProfileFigureStyle {
+  const v = isRecord(value) ? value : {};
+  return { hiddenBadges: normalizeBadgeKinds(v['hiddenBadges']) };
 }
 
 /**
@@ -208,5 +256,5 @@ function normalizeScatter(value: unknown): ScatterFigureStyle {
  */
 export function normalizeFigureStyle(value: unknown): FigureStyle {
   const v = isRecord(value) ? value : {};
-  return { bar: normalizeBar(v['bar']), scatter: normalizeScatter(v['scatter']) };
+  return { bar: normalizeBar(v['bar']), scatter: normalizeScatter(v['scatter']), profile: normalizeProfile(v['profile']) };
 }

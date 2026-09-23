@@ -1,13 +1,16 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 
+import type { FigureBadgeKind } from './figure-chrome';
 import {
+  BADGE_CONTROLS,
   BarFigureStyle,
   DEFAULT_FIGURE_STYLE,
   FigureStyle,
   HIDDEN_INTERVALS_NOTE,
   NumericBarStyleKey,
   NumericScatterStyleKey,
+  ProfileFigureStyle,
   RangeControl,
   ScatterFigureStyle,
   barRangeControl,
@@ -16,14 +19,14 @@ import {
 } from './figure-style';
 import { FRONTIER_UNCERTAINTY_NOTE, MEAN_TIME_NO_INTERVAL_NOTE } from './model-comparison-charts';
 
-/** Which control set the panel shows: the bar panels', the trade-off scatters', or the profile's note. */
+/** Which control set the panel shows: the bar panels', the trade-off scatters', or the profile's. */
 export type FigureStylePanelKind = 'bar' | 'scatter' | 'profile';
 
-type StyleFamily = 'bar' | 'scatter';
+type StyleFamily = 'bar' | 'scatter' | 'profile';
 
 /**
  * The preview dialog's Style tab: one control set for the three bar panels, another for the three
- * trade-off charts, and a note for the profile, which has none.
+ * trade-off charts, and a badge set for the profile.
  *
  * Stateless apart from the last finite bar width: every change is emitted as a whole new style, and
  * the wizard owns the state, its persistence and the rebuild.
@@ -77,6 +80,8 @@ export class FigureStylePanelComponent {
   readonly meanTimeHint = `Adds, when Speed shows mean time per question: ${MEAN_TIME_NO_INTERVAL_NOTE}`;
   readonly frontierHint = `Adds, when it applies: ${FRONTIER_UNCERTAINTY_NOTE}`;
 
+  readonly badgeControls = BADGE_CONTROLS;
+
   /** Where *No limit* returns to when it is unticked. */
   private lastBarWidthPx = DEFAULT_FIGURE_STYLE.bar.maxBarWidthPx ?? 24;
 
@@ -86,6 +91,18 @@ export class FigureStylePanelComponent {
 
   get scatter(): ScatterFigureStyle {
     return this.figureStyle.scatter;
+  }
+
+  get profile(): ProfileFigureStyle {
+    return this.figureStyle.profile;
+  }
+
+  /** The *Filled bars* hint, which mentions the `n = 1` marker only while the figures draw it. */
+  get filledBarsHint(): string {
+    const base = 'A bar backed by a single run is otherwise drawn as an outline; bars backed by several runs are always filled.';
+    return this.bar.singleRunMarker
+      ? `${base} The n = 1 under the model's name marks a single run either way.`
+      : `${base} With the n = 1 marker off, a filled single-run bar looks like any other; only the runs badge says how many runs stand behind the models.`;
   }
 
   /** The label size matters only while one of the two plate toggles is on. */
@@ -162,6 +179,33 @@ export class FigureStylePanelComponent {
     this.figureStyleChange.emit({ ...this.figureStyle, scatter: { ...this.scatter, [key]: value } });
   }
 
+  setProfile<K extends keyof ProfileFigureStyle>(key: K, value: ProfileFigureStyle[K]): void {
+    this.figureStyleChange.emit({ ...this.figureStyle, profile: { ...this.profile, [key]: value } });
+  }
+
+  badgeControlId(family: StyleFamily, kind: FigureBadgeKind): string {
+    return `mc-style-${family}-badge-${kind}`;
+  }
+
+  badgeShown(family: StyleFamily, kind: FigureBadgeKind): boolean {
+    return !this.figureStyle[family].hiddenBadges.includes(kind);
+  }
+
+  /** Emits the family's new hidden list; `normalizeFigureStyle` in the wizard puts it in order. */
+  setBadgeShown(family: StyleFamily, kind: FigureBadgeKind, shown: boolean): void {
+    const current = this.figureStyle[family].hiddenBadges;
+    const hidden = shown
+      ? current.filter((k) => k !== kind)
+      : current.includes(kind) ? [...current] : [...current, kind];
+    if (family === 'bar') {
+      this.setBar('hiddenBadges', hidden);
+    } else if (family === 'scatter') {
+      this.setScatter('hiddenBadges', hidden);
+    } else {
+      this.setProfile('hiddenBadges', hidden);
+    }
+  }
+
   checkedOf(event: Event): boolean {
     return (event.target as HTMLInputElement).checked;
   }
@@ -173,5 +217,9 @@ export class FigureStylePanelComponent {
 
   resetScatter(): void {
     this.figureStyleChange.emit({ ...this.figureStyle, scatter: DEFAULT_FIGURE_STYLE.scatter });
+  }
+
+  resetProfile(): void {
+    this.figureStyleChange.emit({ ...this.figureStyle, profile: DEFAULT_FIGURE_STYLE.profile });
   }
 }

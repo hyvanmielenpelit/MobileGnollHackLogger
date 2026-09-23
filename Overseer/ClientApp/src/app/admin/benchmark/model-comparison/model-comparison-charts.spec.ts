@@ -54,7 +54,7 @@ import type {
   SmallMultiplesOptions,
 } from './model-comparison-charts';
 import { DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
-import type { BarFigureStyle, FigureStyle, ScatterFigureStyle } from './figure-style';
+import type { BarFigureStyle, FigureStyle, ProfileFigureStyle, ScatterFigureStyle } from './figure-style';
 import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 import { CONFIG_ANALYTICS_CHART_TYPE } from '../../config-analytics/config-analytics.component';
 
@@ -1667,9 +1667,14 @@ describe('model-comparison-charts', () => {
   });
 
   describe('figure style', () => {
-    const style = (bar: Partial<BarFigureStyle> = {}, scatter: Partial<ScatterFigureStyle> = {}): FigureStyle => ({
+    const style = (
+      bar: Partial<BarFigureStyle> = {},
+      scatter: Partial<ScatterFigureStyle> = {},
+      profile: Partial<ProfileFigureStyle> = {},
+    ): FigureStyle => ({
       bar: { ...DEFAULT_FIGURE_STYLE.bar, ...bar },
       scatter: { ...DEFAULT_FIGURE_STYLE.scatter, ...scatter },
+      profile: { ...DEFAULT_FIGURE_STYLE.profile, ...profile },
     });
 
     const noteTexts = (spec: { chrome: { notes: readonly { text: string }[] } }): string[] =>
@@ -1995,6 +2000,92 @@ describe('model-comparison-charts', () => {
       const large = measureDirectLabelBlock(ctx as unknown as CanvasRenderingContext2D, block, 14);
       expect(large.height).toBeGreaterThan(normal.height);
       expect(normal.height).toBe(4 + 12 + 12);
+    });
+
+    describe('the n = 1 marker and the badges', () => {
+      const PRICED_IDS = ['s2-quality-cost', 's3-speed-cost', 'p1c-cost', 'p2-profile'];
+      const SCATTER_IDS = ['s1-quality-speed', 's2-quality-cost', 's3-speed-cost'];
+      const BAR_IDS = ['p1a-quality', 'p1b-speed', 'p1c-cost'];
+
+      const kindsOf = (spec: ChartSpec): (string | undefined)[] => spec.chrome.badges.map((badge) => badge.kind);
+
+      it('leaves a single-run model with its plain name when the marker is off', () => {
+        const once = makeEntry({ key: 'once', runCount: 1, candidateCostPerQuestionSdUsd: null });
+        const twice = makeEntry({ key: 'twice', runCount: 2 });
+        const entries = [once, twice];
+        const figure = buildSmallMultiples(entries, {
+          ...smallMultiplesOptions({ style: style({ singleRunMarker: false }) }),
+          glyphs: buildIdentityGlyphs(entries),
+        });
+        for (const panel of [figure.quality, figure.speed, figure.cost]) {
+          expect(panel.config.data.labels?.[0]).withContext(panel.id).toBe(once.label);
+          expect(panel.config.data.labels?.[1]).withContext(panel.id).toBe(twice.label);
+        }
+      });
+
+      it('gives every badge a kind, with the pricing badge exactly where a cost axis is', () => {
+        const figures = buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT });
+        for (const spec of allSpecs(figures)) {
+          const expected = PRICED_IDS.includes(spec.id)
+            ? ['models', 'runs', 'questions', 'pricing']
+            : ['models', 'runs', 'questions'];
+          expect(kindsOf(spec)).withContext(spec.id).toEqual(expected);
+          for (const badge of spec.chrome.badges) {
+            expect(badge.kind === 'pricing').withContext(`${spec.id} ${badge.text}`).toBe(badge.tone === 'pricing');
+          }
+        }
+      });
+
+      it('hides a bar badge on the three bar panels only, and keeps the pricing sentence', () => {
+        const plain = buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT });
+        const figures = buildComparisonFigures(PROFILE_FIXTURE, {
+          context: CONTEXT,
+          style: style({ hiddenBadges: ['runs', 'pricing'] }),
+        });
+        const plainById = new Map(allSpecs(plain).map((spec) => [spec.id, spec]));
+        for (const spec of allSpecs(figures)) {
+          if (BAR_IDS.includes(spec.id)) {
+            expect(kindsOf(spec)).withContext(spec.id).toEqual(['models', 'questions']);
+          } else {
+            expect(spec.chrome.badges).withContext(spec.id).toEqual(plainById.get(spec.id)!.chrome.badges);
+          }
+        }
+        expect(figures.smallMultiples.cost.chrome.detail).toBe(plain.smallMultiples.cost.chrome.detail);
+        expect(figures.smallMultiples.cost.chrome.detail).not.toBe('');
+      });
+
+      it('hides a trade-off badge on the three scatters only', () => {
+        const plain = buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT });
+        const figures = buildComparisonFigures(PROFILE_FIXTURE, {
+          context: CONTEXT,
+          style: style({}, { hiddenBadges: ['models', 'pricing'] }),
+        });
+        const plainById = new Map(allSpecs(plain).map((spec) => [spec.id, spec]));
+        for (const spec of allSpecs(figures)) {
+          if (SCATTER_IDS.includes(spec.id)) {
+            expect(kindsOf(spec)).withContext(spec.id).toEqual(['runs', 'questions']);
+          } else {
+            expect(spec.chrome.badges).withContext(spec.id).toEqual(plainById.get(spec.id)!.chrome.badges);
+          }
+        }
+      });
+
+      it('hides a profile badge on the profile only', () => {
+        const plain = buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT });
+        const figures = buildComparisonFigures(PROFILE_FIXTURE, {
+          context: CONTEXT,
+          style: style({}, {}, { hiddenBadges: ['questions'] }),
+        });
+        const plainById = new Map(allSpecs(plain).map((spec) => [spec.id, spec]));
+        for (const spec of allSpecs(figures)) {
+          if (spec.id === 'p2-profile') {
+            expect(kindsOf(spec)).toEqual(['models', 'runs', 'pricing']);
+            expect(spec.chrome.detail).toBe(plainById.get(spec.id)!.chrome.detail);
+          } else {
+            expect(spec.chrome.badges).withContext(spec.id).toEqual(plainById.get(spec.id)!.chrome.badges);
+          }
+        }
+      });
     });
   });
 });

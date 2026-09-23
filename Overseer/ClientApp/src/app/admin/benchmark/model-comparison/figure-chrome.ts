@@ -7,7 +7,22 @@
  */
 
 export type FigureBadgeTone = 'neutral' | 'pricing';
-export interface FigureBadge { readonly text: string; readonly tone: FigureBadgeTone; readonly ariaLabel?: string; }
+
+/** Which badge a figure's badge is, so the style can hide it by kind. */
+export type FigureBadgeKind = 'models' | 'runs' | 'questions' | 'pricing';
+
+export interface FigureBadge {
+  readonly text: string;
+  readonly tone: FigureBadgeTone;
+  readonly ariaLabel?: string;
+  /** Absent on a badge no style control can hide. */
+  readonly kind?: FigureBadgeKind;
+}
+
+/** The badges whose kind is not hidden, in their original order. */
+export function visibleBadges(badges: readonly FigureBadge[], hidden: readonly FigureBadgeKind[]): FigureBadge[] {
+  return badges.filter((badge) => badge.kind === undefined || !hidden.includes(badge.kind));
+}
 
 /** Which corner of a trade-off plot is better, and the word the marker shows. */
 export interface FigureDirection {
@@ -97,12 +112,12 @@ export function pricingBadge(basis: string, pricedOn: string, locale?: string): 
     const text = date === null
       ? 'Catalog prices'
       : `Catalog prices · ${new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(date)}`;
-    return { text, tone: 'pricing' };
+    return { text, tone: 'pricing', kind: 'pricing' };
   }
   if (basis === 'AsRun') {
-    return { text: 'Prices as run', tone: 'pricing' };
+    return { text: 'Prices as run', tone: 'pricing', kind: 'pricing' };
   }
-  return { text: 'Pricing basis unknown', tone: 'pricing' };
+  return { text: 'Pricing basis unknown', tone: 'pricing', kind: 'pricing' };
 }
 
 /** One sentence saying what the pricing basis means for the cost values, or '' for an unknown basis. */
@@ -119,7 +134,7 @@ export function pricingNote(basis: string): string {
 /** How many runs stand behind each plotted entry: `1 run each`, `3 runs each`, or `1–3 runs each`. */
 export function runsBadge(plotted: readonly { readonly runCount: number }[]): FigureBadge {
   if (plotted.length === 0) {
-    return { text: 'No runs', tone: 'neutral' };
+    return { text: 'No runs', tone: 'neutral', kind: 'runs' };
   }
   const counts = plotted.map((entry) => entry.runCount);
   const min = Math.min(...counts);
@@ -127,5 +142,5 @@ export function runsBadge(plotted: readonly { readonly runCount: number }[]): Fi
   const text = min === max
     ? `${min} ${min === 1 ? 'run' : 'runs'} each`
     : `${min}–${max} runs each`;
-  return { text, tone: 'neutral' };
+  return { text, tone: 'neutral', kind: 'runs' };
 }

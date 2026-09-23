@@ -2208,7 +2208,7 @@ describe('ModelComparisonComponent', () => {
     expect(component.previewTab).toBe('style');
   });
 
-  it('shows the bar set on a panel, the trade-off set on a scatter and the note on the profile', () => {
+  it('shows the bar set on a panel, the trade-off set on a scatter and the profile set on the profile', () => {
     render(buildDto(comparableSet(3)), 4);
     openStyleTab(component.panelCards[0]);
 
@@ -2228,7 +2228,8 @@ describe('ModelComparisonComponent', () => {
     refresh();
     expect(has('#mc-style-bar-heading')).toBeFalse();
     expect(has('#mc-style-scatter-heading')).toBeFalse();
-    expect(textOf('.fsp-note')).toContain('The profile plot has no style controls of its own.');
+    expect(has('#mc-style-profile-heading')).toBeTrue();
+    expect(textOf('.fsp-note')).toContain('The profile plot has no other style controls.');
   });
 
   it('stores a style change at once, persists it, and rebuilds the figures after the debounce', () => {
@@ -2260,6 +2261,32 @@ describe('ModelComparisonComponent', () => {
       expect(renderPreview).not.toHaveBeenCalled();
       jasmine.clock().tick(150);
       expect(renderPreview).toHaveBeenCalled();
+    } finally {
+      jasmine.clock().uninstall();
+    }
+  });
+
+  it('drops a hidden badge from the bar cards after the debounce, and persists it', () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    jasmine.clock().install();
+    try {
+      const kinds = (): (string | undefined)[] => component.panelCards[0].chrome.badges.map(badge => badge.kind);
+      const before = kinds();
+      expect(before).toContain('questions');
+
+      component.onFigureStyleChange({
+        ...component.figureStyle,
+        bar: { ...component.figureStyle.bar, hiddenBadges: ['questions'] }
+      });
+      expect(kinds()).toEqual(before);
+      const stored = JSON.parse(localStorage.getItem(FIGURE_STYLE_STORAGE_KEY)!);
+      expect(stored.version).toBe(1);
+      expect(stored.bar.hiddenBadges).toEqual(['questions']);
+
+      jasmine.clock().tick(150);
+      expect(kinds()).toEqual(before.filter(kind => kind !== 'questions'));
+      expect(component.scatterCards[0].chrome.badges.some(badge => badge.kind === 'questions')).toBeTrue();
     } finally {
       jasmine.clock().uninstall();
     }

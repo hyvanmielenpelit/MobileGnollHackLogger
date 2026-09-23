@@ -1,4 +1,5 @@
 import {
+  BADGE_CONTROLS,
   BAR_RANGE_CONTROLS,
   DEFAULT_FIGURE_STYLE,
   HIDDEN_INTERVALS_NOTE,
@@ -21,7 +22,9 @@ describe('figure-style', () => {
       valueLabels: true,
       valueLabelSizePx: 11,
       axisTextSizePx: 11,
-      gridlines: true
+      singleRunMarker: true,
+      gridlines: true,
+      hiddenBadges: []
     });
     expect(DEFAULT_FIGURE_STYLE.scatter).toEqual({
       markRadiusPx: 6,
@@ -33,8 +36,10 @@ describe('figure-style', () => {
       labelTextSizePx: 11,
       axisTextSizePx: 11,
       legendPosition: 'bottom',
-      gridlines: true
+      gridlines: true,
+      hiddenBadges: []
     });
+    expect(DEFAULT_FIGURE_STYLE.profile).toEqual({ hiddenBadges: [] });
     // 0.8 × 0.9, the two percentages the bars were drawn with.
     expect(1 - DEFAULT_FIGURE_STYLE.bar.gapPercent / 100).toBeCloseTo(0.72, 9);
     expect(HIDDEN_INTERVALS_NOTE).toBe(
@@ -89,7 +94,7 @@ describe('figure-style', () => {
     });
     expect(style.bar).toEqual({ ...DEFAULT_FIGURE_STYLE.bar, gapPercent: 10, gridlines: false });
     expect(style.scatter).toEqual({ ...DEFAULT_FIGURE_STYLE.scatter, markRadiusPx: 9, dominatedShading: false });
-    expect(Object.keys(style)).toEqual(['bar', 'scatter']);
+    expect(Object.keys(style)).toEqual(['bar', 'scatter', 'profile']);
     expect('colour' in style.bar).toBeFalse();
   });
 
@@ -142,5 +147,48 @@ describe('figure-style', () => {
     expect(style.bar.filledBars).toBeFalse();
     expect(style.scatter.dominatedShading).toBeTrue();
     expect(style.scatter.gridlines).toBeTrue();
+  });
+
+  it('keeps the n = 1 marker when set and reads anything but a boolean as shown', () => {
+    expect(normalizeFigureStyle({ bar: { singleRunMarker: false } }).bar.singleRunMarker).toBeFalse();
+    for (const value of ['false', 0, null, undefined]) {
+      expect(normalizeFigureStyle({ bar: { singleRunMarker: value } }).bar.singleRunMarker)
+        .withContext(String(value)).toBeTrue();
+    }
+  });
+
+  it('keeps known badge kinds once each, in control order, and drops the rest', () => {
+    expect(BADGE_CONTROLS.map(control => control.kind)).toEqual(['models', 'runs', 'questions', 'pricing']);
+    const style = normalizeFigureStyle({
+      bar: { hiddenBadges: ['pricing', 'models'] },
+      scatter: { hiddenBadges: ['runs', 'colour', 'runs', 7, null, 'questions'] },
+      profile: { hiddenBadges: ['pricing'] }
+    });
+    expect(style.bar.hiddenBadges).toEqual(['models', 'pricing']);
+    expect(style.scatter.hiddenBadges).toEqual(['runs', 'questions']);
+    expect(style.profile.hiddenBadges).toEqual(['pricing']);
+
+    for (const value of ['runs', 3, {}, null, true]) {
+      const repaired = normalizeFigureStyle({ bar: { hiddenBadges: value }, scatter: { hiddenBadges: value }, profile: { hiddenBadges: value } });
+      expect(repaired.bar.hiddenBadges).withContext(JSON.stringify(value)).toEqual([]);
+      expect(repaired.scatter.hiddenBadges).withContext(JSON.stringify(value)).toEqual([]);
+      expect(repaired.profile.hiddenBadges).withContext(JSON.stringify(value)).toEqual([]);
+    }
+  });
+
+  it('falls back to the default profile when it is missing or malformed', () => {
+    for (const value of [undefined, null, 'profile', [], 42]) {
+      expect(normalizeFigureStyle({ profile: value }).profile).withContext(String(value)).toEqual(DEFAULT_FIGURE_STYLE.profile);
+    }
+    expect(normalizeFigureStyle({ profile: { hiddenBadges: ['runs'], extra: 1 } }).profile).toEqual({ hiddenBadges: ['runs'] });
+  });
+
+  it('reads a version-1 style stored before the badge and marker fields existed with them at their defaults', () => {
+    const style = normalizeFigureStyle({ version: 1, bar: { gapPercent: 10 } });
+    expect(style.bar).toEqual({ ...DEFAULT_FIGURE_STYLE.bar, gapPercent: 10 });
+    expect(style.bar.singleRunMarker).toBeTrue();
+    expect(style.bar.hiddenBadges).toEqual([]);
+    expect(style.scatter.hiddenBadges).toEqual([]);
+    expect(style.profile).toEqual(DEFAULT_FIGURE_STYLE.profile);
   });
 });
