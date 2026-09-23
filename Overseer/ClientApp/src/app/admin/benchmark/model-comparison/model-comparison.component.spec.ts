@@ -237,6 +237,18 @@ describe('ModelComparisonComponent', () => {
       .join(' ');
   }
 
+  /** The footer's Compare / Next / Close button. */
+  function nextButton(): HTMLButtonElement {
+    return fixture.debugElement.query(By.css('.mc-wizard-next')).nativeElement as HTMLButtonElement;
+  }
+
+  /** The footer's Cancel Comparison button, or null while none is rendered. */
+  function cancelCompareButton(): HTMLButtonElement | null {
+    return fixture.debugElement.queryAll(By.css('.mc-wizard-nav-actions .btn-gh-cancel'))
+      .map(button => button.nativeElement as HTMLButtonElement)
+      .find(button => (button.textContent ?? '').includes('Cancel Comparison')) ?? null;
+  }
+
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [ModelComparisonComponent],
@@ -1247,8 +1259,7 @@ describe('ModelComparisonComponent', () => {
     expect(component.comparing).toBeTrue();
     expect(component.nextLabel).toBe('Comparing…');
 
-    const next = fixture.debugElement.queryAll(By.css('.mc-wizard-nav .btn-gh'))[1]
-      .nativeElement as HTMLButtonElement;
+    const next = nextButton();
     expect(next.textContent).toContain('Comparing…');
     expect(next.querySelector('.gh-spinner-small')).toBeTruthy();
     expect(next.getAttribute('aria-busy')).toBe('true');
@@ -1256,12 +1267,16 @@ describe('ModelComparisonComponent', () => {
     expect(next.getAttribute('aria-disabled')).toBe('true');
     expect(next.hasAttribute('disabled')).toBeFalse();
 
-    // The status row above the tabs carries the same fact, with its own spinner.
-    const status = fixture.debugElement.query(By.css('.mc-wizard-loading'))
-      .nativeElement as HTMLElement;
-    expect(status.getAttribute('role')).toBe('status');
-    expect(status.querySelector('.gh-spinner-small')).toBeTruthy();
-    expect(status.textContent).toContain('pricing every entry server-side');
+    // The busy state is in the footer, where the click was; nothing is inserted above the tabs.
+    expect(fixture.debugElement.query(By.css('.mc-wizard-loading'))).toBeNull();
+    expect(textOf('#mc-next-blocked')).toContain('pricing every entry server-side');
+    const root = fixture.nativeElement as HTMLElement;
+    const header = root.querySelector('.mc-wizard-header')!;
+    const tabs = root.querySelector('.mc-wizard-steps')!;
+    const statusAboveTabs = Array.from(root.querySelectorAll('[role="status"]')).filter(status =>
+      (header.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0 &&
+      (tabs.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_PRECEDING) !== 0);
+    expect(statusAboveTabs).toEqual([]);
 
     // The step-1 panel says its result is pending; the picker's own controls stay live.
     const panel = fixture.debugElement.query(By.css('#mc-step-panel-1')).nativeElement as HTMLElement;
@@ -1282,6 +1297,142 @@ describe('ModelComparisonComponent', () => {
     // A pricing-basis refetch loads too, and Next on step 2 is not blocked by it.
     expect(component.comparing).toBeFalse();
     expect(component.nextLabel).toBe('Next');
+  });
+
+  describe('while a comparison is loading', () => {
+    afterEach(() => {
+      jasmine.clock().uninstall();
+    });
+
+    /** Step 1 with a valid selection, Compare pressed and the request in flight. */
+    function comparingOnStep1(): void {
+      render(null, 1);
+      fixture.componentRef.setInput('selectedRunCount', 2);
+      fixture.componentRef.setInput('loading', true);
+      fixture.detectChanges();
+    }
+
+    it('offers Cancel Comparison only while step 1 is comparing, and emits cancelCompare once', () => {
+      render(null, 1);
+      fixture.componentRef.setInput('selectedRunCount', 2);
+      fixture.detectChanges();
+      expect(cancelCompareButton()).toBeNull();
+
+      fixture.componentRef.setInput('loading', true);
+      fixture.detectChanges();
+      const cancel = cancelCompareButton();
+      expect(cancel).toBeTruthy();
+      // A dismissal: the cancel variant, and no icon.
+      expect(cancel!.querySelector('svg')).toBeNull();
+
+      const cancelled: number[] = [];
+      component.cancelCompare.subscribe(() => cancelled.push(1));
+      cancel!.click();
+      expect(cancelled.length).toBe(1);
+    });
+
+    it('offers no Cancel Comparison on a step-2 refetch', () => {
+      render(buildDto(comparableSet(3)), 2);
+      fixture.componentRef.setInput('loading', true);
+      fixture.detectChanges();
+
+      expect(cancelCompareButton()).toBeNull();
+    });
+
+    it('moves focus to Next when Cancel Comparison is pressed and removed', () => {
+      comparingOnStep1();
+      // As the host does: it drops loading and checks the view before the emit returns.
+      component.cancelCompare.subscribe(() => {
+        fixture.componentRef.setInput('loading', false);
+        fixture.detectChanges();
+      });
+
+      const cancel = cancelCompareButton()!;
+      cancel.focus();
+      cancel.click();
+      fixture.detectChanges();
+
+      expect(cancelCompareButton()).toBeNull();
+      expect(document.activeElement).toBe(nextButton());
+    });
+
+    it('moves focus to Next when the result lands while Cancel Comparison has focus', () => {
+      comparingOnStep1();
+      cancelCompareButton()!.focus();
+      expect(document.activeElement).toBe(cancelCompareButton());
+
+      fixture.componentRef.setInput('loading', false);
+      fixture.detectChanges();
+
+      expect(cancelCompareButton()).toBeNull();
+      expect(document.activeElement).toBe(nextButton());
+    });
+
+    it('says after 15 seconds that the comparison is slow, and how to leave it', () => {
+      jasmine.clock().install();
+      comparingOnStep1();
+
+      jasmine.clock().tick(14_999);
+      fixture.detectChanges();
+      expect(component.slowLoading).toBeFalse();
+      expect(textOf('#mc-next-blocked')).not.toContain('longer than usual');
+
+      jasmine.clock().tick(1);
+      fixture.detectChanges();
+      expect(component.slowLoading).toBeTrue();
+      expect(textOf('#mc-next-blocked')).toContain('longer than usual');
+      expect(textOf('#mc-next-blocked')).toContain('close the wizard');
+
+      fixture.componentRef.setInput('loading', false);
+      fixture.detectChanges();
+      expect(component.slowLoading).toBeFalse();
+    });
+
+    it('shows a spinner-bearing refetch line on step 2, where Next carries no spinner', () => {
+      render(buildDto(comparableSet(3)), 2);
+      fixture.componentRef.setInput('loading', true);
+      fixture.detectChanges();
+
+      const busy = fixture.debugElement.query(By.css('.mc-wizard-position .mc-wizard-busy'))
+        .nativeElement as HTMLElement;
+      expect(busy.querySelector('.gh-spinner-small')).toBeTruthy();
+      expect(busy.textContent).toContain('Recomputing the comparison');
+      expect(nextButton().querySelector('.gh-spinner-small')).toBeNull();
+
+      fixture.componentRef.setInput('loading', false);
+      fixture.detectChanges();
+      expect(fixture.debugElement.query(By.css('.mc-wizard-busy'))).toBeNull();
+    });
+
+    it('keeps the header close button enabled and emitting while step 1 is comparing', () => {
+      comparingOnStep1();
+
+      const close = fixture.debugElement.query(By.css('[aria-label="Close cross-model comparison"]'))
+        .nativeElement as HTMLButtonElement;
+      expect(close.disabled).toBeFalse();
+
+      const closed: number[] = [];
+      component.closeRequested.subscribe(() => closed.push(1));
+      close.click();
+      expect(closed.length).toBe(1);
+    });
+
+    it('puts no blocking layer over the wizard, on step 1 or on a step-2 refetch', () => {
+      const expectNoBlockingLayer = (where: string): void => {
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelectorAll('[inert]').length).withContext(`${where}: inert`).toBe(0);
+        expect(root.querySelectorAll('[class*="overlay"], [class*="scrim"], [class*="backdrop"]').length)
+          .withContext(`${where}: overlay`).toBe(0);
+      };
+
+      comparingOnStep1();
+      expectNoBlockingLayer('step 1');
+
+      render(buildDto(comparableSet(3)), 2);
+      fixture.componentRef.setInput('loading', true);
+      fixture.detectChanges();
+      expectNoBlockingLayer('step 2');
+    });
   });
 
   it('emits compare from the footer rather than advancing, while no comparison exists', () => {
@@ -1331,8 +1482,7 @@ describe('ModelComparisonComponent', () => {
     expect(component.canGoNext).toBeFalse();
     expect(component.isStepReachable(4)).toBeFalse();
 
-    const next = fixture.debugElement.queryAll(By.css('.mc-wizard-nav .btn-gh'))[1]
-      .nativeElement as HTMLElement;
+    const next = nextButton();
     // aria-disabled, not disabled: a disabled button cannot be focused, and the reader would be
     // left guessing why Next does nothing.
     expect(next.getAttribute('aria-disabled')).toBe('true');
@@ -1447,8 +1597,7 @@ describe('ModelComparisonComponent', () => {
 
     const close = fixture.debugElement.query(By.css('.mc-wizard-header .btn-icon-action'))
       .nativeElement as HTMLButtonElement;
-    const next = fixture.debugElement.queryAll(By.css('.mc-wizard-nav .btn-gh'))[1]
-      .nativeElement as HTMLButtonElement;
+    const next = nextButton();
     expect(close.disabled).toBeTrue();
     expect(next.disabled).toBeTrue();
 

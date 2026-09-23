@@ -31,18 +31,12 @@
     </button>
   </div>
 
-  <!-- The fetch state sits above the step tabs, so a failed comparison is visible from any step
+  <!-- The fetch error sits above the step tabs, so a failed comparison is visible from any step
        rather than only from the one that happened to be open when it failed. -->
   @if (error) {
     <div class="alert alert-warning mc-wizard-alert" role="alert">
       <div class="alert-content"><div class="alert-body">{{ error }}</div></div>
     </div>
-  }
-  @if (loading) {
-    <p class="text-muted mc-wizard-loading" role="status">
-      <span class="gh-spinner-small" aria-hidden="true"></span>
-      Computing the comparison — pricing every entry server-side.
-    </p>
   }
 
   <div class="gh-tabs gh-tabs-secondary mc-wizard-steps" role="tablist"
@@ -1421,6 +1415,9 @@
       @if (nextBlockedReason) {
         <span class="mc-wizard-blocked" id="mc-next-blocked">{{ nextBlockedReason }}</span>
       }
+      @if (refetchStatus) {
+        <span class="mc-wizard-busy"><span class="gh-spinner-small" aria-hidden="true"></span>{{ refetchStatus }}</span>
+      }
     </p>
 
     <!-- aria-disabled rather than disabled, so the reason stays reachable: a disabled button
@@ -1429,17 +1426,23 @@
          ones that can start one, and leaving either mid-write is what the guard is for.
          While the comparison is being computed it carries the spinner and aria-busy, and stays
          aria-disabled for the same reason it is at every other blocked moment. -->
-    <button type="button" class="btn-gh"
-            [attr.aria-disabled]="!canGoNext"
-            [attr.aria-busy]="comparing ? 'true' : null"
-            [disabled]="exporting"
-            aria-describedby="mc-next-blocked"
-            (click)="nextStep()">
+    <div class="mc-wizard-nav-actions">
       @if (comparing) {
-        <span class="gh-spinner-small" aria-hidden="true"></span>
+        <button #cancelCompareButton type="button" class="btn-gh btn-gh-cancel"
+                (click)="onCancelCompare()">Cancel Comparison</button>
       }
-      {{ nextLabel }}
-    </button>
+      <button #nextButton type="button" class="btn-gh mc-wizard-next"
+              [attr.aria-disabled]="!canGoNext"
+              [attr.aria-busy]="comparing ? 'true' : null"
+              [disabled]="exporting"
+              aria-describedby="mc-next-blocked"
+              (click)="nextStep()">
+        @if (comparing) {
+          <span class="gh-spinner-small" aria-hidden="true"></span>
+        }
+        {{ nextLabel }}
+      </button>
+    </div>
   </div>
 
   <!-- The export outcome, as a toast. Two instances, one per modal, because everything outside

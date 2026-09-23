@@ -1166,18 +1166,9 @@
 
 /* The fetch state, between the header and the step tabs: a failed comparison has to be
    visible from whichever step happened to be open when it failed. */
-.mc-wizard-alert,
-.mc-wizard-loading {
+.mc-wizard-alert {
   flex-shrink: 0;
   margin: 12px 24px 0;
-}
-
-/* A status row rather than a line of muted prose: the spinner says work is under way and the
-   sentence says what the work is. */
-.mc-wizard-loading {
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 /* Pinned under the header. `.gh-tabs` sets `position: relative` for its own scroll-state
@@ -1358,6 +1349,25 @@
   display: block;
   margin-top: 2px;
   color: var(--primary-color);
+}
+
+/* The busy state of a refetch from steps 2–4, where Next is not blocked and carries no spinner.
+   On a line of its own under the step position, centred like it. */
+.mc-wizard-busy {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+/* Cancel Comparison and Next, kept together at the footer's end. */
+.mc-wizard-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 /* On the table and figure steps the notices are a reminder beside the export controls, not the

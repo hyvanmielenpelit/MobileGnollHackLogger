@@ -76,7 +76,7 @@ import {
   selectionNotices
 } from './model-comparison/model-comparison.models';
 import { ProviderBadgeComponent } from '../../shared/provider-badge/provider-badge.component';
-import { Observable, catchError, firstValueFrom, forkJoin, from, map, of, switchMap } from 'rxjs';
+import { Observable, Subscription, catchError, firstValueFrom, forkJoin, from, map, of, switchMap } from 'rxjs';
 import { QuestionYamlImportDialogComponent } from './question-yaml/question-yaml-import-dialog.component';
 import { QuestionYamlHelpDialogComponent } from './question-yaml/question-yaml-help-dialog.component';
 import { SnapshotSuiteWizardComponent } from './question-yaml/snapshot-suite-wizard.component';
@@ -730,6 +730,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    */
   private comparisonToken = 0;
 
+  /** The comparison request in flight. Unsubscribing aborts it, and the server work with it. */
+  private comparisonSubscription: Subscription | null = null;
+
   /**
    * The comparability index for the sources on offer: which of them agree on every must-match key
    * and may therefore be charted together. Read-only, and only ever a disclosure aid — the
@@ -1108,6 +1111,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   onComparisonSelectionChange(selection: ModelComparisonSelection): void {
+    // A response still in flight was asked for the previous selection.
+    this.cancelComparison();
     this.comparisonRunIds = [...selection.runIds];
     this.comparisonGroupIds = [...selection.groupIds];
     this.persistComparisonSelection();
@@ -1197,7 +1202,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.comparisonError = null;
     this.cdr.detectChanges();
 
-    this.benchmarkService.compareModels({
+    this.comparisonSubscription?.unsubscribe();
+    this.comparisonSubscription = this.benchmarkService.compareModels({
       runIds: [...this.comparisonRunIds],
       groupIds: [...this.comparisonGroupIds],
       pricingBasis: this.comparisonPricingBasis
@@ -1216,6 +1222,21 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         this.cdr.detectChanges();
       }
     });
+  }
+
+  /**
+   * Abandons the comparison in flight: the request is aborted, and the selection and the payload
+   * on hand are left as they are.
+   */
+  cancelComparison(): void {
+    if (!this.comparisonLoading) {
+      return;
+    }
+    ++this.comparisonToken;
+    this.comparisonSubscription?.unsubscribe();
+    this.comparisonSubscription = null;
+    this.comparisonLoading = false;
+    this.cdr.detectChanges();
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -1413,6 +1434,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.stopDifficultyPolling();
     this.terminatingDifficultyJob = false;
     this.stopSeriesPolling();
+    this.comparisonSubscription?.unsubscribe();
     if (this.copiedDiagnosticsTimer) { clearTimeout(this.copiedDiagnosticsTimer); }
     if (this.copiedRunDiagnosticsTimer) { clearTimeout(this.copiedRunDiagnosticsTimer); }
     clearTimeout(this.questionsCopyStatusTimer);

@@ -7804,6 +7804,108 @@ describe('AdminBenchmarkComponent', () => {
       expect((component.comparison as any).explanation).toBe('newer');
     });
 
+    // --- Cancelling, and never trapping the operator in the wizard while loading ---
+
+    it('cancels the comparison in flight, releasing the request and ignoring its late result', () => {
+      const request = new Subject<any>();
+      benchmarkServiceMock.compareModels.and.returnValue(request as any);
+      component.onComparisonSelectionChange({ runIds: [1, 2], groupIds: [] });
+
+      component.runComparison();
+      expect(component.comparisonLoading).toBeTrue();
+      expect(request.observed).toBeTrue();
+
+      component.cancelComparison();
+
+      expect(component.comparisonLoading).toBeFalse();
+      // Unsubscribed, so the HTTP request is aborted and the server stops pricing.
+      expect(request.observed).toBeFalse();
+      request.next({ entries: [], explanation: 'late' });
+      expect(component.comparison).toBeNull();
+    });
+
+    it('releases a superseded request when Compare runs again', () => {
+      const first = new Subject<any>();
+      const second = new Subject<any>();
+      benchmarkServiceMock.compareModels.and.returnValues(first as any, second as any);
+      component.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
+
+      component.runComparison();
+      component.runComparison();
+
+      expect(first.observed).toBeFalse();
+      expect(second.observed).toBeTrue();
+    });
+
+    it('drops the request in flight when the selection changes under it', () => {
+      const request = new Subject<any>();
+      benchmarkServiceMock.compareModels.and.returnValue(request as any);
+      component.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
+      component.runComparison();
+
+      component.onComparisonSelectionChange({ runIds: [1, 2], groupIds: [] });
+      request.next({ entries: [], explanation: 'for the previous selection' });
+
+      // The older response would otherwise chart the previous selection and advance the wizard.
+      expect(component.comparison).toBeNull();
+      expect(component.comparisonLoading).toBeFalse();
+      expect(request.observed).toBeFalse();
+    });
+
+    it('treats a cancel with nothing in flight as a no-op', () => {
+      const detectChanges = spyOn((component as any).cdr, 'detectChanges').and.callThrough();
+
+      component.cancelComparison();
+
+      expect(component.comparisonLoading).toBeFalse();
+      expect(detectChanges).not.toHaveBeenCalled();
+    });
+
+    it('never refuses Escape because a comparison is loading', () => {
+      component.comparisonLoading = true;
+      component.comparisonWizard = { exporting: false } as any;
+      const event = { preventDefault: jasmine.createSpy('preventDefault') } as unknown as Event;
+
+      component.onComparisonWizardCancel(event);
+
+      expect(event.preventDefault).not.toHaveBeenCalled();
+    });
+
+    it('never switches close requests off on the wizard dialog', () => {
+      component.openComparisonWizard();
+      fixture.detectChanges();
+
+      const dialog = fixture.nativeElement
+        .querySelector('dialog.benchmark-model-comparison-dialog') as HTMLDialogElement;
+      expect(dialog).toBeTruthy();
+      expect(dialog.getAttribute('closedby')).not.toBe('none');
+    });
+
+    it('keeps the projected picker live and the wizard uncovered while a comparison loads', () => {
+      const request = new Subject<any>();
+      benchmarkServiceMock.compareModels.and.returnValue(request as any);
+      component.onComparisonSelectionChange({ runIds: [1, 2], groupIds: [] });
+      component.openComparisonWizard();
+      fixture.detectChanges();
+
+      component.runComparison();
+      fixture.detectChanges();
+      expect(component.comparisonLoading).toBeTrue();
+
+      const dialog = fixture.nativeElement
+        .querySelector('dialog.benchmark-model-comparison-dialog') as HTMLDialogElement;
+      const checkboxes = Array.from(
+        dialog.querySelectorAll('#mc-step-panel-1 input[type="checkbox"]')) as HTMLInputElement[];
+      expect(checkboxes.length).toBeGreaterThan(0);
+      expect(checkboxes.some(checkbox => !checkbox.disabled)).toBeTrue();
+      expect(dialog.querySelectorAll('[inert]').length).toBe(0);
+
+      const close = dialog.querySelector('[aria-label="Close cross-model comparison"]') as HTMLButtonElement;
+      expect(close.disabled).toBeFalse();
+
+      component.closeComparisonWizard();
+    });
+
     // --- Suite scope ---
 
     it('scopes both offered lists to the suite scope', () => {

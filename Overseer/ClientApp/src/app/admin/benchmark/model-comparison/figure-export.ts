@@ -290,6 +290,9 @@ const BODY_SIZE = 12;
 const LINE_GAP = 6;
 const RULE_GAP = 12;
 
+/** The space between the header block (title, badges, detail) and the plot. */
+const PLOT_GAP = 16;
+
 /** The narrowest content column a figure is laid out in. */
 const MIN_CONTENT_WIDTH = 360;
 
@@ -345,11 +348,11 @@ export const FIGURE_RULE_COLOR = '#2a2a2a';
 const FIGURE_KEY_INK = '#c3c2b7';
 const FIGURE_DOMINATED_FILL = 'rgba(255, 255, 255, 0.12)';
 
-/** Badge pill colors by tone: border, then text. */
-const BADGE_TONE_COLORS: Record<FigureBadgeTone, { readonly border: string; readonly text: string }> = {
-  neutral: { border: '#3a3a38', text: FIGURE_BODY_COLOR },
-  pricing: { border: 'rgba(16, 185, 129, 0.4)', text: '#6ee7b7' },
-  direction: { border: 'rgba(224, 186, 109, 0.5)', text: FIGURE_TITLE_COLOR }
+/** Badge pill colors by tone: border, fill, then text. Match the step-4 card badges (`.mc-badge` and its tone modifiers). */
+const BADGE_TONE_COLORS: Record<FigureBadgeTone, { readonly border: string; readonly fill: string; readonly text: string }> = {
+  neutral: { border: 'rgba(255, 255, 255, 0.25)', fill: 'rgba(255, 255, 255, 0.04)', text: FIGURE_TITLE_COLOR },
+  pricing: { border: 'rgba(16, 185, 129, 0.3)', fill: 'rgba(16, 185, 129, 0.1)', text: '#6ee7b7' },
+  direction: { border: 'rgba(224, 186, 109, 0.45)', fill: 'rgba(224, 186, 109, 0.08)', text: FIGURE_TITLE_COLOR }
 };
 
 /** Note colors by tone: left rule, then text. */
@@ -548,6 +551,7 @@ export function composeFigureImage(request: FigureExportRequest): HTMLCanvasElem
     y = drawBlock(context, chrome.detailLines, PADDING, y, DETAIL_SIZE, '400', FIGURE_MUTED_COLOR);
   }
 
+  y += PLOT_GAP;
   if (chartWidth > 0 && chartHeight > 0 && plotWidth > 0 && plotHeight > 0) {
     context.drawImage(request.canvas, PADDING, y, plotWidth, plotHeight);
   }
@@ -882,6 +886,7 @@ export function measureFigureChrome(source: FigureChromeSource, contentWidth: nu
   if (detailLines.length > 0) {
     height += LINE_GAP + blockHeight(detailLines, DETAIL_SIZE);
   }
+  height += PLOT_GAP;
   if (keyRows.length > 0) {
     height += LINE_GAP + keyRows.length * KEY_ROW_HEIGHT + (keyRows.length - 1) * LINE_GAP;
   }
@@ -1159,6 +1164,8 @@ function drawBadge(
 ): void {
   const tone = BADGE_TONE_COLORS[badge.tone];
   pathRoundedRect(context, x, y, width, height, BADGE_RADIUS);
+  context.fillStyle = tone.fill;
+  context.fill();
   context.strokeStyle = tone.border;
   context.lineWidth = BADGE_BORDER_WIDTH;
   context.stroke();

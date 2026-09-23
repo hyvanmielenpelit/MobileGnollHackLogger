@@ -169,7 +169,127 @@ describe('figure-export', () => {
     expect(composited).not.toContain('condition');
   });
 
+  /** A header of title and badges only, with nothing drawn below the plot. */
+  function headerOnlyChrome(): Partial<FigureChrome> {
+    return { detail: '', key: [], highlight: '', notes: [] };
+  }
+
+  const emptyFooter: Partial<FigureFooter> = { suite: '', computedAt: '' };
+
+  /** The `dy` the plot was drawn at, read from the `drawImage` call that paints `plot`. */
+  function plotTopOf(plot: HTMLCanvasElement, compose: () => void): number {
+    const real = CanvasRenderingContext2D.prototype.drawImage;
+    const tops: number[] = [];
+    spyOn(CanvasRenderingContext2D.prototype, 'drawImage').and.callFake(function (
+      this: CanvasRenderingContext2D,
+      ...args: any[]
+    ) {
+      if (args[0] === plot) {
+        tops.push(args[2]);
+      }
+      return (real as any).apply(this, args);
+    } as any);
+    compose();
+    expect(tops.length).toBe(1);
+    return tops[0];
+  }
+
+  it('leaves at least 16 px between the badge row and the plot', () => {
+    const canvas = sourceCanvas();
+    const figure = request({ canvas, chrome: figureChrome(headerOnlyChrome()), footer: figureFooter(emptyFooter) });
+    const measured = measureFigureChrome(figure, 400);
+
+    // Padding, the title block, the gap above the badges and the badge rows, as the export lays them out.
+    const titleHeight = measured.titleLines.length * Math.round(18 * 1.4);
+    const badgeRowsHeight = measured.badgeRows.length * 17 + (measured.badgeRows.length - 1) * 6;
+    const badgeBottom = 20 + titleHeight + 6 + badgeRowsHeight;
+
+    const plotTop = plotTopOf(canvas, () => composeFigureImage(figure));
+
+    expect(measured.badgeRows.length).toBeGreaterThan(0);
+    expect(plotTop).toBeGreaterThanOrEqual(badgeBottom + 16);
+  });
+
+  it('draws each badge in its tone\'s card colors, filling before stroking', () => {
+    const scratch = document.createElement('canvas').getContext('2d')!;
+    const normalized = (color: string): string => {
+      scratch.fillStyle = '#000000';
+      scratch.fillStyle = color;
+      return String(scratch.fillStyle);
+    };
+
+    const events: { op: 'fill' | 'stroke' | 'fillText'; style: string; text?: string }[] = [];
+    const realFill = CanvasRenderingContext2D.prototype.fill;
+    const realStroke = CanvasRenderingContext2D.prototype.stroke;
+    const realFillText = CanvasRenderingContext2D.prototype.fillText;
+    spyOn(CanvasRenderingContext2D.prototype, 'fill').and.callFake(function (
+      this: CanvasRenderingContext2D,
+      ...args: any[]
+    ) {
+      events.push({ op: 'fill', style: String(this.fillStyle) });
+      return (realFill as any).apply(this, args);
+    } as any);
+    spyOn(CanvasRenderingContext2D.prototype, 'stroke').and.callFake(function (
+      this: CanvasRenderingContext2D,
+      ...args: any[]
+    ) {
+      events.push({ op: 'stroke', style: String(this.strokeStyle) });
+      return (realStroke as any).apply(this, args);
+    } as any);
+    spyOn(CanvasRenderingContext2D.prototype, 'fillText').and.callFake(function (
+      this: CanvasRenderingContext2D,
+      ...args: any[]
+    ) {
+      events.push({ op: 'fillText', style: String(this.fillStyle), text: args[0] });
+      return (realFillText as any).apply(this, args);
+    } as any);
+
+    composeFigureImage(request({
+      chrome: figureChrome({
+        ...headerOnlyChrome(),
+        badges: [
+          { text: '2 models', tone: 'neutral' },
+          { text: 'Current catalog prices', tone: 'pricing' },
+          { text: 'Higher is better', tone: 'direction' }
+        ]
+      }),
+      footer: figureFooter(emptyFooter)
+    }));
+
+    const expected = [
+      { text: '2 models', border: 'rgba(255, 255, 255, 0.25)', fill: 'rgba(255, 255, 255, 0.04)', ink: '#e0ba6d' },
+      { text: 'Current catalog prices', border: 'rgba(16, 185, 129, 0.3)', fill: 'rgba(16, 185, 129, 0.1)', ink: '#6ee7b7' },
+      { text: 'Higher is better', border: 'rgba(224, 186, 109, 0.45)', fill: 'rgba(224, 186, 109, 0.08)', ink: '#e0ba6d' }
+    ];
+    for (const badge of expected) {
+      const textIndex = events.findIndex(event => event.op === 'fillText' && event.text === badge.text);
+      expect(textIndex).withContext(badge.text).toBeGreaterThan(1);
+      const [fill, stroke, text] = events.slice(textIndex - 2, textIndex + 1);
+
+      expect(fill.op).withContext(`${badge.text}: filled before stroked`).toBe('fill');
+      expect(stroke.op).withContext(`${badge.text}: stroked before its text`).toBe('stroke');
+      expect(fill.style).withContext(`${badge.text} fill`).toBe(normalized(badge.fill));
+      expect(stroke.style).withContext(`${badge.text} border`).toBe(normalized(badge.border));
+      expect(text.style).withContext(`${badge.text} text`).toBe(normalized(badge.ink));
+    }
+    // The neutral pill reads gold, as on the card, not the body grey.
+    expect(normalized(expected[0].ink)).not.toBe(normalized('#d4d4d8'));
+  });
+
   describe('measureFigureChrome', () => {
+    it('measures exactly the height the composition draws around the plot', () => {
+      const canvas = sourceCanvas();
+      const figure = request({ canvas, chrome: figureChrome(headerOnlyChrome()), footer: figureFooter(emptyFooter) });
+      const measured = measureFigureChrome(figure, 400);
+
+      let composed!: HTMLCanvasElement;
+      const plotTop = plotTopOf(canvas, () => { composed = composeFigureImage({ ...figure, density: 1 }); });
+
+      expect(composed.height).toBe(measured.height + onScreen.height);
+      // Nothing is drawn below this plot, so only the bottom padding follows it.
+      expect(plotTop + onScreen.height + 20).toBe(composed.height);
+    });
+
     it('wraps five badges at a 360 px content width onto more than one row', () => {
       const badges: FigureBadge[] = [
         { text: 'Current catalog prices', tone: 'pricing' },

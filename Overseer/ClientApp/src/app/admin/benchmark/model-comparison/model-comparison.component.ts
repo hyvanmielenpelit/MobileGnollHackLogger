@@ -124,6 +124,9 @@ import {
  */
 export type ComparisonWizardStep = 1 | 2 | 3 | 4;
 
+/** How long a comparison may run before the footer offers the ways out. */
+const SLOW_COMPARISON_MS = 15_000;
+
 /** One figure's chrome, as the export composer and the layout resolver both take it. */
 type FigureExportChrome = Omit<FigureExportRequest, 'canvas' | 'format' | 'layout'>;
 
@@ -267,11 +270,27 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    */
   @Output() compare = new EventEmitter<void>();
 
+  /** Abandons the comparison in flight. Emitted only on step 1 while `comparing`. */
+  @Output() cancelCompare = new EventEmitter<void>();
+
   /** The last step's Close, and the header's close control. The host owns the dialog element. */
   @Output() closeRequested = new EventEmitter<void>();
 
   /** Focused by the host after showModal(), which would otherwise focus the close button. */
   @ViewChild('wizardHeading') wizardHeading?: ElementRef<HTMLElement>;
+
+  /** The footer's Compare / Next / Close button, which takes focus when Cancel Comparison goes away. */
+  @ViewChild('nextButton') nextButton?: ElementRef<HTMLButtonElement>;
+
+  @ViewChild('cancelCompareButton') cancelCompareButton?: ElementRef<HTMLButtonElement>;
+
+  /** The request has run past `SLOW_COMPARISON_MS`, and the footer says how to leave it. */
+  slowLoading = false;
+
+  private slowLoadingTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Set when the result lands while Cancel Comparison has focus; consumed after the next render. */
+  private restoreFocusToNext = false;
 
   /** The container query root, measured to decide P1's bar orientation. */
   @ViewChild('chartsHost') chartsHost?: ElementRef<HTMLElement>;
@@ -387,6 +406,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   ngOnChanges(changes: SimpleChanges): void {
+    const loadingChange = changes['loading'];
+    if (loadingChange) {
+      this.onLoadingChange(!!loadingChange.previousValue, this.loading);
+    }
+
     const change = changes['comparison'];
     if (!change) {
       return;
@@ -424,9 +448,14 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (this.resizeObserver === null && this.chartsHost) {
       this.observeContainerWidth();
     }
+    if (this.restoreFocusToNext) {
+      this.restoreFocusToNext = false;
+      this.nextButton?.nativeElement.focus();
+    }
   }
 
   ngOnDestroy(): void {
+    this.clearSlowLoadingTimer();
     this.unsubscribeReducedMotion?.();
     this.reducedMotion.dispose();
     this.resizeObserver?.disconnect();
@@ -519,7 +548,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     }
     if (this.step === 1) {
       if (this.loading) {
-        return 'A comparison is being computed.';
+        const computing = 'Computing the comparison — pricing every entry server-side.';
+        return this.slowLoading
+          ? computing + ' This is taking longer than usual: cancel it, or close the wizard — the ' +
+            'comparison keeps computing and is here when you reopen it.'
+          : computing;
       }
       if (this.selectedSourceCount === 0) {
         return 'Select at least one run or analysis group.';
@@ -533,6 +566,55 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return this.shape === 'single'
       ? 'Only one entry is plotted; a comparison needs two.'
       : 'Nothing in this set may be charted together.';
+  }
+
+  /**
+   * The busy line of a refetch from steps 2–4, where Next is not blocked and carries no spinner.
+   * Empty on step 1, whose busy state is the footer button and `nextBlockedReason`.
+   */
+  get refetchStatus(): string {
+    if (!this.loading || this.comparing) {
+      return '';
+    }
+    const recomputing = 'Recomputing the comparison — pricing every entry server-side.';
+    return this.slowLoading
+      ? recomputing + ' This is taking longer than usual; you can close the wizard and come back.'
+      : recomputing;
+  }
+
+  /**
+   * Cancel Comparison. The host drops `loading` synchronously, which removes this button while it
+   * holds focus, so focus moves to Next rather than falling to the body of the modal.
+   */
+  onCancelCompare(): void {
+    this.cancelCompare.emit();
+    this.nextButton?.nativeElement.focus();
+  }
+
+  private onLoadingChange(wasLoading: boolean, isLoading: boolean): void {
+    if (isLoading && !wasLoading) {
+      this.clearSlowLoadingTimer();
+      this.slowLoading = false;
+      this.slowLoadingTimer = setTimeout(() => {
+        this.slowLoadingTimer = null;
+        this.slowLoading = true;
+        this.cdr.markForCheck();
+      }, SLOW_COMPARISON_MS);
+    } else if (!isLoading && wasLoading) {
+      this.clearSlowLoadingTimer();
+      this.slowLoading = false;
+      const cancel = this.cancelCompareButton?.nativeElement;
+      if (cancel && document.activeElement === cancel) {
+        this.restoreFocusToNext = true;
+      }
+    }
+  }
+
+  private clearSlowLoadingTimer(): void {
+    if (this.slowLoadingTimer !== null) {
+      clearTimeout(this.slowLoadingTimer);
+      this.slowLoadingTimer = null;
+    }
   }
 
   /**
