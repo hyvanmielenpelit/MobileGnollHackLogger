@@ -93,6 +93,32 @@ $@"Spell{i} is a spell available to certain classes in GnollHack.
 Spell{i} requires no material components to cast.
 ");
         }
+
+        // Grail of healing and Holy symbol sit under Items/, matching item_lookup's "item"
+        // category; The Holy Grail sits under Artifacts/, matching its "artifact" category
+        // instead, so together they exercise the tool's [item, artifact] category union.
+        var itemsDir = Path.Combine(_tempDir, "Items");
+        var artifactsDir = Path.Combine(_tempDir, "Artifacts");
+        Directory.CreateDirectory(itemsDir);
+        Directory.CreateDirectory(artifactsDir);
+
+        File.WriteAllText(Path.Combine(itemsDir, "Grail of healing.md"),
+@"The Grail of healing is a legendary healing item sought by many adventurers.
+
+## Effects
+Drinking from the grail restores health.
+");
+
+        File.WriteAllText(Path.Combine(artifactsDir, "The Holy Grail.md"),
+@"The Holy Grail is a legendary artifact said to grant a wish to whoever finds it.
+
+## History
+The holy grail has appeared in many quests throughout history.
+");
+
+        File.WriteAllText(Path.Combine(itemsDir, "Holy symbol.md"),
+@"A holy symbol is a religious item used for prayer and turning undead.
+");
     }
 
     public void Dispose()
@@ -547,7 +573,7 @@ Spell{i} requires no material components to cast.
         Assert.True(result.Success);
         Assert.Null(result.ErrorMessage);
         Assert.Contains("'zzznonexistentitem999'", result.Content);
-        Assert.Contains("Both the 'item' path filter and an unfiltered search of the whole wiki missed", result.Content);
+        Assert.Contains("Both the 'item' and 'artifact' path filters and an unfiltered search of the whole wiki missed", result.Content);
         Assert.Contains("get_item_stats", result.Content);
         Assert.Contains("wiki_search", result.Content);
         Assert.True(result.Content!.Length < MissContentMaxChars);
@@ -587,6 +613,56 @@ Spell{i} requires no material components to cast.
         Assert.Null(result.ErrorMessage);
         Assert.NotNull(result.Content);
         Assert.DoesNotContain("Error:", result.Content);
+    }
+
+    [Fact]
+    public async Task ItemLookupTool_ArtifactExactTitle_ReturnsTheArtifactArticle()
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new ItemLookupTool(service);
+
+        var jsonParams = JsonDocument.Parse("{\"name\": \"The Holy Grail\"}").RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Null(result.ErrorMessage);
+        var firstHeader = System.Text.RegularExpressions.Regex.Match(result.Content!, @"^--- (.+?) ---", System.Text.RegularExpressions.RegexOptions.Multiline);
+        Assert.True(firstHeader.Success);
+        Assert.Equal("The Holy Grail.md", firstHeader.Groups[1].Value);
+        Assert.Contains("[Other matches:", result.Content);
+    }
+
+    [Fact]
+    public async Task ItemLookupTool_ArtifactWithoutArticle_IncludesTheArtifact()
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new ItemLookupTool(service);
+
+        var jsonParams = JsonDocument.Parse("{\"name\": \"Holy Grail\"}").RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Null(result.ErrorMessage);
+        Assert.Contains("--- The Holy Grail.md ---", result.Content);
+    }
+
+    [Fact]
+    public async Task ItemLookupTool_ItemExactTitle_StillReturnsTheItem()
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new ItemLookupTool(service);
+
+        var jsonParams = JsonDocument.Parse("{\"name\": \"Grail of healing\"}").RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Null(result.ErrorMessage);
+        var firstHeader = System.Text.RegularExpressions.Regex.Match(result.Content!, @"^--- (.+?) ---", System.Text.RegularExpressions.RegexOptions.Multiline);
+        Assert.True(firstHeader.Success);
+        Assert.Equal("Grail of healing.md", firstHeader.Groups[1].Value);
     }
 }
 

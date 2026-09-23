@@ -3565,6 +3565,93 @@ as second reader and claim verifier. All 106 tool calls of the two runs succeede
   `wiki_search` result sizes and `wiki_view` counts are not comparable across 36 and 37 on questions
   whose searches return short articles.
 
+### Harness Version 38 Updates
+
+Prompted by the analysis of runs 64 (GPT-6 Luna @ `high`) and 65 (GPT-5.6 Luna @ `high`), snapshot
+suite 8 on the format 8 board, harness 37, method 12, graded with Claude 5 Opus @ `medium` and Gemini
+3.8 Flash @ `medium` as second reader and claim verifier. All 103 tool calls of the two runs
+succeeded. The claim verifier returned Supported on three items for a true clause beside the one the
+assessor charged, and two of the four validated evidence-informed re-grades then withdrew true
+charges; two true facts docked to Accuracy 5 reached no check; and the synthesis summed the claim
+counts itself and got them wrong. `HarnessVersion` moves to **"38"**; `ScoringMethodVersion` stays
+**12**. One tool guide changes, so `ToolGuidesSha256` moves from `cc4cf83a…`;
+`CandidateSystemPromptSha256` does not. No EF Core migration.
+
+- **The claim verifier judges the charged part (H1).** An accused item whose quoted fragments are
+  shorter than its sentence prints, after its *Charge* line:
+
+  ```text
+  Charged part (the words the assessor quoted, not part of the claim): "<part>"
+  ```
+
+  with several parts joined by `"; "`. `BenchmarkService` passes each submission's existing
+  `QuotedFragments` as `claimChargedParts`; no column, flag or verdict field is added. The accused
+  preamble now says to *judge the charged part*: Supported means the charged part is true as the
+  answer states it, Refuted that it is false, and a true clause elsewhere in the sentence does not
+  make a false charged part Supported. The critical-error block adds that the assessor's evidence
+  names the part of the claim it holds false, and that a true clause elsewhere does not make the
+  verdict Supported. After 3j:
+
+  > 3k. When a claim joins several statements, a verdict about it is a verdict about the statement at
+  > issue: the charged part of an accused sentence, or the part the assessor's evidence names for a
+  > critical-error quote. Say in your basis which statement you checked.
+
+  Run 65 Q1 was Supported from `src/mon.c:4935-4953`, the general peaceful-anger code, while the charge
+  was the dwarf rule the sentence stated; run 65 Q8 was Supported from the board's *Controlled
+  teleport* line while the hero carried a wand of digging; run 64 Q11's critical quote was Supported
+  on the read-ability clause beside the charged "keep a casting ready". The first two became wrong
+  evidence-informed withdrawals.
+
+- **Accused sentences are checked at Accuracy 5 (H2).** `AccusedQuoteEligibleMaxAccuracyLevel` is 5,
+  so an answer at Accuracy 5 or below, or with a contested verdict, submits the sentences its accuracy
+  evidence quotes. Run 64 Q7 was docked for "while you're not confused" and run 65 Q10 for "can
+  identify two items", both true (`src/read.c:2762-2786`), and neither reached the verifier. The cost
+  is about four to six further checked items per run, US$0.15–0.30 at US$0.04–0.05 an item; the
+  rollback is the constant back to 4 above US$0.06 an item or a run above US$3.80.
+
+- **The synthesis gets harness-counted claim totals (H3).** Directly after the LEVEL DISTRIBUTION
+  block, when any answer has a verification count:
+
+  ```text
+  --- CLAIM VERIFICATION TOTALS (counted by the harness; copy these figures rather than adding up the per-question lines) ---
+  Unverified claims: <U> across <A> answer(s); verified: <S> supported, <R> refuted, <I> indeterminate
+  --- END CLAIM VERIFICATION TOTALS ---
+  ```
+
+  It sums the per-answer `UnverifiedClaimCount`, `ClaimsSupportedCount`, `ClaimsRefutedCount` and
+  `ClaimsIndeterminateCount` (null as 0), the same columns the report's *Assessor Findings* line sums,
+  and `<A>` counts the answers with at least one unverified claim. Instruction 6 already required every
+  count to be copied from a data block; until now no block carried these. Run 64's synthesis wrote
+  "14 checked, 13 supported" against the report's 16 and 15.
+
+- **`item_lookup` finds artifacts (T5, a tool change that live chat shares).** `WikiService` gains
+  `GetLookupContextInCategories` and `GetRelevantContextInCategories`, whose category clause is a
+  `BooleanQuery` of `SHOULD` `pathlower` wildcards, one per category; the single-category methods
+  delegate to them. `ItemLookupTool` searches `item` **and** `artifact`, so `Artifacts/The Holy
+  Grail.md` is a category hit and its exact title wins. The miss payload now says *"Both the 'item' and
+  'artifact' path filters and an unfiltered search of the whole wiki missed"*; its opening is
+  unchanged, so `BenchmarkToolResultClassifier` still reads it. `item_lookup.md` says artifacts are
+  covered, which moves `ToolGuidesSha256`. `monster_lookup` is unchanged. Three calls in run 65 asked
+  for the Grail and got *Grail of healing*, *Holy symbol* and holy water.
+
+- **A minified `get_item_stats` payload keeps what the model needs (T6, a tool change that live chat
+  shares).** When a result exceeds `TruncationThreshold`, `GetItemStatsTool.Minify` keeps `Stats`,
+  `RawDefinition` and `Error`; its `Message` opens with the unchanged *"Response truncated due to size
+  limits."* and, when the Level-2 fallback named why Level 1 failed, appends the original text from
+  *"Structured values were not available:"* onwards; and it keeps the definition of the macro the raw
+  definition invokes (the identifier before its first `(`, such as `SPELL`) when the result still fits
+  the threshold with it. Run 64 Q11 received 572 characters: a positional `SPELL(...)` call with no
+  legend and no reason.
+
+- **What does not move.** `ScoringMethodVersion` (12), `CandidateSystemPromptSha256`, the chat system
+  prompt and `_policy.md`, and every `BenchmarkAnswerFlags` member. The verifier and the synthesis feed
+  no score.
+
+- **Comparability.** `HarnessVersion` and `ToolGuidesSha256` move, and the round's rubric repair (Q6,
+  Q7, Q10) is imported, so the next suite-8 run is NotComparable with runs 64 and 65. `item_lookup`
+  results and counts are not comparable across 37 and 38 on questions about an artifact, and
+  claim-verification counts are not comparable on answers at Accuracy 5.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.

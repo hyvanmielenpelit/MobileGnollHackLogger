@@ -2,7 +2,7 @@ Search the GnollHack wiki for item information.
 
 When the name matches an article title exactly, only that article is returned, with other matching titles listed on one line; pass one of those titles to get a different article.
 
-Uses keyword search across wiki articles in the "item" category.
+Uses keyword search across wiki articles whose path contains "item" or "artifact", so an artifact such as The Holy Grail is found under its own name.
 Results are wiki articles, not structured game data — they may be
 incomplete or not available for all items. If you need exact stats
 (damage, AC, weight, properties), verify against src/objects.c using

@@ -739,6 +739,14 @@ category mechanism as `wiki_search` §5, run for the top 8 hits — and if that 
 **silently retry unfiltered** before finally returning `Success = true, Content = "No information
 found for monster/item: {name}"`. This double fallback makes both tools resilient to the wiki
 repository not actually organizing articles under a `monster`/`item` path segment.
+From harness 38 `item_lookup` calls `GetLookupContextInCategories(name, { "item", "artifact" })`,
+whose category clause matches `pathlower` `*item*` **or** `*artifact*`, so an `Artifacts/…` article
+is a category hit and its exact title wins (`{"name":"The Holy Grail"}` returns
+`Artifacts/The Holy Grail.md`). `monster_lookup` is unchanged. A run stamped 37 or earlier could not
+return an `Artifacts/…` article from `item_lookup` except through the empty-result retry, and an
+artifact query practically never came back empty (run 65: three Grail lookups returned *Grail of
+healing*, *Holy symbol* and holy water). The miss payload's opening, `No GnollHack wiki article
+matched the item '`, is unchanged; its sentence names both path filters.
 
 **The exact-title contract, from harness 26 — but unreachable until harness 27.** The category query
 it runs first could not match any directory before harness 27 (§5), so every lookup fell through to
@@ -857,6 +865,14 @@ populated ("Level 1" minification), or dropping `macro_definitions`/`struct_defi
 one an item can reach: an item's Level 1 success populates `Stats` and `RawDefinition` together,
 so a minified item response keeps both and drops `flag_descriptions`,
 `macro_definitions` and `struct_definitions`.
+From harness 38 the item minification is `GetItemStatsTool.Minify`: its `message` still opens
+*"Response truncated due to size limits."* (the classifier's `StatsMinifiedMessageOpening`), and when
+the Level-2 fallback named why Level 1 failed it appends the original text from *"Structured values
+were not available:"* onwards; it keeps the definition of the macro the raw definition invokes (the
+identifier before its first `(`, such as `SPELL`) when the result still fits `TruncationThreshold`
+with it, and drops every other macro. In a run stamped 37 or earlier a minified Level-2 item payload
+carries neither the reason nor any macro legend (run 64 Q11: 572 characters, a positional
+`SPELL(...)` call).
 
 **The Level 1 → Level 2 *parsing* fallback (distinct from the truncation minification above)
 exists for all three tools, by two different mechanisms:**

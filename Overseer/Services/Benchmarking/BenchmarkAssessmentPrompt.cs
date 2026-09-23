@@ -563,8 +563,16 @@ public static class BenchmarkAssessmentPrompt
     ///     The report prints each answer's verifier spend, the answers the verifier spent most on,
     ///     and the head of a failed verification's raw response, all from stored columns.
     ///     ScoringMethodVersion stays 12 and CandidateSystemPromptSha256 does not move.
+    /// v38: the claim verifier judges the charged part: an accused item prints the words the
+    ///     assessor quoted, the accused and critical-error preambles say a true clause beside the
+    ///     charged one is not Supported, and 3k asks the basis to name the statement checked.
+    ///     Accused sentences are checked at Accuracy 5 as well. The synthesis prompt carries
+    ///     harness-counted claim verification totals. Chat and benchmark alike, item_lookup
+    ///     searches the "item" and "artifact" paths (item_lookup.md moves ToolGuidesSha256), and a
+    ///     minified get_item_stats payload keeps the Level-1 failure reason and the invoked macro.
+    ///     ScoringMethodVersion stays 12 and CandidateSystemPromptSha256 does not move.
     /// </summary>
-    public const string HarnessVersion = "37";
+    public const string HarnessVersion = "38";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:
@@ -1263,6 +1271,19 @@ public static class BenchmarkAssessmentPrompt
         AppendLevelDistributionLine(sb, "Conciseness", verdicts.Select(v => v.ConcisenessLevel));
         AppendLevelDistributionLine(sb, "Readability", verdicts.Select(v => v.ReadabilityLevel));
         sb.AppendLine();
+        // The same per-answer columns the report's Assessor Findings line sums, so the two agree.
+        if (verdicts.Any(v => v.ClaimsSupportedCount.HasValue || v.ClaimsRefutedCount.HasValue || v.ClaimsIndeterminateCount.HasValue))
+        {
+            int unverified = verdicts.Sum(v => v.UnverifiedClaimCount);
+            int withClaims = verdicts.Count(v => v.UnverifiedClaimCount > 0);
+            int supported = verdicts.Sum(v => v.ClaimsSupportedCount ?? 0);
+            int refuted = verdicts.Sum(v => v.ClaimsRefutedCount ?? 0);
+            int indeterminate = verdicts.Sum(v => v.ClaimsIndeterminateCount ?? 0);
+            sb.AppendLine("--- CLAIM VERIFICATION TOTALS (counted by the harness; copy these figures rather than adding up the per-question lines) ---");
+            sb.AppendLine($"Unverified claims: {unverified} across {withClaims} answer(s); verified: {supported} supported, {refuted} refuted, {indeterminate} indeterminate");
+            sb.AppendLine("--- END CLAIM VERIFICATION TOTALS ---");
+            sb.AppendLine();
+        }
         // The digest, not the full board: the synthesis judges no map coordinates, and the digest
         // carries the hero's state that a cross-question finding about board reading turns on.
         if (!string.IsNullOrWhiteSpace(boardDigest))

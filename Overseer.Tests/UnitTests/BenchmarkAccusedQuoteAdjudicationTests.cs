@@ -426,9 +426,10 @@ public class BenchmarkAccusedQuoteAdjudicationTests
     [Theory]
     [InlineData(4, BenchmarkAnswerFlags.None, true)]
     [InlineData(2, BenchmarkAnswerFlags.None, true)]
-    [InlineData(5, BenchmarkAnswerFlags.None, false)]
+    [InlineData(5, BenchmarkAnswerFlags.None, true)]
+    [InlineData(6, BenchmarkAnswerFlags.None, false)]
     [InlineData(6, BenchmarkAnswerFlags.ContestedVerdict, true)]
-    public void Eligible_AtAccuracyFourOrBelow_OrOnAContestedVerdict(int accuracy, BenchmarkAnswerFlags flags, bool expected)
+    public void Eligible_AtAccuracyFiveOrBelow_OrOnAContestedVerdict(int accuracy, BenchmarkAnswerFlags flags, bool expected)
     {
         var answer = new BenchmarkRunAnswer { AccuracyLevel = accuracy, AnswerFlags = (int)flags };
         Assert.Equal(expected, BenchmarkService.IsAccusedQuoteEligible(answer));

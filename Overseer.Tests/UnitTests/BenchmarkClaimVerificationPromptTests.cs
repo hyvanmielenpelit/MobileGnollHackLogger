@@ -386,4 +386,90 @@ public class BenchmarkClaimVerificationPromptTests
         Assert.True(prompt.IndexOf("CANDIDATE TOOL CALLS", System.StringComparison.Ordinal)
             < prompt.IndexOf("=== START CLAIM 0 ===", System.StringComparison.Ordinal));
     }
+
+    private const string AccusedSentence = "Wielding the wand of digging while it has charges lets you dig down, and controlled teleport lets you choose where you land.";
+
+    private static string BuildAccusedPrompt(IReadOnlyList<string>? chargedParts)
+    {
+        return BenchmarkClaimVerificationPrompt.BuildPrompt(
+            "GnollHack Suite",
+            8,
+            "Question?",
+            null,
+            new List<string> { AccusedSentence },
+            new List<string> { "source_code_search" },
+            15,
+            claimRoles: new List<IReadOnlyList<string>> { new[] { BenchmarkClaimRoles.AccusedQuote } },
+            claimCharges: new List<string?> { "The hero has no controlled teleport." },
+            claimChargedParts: new List<IReadOnlyList<string>?> { chargedParts });
+    }
+
+    [Fact]
+    public void BuildPrompt_AnAccusedSentenceWithAShorterFragment_PrintsTheChargedPart()
+    {
+        string prompt = BuildAccusedPrompt(new[] { "controlled teleport lets you choose where you land" });
+
+        Assert.Contains(
+            "Charged part (the words the assessor quoted, not part of the claim): \"controlled teleport lets you choose where you land\"",
+            prompt);
+    }
+
+    [Fact]
+    public void BuildPrompt_SeveralChargedParts_AreJoinedWithSemicolons()
+    {
+        string prompt = BuildAccusedPrompt(new[] { "dig down", "choose where you land" });
+
+        Assert.Contains(
+            "Charged part (the words the assessor quoted, not part of the claim): \"dig down\"; \"choose where you land\"",
+            prompt);
+    }
+
+    [Fact]
+    public void BuildPrompt_AChargedPartEqualToTheWholeSentence_PrintsNoChargedPartLine()
+    {
+        Assert.DoesNotContain("Charged part (", BuildAccusedPrompt(new[] { AccusedSentence }));
+        Assert.DoesNotContain("Charged part (", BuildAccusedPrompt(null));
+    }
+
+    [Fact]
+    public void BuildPrompt_TheAccusedPreamble_JudgesTheChargedPart()
+    {
+        string prompt = BuildAccusedPrompt(null);
+
+        Assert.Contains("judge the charged part", prompt);
+        Assert.Contains("A true clause elsewhere in the sentence does not make a false charged part Supported.", prompt);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildPrompt_Instruction3k_SitsBetween3jAnd4_WithAndWithoutABoard(bool withBoard)
+    {
+        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
+
+        int index3j = prompt.IndexOf("3j. Values passed are settled where they are assigned.", System.StringComparison.Ordinal);
+        int index3k = prompt.IndexOf("3k. When a claim joins several statements", System.StringComparison.Ordinal);
+        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
+
+        Assert.Contains("3k.", prompt);
+        Assert.True(index3k > index3j, "Instruction 3k must follow instruction 3j.");
+        Assert.True(index4 > index3k, "Instruction 4 must follow 3k, unrenumbered.");
+    }
+
+    [Fact]
+    public void BuildPrompt_TheCriticalErrorBlock_JudgesThePartTheEvidenceNames()
+    {
+        string prompt = BenchmarkClaimVerificationPrompt.BuildPrompt(
+            "GnollHack Suite",
+            11,
+            "Question?",
+            null,
+            new List<string> { "Claim." },
+            new List<string> { "source_code_search" },
+            15,
+            isCriticalErrorAdjudication: true,
+            assessorEvidence: "Evidence.");
+
+        Assert.Contains("Judge that part: a true clause elsewhere in the claim does not make the verdict Supported.", prompt);
+    }
 }

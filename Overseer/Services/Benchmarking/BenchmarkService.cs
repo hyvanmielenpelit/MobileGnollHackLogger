@@ -3013,7 +3013,8 @@ public class BenchmarkService
             claimRoles: manifest.Select(m => m.Roles).ToList(),
             claimContexts: manifest.Select(m => m.Context).ToList(),
             toolCallLeads: toolCallLeads,
-            claimCharges: manifest.Select(m => m.Charge).ToList());
+            claimCharges: manifest.Select(m => m.Charge).ToList(),
+            claimChargedParts: manifest.Select(m => m.QuotedFragments).ToList());
 
         var runRequest = BuildClaimVerificationRequest(
             verifierConfig,
@@ -7089,7 +7090,7 @@ public class BenchmarkService
     internal const int AccusedQuoteMaxLength = 400;
     internal const int AccusedQuoteChargeMaxLength = 400;
     internal const int MaxAccusedQuotesPerAnswer = 3;
-    internal const int AccusedQuoteEligibleMaxAccuracyLevel = 4;
+    internal const int AccusedQuoteEligibleMaxAccuracyLevel = 5;
     private const int AccusedQuoteContextMaxLength = 300;
 
     private static readonly Regex StraightQuotedSpanRegex = new("\"([^\"]*)\"", RegexOptions.Compiled);

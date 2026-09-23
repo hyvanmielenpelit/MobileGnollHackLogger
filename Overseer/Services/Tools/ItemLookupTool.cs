@@ -12,6 +12,9 @@ namespace Overseer.Services.Tools
     {
         private readonly WikiService _wikiService;
 
+        /// <summary>The wiki path categories item_lookup searches, so an artifact resolves alongside ordinary items.</summary>
+        private static readonly string[] LookupCategories = { "item", "artifact" };
+
         public string ToolName => "item_lookup";
         public string Description { get; set; } = "Look up an item in the GnollHack wiki database.";
         public ToolExecutionLocation ExecutionLocation => ToolExecutionLocation.Server;
@@ -50,8 +53,9 @@ namespace Overseer.Services.Tools
                 return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing name parameter" });
             }
 
-            // Using WikiService with 'item' filter.
-            var results = _wikiService.GetLookupContext(name, "item");
+            // Using WikiService with 'item' and 'artifact' filters, so an artifact such as The
+            // Holy Grail is found under its own name.
+            var results = _wikiService.GetLookupContextInCategories(name, LookupCategories);
             var content = string.Join("\n\n", results);
 
             if (string.IsNullOrWhiteSpace(content))
@@ -89,7 +93,7 @@ namespace Overseer.Services.Tools
             {
                 var sb = new System.Text.StringBuilder("No GnollHack wiki article matched the item '")
                     .Append(name)
-                    .Append("'. Both the 'item' path filter and an unfiltered search of the whole wiki missed");
+                    .Append("'. Both the 'item' and 'artifact' path filters and an unfiltered search of the whole wiki missed");
 
                 var terms = name
                     .Split(new[] { ' ', '	', '-', '_' }, StringSplitOptions.RemoveEmptyEntries)

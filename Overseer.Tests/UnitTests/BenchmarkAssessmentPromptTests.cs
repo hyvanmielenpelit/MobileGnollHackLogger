@@ -219,9 +219,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsThirtySeven()
+    public void HarnessVersion_IsThirtyEight()
     {
-        Assert.Equal("37", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("38", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -425,6 +425,44 @@ public class BenchmarkAssessmentPromptTests
         Assert.Contains(
             "is copied from the data blocks below, never recomputed by rereading or recounting the per-question verdicts. This synthesis feeds no score.",
             prompt);
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_CarriesHarnessCountedClaimVerificationTotals()
+    {
+        var q1 = Verdict(1, accuracyLevel: 6, accuracyEvidence: "Matches rubric.");
+        q1.UnverifiedClaimCount = 2;
+        q1.ClaimsSupportedCount = 2;
+        q1.ClaimsRefutedCount = 0;
+        q1.ClaimsIndeterminateCount = 0;
+        var q2 = Verdict(2, accuracyLevel: 5, accuracyEvidence: "Minor slip.");
+        q2.UnverifiedClaimCount = 3;
+        q2.ClaimsSupportedCount = 1;
+        q2.ClaimsRefutedCount = 1;
+        q2.ClaimsIndeterminateCount = 1;
+        var q3 = Verdict(3, accuracyLevel: 6, accuracyEvidence: "Matches rubric.");
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { q1, q2, q3 });
+
+        Assert.Contains(
+            "--- CLAIM VERIFICATION TOTALS (counted by the harness; copy these figures rather than adding up the per-question lines) ---",
+            prompt);
+        Assert.Contains("Unverified claims: 5 across 2 answer(s); verified: 3 supported, 1 refuted, 1 indeterminate", prompt);
+
+        int totalsAt = prompt.IndexOf("--- CLAIM VERIFICATION TOTALS", StringComparison.Ordinal);
+        int verdictsAt = prompt.IndexOf("--- PER-QUESTION VERDICTS AND ASSESSMENTS ---", StringComparison.Ordinal);
+        Assert.True(totalsAt >= 0 && totalsAt < verdictsAt);
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_WithoutVerificationCounts_HasNoClaimTotalsBlock()
+    {
+        var q1 = Verdict(1, accuracyLevel: 6, accuracyEvidence: "Matches rubric.");
+        q1.UnverifiedClaimCount = 2;
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { q1 });
+
+        Assert.DoesNotContain("CLAIM VERIFICATION TOTALS", prompt);
     }
 
     [Fact]
@@ -725,18 +763,18 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs37_ScoringMethodIs12()
+    public void Versions_HarnessIs38_ScoringMethodIs12()
     {
-        Assert.Equal("37", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("38", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 37 keeps scoring method 12, under which ACCURACY is graded against the rubric and
+        // Harness 38 keeps scoring method 12, under which ACCURACY is graded against the rubric and
         // the board only and an own-knowledge suspicion becomes a "Suspected false: " unverified
-        // claim. A wiki_search snippet returns a short article whole whatever scored, and a
-        // categorised wiki_search no longer names a best match outside its category; the
-        // wiki_search.md sentence that described that line is gone, which moves ToolGuidesSha256.
-        // The verifier gains 3j, and the report prints verifier spend and the head of a failed
-        // verification's raw response. A 37-stamped run differs from a 36-stamped one on
-        // HarnessVersion and ToolGuidesSha256.
+        // claim. The claim verifier judges the charged part of an accused sentence or a
+        // critical-error quote, accused sentences are checked at Accuracy 5 as well, and the
+        // synthesis carries harness-counted claim totals; none of these feeds a score. item_lookup
+        // searches the "item" and "artifact" paths, and item_lookup.md says so, which moves
+        // ToolGuidesSha256. A 38-stamped run differs from a 37-stamped one on HarnessVersion and
+        // ToolGuidesSha256.
         Assert.Equal(12, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

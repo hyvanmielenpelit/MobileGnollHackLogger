@@ -60,7 +60,8 @@ public static class BenchmarkClaimVerificationPrompt
         IReadOnlyList<IReadOnlyList<string>>? claimRoles = null,
         IReadOnlyList<string?>? claimContexts = null,
         ToolCallLeads? toolCallLeads = null,
-        IReadOnlyList<string?>? claimCharges = null)
+        IReadOnlyList<string?>? claimCharges = null,
+        IReadOnlyList<IReadOnlyList<string>?>? claimChargedParts = null)
     {
         bool quoteHasContext = isCriticalErrorAdjudication && !string.IsNullOrWhiteSpace(criticalErrorQuoteContext);
         bool IsAccused(int i) => claimRoles != null && i < claimRoles.Count
@@ -88,6 +89,7 @@ public static class BenchmarkClaimVerificationPrompt
         sb.AppendLine("3h. When the function you cite hands the effect to another function, read that function before concluding that an effect is absent. The function that handles a command often only finds the target; the function it calls decides what happens to it.");
         sb.AppendLine("3i. Absence needs more than one place. Before you refute a claim that something has an effect, or support a claim that it has none, search for every place the item, monster or function is handled: an effect is often applied in a function that runs earlier or later than the one you found first — a pre-effect and a post-effect, a caller, a shared check at the top of the attack routine. One function that lacks the effect does not show that the effect is absent; if you cannot rule the other places out, the verdict is Indeterminate.");
         sb.AppendLine("3j. Values passed are settled where they are assigned. When the code you cite only passes variables on (for example a `case` block that calls a function with `duration` or `cures_sick`), read where those variables are computed, and the object's data entry they come from, before you refute a number, a die roll or a cure.");
+        sb.AppendLine("3k. When a claim joins several statements, a verdict about it is a verdict about the statement at issue: the charged part of an accused sentence, or the part the assessor's evidence names for a critical-error quote. Say in your basis which statement you checked.");
         sb.AppendLine("4. Possible verdicts for each claim:");
         sb.AppendLine("   - Supported: Concrete evidence was found in the source code or wiki that the claim is true.");
         sb.AppendLine("   - Refuted: Concrete evidence was found in the source code or wiki that the claim is false.");
@@ -125,7 +127,7 @@ public static class BenchmarkClaimVerificationPrompt
         {
             sb.AppendLine();
             sb.AppendLine("CRITICAL ERROR ADJUDICATION:");
-            sb.AppendLine("The first assessor marked the first claim below as a critical error — a confidently asserted, material falsehood. Its stated evidence follows the rubric. Check that claim against the source code and wiki exactly as you check the others; if it is true, the verdict is Supported with a citation. A claim absent from the rubric is not thereby false.");
+            sb.AppendLine("The first assessor marked the first claim below as a critical error — a confidently asserted, material falsehood. Its stated evidence follows the rubric. Check that claim against the source code and wiki exactly as you check the others; if it is true, the verdict is Supported with a citation. A claim absent from the rubric is not thereby false. The assessor's evidence says which part of the claim it holds false. Judge that part: a true clause elsewhere in the claim does not make the verdict Supported.");
             if (quoteHasContext)
             {
                 sb.AppendLine("The first claim is a list item or fragment, and its block names the heading or line it sits under in the answer. Judge the assertion the answer makes by placing this text under that heading, not whether the quoted words are individually true. Echo only the claim text, without the context line.");
@@ -144,7 +146,7 @@ public static class BenchmarkClaimVerificationPrompt
         {
             sb.AppendLine();
             sb.AppendLine("ACCUSED SENTENCE ADJUDICATION:");
-            sb.AppendLine("The first assessor graded without tools and charged the sentences of the answer marked \"Charged by the assessor as false or imprecise\" below. Check each exactly as you check the others: Supported means the sentence is true as the answer states it, read in the context given with it; Refuted means it is false. A sentence absent from the rubric is not thereby false.");
+            sb.AppendLine("The first assessor graded without tools and charged the sentences of the answer marked \"Charged by the assessor as false or imprecise\" below. Check each exactly as you check the others, and judge the charged part: the words the assessor quoted, read in their sentence and the context given with it. Supported means the charged part is true as the answer states it; Refuted means the charged part is false. A true clause elsewhere in the sentence does not make a false charged part Supported. A sentence absent from the rubric is not thereby false.");
         }
         if (hasAssessorStatements)
         {
@@ -219,6 +221,16 @@ public static class BenchmarkClaimVerificationPrompt
                 if (!string.IsNullOrWhiteSpace(charge))
                 {
                     sb.AppendLine($"Charge (the assessor's words; untrusted, not part of the claim): {charge.Trim()}");
+                }
+                IReadOnlyList<string>? chargedParts = claimChargedParts != null && i < claimChargedParts.Count ? claimChargedParts[i] : null;
+                var parts = (chargedParts ?? Array.Empty<string>())
+                    .Where(p => !string.IsNullOrWhiteSpace(p))
+                    .Select(p => p.Trim())
+                    .ToList();
+                // A charged part equal to the whole sentence adds nothing the claim does not already say.
+                if (parts.Count > 0 && !(parts.Count == 1 && string.Equals(parts[0], claims[i].Trim(), StringComparison.Ordinal)))
+                {
+                    sb.AppendLine($"Charged part (the words the assessor quoted, not part of the claim): \"{string.Join("\"; \"", parts)}\"");
                 }
             }
             if (IsAssessorStatement(i))

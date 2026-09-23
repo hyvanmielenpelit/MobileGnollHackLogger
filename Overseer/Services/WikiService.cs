@@ -185,6 +185,17 @@ public class WikiService : IDisposable
 
     public IEnumerable<string> GetRelevantContext(string query, string? categoryFilter = null, int? maxResults = null)
     {
+        var categories = string.IsNullOrEmpty(categoryFilter) ? Array.Empty<string>() : new[] { categoryFilter };
+        return GetRelevantContextInCategories(query, categories, maxResults);
+    }
+
+    /// <summary>
+    /// As <see cref="GetRelevantContext(string, string?, int?)"/>, but the category filter is the
+    /// union of every category in <paramref name="categoryFilters"/> — a document matches when its
+    /// path contains any one of them — rather than exactly one.
+    /// </summary>
+    public IEnumerable<string> GetRelevantContextInCategories(string query, IReadOnlyList<string> categoryFilters, int? maxResults = null)
+    {
         IndexSearcher? searcher;
         Analyzer? analyzer;
         lock (_swapLock)
@@ -193,7 +204,7 @@ public class WikiService : IDisposable
             analyzer = _analyzer;
         }
         if (searcher == null || analyzer == null || string.IsNullOrWhiteSpace(query)) return Enumerable.Empty<string>();
-        
+
         // Build a BooleanQuery that searches both title (boosted) and content
         var parser = new MultiFieldQueryParser(
             LuceneVersion.LUCENE_48,
@@ -201,7 +212,7 @@ public class WikiService : IDisposable
             analyzer,
             new Dictionary<string, float> { { "title", 5.0f }, { "content", 1.0f } }
         );
-        
+
         Query luceneQuery;
         try
         {
@@ -211,19 +222,20 @@ public class WikiService : IDisposable
         {
             return Enumerable.Empty<string>(); // Ignore parse errors
         }
-        
+
         // Apply category filter if provided
-        if (!string.IsNullOrEmpty(categoryFilter))
+        var categoryClause = BuildCategoryClause(categoryFilters);
+        if (categoryClause != null)
         {
             var boolQuery = new BooleanQuery();
             boolQuery.Add(luceneQuery, Occur.MUST);
-            boolQuery.Add(new WildcardQuery(new Term("pathlower", $"*{categoryFilter.Trim().ToLowerInvariant().Replace('\\', '/')}*")), Occur.MUST);
+            boolQuery.Add(categoryClause, Occur.MUST);
             luceneQuery = boolQuery;
         }
-        
+
         var hits = searcher.Search(luceneQuery, maxResults ?? 5);
         var results = new List<string>();
-        
+
         foreach (var hit in hits.ScoreDocs)
         {
             var doc = searcher.Doc(hit.Doc);
@@ -231,8 +243,28 @@ public class WikiService : IDisposable
             string content = doc.Get("content");
             results.Add($"--- {filename} ---\n{content}");
         }
-        
+
         return results;
+    }
+
+    /// <summary>
+    /// One MUST clause matching any category in <paramref name="categoryFilters"/> against the
+    /// case-folded wiki-relative path (the same fold <see cref="IndexWikiFiles"/> stores in
+    /// <c>pathlower</c>): a BooleanQuery of SHOULD <c>WildcardQuery</c> terms, one per non-blank
+    /// entry. In Lucene.NET 4.8 a BooleanQuery of only SHOULD clauses matches when at least one
+    /// matches, so no minimum-should-match is needed. Returns null when no entry remains after
+    /// blank ones are skipped, so the caller applies no category filter at all.
+    /// </summary>
+    private static Query? BuildCategoryClause(IReadOnlyList<string> categoryFilters)
+    {
+        var clause = new BooleanQuery();
+        foreach (var category in categoryFilters)
+        {
+            if (string.IsNullOrWhiteSpace(category)) continue;
+            clause.Add(new WildcardQuery(new Term("pathlower", $"*{category.Trim().ToLowerInvariant().Replace('\\', '/')}*")), Occur.SHOULD);
+        }
+
+        return clause.Clauses.Count > 0 ? clause : null;
     }
 
     public IEnumerable<string> GetRelevantSnippets(string query, string? categoryFilter, int maxResults, int perResultChars)
@@ -562,6 +594,19 @@ public class WikiService : IDisposable
     /// </summary>
     public IEnumerable<string> GetLookupContext(string name, string categoryFilter)
     {
+        var categories = string.IsNullOrEmpty(categoryFilter) ? Array.Empty<string>() : new[] { categoryFilter };
+        return GetLookupContextInCategories(name, categories);
+    }
+
+    /// <summary>
+    /// As <see cref="GetLookupContext(string, string)"/>, but the category filter is the union of
+    /// every category in <paramref name="categoryFilters"/> — a document matches when its path
+    /// contains any one of them — rather than exactly one. Its fallback calls
+    /// <see cref="GetRelevantContextInCategories(string, IReadOnlyList{string}, int?)"/> with the
+    /// same list.
+    /// </summary>
+    public IEnumerable<string> GetLookupContextInCategories(string name, IReadOnlyList<string> categoryFilters)
+    {
         IndexSearcher? searcher;
         Analyzer? analyzer;
         lock (_swapLock)
@@ -588,11 +633,12 @@ public class WikiService : IDisposable
             return Enumerable.Empty<string>();
         }
 
-        if (!string.IsNullOrEmpty(categoryFilter))
+        var categoryClause = BuildCategoryClause(categoryFilters);
+        if (categoryClause != null)
         {
             var boolQuery = new BooleanQuery();
             boolQuery.Add(luceneQuery, Occur.MUST);
-            boolQuery.Add(new WildcardQuery(new Term("pathlower", $"*{categoryFilter.Trim().ToLowerInvariant().Replace('\\', '/')}*")), Occur.MUST);
+            boolQuery.Add(categoryClause, Occur.MUST);
             luceneQuery = boolQuery;
         }
 
@@ -643,8 +689,8 @@ public class WikiService : IDisposable
         }
 
         // No hit's title equals the request: fall back to the same category-filtered top-N join
-        // GetRelevantContext returns.
-        return GetRelevantContext(name, categoryFilter);
+        // GetRelevantContextInCategories returns.
+        return GetRelevantContextInCategories(name, categoryFilters);
     }
 
     /// <summary>
