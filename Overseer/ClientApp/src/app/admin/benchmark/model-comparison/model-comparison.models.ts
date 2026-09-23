@@ -447,12 +447,17 @@ export function sourceLabel(entry: { sourceKind: string; sourceId: number }): st
   return entry.sourceKind === 'Group' ? `Analysis group ${entry.sourceId}` : `Run ${entry.sourceId}`;
 }
 
+/** The condition everything else is compared against: ordinal 1, or the first one on offer. */
+function referenceConditionOf(
+  index: BenchmarkComparabilityIndexDto | null
+): BenchmarkComparabilityConditionDto | null {
+  const conditions = index?.conditions ?? [];
+  return conditions.find(condition => condition.ordinal === 1) ?? conditions[0] ?? null;
+}
+
 /** The label of the condition everything else is compared against. */
 function referenceLabel(index: BenchmarkComparabilityIndexDto | null): string {
-  const conditions = index?.conditions ?? [];
-  return conditions.find(condition => condition.ordinal === 1)?.label
-    ?? conditions[0]?.label
-    ?? 'the largest condition';
+  return referenceConditionOf(index)?.label ?? 'the largest condition';
 }
 
 /**
@@ -829,6 +834,179 @@ export function conditionDetailFor(
     selfInconsistentKeys: [...entry.selfInconsistentKeys],
     rows
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// The condition legend: every condition of the index, the charted one first
+// ---------------------------------------------------------------------------------------------
+
+/** Hex characters of a digest that stay legible: git's own abbreviation, and enough to cite. */
+export const SHORT_HASH_LENGTH = 12;
+
+/** A digest-shaped value, abbreviated on screen whatever kind the index declares for its key. */
+export const HASH_SHAPED = /^[0-9a-fA-F]{32,}$/;
+
+/** Characters past which a differing value is too long to show inline beside its counterpart. */
+const INLINE_DIFFERENCE_CHARS = 80;
+
+/** One condition as the legend lists it. */
+export interface ConditionLegendItem {
+  readonly condition: BenchmarkComparabilityConditionDto;
+  readonly isReference: boolean;
+  /** Entry keys of the sources in this condition, runs first then groups, each by id ascending. */
+  readonly memberKeys: readonly string[];
+  /** A member used to read the cohort's differences: a run where one exists, else the first group. */
+  readonly representativeKey: string | null;
+  /** Labels of the keys the cohort differs from the reference on; empty for the reference. */
+  readonly differingKeyLabels: readonly string[];
+}
+
+/** Every condition of one index, ready for the legend, and the entry lookup built on the way. */
+export interface ConditionLegend {
+  readonly reference: ConditionLegendItem | null;
+  /** Every other condition, newest run first; a missing date sorts last; ties by ordinal. */
+  readonly others: readonly ConditionLegendItem[];
+  /** Entry lookup by key, built once — the picker's tables use it too. */
+  readonly entryByKey: ReadonlyMap<string, BenchmarkComparabilityIndexEntryDto>;
+}
+
+/** A start time as a sortable number, or null when it is absent or does not parse. */
+function startedAtMs(value: string | null | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+/**
+ * The legend's view of one index, built in one pass over its entries.
+ *
+ * Every source in a condition shares one must-match signature, so any single member's
+ * `differencesFromLargest` describes the whole cohort — which is why no per-condition difference
+ * list has to be sent. A run is preferred as that member because its own run id attributes each
+ * differing value to a side, where a group's membership may not have been sent.
+ */
+export function buildConditionLegend(index: BenchmarkComparabilityIndexDto | null): ConditionLegend {
+  const entryByKey = new Map<string, BenchmarkComparabilityIndexEntryDto>();
+  const membersByOrdinal = new Map<number, BenchmarkComparabilityIndexEntryDto[]>();
+  for (const entry of index?.entries ?? []) {
+    entryByKey.set(entry.key, entry);
+    if (entry.conditionOrdinal === 0) {
+      continue;
+    }
+    const members = membersByOrdinal.get(entry.conditionOrdinal);
+    if (members == null) {
+      membersByOrdinal.set(entry.conditionOrdinal, [entry]);
+    } else {
+      members.push(entry);
+    }
+  }
+  if (index == null) {
+    return { reference: null, others: [], entryByKey };
+  }
+
+  const labelOf = new Map(index.largestConditionKeys.map(key => [key.name, key.label] as const));
+  const referenceCondition = referenceConditionOf(index);
+
+  const item = (condition: BenchmarkComparabilityConditionDto): ConditionLegendItem => {
+    const members = [...(membersByOrdinal.get(condition.ordinal) ?? [])].sort((a, b) => {
+      const kindA = a.sourceKind === 'Group' ? 1 : 0;
+      const kindB = b.sourceKind === 'Group' ? 1 : 0;
+      return kindA - kindB || a.sourceId - b.sourceId;
+    });
+    const representative = members[0] ?? null;
+    const isReference = condition === referenceCondition;
+    return {
+      condition,
+      isReference,
+      memberKeys: members.map(member => member.key),
+      representativeKey: representative?.key ?? null,
+      differingKeyLabels: isReference
+        ? []
+        : (representative?.differencesFromLargest ?? [])
+          .map(difference => labelOf.get(difference.name) || difference.name)
+    };
+  };
+
+  const others = index.conditions
+    .filter(condition => condition !== referenceCondition)
+    .map(item)
+    .sort((a, b) => {
+      const timeA = startedAtMs(a.condition.newestRunStartedAtUtc);
+      const timeB = startedAtMs(b.condition.newestRunStartedAtUtc);
+      if (timeA !== timeB) {
+        if (timeA == null) {
+          return 1;
+        }
+        if (timeB == null) {
+          return -1;
+        }
+        return timeB - timeA;
+      }
+      return a.condition.ordinal - b.condition.ordinal;
+    });
+
+  return {
+    reference: referenceCondition == null ? null : item(referenceCondition),
+    others,
+    entryByKey
+  };
+}
+
+/**
+ * One differing key reduced to what a reader scans: "charted → this".
+ *
+ * `from` is always the reference (charted) condition's value and `to` this condition's, so every
+ * line reads in one direction.
+ */
+export type ConditionDifferenceSummary =
+  | { readonly kind: 'fields'; readonly changes: readonly { name: string; from: string; to: string }[] }
+  /** Both sides already shortened to {@link SHORT_HASH_LENGTH}. */
+  | { readonly kind: 'hash'; readonly from: string; readonly to: string }
+  | { readonly kind: 'text'; readonly from: string; readonly to: string }
+  /** At least one side is too long to show inline. */
+  | { readonly kind: 'long' }
+  /** The sides could not be told apart. */
+  | { readonly kind: 'unattributed' };
+
+/** A value short and single-line enough to sit inline beside its counterpart. */
+function fitsInline(value: string): boolean {
+  return value.length <= INLINE_DIFFERENCE_CHARS && !/[\r\n]/.test(value);
+}
+
+export function summarizeConditionDifference(row: ConditionDetailRow): ConditionDifferenceSummary {
+  const from = row.referenceValue;
+  const to = row.thisValue;
+  if (from == null || to == null) {
+    return { kind: 'unattributed' };
+  }
+
+  if (row.referenceFields != null && row.thisFields != null && row.changedFields.length > 0) {
+    const fieldValue = (fields: readonly ConfigurationField[], name: string): string =>
+      fields.find(field => field.name === name)?.value ?? '(none)';
+    return {
+      kind: 'fields',
+      changes: row.changedFields.map(name => ({
+        name,
+        from: fieldValue(row.referenceFields!, name),
+        to: fieldValue(row.thisFields!, name)
+      }))
+    };
+  }
+
+  if (row.valueKind === 'Hash' || (HASH_SHAPED.test(from.trim()) && HASH_SHAPED.test(to.trim()))) {
+    return {
+      kind: 'hash',
+      from: from.trim().slice(0, SHORT_HASH_LENGTH),
+      to: to.trim().slice(0, SHORT_HASH_LENGTH)
+    };
+  }
+
+  if (!fitsInline(from) || !fitsInline(to)) {
+    return { kind: 'long' };
+  }
+  return { kind: 'text', from, to };
 }
 
 // ---------------------------------------------------------------------------------------------

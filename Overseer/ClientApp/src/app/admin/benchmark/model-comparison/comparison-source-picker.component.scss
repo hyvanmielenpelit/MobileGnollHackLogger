@@ -119,66 +119,10 @@
   margin-inline-start: auto;
 }
 
-/* --- Legend: what a condition is --- */
+/* --- About conditions --- */
 
-/* Sizing only: the glass frame, the backdrop and the type come from `.gh-dialog` in
-   `styles.scss` and are not redefined. Wider than `.dialog-wide` because one value in the
-   table below is a serialized options object. */
-.csp-legend-dialog {
-  width: min(860px, 92vw);
-  max-width: min(860px, 92vw);
-  max-height: min(82dvh, 780px);
-  padding: 0;
-  overflow: hidden;
-
-  /* The header / body / actions column needs a flex context, which a dialog does not default to.
-
-     Only `display` is gated on the open state. A closing dialog holds `display: flex` for the
-     length of its exit transition — that is what `display` with `allow-discrete` in the
-     transition list buys — while any property the transition does not list reverts the moment
-     [open] and :modal stop matching. Gating `flex-direction` too would lay the header, body and
-     actions out as a row for the whole exit. `dialog:not([open])` in `styles.scss` still hides
-     the dialog once the transition has finished. */
-  flex-direction: column;
-
-  &[open],
-  &:modal {
-    display: flex;
-  }
-
-  /* Entry and exit. `display` and `overlay` must both be in the list with `allow-discrete`,
-     or a top-layer element snaps in and out instead of transitioning. */
-  opacity: 0;
-  transform: scale(0.985);
-  transition:
-    opacity 0.16s ease,
-    transform 0.16s ease,
-    display 0.16s allow-discrete,
-    overlay 0.16s allow-discrete;
-
-  &[open] {
-    opacity: 1;
-    transform: none;
-
-    @starting-style {
-      opacity: 0;
-      transform: scale(0.985);
-    }
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .csp-legend-dialog {
-    transform: none;
-    transition-duration: 0.01s;
-
-    &[open] {
-      @starting-style {
-        transform: none;
-      }
-    }
-  }
-}
+/* The glass frame, the sizing, the `::backdrop`, the flex column and the open/close transition
+   are all `.gh-dialog-fullscreen`'s and are not redefined here. */
 
 .csp-legend-header {
   flex-shrink: 0;
@@ -484,55 +428,22 @@
   gap: 10px 14px;
 }
 
-/* Holds its line height while empty, so the copy result appearing does not shift the block it
-   sits under. */
-.csp-legend-group .csp-methods-copy-state {
+/* Pushed left of the footer controls, and holding its line height while empty so the copy result
+   appearing does not shift them. */
+.csp-legend-dialog .csp-methods-copy-state {
+  margin: 0 auto 0 0;
+  align-self: center;
   min-height: 1.3em;
   font-size: 12px;
   color: var(--primary-color, #e0ba6d);
 }
 
-/* --- The conditions the figures are not measured under --- */
-
-.csp-others {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-
-  > li {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: 8px 10px;
-    border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
-    border-radius: 6px;
-    background: rgba(255, 255, 255, 0.02);
-    min-width: 0;
-  }
-}
-
-.csp-legend-group .csp-others-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 12px;
-  margin: 0;
-  font-size: 12px;
-
-  strong {
-    font-size: 13px;
-    color: #c3c2b7;
-  }
-
-  code {
-    padding: 1px 6px;
-    border-radius: 4px;
-    background: rgba(0, 0, 0, 0.32);
-    font-family: "Consolas", "Menlo", monospace;
-    color: #a1a1aa;
+@media (max-width: 500px) {
+  /* `.dialog-actions` stacks in column-reverse below this width, where an auto left margin would
+     only add a gap above the status line. */
+  .csp-legend-dialog .csp-methods-copy-state {
+    margin: 0;
+    align-self: stretch;
   }
 }
 
@@ -542,6 +453,228 @@
   flex-shrink: 0;
   margin-top: 0;
   padding: 15px 20px;
+}
+
+/* One readable column on a wide screen, and the container the methods grid collapses against. */
+.csp-legend-inner {
+  container-type: inline-size;
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+
+  > .alert {
+    margin-bottom: 0;
+  }
+}
+
+/* --- What decides a condition: one card per kind of key --- */
+
+.csp-rule-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 12px;
+}
+
+.csp-rule-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+
+  h5 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #e4e4e7;
+  }
+}
+
+.csp-legend-group .csp-rule-count {
+  font-weight: 600;
+  color: #c3c2b7;
+}
+
+.csp-rule-keys > summary {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #a1a1aa;
+}
+
+/* --- Conditions: an exclusive accordion, the charted one first --- */
+
+.csp-conditions-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px 16px;
+
+  > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+.csp-cond-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.csp-cond-item {
+  min-width: 0;
+
+  > summary {
+    flex-wrap: wrap;
+    gap: 6px 14px;
+  }
+
+  /* The open item stands out from the closed ones around it. */
+  &[open] {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  }
+}
+
+.csp-cond-meta {
+  font-size: 13px;
+  font-weight: 400;
+  color: #a1a1aa;
+}
+
+/* The pinned item's tag. A word, so the charted condition is not told apart by colour alone. */
+.csp-cond-charted {
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 55%, transparent);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--primary-color);
+}
+
+.csp-cond-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 4px;
+
+  h5 {
+    margin: 0;
+    font-family: "Cinzel", serif;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    color: var(--primary-color);
+  }
+
+  .csp-methods-rule strong {
+    color: #c3c2b7;
+  }
+}
+
+/* The label column and the value column side by side, and one above the other in a narrow
+   dialog. The rows are `.csp-legend-values`' own divs, so the value treatment is shared. */
+.csp-methods-grid > div {
+  grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr);
+  gap: 4px 16px;
+}
+
+@container (max-width: 40rem) {
+  .csp-methods-grid > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* One line per differing key: its label, then charted value → this condition's value. */
+.csp-diff-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+
+  > li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+    min-width: 0;
+    color: #a1a1aa;
+  }
+
+  strong {
+    color: #c3c2b7;
+  }
+
+  code {
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.32);
+    font-family: "Consolas", "Menlo", monospace;
+    font-size: 12px;
+    color: #c3c2b7;
+    overflow-wrap: anywhere;
+  }
+
+  code.csp-methods-key {
+    background: rgba(255, 255, 255, 0.05);
+    font-size: 11px;
+    color: #8b8b90;
+  }
+}
+
+.csp-diff-fields {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0 0 0 12px;
+  list-style: none;
+}
+
+.csp-diff-values {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  min-width: 0;
+}
+
+.csp-diff-note {
+  color: #8b8b90;
+}
+
+.csp-legend-group .csp-cond-members {
+  color: #c3c2b7;
+}
+
+.csp-cond-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.csp-cond-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.csp-legend-group .csp-cond-count {
+  color: #c3c2b7;
 }
 
 /* --- The two tables --- */

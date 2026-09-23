@@ -120,6 +120,20 @@ import {
  */
 export type ComparisonWizardStep = 1 | 2 | 3 | 4;
 
+/**
+ * Every wizard step with its title and a one-line summary of what it is for.
+ *
+ * Exported so the launcher lists the same steps under the same names as the wizard's own stepper.
+ */
+export const COMPARISON_WIZARD_STEPS: readonly {
+  readonly step: ComparisonWizardStep; readonly title: string; readonly summary: string;
+}[] = [
+  { step: 1, title: 'Sources', summary: 'Choose the runs or groups to compare.' },
+  { step: 2, title: 'Comparability & filters', summary: 'See which of them can be charted together.' },
+  { step: 3, title: 'Table', summary: 'Read the results side by side.' },
+  { step: 4, title: 'Figures', summary: 'View the charts and export them.' }
+];
+
 /** How long a comparison may run before the footer offers the ways out. */
 const SLOW_COMPARISON_MS = 15_000;
 
@@ -475,12 +489,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   readonly steps: readonly ComparisonWizardStep[] = [1, 2, 3, 4];
 
-  readonly stepTitles: Record<ComparisonWizardStep, string> = {
-    1: 'Sources',
-    2: 'Comparability & filters',
-    3: 'Table',
-    4: 'Figures'
-  };
+  readonly stepTitles = Object.fromEntries(
+    COMPARISON_WIZARD_STEPS.map(entry => [entry.step, entry.title])
+  ) as Record<ComparisonWizardStep, string>;
 
   /**
    * Steps 2 and 3 need a computed comparison; step 4 additionally needs something chartable.

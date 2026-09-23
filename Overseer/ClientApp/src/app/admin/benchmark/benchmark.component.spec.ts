@@ -14,6 +14,7 @@ import { BenchmarkCompletionNotificationService } from '../../services/benchmark
 import { BenchmarkBackgroundActivityService } from '../../services/benchmark-background-activity.service';
 import { BenchmarkPollTickerService } from '../../services/benchmark-poll-ticker.service';
 import { serializeQuestionsYaml } from './question-yaml/question-yaml-format';
+import { COMPARISON_WIZARD_STEPS } from './model-comparison/model-comparison.component';
 
 describe('AdminBenchmarkComponent', () => {
   let component: AdminBenchmarkComponent;
@@ -7544,6 +7545,26 @@ describe('AdminBenchmarkComponent', () => {
       const terms = Array.from(state.querySelectorAll('dt')).map((dt: any) => dt.textContent.trim());
       expect(terms).toEqual(['Suite', 'Pricing basis', 'Charted', 'Computed']);
       expect(state.textContent).toContain('2 of 3 entries');
+    });
+
+    it('lists the four wizard steps under the titles the wizard itself uses', () => {
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      fixture.detectChanges();
+
+      const items = Array.from(
+        fixture.nativeElement.querySelectorAll('.mc-launcher ol.mc-launcher-steps > li')) as HTMLElement[];
+      expect(items.length).toBe(4);
+      expect(items.map(item => item.querySelector('strong')?.textContent?.trim()))
+        .toEqual(COMPARISON_WIZARD_STEPS.map(step => step.title));
+    });
+
+    it('carries one plain-language callout, and none of the internal key vocabulary', () => {
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      fixture.detectChanges();
+
+      const launcher = fixture.nativeElement.querySelector('.mc-launcher') as HTMLElement;
+      expect(launcher.querySelectorAll('.alert.alert-info[role="note"]').length).toBe(1);
+      expect(launcher.textContent).not.toContain('must-match');
     });
 
     it('opens the wizard modally from the launcher, and keeps it mounted after a close', () => {

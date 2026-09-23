@@ -2466,13 +2466,63 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
     color: var(--title-color, var(--primary-color));
   }
 
-  .mc-launcher-note {
-    margin: 0;
-    max-width: 90ch;
-    color: #b4b4b8;
+  h4 {
+    margin: 0 0 10px;
+    font-family: "Cinzel", serif;
     font-size: 13px;
+    letter-spacing: 0.04em;
+    color: var(--primary-color);
+  }
+
+  .mc-launcher-lead {
+    margin: 0;
+    max-width: 70ch;
+    color: #d4d4d8;
+    font-size: 14px;
     line-height: 1.55;
   }
+
+  .alert {
+    margin-bottom: 0;
+    max-width: 90ch;
+  }
+}
+
+/* One row per wizard step: a round number badge, then the title and its one-line summary. */
+.mc-launcher-steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #b4b4b8;
+  }
+
+  strong {
+    color: #e4e4e7;
+  }
+}
+
+.mc-launcher-step-number {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--primary-color);
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--primary-color);
 }
 
 .mc-launcher-state {

@@ -1384,37 +1384,66 @@
       -->
       <div class="mc-launcher">
         <h3>Cross-model comparison</h3>
-        <p class="mc-launcher-note">
-          Compares candidate models on quality, speed and cost over one benchmark suite. Two sources
-          may be charted together only where every must-match comparability key agrees — the same
-          suite, the same scoring method, the same harness and grading configuration; where one does
-          not, the source is excluded from every figure and the keys it differs on are named. The
-          wizard walks the three stages: choosing sources, reading what is comparable, and the
-          figures.
+        <p class="mc-launcher-lead">
+          Compare AI models side by side on quality, speed and cost, using the benchmark runs of one
+          suite.
         </p>
+
+        <div class="alert alert-info" role="note">
+          <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          <div class="alert-content">
+            <p class="alert-heading">Only like-for-like runs are charted together</p>
+            <div class="alert-body">
+              Runs are comparable only when they were measured the same way: the same questions,
+              grading and settings. The wizard shows which runs are left out, and why.
+            </div>
+          </div>
+        </div>
+
+        <!-- A static list, not `.gh-steps`: that class is a live stepper keyed on
+             `aria-current="step"`, which nothing here is. The titles are the wizard's own. -->
+        <section aria-labelledby="mc-launcher-steps-heading">
+          <h4 id="mc-launcher-steps-heading">How it works</h4>
+          <ol class="mc-launcher-steps">
+            @for (s of comparisonWizardSteps; track s.step) {
+              <li>
+                <span class="mc-launcher-step-number" aria-hidden="true">{{ s.step }}</span>
+                <span><strong>{{ s.title }}</strong> — {{ s.summary }}</span>
+              </li>
+            }
+          </ol>
+        </section>
 
         <!-- Only what the last comparison produced. Nothing about a pending selection is reported
              here: this panel holds no control that could change one, and a labelled read-out beside
              no selector reads as a control that has stopped working. -->
         @if (comparison) {
-          <dl class="mc-launcher-state">
-            <div>
-              <dt>Suite</dt>
-              <dd>{{ comparison.baselineSuiteName || 'Not set' }}</dd>
-            </div>
-            <div>
-              <dt>Pricing basis</dt>
-              <dd>{{ comparison.pricingBasisLabel || comparison.pricingBasis }}</dd>
-            </div>
-            <div>
-              <dt>Charted</dt>
-              <dd>{{ comparison.comparableCount }} of {{ comparison.entries.length }} entries</dd>
-            </div>
-            <div>
-              <dt>Computed</dt>
-              <dd>{{ comparison.computedAtUtc | date:'short' }}</dd>
-            </div>
-          </dl>
+          <section aria-labelledby="mc-launcher-last-heading">
+            <h4 id="mc-launcher-last-heading">Last comparison</h4>
+            <dl class="mc-launcher-state">
+              <div>
+                <dt>Suite</dt>
+                <dd>{{ comparison.baselineSuiteName || 'Not set' }}</dd>
+              </div>
+              <div>
+                <dt>Pricing basis</dt>
+                <dd>{{ comparison.pricingBasisLabel || comparison.pricingBasis }}</dd>
+              </div>
+              <div>
+                <dt>Charted</dt>
+                <dd>{{ comparison.comparableCount }} of {{ comparison.entries.length }} entries</dd>
+              </div>
+              <div>
+                <dt>Computed</dt>
+                <dd>{{ comparison.computedAtUtc | date:'short' }}</dd>
+              </div>
+            </dl>
+          </section>
         }
 
         @if (comparabilityIndexError) {

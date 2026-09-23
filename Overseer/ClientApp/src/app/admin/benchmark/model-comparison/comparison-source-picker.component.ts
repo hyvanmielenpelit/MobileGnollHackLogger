@@ -24,9 +24,13 @@ import type {
   BenchmarkRunSummaryDto
 } from '../../../services/admin-benchmark.service';
 import {
+  HASH_SHAPED,
+  SHORT_HASH_LENGTH,
+  buildConditionLegend,
   conditionDetailFor,
-  conditionOf,
-  selectedConditions
+  selectedConditions,
+  sourceLabel,
+  summarizeConditionDifference
 } from './model-comparison.models';
 import type {
   BenchmarkComparabilityConditionDto,
@@ -36,6 +40,9 @@ import type {
   BenchmarkComparabilityKeyValueDto,
   ConditionDetail,
   ConditionDetailRow,
+  ConditionDifferenceSummary,
+  ConditionLegend,
+  ConditionLegendItem,
   ConfigurationField
 } from './model-comparison.models';
 
@@ -83,8 +90,11 @@ export const GROUP_SECTION_TITLE = 'Analysis groups';
 /** The canonical rendering of an absent value, as `BenchmarkComparabilityKey.NoValue` writes it. */
 const NO_VALUE = '(none)';
 
-/** Hex characters of a digest that stay legible: git's own abbreviation, and enough to cite. */
-const SHORT_HASH_LENGTH = 12;
+/** Other conditions the legend adds per Show more; the charted one is always shown besides. */
+export const CONDITION_PAGE_SIZE = 5;
+
+/** Member labels a legend item names before the rest are counted instead. */
+const MEMBER_SUMMARY_LABELS = 6;
 
 /** How long a copy result stays on the status line before it clears itself. */
 const COPY_STATE_MS = 2000;
@@ -140,9 +150,6 @@ const CONDITION_KIND_LABELS: Readonly<Record<string, string | undefined>> = {
 /** Characters of an unparsed value that render before the collapsed box and its control take over. */
 const LONG_VALUE_CHARS = 600;
 
-/** A digest-shaped value, abbreviated on screen whatever kind the index declares for its key. */
-const HASH_SHAPED = /^[0-9a-fA-F]{32,}$/;
-
 /**
  * One side of a difference, so both panels of a row render from one block of markup.
  *
@@ -178,11 +185,18 @@ function conditionSide(
   };
 }
 
-/** One condition the figures are not measured under, and what it disagrees with the reference on. */
-export interface OtherConditionSummary {
-  readonly condition: BenchmarkComparabilityConditionDto;
-  /** The human labels of its differing keys, so the reader sees what switching would change. */
-  readonly differingKeyLabels: readonly string[];
+/** One differing key of a legend item, as its body lists it. */
+export interface ConditionDifferenceLine {
+  readonly name: string;
+  readonly label: string;
+  readonly summary: ConditionDifferenceSummary;
+}
+
+/** The hue class of a condition badge, keyed by ordinal so same-condition rows read alike. */
+function conditionHueClass(ordinal: number | null): string {
+  return ordinal == null
+    ? 'csp-condition csp-condition-none'
+    : `csp-condition csp-condition-${((ordinal - 1) % 3) + 1}`;
 }
 
 /**
@@ -442,8 +456,28 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
   // the result: a condition badge and detail per row, and a filter to narrow to one condition.
   // ---------------------------------------------------------------------------------------------
 
+  private legendCache: {
+    readonly index: BenchmarkComparabilityIndexDto | null;
+    readonly legend: ConditionLegend;
+  } | null = null;
+
+  /**
+   * The index's legend view and entry map, rebuilt only when the index object is replaced.
+   *
+   * Keyed on identity rather than on `ngOnChanges`, which a directly assigned input never fires.
+   * The host always replaces the index and never mutates it in place.
+   */
+  get legend(): ConditionLegend {
+    const index = this.comparabilityIndex;
+    if (this.legendCache?.index !== index) {
+      this.legendCache = { index, legend: buildConditionLegend(index) };
+      this.differenceCache.clear();
+    }
+    return this.legendCache!.legend;
+  }
+
   private comparabilityEntry(key: string): BenchmarkComparabilityIndexEntryDto | undefined {
-    return this.comparabilityIndex?.entries.find(entry => entry.key === key);
+    return this.legend.entryByKey.get(key);
   }
 
   /** The row's condition label, or a muted dash while the index has not loaded or lacks the key. */
@@ -454,8 +488,10 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
     return this.comparabilityEntry(key)?.conditionLabel ?? '—';
   }
 
+  /** The row's condition ordinal, or null while the index has not loaded, lacks the key or leaves it unassigned. */
   conditionOrdinal(key: string): number | null {
-    return conditionOf(this.comparabilityIndex, key);
+    const ordinal = this.comparabilityEntry(key)?.conditionOrdinal ?? 0;
+    return ordinal === 0 ? null : ordinal;
   }
 
   conditionDifferences(key: string): BenchmarkComparabilityDifferenceDto[] {
@@ -479,11 +515,7 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
 
   /** One of a small hue palette, keyed by condition ordinal so same-condition rows read alike. */
   conditionBadgeClass(key: string): string {
-    const ordinal = this.conditionOrdinal(key);
-    if (ordinal == null) {
-      return 'csp-condition csp-condition-none';
-    }
-    return `csp-condition csp-condition-${((ordinal - 1) % 3) + 1}`;
+    return conditionHueClass(this.conditionOrdinal(key));
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -744,8 +776,7 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
 
   /** The condition the figures are measured under: ordinal 1, or the first one on offer. */
   get referenceCondition(): BenchmarkComparabilityConditionDto | null {
-    const conditions = this.comparabilityIndex?.conditions ?? [];
-    return conditions.find(condition => condition.ordinal === 1) ?? conditions[0] ?? null;
+    return this.legend.reference?.condition ?? null;
   }
 
   /** Its label, so the block's heading names the same badge the two tables show on its rows. */
@@ -761,6 +792,16 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
    * taxonomy appears in the block the moment it exists.
    */
   get methodsGroups(): MethodsKindGroup[] {
+    const legend = this.legend;
+    if (this.methodsCache?.legend !== legend) {
+      this.methodsCache = { legend, groups: this.buildMethodsGroups() };
+    }
+    return this.methodsCache.groups;
+  }
+
+  private methodsCache: { readonly legend: ConditionLegend; readonly groups: MethodsKindGroup[] } | null = null;
+
+  private buildMethodsGroups(): MethodsKindGroup[] {
     const keys = this.comparabilityIndex?.largestConditionKeys ?? [];
     const named = METHODS_KINDS.map(kind => kind.kind);
     const order = [...named, ...keys.map(key => key.kind).filter(kind => !named.includes(kind))];
@@ -783,46 +824,6 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
       });
     }
     return groups;
-  }
-
-  /**
-   * The conditions the figures are *not* measured under, with the keys each disagrees on.
-   *
-   * This is the concrete answer to "why the largest and not the latest": the reader can see that
-   * the alternative is smaller, what switching to it would change, and whether it is newer.
-   */
-  get otherConditions(): OtherConditionSummary[] {
-    const index = this.comparabilityIndex;
-    if (!index) {
-      return [];
-    }
-    const referenceOrdinal = this.referenceCondition?.ordinal ?? 1;
-    return index.conditions
-      .filter(condition => condition.ordinal !== referenceOrdinal)
-      .map(condition => ({
-        condition,
-        differingKeyLabels: this.differingKeyLabels(condition.ordinal)
-      }));
-  }
-
-  /**
-   * The labels of the keys one condition differs from the reference on.
-   *
-   * Every source in a condition shares one must-match signature, so any single member's
-   * `differencesFromLargest` describes the whole cohort — which is why no per-condition difference
-   * list has to be sent.
-   */
-  private differingKeyLabels(ordinal: number): string[] {
-    const member = this.comparabilityIndex?.entries
-      .find(entry => entry.conditionOrdinal === ordinal);
-    return (member?.differencesFromLargest ?? []).map(difference => this.keyLabel(difference.name));
-  }
-
-  /** A key's human label as the reference condition describes it, falling back to its own name. */
-  keyLabel(name: string): string {
-    const described = this.comparabilityIndex?.largestConditionKeys
-      .find(key => key.name === name);
-    return described?.label || name;
   }
 
   /** The first {@link SHORT_HASH_LENGTH} characters: short enough to read, enough to cite. */
@@ -934,34 +935,219 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
     }
   }
 
-  /**
-   * Light dismiss where `closedby` is unsupported — Safari, at the time of writing.
-   *
-   * A backdrop click reports the dialog itself as the target, so a hit outside the dialog's own
-   * border box is the backdrop and closes it. A no-op in every browser that has `closedby`.
-   */
-  onLegendDialogClick(event: MouseEvent): void {
-    if ('closedBy' in HTMLDialogElement.prototype) {
-      return;
-    }
-    const dialog = event.currentTarget as HTMLDialogElement;
-    if (event.target !== dialog) {
-      return;
-    }
-    const rect = dialog.getBoundingClientRect();
-    const inside = rect.top <= event.clientY && event.clientY <= rect.top + rect.height
-      && rect.left <= event.clientX && event.clientX <= rect.left + rect.width;
-    if (!inside) {
-      dialog.close();
-    }
+  /** Copies the condition's signature in full, never the twelve characters the facts row shows. */
+  async copySignature(condition: BenchmarkComparabilityConditionDto): Promise<void> {
+    const copied = await copyToClipboard(condition.signature);
+    this.setCopyState(copied ? `Full ${condition.label} signature copied.` : COPY_FAILED);
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The About conditions dialog
+  //
+  // Nothing of its body is rendered while it is closed, and inside it only the open accordion
+  // item's body is: the legend can list every condition of the index, and each body carries the
+  // full methods block or a difference list.
+  // ---------------------------------------------------------------------------------------------
+
+  @ViewChild('legendDialog')
+  private legendDialogRef?: ElementRef<HTMLDialogElement>;
+
+  /** Whether the dialog is open, which is what renders its body at all. */
+  legendOpen = false;
+
+  /** The one accordion item whose body is rendered, by condition ordinal. */
+  openConditionOrdinal: number | null = null;
+
+  /** Other conditions currently listed; the charted one is always listed besides. */
+  visibleOtherCount = CONDITION_PAGE_SIZE;
+
+  /** Machine key names, key descriptions and full digests, dialog-wide. */
+  showTechnicalDetails = false;
+
+  /** Each rendered item's difference lines by ordinal, for the current index. */
+  private readonly differenceCache = new Map<number, ConditionDifferenceLine[]>();
+
+  /** Opens the dialog on the charted condition, first page, technical details off. */
+  openLegend(): void {
+    this.visibleOtherCount = CONDITION_PAGE_SIZE;
+    this.showTechnicalDetails = false;
+    this.openConditionOrdinal = this.legend.reference?.condition.ordinal ?? null;
+    this.legendOpen = true;
+    // The body is autofocused, so it has to exist before the dialog is promoted to the top layer.
+    this.cdr.detectChanges();
+    this.legendDialogRef?.nativeElement.showModal();
   }
 
   /**
-   * Keeps the legend's own close and cancel events off the wizard dialog that contains it. The
-   * host closes the wizard from those two events, and this dialog is a descendant of it.
+   * Keeps the legend's own close and cancel events off the wizard dialog that contains it — the
+   * host closes the wizard from those two events, and this dialog is a descendant of it — and on
+   * close drops the body and returns focus to the button that opened it.
+   *
+   * Only `close` is acted on, for the reason {@link onConditionDialogClose} gives.
    */
   onLegendDialogClose(event: Event): void {
     event.stopPropagation();
+    if (event.type !== 'close') {
+      return;
+    }
+    this.legendOpen = false;
+    this.cdr.detectChanges();
+    document.getElementById('csp-legend-trigger')?.focus();
+  }
+
+  /**
+   * Tracks the exclusive accordion. The closing item's event can arrive before or after the
+   * opening one's, so a close clears the state only while it still names that item.
+   */
+  onConditionToggle(ordinal: number, event: ToggleEvent): void {
+    if (event.newState === 'open') {
+      this.openConditionOrdinal = ordinal;
+    } else if (this.openConditionOrdinal === ordinal) {
+      this.openConditionOrdinal = null;
+    }
+    this.cdr.detectChanges();
+  }
+
+  /**
+   * The three kinds of key as plain-language cards, each with its technical names. Read only while
+   * the dialog is open, which is the only time its body renders.
+   */
+  get ruleCards(): { id: string; title: string; note: string; names: readonly string[] }[] {
+    const index = this.comparabilityIndex;
+    return [
+      {
+        id: 'must-match',
+        title: 'Must be the same',
+        note: 'If one of these differs, the run is left out of the charts.',
+        names: index?.mustMatchKeyNames ?? []
+      },
+      {
+        id: 'model-axis',
+        title: 'What you compare',
+        note: 'The model and how it is set up — differences here are the point of the comparison.',
+        names: index?.modelAxisKeyNames ?? []
+      },
+      {
+        id: 'degrading',
+        title: 'May differ, flagged',
+        note: 'Still charted; the speed or cost axis they affect is marked.',
+        names: index?.degradingKeyNames ?? []
+      }
+    ];
+  }
+
+  /** The accordion's items in order: the charted condition, then the listed page of the others. */
+  get listedConditions(): readonly ConditionLegendItem[] {
+    const reference = this.legend.reference;
+    return reference ? [reference, ...this.visibleOthers] : this.visibleOthers;
+  }
+
+  get visibleOthers(): readonly ConditionLegendItem[] {
+    return this.legend.others.slice(0, this.visibleOtherCount);
+  }
+
+  get remainingOtherCount(): number {
+    return Math.max(0, this.legend.others.length - this.visibleOtherCount);
+  }
+
+  /** How many the Show more button adds. */
+  get nextConditionPageCount(): number {
+    return Math.min(CONDITION_PAGE_SIZE, this.remainingOtherCount);
+  }
+
+  /** Conditions listed now, the charted one included. */
+  get shownConditionCount(): number {
+    return (this.legend.reference ? 1 : 0) + this.visibleOthers.length;
+  }
+
+  /** Every condition of the index. */
+  get totalConditionCount(): number {
+    return (this.legend.reference ? 1 : 0) + this.legend.others.length;
+  }
+
+  /** The pager row is offered only when the others do not fit on one page. */
+  get conditionsPaged(): boolean {
+    return this.legend.others.length > CONDITION_PAGE_SIZE;
+  }
+
+  /**
+   * Lists the next page, and moves focus to its first item: the button that had it may just have
+   * disappeared, and a keyboard reader should land on what was added.
+   */
+  showMoreConditions(): void {
+    const firstNew = this.legend.others[this.visibleOtherCount];
+    if (firstNew == null) {
+      return;
+    }
+    this.visibleOtherCount += CONDITION_PAGE_SIZE;
+    this.cdr.detectChanges();
+    document.getElementById(this.conditionSummaryId(firstNew))?.focus();
+  }
+
+  toggleTechnicalDetails(): void {
+    this.showTechnicalDetails = !this.showTechnicalDetails;
+    this.cdr.detectChanges();
+  }
+
+  /** The DOM id of an item's `<summary>`, which Show more moves focus to. */
+  conditionSummaryId(item: ConditionLegendItem): string {
+    return `csp-cond-summary-${item.condition.ordinal}`;
+  }
+
+  /** The item's badge, in the same hue its rows carry in the two source tables. */
+  conditionItemBadgeClass(item: ConditionLegendItem): string {
+    return conditionHueClass(item.condition.ordinal);
+  }
+
+  /** "differs on 2 settings", or nothing for the charted condition. */
+  differsOnLabel(item: ConditionLegendItem): string {
+    return `differs on ${this.countLabel(item.differingKeyLabels.length, 'setting')}`;
+  }
+
+  /**
+   * What one condition differs from the charted one on, key by key, charted value first.
+   *
+   * Read through the condition's representative member, which speaks for the whole cohort.
+   */
+  differenceSummaries(item: ConditionLegendItem): ConditionDifferenceLine[] {
+    const key = item.representativeKey;
+    if (key == null) {
+      return [];
+    }
+    // Read first: a replaced index clears the cache.
+    void this.legend;
+    let lines = this.differenceCache.get(item.condition.ordinal);
+    if (lines == null) {
+      const detail = conditionDetailFor(this.comparabilityIndex, key, this.sourceRunIds(key));
+      lines = (detail?.rows ?? []).map(row => ({
+        name: row.name,
+        label: row.label,
+        summary: summarizeConditionDifference(row)
+      }));
+      this.differenceCache.set(item.condition.ordinal, lines);
+    }
+    return lines;
+  }
+
+  /** "Run 12, Run 15, Analysis group 3 and 4 more": the sources in one condition. */
+  memberSummary(item: ConditionLegendItem): string {
+    const labels = item.memberKeys
+      .slice(0, MEMBER_SUMMARY_LABELS)
+      .map(key => this.legend.entryByKey.get(key))
+      .filter((entry): entry is BenchmarkComparabilityIndexEntryDto => entry != null)
+      .map(entry => sourceLabel(entry));
+    if (labels.length === 0) {
+      return 'None recorded.';
+    }
+    const rest = item.memberKeys.length - MEMBER_SUMMARY_LABELS;
+    return rest > 0 ? `${labels.join(', ')} and ${rest} more` : labels.join(', ');
+  }
+
+  /** Opens the comparability detail of the condition's representative source, over this dialog. */
+  openConditionDetailFor(item: ConditionLegendItem, event: Event): void {
+    if (item.representativeKey != null) {
+      this.openConditionDetail(item.representativeKey, event);
+    }
   }
 
   /** Every condition label offered by the index, in whatever order they arrive plus any extras. */

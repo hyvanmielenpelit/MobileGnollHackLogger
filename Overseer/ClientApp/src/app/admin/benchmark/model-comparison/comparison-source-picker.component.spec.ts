@@ -617,34 +617,240 @@ describe('ComparisonSourcePickerComponent', () => {
   });
 
   // -------------------------------------------------------------------------------------------
-  // The condition legend
+  // About conditions
   // -------------------------------------------------------------------------------------------
 
-  it('opens the condition legend as a modal dialog', () => {
-    render({ comparabilityIndex: buildIndex() });
-    const dialog = fixture.debugElement.query(By.css('dialog.csp-legend-dialog'))
+  function legendDialog(): HTMLDialogElement {
+    return fixture.debugElement.query(By.css('dialog.csp-legend-dialog'))
       .nativeElement as HTMLDialogElement;
-    const showModal = spyOn(dialog, 'showModal');
+  }
+
+  /** Every legend spec opens the dialog first: nothing of its body renders while it is closed. */
+  function openLegend(): void {
+    component.openLegend();
+    fixture.detectChanges();
+  }
+
+  function conditionItems(): HTMLDetailsElement[] {
+    return fixture.debugElement.queryAll(By.css('details.csp-cond-item'))
+      .map(element => element.nativeElement as HTMLDetailsElement);
+  }
+
+  /** The accordion bodies actually in the DOM; the rule cards' disclosures carry the class too. */
+  function conditionBodies(): HTMLElement[] {
+    return fixture.debugElement.queryAll(By.css('details.csp-cond-item > .gh-disclosure-body'))
+      .map(element => element.nativeElement as HTMLElement);
+  }
+
+  function toggle(item: HTMLDetailsElement, newState: 'open' | 'closed'): void {
+    item.dispatchEvent(new ToggleEvent('toggle', {
+      newState,
+      oldState: newState === 'open' ? 'closed' : 'open'
+    }));
+    fixture.detectChanges();
+  }
+
+  /** The reference condition plus `count` others, each a day older than the one before. */
+  function indexWithOthers(count: number): BenchmarkComparabilityIndexDto {
+    const conditions = [buildIndex().conditions[0]];
+    for (let i = 0; i < count; i++) {
+      const ordinal = i + 2;
+      conditions.push({
+        ordinal,
+        label: `Condition ${String.fromCharCode(64 + ordinal)}`,
+        sourceCount: 1,
+        runCount: 1,
+        signature: `sig-${ordinal}`,
+        newestRunStartedAtUtc: `2026-08-${String(28 - i).padStart(2, '0')}T10:00:00Z`
+      });
+    }
+    return buildIndex({ conditions });
+  }
+
+  it('opens About conditions as a modal dialog from its trigger', () => {
+    render({ comparabilityIndex: buildIndex() });
+    const showModal = spyOn(legendDialog(), 'showModal');
 
     (fixture.debugElement.query(By.css('#csp-legend-trigger'))
       .nativeElement as HTMLButtonElement).click();
 
     expect(showModal).toHaveBeenCalled();
+    expect(component.legendOpen).toBeTrue();
+    // Full-screen, so its backdrop is only a thin ring: no light dismiss.
+    expect(legendDialog().classList.contains('gh-dialog-fullscreen')).toBeTrue();
+    expect(legendDialog().hasAttribute('closedby')).toBeFalse();
+    expect((fixture.debugElement.query(By.css('#csp-legend-title')).nativeElement as HTMLElement)
+      .textContent?.trim()).toBe('About conditions');
   });
 
-  it('renders every comparability key as its own chip', () => {
+  it('renders nothing of its body while closed, and drops it again on close', async () => {
+    render({ comparabilityIndex: buildIndex() });
+    expect(fixture.debugElement.query(By.css('.csp-legend-inner'))).toBeNull();
+
+    openLegend();
+    expect(fixture.debugElement.query(By.css('.csp-legend-inner'))).toBeTruthy();
+
+    legendDialog().close();
+    // `close` is fired from a queued element task, so it has not run yet.
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+    fixture.detectChanges();
+
+    expect(component.legendOpen).toBeFalse();
+    expect(fixture.debugElement.query(By.css('.csp-legend-inner'))).toBeNull();
+    expect(document.activeElement?.id).toBe('csp-legend-trigger');
+  });
+
+  it('renders every comparability key as its own chip, under Technical names', () => {
     const index = buildIndex();
     render({ comparabilityIndex: index });
+    openLegend();
 
-    // Direct children only: the methods block and the other-conditions list reuse the same class
-    // for their own values, nested inside a `<dd>` and an `<li>` respectively.
-    const chips = fixture.debugElement.queryAll(By.css('.csp-legend-group > .csp-key-chips li'))
+    const chips = fixture.debugElement.queryAll(By.css('.csp-rule-keys .csp-key-chips li'))
       .map(element => (element.nativeElement as HTMLElement).textContent?.trim() ?? '');
 
     expect(chips.length).toBe(
       index.mustMatchKeyNames.length + index.modelAxisKeyNames.length + index.degradingKeyNames.length);
     // A comma would mean a joined string was handed to the browser as one breakable-anywhere token.
     expect(chips.some(text => text.includes(','))).toBeFalse();
+  });
+
+  it('pins the charted condition first, tagged and open, and lists the others newest first', () => {
+    const index = buildIndex({
+      conditions: [
+        ...buildIndex().conditions,
+        {
+          ordinal: 3, label: 'Condition C', sourceCount: 1, runCount: 2,
+          signature: 'sig-c', newestRunStartedAtUtc: '2026-09-08T09:00:00Z'
+        }
+      ]
+    });
+    render({ comparabilityIndex: index });
+    openLegend();
+
+    const items = conditionItems();
+    const summaries = items.map(item => item.querySelector('summary')?.textContent ?? '');
+    // Condition C's newest run is newer than the charted one's; it still comes after it.
+    expect(summaries.map(text => text.match(/Condition [A-Z]/)?.[0]))
+      .toEqual(['Condition A', 'Condition C', 'Condition B']);
+    expect(items[0].querySelector('.csp-cond-charted')?.textContent?.trim()).toBe('Charted');
+    expect(items[1].querySelector('.csp-cond-charted')).toBeNull();
+    expect(items[0].open).toBeTrue();
+    expect(component.openConditionOrdinal).toBe(1);
+    expect(summaries[2]).toContain('differs on 1 setting');
+  });
+
+  it('keeps one body in the DOM, and moves it with the exclusive accordion', () => {
+    render({ comparabilityIndex: buildIndex() });
+    openLegend();
+    const [reference, other] = conditionItems();
+
+    expect(conditionItems().every(item => item.getAttribute('name') === 'csp-conditions')).toBeTrue();
+    expect(conditionBodies().length).toBe(1);
+    expect(reference.contains(conditionBodies()[0])).toBeTrue();
+
+    toggle(other, 'open');
+    // The closing item's event arrives after the opening one's and must not clear the new state.
+    toggle(reference, 'closed');
+
+    expect(component.openConditionOrdinal).toBe(2);
+    expect(conditionBodies().length).toBe(1);
+    expect(other.contains(conditionBodies()[0])).toBeTrue();
+
+    toggle(other, 'closed');
+    expect(component.openConditionOrdinal).toBeNull();
+    expect(conditionBodies().length).toBe(0);
+  });
+
+  it('lists five more conditions per Show more and moves focus to the first new one', () => {
+    render({ comparabilityIndex: indexWithOthers(8) });
+    openLegend();
+
+    expect(conditionItems().length).toBe(6);
+    const count = () => (fixture.debugElement.query(By.css('.csp-cond-count'))
+      .nativeElement as HTMLElement).textContent?.trim();
+    expect(count()).toBe('Showing 6 of 9 conditions');
+
+    const more = fixture.debugElement.query(By.css('.csp-cond-pager button'))
+      .nativeElement as HTMLButtonElement;
+    expect(more.textContent?.trim()).toBe('Show 3 more');
+    const firstHidden = component.legend.others[5].condition.ordinal;
+
+    more.click();
+    fixture.detectChanges();
+
+    expect(conditionItems().length).toBe(9);
+    expect(count()).toBe('Showing 9 of 9 conditions');
+    expect(fixture.debugElement.query(By.css('.csp-cond-pager button'))).toBeNull();
+    expect(document.activeElement?.id).toBe(`csp-cond-summary-${firstHidden}`);
+  });
+
+  it('offers no pager while the other conditions fit on one page', () => {
+    render({ comparabilityIndex: indexWithOthers(5) });
+    openLegend();
+
+    expect(conditionItems().length).toBe(6);
+    expect(fixture.debugElement.query(By.css('.csp-cond-pager'))).toBeNull();
+  });
+
+  it("reads another condition's differences charted value first, and opens its full detail", () => {
+    render({ runs: runs(3), comparabilityIndex: buildIndex() });
+    openLegend();
+    const other = conditionItems()[1];
+    toggle(other, 'open');
+
+    const body = conditionBodies()[0];
+    const text = body.textContent ?? '';
+    expect(text).toContain('What is different from Condition A');
+    const line = body.querySelector('.csp-diff-list > li')?.textContent ?? '';
+    expect(line).toContain('serviceTier');
+    expect(line.indexOf('standard')).toBeGreaterThan(-1);
+    expect(line.indexOf('standard')).toBeLessThan(line.indexOf('priority'));
+    expect(line).toContain('changed to');
+    expect(body.querySelector('.csp-cond-members')?.textContent?.trim()).toBe('Run 3');
+
+    const detailDialog = fixture.debugElement.query(By.css('dialog.csp-condition-dialog'))
+      .nativeElement as HTMLDialogElement;
+    const showModal = spyOn(detailDialog, 'showModal');
+    const fullDetail = body.querySelector('.csp-cond-actions button') as HTMLButtonElement;
+    expect(fullDetail.getAttribute('aria-label')).toBe('Full detail for Condition B');
+
+    fullDetail.click();
+
+    expect(showModal).toHaveBeenCalled();
+    expect(component.conditionDetail?.sourceLabel).toBe('Run 3');
+  });
+
+  it('keeps technical details off on every open', () => {
+    render({ comparabilityIndex: buildIndex() });
+    openLegend();
+    expect(component.showTechnicalDetails).toBeFalse();
+    expect(fixture.debugElement.query(By.css('.csp-methods-key'))).toBeNull();
+
+    component.toggleTechnicalDetails();
+    expect(fixture.debugElement.query(By.css('.csp-methods-key'))).toBeTruthy();
+    expect((fixture.debugElement.query(By.css('.csp-conditions-head .gh-filter-toggle'))
+      .nativeElement as HTMLButtonElement).getAttribute('aria-pressed')).toBe('true');
+
+    component.onLegendDialogClose(new Event('close'));
+    openLegend();
+
+    expect(component.showTechnicalDetails).toBeFalse();
+    expect(fixture.debugElement.query(By.css('.csp-methods-key'))).toBeNull();
+  });
+
+  it('rebuilds its entry lookup when the index is replaced', () => {
+    render({ comparabilityIndex: buildIndex() });
+    expect(component.conditionLabel('run:3')).toBe('Condition B');
+
+    const replaced = buildIndex({
+      entries: buildIndex().entries.map(entry => entry.key === 'run:3'
+        ? { ...entry, conditionLabel: 'Condition Z' }
+        : entry)
+    });
+    fixture.componentRef.setInput('comparabilityIndex', replaced);
+    fixture.detectChanges();
+
+    expect(component.conditionLabel('run:3')).toBe('Condition Z');
   });
 
   // -------------------------------------------------------------------------------------------
@@ -675,11 +881,17 @@ describe('ComparisonSourcePickerComponent', () => {
       return ((element?.nativeElement as HTMLElement | undefined)?.textContent ?? '').trim();
     }
 
+    /** The legend open on the reference condition, which is where the methods block renders. */
+    function renderLegend(index: BenchmarkComparabilityIndexDto = buildIndex()): void {
+      render({ comparabilityIndex: index });
+      openLegend();
+    }
+
     it('names the condition, its size, its newest run and the rule that chose it', () => {
       const index = buildIndex();
-      render({ comparabilityIndex: index });
+      renderLegend(index);
 
-      expect(textOf('#csp-methods-heading')).toContain('Condition A');
+      expect(textOf('.csp-legend-charted .alert-heading')).toBe('The charts use Condition A');
 
       const facts = textOf('.csp-methods-facts');
       expect(facts).toContain('Sources');
@@ -690,40 +902,47 @@ describe('ComparisonSourcePickerComponent', () => {
 
       // The sentence is the server's, so the text an operator reads cannot drift from the
       // tie-break the bucketing applies.
-      expect(textOf('.csp-methods-rule')).toBe(index.referenceSelectionRule);
+      expect(textOf('.csp-methods-rule')).toContain(index.referenceSelectionRule);
     });
 
     it('gives each reference-condition key its own row, grouped by kind', () => {
       const index = buildIndex();
-      render({ comparabilityIndex: index });
+      renderLegend(index);
 
-      const rows = fixture.debugElement.queryAll(By.css('.csp-legend-values dt'));
+      const rows = fixture.debugElement.queryAll(By.css('.csp-methods-grid dt'));
       expect(rows.length).toBe(index.largestConditionKeys.length);
 
       const titles = fixture.debugElement.queryAll(By.css('.csp-methods-kind h5'))
         .map(element => (element.nativeElement as HTMLElement).textContent?.trim());
       expect(titles).toEqual(['The exam', 'The apparatus']);
 
-      // Every row carries the human label, the machine name and the one-line description: the
-      // internal key name alone is what made the old block unreadable.
-      const firstRow = (rows[0].nativeElement as HTMLElement).textContent ?? '';
-      expect(firstRow).toContain('Question suite');
+      // The human label by default; the machine name and the one-line description are technical
+      // details, one toggle away.
+      expect((rows[0].nativeElement as HTMLElement).textContent).toContain('Question suite');
+      expect((rows[0].nativeElement as HTMLElement).textContent).not.toContain('BenchmarkSuiteId');
+
+      component.toggleTechnicalDetails();
+      const firstRow = (fixture.debugElement.queryAll(By.css('.csp-methods-grid dt'))[0]
+        .nativeElement as HTMLElement).textContent ?? '';
       expect(firstRow).toContain('BenchmarkSuiteId');
       expect(textOf('.csp-methods-key-note')).toContain('A difference here');
     });
 
     it('shows an identifier as the name the server knows for it', () => {
-      render({ comparabilityIndex: buildIndex() });
+      renderLegend();
 
       const values = fixture.debugElement.queryAll(By.css('.csp-legend-values dd code'))
         .map(element => (element.nativeElement as HTMLElement).textContent ?? '');
       expect(values.some(text => text.includes('NetHack Wiki Suite (#5)'))).toBeTrue();
     });
 
-    it('shows a hash as twelve characters with the full digest behind a disclosure', () => {
-      render({ comparabilityIndex: buildIndex() });
+    it('shows a hash as twelve characters, with the full digest a technical detail', () => {
+      renderLegend();
 
-      expect(textOf('.csp-methods-hash code')).toBe(FULL_DIGEST.slice(0, 12));
+      expect(textOf('.csp-methods-grid .csp-methods-hash code')).toBe(FULL_DIGEST.slice(0, 12));
+      expect(fixture.debugElement.query(By.css('details.csp-methods-disclosure'))).toBeNull();
+
+      component.toggleTechnicalDetails();
 
       const disclosure = fixture.debugElement.query(By.css('details.csp-methods-disclosure'));
       expect(disclosure).withContext('the full digest must remain reachable by hand').toBeTruthy();
@@ -731,7 +950,7 @@ describe('ComparisonSourcePickerComponent', () => {
     });
 
     it('keeps the prompt-options value inside its own code scroller', () => {
-      render({ comparabilityIndex: buildIndex() });
+      renderLegend();
 
       const values = fixture.debugElement.queryAll(By.css('.csp-legend-values dd code'))
         .map(element => (element.nativeElement as HTMLElement).textContent ?? '');
@@ -746,7 +965,7 @@ describe('ComparisonSourcePickerComponent', () => {
     });
 
     it('splits a list value into one chip per element', () => {
-      render({ comparabilityIndex: buildIndex() });
+      renderLegend();
 
       const chips = fixture.debugElement.queryAll(By.css('.csp-legend-values dd .csp-key-chips li'))
         .map(element => (element.nativeElement as HTMLElement).textContent?.trim());
@@ -755,7 +974,7 @@ describe('ComparisonSourcePickerComponent', () => {
     });
 
     it('renders an absent value as a dash rather than as the word "(none)"', () => {
-      render({ comparabilityIndex: buildIndex() });
+      renderLegend();
 
       const none = fixture.debugElement.query(By.css('.csp-methods-none'));
       expect(none).toBeTruthy();
@@ -768,7 +987,11 @@ describe('ComparisonSourcePickerComponent', () => {
     it('copies the methods statement with full values, never the abbreviations', async () => {
       const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
       installClipboard({ writeText });
-      render({ comparabilityIndex: buildIndex() });
+      renderLegend();
+      const footerButtons = fixture.debugElement
+        .queryAll(By.css('dialog.csp-legend-dialog .dialog-actions button'))
+        .map(element => (element.nativeElement as HTMLButtonElement).textContent?.trim());
+      expect(footerButtons).toEqual(['Close', 'Copy methods statement']);
 
       await component.copyMethodsStatement();
 
@@ -795,6 +1018,17 @@ describe('ComparisonSourcePickerComponent', () => {
       expect(writeText).toHaveBeenCalledWith(FULL_DIGEST);
     });
 
+    it('copies a condition signature in full', async () => {
+      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      installClipboard({ writeText });
+      render({ comparabilityIndex: buildIndex() });
+
+      await component.copySignature(buildIndex().conditions[0]);
+
+      expect(writeText).toHaveBeenCalledWith('sig-a');
+      expect(component.methodsCopyState).toContain('signature copied');
+    });
+
     it('says what to do instead when the clipboard refuses the write', async () => {
       installClipboard(undefined);
       render({ comparabilityIndex: buildIndex() });
@@ -803,70 +1037,6 @@ describe('ComparisonSourcePickerComponent', () => {
 
       expect(component.methodsCopyState).toBe('Copy failed — select the text instead.');
     });
-  });
-
-  // -------------------------------------------------------------------------------------------
-  // The conditions the figures are not measured under
-  // -------------------------------------------------------------------------------------------
-
-  it('lists every non-reference condition with its size and the keys it differs on', () => {
-    render({ comparabilityIndex: buildIndex() });
-
-    expect(component.otherConditions.length).toBe(1);
-    expect(component.otherConditions[0].condition.label).toBe('Condition B');
-
-    const others = fixture.debugElement.queryAll(By.css('.csp-others > li'))
-      .map(element => (element.nativeElement as HTMLElement).textContent ?? '');
-    expect(others.length).toBe(1);
-    expect(others[0]).toContain('Condition B');
-    expect(others[0]).toContain('1 source');
-    expect(others[0]).toContain('1 run');
-    // The differing key is named by its own label where the reference condition describes it, so
-    // the reader sees what switching would change rather than a bare internal name.
-    expect(others[0]).toContain('serviceTier');
-  });
-
-  it('offers no other-conditions section when everything is in one condition', () => {
-    const index = buildIndex({
-      conditions: [{
-        ordinal: 1, label: 'Condition A', sourceCount: 3, runCount: 3,
-        signature: 'sig-a', newestRunStartedAtUtc: '2026-09-07T18:22:00Z'
-      }]
-    });
-    render({ comparabilityIndex: index });
-
-    expect(component.otherConditions).toEqual([]);
-    expect(fixture.debugElement.query(By.css('#csp-others-heading'))).toBeNull();
-  });
-
-  it('closes the legend on a backdrop click where closedby is unsupported', () => {
-    render({ comparabilityIndex: buildIndex() });
-    const dialog = fixture.debugElement.query(By.css('dialog.csp-legend-dialog'))
-      .nativeElement as HTMLDialogElement;
-    const close = spyOn(dialog, 'close');
-    // The dialog is closed, so its rect is empty and every coordinate is outside it.
-    const outside = { target: dialog, currentTarget: dialog, clientX: -50, clientY: -50 } as unknown as MouseEvent;
-
-    component.onLegendDialogClick(outside);
-
-    if ('closedBy' in HTMLDialogElement.prototype) {
-      // The browser's own light dismiss owns this; the handler must not close it a second time.
-      expect(close).not.toHaveBeenCalled();
-    } else {
-      expect(close).toHaveBeenCalled();
-      close.calls.reset();
-      const rect = dialog.getBoundingClientRect();
-      const inside = {
-        target: dialog,
-        currentTarget: dialog,
-        clientX: rect.left + rect.width / 2,
-        clientY: rect.top + rect.height / 2
-      } as unknown as MouseEvent;
-
-      component.onLegendDialogClick(inside);
-
-      expect(close).not.toHaveBeenCalled();
-    }
   });
 
   it('keeps the legend close event off the wizard', () => {

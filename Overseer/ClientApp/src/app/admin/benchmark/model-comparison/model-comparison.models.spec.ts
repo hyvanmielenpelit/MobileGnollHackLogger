@@ -1,11 +1,15 @@
 import {
+  buildConditionLegend,
   conditionDetailFor,
-  parseConfigurationValue
+  parseConfigurationValue,
+  summarizeConditionDifference
 } from './model-comparison.models';
 import type {
+  BenchmarkComparabilityConditionDto,
   BenchmarkComparabilityIndexDto,
   BenchmarkComparabilityIndexEntryDto,
-  BenchmarkComparabilityKeyValueDto
+  BenchmarkComparabilityKeyValueDto,
+  ConditionDetailRow
 } from './model-comparison.models';
 
 /** The reference condition's assessor configuration, in the `key=value;…` shape the wire uses. */
@@ -291,5 +295,189 @@ describe('conditionDetailFor', () => {
     // Such a source is not in any condition, so it differs from the reference on nothing named.
     expect(detail.rows).toEqual([]);
     expect(detail.conditionLabel).toBe('Self-inconsistent');
+  });
+});
+
+describe('buildConditionLegend', () => {
+  function condition(
+    ordinal: number,
+    newestRunStartedAtUtc: string | null
+  ): BenchmarkComparabilityConditionDto {
+    return {
+      ordinal,
+      label: `Condition ${String.fromCharCode(64 + ordinal)}`,
+      sourceCount: 1,
+      runCount: 1,
+      signature: `sig-${ordinal}`,
+      newestRunStartedAtUtc
+    };
+  }
+
+  it('returns no reference, no others and an empty map for no index', () => {
+    const legend = buildConditionLegend(null);
+
+    expect(legend.reference).toBeNull();
+    expect(legend.others).toEqual([]);
+    expect(legend.entryByKey.size).toBe(0);
+  });
+
+  it('maps every entry by key, the unassigned ones included', () => {
+    const legend = buildConditionLegend(buildIndex());
+
+    expect(legend.entryByKey.size).toBe(4);
+    expect(legend.entryByKey.get('group:9')?.conditionLabel).toBe('Self-inconsistent');
+  });
+
+  it('pins ordinal 1 as the reference even when another condition is newer', () => {
+    const index = buildIndex({
+      entries: [],
+      conditions: [
+        condition(1, '2026-09-01T08:00:00Z'),
+        condition(2, '2026-09-05T08:00:00Z'),
+        condition(3, null),
+        condition(4, '2026-09-09T08:00:00Z'),
+        condition(5, '2026-09-05T08:00:00Z')
+      ]
+    });
+
+    const legend = buildConditionLegend(index);
+
+    expect(legend.reference?.condition.ordinal).toBe(1);
+    expect(legend.reference?.isReference).toBeTrue();
+    // Newest first; the undated condition last; the two equal dates in ordinal order.
+    expect(legend.others.map(item => item.condition.ordinal)).toEqual([4, 2, 5, 3]);
+    expect(legend.others.every(item => !item.isReference)).toBeTrue();
+  });
+
+  it('falls back to the first condition when none has ordinal 1', () => {
+    const legend = buildConditionLegend(buildIndex({
+      entries: [],
+      conditions: [condition(3, null), condition(2, null)]
+    }));
+
+    expect(legend.reference?.condition.ordinal).toBe(3);
+    expect(legend.others.map(item => item.condition.ordinal)).toEqual([2]);
+  });
+
+  it('groups members by condition, runs first, and reads the cohort through a run', () => {
+    const index = buildIndex({
+      entries: [
+        ...buildIndex().entries,
+        // A group listed before a run of the same condition, with a lower id.
+        buildEntry({
+          key: 'group:2', sourceKind: 'Group', sourceId: 2, conditionOrdinal: 3,
+          differencesFromLargest: []
+        }),
+        buildEntry({
+          key: 'run:7', sourceId: 7, conditionOrdinal: 3,
+          differencesFromLargest: differences([7]).slice(0, 1)
+        })
+      ],
+      conditions: [...buildIndex().conditions, condition(3, '2026-09-08T08:00:00Z')]
+    });
+
+    const legend = buildConditionLegend(index);
+
+    expect(legend.reference?.memberKeys).toEqual(['run:1']);
+    expect(legend.reference?.differingKeyLabels).toEqual([]);
+
+    // Condition B's newest run (9 September) is newer than the third condition's (8 September).
+    const [second, third] = legend.others;
+    expect(third.memberKeys).toEqual(['run:7', 'group:2']);
+    expect(third.representativeKey).toBe('run:7');
+    expect(third.differingKeyLabels).toEqual(['Assessor configuration']);
+
+    expect(second.memberKeys).toEqual(['run:3', 'group:4']);
+    expect(second.differingKeyLabels).toEqual(['Assessor configuration', 'Candidate system prompt']);
+  });
+
+  it('takes the first group as the representative of a cohort with no run', () => {
+    const index = buildIndex({
+      entries: [
+        buildEntry({ key: 'run:1', sourceId: 1 }),
+        buildEntry({ key: 'group:8', sourceKind: 'Group', sourceId: 8, conditionOrdinal: 2 }),
+        buildEntry({ key: 'group:5', sourceKind: 'Group', sourceId: 5, conditionOrdinal: 2 })
+      ]
+    });
+
+    const [other] = buildConditionLegend(index).others;
+
+    expect(other.memberKeys).toEqual(['group:5', 'group:8']);
+    expect(other.representativeKey).toBe('group:5');
+  });
+});
+
+describe('summarizeConditionDifference', () => {
+  function row(overrides: Partial<ConditionDetailRow> = {}): ConditionDetailRow {
+    return {
+      name: 'serviceTier',
+      label: 'Candidate service tier',
+      kind: 'Instrument',
+      valueKind: 'Text',
+      description: 'A difference here means the runs were served at different priorities.',
+      thisValue: 'priority',
+      referenceValue: 'standard',
+      thisFields: null,
+      referenceFields: null,
+      changedFields: [],
+      variants: [],
+      ...overrides
+    };
+  }
+
+  it('reads a configuration field by field, charted value first', () => {
+    const [assessor] = conditionDetailFor(buildIndex(), 'run:3', [3])!.rows;
+
+    expect(summarizeConditionDifference(assessor)).toEqual({
+      kind: 'fields',
+      changes: [{ name: 'thinking', from: 'medium', to: 'high' }]
+    });
+  });
+
+  it('writes (none) for a field present on one side only', () => {
+    const summary = summarizeConditionDifference(row({
+      referenceValue: 'provider=OpenAI',
+      thisValue: 'provider=OpenAI;secondOpinion=Google',
+      referenceFields: [{ name: 'provider', value: 'OpenAI' }],
+      thisFields: [
+        { name: 'provider', value: 'OpenAI' },
+        { name: 'secondOpinion', value: 'Google' }
+      ],
+      changedFields: ['secondOpinion']
+    }));
+
+    expect(summary).toEqual({
+      kind: 'fields',
+      changes: [{ name: 'secondOpinion', from: '(none)', to: 'Google' }]
+    });
+  });
+
+  it('shortens a digest on both sides', () => {
+    const [, prompt] = conditionDetailFor(buildIndex(), 'run:3', [3])!.rows;
+
+    expect(summarizeConditionDifference(prompt)).toEqual({
+      kind: 'hash',
+      from: REFERENCE_DIGEST.slice(0, 12),
+      to: OTHER_DIGEST.slice(0, 12)
+    });
+    // Digest-shaped values are shortened whatever kind the key declares.
+    expect(summarizeConditionDifference(row({
+      referenceValue: REFERENCE_DIGEST, thisValue: OTHER_DIGEST
+    })).kind).toBe('hash');
+  });
+
+  it('shows a short value inline, charted value first', () => {
+    expect(summarizeConditionDifference(row()))
+      .toEqual({ kind: 'text', from: 'standard', to: 'priority' });
+  });
+
+  it('refers a long or multi-line value to the full detail', () => {
+    expect(summarizeConditionDifference(row({ thisValue: 'x'.repeat(81) })).kind).toBe('long');
+    expect(summarizeConditionDifference(row({ referenceValue: 'one\ntwo' })).kind).toBe('long');
+  });
+
+  it('says so when either side could not be attributed', () => {
+    expect(summarizeConditionDifference(row({ thisValue: null })).kind).toBe('unattributed');
+    expect(summarizeConditionDifference(row({ referenceValue: null })).kind).toBe('unattributed');
   });
 });

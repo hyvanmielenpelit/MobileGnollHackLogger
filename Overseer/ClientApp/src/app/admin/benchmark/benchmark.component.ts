@@ -65,7 +65,10 @@ import { formatThinkingLevel, showReasoningBadge, formatServiceTier, formatDiffi
 import { TableState, exactFilter } from '../../shared/data-table/table-state';
 import { SortHeaderComponent } from '../../shared/data-table/sort-header.component';
 import { TablePagerComponent } from '../../shared/data-table/table-pager.component';
-import { ModelComparisonComponent } from './model-comparison/model-comparison.component';
+import {
+  COMPARISON_WIZARD_STEPS,
+  ModelComparisonComponent
+} from './model-comparison/model-comparison.component';
 import {
   ComparisonSourcePickerComponent,
   ModelComparisonSelection
@@ -276,6 +279,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * heading it owns, and asking whether an export is in flight before allowing a close.
    */
   @ViewChild(ModelComparisonComponent) comparisonWizard?: ModelComparisonComponent;
+
+  /** The wizard's steps, which the launcher lists under the same titles as the wizard's stepper. */
+  readonly comparisonWizardSteps = COMPARISON_WIZARD_STEPS;
 
   /**
    * The criteria editor, for the one thing the host cannot reach through the DOM: putting it

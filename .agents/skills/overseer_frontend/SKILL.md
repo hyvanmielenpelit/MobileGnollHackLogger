@@ -249,9 +249,12 @@ To find specific popups, look in the corresponding component's `.html` template:
 - **Comparison Source Picker (`comparison-source-picker.component.html`, Admin → AI Benchmark →
   Run History → Cross-model comparison, step 1)** — single runs and analysis groups on two
   kind tabs (`csp-src-tab-runs` / `csp-src-tab-groups`), one table and one pager per tab.
-  - `#legendDialog`: Comparability legend — what each must-match key is and the value the
-    reference condition holds for it. Opened by the help icon (`#csp-legend-trigger`) at the
-    end of the step's condition line.
+  - `#legendDialog`: About conditions — full-screen: what a condition is, which one the charts
+    use, the three kinds of key as plain-language cards with technical names collapsed, and
+    every condition as an exclusive accordion (`<details name="csp-conditions">`, only the open
+    body rendered), the charted one pinned first and the rest newest first, five more per Show
+    more; technical details behind a toggle; nothing rendered while closed. Opened by the
+    *About conditions* button (`#csp-legend-trigger`).
   - `#conditionDetailDialog`: Comparability detail for one source — one row per key it differs
     from the reference condition on, with this source's value beside the reference's, a
     `key=value;` configuration split into fields with the changed ones marked, and a copy-as-
