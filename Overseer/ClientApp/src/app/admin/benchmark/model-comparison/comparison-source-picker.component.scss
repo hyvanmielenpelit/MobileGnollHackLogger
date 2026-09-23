@@ -34,19 +34,11 @@
   gap: 8px 16px;
 }
 
-.csp-lead {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: #a1a1aa;
-  max-width: 90ch;
-}
-
-/* Aligns the trailing info button with the surrounding prose rather than with the line's cap
-   height, and separates it from the sentence that names it. */
-.csp-condition-note .action-btn {
-  vertical-align: middle;
-  margin-inline-start: 4px;
+.csp-intro-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
 }
 
 /* --- Suite scope --- */
@@ -124,6 +116,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px 10px;
+  margin-inline-start: auto;
 }
 
 /* --- Legend: what a condition is --- */

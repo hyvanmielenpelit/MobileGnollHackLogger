@@ -4,48 +4,37 @@
     <div class="csp-intro-head">
       <h3 id="csp-heading">Choose what to compare</h3>
 
-      <!-- Suite scope: a selection-stage control, so it sits above the two tables it scopes rather
-           than in the comparison view's filter row, which holds presentation controls only. -->
-      <div class="csp-scope">
-        <label for="csp-suite">Suite<span class="visually-hidden"> — show runs and groups from</span></label>
-        <select id="csp-suite" class="gh-input" [disabled]="suites.length === 0"
-                [ngModel]="suiteId" [ngModelOptions]="{ standalone: true }"
-                (ngModelChange)="onSuiteChange($event)">
-          <option [ngValue]="null">All suites</option>
-          @for (suite of suites; track suite.id) {
-            <option [ngValue]="suite.id">{{ suite.name }}</option>
-          }
-        </select>
+      <div class="csp-intro-tools">
+        <!-- A dialog rather than an inline disclosure: the largest condition's values include a
+             serialized prompt-options JSON with no break opportunity in it, which overflows any
+             column this panel can give it, and expanding in place displaces both source tables. -->
+        <button type="button" class="btn-ghost" id="csp-legend-trigger"
+                (click)="legendDialog.showModal()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+               viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          About conditions
+        </button>
+
+        <!-- Suite scope: a selection-stage control, so it sits above the two tables it scopes rather
+             than in the comparison view's filter row, which holds presentation controls only. -->
+        <div class="csp-scope">
+          <label for="csp-suite">Suite<span class="visually-hidden"> — show runs and groups from</span></label>
+          <select id="csp-suite" class="gh-input" [disabled]="suites.length === 0"
+                  [ngModel]="suiteId" [ngModelOptions]="{ standalone: true }"
+                  (ngModelChange)="onSuiteChange($event)">
+            <option [ngValue]="null">All suites</option>
+            @for (suite of suites; track suite.id) {
+              <option [ngValue]="suite.id">{{ suite.name }}</option>
+            }
+          </select>
+        </div>
       </div>
     </div>
-
-    <p class="csp-lead">
-      Tick the runs or analysis groups you want on the charts, then press <strong>Compare</strong>
-      (bottom right). Nothing is calculated until you do.
-    </p>
-
-    <!-- A dialog rather than an inline disclosure: the largest condition's values include a
-         serialized prompt-options JSON with no break opportunity in it, which overflows any
-         column this panel can give it, and expanding in place displaces both source tables. -->
-    <p class="csp-lead csp-condition-note">
-      The <strong>Condition</strong> column shows which rows were measured the same way. Only rows
-      with the same condition can be charted together.
-      <button type="button" class="action-btn" id="csp-legend-trigger"
-              aria-label="What a condition is"
-              [attr.style]="'anchor-name: --csp-tip-legend'"
-              interestfor="csp-tip-legend"
-              (click)="legendDialog.showModal()">
-        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-             viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="10"></circle>
-          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-          <line x1="12" y1="17" x2="12.01" y2="17"></line>
-        </svg>
-      </button>
-    </p>
-    <div popover="hint" class="gh-tooltip" id="csp-tip-legend"
-         [attr.style]="'position-anchor: --csp-tip-legend'">What a condition is</div>
   </section>
 
   <!-- ===================================================================================
@@ -76,9 +65,6 @@
     <div role="tabpanel" id="csp-src-panel-runs" aria-labelledby="csp-src-tab-runs" tabindex="0"
          class="csp-panel">
       <div class="csp-panel-toolbar">
-        <p class="csp-panel-note">
-          Each run you tick becomes one point on the charts. Only completed runs can be ticked.
-        </p>
         <div class="csp-panel-actions">
           @if (selectedRunIds.length > 0) {
             <p class="csp-selection-count" role="status">
@@ -234,11 +220,7 @@
     <div role="tabpanel" id="csp-src-panel-groups" aria-labelledby="csp-src-tab-groups" tabindex="0"
          class="csp-panel">
       <div class="csp-panel-toolbar">
-        <p class="csp-panel-note">
-          Each group you tick becomes one point, averaged over the runs in it. If a group's runs
-          were not measured the same way, the comparison leaves it out and names the settings that
-          differ.
-        </p>
+        <p class="csp-panel-note">Each group is one point: the average of its runs.</p>
         <div class="csp-panel-actions">
           @if (selectedGroupIds.length > 0) {
             <p class="csp-selection-count" role="status">
