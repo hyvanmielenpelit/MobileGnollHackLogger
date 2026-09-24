@@ -221,6 +221,29 @@
   }
 }
 
+/* One Number format row: the label over a full-width select, closer together than the rows. */
+.fsp-number {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+
+  > label {
+    font-size: 13px;
+  }
+
+  select {
+    width: 100%;
+    min-width: 0;
+    font-variant-numeric: tabular-nums;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color, #d4af37);
+      outline-offset: 2px;
+    }
+  }
+}
+
 .checkbox-label input[type="checkbox"]:disabled {
   cursor: not-allowed;
 }

@@ -2638,6 +2638,103 @@ describe('ModelComparisonComponent', () => {
     second.destroy();
   });
 
+  // --- Number format and the value-axis title break ---------------------------------------------
+
+  it('holds empty number samples until figures exist, then fills each family\'s from the plotted set', () => {
+    expect(component.figures).toBeNull();
+    expect(component.numberSamples).toEqual({ bar: {}, scatter: {}, profile: {} });
+
+    render(buildDto(comparableSet(3)), 4);
+    const plotted = component.figures!.selection.plotted;
+    expect(component.numberSamples.bar.intelligenceIndex).toEqual({ value: plotted[0].intelligenceIndex });
+    expect(Object.keys(component.numberSamples.bar).sort()).toEqual(['intelligenceIndex', 'meanModelTime', 'suiteCost']);
+    expect(Object.keys(component.numberSamples.scatter).sort()).toEqual(['costPerQuestion', 'intelligenceIndex', 'meanModelTime']);
+    expect(component.numberSamples.scatter.costPerQuestion).toEqual({ value: plotted[0].candidateCostPerQuestionUsd });
+    expect(Object.keys(component.numberSamples.profile).sort()).toEqual(['intelligenceIndex', 'meanModelTime', 'suiteCost']);
+  });
+
+  it('keeps the number samples through a family switch and replaces them on a rebuild', () => {
+    render(buildDto(comparableSet(3)), 4);
+    const before = component.numberSamples;
+    component.selectStyleFamily('scatter');
+    component.selectStyleFamily('profile');
+    component.selectStyleFamily('bar');
+    expect(component.numberSamples).toBe(before);
+
+    component.onSpeedMeasureChange('ttftP50');
+    expect(component.numberSamples).not.toBe(before);
+    const plotted = component.figures!.selection.plotted;
+    expect(component.numberSamples.bar.ttftP50).toEqual({ value: plotted[0].ttftP50Ms, unit: 's' });
+    expect(component.numberSamples.bar.meanModelTime).toBeUndefined();
+
+    const first = component.numberSamples.bar.intelligenceIndex!.value;
+    component.onSortDirectionChange(component.sort.direction === 'desc' ? 'asc' : 'desc');
+    expect(component.numberSamples.bar.intelligenceIndex!.value).not.toBe(first);
+    expect(component.numberSamples.bar.intelligenceIndex!.value).toBe(component.figures!.selection.plotted[0].intelligenceIndex);
+  });
+
+  it('hands the shown family\'s samples and the selected measures to the style panel', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openStyleTab(component.panelCards[0]);
+    const panel = fixture.debugElement.query(By.css('app-figure-style-panel'));
+    expect(panel).not.toBeNull();
+    const instance = panel.componentInstance as { numberSamples: unknown; speedMeasure: unknown; costMeasure: unknown };
+    expect(instance.numberSamples).toBe(component.numberSamples.bar);
+    expect(instance.speedMeasure).toBe(component.speedMeasure);
+    expect(instance.costMeasure).toBe(component.costMeasure);
+    expect(styleControl('mc-style-bar-number-intelligenceIndex')).toBeTruthy();
+  });
+
+  it('refreshes the profile ranges and the figures after a number change, once the style debounce passes', () => {
+    render(buildDto(comparableSet(3)), 4);
+    const minLabel = (): string => component.profileAxes!.axes[0].minLabel;
+    expect(minLabel()).toMatch(/^\d+$/);
+
+    jasmine.clock().install();
+    try {
+      component.onFigureStyleChange({
+        ...component.figureStyle,
+        numbers: { ...component.figureStyle.numbers, intelligenceIndex: 2 }
+      });
+      expect(JSON.parse(localStorage.getItem(FIGURE_STYLE_STORAGE_KEY)!).numbers.intelligenceIndex).toBe(2);
+      expect(minLabel()).toMatch(/^\d+$/);
+
+      jasmine.clock().tick(150);
+      refresh();
+      expect(minLabel()).toMatch(/^\d+\.\d{2}$/);
+      expect(textOf('.mc-axis-ends')).toContain(minLabel());
+    } finally {
+      jasmine.clock().uninstall();
+    }
+  });
+
+  it('persists the number formats and the title break, and reads them back', () => {
+    render(buildDto(comparableSet(3)), 4);
+    component.onFigureStyleChange({
+      ...component.figureStyle,
+      bar: { ...component.figureStyle.bar, axisTitleBreak: 'always' },
+      numbers: { ...component.figureStyle.numbers, suiteCost: 2, ttftP50: 5 }
+    });
+    const stored = JSON.parse(localStorage.getItem(FIGURE_STYLE_STORAGE_KEY)!);
+    expect(stored.version).toBe(1);
+    expect(stored.bar.axisTitleBreak).toBe('always');
+    expect(stored.numbers).toEqual({ ...DEFAULT_FIGURE_STYLE.numbers, suiteCost: 2, ttftP50: 5 });
+
+    const second = TestBed.createComponent(ModelComparisonComponent);
+    second.detectChanges();
+    expect(second.componentInstance.figureStyle.bar.axisTitleBreak).toBe('always');
+    expect(second.componentInstance.figureStyle.numbers).toEqual({ ...DEFAULT_FIGURE_STYLE.numbers, suiteCost: 2, ttftP50: 5 });
+    second.destroy();
+
+    // A style stored before either field existed reads both at their defaults.
+    localStorage.setItem(FIGURE_STYLE_STORAGE_KEY, JSON.stringify({ version: 1, bar: { gapPercent: 10 } }));
+    const third = TestBed.createComponent(ModelComparisonComponent);
+    third.detectChanges();
+    expect(third.componentInstance.figureStyle.bar.axisTitleBreak).toBe('auto');
+    expect(third.componentInstance.figureStyle.numbers).toEqual(DEFAULT_FIGURE_STYLE.numbers);
+    third.destroy();
+  });
+
   it('feeds the Text size range into the export layout, and disables it for On-screen', async () => {
     render(buildDto(comparableSet(3)), 4);
     openSidebarTab('download');
@@ -3489,7 +3586,8 @@ describe('ModelComparisonComponent', () => {
     component.figureStyle = {
       bar: { ...DEFAULT_FIGURE_STYLE.bar, titleSizePx: 30, badgeTextSizePx: 14, footerTextSizePx: 16 },
       scatter: { ...DEFAULT_FIGURE_STYLE.scatter, footer: false },
-      profile: { ...DEFAULT_FIGURE_STYLE.profile, titleSizePx: 22 }
+      profile: { ...DEFAULT_FIGURE_STYLE.profile, titleSizePx: 22 },
+      numbers: DEFAULT_FIGURE_STYLE.numbers
     };
 
     const bar = exportChrome(component.panelCards[1]);

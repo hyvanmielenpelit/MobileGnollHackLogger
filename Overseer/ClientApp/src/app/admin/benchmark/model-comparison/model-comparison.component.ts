@@ -55,10 +55,12 @@ import {
   SortDirection,
   SpeedMeasure,
   buildComparisonFigures,
+  buildNumberSamples,
   formatQuestionsAsked,
   glyphFor,
   normalizeProfile
 } from './model-comparison-charts';
+import type { NumberSamples } from './measure-format';
 import { MAX_COMPARISON_SOURCES } from './comparison-source-picker.component';
 import {
   BenchmarkModelComparisonDto,
@@ -455,6 +457,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /** The profile's axis endpoints, printed beside P2 so its normalized heights stay anchored. */
   profileAxes: ProfileNormalization | null = null;
+
+  /** What each family's Number format options preview on; replaced only by a rebuild. */
+  numberSamples: Readonly<Record<FigureStylePanelKind, NumberSamples>> = { bar: {}, scatter: {}, profile: {} };
 
   /** The hard ceiling the chart core enforces; the picker names it so the cap is never a surprise. */
   readonly maxPlottedEntries = MAX_PLOTTED_ENTRIES;
@@ -3284,13 +3289,27 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       style: this.figureStyle
     });
 
-    this.profileAxes = this.figures.selection.plotted.length >= 2
-      ? normalizeProfile(this.figures.selection.plotted, {
+    const plotted = this.figures.selection.plotted;
+    this.profileAxes = plotted.length >= 2
+      ? normalizeProfile(plotted, {
         context: this.context,
         speedMeasure: this.speedMeasure,
-        costMeasure: this.costMeasure
+        costMeasure: this.costMeasure,
+        numbers: this.figureStyle.numbers
       })
       : null;
+
+    const sampleOptions = {
+      context: this.context,
+      speedMeasure: this.speedMeasure,
+      costMeasure: this.costMeasure,
+      style: this.figureStyle
+    };
+    this.numberSamples = {
+      bar: buildNumberSamples(plotted, sampleOptions, 'bar'),
+      scatter: buildNumberSamples(plotted, sampleOptions, 'scatter'),
+      profile: buildNumberSamples(plotted, sampleOptions, 'profile')
+    };
 
     // A refetch can take the previewed figure out of the set.
     if (this.previewCardId !== null && this.previewCard === null) {

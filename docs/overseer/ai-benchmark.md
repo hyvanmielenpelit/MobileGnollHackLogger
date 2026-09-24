@@ -2365,6 +2365,11 @@ below is carried by a file no fingerprint covers.
   a fixed `'1.4-4'`, and `formatUsd`/`formatUsdText` a fixed `toFixed(4)`. Zero prints `$0.0000`;
   thousands separators stay where a `DecimalPipe` already produced them. A sub-cent candidate and a
   multi-dollar one line up on the decimal point, which is the comparison the whole area exists for.
+  In the comparison figures four is now only the default: *Style › Number format* sets the decimals
+  of bar value labels, scatter value plates, tooltips and the profile's range labels, and the chart
+  module no longer has a `formatUsd` of its own. Run cards, axis ticks and the comparison table and
+  its exports keep the formatting described here (see *Comparison Figure Number Format and Axis
+  Titles (2026-09-24)*).
 - **The cost panel's bars carry value labels.** Only the cost panel: the label is drawn past the SD
   whisker by a scriptable `offset` that measures the whisker in pixels from the value scale, and the
   scale takes `grace: '12%'` so the tallest bar's label is not clipped. `grace` is ignored where a
@@ -2374,7 +2379,9 @@ below is carried by a file no fingerprint covers.
 - **Every axis title is two lines**: what the axis measures, then *lower is better*, *higher is
   better*, or — on the profile figure — *up is better on every axis*. Chart.js draws one line per
   element of a `string[]` title, so the direction is no longer an em-dash suffix that a narrow figure
-  truncates first.
+  truncates first. The direction line appears only while the figure's Better badge is hidden, and a
+  bar value-axis title can also move its final parenthetical to a line of its own (see *Comparison
+  Figure Number Format and Axis Titles (2026-09-24)*), so a title is one to three lines.
 - **WebP exports choose a quality.** The format option reads exactly *WebP*, and a quality select
   (75, 80, 85, 90, 95 or 100, default **100**) appears beside it only while WebP is chosen. The
   figures and the table hold the setting separately, as they already hold their formats separately.
@@ -2474,6 +2481,66 @@ from stored data.
   recomputing is one click.
 - **What moves.** `$ / question` drops wherever answers were lost or rubrics revised, by the ratio of
   scored to asked. Whole-suite cost does not change: it is each entry's own mean run cost.
+
+### Comparison Figure Number Format and Axis Titles (2026-09-24) — No Version Bump
+
+*Prompted by a cost panel whose value-axis title, `Candidate cost of one suite run (USD, 18 questions
+asked)`, was longer than its axis.* Display only: nothing here grades anything, and
+`HarnessVersion`, `ScoringMethodVersion`, `CandidateSystemPromptSha256` and `ToolGuidesSha256` do
+not move. Both settings live in step 4's sidebar, **Style** tab, and are stored with the rest of the
+figure style in the browser (`overseer.modelComparison.figureStyle`, still `version: 1`); a style
+stored before them reads both at their defaults.
+
+- **Axis title line break** (Bar panels › *Values and axes*): *Automatic* (default), *Always* or
+  *Never*. A title that ends in a parenthetical after a nonempty head can move that parenthetical to
+  a second line, `Candidate cost of one suite run` over `(USD, 18 questions asked)`; nothing else is
+  split, and `Model` never is. The *lower/higher is better* line, shown only while the Better badge
+  is hidden, stays last. The tooltip keeps the one-line title. *Automatic* decides at every layout,
+  in the value scale's `afterFit`: it measures the unbroken lines in the title's resolved font against
+  the fitted axis length less 8 px, and where they do not fit it breaks the title and refits the
+  scale once. The page, the preview and every export therefore decide independently, by their own
+  axis length; pixel density alone does not change the decision, and a longer axis restores the
+  unbroken title. The decision is written into each chart's own merged options, never into the
+  figure spec, so two charts built from one spec can decide differently. Only bar value axes break;
+  scatter titles are unchanged.
+- **The limit.** One break is all there is. Where the head or the parenthetical alone is longer than
+  the axis, or the title font is very large, the title still does not fit; it is drawn whole, with no
+  ellipsis, no smaller font and no further wrapping. A longer axis (a taller preview, a wider
+  container) or a smaller *Axis titles* size is the remedy.
+- **Two Chart.js layout facts the break works around or lives with.** A second `fit()` recomputes
+  the scale's tick-label padding from pixel state the first fit has already moved, and the layout
+  sizes the axis from that padding, so the refit keeps the first fit's `paddingLeft/Right/Top/
+  Bottom`. And in horizontal bars Chart.js fits the category axis at the full plot height, fits the
+  value axis beside it, then refits only the category axis at the shorter final height: where that
+  refit autoskips ticks the category axis narrows and the value axis ends up wider than the width
+  its title was decided on. That can leave a break the final width did not need (seen with eight
+  models and large axis text on a short plot); it never leaves a one-line title too long for its
+  axis. Correcting it would take a second layout pass, which the break deliberately never starts.
+- **Number format** — a section in every family (after bar *Values and axes*, trade-off *Labels and
+  legend* and profile *Heading and badges*) with one select per measure the family shows: Intelligence
+  Index, the selected speed measure, and the selected cost (the trade-offs always show *Cost per
+  question*). Each option reads its decimal count and the family's first plotted value written with
+  it, `1 (22.5 s)`, or a fixed example where nothing is plotted. Defaults: Intelligence Index **0**,
+  Speed Index **0**, mean time per question **1**, total time for the suite **1**, TTFT P50 **2**, and
+  **4** for every cost. The setting is per measure and shared by every family that shows it; switching
+  the speed or cost measure shows that measure's own setting.
+- **What it formats.** Bar value labels and bar tooltips, scatter value plates and scatter tooltips,
+  the profile's tooltip and its real-value range labels. Values are written fixed-point with their
+  trailing zeros; a value that rounds to zero never keeps a minus sign. **Not** axis ticks, which
+  follow their own step; not run cards; not the comparison table or its CSV/XLSX exports. No value,
+  domain, sort order, frontier or normalized coordinate is rounded.
+- **Units.** Time decimals count in seconds. A millisecond display shows `decimals − 3` of them and
+  never fewer than whole milliseconds, so settings 0–3 read alike there and can keep more precision
+  than the seconds display would. Each family keeps its own unit rule — bars the largest plotted
+  speed, scatters the resolved axis domain, the profile the largest plotted time — so the value text
+  always agrees with its axis title, and a sub-second model on a seconds axis reads `0.9 s` rather
+  than the `870 ms` it used to.
+- **Resets.** The section's reset (*Reset visible number formats to defaults*) resets only the three
+  measures on show; a hidden measure keeps its setting. The family resets (*Reset bar style* and the
+  others) leave every number format alone.
+- **Visible defaults changed.** The scatter and profile indices lose the fractional digit they used to
+  print, mean and total times show one decimal instead of two, and every time value follows its
+  figure's unit.
 
 ### Harness Version 29 Updates
 

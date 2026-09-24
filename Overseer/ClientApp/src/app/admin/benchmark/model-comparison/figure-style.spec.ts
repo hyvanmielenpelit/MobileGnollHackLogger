@@ -13,7 +13,7 @@ import {
 describe('figure-style', () => {
   const chromeDefaults = { titleSizePx: 18, badgeTextSizePx: 11, footerTextSizePx: 12, footer: true };
 
-  it('defaults to the values the figures were drawn with before any control existed', () => {
+  it('defaults to the values the figures were drawn with before any control existed, plus the new controls', () => {
     expect(DEFAULT_FIGURE_STYLE.bar).toEqual({
       ...chromeDefaults,
       orientation: 'auto',
@@ -29,6 +29,7 @@ describe('figure-style', () => {
       valueLabelSizePx: 11,
       axisTextSizePx: 11,
       axisTitleSizePx: 12,
+      axisTitleBreak: 'auto',
       singleRunMarker: true,
       gridlines: true,
       hiddenBadges: []
@@ -49,6 +50,16 @@ describe('figure-style', () => {
       hiddenBadges: []
     });
     expect(DEFAULT_FIGURE_STYLE.profile).toEqual({ ...chromeDefaults, hiddenBadges: [] });
+    expect(DEFAULT_FIGURE_STYLE.numbers).toEqual({
+      intelligenceIndex: 0,
+      speedIndex: 0,
+      meanModelTime: 1,
+      totalModelTime: 1,
+      ttftP50: 2,
+      suiteCost: 4,
+      totalRunCost: 4,
+      costPerQuestion: 4
+    });
     // 0.8 × 0.9, the two percentages the bars were drawn with.
     expect(1 - DEFAULT_FIGURE_STYLE.bar.gapPercent / 100).toBeCloseTo(0.72, 9);
     expect(HIDDEN_INTERVALS_NOTE).toBe(
@@ -179,7 +190,7 @@ describe('figure-style', () => {
     });
     expect(style.bar).toEqual({ ...DEFAULT_FIGURE_STYLE.bar, gapPercent: 10, gridlines: false });
     expect(style.scatter).toEqual({ ...DEFAULT_FIGURE_STYLE.scatter, markRadiusPx: 9, dominatedShading: false });
-    expect(Object.keys(style)).toEqual(['bar', 'scatter', 'profile']);
+    expect(Object.keys(style)).toEqual(['bar', 'scatter', 'profile', 'numbers']);
     expect('colour' in style.bar).toBeFalse();
   });
 
@@ -276,5 +287,66 @@ describe('figure-style', () => {
     expect(style.bar.hiddenBadges).toEqual([]);
     expect(style.scatter.hiddenBadges).toEqual([]);
     expect(style.profile).toEqual(DEFAULT_FIGURE_STYLE.profile);
+  });
+
+  it('reads a style stored before the title break and number formats existed with both at their defaults', () => {
+    const style = normalizeFigureStyle({ version: 1, bar: { gapPercent: 10 }, scatter: { markRadiusPx: 9 } });
+    expect(style.bar.axisTitleBreak).toBe('auto');
+    expect(style.numbers).toEqual(DEFAULT_FIGURE_STYLE.numbers);
+    expect(style.bar.gapPercent).toBe(10);
+    expect(style.scatter.markRadiusPx).toBe(9);
+  });
+
+  it('keeps a valid title break and repairs any other value', () => {
+    for (const value of ['auto', 'always', 'never'] as const) {
+      expect(normalizeFigureStyle({ bar: { axisTitleBreak: value } }).bar.axisTitleBreak).toBe(value);
+    }
+    for (const value of ['sometimes', 1, null, true, ['always']]) {
+      expect(normalizeFigureStyle({ bar: { axisTitleBreak: value } }).bar.axisTitleBreak)
+        .withContext(JSON.stringify(value)).toBe('auto');
+    }
+  });
+
+  it('normalizes the number formats field by field and drops unknown keys', () => {
+    const style = normalizeFigureStyle({
+      numbers: {
+        intelligenceIndex: 2,
+        speedIndex: 9,
+        meanModelTime: -3,
+        totalModelTime: 2.6,
+        ttftP50: '3',
+        suiteCost: null,
+        totalRunCost: Number.NaN,
+        costPerQuestion: Number.POSITIVE_INFINITY,
+        colour: 3
+      }
+    });
+    expect(style.numbers).toEqual({
+      intelligenceIndex: 2,
+      speedIndex: 6,
+      meanModelTime: 0,
+      totalModelTime: 3,
+      ttftP50: 2,
+      suiteCost: 4,
+      totalRunCost: 4,
+      costPerQuestion: 4
+    });
+    expect('colour' in style.numbers).toBeFalse();
+
+    for (const value of [null, [], [1, 2], 'numbers', 7, true]) {
+      expect(normalizeFigureStyle({ numbers: value }).numbers).withContext(JSON.stringify(value)).toEqual(DEFAULT_FIGURE_STYLE.numbers);
+    }
+  });
+
+  it('never mutates its input or the defaults, and returns a fresh number record', () => {
+    const input = { numbers: { intelligenceIndex: 3 }, bar: { axisTitleBreak: 'never' } };
+    const snapshot = JSON.parse(JSON.stringify(input));
+    const defaults = JSON.parse(JSON.stringify(DEFAULT_FIGURE_STYLE));
+    const style = normalizeFigureStyle(input);
+    expect(input).toEqual(snapshot);
+    expect(JSON.parse(JSON.stringify(DEFAULT_FIGURE_STYLE))).toEqual(defaults);
+    expect(style.numbers).not.toBe(DEFAULT_FIGURE_STYLE.numbers);
+    expect(normalizeFigureStyle({}).numbers).not.toBe(DEFAULT_FIGURE_STYLE.numbers);
+    expect(style.numbers.intelligenceIndex).toBe(3);
   });
 });

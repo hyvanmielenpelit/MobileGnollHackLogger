@@ -1,4 +1,5 @@
 import { Chart } from 'chart.js';
+import type { Plugin } from 'chart.js';
 import { unzipSync } from 'fflate';
 
 import {
@@ -14,6 +15,7 @@ import {
   FIGURE_FONT_STACK,
   FigureExportLayout,
   FigureExportResolution,
+  OffscreenPlotConfig,
   WEBP_QUALITY_OPTIONS,
   WebpQuality,
   aspectRatioLabel,
@@ -34,6 +36,9 @@ import {
   webpEncoderQuality
 } from './figure-export';
 import type { FigureBadge, FigureChrome, FigureFooter, FigureNote } from './figure-chrome';
+import { DEFAULT_FIGURE_STYLE } from './figure-style';
+import { buildIdentityGlyphs, buildSmallMultiples } from './model-comparison-charts';
+import type { ModelComparisonContext, ModelComparisonEntry } from './model-comparison-charts';
 import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 
 describe('figure-export', () => {
@@ -765,6 +770,61 @@ describe('figure-export', () => {
       expect(plot!.height).toBe(760);
       expect(plot!.style.width).toBe('920px');
       expect(plot!.style.height).toBe('380px');
+    });
+
+    it('breaks a cost panel\'s value-axis title by its own layout length, never by the density, and leaves the spec alone', async () => {
+      const entry = (key: string, runCost: number): ModelComparisonEntry => ({
+        key, label: `Model ${key}`, runCount: 2,
+        intelligenceIndex: 70, intelligenceIndexCi95HalfWidth: 3,
+        speedIndex: 60, speedIndexSaturated: false, speedIndexSd: null,
+        ttftP50Ms: 900, ttftP90Ms: 1500, modelTimeMeanMs: 22470, totalModelTimeMs: 404460, totalModelTimeSdMs: null,
+        candidateCostPerQuestionUsd: runCost / 18, candidateCostPerQuestionSdUsd: null, candidateCostPerRunUsd: runCost,
+        totalRunCostUsd: runCost * 2, totalRunCostSdUsd: null,
+        speedDegraded: false, costDegraded: false, excluded: false, excludedReasonKeys: []
+      });
+      const entries = [entry('A', 0.0761), entry('B', 0.0428)];
+      const context: ModelComparisonContext = {
+        scoredItemsMin: 18, scoredItemsMax: 18, suiteItemCount: 18, questionsAskedPerRun: 18,
+        pricingBasisLabel: 'Current', pricingBasis: 'Current', pricedOn: '', suiteName: 'Suite'
+      };
+      const spec = buildSmallMultiples(entries, {
+        context, glyphs: buildIdentityGlyphs(entries), reducedMotion: true,
+        speedMeasure: 'meanModelTime', costMeasure: 'candidateSuite', orientation: 'vertical', style: DEFAULT_FIGURE_STYLE
+      }).cost;
+      const sourceTitle = (spec.config.options!.scales!['y'] as unknown as { title: { text: unknown } }).title;
+      const sourceText = JSON.parse(JSON.stringify(sourceTitle.text));
+
+      const seen: { text: string[]; length: number }[] = [];
+      const observer: Plugin = {
+        id: 'titleObserver',
+        afterDraw: (chart: Chart) => {
+          const scale = chart.scales['y'];
+          const text = (scale.options as unknown as { title: { text: string[] } }).title.text;
+          seen.push({ text: [...text], length: scale.height });
+        }
+      };
+      const render = (plotHeight: number, density: number) => renderPlotOffscreen(
+        { ...(spec.config as unknown as OffscreenPlotConfig), plugins: [...spec.plugins, observer] },
+        {
+          layoutWidth: 480, layoutHeight: plotHeight + 120, plotWidth: 440, plotHeight, density,
+          pixelWidth: 480 * density, pixelHeight: (plotHeight + 120) * density
+        }
+      );
+
+      const broken = ['Candidate cost of one suite run', '(USD, 18 questions asked)'];
+      const unbroken = ['Candidate cost of one suite run (USD, 18 questions asked)'];
+      for (const density of [1, 2]) {
+        expect(await render(200, density)).withContext(`short at ${density}`).not.toBeNull();
+        expect(await render(700, density)).withContext(`tall at ${density}`).not.toBeNull();
+      }
+      expect(seen.length).toBe(4);
+      expect(seen[0].text).toEqual(broken);
+      expect(seen[1].text).toEqual(unbroken);
+      expect(seen[1].length).toBeGreaterThan(seen[0].length);
+      // The same logical size decides alike at twice the density.
+      expect(seen[2]).toEqual(seen[0]);
+      expect(seen[3]).toEqual(seen[1]);
+      expect(sourceTitle.text).toEqual(sourceText);
     });
   });
 

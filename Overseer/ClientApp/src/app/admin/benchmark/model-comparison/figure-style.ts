@@ -7,9 +7,13 @@
  */
 
 import type { FigureBadgeKind } from './figure-chrome';
+import { DEFAULT_MEASURE_DECIMALS, NUMBER_MEASURES, normalizeMeasureDecimals } from './measure-format';
+import type { NumberFormatStyle, NumberMeasure } from './measure-format';
 
 export type BarOrientationChoice = 'auto' | 'vertical' | 'horizontal';
 export type ScatterLegendPosition = 'bottom' | 'right';
+/** Whether a bar value-axis title puts its final parenthetical on a line of its own. */
+export type AxisTitleBreak = 'auto' | 'always' | 'never';
 
 /** The figure's caption text, on the page card and in the composed figure. */
 export interface FigureChromeStyle {
@@ -41,6 +45,8 @@ export interface BarFigureStyle extends FigureChromeStyle {
   /** Tick and category labels. */
   readonly axisTextSizePx: number;
   readonly axisTitleSizePx: number;
+  /** Automatic breaks the value-axis title only where the unbroken title is longer than its axis. */
+  readonly axisTitleBreak: AxisTitleBreak;
   /** `n = 1` under a single-run model's name. */
   readonly singleRunMarker: boolean;
   readonly gridlines: boolean;
@@ -72,11 +78,13 @@ export interface ProfileFigureStyle extends FigureChromeStyle {
   readonly hiddenBadges: readonly FigureBadgeKind[];
 }
 
-/** Three families: the bar panels, the trade-off scatters and the profile. */
+/** Three families: the bar panels, the trade-off scatters and the profile, and the number formats they share. */
 export interface FigureStyle {
   readonly bar: BarFigureStyle;
   readonly scatter: ScatterFigureStyle;
   readonly profile: ProfileFigureStyle;
+  /** Decimal places per measure, in every family that shows the measure. */
+  readonly numbers: NumberFormatStyle;
 }
 
 /** The composer's caption sizes and a shown footer. */
@@ -87,7 +95,10 @@ const DEFAULT_CHROME_STYLE: FigureChromeStyle = {
   footer: true,
 };
 
-/** Equal to the values the figures were drawn with before any control existed. */
+/**
+ * The style a browser without a stored one starts from. The sizes, spacing and toggles equal the
+ * drawing before any control existed; the value text follows {@link DEFAULT_MEASURE_DECIMALS}.
+ */
 export const DEFAULT_FIGURE_STYLE: FigureStyle = {
   bar: {
     ...DEFAULT_CHROME_STYLE,
@@ -104,6 +115,7 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
     valueLabelSizePx: 11,
     axisTextSizePx: 11,
     axisTitleSizePx: 12,
+    axisTitleBreak: 'auto',
     singleRunMarker: true,
     gridlines: true,
     hiddenBadges: [],
@@ -127,6 +139,7 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
     ...DEFAULT_CHROME_STYLE,
     hiddenBadges: [],
   },
+  numbers: DEFAULT_MEASURE_DECIMALS,
 };
 
 /** The caption note a figure carries when its uncertainty bars are hidden and would have drawn. */
@@ -299,6 +312,7 @@ function normalizeBar(value: unknown): BarFigureStyle {
     valueLabelSizePx: numeric('valueLabelSizePx'),
     axisTextSizePx,
     axisTitleSizePx: axisTitleSize(v, axisTextSizePx, barRangeControl('axisTitleSizePx')),
+    axisTitleBreak: oneOf(v['axisTitleBreak'], ['auto', 'always', 'never'] as const, d.axisTitleBreak),
     singleRunMarker: booleanOr(v['singleRunMarker'], d.singleRunMarker),
     gridlines: booleanOr(v['gridlines'], d.gridlines),
     hiddenBadges: normalizeBadgeKinds(v['hiddenBadges']),
@@ -333,6 +347,16 @@ function normalizeProfile(value: unknown): ProfileFigureStyle {
   return { ...normalizeChrome(v), hiddenBadges: normalizeBadgeKinds(v['hiddenBadges']) };
 }
 
+/** Every known measure, each on its own: a missing or invalid one takes its default. */
+function normalizeNumbers(value: unknown): NumberFormatStyle {
+  const v = isRecord(value) ? value : {};
+  const numbers = {} as Record<NumberMeasure, number>;
+  for (const measure of NUMBER_MEASURES) {
+    numbers[measure] = normalizeMeasureDecimals(v[measure], DEFAULT_MEASURE_DECIMALS[measure]);
+  }
+  return numbers;
+}
+
 /**
  * A usable style from anything, a parsed `localStorage` value included. Every valid field is kept,
  * numbers are rounded and clamped into their ranges, only real booleans are accepted for the
@@ -340,5 +364,10 @@ function normalizeProfile(value: unknown): ProfileFigureStyle {
  */
 export function normalizeFigureStyle(value: unknown): FigureStyle {
   const v = isRecord(value) ? value : {};
-  return { bar: normalizeBar(v['bar']), scatter: normalizeScatter(v['scatter']), profile: normalizeProfile(v['profile']) };
+  return {
+    bar: normalizeBar(v['bar']),
+    scatter: normalizeScatter(v['scatter']),
+    profile: normalizeProfile(v['profile']),
+    numbers: normalizeNumbers(v['numbers']),
+  };
 }

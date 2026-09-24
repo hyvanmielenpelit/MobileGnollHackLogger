@@ -121,6 +121,36 @@
   </div>
 </ng-template>
 
+<!-- Number format: decimals for the three measures the family shows, shared with every family that
+     shows the same measure. Each option previews the family's first plotted value. -->
+<ng-template #numbersSection let-family="family">
+  <div class="fsp-section">
+    <details class="gh-disclosure gh-disclosure--section" [id]="sectionId(family, 'numbers')"
+             [open]="isOpen(family, 'numbers')" (toggle)="onSectionToggle(family, 'numbers', $event)">
+      <ng-container *ngTemplateOutlet="sectionSummary; context: { family: family, section: section(family, 'numbers') }"></ng-container>
+      <div class="gh-disclosure-body fsp-section-body">
+        <div class="fsp-show-head">
+          <span class="fsp-subheading">Decimal places</span>
+          <app-info-tip [tipId]="tipId(family, 'numbers')" subject="Number format">Decimals in value labels, value plates, tooltips and profile ranges. Axis ticks follow their own step. Each measure keeps its setting across figures. Time decimals count in seconds; millisecond displays show at least whole milliseconds. Resetting a figure style leaves number formats as they are.</app-info-tip>
+        </div>
+        @for (measure of numberRows(family); track measure) {
+          <div class="fsp-number">
+            <label [for]="numberControlId(family, measure)">{{ measureNames[measure] }}</label>
+            <select class="gh-input" [id]="numberControlId(family, measure)"
+                    [attr.aria-describedby]="tipId(family, 'numbers')"
+                    (change)="onNumber(measure, $event)">
+              @for (option of numberOptions(measure); track option.value) {
+                <option [value]="option.value" [selected]="option.value === numberValue(measure)">{{ option.label }}</option>
+              }
+            </select>
+          </div>
+        }
+      </div>
+    </details>
+    <ng-container *ngTemplateOutlet="sectionReset; context: { family: family, name: 'numbers' }"></ng-container>
+  </div>
+</ng-template>
+
 <!-- The family's heading, with Expand all and Collapse all beside it. -->
 <ng-template #panelHead let-family="family" let-title="title">
   <div class="fsp-head">
@@ -188,10 +218,28 @@
               @for (control of barAxisControls; track control.key) {
                 <ng-container *ngTemplateOutlet="range; context: { family: 'bar', control: control }"></ng-container>
               }
+              <fieldset class="fsp-choice" aria-labelledby="mc-style-bar-axisTitleBreak-label"
+                        aria-describedby="mc-style-bar-axisTitleBreak-tip">
+                <legend>
+                  <span id="mc-style-bar-axisTitleBreak-label">Axis title line break</span>
+                  <app-info-tip tipId="mc-style-bar-axisTitleBreak-tip" subject="Axis title line break">Automatic moves the part in parentheses to a second line when the title is longer than its axis.</app-info-tip>
+                </legend>
+                @for (option of axisTitleBreakOptions; track option.value) {
+                  <label class="fsp-radio">
+                    <input type="radio" name="mc-style-bar-axisTitleBreak"
+                           [id]="'mc-style-bar-axisTitleBreak-' + option.value"
+                           [value]="option.value" [checked]="bar.axisTitleBreak === option.value"
+                           (change)="setBar('axisTitleBreak', option.value)">
+                    {{ option.label }}
+                  </label>
+                }
+              </fieldset>
             </div>
           </details>
           <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'bar', name: 'values' }"></ng-container>
         </div>
+
+        <ng-container *ngTemplateOutlet="numbersSection; context: { family: 'bar' }"></ng-container>
 
         <div class="fsp-section">
           <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('bar', 'uncertainty')"
@@ -343,6 +391,8 @@
           <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'scatter', name: 'labels' }"></ng-container>
         </div>
 
+        <ng-container *ngTemplateOutlet="numbersSection; context: { family: 'scatter' }"></ng-container>
+
         <div class="fsp-section">
           <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('scatter', 'axes')"
                    [open]="isOpen('scatter', 'axes')" (toggle)="onSectionToggle('scatter', 'axes', $event)">
@@ -416,6 +466,7 @@
 
       <div class="fsp-section-stack">
         <ng-container *ngTemplateOutlet="headingSection; context: { family: 'profile' }"></ng-container>
+        <ng-container *ngTemplateOutlet="numbersSection; context: { family: 'profile' }"></ng-container>
         <ng-container *ngTemplateOutlet="footerSection; context: { family: 'profile', section: section('profile', 'footer') }"></ng-container>
       </div>
 

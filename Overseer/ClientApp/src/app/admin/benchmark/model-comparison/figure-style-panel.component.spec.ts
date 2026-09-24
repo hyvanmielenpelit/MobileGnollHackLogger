@@ -8,6 +8,9 @@ import {
 } from './figure-style-panel.component';
 import { DEFAULT_FIGURE_STYLE, FigureStyle, HIDDEN_INTERVALS_NOTE } from './figure-style';
 import { FRONTIER_UNCERTAINTY_NOTE, MEAN_TIME_NO_INTERVAL_NOTE } from './model-comparison-charts';
+import type { CostMeasure, SpeedMeasure } from './model-comparison-charts';
+import { MEASURE_NAMES, NUMBER_MEASURES, costNumberMeasure, speedNumberMeasure } from './measure-format';
+import type { NumberMeasure } from './measure-format';
 
 describe('FigureStylePanelComponent', () => {
   let fixture: ComponentFixture<FigureStylePanelComponent>;
@@ -93,21 +96,21 @@ describe('FigureStylePanelComponent', () => {
     render('bar');
     expect(host().querySelector('#mc-style-bar-heading')?.textContent).toContain('Bar charts — Intelligence, Speed and Cost');
     expect(host().querySelector('#mc-style-scatter-heading')).toBeNull();
-    expect(sectionTitles()).toEqual(['Heading and badges', 'Bars', 'Values and axes', 'Uncertainty', 'Footer', 'Layout']);
+    expect(sectionTitles()).toEqual(['Heading and badges', 'Bars', 'Values and axes', 'Number format', 'Uncertainty', 'Footer', 'Layout']);
   });
 
   it('renders the trade-off set for a scatter and not the bar set', () => {
     render('scatter');
     expect(host().querySelector('#mc-style-scatter-heading')?.textContent?.trim()).toBe('Trade-off charts');
     expect(host().querySelector('#mc-style-bar-heading')).toBeNull();
-    expect(sectionTitles()).toEqual(['Heading and badges', 'Marks and frontier', 'Labels and legend', 'Axes', 'Uncertainty', 'Footer']);
+    expect(sectionTitles()).toEqual(['Heading and badges', 'Marks and frontier', 'Labels and legend', 'Number format', 'Axes', 'Uncertainty', 'Footer']);
   });
 
   it('renders the caption sections, the note and a reset button for the profile', () => {
     render('profile');
     expect(host().querySelector('#mc-style-profile-heading')?.textContent).toContain('Profile plot');
     const inputs = Array.from(host().querySelectorAll<HTMLInputElement>('input'));
-    expect(sectionTitles()).toEqual(['Heading and badges', 'Footer']);
+    expect(sectionTitles()).toEqual(['Heading and badges', 'Number format', 'Footer']);
     expect(inputs.map(input => input.id)).toEqual([
       'mc-style-profile-titleSizePx',
       'mc-style-profile-badgeTextSizePx',
@@ -183,7 +186,8 @@ describe('FigureStylePanelComponent', () => {
     const changed: FigureStyle = {
       bar: { ...DEFAULT_FIGURE_STYLE.bar, hiddenBadges: ['runs'] },
       scatter: { ...DEFAULT_FIGURE_STYLE.scatter, hiddenBadges: ['models'] },
-      profile: { ...DEFAULT_FIGURE_STYLE.profile, hiddenBadges: ['questions', 'pricing'] }
+      profile: { ...DEFAULT_FIGURE_STYLE.profile, hiddenBadges: ['questions', 'pricing'] },
+      numbers: DEFAULT_FIGURE_STYLE.numbers
     };
     render('profile', changed);
     (host().querySelector('#mc-style-profile-reset') as HTMLButtonElement).click();
@@ -303,7 +307,8 @@ describe('FigureStylePanelComponent', () => {
     const changed: FigureStyle = {
       bar: { ...DEFAULT_FIGURE_STYLE.bar, gapPercent: 5, intervals: false, hiddenIntervalsNote: false, meanTimeNoIntervalNote: false },
       scatter: { ...DEFAULT_FIGURE_STYLE.scatter, markRadiusPx: 12, intervals: false, dominatedShading: false, frontierIntervalsNote: false },
-      profile: DEFAULT_FIGURE_STYLE.profile
+      profile: DEFAULT_FIGURE_STYLE.profile,
+      numbers: DEFAULT_FIGURE_STYLE.numbers
     };
     render('bar', changed);
     (host().querySelector('#mc-style-bar-reset') as HTMLButtonElement).click();
@@ -417,7 +422,7 @@ describe('FigureStylePanelComponent', () => {
     const sections = (): HTMLDetailsElement[] =>
       Array.from(host().querySelectorAll<HTMLDetailsElement>('details.gh-disclosure--section'));
     expect(sections().every(details => details.open)).toBeTrue();
-    expect(JSON.parse(localStorage.getItem(FIGURE_STYLE_PANEL_OPEN_KEY)!).scatter.length).toBe(6);
+    expect(JSON.parse(localStorage.getItem(FIGURE_STYLE_PANEL_OPEN_KEY)!).scatter.length).toBe(7);
 
     (host().querySelector('#mc-style-scatter-collapse') as HTMLButtonElement).click();
     fixture.detectChanges();
@@ -516,7 +521,7 @@ describe('FigureStylePanelComponent', () => {
 
   it('claims every style field of each family in exactly one section', () => {
     for (const kind of ['bar', 'scatter', 'profile'] as const) {
-      const keys = FIGURE_STYLE_SECTIONS[kind].flatMap(section => [...section.keys]);
+      const keys = FIGURE_STYLE_SECTIONS[kind].filter(section => !section.shared).flatMap(section => [...section.keys]);
       expect(new Set(keys).size).withContext(`${kind} duplicates`).toBe(keys.length);
       expect([...keys].sort()).withContext(kind).toEqual(Object.keys(DEFAULT_FIGURE_STYLE[kind]).sort());
     }
@@ -529,11 +534,12 @@ describe('FigureStylePanelComponent', () => {
       const sections = Array.from(host().querySelectorAll('.fsp-section'));
       expect(sections.length).withContext(kind).toBe(FIGURE_STYLE_SECTIONS[kind].length);
       sections.forEach((wrapper, index) => {
-        const title = FIGURE_STYLE_SECTIONS[kind][index].title;
+        const { title, shared } = FIGURE_STYLE_SECTIONS[kind][index];
         const buttons = wrapper.querySelectorAll('.fsp-section-reset');
         expect(buttons.length).withContext(`${kind} ${title}`).toBe(1);
         const button = buttons[0] as HTMLButtonElement;
-        expect(button.getAttribute('aria-label')).toBe(`Reset ${title} to defaults`);
+        expect(button.getAttribute('aria-label'))
+          .toBe(shared ? 'Reset visible number formats to defaults' : `Reset ${title} to defaults`);
         expect(button.getAttribute('aria-disabled')).withContext(`${kind} ${title}`).toBe('true');
         expect(button.closest('summary')).toBeNull();
         expect(button.closest('details')).toBeNull();
@@ -542,6 +548,198 @@ describe('FigureStylePanelComponent', () => {
         expect(tip?.textContent?.trim()).toBe('Already at defaults');
       });
     }
+  });
+
+  // --- Number format and axis title break --------------------------------------------------------
+
+  function numberSelect(family: FigureStylePanelKind, measure: NumberMeasure): HTMLSelectElement {
+    const element = host().querySelector<HTMLSelectElement>(`#mc-style-${family}-number-${measure}`);
+    expect(element).withContext(`${family} ${measure}`).not.toBeNull();
+    return element!;
+  }
+
+  function numberRowIds(family: FigureStylePanelKind): string[] {
+    return Array.from(host().querySelectorAll<HTMLSelectElement>(`#mc-style-${family}-section-numbers select`)).map(s => s.id);
+  }
+
+  function chooseNumber(select: HTMLSelectElement, value: number): void {
+    select.value = String(value);
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+  }
+
+  function withNumbers(numbers: Partial<Record<NumberMeasure, number>>): FigureStyle {
+    return { ...DEFAULT_FIGURE_STYLE, numbers: { ...DEFAULT_FIGURE_STYLE.numbers, ...numbers } };
+  }
+
+  it('covers every number measure through the shared record and the row mappings', () => {
+    expect(Object.keys(DEFAULT_FIGURE_STYLE.numbers).sort()).toEqual([...NUMBER_MEASURES].sort());
+    const reachable = new Set<NumberMeasure>(['intelligenceIndex', 'costPerQuestion']);
+    (['meanModelTime', 'totalModelTime', 'ttftP50', 'speedIndex'] as SpeedMeasure[]).forEach(m => reachable.add(speedNumberMeasure(m)));
+    (['candidateSuite', 'totalRun'] as CostMeasure[]).forEach(m => reachable.add(costNumberMeasure(m)));
+    expect([...reachable].sort()).toEqual([...NUMBER_MEASURES].sort());
+    for (const kind of ['bar', 'scatter', 'profile'] as const) {
+      expect(FIGURE_STYLE_SECTIONS[kind].filter(section => section.shared).map(section => section.name))
+        .withContext(kind).toEqual(['numbers']);
+    }
+  });
+
+  it('shows three labelled number rows per family, with the family\'s own cost', () => {
+    render('bar');
+    expect(numberRowIds('bar')).toEqual([
+      'mc-style-bar-number-intelligenceIndex', 'mc-style-bar-number-meanModelTime', 'mc-style-bar-number-suiteCost'
+    ]);
+    render('scatter');
+    expect(numberRowIds('scatter')).toEqual([
+      'mc-style-scatter-number-intelligenceIndex', 'mc-style-scatter-number-meanModelTime', 'mc-style-scatter-number-costPerQuestion'
+    ]);
+    render('profile');
+    expect(numberRowIds('profile')).toEqual([
+      'mc-style-profile-number-intelligenceIndex', 'mc-style-profile-number-meanModelTime', 'mc-style-profile-number-suiteCost'
+    ]);
+    for (const id of numberRowIds('profile')) {
+      const label = host().querySelector(`label[for="${id}"]`);
+      const measure = id.replace('mc-style-profile-number-', '') as NumberMeasure;
+      expect(label?.textContent?.trim()).withContext(id).toBe(MEASURE_NAMES[measure]);
+      expect(control(id).getAttribute('aria-describedby')).toBe('mc-style-profile-numbers-tip');
+    }
+    expect(hintOf(control('mc-style-profile-number-intelligenceIndex'))).toContain('Resetting a figure style leaves number formats as they are.');
+  });
+
+  it('follows the selected speed and cost measures, and shows each measure\'s own stored setting', () => {
+    fixture.componentRef.setInput('speedMeasure', 'ttftP50');
+    fixture.componentRef.setInput('costMeasure', 'totalRun');
+    render('bar', withNumbers({ ttftP50: 3, totalRunCost: 1, meanModelTime: 5 }));
+    expect(numberRowIds('bar')).toEqual([
+      'mc-style-bar-number-intelligenceIndex', 'mc-style-bar-number-ttftP50', 'mc-style-bar-number-totalRunCost'
+    ]);
+    expect(numberSelect('bar', 'ttftP50').value).toBe('3');
+    expect(numberSelect('bar', 'totalRunCost').value).toBe('1');
+    render('scatter', withNumbers({ ttftP50: 3, totalRunCost: 1 }));
+    expect(numberSelect('scatter', 'costPerQuestion').value).toBe('4');
+
+    fixture.componentRef.setInput('speedMeasure', 'meanModelTime');
+    render('bar', withNumbers({ ttftP50: 3, totalRunCost: 1, meanModelTime: 5 }));
+    expect(numberSelect('bar', 'meanModelTime').value).toBe('5');
+  });
+
+  it('labels each option with its decimal count and the family sample, or the fixed example', () => {
+    render('bar');
+    const options = (measure: NumberMeasure): string[] =>
+      Array.from(numberSelect('bar', measure).options).map(option => option.textContent!.trim());
+    expect(options('meanModelTime')).toEqual([
+      '0 (23 s)', '1 (22.5 s)', '2 (22.50 s)', '3 (22.500 s)', '4 (22.5000 s)', '5 (22.50000 s)', '6 (22.500000 s)'
+    ]);
+    expect(Array.from(numberSelect('bar', 'meanModelTime').options).map(option => option.value)).toEqual(['0', '1', '2', '3', '4', '5', '6']);
+    expect(options('suiteCost')[4]).toBe('4 ($0.0761)');
+    expect(options('intelligenceIndex')[0]).toBe('0 (71)');
+
+    fixture.componentRef.setInput('numberSamples', {
+      intelligenceIndex: { value: 71.44 },
+      meanModelTime: { value: 850.3, unit: 'ms' },
+      suiteCost: { value: 0.0428 }
+    });
+    fixture.detectChanges();
+    expect(options('intelligenceIndex')[1]).toBe('1 (71.4)');
+    expect(options('meanModelTime').slice(0, 5)).toEqual(['0 (850 ms)', '1 (850 ms)', '2 (850 ms)', '3 (850 ms)', '4 (850.3 ms)']);
+    expect(options('suiteCost')[2]).toBe('2 ($0.04)');
+  });
+
+  it('emits one measure\'s decimals for every family and clears the reset status', () => {
+    render('scatter', withNumbers({ suiteCost: 2 }));
+    fixture.componentInstance.resetStatus = 'Something reset.';
+    chooseNumber(numberSelect('scatter', 'intelligenceIndex'), 2);
+    expect(emitted.length).toBe(1);
+    expect(emitted[0].numbers).toEqual({ ...DEFAULT_FIGURE_STYLE.numbers, suiteCost: 2, intelligenceIndex: 2 });
+    expect(emitted[0].bar).toBe(DEFAULT_FIGURE_STYLE.bar);
+    expect(emitted[0].scatter).toBe(DEFAULT_FIGURE_STYLE.scatter);
+    expect(fixture.componentInstance.resetStatus).toBe('');
+    expect(DEFAULT_FIGURE_STYLE.numbers.intelligenceIndex).toBe(0);
+
+    fixture.componentInstance.setNumber('costPerQuestion', 9.4);
+    expect(emitted[1].numbers.costPerQuestion).toBe(6);
+  });
+
+  it('summarizes the visible number formats in the read-out', () => {
+    render('bar', withNumbers({ meanModelTime: 3 }));
+    const readout = host().querySelector('#mc-style-bar-section-numbers > summary .gh-disclosure-summary-value');
+    expect(readout?.textContent?.trim()).toBe('Intelligence 0 · Mean time 3 · Cost 4');
+    render('scatter');
+    expect(host().querySelector('#mc-style-scatter-section-numbers > summary .gh-disclosure-summary-value')?.textContent?.trim())
+      .toBe('Intelligence 0 · Mean time 1 · Cost / question 4');
+  });
+
+  it('resets only the visible number formats, and keeps a hidden measure\'s setting', () => {
+    render('bar', withNumbers({ ttftP50: 5, suiteCost: 1 }));
+    const reset = resetButton('mc-style-bar-section-numbers-reset');
+    expect(reset.getAttribute('aria-disabled')).toBeNull();
+    expect(host().querySelector('#mc-style-bar-section-numbers-reset-tip')?.textContent?.trim()).toBe('Reset to defaults');
+    reset.click();
+    fixture.detectChanges();
+    expect(emitted.length).toBe(1);
+    expect(emitted[0].numbers).toEqual({ ...DEFAULT_FIGURE_STYLE.numbers, ttftP50: 5 });
+    expect(emitted[0].bar).toBe(DEFAULT_FIGURE_STYLE.bar);
+    expect(statusText()).toBe('Visible number formats reset to defaults.');
+
+    // Only a hidden measure differs, so the visible rows are at their defaults.
+    render('bar', withNumbers({ ttftP50: 5 }));
+    expect(resetButton('mc-style-bar-section-numbers-reset').getAttribute('aria-disabled')).toBe('true');
+    resetButton('mc-style-bar-section-numbers-reset').click();
+    expect(emitted.length).toBe(1);
+  });
+
+  it('leaves every number format alone on each family reset', () => {
+    const numbers = { ...DEFAULT_FIGURE_STYLE.numbers, intelligenceIndex: 2, suiteCost: 1, costPerQuestion: 6 };
+    const changed: FigureStyle = { ...DEFAULT_FIGURE_STYLE, numbers };
+    for (const [kind, id] of [['bar', 'mc-style-bar-reset'], ['scatter', 'mc-style-scatter-reset'], ['profile', 'mc-style-profile-reset']] as const) {
+      emitted = [];
+      render(kind, changed);
+      (host().querySelector(`#${id}`) as HTMLButtonElement).click();
+      expect(emitted[0].numbers).withContext(kind).toEqual(numbers);
+    }
+  });
+
+  it('opens the Number format section closed under an old stored disclosure state', () => {
+    fixture.destroy();
+    localStorage.setItem(FIGURE_STYLE_PANEL_OPEN_KEY, JSON.stringify({ bar: ['values', 'layout'], scatter: ['labels'] }));
+    create();
+    render('bar');
+    expect(section('mc-style-bar-section-values').open).toBeTrue();
+    expect(section('mc-style-bar-section-numbers').open).toBeFalse();
+    render('scatter');
+    expect(section('mc-style-scatter-section-numbers').open).toBeFalse();
+    render('profile');
+    expect(section('mc-style-profile-section-heading').open).toBeTrue();
+    expect(section('mc-style-profile-section-numbers').open).toBeFalse();
+  });
+
+  it('gives every number control and title-break radio a distinct id', () => {
+    for (const kind of ['bar', 'scatter', 'profile'] as const) {
+      render(kind);
+      const ids = Array.from(host().querySelectorAll('[id]')).map(element => element.id);
+      expect(new Set(ids).size).withContext(kind).toBe(ids.length);
+    }
+  });
+
+  it('chooses the axis title line break with a radio group, Automatic by default', () => {
+    render('bar');
+    const auto = control('mc-style-bar-axisTitleBreak-auto');
+    expect(auto.checked).toBeTrue();
+    expect(auto.name).toBe('mc-style-bar-axisTitleBreak');
+    const fieldset = auto.closest('fieldset')!;
+    expect(fieldset.querySelector('legend')?.textContent).toContain('Axis title line break');
+    expect(host().querySelector(`#${fieldset.getAttribute('aria-describedby')}`)?.textContent?.trim())
+      .toBe('Automatic moves the part in parentheses to a second line when the title is longer than its axis.');
+
+    setChecked(control('mc-style-bar-axisTitleBreak-never'), true);
+    expect(emitted[0].bar.axisTitleBreak).toBe('never');
+    acceptLast();
+    expect(control('mc-style-bar-axisTitleBreak-never').checked).toBeTrue();
+    expect(host().querySelector('#mc-style-bar-section-values > summary .gh-disclosure-summary-value')?.textContent?.trim())
+      .toBe('values 11 px · axis 11/12 px · title never broken · n = 1');
+    expect(resetButton('mc-style-bar-section-values-reset').getAttribute('aria-disabled')).toBeNull();
+    resetButton('mc-style-bar-section-values-reset').click();
+    expect(emitted[1].bar.axisTitleBreak).toBe('auto');
   });
 
   it('resets one section only, and lights its button while it differs', () => {

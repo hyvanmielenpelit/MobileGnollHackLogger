@@ -1050,6 +1050,8 @@
                          of that state. -->
                     <app-figure-style-panel [kind]="effectiveStyleFamily" [figureStyle]="figureStyle"
                                             [directLabels]="scatterDirectLabels" [inlineValues]="scatterInlineValues"
+                                            [speedMeasure]="speedMeasure" [costMeasure]="costMeasure"
+                                            [numberSamples]="numberSamples[effectiveStyleFamily]"
                                             (figureStyleChange)="onFigureStyleChange($event)"
                                             (directLabelsChange)="onScatterDirectLabelsChange($event)"
                                             (inlineValuesChange)="onScatterInlineValuesChange($event)"></app-figure-style-panel>

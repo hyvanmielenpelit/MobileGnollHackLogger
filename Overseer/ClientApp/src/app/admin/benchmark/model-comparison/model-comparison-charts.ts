@@ -10,13 +10,16 @@
  */
 
 import ChartDataLabels from 'chartjs-plugin-datalabels';
-import type { Chart, ChartConfiguration, ChartType, DefaultDataPoint, Plugin, Point } from 'chart.js';
+import type { Chart, ChartConfiguration, ChartType, DefaultDataPoint, FontSpec, Plugin, Point, Scale } from 'chart.js';
+import { toFont } from 'chart.js/helpers';
 import { chooseScaleType, formatTick, linearDomain, logDomain, timeUnitFor } from './axis-domain';
 import type { AxisBounds, AxisTickKind, ScaleType, TimeUnit } from './axis-domain';
 import { pricingBadge, pricingNote, questionsBadge, runsBadge, visibleBadges } from './figure-chrome';
 import type { FigureBadge, FigureChrome, FigureDirection, FigureKeyItem, FigureNote } from './figure-chrome';
 import { DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
-import type { FigureStyle } from './figure-style';
+import type { AxisTitleBreak, FigureStyle, ScatterFigureStyle } from './figure-style';
+import { DEFAULT_MEASURE_DECIMALS, costNumberMeasure, formatMeasure, speedNumberMeasure } from './measure-format';
+import type { NumberFormatStyle, NumberMeasure, NumberSamples } from './measure-format';
 
 // ---------------------------------------------------------------------------------------------
 // Input model
@@ -817,12 +820,89 @@ function warningNotes(texts: readonly string[]): FigureNote[] {
   return texts.map((text): FigureNote => ({ text, tone: 'warning' }));
 }
 
-function formatMs(value: number): string {
-  return value >= 1000 ? `${(value / 1000).toFixed(2)} s` : `${Math.round(value)} ms`;
+/**
+ * A title's final parenthetical split onto a line of its own: `Candidate cost of one suite run
+ * (USD, 18 questions asked)` becomes the head and `(USD, 18 questions asked)`. Null where the title
+ * does not end in a parenthetical preceded by a space and a nonempty head.
+ */
+export function splitAxisTitle(text: string): [string, string] | null {
+  if (!text.endsWith(')')) {
+    return null;
+  }
+  let depth = 0;
+  let open = -1;
+  for (let i = text.length - 1; i >= 0; i -= 1) {
+    if (text[i] === ')') {
+      depth += 1;
+    } else if (text[i] === '(') {
+      depth -= 1;
+      if (depth === 0) {
+        open = i;
+        break;
+      }
+    }
+  }
+  if (open < 1 || text[open - 1] !== ' ') {
+    return null;
+  }
+  const head = text.slice(0, open - 1);
+  return head.trim() === '' ? null : [head, text.slice(open)];
 }
 
-function formatUsd(value: number): string {
-  return `$${value.toFixed(4)}`;
+/** An axis title's lines unbroken and, where it has a final parenthetical, broken; the direction line last in both. */
+export function axisTitleLines(
+  text: string,
+  better?: BetterDirection,
+): { readonly unbroken: readonly string[]; readonly broken: readonly string[] | null } {
+  const direction = better ? [better === 'lower' ? 'lower is better' : 'higher is better'] : [];
+  const split = splitAxisTitle(text);
+  return { unbroken: [text, ...direction], broken: split ? [...split, ...direction] : null };
+}
+
+/** Room, in px, an unbroken title must leave along its axis before Automatic keeps it on one line. */
+export const AXIS_TITLE_RESERVE_PX = 8;
+
+function sameLines(current: unknown, lines: readonly string[]): boolean {
+  return Array.isArray(current) && current.length === lines.length && current.every((line, i) => line === lines[i]);
+}
+
+/**
+ * The value scale's `afterFit`: breaks the title when its widest unbroken line is longer than the
+ * fitted axis less {@link AXIS_TITLE_RESERVE_PX}, and refits once to reserve the new thickness.
+ *
+ * Both alternatives come from the closure on every fit, so a longer axis restores the unbroken title.
+ * The write lands in the chart's own merged options, never in the spec the builder returned.
+ */
+function breakTitleToFit(unbroken: readonly string[], broken: readonly string[]): (scale: Scale) => void {
+  return (scale) => {
+    const title = (scale.options as unknown as { title: { text: string | string[]; font?: Partial<FontSpec> } }).title;
+    const font = toFont(title.font ?? {}, scale.chart.options.font);
+    const ctx = scale.ctx;
+    ctx.save();
+    ctx.font = font.string;
+    const widest = Math.max(...unbroken.map((line) => ctx.measureText(line).width));
+    ctx.restore();
+    const available = scale.isHorizontal() ? scale.width : scale.height;
+    const chosen = widest > Math.max(0, available - AXIS_TITLE_RESERVE_PX) ? broken : unbroken;
+    if (!sameLines(title.text, chosen)) {
+      title.text = [...chosen];
+      // A second fit recomputes the tick-label padding from pixel state the first one has already
+      // moved, and the layout sizes the axis from that padding: keep the first fit's.
+      const { paddingLeft, paddingRight, paddingTop, paddingBottom } = scale;
+      scale.fit();
+      Object.assign(scale, { paddingLeft, paddingRight, paddingTop, paddingBottom });
+    }
+  };
+}
+
+/** A bar value axis's title options, and the `afterFit` that decides its break while it is Automatic. */
+function valueAxisTitle(text: string, better: BetterDirection | undefined, mode: AxisTitleBreak, size: number) {
+  const { unbroken, broken } = axisTitleLines(text, better);
+  const lines = mode === 'always' && broken ? broken : unbroken;
+  return {
+    title: axisTitle([...lines], undefined, size),
+    ...(mode === 'auto' && broken ? { afterFit: breakTitleToFit(unbroken, broken) } : {}),
+  };
 }
 
 function degradedNotices(plotted: readonly ModelComparisonEntry[], axes: readonly ('speed' | 'cost')[]): string[] {
@@ -1481,7 +1561,8 @@ interface ScatterAxisSpec {
   readonly bounds: AxisBounds;
   /** The narrowest linear domain allowed, given the largest plotted value. */
   readonly minSpan: (largest: number) => number;
-  readonly format: (value: number) => string;
+  /** Whose decimal setting the plates and tooltips follow. */
+  readonly measure: NumberMeasure;
   readonly value: (entry: ModelComparisonEntry) => number;
   readonly errLow: (entry: ModelComparisonEntry) => number | undefined;
   readonly errHigh: (entry: ModelComparisonEntry) => number | undefined;
@@ -1502,7 +1583,7 @@ const QUALITY_AXIS: ScatterAxisSpec = {
   better: 'higher',
   bounds: INDEX_BOUNDS,
   minSpan: INDEX_MIN_SPAN,
-  format: (v) => v.toFixed(1),
+  measure: 'intelligenceIndex',
   value: (e) => e.intelligenceIndex,
   errLow: (e) => e.intelligenceIndexCi95HalfWidth,
   errHigh: (e) => e.intelligenceIndexCi95HalfWidth,
@@ -1519,7 +1600,7 @@ const TTFT_AXIS: ScatterAxisSpec = {
   better: 'lower',
   bounds: MEASURE_BOUNDS,
   minSpan: MEASURE_MIN_SPAN,
-  format: formatMs,
+  measure: 'ttftP50',
   value: (e) => e.ttftP50Ms,
   // Latency is right-skewed, so the spread is the P50-to-P90 whisker, never a symmetric SD.
   errLow: () => undefined,
@@ -1534,7 +1615,7 @@ const COST_AXIS: ScatterAxisSpec = {
   better: 'lower',
   bounds: MEASURE_BOUNDS,
   minSpan: MEASURE_MIN_SPAN,
-  format: formatUsd,
+  measure: 'costPerQuestion',
   value: (e) => e.candidateCostPerQuestionUsd,
   errLow: (e) => e.candidateCostPerQuestionSdUsd ?? undefined,
   errHigh: (e) => e.candidateCostPerQuestionSdUsd ?? undefined,
@@ -1548,7 +1629,7 @@ const SPEED_INDEX_AXIS: ScatterAxisSpec = {
   better: 'higher',
   bounds: INDEX_BOUNDS,
   minSpan: INDEX_MIN_SPAN,
-  format: (v) => v.toFixed(1),
+  measure: 'speedIndex',
   value: (e) => speedValue(e, 'speedIndex') ?? Number.NaN,
   errLow: (e) => e.speedIndexSd ?? undefined,
   errHigh: (e) => e.speedIndexSd ?? undefined,
@@ -1565,7 +1646,7 @@ const MEAN_MODEL_TIME_AXIS: ScatterAxisSpec = {
   better: 'lower',
   bounds: MEASURE_BOUNDS,
   minSpan: MEASURE_MIN_SPAN,
-  format: formatMs,
+  measure: 'meanModelTime',
   value: (e) => speedValue(e, 'meanModelTime') ?? Number.NaN,
   errLow: () => undefined,
   errHigh: () => undefined,
@@ -1581,7 +1662,7 @@ const TOTAL_MODEL_TIME_AXIS: ScatterAxisSpec = {
   better: 'lower',
   bounds: MEASURE_BOUNDS,
   minSpan: MEASURE_MIN_SPAN,
-  format: formatMs,
+  measure: 'totalModelTime',
   value: (e) => speedValue(e, 'totalModelTime') ?? Number.NaN,
   errLow: (e) => e.totalModelTimeSdMs ?? undefined,
   errHigh: (e) => e.totalModelTimeSdMs ?? undefined,
@@ -1622,6 +1703,23 @@ function isMeasured(entry: ModelComparisonEntry, x: ScatterAxisSpec, y: ScatterA
   return Number.isFinite(x.value(entry)) && Number.isFinite(y.value(entry));
 }
 
+/** What a scatter axis takes from the trade-off style. */
+interface ScatterAxisStyle {
+  readonly whiskers: boolean;
+  readonly textSizePx: number;
+  readonly titleSizePx: number;
+  readonly gridlines: boolean;
+}
+
+function scatterAxisStyle(style: ScatterFigureStyle): ScatterAxisStyle {
+  return {
+    whiskers: style.intervals,
+    textSizePx: style.axisTextSizePx,
+    titleSizePx: style.axisTitleSizePx,
+    gridlines: style.gridlines,
+  };
+}
+
 /**
  * A scatter axis resolved against the plotted entries: its scale type, domain, ticks, unit and title,
  * and the Chart.js scale options that draw them.
@@ -1634,12 +1732,7 @@ function isMeasured(entry: ModelComparisonEntry, x: ScatterAxisSpec, y: ScatterA
 function resolveAxis(
   spec: ScatterAxisSpec,
   plotted: readonly ModelComparisonEntry[],
-  axisStyle: {
-    readonly whiskers: boolean;
-    readonly textSizePx: number;
-    readonly titleSizePx: number;
-    readonly gridlines: boolean;
-  } = { whiskers: true, textSizePx: 11, titleSizePx: 12, gridlines: true },
+  axisStyle: ScatterAxisStyle = { whiskers: true, textSizePx: 11, titleSizePx: 12, gridlines: true },
 ) {
   const values: number[] = [];
   const lows: number[] = [];
@@ -1678,6 +1771,7 @@ function resolveAxis(
     min,
     max,
     ticks,
+    unit,
     title,
     scale: {
       type,
@@ -1735,22 +1829,21 @@ export const FRONTIER_UNCERTAINTY_NOTE =
 /**
  * What one mark's plate carries, from the two toggles the wizard offers.
  *
- * The value lines use the axis's own `format`, so the plate, the tick labels and the tooltip agree
- * to the digit. An unmeasured coordinate — a speed measure a model has no figure for — yields no
- * line at all rather than a printed NaN.
+ * The value lines use the same formatters as the tooltip, so the plate and the tooltip agree to the
+ * digit; the ticks follow their own step. An unmeasured coordinate — a speed measure a model has no
+ * figure for — yields no line at all rather than a printed NaN.
  */
 function directLabelBlock(
   entry: ModelComparisonEntry,
-  xAxis: ScatterAxisSpec,
-  yAxis: ScatterAxisSpec,
+  axes: readonly (readonly [ScatterAxisSpec, (value: number) => string])[],
   options: { glyphs: ReadonlyMap<string, IdentityGlyph>; named: boolean; valued: boolean },
 ): DirectLabelBlock {
   const values: DirectLabelValue[] = [];
   if (options.valued) {
-    for (const axis of [xAxis, yAxis]) {
+    for (const [axis, format] of axes) {
       const value = axis.value(entry);
       if (Number.isFinite(value)) {
-        values.push({ label: axis.shortLabel, text: axis.format(value) });
+        values.push({ label: axis.shortLabel, text: format(value) });
       }
     }
   }
@@ -1795,14 +1888,13 @@ function buildScatter(
     };
   });
 
-  const axisStyle = {
-    whiskers: style.intervals,
-    textSizePx: style.axisTextSizePx,
-    titleSizePx: style.axisTitleSizePx,
-    gridlines: style.gridlines,
-  };
+  const axisStyle = scatterAxisStyle(style);
   const xResolved = resolveAxis(xAxis, plotted, axisStyle);
   const yResolved = resolveAxis(yAxis, plotted, axisStyle);
+  // Plates and tooltips write each value in its axis's unit, to the measure's decimal setting.
+  const numbers = (options.style ?? DEFAULT_FIGURE_STYLE).numbers;
+  const formatX = (value: number): string => formatMeasure(value, xAxis.measure, numbers[xAxis.measure], xResolved.unit);
+  const formatY = (value: number): string => formatMeasure(value, yAxis.measure, numbers[yAxis.measure], yResolved.unit);
 
   // An unmeasured coordinate draws no mark, so it can neither beat a model nor be beaten by one.
   const measured = plotted.filter((entry) => isMeasured(entry, xAxis, yAxis));
@@ -1876,8 +1968,8 @@ function buildScatter(
                 return 'not measured';
               }
               return [
-                `${xAxis.tooltipLabel}: ${xAxis.format(x)}`,
-                `${yAxis.tooltipLabel}: ${yAxis.format(y)}`,
+                `${xAxis.tooltipLabel}: ${formatX(x)}`,
+                `${yAxis.tooltipLabel}: ${formatY(y)}`,
               ];
             },
           },
@@ -1888,7 +1980,7 @@ function buildScatter(
         ...(annotate
           ? {
               [directLabelPlugin.id]: {
-                blocks: plotted.map((entry) => directLabelBlock(entry, xAxis, yAxis, {
+                blocks: plotted.map((entry) => directLabelBlock(entry, [[xAxis, formatX], [yAxis, formatY]], {
                   glyphs,
                   named: directLabels,
                   valued: inlineValues,
@@ -2166,7 +2258,7 @@ function buildPanel(
     beginAtZero: true,
     min: 0,
     max: axisMax,
-    title: axisTitle(axisTitleText, directionShown ? undefined : better, style.axisTitleSizePx),
+    ...valueAxisTitle(axisTitleText, directionShown ? undefined : better, style.axisTitleBreak, style.axisTitleSizePx),
     grid: gridOptions(style.gridlines),
     border: { color: CHART_INK.baseline },
     // The tick decimals follow Chart.js's own step, read off the first two ticks. The unit is the
@@ -2280,6 +2372,14 @@ function buildPanel(
 export const MEAN_TIME_NO_INTERVAL_NOTE =
   'Mean time per question has no uncertainty bar: the spread across questions is not recorded.';
 
+/** The Speed panel's time unit, from the largest finite plotted value. */
+function barSpeedUnit(plotted: readonly ModelComparisonEntry[], speedMeasure: SpeedMeasure): TimeUnit {
+  const measured = plotted
+    .map((e) => speedValue(e, speedMeasure))
+    .filter((v): v is number => v !== null && Number.isFinite(v));
+  return timeUnitFor(measured.length > 0 ? Math.max(...measured) : 0);
+}
+
 /**
  * P1 — three aligned bar panels sharing one model order, so a row is one model and a column is one
  * measure. Each panel keeps its own real units and its own axis title; there is no shared y-axis and
@@ -2354,9 +2454,11 @@ export function buildSmallMultiples(
     speedNotes.push({ text: MEAN_TIME_NO_INTERVAL_NOTE, tone: 'info' });
   }
 
-  // The unit follows the largest plotted time, and the title and the ticks both carry it.
-  const measuredSpeeds = speedValues.filter((v): v is number => v !== null && Number.isFinite(v));
-  const speedUnit = timeUnitFor(measuredSpeeds.length > 0 ? Math.max(...measuredSpeeds) : 0);
+  // The unit follows the largest plotted time, and the title, the ticks and the values all carry it.
+  const speedUnit = barSpeedUnit(plotted, speedMeasure);
+  const numbers = (options.style ?? DEFAULT_FIGURE_STYLE).numbers;
+  const speedKey = speedNumberMeasure(speedMeasure);
+  const costKey = costNumberMeasure(costMeasure);
   const speedTitle =
     speedMeasure === 'speedIndex'
       ? 'Speed Index (0-100)'
@@ -2389,7 +2491,7 @@ export function buildSmallMultiples(
       'Intelligence Index (0-100)',
       'higher',
       100,
-      (v) => v.toFixed(0),
+      (v) => formatMeasure(v, 'intelligenceIndex', numbers.intelligenceIndex),
       { kind: 'index' },
       qualityValues,
       qualityErr,
@@ -2407,7 +2509,7 @@ export function buildSmallMultiples(
       speedTitle,
       speedLowerIsBetter(speedMeasure) ? 'lower' : 'higher',
       speedMeasure === 'speedIndex' ? 100 : undefined,
-      speedMeasure === 'speedIndex' ? (v) => v.toFixed(0) : formatMs,
+      (v) => formatMeasure(v, speedKey, numbers[speedKey], speedUnit),
       speedMeasure === 'speedIndex' ? { kind: 'index' } : { kind: 'time', unit: speedUnit },
       speedValues,
       speedErrLow,
@@ -2425,7 +2527,7 @@ export function buildSmallMultiples(
       costTitle,
       'lower',
       undefined,
-      formatUsd,
+      (v) => formatMeasure(v, costKey, numbers[costKey]),
       { kind: 'usd' },
       costValues,
       costSd,
@@ -2485,23 +2587,59 @@ export interface ProfileNormalization {
  */
 export function normalizeProfile(
   plotted: readonly ModelComparisonEntry[],
-  options: { context: ModelComparisonContext; speedMeasure: SpeedMeasure; costMeasure: CostMeasure },
+  options: ProfileNormalizationOptions,
 ): ProfileNormalization {
-  const { context, speedMeasure, costMeasure } = options;
+  const { axes, rows } = prepareProfile(plotted, options);
+  return { axes, rows };
+}
 
-  const rawFor = (id: ProfileAxisId, entry: ModelComparisonEntry): number => {
-    switch (id) {
-      case 'quality':
-        return entry.intelligenceIndex;
-      case 'speed':
-        return speedValue(entry, speedMeasure) ?? 0;
-      case 'cost':
-        return costValue(entry, costMeasure, context);
-    }
-  };
+export interface ProfileNormalizationOptions {
+  readonly context: ModelComparisonContext;
+  readonly speedMeasure: SpeedMeasure;
+  readonly costMeasure: CostMeasure;
+  /** Decimals of the range labels and the tooltip. Defaults to {@link DEFAULT_MEASURE_DECIMALS}. */
+  readonly numbers?: NumberFormatStyle;
+}
+
+function profileRawValue(
+  id: ProfileAxisId,
+  entry: ModelComparisonEntry,
+  options: ProfileNormalizationOptions,
+): number {
+  switch (id) {
+    case 'quality':
+      return entry.intelligenceIndex;
+    case 'speed':
+      return speedValue(entry, options.speedMeasure) ?? 0;
+    case 'cost':
+      return costValue(entry, options.costMeasure, options.context);
+  }
+}
+
+/** The profile's time unit, from the largest finite raw speed value in the plotted set. */
+function profileTimeUnit(plotted: readonly ModelComparisonEntry[], options: ProfileNormalizationOptions): TimeUnit {
+  const raw = plotted.map((entry) => profileRawValue('speed', entry, options)).filter((v) => Number.isFinite(v));
+  return timeUnitFor(raw.length > 0 ? Math.max(...raw) : 0);
+}
+
+/** The normalization, plus each axis's value formatter, in {@link PROFILE_AXIS_ORDER}. */
+function prepareProfile(
+  plotted: readonly ModelComparisonEntry[],
+  options: ProfileNormalizationOptions,
+): ProfileNormalization & { readonly formats: readonly ((value: number) => string)[] } {
+  const { speedMeasure, costMeasure } = options;
+  const numbers = options.numbers ?? DEFAULT_MEASURE_DECIMALS;
+  const rawFor = (id: ProfileAxisId, entry: ModelComparisonEntry): number => profileRawValue(id, entry, options);
+  const speedKey = speedNumberMeasure(speedMeasure);
+  const costKey = costNumberMeasure(costMeasure);
+  const timeUnit = profileTimeUnit(plotted, options);
 
   const axisMeta: Record<ProfileAxisId, { title: string; lowerIsBetter: boolean; format: (v: number) => string }> = {
-    quality: { title: 'Intelligence', lowerIsBetter: false, format: (v) => v.toFixed(1) },
+    quality: {
+      title: 'Intelligence',
+      lowerIsBetter: false,
+      format: (v) => formatMeasure(v, 'intelligenceIndex', numbers.intelligenceIndex),
+    },
     speed: {
       title: speedMeasure === 'speedIndex'
         ? 'Speed Index'
@@ -2511,12 +2649,12 @@ export function normalizeProfile(
             ? 'Speed (total model time)'
             : 'Speed (TTFT P50)',
       lowerIsBetter: speedLowerIsBetter(speedMeasure),
-      format: speedMeasure === 'speedIndex' ? (v) => v.toFixed(1) : formatMs,
+      format: (v) => formatMeasure(v, speedKey, numbers[speedKey], timeUnit),
     },
     cost: {
       title: costMeasure === 'candidateSuite' ? 'Cost (candidate, suite)' : 'Cost (total run)',
       lowerIsBetter: true,
-      format: formatUsd,
+      format: (v) => formatMeasure(v, costKey, numbers[costKey]),
     },
   };
 
@@ -2548,7 +2686,7 @@ export function normalizeProfile(
     return { key: entry.key, label: entry.label, values, raw };
   });
 
-  return { axes, rows };
+  return { axes, rows, formats: PROFILE_AXIS_ORDER.map((id) => axisMeta[id].format) };
 }
 
 export interface ProfileOptions extends FigureOptions {
@@ -2568,7 +2706,12 @@ export function buildProfilePlot(
   options: ProfileOptions,
 ): ChartSpec<'line', (number | null)[], string> {
   const { context, glyphs, reducedMotion, highlightedKey, selectedKeys } = options;
-  const normalization = normalizeProfile(plotted, options);
+  const normalization = prepareProfile(plotted, {
+    context,
+    speedMeasure: options.speedMeasure,
+    costMeasure: options.costMeasure,
+    numbers: (options.style ?? DEFAULT_FIGURE_STYLE).numbers,
+  });
 
   const emphasised = new Set<string>(selectedKeys ?? []);
   if (highlightedKey) {
@@ -2646,13 +2789,12 @@ export function buildProfilePlot(
             // Real values, not the normalized ones: the plot is a shape, the tooltip is the record.
             label: (item) => {
               const row = normalization.rows[item.datasetIndex];
-              if (!row) {
+              const axis = normalization.axes[item.dataIndex];
+              const format = normalization.formats[item.dataIndex];
+              if (!row || !axis || !format) {
                 return '';
               }
-              const axis = normalization.axes[item.dataIndex];
-              const format =
-                axis?.id === 'cost' ? formatUsd : axis?.id === 'speed' && speedLowerIsBetter(options.speedMeasure) ? formatMs : (v: number) => v.toFixed(1);
-              return `${row.label} — ${axis?.title}: ${format(row.raw[item.dataIndex])}`;
+              return `${row.label} — ${axis.title}: ${format(row.raw[item.dataIndex])}`;
             },
           },
         },
@@ -2770,4 +2912,71 @@ export function buildComparisonFigures(
     smallMultiples: buildSmallMultiples(selection.plotted, smallMultiplesOptions),
     profile: buildProfilePlot(selection.plotted, { ...figureOptions, speedMeasure, costMeasure }),
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Number format samples
+// ---------------------------------------------------------------------------------------------
+
+export interface NumberSampleOptions {
+  readonly context: ModelComparisonContext;
+  readonly speedMeasure: SpeedMeasure;
+  readonly costMeasure: CostMeasure;
+  /** The style the figures were built with: the scatter's time unit depends on its intervals. */
+  readonly style?: FigureStyle;
+}
+
+/** The first finite value in plotted order, or undefined where no plotted entry has one. */
+function firstFinite(
+  plotted: readonly ModelComparisonEntry[],
+  value: (entry: ModelComparisonEntry) => number | null,
+): number | undefined {
+  for (const entry of plotted) {
+    const v = value(entry);
+    if (v !== null && Number.isFinite(v)) {
+      return v;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * What the Number format options of one figure family preview on: the first plotted value of each
+ * of its three measures, with the time unit that family writes it in. A measure no plotted entry
+ * has is left out, and the panel previews it on a fixed example instead.
+ */
+export function buildNumberSamples(
+  plotted: readonly ModelComparisonEntry[],
+  options: NumberSampleOptions,
+  family: 'bar' | 'scatter' | 'profile',
+): NumberSamples {
+  const { context, speedMeasure, costMeasure } = options;
+  const style = options.style ?? DEFAULT_FIGURE_STYLE;
+  const speedKey = speedNumberMeasure(speedMeasure);
+  const samples: Partial<Record<NumberMeasure, { value: number; unit?: TimeUnit }>> = {};
+
+  const quality = firstFinite(plotted, (e) => e.intelligenceIndex);
+  if (quality !== undefined) {
+    samples.intelligenceIndex = { value: quality };
+  }
+
+  const speed = firstFinite(plotted, (e) => speedValue(e, speedMeasure));
+  if (speed !== undefined) {
+    const unit = speedMeasure === 'speedIndex'
+      ? undefined
+      : family === 'bar'
+        ? barSpeedUnit(plotted, speedMeasure)
+        : family === 'scatter'
+          ? resolveAxis(speedAxisFor(speedMeasure), plotted, scatterAxisStyle(style.scatter)).unit
+          : profileTimeUnit(plotted, { context, speedMeasure, costMeasure });
+    samples[speedKey] = unit === undefined ? { value: speed } : { value: speed, unit };
+  }
+
+  const cost = family === 'scatter'
+    ? firstFinite(plotted, (e) => e.candidateCostPerQuestionUsd)
+    : firstFinite(plotted, (e) => costValue(e, costMeasure, context));
+  if (cost !== undefined) {
+    samples[family === 'scatter' ? 'costPerQuestion' : costNumberMeasure(costMeasure)] = { value: cost };
+  }
+  return samples;
 }

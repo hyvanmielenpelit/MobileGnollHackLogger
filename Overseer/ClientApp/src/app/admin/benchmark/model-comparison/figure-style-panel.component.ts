@@ -18,7 +18,20 @@ import {
   clampToControl,
   scatterRangeControl
 } from './figure-style';
+import {
+  DEFAULT_MEASURE_DECIMALS,
+  MAX_MEASURE_DECIMALS,
+  MEASURE_NAMES,
+  MEASURE_SHORT_NAMES,
+  NumberMeasure,
+  NumberSamples,
+  costNumberMeasure,
+  formatMeasureSample,
+  normalizeMeasureDecimals,
+  speedNumberMeasure
+} from './measure-format';
 import { FRONTIER_UNCERTAINTY_NOTE, MEAN_TIME_NO_INTERVAL_NOTE } from './model-comparison-charts';
+import type { CostMeasure, SpeedMeasure } from './model-comparison-charts';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 
@@ -27,17 +40,26 @@ export type FigureStylePanelKind = 'bar' | 'scatter' | 'profile';
 
 type StyleFamily = 'bar' | 'scatter' | 'profile';
 
-/** One collapsible section: its key within the family, its summary title and the style fields it edits. */
+/**
+ * One collapsible section: its key within the family, its summary title and the style fields it
+ * edits. A shared section edits the number formats every family shares, not family fields.
+ */
 export interface FigureStyleSection {
   readonly name: string;
   readonly title: string;
   readonly keys: readonly string[];
+  readonly shared?: boolean;
 }
+
+const NUMBERS_SECTION: FigureStyleSection = { name: 'numbers', title: 'Number format', keys: [], shared: true };
 
 const HEADING_KEYS = ['titleSizePx', 'badgeTextSizePx', 'hiddenBadges'] as const;
 const FOOTER_KEYS = ['footer', 'footerTextSizePx'] as const;
 
-/** Each family's sections, in the order the panel stacks them. Together they claim every style field once. */
+/**
+ * Each family's sections, in the order the panel stacks them. Together a family's sections claim
+ * every one of its style fields once; the shared Number format section edits `numbers`.
+ */
 export const FIGURE_STYLE_SECTIONS: Readonly<Record<StyleFamily, readonly FigureStyleSection[]>> = {
   bar: [
     { name: 'heading', title: 'Heading and badges', keys: HEADING_KEYS },
@@ -45,8 +67,9 @@ export const FIGURE_STYLE_SECTIONS: Readonly<Record<StyleFamily, readonly Figure
     {
       name: 'values',
       title: 'Values and axes',
-      keys: ['valueLabels', 'valueLabelSizePx', 'singleRunMarker', 'axisTextSizePx', 'axisTitleSizePx']
+      keys: ['valueLabels', 'valueLabelSizePx', 'singleRunMarker', 'axisTextSizePx', 'axisTitleSizePx', 'axisTitleBreak']
     },
+    NUMBERS_SECTION,
     { name: 'uncertainty', title: 'Uncertainty', keys: ['intervals', 'hiddenIntervalsNote', 'meanTimeNoIntervalNote'] },
     { name: 'footer', title: 'Footer', keys: FOOTER_KEYS },
     { name: 'layout', title: 'Layout', keys: ['orientation', 'gridlines'] }
@@ -55,15 +78,23 @@ export const FIGURE_STYLE_SECTIONS: Readonly<Record<StyleFamily, readonly Figure
     { name: 'heading', title: 'Heading and badges', keys: HEADING_KEYS },
     { name: 'marks', title: 'Marks and frontier', keys: ['markRadiusPx', 'frontierWidthPx', 'dominatedShading'] },
     { name: 'labels', title: 'Labels and legend', keys: ['labelTextSizePx', 'legendPosition'] },
+    NUMBERS_SECTION,
     { name: 'axes', title: 'Axes', keys: ['axisTextSizePx', 'axisTitleSizePx', 'gridlines'] },
     { name: 'uncertainty', title: 'Uncertainty', keys: ['intervals', 'hiddenIntervalsNote', 'frontierIntervalsNote'] },
     { name: 'footer', title: 'Footer', keys: FOOTER_KEYS }
   ],
   profile: [
     { name: 'heading', title: 'Heading and badges', keys: HEADING_KEYS },
+    NUMBERS_SECTION,
     { name: 'footer', title: 'Footer', keys: FOOTER_KEYS }
   ]
 };
+
+/** One Number format choice: a decimal count and the family's sample written with it. */
+export interface NumberOption {
+  readonly value: number;
+  readonly label: string;
+}
 
 /**
  * Where the open sections are kept, per browser, as `{ bar: [...], scatter: [...], profile: [...] }`.
@@ -121,6 +152,15 @@ export class FigureStylePanelComponent implements OnInit {
   /** The wizard's *Show values in the chart* toggle. */
   @Input() inlineValues = false;
 
+  /** The wizard's speed measure, whose decimals the Number format section shows. */
+  @Input() speedMeasure: SpeedMeasure = 'meanModelTime';
+
+  /** The wizard's cost measure, whose decimals the bar and profile Number format sections show. */
+  @Input() costMeasure: CostMeasure = 'candidateSuite';
+
+  /** The shown family's plotted values the decimal options preview on. */
+  @Input() numberSamples: NumberSamples = {};
+
   @Output() figureStyleChange = new EventEmitter<FigureStyle>();
   @Output() directLabelsChange = new EventEmitter<boolean>();
   @Output() inlineValuesChange = new EventEmitter<boolean>();
@@ -156,6 +196,14 @@ export class FigureStylePanelComponent implements OnInit {
     { value: 'bottom', label: 'Bottom' },
     { value: 'right', label: 'Right' }
   ] as const;
+
+  readonly axisTitleBreakOptions = [
+    { value: 'auto', label: 'Automatic' },
+    { value: 'always', label: 'Always' },
+    { value: 'never', label: 'Never' }
+  ] as const;
+
+  readonly measureNames = MEASURE_NAMES;
 
   /** The caption text each note checkbox adds, quoted verbatim in its tip. */
   readonly meanTimeHint = `Adds, on mean time per question: ${MEAN_TIME_NO_INTERVAL_NOTE}`;
@@ -313,6 +361,51 @@ export class FigureStylePanelComponent implements OnInit {
     return (event.target as HTMLInputElement).checked;
   }
 
+  // --- Number format -------------------------------------------------------------------------
+
+  /** The three measures a family shows: Intelligence, the selected speed, and its cost. */
+  numberRows(family: StyleFamily): readonly NumberMeasure[] {
+    return [
+      'intelligenceIndex',
+      speedNumberMeasure(this.speedMeasure),
+      family === 'scatter' ? 'costPerQuestion' : costNumberMeasure(this.costMeasure)
+    ];
+  }
+
+  /** 0 to 6 decimals, each labelled with the family's sample written that way: `1 (22.5 s)`. */
+  numberOptions(measure: NumberMeasure): readonly NumberOption[] {
+    const options: NumberOption[] = [];
+    for (let decimals = 0; decimals <= MAX_MEASURE_DECIMALS; decimals += 1) {
+      options.push({
+        value: decimals,
+        label: `${decimals} (${formatMeasureSample(measure, decimals, this.numberSamples[measure])})`
+      });
+    }
+    return options;
+  }
+
+  numberValue(measure: NumberMeasure): number {
+    return this.figureStyle.numbers[measure];
+  }
+
+  numberControlId(family: StyleFamily, measure: NumberMeasure): string {
+    return `mc-style-${family}-number-${measure}`;
+  }
+
+  onNumber(measure: NumberMeasure, event: Event): void {
+    this.setNumber(measure, Number((event.target as HTMLSelectElement).value));
+  }
+
+  /** Emits the style with one measure's decimals replaced, in every family. */
+  setNumber(measure: NumberMeasure, value: number): void {
+    const numbers = this.figureStyle.numbers;
+    this.resetStatus = '';
+    this.figureStyleChange.emit({
+      ...this.figureStyle,
+      numbers: { ...numbers, [measure]: normalizeMeasureDecimals(value, numbers[measure]) }
+    });
+  }
+
   onDirectLabels(on: boolean): void {
     this.resetStatus = '';
     this.directLabelsChange.emit(on);
@@ -355,6 +448,16 @@ export class FigureStylePanelComponent implements OnInit {
       return;
     }
     const section = this.section(family, name);
+    if (section.shared) {
+      // Only the measures this family shows; a hidden measure keeps its setting.
+      const numbers: Record<NumberMeasure, number> = { ...this.figureStyle.numbers };
+      for (const measure of this.numberRows(family)) {
+        numbers[measure] = DEFAULT_MEASURE_DECIMALS[measure];
+      }
+      this.figureStyleChange.emit({ ...this.figureStyle, numbers });
+      this.resetStatus = 'Visible number formats reset to defaults.';
+      return;
+    }
     if (!this.sectionFieldsDefault(family, name)) {
       const defaults = DEFAULT_FIGURE_STYLE[family] as unknown as Record<string, unknown>;
       const reset = Object.fromEntries(section.keys.map((key) => [key, defaults[key]]));
@@ -371,7 +474,8 @@ export class FigureStylePanelComponent implements OnInit {
 
   /** The reset button's accessible name. */
   resetLabel(family: StyleFamily, name: string): string {
-    return `Reset ${this.section(family, name).title} to defaults`;
+    const section = this.section(family, name);
+    return section.shared ? 'Reset visible number formats to defaults' : `Reset ${section.title} to defaults`;
   }
 
   /** The reset button's tooltip. */
@@ -380,6 +484,9 @@ export class FigureStylePanelComponent implements OnInit {
   }
 
   private sectionFieldsDefault(family: StyleFamily, name: string): boolean {
+    if (this.section(family, name).shared) {
+      return this.numberRows(family).every((measure) => this.figureStyle.numbers[measure] === DEFAULT_MEASURE_DECIMALS[measure]);
+    }
     const current = this.figureStyle[family] as unknown as Record<string, unknown>;
     const defaults = DEFAULT_FIGURE_STYLE[family] as unknown as Record<string, unknown>;
     return this.section(family, name).keys.every((key) => sameStyleValue(current[key], defaults[key]));
@@ -448,6 +555,11 @@ export class FigureStylePanelComponent implements OnInit {
 
   /** The one-line summary a closed section shows of its current values. */
   readout(family: StyleFamily, name: string): string {
+    if (this.section(family, name).shared) {
+      return this.numberRows(family)
+        .map((measure) => `${MEASURE_SHORT_NAMES[measure]} ${this.figureStyle.numbers[measure]}`)
+        .join(' · ');
+    }
     const style = this.figureStyle[family];
     switch (name) {
       case 'heading': {
@@ -485,6 +597,7 @@ export class FigureStylePanelComponent implements OnInit {
         return [
           bar.valueLabels ? `values ${bar.valueLabelSizePx} px` : 'no values',
           `axis ${bar.axisTextSizePx}/${bar.axisTitleSizePx} px`,
+          ...(bar.axisTitleBreak === 'auto' ? [] : [bar.axisTitleBreak === 'always' ? 'title always broken' : 'title never broken']),
           ...(bar.singleRunMarker ? ['n = 1'] : [])
         ].join(' · ');
       case 'layout': {

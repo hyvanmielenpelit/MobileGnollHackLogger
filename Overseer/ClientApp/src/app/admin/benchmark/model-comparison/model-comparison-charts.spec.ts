@@ -1,7 +1,13 @@
 import { Chart } from 'chart.js';
+import type { ChartConfiguration, ChartType, FontSpec, Plugin, Scale } from 'chart.js';
+import { toFont } from 'chart.js/helpers';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 import {
   ACCENT,
+  AXIS_TITLE_RESERVE_PX,
+  axisTitleLines,
+  buildNumberSamples,
+  splitAxisTitle,
   CATEGORICAL_PALETTE_DARK,
   CHART_INK,
   CHART_SURFACE,
@@ -41,7 +47,10 @@ import {
   suiteCostUsd,
 } from './model-comparison-charts';
 import type {
+  BarOrientation,
   ChartSpec,
+  CostMeasure,
+  SpeedMeasure,
   DirectLabelAnchor,
   DirectLabelBlock,
   DirectLabelBox,
@@ -53,6 +62,7 @@ import type {
 } from './model-comparison-charts';
 import { DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
 import type { BarFigureStyle, FigureStyle, ProfileFigureStyle, ScatterFigureStyle } from './figure-style';
+import type { NumberFormatStyle } from './measure-format';
 import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 import { CONFIG_ANALYTICS_CHART_TYPE } from '../../config-analytics/config-analytics.component';
 
@@ -461,7 +471,7 @@ describe('model-comparison-charts', () => {
       expect(tooltip.callbacks?.title?.([{ dataset: { label: 'Model A' } }])).toBe('Model A');
       expect(tooltip.callbacks?.label?.({ parsed: { x: 2000, y: 80.1 } })).toEqual([
         'Time to first token, median: 2.00 s',
-        'Intelligence Index: 80.1',
+        'Intelligence Index: 80',
       ]);
 
       // Three models are plotted, so dataset index 3 is the frontier annotation.
@@ -528,7 +538,7 @@ describe('model-comparison-charts', () => {
       expect(ttftPoint['yErrHigh']).toBe(1300);
 
       // 900 ms is the largest mean, so the panel stays in milliseconds.
-      expect(scaleOf(mean.speed.config, 'y').title?.text).toBe('Mean time per question (ms)');
+      expect(scaleOf(mean.speed.config, 'y').title?.text).toEqual(['Mean time per question (ms)']);
       const meanPoint = pointsOf(mean.speed.config)[0];
       expect(meanPoint['y']).toBe(PROFILE_FIXTURE[0].modelTimeMeanMs);
       expect(meanPoint['yErrLow']).toBeUndefined();
@@ -539,7 +549,7 @@ describe('model-comparison-charts', () => {
       });
 
       // 9000 ms is past a second, so the title and the ticks switch to seconds together.
-      expect(scaleOf(total.speed.config, 'y').title?.text).toBe('Total time for the suite (s)');
+      expect(scaleOf(total.speed.config, 'y').title?.text).toEqual(['Total time for the suite (s)']);
       const totalTick = scaleOf(total.speed.config, 'y').ticks?.callback;
       expect(totalTick?.(0, 0, [{ value: 0 }, { value: 2000 }])).toBe('0 s');
       expect(totalTick?.(2000, 1, [{ value: 0 }, { value: 2000 }])).toBe('2 s');
@@ -1566,8 +1576,9 @@ describe('model-comparison-charts', () => {
       expect(valued.config.options?.plugins?.legend?.display).toBeTrue();
       expect(pluginOptions(valued).blocks.map((b) => b.name)).toEqual([undefined, undefined, undefined]);
       expect(pluginOptions(valued).blocks[0].values).toEqual([
-        { label: 'Mean time', text: '900 ms' },
-        { label: 'Intelligence', text: '90.0' },
+        // 900 ms on an axis whose padded domain passes 1000 ms, so the plate follows the axis into seconds.
+        { label: 'Mean time', text: '0.9 s' },
+        { label: 'Intelligence', text: '90' },
       ]);
       expect(pluginOptions(valued).blocks[0].hue).toBe(glyphFor(BASE_FIGURE_OPTIONS.glyphs, 'A').hue);
 
@@ -1700,7 +1711,7 @@ describe('model-comparison-charts', () => {
     it('defaults the speed measure to mean model time, everywhere the measure is read', () => {
       const figures = buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT });
 
-      expect(scaleOf(figures.smallMultiples.speed.config, 'y').title?.text).toBe('Mean time per question (ms)');
+      expect(scaleOf(figures.smallMultiples.speed.config, 'y').title?.text).toEqual(['Mean time per question (ms)']);
       expect(titleLines(scaleOf(figures.qualitySpeed.config, 'x'))[0]).toContain('Mean time per question');
       expect(titleLines(scaleOf(figures.speedCost.config, 'x'))[0]).toContain('Mean time per question');
       expect(figures.profile.config.data.labels).toContain('Speed (mean model time)');
@@ -1739,6 +1750,7 @@ describe('model-comparison-charts', () => {
       bar: { ...DEFAULT_FIGURE_STYLE.bar, ...bar },
       scatter: { ...DEFAULT_FIGURE_STYLE.scatter, ...scatter },
       profile: { ...DEFAULT_FIGURE_STYLE.profile, ...profile },
+      numbers: DEFAULT_FIGURE_STYLE.numbers,
     });
 
     const noteTexts = (spec: { chrome: { notes: readonly { text: string }[] } }): string[] =>
@@ -2267,5 +2279,643 @@ describe('chart.js registration', () => {
 
   it('registers the controller the config analytics panel draws with', () => {
     expect(() => Chart.registry.getController(CONFIG_ANALYTICS_CHART_TYPE)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Number formats, their samples and the value-axis title break
+// ---------------------------------------------------------------------------------------------
+
+const CONTEXT_18: ModelComparisonContext = { ...CONTEXT, questionsAskedPerRun: 18 };
+
+/** Two models whose suite cost is read from the run cost; the per-question cost is that / 18. */
+const FORMAT_FIXTURE: ModelComparisonEntry[] = [
+  makeEntry({
+    key: 'A',
+    intelligenceIndex: 71.4,
+    speedIndex: 64,
+    modelTimeMeanMs: 22470,
+    totalModelTimeMs: 504000,
+    totalModelTimeSdMs: null,
+    ttftP50Ms: 1250,
+    ttftP90Ms: 1250,
+    candidateCostPerRunUsd: 0.0761,
+    candidateCostPerQuestionUsd: 0.0761 / 18,
+    totalRunCostUsd: 0.312,
+  }),
+  makeEntry({
+    key: 'B',
+    intelligenceIndex: 71.2,
+    speedIndex: 58,
+    modelTimeMeanMs: 850,
+    totalModelTimeMs: 15300,
+    totalModelTimeSdMs: null,
+    ttftP50Ms: 900,
+    ttftP90Ms: 900,
+    candidateCostPerRunUsd: 0.0428,
+    candidateCostPerQuestionUsd: 0.0428 / 18,
+    totalRunCostUsd: 0.2,
+  }),
+];
+
+function withNumbers(overrides: Partial<NumberFormatStyle>, base: FigureStyle = DEFAULT_FIGURE_STYLE): FigureStyle {
+  return { ...base, numbers: { ...base.numbers, ...overrides } };
+}
+
+function formatOptions(overrides: Partial<SmallMultiplesOptions> = {}): SmallMultiplesOptions {
+  return {
+    ...BASE_FIGURE_OPTIONS,
+    context: CONTEXT_18,
+    glyphs: buildIdentityGlyphs(FORMAT_FIXTURE),
+    speedMeasure: 'meanModelTime',
+    costMeasure: 'candidateSuite',
+    orientation: 'vertical',
+    ...overrides,
+  };
+}
+
+/** A bar panel's value label and tooltip line for one bar, through the callbacks Chart.js calls. */
+function barText(spec: { config: unknown }): { label: (index: number) => string; tooltip: (index: number) => string } {
+  const plugins = (spec.config as { options: { plugins: unknown } }).options.plugins as {
+    datalabels: { formatter: (value: unknown, ctx: { dataIndex: number }) => string };
+    tooltip: { callbacks: { label: (item: { dataIndex: number }) => string } };
+  };
+  return {
+    label: (index) => plugins.datalabels.formatter(undefined, { dataIndex: index }),
+    tooltip: (index) => plugins.tooltip.callbacks.label({ dataIndex: index }),
+  };
+}
+
+function scatterTooltip(spec: { config: unknown }): (x: number, y: number) => string[] {
+  const plugins = (spec.config as { options: { plugins: unknown } }).options.plugins as {
+    tooltip: { callbacks: { label: (item: { parsed: { x: number; y: number } }) => string[] } };
+  };
+  return (x, y) => plugins.tooltip.callbacks.label({ parsed: { x, y } });
+}
+
+function plateValues(spec: { config: unknown }): DirectLabelValue[][] {
+  const plugins = (spec.config as { options: { plugins: Record<string, DirectLabelPluginOptions> } }).options.plugins;
+  return plugins[directLabelPlugin.id].blocks.map((block) => [...block.values]);
+}
+
+describe('number formats in the figures', () => {
+  it('writes bar value labels and bar tooltips to the same decimals', () => {
+    const figure = buildSmallMultiples(FORMAT_FIXTURE, formatOptions({
+      style: withNumbers({ intelligenceIndex: 1, meanModelTime: 2, suiteCost: 2 }),
+    }));
+    const quality = barText(figure.quality);
+    expect(quality.label(0)).toBe('71.4');
+    expect(quality.label(1)).toBe('71.2');
+    expect(quality.tooltip(0)).toBe('Intelligence Index (0-100): 71.4');
+    const speed = barText(figure.speed);
+    expect(speed.label(0)).toBe('22.47 s');
+    expect(speed.label(1)).toBe('0.85 s');
+    expect(speed.tooltip(1)).toBe('Mean time per question (s): 0.85 s');
+    const cost = barText(figure.cost);
+    expect(cost.label(0)).toBe('$0.08');
+    expect(cost.label(1)).toBe('$0.04');
+    expect(cost.tooltip(0)).toBe('Candidate cost of one suite run (USD, 18 questions asked): $0.08');
+  });
+
+  it('prints whole indices, one decimal of seconds and four of dollars by default', () => {
+    const figure = buildSmallMultiples(FORMAT_FIXTURE, formatOptions());
+    expect(barText(figure.quality).label(0)).toBe('71');
+    expect(barText(figure.quality).label(1)).toBe('71');
+    expect(barText(figure.speed).label(0)).toBe('22.5 s');
+    expect(barText(figure.cost).label(0)).toBe('$0.0761');
+    expect(barText(figure.cost).label(1)).toBe('$0.0428');
+  });
+
+  it('writes a sub-second model in seconds on a seconds axis, and in whole ms on a milliseconds one', () => {
+    const entries = [FORMAT_FIXTURE[0], makeEntry({ key: 'fast', modelTimeMeanMs: 870 })];
+    const figure = buildSmallMultiples(entries, formatOptions({ glyphs: buildIdentityGlyphs(entries) }));
+    expect(titleLines(scaleOf(figure.speed.config, 'y'))[0]).toBe('Mean time per question (s)');
+    expect(barText(figure.speed).label(1)).toBe('0.9 s');
+
+    const msOnly = buildSmallMultiples([FORMAT_FIXTURE[1]], formatOptions({ style: withNumbers({ meanModelTime: 3 }) }));
+    expect(titleLines(scaleOf(msOnly.speed.config, 'y'))[0]).toBe('Mean time per question (ms)');
+    expect(barText(msOnly.speed).label(0)).toBe('850 ms');
+  });
+
+  it('follows the setting of whichever speed and cost measure is selected', () => {
+    const speeds: [SpeedMeasure, string][] = [
+      ['meanModelTime', '22.470 s'],
+      ['totalModelTime', '504.000 s'],
+      ['ttftP50', '1.250 s'],
+      ['speedIndex', '64.000'],
+    ];
+    for (const [speedMeasure, text] of speeds) {
+      const style = withNumbers({ meanModelTime: 0, totalModelTime: 0, ttftP50: 0, speedIndex: 0, [speedMeasure]: 3 });
+      const figure = buildSmallMultiples(FORMAT_FIXTURE, formatOptions({ speedMeasure, style }));
+      expect(barText(figure.speed).label(0)).withContext(speedMeasure).toBe(text);
+    }
+    const costs: [CostMeasure, string][] = [['candidateSuite', '$0.076'], ['totalRun', '$0.3']];
+    for (const [costMeasure, text] of costs) {
+      const style = withNumbers({ suiteCost: costMeasure === 'candidateSuite' ? 3 : 0, totalRunCost: costMeasure === 'totalRun' ? 1 : 5 });
+      const figure = buildSmallMultiples(FORMAT_FIXTURE, formatOptions({ costMeasure, style }));
+      expect(barText(figure.cost).label(0)).withContext(costMeasure).toBe(text);
+    }
+  });
+
+  it('keeps each measure\'s setting to that measure', () => {
+    const base = buildSmallMultiples(FORMAT_FIXTURE, formatOptions());
+    const others = buildSmallMultiples(FORMAT_FIXTURE, formatOptions({
+      style: withNumbers({ totalModelTime: 6, ttftP50: 6, speedIndex: 6, totalRunCost: 6, costPerQuestion: 6 }),
+    }));
+    for (const panel of ['quality', 'speed', 'cost'] as const) {
+      for (const index of [0, 1]) {
+        expect(barText(others[panel]).label(index)).withContext(`${panel} ${index}`).toBe(barText(base[panel]).label(index));
+      }
+    }
+  });
+
+  it('rounds no value, domain, tick or normalized coordinate', () => {
+    const six = withNumbers({
+      intelligenceIndex: 6, speedIndex: 6, meanModelTime: 6, totalModelTime: 6, ttftP50: 6,
+      suiteCost: 6, totalRunCost: 6, costPerQuestion: 6,
+    });
+    const plain = buildComparisonFigures(FORMAT_FIXTURE, { context: CONTEXT_18 });
+    const precise = buildComparisonFigures(FORMAT_FIXTURE, { context: CONTEXT_18, style: six });
+    const before = allSpecs(plain);
+    const after = allSpecs(precise);
+    before.forEach((spec, i) => {
+      expect(datasetsOf(after[i].config).map((d) => d['data'])).withContext(spec.id).toEqual(datasetsOf(spec.config).map((d) => d['data']));
+      for (const axis of ['x', 'y'] as const) {
+        const a = scaleOf(spec.config, axis);
+        const b = scaleOf(after[i].config, axis);
+        expect(b.min).withContext(`${spec.id} ${axis}`).toBe(a.min);
+        expect(b.max).withContext(`${spec.id} ${axis}`).toBe(a.max);
+        expect(ticksOf(b)).withContext(`${spec.id} ${axis}`).toEqual(ticksOf(a));
+        const steps = [{ value: 0 }, { value: 2500 }];
+        for (const value of [0, 0.05, 2500, 12345]) {
+          expect(b.ticks?.callback?.(value, 1, steps)).withContext(`${spec.id} ${axis} ${value}`).toEqual(a.ticks?.callback?.(value, 1, steps));
+        }
+      }
+    });
+
+    const options = { context: CONTEXT_18, speedMeasure: 'meanModelTime', costMeasure: 'candidateSuite' } as const;
+    const normal = normalizeProfile(FORMAT_FIXTURE, options);
+    const sixProfile = normalizeProfile(FORMAT_FIXTURE, { ...options, numbers: six.numbers });
+    expect(sixProfile.rows).toEqual(normal.rows);
+    expect(sixProfile.axes.map((axis) => [axis.min, axis.max])).toEqual(normal.axes.map((axis) => [axis.min, axis.max]));
+  });
+
+  it('writes scatter plates and scatter tooltips alike, in the axis unit', () => {
+    const style = withNumbers({ intelligenceIndex: 1, meanModelTime: 2, costPerQuestion: 5, suiteCost: 0 });
+    const options = { ...BASE_FIGURE_OPTIONS, context: CONTEXT_18, glyphs: buildIdentityGlyphs(FORMAT_FIXTURE), inlineValues: true, style };
+    const s1 = buildQualitySpeedScatter(FORMAT_FIXTURE, options);
+    expect(plateValues(s1)[1]).toEqual([
+      { label: 'Mean time', text: '0.85 s' },
+      { label: 'Intelligence', text: '71.2' },
+    ]);
+    expect(scatterTooltip(s1)(850, 71.2)).toEqual(['Mean time per question: 0.85 s', 'Intelligence Index: 71.2']);
+
+    // Trade-offs always show cost per question, whatever the suite-cost setting.
+    const s2 = buildQualityCostScatter(FORMAT_FIXTURE, options);
+    expect(plateValues(s2)[0]).toEqual([
+      { label: 'Cost / question', text: '$0.00423' },
+      { label: 'Intelligence', text: '71.4' },
+    ]);
+    expect(scatterTooltip(s2)(0.0761 / 18, 71.4)).toEqual(['Cost per question: $0.00423', 'Intelligence Index: 71.4']);
+  });
+
+  it('follows a scatter axis into seconds where its domain passes 1000 ms, though every value is below', () => {
+    const entries = [makeEntry({ key: 'p', modelTimeMeanMs: 900 }), makeEntry({ key: 'q', modelTimeMeanMs: 950 })];
+    const spec = buildQualitySpeedScatter(entries, {
+      ...BASE_FIGURE_OPTIONS,
+      glyphs: buildIdentityGlyphs(entries),
+      inlineValues: true,
+      style: withNumbers({ meanModelTime: 2 }),
+    });
+    expect(titleLines(scaleOf(spec.config, 'x'))[0]).toBe('Mean time per question (s)');
+    expect(plateValues(spec).map((values) => values[0].text)).toEqual(['0.90 s', '0.95 s']);
+    expect(scatterTooltip(spec)(900, 50)[0]).toBe('Mean time per question: 0.90 s');
+  });
+
+  it('writes the profile range labels and the profile tooltip to the style decimals', () => {
+    const numbers = { ...DEFAULT_FIGURE_STYLE.numbers, intelligenceIndex: 1, meanModelTime: 2, suiteCost: 2 };
+    const options = { context: CONTEXT_18, speedMeasure: 'meanModelTime', costMeasure: 'candidateSuite' } as const;
+    const styled = normalizeProfile(FORMAT_FIXTURE, { ...options, numbers });
+    expect(styled.axes.map((axis) => [axis.minLabel, axis.maxLabel])).toEqual([
+      ['71.2', '71.4'],
+      ['0.85 s', '22.47 s'],
+      ['$0.04', '$0.08'],
+    ]);
+    // 850 ms at one decimal is a binary tie, so the defaults are checked away from it.
+    const defaults = normalizeProfile(FORMAT_FIXTURE, options);
+    expect([defaults.axes[0].minLabel, defaults.axes[0].maxLabel]).toEqual(['71', '71']);
+    expect(defaults.axes[1].maxLabel).toBe('22.5 s');
+    expect([defaults.axes[2].minLabel, defaults.axes[2].maxLabel]).toEqual(['$0.0428', '$0.0761']);
+
+    const plot = buildProfilePlot(FORMAT_FIXTURE, {
+      ...BASE_FIGURE_OPTIONS,
+      glyphs: buildIdentityGlyphs(FORMAT_FIXTURE),
+      ...options,
+      style: withNumbers(numbers),
+    });
+    const label = (plot.config.options?.plugins?.tooltip as unknown as {
+      callbacks: { label: (item: { datasetIndex: number; dataIndex: number }) => string };
+    }).callbacks.label;
+    expect(label({ datasetIndex: 0, dataIndex: 0 })).toBe('A — Intelligence: 71.4');
+    expect(label({ datasetIndex: 1, dataIndex: 1 })).toBe('B — Speed (mean model time): 0.85 s');
+    expect(label({ datasetIndex: 0, dataIndex: 2 })).toBe('A — Cost (candidate, suite): $0.08');
+    expect(label({ datasetIndex: 5, dataIndex: 0 })).toBe('');
+    expect(label({ datasetIndex: 0, dataIndex: 7 })).toBe('');
+    expect(label({ datasetIndex: -1, dataIndex: -1 })).toBe('');
+  });
+
+  it('keeps the profile\'s zero for a missing Speed Index rather than a new format', () => {
+    const entries = [makeEntry({ key: 'none', speedIndex: null }), makeEntry({ key: 'some', speedIndex: 40 })];
+    const profile = normalizeProfile(entries, {
+      context: CONTEXT,
+      speedMeasure: 'speedIndex',
+      costMeasure: 'candidateSuite',
+      numbers: { ...DEFAULT_FIGURE_STYLE.numbers, speedIndex: 1 },
+    });
+    expect(profile.axes[1].minLabel).toBe('0.0');
+    expect(profile.axes[1].maxLabel).toBe('40.0');
+  });
+});
+
+describe('number format samples', () => {
+  const options = { context: CONTEXT_18, speedMeasure: 'meanModelTime', costMeasure: 'candidateSuite' } as const;
+
+  it('takes the first plotted value of each of the family\'s three measures, with the family unit', () => {
+    expect(buildNumberSamples(FORMAT_FIXTURE, options, 'bar')).toEqual({
+      intelligenceIndex: { value: 71.4 },
+      meanModelTime: { value: 22470, unit: 's' },
+      suiteCost: { value: 0.0761 },
+    });
+    expect(buildNumberSamples(FORMAT_FIXTURE, options, 'profile')).toEqual({
+      intelligenceIndex: { value: 71.4 },
+      meanModelTime: { value: 22470, unit: 's' },
+      suiteCost: { value: 0.0761 },
+    });
+    expect(buildNumberSamples(FORMAT_FIXTURE, options, 'scatter')).toEqual({
+      intelligenceIndex: { value: 71.4 },
+      meanModelTime: { value: 22470, unit: 's' },
+      costPerQuestion: { value: 0.0761 / 18 },
+    });
+  });
+
+  it('follows the plotted order, the selected measures and skips unmeasured values', () => {
+    const reversed = [...FORMAT_FIXTURE].reverse();
+    expect(buildNumberSamples(reversed, options, 'bar').intelligenceIndex).toEqual({ value: 71.2 });
+    expect(buildNumberSamples(reversed, options, 'bar').meanModelTime).toEqual({ value: 850, unit: 's' });
+
+    const total = buildNumberSamples(FORMAT_FIXTURE, { ...options, speedMeasure: 'ttftP50', costMeasure: 'totalRun' }, 'bar');
+    expect(total).toEqual({ intelligenceIndex: { value: 71.4 }, ttftP50: { value: 1250, unit: 's' }, totalRunCost: { value: 0.312 } });
+
+    const index = [makeEntry({ key: 'x', speedIndex: null }), makeEntry({ key: 'y', speedIndex: 64 })];
+    expect(buildNumberSamples(index, { ...options, speedMeasure: 'speedIndex' }, 'bar').speedIndex).toEqual({ value: 64 });
+
+    const unmeasured = [makeEntry({ key: 'n', modelTimeMeanMs: Number.NaN }), makeEntry({ key: 'm', modelTimeMeanMs: 700 })];
+    expect(buildNumberSamples(unmeasured, options, 'bar').meanModelTime).toEqual({ value: 700, unit: 'ms' });
+  });
+
+  it('leaves out a measure nothing plotted has, and everything for an empty set', () => {
+    const none = [makeEntry({ key: 'x', speedIndex: null }), makeEntry({ key: 'y', speedIndex: null })];
+    const samples = buildNumberSamples(none, { ...options, speedMeasure: 'speedIndex' }, 'profile');
+    expect('speedIndex' in samples).toBeFalse();
+    expect(samples.intelligenceIndex).toEqual({ value: 50 });
+    expect(buildNumberSamples([], options, 'scatter')).toEqual({});
+  });
+
+  it('takes the scatter unit from the resolved axis, which the interval visibility can move', () => {
+    const entries = [
+      makeEntry({ key: 'p', totalModelTimeMs: 700, totalModelTimeSdMs: 400 }),
+      makeEntry({ key: 'q', totalModelTimeMs: 800, totalModelTimeSdMs: 400 }),
+    ];
+    const totals = { ...options, speedMeasure: 'totalModelTime' } as const;
+    expect(buildNumberSamples(entries, totals, 'scatter').totalModelTime).toEqual({ value: 700, unit: 's' });
+    const hidden = { ...DEFAULT_FIGURE_STYLE, scatter: { ...DEFAULT_FIGURE_STYLE.scatter, intervals: false } };
+    expect(buildNumberSamples(entries, { ...totals, style: hidden }, 'scatter').totalModelTime).toEqual({ value: 700, unit: 'ms' });
+    // The builder resolves the same unit for its title.
+    const spec = buildQualitySpeedScatter(entries, { ...BASE_FIGURE_OPTIONS, glyphs: buildIdentityGlyphs(entries), speedMeasure: 'totalModelTime', style: hidden });
+    expect(titleLines(scaleOf(spec.config, 'x'))[0]).toBe('Total time for the suite (ms)');
+    // Bars and the profile use the largest raw value, so they stay in milliseconds either way.
+    expect(buildNumberSamples(entries, totals, 'bar').totalModelTime).toEqual({ value: 700, unit: 'ms' });
+    expect(buildNumberSamples(entries, totals, 'profile').totalModelTime).toEqual({ value: 700, unit: 'ms' });
+  });
+});
+
+describe('the value-axis title break', () => {
+  const COST_TITLE = 'Candidate cost of one suite run (USD, 18 questions asked)';
+
+  it('splits only a final parenthetical after a nonempty head', () => {
+    expect(splitAxisTitle(COST_TITLE)).toEqual(['Candidate cost of one suite run', '(USD, 18 questions asked)']);
+    expect(splitAxisTitle('Intelligence Index (0-100)')).toEqual(['Intelligence Index', '(0-100)']);
+    expect(splitAxisTitle('Mean time (per question) (s)')).toEqual(['Mean time (per question)', '(s)']);
+    expect(splitAxisTitle('Cost (a (b))')).toEqual(['Cost', '(a (b))']);
+    expect(splitAxisTitle('Model')).toBeNull();
+    expect(splitAxisTitle('Cost (USD) per run')).toBeNull();
+    expect(splitAxisTitle('(USD)')).toBeNull();
+    expect(splitAxisTitle(' (USD)')).toBeNull();
+    expect(splitAxisTitle('   (USD)')).toBeNull();
+    expect(splitAxisTitle('Cost(USD)')).toBeNull();
+    expect(splitAxisTitle('Cost USD)')).toBeNull();
+  });
+
+  it('keeps the direction line last and discards no title text', () => {
+    const lines = axisTitleLines(COST_TITLE, 'lower');
+    expect(lines.unbroken).toEqual([COST_TITLE, 'lower is better']);
+    expect(lines.broken).toEqual(['Candidate cost of one suite run', '(USD, 18 questions asked)', 'lower is better']);
+    expect(lines.broken!.slice(0, 2).join(' ')).toBe(COST_TITLE);
+    expect(axisTitleLines(COST_TITLE).broken).toEqual(['Candidate cost of one suite run', '(USD, 18 questions asked)']);
+    expect(axisTitleLines('Model', 'higher')).toEqual({ unbroken: ['Model', 'higher is better'], broken: null });
+  });
+
+  function barStyle(bar: Partial<BarFigureStyle>): FigureStyle {
+    return { ...DEFAULT_FIGURE_STYLE, bar: { ...DEFAULT_FIGURE_STYLE.bar, ...bar } };
+  }
+
+  it('builds each mode: Always broken, Never and Automatic unbroken, and only Automatic decides at fit', () => {
+    const build = (bar: Partial<BarFigureStyle>) => buildSmallMultiples(FORMAT_FIXTURE, formatOptions({ style: barStyle(bar) }));
+    const afterFitOf = (config: unknown): unknown => (scaleOf(config, 'y') as { afterFit?: unknown }).afterFit;
+
+    const always = build({ axisTitleBreak: 'always' });
+    expect(titleLines(scaleOf(always.cost.config, 'y'))).toEqual(['Candidate cost of one suite run', '(USD, 18 questions asked)']);
+    expect(titleLines(scaleOf(always.quality.config, 'y'))).toEqual(['Intelligence Index', '(0-100)']);
+    expect(afterFitOf(always.cost.config)).toBeUndefined();
+
+    const never = build({ axisTitleBreak: 'never' });
+    expect(titleLines(scaleOf(never.cost.config, 'y'))).toEqual([COST_TITLE]);
+    expect(afterFitOf(never.cost.config)).toBeUndefined();
+
+    const auto = build({});
+    expect(scaleOf(auto.cost.config, 'y').title?.text).toEqual([COST_TITLE]);
+    expect(typeof afterFitOf(auto.cost.config)).toBe('function');
+
+    // The category axis and the tooltip keep their one-line titles in every mode.
+    for (const figure of [always, never, auto]) {
+      expect(scaleOf(figure.cost.config, 'x').title?.text).toBe('Model');
+      expect(barText(figure.cost).tooltip(0).startsWith(`${COST_TITLE}: `)).toBeTrue();
+    }
+
+    const hidden = build({ axisTitleBreak: 'always', hiddenBadges: ['direction'] });
+    expect(titleLines(scaleOf(hidden.cost.config, 'y'))).toEqual(['Candidate cost of one suite run', '(USD, 18 questions asked)', 'lower is better']);
+    const hiddenNever = build({ axisTitleBreak: 'never', hiddenBadges: ['direction'] });
+    expect(titleLines(scaleOf(hiddenNever.cost.config, 'y'))).toEqual([COST_TITLE, 'lower is better']);
+
+    const horizontal = buildSmallMultiples(FORMAT_FIXTURE, formatOptions({ orientation: 'horizontal', style: barStyle({ axisTitleBreak: 'always' }) }));
+    expect(titleLines(scaleOf(horizontal.cost.config, 'x'))).toEqual(['Candidate cost of one suite run', '(USD, 18 questions asked)']);
+    expect(scaleOf(horizontal.cost.config, 'y').title?.text).toBe('Model');
+  });
+
+  it('leaves the scatter titles unbroken', () => {
+    const spec = buildQualityCostScatter(FORMAT_FIXTURE, { ...BASE_FIGURE_OPTIONS, style: barStyle({ axisTitleBreak: 'always' }) });
+    expect(titleLines(scaleOf(spec.config, 'x'))[0]).toBe('Cost per question (USD)');
+    expect((scaleOf(spec.config, 'x') as { afterFit?: unknown }).afterFit).toBeUndefined();
+  });
+});
+
+/**
+ * The Automatic break on real Chart.js layouts. Each chart is constructed the way
+ * `renderPlotOffscreen` constructs one — a shallow copy of the spec's options — because Chart.js
+ * replaces `options.scales` of the object it is given with its own merged copy, and the break is
+ * written there.
+ */
+describe('the automatic title break on a real chart', () => {
+  const COST_TITLE = 'Candidate cost of one suite run (USD, 18 questions asked)';
+  const LONG_LABELS = [
+    'An exceptionally long model name for layout (preview)',
+    'Another rather long model name (latest)',
+  ];
+  let charts: Chart[] = [];
+  let containers: HTMLElement[] = [];
+
+  beforeAll(() => {
+    Chart.register(...APP_CHART_REGISTRABLES);
+  });
+
+  afterEach(() => {
+    charts.forEach((chart) => chart.destroy());
+    containers.forEach((container) => container.remove());
+    charts = [];
+    containers = [];
+  });
+
+  function entriesFor(labels: 'short' | 'long' | 'eight'): ModelComparisonEntry[] {
+    if (labels === 'eight') {
+      return Array.from({ length: 8 }, (_, i) => makeEntry({
+        key: `m${i}`,
+        label: `Model ${i}${' with a longer name'.repeat(i % 3)}`,
+        candidateCostPerRunUsd: 0.01 * (i + 1),
+      }));
+    }
+    return labels === 'short'
+      ? FORMAT_FIXTURE
+      : FORMAT_FIXTURE.map((entry, i) => ({ ...entry, label: LONG_LABELS[i] }));
+  }
+
+  function costPanel(
+    orientation: BarOrientation,
+    options: { labels?: 'short' | 'long' | 'eight'; titleSize?: number; axisTextSize?: number; directionHidden?: boolean } = {},
+  ) {
+    const entries = entriesFor(options.labels ?? 'short');
+    const style: FigureStyle = {
+      ...DEFAULT_FIGURE_STYLE,
+      bar: {
+        ...DEFAULT_FIGURE_STYLE.bar,
+        axisTextSizePx: options.axisTextSize ?? DEFAULT_FIGURE_STYLE.bar.axisTextSizePx,
+        axisTitleSizePx: options.titleSize ?? DEFAULT_FIGURE_STYLE.bar.axisTitleSizePx,
+        hiddenBadges: options.directionHidden ? ['direction'] : [],
+      },
+    };
+    return buildSmallMultiples(entries, formatOptions({ glyphs: buildIdentityGlyphs(entries), orientation, style })).cost;
+  }
+
+  function mount(spec: { config: unknown; plugins: readonly Plugin[] }, width: number, height: number, density = 1): Chart {
+    const container = document.createElement('div');
+    container.style.cssText = `position: fixed; left: -10000px; top: 0; width: ${width}px; height: ${height}px`;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    container.appendChild(canvas);
+    document.body.appendChild(container);
+    containers.push(container);
+    const config = spec.config as { type: ChartType; data: unknown; options?: Record<string, unknown> };
+    const chart = new Chart(canvas, {
+      type: config.type,
+      data: config.data,
+      options: {
+        ...(config.options ?? {}),
+        responsive: false,
+        maintainAspectRatio: false,
+        animation: false,
+        devicePixelRatio: density,
+        font: { family: 'Arial', size: 12 },
+      },
+      plugins: [...spec.plugins],
+    } as unknown as ChartConfiguration);
+    charts.push(chart);
+    return chart;
+  }
+
+  function valueScale(chart: Chart, orientation: BarOrientation): Scale {
+    return chart.scales[orientation === 'vertical' ? 'y' : 'x'];
+  }
+
+  function titleText(scale: Scale): unknown {
+    return (scale.options as unknown as { title: { text: unknown } }).title.text;
+  }
+
+  function widest(chart: Chart, scale: Scale, lines: readonly string[]): number {
+    const title = (scale.options as unknown as { title: { font: Partial<FontSpec> } }).title;
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.font = toFont(title.font, chart.options.font).string;
+    const width = Math.max(...lines.map((line) => ctx.measureText(line).width));
+    ctx.restore();
+    return width;
+  }
+
+  /** Checks the chart's title against its final axis length, and says which form that length needs. */
+  function expectFinalDecision(chart: Chart, orientation: BarOrientation, directionHidden: boolean, context: string): 'broken' | 'unbroken' {
+    const lines = axisTitleLines(COST_TITLE, directionHidden ? 'lower' : undefined);
+    const scale = valueScale(chart, orientation);
+    const length = orientation === 'vertical' ? scale.height : scale.width;
+    const fits = widest(chart, scale, lines.unbroken) <= Math.max(0, length - AXIS_TITLE_RESERVE_PX);
+    const text = titleText(scale) as string[];
+    expect(text).withContext(`${context}, axis ${length.toFixed(2)} px`).toEqual(fits ? [...lines.unbroken] : [...lines.broken!]);
+    // Nothing is dropped, whichever form was drawn.
+    expect(text.slice(0, fits ? 1 : 2).join(' ')).withContext(context).toBe(COST_TITLE);
+    return fits ? 'unbroken' : 'broken';
+  }
+
+  function sourceTitle(spec: { config: unknown }, orientation: BarOrientation): { title: { text: unknown }; copy: unknown } {
+    const title = (scaleOf(spec.config, orientation === 'vertical' ? 'y' : 'x') as { title: { text: unknown } }).title;
+    return { title, copy: JSON.parse(JSON.stringify(title.text)) };
+  }
+
+  function sweep(from: number, to: number, step: number): number[] {
+    const lengths: number[] = [];
+    for (let length = from; length <= to; length += step) {
+      lengths.push(length);
+    }
+    return lengths;
+  }
+
+  it('decides against the final value-axis length in both orientations, for every label, badge and title size', () => {
+    for (const orientation of ['vertical', 'horizontal'] as const) {
+      for (const labels of ['short', 'long'] as const) {
+        for (const directionHidden of [false, true]) {
+          for (const titleSize of [8, 12, 48]) {
+            const spec = costPanel(orientation, { labels, titleSize, directionHidden });
+            const source = sourceTitle(spec, orientation);
+            const outcomes = new Set<string>();
+            const lengths = orientation === 'vertical' ? sweep(140, 700, 40) : sweep(240, 1000, 40);
+            for (const length of lengths) {
+              const chart = orientation === 'vertical' ? mount(spec, 420, length) : mount(spec, length, 320);
+              outcomes.add(expectFinalDecision(chart, orientation, directionHidden, `${orientation} ${labels} ${titleSize}px hidden=${directionHidden} ${length}`));
+            }
+            expect(source.title.text).withContext('source').toEqual(source.copy);
+            if (titleSize === 12) {
+              expect(outcomes.size).withContext(`${orientation} ${labels} hidden=${directionHidden}: both forms reached`).toBe(2);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('decides correctly at every few pixels around the threshold', () => {
+    for (const orientation of ['vertical', 'horizontal'] as const) {
+      const spec = costPanel(orientation, { labels: 'long' });
+      const outcomes: string[] = [];
+      const lengths = orientation === 'vertical' ? sweep(300, 520, 3) : sweep(380, 700, 3);
+      for (const length of lengths) {
+        const chart = orientation === 'vertical' ? mount(spec, 420, length) : mount(spec, length, 320);
+        outcomes.push(expectFinalDecision(chart, orientation, false, `${orientation} ${length}`));
+      }
+      expect(outcomes).withContext(orientation).toContain('broken');
+      expect(outcomes).withContext(orientation).toContain('unbroken');
+    }
+  });
+
+  /**
+   * Eight horizontal models, where the category axis autoskips. Chart.js fits that axis at the full
+   * plot height first, decides the value axis against what is left beside it, then refits the
+   * category axis at the shorter final height and never refits the value axis: where the refit
+   * drops ticks the category axis narrows, and the value axis ends up wider than the width its
+   * title was decided on. That can leave a break the final width did not need, and nothing else:
+   * an unbroken title always fits. At the default axis text size and the supported heights (the
+   * page's horizontal panels are at least 260 px tall, an export's plot at least 160 px) the
+   * decision matches the final width exactly.
+   */
+  it('decides against the final width with eight horizontal models, a break left unneeded only where the category axis autoskipped', () => {
+    let skipped = false;
+    for (const axisTextSize of [11, 24]) {
+      const spec = costPanel('horizontal', { labels: 'eight', axisTextSize });
+      for (const height of [110, 160, 200, 260]) {
+        for (const width of sweep(260, 1000, 12)) {
+          const context = `eight ${axisTextSize}px ${width}x${height}`;
+          const chart = mount(spec, width, height);
+          const autoskipped = chart.scales['y'].ticks.length < 8;
+          skipped ||= autoskipped;
+          const scale = valueScale(chart, 'horizontal');
+          const unbrokenFits = widest(chart, scale, [COST_TITLE]) <= scale.width - AXIS_TITLE_RESERVE_PX;
+          const broken = (titleText(scale) as string[]).length === 2;
+          if (axisTextSize === 11 && height >= 160) {
+            expectFinalDecision(chart, 'horizontal', false, context);
+          } else if (!(broken && unbrokenFits && autoskipped)) {
+            expectFinalDecision(chart, 'horizontal', false, context);
+          }
+          // Whatever was decided, an unbroken title is never squeezed.
+          if (!broken) {
+            expect(unbrokenFits).withContext(context).toBeTrue();
+          }
+        }
+      }
+    }
+    expect(skipped).withContext('the category axis autoskipped somewhere').toBeTrue();
+  });
+
+  it('keeps the whole broken title where even one line is longer than a too-short axis', () => {
+    const spec = costPanel('vertical');
+    const chart = mount(spec, 420, 110);
+    const scale = valueScale(chart, 'vertical');
+    const lines = axisTitleLines(COST_TITLE);
+    expect(titleText(scale)).toEqual([...lines.broken!]);
+    // The documented limit: one break is all there is, and the head alone does not fit.
+    expect(widest(chart, scale, [lines.broken![0]])).toBeGreaterThan(scale.height);
+  });
+
+  it('breaks, restores and breaks again as one chart is resized', () => {
+    const spec = costPanel('vertical');
+    const source = sourceTitle(spec, 'vertical');
+    const chart = mount(spec, 420, 200);
+    const unbroken = [COST_TITLE];
+    const broken = ['Candidate cost of one suite run', '(USD, 18 questions asked)'];
+    expect(titleText(chart.scales['y'])).toEqual(broken);
+    chart.resize(420, 700);
+    expect(titleText(chart.scales['y'])).toEqual(unbroken);
+    expectFinalDecision(chart, 'vertical', false, 'grown');
+    chart.resize(420, 200);
+    expect(titleText(chart.scales['y'])).toEqual(broken);
+    expect(source.title.text).toEqual(source.copy);
+  });
+
+  it('lets two charts from one spec decide apart, each in its own options', () => {
+    const spec = costPanel('vertical');
+    const source = sourceTitle(spec, 'vertical');
+    const short = mount(spec, 420, 200);
+    const tall = mount(spec, 420, 700);
+    expect(titleText(short.scales['y'])).toEqual(['Candidate cost of one suite run', '(USD, 18 questions asked)']);
+    expect(titleText(tall.scales['y'])).toEqual([COST_TITLE]);
+    short.update();
+    expect(titleText(tall.scales['y'])).toEqual([COST_TITLE]);
+    expect(source.title.text).toEqual(source.copy);
+  });
+
+  it('does not change its decision with the pixel density alone', () => {
+    const spec = costPanel('vertical');
+    for (const height of sweep(200, 600, 50)) {
+      const one = mount(spec, 420, height, 1);
+      const two = mount(spec, 420, height, 2);
+      expect(titleText(two.scales['y'])).withContext(String(height)).toEqual(titleText(one.scales['y']));
+    }
   });
 });
