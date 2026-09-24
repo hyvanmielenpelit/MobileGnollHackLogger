@@ -979,6 +979,10 @@ export interface BenchmarkRunAnswerDto {
   claimsSupportedCount?: number | null;
   claimsRefutedCount?: number | null;
   claimsIndeterminateCount?: number | null;
+  /** Per-sentence counts from a run integrity dispute's accused-sentence check. Null when the answer has no claim-verification record. */
+  accusedSupportedCount?: number | null;
+  accusedRefutedCount?: number | null;
+  accusedIndeterminateCount?: number | null;
   claimVerificationByModelDisplayNameUsed?: string | null;
   claimVerificationInputTokens?: number | null;
   claimVerificationOutputTokens?: number | null;

@@ -52,7 +52,7 @@ import { MultiRunComponent } from './multi-run/multi-run.component';
 import { MultiRunProgressDialogComponent } from './multi-run/multi-run-progress-dialog.component';
 import { QuestionGenerationDialogComponent } from './question-generation/question-generation-dialog.component';
 import { SuiteDescriptionGenerationDialogComponent } from './description-generation/suite-description-generation-dialog.component';
-import { BenchmarkCostPanelComponent } from './cost-panel/benchmark-cost-panel.component';
+import { BenchmarkCostPanelComponent, apportionWholePercentShares } from './cost-panel/benchmark-cost-panel.component';
 import { SnapshotViewerComponent } from '../../shared/snapshot-viewer/snapshot-viewer.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import { SystemService } from '../../services/system.service';
@@ -1758,16 +1758,33 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   /**
-   * The candidate's share of the catalog total, or `'share unknown'` when either figure is missing
-   * or the total is zero — a percentage of nothing would read as a measurement.
+   * The candidate's share of the catalog total, apportioned across the same five role amounts and
+   * in the same order the cost panel receives them (candidate, assessor, second opinion, claim
+   * verifier, synthesis), by the same largest-remainder rule — so the card and the panel below it
+   * always print the same whole percent. `'share unknown'` when the candidate figure itself is
+   * missing.
    */
-  candidateCostShareLabel(run: BenchmarkRunSummaryDto | BenchmarkRunDetailDto): string {
+  candidateCostShareLabel(run: BenchmarkRunDetailDto): string {
     const candidate = run.estimatedCandidateCost;
-    const total = run.estimatedCost;
-    if (candidate == null || total == null || !Number.isFinite(candidate) || !Number.isFinite(total) || total <= 0) {
+    if (candidate == null || !Number.isFinite(candidate)) {
       return 'share unknown';
     }
-    return `${Math.round((candidate / total) * 100)} % of catalog total`;
+    const roleAmounts: { key: string; amount: number | null | undefined }[] = [
+      { key: 'candidate', amount: run.estimatedCandidateCost },
+      { key: 'assessor', amount: run.estimatedAssessorCost },
+      { key: 'secondOpinion', amount: run.estimatedSecondOpinionCost },
+      { key: 'claimVerifier', amount: run.estimatedVerifierCost },
+      { key: 'synthesis', amount: run.estimatedSynthesisCost }
+    ];
+    const present = roleAmounts.filter((role): role is { key: string; amount: number } =>
+      role.amount != null && Number.isFinite(role.amount)
+    );
+    const shares = apportionWholePercentShares(present.map(role => role.amount));
+    const candidateIndex = present.findIndex(role => role.key === 'candidate');
+    if (candidateIndex === -1) {
+      return 'share unknown';
+    }
+    return `${shares[candidateIndex]} % of catalog total`;
   }
 
   /**
@@ -4566,7 +4583,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       // --- MODELS ---
       lines.push('--- MODELS ---');
       lines.push(`Tested:   ${run.testedModelDisplayNameUsed} (${run.testedModelProviderUsed} / ${run.testedModelIdUsed})`);
-      lines.push(`          thinking: ${run.testedModelThinkingLevelUsed ?? 'default'}, reasoning: ${run.testedModelReasoningModeUsed ?? 'default'}, service tier: ${this.formatServiceTier(run.testedModelServiceTierUsed)}, max output tokens: ${run.testedModelMaxOutputTokensUsed ?? 'default'}, parallel mode: ${run.testedModelParallelExecutionModeUsed}`);
+      lines.push(`          thinking: ${run.testedModelThinkingLevelUsed ?? 'default'}, reasoning: ${run.testedModelReasoningModeUsed ?? 'default'}, service tier: ${this.diagnosticsServiceTierLabel(run.testedModelServiceTierUsed)}, max output tokens: ${run.testedModelMaxOutputTokensUsed ?? 'default'}, parallel mode: ${run.testedModelParallelExecutionModeUsed}`);
       lines.push(`Assessor: ${run.assessorModelDisplayNameUsed} (${run.assessorModelProviderUsed} / ${run.assessorModelIdUsed}), thinking: ${run.assessorModelThinkingLevelUsed ?? 'default'}, reasoning: ${run.assessorModelReasoningModeUsed ?? 'default'}, available=${run.assessorAvailable}`);
       // The third role, named whether or not one was used: "no second opinion" is itself a fact
       // about how the run was graded, and the capture used to omit it entirely.
@@ -4574,6 +4591,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         lines.push(`Second:   ${run.secondOpinionAssessorModelDisplayNameUsed} (${run.secondOpinionAssessorModelProviderUsed} / ${run.secondOpinionAssessorModelIdUsed}), thinking: ${run.secondOpinionAssessorModelThinkingLevelUsed ?? 'default'}, reasoning: ${run.secondOpinionAssessorModelReasoningModeUsed ?? 'default'}`);
       } else {
         lines.push('Second:   none selected');
+      }
+      if (run.claimVerifierModelConfigurationId != null) {
+        lines.push(`Verifier: ${run.claimVerifierDisplayNameUsed} (${run.claimVerifierProviderUsed} / ${run.claimVerifierModelIdUsed}), thinking: ${run.claimVerifierThinkingLevelUsed ?? 'default'}, reasoning: ${run.claimVerifierReasoningModeUsed ?? 'default'}`);
+      } else {
+        lines.push('Verifier: none selected');
       }
       lines.push('');
 
@@ -6632,6 +6654,15 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return formatServiceTier(tier);
   }
 
+  /**
+   * H5. The diagnostics capture's own service tier wording: an unset tier reads as "default (none
+   * requested)" rather than the badge wording's "None", because the capture is read by a person
+   * troubleshooting a run rather than displayed as a compact badge.
+   */
+  private diagnosticsServiceTierLabel(tier: string | null | undefined): string {
+    return tier ? formatServiceTier(tier) : 'default (none requested)';
+  }
+
   difficultyProgressLabel(suite?: BenchmarkSuiteDto | null): string {
     if (suite) {
       return `Difficulty ${suite.assessedQuestionCount}/${suite.questionCount} Assessed`;
@@ -6927,15 +6958,24 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       .filter(a => a.secondOpinionDisagreed);
     const verified = disputed.filter(a =>
       a.claimsSupportedCount != null || a.claimsRefutedCount != null || a.claimsIndeterminateCount != null
+      || a.accusedSupportedCount != null || a.accusedRefutedCount != null || a.accusedIndeterminateCount != null
     );
     if (verified.length === 0) return '';
     const totalSupported = verified.reduce((sum, a) => sum + (a.claimsSupportedCount ?? 0), 0);
     const totalRefuted = verified.reduce((sum, a) => sum + (a.claimsRefutedCount ?? 0), 0);
     const totalIndeterminate = verified.reduce((sum, a) => sum + (a.claimsIndeterminateCount ?? 0), 0);
+    const totalAccusedSupported = verified.reduce((sum, a) => sum + (a.accusedSupportedCount ?? 0), 0);
+    const totalAccusedRefuted = verified.reduce((sum, a) => sum + (a.accusedRefutedCount ?? 0), 0);
+    const totalAccusedIndeterminate = verified.reduce((sum, a) => sum + (a.accusedIndeterminateCount ?? 0), 0);
+    // The accused-sentence check runs only on the disputed sentences themselves, so it appears
+    // only when it found something to report.
+    const accusedPart = (totalAccusedSupported + totalAccusedRefuted + totalAccusedIndeterminate) > 0
+      ? `; accused sentences: ${totalAccusedSupported} supported, ${totalAccusedRefuted} refuted, ${totalAccusedIndeterminate} indeterminate`
+      : '';
     if (verified.length === 1) {
-      return `Claim verification for Q${verified[0].orderIndex}: ${totalSupported} supported, ${totalRefuted} refuted, ${totalIndeterminate} indeterminate.`;
+      return `Claim verification for Q${verified[0].orderIndex}: ${totalSupported} supported, ${totalRefuted} refuted, ${totalIndeterminate} indeterminate${accusedPart}.`;
     }
-    return `Claim verification for disputed answer(s): ${totalSupported} supported, ${totalRefuted} refuted, ${totalIndeterminate} indeterminate.`;
+    return `Claim verification for disputed answer(s): ${totalSupported} supported, ${totalRefuted} refuted, ${totalIndeterminate} indeterminate${accusedPart}.`;
   }
 
   /**

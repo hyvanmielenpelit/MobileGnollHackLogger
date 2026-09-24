@@ -36,6 +36,95 @@ public class BenchmarkVerdictConsistencyTests
         Assert.False(BenchmarkVerdictConsistency.MentionsFabrication(comment));
     }
 
+    [Theory]
+    [InlineData("The answer hallucinates the Holy Grail's charges.")]
+    [InlineData("Solid overall. It invents a racial intrinsic.")]
+    [InlineData("Quaffed a potion of hallucination, then fabricates a cure.")]
+    public void MentionsUndeniedFabrication_MatchesAnUndeniedFabrication(string text)
+    {
+        Assert.True(BenchmarkVerdictConsistency.MentionsUndeniedFabrication(text));
+    }
+
+    [Theory]
+    // Game vocabulary sharing the "hallucinat" stem.
+    [InlineData("It does not explain that the mushrooms are a poison or hallucination gamble.")]
+    [InlineData("The hero quaffed a potion of hallucination.")]
+    [InlineData("Unicorn horns cure hallucination; the hallucination resistance source is right.")]
+    [InlineData("Correct that monsters look random while hallucinating.")]
+    // Denied fabrications.
+    [InlineData("The artifact is real, not an invented item.")]
+    [InlineData("The formula is supported rather than invented.")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void MentionsUndeniedFabrication_IgnoresGameVocabularyAndDenials(string? text)
+    {
+        Assert.False(BenchmarkVerdictConsistency.MentionsUndeniedFabrication(text));
+    }
+
+    [Fact]
+    public void MentionsFabrication_IgnoresGameVocabulary()
+    {
+        Assert.False(BenchmarkVerdictConsistency.MentionsFabrication("The hero quaffed a potion of hallucination."));
+        Assert.True(BenchmarkVerdictConsistency.MentionsFabrication("The hero quaffed a potion of hallucination and it hallucinates a wand."));
+    }
+
+    private static string ParserVerdict(string comment, string accuracyEvidence, string completenessEvidence) => $$"""
+        {
+          "accuracyLevel": 5,
+          "completenessLevel": 5,
+          "concisenessLevel": 5,
+          "readabilityLevel": 5,
+          "criticalError": false,
+          "criticalErrorQuote": null,
+          "unverifiedClaims": [],
+          "accuracyEvidence": "{{accuracyEvidence}}",
+          "completenessEvidence": "{{completenessEvidence}}",
+          "comment": "{{comment}}"
+        }
+        """;
+
+    [Fact]
+    public void ContestedVerdict_IsNotSetByGameVocabularyInTheCompletenessEvidence()
+    {
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            ParserVerdict(
+                comment: "Solid answer; misses the poison or hallucination gamble of the mushrooms.",
+                accuracyEvidence: "Matches rubric.",
+                completenessEvidence: "It does not explain that the mushrooms are a poison or hallucination gamble."),
+            gradedAnswerText: null);
+
+        Assert.True(result.Success);
+        Assert.False(result.Result!.ContestedVerdict);
+    }
+
+    [Fact]
+    public void ContestedVerdict_IsNotReadFromTheCompletenessEvidence()
+    {
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            ParserVerdict(
+                comment: "Solid answer.",
+                accuracyEvidence: "Matches rubric.",
+                completenessEvidence: "Omits the made up charge count."),
+            gradedAnswerText: null);
+
+        Assert.True(result.Success);
+        Assert.False(result.Result!.ContestedVerdict);
+    }
+
+    [Theory]
+    [InlineData("The answer hallucinates the Holy Grail's charges.", true)]
+    [InlineData("The Holy Grail is real, not an invented item.", false)]
+    [InlineData("States the hero quaffed a potion of hallucination.", false)]
+    public void ContestedVerdict_FollowsTheAccuracyEvidence(string accuracyEvidence, bool expected)
+    {
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            ParserVerdict(comment: "Solid answer.", accuracyEvidence: accuracyEvidence, completenessEvidence: "Matches rubric."),
+            gradedAnswerText: null);
+
+        Assert.True(result.Success);
+        Assert.Equal(expected, result.Result!.ContestedVerdict);
+    }
+
     [Fact]
     public void QuestionsNamedWithFabrication_FindsTheQuestionInTheSentenceThatNamesIt()
     {

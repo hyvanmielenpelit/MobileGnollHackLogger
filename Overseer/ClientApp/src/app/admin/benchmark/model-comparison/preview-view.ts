@@ -1,9 +1,9 @@
 /**
- * Zoom arithmetic for the figure preview's stage.
+ * Zoom arithmetic for the figures' two views, All and Single.
  *
  * A zoom is **device pixels per export pixel**, so 1 is 100 %: one pixel of the written file on one
- * pixel of the display. None of it reaches an export; only the preview's own rasterisation and the
- * stage's CSS box read it.
+ * pixel of the display, in either view. None of it reaches an export; only the views' own
+ * rasterisation and their CSS boxes read it.
  *
  * Deliberately free of any Angular dependency and of the DOM, so it unit-tests as plain TypeScript.
  */
@@ -51,6 +51,29 @@ export function clampPreviewZoom(zoom: number, range: PreviewZoomRange): number 
     return range.min;
   }
   return Math.min(range.max, Math.max(range.min, zoom));
+}
+
+/**
+ * The zoom at which one figure's full height fits the visible height of a scroller: the All tab's
+ * *Fit height*.
+ *
+ * `viewportClientHeight` and `padding` are CSS px, `figureHeightPx` is the export's own pixels and
+ * `previewDpr` is the device pixel ratio the stage rasterises at, so the result means what every
+ * other zoom here means: 1 is one export pixel on one device pixel. Clamped to the zoom range, whose
+ * floor follows the fit itself; a viewport with no usable height gives the fixed floor.
+ */
+export function fitHeightZoom(
+  viewportClientHeight: number,
+  figureHeightPx: number,
+  previewDpr: number,
+  padding: number
+): number {
+  const dpr = Number.isFinite(previewDpr) && previewDpr > 0 ? previewDpr : 1;
+  const fit = (viewportClientHeight - 2 * padding) * dpr / figureHeightPx;
+  if (!isUsableZoom(fit)) {
+    return PREVIEW_MIN_ZOOM_FLOOR;
+  }
+  return clampPreviewZoom(fit, previewZoomRange(fit));
 }
 
 /** `screenFitZoom` is expected clamped to {@link PREVIEW_MAX_ZOOM} already. */

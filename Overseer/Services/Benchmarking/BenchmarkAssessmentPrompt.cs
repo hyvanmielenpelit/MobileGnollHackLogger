@@ -571,8 +571,17 @@ public static class BenchmarkAssessmentPrompt
     ///     searches the "item" and "artifact" paths (item_lookup.md moves ToolGuidesSha256), and a
     ///     minified get_item_stats payload keeps the Level-1 failure reason and the invoked macro.
     ///     ScoringMethodVersion stays 12 and CandidateSystemPromptSha256 does not move.
+    /// v39: a contested verdict is read from the comment and the accuracy evidence alone, with game
+    ///     vocabulary ("potion of hallucination", "hallucination gamble") masked and a denied
+    ///     fabrication skipped. A disputed answer's report line and admin DTO carry its accused-sentence
+    ///     verdict counts, computed from the stored verification. A verdict whose only source citation
+    ///     is a single line inside a #define header carries a citation note naming the macro and
+    ///     counts as Indeterminate. An item submitted with a charged part is read from its own
+    ///     chargedPartVerdict and chargedPartBasis, Indeterminate when that is missing; the verifier
+    ///     gains 3l (a wiki statement contradicted by source needs both named). ScoringMethodVersion
+    ///     stays 12 and CandidateSystemPromptSha256 does not move.
     /// </summary>
-    public const string HarnessVersion = "38";
+    public const string HarnessVersion = "39";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:
@@ -1023,7 +1032,7 @@ public static class BenchmarkAssessmentPrompt
                 {
                     sb.AppendLine($"  Citation: {cv.Citation}");
                 }
-                if (!string.IsNullOrWhiteSpace(cv.Basis))
+                if (!string.IsNullOrWhiteSpace(cv.Basis) && !string.Equals(cv.Basis, cv.Citation, StringComparison.Ordinal))
                 {
                     sb.AppendLine($"  Basis: {cv.Basis}");
                 }
@@ -1158,7 +1167,7 @@ public static class BenchmarkAssessmentPrompt
         {
             sb.AppendLine($"{indent}  Citation: {v.Citation}");
         }
-        if (!string.IsNullOrWhiteSpace(v.Basis))
+        if (!string.IsNullOrWhiteSpace(v.Basis) && !string.Equals(v.Basis, v.Citation, StringComparison.Ordinal))
         {
             sb.AppendLine($"{indent}  Basis: {v.Basis}");
         }

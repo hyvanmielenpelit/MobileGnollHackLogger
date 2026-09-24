@@ -264,18 +264,38 @@ To find specific popups, look in the corresponding component's `.html` template:
 - **Model Comparison (`model-comparison.component.html`, Admin → AI Benchmark → Run History →
   Cross-model comparison, step 4)**
   - No preview dialog: step 4 is a workspace. A collapsible sidebar has three tabs — Emphasis,
-    Export (size, aspect ratio, density, format, quality, text size) and Style
-    (`app-figure-style-panel` under a segmented *Bar panels / Profile / Trade-offs* tab row that
-    follows the previewed figure; each settings section has its own reset button) — and its collapsed state and tab are kept in
-    `localStorage['overseer.modelComparison.figureSidebar']`. Beside it, a Charts / Preview tab
-    pair: Charts holds the cards, each with one *Open in preview* (eye) button; Preview composes
-    one figure exactly as it will be exported, with zoom, Copy and Download. *Download all* sits in
-    the figure bar above both. The Charts panel stays rendered, `inert` and `visibility: hidden`
-    under Preview, because every export composes from its live canvases. Style applies to the page
-    and to every export and is kept in `localStorage['overseer.modelComparison.figureStyle']`. A
-    figure with its uncertainty bars hidden says so in a caption note unless that note is switched
-    off too; the frontier-within-intervals note has its own switch, and so does the Speed panel's
-    mean-time note. Warning notes have none.
+    Style and Download (format and, where the format has one, quality). Style opens with a
+    **Figure size** section (size and aspect ratio with *Custom* width and height, pixel density,
+    text size, the pixel readout, and its own reset) above `app-figure-style-panel` under a
+    segmented *Bar panels / Profile / Trade-offs* tab row that follows the figure in *Single*; each
+    settings section has its own reset button. There is no *On-screen* size: a figure always has an
+    export size, Full HD (1920 × 1080) by default, kept in
+    `localStorage['overseer.modelComparison.figureSize']` (an unknown or `onscreen` id reads as
+    `fullhd`). The sidebar's collapsed state, tab, Figure size open state and the active view are
+    kept in `localStorage['overseer.modelComparison.figureSidebar']`.
+  - Beside it, an **All / Single** tab pair (accessible names *All figures* and *Single figure*;
+    a stored `charts` reads as `all`, `preview` as `single`). **Both show bitmaps composed by the
+    export pipeline** — `resolveFigureLayout`, `renderPlotOffscreen` from each card's Chart.js
+    configuration, then the chrome — the same code that writes the downloaded file, so what is on
+    the page is what is downloaded. No `BaseChartDirective` renders on step 4 and nothing reads a
+    live chart canvas; the component registers the `provideCharts` registerables itself for that
+    reason. *All* shows every figure as a focusable tile (`<canvas role="img">` named by the
+    figure's title and subtitle; Enter or a click opens it in *Single*; the eye button, *Open in
+    Single view*, is not a separate Tab stop) in a natively scrolling grid, with Zoom out, a *Zoom*
+    slider, Zoom in, the percent readout and **Fit height** — the default, re-applied on resize
+    until the user zooms — and the keys `+`/`=`, `-` and `0`. A tile's CSS size is its export size
+    over the preview pixel ratio times the zoom, so 100 % means actual pixels in both tabs. Tiles
+    are composed at display resolution, 120 ms after the last change and then on the next frame,
+    only when within one viewport height of view, with a generation counter discarding a stale
+    composition. The figures in *All* have no Chart.js hover tooltips (a deliberate trade for
+    page-equals-download). *Single* shows one figure with zoom, drag-pan, *Fit to screen*,
+    *Actual pixels*, *Reset view*, Copy and Download, and opens on the figure last activated in
+    *All*. *Download all* sits in the figure bar above both.
+  - Style applies to every figure and every export and is kept in
+    `localStorage['overseer.modelComparison.figureStyle']`. A figure with its uncertainty bars
+    hidden says so in a caption note unless that note is switched off too; the
+    frontier-within-intervals note has its own switch, and so does the Speed panel's mean-time
+    note. Warning notes have none.
 
 ## Component Reuse and State Management
 

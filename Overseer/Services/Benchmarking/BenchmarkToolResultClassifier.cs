@@ -205,6 +205,16 @@ public static class BenchmarkToolResultClassifier
         "... [Article truncated: showing "
     };
 
+    /// <summary>
+    /// <c>WikiViewTool</c>'s notice on a section-less article longer than the result cap, at the
+    /// start of the result: the tool cut the article itself, so no per-tool-cap marker follows.
+    /// </summary>
+    private static readonly Regex WikiViewTooLongNoticeRegex = new(
+        @"^\[Article is \d+ characters; the first \d+ are shown\. Headings: ",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private const string WikiViewTool = "wiki_view";
+
     /// <summary><c>SourceCodeService.SearchFiles</c>' hidden-match-group notice.</summary>
     private static readonly Regex HiddenMatchGroupsRegex = new(
         @"\[\.\.\. \d+ additional match groups in this file hidden \.\.\.\]",
@@ -270,7 +280,9 @@ public static class BenchmarkToolResultClassifier
                     notFound = StartsWithAny(head, openings);
                 }
 
-                partial = ContainsAny(result, PartialMarkers) || HiddenMatchGroupsRegex.IsMatch(result);
+                partial = ContainsAny(result, PartialMarkers)
+                    || HiddenMatchGroupsRegex.IsMatch(result)
+                    || (string.Equals(tool, WikiViewTool, StringComparison.OrdinalIgnoreCase) && WikiViewTooLongNoticeRegex.IsMatch(head));
             }
         }
 

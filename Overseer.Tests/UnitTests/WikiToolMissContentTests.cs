@@ -119,6 +119,15 @@ The holy grail has appeared in many quests throughout history.
         File.WriteAllText(Path.Combine(itemsDir, "Holy symbol.md"),
 @"A holy symbol is a religious item used for prayer and turning undead.
 ");
+
+        // A single-match item with no title collision, so its exact-title lookup result carries a
+        // plain "--- Items/Torch.md ---" header rather than one qualified by "[Other matches: ...]".
+        File.WriteAllText(Path.Combine(itemsDir, "Torch.md"),
+@"A torch is a simple light source that burns for a limited number of turns.
+
+## Usage
+Wielding a lit torch increases visibility in dark areas.
+");
     }
 
     public void Dispose()
@@ -629,7 +638,7 @@ The holy grail has appeared in many quests throughout history.
         Assert.Null(result.ErrorMessage);
         var firstHeader = System.Text.RegularExpressions.Regex.Match(result.Content!, @"^--- (.+?) ---", System.Text.RegularExpressions.RegexOptions.Multiline);
         Assert.True(firstHeader.Success);
-        Assert.Equal("The Holy Grail.md", firstHeader.Groups[1].Value);
+        Assert.Equal("Artifacts/The Holy Grail.md", firstHeader.Groups[1].Value);
         Assert.Contains("[Other matches:", result.Content);
     }
 
@@ -645,7 +654,7 @@ The holy grail has appeared in many quests throughout history.
 
         Assert.True(result.Success);
         Assert.Null(result.ErrorMessage);
-        Assert.Contains("--- The Holy Grail.md ---", result.Content);
+        Assert.Contains("--- Artifacts/The Holy Grail.md ---", result.Content);
     }
 
     [Fact]
@@ -662,7 +671,30 @@ The holy grail has appeared in many quests throughout history.
         Assert.Null(result.ErrorMessage);
         var firstHeader = System.Text.RegularExpressions.Regex.Match(result.Content!, @"^--- (.+?) ---", System.Text.RegularExpressions.RegexOptions.Multiline);
         Assert.True(firstHeader.Success);
-        Assert.Equal("Grail of healing.md", firstHeader.Groups[1].Value);
+        Assert.Equal("Items/Grail of healing.md", firstHeader.Groups[1].Value);
+    }
+
+    /// <summary>
+    /// The exact-title lookup result header carries the repository-relative path, not the bare
+    /// filename, so a hit under Items/ is distinguishable from one of the same name under another
+    /// category — matching how wiki_search's own snippet header and wiki_view's article header
+    /// already label a hit.
+    /// </summary>
+    [Fact]
+    public async Task ItemLookupTool_ExactTitle_HeaderCarriesTheRepositoryRelativePath()
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new ItemLookupTool(service);
+
+        var jsonParams = JsonDocument.Parse("{\"name\": \"Torch\"}").RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Null(result.ErrorMessage);
+        var firstHeader = System.Text.RegularExpressions.Regex.Match(result.Content!, @"^--- (.+?) ---", System.Text.RegularExpressions.RegexOptions.Multiline);
+        Assert.True(firstHeader.Success);
+        Assert.Equal("Items/Torch.md", firstHeader.Groups[1].Value);
     }
 }
 
@@ -1003,7 +1035,7 @@ public class WikiSearchCoverageRankingTests : IDisposable
     /// <summary>The same parsed query's plain score order, as file names.</summary>
     private static List<string> ScoreOrder(WikiService service, string query, string? category = null)
     {
-        return Headers(service.GetRelevantContext(query, category, 5));
+        return Headers(service.GetRelevantContext(query, category, 5)).Select(FileName).ToList();
     }
 
     private static string Fillers(int count)

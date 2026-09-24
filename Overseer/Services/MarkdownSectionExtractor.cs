@@ -39,21 +39,7 @@ internal static class MarkdownSectionExtractor
     public static string Extract(string content, string section)
     {
         var lines = content.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-        var headings = new List<(int LineIndex, int Level, string Title)>();
-
-        for (int i = 0; i < lines.Length; i++)
-        {
-            if (!lines[i].TrimStart().StartsWith("#"))
-            {
-                continue;
-            }
-
-            var match = Regex.Match(lines[i], @"^(#+)\s+(.*)");
-            if (match.Success)
-            {
-                headings.Add((i, match.Groups[1].Value.Length, match.Groups[2].Value.Trim()));
-            }
-        }
+        var headings = ParseHeadings(lines);
 
         int selected = FindHeadingIndex(headings, section);
 
@@ -68,7 +54,7 @@ internal static class MarkdownSectionExtractor
 
         if (selected < 0)
         {
-            return $"[Section '{section}' not found in article.{BuildHeadingListFragment(headings.Select(h => h.Title))} Returning full text.]\n\n{content}";
+            return $"[Section '{section}' not found in article.{BuildHeadingListFragment(Headings(content))} Returning full text.]\n\n{content}";
         }
 
         int sectionLevel = headings[selected].Level;
@@ -128,6 +114,43 @@ internal static class MarkdownSectionExtractor
         }
 
         return selected;
+    }
+
+    /// <summary>
+    /// Every Markdown heading line in <paramref name="lines"/> — one starting with one or more
+    /// <c>#</c> — as its line index, level (the run of <c>#</c>) and title (the rest of the line,
+    /// trimmed), in document order.
+    /// </summary>
+    private static List<(int LineIndex, int Level, string Title)> ParseHeadings(string[] lines)
+    {
+        var headings = new List<(int LineIndex, int Level, string Title)>();
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            if (!lines[i].TrimStart().StartsWith("#"))
+            {
+                continue;
+            }
+
+            var match = Regex.Match(lines[i], @"^(#+)\s+(.*)");
+            if (match.Success)
+            {
+                headings.Add((i, match.Groups[1].Value.Length, match.Groups[2].Value.Trim()));
+            }
+        }
+
+        return headings;
+    }
+
+    /// <summary>
+    /// Every Markdown heading in <paramref name="content"/>, in document order, as its title alone
+    /// (leading <c>#</c>'s stripped, trimmed). Shared by the section-miss marker line and
+    /// <c>wiki_view</c>'s too-long-article notice, so both list one article's headings the same way.
+    /// </summary>
+    internal static IReadOnlyList<string> Headings(string content)
+    {
+        var lines = content.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+        return ParseHeadings(lines).Select(h => h.Title).ToList();
     }
 
     /// <summary>

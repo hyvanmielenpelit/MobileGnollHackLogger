@@ -236,6 +236,12 @@ cards' "open in preview" moved from* maximize-2 *to* eye*, the glyph Run History
 *Changed 2026-09-24: the model comparison's Style sections gained a per-section reset icon button
 with the* undo *glyph; rotate was not reused, because it already means "runs again".*
 
+*Changed 2026-09-24 (runs 66 and 67 round): the model comparison's Charts / Preview tabs became
+**All** (*grid*) and **Single** (*eye*). The eye button on each *All* tile is named "Open <figure> in
+Single view". The *All* toolbar's **Fit height** uses* maximize*, the fitting glyph* Single *already
+uses for Fit to screen; the new **Figure size** section's reset uses* undo *like the other Style
+sections.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |

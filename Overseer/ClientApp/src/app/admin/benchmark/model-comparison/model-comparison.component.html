@@ -928,21 +928,6 @@
           }
         </ng-template>
 
-        <!-- The composed figure's footer on the page card, last in the card's foot as it is last in
-             the composed figure; shown while the card's family has the footer on. -->
-        <ng-template #cardFooter let-card>
-          @if (cardFooterShown(card) && (figureFooter.suite || figureFooter.computedAt)) {
-            <p class="mc-card-footer">
-              @if (figureFooter.suite) {
-                <span class="mc-card-footer-suite"><span class="mc-card-footer-label">Suite</span> {{ figureFooter.suite }}</span>
-              }
-              @if (figureFooter.computedAt) {
-                <span class="mc-card-footer-computed">Computed {{ figureFooter.computedAt }}</span>
-              }
-            </p>
-          }
-        </ng-template>
-
         @if (showFigures) {
           <div class="mc-fig-workspace" [class.is-collapsed]="sidebarCollapsed">
 
@@ -1030,6 +1015,124 @@
               @if (sidebarTab === 'style') {
                 <div class="mc-side-panel" role="tabpanel" id="mc-side-panel-style"
                      aria-labelledby="mc-side-tab-style" tabindex="0">
+                  <!-- ===============================================================================
+                       FIGURE SIZE
+
+                       First, above the family tabs, because it shapes every family's figures: the All
+                       tiles, the Single stage and every download are composed at it. A settings section
+                       (§5b): the summary holds text only, and the reset button sits after <details> in
+                       the positioned wrapper, never in the summary or the body.
+                       =============================================================================== -->
+                  <div class="mc-size-section">
+                    <details class="gh-disclosure gh-disclosure--section" id="mc-figure-size-section"
+                             [open]="figureSizeOpen" (toggle)="onFigureSizeToggle($event)">
+                      <summary>
+                        <span class="gh-disclosure-summary-title">Figure size</span>
+                        <span class="gh-disclosure-summary-value" aria-hidden="true">{{ figureSizeReadout }}</span>
+                      </summary>
+                      <div class="gh-disclosure-body mc-size-body">
+                        <p class="mc-field-hint" id="mc-figure-size-hint">The shape, sharpness and text size of every
+                          figure — in All, in Single and in downloads.</p>
+
+                        <label for="mc-export-resolution">Size and aspect ratio</label>
+                        <select id="mc-export-resolution" class="gh-input"
+                                aria-describedby="mc-figure-size-hint"
+                                [ngModel]="figureSize.resolutionId" [ngModelOptions]="{ standalone: true }"
+                                (ngModelChange)="onExportResolutionChange($event)">
+                          @for (group of exportPresetGroups; track group.label) {
+                            <optgroup [label]="group.label">
+                              @for (preset of group.presets; track preset.id) {
+                                <option [value]="preset.id">{{ preset.label }}</option>
+                              }
+                            </optgroup>
+                          }
+                          <optgroup label="Custom">
+                            <option value="custom">Custom…</option>
+                          </optgroup>
+                        </select>
+
+                        @if (isCustomResolution) {
+                          <label for="mc-export-width">Width in pixels</label>
+                          <input id="mc-export-width" type="number" class="gh-input mc-export-dimension"
+                                 [min]="minExportDimension" [max]="maxExportDimension" step="10"
+                                 aria-describedby="mc-export-resolution-error"
+                                 [ngModel]="figureSize.customWidthPx" [ngModelOptions]="{ standalone: true }"
+                                 (ngModelChange)="onCustomWidthChange($event)">
+                          <label for="mc-export-height">Height in pixels</label>
+                          <input id="mc-export-height" type="number" class="gh-input mc-export-dimension"
+                                 [min]="minExportDimension" [max]="maxExportDimension" step="10"
+                                 aria-describedby="mc-export-resolution-error"
+                                 [ngModel]="figureSize.customHeightPx" [ngModelOptions]="{ standalone: true }"
+                                 (ngModelChange)="onCustomHeightChange($event)">
+                          <label class="checkbox-label">
+                            <input type="checkbox" [ngModel]="customRatioLocked"
+                                   [ngModelOptions]="{ standalone: true }"
+                                   (ngModelChange)="lockCustomRatio($event)">
+                            Keep {{ exportAspectLabel }}
+                          </label>
+                        }
+
+                        <!-- One density for every size, defaulting to the display's own: the read-out below is
+                             what keeps that single rule honest about what a size will write. -->
+                        <label for="mc-export-density">Pixel density</label>
+                        <select id="mc-export-density" class="gh-input mc-export-quality"
+                                aria-describedby="mc-export-resolution-error"
+                                [ngModel]="figureSize.densitySelection" [ngModelOptions]="{ standalone: true }"
+                                (ngModelChange)="onExportDensityChange($event)">
+                          @for (d of exportDensityPresets; track d) {
+                            <option [ngValue]="d">{{ densityOptionLabel(d) }}</option>
+                          }
+                          <option [ngValue]="'custom'">Custom…</option>
+                        </select>
+                        @if (isCustomDensity) {
+                          <label for="mc-export-density-custom">Density in percent</label>
+                          <input id="mc-export-density-custom" type="number" class="gh-input mc-export-dimension"
+                                 [min]="minExportDensityPercent" [max]="maxExportDensityPercent" step="5"
+                                 aria-describedby="mc-export-resolution-error"
+                                 [ngModel]="figureSize.customDensityPercent" [ngModelOptions]="{ standalone: true }"
+                                 (ngModelChange)="onCustomDensityChange($event)">
+                        }
+
+                        <!-- Text size composes each figure in a smaller or larger box at the same pixel size, so
+                             the caption, notes and the plot's own text scale together. -->
+                        <div class="mc-range">
+                          <label for="mc-export-text-scale">Text size</label>
+                          <div class="mc-range-row">
+                            <input id="mc-export-text-scale" type="range"
+                                   [min]="minExportTextScalePercent" [max]="maxExportTextScalePercent" step="5"
+                                   [value]="figureSize.textScalePercent"
+                                   [attr.aria-valuetext]="figureSize.textScalePercent + ' percent'"
+                                   aria-describedby="mc-export-text-scale-hint"
+                                   (input)="onExportTextScaleChange(+$any($event.target).value)">
+                            <output class="mc-range-value" aria-hidden="true" for="mc-export-text-scale">{{ figureSize.textScalePercent }} %</output>
+                          </div>
+                          <p class="mc-field-hint" id="mc-export-text-scale-hint">Scales the caption, notes and chart text
+                            together without changing the pixel size. Raise it for a small figure.</p>
+                        </div>
+
+                        <p class="mc-export-dimensions">{{ exportDimensionsLabel }} · {{ exportAspectLabel }}</p>
+                        @if (exportSizeError) {
+                          <p class="mc-export-error" id="mc-export-resolution-error" role="alert">{{ exportSizeError }}</p>
+                        }
+                      </div>
+                    </details>
+                    <button type="button" class="action-btn mc-size-reset" id="mc-figure-size-reset"
+                            aria-label="Reset Figure size to defaults"
+                            [attr.aria-disabled]="figureSizeIsDefault ? 'true' : null"
+                            interestfor="mc-tip-figure-size-reset" style="anchor-name: --mc-tip-figure-size-reset"
+                            (click)="resetFigureSize()">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                           viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M9 14 4 9l5-5"></path>
+                        <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"></path>
+                      </svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" id="mc-tip-figure-size-reset"
+                         style="position-anchor: --mc-tip-figure-size-reset">{{ figureSizeIsDefault ? 'Already at defaults' : 'Reset to defaults' }}</div>
+                  </div>
+                  <p class="visually-hidden" role="status">{{ figureSizeResetStatus }}</p>
+
                   <!-- The family tabs swap the control set below in place, so they are tabs; the segmented look
                        keeps them apart from the sidebar's own tab row above. -->
                   <div class="gh-tabs gh-tabs-segmented mc-style-family-tabs" role="tablist" aria-label="Figures to style">
@@ -1063,71 +1166,12 @@
               }
 
               @if (sidebarTab === 'download') {
-                <!-- Visible labels, not `visually-hidden` ones: a labelled form is what a reader
-                     configuring four settings at once needs. -->
+                <!-- Visible labels, not `visually-hidden` ones. The size is the Style tab's: it shapes
+                     every figure on the page as well as the files. -->
                 <div class="mc-side-panel" role="tabpanel" id="mc-side-panel-download"
                      aria-labelledby="mc-side-tab-download" tabindex="0">
-                  <h4 id="mc-preview-controls-title" class="mc-section-title">Size and format</h4>
-                  <p class="mc-field-hint mc-download-scope">These settings affect downloads only. The Preview tab
-                    shows a figure as it will download; the Charts tab does not change.</p>
-
-                  <label for="mc-export-resolution">Size and aspect ratio</label>
-                  <select id="mc-export-resolution" class="gh-input"
-                          [ngModel]="exportResolutionId" [ngModelOptions]="{ standalone: true }"
-                          (ngModelChange)="onExportResolutionChange($event)">
-                    @for (group of exportPresetGroups; track group.label) {
-                      <optgroup [label]="group.label">
-                        @for (preset of group.presets; track preset.id) {
-                          <option [value]="preset.id">{{ preset.label }}</option>
-                        }
-                      </optgroup>
-                    }
-                    <optgroup label="Custom">
-                      <option value="custom">Custom…</option>
-                    </optgroup>
-                  </select>
-
-                  @if (isCustomResolution) {
-                    <label for="mc-export-width">Width in pixels</label>
-                    <input id="mc-export-width" type="number" class="gh-input mc-export-dimension"
-                           [min]="minExportDimension" [max]="maxExportDimension" step="10"
-                           aria-describedby="mc-export-resolution-error"
-                           [ngModel]="customExportWidth" [ngModelOptions]="{ standalone: true }"
-                           (ngModelChange)="onCustomWidthChange($event)">
-                    <label for="mc-export-height">Height in pixels</label>
-                    <input id="mc-export-height" type="number" class="gh-input mc-export-dimension"
-                           [min]="minExportDimension" [max]="maxExportDimension" step="10"
-                           aria-describedby="mc-export-resolution-error"
-                           [ngModel]="customExportHeight" [ngModelOptions]="{ standalone: true }"
-                           (ngModelChange)="onCustomHeightChange($event)">
-                    <label class="checkbox-label">
-                      <input type="checkbox" [ngModel]="customRatioLocked"
-                             [ngModelOptions]="{ standalone: true }"
-                             (ngModelChange)="lockCustomRatio($event)">
-                      Keep {{ exportAspectLabel }}
-                    </label>
-                  }
-
-                  <!-- One density for every size, defaulting to the display's own: the read-out below is
-                       what keeps that single rule honest about what an explicit size will write. -->
-                  <label for="mc-export-density">Pixel density</label>
-                  <select id="mc-export-density" class="gh-input mc-export-quality"
-                          aria-describedby="mc-export-resolution-error"
-                          [ngModel]="exportDensitySelection" [ngModelOptions]="{ standalone: true }"
-                          (ngModelChange)="onExportDensityChange($event)">
-                    @for (d of exportDensityPresets; track d) {
-                      <option [ngValue]="d">{{ densityOptionLabel(d) }}</option>
-                    }
-                    <option [ngValue]="'custom'">Custom…</option>
-                  </select>
-                  @if (isCustomDensity) {
-                    <label for="mc-export-density-custom">Density in percent</label>
-                    <input id="mc-export-density-custom" type="number" class="gh-input mc-export-dimension"
-                           [min]="minExportDensityPercent" [max]="maxExportDensityPercent" step="5"
-                           aria-describedby="mc-export-resolution-error"
-                           [ngModel]="customExportDensityPercent" [ngModelOptions]="{ standalone: true }"
-                           (ngModelChange)="onCustomDensityChange($event)">
-                  }
+                  <h4 id="mc-download-title" class="mc-section-title">Format</h4>
+                  <p class="mc-field-hint">The size, pixel density and text size are in the Style tab, under Figure size.</p>
 
                   <label for="mc-export-format">Format</label>
                   <select id="mc-export-format" class="gh-input mc-export-format"
@@ -1149,26 +1193,6 @@
                     </select>
                   }
 
-                  <!-- Text size composes the export in a smaller or larger box at the same pixel size, so the
-                       caption, notes and the plot's own text scale together. -->
-                  <div class="mc-range">
-                    <label for="mc-export-text-scale">Text size</label>
-                    <div class="mc-range-row">
-                      <input id="mc-export-text-scale" type="range"
-                             [min]="minExportTextScalePercent" [max]="maxExportTextScalePercent" step="5"
-                             [value]="exportTextScalePercent" [disabled]="exportTextScaleDisabled"
-                             [attr.aria-valuetext]="exportTextScalePercent + ' percent'"
-                             aria-describedby="mc-export-text-scale-hint"
-                             (input)="onExportTextScaleChange(+$any($event.target).value)">
-                      <output class="mc-range-value" aria-hidden="true" for="mc-export-text-scale">{{ exportTextScalePercent }} %</output>
-                    </div>
-                    <p class="mc-field-hint" id="mc-export-text-scale-hint">@if (exportTextScaleDisabled) {On-screen exports follow the page's own text.} @else {Scales the caption, notes and chart text together without changing the pixel size. Raise it for a small export.}</p>
-                  </div>
-
-                  <p class="mc-export-dimensions">{{ exportDimensionsLabel }}@if (exportAspectLabel) { · {{ exportAspectLabel }}}</p>
-                  @if (exportSizeError) {
-                    <p class="mc-export-error" id="mc-export-resolution-error" role="alert">{{ exportSizeError }}</p>
-                  }
                   @if (previewRefusal) {
                     <p class="mc-export-error" role="alert">{{ previewRefusal }}</p>
                   }
@@ -1191,20 +1215,24 @@
                 <div popover="hint" class="gh-tooltip" id="mc-tip-sidebar"
                      style="position-anchor: --mc-tip-sidebar">{{ sidebarCollapsed ? 'Show figure settings' : 'Hide figure settings' }}</div>
 
+                <!-- The visible words are the start of each accessible name, so a speech user saying
+                     "All" or "Single" reaches the tab. -->
                 <div class="gh-tabs gh-tabs-secondary mc-fig-tabs" role="tablist" aria-label="Figure views">
                   @for (tab of figureTabs; track tab.id; let i = $index) {
                     <button type="button" role="tab" class="gh-tab"
                             [id]="'mc-fig-tab-' + tab.id"
+                            [attr.aria-label]="tab.name"
                             [attr.aria-controls]="'mc-fig-panel-' + tab.id"
                             [attr.aria-selected]="figureTab === tab.id"
                             [attr.tabindex]="figureTab === tab.id ? 0 : -1"
                             (keydown)="onFigureTabKeydown($event, i)"
                             (click)="selectFigureTab(tab.id)">
-                      @if (tab.id === 'charts') {
+                      @if (tab.id === 'all') {
                         <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                          <line x1="18" y1="20" x2="18" y2="10"></line>
-                          <line x1="12" y1="20" x2="12" y2="4"></line>
-                          <line x1="6" y1="20" x2="6" y2="14"></line>
+                          <rect x="3" y="3" width="7" height="7"></rect>
+                          <rect x="14" y="3" width="7" height="7"></rect>
+                          <rect x="14" y="14" width="7" height="7"></rect>
+                          <rect x="3" y="14" width="7" height="7"></rect>
                         </svg>
                       } @else {
                         <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1234,262 +1262,141 @@
                      style="position-anchor: --mc-tip-download-all">{{ downloadAllTooltip }}</div>
               </div>
 
-              <div class="mc-fig-panels">
-                <!--
-                  THE CHARTS PANEL IS NEVER DESTROYED OR display: none, EVEN UNDER THE PREVIEW TAB.
+              <!-- Both views show figures composed by the export pipeline and neither renders a live
+                   chart, so what the page shows is the file a download writes. Measured for P1's bar
+                   orientation. -->
+              <div class="mc-fig-panels" #chartsHost>
+                @if (figureTab === 'all') {
+                  <div class="mc-fig-panel mc-fig-panel--all" role="tabpanel" tabindex="0"
+                       id="mc-fig-panel-all" aria-labelledby="mc-fig-tab-all"
+                       aria-describedby="mc-all-hint" aria-keyshortcuts="+ - 0"
+                       (keydown)="onAllPanelKeydown($event)">
+                    <!-- The Single toolbar's zoom controls, without pan: the viewport scrolls natively. A
+                         group, not role="toolbar": a toolbar's arrow-key model would fight the slider's. -->
+                    <div class="mc-preview-toolbar mc-all-toolbar">
+                      <div class="mc-preview-group mc-all-zoom" role="group" aria-label="Zoom of all figures">
+                        <button type="button" class="action-btn" aria-label="Zoom all figures out"
+                                [attr.aria-disabled]="canZoomAllOut ? null : 'true'"
+                                interestfor="mc-tip-all-zoom-out" style="anchor-name: --mc-tip-all-zoom-out"
+                                (click)="zoomAllOut()">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            <line x1="8" y1="11" x2="14" y2="11"></line>
+                          </svg>
+                        </button>
+                        <label class="mc-all-zoom-label" for="mc-all-zoom">Zoom</label>
+                        <input id="mc-all-zoom" type="range" class="mc-preview-zoom-slider"
+                               min="0" [max]="previewSliderSteps" step="1" [value]="allSliderValue"
+                               [attr.aria-valuetext]="allZoomValueText"
+                               (input)="onAllSliderInput(+$any($event.target).value)">
+                        <button type="button" class="action-btn" aria-label="Zoom all figures in"
+                                [attr.aria-disabled]="canZoomAllIn ? null : 'true'"
+                                interestfor="mc-tip-all-zoom-in" style="anchor-name: --mc-tip-all-zoom-in"
+                                (click)="zoomAllIn()">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            <line x1="11" y1="8" x2="11" y2="14"></line>
+                            <line x1="8" y1="11" x2="14" y2="11"></line>
+                          </svg>
+                        </button>
+                        <output class="mc-range-value mc-preview-zoom-value" for="mc-all-zoom" aria-hidden="true">{{ allZoomLabel }}</output>
+                        <button type="button" class="action-btn" aria-label="Fit height"
+                                interestfor="mc-tip-all-fit" style="anchor-name: --mc-tip-all-fit"
+                                (click)="fitAllHeight()">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                    <div popover="hint" class="gh-tooltip" id="mc-tip-all-zoom-out"
+                         style="position-anchor: --mc-tip-all-zoom-out">Zoom out (−)</div>
+                    <div popover="hint" class="gh-tooltip" id="mc-tip-all-zoom-in"
+                         style="position-anchor: --mc-tip-all-zoom-in">Zoom in (+)</div>
+                    <div popover="hint" class="gh-tooltip" id="mc-tip-all-fit"
+                         style="position-anchor: --mc-tip-all-fit">Fit one figure's height to the view (0)</div>
 
-                  The preview and every export compose from the live chart canvases — the on-screen
-                  preset, the live fallback, Copy — and @if would destroy them, while hidden,
-                  display: none or content-visibility: hidden would lay them out at zero size. So the
-                  inactive panel keeps its box, is visibility: hidden and inert: invisible, unfocusable
-                  and out of the accessibility tree, but still laid out at the same width. The one
-                  exception to "an inactive tab panel is hidden".
-                -->
-                <div class="mc-fig-panel mc-fig-panel--charts" role="tabpanel" tabindex="0"
-                     id="mc-fig-panel-charts" aria-labelledby="mc-fig-tab-charts"
-                     [class.is-inactive]="figureTab !== 'charts'"
-                     [attr.inert]="figureTab !== 'charts' ? '' : null">
-                  <ng-container *ngTemplateOutlet="setNoticeList"></ng-container>
+                    <div class="mc-all-notices">
+                      <ng-container *ngTemplateOutlet="setNoticeList"></ng-container>
+                      @if (shape === 'pair') {
+                        <p class="section-note">
+                          The profile plot is suppressed at two entries: two polylines either cross once or they
+                          do not, which the three bar panels already show.
+                        </p>
+                      }
+                    </div>
 
-                  <!-- Card order is fixed: P1, then P2, then the three scatters. P1 answers the primary
-                       question and carries real units, so it is where a reader lands. -->
-                  <div class="mc-charts" #chartsHost [class.mc-single-run]="allSingleRun">
-
-                    <!-- P1 — three linked panels, one shared model order, one unit each. -->
-                    <div class="mc-panels">
-                      @for (card of panelCards; track card.id) {
-                        <figure class="mc-card" [attr.aria-labelledby]="card.id + '-title'" [style]="cardChromeVars(card)">
-                          <figcaption class="mc-card-head">
-                            <h5 class="mc-card-title" [id]="card.id + '-title'">{{ card.chrome.title }}</h5>
-                            <ul class="mc-meta" aria-label="About this figure">
-                              @for (badge of card.chrome.badges; track $index) {
-                                <li [class]="'mc-badge mc-badge--' + badge.tone"
-                                    [attr.aria-label]="badge.ariaLabel ?? null">{{ badge.text }}</li>
+                    <!-- Card order is fixed: P1, then P2, then the three scatters. P1 answers the primary
+                         question and carries real units, so it is where a reader lands. Each tile is the
+                         composed figure at the figure size; its box is that size at the All zoom. -->
+                    <div class="mc-all-viewport" #allViewport>
+                      @if (exportSizeError) {
+                        <p class="mc-export-error">{{ exportSizeError }}</p>
+                      } @else {
+                        <div class="mc-all-grid">
+                          @for (card of exportableCards; track card.id; let i = $index) {
+                            <div #allTile class="mc-all-tile" role="group" tabindex="0"
+                                 [attr.data-figure-id]="card.id" [attr.aria-label]="card.title"
+                                 aria-describedby="mc-all-tile-hint"
+                                 [class.is-deferred]="i >= allTilesPerRow"
+                                 [style.width.px]="allTileCssWidth" [style.height.px]="allTileCssHeight"
+                                 [style.contain-intrinsic-size]="i >= allTilesPerRow ? allTileIntrinsicSize : null"
+                                 (click)="openInSingle(card)" (keydown)="onAllTileKeydown($event, card)">
+                              <canvas class="mc-all-canvas" role="img" [attr.data-figure-id]="card.id"
+                                      [attr.aria-label]="card.ariaLabel"
+                                      [attr.aria-describedby]="card.id === profileCard?.id && profileAxes ? card.id + '-axis-ends' : null"></canvas>
+                              @if (allTileRefusals[card.id]; as refusal) {
+                                <p class="mc-all-refusal">{{ refusal }}</p>
                               }
-                              @if (card.chrome.direction; as direction) {
-                                <li class="mc-direction">
-                                  <svg class="mc-direction-arrow" xmlns="http://www.w3.org/2000/svg" width="14" height="14"
-                                       viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                                       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
-                                       [style.rotate.deg]="directionRotation(direction)"><path d="M7 17 17 7M8 7h9v9"></path></svg>
-                                  <span aria-hidden="true">{{ direction.label }}</span>
-                                  <span class="visually-hidden">{{ directionText(direction) }}</span>
-                                </li>
-                              }
-                            </ul>
-                            @if (card.chrome.detail) {
-                              <p class="mc-card-detail">{{ card.chrome.detail }}</p>
-                            }
-                            <!-- Never disabled: the preview is where a size error is shown and fixed. -->
-                            <div class="mc-card-actions">
-                              <button type="button" class="action-btn mc-preview-open"
-                                      [attr.aria-label]="'Open ' + card.title + ' in the preview'"
-                                      [attr.interestfor]="tipId('prev', card.id)"
-                                      [attr.style]="'anchor-name: --' + tipId('prev', card.id)"
-                                      (click)="openInPreview(card)">
+                              <!-- Out of the tab order: the tile itself takes focus and opens on Enter, so a
+                                   second stop per figure would repeat it. -->
+                              <button type="button" class="action-btn mc-all-open" tabindex="-1"
+                                      [attr.aria-label]="'Open ' + card.title + ' in Single view'"
+                                      [attr.interestfor]="tipId('single', card.id)"
+                                      [attr.style]="'anchor-name: --' + tipId('single', card.id)"
+                                      (click)="$event.stopPropagation(); openInSingle(card)">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                   <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                                   <circle cx="12" cy="12" r="3"></circle>
                                 </svg>
                               </button>
+                              <div popover="hint" class="gh-tooltip" [id]="tipId('single', card.id)"
+                                   [attr.style]="'position-anchor: --' + tipId('single', card.id)">Open in Single view</div>
                             </div>
-                            <div popover="hint" class="gh-tooltip" [id]="tipId('prev', card.id)"
-                                 [attr.style]="'position-anchor: --' + tipId('prev', card.id)">Open in the preview, at export size</div>
-                          </figcaption>
-                          <div class="mc-canvas" [style.height.px]="card.heightPx">
-                            <canvas baseChart role="img" [attr.aria-label]="card.ariaLabel" [attr.data-figure-id]="card.id"
-                                    [type]="card.type" [data]="card.data" [options]="card.options"
-                                    [plugins]="card.plugins"></canvas>
-                          </div>
-                          <div class="mc-card-foot">
-                            @if (card.chrome.key.length > 0) {
-                              <ul class="mc-key" aria-label="Key">
-                                @for (item of card.chrome.key; track item.glyph) {
-                                  <li><span [class]="'mc-key-glyph mc-key-glyph--' + item.glyph" aria-hidden="true"></span>{{ item.text }}</li>
-                                }
-                              </ul>
-                            }
-                            @if (card.chrome.highlight) {
-                              <p class="mc-card-highlight">{{ card.chrome.highlight }}</p>
-                            }
-                            @if (card.chrome.notes.length > 0) {
-                              <ul class="mc-notes">
-                                @for (note of card.chrome.notes; track $index) {
-                                  <li [class]="'mc-note mc-note--' + note.tone">
-                                    <span class="visually-hidden">{{ note.tone === 'warning' ? 'Warning: ' : 'Note: ' }}</span>{{ note.text }}
-                                  </li>
-                                }
-                              </ul>
-                            }
-                            <ng-container *ngTemplateOutlet="cardFooter; context: { $implicit: card }"></ng-container>
-                          </div>
-                        </figure>
+                          }
+                        </div>
                       }
                     </div>
 
-                    <!-- P2 — the companion. Suppressed at two entries: two polylines cross once or not at all. -->
+                    <!-- The profile's real axis endpoints, which the normalized plot does not print, as the
+                         profile tile's description. -->
                     @if (profileCard; as profile) {
-                      <figure class="mc-card" [attr.aria-labelledby]="profile.id + '-title'" [style]="cardChromeVars(profile)">
-                        <figcaption class="mc-card-head">
-                          <h5 class="mc-card-title" [id]="profile.id + '-title'">{{ profile.chrome.title }}</h5>
-                          <ul class="mc-meta" aria-label="About this figure">
-                            @for (badge of profile.chrome.badges; track $index) {
-                              <li [class]="'mc-badge mc-badge--' + badge.tone"
-                                  [attr.aria-label]="badge.ariaLabel ?? null">{{ badge.text }}</li>
-                            }
-                            @if (profile.chrome.direction; as direction) {
-                              <li class="mc-direction">
-                                <svg class="mc-direction-arrow" xmlns="http://www.w3.org/2000/svg" width="14" height="14"
-                                     viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
-                                     [style.rotate.deg]="directionRotation(direction)"><path d="M7 17 17 7M8 7h9v9"></path></svg>
-                                <span aria-hidden="true">{{ direction.label }}</span>
-                                <span class="visually-hidden">{{ directionText(direction) }}</span>
-                              </li>
-                            }
-                          </ul>
-                          @if (profile.chrome.detail) {
-                            <p class="mc-card-detail">{{ profile.chrome.detail }}</p>
-                          }
-                          <div class="mc-card-actions">
-                            <button type="button" class="action-btn mc-preview-open"
-                                    [attr.aria-label]="'Open ' + profile.title + ' in the preview'"
-                                    [attr.interestfor]="tipId('prev', profile.id)"
-                                    [attr.style]="'anchor-name: --' + tipId('prev', profile.id)"
-                                    (click)="openInPreview(profile)">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                <circle cx="12" cy="12" r="3"></circle>
-                              </svg>
-                            </button>
-                          </div>
-                          <div popover="hint" class="gh-tooltip" [id]="tipId('prev', profile.id)"
-                               [attr.style]="'position-anchor: --' + tipId('prev', profile.id)">Open in the preview, at export size</div>
-                        </figcaption>
-                        <div class="mc-canvas" [style.height.px]="profile.heightPx">
-                          <canvas baseChart role="img" [attr.aria-label]="profile.ariaLabel" [attr.data-figure-id]="profile.id"
-                                  [type]="profile.type" [data]="profile.data" [options]="profile.options"
-                                  [plugins]="profile.plugins"></canvas>
-                        </div>
-                        <div class="mc-card-foot">
-                          @if (profileAxes) {
-                            <!-- The real endpoints, printed beside a normalized plot so a height stays anchored. -->
-                            <dl class="mc-axis-ends">
-                              @for (axis of profileAxes.axes; track axis.id) {
-                                <div>
-                                  <dt>{{ axis.title }}</dt>
-                                  <dd>{{ axis.minLabel }} to {{ axis.maxLabel }}{{ axis.lowerIsBetter ? ' (inverted: lower is better)' : '' }}</dd>
-                                </div>
-                              }
-                            </dl>
-                          }
-                          @if (profile.chrome.key.length > 0) {
-                            <ul class="mc-key" aria-label="Key">
-                              @for (item of profile.chrome.key; track item.glyph) {
-                                <li><span [class]="'mc-key-glyph mc-key-glyph--' + item.glyph" aria-hidden="true"></span>{{ item.text }}</li>
-                              }
-                            </ul>
-                          }
-                          @if (profile.chrome.highlight) {
-                            <p class="mc-card-highlight">{{ profile.chrome.highlight }}</p>
-                          }
-                          @if (profile.chrome.notes.length > 0) {
-                            <ul class="mc-notes">
-                              @for (note of profile.chrome.notes; track $index) {
-                                <li [class]="'mc-note mc-note--' + note.tone">
-                                  <span class="visually-hidden">{{ note.tone === 'warning' ? 'Warning: ' : 'Note: ' }}</span>{{ note.text }}
-                                </li>
-                              }
-                            </ul>
-                          }
-                          <ng-container *ngTemplateOutlet="cardFooter; context: { $implicit: profile }"></ng-container>
-                        </div>
-                      </figure>
-                    } @else if (shape === 'pair') {
-                      <p class="section-note">
-                        The profile plot is suppressed at two entries: two polylines either cross once or they
-                        do not, which the three panels above already show.
-                      </p>
-                    }
-
-                    <!-- S1-S3 — the trade-off scatters. -->
-                    <div class="mc-grid">
-                      @for (card of scatterCards; track card.id) {
-                        <figure class="mc-card" [attr.aria-labelledby]="card.id + '-title'" [style]="cardChromeVars(card)">
-                          <figcaption class="mc-card-head">
-                            <h5 class="mc-card-title" [id]="card.id + '-title'">{{ card.chrome.title }}</h5>
-                            <ul class="mc-meta" aria-label="About this figure">
-                              @for (badge of card.chrome.badges; track $index) {
-                                <li [class]="'mc-badge mc-badge--' + badge.tone"
-                                    [attr.aria-label]="badge.ariaLabel ?? null">{{ badge.text }}</li>
-                              }
-                              @if (card.chrome.direction; as direction) {
-                                <li class="mc-direction">
-                                  <svg class="mc-direction-arrow" xmlns="http://www.w3.org/2000/svg" width="14" height="14"
-                                       viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                                       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
-                                       [style.rotate.deg]="directionRotation(direction)"><path d="M7 17 17 7M8 7h9v9"></path></svg>
-                                  <span aria-hidden="true">{{ direction.label }}</span>
-                                  <span class="visually-hidden">{{ directionText(direction) }}</span>
-                                </li>
-                              }
-                            </ul>
-                            @if (card.chrome.detail) {
-                              <p class="mc-card-detail">{{ card.chrome.detail }}</p>
-                            }
-                            <div class="mc-card-actions">
-                              <button type="button" class="action-btn mc-preview-open"
-                                      [attr.aria-label]="'Open ' + card.title + ' in the preview'"
-                                      [attr.interestfor]="tipId('prev', card.id)"
-                                      [attr.style]="'anchor-name: --' + tipId('prev', card.id)"
-                                      (click)="openInPreview(card)">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                  <circle cx="12" cy="12" r="3"></circle>
-                                </svg>
-                              </button>
+                      @if (profileAxes) {
+                        <dl class="mc-axis-ends visually-hidden" [id]="profile.id + '-axis-ends'">
+                          @for (axis of profileAxes.axes; track axis.id) {
+                            <div>
+                              <dt>{{ axis.title }}</dt>
+                              <dd>{{ axis.minLabel }} to {{ axis.maxLabel }}{{ axis.lowerIsBetter ? ' (inverted: lower is better)' : '' }}</dd>
                             </div>
-                            <div popover="hint" class="gh-tooltip" [id]="tipId('prev', card.id)"
-                                 [attr.style]="'position-anchor: --' + tipId('prev', card.id)">Open in the preview, at export size</div>
-                          </figcaption>
-                          <div class="mc-canvas" [style.height.px]="card.heightPx">
-                            <canvas baseChart role="img" [attr.aria-label]="card.ariaLabel" [attr.data-figure-id]="card.id"
-                                    [type]="card.type" [data]="card.data" [options]="card.options"
-                                    [plugins]="card.plugins"></canvas>
-                          </div>
-                          <div class="mc-card-foot">
-                            @if (card.chrome.key.length > 0) {
-                              <ul class="mc-key" aria-label="Key">
-                                @for (item of card.chrome.key; track item.glyph) {
-                                  <li><span [class]="'mc-key-glyph mc-key-glyph--' + item.glyph" aria-hidden="true"></span>{{ item.text }}</li>
-                                }
-                              </ul>
-                            }
-                            @if (card.chrome.highlight) {
-                              <p class="mc-card-highlight">{{ card.chrome.highlight }}</p>
-                            }
-                            @if (card.chrome.notes.length > 0) {
-                              <ul class="mc-notes">
-                                @for (note of card.chrome.notes; track $index) {
-                                  <li [class]="'mc-note mc-note--' + note.tone">
-                                    <span class="visually-hidden">{{ note.tone === 'warning' ? 'Warning: ' : 'Note: ' }}</span>{{ note.text }}
-                                  </li>
-                                }
-                              </ul>
-                            }
-                            <ng-container *ngTemplateOutlet="cardFooter; context: { $implicit: card }"></ng-container>
-                          </div>
-                        </figure>
+                          }
+                        </dl>
                       }
-                    </div>
+                    }
+                    <p id="mc-all-hint" class="visually-hidden">Every figure as it downloads. Plus and minus zoom
+                      them all, and 0 fits one figure's height to the view; scroll to see the rest. Zoom affects
+                      only this view, never the exported images.</p>
+                    <p id="mc-all-tile-hint" class="visually-hidden">Press Enter to open this figure in the Single
+                      view.</p>
                   </div>
-                </div>
+                }
 
-                @if (figureTab === 'preview') {
-                  <div class="mc-fig-panel mc-fig-panel--preview" role="tabpanel" tabindex="0"
-                       id="mc-fig-panel-preview" aria-labelledby="mc-fig-tab-preview">
+                @if (figureTab === 'single') {
+                  <div class="mc-fig-panel mc-fig-panel--single" role="tabpanel" tabindex="0"
+                       id="mc-fig-panel-single" aria-labelledby="mc-fig-tab-single">
                     <!-- Three groups, not role="toolbar": a toolbar's arrow-key model would fight the
-                         slider's. Zoom and position are the preview's alone and never reach an export. -->
+                         slider's. Zoom and position are this view's alone and never reach an export. -->
                     <div class="mc-preview-toolbar">
                       <div class="mc-preview-group" role="group" aria-label="Figure">
                         <button type="button" class="action-btn" aria-label="Previous figure"
@@ -1615,9 +1522,9 @@
                     <div popover="hint" class="gh-tooltip" id="mc-tip-fig-copy"
                          style="position-anchor: --mc-tip-fig-copy">Copy as an image, with caption and notes</div>
 
-                    <!-- The stage exists only while the Preview tab is shown: it is sized to each
+                    <!-- The stage exists only while the Single tab is shown: it is sized to each
                          composition, and would otherwise keep a full-size bitmap alive beside the
-                         figures it copies. -->
+                         All tab's tiles. -->
                     <div class="mc-preview-stage" #previewStage [attr.aria-busy]="previewBusy ? 'true' : null">
                       <div class="mc-preview-viewport" #previewViewport tabindex="0" role="group"
                            aria-label="Figure preview viewport" aria-describedby="mc-preview-view-hint"
@@ -1635,7 +1542,7 @@
                     <p id="mc-preview-view-hint" class="visually-hidden">Drag, scroll or use the arrow keys to move
                       the figure. Ctrl and scroll zooms at the pointer. From the keyboard, plus and minus zoom,
                       0 fits the figure to the screen and 1 shows actual pixels. Zoom and position affect only
-                      this preview, never the exported image.</p>
+                      this view, never the exported image.</p>
                   </div>
                 }
               </div>

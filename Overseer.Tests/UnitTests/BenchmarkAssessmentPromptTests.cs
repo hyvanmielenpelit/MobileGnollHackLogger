@@ -219,9 +219,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsThirtyEight()
+    public void HarnessVersion_IsThirtyNine()
     {
-        Assert.Equal("38", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("39", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -763,18 +763,18 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs38_ScoringMethodIs12()
+    public void Versions_HarnessIs39_ScoringMethodIs12()
     {
-        Assert.Equal("38", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("39", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 38 keeps scoring method 12, under which ACCURACY is graded against the rubric and
+        // Harness 39 keeps scoring method 12, under which ACCURACY is graded against the rubric and
         // the board only and an own-knowledge suspicion becomes a "Suspected false: " unverified
-        // claim. The claim verifier judges the charged part of an accused sentence or a
-        // critical-error quote, accused sentences are checked at Accuracy 5 as well, and the
-        // synthesis carries harness-counted claim totals; none of these feeds a score. item_lookup
-        // searches the "item" and "artifact" paths, and item_lookup.md says so, which moves
-        // ToolGuidesSha256. A 38-stamped run differs from a 37-stamped one on HarnessVersion and
-        // ToolGuidesSha256.
+        // claim. A contested verdict is read from the comment and the accuracy evidence with game
+        // vocabulary masked and denied fabrications skipped; a disputed answer carries its
+        // accused-sentence verdict counts; a single cited line inside a #define header is noted as a
+        // macro definition and counts as Indeterminate; and a charged item is read from its own
+        // chargedPartVerdict. None of these feeds a score, and no tool guide or candidate prompt
+        // moves, so a 39-stamped run differs from a 38-stamped one on HarnessVersion alone.
         Assert.Equal(12, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

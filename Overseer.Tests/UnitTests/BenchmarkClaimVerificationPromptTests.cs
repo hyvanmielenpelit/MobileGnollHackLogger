@@ -472,4 +472,67 @@ public class BenchmarkClaimVerificationPromptTests
 
         Assert.Contains("Judge that part: a true clause elsewhere in the claim does not make the verdict Supported.", prompt);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildPrompt_Instruction3k_AsksForTheChargedPartVerdict_And3lFollowsIt_WithAndWithoutABoard(bool withBoard)
+    {
+        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
+
+        Assert.Contains("For an item that names a charged part, chargedPartVerdict is your verdict on that part alone, with its own citation in chargedPartBasis; the item's verdict field is ignored for such an item.", prompt);
+        Assert.Contains("3l. When a GnollHack wiki page states the property a claim is about — a spell's casting time, an item's effect, a stat block value — and your reading of the source seems to contradict it, name the wiki statement in your basis and cite the code that overrides it; the wiki's stat blocks are printed from the same game data. Without both, the verdict is Indeterminate.", prompt);
+
+        int index3k = prompt.IndexOf("3k. When a claim joins several statements", System.StringComparison.Ordinal);
+        int index3l = prompt.IndexOf("3l. When a GnollHack wiki page states", System.StringComparison.Ordinal);
+        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
+
+        Assert.True(index3l > index3k, "Instruction 3l must follow instruction 3k.");
+        Assert.True(index4 > index3l, "Instruction 4 must follow 3l, unrenumbered.");
+    }
+
+    [Fact]
+    public void BuildPrompt_AChargedItem_AsksForTheTwoChargedPartFieldsInTheSchema()
+    {
+        string prompt = BuildAccusedPrompt(new[] { "controlled teleport lets you choose where you land" });
+        string schema = prompt.Substring(prompt.IndexOf("--- JSON OUTPUT SCHEMA ---", System.StringComparison.Ordinal));
+
+        Assert.Contains("\"chargedPartVerdict\": \"Refuted\", // only for an item that names a charged part (ClaimIndex 0): \"Supported\" | \"Refuted\" | \"Indeterminate\"", schema);
+        Assert.Contains("\"chargedPartBasis\":", schema);
+        Assert.Contains("\"basis\": \"One-sentence explanation of the evidence found or why it is refuted/indeterminate.\",", schema);
+    }
+
+    [Fact]
+    public void BuildPrompt_WithoutAChargedItem_TheSchemaHasNoChargedPartFields()
+    {
+        string schema = BuildAccusedPrompt(new[] { AccusedSentence });
+
+        Assert.DoesNotContain("\"chargedPartVerdict\"", schema);
+        Assert.DoesNotContain("\"chargedPartBasis\"", schema);
+        Assert.DoesNotContain("\"chargedPartVerdict\"", BuildPrompt());
+    }
+
+    [Fact]
+    public void ChargedPartItems_MarksExactlyTheClaimsPrintedWithAChargedPartLine()
+    {
+        var claims = new List<string> { "Own claim.", AccusedSentence, AccusedSentence, "Stated by the assessor." };
+        var roles = new List<IReadOnlyList<string>>
+        {
+            new[] { BenchmarkClaimRoles.UnverifiedClaim },
+            new[] { BenchmarkClaimRoles.AccusedQuote },
+            new[] { BenchmarkClaimRoles.AccusedQuote },
+            new[] { BenchmarkClaimRoles.AssessorStatement }
+        };
+        var parts = new List<IReadOnlyList<string>?>
+        {
+            new[] { "Own" },
+            new[] { "dig down" },
+            new[] { AccusedSentence },
+            new[] { "assessor" }
+        };
+
+        var charged = BenchmarkClaimVerificationPrompt.ChargedPartItems(claims, roles, parts);
+
+        Assert.Equal(new[] { false, true, false, false }, charged);
+    }
 }

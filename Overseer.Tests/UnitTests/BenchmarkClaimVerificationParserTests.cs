@@ -227,5 +227,116 @@ public class BenchmarkClaimVerificationParserTests
         Assert.Equal(BenchmarkClaimVerdict.Refuted, verifications[0].Verdict);
         Assert.Null(verifications[0].Roles);
         Assert.True(BenchmarkClaimRoles.IsOrdinaryClaim(verifications[0]));
+        Assert.Null(verifications[0].ChargedPart);
+        Assert.Null(verifications[0].ItemVerdict);
+    }
+
+    private const string ChargedSentence = "Studying a spellbook takes 6 turns, and dig is a matter spell.";
+
+    [Fact]
+    public void Parse_AChargedItem_IsReadFromItsChargedPartVerdict_AndKeepsTheItemsOwnVerdict()
+    {
+        var claims = new List<string> { ChargedSentence };
+        string json = "{\"verifications\":[{\"claimIndex\":0,\"claim\":\"" + ChargedSentence + "\","
+            + "\"verdict\":\"Supported\",\"citation\":\"src/spell.c:640\",\"basis\":\"Dig is a matter spell.\","
+            + "\"chargedPartVerdict\":\"Refuted\",\"chargedPartBasis\":\"The delay is set per book in src/objects.c:3560, not 6 for every book.\"}]}";
+
+        var result = BenchmarkClaimVerificationParser.Parse(json, claims, new[] { true });
+
+        Assert.True(result.Success);
+        var v = Assert.Single(result.Verifications);
+        Assert.Equal(BenchmarkClaimVerdict.Refuted, v.Verdict);
+        Assert.Equal(BenchmarkClaimVerdict.Refuted, v.EffectiveVerdict);
+        Assert.Equal("The delay is set per book in src/objects.c:3560, not 6 for every book.", v.Basis);
+        Assert.Equal("The delay is set per book in src/objects.c:3560, not 6 for every book.", v.Citation);
+        Assert.Null(v.CitationNote);
+        Assert.True(v.ChargedPart);
+        Assert.Equal("Supported", v.ItemVerdict);
+        Assert.Equal("src/spell.c:640", v.ItemCitation);
+        Assert.Equal("Dig is a matter spell.", v.ItemBasis);
+        Assert.Equal(0, result.ClaimsSupportedCount);
+        Assert.Equal(1, result.ClaimsRefutedCount);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(",\"chargedPartVerdict\":\"Probably false\"")]
+    [InlineData(",\"chargedPartVerdict\":null")]
+    public void Parse_AChargedItemWithoutAChargedPartVerdict_IsIndeterminateWithTheNote(string chargedPartField)
+    {
+        var claims = new List<string> { ChargedSentence };
+        string json = "{\"verifications\":[{\"claimIndex\":0,\"claim\":\"" + ChargedSentence + "\","
+            + "\"verdict\":\"Supported\",\"citation\":\"src/spell.c:640\",\"basis\":\"Dig is a matter spell.\""
+            + chargedPartField + "}]}";
+
+        var result = BenchmarkClaimVerificationParser.Parse(json, claims, new[] { true });
+
+        var v = Assert.Single(result.Verifications);
+        Assert.Equal(BenchmarkClaimVerificationParser.ChargedPartNotJudgedNote, v.CitationNote);
+        Assert.Equal("the charged part was not judged separately", v.CitationNote);
+        Assert.Equal(BenchmarkClaimVerdict.Indeterminate, v.EffectiveVerdict);
+        Assert.Equal(BenchmarkClaimVerdict.Supported, v.Verdict);
+        Assert.Equal("Supported", v.ItemVerdict);
+        Assert.True(v.ChargedPart);
+        Assert.Equal(0, result.ClaimsSupportedCount);
+        Assert.Equal(1, result.ClaimsIndeterminateCount);
+    }
+
+    [Fact]
+    public void Parse_AChargedPartVerdictWhoseBasisCitesNothing_IsDemotedToIndeterminate()
+    {
+        var claims = new List<string> { ChargedSentence };
+        string json = "{\"verifications\":[{\"claimIndex\":0,\"claim\":\"" + ChargedSentence + "\","
+            + "\"verdict\":\"Supported\",\"citation\":\"src/spell.c:640\",\"basis\":\"b\","
+            + "\"chargedPartVerdict\":\"Refuted\",\"chargedPartBasis\":\"Books differ in delay.\"}]}";
+
+        var result = BenchmarkClaimVerificationParser.Parse(json, claims, new[] { true });
+
+        var v = Assert.Single(result.Verifications);
+        Assert.Equal(BenchmarkClaimVerdict.Indeterminate, v.Verdict);
+        Assert.Null(v.Citation);
+        Assert.Contains("missing citation", v.Basis);
+        Assert.Equal(1, result.CitationsMissingDemoted);
+    }
+
+    [Fact]
+    public void Parse_AnUnchargedItem_IgnoresAChargedPartVerdict()
+    {
+        var claims = new List<string> { ChargedSentence };
+        string json = "{\"verifications\":[{\"claimIndex\":0,\"claim\":\"" + ChargedSentence + "\","
+            + "\"verdict\":\"Supported\",\"citation\":\"src/spell.c:640\",\"basis\":\"b\","
+            + "\"chargedPartVerdict\":\"Refuted\",\"chargedPartBasis\":\"src/objects.c:3560\"}]}";
+
+        var withoutFlags = BenchmarkClaimVerificationParser.Parse(json, claims);
+        var withFalseFlag = BenchmarkClaimVerificationParser.Parse(json, claims, new[] { false });
+
+        foreach (var result in new[] { withoutFlags, withFalseFlag })
+        {
+            var v = Assert.Single(result.Verifications);
+            Assert.Equal(BenchmarkClaimVerdict.Supported, v.EffectiveVerdict);
+            Assert.Equal("src/spell.c:640", v.Citation);
+            Assert.Null(v.ChargedPart);
+            Assert.Null(v.ItemVerdict);
+            Assert.Null(v.CitationNote);
+        }
+    }
+
+    [Fact]
+    public void AChargedItem_RoundTripsThroughStoredJson()
+    {
+        var claims = new List<string> { ChargedSentence };
+        string json = "{\"verifications\":[{\"claimIndex\":0,\"claim\":\"" + ChargedSentence + "\","
+            + "\"verdict\":\"Supported\",\"citation\":\"src/spell.c:640\",\"basis\":\"b\","
+            + "\"chargedPartVerdict\":\"Refuted\",\"chargedPartBasis\":\"src/objects.c:3560 sets it per book.\"}]}";
+        var parsed = Assert.Single(BenchmarkClaimVerificationParser.Parse(json, claims, new[] { true }).Verifications);
+
+        string stored = System.Text.Json.JsonSerializer.Serialize(new[] { parsed });
+        var read = Assert.Single(System.Text.Json.JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(stored)!);
+
+        Assert.Equal(BenchmarkClaimVerdict.Refuted, read.EffectiveVerdict);
+        Assert.True(read.ChargedPart);
+        Assert.Equal("Supported", read.ItemVerdict);
+        Assert.Equal("src/spell.c:640", read.ItemCitation);
+        Assert.Contains("\"itemVerdict\":\"Supported\"", stored);
     }
 }

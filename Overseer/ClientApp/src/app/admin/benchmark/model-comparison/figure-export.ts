@@ -110,12 +110,11 @@ export function densityPresetFor(density: FigureExportDensity): FigureExportDens
 
 /** One offered export size. */
 export interface FigureExportResolution {
-  /** `'onscreen' | 'hd' | … | 'custom'`. */
+  /** `'hd' | 'fullhd' | … | 'custom'`. */
   readonly id: string;
   readonly label: string;
-  /** Null for `'onscreen'`, which follows the live canvas at the chosen pixel density. */
-  readonly widthPx: number | null;
-  readonly heightPx: number | null;
+  readonly widthPx: number;
+  readonly heightPx: number;
   /** The aspect ratio the size belongs to, as the picker's `<optgroup>` names it. */
   readonly group: string;
 }
@@ -129,8 +128,6 @@ export interface FigureExportResolution {
  * distinction behind arithmetic.
  */
 export const FIGURE_EXPORT_PRESETS: readonly FigureExportResolution[] = [
-  { id: 'onscreen', label: 'On-screen', widthPx: null, heightPx: null, group: 'On-screen' },
-
   { id: 'hd', label: 'HD — 1280 × 720', widthPx: 1280, heightPx: 720, group: '16:9' },
   { id: 'fullhd', label: 'Full HD — 1920 × 1080', widthPx: 1920, heightPx: 1080, group: '16:9' },
   { id: 'qhd', label: 'QHD — 2560 × 1440', widthPx: 2560, heightPx: 1440, group: '16:9' },
@@ -282,7 +279,7 @@ export const DEFAULT_FIGURE_TEXT_SIZES: FigureChromeTextSizes = { titlePx: 18, b
 
 /** One figure, with every piece of chrome the exported image must carry. */
 export interface FigureExportRequest {
-  /** The live chart canvas, or one rendered by {@link renderPlotOffscreen}. Read, never mutated. */
+  /** The plot, as {@link renderPlotOffscreen} renders it. Read, never mutated. */
   readonly canvas: HTMLCanvasElement;
   /** Title, badges, direction, detail, key, highlight and notes: everything the card and the export share. */
   readonly chrome: FigureChrome;
@@ -291,9 +288,9 @@ export interface FigureExportRequest {
   /** Absent draws at {@link DEFAULT_FIGURE_TEXT_SIZES}. */
   readonly textSizes?: FigureChromeTextSizes;
   readonly format: FigureExportFormat;
-  /** From {@link resolveFigureLayout}. Absent composes at the on-screen size and density. */
+  /** From {@link resolveFigureLayout}. Absent composes at the source canvas's own size, at `density`. */
   readonly layout?: FigureExportLayout | null;
-  /** Read only where there is no `layout`: the density the live canvas is composed at. */
+  /** Read only where there is no `layout`: the density the source canvas is composed at. */
   readonly density?: FigureExportDensity;
   readonly webpQuality?: WebpQuality;
 }
@@ -423,22 +420,15 @@ export function layoutBoxFor(pixelWidth: number, pixelHeight: number, textScale 
  *
  * `density` multiplies the bitmap and leaves the composition box alone, so it is required rather
  * than defaulted: a call site that omitted it would silently keep a factor of its own. `textScale`
- * is required for the same reason; it shrinks the composition box ({@link layoutBoxFor}) and is
- * ignored for the On-screen preset, whose box is the live canvas.
+ * is required for the same reason; it shrinks the composition box ({@link layoutBoxFor}) at every
+ * size.
  */
 export function resolveFigureLayout(
   request: Omit<FigureExportRequest, 'canvas' | 'format'>,
   resolution: FigureExportResolution,
-  onScreen: { width: number; height: number },
   density: FigureExportDensity,
   textScale: number
 ): { layout: FigureExportLayout | null; refusal: string | null } {
-  if (resolution.widthPx === null && resolution.heightPx === null) {
-    const layout = onScreenLayout(request, onScreen, density);
-    const refusal = bitmapRefusal(layout.layoutWidth, layout.layoutHeight, density);
-    return refusal ? { layout: null, refusal } : { layout, refusal: null };
-  }
-
   const requestedWidth = resolution.widthPx;
   const requestedHeight = resolution.heightPx;
   if (!isUsableDimension(requestedWidth) || !isUsableDimension(requestedHeight)) {
@@ -681,14 +671,13 @@ export interface OffscreenPlotConfig {
 /**
  * Renders one plot into a transient offscreen chart sized to `layout`, and returns a snapshot of it.
  *
- * An explicit resolution needs a plot box of its own: raising the live chart's device pixel ratio
- * sharpens it but cannot change its layout box without reflowing the visible page. The chart is
- * therefore built in a container parked off-screen, sized to the layout's plot box, and torn down
- * again — construction, snapshot, `destroy` and removal all inside one `try/finally`, so a throw
- * cannot strand a detached chart or its container.
+ * Every figure — on the page, in the preview and in a download — is plotted here, so all three are
+ * the same rendering. The chart is built in a container parked off-screen, sized to the layout's
+ * plot box, and torn down again — construction, snapshot, `destroy` and removal all inside one
+ * `try/finally`, so a throw cannot strand a detached chart or its container.
  *
- * The returned canvas is a copy: `destroy` clears the chart's own canvas. Failure returns null, so
- * the caller can fall back to the live-canvas path rather than losing the export.
+ * The returned canvas is a copy: `destroy` clears the chart's own canvas. Failure returns null, and
+ * the caller reports the figure as not composed.
  *
  * Chart.js controllers, elements and scales are registered globally by `provideCharts`, so no
  * further registration happens here.
@@ -1141,27 +1130,6 @@ function measureFooter(
     computedText,
     twoLines: !fitsOneLine,
     height: fitsOneLine ? lineHeight : lineHeight * 2
-  };
-}
-
-/** The box the live canvas is already laid out in, written at the chosen density. */
-function onScreenLayout(
-  request: FigureChromeSource,
-  onScreen: { width: number; height: number },
-  density: FigureExportDensity
-): FigureExportLayout {
-  const plotWidth = Math.max(onScreen.width, MIN_CONTENT_WIDTH);
-  const layoutWidth = plotWidth + PADDING * 2;
-  const plotHeight = onScreen.height;
-  const layoutHeight = measureFigureChrome(request, plotWidth).height + plotHeight;
-  return {
-    layoutWidth,
-    layoutHeight,
-    plotWidth,
-    plotHeight,
-    density,
-    pixelWidth: Math.round(layoutWidth * density),
-    pixelHeight: Math.round(layoutHeight * density)
   };
 }
 

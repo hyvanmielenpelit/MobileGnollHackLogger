@@ -19,20 +19,27 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { BaseChartDirective } from 'ng2-charts';
+import { NG_CHARTS_CONFIGURATION } from 'ng2-charts';
+import { Chart, defaults as chartDefaults } from 'chart.js';
 import type { ChartConfiguration, ChartType, Plugin } from 'chart.js';
+import type { Subscription } from 'rxjs';
 
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import {
   FigureChrome,
-  FigureDirection,
   FigureFooter,
   FigureNote,
-  figureDirectionRotation,
-  figureDirectionText,
   figureSummary,
   formatComputedAt
 } from './figure-chrome';
+import {
+  DEFAULT_FIGURE_RESOLUTION_ID,
+  FigureSizeSettings,
+  defaultFigureSize,
+  readStoredFigureSize,
+  sameFigureSize,
+  writeStoredFigureSize
+} from './figure-size';
 import { DEFAULT_FIGURE_STYLE, FigureStyle, normalizeFigureStyle } from './figure-style';
 import { FigureStylePanelComponent, FigureStylePanelKind } from './figure-style-panel.component';
 import { exactFilter, TableState } from '../../../shared/data-table/table-state';
@@ -101,7 +108,6 @@ import {
   composeFigureImage,
   copyImageToClipboard,
   densityPercentLabel,
-  densityPresetFor,
   displayDensity,
   encodeFigureImage,
   figureArchiveFilename,
@@ -120,6 +126,7 @@ import {
   canZoomPreviewIn,
   canZoomPreviewOut,
   clampPreviewZoom,
+  fitHeightZoom,
   formatPreviewZoom,
   nextPreviewZoomStop,
   previewRasterZoom,
@@ -176,40 +183,66 @@ const SLOW_COMPARISON_MS = 15_000;
 /** Where the figure style is kept, per browser. Read and written in `try/catch`; never required. */
 export const FIGURE_STYLE_STORAGE_KEY = 'overseer.modelComparison.figureStyle';
 
-/** Step 4's two views of the figures: every card, or one figure composed at export size. */
-export type FigureViewTab = 'charts' | 'preview';
+/**
+ * Step 4's two views of the figures, both composed by the export pipeline: every figure, or one
+ * figure with zoom and pan.
+ */
+export type FigureViewTab = 'all' | 'single';
 
 /** The figure settings sidebar's three tabs, in order. */
 export type FigureSidebarTab = 'emphasis' | 'style' | 'download';
 
 /**
- * Where the sidebar's collapsed state and tab are kept, per browser, as
- * `{ version: 1, collapsed, tab }`. Read and written in `try/catch`; never required.
+ * Where the sidebar's collapsed state and tab, the figure view and whether the Style tab's Figure
+ * size section is open are kept, per browser, as `{ version: 1, collapsed, tab, view,
+ * figureSizeOpen }`. Read and written in `try/catch`; never required.
  */
 export const FIGURE_SIDEBAR_STORAGE_KEY = 'overseer.modelComparison.figureSidebar';
 
 const FIGURE_SIDEBAR_TABS: readonly FigureSidebarTab[] = ['emphasis', 'style', 'download'];
 
+/** The stored workspace layout, field by field. */
+interface StoredFigureSidebar {
+  readonly collapsed: boolean;
+  readonly tab: FigureSidebarTab;
+  readonly view: FigureViewTab;
+  readonly figureSizeOpen: boolean;
+}
+
 /** The stored sidebar state, field by field; the default wherever storage is absent or unreadable. */
-function readStoredFigureSidebar(): { collapsed: boolean; tab: FigureSidebarTab } {
-  const fallback = { collapsed: false, tab: 'emphasis' as FigureSidebarTab };
+function readStoredFigureSidebar(): StoredFigureSidebar {
+  const fallback: StoredFigureSidebar = { collapsed: false, tab: 'emphasis', view: 'all', figureSizeOpen: true };
   try {
     const raw = localStorage.getItem(FIGURE_SIDEBAR_STORAGE_KEY);
     const stored: unknown = raw === null ? null : JSON.parse(raw);
     if (stored === null || typeof stored !== 'object') {
       return fallback;
     }
-    const { collapsed, tab: storedTab } = stored as { collapsed?: unknown; tab?: unknown };
+    const { collapsed, tab: storedTab, view: storedView, figureSizeOpen } =
+      stored as { collapsed?: unknown; tab?: unknown; view?: unknown; figureSizeOpen?: unknown };
     // 'export' is the Download tab's earlier stored name.
     const tab = storedTab === 'export' ? 'download' : storedTab;
+    // 'charts' and 'preview' are the All and Single views' earlier stored names.
+    const view = storedView === 'charts' ? 'all' : storedView === 'preview' ? 'single' : storedView;
     return {
       collapsed: typeof collapsed === 'boolean' ? collapsed : fallback.collapsed,
-      tab: FIGURE_SIDEBAR_TABS.includes(tab as FigureSidebarTab) ? tab as FigureSidebarTab : fallback.tab
+      tab: FIGURE_SIDEBAR_TABS.includes(tab as FigureSidebarTab) ? tab as FigureSidebarTab : fallback.tab,
+      view: view === 'all' || view === 'single' ? view : fallback.view,
+      figureSizeOpen: typeof figureSizeOpen === 'boolean' ? figureSizeOpen : fallback.figureSizeOpen
     };
   } catch {
     return fallback;
   }
 }
+
+/** The All tab's scroller padding, in CSS px; `.mc-all-viewport` in the stylesheet matches it. */
+const ALL_VIEWPORT_PADDING = 16;
+
+/** The All tab's gap between tiles, in CSS px; `.mc-all-grid` matches it. */
+const ALL_TILE_GAP = 16;
+
+/** How long the All tab waits for changes to stop before it re-composes its tiles. */
+const ALL_COMPOSE_QUIET_MS = 120;
 
 /** One figure's chrome, as the export composer and the layout resolver both take it. */
 type FigureExportChrome = Omit<FigureExportRequest, 'canvas' | 'format' | 'layout'>;
@@ -242,12 +275,12 @@ export interface ComparisonStatTile {
 }
 
 /**
- * One figure ready to render: its chart.js inputs beside the chrome the template draws as real text.
+ * One figure ready to compose: its chart.js inputs beside the chrome the export composer draws.
  *
  * The chart core types each figure by its own chart type and datum shape, which is what makes its
- * builders type-safe; a template renders them in one loop, so the card widens them back to the
- * directive's own erased inputs. The chrome stays structured data rather than a chart.js plugin,
- * so it is selectable text a screen reader reaches without touching the canvas.
+ * builders type-safe; the views compose them in one loop, so the card widens them back to the
+ * offscreen renderer's erased inputs. The chrome stays structured data rather than a chart.js
+ * plugin, so the composer lays it out and the tile's accessible name summarises it.
  */
 export interface ComparisonFigureCard {
   readonly id: string;
@@ -258,7 +291,6 @@ export interface ComparisonFigureCard {
   readonly data: ChartConfiguration['data'];
   readonly options: ChartConfiguration['options'];
   readonly plugins: Plugin[];
-  readonly heightPx: number;
 }
 
 /**
@@ -293,7 +325,7 @@ export interface ComparisonFigureCard {
 @Component({
   selector: 'app-benchmark-model-comparison',
   standalone: true,
-  imports: [CommonModule, FormsModule, BaseChartDirective, SortHeaderComponent, TablePagerComponent, ProviderBadgeComponent, ToastComponent, FigureStylePanelComponent],
+  imports: [CommonModule, FormsModule, SortHeaderComponent, TablePagerComponent, ProviderBadgeComponent, ToastComponent, FigureStylePanelComponent],
   templateUrl: './model-comparison.component.html',
   styleUrls: ['./model-comparison.component.scss']
 })
@@ -379,11 +411,16 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** Set when the result lands while Cancel Comparison has focus; consumed after the next render. */
   private restoreFocusToNext = false;
 
-  /** The container query root, measured to decide P1's bar orientation. */
+  /** The figure views' box, measured to decide P1's bar orientation. */
   @ViewChild('chartsHost') chartsHost?: ElementRef<HTMLElement>;
 
-  /** The live chart directives, in template order, so an export reads the rendered canvas. */
-  @ViewChildren(BaseChartDirective) chartDirectives?: QueryList<BaseChartDirective>;
+  /**
+   * The chart types the figures are plotted with, from the application's `provideCharts`.
+   *
+   * No `BaseChartDirective` renders on this view — every figure is plotted offscreen — so the
+   * registration that directive performs on construction is performed here instead.
+   */
+  private readonly chartsConfig = inject(NG_CHARTS_CONFIGURATION, { optional: true });
 
   // --- Client-side filter state, all of it scoping every figure at once ---
 
@@ -469,6 +506,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   private unsubscribeReducedMotion: (() => void) | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
+  /** The element `resizeObserver` watches; a new one, after step 4 is rendered again, is re-observed. */
+  private observedChartsHost: HTMLElement | null = null;
+
   /**
    * Sort, filter and page state for the table view.
    *
@@ -498,6 +538,12 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
+    if (this.chartsConfig?.registerables) {
+      Chart.register(...this.chartsConfig.registerables);
+    }
+    if (this.chartsConfig?.defaults) {
+      chartDefaults.set(this.chartsConfig.defaults);
+    }
     this.figureStyle = this.readStoredFigureStyle();
     this.unsubscribeReducedMotion = this.reducedMotion.subscribe(() => this.rebuild());
     this.rebuild();
@@ -532,22 +578,27 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   ngAfterViewInit(): void {
-    this.observeContainerWidth();
+    if (this.chartsHost) {
+      this.observeContainerWidth();
+    }
     // The panel renders behind the host's @if, so the polyfill's first scan never saw these anchors.
     refreshAnchorPositioning();
   }
 
   /**
-   * The chart container lives inside the figure branch, so it does not exist on the pass that runs
-   * `ngAfterViewInit` for a set that starts empty or incomparable. The observer is attached the
-   * first time the element appears instead, and never re-attached.
+   * The figure views' box lives inside the figure branch, so it does not exist on the pass that
+   * runs `ngAfterViewInit` for a set that starts empty or incomparable, and it is a new element each
+   * time step 4 is rendered again. The observer is attached whenever the element it watches is not
+   * the one on the page.
    *
-   * The preview stage can leave the DOM or come back without a tab click — a refetch takes the
-   * figures away or returns them. Leaving tears down only unbound state, since a bound field
-   * changed inside this hook faults the check; returning re-attaches outside the check pass.
+   * Both views can leave the DOM or come back without a tab click — a refetch takes the figures
+   * away or returns them, and leaving step 4 removes them. Leaving tears down only unbound state,
+   * since a bound field changed inside this hook faults the check; returning re-attaches outside the
+   * check pass.
    */
   ngAfterViewChecked(): void {
-    if (this.resizeObserver === null && this.chartsHost) {
+    const host = this.chartsHost?.nativeElement ?? null;
+    if (host !== null && host !== this.observedChartsHost) {
       this.observeContainerWidth();
     }
     if (this.restoreFocusToNext) {
@@ -559,12 +610,24 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       this.disconnectStageObserver();
       this.previewActive = false;
       this.previewSeq++;
-    } else if (this.figureTab === 'preview' && this.previewStage && !this.previewActive && !this.previewAttachQueued) {
+    } else if (this.figureTab === 'single' && this.previewStage && !this.previewActive && !this.previewAttachQueued) {
       this.previewAttachQueued = true;
       queueMicrotask(() => {
         this.previewAttachQueued = false;
-        if (this.figureTab === 'preview' && this.previewStage && !this.previewActive) {
+        if (this.figureTab === 'single' && this.previewStage && !this.previewActive) {
           this.attachPreview();
+          this.cdr.markForCheck();
+        }
+      });
+    }
+    if (this.allActive && !this.allViewport) {
+      this.teardownAll();
+    } else if (this.figureTab === 'all' && this.allViewport && !this.allActive && !this.allAttachQueued) {
+      this.allAttachQueued = true;
+      queueMicrotask(() => {
+        this.allAttachQueued = false;
+        if (this.figureTab === 'all' && this.allViewport && !this.allActive) {
+          this.attachAll();
           this.cdr.markForCheck();
         }
       });
@@ -580,9 +643,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.reducedMotion.dispose();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    this.observedChartsHost = null;
     this.disconnectStageObserver();
     this.cancelScheduledPreview();
     this.cancelScheduledStyle();
+    this.teardownAll();
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -814,8 +879,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       return;
     }
     if (this.step === 4 && step !== 4) {
-      // While the stage still exists. `figureTab` is kept, so returning re-attaches it.
+      // While the views still exist. `figureTab` is kept, so returning re-attaches the one shown.
       this.detachPreview();
+      this.detachAll();
     }
     this.step = step;
     // Marked, like every other mutator here: several callers are outside a template event —
@@ -889,6 +955,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     const next: ComparisonWizardStep = this.comparison === null ? 1 : !previous ? 2 : this.step;
     if (this.step === 4 && next !== 4) {
       this.detachPreview();
+      this.detachAll();
     }
     this.step = next;
   }
@@ -954,8 +1021,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * Both scatter toggles live in the sidebar's Style tab and re-draw the charts and, through
-   * `rebuild`, the preview while it is shown.
+   * Both scatter toggles live in the sidebar's Style tab and, through `rebuild`, re-compose
+   * whichever figure view is shown.
    */
   onScatterDirectLabelsChange(on: boolean): void {
     this.scatterDirectLabels = on;
@@ -1014,13 +1081,14 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * Hover and keyboard focus light the same model in all three panels and in the profile.
+   * Hover and keyboard focus on an Emphasis entry light the same model in all three panels and in
+   * the profile; on the All tab the tiles re-compose once the pointer settles.
    *
-   * Refused on the Preview tab, where a transient hover would be composed into the export and
-   * recompose on every pass of the pointer. Clearing is always accepted.
+   * Refused on the Single tab, where a transient hover would be composed into the figure about to
+   * be exported and recompose on every pass of the pointer. Clearing is always accepted.
    */
   setHighlight(key: string | null): void {
-    if (this.highlightedKey === key || (key !== null && this.figureTab === 'preview')) {
+    if (this.highlightedKey === key || (key !== null && this.figureTab === 'single')) {
       return;
     }
     this.highlightedKey = key;
@@ -1189,17 +1257,12 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (!panels || !this.showFigures) {
       return [];
     }
-    const height = this.panelHeight();
-    return [
-      this.toCard(panels.quality, height),
-      this.toCard(panels.speed, height),
-      this.toCard(panels.cost, height)
-    ];
+    return [this.toCard(panels.quality), this.toCard(panels.speed), this.toCard(panels.cost)];
   }
 
   /** P2 — the normalized profile, suppressed below three entries. */
   get profileCard(): ComparisonFigureCard | null {
-    return this.figures && this.showProfile ? this.toCard(this.figures.profile, 340) : null;
+    return this.figures && this.showProfile ? this.toCard(this.figures.profile) : null;
   }
 
   /** S1-S3 — the three scatters, which render from two entries upward. */
@@ -1208,24 +1271,16 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (!figures || !this.showFigures) {
       return [];
     }
-    const height = this.scatterHeight();
-    return [
-      this.toCard(figures.qualitySpeed, height),
-      this.toCard(figures.qualityCost, height),
-      this.toCard(figures.speedCost, height)
-    ];
+    return [this.toCard(figures.qualitySpeed), this.toCard(figures.qualityCost), this.toCard(figures.speedCost)];
   }
 
-  private toCard(
-    spec: {
-      id: string;
-      title: string;
-      chrome: FigureChrome;
-      config: { type: string; data: unknown; options?: unknown };
-      plugins: Plugin[];
-    },
-    heightPx: number
-  ): ComparisonFigureCard {
+  private toCard(spec: {
+    id: string;
+    title: string;
+    chrome: FigureChrome;
+    config: { type: string; data: unknown; options?: unknown };
+    plugins: Plugin[];
+  }): ComparisonFigureCard {
     return {
       id: spec.id,
       title: spec.title,
@@ -1234,8 +1289,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       type: spec.config.type as ChartType,
       data: spec.config.data as ChartConfiguration['data'],
       options: spec.config.options as ChartConfiguration['options'],
-      plugins: spec.plugins,
-      heightPx
+      plugins: spec.plugins
     };
   }
 
@@ -1290,13 +1344,13 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.exportNotice = null;
   }
 
-  // --- Export resolution ---
+  // --- Figure size ---
   //
-  // Presets plus a custom width and height, and a pixel density beside them. Every explicit size
-  // composes at one layout width and scales, so a 4K export and a Full HD export differ in pixels
-  // and not in relative type size; the density then multiplies the bitmap of whichever size was
-  // chosen, leaving the composition alone. The on-screen preset follows the rendered figure at
-  // that same density.
+  // Presets plus a custom width and height, a pixel density and a text size, held as one
+  // `FigureSizeSettings` in the Style tab. They shape every figure: the All tab, the Single tab and
+  // every download compose at them. Every size composes at one layout width and scales, so a 4K
+  // figure and a Full HD figure differ in pixels and not in relative type size; the density then
+  // multiplies the bitmap of whichever size was chosen, leaving the composition alone.
 
   readonly exportPresets = FIGURE_EXPORT_PRESETS;
 
@@ -1319,13 +1373,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    */
   readonly displayDensity = displayDensity();
 
-  /** A listed factor, or `'custom'` for the percentage field beside it. */
-  exportDensitySelection: number | 'custom' = densityPresetFor(this.displayDensity) ?? 'custom';
-  customExportDensityPercent = Math.round(this.displayDensity * 100);
-
-  exportResolutionId = 'onscreen';
-  customExportWidth = 1920;
-  customExportHeight = 1080;
+  /**
+   * Size, density and text size, as the Style tab's Figure size section sets them. Read from
+   * storage when the component is created and written on every change; replaced, never mutated.
+   */
+  figureSize: FigureSizeSettings = readStoredFigureSize(this.displayDensity);
 
   /** On, one custom side follows the other so the shape survives a change of size. */
   customRatioLocked = false;
@@ -1334,34 +1386,36 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   private customRatio = 16 / 9;
 
   get isCustomResolution(): boolean {
-    return this.exportResolutionId === 'custom';
+    return this.figureSize.resolutionId === 'custom';
   }
 
   /** The chosen preset, or the custom pair clamped into the supported range. */
   get exportResolution(): FigureExportResolution {
     if (!this.isCustomResolution) {
-      return this.exportPresets.find(preset => preset.id === this.exportResolutionId)
+      return this.exportPresets.find(preset => preset.id === this.figureSize.resolutionId)
+        ?? this.exportPresets.find(preset => preset.id === DEFAULT_FIGURE_RESOLUTION_ID)
         ?? this.exportPresets[0];
     }
     return {
       id: 'custom',
       label: 'Custom',
       group: 'Custom',
-      widthPx: this.clampDimension(this.customExportWidth),
-      heightPx: this.clampDimension(this.customExportHeight)
+      widthPx: this.clampDimension(this.figureSize.customWidthPx),
+      heightPx: this.clampDimension(this.figureSize.customHeightPx)
     };
   }
 
   get isCustomDensity(): boolean {
-    return this.exportDensitySelection === 'custom';
+    return this.figureSize.densitySelection === 'custom';
   }
 
   /** The chosen factor: a listed preset, or the custom percentage clamped into its bounds. */
   get exportDensity(): number {
-    if (this.exportDensitySelection !== 'custom') {
-      return this.exportDensitySelection;
+    const selection = this.figureSize.densitySelection;
+    if (selection !== 'custom') {
+      return selection;
     }
-    return this.clampDensityPercent(this.customExportDensityPercent) / 100;
+    return this.clampDensityPercent(this.figureSize.customDensityPercent) / 100;
   }
 
   /** The percentage the read-outs name the current density by. */
@@ -1376,20 +1430,17 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       : densityPercentLabel(preset);
   }
 
-  /** The current size's shape, or empty for the on-screen size, which has no fixed one. */
+  /** The current size's shape, e.g. `16:9`. */
   get exportAspectLabel(): string {
     const resolution = this.exportResolution;
-    if (resolution.widthPx === null || resolution.heightPx === null) {
-      return '';
-    }
     return aspectRatioLabel(resolution.widthPx, resolution.heightPx);
   }
 
   /**
    * The size and format in one line, for the *Download all* tooltip.
    *
-   * The figure bar carries the settings as a read-out rather than as controls: the controls live in
-   * the sidebar's Download tab, beside the preview that shows their effect.
+   * The figure bar carries the settings as a read-out rather than as controls: the size lives in
+   * the sidebar's Style tab and the format in its Download tab, beside the figures they shape.
    */
   get exportSummary(): string {
     const format = this.exportFormat === 'webp'
@@ -1415,13 +1466,13 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       return '';
     }
     const bad = [
-      this.isUsableDimension(this.customExportWidth) ? '' : 'width',
-      this.isUsableDimension(this.customExportHeight) ? '' : 'height'
+      this.isUsableDimension(this.figureSize.customWidthPx) ? '' : 'width',
+      this.isUsableDimension(this.figureSize.customHeightPx) ? '' : 'height'
     ].filter(name => name !== '');
     if (bad.length === 0) {
       return '';
     }
-    return `The export ${bad.join(' and ')} must be between ${this.minExportDimension} and ` +
+    return `The figure ${bad.join(' and ')} must be between ${this.minExportDimension} and ` +
       `${this.maxExportDimension} px.`;
   }
 
@@ -1430,14 +1481,14 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (!this.isCustomDensity) {
       return '';
     }
-    const percent = this.customExportDensityPercent;
+    const percent = this.figureSize.customDensityPercent;
     const usable = Number.isFinite(percent)
       && percent >= this.minExportDensityPercent
       && percent <= this.maxExportDensityPercent;
     if (usable) {
       return '';
     }
-    return `The export density must be between ${this.minExportDensityPercent} and ` +
+    return `The pixel density must be between ${this.minExportDensityPercent} and ` +
       `${this.maxExportDensityPercent} %.`;
   }
 
@@ -1450,9 +1501,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       return '';
     }
     const resolution = this.exportResolution;
-    if (resolution.widthPx === null || resolution.heightPx === null) {
-      return '';
-    }
     return bitmapRefusal(resolution.widthPx, resolution.heightPx, this.exportDensity) ?? '';
   }
 
@@ -1465,10 +1513,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   get exportDimensionsLabel(): string {
     const resolution = this.exportResolution;
     const percent = this.exportDensityLabel;
-    if (resolution.widthPx === null || resolution.heightPx === null) {
-      return `Each figure’s on-screen size at ${percent} — the width follows the panel it is ` +
-        'rendered in.';
-    }
     const density = this.exportDensity;
     const box = layoutBoxFor(resolution.widthPx, resolution.heightPx, this.exportTextScale);
     const written = `${Math.round(resolution.widthPx * density)} × ` +
@@ -1483,19 +1527,42 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       `${this.formatDensity(box.density * density)}× density`;
   }
 
+  /** The closed Figure size section's one-line read-out. */
+  get figureSizeReadout(): string {
+    const resolution = this.exportResolution;
+    const size = this.isCustomResolution
+      ? `Custom ${resolution.widthPx} × ${resolution.heightPx}`
+      : resolution.label;
+    return `${size} · ${this.exportDensityLabel} · text ${this.figureSize.textScalePercent} %`;
+  }
+
+  /** Whether the Figure size section holds its defaults, which is when its reset has nothing to do. */
+  get figureSizeIsDefault(): boolean {
+    return sameFigureSize(this.figureSize, defaultFigureSize(this.displayDensity));
+  }
+
+  /** What the Figure size section's status line announces after a reset; cleared by the next change. */
+  figureSizeResetStatus = '';
+
+  /** Restores Full HD, the display's own density and 100 % text. The custom ratio lock is left alone. */
+  resetFigureSize(): void {
+    if (this.figureSizeIsDefault) {
+      return;
+    }
+    this.setFigureSize(defaultFigureSize(this.displayDensity));
+    this.figureSizeResetStatus = 'Figure size reset to defaults.';
+  }
+
   onExportResolutionChange(value: string): void {
-    this.exportResolutionId = value;
-    this.schedulePreview();
+    this.setFigureSize({ resolutionId: value });
   }
 
   onExportDensityChange(value: number | 'custom'): void {
-    this.exportDensitySelection = value;
-    this.schedulePreview();
+    this.setFigureSize({ densitySelection: value });
   }
 
   onCustomDensityChange(percent: number): void {
-    this.customExportDensityPercent = percent;
-    this.schedulePreview();
+    this.setFigureSize({ customDensityPercent: percent });
   }
 
   /**
@@ -1508,57 +1575,60 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   lockCustomRatio(locked: boolean): void {
     this.customRatioLocked = locked;
     if (locked) {
-      const width = this.clampDimension(this.customExportWidth);
-      const height = this.clampDimension(this.customExportHeight);
+      const width = this.clampDimension(this.figureSize.customWidthPx);
+      const height = this.clampDimension(this.figureSize.customHeightPx);
       this.customRatio = height > 0 ? width / height : 1;
     }
-    this.schedulePreview();
+    this.cdr.markForCheck();
   }
 
   onCustomWidthChange(width: number): void {
-    this.customExportWidth = width;
-    if (this.customRatioLocked) {
-      this.customExportHeight = this.clampDimension(Math.round(width / this.customRatio));
-    }
-    this.schedulePreview();
+    this.setFigureSize(this.customRatioLocked
+      ? { customWidthPx: width, customHeightPx: this.clampDimension(Math.round(width / this.customRatio)) }
+      : { customWidthPx: width });
   }
 
   onCustomHeightChange(height: number): void {
-    this.customExportHeight = height;
-    if (this.customRatioLocked) {
-      this.customExportWidth = this.clampDimension(Math.round(height * this.customRatio));
-    }
-    this.schedulePreview();
+    this.setFigureSize(this.customRatioLocked
+      ? { customHeightPx: height, customWidthPx: this.clampDimension(Math.round(height * this.customRatio)) }
+      : { customHeightPx: height });
   }
 
   onFigureWebpQualityChange(value: WebpQuality): void {
     this.figureWebpQuality = value;
-    this.schedulePreview();
   }
-
-  /** Composition text size as a percentage: larger composes in a smaller box, at the same pixel size. */
-  exportTextScalePercent = 100;
 
   readonly minExportTextScalePercent = FIGURE_EXPORT_MIN_TEXT_SCALE_PERCENT;
   readonly maxExportTextScalePercent = FIGURE_EXPORT_MAX_TEXT_SCALE_PERCENT;
 
   /** The text size as the factor the layout resolver takes. */
   get exportTextScale(): number {
-    return this.exportTextScalePercent / 100;
+    return this.figureSize.textScalePercent / 100;
   }
 
-  /** On-screen exports follow the live canvas, whose text is the page's own. */
-  get exportTextScaleDisabled(): boolean {
-    return this.exportResolution.widthPx === null || this.exportResolution.heightPx === null;
-  }
-
+  /** Composition text size as a percentage: larger composes in a smaller box, at the same pixel size. */
   onExportTextScaleChange(percent: number): void {
     const value = Number.isFinite(percent) ? Math.round(percent) : 100;
-    this.exportTextScalePercent = Math.min(
-      this.maxExportTextScalePercent,
-      Math.max(this.minExportTextScalePercent, value)
-    );
+    this.setFigureSize({
+      textScalePercent: Math.min(this.maxExportTextScalePercent, Math.max(this.minExportTextScalePercent, value))
+    });
+  }
+
+  /**
+   * Replaces the size, stores it and re-composes whichever view is shown. The All tab's tiles take
+   * their new box at once; their bitmaps follow once the change pauses.
+   */
+  private setFigureSize(patch: Partial<FigureSizeSettings>): void {
+    this.figureSize = { ...this.figureSize, ...patch };
+    writeStoredFigureSize(this.figureSize);
+    this.figureSizeResetStatus = '';
     this.schedulePreview();
+    if (this.allActive) {
+      this.refreshAllGeometry();
+      this.markAllStale();
+      this.scheduleAllCompose();
+    }
+    this.cdr.markForCheck();
   }
 
   /** Every card currently rendered, in the order the template draws them. */
@@ -1588,18 +1658,14 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * Puts one figure on the system clipboard, composed exactly as the on-screen download composes
-   * it — chrome and footer inside the same bitmap.
+   * Puts one figure on the system clipboard, composed exactly as its download composes it — at the
+   * figure size, chrome and footer inside the same bitmap — and always as a PNG.
    *
    * There is deliberately no *Copy all figures*: an operating-system clipboard holds one image, so
    * a batch would appear to copy six and silently keep the last.
    */
   async copyFigure(card: ComparisonFigureCard): Promise<void> {
-    if (this.exporting) {
-      return;
-    }
-    const canvas = this.canvasFor(card);
-    if (!canvas) {
+    if (this.exporting || this.exportSizeError !== '') {
       return;
     }
     this.exporting = true;
@@ -1607,9 +1673,12 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.cdr.markForCheck();
 
     try {
-      const encoded = await this.encodeFromLiveCanvas(
-        this.exportChrome(card), canvas, this.exportDensity, 'png');
-      const outcome = await copyImageToClipboard(encoded.blob);
+      const figure = await this.exportOneFigure(card, this.exportResolution, 'png');
+      if (!figure.result) {
+        this.announce(figure.refusal ?? 'The figure could not be copied.', 'error');
+        return;
+      }
+      const outcome = await copyImageToClipboard(figure.result.blob);
       if (outcome === 'copied') {
         this.announce(`Copied ${card.title} to the clipboard.`, 'success');
       } else if (outcome === 'unsupported') {
@@ -1652,16 +1721,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     const stamp = new Date();
     const entries: FigureArchiveEntry[] = [];
     let fellBack = false;
-    let liveFallback = false;
     let pixels = '';
     const refusals: string[] = [];
     try {
       for (const card of cards) {
-        const canvas = this.canvasFor(card);
-        if (!canvas) {
-          continue;
-        }
-        const outcome = await this.exportOneFigure(card, canvas, resolution);
+        const outcome = await this.exportOneFigure(card, resolution);
         if (outcome.refusal) {
           refusals.push(outcome.refusal);
           continue;
@@ -1670,7 +1734,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
           continue;
         }
         fellBack = fellBack || outcome.result.fellBackToPng;
-        liveFallback = liveFallback || outcome.liveFallback;
         pixels = outcome.pixels || pixels;
         entries.push({
           name: figureExportFilename(card.id, outcome.result.format, stamp),
@@ -1685,7 +1748,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         saveFigureBlob(await buildFigureArchive(entries), archive);
       }
       this.announce(
-        this.exportOutcomeSummary(entries.length, cards.length, pixels, fellBack, liveFallback, refusals, archive),
+        this.exportOutcomeSummary(entries.length, cards.length, pixels, fellBack, refusals, archive),
         entries.length > 0 && refusals.length === 0 ? 'success' : 'error'
       );
     } catch {
@@ -1699,93 +1762,56 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /**
    * Encodes one figure at the requested resolution, or refuses it.
    *
-   * An explicit size needs a plot box of its own, which the live chart cannot be given without
-   * reflowing the visible page, so the plot is rebuilt in a transient offscreen chart. Where that
-   * cannot be built the live canvas is composed instead and the status says so: an export never
-   * simply fails.
+   * The plot is rendered in a transient offscreen chart sized to the layout's own plot box — the
+   * same composition the All and Single tabs show. A figure whose chart cannot be built is refused
+   * in words, like a figure whose caveats do not fit.
+   *
+   * The format is a parameter rather than the control's value because the clipboard path is fixed
+   * at PNG: every engine that implements `ClipboardItem` rejects `image/webp` in one.
    */
   private async exportOneFigure(
     card: ComparisonFigureCard,
-    canvas: HTMLCanvasElement,
-    resolution: FigureExportResolution
+    resolution: FigureExportResolution,
+    format: FigureExportFormat = this.exportFormat
   ): Promise<{
     result: FigureExportResult | null;
     refusal: string | null;
-    liveFallback: boolean;
     pixels: string;
   }> {
     const chrome = this.exportChrome(card);
-
-    // The on-screen preset keeps the live-canvas path: the composition follows the rendered figure
-    // at the chosen density, so there is no target box to refuse and no offscreen chart to build.
-    if (resolution.widthPx === null || resolution.heightPx === null) {
-      return {
-        result: await this.encodeFromLiveCanvas(chrome, canvas, this.exportDensity),
-        refusal: null,
-        liveFallback: false,
-        pixels: ''
-      };
-    }
-
-    const { layout, refusal } = resolveFigureLayout(
-      chrome, resolution, this.onScreenSizeOf(canvas), this.exportDensity, this.exportTextScale);
+    const { layout, refusal } = resolveFigureLayout(chrome, resolution, this.exportDensity, this.exportTextScale);
     if (!layout) {
-      return { result: null, refusal, liveFallback: false, pixels: '' };
+      return { result: null, refusal, pixels: '' };
     }
 
-    const plot = await renderPlotOffscreen(
-      { type: card.type, data: card.data, options: card.options, plugins: card.plugins },
-      layout
-    );
-    if (!plot) {
-      return {
-        result: await this.encodeFromLiveCanvas(chrome, canvas, this.exportDensity),
-        refusal: null,
-        liveFallback: true,
-        pixels: ''
-      };
+    const composed = await this.composeFigure(card, chrome, layout, format);
+    if (!composed) {
+      return { result: null, refusal: `${card.title} could not be composed: its chart could not be built.`, pixels: '' };
     }
-
-    const composed = composeFigureImage({ ...chrome, canvas: plot, format: this.exportFormat, layout });
     return {
-      result: await encodeFigureImage(composed, this.exportFormat, this.figureWebpQuality),
+      // Quality is read only by the WebP encoder, so the clipboard's fixed PNG ignores it.
+      result: await encodeFigureImage(composed, format, this.figureWebpQuality),
       refusal: null,
-      liveFallback: false,
       pixels: `${layout.pixelWidth} × ${layout.pixelHeight} px`
     };
   }
 
   /**
-   * Re-renders one live chart at `density` device pixels, composes it and encodes it.
-   *
-   * The format is a parameter rather than the control's value because the clipboard path is fixed
-   * at PNG: every engine that implements `ClipboardItem` rejects `image/webp` in one.
-   *
-   * The previous `devicePixelRatio` is restored and the chart resized again in a `finally`, so a
-   * thrown encode cannot strand the on-screen figure at export density.
+   * The one composition every figure goes through — a tile on the All tab, the Single tab's stage,
+   * a download and a copy: the plot rendered offscreen at `layout`, and the chrome drawn around it.
+   * Null where the offscreen chart could not be built.
    */
-  private async encodeFromLiveCanvas(
+  private async composeFigure(
+    card: ComparisonFigureCard,
     chrome: FigureExportChrome,
-    canvas: HTMLCanvasElement,
-    density: number,
+    layout: FigureExportLayout,
     format: FigureExportFormat = this.exportFormat
-  ): Promise<FigureExportResult> {
-    const chart = this.chartFor(canvas);
-    const previousRatio = chart?.options?.devicePixelRatio;
-    try {
-      if (chart?.options) {
-        chart.options.devicePixelRatio = density;
-        chart.resize();
-      }
-      const composed = composeFigureImage({ ...chrome, canvas, format, layout: null, density });
-      // Quality is read only by the WebP encoder, so the clipboard's fixed PNG ignores it.
-      return await encodeFigureImage(composed, format, this.figureWebpQuality);
-    } finally {
-      if (chart?.options) {
-        chart.options.devicePixelRatio = previousRatio;
-        chart.resize();
-      }
-    }
+  ): Promise<HTMLCanvasElement | null> {
+    const plot = await renderPlotOffscreen(
+      { type: card.type, data: card.data, options: card.options, plugins: card.plugins },
+      layout
+    );
+    return plot ? composeFigureImage({ ...chrome, canvas: plot, format, layout }) : null;
   }
 
   /**
@@ -1805,48 +1831,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     };
   }
 
-  /** The card's caption sizes as CSS custom properties, so the page follows the Style tab. */
-  cardChromeVars(card: ComparisonFigureCard): Record<string, string> {
-    if (this.cardChromeVarsFrom !== this.figureStyle) {
-      this.cardChromeVarsFrom = this.figureStyle;
-      this.cardChromeVarsByFamily = new Map();
-    }
-    const family = this.familyOf(card);
-    let vars = this.cardChromeVarsByFamily.get(family);
-    if (!vars) {
-      const style = this.figureStyle[family];
-      vars = {
-        '--mc-title-size': `${style.titleSizePx}px`,
-        '--mc-badge-size': `${style.badgeTextSizePx}px`,
-        '--mc-footer-size': `${style.footerTextSizePx}px`
-      };
-      this.cardChromeVarsByFamily.set(family, vars);
-    }
-    return vars;
-  }
-
-  /** Whether the card's family shows the figure footer. */
-  cardFooterShown(card: ComparisonFigureCard): boolean {
-    return this.figureStyle[this.familyOf(card)].footer;
-  }
-
-  // One record per family, rebuilt only when `figureStyle` is replaced, so change detection sees a
-  // stable style map between edits.
-  private cardChromeVarsFrom: FigureStyle | null = null;
-  private cardChromeVarsByFamily = new Map<FigureStylePanelKind, Record<string, string>>();
-
   /** Which style family a card draws from: the bar panels, the trade-off scatters or the profile. */
   private familyOf(card: ComparisonFigureCard | null | undefined): FigureStylePanelKind {
     const type = card?.type;
     return type === 'bar' ? 'bar' : type === 'scatter' ? 'scatter' : 'profile';
-  }
-
-  /** The live canvas's CSS box, which the on-screen layout is measured against. */
-  private onScreenSizeOf(canvas: HTMLCanvasElement): { width: number; height: number } {
-    return {
-      width: canvas.clientWidth > 0 ? canvas.clientWidth : canvas.width,
-      height: canvas.clientHeight > 0 ? canvas.clientHeight : canvas.height
-    };
   }
 
   private clampDimension(value: number): number {
@@ -1904,8 +1892,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * The figure footer: the suite and the computation time, in the composer's own two-sided layout.
-   * The page cards show the same text under each figure whose family has the footer on.
+   * The figure footer: the suite and the computation time, in the composer's own two-sided layout,
+   * under each figure whose family has the footer on.
    */
   get figureFooter(): FigureFooter {
     const dto = this.comparison;
@@ -1926,7 +1914,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     requested: number,
     pixels: string,
     fellBack: boolean,
-    liveFallback: boolean,
     refusals: readonly string[],
     archive: string
   ): string {
@@ -1948,54 +1935,45 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (fellBack) {
       parts.push('This browser cannot encode WebP, so the file was written as PNG.');
     }
-    if (liveFallback) {
-      parts.push('An offscreen chart could not be built for at least one figure, so it was ' +
-        'written at its on-screen size instead.');
-    }
     parts.push(...refusals);
     return parts.join(' ');
-  }
-
-  /**
-   * The canvas belonging to one card, located by the card id the template writes on it. Not by its
-   * aria-label: that text follows the chrome, which a rebuild can change before the view catches up.
-   */
-  private canvasFor(card: ComparisonFigureCard): HTMLCanvasElement | null {
-    const directive = this.chartDirectives?.find(
-      candidate => this.canvasOf(candidate)?.getAttribute('data-figure-id') === card.id
-    );
-    return directive ? this.canvasOf(directive) : null;
-  }
-
-  private chartFor(canvas: HTMLCanvasElement): { options?: any; resize(): void } | null {
-    const directive = this.chartDirectives?.find(candidate => this.canvasOf(candidate) === canvas);
-    return (directive?.chart as unknown as { options?: any; resize(): void } | undefined) ?? null;
-  }
-
-  private canvasOf(directive: BaseChartDirective): HTMLCanvasElement | null {
-    return (directive.chart?.canvas as HTMLCanvasElement | undefined) ?? null;
   }
 
   // ---------------------------------------------------------------------------------------------
   // The step-4 workspace
   //
   // A collapsible settings sidebar (Emphasis, Style, Download) beside two views of the figures:
-  // Charts, every card, and Preview, one figure composed at export size. Every control exists once.
+  // All, every figure, and Single, one figure with zoom and pan. Both show figures composed by the
+  // export pipeline at the figure size, so the page and a download are the same image. Every
+  // control exists once.
   // ---------------------------------------------------------------------------------------------
 
-  /** Starts on Charts whenever the wizard is created; kept across steps, never persisted. */
-  figureTab: FigureViewTab = 'charts';
-
-  readonly figureTabs: readonly { readonly id: FigureViewTab; readonly label: string }[] = [
-    { id: 'charts', label: 'Charts' },
-    { id: 'preview', label: 'Preview' }
-  ];
-
   private readonly storedSidebar = readStoredFigureSidebar();
+
+  /** All by default; kept across steps and remembered per browser. */
+  figureTab: FigureViewTab = this.storedSidebar.view;
+
+  readonly figureTabs: readonly { readonly id: FigureViewTab; readonly label: string; readonly name: string }[] = [
+    { id: 'all', label: 'All', name: 'All figures' },
+    { id: 'single', label: 'Single', name: 'Single figure' }
+  ];
 
   sidebarCollapsed = this.storedSidebar.collapsed;
 
   sidebarTab: FigureSidebarTab = this.storedSidebar.tab;
+
+  /** Whether the Style tab's Figure size section is open. Open by default. */
+  figureSizeOpen = this.storedSidebar.figureSizeOpen;
+
+  /** Follows the native `toggle`, which fires for a click, a key and a bound `open` alike. */
+  onFigureSizeToggle(event: Event): void {
+    const open = (event.target as HTMLDetailsElement).open;
+    if (open === this.figureSizeOpen) {
+      return;
+    }
+    this.figureSizeOpen = open;
+    this.writeStoredSidebar();
+  }
 
   readonly sidebarTabs: readonly { readonly id: FigureSidebarTab; readonly label: string }[] = [
     { id: 'emphasis', label: 'Emphasis' },
@@ -2029,14 +2007,15 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * Switches the figure view. The preview attaches once its panel exists, and detaches while its
-   * elements still do.
+   * Switches the figure view. Each view attaches once its panel exists, and detaches while its
+   * elements still do. Single opens on the figure last activated on All, or the first.
    */
   selectFigureTab(tab: FigureViewTab): void {
     if (tab === this.figureTab) {
       return;
     }
-    if (tab === 'preview') {
+    if (tab === 'single') {
+      this.detachAll();
       if (this.previewCard === null) {
         this.previewCardId = this.exportableCards[0]?.id ?? null;
       }
@@ -2045,13 +2024,16 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         this.styleFamily = this.familyOf(card);
       }
       this.setHighlight(null);
-      this.figureTab = 'preview';
+      this.figureTab = 'single';
+      this.writeStoredSidebar();
       this.cdr.detectChanges();
       this.attachPreview();
     } else {
       this.detachPreview();
-      this.figureTab = tab;
-      this.cdr.markForCheck();
+      this.figureTab = 'all';
+      this.writeStoredSidebar();
+      this.cdr.detectChanges();
+      this.attachAll();
     }
   }
 
@@ -2066,15 +2048,27 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     document.getElementById(`mc-fig-tab-${tab}`)?.focus();
   }
 
-  /** A card's eye button: the Preview tab on that figure, with focus on the figure select. */
-  openInPreview(card: ComparisonFigureCard): void {
+  /**
+   * A tile on the All tab, clicked, entered or opened by its eye button: the Single tab on that
+   * figure, with focus on the figure select.
+   */
+  openInSingle(card: ComparisonFigureCard): void {
     this.selectPreviewCard(card.id);
-    if (this.figureTab === 'preview') {
+    if (this.figureTab === 'single') {
       this.cdr.detectChanges();
     } else {
-      this.selectFigureTab('preview');
+      this.selectFigureTab('single');
     }
     document.getElementById('mc-preview-figure')?.focus();
+  }
+
+  /** Enter on the tile itself; a key pressed on the eye button inside it is the button's own. */
+  onAllTileKeydown(event: KeyboardEvent, card: ComparisonFigureCard): void {
+    if (event.key !== 'Enter' || event.target !== event.currentTarget) {
+      return;
+    }
+    event.preventDefault();
+    this.openInSingle(card);
   }
 
   /** The §5 tab keyboard model's target index, or null for a key it does not handle. */
@@ -2096,7 +2090,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   private writeStoredSidebar(): void {
     try {
       localStorage.setItem(FIGURE_SIDEBAR_STORAGE_KEY, JSON.stringify({
-        version: 1, collapsed: this.sidebarCollapsed, tab: this.sidebarTab
+        version: 1,
+        collapsed: this.sidebarCollapsed,
+        tab: this.sidebarTab,
+        view: this.figureTab,
+        figureSizeOpen: this.figureSizeOpen
       }));
     } catch {
       // Private mode or blocked storage: the layout still applies for this session.
@@ -2105,7 +2103,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   // --- Style family ---
 
-  /** Which family the Style tab edits. Follows the previewed figure. */
+  /** Which family the Style tab edits. Follows the figure on the Single tab. */
   styleFamily: FigureStylePanelKind = 'bar';
 
   /** The families with a rendered card, in card order. */
@@ -2125,10 +2123,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return this.styleFamilies.some(family => family.kind === this.styleFamily) ? this.styleFamily : 'bar';
   }
 
-  /** On the Preview tab, the stage moves to the first figure of the chosen family. */
+  /** On the Single tab, the stage moves to the first figure of the chosen family. */
   selectStyleFamily(kind: FigureStylePanelKind): void {
     this.styleFamily = kind;
-    if (this.figureTab === 'preview' && this.familyOf(this.previewCard) !== kind) {
+    if (this.figureTab === 'single' && this.familyOf(this.previewCard) !== kind) {
       const target = this.exportableCards.find(card => this.familyOf(card) === kind);
       if (target) {
         this.selectPreviewCard(target.id);
@@ -2151,21 +2149,22 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   // ---------------------------------------------------------------------------------------------
-  // The figure preview
+  // The Single tab
   //
   // One figure at a time, composed by the same pipeline the download uses and drawn onto a canvas
-  // on the Preview tab: the size, the aspect ratio, the format and the quality are chosen against
-  // the image they produce rather than against a file already on disk. A figure whose caveats do
-  // not fit the chosen box is refused here, in the same words the download would refuse it in.
+  // with zoom and pan: the size, the aspect ratio and the text size are chosen against the image
+  // they produce rather than against a file already on disk. A figure whose caveats do not fit the
+  // chosen box is refused here, in the same words the download would refuse it in. The `preview`
+  // names below are this tab's.
   // ---------------------------------------------------------------------------------------------
 
-  /** The stage the composed image is drawn onto. Present while the Preview tab is shown. */
+  /** The stage the composed image is drawn onto. Present while the Single tab is shown. */
   @ViewChild('previewCanvas') previewCanvas?: ElementRef<HTMLCanvasElement>;
 
   /** The box the stage canvas is fitted into, and the element whose size the preview follows. */
   @ViewChild('previewStage') previewStage?: ElementRef<HTMLElement>;
 
-  /** Which card is previewed. Null before the Preview tab has ever been shown. */
+  /** Which card the Single tab shows. Null before it has ever been shown or a tile activated. */
   previewCardId: string | null = null;
 
   /**
@@ -2236,16 +2235,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return this.exportableCards.find(card => card.id === this.previewCardId) ?? null;
   }
 
-  /** The card's Better badge arrow, turned toward the better side. */
-  directionRotation(direction: FigureDirection): number {
-    return figureDirectionRotation(direction);
-  }
-
-  /** The card's Better badge spelled out for assistive technology. */
-  directionText(direction: FigureDirection): string {
-    return figureDirectionText(direction);
-  }
-
   /** The stage is a `role="img"`, so it carries the card's own summary rather than a bare noun. */
   get previewAriaLabel(): string {
     const card = this.previewCard;
@@ -2253,12 +2242,16 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * Starts composing onto a stage that has just been rendered.
+   * Starts composing onto a stage that has just been rendered — after a tab change, or when step 4
+   * opens on a remembered Single tab, where no figure has been chosen yet.
    *
    * The toolbar's tooltip anchors render behind the panel's @if, which the polyfill's first scan
    * never saw.
    */
   private attachPreview(): void {
+    if (this.previewCard === null) {
+      this.previewCardId = this.exportableCards[0]?.id ?? null;
+    }
     this.previewView = 'default';
     this.previewRefusal = '';
     this.previewActive = true;
@@ -2487,12 +2480,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * squeezed into the box after the fact.
    *
    * Nothing here produces a blob or an object URL — the composed canvas is drawn straight onto the
-   * on-screen one — so a detached preview leaves nothing to revoke.
+   * stage's — so a detached stage leaves nothing to revoke.
    */
   private async renderPreview(): Promise<void> {
     const card = this.previewCard;
-    const canvas = card ? this.canvasFor(card) : null;
-    if (!card || !canvas || !this.previewCanvas) {
+    if (!card || !this.previewCanvas) {
       return;
     }
 
@@ -2503,9 +2495,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
     try {
       const chrome = this.exportChrome(card);
-      const onScreen = this.onScreenSizeOf(canvas);
-      const target = resolveFigureLayout(
-        chrome, this.exportResolution, onScreen, this.exportDensity, this.exportTextScale);
+      const target = resolveFigureLayout(chrome, this.exportResolution, this.exportDensity, this.exportTextScale);
       if (!target.layout) {
         this.previewRefusal = target.refusal ?? '';
         this.blankPreview();
@@ -2528,7 +2518,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         return;
       }
 
-      const composed = await this.composePreview(card, canvas, chrome, fit.layout);
+      const composed = await this.composeFigure(card, chrome, fit.layout);
       if (sequence !== this.previewSeq) {
         return;
       }
@@ -2549,6 +2539,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
           this.schedulePreview();
         }
       } else {
+        // The download refuses the same figure in the same words.
+        this.previewRefusal = `${card.title} could not be composed: its chart could not be built.`;
         this.blankPreview();
       }
     } catch {
@@ -2560,30 +2552,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       }
       this.cdr.markForCheck();
     }
-  }
-
-  /**
-   * One composition at the fitted layout, through the same two paths the export itself takes.
-   *
-   * The on-screen preset goes through the offscreen chart as well: its target box is the live
-   * canvas's own, and re-rendering it at the fitted density is what lets the preview fill the stage
-   * without any of it being a scaled copy.
-   */
-  private async composePreview(
-    card: ComparisonFigureCard,
-    canvas: HTMLCanvasElement,
-    chrome: FigureExportChrome,
-    layout: FigureExportLayout
-  ): Promise<HTMLCanvasElement | null> {
-    const plot = await renderPlotOffscreen(
-      { type: card.type, data: card.data, options: card.options, plugins: card.plugins },
-      layout
-    );
-    // The live canvas is the same fallback the export takes where an offscreen chart cannot be
-    // built: a preview that showed nothing would read as a refusal the download does not make.
-    return plot
-      ? composeFigureImage({ ...chrome, canvas: plot, format: this.exportFormat, layout })
-      : composeFigureImage({ ...chrome, canvas, format: this.exportFormat, layout: null });
   }
 
   /**
@@ -2842,6 +2810,499 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     stage.style.height = '';
     stage.classList.remove('is-pixelated');
     this.previewViewport?.nativeElement.classList.remove('is-pannable');
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The All tab
+  //
+  // Every figure as a tile, each composed by the same pipeline as the download and drawn onto its
+  // own canvas, so the page shows the file a reader would get. A tile's box is the figure's export
+  // size over the display ratio, times the All zoom — Single's zoom, where 100 % is actual pixels —
+  // and its bitmap is that box at the display's density, never more than the export itself.
+  // Tiles re-compose once changes pause, and only once they come within a viewport's height of view.
+  // ---------------------------------------------------------------------------------------------
+
+  /** The scroller the tiles wrap in. Present while the All tab is shown. */
+  @ViewChild('allViewport') allViewport?: ElementRef<HTMLElement>;
+
+  /** The tiles, observed for visibility again whenever the set of figures changes. */
+  @ViewChildren('allTile') allTileElements?: QueryList<ElementRef<HTMLElement>>;
+
+  /** True while the tiles are attached and composing. Not bound in the template, so the view hooks may change it. */
+  allActive = false;
+
+  private allAttachQueued = false;
+
+  /** What the reader asked the tiles to show: Fit height, or an explicit zoom. Never reaches an export. */
+  allView: 'fitHeight' | number = 'fitHeight';
+
+  /** The zoom at which one figure's full height fits the viewport, from the last measurement. */
+  allFitHeightZoom = 1;
+
+  /** The viewport's width less its padding, which decides how many tiles share the first row. */
+  private allContentWidth = 0;
+
+  /** The ratio tiles are sized and rasterised at, clamped as the Single tab clamps it. */
+  private allDpr = 1;
+
+  /** Each refused tile's reason, in the words the download refuses it in. */
+  allTileRefusals: Record<string, string> = {};
+
+  /** Tiles within one viewport height of view; every tile where IntersectionObserver is absent. */
+  private allVisibleIds = new Set<string>();
+
+  /** Tiles whose bitmap no longer matches the figure or its settings, composed once visible. */
+  private allStaleIds = new Set<string>();
+
+  /** The fraction of the target the painted tiles carry; a zoom needing another one re-composes. */
+  private allPaintedRasterZoom: number | null = null;
+
+  /** Bumped by every request, so a composition that finishes after a newer request is discarded. */
+  private allGeneration = 0;
+
+  private allComposeTimer: ReturnType<typeof setTimeout> | null = null;
+  private allComposeFrame: number | null = null;
+  private allResizeObserver: ResizeObserver | null = null;
+  private allIntersectionObserver: IntersectionObserver | null = null;
+  private allTileChanges: Subscription | null = null;
+
+  /** The viewport height the IntersectionObserver's one-viewport margin was built for. */
+  private allObservedHeight = 0;
+
+  /** The export's own pixel size, which every tile shares; null while the size is unusable. */
+  get allTargetPixels(): { width: number; height: number } | null {
+    if (this.exportSizeError !== '') {
+      return null;
+    }
+    const resolution = this.exportResolution;
+    const density = this.exportDensity;
+    return { width: Math.round(resolution.widthPx * density), height: Math.round(resolution.heightPx * density) };
+  }
+
+  get allZoomRange(): PreviewZoomRange {
+    return previewZoomRange(this.allFitHeightZoom);
+  }
+
+  /** The requested view as device pixels per export pixel: 1 is 100 %, as on the Single tab. */
+  get allZoomValue(): number {
+    return clampPreviewZoom(this.allView === 'fitHeight' ? this.allFitHeightZoom : this.allView, this.allZoomRange);
+  }
+
+  get allTileCssWidth(): number {
+    const pixels = this.allTargetPixels;
+    return pixels ? pixels.width / this.allDpr * this.allZoomValue : 0;
+  }
+
+  get allTileCssHeight(): number {
+    const pixels = this.allTargetPixels;
+    return pixels ? pixels.height / this.allDpr * this.allZoomValue : 0;
+  }
+
+  /** How many tiles the first row holds; the rest defer their rendering until scrolled near. */
+  get allTilesPerRow(): number {
+    const width = this.allTileCssWidth;
+    if (!(width > 0) || !(this.allContentWidth > 0)) {
+      return 1;
+    }
+    return Math.max(1, Math.floor((this.allContentWidth + ALL_TILE_GAP) / (width + ALL_TILE_GAP)));
+  }
+
+  /** A deferred tile's `contain-intrinsic-size`, so the scroll height holds while it is skipped. */
+  get allTileIntrinsicSize(): string {
+    return `auto ${Math.round(this.allTileCssWidth)}px auto ${Math.round(this.allTileCssHeight)}px`;
+  }
+
+  get allSliderValue(): number {
+    return zoomToSlider(this.allZoomValue, this.allZoomRange);
+  }
+
+  get allZoomLabel(): string {
+    const zoom = formatPreviewZoom(this.allZoomValue);
+    return this.allView === 'fitHeight' ? `${zoom} · Fit height` : zoom;
+  }
+
+  get allZoomValueText(): string {
+    const percent = `${formatPreviewZoom(this.allZoomValue).replace('%', '')} percent`;
+    return this.allView === 'fitHeight' ? `${percent}, fitted to the height` : percent;
+  }
+
+  get canZoomAllIn(): boolean {
+    return canZoomPreviewIn(this.allZoomValue, this.allZoomRange);
+  }
+
+  get canZoomAllOut(): boolean {
+    return canZoomPreviewOut(this.allZoomValue, this.allZoomRange);
+  }
+
+  zoomAllIn(): void {
+    if (this.canZoomAllIn) {
+      this.setAllView(nextPreviewZoomStop(this.allZoomValue, this.allFitHeightZoom, this.allZoomRange));
+    }
+  }
+
+  zoomAllOut(): void {
+    if (this.canZoomAllOut) {
+      this.setAllView(previousPreviewZoomStop(this.allZoomValue, this.allFitHeightZoom, this.allZoomRange));
+    }
+  }
+
+  onAllSliderInput(value: number): void {
+    this.setAllView(sliderToZoom(value, this.allZoomRange));
+  }
+
+  fitAllHeight(): void {
+    this.setAllView('fitHeight');
+  }
+
+  /** Applies a view at once, stretching the painted bitmaps; they re-compose where the raster changes. */
+  setAllView(view: 'fitHeight' | number): void {
+    const next = typeof view === 'number' ? clampPreviewZoom(view, this.allZoomRange) : view;
+    if (next === this.allView) {
+      return;
+    }
+    this.allView = next;
+    this.onAllZoomChange();
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * `+` / `=` zoom in, `-` out and `0` fits the height, anywhere in the panel but a form field — the
+   * slider keeps its own keys. Unmodified keys only: Ctrl / ⌘ / Alt with them stay the browser's zoom.
+   */
+  onAllPanelKeydown(event: KeyboardEvent): void {
+    if (event.ctrlKey || event.metaKey || event.altKey || this.isFormField(event.target)) {
+      return;
+    }
+    const actions: Record<string, () => void> = {
+      '+': () => this.zoomAllIn(),
+      '=': () => this.zoomAllIn(),
+      '-': () => this.zoomAllOut(),
+      '0': () => this.fitAllHeight()
+    };
+    const action = actions[event.key];
+    if (action) {
+      event.preventDefault();
+      action();
+    }
+  }
+
+  /**
+   * The viewport's border box in CSS px and the display's ratio, or null where it is absent.
+   *
+   * The border box rather than the client box, so a scrollbar that a zoom brings or takes away never
+   * changes the fit it was zoomed to. Public so a spec can stand in a laid-out viewport.
+   */
+  measureAllViewport(): PreviewStage | null {
+    const element = this.allViewport?.nativeElement;
+    if (!element) {
+      return null;
+    }
+    const box = element.getBoundingClientRect();
+    return { width: box.width, height: box.height, devicePixelRatio: window.devicePixelRatio || 1 };
+  }
+
+  /**
+   * Starts composing onto tiles that have just been rendered, at Fit height.
+   *
+   * The toolbar's tooltip anchors render behind the panel's @if, which the polyfill's first scan
+   * never saw.
+   */
+  private attachAll(): void {
+    const viewport = this.allViewport?.nativeElement;
+    if (!viewport) {
+      return;
+    }
+    this.allActive = true;
+    this.allView = 'fitHeight';
+    this.allTileRefusals = {};
+    this.allPaintedRasterZoom = null;
+    this.refreshAllGeometry();
+    this.observeAllViewport(viewport);
+    this.observeAllTiles();
+    this.allTileChanges = this.allTileElements?.changes.subscribe(() => this.observeAllTiles()) ?? null;
+    refreshAnchorPositioning();
+    this.markAllStale();
+    this.scheduleAllCompose();
+    this.cdr.markForCheck();
+  }
+
+  /** Stops composing and forgets the view, so returning opens at Fit height again. */
+  private detachAll(): void {
+    this.teardownAll();
+    this.allView = 'fitHeight';
+    this.allTileRefusals = {};
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * Cancels every timer, frame and observer and discards any composition in flight. Touches no bound
+   * field, so the view hooks may call it once the panel has left the DOM.
+   */
+  private teardownAll(): void {
+    this.allActive = false;
+    this.allGeneration++;
+    this.cancelScheduledAllCompose();
+    this.allResizeObserver?.disconnect();
+    this.allResizeObserver = null;
+    this.allIntersectionObserver?.disconnect();
+    this.allIntersectionObserver = null;
+    this.allTileChanges?.unsubscribe();
+    this.allTileChanges = null;
+    this.allVisibleIds.clear();
+    this.allStaleIds.clear();
+    this.allPaintedRasterZoom = null;
+  }
+
+  /**
+   * Measures the viewport: the display ratio, the row width and the Fit height zoom. A viewport with
+   * no height left once padded — a closed dialog, a fixture never laid out — keeps the last fit.
+   */
+  private refreshAllGeometry(): void {
+    const stage = this.measureAllViewport();
+    if (!stage) {
+      return;
+    }
+    this.allDpr = Math.min(4, Math.max(1, stage.devicePixelRatio));
+    this.allContentWidth = Math.max(0, stage.width - 2 * ALL_VIEWPORT_PADDING);
+    const pixels = this.allTargetPixels;
+    if (pixels && stage.height > 2 * ALL_VIEWPORT_PADDING) {
+      this.allFitHeightZoom = fitHeightZoom(stage.height, pixels.height, this.allDpr, ALL_VIEWPORT_PADDING);
+    }
+  }
+
+  /**
+   * Re-fits on every viewport resize — a window, a split screen, the sidebar, browser zoom. While
+   * the reader has not zoomed, Fit height follows; an explicit zoom is kept. Absent outside a
+   * browser, where the viewport is never laid out to begin with.
+   */
+  private observeAllViewport(viewport: HTMLElement): void {
+    this.allResizeObserver?.disconnect();
+    this.allResizeObserver = null;
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    this.allResizeObserver = new ResizeObserver(() => this.zone.run(() => {
+      if (!this.allActive) {
+        return;
+      }
+      const before = this.allZoomValue;
+      this.refreshAllGeometry();
+      if (Math.abs(viewport.getBoundingClientRect().height - this.allObservedHeight) >= 1) {
+        this.observeAllTiles();
+      }
+      if (this.allZoomValue !== before) {
+        this.onAllZoomChange();
+      }
+      this.cdr.markForCheck();
+    }));
+    this.allResizeObserver.observe(viewport, { box: 'border-box' });
+  }
+
+  /**
+   * Watches which tiles are within one viewport height of view, so only those compose. Without
+   * IntersectionObserver every tile counts as near.
+   */
+  private observeAllTiles(): void {
+    this.allIntersectionObserver?.disconnect();
+    this.allIntersectionObserver = null;
+    const viewport = this.allViewport?.nativeElement;
+    const tiles = this.allTileElements?.map(ref => ref.nativeElement) ?? [];
+    const ids = new Set(tiles.map(tile => tile.dataset['figureId'] ?? '').filter(id => id !== ''));
+    for (const id of [...this.allVisibleIds]) {
+      if (!ids.has(id)) {
+        this.allVisibleIds.delete(id);
+      }
+    }
+
+    const height = viewport ? Math.max(0, Math.round(viewport.getBoundingClientRect().height)) : 0;
+    this.allObservedHeight = height;
+    if (!viewport || typeof IntersectionObserver === 'undefined') {
+      let arrived = false;
+      for (const id of ids) {
+        if (!this.allVisibleIds.has(id)) {
+          this.allVisibleIds.add(id);
+          arrived = arrived || this.allStaleIds.has(id);
+        }
+      }
+      if (arrived) {
+        this.scheduleAllCompose();
+      }
+      return;
+    }
+    const observer = new IntersectionObserver(
+      entries => this.zone.run(() => this.onAllTilesIntersect(entries)),
+      { root: viewport, rootMargin: `${height}px 0px` }
+    );
+    tiles.forEach(tile => observer.observe(tile));
+    this.allIntersectionObserver = observer;
+  }
+
+  private onAllTilesIntersect(entries: IntersectionObserverEntry[]): void {
+    let arrived = false;
+    for (const entry of entries) {
+      const id = (entry.target as HTMLElement).dataset['figureId'];
+      if (!id) {
+        continue;
+      }
+      if (entry.isIntersecting) {
+        if (!this.allVisibleIds.has(id)) {
+          this.allVisibleIds.add(id);
+          arrived = arrived || this.allStaleIds.has(id);
+        }
+      } else {
+        this.allVisibleIds.delete(id);
+      }
+    }
+    if (arrived) {
+      this.scheduleAllCompose();
+    }
+  }
+
+  /** Re-composes only where the new zoom needs a different raster; otherwise the bitmaps stretch. */
+  private onAllZoomChange(): void {
+    const pixels = this.allTargetPixels;
+    const raster = pixels ? previewRasterZoom(this.allZoomValue, pixels.width, pixels.height).zoom : null;
+    if (raster === null || this.allPaintedRasterZoom === null ||
+        Math.abs(raster - this.allPaintedRasterZoom) > this.allPaintedRasterZoom * 1e-9) {
+      this.markAllStale();
+      this.scheduleAllCompose();
+    }
+  }
+
+  private markAllStale(): void {
+    this.allStaleIds = new Set(this.exportableCards.map(card => card.id));
+  }
+
+  /**
+   * Composes the stale, visible tiles on the first animation frame after the changes have been
+   * quiet for {@link ALL_COMPOSE_QUIET_MS}. Every request supersedes the one before it.
+   */
+  private scheduleAllCompose(): void {
+    if (!this.allActive) {
+      return;
+    }
+    this.allGeneration++;
+    this.cancelScheduledAllCompose();
+    this.allComposeTimer = setTimeout(() => {
+      this.allComposeTimer = null;
+      this.allComposeFrame = requestAnimationFrame(() => {
+        this.allComposeFrame = null;
+        void this.composeAllTiles();
+      });
+    }, ALL_COMPOSE_QUIET_MS);
+  }
+
+  private cancelScheduledAllCompose(): void {
+    if (this.allComposeTimer !== null) {
+      clearTimeout(this.allComposeTimer);
+      this.allComposeTimer = null;
+    }
+    if (this.allComposeFrame !== null) {
+      cancelAnimationFrame(this.allComposeFrame);
+      this.allComposeFrame = null;
+    }
+  }
+
+  /**
+   * Composes every stale tile within reach at the current settings and paints it.
+   *
+   * The target layout is what Download would write, and it alone decides any refusal; the tile then
+   * gets that same composition at the raster its box affords, as the Single stage does.
+   */
+  private async composeAllTiles(): Promise<void> {
+    const generation = this.allGeneration;
+    if (!this.allActive || this.allTargetPixels === null) {
+      return;
+    }
+    const resolution = this.exportResolution;
+    const density = this.exportDensity;
+    const textScale = this.exportTextScale;
+    const zoom = this.allZoomValue;
+    const stage = this.allStage();
+    const cards = this.exportableCards
+      .filter(card => this.allStaleIds.has(card.id) && this.allVisibleIds.has(card.id));
+
+    for (const card of cards) {
+      const canvas = this.allTileCanvas(card.id);
+      if (!canvas) {
+        continue;
+      }
+      const chrome = this.exportChrome(card);
+      const target = resolveFigureLayout(chrome, resolution, density, textScale);
+      if (!target.layout) {
+        this.setAllTileRefusal(card.id, target.refusal ?? '');
+        this.paintTile(canvas, null);
+        this.allStaleIds.delete(card.id);
+        continue;
+      }
+      const fit = previewLayoutFor(target.layout, stage, zoom);
+      if (!fit) {
+        continue;
+      }
+      let composed: HTMLCanvasElement | null;
+      try {
+        composed = await this.composeFigure(card, chrome, fit.layout);
+      } catch {
+        composed = null;
+      }
+      if (generation !== this.allGeneration || !this.allActive) {
+        return;
+      }
+      this.setAllTileRefusal(card.id, composed ? '' : `${card.title} could not be composed: its chart could not be built.`);
+      this.paintTile(canvas, composed);
+      this.allPaintedRasterZoom = fit.rasterZoom;
+      this.allStaleIds.delete(card.id);
+    }
+    this.cdr.markForCheck();
+  }
+
+  /** The viewport's padded content box, at least 1 × 1, as the layout fitter takes a stage. */
+  private allStage(): PreviewStage {
+    const stage = this.measureAllViewport();
+    return {
+      width: Math.max(1, (stage?.width ?? 0) - 2 * ALL_VIEWPORT_PADDING),
+      height: Math.max(1, (stage?.height ?? 0) - 2 * ALL_VIEWPORT_PADDING),
+      devicePixelRatio: this.allDpr
+    };
+  }
+
+  private allTileCanvas(id: string): HTMLCanvasElement | null {
+    return this.allViewport?.nativeElement
+      .querySelector<HTMLCanvasElement>(`canvas[data-figure-id="${CSS.escape(id)}"]`) ?? null;
+  }
+
+  private setAllTileRefusal(id: string, refusal: string): void {
+    if ((this.allTileRefusals[id] ?? '') === refusal) {
+      return;
+    }
+    const next = { ...this.allTileRefusals };
+    if (refusal === '') {
+      delete next[id];
+    } else {
+      next[id] = refusal;
+    }
+    this.allTileRefusals = next;
+  }
+
+  /** Draws a composition at its own bitmap size, or blanks the tile; its box is the tile's. */
+  private paintTile(canvas: HTMLCanvasElement, composed: HTMLCanvasElement | null): void {
+    if (!composed) {
+      canvas.width = 0;
+      canvas.height = 0;
+      return;
+    }
+    canvas.width = composed.width;
+    canvas.height = composed.height;
+    canvas.getContext('2d')?.drawImage(composed, 0, 0);
+  }
+
+  /** `input`, `select`, `textarea` or editable text, whose keys are their own. */
+  private isFormField(target: EventTarget | null): boolean {
+    const element = target as HTMLElement | null;
+    if (!element || typeof element.closest !== 'function') {
+      return false;
+    }
+    return element.isContentEditable || element.closest('input, select, textarea') !== null;
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -3221,23 +3682,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return formatUsdText(value);
   }
 
-  /**
-   * The canvas box height, in pixels.
-   *
-   * Set on the wrapper rather than left to the card, so the plot and its x-axis label band both fit:
-   * a box sized to the plot alone clips the axis or produces a nested scrollbar. Horizontal panels
-   * grow with the entry count, because eight horizontal bars in a fixed 320 px box are unreadable.
-   */
-  panelHeight(): number {
-    return this.effectiveOrientation === 'horizontal'
-      ? Math.max(260, 140 + 36 * this.plotted.length)
-      : 340;
-  }
-
-  scatterHeight(): number {
-    return 360;
-  }
-
   // ---------------------------------------------------------------------------------------------
   // Internals
   // ---------------------------------------------------------------------------------------------
@@ -3320,19 +3764,23 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     // outside change detection: a filter control, the reduced-motion listener, the resize
     // observer. Marking here is what makes the figures, the notices and the table agree.
     this.cdr.markForCheck();
-    // A no-op unless the Preview tab is composing, which follows every rebuild.
+    // No-ops unless the Single stage or the All tiles are composing, which follow every rebuild.
     this.schedulePreview();
+    if (this.allActive) {
+      this.markAllStale();
+      this.scheduleAllCompose();
+    }
   }
 
   /**
-   * Watches the chart container's own width, not the window's.
-   *
-   * The same width drives the container queries in the stylesheet and P1's bar orientation, so the
-   * panels stack and their bars turn horizontal together; the constant they share is
-   * {@link P1_STACK_BREAKPOINT_PX}.
+   * Watches the figure views' own width, not the window's: below {@link P1_STACK_BREAKPOINT_PX}
+   * P1's bars turn horizontal, so eight model names read as left-aligned labels.
    */
   private observeContainerWidth(): void {
     const host = this.chartsHost?.nativeElement;
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    this.observedChartsHost = host ?? null;
     if (!host || typeof ResizeObserver === 'undefined') {
       return;
     }

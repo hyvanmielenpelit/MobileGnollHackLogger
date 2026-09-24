@@ -324,6 +324,83 @@ public class BenchmarkCitationLivenessCheckTests
         Assert.Null(check.NoteFor("src/objects.c:9"));
     }
 
+    private static BenchmarkCitationLivenessCheck MacroCheck()
+    {
+        var corpus = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["src/objects.c"] = new[]
+            {
+                "#include \"hack.h\"",                                                   // 1
+                "",                                                                      // 2
+                "#define SPELL(name, desc, sub, prob, delay, level, \\",                 // 3
+                "              mgc, dir, color)                     \\",                 // 4
+                "    OBJECT(OBJ(name, desc), prob, delay, level, \\",                    // 5
+                "           mgc, dir, color)",                                           // 6
+                "SPELL(\"dig\", \"parchment\", P_MATTER_SPELL, 20, 6, 5, 1, RAY, HI_PAPER),", // 7
+                "#undef SPELL"                                                           // 8
+            },
+            ["include/objclass.h"] = new[]
+            {
+                "struct objclass {",                                                     // 1
+                "    short oc_delay;",                                                   // 2
+                "};",                                                                    // 3
+                "#define objects_delay(otyp) \\",                                        // 4
+                "    (objects[otyp].oc_delay)",                                          // 5
+                "#define MAXSPELL 12"                                                    // 6
+            }
+        };
+        return new BenchmarkCitationLivenessCheck(() => corpus);
+    }
+
+    [Theory]
+    [InlineData("src/objects.c:3", "cited line src/objects.c:3 is only the definition of macro SPELL")]
+    [InlineData("src/objects.c:4", "cited line src/objects.c:4 is only the definition of macro SPELL")]
+    [InlineData("src/objects.c:6", "cited line src/objects.c:6 is only the definition of macro SPELL")]
+    [InlineData("include/objclass.h:5", "cited line include/objclass.h:5 is only the definition of macro objects_delay")]
+    [InlineData("include/objclass.h:6", "cited line include/objclass.h:6 is only the definition of macro MAXSPELL")]
+    public void ASingleLineInsideAMultiLineDefineHeader_GetsTheMacroDefinitionNote(string citation, string expected)
+    {
+        Assert.Equal(expected, MacroCheck().NoteFor(citation));
+    }
+
+    [Theory]
+    // The line after the header: the first line not ending in "\" closed it at line 6.
+    [InlineData("src/objects.c:7")]
+    // A range is never noted.
+    [InlineData("src/objects.c:3-6")]
+    [InlineData("include/objclass.h:4-5")]
+    // A header line outside any macro.
+    [InlineData("include/objclass.h:2")]
+    public void ALineOutsideADefineHeader_OrARange_GetsNoMacroNote(string citation)
+    {
+        Assert.Null(MacroCheck().NoteFor(citation));
+    }
+
+    [Fact]
+    public void TheMacroNote_DemotesTheVerdictForCounting_AndKeepsTheStoredVerdict()
+    {
+        var verification = new BenchmarkClaimVerification(0, "Spells take 6 turns to learn.", BenchmarkClaimVerdict.Refuted, "src/objects.c:4", "The SPELL macro says otherwise.");
+
+        var annotated = Assert.Single(MacroCheck().Annotate(new[] { verification }));
+
+        Assert.Equal("cited line src/objects.c:4 is only the definition of macro SPELL", annotated.CitationNote);
+        Assert.Equal(BenchmarkClaimVerdict.Refuted, annotated.Verdict);
+        Assert.Equal(BenchmarkClaimVerdict.Indeterminate, annotated.EffectiveVerdict);
+    }
+
+    [Fact]
+    public void AVerificationThatAlreadyCarriesANote_KeepsIt()
+    {
+        var verification = new BenchmarkClaimVerification(0, "Claim.", BenchmarkClaimVerdict.Supported, "src/objects.c:4", "Basis.")
+        {
+            CitationNote = BenchmarkClaimVerificationParser.ChargedPartNotJudgedNote
+        };
+
+        var annotated = Assert.Single(MacroCheck().Annotate(new[] { verification }));
+
+        Assert.Equal(BenchmarkClaimVerificationParser.ChargedPartNotJudgedNote, annotated.CitationNote);
+    }
+
     [Fact]
     public void CommentsAndLiterals_AreBlankedInPlace_AcrossLines()
     {

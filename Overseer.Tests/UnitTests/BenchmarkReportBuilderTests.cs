@@ -3595,6 +3595,55 @@ public class BenchmarkReportBuilderTests
         Assert.DoesNotContain("Second reader:", report);
     }
 
+    [Fact]
+    public void DisputedAssessments_CarriesAccusedSentenceCounts_WhenTheAnswerHasAccusedSentences()
+    {
+        string[] accused = { BenchmarkClaimRoles.AccusedQuote };
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 54);
+        q1.SecondOpinionQualityScore = 25;
+        q1.SecondOpinionCriticalError = true;
+        q1.SecondOpinionDisagreed = true;
+        q1.SecondOpinionTrigger = "LowQualityScore";
+        q1.ClaimsSupportedCount = 0;
+        q1.ClaimsRefutedCount = 0;
+        q1.ClaimsIndeterminateCount = 0;
+        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            new BenchmarkClaimVerification(0, "The Grail has three charges.", BenchmarkClaimVerdict.Supported, "src/artifact.c:120", "True.") { Roles = accused },
+            new BenchmarkClaimVerification(1, "The Grail cures lycanthropy.", BenchmarkClaimVerdict.Refuted, "src/artifact.c:140", "False.") { Roles = accused }
+        });
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Flagged, q1);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains(
+            "[Claims: 0 supported, 0 refuted, 0 indeterminate; accused sentences: 1 supported, 1 refuted, 0 indeterminate]",
+            report);
+    }
+
+    [Fact]
+    public void DisputedAssessments_CarriesNoAccusedSentenceCounts_WhenTheAnswerHasNone()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 54);
+        q1.SecondOpinionQualityScore = 25;
+        q1.SecondOpinionCriticalError = true;
+        q1.SecondOpinionDisagreed = true;
+        q1.SecondOpinionTrigger = "LowQualityScore";
+        q1.ClaimsSupportedCount = 1;
+        q1.ClaimsRefutedCount = 0;
+        q1.ClaimsIndeterminateCount = 0;
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Flagged, q1);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("[Claims: 1 supported, 0 refuted, 0 indeterminate]", report);
+        Assert.DoesNotContain("accused sentences:", report);
+    }
+
     // --- Terminal provider failures withhold the indices (harness version 21) ---
 
     private static BenchmarkRunAnswer TerminalFailureAnswer(int orderIndex, BenchmarkAnswerStatus status, int? httpStatusCode, string errorMessage)

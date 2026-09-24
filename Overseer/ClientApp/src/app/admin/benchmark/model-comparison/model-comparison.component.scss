@@ -5,8 +5,8 @@
  * `styles.scss` and are never redefined, because an emulated-encapsulation override would apply to
  * this one component and to nothing else — an invisible divergence rather than a visible bug.
  *
- * The chart grid responds to `.mc-charts`, its own container, rather than to the viewport, so it
- * lays out correctly inside a tab panel that is narrower than the window.
+ * The figures are not laid out here: each is a bitmap the export composer draws, shown at its own
+ * size times the view's zoom, so the page and a downloaded file are the same image.
  */
 
 .mc-section {
@@ -200,7 +200,7 @@
   grid-template-columns: 1fr;
 }
 
-/* 720px is the same width the figure grid stacks at, so the whole view changes shape once. */
+/* 720px is `P1_STACK_BREAKPOINT_PX`, the width below which P1's bars turn horizontal. */
 @container (min-width: 720px) {
   .mc-filters {
     grid-template-columns: 2fr 1fr;
@@ -363,92 +363,8 @@
 }
 
 /* ==========================================================================
-   The figures
+   Figure metadata, badges and notes, as the facts strip and the table use them
    ========================================================================== */
-
-.mc-charts {
-  /* The queries below resolve against this box, not the window, so the grid responds to the tab
-     panel it sits in. */
-  container-type: inline-size;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.mc-panels,
-.mc-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  /* The three rows every card spans: head, canvas, foot. Repeats per card-row, so a card two
-     columns wide can subgrid its own three rows onto the row group its siblings share. */
-  grid-auto-rows: auto auto 1fr;
-  column-gap: 16px;
-  row-gap: 10px;
-}
-
-/*
- * 720px is `P1_STACK_BREAKPOINT_PX` in `model-comparison-charts.ts`, and the two must stay equal:
- * below it the panels stack here and the component switches the bars to horizontal, so that eight
- * model names read as left-aligned labels instead of colliding or being rotated past 45 degrees.
- * A spec asserts the component flips orientation at exactly that width.
- */
-@container (min-width: 720px) {
-  .mc-panels {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .mc-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@container (min-width: 1180px) {
-  .mc-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
-/* Head, canvas and foot align across every card sharing a row: the subgrid inherits the three
-   row tracks `.mc-panels`/`.mc-grid` lay out per card-row, so a longer badge list or note list in
-   one card does not leave its neighbours' canvases sitting at different heights. The first
-   `grid-template-rows` is the same-cascade fallback for an engine without subgrid support. */
-.mc-card {
-  margin: 0;
-  padding: 14px 16px 16px;
-  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
-  border-radius: 8px;
-  background: rgba(17, 17, 17, 0.65);
-  display: grid;
-  grid-template-rows: auto auto 1fr;
-  grid-row: span 3;
-  grid-template-rows: subgrid;
-  min-width: 0;
-}
-
-/* Text down the first column, the card's controls pinned to the second, so a long title wraps
-   without pushing them out of the card. */
-.mc-card-head {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: start;
-  /* A head shorter than the tallest in its row keeps its rows packed at the top. */
-  align-content: start;
-  gap: 3px 10px;
-}
-
-.mc-card-title,
-.mc-meta,
-.mc-card-detail {
-  grid-column: 1;
-}
-
-.mc-card-title {
-  margin: 0;
-  font-family: "Cinzel", serif;
-  font-size: var(--mc-title-size, 18px);
-  color: #ffffff;
-  text-wrap: balance;
-}
 
 .mc-meta {
   list-style: none;
@@ -477,210 +393,6 @@
   }
 }
 
-/* The figure badges' size follows the card's Style value. The extra class outranks the step-3
-   table's later `.mc-badge` rule, which otherwise sets their look. */
-.mc-card-head .mc-badge {
-  font-size: var(--mc-badge-size, 11px);
-}
-
-/* The Better badge, last on the badge row and pushed to its right end; on a narrow card it wraps
-   onto a line of its own, still right-aligned. The export composer draws the same pill
-   (`figure-export.ts`). */
-.mc-direction {
-  margin-inline-start: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px 2px 6px;
-  border: 1px solid rgba(224, 186, 109, 0.55);
-  border-radius: 999px;
-  background: rgba(224, 186, 109, 0.1);
-  color: #e0ba6d;
-  font-size: var(--mc-badge-size, 11px);
-  font-weight: 700;
-  line-height: 1.4;
-  white-space: nowrap;
-}
-
-/* 1.3 × the badge size, as the composer's `directionArrowSize`. */
-.mc-direction-arrow {
-  flex: none;
-  width: calc(var(--mc-badge-size, 11px) * 1.3);
-  height: calc(var(--mc-badge-size, 11px) * 1.3);
-}
-
-.mc-card-detail {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: #898781;
-  text-wrap: pretty;
-}
-
-/* The card's Open in preview button. Shares the title and badge rows, so it stays top-aligned
-   beside a one-line or a three-line head without making the title row taller. */
-.mc-card-actions {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  align-self: start;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-/*
- * The canvas box is sized by the component to hold the plot *and* its axis label band. A box fitted
- * to the plot alone clips the axis or produces a nested scrollbar, both of which are anti-patterns;
- * nothing here may introduce an overflow of its own.
- */
-.mc-canvas {
-  position: relative;
-  width: 100%;
-  min-width: 0;
-}
-
-.mc-card-foot {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-/* The composed figure's footer (`drawFooter` in `figure-export.ts`): a rule, the suite on the left
-   and the computation time on the right, wrapping under it when both do not fit. */
-.mc-card-footer {
-  margin: 0;
-  padding-top: 8px;
-  border-top: 1px solid #2a2a2a;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 2px 16px;
-  font-size: var(--mc-footer-size, 12px);
-  line-height: 1.4;
-  color: #d4d4d8;
-}
-
-.mc-card-footer-label {
-  margin-right: 8px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  font-size: calc(var(--mc-footer-size, 12px) * 10 / 12);
-  color: #a1a1aa;
-}
-
-/* A long suite name wraps rather than widening the card. */
-.mc-card-footer-suite {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.mc-card-footer-computed {
-  color: #a1a1aa;
-}
-
-.mc-axis-ends {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: #898781;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 20px;
-
-  dt {
-    font-weight: 600;
-    color: #c3c2b7;
-  }
-
-  dd {
-    margin: 0;
-  }
-}
-
-.mc-key {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
-  font-size: 12px;
-  color: #c3c2b7;
-
-  li {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-}
-
-/* One 12 × 12 px box per glyph, matching what the export composer draws for the same key. */
-.mc-key-glyph {
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  flex-shrink: 0;
-
-  &.mc-key-glyph--hollow {
-    border-radius: 50%;
-    border: 2px solid #c3c2b7;
-  }
-
-  &.mc-key-glyph--solid {
-    border-radius: 50%;
-    background: #c3c2b7;
-  }
-
-  &.mc-key-glyph--frontier {
-    width: 14px;
-    height: 2px;
-    background: #c3c2b7;
-    align-self: center;
-  }
-
-  &.mc-key-glyph--dominated {
-    width: 10px;
-    height: 10px;
-    background: rgba(255, 255, 255, 0.12);
-    border: 1px solid #c3c2b7;
-    align-self: center;
-  }
-
-  &.mc-key-glyph--interval {
-    position: relative;
-    width: 2px;
-    height: 12px;
-    background: #c3c2b7;
-    align-self: center;
-
-    &::before,
-    &::after {
-      content: "";
-      position: absolute;
-      left: -3px;
-      width: 8px;
-      height: 2px;
-      background: #c3c2b7;
-    }
-
-    &::before {
-      top: 0;
-    }
-
-    &::after {
-      bottom: 0;
-    }
-  }
-}
-
-.mc-card-highlight {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 600;
-  color: #ffffff;
-}
-
 .mc-notes {
   list-style: none;
   margin: 0;
@@ -688,29 +400,6 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.mc-note {
-  font-size: 12px;
-  line-height: 1.45;
-  padding-left: 8px;
-  border-left: 2px solid;
-  text-wrap: pretty;
-
-  &.mc-note--warning {
-    color: #e0ba6d;
-    border-left-color: rgba(224, 186, 109, 0.5);
-  }
-
-  &.mc-note--info {
-    color: #a1a1aa;
-    border-left-color: #4a4a46;
-  }
-}
-
-/* Every plotted entry rests on one run, so the intervals are the part worth looking at. */
-.mc-single-run .mc-note--warning {
-  color: #ffffff;
 }
 
 /* ==========================================================================
@@ -1512,13 +1201,13 @@
   }
 }
 
-/* --- The figures step: settings sidebar, figure bar, Charts and Preview --- */
+/* --- The figures step: settings sidebar, figure bar, All and Single --- */
 
 /* The sidebar and the main area side by side, collapsing to one column on the workspace's own
    width rather than the viewport's: the wizard is already narrower than the window on a split
    screen. The `mc-fig` container is the step panel, because a container query cannot restyle the
    container itself. Collapsing the sidebar is an instant reflow, not a transition — every animated
-   frame would resize seven chart canvases and the preview stage. */
+   frame would re-fit the All tiles or the Single stage. */
 .mc-fig-workspace {
   flex: 1;
   min-height: 0;
@@ -1581,8 +1270,33 @@
   }
 }
 
-.mc-download-scope {
-  margin-bottom: 2px;
+/* The Figure size section and its reset button, which sits over the summary row's end, as the
+   Style panel's own sections place theirs. */
+.mc-size-section {
+  position: relative;
+
+  > details > summary {
+    padding-inline-end: 50px;
+  }
+}
+
+.mc-size-reset {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 8px;
+  margin: 0;
+
+  &[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+.mc-size-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 2px;
 }
 
 .mc-style-family-panel:focus-visible {
@@ -1664,7 +1378,7 @@
   margin-inline-start: auto;
 }
 
-/* Both panels fill the same box, so the chart canvases keep the same width on either tab. */
+/* Both panels fill the same box; each scrolls inside its own viewport, never the panel itself. */
 .mc-fig-panels {
   position: relative;
   min-height: 0;
@@ -1673,27 +1387,110 @@
 .mc-fig-panel {
   position: absolute;
   inset: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: hidden;
   padding: 16px 24px 24px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 8px;
 
   &:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: -2px;
   }
+}
 
-  /* Never `display: none`: the preview and every export compose from these live canvases. */
-  &.is-inactive {
-    visibility: hidden;
+/* --- The All tab --- */
+
+.mc-all-toolbar .mc-all-zoom-label {
+  font-size: 13px;
+  color: #c3c2b7;
+}
+
+/* The set's caveats above the tiles, bounded so a long list never leaves the tiles no height. */
+.mc-all-notices {
+  flex: none;
+  max-block-size: 30%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+
+  &:empty {
+    display: none;
+  }
+
+  .section-note {
+    margin-top: 6px;
   }
 }
 
-.mc-fig-panel--preview {
-  overflow: hidden;
-  gap: 8px;
+/* The scroller the tiles wrap in. Its padding is `ALL_VIEWPORT_PADDING` in the component, which
+   Fit height subtracts; it has no border, so its border box is what the component measures. The
+   ground matches the Single stage's, so a figure's own background shows where it ends. */
+.mc-all-viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  border-radius: 8px;
+  background: #0f0f0f;
+  scrollbar-color: var(--border-glass) transparent;
+}
+
+/* The gap is `ALL_TILE_GAP` in the component, which counts the tiles in the first row. */
+.mc-all-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+/* The component states the tile's box in CSS px: the figure's export size at the All zoom. */
+.mc-all-tile {
+  position: relative;
+  flex: none;
+  cursor: zoom-in;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 3px;
+  }
+
+  /* Rows past the first skip their rendering until scrolled near; the component supplies
+     `contain-intrinsic-size`, so the scroll height holds meanwhile. */
+  &.is-deferred {
+    content-visibility: auto;
+  }
+}
+
+.mc-all-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Over the tile's top right corner, clear of the figure's title, which starts at the left. */
+.mc-all-open {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-end: 8px;
+  margin: 0;
+  background: rgba(15, 15, 15, 0.8);
+}
+
+.mc-all-refusal {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 48px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--primary-color);
+  border: 1px dashed var(--border-glass);
+  border-radius: 6px;
 }
 
 /* The step's own padding, where no workspace renders. */
@@ -1704,7 +1501,7 @@
   padding: 16px 24px 24px;
 }
 
-/* --- The Preview tab --- */
+/* --- The Single tab; its toolbar's groups also lay out the All tab's zoom --- */
 
 /* Figure, zoom and export groups; wraps on a narrow panel, the export group kept at the end. */
 .mc-preview-toolbar {

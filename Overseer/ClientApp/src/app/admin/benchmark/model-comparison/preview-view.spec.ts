@@ -6,6 +6,7 @@ import {
   canZoomPreviewIn,
   canZoomPreviewOut,
   clampPreviewZoom,
+  fitHeightZoom,
   formatPreviewZoom,
   nextPreviewZoomStop,
   previewRasterZoom,
@@ -33,6 +34,26 @@ describe('preview-view', () => {
       expect(resolvePreviewZoom(1.5, 0.5)).toBe(1.5);
       expect(resolvePreviewZoom(20, 0.5)).toBe(PREVIEW_MAX_ZOOM);
       expect(resolvePreviewZoom(0.01, 0.5)).toBe(0.1);
+    });
+  });
+
+  describe('fitHeightZoom', () => {
+    it('fits one figure’s full height into the visible height, less the padding', () => {
+      // A 1080 px figure in a 900 px viewport at DPR 2 with 16 px padding.
+      expect(fitHeightZoom(900, 1080, 2, 16)).toBeCloseTo((900 - 32) * 2 / 1080, 12);
+      expect(fitHeightZoom(900, 1080, 2, 16)).toBeCloseTo(1.607, 3);
+    });
+
+    it('clamps to the largest zoom, and falls to the floor where no height is left', () => {
+      expect(fitHeightZoom(4000, 100, 4, 0)).toBe(PREVIEW_MAX_ZOOM);
+      expect(fitHeightZoom(20, 1080, 1, 16)).toBe(0.1);
+      expect(fitHeightZoom(900, 0, 2, 16)).toBe(0.1);
+    });
+
+    it('keeps a fit below 10 % rather than raising it to the fixed floor', () => {
+      const fit = fitHeightZoom(300, 8000, 1, 0);
+      expect(fit).toBeCloseTo(300 / 8000, 12);
+      expect(fit).toBeLessThan(0.1);
     });
   });
 

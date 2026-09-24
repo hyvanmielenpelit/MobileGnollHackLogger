@@ -34,8 +34,9 @@ public record BenchmarkClaimVerification(
 
     /// <summary>
     /// Set by <see cref="BenchmarkCitationLivenessCheck"/> when the cited source function has no live
-    /// call site. The stored <see cref="Verdict"/> is left as the verifier gave it; every flag and
-    /// count reads <see cref="EffectiveVerdict"/>.
+    /// call site, and by <see cref="BenchmarkClaimVerificationParser"/> when a charged part was not
+    /// judged separately. The stored <see cref="Verdict"/> is left as the verifier gave it; every flag
+    /// and count reads <see cref="EffectiveVerdict"/>.
     /// </summary>
     [JsonPropertyName("citationNote")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -74,6 +75,34 @@ public record BenchmarkClaimVerification(
     [JsonPropertyName("charge")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Charge { get; init; }
+
+    /// <summary>
+    /// True on an item submitted with a charged part (a <c>Charged part</c> line in its claim block).
+    /// Its <see cref="Verdict"/> is then the verifier's <c>chargedPartVerdict</c>, and
+    /// <see cref="Citation"/> and <see cref="Basis"/> its <c>chargedPartBasis</c>, which carries the
+    /// citation; the verdict, citation and basis the verifier gave the whole item are kept in
+    /// <see cref="ItemVerdict"/>, <see cref="ItemCitation"/> and <see cref="ItemBasis"/>. When the
+    /// charged part was not judged, <see cref="Verdict"/>, <see cref="Citation"/> and
+    /// <see cref="Basis"/> are the item's own and <see cref="CitationNote"/> says so. Null otherwise.
+    /// </summary>
+    [JsonPropertyName("chargedPart")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? ChargedPart { get; init; }
+
+    /// <summary>On a <see cref="ChargedPart"/> item: the verdict the verifier gave the whole item, as text. Null otherwise.</summary>
+    [JsonPropertyName("itemVerdict")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ItemVerdict { get; init; }
+
+    /// <summary>On a <see cref="ChargedPart"/> item: the citation the verifier gave the whole item. Null otherwise.</summary>
+    [JsonPropertyName("itemCitation")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ItemCitation { get; init; }
+
+    /// <summary>On a <see cref="ChargedPart"/> item: the basis the verifier gave the whole item. Null otherwise.</summary>
+    [JsonPropertyName("itemBasis")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ItemBasis { get; init; }
 
     /// <summary>The verdict every flag and count reads: Indeterminate when a <see cref="CitationNote"/> is set.</summary>
     [JsonIgnore]
@@ -237,11 +266,32 @@ public static class BenchmarkClaimVerificationParser
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
+    /// <summary>The <see cref="BenchmarkClaimVerification.CitationNote"/> of a charged-part item whose <c>chargedPartVerdict</c> is missing or unparseable.</summary>
+    public const string ChargedPartNotJudgedNote = "the charged part was not judged separately";
+
+    private const string MissingCitationDemotion = "[Harness: demoted to Indeterminate — missing citation.]";
+
+    /// <summary>
+    /// What a <c>chargedPartBasis</c> must name to cite anything: a <c>src/</c> or <c>include/</c>
+    /// file, a wiki page or a board line.
+    /// </summary>
+    private static readonly Regex ChargedPartCitationRegex = new(
+        @"(?<![\w/.-])(?:src|include)/[\w./-]+?\.(?:c|h)\b|\bwiki\s*:|\bboard\s*:",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <param name="chargedPartItems">
+    /// Per submitted claim, whether it was submitted with a charged part
+    /// (<see cref="BenchmarkClaimVerificationPrompt.ChargedPartItems"/>). Such an item's verdict is
+    /// read from <c>chargedPartVerdict</c> and its citation from <c>chargedPartBasis</c>; see
+    /// <see cref="BenchmarkClaimVerification.ChargedPart"/>. Null when none was.
+    /// </param>
     public static BenchmarkClaimVerificationParseResult Parse(
         string? responseText,
-        IReadOnlyList<string> submittedClaims)
+        IReadOnlyList<string> submittedClaims,
+        IReadOnlyList<bool>? chargedPartItems = null)
     {
         submittedClaims ??= Array.Empty<string>();
+        bool IsChargedPartItem(int index) => chargedPartItems != null && index >= 0 && index < chargedPartItems.Count && chargedPartItems[index];
 
         if (string.IsNullOrWhiteSpace(responseText))
         {
@@ -318,34 +368,9 @@ public static class BenchmarkClaimVerificationParser
                 string? citation = GetStringProperty(el, "citation", "source");
                 string? basis = GetStringProperty(el, "basis", "explanation", "reason");
 
-                BenchmarkClaimVerdict verdict = BenchmarkClaimVerdict.Indeterminate;
-                if (el.TryGetProperty("verdict", out var vProp) || el.TryGetProperty("Verdict", out vProp))
+                if (!TryGetVerdict(el, out BenchmarkClaimVerdict verdict, "verdict", "Verdict"))
                 {
-                    if (vProp.ValueKind == JsonValueKind.String)
-                    {
-                        string? vStr = vProp.GetString();
-                        if (string.Equals(vStr, "Supported", StringComparison.OrdinalIgnoreCase))
-                        {
-                            verdict = BenchmarkClaimVerdict.Supported;
-                        }
-                        else if (string.Equals(vStr, "Refuted", StringComparison.OrdinalIgnoreCase))
-                        {
-                            verdict = BenchmarkClaimVerdict.Refuted;
-                        }
-                        else
-                        {
-                            verdict = BenchmarkClaimVerdict.Indeterminate;
-                        }
-                    }
-                    else if (vProp.ValueKind == JsonValueKind.Number && vProp.TryGetInt32(out int vNum))
-                    {
-                        verdict = vNum switch
-                        {
-                            1 => BenchmarkClaimVerdict.Supported,
-                            2 => BenchmarkClaimVerdict.Refuted,
-                            _ => BenchmarkClaimVerdict.Indeterminate
-                        };
-                    }
+                    verdict = BenchmarkClaimVerdict.Indeterminate;
                 }
 
                 // Match entry to submitted claim by claimIndex, then verify echoed claim equals submitted claim.
@@ -361,6 +386,55 @@ public static class BenchmarkClaimVerificationParser
                     continue;
                 }
 
+                // The item's own verdict is kept as given; the charged part's verdict is the one read.
+                if (IsChargedPartItem(claimIndex))
+                {
+                    if (!TryGetVerdict(el, out BenchmarkClaimVerdict partVerdict, "chargedPartVerdict", "charged_part_verdict"))
+                    {
+                        matched[claimIndex] = new BenchmarkClaimVerification(
+                            claimIndex,
+                            submittedClaims[claimIndex],
+                            verdict,
+                            citation,
+                            basis)
+                        {
+                            ChargedPart = true,
+                            ItemVerdict = verdict.ToString(),
+                            ItemCitation = citation,
+                            ItemBasis = basis,
+                            CitationNote = ChargedPartNotJudgedNote
+                        };
+                        continue;
+                    }
+
+                    string? partBasis = GetStringProperty(el, "chargedPartBasis", "charged_part_basis");
+
+                    // A charged-part basis that names no source file, wiki page or board line cites nothing.
+                    if ((partVerdict == BenchmarkClaimVerdict.Supported || partVerdict == BenchmarkClaimVerdict.Refuted) &&
+                        (string.IsNullOrWhiteSpace(partBasis) || !ChargedPartCitationRegex.IsMatch(partBasis)))
+                    {
+                        partVerdict = BenchmarkClaimVerdict.Indeterminate;
+                        citationsMissingDemoted++;
+                        partBasis = string.IsNullOrWhiteSpace(partBasis)
+                            ? MissingCitationDemotion
+                            : $"{partBasis} {MissingCitationDemotion}";
+                    }
+
+                    matched[claimIndex] = new BenchmarkClaimVerification(
+                        claimIndex,
+                        submittedClaims[claimIndex],
+                        partVerdict,
+                        partVerdict == BenchmarkClaimVerdict.Indeterminate ? null : partBasis,
+                        partBasis)
+                    {
+                        ChargedPart = true,
+                        ItemVerdict = verdict.ToString(),
+                        ItemCitation = citation,
+                        ItemBasis = basis
+                    };
+                    continue;
+                }
+
                 // Demote Supported or Refuted with a blank citation to Indeterminate.
                 if ((verdict == BenchmarkClaimVerdict.Supported || verdict == BenchmarkClaimVerdict.Refuted) &&
                     string.IsNullOrWhiteSpace(citation))
@@ -368,8 +442,8 @@ public static class BenchmarkClaimVerificationParser
                     verdict = BenchmarkClaimVerdict.Indeterminate;
                     citationsMissingDemoted++;
                     basis = string.IsNullOrWhiteSpace(basis)
-                        ? "[Harness: demoted to Indeterminate — missing citation.]"
-                        : $"{basis} [Harness: demoted to Indeterminate — missing citation.]";
+                        ? MissingCitationDemotion
+                        : $"{basis} {MissingCitationDemotion}";
                 }
 
                 matched[claimIndex] = new BenchmarkClaimVerification(
@@ -390,7 +464,10 @@ public static class BenchmarkClaimVerificationParser
                         submittedClaims[i],
                         BenchmarkClaimVerdict.Indeterminate,
                         null,
-                        "[Harness: absent from verifier response; defaulted to Indeterminate.]");
+                        "[Harness: absent from verifier response; defaulted to Indeterminate.]")
+                    {
+                        ChargedPart = IsChargedPartItem(i) ? true : null
+                    };
                 }
             }
 
@@ -400,9 +477,9 @@ public static class BenchmarkClaimVerificationParser
             {
                 Success = true,
                 Verifications = finalVerifications,
-                ClaimsSupportedCount = finalVerifications.Count(v => v.Verdict == BenchmarkClaimVerdict.Supported),
-                ClaimsRefutedCount = finalVerifications.Count(v => v.Verdict == BenchmarkClaimVerdict.Refuted),
-                ClaimsIndeterminateCount = finalVerifications.Count(v => v.Verdict == BenchmarkClaimVerdict.Indeterminate),
+                ClaimsSupportedCount = finalVerifications.Count(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Supported),
+                ClaimsRefutedCount = finalVerifications.Count(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Refuted),
+                ClaimsIndeterminateCount = finalVerifications.Count(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Indeterminate),
                 MismatchesDropped = mismatchesDropped,
                 CitationsMissingDemoted = citationsMissingDemoted,
                 RawJson = json
@@ -432,6 +509,55 @@ public static class BenchmarkClaimVerificationParser
     {
         string unquoted = text.Trim().Trim('"', '\'');
         return Regex.Replace(unquoted, @"\s+", " ");
+    }
+
+    /// <summary>
+    /// The verdict in the first of <paramref name="propertyNames"/> the element carries: the strings
+    /// Supported, Refuted and Indeterminate in any casing, or the numbers 1, 2 and 0. False when no
+    /// such property is present or its value is none of these.
+    /// </summary>
+    private static bool TryGetVerdict(JsonElement element, out BenchmarkClaimVerdict verdict, params string[] propertyNames)
+    {
+        verdict = BenchmarkClaimVerdict.Indeterminate;
+        foreach (string name in propertyNames)
+        {
+            if (!element.TryGetProperty(name, out var prop)) continue;
+
+            if (prop.ValueKind == JsonValueKind.String)
+            {
+                string? text = prop.GetString();
+                if (string.Equals(text, "Supported", StringComparison.OrdinalIgnoreCase))
+                {
+                    verdict = BenchmarkClaimVerdict.Supported;
+                    return true;
+                }
+                if (string.Equals(text, "Refuted", StringComparison.OrdinalIgnoreCase))
+                {
+                    verdict = BenchmarkClaimVerdict.Refuted;
+                    return true;
+                }
+                return string.Equals(text, "Indeterminate", StringComparison.OrdinalIgnoreCase);
+            }
+
+            if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out int number))
+            {
+                switch (number)
+                {
+                    case 0:
+                        return true;
+                    case 1:
+                        verdict = BenchmarkClaimVerdict.Supported;
+                        return true;
+                    case 2:
+                        verdict = BenchmarkClaimVerdict.Refuted;
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        return false;
     }
 
     private static string? GetStringProperty(JsonElement element, params string[] propertyNames)

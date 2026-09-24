@@ -685,6 +685,14 @@ public class BenchmarkRunAnswerDto
     public int? ClaimsSupportedCount { get; set; }
     public int? ClaimsRefutedCount { get; set; }
     public int? ClaimsIndeterminateCount { get; set; }
+
+    /// <summary>
+    /// The accused sentences of <see cref="ClaimVerificationJson"/> by the verdict the harness reads,
+    /// computed from the stored record when the DTO is built. Null when there is no record.
+    /// </summary>
+    public int? AccusedSupportedCount { get; set; }
+    public int? AccusedRefutedCount { get; set; }
+    public int? AccusedIndeterminateCount { get; set; }
     public string? ClaimVerificationByModelDisplayNameUsed { get; set; }
     public int? ClaimVerificationInputTokens { get; set; }
     public int? ClaimVerificationOutputTokens { get; set; }

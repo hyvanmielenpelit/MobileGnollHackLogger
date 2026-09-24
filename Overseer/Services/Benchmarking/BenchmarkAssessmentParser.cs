@@ -353,11 +353,12 @@ public static class BenchmarkAssessmentParser
 
             // Advisory only. The assessor said "hallucinates" and then declined to set the flag;
             // the harness records the divergence and routes it to a second reader rather than
-            // overriding a judgement it is not in a position to make.
+            // overriding a judgement it is not in a position to make. Read from the comment and the
+            // accuracy evidence only, where a fabrication is charged; the completeness evidence lists
+            // omissions. Game vocabulary and denied fabrications do not count.
             bool contestedVerdict = !criticalError &&
-                (BenchmarkVerdictConsistency.MentionsFabrication(comment) ||
-                 BenchmarkVerdictConsistency.MentionsFabrication(accuracyEvidence) ||
-                 BenchmarkVerdictConsistency.MentionsFabrication(completenessEvidence));
+                (BenchmarkVerdictConsistency.MentionsUndeniedFabrication(comment) ||
+                 BenchmarkVerdictConsistency.MentionsUndeniedFabrication(accuracyEvidence));
 
             // The inverse of contestedVerdict: there the prose says more than the flag, here it says less.
             // Same treatment — recorded, routed to a second reader, never applied to the score.

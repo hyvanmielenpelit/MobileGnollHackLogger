@@ -15,6 +15,36 @@ export interface BenchmarkCostRoleRow {
 }
 
 /**
+ * Whole-percent shares that sum to exactly 100 whenever the amounts sum above zero, by giving
+ * the leftover points to the largest fractional remainders. Independent rounding of each share
+ * would print a column that adds up to 99 or 101.
+ */
+export function apportionWholePercentShares(amounts: readonly number[]): number[] {
+  const sum = amounts.reduce((running, amount) => running + amount, 0);
+  if (sum <= 0) {
+    return amounts.map(() => 0);
+  }
+
+  const exact = amounts.map(amount => (amount / sum) * 100);
+  const shares = exact.map(share => Math.floor(share));
+  let leftover = 100 - shares.reduce((running, share) => running + share, 0);
+
+  const byRemainder = exact
+    .map((share, index) => ({ index, remainder: share - Math.floor(share) }))
+    .sort((a, b) => b.remainder - a.remainder || a.index - b.index);
+
+  for (const entry of byRemainder) {
+    if (leftover <= 0) {
+      break;
+    }
+    shares[entry.index]++;
+    leftover--;
+  }
+
+  return shares;
+}
+
+/**
  * The per-role split behind a run's estimated cost, for both the live progress dialog and the
  * finished-run dialog.
  *
@@ -104,7 +134,7 @@ export class BenchmarkCostPanelComponent {
       .filter(role => this.isFigure(figures[role.key]))
       .map(role => ({ key: role.key, name: role.name, amount: figures[role.key] as number }));
 
-    const shares = BenchmarkCostPanelComponent.apportionShares(present.map(role => role.amount));
+    const shares = apportionWholePercentShares(present.map(role => role.amount));
 
     return present.map((role, index) => ({
       key: role.key,
@@ -131,35 +161,5 @@ export class BenchmarkCostPanelComponent {
 
   private isFigure(amount: number | null | undefined): amount is number {
     return amount != null && Number.isFinite(amount);
-  }
-
-  /**
-   * Whole-percent shares that sum to exactly 100 whenever the amounts sum above zero, by giving
-   * the leftover points to the largest fractional remainders. Independent rounding of each share
-   * would print a column that adds up to 99 or 101.
-   */
-  private static apportionShares(amounts: readonly number[]): number[] {
-    const sum = amounts.reduce((running, amount) => running + amount, 0);
-    if (sum <= 0) {
-      return amounts.map(() => 0);
-    }
-
-    const exact = amounts.map(amount => (amount / sum) * 100);
-    const shares = exact.map(share => Math.floor(share));
-    let leftover = 100 - shares.reduce((running, share) => running + share, 0);
-
-    const byRemainder = exact
-      .map((share, index) => ({ index, remainder: share - Math.floor(share) }))
-      .sort((a, b) => b.remainder - a.remainder || a.index - b.index);
-
-    for (const entry of byRemainder) {
-      if (leftover <= 0) {
-        break;
-      }
-      shares[entry.index]++;
-      leftover--;
-    }
-
-    return shares;
   }
 }

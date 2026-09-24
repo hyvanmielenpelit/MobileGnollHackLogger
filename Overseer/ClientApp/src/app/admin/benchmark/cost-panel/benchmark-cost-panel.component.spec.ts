@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { BenchmarkCostPanelComponent } from './benchmark-cost-panel.component';
+import { BenchmarkCostPanelComponent, apportionWholePercentShares } from './benchmark-cost-panel.component';
 
 /**
  * The per-role cost panel.
@@ -254,6 +254,30 @@ describe('BenchmarkCostPanelComponent', () => {
       fixture.detectChanges();
       expect(fixture.nativeElement.querySelector('.gh-cost-panel__marker')).not.toBeNull();
       expect(fixture.nativeElement.textContent).toContain('lower bound');
+    });
+  });
+
+  describe('apportionWholePercentShares', () => {
+    it('should sum to exactly 100 for figures that do not round cleanly', () => {
+      const shares = apportionWholePercentShares([0.6926, 0.80, 0.10, 1.10, 0.0321]);
+      expect(shares.reduce((running, share) => running + share, 0)).toBe(100);
+    });
+
+    it('should give the leftover points to the largest fractional remainders', () => {
+      // Exact shares: 25.42, 29.36, 3.67, 40.37, 1.18 -- the floors sum to 98, so the two largest
+      // remainders (second opinion, then candidate) each get one extra point.
+      const shares = apportionWholePercentShares([0.6926, 0.80, 0.10, 1.10, 0.0321]);
+      expect(shares).toEqual([26, 29, 4, 40, 1]);
+    });
+
+    it('should return all zero shares when every amount is zero', () => {
+      expect(apportionWholePercentShares([0, 0, 0])).toEqual([0, 0, 0]);
+    });
+
+    it('should break a remainder tie by the earlier index', () => {
+      // Three equal amounts: exact shares are 33.33 each, floors sum to 99, and the one leftover
+      // point goes to the first of the tied remainders.
+      expect(apportionWholePercentShares([1, 1, 1])).toEqual([34, 33, 33]);
     });
   });
 

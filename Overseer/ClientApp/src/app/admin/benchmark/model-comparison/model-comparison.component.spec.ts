@@ -1,7 +1,7 @@
 import { ChangeDetectorRef, Component, DebugElement, inject } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { provideCharts } from 'ng2-charts';
+import { BaseChartDirective, provideCharts } from 'ng2-charts';
 
 import {
   ComparisonFigureCard,
@@ -38,7 +38,8 @@ import {
 } from './model-comparison.models';
 import { TableExportFormat, xlsxWriterModule } from './table-export';
 import { zipWriterModule } from './figure-export';
-import { previewZoomRange, zoomToSlider } from './preview-view';
+import { FIGURE_SIZE_STORAGE_KEY, defaultFigureSize } from './figure-size';
+import { fitHeightZoom, previewZoomRange, zoomToSlider } from './preview-view';
 import { ToastComponent } from '../../../shared/toast/toast.component';
 
 describe('ModelComparisonComponent', () => {
@@ -268,10 +269,11 @@ describe('ModelComparisonComponent', () => {
   }
 
   beforeEach(async () => {
-    // The figure style and the sidebar are remembered per browser, so one spec's must not reach the
-    // next.
+    // The figure style, the figure size and the sidebar are remembered per browser, so one spec's
+    // must not reach the next.
     localStorage.removeItem(FIGURE_STYLE_STORAGE_KEY);
     localStorage.removeItem(FIGURE_SIDEBAR_STORAGE_KEY);
+    localStorage.removeItem(FIGURE_SIZE_STORAGE_KEY);
     await TestBed.configureTestingModule({
       imports: [ModelComparisonComponent],
       providers: [provideCharts({ registerables: APP_CHART_REGISTRABLES })]
@@ -284,6 +286,13 @@ describe('ModelComparisonComponent', () => {
   afterEach(() => {
     localStorage.removeItem(FIGURE_STYLE_STORAGE_KEY);
     localStorage.removeItem(FIGURE_SIDEBAR_STORAGE_KEY);
+    localStorage.removeItem(FIGURE_SIZE_STORAGE_KEY);
+  });
+
+  // The All tab leaves a debounced composition behind it, and a timer that outlived its test would
+  // compose against the next one's fixture.
+  afterEach(() => {
+    (component as unknown as { detachAll(): void }).detachAll();
   });
 
   /** Selects one tab of the step-4 settings sidebar by clicking it. */
@@ -518,51 +527,41 @@ describe('ModelComparisonComponent', () => {
     expect(component.profileCard?.chrome.notes.length).toBeGreaterThan(0);
   });
 
-  it('renders a pricing badge on the cost scatter and withholds it from the quality-speed one', () => {
+  it('carries a pricing badge on the cost scatter and withholds it from the quality-speed one', () => {
     render(buildDto(comparableSet(3)), 4);
 
-    const scatterFigures = fixture.debugElement.queryAll(By.css('.mc-grid .mc-card'));
-    expect(scatterFigures.length).toBe(3);
-    // S1 is quality vs. speed, which carries no cost axis; S2 is quality vs. cost.
-    expect(scatterFigures[0].queryAll(By.css('.mc-badge--pricing')).length).toBe(0);
-    expect(scatterFigures[1].queryAll(By.css('.mc-badge--pricing')).length).toBeGreaterThan(0);
+    const scatters = component.scatterCards;
+    expect(scatters.length).toBe(3);
+    // S1 is quality vs. speed, which carries no cost axis; S2 is quality vs. cost. The composer draws
+    // the chrome's badges into the tile and the file alike.
+    expect(scatters[0].chrome.badges.filter(badge => badge.tone === 'pricing').length).toBe(0);
+    expect(scatters[1].chrome.badges.filter(badge => badge.tone === 'pricing').length).toBeGreaterThan(0);
   });
 
-  it('ends each scatter and bar card head\'s badge row with the Better badge', () => {
+  it('names the Better direction in each scatter and bar tile\'s accessible name, and never as a badge', () => {
     render(buildDto(comparableSet(3)), 4);
 
-    const scatterFigures = fixture.debugElement.queryAll(By.css('.mc-grid .mc-card'));
-    expect(scatterFigures.length).toBe(3);
-    const label = (index: number): string =>
-      (scatterFigures[index].query(By.css('canvas')).nativeElement as HTMLCanvasElement).getAttribute('aria-label') ?? '';
-    expect(label(0)).toContain('Better toward the top left');
-    expect(label(1)).toContain('Better toward the top left');
-    expect(label(2)).toContain('Better toward the bottom left');
-
-    const panelFigures = fixture.debugElement.queryAll(By.css('.mc-panels .mc-card'));
-    expect(panelFigures.length).toBe(3);
-    for (const figure of [...scatterFigures, ...panelFigures]) {
-      const items = figure.queryAll(By.css('.mc-card-head .mc-meta > li'));
-      const pill = items[items.length - 1].nativeElement as HTMLElement;
-      expect(pill.classList).toContain('mc-direction');
-      expect(figure.queryAll(By.css('.mc-direction')).length).toBe(1);
-      expect(pill.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
-      const badgeTexts = figure.queryAll(By.css('.mc-badge')).map(badge => (badge.nativeElement as HTMLElement).textContent!);
-      expect(badgeTexts.some(badgeText => badgeText.includes('Better'))).toBeFalse();
-    }
-    const spoken = (figure: DebugElement): string =>
-      (figure.query(By.css('.mc-direction .visually-hidden')).nativeElement as HTMLElement).textContent!.trim();
-    expect(spoken(scatterFigures[2])).toBe('Better toward the bottom left');
+    const label = (card: ComparisonFigureCard): string =>
+      (fixture.debugElement.query(By.css(`canvas[data-figure-id="${card.id}"]`)).nativeElement as HTMLCanvasElement)
+        .getAttribute('aria-label') ?? '';
+    const scatters = component.scatterCards;
+    expect(label(scatters[0])).toContain('Better toward the top left');
+    expect(label(scatters[1])).toContain('Better toward the top left');
+    expect(label(scatters[2])).toContain('Better toward the bottom left');
     // Intelligence is better higher: up on vertical bars, right on horizontal ones.
-    expect(spoken(panelFigures[0])).toBe(
+    expect(label(component.panelCards[0])).toContain(
       component.effectiveOrientation === 'vertical' ? 'Better toward the top' : 'Better toward the right');
-    const arrow = scatterFigures[0].query(By.css('.mc-direction-arrow')).nativeElement as SVGElement;
-    expect(arrow.style.rotate).toBe('270deg');
+
+    for (const card of [...scatters, ...component.panelCards]) {
+      expect(card.chrome.direction).withContext(card.id).toBeDefined();
+      expect(card.chrome.badges.some(badge => badge.text.includes('Better'))).withContext(card.id).toBeFalse();
+    }
   });
 
   it('shows no Better badge where the style hides it, or on the profile', () => {
     render(buildDto(comparableSet(3)), 4);
-    expect(fixture.debugElement.queryAll(By.css('.mc-direction')).length).toBe(6);
+    const directions = (): number => component.exportableCards.filter(card => card.chrome.direction).length;
+    expect(directions()).toBe(6);
 
     jasmine.clock().install();
     try {
@@ -573,25 +572,16 @@ describe('ModelComparisonComponent', () => {
       });
       jasmine.clock().tick(150);
       fixture.detectChanges();
-      expect(fixture.debugElement.queryAll(By.css('.mc-direction')).length).toBe(0);
+      expect(directions()).toBe(0);
       for (const card of [...component.panelCards, ...component.scatterCards]) {
         expect(card.chrome.direction).withContext(card.id).toBeUndefined();
+        const label = (fixture.debugElement.query(By.css(`canvas[data-figure-id="${card.id}"]`))
+          .nativeElement as HTMLCanvasElement).getAttribute('aria-label') ?? '';
+        expect(label).withContext(card.id).not.toContain('Better toward');
       }
     } finally {
       jasmine.clock().uninstall();
     }
-  });
-
-  it('gives the scatter heads the same action block as the panels, with no side column', () => {
-    render(buildDto(comparableSet(3)), 4);
-
-    const heads = fixture.debugElement.queryAll(By.css('.mc-grid .mc-card .mc-card-head'));
-    expect(heads.length).toBe(3);
-    for (const head of heads) {
-      expect(head.queryAll(By.css('.mc-card-actions')).length).toBe(1);
-      expect(head.queryAll(By.css('.mc-card-side')).length).toBe(0);
-    }
-    expect(fixture.debugElement.queryAll(By.css('.mc-card-side')).length).toBe(0);
   });
 
   it('draws no Better marker on any plot canvas', () => {
@@ -599,7 +589,7 @@ describe('ModelComparisonComponent', () => {
 
     for (const card of component.exportableCards) {
       expect(card.plugins.map(plugin => plugin.id)).withContext(card.id).not.toContain('overseerDirectionMarker');
-      // The export finds a card's live canvas by this id, which no rebuild changes.
+      // The All tab paints a figure onto the tile canvas carrying this id, which no rebuild changes.
       expect(fixture.debugElement.queryAll(By.css(`canvas[data-figure-id="${card.id}"]`)).length).withContext(card.id).toBe(1);
     }
     expect(component.profileCard!.chrome.direction).toBeUndefined();
@@ -618,7 +608,8 @@ describe('ModelComparisonComponent', () => {
     component.goToStep(4);
     fixture.detectChanges();
     expect(fixture.debugElement.queryAll(By.css('.mc-filters')).length).toBe(0);
-    expect(fixture.debugElement.queryAll(By.css('.mc-card select, .mc-card input')).length).toBe(0);
+    expect(fixture.debugElement.queryAll(By.css('.mc-all-tile')).length).toBe(7);
+    expect(fixture.debugElement.queryAll(By.css('.mc-all-tile select, .mc-all-tile input')).length).toBe(0);
   });
 
   it('carries no suite control: suite scope is a selection-stage control and belongs to the picker', () => {
@@ -920,21 +911,24 @@ describe('ModelComparisonComponent', () => {
   // Figure export
   // -------------------------------------------------------------------------------------------
 
-  it('gives every figure card one control, Open in the preview, and the set one Download all', () => {
+  it('gives every figure tile one control, Open in Single view, and the set one Download all', () => {
     render(buildDto(comparableSet(3)), 4);
 
-    const cards = fixture.debugElement.queryAll(By.css('.mc-card'));
-    expect(cards.length).toBe(7);
-    for (const card of cards) {
-      const actions = card.queryAll(By.css('.mc-card-actions button'));
+    const tiles = fixture.debugElement.queryAll(By.css('.mc-all-tile'));
+    expect(tiles.length).toBe(7);
+    for (const tile of tiles) {
+      const actions = tile.queryAll(By.css('button'));
       expect(actions.length).toBe(1);
       // An icon-only button has no text, so aria-label is its accessible name — and it has to name
-      // the card, or seven buttons share one name in a screen reader's control list.
+      // the figure, or seven buttons share one name in a screen reader's control list.
       expect((actions[0].nativeElement as HTMLElement).getAttribute('aria-label'))
-        .toMatch(/^Open .+ in the preview$/);
+        .toMatch(/^Open .+ in Single view$/);
+      // The tile itself is the keyboard stop, so the button is not a second one.
+      expect((tile.nativeElement as HTMLElement).getAttribute('tabindex')).toBe('0');
+      expect((actions[0].nativeElement as HTMLElement).getAttribute('tabindex')).toBe('-1');
     }
-    // Copying and downloading one figure happen on the Preview tab only.
-    expect(fixture.debugElement.queryAll(By.css('.mc-card .mc-download, .mc-card .mc-copy')).length).toBe(0);
+    // Copying and downloading one figure happen on the Single tab only.
+    expect(fixture.debugElement.queryAll(By.css('.mc-all-tile .mc-download, .mc-all-tile .mc-copy')).length).toBe(0);
 
     const step = fixture.debugElement.query(By.css('#mc-step-panel-4')).nativeElement as HTMLElement;
     const downloadAll = Array.from(step.querySelectorAll('button'))
@@ -948,8 +942,8 @@ describe('ModelComparisonComponent', () => {
   it('offers a WebP quality for the figures only while WebP is the chosen format', async () => {
     render(buildDto(comparableSet(3)), 4);
     openSidebarTab('download');
-    expect(component.figureTab).withContext('no preview is needed to reach the export settings')
-      .toBe('charts');
+    expect(component.figureTab).withContext('no Single view is needed to reach the export settings')
+      .toBe('all');
 
     const format = fixture.debugElement.query(By.css('#mc-export-format'))
       .nativeElement as HTMLSelectElement;
@@ -977,7 +971,7 @@ describe('ModelComparisonComponent', () => {
 
   it('renders no workspace, sidebar or figure bar where no figure is rendered', () => {
     const absent = (): void => {
-      for (const selector of ['.mc-fig-workspace', '#mc-fig-sidebar', '.mc-fig-bar', '.mc-card-actions']) {
+      for (const selector of ['.mc-fig-workspace', '#mc-fig-sidebar', '.mc-fig-bar', '.mc-all-tile']) {
         expect(fixture.debugElement.query(By.css(selector))).withContext(selector).toBeNull();
       }
     };
@@ -994,7 +988,7 @@ describe('ModelComparisonComponent', () => {
     ]), 4);
     expect(component.shape).toBe('none');
     expect(component.isStepReachable(4)).toBeFalse();
-    expect(fixture.debugElement.query(By.css('.mc-card'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('.mc-all-tile'))).toBeNull();
     absent();
 
     render(null);
@@ -1086,7 +1080,7 @@ describe('ModelComparisonComponent', () => {
     expect(fixture.debugElement.query(By.css('.mc-emphasis'))).toBeNull();
   });
 
-  it('labels each trade-off checkbox in the Style tab, and offers neither in the Charts panel', () => {
+  it('labels each trade-off checkbox in the Style tab, and offers neither in the All panel', () => {
     render(buildDto(comparableSet(3)), 4);
 
     const names = scatterToggle(0).nativeElement as HTMLInputElement;
@@ -1094,8 +1088,8 @@ describe('ModelComparisonComponent', () => {
     const values = scatterToggle(1).nativeElement as HTMLInputElement;
     expect(values.closest('label')?.textContent).toContain('Show values in the chart');
 
-    const charts = fixture.debugElement.query(By.css('#mc-fig-panel-charts')).nativeElement as HTMLElement;
-    expect(charts.querySelectorAll('input[type="checkbox"]').length).toBe(0);
+    const all = fixture.debugElement.query(By.css('#mc-fig-panel-all')).nativeElement as HTMLElement;
+    expect(all.querySelectorAll('input[type="checkbox"]').length).toBe(0);
   });
   // -------------------------------------------------------------------------------------------
   // The wizard
@@ -1821,27 +1815,27 @@ describe('ModelComparisonComponent', () => {
   });
 
   // -------------------------------------------------------------------------------------------
-  // Export resolution in the sidebar's Download tab, and the Preview tab that shows its effect
+  // The figure size in the sidebar's Style tab, and the Single tab that shows its effect
   // -------------------------------------------------------------------------------------------
 
-  /** The Preview tab's button in the figure bar. */
-  function previewTabButton(): HTMLButtonElement {
-    return fixture.debugElement.query(By.css('#mc-fig-tab-preview')).nativeElement as HTMLButtonElement;
+  /** The Single tab's button in the figure bar. */
+  function singleTabButton(): HTMLButtonElement {
+    return fixture.debugElement.query(By.css('#mc-fig-tab-single')).nativeElement as HTMLButtonElement;
   }
 
   /**
-   * Shows the Preview tab: on `card` through that card's own eye button, or on the first figure
-   * through the tab itself.
+   * Shows the Single tab: on `card` through the eye button on its All tile, or on the last figure
+   * activated through the tab itself.
    */
-  function openPreview(card?: ComparisonFigureCard): void {
+  function openSingle(card?: ComparisonFigureCard): void {
     if (card) {
-      const eye = fixture.debugElement.queryAll(By.css('.mc-card .mc-preview-open'))
+      const eye = fixture.debugElement.queryAll(By.css('.mc-all-tile .mc-all-open'))
         .map(button => button.nativeElement as HTMLButtonElement)
-        .find(button => button.getAttribute('aria-label') === `Open ${card.title} in the preview`);
+        .find(button => button.getAttribute('aria-label') === `Open ${card.title} in Single view`);
       expect(eye).withContext(`the eye button of ${card.title}`).toBeTruthy();
       eye!.click();
     } else {
-      previewTabButton().click();
+      singleTabButton().click();
     }
     refresh();
   }
@@ -1890,17 +1884,16 @@ describe('ModelComparisonComponent', () => {
 
   it('shows the two custom size inputs only for Custom, and names what will be written', () => {
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('download');
+    openSidebarTab('style');
     // The control opens on the test machine's own display, which the pixel counts below are not
     // about; every one of them is the composition at 100 %.
     component.onExportDensityChange(1);
-    expect(fixture.debugElement.query(By.css('#mc-export-width'))).toBeNull();
-    expect(textOf('.mc-export-dimensions')).toContain('on-screen size');
-
-    component.onExportResolutionChange('fullhd');
     refresh();
+    expect(fixture.debugElement.query(By.css('#mc-export-width'))).toBeNull();
+    // Full HD is where the size opens.
     expect(textOf('.mc-export-dimensions')).toContain('1920 × 1080 px');
     expect(textOf('.mc-export-dimensions')).toContain('2× density');
+    expect(textOf('.mc-export-dimensions')).toContain('16:9');
 
     // A 21:9 size is laid out wider rather than shorter, at the same type size and density.
     component.onExportResolutionChange('uw1080');
@@ -1916,18 +1909,21 @@ describe('ModelComparisonComponent', () => {
 
   it('refuses an out-of-range custom size in words, and will not export under one', () => {
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('download');
+    openSidebarTab('style');
     component.onExportDensityChange(1);
     component.onExportResolutionChange('custom');
-    component.customExportHeight = 10;
+    component.onCustomHeightChange(10);
     refresh();
 
     expect(component.customResolutionError).toContain('height');
     expect(component.customResolutionError).toContain(`${component.maxExportDimension}`);
     expect(component.canExport).toBeFalse();
-    expect(textOf('.mc-export-error')).toContain('height');
+    expect(textOf('#mc-side-panel-style .mc-export-error')).toContain('height');
+    // The All tab has no tile to size under it, and says why instead.
+    expect(fixture.debugElement.query(By.css('.mc-all-tile'))).toBeNull();
+    expect(textOf('.mc-all-viewport .mc-export-error')).toContain('height');
 
-    component.customExportHeight = 1080;
+    component.onCustomHeightChange(1080);
     refresh();
     expect(component.customResolutionError).toBe('');
     expect(component.canExport).toBeTrue();
@@ -1936,9 +1932,9 @@ describe('ModelComparisonComponent', () => {
   it('opens the density on the reader’s own display, and says which option that is', () => {
     withDisplayDensity(2);
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('download');
+    openSidebarTab('style');
 
-    expect(component.exportDensitySelection).toBe(2);
+    expect(component.figureSize.densitySelection).toBe(2);
     expect(component.exportDensity).toBe(2);
     expect(component.isCustomDensity).toBeFalse();
     expect(textOf('#mc-export-density')).toContain('200% (this display)');
@@ -1950,10 +1946,10 @@ describe('ModelComparisonComponent', () => {
     // 110 % browser zoom on a 200 % display.
     withDisplayDensity(2.2);
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('download');
+    openSidebarTab('style');
 
-    expect(component.exportDensitySelection).toBe('custom');
-    expect(component.customExportDensityPercent).toBe(220);
+    expect(component.figureSize.densitySelection).toBe('custom');
+    expect(component.figureSize.customDensityPercent).toBe(220);
     expect(component.exportDensity).toBe(2.2);
     expect(fixture.debugElement.query(By.css('#mc-export-density-custom'))).toBeTruthy();
     expect(component.exportSizeError).toBe('');
@@ -1962,7 +1958,7 @@ describe('ModelComparisonComponent', () => {
   it('offers every Windows display scaling step, and Custom below them', () => {
     withDisplayDensity(1);
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('download');
+    openSidebarTab('style');
 
     const options = fixture.debugElement
       .queryAll(By.css('#mc-export-density option'))
@@ -1975,7 +1971,7 @@ describe('ModelComparisonComponent', () => {
 
   it('multiplies the written size by the density in the read-out and the Download all summary', () => {
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('download');
+    openSidebarTab('style');
     component.onExportResolutionChange('fullhd');
 
     component.onExportDensityChange(2);
@@ -1995,21 +1991,41 @@ describe('ModelComparisonComponent', () => {
     expect(plain).not.toContain('(1920 × 1080 at');
   });
 
-  it('names the density on the on-screen size, and no fixed factor', () => {
+  it('opens every figure at Full HD, the display’s own density and 100 % text, and offers no On-screen size', () => {
+    withDisplayDensity(1.5);
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('download');
-    component.onExportDensityChange(1.5);
-    refresh();
+    openSidebarTab('style');
 
+    expect(component.figureSize).toEqual(defaultFigureSize(1.5));
+    expect(component.exportResolution.id).toBe('fullhd');
+    expect(component.exportDensity).toBe(1.5);
+    expect(component.exportTextScale).toBe(1);
     const readout = textOf('.mc-export-dimensions');
-    expect(readout).toContain('on-screen size at 150%');
-    expect(readout).not.toContain('Twice');
-    expect(component.exportResolution.label).toBe('On-screen');
+    expect(readout).toContain('2880 × 1620 px (1920 × 1080 at 150%)');
+    expect(readout).not.toContain('on-screen');
+
+    const sizes = Array.from((fixture.debugElement.query(By.css('#mc-export-resolution'))
+      .nativeElement as HTMLSelectElement).options).map(option => option.value);
+    expect(sizes).not.toContain('onscreen');
+    expect(sizes).toContain('custom');
+    // Every size composes at its own box, so the text size is never disabled.
+    expect(styleControl('mc-export-text-scale').disabled).toBeFalse();
+  });
+
+  it('reads a stored On-screen size as Full HD, and keeps every other stored field', () => {
+    localStorage.setItem(FIGURE_SIZE_STORAGE_KEY, JSON.stringify({
+      version: 1, ...defaultFigureSize(1), resolutionId: 'onscreen', densitySelection: 3, textScalePercent: 150
+    }));
+    const stored = TestBed.createComponent(ModelComparisonComponent);
+    expect(stored.componentInstance.figureSize.resolutionId).toBe('fullhd');
+    expect(stored.componentInstance.exportDensity).toBe(3);
+    expect(stored.componentInstance.figureSize.textScalePercent).toBe(150);
+    stored.destroy();
   });
 
   it('refuses a custom density outside its bounds, and will not export under one', () => {
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('download');
+    openSidebarTab('style');
     component.onExportDensityChange('custom');
     component.onCustomDensityChange(900);
     refresh();
@@ -2017,7 +2033,7 @@ describe('ModelComparisonComponent', () => {
     expect(component.customDensityError).toContain(`${component.maxExportDensityPercent}`);
     expect(component.exportSizeError).toBe(component.customDensityError);
     expect(component.canExport).toBeFalse();
-    expect(textOf('#mc-side-panel-download .mc-export-error')).toContain('800');
+    expect(textOf('#mc-side-panel-style .mc-export-error')).toContain('800');
 
     component.onCustomDensityChange(150);
     refresh();
@@ -2028,8 +2044,8 @@ describe('ModelComparisonComponent', () => {
 
   it('refuses a bitmap the browser could not allocate, and marks every export control unavailable', () => {
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('download');
-    openPreview();
+    openSidebarTab('style');
+    openSingle();
     component.onExportResolutionChange('custom');
     component.onCustomWidthChange(8000);
     component.onCustomHeightChange(8000);
@@ -2056,61 +2072,56 @@ describe('ModelComparisonComponent', () => {
     expect(controls.every(button => button.getAttribute('aria-disabled') === null)).toBeTrue();
   });
 
-  it('copies the live figure at the chosen density, and restores the chart afterwards', async () => {
+  it('copies the figure composed at the figure size, as a PNG, without a chart on the page', async () => {
     render(buildDto(comparableSet(3)), 4);
-    withClipboard({ write: () => Promise.resolve() });
+    const written: ClipboardItem[] = [];
+    withClipboard({ write: (items: ClipboardItem[]) => { written.push(...items); return Promise.resolve(); } });
     const card = component.panelCards[0];
-    const canvas = (component as unknown as {
-      canvasFor(card: ComparisonFigureCard): HTMLCanvasElement | null;
-    }).canvasFor(card)!;
-    const chart = (component as unknown as {
-      chartFor(canvas: HTMLCanvasElement): { options: { devicePixelRatio?: number }; resize(): void } | null;
-    }).chartFor(canvas)!;
-    expect(chart).withContext('the live chart the copy path re-renders').toBeTruthy();
+    expect(fixture.debugElement.queryAll(By.directive(BaseChartDirective)).length).toBe(0);
 
-    const previous = chart.options.devicePixelRatio;
-    const seen: (number | undefined)[] = [];
-    spyOn(chart, 'resize').and.callFake(() => seen.push(chart.options.devicePixelRatio));
-
-    component.onExportDensityChange(3);
+    component.onExportDensityChange(1);
+    component.onExportResolutionChange('hd');
     await component.copyFigure(card);
 
-    // Up for the encode, back down in the `finally`: a copy must not strand the on-screen figure.
-    expect(seen[0]).toBe(3);
-    expect(chart.options.devicePixelRatio).toBe(previous);
+    expect(component.exportStatus).toBe(`Copied ${card.title} to the clipboard.`);
+    expect(written.length).toBe(1);
+    expect(written[0].types).toEqual(['image/png']);
+    const bitmap = await createImageBitmap(await written[0].getType('image/png'));
+    expect([bitmap.width, bitmap.height]).toEqual([1280, 720]);
+    bitmap.close();
   });
 
   it('derives the other custom side from the locked ratio', () => {
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('download');
+    openSidebarTab('style');
     component.onExportResolutionChange('custom');
-    component.customExportWidth = 1920;
-    component.customExportHeight = 1080;
+    component.onCustomWidthChange(1920);
+    component.onCustomHeightChange(1080);
 
     component.lockCustomRatio(true);
     component.onCustomWidthChange(1280);
-    expect(component.customExportHeight).toBe(720);
+    expect(component.figureSize.customHeightPx).toBe(720);
 
     component.onCustomHeightChange(1080);
-    expect(component.customExportWidth).toBe(1920);
+    expect(component.figureSize.customWidthPx).toBe(1920);
     expect(component.exportAspectLabel).toBe('16:9');
 
     // Unlocked, a side is exactly what was typed into it.
     component.lockCustomRatio(false);
     component.onCustomWidthChange(1000);
-    expect(component.customExportHeight).toBe(1080);
+    expect(component.figureSize.customHeightPx).toBe(1080);
   });
 
-  it('opens the Preview tab on one card and steps through the set, wrapping at both ends', () => {
+  it('opens the Single tab on one tile and steps through the set, wrapping at both ends', () => {
     render(buildDto(comparableSet(3)), 4);
     const cards = component.exportableCards;
     expect(cards.length).toBe(7);
 
-    openPreview(cards[2]);
-    expect(component.figureTab).toBe('preview');
+    openSingle(cards[2]);
+    expect(component.figureTab).toBe('single');
     expect(component.previewCardId).toBe(cards[2].id);
     expect(component.previewActive).toBeTrue();
-    expect(previewTabButton().getAttribute('aria-selected')).toBe('true');
+    expect(singleTabButton().getAttribute('aria-selected')).toBe('true');
     // A screen reader lands on "Figure, <title>".
     expect(document.activeElement?.id).toBe('mc-preview-figure');
 
@@ -2124,16 +2135,16 @@ describe('ModelComparisonComponent', () => {
     component.previewNext();
     expect(component.previewCardId).toBe(cards[0].id);
 
-    // The tab itself shows the last figure previewed, or the first where none was.
-    component.selectFigureTab('charts');
+    // The tab itself shows the last figure shown or activated, or the first where none was.
+    component.selectFigureTab('all');
     refresh();
-    openPreview();
+    openSingle();
     expect(component.previewCardId).toBe(cards[0].id);
   });
 
-  /** Shows the Preview tab on a card and the sidebar's Style tab, both through the real tabs. */
+  /** Shows the Single tab on a card and the sidebar's Style tab, both through the real tabs. */
   function openStyleTab(card?: ComparisonFigureCard): void {
-    openPreview(card);
+    openSingle(card);
     openSidebarTab('style');
   }
 
@@ -2156,14 +2167,12 @@ describe('ModelComparisonComponent', () => {
   }
 
   /**
-   * The text of every note drawn on the page under one card, found by its place in a group, as one
-   * string: each note carries a visually hidden tone prefix before its own text.
+   * The notes one figure draws — on its All tile and in its file alike, since both are one
+   * composition — found by its place in a family, as one string.
    */
-  function pageNotes(group: '.mc-panels' | '.mc-grid', index: number): string {
-    const card = fixture.debugElement.queryAll(By.css(`${group} .mc-card`))[index];
-    return card.queryAll(By.css('.mc-note'))
-      .map(note => ((note.nativeElement as HTMLElement).textContent ?? '').replace(/\s+/g, ' ').trim())
-      .join(' | ');
+  function drawnNotes(family: 'panels' | 'scatters', index: number): string {
+    const card = family === 'panels' ? component.panelCards[index] : component.scatterCards[index];
+    return exportNotesOf(card).join(' | ');
   }
 
   function exportNotesOf(card: ComparisonFigureCard): string[] {
@@ -2317,16 +2326,39 @@ describe('ModelComparisonComponent', () => {
     expect(fixture.debugElement.query(By.css('#mc-side-panel-style'))).toBeNull();
   });
 
-  it('offers Charts and Preview as tabs with the full tab contract', () => {
+  it('offers All and Single as tabs with the full tab contract', () => {
     render(buildDto(comparableSet(3)), 4);
 
+    // Named in full for assistive technology, starting with the visible word.
+    const names = fixture.debugElement.queryAll(By.css('.mc-fig-tabs [role="tab"]'))
+      .map(tab => (tab.nativeElement as HTMLElement).getAttribute('aria-label'));
+    expect(names).toEqual(['All figures', 'Single figure']);
+
     expectTabContract('.mc-fig-tabs', 'Figure views', 'mc-fig-tab-', 'mc-fig-panel-',
-      ['Charts', 'Preview'], () => component.figureTab);
+      ['All', 'Single'], () => component.figureTab);
     expect(component.previewActive).toBeTrue();
-    expect(fixture.debugElement.query(By.css('#mc-fig-panel-preview'))).not.toBeNull();
+    expect(fixture.debugElement.query(By.css('#mc-fig-panel-single'))).not.toBeNull();
+    expect(fixture.debugElement.query(By.css('#mc-fig-panel-all'))).toBeNull();
     // Both tabs carry a glyph, or neither would.
     const glyphs = fixture.debugElement.queryAll(By.css('.mc-fig-tabs [role="tab"] svg.btn-icon'));
     expect(glyphs.length).toBe(2);
+  });
+
+  it('reads a stored Charts or Preview view as All or Single', () => {
+    localStorage.setItem(FIGURE_SIDEBAR_STORAGE_KEY, JSON.stringify({ version: 1, collapsed: false, tab: 'style', view: 'preview' }));
+    let stored = TestBed.createComponent(ModelComparisonComponent);
+    expect(stored.componentInstance.figureTab).toBe('single');
+    stored.destroy();
+
+    localStorage.setItem(FIGURE_SIDEBAR_STORAGE_KEY, JSON.stringify({ version: 1, collapsed: false, tab: 'style', view: 'charts' }));
+    stored = TestBed.createComponent(ModelComparisonComponent);
+    expect(stored.componentInstance.figureTab).toBe('all');
+    stored.destroy();
+
+    localStorage.setItem(FIGURE_SIDEBAR_STORAGE_KEY, JSON.stringify({ version: 1, collapsed: false, tab: 'style', view: 'gallery' }));
+    stored = TestBed.createComponent(ModelComparisonComponent);
+    expect(stored.componentInstance.figureTab).toBe('all');
+    stored.destroy();
   });
 
   it('shows the bar set on a panel, the trade-off set on a scatter and the profile set on the profile', () => {
@@ -2351,7 +2383,6 @@ describe('ModelComparisonComponent', () => {
     expect(has('#mc-style-bar-heading')).toBeFalse();
     expect(has('#mc-style-scatter-heading')).toBeFalse();
     expect(has('#mc-style-profile-heading')).toBeTrue();
-    expect(textOf('.fsp-note')).toContain('Chart text follows Text size on the Download tab.');
   });
 
   it('stores a style change at once, persists it, and rebuilds the figures after the debounce', () => {
@@ -2414,18 +2445,6 @@ describe('ModelComparisonComponent', () => {
     }
   });
 
-  /** A part of one page card on the Charts tab, or null while it is not rendered. */
-  function cardPart(cardId: string, selector: string): HTMLElement | null {
-    return (fixture.nativeElement as HTMLElement)
-      .querySelector<HTMLElement>(`figure.mc-card[aria-labelledby="${cardId}-title"] ${selector}`);
-  }
-
-  function cardPartSize(cardId: string, selector: string): string {
-    const part = cardPart(cardId, selector);
-    expect(part).withContext(`${cardId} ${selector}`).not.toBeNull();
-    return part ? getComputedStyle(part).fontSize : '';
-  }
-
   /** Applies one family's style change the way the Style tab does, and re-renders without a tick. */
   function changeFamilyStyle<K extends 'bar' | 'scatter' | 'profile'>(
     family: K, change: Partial<FigureStyle[K]>
@@ -2437,87 +2456,56 @@ describe('ModelComparisonComponent', () => {
     refresh();
   }
 
-  it('sizes the page card titles from each family\'s Heading size', () => {
+  /** One figure's caption as the composer draws it — on its All tile and in its file alike. */
+  function drawnChrome(card: ComparisonFigureCard): {
+    footer: FigureFooter; textSizes?: { titlePx: number; badgePx: number; footerPx: number };
+  } {
+    return (component as unknown as {
+      exportChrome(card: ComparisonFigureCard): {
+        footer: FigureFooter; textSizes?: { titlePx: number; badgePx: number; footerPx: number };
+      };
+    }).exportChrome(card);
+  }
+
+  it('draws the figure footer in every figure, and drops it where Show footer is off', () => {
     render(buildDto(comparableSet(3)), 4);
-
-    jasmine.clock().install();
-    try {
-      changeFamilyStyle('bar', { titleSizePx: 30 });
-      expect(component.panelCards.length).toBe(3);
-      for (const card of component.panelCards) {
-        expect(cardPartSize(card.id, '.mc-card-title')).withContext(card.id).toBe('30px');
-      }
-      expect(cardPartSize(component.scatterCards[0].id, '.mc-card-title')).toBe('18px');
-    } finally {
-      jasmine.clock().uninstall();
-    }
-  });
-
-  it('sizes the page badges, the Better badge and its arrow from Badge text size', () => {
-    render(buildDto(comparableSet(3)), 4);
-
-    jasmine.clock().install();
-    try {
-      changeFamilyStyle('scatter', { badgeTextSizePx: 20 });
-      const id = component.scatterCards[0].id;
-      expect(cardPartSize(id, '.mc-badge')).toBe('20px');
-      expect(cardPartSize(id, '.mc-direction')).toBe('20px');
-      const arrow = cardPart(id, '.mc-direction-arrow');
-      expect(arrow).not.toBeNull();
-      expect(getComputedStyle(arrow!).width).toBe('26px');
-      expect(cardPartSize(component.panelCards[0].id, '.mc-badge')).toBe('11px');
-    } finally {
-      jasmine.clock().uninstall();
-    }
-  });
-
-  it('shows the figure footer on every page card, and drops it where Show footer is off', () => {
-    render(buildDto(comparableSet(3)), 4);
-    const footers = (cardId: string): HTMLElement[] => Array.from(
-      (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>(
-        `figure.mc-card[aria-labelledby="${cardId}-title"] .mc-card-footer`));
     const cards = [...component.panelCards, component.profileCard!, ...component.scatterCards];
     for (const card of cards) {
-      const found = footers(card.id);
-      expect(found.length).withContext(card.id).toBe(1);
-      expect(found[0].textContent).toContain('GnollHack Player Assistance Benchmark Suite');
-      expect(found[0].textContent).toContain('Computed');
+      expect(drawnChrome(card).footer.suite).withContext(card.id).toBe('GnollHack Player Assistance Benchmark Suite');
+      expect(drawnChrome(card).footer.computedAt).withContext(card.id).not.toBe('');
     }
 
     jasmine.clock().install();
     try {
       changeFamilyStyle('profile', { footer: false });
-      expect(footers(component.profileCard!.id).length).toBe(0);
+      expect(drawnChrome(component.profileCard!).footer).toEqual({ suite: '', computedAt: '' });
       for (const card of component.panelCards) {
-        expect(footers(card.id).length).withContext(card.id).toBe(1);
+        expect(drawnChrome(card).footer.suite).withContext(card.id).not.toBe('');
       }
     } finally {
       jasmine.clock().uninstall();
     }
   });
 
-  it('sizes the page footer from Footer text size', () => {
+  it('draws each family at its own caption sizes, and re-composes the All tiles once a style change pauses', async () => {
     render(buildDto(comparableSet(3)), 4);
+    await settleAllTab();
+    expect(component.allActive).toBeTrue();
+    const schedule = spyOn(
+      component as unknown as { scheduleAllCompose(): void }, 'scheduleAllCompose').and.callThrough();
 
     jasmine.clock().install();
     try {
-      changeFamilyStyle('bar', { footerTextSizePx: 16 });
-      expect(cardPartSize(component.panelCards[0].id, '.mc-card-footer')).toBe('16px');
-      expect(cardPartSize(component.scatterCards[0].id, '.mc-card-footer')).toBe('12px');
-    } finally {
-      jasmine.clock().uninstall();
-    }
-  });
+      changeFamilyStyle('bar', { titleSizePx: 30, badgeTextSizePx: 14, footerTextSizePx: 16 });
+      // Not yet: a drag re-composes once it pauses.
+      expect(schedule).not.toHaveBeenCalled();
+      jasmine.clock().tick(150);
+      expect(schedule).toHaveBeenCalled();
 
-  it('follows a style change on the page at once, before the charts rebuild', () => {
-    render(buildDto(comparableSet(3)), 4);
-    const id = component.profileCard!.id;
-    expect(cardPartSize(id, '.mc-card-title')).toBe('18px');
-
-    jasmine.clock().install();
-    try {
-      changeFamilyStyle('profile', { titleSizePx: 24 });
-      expect(cardPartSize(id, '.mc-card-title')).toBe('24px');
+      for (const card of component.panelCards) {
+        expect(drawnChrome(card).textSizes).withContext(card.id).toEqual({ titlePx: 30, badgePx: 14, footerPx: 16 });
+      }
+      expect(drawnChrome(component.scatterCards[0]).textSizes).toEqual({ titlePx: 18, badgePx: 11, footerPx: 12 });
     } finally {
       jasmine.clock().uninstall();
     }
@@ -2529,17 +2517,17 @@ describe('ModelComparisonComponent', () => {
 
     const noteToggle = styleControl('mc-style-bar-hiddenIntervalsNote');
     expect(noteToggle.disabled).toBeTrue();
-    expect(pageNotes('.mc-panels', 0)).not.toContain(HIDDEN_INTERVALS_NOTE);
+    expect(drawnNotes('panels', 0)).not.toContain(HIDDEN_INTERVALS_NOTE);
 
     withStyleDebounce(() => setChecked(styleControl('mc-style-bar-intervals'), false));
-    expect(pageNotes('.mc-panels', 0)).toContain(HIDDEN_INTERVALS_NOTE);
+    expect(drawnNotes('panels', 0)).toContain(HIDDEN_INTERVALS_NOTE);
     // The Speed panel on mean time draws no whisker anyway, so it gains nothing.
-    expect(pageNotes('.mc-panels', 1)).not.toContain(HIDDEN_INTERVALS_NOTE);
+    expect(drawnNotes('panels', 1)).not.toContain(HIDDEN_INTERVALS_NOTE);
     expect(component.panelCards[0].plugins).not.toContain(errorBarPlugin);
 
     expect(styleControl('mc-style-bar-hiddenIntervalsNote').disabled).toBeFalse();
     withStyleDebounce(() => setChecked(styleControl('mc-style-bar-hiddenIntervalsNote'), false));
-    expect(pageNotes('.mc-panels', 0)).not.toContain(HIDDEN_INTERVALS_NOTE);
+    expect(drawnNotes('panels', 0)).not.toContain(HIDDEN_INTERVALS_NOTE);
   });
 
   it('drops the frontier note from the scatter card and its export on request, keeping the set notes', () => {
@@ -2555,7 +2543,7 @@ describe('ModelComparisonComponent', () => {
     withStyleDebounce(() => setChecked(styleControl('mc-style-scatter-frontierIntervalsNote'), false));
 
     expect(s1().chrome.notes.map(note => note.text)).not.toContain(FRONTIER_UNCERTAINTY_NOTE);
-    expect(pageNotes('.mc-grid', 0)).not.toContain(FRONTIER_UNCERTAINTY_NOTE);
+    expect(drawnNotes('scatters', 0)).not.toContain(FRONTIER_UNCERTAINTY_NOTE);
     expect(exportNotesOf(s1())).not.toContain(FRONTIER_UNCERTAINTY_NOTE);
     for (const text of setNotes) {
       expect(exportNotesOf(s1())).toContain(text);
@@ -2596,32 +2584,31 @@ describe('ModelComparisonComponent', () => {
     expect(component.speedMeasure).toBe('meanModelTime');
     const setNotes = component.setFigureNotes.map(note => note.text);
     const speed = (): ComparisonFigureCard => component.panelCards[1];
-    expect(pageNotes('.mc-panels', 1)).toContain(MEAN_TIME_NO_INTERVAL_NOTE);
+    expect(drawnNotes('panels', 1)).toContain(MEAN_TIME_NO_INTERVAL_NOTE);
 
     openStyleTab(speed());
     const toggle = styleControl('mc-style-bar-meanTimeNoIntervalNote');
     expect(toggle.disabled).toBeFalse();
     withStyleDebounce(() => setChecked(toggle, false));
 
-    expect(pageNotes('.mc-panels', 1)).not.toContain(MEAN_TIME_NO_INTERVAL_NOTE);
+    expect(drawnNotes('panels', 1)).not.toContain(MEAN_TIME_NO_INTERVAL_NOTE);
     expect(exportNotesOf(speed())).not.toContain(MEAN_TIME_NO_INTERVAL_NOTE);
     for (const text of setNotes) {
       expect(exportNotesOf(speed())).toContain(text);
     }
   });
 
-  it('lets a forced horizontal orientation size the panels in a wide container', () => {
+  it('lets a forced horizontal orientation turn the panels in a wide container', () => {
     render(buildDto(comparableSet(3)), 4);
     component.applyContainerWidth(P1_STACK_BREAKPOINT_PX + 400);
     expect(component.orientation).toBe('vertical');
-    expect(component.panelHeight()).toBe(340);
+    expect((component.panelCards[0].options as { indexAxis?: string }).indexAxis).not.toBe('y');
 
     openStyleTab(component.panelCards[0]);
     withStyleDebounce(() => setChecked(styleControl('mc-style-bar-orientation-horizontal'), true));
 
     expect(component.effectiveOrientation).toBe('horizontal');
     expect(component.orientation).toBe('vertical');
-    expect(component.panelHeight()).toBe(260);
     expect((component.panelCards[0].options as { indexAxis?: string }).indexAxis).toBe('y');
   });
 
@@ -2735,23 +2722,24 @@ describe('ModelComparisonComponent', () => {
     third.destroy();
   });
 
-  it('feeds the Text size range into the export layout, and disables it for On-screen', async () => {
+  it('feeds the Text size range into every size’s layout, and persists it', async () => {
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('download');
-    openPreview(component.panelCards[0]);
+    openSidebarTab('style');
+    openSingle(component.panelCards[0]);
 
-    const range = styleControl('mc-export-text-scale');
-    expect(component.exportResolutionId).toBe('onscreen');
-    expect(range.disabled).toBeTrue();
+    // Full HD, where the size opens: the text size applies to it as to every other size.
+    expect(component.figureSize.resolutionId).toBe('fullhd');
+    expect(styleControl('mc-export-text-scale').disabled).toBeFalse();
+    expect(component.exportDimensionsLabel).toContain('laid out at 960 × 540');
 
     component.onExportResolutionChange('square1080');
     refresh();
-    expect(styleControl('mc-export-text-scale').disabled).toBeFalse();
     expect(component.exportDimensionsLabel).toContain('laid out at 960 × 960');
 
     setRange(styleControl('mc-export-text-scale'), 200);
-    expect(component.exportTextScalePercent).toBe(200);
+    expect(component.figureSize.textScalePercent).toBe(200);
     expect(component.exportDimensionsLabel).toContain('laid out at 480 × 480');
+    expect(JSON.parse(localStorage.getItem(FIGURE_SIZE_STORAGE_KEY)!).textScalePercent).toBe(200);
 
     component.onExportResolutionChange('custom');
     component.lockCustomRatio(false);
@@ -2781,7 +2769,7 @@ describe('ModelComparisonComponent', () => {
         footer: { suite: 'Suite A', computedAt: 'Current catalog, 3 Sep 2026' }
       });
     openSidebarTab('download');
-    openPreview(card);
+    openSingle(card);
 
     component.onExportResolutionChange('custom');
     component.onCustomWidthChange(1280);
@@ -2845,7 +2833,7 @@ describe('ModelComparisonComponent', () => {
     render(buildDto(comparableSet(3)), 4);
     // A fixture's element is never laid out, so the stage's geometry is given rather than measured.
     spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
-    openPreview();
+    openSingle();
 
     // A density above the stage's own only raises the cap on the preview; the stage still decides.
     component.onExportDensityChange(2);
@@ -2862,7 +2850,7 @@ describe('ModelComparisonComponent', () => {
   it('fits a portrait target to the stage’s height, in the target’s own ratio', async () => {
     render(buildDto(comparableSet(3)), 4);
     spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
-    openPreview();
+    openSingle();
 
     component.onExportDensityChange(1);
     component.onExportResolutionChange('a4p');
@@ -2906,7 +2894,7 @@ describe('ModelComparisonComponent', () => {
   async function openFullHdPreview(): Promise<void> {
     render(buildDto(comparableSet(3)), 4);
     spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
-    openPreview();
+    openSingle();
     component.onExportDensityChange(1);
     component.onExportResolutionChange('fullhd');
     await composePreview();
@@ -2916,7 +2904,7 @@ describe('ModelComparisonComponent', () => {
   async function openCustomPreview(): Promise<void> {
     render(buildDto(comparableSet(3)), 4);
     spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
-    openPreview();
+    openSingle();
     component.onExportDensityChange(1);
     component.onExportResolutionChange('custom');
     component.onCustomWidthChange(800);
@@ -3104,13 +3092,13 @@ describe('ModelComparisonComponent', () => {
     expect(sizes[2]).toEqual(sizes[0]);
   });
 
-  it('returns to the Preview tab in the default view', async () => {
+  it('returns to the Single tab in the default view', async () => {
     await openFullHdPreview();
     component.setPreviewView(4);
 
-    component.selectFigureTab('charts');
+    component.selectFigureTab('all');
     refresh();
-    openPreview();
+    openSingle();
 
     expect(component.previewView).toBe('default');
   });
@@ -3128,33 +3116,44 @@ describe('ModelComparisonComponent', () => {
     };
   }
 
-  it('stops watching the stage on switching to Charts', () => {
+  it('stops watching the stage on switching to All, and watches the All viewport instead', () => {
     render(buildDto(comparableSet(3)), 4);
     const observers = installFakeResizeObserver();
-    openPreview();
+    openSingle();
     const { watching, removed } = watchedStage(observers);
     expect(watching.length).toBe(1);
 
-    (fixture.debugElement.query(By.css('#mc-fig-tab-charts')).nativeElement as HTMLButtonElement).click();
+    (fixture.debugElement.query(By.css('#mc-fig-tab-all')).nativeElement as HTMLButtonElement).click();
     refresh();
 
     expect(watching[0].disconnected).toBe(1);
     expect(component.previewActive).toBeFalse();
     expect(removed).toHaveBeenCalledWith('wheel', jasmine.any(Function), jasmine.anything());
-    expect(fixture.debugElement.query(By.css('#mc-fig-panel-preview'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('#mc-fig-panel-single'))).toBeNull();
+
+    const viewport = fixture.debugElement.query(By.css('.mc-all-viewport')).nativeElement as HTMLElement;
+    const watchingAll = observers.filter(observer => observer.observed.includes(viewport));
+    expect(watchingAll.length).toBe(1);
+    expect(component.allActive).toBeTrue();
+
+    // Back to Single: the All viewport's observer goes with it.
+    singleTabButton().click();
+    refresh();
+    expect(watchingAll[0].disconnected).toBe(1);
+    expect(component.allActive).toBeFalse();
   });
 
   it('stops watching the stage on leaving step 4, and on destroy', async () => {
     render(buildDto(comparableSet(3)), 4);
     const observers = installFakeResizeObserver();
-    openPreview();
+    openSingle();
     const first = watchedStage(observers);
 
     component.goToStep(3);
     fixture.detectChanges();
     expect(first.watching[0].disconnected).toBe(1);
     expect(first.removed).toHaveBeenCalledWith('pointerdown', jasmine.any(Function), undefined);
-    expect(component.figureTab).withContext('kept, so returning shows the Preview tab again').toBe('preview');
+    expect(component.figureTab).withContext('kept, so returning shows the Single tab again').toBe('single');
 
     component.goToStep(4);
     fixture.detectChanges();
@@ -3171,7 +3170,7 @@ describe('ModelComparisonComponent', () => {
   it('removes the viewport listeners from their element after a refetch has taken it out of the DOM', () => {
     render(buildDto(comparableSet(3)), 4);
     const observers = installFakeResizeObserver();
-    openPreview();
+    openSingle();
     const { watching, viewport, removed } = watchedStage(observers);
 
     // A refetch down to one entry: step 4 stays open, and the workspace goes with the figures.
@@ -3214,29 +3213,34 @@ describe('ModelComparisonComponent', () => {
     component.exporting = false;
   });
 
-  it('offers an open-in-preview control on every figure card, naming its figure and never disabled', () => {
+  it('offers an Open in Single view control on every tile, naming its figure and never disabled', () => {
     render(buildDto(comparableSet(3)), 4);
 
-    const previews = (): HTMLButtonElement[] => fixture.debugElement.queryAll(By.css('.mc-card .mc-preview-open'))
+    const opens = (): HTMLButtonElement[] => fixture.debugElement.queryAll(By.css('.mc-all-tile .mc-all-open'))
       .map(button => button.nativeElement as HTMLButtonElement);
-    expect(previews().length).toBe(7);
+    expect(opens().length).toBe(7);
 
     // Icon-only, so aria-label is the accessible name — and seven of them must not share one.
-    const names = previews().map(button => button.getAttribute('aria-label') ?? '');
-    expect(names.every(name => name.startsWith('Open ') && name.endsWith(' in the preview')))
+    const names = opens().map(button => button.getAttribute('aria-label') ?? '');
+    expect(names.every(name => name.startsWith('Open ') && name.endsWith(' in Single view')))
       .toBeTrue();
     expect(new Set(names).size).toBe(7);
-    expect(previews().every(button => button.querySelector('path')?.getAttribute('d')?.startsWith('M1 12s4-8')))
+    expect(opens().every(button => button.querySelector('path')?.getAttribute('d')?.startsWith('M1 12s4-8')))
       .withContext('the eye glyph').toBeTrue();
+    expect(opens().every(button => !button.disabled && button.getAttribute('aria-disabled') === null))
+      .toBeTrue();
+    expect(opens().every(button => button.textContent?.trim() === '')).toBeTrue();
 
-    // The preview is where a size error is shown and fixed, so it stays reachable under one.
+    // The Single tab is where a size error is shown and fixed, so it stays reachable under one,
+    // though the All tab has no tile to size.
     component.onExportResolutionChange('custom');
     component.onCustomWidthChange(10);
     refresh();
     expect(component.canExport).toBeFalse();
-    expect(previews().every(button => !button.disabled && button.getAttribute('aria-disabled') === null))
-      .toBeTrue();
-    expect(previews().every(button => button.textContent?.trim() === '')).toBeTrue();
+    expect(opens().length).toBe(0);
+    const single = singleTabButton();
+    expect(single.disabled).toBeFalse();
+    expect(single.getAttribute('aria-disabled')).toBeNull();
   });
 
   // -------------------------------------------------------------------------------------------
@@ -3605,7 +3609,7 @@ describe('ModelComparisonComponent', () => {
     render(buildDto(comparableSet(3)), 4);
     const saved = captureSaves();
     const zip = stubZipWriter();
-    openPreview(component.panelCards[0]);
+    openSingle(component.panelCards[0]);
 
     await component.downloadPreviewedFigure();
 
@@ -3662,7 +3666,7 @@ describe('ModelComparisonComponent', () => {
 
   it('lays the preview toolbar out as three labelled groups of tooltipped icon buttons', () => {
     render(buildDto(comparableSet(3)), 4);
-    openPreview();
+    openSingle();
 
     const toolbar = fixture.debugElement.query(By.css('.mc-preview-toolbar')).nativeElement as HTMLElement;
     const style = getComputedStyle(toolbar);
@@ -3713,8 +3717,8 @@ describe('ModelComparisonComponent', () => {
     const toast = fixture.debugElement.query(By.directive(ToastComponent)).componentInstance as ToastComponent;
     expect(toast.notice).toBe(component.exportNotice);
 
-    // The Preview tab is not a modal, so the same toast still carries it there.
-    openPreview();
+    // The Single tab is not a modal, so the same toast still carries it there.
+    openSingle();
     expect(toast.notice).toBe(component.exportNotice);
   });
 
@@ -3730,7 +3734,7 @@ describe('ModelComparisonComponent', () => {
     return fixture.debugElement.query(By.css('#mc-fig-sidebar')).nativeElement as HTMLElement;
   }
 
-  function storedSidebar(): { version: number; collapsed: boolean; tab: string } {
+  function storedSidebar(): { version: number; collapsed: boolean; tab: string; view: string; figureSizeOpen: boolean } {
     return JSON.parse(localStorage.getItem(FIGURE_SIDEBAR_STORAGE_KEY)!);
   }
 
@@ -3764,7 +3768,7 @@ describe('ModelComparisonComponent', () => {
     expect(getComputedStyle(sidebar()).display).toBe('none');
     expect(fixture.debugElement.query(By.css('.mc-fig-workspace.is-collapsed'))).not.toBeNull();
     expect(textOf('#mc-tip-sidebar')).toContain('Show figure settings');
-    expect(storedSidebar()).toEqual({ version: 1, collapsed: true, tab: 'emphasis' });
+    expect(storedSidebar()).toEqual({ version: 1, collapsed: true, tab: 'emphasis', view: 'all', figureSizeOpen: true });
 
     const second = secondInstance();
     expect(second.componentInstance.sidebarCollapsed).toBeTrue();
@@ -3789,7 +3793,7 @@ describe('ModelComparisonComponent', () => {
   it('restores the sidebar tab, and falls back to Emphasis on an unknown or malformed one', () => {
     render(buildDto(comparableSet(3)), 4);
     openSidebarTab('download');
-    expect(storedSidebar()).toEqual({ version: 1, collapsed: false, tab: 'download' });
+    expect(storedSidebar()).toEqual({ version: 1, collapsed: false, tab: 'download', view: 'all', figureSizeOpen: true });
 
     let second = secondInstance();
     expect(second.componentInstance.sidebarTab).toBe('download');
@@ -3818,16 +3822,107 @@ describe('ModelComparisonComponent', () => {
     second.destroy();
   });
 
-  it('says on the Download tab that its settings affect downloads only', () => {
+  it('keeps only the format on the Download tab, and points to the Style tab for the size', () => {
     render(buildDto(comparableSet(3)), 4);
     openSidebarTab('download');
 
-    expect(textOf('#mc-side-panel-download .mc-download-scope')).toContain('These settings affect downloads only.');
+    const panel = fixture.debugElement.query(By.css('#mc-side-panel-download')).nativeElement as HTMLElement;
+    expect(panel.querySelector('#mc-export-format')).not.toBeNull();
+    for (const id of ['mc-export-resolution', 'mc-export-density', 'mc-export-text-scale', 'mc-export-width']) {
+      expect(panel.querySelector(`#${id}`)).withContext(id).toBeNull();
+    }
+    expect(panel.textContent).not.toContain('affect downloads only');
+    expect(panel.textContent).toContain('in the Style tab, under Figure size');
+  });
+
+  it('opens the Style tab on Figure size, above the family tabs, with its three controls', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openSidebarTab('style');
+
+    const panel = fixture.debugElement.query(By.css('#mc-side-panel-style')).nativeElement as HTMLElement;
+    const section = panel.querySelector<HTMLDetailsElement>('#mc-figure-size-section')!;
+    expect(section).not.toBeNull();
+    expect(section.open).withContext('open by default').toBeTrue();
+    expect(section.querySelector('summary .gh-disclosure-summary-title')?.textContent?.trim()).toBe('Figure size');
+    // First: before the family tabs, because it shapes every family.
+    const familyTabs = panel.querySelector('.mc-style-family-tabs')!;
+    expect(section.compareDocumentPosition(familyTabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(panel.firstElementChild?.contains(section)).toBeTrue();
+
+    const labels = Array.from(section.querySelectorAll('label')).map(label => label.textContent?.trim());
+    expect(labels).toContain('Size and aspect ratio');
+    expect(labels).toContain('Pixel density');
+    expect(labels).toContain('Text size');
+    expect(section.querySelector('#mc-export-resolution')).not.toBeNull();
+    expect(section.querySelector('#mc-export-density')).not.toBeNull();
+    expect(section.querySelector('#mc-export-text-scale')).not.toBeNull();
+    expect(section.querySelector('#mc-figure-size-hint')?.textContent?.replace(/\s+/g, ' '))
+      .toContain('The shape, sharpness and text size of every figure — in All, in Single and in downloads.');
+    expect(section.querySelector('.mc-export-dimensions')?.textContent).toContain('laid out at');
+  });
+
+  it('remembers whether Figure size is open, in the sidebar record', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openSidebarTab('style');
+    const section = fixture.debugElement.query(By.css('#mc-figure-size-section')).nativeElement as HTMLDetailsElement;
+
+    section.open = false;
+    section.dispatchEvent(new Event('toggle'));
+    refresh();
+    expect(component.figureSizeOpen).toBeFalse();
+    expect(storedSidebar()).toEqual({ version: 1, collapsed: false, tab: 'style', view: 'all', figureSizeOpen: false });
+
+    const second = secondInstance();
+    expect(second.componentInstance.figureSizeOpen).toBeFalse();
+    second.destroy();
+  });
+
+  it('resets Figure size to Full HD at the display’s density and 100 % text, and says so', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openSidebarTab('style');
+    const reset = (): HTMLButtonElement =>
+      fixture.debugElement.query(By.css('#mc-figure-size-reset')).nativeElement as HTMLButtonElement;
+
+    // §5b: after <details>, in the positioned wrapper, never in the summary or the body.
+    expect(reset().closest('details')).toBeNull();
+    expect(reset().parentElement?.classList).toContain('mc-size-section');
+    expect(reset().getAttribute('aria-label')).toBe('Reset Figure size to defaults');
+    expect(reset().getAttribute('aria-disabled')).toBe('true');
+    expect(reset().querySelector('path')?.getAttribute('d')).withContext('the undo glyph').toBe('M9 14 4 9l5-5');
+
+    component.onExportResolutionChange('a4p');
+    component.onExportTextScaleChange(150);
+    refresh();
+    expect(reset().getAttribute('aria-disabled')).toBeNull();
+
+    reset().click();
+    refresh();
+    expect(component.figureSize).toEqual(defaultFigureSize(component.displayDensity));
+    expect(JSON.parse(localStorage.getItem(FIGURE_SIZE_STORAGE_KEY)!).resolutionId).toBe('fullhd');
+    expect(reset().getAttribute('aria-disabled')).toBe('true');
+    expect(textOf('#mc-side-panel-style [role="status"]')).toContain('Figure size reset to defaults.');
+  });
+
+  it('persists a size change, and a new instance opens on it', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openSidebarTab('style');
+    component.onExportResolutionChange('uw1440');
+    component.onExportDensityChange(2);
+
+    const stored = JSON.parse(localStorage.getItem(FIGURE_SIZE_STORAGE_KEY)!);
+    expect(stored.version).toBe(1);
+    expect(stored.resolutionId).toBe('uw1440');
+    expect(stored.densitySelection).toBe(2);
+
+    const second = secondInstance();
+    expect(second.componentInstance.exportResolution.id).toBe('uw1440');
+    expect(second.componentInstance.exportDensity).toBe(2);
+    second.destroy();
   });
 
   it('centres Download all and the sidebar toggle on the figure bar', () => {
     render(buildDto(comparableSet(3)), 4);
-    expect(component.figureTab).toBe('charts');
+    expect(component.figureTab).toBe('all');
 
     const box = (selector: string): DOMRect =>
       (fixture.debugElement.query(By.css(selector)).nativeElement as HTMLElement).getBoundingClientRect();
@@ -3840,41 +3935,32 @@ describe('ModelComparisonComponent', () => {
     }
   });
 
-  it('keeps every chart canvas alive, inert and invisible under the Preview tab, and exports from it', async () => {
+  it('renders no chart directive on step 4, and exports without reading a page canvas', async () => {
     render(buildDto(comparableSet(3)), 4);
-    const canvases = (): HTMLCanvasElement[] => Array.from(
-      (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLCanvasElement>('canvas[data-figure-id]'));
-    expect(canvases().length).toBe(7);
+    const directives = (): number => fixture.debugElement.queryAll(By.directive(BaseChartDirective)).length;
+    expect(directives()).withContext('the All tab').toBe(0);
+    expect(fixture.debugElement.queryAll(By.css('canvas[baseChart], canvas[basechart]')).length).toBe(0);
 
-    openPreview(component.panelCards[0]);
-
-    expect(canvases().length).withContext('the live canvases every export composes from').toBe(7);
-    const charts = fixture.debugElement.query(By.css('#mc-fig-panel-charts')).nativeElement as HTMLElement;
-    expect(charts.hasAttribute('inert')).toBeTrue();
-    expect(charts.classList).toContain('is-inactive');
-    expect(getComputedStyle(charts).display).not.toBe('none');
-    expect(getComputedStyle(charts).visibility).toBe('hidden');
+    openSingle(component.panelCards[0]);
+    expect(directives()).withContext('the Single tab').toBe(0);
+    // Nothing is kept rendered and hidden behind the Single tab any more.
+    expect(fixture.debugElement.query(By.css('#mc-fig-panel-all'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('.mc-fig-panel[inert], .mc-fig-panel.is-inactive'))).toBeNull();
 
     captureSaves();
     const exportOne = spyOn(
-      component as unknown as { exportOneFigure(card: ComparisonFigureCard, canvas: HTMLCanvasElement | null): Promise<unknown> },
+      component as unknown as { exportOneFigure(card: ComparisonFigureCard, ...rest: unknown[]): Promise<unknown> },
       'exportOneFigure'
-    ).and.returnValue(Promise.resolve({ result: null, refusal: null, liveFallback: false, pixels: '' }));
+    ).and.returnValue(Promise.resolve({ result: null, refusal: null, pixels: '' }));
     await component.downloadPreviewedFigure();
 
     expect(exportOne).toHaveBeenCalledTimes(1);
-    const [card, canvas] = exportOne.calls.mostRecent().args;
-    expect(card.id).toBe(component.panelCards[0].id);
-    expect(canvas).not.toBeNull();
-    expect(canvas!.isConnected).toBeTrue();
-
-    (fixture.debugElement.query(By.css('#mc-fig-tab-charts')).nativeElement as HTMLButtonElement).click();
-    refresh();
-    expect(charts.hasAttribute('inert')).toBeFalse();
-    expect(charts.classList).not.toContain('is-inactive');
+    const args = exportOne.calls.mostRecent().args;
+    expect((args[0] as ComparisonFigureCard).id).toBe(component.panelCards[0].id);
+    expect(args.some(arg => arg instanceof HTMLCanvasElement)).toBeFalse();
   });
 
-  it('re-composes the preview on an emphasis toggle while it is shown, and not on the Charts tab', () => {
+  it('re-composes the Single stage on an emphasis toggle while it is shown, and not on the All tab', () => {
     render(buildDto(comparableSet(3)), 4);
     const renderPreview = spyOn(
       component as unknown as { renderPreview(): Promise<void> }, 'renderPreview'
@@ -3888,7 +3974,7 @@ describe('ModelComparisonComponent', () => {
       jasmine.clock().tick(200);
       expect(renderPreview).not.toHaveBeenCalled();
 
-      openPreview();
+      openSingle();
       jasmine.clock().tick(200);
       renderPreview.calls.reset();
 
@@ -3902,25 +3988,302 @@ describe('ModelComparisonComponent', () => {
     }
   });
 
-  it('lights no hover highlight on the Preview tab, and still clears one', () => {
+  it('lights a hover highlight on the All tab, none on the Single tab, and still clears one', async () => {
     render(buildDto(comparableSet(3)), 4);
+    await settleAllTab();
+    const schedule = spyOn(
+      component as unknown as { scheduleAllCompose(): void }, 'scheduleAllCompose').and.callThrough();
     component.setHighlight('run:1');
     expect(component.highlightedKey).toBe('run:1');
+    // The tiles re-compose with the model lit.
+    expect(schedule).toHaveBeenCalled();
 
-    openPreview();
-    expect(component.highlightedKey).withContext('entering the preview clears it').toBeNull();
+    openSingle();
+    expect(component.highlightedKey).withContext('entering the Single tab clears it').toBeNull();
 
     component.setHighlight('run:2');
     expect(component.highlightedKey).toBeNull();
 
-    component.selectFigureTab('charts');
+    component.selectFigureTab('all');
     component.setHighlight('run:2');
     expect(component.highlightedKey).toBe('run:2');
     component.setHighlight(null);
     expect(component.highlightedKey).toBeNull();
   });
 
-  it('keeps the Style tab on the previewed figure\'s family, and moves the preview to a chosen one', () => {
+  // -------------------------------------------------------------------------------------------
+  // The All tab: every figure, exactly as exported
+  // -------------------------------------------------------------------------------------------
+
+  let realIntersectionObserver: typeof IntersectionObserver | undefined;
+
+  /** Every tile counts as near, as it does in a browser without IntersectionObserver. */
+  function withoutIntersectionObserver(): void {
+    realIntersectionObserver = window.IntersectionObserver;
+    (window as unknown as { IntersectionObserver: unknown }).IntersectionObserver = undefined;
+  }
+
+  afterEach(() => {
+    if (realIntersectionObserver) {
+      (window as unknown as { IntersectionObserver: unknown }).IntersectionObserver = realIntersectionObserver;
+      realIntersectionObserver = undefined;
+    }
+  });
+
+  /** Lets the All tab attach, which runs in a microtask outside the check pass that found it. */
+  async function settleAllTab(): Promise<void> {
+    await Promise.resolve();
+    fixture.detectChanges();
+  }
+
+  /** The composition the debounce would run, without waiting for its timer and frame. */
+  async function composeAllTiles(): Promise<void> {
+    await (component as unknown as { composeAllTiles(): Promise<void> }).composeAllTiles();
+    refresh();
+  }
+
+  function allPanel(): HTMLElement {
+    return fixture.debugElement.query(By.css('#mc-fig-panel-all')).nativeElement as HTMLElement;
+  }
+
+  function tileOf(card: ComparisonFigureCard): HTMLElement {
+    return fixture.debugElement.query(By.css(`.mc-all-tile[data-figure-id="${card.id}"]`)).nativeElement as HTMLElement;
+  }
+
+  /** A 1200 × 900 viewport at DPR 2, with Full HD at 100 % density: Fit height is 868 × 2 / 1080. */
+  async function openFittedAll(): Promise<void> {
+    spyOn(component, 'measureAllViewport').and.returnValue({ width: 1200, height: 900, devicePixelRatio: 2 });
+    component.onExportDensityChange(1);
+    render(buildDto(comparableSet(3)), 4);
+    await settleAllTab();
+  }
+
+  it('opens the All tab at Fit height: one figure’s full height in the visible height', async () => {
+    await openFittedAll();
+
+    expect(component.allActive).toBeTrue();
+    expect(component.allView).toBe('fitHeight');
+    const fit = fitHeightZoom(900, 1080, 2, 16);
+    expect(component.allZoomValue).toBeCloseTo(fit, 9);
+    // The tile is the export's pixels over the display ratio, times the zoom: 900 less the padding.
+    // Inline style lengths are serialized to two decimals.
+    expect(parseFloat(tileOf(component.panelCards[0]).style.height)).toBeCloseTo(868, 1);
+    expect(parseFloat(tileOf(component.panelCards[0]).style.width)).toBeCloseTo(868 * 1920 / 1080, 1);
+    expect(textOf('.mc-all-toolbar .mc-preview-zoom-value')).toContain('Fit height');
+    const slider = fixture.debugElement.query(By.css('#mc-all-zoom')).nativeElement as HTMLInputElement;
+    expect(slider.getAttribute('aria-valuetext')).toBe(`${Math.round(fit * 100)} percent, fitted to the height`);
+    expect(fixture.debugElement.query(By.css('label[for="mc-all-zoom"]'))?.nativeElement.textContent.trim()).toBe('Zoom');
+  });
+
+  it('answers + − 0 anywhere in the All panel but a form field, and leaves them to the browser with Ctrl', async () => {
+    await openFittedAll();
+    const fit = component.allZoomValue;
+    const press = (target: HTMLElement, key: string, init: KeyboardEventInit = {}): KeyboardEvent => {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+      target.dispatchEvent(event);
+      refresh();
+      return event;
+    };
+
+    const tile = tileOf(component.panelCards[0]);
+    expect(press(tile, '+').defaultPrevented).toBeTrue();
+    expect(component.allView).toBeGreaterThan(fit);
+    const zoomedIn = component.allZoomValue;
+    press(allPanel(), '=');
+    expect(component.allZoomValue).toBeGreaterThan(zoomedIn);
+    press(allPanel(), '-');
+    expect(component.allZoomValue).toBeCloseTo(zoomedIn, 9);
+    press(allPanel(), '0');
+    expect(component.allView).toBe('fitHeight');
+
+    const withCtrl = press(allPanel(), '+', { ctrlKey: true });
+    expect(withCtrl.defaultPrevented).toBeFalse();
+    expect(component.allView).toBe('fitHeight');
+    const slider = fixture.debugElement.query(By.css('#mc-all-zoom')).nativeElement as HTMLInputElement;
+    expect(press(slider, '-').defaultPrevented).withContext('the slider keeps its own keys').toBeFalse();
+    expect(component.allView).toBe('fitHeight');
+  });
+
+  it('zooms every tile from the toolbar, and fits the height again', async () => {
+    await openFittedAll();
+    const button = (name: string): HTMLButtonElement =>
+      fixture.debugElement.query(By.css(`.mc-all-toolbar button[aria-label="${name}"]`)).nativeElement as HTMLButtonElement;
+    const height = (): number => parseFloat(tileOf(component.scatterCards[0]).style.height);
+    const fitted = height();
+
+    button('Zoom all figures in').click();
+    refresh();
+    expect(typeof component.allView).toBe('number');
+    expect(height()).toBeGreaterThan(fitted);
+
+    button('Zoom all figures out').click();
+    button('Zoom all figures out').click();
+    refresh();
+    expect(height()).toBeLessThan(fitted);
+
+    button('Fit height').click();
+    refresh();
+    expect(component.allView).toBe('fitHeight');
+    expect(height()).toBeCloseTo(fitted, 6);
+
+    for (const name of ['Zoom all figures out', 'Zoom all figures in', 'Fit height']) {
+      const tipId = button(name).getAttribute('interestfor');
+      expect(tipId).withContext(name).toBeTruthy();
+      expect((fixture.nativeElement as HTMLElement).querySelector(`#${tipId}`)?.getAttribute('popover')).toBe('hint');
+      expect(button(name).hasAttribute('title')).toBeFalse();
+    }
+  });
+
+  it('keeps the reader’s zoom across a viewport resize, and re-fits while they have not zoomed', async () => {
+    await openFittedAll();
+    const measure = component.measureAllViewport as jasmine.Spy;
+    const refreshGeometry = (): void =>
+      (component as unknown as { refreshAllGeometry(): void }).refreshAllGeometry();
+
+    measure.and.returnValue({ width: 1200, height: 600, devicePixelRatio: 2 });
+    refreshGeometry();
+    expect(component.allZoomValue).toBeCloseTo(fitHeightZoom(600, 1080, 2, 16), 9);
+
+    component.setAllView(1);
+    measure.and.returnValue({ width: 1200, height: 1000, devicePixelRatio: 2 });
+    refreshGeometry();
+    expect(component.allZoomValue).toBe(1);
+  });
+
+  it('opens a tile in Single on Enter or a click, and Single opens on the figure last activated', async () => {
+    await openFittedAll();
+    const card = component.scatterCards[1];
+
+    const tile = tileOf(card);
+    expect(tile.getAttribute('tabindex')).toBe('0');
+    expect(tile.getAttribute('aria-label')).toBe(card.title);
+    const canvas = tile.querySelector('canvas')!;
+    expect(canvas.getAttribute('role')).toBe('img');
+    expect(canvas.getAttribute('aria-label')).toBe(card.ariaLabel);
+
+    tile.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    refresh();
+    expect(component.figureTab).toBe('single');
+    expect(component.previewCardId).toBe(card.id);
+    expect(document.activeElement?.id).toBe('mc-preview-figure');
+
+    component.selectFigureTab('all');
+    refresh();
+    tileOf(component.panelCards[2]).click();
+    refresh();
+    expect(component.figureTab).toBe('single');
+    expect(component.previewCardId).toBe(component.panelCards[2].id);
+
+    // Back on All, the Single tab itself reopens the figure last activated.
+    component.selectFigureTab('all');
+    refresh();
+    openSingle();
+    expect(component.previewCardId).toBe(component.panelCards[2].id);
+  });
+
+  it('paints every tile with the composition the download writes, at the tile’s raster', async () => {
+    withoutIntersectionObserver();
+    await openFittedAll();
+    await composeAllTiles();
+
+    const zoom = component.allZoomValue;
+    for (const card of component.exportableCards) {
+      const canvas = tileOf(card).querySelector('canvas')!;
+      // The displayed size at the display's density, never more than the export itself.
+      expect(canvas.width).withContext(card.id).toBe(Math.round(1920 * Math.min(1, zoom)));
+      expect(canvas.height).withContext(card.id).toBe(Math.round(1080 * Math.min(1, zoom)));
+    }
+    expect(component.allTileRefusals).toEqual({});
+  });
+
+  it('re-composes the tiles and persists a size change, giving every tile the new box', async () => {
+    withoutIntersectionObserver();
+    await openFittedAll();
+    await composeAllTiles();
+    const schedule = spyOn(
+      component as unknown as { scheduleAllCompose(): void }, 'scheduleAllCompose').and.callThrough();
+
+    openSidebarTab('style');
+    const select = fixture.debugElement.query(By.css('#mc-export-resolution')).nativeElement as HTMLSelectElement;
+    select.value = 'square1080';
+    select.dispatchEvent(new Event('change'));
+    refresh();
+
+    expect(component.figureSize.resolutionId).toBe('square1080');
+    expect(JSON.parse(localStorage.getItem(FIGURE_SIZE_STORAGE_KEY)!).resolutionId).toBe('square1080');
+    expect(schedule).toHaveBeenCalled();
+    // Still at Fit height, now for a square: as tall as before, as wide as it is tall.
+    const tile = tileOf(component.panelCards[0]);
+    expect(parseFloat(tile.style.height)).toBeCloseTo(868, 6);
+    expect(parseFloat(tile.style.width)).toBeCloseTo(868, 6);
+
+    await composeAllTiles();
+    const canvas = tile.querySelector('canvas')!;
+    expect(canvas.width).toBe(canvas.height);
+  });
+
+  it('names a figure its caveats do not fit on its tile, in the download’s words', async () => {
+    withoutIntersectionObserver();
+    await openFittedAll();
+    const card = component.panelCards[0];
+    const notice = (index: number): string =>
+      `Notice ${index}: ` + 'the speed axis is degraded for this entry, so its bar is drawn from a partial sample. '.repeat(6);
+    spyOn(component as unknown as { exportChrome(card: ComparisonFigureCard): unknown }, 'exportChrome')
+      .and.returnValue({
+        chrome: { ...card.chrome, notes: [1, 2, 3, 4, 5, 6].map(index => ({ text: notice(index), tone: 'warning' as const })) },
+        footer: { suite: 'Suite A', computedAt: '3 Sep 2026' }
+      });
+    component.onExportResolutionChange('hd');
+    await composeAllTiles();
+
+    expect(component.allTileRefusals[card.id]).toContain(card.title);
+    expect(component.allTileRefusals[card.id]).toContain('1280 × 720 px');
+    expect(tileOf(card).querySelector('.mc-all-refusal')?.textContent).toContain('1280 × 720 px');
+    expect(tileOf(card).querySelector('canvas')!.width).toBe(0);
+  });
+
+  it('defers the rendering of tiles past the first row, holding their size', async () => {
+    await openFittedAll();
+
+    // A 1200 px viewport less 32 px of padding holds one Fit height tile of 1543 px per row.
+    expect(component.allTilesPerRow).toBe(1);
+    const tiles = fixture.debugElement.queryAll(By.css('.mc-all-tile')).map(tile => tile.nativeElement as HTMLElement);
+    expect(tiles[0].classList).not.toContain('is-deferred');
+    expect(tiles.slice(1).every(tile => tile.classList.contains('is-deferred'))).toBeTrue();
+    expect(tiles[1].style.getPropertyValue('contain-intrinsic-size')).toContain(`${Math.round(component.allTileCssHeight)}px`);
+  });
+
+  it('stops composing, and drops its observers and timers, on leaving the All tab, step 4 and on destroy', async () => {
+    await openFittedAll();
+    const internals = component as unknown as {
+      allComposeTimer: unknown; allResizeObserver: unknown; allIntersectionObserver: unknown;
+    };
+    expect(internals.allComposeTimer).not.toBeNull();
+
+    openSingle();
+    expect(component.allActive).toBeFalse();
+    expect(internals.allComposeTimer).toBeNull();
+    expect(internals.allResizeObserver).toBeNull();
+    expect(internals.allIntersectionObserver).toBeNull();
+
+    component.selectFigureTab('all');
+    refresh();
+    expect(component.allActive).toBeTrue();
+    component.goToStep(3);
+    fixture.detectChanges();
+    expect(component.allActive).toBeFalse();
+    expect(internals.allComposeTimer).toBeNull();
+
+    component.goToStep(4);
+    fixture.detectChanges();
+    await settleAllTab();
+    expect(component.allActive).toBeTrue();
+    fixture.destroy();
+    expect(component.allActive).toBeFalse();
+    expect(internals.allResizeObserver).toBeNull();
+  });
+
+  it('keeps the Style tab on the Single figure\'s family, and moves the Single stage to a chosen one', () => {
     render(buildDto(comparableSet(3)), 4);
     openSidebarTab('style');
     const families = (): string[] => fixture.debugElement.queryAll(By.css('.mc-style-family-tabs [role="tab"]'))
@@ -3929,13 +4292,13 @@ describe('ModelComparisonComponent', () => {
     expect((fixture.debugElement.query(By.css('.mc-style-family-tabs')).nativeElement as HTMLElement)
       .getAttribute('aria-label')).toBe('Figures to style');
 
-    // On the Charts tab, choosing a family moves nothing.
+    // On the All tab, choosing a family moves nothing.
     openStyleFamily('scatter');
     expect(component.styleFamily).toBe('scatter');
     expect(component.previewCardId).toBeNull();
     expect(fixture.debugElement.query(By.css('#mc-style-scatter-heading'))).not.toBeNull();
 
-    openPreview(component.panelCards[1]);
+    openSingle(component.panelCards[1]);
     expect(component.styleFamily).withContext('follows the figure on the stage').toBe('bar');
     component.selectPreviewCard(component.scatterCards[0].id);
     expect(component.styleFamily).toBe('scatter');
@@ -4017,7 +4380,7 @@ describe('ModelComparisonComponent', () => {
 
   it('leaves no duplicate of any control in step 4', () => {
     render(buildDto(comparableSet(3)), 4);
-    openPreview();
+    openSingle();
 
     const step = fixture.debugElement.query(By.css('#mc-step-panel-4')).nativeElement as HTMLElement;
     const outsidePanel = (text: string): Element[] => Array.from(step.querySelectorAll('label, button, h4'))
@@ -4032,9 +4395,9 @@ describe('ModelComparisonComponent', () => {
     expect(fixture.debugElement.queryAll(By.css('app-figure-style-panel')).length).toBeLessThanOrEqual(1);
   });
 
-  it('returns to the Preview tab after a step away, and watches the stage again', async () => {
+  it('returns to the Single tab after a step away, and watches the stage again', async () => {
     render(buildDto(comparableSet(3)), 4);
-    openPreview();
+    openSingle();
     const observe = spyOn(component as unknown as { observeStage(): void }, 'observeStage').and.callThrough();
 
     component.goToStep(3);
@@ -4048,8 +4411,8 @@ describe('ModelComparisonComponent', () => {
     await Promise.resolve();
     fixture.detectChanges();
 
-    expect(component.figureTab).toBe('preview');
-    expect(previewTabButton().getAttribute('aria-selected')).toBe('true');
+    expect(component.figureTab).toBe('single');
+    expect(singleTabButton().getAttribute('aria-selected')).toBe('true');
     expect(component.previewActive).toBeTrue();
     expect(observe).toHaveBeenCalledTimes(1);
   });

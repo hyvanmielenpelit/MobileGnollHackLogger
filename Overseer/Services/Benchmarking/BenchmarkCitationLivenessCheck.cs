@@ -32,6 +32,13 @@ using System.Text.RegularExpressions;
 /// instead of the usual liveness check; a range starting on that same line is exempt, since it also
 /// reaches inside the body.
 ///
+/// A single-line, unranged reference to a <c>src/*.c</c> or <c>include/*.h</c> line inside a
+/// <c>#define</c> header — the <c>#define</c> line or one of its backslash-continued lines, up to
+/// and including the first line that does not end in <c>\</c> — gets a note naming the macro, the
+/// same way. An <c>include/*.h</c> reference is checked for nothing else.
+///
+/// A verification that already carries a note keeps it.
+///
 /// Pure over the corpus it is given; any failure yields no note.
 /// </summary>
 public sealed class BenchmarkCitationLivenessCheck
@@ -61,9 +68,17 @@ public sealed class BenchmarkCitationLivenessCheck
     public static string DefinitionLineNoteText(string path, int line, string functionName)
         => $"cited line {path}:{line} is only the definition line of {functionName}";
 
+    public static string MacroDefinitionNoteText(string path, int line, string macroName)
+        => $"cited line {path}:{line} is only the definition of macro {macroName}";
+
+    /// <summary>A <c>src/*.c</c> or <c>include/*.h</c> line or line range; group 1 is the path.</summary>
     private static readonly Regex SourceReferenceRegex = new(
-        @"(?<![\w/.-])src/([\w./-]+?\.c):(\d+)(?:\s*[-–]\s*(\d+))?",
+        @"(?<![\w/.-])(src/[\w./-]+?\.c|include/[\w./-]+?\.h):(\d+)(?:\s*[-–]\s*(\d+))?",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly Regex DefineRegex = new(@"^\s*#\s*define\s+([A-Za-z_]\w*)", RegexOptions.Compiled);
+
+    private const int MaxMacroHeaderLines = 200;
 
     /// <summary>A <c>src/</c> or <c>include/</c> file named without a line: no <c>:&lt;digit&gt;</c> follows it.</summary>
     private static readonly Regex LinelessSourceFileRegex = new(
@@ -97,6 +112,12 @@ public sealed class BenchmarkCitationLivenessCheck
         var result = new List<BenchmarkClaimVerification>(verifications.Count);
         foreach (var v in verifications)
         {
+            if (!string.IsNullOrWhiteSpace(v.CitationNote))
+            {
+                result.Add(v);
+                continue;
+            }
+
             string? note = v.Verdict == BenchmarkClaimVerdict.Indeterminate ? null : NoteFor(v.Citation);
             result.Add(note == null ? v : v with { CitationNote = note });
         }
@@ -137,16 +158,31 @@ public sealed class BenchmarkCitationLivenessCheck
         var notes = new List<string>();
         foreach (var reference in references)
         {
-            string path = "src/" + reference.Groups[1].Value;
+            string path = reference.Groups[1].Value;
             if (!int.TryParse(reference.Groups[2].Value, out int line)) return null;
             bool hasRange = reference.Groups[3].Success;
+            bool isHeader = path.StartsWith("include/", StringComparison.Ordinal);
 
             if (!view.Stripped.TryGetValue(path, out var lines))
             {
+                if (isHeader) return null;
                 string missingNote = MissingFileNoteText(path);
                 if (!notes.Contains(missingNote, StringComparer.Ordinal)) notes.Add(missingNote);
                 continue;
             }
+
+            if (!hasRange && line >= 1 && line <= lines.Length)
+            {
+                string? macroName = MacroDefinedAt(lines, line - 1);
+                if (macroName != null)
+                {
+                    string macroNote = MacroDefinitionNoteText(path, line, macroName);
+                    if (!notes.Contains(macroNote, StringComparer.Ordinal)) notes.Add(macroNote);
+                    continue;
+                }
+            }
+
+            if (isHeader) return null;
 
             if (!hasRange && line >= 1 && line <= lines.Length)
             {
@@ -208,6 +244,28 @@ public sealed class BenchmarkCitationLivenessCheck
         if (typed.Success && !Keywords.Contains(typed.Groups[1].Value) && OpensABody(lines, row, typed.Groups[1].Index + typed.Groups[1].Length))
         {
             return typed.Groups[1].Value;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The name of the macro whose <c>#define</c> header holds line <paramref name="row"/> (0-based):
+    /// the line is a <c>#define</c> line, or every line from one up to it ends in <c>\</c>. Null
+    /// otherwise.
+    /// </summary>
+    private static string? MacroDefinedAt(string[] lines, int row)
+    {
+        var define = DefineRegex.Match(lines[row]);
+        if (define.Success) return define.Groups[1].Value;
+
+        int first = Math.Max(0, row - MaxMacroHeaderLines);
+        for (int i = row - 1; i >= first; i--)
+        {
+            if (!lines[i].TrimEnd().EndsWith('\\')) return null;
+
+            define = DefineRegex.Match(lines[i]);
+            if (define.Success) return define.Groups[1].Value;
         }
 
         return null;

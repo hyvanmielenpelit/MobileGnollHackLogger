@@ -72,13 +72,99 @@ namespace Overseer.Services.Tools
             }
 
             string content = fetched!;
+            string spoilerFreeSuffix = context.SpoilerFreeMode ? SpoilerFreeSuffix : string.Empty;
+            int articleBudget = context.MaxResultLength - spoilerFreeSuffix.Length;
 
-            if (context.SpoilerFreeMode)
+            if (string.IsNullOrWhiteSpace(section) && content.Length > articleBudget)
             {
-                content += "\n\n[SPOILER-FREE MODE ACTIVE: Review the spoiler_policy before sharing this information. Only share mechanics, not unrevealed content.]";
+                content = PrependTooLongNotice(content, articleBudget);
             }
 
+            content += spoilerFreeSuffix;
+
             return Task.FromResult(new ToolResult { Success = true, Content = content });
+        }
+
+        private const string SpoilerFreeSuffix = "\n\n[SPOILER-FREE MODE ACTIVE: Review the spoiler_policy before sharing this information. Only share mechanics, not unrevealed content.]";
+
+        /// <summary>The whole too-long-article notice line, headings list included, never exceeds this.</summary>
+        private const int TooLongNoticeMaxChars = 600;
+
+        /// <summary>
+        /// Cuts a section-less article down to <paramref name="maxResultLength"/> and prepends a
+        /// notice line naming its full length, how much is shown, and its headings, so the model can
+        /// ask for the rest by section instead of losing the tail to <c>ToolExecutor</c>'s own
+        /// truncation with no pointer back into the article. The notice plus the kept text lands at
+        /// exactly <paramref name="maxResultLength"/> characters (never over), so the downstream cap
+        /// never fires on top of it.
+        /// </summary>
+        private static string PrependTooLongNotice(string content, int maxResultLength)
+        {
+            var headings = MarkdownSectionExtractor.Headings(content);
+            var (notice, shown) = BuildTooLongNotice(content.Length, maxResultLength, headings);
+
+            return notice + "\n" + content.Substring(0, Math.Min(shown, content.Length));
+        }
+
+        /// <summary>
+        /// Builds the notice line and the character count it leaves for the article, by fixed
+        /// point: the line names its own shown-count, so growing that number by a digit can grow the
+        /// line itself, which is why <paramref name="maxResultLength"/> minus the line's length (and
+        /// its newline) is recomputed until it stops moving. The headings list is fitted to
+        /// <see cref="TooLongNoticeMaxChars"/> first, truncated with a trailing "…" if it does not
+        /// fit, using <paramref name="maxResultLength"/> itself as a safe over-estimate of the
+        /// shown-count's digit width.
+        /// </summary>
+        private static (string Notice, int Shown) BuildTooLongNotice(int articleLength, int maxResultLength, IReadOnlyList<string> headings)
+        {
+            string headingsText = headings.Count > 0 ? string.Join("; ", headings) : "(none)";
+            headingsText = FitHeadingsToNoticeCap(articleLength, maxResultLength, headingsText);
+
+            int shown = 0;
+            for (int i = 0; i < 4; i++)
+            {
+                string probe = ComposeNotice(articleLength, shown, headingsText);
+                int candidate = Math.Max(0, maxResultLength - probe.Length - 1);
+                if (candidate == shown)
+                {
+                    break;
+                }
+                shown = candidate;
+            }
+
+            return (ComposeNotice(articleLength, shown, headingsText), shown);
+        }
+
+        /// <summary>
+        /// Cuts <paramref name="headingsText"/>, appending "…", until the notice line built from it
+        /// no longer exceeds <see cref="TooLongNoticeMaxChars"/>. Measures with the shown-count fixed
+        /// at <paramref name="maxResultLength"/>, which is at least as wide as the real shown-count
+        /// ever will be, so the line this settles on is never under-estimated and later found too long.
+        /// </summary>
+        private static string FitHeadingsToNoticeCap(int articleLength, int maxResultLength, string headingsText)
+        {
+            while (headingsText.Length > 0 && ComposeNotice(articleLength, maxResultLength, headingsText).Length > TooLongNoticeMaxChars)
+            {
+                int overshoot = ComposeNotice(articleLength, maxResultLength, headingsText).Length - TooLongNoticeMaxChars;
+                int cut = headingsText.Length - overshoot - 1; // room for the trailing "…"
+                if (cut <= 0)
+                {
+                    return "…";
+                }
+
+                // A heading list is mostly emoji at the boundaries, and cutting between the two
+                // halves of a surrogate pair leaves a lone surrogate the serializer renders as U+FFFD.
+                if (char.IsHighSurrogate(headingsText[cut - 1])) cut--;
+
+                headingsText = headingsText.Substring(0, cut) + "…";
+            }
+
+            return headingsText;
+        }
+
+        private static string ComposeNotice(int articleLength, int shown, string headingsText)
+        {
+            return $"[Article is {articleLength} characters; the first {shown} are shown. Headings: {headingsText}. Call wiki_view again with section set to one of them to read the rest.]";
         }
 
         private const int ProbeMaxResults = 3;

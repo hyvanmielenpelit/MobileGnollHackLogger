@@ -3094,6 +3094,11 @@ public class BenchmarkService
             claimCharges: manifest.Select(m => m.Charge).ToList(),
             claimChargedParts: manifest.Select(m => m.QuotedFragments).ToList());
 
+        var chargedPartItems = BenchmarkClaimVerificationPrompt.ChargedPartItems(
+            claims,
+            manifest.Select(m => m.Roles).ToList(),
+            manifest.Select(m => m.QuotedFragments).ToList());
+
         var runRequest = BuildClaimVerificationRequest(
             verifierConfig,
             verifierApiKey,
@@ -3178,7 +3183,7 @@ public class BenchmarkService
         }
         else
         {
-            var parseResult = BenchmarkClaimVerificationParser.Parse(runResult.FinalText, claims);
+            var parseResult = BenchmarkClaimVerificationParser.Parse(runResult.FinalText, claims, chargedPartItems);
 
             bool retryEnabled = _configuration.GetValue<bool>("Benchmark:ClaimVerification:ParseRetryEnabled", true);
             if (!parseResult.Success && retryEnabled)
@@ -3224,7 +3229,7 @@ public class BenchmarkService
 
                 if (string.IsNullOrWhiteSpace(terminalError))
                 {
-                    parseResult = BenchmarkClaimVerificationParser.Parse(retryResult.FinalText, claims);
+                    parseResult = BenchmarkClaimVerificationParser.Parse(retryResult.FinalText, claims, chargedPartItems);
                     if (retryResult.TotalPromptTokens > 0)
                     {
                         runResult = retryResult;

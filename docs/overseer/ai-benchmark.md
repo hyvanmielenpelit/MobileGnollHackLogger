@@ -3798,6 +3798,116 @@ counts itself and got them wrong. `HarnessVersion` moves to **"38"**; `ScoringMe
   results and counts are not comparable across 37 and 38 on questions about an artifact, and
   claim-verification counts are not comparable on answers at Accuracy 5.
 
+### Harness Version 39 Updates
+
+Prompted by the analysis of runs 66 (GPT-6 Sol @ `medium`) and 67 (GPT-5.6 Luna @ `max`), snapshot
+suite 8 on the format 8 board, harness 38, method 12, graded with Claude 5.5 Opus @ `medium` and
+Gemini 3.8 Flash @ `medium` as second reader and claim verifier. All 143 tool calls of the two runs
+succeeded. A game word raised a false contested verdict; the disputed-answer summaries ignored the
+accused sentences; and the claim verifier produced four more wrong verdicts (instances 40–43), two
+of which a validated evidence-informed re-grade then relied on. `HarnessVersion` moves to **"39"**;
+`ScoringMethodVersion` stays **12**. No tool guide changes, so `ToolGuidesSha256` stays `671d4949…`;
+`CandidateSystemPromptSha256` does not move. No EF Core migration.
+
+- **A contested verdict ignores the game senses of "hallucination" (H1).**
+  `BenchmarkVerdictConsistency` masks the game vocabulary that shares the fabrication stem — *potion
+  of hallucination*, *hallucination gamble / risk / effect / status / resistance*, *cures / causes /
+  induces / from / or / and / to hallucination*, *hallucinating hero / player / character*, *while
+  hallucinating* — with spaces of equal length before matching. The contested-verdict check reads the
+  assessor's **comment and accuracy evidence only**, through the denial-aware
+  `MentionsUndeniedFabrication` (sentence by sentence, as the synthesis path already did); the
+  completeness evidence lists omissions and is no longer read. Run 67 Q5's *"a poison or
+  hallucination gamble"* in completeness evidence raised a contested verdict and a second opinion.
+  `MentionsFabrication` keeps its signature for its other caller and masks the same vocabulary.
+
+- **Disputed-answer lines count accused sentences (H2).** A *Disputed Assessments* line whose answer
+  has accused sentences adds `; accused sentences: S supported, R refuted, I indeterminate` inside its
+  bracket (the bracket opens `[Accused sentences: …]` when the answer has no claim counts), and the
+  answer DTO carries `accusedSupportedCount`, `accusedRefutedCount` and `accusedIndeterminateCount`
+  (null without a verification record), all computed at render time from `ClaimVerificationJson` by
+  the report's existing `AccusedSentencesOf` / `VerdictCounts`. The Run Integrity Notice prints them
+  the same way. Run 67 Q3 read "0 supported, 0 refuted, 0 indeterminate" while its two accused
+  sentences came back one Supported, one Refuted.
+
+- **A macro's definition line is not evidence (H3a).** `BenchmarkCitationLivenessCheck` notes a
+  verdict whose only source evidence is a single `src/*.c` or `include/*.h` line inside a `#define`
+  header — the `#define` line or one of its backslash-continued lines, through the first line that
+  does not end in `\`:
+
+  ```text
+  cited line <path>:<line> is only the definition of macro <NAME>
+  ```
+
+  and counts it Indeterminate, by the same path and storage as the harness-36 function-definition
+  note. A range is never noted. Run 66 Q13 was refuted citing `src/objects.c:3549`, a parameter line of
+  `#define SPELL(…)`.
+
+- **The charged part gets its own verdict (H3b).** For an accused item that prints a *Charged part*
+  line, the claim-verification schema asks for `chargedPartVerdict` (`Supported` | `Refuted` |
+  `Indeterminate`) and `chargedPartBasis`, and instruction 3k adds: *"For an item that names a charged
+  part, chargedPartVerdict is your verdict on that part alone, with its own citation in
+  chargedPartBasis; the item's verdict field is ignored for such an item."* The parser receives which
+  items carried the line (`BenchmarkClaimVerificationPrompt.ChargedPartItems`, the same rule the
+  prompt uses) and stores the charged-part verdict as the item's verdict, with `chargedPartBasis` as
+  its citation and basis, so every existing reader and every citation note works on it; the item's
+  own verdict, citation and basis are kept as `itemVerdict`, `itemCitation` and `itemBasis` for
+  display, and `chargedPart` is `true`. A missing or unparseable `chargedPartVerdict` keeps the item's
+  own fields and counts Indeterminate with the note *"the charged part was not judged separately"*; a
+  Supported or Refuted charged-part verdict whose basis names no `src/` or `include/` file, `wiki:` or
+  `board:` is demoted to Indeterminate as a missing citation. The new stored fields are omitted when
+  null, so earlier stored JSON reads unchanged. Run 67 Q7 was Supported on the uncharged clause
+  although harness 38 printed the charged part.
+
+- **Instruction 3l.** *"When a GnollHack wiki page states the property a claim is about — a spell's
+  casting time, an item's effect, a stat block value — and your reading of the source seems to
+  contradict it, name the wiki statement in your basis and cite the code that overrides it; the
+  wiki's stat blocks are printed from the same game data. Without both, the verdict is
+  Indeterminate."* Run 67 Q6 was refuted from `docast` while the wiki page the candidate read said
+  "Casting time: 0 rounds", generated from the same flag.
+
+- **One cost share, one number (H4).** The cost panel's largest-remainder apportioning is the exported
+  pure function `apportionWholePercentShares`, and the Model Under Test card prints the candidate's
+  apportioned share among the same roles, so card and panel print the same whole percent (run 66:
+  25 % on the card, 26 % in the panel, for $0.6926 of $2.7247).
+
+- **The diagnostics capture names the verifier (H5).** The `--- MODELS ---` block gains a `Verifier:`
+  line in the form of its neighbours, or `Verifier: none selected`, and prints an unset service tier
+  as `default (none requested)` in that block only.
+
+- **No *Endpoint: official* row in the run progress dialog (H6).** The Model Under Test endpoint row
+  appears only for a non-official endpoint, as the three grader rows already did. The report's
+  manifest keeps its `Endpoint:` line.
+
+- **`wiki_view` names what it cuts (T2, a tool change that live chat shares).** A `wiki_view` without
+  a `section` whose rendered article is longer than the result cap returns
+
+  ```text
+  [Article is N characters; the first M are shown. Headings: H1; H2; …. Call wiki_view again with section set to one of them to read the rest.]
+  ```
+
+  followed by the article's first `M` characters, where the line, its newline and the shown text
+  land at exactly the cap (less the spoiler-free suffix when that mode is on); the headings are every
+  heading of the whole article from `MarkdownSectionExtractor.Headings`, the list the section-miss
+  marker also uses, and the line is capped at 600 characters with a trailing `…`. Such a result no
+  longer carries `ToolExecutor`'s `[Truncated:` suffix, so `BenchmarkToolResultClassifier` recognises
+  the line at the start of a `wiki_view` result and marks the row **`partial`** (a tool's own
+  partial-result notice), not `cut`. *Sacrifice Offering* (17,840 characters) was cut blind at 10,000
+  on both runs.
+
+- **Lookup headers name the path (T1, a tool change that live chat shares).** `monster_lookup`,
+  `item_lookup` and the pre-injected wiki context print `--- Items/Torch.md ---` rather than
+  `--- Torch.md ---`, as `wiki_view` and `wiki_search` already did.
+
+- **What does not move.** `ScoringMethodVersion` (12), `ToolGuidesSha256`,
+  `CandidateSystemPromptSha256`, the chat system prompt and `_policy.md`, and every
+  `BenchmarkAnswerFlags` member. No stored score, level or cap changes.
+
+- **Comparability.** Only the Instrument key `HarnessVersion` moves, so a harness-39 run of an
+  otherwise identical configuration is one key away from runs 66 and 67. Contested-verdict counts,
+  claim-verification counts on accused items with a charged part, and citation-note counts are not
+  comparable across 38 and 39; a run stamped 38 or earlier carries no charged-part verdicts, and its
+  stored verdicts are unchanged. `wiki_view` result lengths are not comparable on over-cap articles.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.

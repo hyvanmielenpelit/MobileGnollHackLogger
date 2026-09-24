@@ -627,6 +627,29 @@ An article with no headings at all keeps the original
 `[Section 'X' not found in article. Returning full text.]`. A run recorded before the run-33 round
 carries that original line on every `nethack_wiki_view` section miss, whatever the article.
 
+**A `wiki_view` without a `section` whose rendered article is longer than the cap begins with a
+headings line, from the runs 66 and 67 round (harness 39).** When the rendered article (its
+`--- <path> ---` header included) is longer than `MaxResultLength` — less the spoiler-free suffix when
+that mode is on — `WikiViewTool` returns one line, a newline and the article's first `M` characters:
+
+```
+[Article is N characters; the first M are shown. Headings: H1; H2; …. Call wiki_view again with section set to one of them to read the rest.]
+```
+
+`N` is the rendered article's full length; `M` is chosen so the line, its newline and the shown text
+land at exactly the cap. The headings are every Markdown heading of the **whole** article in document
+order, as written, from `MarkdownSectionExtractor.Headings` — the same list the section-miss marker
+prints — `; `-separated; the whole line is capped at 600 characters with a trailing `…`, and an
+article with no headings prints `Headings: (none)`. The line is omitted when the article fits, and a
+request with a `section` is unchanged. Because the result already fits, `ToolExecutor`'s
+`... [Truncated: showing …]` suffix no longer appears on such a call: on a run stamped **39 or
+later** a section-less `wiki_view` result of exactly the cap that opens with `[Article is` is an
+ordinary success, which the tool-call log marks **`partial`** rather than `cut`, and a
+`[Truncated:` suffix on one is a regression; on a run stamped 38 or earlier
+the same article came back cut blind at ≈ 10,117 characters with the suffix and no heading list (runs
+66 and 67, *Sacrifice Offering*, 17,840 characters). This is a tool-output change: no tool guide
+changed, so `ToolGuidesSha256` did not move.
+
 **Result shape**: `wiki_search` returns per-hit snippets via `WikiSnippetExtractor.BuildSnippet`
 (bounded to `PerResultChars`, query-term-aware). **From harness 30 a snippet keeps an article's lead
 block regardless of score.** When some section scores above zero and the whole article formats to
@@ -768,6 +791,14 @@ was `GetRelevantContext` itself and an exact hit came back with its neighbours: 
 *Master lich* (4,001). In a run stamped **27 or later**, an exact-title request whose result carries a
 second `--- <file> ---` header is a regression of this contract; in one stamped 26 it is the
 case-sensitive category filter above, which is what run 42 found.
+
+**The lookup result header names the repository path, from the runs 66 and 67 round (harness 39).**
+Every `--- … ---` header `monster_lookup` and `item_lookup` print — the exact-title article and each
+article of the top-5 join — reads `doc.Get("relfile") ?? doc.Get("filename")`, as `wiki_view` and
+`wiki_search` already did: `--- Items/Torch.md ---`, not `--- Torch.md ---`, so the path can be
+copied straight into `wiki_view`'s `article`. The same header change reaches live chat's pre-injected
+wiki context, which is built by `GetRelevantContext`. A run stamped 38 or earlier prints the bare
+filename there. `ToolGuidesSha256` did not move.
 
 **`get_monster_stats` / `get_item_stats` / `get_artifact_stats`** — `name` (required, exact as
 written in the source: `src/monst.c`, `src/objects.c`, `include/artilist.h` respectively). For

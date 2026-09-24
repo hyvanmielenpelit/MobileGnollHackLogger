@@ -37,6 +37,29 @@ public static class BenchmarkVerdictConsistency
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>
+    /// The game senses of the <see cref="FabricationRegex"/> stem "hallucinat": the potion, the
+    /// status effect and its risk, cures and causes, and a hallucinating hero. Masked out before
+    /// <see cref="FabricationRegex"/> is applied, so "the poison or hallucination gamble of the
+    /// mushrooms" describes the game rather than an invented claim.
+    /// </summary>
+    private static readonly Regex GameVocabularyRegex = new(
+        @"potion(?:s)?\s+of\s+hallucination"
+        + @"|hallucination\s+(?:gamble|risk|effect|status|resistance)"
+        + @"|(?:cure[sd]?|causes?|induces?|from|or|and|to)\s+hallucination"
+        + @"|hallucinating\s+(?:hero|player|character)"
+        + @"|while\s+hallucinating",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// <paramref name="text"/> with every <see cref="GameVocabularyRegex"/> match replaced by spaces
+    /// of equal length, so indices into the result are indices into the original.
+    /// </summary>
+    private static string MaskGameVocabulary(string text)
+    {
+        return GameVocabularyRegex.Replace(text, m => new string(' ', m.Length));
+    }
+
+    /// <summary>
     /// Words by which accuracy evidence approves of a sentence it quotes ("Correct on the core
     /// mechanic ("…")"). Whole words, case-insensitive. A clause carrying one and no
     /// <see cref="AccusationChargeRegex"/> word quotes the answer to agree with it, and the quote
@@ -73,13 +96,30 @@ public static class BenchmarkVerdictConsistency
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>
-    /// True when the text describes a fabrication. Applied to an assessor's comment and to each
-    /// of its evidence strings; a hit alongside <c>criticalError == false</c> is a contested
-    /// verdict.
+    /// True when the text describes a fabrication, once its <see cref="GameVocabularyRegex"/> game
+    /// senses are masked out.
     /// </summary>
     public static bool MentionsFabrication(string? text)
     {
-        return !string.IsNullOrWhiteSpace(text) && FabricationRegex.IsMatch(text);
+        return !string.IsNullOrWhiteSpace(text) && FabricationRegex.IsMatch(MaskGameVocabulary(text));
+    }
+
+    /// <summary>
+    /// True when some sentence of the text, per <see cref="SplitSentences"/>, holds a fabrication
+    /// match that no denial precedes (<see cref="HasUndeniedFabrication"/>), once its
+    /// <see cref="GameVocabularyRegex"/> game senses are masked out. Applied to an assessor's
+    /// comment and its accuracy evidence; a hit alongside <c>criticalError == false</c> is a
+    /// contested verdict. "hallucinates the Holy Grail's charges" matches; "not an invented item"
+    /// and "quaffed a potion of hallucination" do not.
+    /// </summary>
+    public static bool MentionsUndeniedFabrication(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        return SplitSentences(MaskGameVocabulary(text)).Any(HasUndeniedFabrication);
     }
 
     /// <summary>

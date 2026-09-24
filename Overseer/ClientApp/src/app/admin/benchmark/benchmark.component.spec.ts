@@ -3991,6 +3991,59 @@ describe('AdminBenchmarkComponent', () => {
       // which a unit test cannot assert — only that the markup it depends on is present.
     });
 
+    // H6. The Endpoint row under Model under test follows the same rule as the grader rows
+    // below it: the official endpoint is the assumed default and prints nothing extra.
+    it('should render no Endpoint row for the official endpoint', () => {
+      component.activeRunDetail = {
+        id: 42,
+        status: 'Running',
+        suiteName: 'Default Suite',
+        testedModelDisplayNameUsed: 'Gemini 3.7 Flash',
+        testedModelProviderUsed: 'Google',
+        testedModelIdUsed: 'gemini-3.7-flash',
+        testedModelParallelExecutionModeUsed: 2,
+        testedModelEndpoint: 'official',
+        assessorModelDisplayNameUsed: 'GPT-5.6 Luna',
+        assessorModelProviderUsed: 'OpenAI',
+        assessorModelIdUsed: 'gpt-5.6-luna',
+        totalQuestionCount: 10,
+        answers: []
+      } as any;
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      const strip = fixture.nativeElement.querySelector('.run-model-strip');
+      const dts = Array.from(strip.querySelectorAll('dt')) as HTMLElement[];
+      expect(dts.map(dt => dt.textContent?.trim())).not.toContain('Endpoint');
+    });
+
+    it('should render the Endpoint row for a custom endpoint', () => {
+      component.activeRunDetail = {
+        id: 42,
+        status: 'Running',
+        suiteName: 'Default Suite',
+        testedModelDisplayNameUsed: 'Gemini 3.7 Flash',
+        testedModelProviderUsed: 'Google',
+        testedModelIdUsed: 'gemini-3.7-flash',
+        testedModelParallelExecutionModeUsed: 2,
+        testedModelEndpoint: 'custom (contoso.example; fingerprint ab12cd34)',
+        assessorModelDisplayNameUsed: 'GPT-5.6 Luna',
+        assessorModelProviderUsed: 'OpenAI',
+        assessorModelIdUsed: 'gpt-5.6-luna',
+        totalQuestionCount: 10,
+        answers: []
+      } as any;
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      const strip = fixture.nativeElement.querySelector('.run-model-strip');
+      const dts = Array.from(strip.querySelectorAll('dt')) as HTMLElement[];
+      const endpointIndex = dts.findIndex(dt => dt.textContent?.trim() === 'Endpoint');
+      expect(endpointIndex).toBeGreaterThan(-1);
+      const dds = strip.querySelectorAll('dd');
+      expect(dds[endpointIndex].textContent).toContain('custom (contoso.example; fingerprint ab12cd34)');
+    });
+
     it('should render second opinion assessor row under Evaluator with selected mode when configured', () => {
       component.activeRunDetail = {
         id: 42,
@@ -4907,6 +4960,29 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.runDiagnosticsText).toContain('Second:   none selected');
     });
 
+    it('should include a Verifier line built like the neighbouring model lines', () => {
+      component.activeRunDetail = buildDiagnosticsRun({
+        claimVerifierModelConfigurationId: 5,
+        claimVerifierDisplayNameUsed: 'GnollHack Verifier',
+        claimVerifierProviderUsed: 'Anthropic',
+        claimVerifierModelIdUsed: 'claude-verifier',
+        claimVerifierThinkingLevelUsed: 'high',
+        claimVerifierReasoningModeUsed: 'enabled'
+      });
+      expect(component.runDiagnosticsText)
+        .toContain('Verifier: GnollHack Verifier (Anthropic / claude-verifier), thinking: high, reasoning: enabled');
+    });
+
+    it('should say so when no claim verifier was selected', () => {
+      component.activeRunDetail = buildDiagnosticsRun();
+      expect(component.runDiagnosticsText).toContain('Verifier: none selected');
+    });
+
+    it('should print an unset service tier as default (none requested) in the MODELS block', () => {
+      component.activeRunDetail = buildDiagnosticsRun();
+      expect(component.runDiagnosticsText).toContain('service tier: default (none requested)');
+    });
+
     it('should record the scoring constants the run was actually scored with', () => {
       component.activeRunDetail = buildDiagnosticsRun();
       const text = component.runDiagnosticsText;
@@ -5627,6 +5703,48 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.disputeVerificationLabel).toBe('');
     });
 
+    it('should append the accused-sentence counts only when they are non-zero', () => {
+      // Zero claim counts, but the accused-sentence check found something.
+      component.selectedRunDetail = {
+        id: 1,
+        answers: [
+          {
+            orderIndex: 3,
+            secondOpinionDisagreed: true,
+            claimsSupportedCount: 0,
+            claimsRefutedCount: 0,
+            claimsIndeterminateCount: 0,
+            accusedSupportedCount: 1,
+            accusedRefutedCount: 1,
+            accusedIndeterminateCount: 0
+          } as any
+        ]
+      } as any;
+
+      expect(component.disputeVerificationLabel).toBe(
+        'Claim verification for Q3: 0 supported, 0 refuted, 0 indeterminate; accused sentences: 1 supported, 1 refuted, 0 indeterminate.'
+      );
+
+      // Accused counts all zero: no accused part, but the answer still counts as verified.
+      component.selectedRunDetail = {
+        id: 1,
+        answers: [
+          {
+            orderIndex: 3,
+            secondOpinionDisagreed: true,
+            claimsSupportedCount: 0,
+            claimsRefutedCount: 0,
+            claimsIndeterminateCount: 0,
+            accusedSupportedCount: 0,
+            accusedRefutedCount: 0,
+            accusedIndeterminateCount: 0
+          } as any
+        ]
+      } as any;
+
+      expect(component.disputeVerificationLabel).toBe('Claim verification for Q3: 0 supported, 0 refuted, 0 indeterminate.');
+    });
+
     it('should compute omissionAsAccuracyAnswerCount and omissionAsAccuracyQuestionNumbers', () => {
       component.selectedRunDetail = {
         id: 1,
@@ -6011,6 +6129,10 @@ describe('AdminBenchmarkComponent', () => {
         status: 2,
         estimatedCost: 3.03,
         estimatedCandidateCost: 2.30,
+        estimatedAssessorCost: 0.50,
+        estimatedSecondOpinionCost: 0.10,
+        estimatedVerifierCost: 0.10,
+        estimatedSynthesisCost: 0.03,
         pricingSource: 'Anthropic API',
         answers: []
       } as any;
@@ -6023,6 +6145,42 @@ describe('AdminBenchmarkComponent', () => {
       const content = card!.textContent?.replace(/\s+/g, ' ').trim() || '';
       expect(content).toContain('$2.3000');
       expect(content).toContain('76 % of catalog total');
+    });
+
+    // H4. The card and the cost panel below it apportion the same five role amounts, in the same
+    // order, by the same largest-remainder rule, so they can never disagree on the whole percent.
+    it('should print the same apportioned percent as the cost panel below it', () => {
+      component.activeSubTab = 'run';
+      component.selectedRunDetail = {
+        id: 1,
+        benchmarkSuiteId: 1,
+        suiteName: 'Test',
+        status: 2,
+        estimatedCost: 2.7247,
+        estimatedCandidateCost: 0.6926,
+        estimatedAssessorCost: 0.80,
+        estimatedSecondOpinionCost: 0.10,
+        estimatedVerifierCost: 1.10,
+        estimatedSynthesisCost: 0.0321,
+        estimatedGradingCost: 2.0321,
+        pricingSource: 'Anthropic API',
+        answers: []
+      } as any;
+      fixture.detectChanges();
+
+      // Exact shares: candidate 25.42, assessor 29.36, second opinion 3.67, claim verifier 40.37,
+      // synthesis 1.18 -- the floors sum to 98, so the two largest remainders (second opinion,
+      // then candidate) each get one extra point, giving the candidate 26 %.
+      const cards = Array.from(fixture.nativeElement.querySelectorAll('.score-card')) as HTMLElement[];
+      const card = cards.find(c => c.querySelector('.score-label')?.textContent?.trim() === 'Model Under Test');
+      expect(card!.textContent).toContain('26 % of catalog total');
+
+      const panelShares = Array.from(
+        (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>(
+          '.gh-cost-role:not(.gh-cost-role--subtotal) .gh-cost-role__share'
+        )
+      ).map(el => el.textContent?.trim());
+      expect(panelShares[0]).toBe('26%');
     });
 
     it('should omit the Model Under Test card when the candidate cost was never recorded', () => {

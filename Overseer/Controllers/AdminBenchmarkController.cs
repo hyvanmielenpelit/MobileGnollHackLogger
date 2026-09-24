@@ -3175,6 +3175,10 @@ public class AdminBenchmarkController : ControllerBase
             Answers = run.Answers.OrderBy(a => a.OrderIndex).Select(a =>
             {
                 bool hasToolCallOutcome = toolCallOutcomesByAnswer.TryGetValue(a.Id, out var toolCallOutcome);
+                bool hasVerificationRecord = !string.IsNullOrWhiteSpace(a.ClaimVerificationJson);
+                var accusedCounts = hasVerificationRecord
+                    ? BenchmarkReportBuilder.VerdictCounts(BenchmarkReportBuilder.AccusedSentencesOf(a))
+                    : default;
                 return new BenchmarkRunAnswerDto
                 {
                     Id = a.Id,
@@ -3269,6 +3273,9 @@ public class AdminBenchmarkController : ControllerBase
                     ClaimsSupportedCount = a.ClaimsSupportedCount,
                     ClaimsRefutedCount = a.ClaimsRefutedCount,
                     ClaimsIndeterminateCount = a.ClaimsIndeterminateCount,
+                    AccusedSupportedCount = hasVerificationRecord ? accusedCounts.Supported : null,
+                    AccusedRefutedCount = hasVerificationRecord ? accusedCounts.Refuted : null,
+                    AccusedIndeterminateCount = hasVerificationRecord ? accusedCounts.Indeterminate : null,
                     ClaimVerificationByModelDisplayNameUsed = a.ClaimVerificationByModelSnapshot.Label(),
                     ClaimVerificationInputTokens = a.ClaimVerificationInputTokens,
                     ClaimVerificationOutputTokens = a.ClaimVerificationOutputTokens,

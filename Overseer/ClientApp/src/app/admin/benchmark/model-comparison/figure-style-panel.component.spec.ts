@@ -122,7 +122,7 @@ describe('FigureStylePanelComponent', () => {
       'mc-style-profile-footerTextSizePx'
     ]);
     expect(inputs.filter(input => input.type === 'checkbox').every(input => input.checked)).toBeTrue();
-    expect(host().querySelector('.fsp-note')?.textContent?.trim()).toBe('Chart text follows Text size on the Download tab.');
+    expect(host().querySelector('.fsp-note')?.textContent?.trim()).toBe('Chart text follows Text size under Figure size.');
     const reset = host().querySelector('#mc-style-profile-reset') as HTMLButtonElement;
     expect(reset.textContent!.trim()).toBe('Reset profile style');
   });

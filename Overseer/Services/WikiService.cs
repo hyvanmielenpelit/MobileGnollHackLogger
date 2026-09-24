@@ -239,9 +239,9 @@ public class WikiService : IDisposable
         foreach (var hit in hits.ScoreDocs)
         {
             var doc = searcher.Doc(hit.Doc);
-            string filename = doc.Get("filename");
+            string label = doc.Get("relfile") ?? doc.Get("filename");
             string content = doc.Get("content");
-            results.Add($"--- {filename} ---\n{content}");
+            results.Add($"--- {label} ---\n{content}");
         }
 
         return results;
@@ -670,7 +670,8 @@ public class WikiService : IDisposable
         {
             int matchIndex = matchIndexes[0];
             var matchDoc = docs[matchIndex];
-            string article = $"--- {matchDoc.Get("filename")} ---\n{matchDoc.Get("content")}";
+            string label = matchDoc.Get("relfile") ?? matchDoc.Get("filename");
+            string article = $"--- {label} ---\n{matchDoc.Get("content")}";
 
             var otherTitles = docs
                 .Where((_, index) => index != matchIndex)

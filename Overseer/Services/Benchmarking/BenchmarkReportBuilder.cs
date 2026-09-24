@@ -429,7 +429,7 @@ public static class BenchmarkReportBuilder
     /// The sentences of the answer the assessor quoted as false and the harness sent to the claim
     /// verifier, each with its verdict. Read by role, so a record stored without roles has none.
     /// </summary>
-    private static List<BenchmarkClaimVerification> AccusedSentencesOf(BenchmarkRunAnswer answer)
+    internal static List<BenchmarkClaimVerification> AccusedSentencesOf(BenchmarkRunAnswer answer)
         => (ClaimVerificationsOf(answer) ?? new List<BenchmarkClaimVerification>())
             .Where(v => BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.AccusedQuote))
             .ToList();
@@ -450,7 +450,7 @@ public static class BenchmarkReportBuilder
             .ToList();
 
     /// <summary>Verifications by the verdict the harness reads (<see cref="BenchmarkClaimVerification.EffectiveVerdict"/>): supported, refuted, indeterminate.</summary>
-    private static (int Supported, int Refuted, int Indeterminate) VerdictCounts(IEnumerable<BenchmarkClaimVerification> verifications)
+    internal static (int Supported, int Refuted, int Indeterminate) VerdictCounts(IEnumerable<BenchmarkClaimVerification> verifications)
     {
         var list = verifications.ToList();
         return (
@@ -3878,11 +3878,20 @@ public static class BenchmarkReportBuilder
             sb.AppendLine();
             foreach (var d in disputed)
             {
-                string claimNote = string.Empty;
+                // The accused sentences are counted apart from the answer's own claims, from the stored verification.
+                var claimNoteParts = new List<string>();
                 if (d.ClaimsSupportedCount.HasValue || d.ClaimsRefutedCount.HasValue || d.ClaimsIndeterminateCount.HasValue)
                 {
-                    claimNote = $" [Claims: {d.ClaimsSupportedCount ?? 0} supported, {d.ClaimsRefutedCount ?? 0} refuted, {d.ClaimsIndeterminateCount ?? 0} indeterminate]";
+                    claimNoteParts.Add($"Claims: {d.ClaimsSupportedCount ?? 0} supported, {d.ClaimsRefutedCount ?? 0} refuted, {d.ClaimsIndeterminateCount ?? 0} indeterminate");
                 }
+                var disputedAccused = AccusedSentencesOf(d);
+                if (disputedAccused.Count > 0)
+                {
+                    var (disputedSupported, disputedRefuted, disputedIndeterminate) = VerdictCounts(disputedAccused);
+                    string accusedCounts = $"{disputedSupported} supported, {disputedRefuted} refuted, {disputedIndeterminate} indeterminate";
+                    claimNoteParts.Add(claimNoteParts.Count == 0 ? $"Accused sentences: {accusedCounts}" : $"accused sentences: {accusedCounts}");
+                }
+                string claimNote = claimNoteParts.Count == 0 ? string.Empty : $" [{string.Join("; ", claimNoteParts)}]";
                 sb.AppendLine($"- **Question {d.OrderIndex}:** first {d.QualityScore ?? 0} / 100 (critical error {(d.CriticalError ? "yes" : "no")}, {d.AssessedByModelSnapshot.Label()}) vs second {d.SecondOpinionQualityScore!.Value} / 100 (critical error {(d.SecondOpinionCriticalError == true ? "yes" : "no")}, {d.SecondOpinionByModelSnapshot.Label()}){claimNote}");
                 string? secondReaderComment = ReadSecondOpinionComment(d.SecondOpinionJson);
                 if (secondReaderComment != null)

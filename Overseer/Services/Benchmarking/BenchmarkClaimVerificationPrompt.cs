@@ -89,7 +89,8 @@ public static class BenchmarkClaimVerificationPrompt
         sb.AppendLine("3h. When the function you cite hands the effect to another function, read that function before concluding that an effect is absent. The function that handles a command often only finds the target; the function it calls decides what happens to it.");
         sb.AppendLine("3i. Absence needs more than one place. Before you refute a claim that something has an effect, or support a claim that it has none, search for every place the item, monster or function is handled: an effect is often applied in a function that runs earlier or later than the one you found first — a pre-effect and a post-effect, a caller, a shared check at the top of the attack routine. One function that lacks the effect does not show that the effect is absent; if you cannot rule the other places out, the verdict is Indeterminate.");
         sb.AppendLine("3j. Values passed are settled where they are assigned. When the code you cite only passes variables on (for example a `case` block that calls a function with `duration` or `cures_sick`), read where those variables are computed, and the object's data entry they come from, before you refute a number, a die roll or a cure.");
-        sb.AppendLine("3k. When a claim joins several statements, a verdict about it is a verdict about the statement at issue: the charged part of an accused sentence, or the part the assessor's evidence names for a critical-error quote. Say in your basis which statement you checked.");
+        sb.AppendLine("3k. When a claim joins several statements, a verdict about it is a verdict about the statement at issue: the charged part of an accused sentence, or the part the assessor's evidence names for a critical-error quote. Say in your basis which statement you checked. For an item that names a charged part, chargedPartVerdict is your verdict on that part alone, with its own citation in chargedPartBasis; the item's verdict field is ignored for such an item.");
+        sb.AppendLine("3l. When a GnollHack wiki page states the property a claim is about — a spell's casting time, an item's effect, a stat block value — and your reading of the source seems to contradict it, name the wiki statement in your basis and cite the code that overrides it; the wiki's stat blocks are printed from the same game data. Without both, the verdict is Indeterminate.");
         sb.AppendLine("4. Possible verdicts for each claim:");
         sb.AppendLine("   - Supported: Concrete evidence was found in the source code or wiki that the claim is true.");
         sb.AppendLine("   - Refuted: Concrete evidence was found in the source code or wiki that the claim is false.");
@@ -222,13 +223,8 @@ public static class BenchmarkClaimVerificationPrompt
                 {
                     sb.AppendLine($"Charge (the assessor's words; untrusted, not part of the claim): {charge.Trim()}");
                 }
-                IReadOnlyList<string>? chargedParts = claimChargedParts != null && i < claimChargedParts.Count ? claimChargedParts[i] : null;
-                var parts = (chargedParts ?? Array.Empty<string>())
-                    .Where(p => !string.IsNullOrWhiteSpace(p))
-                    .Select(p => p.Trim())
-                    .ToList();
-                // A charged part equal to the whole sentence adds nothing the claim does not already say.
-                if (parts.Count > 0 && !(parts.Count == 1 && string.Equals(parts[0], claims[i].Trim(), StringComparison.Ordinal)))
+                var parts = ChargedPartsShown(claims[i], claimRoles?[i], claimChargedParts != null && i < claimChargedParts.Count ? claimChargedParts[i] : null);
+                if (parts.Count > 0)
                 {
                     sb.AppendLine($"Charged part (the words the assessor quoted, not part of the claim): \"{string.Join("\"; \"", parts)}\"");
                 }
@@ -250,12 +246,75 @@ public static class BenchmarkClaimVerificationPrompt
         sb.AppendLine("      \"claim\": \"<verbatim claim text>\",");
         sb.AppendLine("      \"verdict\": \"Supported\", // \"Supported\" | \"Refuted\" | \"Indeterminate\"");
         sb.AppendLine("      \"citation\": \"src/file.c:line or wiki:PageTitle (required for Supported/Refuted, null for Indeterminate)\",");
-        sb.AppendLine("      \"basis\": \"One-sentence explanation of the evidence found or why it is refuted/indeterminate.\"");
+        var chargedPartIndexes = ChargedPartItems(claims, claimRoles, claimChargedParts)
+            .Select((charged, index) => (charged, index))
+            .Where(x => x.charged)
+            .Select(x => x.index.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            .ToList();
+        if (chargedPartIndexes.Count == 0)
+        {
+            sb.AppendLine("      \"basis\": \"One-sentence explanation of the evidence found or why it is refuted/indeterminate.\"");
+        }
+        else
+        {
+            sb.AppendLine("      \"basis\": \"One-sentence explanation of the evidence found or why it is refuted/indeterminate.\",");
+            sb.AppendLine($"      \"chargedPartVerdict\": \"Refuted\", // only for an item that names a charged part (ClaimIndex {string.Join(", ", chargedPartIndexes)}): \"Supported\" | \"Refuted\" | \"Indeterminate\"");
+            sb.AppendLine("      \"chargedPartBasis\": \"One-sentence explanation of the verdict on the charged part alone, with its own citation (src/file.c:line or wiki:PageTitle).\" // only for an item that names a charged part");
+        }
         sb.AppendLine("    }");
         sb.AppendLine("  ]");
         sb.AppendLine("}");
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// The charged parts the <c>Charged part</c> line of an accused claim's block shows: its quoted
+    /// fragments, trimmed and non-blank. Empty when the claim is not accused, has none, or has one
+    /// equal to the whole claim, which adds nothing the claim does not already say.
+    /// </summary>
+    public static IReadOnlyList<string> ChargedPartsShown(
+        string claim,
+        IReadOnlyList<string>? roles,
+        IReadOnlyList<string>? chargedParts)
+    {
+        if (roles == null || !roles.Contains(BenchmarkClaimRoles.AccusedQuote))
+        {
+            return Array.Empty<string>();
+        }
+
+        var parts = (chargedParts ?? Array.Empty<string>())
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => p.Trim())
+            .ToList();
+        if (parts.Count == 1 && string.Equals(parts[0], (claim ?? string.Empty).Trim(), StringComparison.Ordinal))
+        {
+            return Array.Empty<string>();
+        }
+
+        return parts;
+    }
+
+    /// <summary>
+    /// Per claim, whether <see cref="BuildPrompt"/> shows it with a <c>Charged part</c> line, given the
+    /// same claims, roles and charged parts; <see cref="BenchmarkClaimVerificationParser.Parse"/> reads
+    /// such an item's verdict from <c>chargedPartVerdict</c>.
+    /// </summary>
+    public static IReadOnlyList<bool> ChargedPartItems(
+        IReadOnlyList<string> claims,
+        IReadOnlyList<IReadOnlyList<string>>? claimRoles,
+        IReadOnlyList<IReadOnlyList<string>?>? claimChargedParts)
+    {
+        claims ??= Array.Empty<string>();
+        var result = new bool[claims.Count];
+        for (int i = 0; i < claims.Count; i++)
+        {
+            IReadOnlyList<string>? roles = claimRoles != null && i < claimRoles.Count ? claimRoles[i] : null;
+            IReadOnlyList<string>? parts = claimChargedParts != null && i < claimChargedParts.Count ? claimChargedParts[i] : null;
+            result[i] = ChargedPartsShown(claims[i], roles, parts).Count > 0;
+        }
+
+        return result;
     }
 
     /// <summary>The candidate's tool calls as the verifier prompt shows them, and what was left out.</summary>
