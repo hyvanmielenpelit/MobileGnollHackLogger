@@ -6,6 +6,7 @@ import { provideCharts } from 'ng2-charts';
 import {
   ComparisonFigureCard,
   ComparisonWizardStep,
+  FIGURE_SIDEBAR_STORAGE_KEY,
   FIGURE_STYLE_STORAGE_KEY,
   ModelComparisonComponent
 } from './model-comparison.component';
@@ -266,8 +267,10 @@ describe('ModelComparisonComponent', () => {
   }
 
   beforeEach(async () => {
-    // The figure style is remembered per browser, so one spec's style must not reach the next.
+    // The figure style and the sidebar are remembered per browser, so one spec's must not reach the
+    // next.
     localStorage.removeItem(FIGURE_STYLE_STORAGE_KEY);
+    localStorage.removeItem(FIGURE_SIDEBAR_STORAGE_KEY);
     await TestBed.configureTestingModule({
       imports: [ModelComparisonComponent],
       providers: [provideCharts({ registerables: APP_CHART_REGISTRABLES })]
@@ -279,7 +282,14 @@ describe('ModelComparisonComponent', () => {
 
   afterEach(() => {
     localStorage.removeItem(FIGURE_STYLE_STORAGE_KEY);
+    localStorage.removeItem(FIGURE_SIDEBAR_STORAGE_KEY);
   });
+
+  /** Selects one tab of the step-4 settings sidebar by clicking it. */
+  function openSidebarTab(tab: 'emphasis' | 'export' | 'style'): void {
+    (fixture.debugElement.query(By.css(`#mc-side-tab-${tab}`)).nativeElement as HTMLButtonElement).click();
+    fixture.detectChanges();
+  }
 
   // -------------------------------------------------------------------------------------------
   // The table view
@@ -434,9 +444,18 @@ describe('ModelComparisonComponent', () => {
     return plugins?.[directLabelPlugin.id]?.blocks as DirectLabelBlock[] | undefined;
   }
 
-  /** The nth checkbox above the three scatters: 0 names the marks, 1 draws their values. */
+  /** Opens the sidebar's Style tab on one family, through the real tab and radio. */
+  function openStyleFamily(kind: 'bar' | 'profile' | 'scatter'): void {
+    openSidebarTab('style');
+    (fixture.debugElement.query(By.css(`#mc-style-family-${kind}`)).nativeElement as HTMLInputElement).click();
+    fixture.detectChanges();
+  }
+
+  /** The nth trade-off checkbox in the Style tab: 0 names the marks, 1 draws their values. */
   function scatterToggle(index: number): DebugElement {
-    return fixture.debugElement.queryAll(By.css('.mc-scatter-options input[type="checkbox"]'))[index];
+    openStyleFamily('scatter');
+    return fixture.debugElement.query(By.css(
+      index === 0 ? '#mc-style-scatter-directLabels' : '#mc-style-scatter-inlineValues'));
   }
 
   function tick(toggle: DebugElement, on: boolean): void {
@@ -455,7 +474,7 @@ describe('ModelComparisonComponent', () => {
     expect(scatterBlocks()!.every(b => b.name === undefined)).toBeTrue();
 
     const toggle = scatterToggle(0);
-    expect(toggle).withContext('the toggle sits above the three scatters').toBeTruthy();
+    expect(toggle).withContext('the toggle sits in the Style tab, under Trade-offs').toBeTruthy();
     tick(toggle, true);
 
     expect(component.scatterDirectLabels).toBeTrue();
@@ -900,33 +919,36 @@ describe('ModelComparisonComponent', () => {
   // Figure export
   // -------------------------------------------------------------------------------------------
 
-  it('offers a download and a copy control on every figure card, and one download for the set', () => {
+  it('gives every figure card one control, Open in the preview, and the set one Download all', () => {
     render(buildDto(comparableSet(3)), 4);
 
-    const cards = fixture.debugElement.queryAll(By.css('.mc-card')).length;
-    const downloads = fixture.debugElement.queryAll(By.css('.mc-card .mc-download'));
-    const copies = fixture.debugElement.queryAll(By.css('.mc-card .mc-copy'));
-    expect(cards).toBe(7);
-    expect(downloads.length).toBe(7);
-    expect(copies.length).toBe(7);
-    // An icon-only button has no text, so aria-label is its accessible name — and it has to name
-    // the card, or seven buttons share one name in a screen reader's control list.
-    expect((downloads[0].nativeElement as HTMLElement).getAttribute('aria-label'))
-      .toContain('Download ');
-    const copyNames = copies.map(copy =>
-      (copy.nativeElement as HTMLElement).getAttribute('aria-label') ?? '');
-    expect(copyNames.every(name => name.startsWith('Copy ') && name.endsWith('to the clipboard')))
-      .toBeTrue();
-    expect(new Set(copyNames).size).toBe(7);
+    const cards = fixture.debugElement.queryAll(By.css('.mc-card'));
+    expect(cards.length).toBe(7);
+    for (const card of cards) {
+      const actions = card.queryAll(By.css('.mc-card-actions button'));
+      expect(actions.length).toBe(1);
+      // An icon-only button has no text, so aria-label is its accessible name — and it has to name
+      // the card, or seven buttons share one name in a screen reader's control list.
+      expect((actions[0].nativeElement as HTMLElement).getAttribute('aria-label'))
+        .toMatch(/^Open .+ in the preview$/);
+    }
+    // Copying and downloading one figure happen on the Preview tab only.
+    expect(fixture.debugElement.queryAll(By.css('.mc-card .mc-download, .mc-card .mc-copy')).length).toBe(0);
 
-    expect(fixture.debugElement.query(By.css('#mc-export-format'))).toBeTruthy();
-    expect(textOf('.mc-export')).toContain('Download all figures');
+    const step = fixture.debugElement.query(By.css('#mc-step-panel-4')).nativeElement as HTMLElement;
+    const downloadAll = Array.from(step.querySelectorAll('button'))
+      .filter(button => (button.textContent ?? '').includes('Download all'));
+    expect(downloadAll.length).toBe(1);
+    expect(downloadAll[0].closest('.mc-fig-bar')).not.toBeNull();
     // One image on the clipboard at a time, so there is deliberately no batch copy.
-    expect(textOf('.mc-export')).not.toContain('Copy all figures');
+    expect(step.textContent).not.toContain('Copy all figures');
   });
 
   it('offers a WebP quality for the figures only while WebP is the chosen format', async () => {
     render(buildDto(comparableSet(3)), 4);
+    openSidebarTab('export');
+    expect(component.figureTab).withContext('no preview is needed to reach the export settings')
+      .toBe('charts');
 
     const format = fixture.debugElement.query(By.css('#mc-export-format'))
       .nativeElement as HTMLSelectElement;
@@ -952,13 +974,18 @@ describe('ModelComparisonComponent', () => {
     expect(fixture.debugElement.query(By.css('label[for="mc-export-webp-quality"]'))).toBeTruthy();
   });
 
-  it('hides the export controls where no figure is rendered', () => {
+  it('renders no workspace, sidebar or figure bar where no figure is rendered', () => {
+    const absent = (): void => {
+      for (const selector of ['.mc-fig-workspace', '#mc-fig-sidebar', '.mc-fig-bar', '.mc-card-actions']) {
+        expect(fixture.debugElement.query(By.css(selector))).withContext(selector).toBeNull();
+      }
+    };
+
     // Not merely hidden: the whole Figures step refuses to open, because there is nothing on it.
     render(buildDto(comparableSet(1)), 4);
     expect(component.shape).toBe('single');
     expect(component.isStepReachable(4)).toBeFalse();
-    expect(fixture.debugElement.query(By.css('.mc-export'))).toBeNull();
-    expect(fixture.debugElement.queryAll(By.css('.mc-download')).length).toBe(0);
+    absent();
 
     render(buildDto([
       buildExcludedEntry('run:8', ['ScoringMethodVersion']),
@@ -967,12 +994,25 @@ describe('ModelComparisonComponent', () => {
     expect(component.shape).toBe('none');
     expect(component.isStepReachable(4)).toBeFalse();
     expect(fixture.debugElement.query(By.css('.mc-card'))).toBeNull();
+    absent();
 
     render(null);
     expect(component.shape).toBe('empty');
     expect(component.isStepReachable(2)).toBeFalse();
-    expect(fixture.debugElement.query(By.css('.mc-export'))).toBeNull();
+    absent();
     expect(component.canExport).toBeFalse();
+  });
+
+  it('says nothing can be charted when a refetch leaves step 4 open over an unchartable set', () => {
+    render(buildDto(comparableSet(3)), 4);
+    expect(fixture.debugElement.query(By.css('.mc-fig-workspace'))).not.toBeNull();
+
+    fixture.componentRef.setInput('comparison', buildDto(comparableSet(1)));
+    fixture.detectChanges();
+
+    expect(component.step).toBe(4);
+    expect(fixture.debugElement.query(By.css('.mc-fig-workspace'))).toBeNull();
+    expect(textOf('.mc-fig-empty')).toContain('Nothing in this set can be charted.');
   });
 
   it('lists every rendered card as exportable, in the order they are drawn', () => {
@@ -998,10 +1038,13 @@ describe('ModelComparisonComponent', () => {
       .find(button => (button.textContent ?? '').trim() === 'Clear emphasis')!;
   }
 
-  it('chooses emphasis on the figures step, one checkbox per plotted entry', () => {
+  it('chooses emphasis in the sidebar\'s Emphasis tab, one checkbox per plotted entry', () => {
     render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringMethodVersion'])]), 4);
 
-    const fieldset = fixture.debugElement.query(By.css('.mc-emphasis')).nativeElement as HTMLElement;
+    // The sidebar opens on Emphasis.
+    expect(component.sidebarTab).toBe('emphasis');
+    const fieldset = fixture.debugElement.query(By.css('#mc-side-panel-emphasis .mc-emphasis'))
+      .nativeElement as HTMLElement;
     expect(fieldset.querySelector('legend')?.textContent?.trim()).toBe('Emphasise models');
     // The hint names the group once, rather than being repeated onto every box.
     expect(fieldset.getAttribute('aria-describedby')).toBe('mc-emphasis-hint');
@@ -1042,18 +1085,16 @@ describe('ModelComparisonComponent', () => {
     expect(fixture.debugElement.query(By.css('.mc-emphasis'))).toBeNull();
   });
 
-  it('describes each scatter checkbox with the hint that sits under it', () => {
+  it('labels each trade-off checkbox in the Style tab, and offers neither in the Charts panel', () => {
     render(buildDto(comparableSet(3)), 4);
 
     const names = scatterToggle(0).nativeElement as HTMLInputElement;
-    expect(names.getAttribute('aria-describedby')).toBe('mc-direct-labels-hint');
-    expect((fixture.debugElement.query(By.css('#mc-direct-labels-hint'))
-      .nativeElement as HTMLElement).textContent).toContain('leader line');
-
+    expect(names.closest('label')?.textContent).toContain('Label models inside the chart');
     const values = scatterToggle(1).nativeElement as HTMLInputElement;
-    expect(values.getAttribute('aria-describedby')).toBe('mc-inline-values-hint');
-    expect((fixture.debugElement.query(By.css('#mc-inline-values-hint'))
-      .nativeElement as HTMLElement).textContent).toContain('hover overlay');
+    expect(values.closest('label')?.textContent).toContain('Show values in the chart');
+
+    const charts = fixture.debugElement.query(By.css('#mc-fig-panel-charts')).nativeElement as HTMLElement;
+    expect(charts.querySelectorAll('input[type="checkbox"]').length).toBe(0);
   });
   // -------------------------------------------------------------------------------------------
   // The wizard
@@ -1768,6 +1809,9 @@ describe('ModelComparisonComponent', () => {
     const next = nextButton();
     expect(close.disabled).toBeTrue();
     expect(next.disabled).toBeTrue();
+    // The wizard's two are the only close controls: no preview dialog carries a third.
+    expect(fixture.debugElement.queryAll(By.css('.btn-icon-action')).length).toBe(1);
+    expect(fixture.debugElement.query(By.css('dialog.mc-preview-dialog'))).toBeNull();
 
     component.exporting = false;
     refresh();
@@ -1776,28 +1820,28 @@ describe('ModelComparisonComponent', () => {
   });
 
   // -------------------------------------------------------------------------------------------
-  // Export resolution, and the preview dialog that now carries its controls
+  // Export resolution in the sidebar's Export tab, and the Preview tab that shows its effect
   // -------------------------------------------------------------------------------------------
 
-  function previewDialog(): HTMLDialogElement {
-    return fixture.debugElement.query(By.css('dialog.mc-preview-dialog'))
-      .nativeElement as HTMLDialogElement;
+  /** The Preview tab's button in the figure bar. */
+  function previewTabButton(): HTMLButtonElement {
+    return fixture.debugElement.query(By.css('#mc-fig-tab-preview')).nativeElement as HTMLButtonElement;
   }
 
   /**
-   * Opens the preview with `showModal` stubbed.
-   *
-   * A fixture's element is never in the document, and `showModal` on a detached dialog throws; the
-   * source picker's own dialog specs stand it in the same way. The controls themselves are in the
-   * DOM either way — a closed dialog is hidden, not absent — so the open state is about the
-   * component's own behaviour rather than about reaching them.
+   * Shows the Preview tab: on `card` through that card's own eye button, or on the first figure
+   * through the tab itself.
    */
   function openPreview(card?: ComparisonFigureCard): void {
-    const dialog = previewDialog();
-    if (!jasmine.isSpy(dialog.showModal)) {
-      spyOn(dialog, 'showModal');
+    if (card) {
+      const eye = fixture.debugElement.queryAll(By.css('.mc-card .mc-preview-open'))
+        .map(button => button.nativeElement as HTMLButtonElement)
+        .find(button => button.getAttribute('aria-label') === `Open ${card.title} in the preview`);
+      expect(eye).withContext(`the eye button of ${card.title}`).toBeTruthy();
+      eye!.click();
+    } else {
+      previewTabButton().click();
     }
-    component.openFigurePreview(card);
     refresh();
   }
 
@@ -1807,10 +1851,10 @@ describe('ModelComparisonComponent', () => {
     refresh();
   }
 
-  // An open preview leaves a debounced composition behind it, and a timer that outlived its test
+  // A shown preview leaves a debounced composition behind it, and a timer that outlived its test
   // would compose against the next one's fixture.
   afterEach(() => {
-    component.onFigurePreviewClosed();
+    (component as unknown as { detachPreview(): void }).detachPreview();
   });
 
   let restoreDevicePixelRatio: (() => void) | null = null;
@@ -1845,7 +1889,7 @@ describe('ModelComparisonComponent', () => {
 
   it('shows the two custom size inputs only for Custom, and names what will be written', () => {
     render(buildDto(comparableSet(3)), 4);
-    openPreview();
+    openSidebarTab('export');
     // The control opens on the test machine's own display, which the pixel counts below are not
     // about; every one of them is the composition at 100 %.
     component.onExportDensityChange(1);
@@ -1871,7 +1915,7 @@ describe('ModelComparisonComponent', () => {
 
   it('refuses an out-of-range custom size in words, and will not export under one', () => {
     render(buildDto(comparableSet(3)), 4);
-    openPreview();
+    openSidebarTab('export');
     component.onExportDensityChange(1);
     component.onExportResolutionChange('custom');
     component.customExportHeight = 10;
@@ -1891,7 +1935,7 @@ describe('ModelComparisonComponent', () => {
   it('opens the density on the reader’s own display, and says which option that is', () => {
     withDisplayDensity(2);
     render(buildDto(comparableSet(3)), 4);
-    openPreview();
+    openSidebarTab('export');
 
     expect(component.exportDensitySelection).toBe(2);
     expect(component.exportDensity).toBe(2);
@@ -1905,7 +1949,7 @@ describe('ModelComparisonComponent', () => {
     // 110 % browser zoom on a 200 % display.
     withDisplayDensity(2.2);
     render(buildDto(comparableSet(3)), 4);
-    openPreview();
+    openSidebarTab('export');
 
     expect(component.exportDensitySelection).toBe('custom');
     expect(component.customExportDensityPercent).toBe(220);
@@ -1917,7 +1961,7 @@ describe('ModelComparisonComponent', () => {
   it('offers every Windows display scaling step, and Custom below them', () => {
     withDisplayDensity(1);
     render(buildDto(comparableSet(3)), 4);
-    openPreview();
+    openSidebarTab('export');
 
     const options = fixture.debugElement
       .queryAll(By.css('#mc-export-density option'))
@@ -1928,9 +1972,9 @@ describe('ModelComparisonComponent', () => {
     ]);
   });
 
-  it('multiplies the written size by the density in the read-out and the header summary', () => {
+  it('multiplies the written size by the density in the read-out and the Download all summary', () => {
     render(buildDto(comparableSet(3)), 4);
-    openPreview();
+    openSidebarTab('export');
     component.onExportResolutionChange('fullhd');
 
     component.onExportDensityChange(2);
@@ -1939,7 +1983,7 @@ describe('ModelComparisonComponent', () => {
     expect(doubled).toContain('3840 × 2160 px');
     expect(doubled).toContain('1920 × 1080 at 200%');
     expect(doubled).toContain('4× density');
-    expect(textOf('.mc-export-summary')).toContain('200%');
+    expect(textOf('#mc-tip-download-all')).toContain('200%');
 
     // At 100 % the requested size and the written one are one number, printed once.
     component.onExportDensityChange(1);
@@ -1952,7 +1996,7 @@ describe('ModelComparisonComponent', () => {
 
   it('names the density on the on-screen size, and no fixed factor', () => {
     render(buildDto(comparableSet(3)), 4);
-    openPreview();
+    openSidebarTab('export');
     component.onExportDensityChange(1.5);
     refresh();
 
@@ -1964,7 +2008,7 @@ describe('ModelComparisonComponent', () => {
 
   it('refuses a custom density outside its bounds, and will not export under one', () => {
     render(buildDto(comparableSet(3)), 4);
-    openPreview();
+    openSidebarTab('export');
     component.onExportDensityChange('custom');
     component.onCustomDensityChange(900);
     refresh();
@@ -1972,7 +2016,7 @@ describe('ModelComparisonComponent', () => {
     expect(component.customDensityError).toContain(`${component.maxExportDensityPercent}`);
     expect(component.exportSizeError).toBe(component.customDensityError);
     expect(component.canExport).toBeFalse();
-    expect(textOf('.mc-preview-controls .mc-export-error')).toContain('800');
+    expect(textOf('#mc-side-panel-export .mc-export-error')).toContain('800');
 
     component.onCustomDensityChange(150);
     refresh();
@@ -1981,8 +2025,9 @@ describe('ModelComparisonComponent', () => {
     expect(component.canExport).toBeTrue();
   });
 
-  it('refuses a bitmap the browser could not allocate, and disables the footer under it', () => {
+  it('refuses a bitmap the browser could not allocate, and marks every export control unavailable', () => {
     render(buildDto(comparableSet(3)), 4);
+    openSidebarTab('export');
     openPreview();
     component.onExportResolutionChange('custom');
     component.onCustomWidthChange(8000);
@@ -1993,16 +2038,21 @@ describe('ModelComparisonComponent', () => {
     expect(component.exportSizeError).toContain('24000 × 24000');
     expect(component.exportSizeError).toContain('16384');
     expect(component.canExport).toBeFalse();
-    const footer = fixture.debugElement
-      .queryAll(By.css('.mc-preview-foot button'))
-      .map(button => button.nativeElement as HTMLButtonElement);
-    expect(footer.length).toBe(3);
-    expect(footer.every(button => button.disabled)).toBeTrue();
+    // Copy, Download and Download all: aria-disabled, so each stays focusable and its reason reachable.
+    const controls = [
+      ...fixture.debugElement.queryAll(By.css('.mc-preview-export button')),
+      fixture.debugElement.query(By.css('.mc-fig-download-all'))
+    ].map(button => button.nativeElement as HTMLButtonElement);
+    expect(controls.length).toBe(3);
+    expect(controls.every(button => button.getAttribute('aria-disabled') === 'true')).toBeTrue();
+    expect(controls.every(button => !button.disabled)).toBeTrue();
+    expect(component.downloadAllTooltip).toBe(component.exportSizeError);
 
     component.onExportDensityChange(2);
     refresh();
     expect(component.exportSizeError).toBe('');
     expect(component.canExport).toBeTrue();
+    expect(controls.every(button => button.getAttribute('aria-disabled') === null)).toBeTrue();
   });
 
   it('copies the live figure at the chosen density, and restores the chart afterwards', async () => {
@@ -2031,7 +2081,7 @@ describe('ModelComparisonComponent', () => {
 
   it('derives the other custom side from the locked ratio', () => {
     render(buildDto(comparableSet(3)), 4);
-    openPreview();
+    openSidebarTab('export');
     component.onExportResolutionChange('custom');
     component.customExportWidth = 1920;
     component.customExportHeight = 1080;
@@ -2050,16 +2100,18 @@ describe('ModelComparisonComponent', () => {
     expect(component.customExportHeight).toBe(1080);
   });
 
-  it('opens the preview on one card and steps through the set, wrapping at both ends', () => {
+  it('opens the Preview tab on one card and steps through the set, wrapping at both ends', () => {
     render(buildDto(comparableSet(3)), 4);
     const cards = component.exportableCards;
     expect(cards.length).toBe(7);
 
-    const showModal = spyOn(previewDialog(), 'showModal');
     openPreview(cards[2]);
+    expect(component.figureTab).toBe('preview');
     expect(component.previewCardId).toBe(cards[2].id);
-    expect(component.previewOpen).toBeTrue();
-    expect(showModal).toHaveBeenCalled();
+    expect(component.previewActive).toBeTrue();
+    expect(previewTabButton().getAttribute('aria-selected')).toBe('true');
+    // A screen reader lands on "Figure, <title>".
+    expect(document.activeElement?.id).toBe('mc-preview-figure');
 
     component.previewNext();
     expect(component.previewCardId).toBe(cards[3].id);
@@ -2071,23 +2123,17 @@ describe('ModelComparisonComponent', () => {
     component.previewNext();
     expect(component.previewCardId).toBe(cards[0].id);
 
-    // The header's own control opens on the first card rather than on nothing.
-    component.onFigurePreviewClosed();
+    // The tab itself shows the last figure previewed, or the first where none was.
+    component.selectFigureTab('charts');
+    refresh();
     openPreview();
     expect(component.previewCardId).toBe(cards[0].id);
   });
 
-  /** The preview aside's two settings tabs, in order. */
-  function previewTabButtons(): HTMLButtonElement[] {
-    return fixture.debugElement.queryAll(By.css('.mc-preview-tabs [role="tab"]'))
-      .map(tab => tab.nativeElement as HTMLButtonElement);
-  }
-
-  /** Opens the preview on a card and switches the aside to its Style tab through the real tab. */
+  /** Shows the Preview tab on a card and the sidebar's Style tab, both through the real tabs. */
   function openStyleTab(card?: ComparisonFigureCard): void {
     openPreview(card);
-    previewTabButtons()[1].click();
-    refresh();
+    openSidebarTab('style');
   }
 
   function styleControl(id: string): HTMLInputElement {
@@ -2137,7 +2183,7 @@ describe('ModelComparisonComponent', () => {
     }
   }
 
-  it('mirrors both trade-off toggles in the Style tab and drives the page from them', () => {
+  it('drives the page from both trade-off toggles in the Style tab', () => {
     render(buildDto(comparableSet(3)), 4);
     openStyleTab(component.scatterCards[0]);
 
@@ -2148,37 +2194,34 @@ describe('ModelComparisonComponent', () => {
 
     setChecked(named, true);
     expect(component.scatterDirectLabels).toBeTrue();
-    // The page's own checkbox above the scatters reads the same field, so both stay in step.
-    expect((scatterToggle(0).nativeElement as HTMLInputElement).checked).toBeTrue();
+    expect(styleControl('mc-style-scatter-directLabels').checked).toBeTrue();
     expect(scatterLegendDisplays()).toEqual([false, false, false]);
 
     setChecked(styleControl('mc-style-scatter-inlineValues'), false);
     expect(component.scatterInlineValues).toBeFalse();
-    expect((scatterToggle(1).nativeElement as HTMLInputElement).checked).toBeFalse();
+    expect(styleControl('mc-style-scatter-inlineValues').checked).toBeFalse();
     expect(scatterBlocks()!.every(b => b.values.length === 0)).toBeTrue();
   });
 
-  it('fills single-run bars from the step 4 checkbox, persists it, and mirrors the Style tab', () => {
+  it('fills single-run bars from the Style tab, persists it, and keeps no second copy of the control', () => {
     render(buildDto(comparableSet(3).map(entry => ({ ...entry, runCount: 1 }))), 4);
 
     const fills = (): unknown[] =>
       (component.panelCards[0].data.datasets[0] as unknown as Record<string, unknown[]>)['backgroundColor'];
     expect(fills().every(fill => fill === 'transparent')).toBeTrue();
+    expect(fixture.debugElement.query(By.css('#mc-bar-filled'))).toBeNull();
 
-    const pageToggle = (): HTMLInputElement => styleControl('mc-bar-filled');
-    expect(pageToggle().checked).toBeFalse();
+    openStyleFamily('bar');
+    const styleToggle = (): HTMLInputElement => styleControl('mc-style-bar-filledBars');
+    expect(styleToggle().checked).toBeFalse();
 
-    withStyleDebounce(() => setChecked(pageToggle(), true));
+    withStyleDebounce(() => setChecked(styleToggle(), true));
     expect(component.figureStyle.bar.filledBars).toBeTrue();
     expect(JSON.parse(localStorage.getItem(FIGURE_STYLE_STORAGE_KEY)!).bar.filledBars).toBeTrue();
     expect(fills().some(fill => fill === 'transparent')).toBeFalse();
 
-    openStyleTab(component.panelCards[0]);
-    const styleToggle = styleControl('mc-style-bar-filledBars');
-    expect(styleToggle.checked).toBeTrue();
-
-    withStyleDebounce(() => setChecked(styleToggle, false));
-    expect(pageToggle().checked).toBeFalse();
+    withStyleDebounce(() => setChecked(styleToggle(), false));
+    expect(styleToggle().checked).toBeFalse();
     expect(fills().every(fill => fill === 'transparent')).toBeTrue();
   });
 
@@ -2205,43 +2248,84 @@ describe('ModelComparisonComponent', () => {
     }
   });
 
-  it('offers Export and Style as tabs with the full tab contract', () => {
-    render(buildDto(comparableSet(3)), 4);
-    openPreview(component.panelCards[0]);
+  /**
+   * Checks one tab row against the full tab contract: roles, names, selection, a roving tabindex,
+   * Left/Right wrapping, Home/End, and focus following selection.
+   */
+  function expectTabContract(
+    listSelector: string,
+    listLabel: string,
+    idPrefix: string,
+    panelPrefix: string,
+    labels: string[],
+    selected: () => string
+  ): void {
+    const tabs = (): HTMLButtonElement[] =>
+      fixture.debugElement.queryAll(By.css(`${listSelector} [role="tab"]`))
+        .map(tab => tab.nativeElement as HTMLButtonElement);
+    const ids = labels.map(label => label.toLowerCase());
 
-    const tablist = fixture.debugElement.query(By.css('.mc-preview-tabs')).nativeElement as HTMLElement;
+    const tablist = fixture.debugElement.query(By.css(listSelector)).nativeElement as HTMLElement;
     expect(tablist.getAttribute('role')).toBe('tablist');
-    expect(tablist.getAttribute('aria-label')).toBe('Preview settings');
+    expect(tablist.getAttribute('aria-label')).toBe(listLabel);
+    expect(tabs().map(tab => tab.textContent!.trim())).toEqual(labels);
 
-    const [exportTab, styleTab] = previewTabButtons();
-    expect(previewTabButtons().map(tab => tab.textContent!.trim())).toEqual(['Export', 'Style']);
-    expect(exportTab.getAttribute('aria-selected')).toBe('true');
-    expect(exportTab.getAttribute('tabindex')).toBe('0');
-    expect(styleTab.getAttribute('aria-selected')).toBe('false');
-    expect(styleTab.getAttribute('tabindex')).toBe('-1');
-    expect(exportTab.getAttribute('aria-controls')).toBe('mc-preview-panel-export');
-    expect(styleTab.getAttribute('aria-controls')).toBe('mc-preview-panel-style');
+    tabs().forEach((tab, index) => {
+      expect(tab.id).toBe(`${idPrefix}${ids[index]}`);
+      expect(tab.getAttribute('aria-controls')).toBe(`${panelPrefix}${ids[index]}`);
+      expect(tab.getAttribute('aria-selected')).toBe(index === 0 ? 'true' : 'false');
+      expect(tab.getAttribute('tabindex')).toBe(index === 0 ? '0' : '-1');
+    });
+    const firstPanel = fixture.debugElement.query(By.css(`#${panelPrefix}${ids[0]}`)).nativeElement as HTMLElement;
+    expect(firstPanel.getAttribute('role')).toBe('tabpanel');
+    expect(firstPanel.getAttribute('aria-labelledby')).toBe(`${idPrefix}${ids[0]}`);
+    expect(firstPanel.getAttribute('tabindex')).toBe('0');
 
-    const exportPanel = fixture.debugElement.query(By.css('#mc-preview-panel-export')).nativeElement as HTMLElement;
-    expect(exportPanel.getAttribute('role')).toBe('tabpanel');
-    expect(exportPanel.getAttribute('aria-labelledby')).toBe(exportTab.id);
-    expect(exportPanel.getAttribute('tabindex')).toBe('0');
-    expect(fixture.debugElement.query(By.css('#mc-preview-panel-style'))).toBeNull();
+    const press = (index: number, key: string): void => {
+      tabs()[index].dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      refresh();
+    };
+    const last = labels.length - 1;
 
-    exportTab.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    refresh();
-    expect(component.previewTab).toBe('style');
-    expect(previewTabButtons()[1].getAttribute('aria-selected')).toBe('true');
-    expect(previewTabButtons()[1].getAttribute('tabindex')).toBe('0');
-    expect(fixture.debugElement.query(By.css('#mc-preview-panel-export'))).toBeNull();
-    expect(fixture.debugElement.query(By.css('#mc-preview-panel-style'))).not.toBeNull();
+    press(0, 'ArrowRight');
+    expect(selected()).toBe(ids[1]);
+    expect(tabs()[1].getAttribute('aria-selected')).toBe('true');
+    expect(tabs()[1].getAttribute('tabindex')).toBe('0');
+    expect(tabs()[0].getAttribute('tabindex')).toBe('-1');
+    expect(document.activeElement).toBe(tabs()[1]);
 
-    previewTabButtons()[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
-    refresh();
-    expect(component.previewTab).toBe('export');
-    previewTabButtons()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
-    refresh();
-    expect(component.previewTab).toBe('style');
+    press(1, 'Home');
+    expect(selected()).toBe(ids[0]);
+    press(0, 'ArrowLeft');
+    expect(selected()).withContext('Left wraps to the last tab').toBe(ids[last]);
+    press(last, 'ArrowRight');
+    expect(selected()).withContext('Right wraps to the first tab').toBe(ids[0]);
+    press(0, 'End');
+    expect(selected()).toBe(ids[last]);
+    expect(document.activeElement).toBe(tabs()[last]);
+  }
+
+  it('offers the sidebar\'s three sections as tabs with the full tab contract', () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    expectTabContract('.mc-fig-sidebar-tabs', 'Figure settings sections', 'mc-side-tab-', 'mc-side-panel-',
+      ['Emphasis', 'Export', 'Style'], () => component.sidebarTab);
+    // Only the selected section's panel is rendered.
+    expect(fixture.debugElement.query(By.css('#mc-side-panel-style'))).not.toBeNull();
+    expect(fixture.debugElement.query(By.css('#mc-side-panel-emphasis'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('#mc-side-panel-export'))).toBeNull();
+  });
+
+  it('offers Charts and Preview as tabs with the full tab contract', () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    expectTabContract('.mc-fig-tabs', 'Figure views', 'mc-fig-tab-', 'mc-fig-panel-',
+      ['Charts', 'Preview'], () => component.figureTab);
+    expect(component.previewActive).toBeTrue();
+    expect(fixture.debugElement.query(By.css('#mc-fig-panel-preview'))).not.toBeNull();
+    // Both tabs carry a glyph, or neither would.
+    const glyphs = fixture.debugElement.queryAll(By.css('.mc-fig-tabs [role="tab"] svg.btn-icon'));
+    expect(glyphs.length).toBe(2);
   });
 
   it('shows the bar set on a panel, the trade-off set on a scatter and the profile set on the profile', () => {
@@ -2251,13 +2335,14 @@ describe('ModelComparisonComponent', () => {
     const has = (selector: string): boolean => fixture.debugElement.query(By.css(selector)) !== null;
     expect(has('#mc-style-bar-heading')).toBeTrue();
     expect(has('#mc-style-scatter-heading')).toBeFalse();
-    expect(textOf('#mc-preview-panel-style')).toContain(
+    expect(textOf('#mc-side-panel-style')).toContain(
       'Plot changes apply to the page and every export; caption sizes and the footer, to the preview and exports.');
 
     // Switching figure keeps the tab, and the set follows the figure's kind.
     component.selectPreviewCard(component.scatterCards[0].id);
     refresh();
-    expect(component.previewTab).toBe('style');
+    expect(component.sidebarTab).toBe('style');
+    expect(component.styleFamily).toBe('scatter');
     expect(has('#mc-style-scatter-heading')).toBeTrue();
     expect(has('#mc-style-bar-heading')).toBeFalse();
 
@@ -2446,6 +2531,7 @@ describe('ModelComparisonComponent', () => {
 
   it('feeds the Text size range into the export layout, and disables it for On-screen', async () => {
     render(buildDto(comparableSet(3)), 4);
+    openSidebarTab('export');
     openPreview(component.panelCards[0]);
 
     const range = styleControl('mc-export-text-scale');
@@ -2488,6 +2574,7 @@ describe('ModelComparisonComponent', () => {
         },
         footer: { suite: 'Suite A', computedAt: 'Current catalog, 3 Sep 2026' }
       });
+    openSidebarTab('export');
     openPreview(card);
 
     component.onExportResolutionChange('custom');
@@ -2499,7 +2586,7 @@ describe('ModelComparisonComponent', () => {
     expect(component.previewRefusal).toContain(card.title);
     // The target size, which is what Download would write and what it would refuse.
     expect(component.previewRefusal).toContain('1280 × 720 px');
-    expect(textOf('.mc-preview-controls .mc-export-error')).toContain('1280 × 720 px');
+    expect(textOf('#mc-side-panel-export .mc-export-error')).toContain('1280 × 720 px');
     expect(component.previewCanvas!.nativeElement.width).toBe(0);
     expect(component.previewBusy).toBeFalse();
   });
@@ -2585,17 +2672,15 @@ describe('ModelComparisonComponent', () => {
   // Preview zoom and pan
   // -------------------------------------------------------------------------------------------
 
-  /** One of the zoom row's controls, by its accessible name. */
+  /** One of the zoom group's controls, by its accessible name. */
   function zoomButton(name: string): HTMLButtonElement {
     return fixture.debugElement.query(By.css(`.mc-preview-zoom button[aria-label="${name}"]`))
       .nativeElement as HTMLButtonElement;
   }
 
-  /** One of the three text view buttons, by its visible label. */
-  function viewButton(label: string): HTMLButtonElement {
-    return fixture.debugElement.queryAll(By.css('.mc-preview-zoom-views button'))
-      .map(button => button.nativeElement as HTMLButtonElement)
-      .find(button => button.textContent!.trim() === label)!;
+  /** One of the three icon-only view buttons, by its accessible name. */
+  function viewButton(label: 'Fit to screen' | 'Actual pixels, 100 percent' | 'Reset view'): HTMLButtonElement {
+    return zoomButton(label);
   }
 
   function previewViewport(): HTMLElement {
@@ -2741,8 +2826,8 @@ describe('ModelComparisonComponent', () => {
     await openCustomPreview();
     clickAndRefresh(viewButton('Fit to screen'));
 
-    const actual = viewButton('100%');
-    expect(actual.getAttribute('aria-label')).toBe('Actual pixels, 100 percent');
+    const actual = viewButton('Actual pixels, 100 percent');
+    expect(actual.textContent!.trim()).toBe('');
     clickAndRefresh(actual);
 
     expect(component.previewView).toBe(1);
@@ -2813,60 +2898,139 @@ describe('ModelComparisonComponent', () => {
     expect(sizes[2]).toEqual(sizes[0]);
   });
 
-  it('reopens in the default view', async () => {
+  it('returns to the Preview tab in the default view', async () => {
     await openFullHdPreview();
     component.setPreviewView(4);
 
-    component.onFigurePreviewClosed();
+    component.selectFigureTab('charts');
+    refresh();
     openPreview();
 
     expect(component.previewView).toBe('default');
   });
 
-  it('stops watching the stage when the preview closes', () => {
+  /** The stage the fake observer watches, and the viewport the pan and wheel listeners are on. */
+  function watchedStage(observers: RecordingResizeObserver[]): {
+    watching: RecordingResizeObserver[]; viewport: HTMLElement; removed: jasmine.Spy;
+  } {
+    const stage = fixture.debugElement.query(By.css('.mc-preview-stage')).nativeElement as HTMLElement;
+    const viewport = previewViewport();
+    return {
+      watching: observers.filter(observer => observer.observed.includes(stage)),
+      viewport,
+      removed: spyOn(viewport, 'removeEventListener').and.callThrough()
+    };
+  }
+
+  it('stops watching the stage on switching to Charts', () => {
     render(buildDto(comparableSet(3)), 4);
     const observers = installFakeResizeObserver();
     openPreview();
-
-    const stage = fixture.debugElement.query(By.css('.mc-preview-stage'))
-      .nativeElement as HTMLElement;
-    const watching = observers.filter(observer => observer.observed.includes(stage));
+    const { watching, removed } = watchedStage(observers);
     expect(watching.length).toBe(1);
 
-    component.onFigurePreviewClosed();
+    (fixture.debugElement.query(By.css('#mc-fig-tab-charts')).nativeElement as HTMLButtonElement).click();
+    refresh();
 
     expect(watching[0].disconnected).toBe(1);
+    expect(component.previewActive).toBeFalse();
+    expect(removed).toHaveBeenCalledWith('wheel', jasmine.any(Function), jasmine.anything());
+    expect(fixture.debugElement.query(By.css('#mc-fig-panel-preview'))).toBeNull();
   });
 
-  it('summarises the export size and format in the Figures header', () => {
+  it('stops watching the stage on leaving step 4, and on destroy', async () => {
+    render(buildDto(comparableSet(3)), 4);
+    const observers = installFakeResizeObserver();
+    openPreview();
+    const first = watchedStage(observers);
+
+    component.goToStep(3);
+    fixture.detectChanges();
+    expect(first.watching[0].disconnected).toBe(1);
+    expect(first.removed).toHaveBeenCalledWith('pointerdown', jasmine.any(Function), undefined);
+    expect(component.figureTab).withContext('kept, so returning shows the Preview tab again').toBe('preview');
+
+    component.goToStep(4);
+    fixture.detectChanges();
+    // The re-attach runs in a microtask, outside the check pass that found the stage.
+    await Promise.resolve();
+    fixture.detectChanges();
+    const second = watchedStage(observers);
+    expect(second.watching.length).toBe(1);
+
+    fixture.destroy();
+    expect(second.watching[0].disconnected).toBe(1);
+  });
+
+  it('removes the viewport listeners from their element after a refetch has taken it out of the DOM', () => {
+    render(buildDto(comparableSet(3)), 4);
+    const observers = installFakeResizeObserver();
+    openPreview();
+    const { watching, viewport, removed } = watchedStage(observers);
+
+    // A refetch down to one entry: step 4 stays open, and the workspace goes with the figures.
+    fixture.componentRef.setInput('comparison', buildDto(comparableSet(1)));
+    fixture.detectChanges();
+
+    expect(viewport.isConnected).toBeFalse();
+    expect(component.previewActive).toBeFalse();
+    expect(watching[0].disconnected).toBe(1);
+    expect(removed).toHaveBeenCalledWith('wheel', jasmine.any(Function), jasmine.anything());
+    expect(removed).toHaveBeenCalledWith('pointerdown', jasmine.any(Function), undefined);
+  });
+
+  it('carries the export size and format in the Download all tooltip, and a size error instead of it', () => {
     render(buildDto(comparableSet(3)), 4);
 
     component.onExportDensityChange(1);
     component.onExportResolutionChange('fullhd');
     refresh();
-    expect(textOf('.mc-export-summary')).toContain('Full HD — 1920 × 1080');
-    expect(textOf('.mc-export-summary')).toContain('100%');
-    expect(textOf('.mc-export-summary')).toContain('PNG');
+    expect(component.downloadAllTooltip).toContain(component.exportSummary);
+    const tooltip = (): string => textOf('#mc-tip-download-all');
+    expect(tooltip()).toContain('All figures as one archive');
+    expect(tooltip()).toContain('Full HD — 1920 × 1080');
+    expect(tooltip()).toContain('100%');
+    expect(tooltip()).toContain('PNG');
 
     component.onExportFormatChange('webp');
     refresh();
-    expect(textOf('.mc-export-summary')).toContain('WebP q85');
+    expect(tooltip()).toContain('WebP q85');
     expect(component.exportAspectLabel).toBe('16:9');
+
+    component.onExportResolutionChange('custom');
+    component.onCustomWidthChange(10);
+    refresh();
+    expect(component.exportSizeError).not.toBe('');
+    expect(tooltip()).toBe(component.exportSizeError);
+
+    component.exporting = true;
+    expect(component.downloadAllTooltip).toBe('An export is running.');
+    component.exporting = false;
   });
 
-  it('offers a preview control on every figure card, each naming its own figure', () => {
+  it('offers an open-in-preview control on every figure card, naming its figure and never disabled', () => {
     render(buildDto(comparableSet(3)), 4);
 
-    const previews = fixture.debugElement.queryAll(By.css('.mc-card .mc-preview-open'))
+    const previews = (): HTMLButtonElement[] => fixture.debugElement.queryAll(By.css('.mc-card .mc-preview-open'))
       .map(button => button.nativeElement as HTMLButtonElement);
-    expect(previews.length).toBe(7);
+    expect(previews().length).toBe(7);
 
     // Icon-only, so aria-label is the accessible name — and seven of them must not share one.
-    const names = previews.map(button => button.getAttribute('aria-label') ?? '');
-    expect(names.every(name => name.startsWith('Preview ') && name.endsWith(' at export size')))
+    const names = previews().map(button => button.getAttribute('aria-label') ?? '');
+    expect(names.every(name => name.startsWith('Open ') && name.endsWith(' in the preview')))
       .toBeTrue();
     expect(new Set(names).size).toBe(7);
-    expect(previews.every(button => button.textContent?.trim() === '')).toBeTrue();
+    expect(previews().every(button => button.querySelector('path')?.getAttribute('d')?.startsWith('M1 12s4-8')))
+      .withContext('the eye glyph').toBeTrue();
+
+    // The preview is where a size error is shown and fixed, so it stays reachable under one.
+    component.onExportResolutionChange('custom');
+    component.onCustomWidthChange(10);
+    refresh();
+    expect(component.canExport).toBeFalse();
+    expect(previews().every(button => !button.disabled && button.getAttribute('aria-disabled') === null))
+      .toBeTrue();
+    expect(previews().every(button => button.textContent?.trim() === '')).toBeTrue();
   });
 
   // -------------------------------------------------------------------------------------------
@@ -3289,36 +3453,306 @@ describe('ModelComparisonComponent', () => {
     expect(component.exportNotice?.message).toContain('No figure was written at this size.');
   });
 
-  it('lays the preview footer out as a row of its own, its controls spaced', () => {
+  it('lays the preview toolbar out as three labelled groups of tooltipped icon buttons', () => {
     render(buildDto(comparableSet(3)), 4);
     openPreview();
 
-    const foot = fixture.debugElement.query(By.css('.mc-preview-foot')).nativeElement as HTMLElement;
-    const style = getComputedStyle(foot);
+    const toolbar = fixture.debugElement.query(By.css('.mc-preview-toolbar')).nativeElement as HTMLElement;
+    const style = getComputedStyle(toolbar);
     expect(style.display).toBe('flex');
     expect(style.columnGap).not.toBe('0px');
     expect(style.columnGap).not.toBe('normal');
+    // Groups, not a toolbar: a toolbar's arrow-key model would fight the slider's.
+    expect(toolbar.getAttribute('role')).toBeNull();
+    const groups = Array.from(toolbar.querySelectorAll(':scope > [role="group"]'));
+    expect(groups.map(group => group.getAttribute('aria-label')))
+      .toEqual(['Figure', 'Preview zoom', 'Export this figure']);
+
+    for (const name of ['Fit to screen', 'Actual pixels, 100 percent', 'Reset view']) {
+      const button = zoomButton(name);
+      expect(button.textContent!.trim()).withContext(name).toBe('');
+      expect(button.classList).toContain('action-btn');
+      const tipId = button.getAttribute('interestfor');
+      expect(tipId).withContext(name).toBeTruthy();
+      const tip = (fixture.nativeElement as HTMLElement).querySelector(`#${tipId}`);
+      expect(tip?.getAttribute('popover')).withContext(name).toBe('hint');
+      expect(button.getAttribute('style')).toContain(`anchor-name: --${tipId}`);
+      expect(tip?.getAttribute('style')).toContain(`position-anchor: --${tipId}`);
+    }
+
+    // Every icon-only button in the workspace has a name and a tooltip, and none uses `title`.
+    const step = fixture.debugElement.query(By.css('#mc-step-panel-4')).nativeElement as HTMLElement;
+    for (const button of Array.from(step.querySelectorAll<HTMLButtonElement>('button.action-btn'))) {
+      expect(button.getAttribute('aria-label')).withContext(button.outerHTML).toBeTruthy();
+      expect(button.getAttribute('interestfor')).withContext(button.outerHTML).toBeTruthy();
+      expect(button.getAttribute('type')).toBe('button');
+    }
+    expect(step.querySelectorAll('[title]').length).toBe(0);
+
+    // The one image button, and only one, is the figure's Download.
+    const primary = Array.from(toolbar.querySelectorAll('.btn-gh'));
+    expect(primary.length).toBe(1);
+    expect(primary[0].textContent!.trim()).toBe('Download');
   });
 
-  it('hands the notice to the toast inside whichever modal is innermost', async () => {
+  it('hands the notice to its one toast', async () => {
     render(buildDto(comparableSet(3)), 4);
     withClipboard({ write: () => Promise.resolve() });
 
     await component.copyFigure(component.panelCards[0]);
     refresh();
 
-    // Two, one per modal: everything outside the innermost open dialog is inert.
-    expect(fixture.debugElement.queryAll(By.css('app-toast')).length).toBe(2);
-    const toasts = fixture.debugElement.queryAll(By.directive(ToastComponent))
-      .map(element => element.componentInstance as ToastComponent);
-    expect(toasts.length).toBe(2);
-    expect(toasts[0].notice).toBe(component.exportNotice);
-    expect(toasts[1].notice).toBeNull();
+    expect(fixture.debugElement.queryAll(By.css('app-toast')).length).toBe(1);
+    const toast = fixture.debugElement.query(By.directive(ToastComponent)).componentInstance as ToastComponent;
+    expect(toast.notice).toBe(component.exportNotice);
+
+    // The Preview tab is not a modal, so the same toast still carries it there.
+    openPreview();
+    expect(toast.notice).toBe(component.exportNotice);
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // The step-4 workspace: sidebar, figure tabs, and the live charts under the preview
+  // -------------------------------------------------------------------------------------------
+
+  function sidebarToggle(): HTMLButtonElement {
+    return fixture.debugElement.query(By.css('.mc-fig-sidebar-toggle')).nativeElement as HTMLButtonElement;
+  }
+
+  function sidebar(): HTMLElement {
+    return fixture.debugElement.query(By.css('#mc-fig-sidebar')).nativeElement as HTMLElement;
+  }
+
+  function storedSidebar(): { version: number; collapsed: boolean; tab: string } {
+    return JSON.parse(localStorage.getItem(FIGURE_SIDEBAR_STORAGE_KEY)!);
+  }
+
+  /** A second instance over the same payload, built after storage was written. */
+  function secondInstance(): ComponentFixture<ModelComparisonComponent> {
+    const second = TestBed.createComponent(ModelComparisonComponent);
+    second.componentRef.setInput('comparison', buildDto(comparableSet(3)));
+    second.detectChanges();
+    second.componentInstance.goToStep(4);
+    second.detectChanges();
+    return second;
+  }
+
+  it('collapses the sidebar from its disclosure, persists it, and restores it in a new instance', () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    const toggle = sidebarToggle();
+    expect(toggle.getAttribute('aria-label')).toBe('Figure settings');
+    expect(toggle.getAttribute('aria-controls')).toBe('mc-fig-sidebar');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(sidebar().hidden).toBeFalse();
+    expect(textOf('#mc-tip-sidebar')).toContain('Hide figure settings');
+
+    toggle.click();
+    fixture.detectChanges();
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    // The name stays constant; the state is aria-expanded's.
+    expect(toggle.getAttribute('aria-label')).toBe('Figure settings');
+    expect(sidebar().hidden).toBeTrue();
+    expect(getComputedStyle(sidebar()).display).toBe('none');
+    expect(fixture.debugElement.query(By.css('.mc-fig-workspace.is-collapsed'))).not.toBeNull();
+    expect(textOf('#mc-tip-sidebar')).toContain('Show figure settings');
+    expect(storedSidebar()).toEqual({ version: 1, collapsed: true, tab: 'emphasis' });
+
+    const second = secondInstance();
+    expect(second.componentInstance.sidebarCollapsed).toBeTrue();
+    expect((second.nativeElement as HTMLElement).querySelector('#mc-fig-sidebar')?.hasAttribute('hidden')).toBeTrue();
+    second.destroy();
+  });
+
+  it('keeps the sidebar defaults when storage throws', () => {
+    spyOn(Storage.prototype, 'getItem').and.throwError('blocked');
+    spyOn(Storage.prototype, 'setItem').and.throwError('blocked');
+
+    const blocked = TestBed.createComponent(ModelComparisonComponent);
+    expect(blocked.componentInstance.sidebarCollapsed).toBeFalse();
+    expect(blocked.componentInstance.sidebarTab).toBe('emphasis');
+    expect(() => blocked.componentInstance.toggleSidebar()).not.toThrow();
+    expect(() => blocked.componentInstance.selectSidebarTab('style')).not.toThrow();
+    expect(blocked.componentInstance.sidebarCollapsed).toBeTrue();
+    expect(blocked.componentInstance.sidebarTab).toBe('style');
+    blocked.destroy();
+  });
+
+  it('restores the sidebar tab, and falls back to Emphasis on an unknown or malformed one', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openSidebarTab('export');
+    expect(storedSidebar()).toEqual({ version: 1, collapsed: false, tab: 'export' });
+
+    let second = secondInstance();
+    expect(second.componentInstance.sidebarTab).toBe('export');
+    expect((second.nativeElement as HTMLElement).querySelector('#mc-side-panel-export')).not.toBeNull();
+    second.destroy();
+
+    localStorage.setItem(FIGURE_SIDEBAR_STORAGE_KEY, JSON.stringify({ version: 1, collapsed: 'yes', tab: 'layout' }));
+    second = secondInstance();
+    expect(second.componentInstance.sidebarTab).toBe('emphasis');
+    expect(second.componentInstance.sidebarCollapsed).toBeFalse();
+    second.destroy();
+
+    localStorage.setItem(FIGURE_SIDEBAR_STORAGE_KEY, '{not json');
+    second = secondInstance();
+    expect(second.componentInstance.sidebarTab).toBe('emphasis');
+    second.destroy();
+  });
+
+  it('keeps every chart canvas alive, inert and invisible under the Preview tab, and exports from it', async () => {
+    render(buildDto(comparableSet(3)), 4);
+    const canvases = (): HTMLCanvasElement[] => Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLCanvasElement>('canvas[data-figure-id]'));
+    expect(canvases().length).toBe(7);
+
+    openPreview(component.panelCards[0]);
+
+    expect(canvases().length).withContext('the live canvases every export composes from').toBe(7);
+    const charts = fixture.debugElement.query(By.css('#mc-fig-panel-charts')).nativeElement as HTMLElement;
+    expect(charts.hasAttribute('inert')).toBeTrue();
+    expect(charts.classList).toContain('is-inactive');
+    expect(getComputedStyle(charts).display).not.toBe('none');
+    expect(getComputedStyle(charts).visibility).toBe('hidden');
+
+    captureSaves();
+    const exportOne = spyOn(
+      component as unknown as { exportOneFigure(card: ComparisonFigureCard, canvas: HTMLCanvasElement | null): Promise<unknown> },
+      'exportOneFigure'
+    ).and.returnValue(Promise.resolve({ result: null, refusal: null, liveFallback: false, pixels: '' }));
+    await component.downloadPreviewedFigure();
+
+    expect(exportOne).toHaveBeenCalledTimes(1);
+    const [card, canvas] = exportOne.calls.mostRecent().args;
+    expect(card.id).toBe(component.panelCards[0].id);
+    expect(canvas).not.toBeNull();
+    expect(canvas!.isConnected).toBeTrue();
+
+    (fixture.debugElement.query(By.css('#mc-fig-tab-charts')).nativeElement as HTMLButtonElement).click();
+    refresh();
+    expect(charts.hasAttribute('inert')).toBeFalse();
+    expect(charts.classList).not.toContain('is-inactive');
+  });
+
+  it('re-composes the preview on an emphasis toggle while it is shown, and not on the Charts tab', () => {
+    render(buildDto(comparableSet(3)), 4);
+    const renderPreview = spyOn(
+      component as unknown as { renderPreview(): Promise<void> }, 'renderPreview'
+    ).and.returnValue(Promise.resolve());
+    const box = (): DebugElement => fixture.debugElement.queryAll(By.css('.mc-emphasis-list input[type="checkbox"]'))[0];
+
+    jasmine.clock().install();
+    try {
+      box().triggerEventHandler('change', { target: box().nativeElement });
+      fixture.detectChanges();
+      jasmine.clock().tick(200);
+      expect(renderPreview).not.toHaveBeenCalled();
+
+      openPreview();
+      jasmine.clock().tick(200);
+      renderPreview.calls.reset();
+
+      box().triggerEventHandler('change', { target: box().nativeElement });
+      fixture.detectChanges();
+      expect(renderPreview).not.toHaveBeenCalled();
+      jasmine.clock().tick(200);
+      expect(renderPreview).toHaveBeenCalledTimes(1);
+    } finally {
+      jasmine.clock().uninstall();
+    }
+  });
+
+  it('lights no hover highlight on the Preview tab, and still clears one', () => {
+    render(buildDto(comparableSet(3)), 4);
+    component.setHighlight('run:1');
+    expect(component.highlightedKey).toBe('run:1');
 
     openPreview();
+    expect(component.highlightedKey).withContext('entering the preview clears it').toBeNull();
 
-    expect(toasts[0].notice).toBeNull();
-    expect(toasts[1].notice).toBe(component.exportNotice);
+    component.setHighlight('run:2');
+    expect(component.highlightedKey).toBeNull();
+
+    component.selectFigureTab('charts');
+    component.setHighlight('run:2');
+    expect(component.highlightedKey).toBe('run:2');
+    component.setHighlight(null);
+    expect(component.highlightedKey).toBeNull();
+  });
+
+  it('keeps the Style tab on the previewed figure\'s family, and moves the preview to a chosen one', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openSidebarTab('style');
+    const families = (): string[] => fixture.debugElement.queryAll(By.css('.mc-style-family-option'))
+      .map(option => ((option.nativeElement as HTMLElement).textContent ?? '').trim());
+    expect(families()).toEqual(['Bar panels', 'Profile', 'Trade-offs']);
+    expect((fixture.debugElement.query(By.css('.mc-style-family legend')).nativeElement as HTMLElement)
+      .textContent!.trim()).toBe('Figures to style');
+
+    // On the Charts tab, choosing a family moves nothing.
+    openStyleFamily('scatter');
+    expect(component.styleFamily).toBe('scatter');
+    expect(component.previewCardId).toBeNull();
+    expect(fixture.debugElement.query(By.css('#mc-style-scatter-heading'))).not.toBeNull();
+
+    openPreview(component.panelCards[1]);
+    expect(component.styleFamily).withContext('follows the figure on the stage').toBe('bar');
+    component.selectPreviewCard(component.scatterCards[0].id);
+    expect(component.styleFamily).toBe('scatter');
+
+    component.selectStyleFamily('bar');
+    expect(component.previewCardId).toBe(component.panelCards[0].id);
+    component.selectStyleFamily('profile');
+    expect(component.previewCardId).toBe(component.profileCard!.id);
+  });
+
+  it('offers no Profile family where the profile is suppressed', () => {
+    render(buildDto(comparableSet(2)), 4);
+    expect(component.profileCard).toBeNull();
+    expect(component.styleFamilies.map(family => family.kind)).toEqual(['bar', 'scatter']);
+
+    component.styleFamily = 'profile';
+    expect(component.effectiveStyleFamily).toBe('bar');
+  });
+
+  it('leaves no duplicate of any control in step 4', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openPreview();
+
+    const step = fixture.debugElement.query(By.css('#mc-step-panel-4')).nativeElement as HTMLElement;
+    const outsidePanel = (text: string): Element[] => Array.from(step.querySelectorAll('label, button, h4'))
+      .filter(element => !element.closest('app-figure-style-panel'))
+      .filter(element => (element.textContent ?? '').includes(text));
+    for (const text of ['Filled bars in the Intelligence', 'Label models inside', 'Show values in', 'Figure preview…']) {
+      expect(outsidePanel(text).length).withContext(text).toBe(0);
+    }
+    expect(fixture.debugElement.query(By.css('dialog.mc-preview-dialog'))).toBeNull();
+    // Each export control exists once.
+    expect(step.querySelectorAll('#mc-export-resolution').length).toBeLessThanOrEqual(1);
+    expect(fixture.debugElement.queryAll(By.css('app-figure-style-panel')).length).toBeLessThanOrEqual(1);
+  });
+
+  it('returns to the Preview tab after a step away, and watches the stage again', async () => {
+    render(buildDto(comparableSet(3)), 4);
+    openPreview();
+    const observe = spyOn(component as unknown as { observeStage(): void }, 'observeStage').and.callThrough();
+
+    component.goToStep(3);
+    fixture.detectChanges();
+    expect(component.previewActive).toBeFalse();
+    expect(fixture.debugElement.query(By.css('.mc-preview-stage'))).toBeNull();
+
+    component.goToStep(4);
+    fixture.detectChanges();
+    // The re-attach runs in a microtask, outside the check pass that found the stage.
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    expect(component.figureTab).toBe('preview');
+    expect(previewTabButton().getAttribute('aria-selected')).toBe('true');
+    expect(component.previewActive).toBeTrue();
+    expect(observe).toHaveBeenCalledTimes(1);
   });
 
   // -------------------------------------------------------------------------------------------

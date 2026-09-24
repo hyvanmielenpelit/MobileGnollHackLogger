@@ -263,15 +263,19 @@ To find specific popups, look in the corresponding component's `.html` template:
 
 - **Model Comparison (`model-comparison.component.html`, Admin → AI Benchmark → Run History →
   Cross-model comparison, step 4)**
-  - `#figurePreviewDialog`: Figure preview — one figure at a time, composited exactly as it will
-    be exported; opened from the Figures header and from each card's preview button. Two tabs:
+  - No preview dialog: step 4 is a workspace. A collapsible sidebar has three tabs — Emphasis,
     Export (size, aspect ratio, density, format, quality, text size) and Style
-    (`app-figure-style-panel`: the bar-chart set for the three panels, the trade-off set for the
-    three scatters, a note for the profile). Style applies to the page and to every export and is
-    kept in `localStorage['overseer.modelComparison.figureStyle']`. A figure with its uncertainty
-    bars hidden says so in a caption note unless that note is switched off too; the
-    frontier-within-intervals note has its own switch, and so does the Speed panel's mean-time
-    note. Warning notes have none.
+    (`app-figure-style-panel` under a *Bar panels / Profile / Trade-offs* family selector that
+    follows the previewed figure) — and its collapsed state and tab are kept in
+    `localStorage['overseer.modelComparison.figureSidebar']`. Beside it, a Charts / Preview tab
+    pair: Charts holds the cards, each with one *Open in preview* (eye) button; Preview composes
+    one figure exactly as it will be exported, with zoom, Copy and Download. *Download all* sits in
+    the figure bar above both. The Charts panel stays rendered, `inert` and `visibility: hidden`
+    under Preview, because every export composes from its live canvases. Style applies to the page
+    and to every export and is kept in `localStorage['overseer.modelComparison.figureStyle']`. A
+    figure with its uncertainty bars hidden says so in a caption note unless that note is switched
+    off too; the frontier-within-intervals note has its own switch, and so does the Speed panel's
+    mean-time note. Warning notes have none.
 
 ## Component Reuse and State Management
 

@@ -28,7 +28,7 @@
   flex-wrap: wrap;
 }
 
-/* Section title: one per section, on every step and in the preview aside. */
+/* Section title: one per section, on every step and in the figure sidebar. */
 .mc-section-title {
   margin: 0;
   font-family: "Cinzel", serif;
@@ -55,21 +55,6 @@
   gap: 6px;
 }
 
-/* The Figures heading and the export controls on one row, the controls pushed to the far end. */
-.mc-figures-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px 16px;
-  justify-content: space-between;
-}
-
-.mc-export {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .mc-export-format {
   width: auto;
   min-width: 170px;
@@ -79,18 +64,6 @@
 .mc-export-quality {
   width: auto;
   min-width: 110px;
-}
-
-/* The settings as a read-out beside the two buttons: what will be written, and at what size. */
-.mc-export-summary {
-  margin: 0;
-  font-size: 12px;
-  color: #c3c2b7;
-
-  small {
-    display: block;
-    color: #8b8b90;
-  }
 }
 
 .section-note,
@@ -535,8 +508,8 @@
   text-wrap: pretty;
 }
 
-/* Download, Copy and Preview, side by side. Shares the title and badge rows, so the buttons stay
-   top-aligned beside a one-line or a three-line head without making the title row taller. */
+/* The card's Open in preview button. Shares the title and badge rows, so it stays top-aligned
+   beside a one-line or a three-line head without making the title row taller. */
 .mc-card-actions {
   grid-column: 2;
   grid-row: 1 / span 2;
@@ -891,25 +864,6 @@
   }
 }
 
-/* The one control that belongs to the scatters rather than to the whole figure set, so it sits
-   with them rather than in the filter row above every figure. */
-.mc-scatter-options,
-.mc-bar-options {
-  margin: 12px 0 8px;
-
-  /* 30px = the global checkbox's 20px box plus `.checkbox-label`'s 10px gap, so the hint starts
-     under the label text rather than under the box. */
-  .mc-field-hint {
-    margin-left: 30px;
-  }
-
-  /* Both the label and the hint carry no margin of their own, so the second pair needs its own
-     separation from the first one's hint. */
-  .mc-field-hint + .checkbox-label {
-    margin-top: 8px;
-  }
-}
-
 /* Reserved whether or not the rows overflow, so a filter that shortens the table does not shift it. */
 .mc-table-scroll {
   scrollbar-gutter: stable;
@@ -1131,10 +1085,9 @@
   min-width: 0;
   min-height: 0;
 
-  /* Both toast hosts — the wizard dialog and the figure preview dialog — carry a 72px header
-     (14px padding, a 44px icon button, 14px padding) inside an 8px full-screen dialog inset;
-     the toast sits 12px below it. Custom properties inherit, so both `<app-toast>` instances
-     read it, including the one inside the `<dialog>`. */
+  /* The toast's host, the wizard dialog, carries a 72px header (14px padding, a 44px icon button,
+     14px padding) inside an 8px full-screen dialog inset; the toast sits 12px below it. Custom
+     properties inherit, so the `<app-toast>` reads it. */
   --toast-top: 92px;
 }
 
@@ -1212,7 +1165,8 @@
 }
 
 /* The only scroller in the dialog. `overscroll-behavior: contain` stops a wheel gesture that
-   reaches the end of a long table from chaining into the page behind the dialog. */
+   reaches the end of a long table from chaining into the page behind the dialog. Step 4 hands
+   scrolling to its sidebar and its panels, so its figure bar never scrolls away. */
 .mc-step {
   flex: 1;
   min-width: 0;
@@ -1230,6 +1184,13 @@
   &[hidden] {
     display: none;
   }
+}
+
+.mc-step--figures {
+  overflow: hidden;
+  padding: 0;
+  gap: 0;
+  container: mc-fig / inline-size;
 }
 
 /* The step-1 notices, in their own labelled strip between the step panel and the navigation.
@@ -1509,71 +1470,40 @@
   }
 }
 
-/* --- The figure preview dialog --- */
+/* --- The figures step: settings sidebar, figure bar, Charts and Preview --- */
 
-/* A header / body / footer column inside a full-screen dialog whose own padding is zero. The
-   container query root is here rather than on the body, so the controls and the stage collapse to
-   one column on the dialog's own width and not on the viewport's — the wizard behind it is already
-   narrower than the window on a split screen. */
-.mc-preview {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-  container-type: inline-size;
-}
-
-/* Three columns: the title, the figure switch centred between them, and the close control. A flex
-   row would centre the switch between the title's width and the button's, not in the dialog. */
-.mc-preview-head {
-  flex-shrink: 0;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
-
-  h3 {
-    margin: 0;
-    font-size: 18px;
-  }
-
-  .btn-icon-action {
-    justify-self: end;
-  }
-}
-
-.mc-preview-switch {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* Seven figure titles, the longest of which is a full sentence fragment; bounded so the header row
-   keeps its three columns rather than letting the select set the dialog's width. */
-.mc-preview-figure {
-  width: auto;
-  min-width: 200px;
-  max-width: 46cqw;
-}
-
-.mc-preview-body {
+/* The sidebar and the main area side by side, collapsing to one column on the workspace's own
+   width rather than the viewport's: the wizard is already narrower than the window on a split
+   screen. The `mc-fig` container is the step panel, because a container query cannot restyle the
+   container itself. Collapsing the sidebar is an instant reflow, not a transition — every animated
+   frame would resize seven chart canvases and the preview stage. */
+.mc-fig-workspace {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+  grid-template-columns: minmax(300px, 22rem) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
-  gap: 16px;
-  padding: 16px 20px;
+
+  &.is-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
-.mc-preview-controls {
+.mc-fig-sidebar {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-width: 0;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  padding: 0 16px 16px;
+  border-inline-end: 1px solid var(--border-glass);
+
+  /* `display: flex` above outranks the user-agent `[hidden]` rule. */
+  &[hidden] {
+    display: none;
+  }
 
   label {
     font-size: 13px;
@@ -1584,20 +1514,20 @@
   .checkbox-label {
     margin: 0;
   }
-
 }
 
-/* The Export / Style strip stays put while the panel under it scrolls with the aside. */
-.mc-preview-tabs {
+/* The Emphasis / Export / Style strip stays put while the panel under it scrolls with the sidebar.
+   Opaque, in the wizard's own ground like `.mc-wizard-steps`, so the scrolled panel does not show
+   through. */
+.mc-fig-sidebar-tabs {
   flex: none;
   position: sticky;
   top: 0;
   z-index: 1;
-  /* Opaque, over the dialog's own ground, so the scrolled panel does not show through. */
-  background: rgb(20, 20, 20);
+  background: rgba(16, 16, 16, 0.98);
 }
 
-.mc-preview-panel {
+.mc-side-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1611,6 +1541,65 @@
 
 .mc-style-scope {
   margin-bottom: 2px;
+}
+
+/* The style family as a segmented row of real radios: the input is hidden but stays focusable, and
+   its label carries the checked and focus states. */
+.mc-style-family {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-self: flex-start;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  overflow: hidden;
+
+  legend {
+    float: left;
+    width: 100%;
+    margin-bottom: 6px;
+    padding: 0;
+    font-size: 13px;
+    color: #c3c2b7;
+  }
+}
+
+.mc-style-family-option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  font-size: 13px;
+  color: var(--font-color);
+  cursor: pointer;
+
+  & + & {
+    border-inline-start: 1px solid var(--border-glass);
+  }
+
+  &:hover {
+    color: var(--primary-color);
+  }
+
+  &:has(:checked) {
+    background: rgba(212, 175, 55, 0.15);
+    color: var(--primary-color);
+  }
+
+  &:has(:focus-visible) {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
+  }
+}
+
+.mc-style-family-input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
 }
 
 /* A range with its value beside it, as the Style tab lays out its own. */
@@ -1652,18 +1641,89 @@
   color: #d4d4d8;
 }
 
-/* The zoom row above the stage, in the body grid's second column. */
-.mc-preview-stage-column {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+/* The figure bar above whichever view is shown, in a grid row of its own so it never scrolls. */
+.mc-fig-main {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
   min-height: 0;
+}
+
+/* One rule line under the whole bar, in the secondary tab row's colour; the tab row drops its own. */
+.mc-fig-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 6px 24px 0 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+
+  .action-btn {
+    margin-left: 0;
+  }
+}
+
+.mc-fig-tabs {
+  border-bottom: none;
   min-width: 0;
 }
 
-/* Wraps on a narrow stage, the view buttons dropping under the slider. */
-.mc-preview-zoom {
+.mc-fig-download-all {
+  margin-inline-start: auto;
+}
+
+/* Both panels fill the same box, so the chart canvases keep the same width on either tab. */
+.mc-fig-panels {
+  position: relative;
+  min-height: 0;
+}
+
+.mc-fig-panel {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
+  }
+
+  /* Never `display: none`: the preview and every export compose from these live canvases. */
+  &.is-inactive {
+    visibility: hidden;
+  }
+}
+
+.mc-fig-panel--preview {
+  overflow: hidden;
+  gap: 8px;
+}
+
+/* The step's own padding, where no workspace renders. */
+.mc-fig-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 24px 24px;
+}
+
+/* --- The Preview tab --- */
+
+/* Figure, zoom and export groups; wraps on a narrow panel, the export group kept at the end. */
+.mc-preview-toolbar {
   flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.mc-preview-group {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -1685,10 +1745,28 @@
   }
 }
 
+.mc-preview-export {
+  margin-inline-start: auto;
+
+  .btn-gh[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+    filter: grayscale(0.6);
+  }
+}
+
+/* Seven figure titles, the longest of which is a full sentence fragment; bounded against the
+   workspace's width so the select never sets the toolbar's. */
+.mc-preview-figure {
+  width: auto;
+  min-width: 200px;
+  max-width: 46cqw;
+}
+
 .mc-preview-zoom-slider {
   flex: 1 1 auto;
   min-width: 80px;
-  max-width: 280px;
+  max-width: 220px;
   margin: 0;
   accent-color: var(--primary-color);
 
@@ -1702,12 +1780,6 @@
 .mc-preview-zoom-value {
   min-width: 9.5em;
   text-align: left;
-}
-
-.mc-preview-zoom-views {
-  display: flex;
-  gap: 6px;
-  margin-left: auto;
 }
 
 /* Near-black rather than the card ground: the composition carries its own opaque background, and a
@@ -1766,37 +1838,17 @@
   right: 12px;
 }
 
-/* Its own row: `.dialog-footer` is scoped to the benchmark component and never reaches this
-   dialog. Wraps on a narrow dialog, buttons kept together at the end. */
-.mc-preview-foot {
-  flex-shrink: 0;
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin: 0;
-  padding: 12px 24px;
-  border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
-}
-
-/* Controls first, then the stage: a reader on a narrow dialog is still configuring a size, and a
-   stage above the controls would push every one of them below the fold. */
-@container (max-width: 860px) {
-  .mc-preview-body {
+/* Controls first, then the figures: a reader on a narrow screen is still configuring a size, and
+   figures above the controls would push every one of them below the fold. */
+@container mc-fig (max-width: 860px) {
+  .mc-fig-workspace {
     grid-template-columns: minmax(0, 1fr);
-    /* Stacked, both rows are content-sized and the body itself is what scrolls. */
-    grid-template-rows: auto auto;
-    overflow-y: auto;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
-  .mc-preview-controls {
-    overflow-y: visible;
-  }
-
-  /* A fixed height rather than a flex share: the stacked column is content-sized. */
-  .mc-preview-stage {
-    flex: none;
-    height: min(60dvh, 520px);
+  .mc-fig-sidebar {
+    max-block-size: 40dvh;
+    border-inline-end: none;
+    border-bottom: 1px solid var(--border-glass);
   }
 }

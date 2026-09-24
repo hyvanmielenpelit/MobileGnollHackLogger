@@ -174,8 +174,38 @@ const SLOW_COMPARISON_MS = 15_000;
 /** Where the figure style is kept, per browser. Read and written in `try/catch`; never required. */
 export const FIGURE_STYLE_STORAGE_KEY = 'overseer.modelComparison.figureStyle';
 
-/** The preview dialog's two settings tabs, in order. */
-export type FigurePreviewTab = 'export' | 'style';
+/** Step 4's two views of the figures: every card, or one figure composed at export size. */
+export type FigureViewTab = 'charts' | 'preview';
+
+/** The figure settings sidebar's three tabs, in order. */
+export type FigureSidebarTab = 'emphasis' | 'export' | 'style';
+
+/**
+ * Where the sidebar's collapsed state and tab are kept, per browser, as
+ * `{ version: 1, collapsed, tab }`. Read and written in `try/catch`; never required.
+ */
+export const FIGURE_SIDEBAR_STORAGE_KEY = 'overseer.modelComparison.figureSidebar';
+
+const FIGURE_SIDEBAR_TABS: readonly FigureSidebarTab[] = ['emphasis', 'export', 'style'];
+
+/** The stored sidebar state, field by field; the default wherever storage is absent or unreadable. */
+function readStoredFigureSidebar(): { collapsed: boolean; tab: FigureSidebarTab } {
+  const fallback = { collapsed: false, tab: 'emphasis' as FigureSidebarTab };
+  try {
+    const raw = localStorage.getItem(FIGURE_SIDEBAR_STORAGE_KEY);
+    const stored: unknown = raw === null ? null : JSON.parse(raw);
+    if (stored === null || typeof stored !== 'object') {
+      return fallback;
+    }
+    const { collapsed, tab } = stored as { collapsed?: unknown; tab?: unknown };
+    return {
+      collapsed: typeof collapsed === 'boolean' ? collapsed : fallback.collapsed,
+      tab: FIGURE_SIDEBAR_TABS.includes(tab as FigureSidebarTab) ? tab as FigureSidebarTab : fallback.tab
+    };
+  } catch {
+    return fallback;
+  }
+}
 
 /** One figure's chrome, as the export composer and the layout resolver both take it. */
 type FigureExportChrome = Omit<FigureExportRequest, 'canvas' | 'format' | 'layout'>;
@@ -504,6 +534,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * The chart container lives inside the figure branch, so it does not exist on the pass that runs
    * `ngAfterViewInit` for a set that starts empty or incomparable. The observer is attached the
    * first time the element appears instead, and never re-attached.
+   *
+   * The preview stage can leave the DOM or come back without a tab click — a refetch takes the
+   * figures away or returns them. Leaving tears down only unbound state, since a bound field
+   * changed inside this hook faults the check; returning re-attaches outside the check pass.
    */
   ngAfterViewChecked(): void {
     if (this.resizeObserver === null && this.chartsHost) {
@@ -513,7 +547,25 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       this.restoreFocusToNext = false;
       this.nextButton?.nativeElement.focus();
     }
+    if (this.previewActive && !this.previewStage) {
+      this.cancelScheduledPreview();
+      this.disconnectStageObserver();
+      this.previewActive = false;
+      this.previewSeq++;
+    } else if (this.figureTab === 'preview' && this.previewStage && !this.previewActive && !this.previewAttachQueued) {
+      this.previewAttachQueued = true;
+      queueMicrotask(() => {
+        this.previewAttachQueued = false;
+        if (this.figureTab === 'preview' && this.previewStage && !this.previewActive) {
+          this.attachPreview();
+          this.cdr.markForCheck();
+        }
+      });
+    }
   }
+
+  /** A re-attach is waiting for its microtask, so later checks in the same turn do not queue another. */
+  private previewAttachQueued = false;
 
   ngOnDestroy(): void {
     this.clearSlowLoadingTimer();
@@ -754,6 +806,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (!this.isStepReachable(step)) {
       return;
     }
+    if (this.step === 4 && step !== 4) {
+      // While the stage still exists. `figureTab` is kept, so returning re-attaches it.
+      this.detachPreview();
+    }
     this.step = step;
     // Marked, like every other mutator here: several callers are outside a template event —
     // ngOnChanges, the keyboard handler, the host reopening the dialog.
@@ -823,13 +879,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * sources are: every later step has nothing to render without one.
    */
   private applyComparisonToStep(previous: BenchmarkModelComparisonDto | null | undefined): void {
-    if (this.comparison === null) {
-      this.step = 1;
-      return;
+    const next: ComparisonWizardStep = this.comparison === null ? 1 : !previous ? 2 : this.step;
+    if (this.step === 4 && next !== 4) {
+      this.detachPreview();
     }
-    if (!previous) {
-      this.step = 2;
-    }
+    this.step = next;
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -893,24 +947,17 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * Both scatter toggles are offered above the charts and again in the preview dialog, so each one
-   * re-composes the preview as well as the page. `schedulePreview` is a no-op while it is closed.
+   * Both scatter toggles live in the sidebar's Style tab and re-draw the charts and, through
+   * `rebuild`, the preview while it is shown.
    */
   onScatterDirectLabelsChange(on: boolean): void {
     this.scatterDirectLabels = on;
     this.rebuild();
-    this.schedulePreview();
   }
 
   onScatterInlineValuesChange(on: boolean): void {
     this.scatterInlineValues = on;
     this.rebuild();
-    this.schedulePreview();
-  }
-
-  /** The page's copy of the Style tab's *Filled bars*: one field, so the two stay in step. */
-  onBarFilledChange(on: boolean): void {
-    this.onFigureStyleChange({ ...this.figureStyle, bar: { ...this.figureStyle.bar, filledBars: on } });
   }
 
   /**
@@ -924,7 +971,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.styleTimer = setTimeout(() => {
       this.styleTimer = null;
       this.rebuild();
-      this.schedulePreview();
     }, this.previewDebounceMs);
     this.cdr.markForCheck();
   }
@@ -960,9 +1006,14 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     }
   }
 
-  /** Hover and keyboard focus light the same model in all three panels and in the profile. */
+  /**
+   * Hover and keyboard focus light the same model in all three panels and in the profile.
+   *
+   * Refused on the Preview tab, where a transient hover would be composed into the export and
+   * recompose on every pass of the pointer. Clearing is always accepted.
+   */
   setHighlight(key: string | null): void {
-    if (this.highlightedKey === key) {
+    if (this.highlightedKey === key || (key !== null && this.figureTab === 'preview')) {
       return;
     }
     this.highlightedKey = key;
@@ -1328,17 +1379,27 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * The size and format in one line, for the Figures header.
+   * The size and format in one line, for the *Download all* tooltip.
    *
-   * The header carries the settings as a read-out rather than as controls: the controls live in the
-   * preview dialog, where their effect is visible, and two sets of them on one screen would let the
-   * reader change a size in the place that cannot show what it did.
+   * The figure bar carries the settings as a read-out rather than as controls: the controls live in
+   * the sidebar's Export tab, beside the preview that shows their effect.
    */
   get exportSummary(): string {
     const format = this.exportFormat === 'webp'
       ? `WebP q${this.figureWebpQuality}`
       : 'PNG';
     return `${this.exportResolution.label} · ${this.exportDensityLabel} · ${format}`;
+  }
+
+  /** What *Download all* would do now, or why it will not. */
+  get downloadAllTooltip(): string {
+    if (this.exporting) {
+      return 'An export is running.';
+    }
+    if (this.exportSizeError !== '') {
+      return this.exportSizeError;
+    }
+    return `All figures as one archive — ${this.exportSummary}`;
   }
 
   /** An out-of-range custom size, named. Empty while the current setting is usable. */
@@ -1876,28 +1937,189 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   // ---------------------------------------------------------------------------------------------
+  // The step-4 workspace
+  //
+  // A collapsible settings sidebar (Emphasis, Export, Style) beside two views of the figures:
+  // Charts, every card, and Preview, one figure composed at export size. Every control exists once.
+  // ---------------------------------------------------------------------------------------------
+
+  /** Starts on Charts whenever the wizard is created; kept across steps, never persisted. */
+  figureTab: FigureViewTab = 'charts';
+
+  readonly figureTabs: readonly { readonly id: FigureViewTab; readonly label: string }[] = [
+    { id: 'charts', label: 'Charts' },
+    { id: 'preview', label: 'Preview' }
+  ];
+
+  private readonly storedSidebar = readStoredFigureSidebar();
+
+  sidebarCollapsed = this.storedSidebar.collapsed;
+
+  sidebarTab: FigureSidebarTab = this.storedSidebar.tab;
+
+  readonly sidebarTabs: readonly { readonly id: FigureSidebarTab; readonly label: string }[] = [
+    { id: 'emphasis', label: 'Emphasis' },
+    { id: 'export', label: 'Export' },
+    { id: 'style', label: 'Style' }
+  ];
+
+  /** Focus stays on the toggle, which sits outside the sidebar and is always rendered. */
+  toggleSidebar(): void {
+    this.sidebarCollapsed = !this.sidebarCollapsed;
+    this.writeStoredSidebar();
+    this.cdr.markForCheck();
+  }
+
+  selectSidebarTab(tab: FigureSidebarTab): void {
+    this.sidebarTab = tab;
+    this.writeStoredSidebar();
+    this.cdr.markForCheck();
+  }
+
+  /** Left/Right move and wrap, Home/End jump to the ends; focus follows selection. */
+  onSidebarTabKeydown(event: KeyboardEvent, index: number): void {
+    const next = this.rovingTabIndex(event, index, this.sidebarTabs.length);
+    if (next === null) {
+      return;
+    }
+    const tab = this.sidebarTabs[next].id;
+    this.selectSidebarTab(tab);
+    this.cdr.detectChanges();
+    document.getElementById(`mc-side-tab-${tab}`)?.focus();
+  }
+
+  /**
+   * Switches the figure view. The preview attaches once its panel exists, and detaches while its
+   * elements still do.
+   */
+  selectFigureTab(tab: FigureViewTab): void {
+    if (tab === this.figureTab) {
+      return;
+    }
+    if (tab === 'preview') {
+      if (this.previewCard === null) {
+        this.previewCardId = this.exportableCards[0]?.id ?? null;
+      }
+      const card = this.previewCard;
+      if (card) {
+        this.styleFamily = this.familyOf(card);
+      }
+      this.setHighlight(null);
+      this.figureTab = 'preview';
+      this.cdr.detectChanges();
+      this.attachPreview();
+    } else {
+      this.detachPreview();
+      this.figureTab = tab;
+      this.cdr.markForCheck();
+    }
+  }
+
+  onFigureTabKeydown(event: KeyboardEvent, index: number): void {
+    const next = this.rovingTabIndex(event, index, this.figureTabs.length);
+    if (next === null) {
+      return;
+    }
+    const tab = this.figureTabs[next].id;
+    this.selectFigureTab(tab);
+    this.cdr.detectChanges();
+    document.getElementById(`mc-fig-tab-${tab}`)?.focus();
+  }
+
+  /** A card's eye button: the Preview tab on that figure, with focus on the figure select. */
+  openInPreview(card: ComparisonFigureCard): void {
+    this.selectPreviewCard(card.id);
+    if (this.figureTab === 'preview') {
+      this.cdr.detectChanges();
+    } else {
+      this.selectFigureTab('preview');
+    }
+    document.getElementById('mc-preview-figure')?.focus();
+  }
+
+  /** The §5 tab keyboard model's target index, or null for a key it does not handle. */
+  private rovingTabIndex(event: KeyboardEvent, index: number, count: number): number | null {
+    const targets: Record<string, number> = {
+      ArrowRight: index + 1,
+      ArrowLeft: index - 1,
+      Home: 0,
+      End: count - 1
+    };
+    const requested = targets[event.key];
+    if (requested === undefined) {
+      return null;
+    }
+    event.preventDefault();
+    return (requested + count) % count;
+  }
+
+  private writeStoredSidebar(): void {
+    try {
+      localStorage.setItem(FIGURE_SIDEBAR_STORAGE_KEY, JSON.stringify({
+        version: 1, collapsed: this.sidebarCollapsed, tab: this.sidebarTab
+      }));
+    } catch {
+      // Private mode or blocked storage: the layout still applies for this session.
+    }
+  }
+
+  // --- Style family ---
+
+  /** Which family the Style tab edits. Follows the previewed figure. */
+  styleFamily: FigureStylePanelKind = 'bar';
+
+  /** The families with a rendered card, in card order. */
+  get styleFamilies(): { kind: FigureStylePanelKind; label: string }[] {
+    const families: { kind: FigureStylePanelKind; label: string }[] = [{ kind: 'bar', label: 'Bar panels' }];
+    if (this.profileCard) {
+      families.push({ kind: 'profile', label: 'Profile' });
+    }
+    if (this.scatterCards.length > 0) {
+      families.push({ kind: 'scatter', label: 'Trade-offs' });
+    }
+    return families;
+  }
+
+  /** The family the Style tab renders: `bar` where the chosen one has no card in this set. */
+  get effectiveStyleFamily(): FigureStylePanelKind {
+    return this.styleFamilies.some(family => family.kind === this.styleFamily) ? this.styleFamily : 'bar';
+  }
+
+  /** On the Preview tab, the stage moves to the first figure of the chosen family. */
+  selectStyleFamily(kind: FigureStylePanelKind): void {
+    this.styleFamily = kind;
+    if (this.figureTab === 'preview' && this.familyOf(this.previewCard) !== kind) {
+      const target = this.exportableCards.find(card => this.familyOf(card) === kind);
+      if (target) {
+        this.selectPreviewCard(target.id);
+      }
+    }
+    this.cdr.markForCheck();
+  }
+
+  // ---------------------------------------------------------------------------------------------
   // The figure preview
   //
   // One figure at a time, composed by the same pipeline the download uses and drawn onto a canvas
-  // in a full-screen dialog: the size, the aspect ratio, the format and the quality are chosen
-  // against the image they produce rather than against a file already on disk. A figure whose
-  // caveats do not fit the chosen box is refused here, in the same words the download would refuse
-  // it in, which is the whole reason the controls moved into this dialog.
+  // on the Preview tab: the size, the aspect ratio, the format and the quality are chosen against
+  // the image they produce rather than against a file already on disk. A figure whose caveats do
+  // not fit the chosen box is refused here, in the same words the download would refuse it in.
   // ---------------------------------------------------------------------------------------------
 
-  @ViewChild('figurePreviewDialog') figurePreviewDialog?: ElementRef<HTMLDialogElement>;
-
-  /** The stage the composed image is drawn onto. Always in the template, so it is never absent. */
+  /** The stage the composed image is drawn onto. Present while the Preview tab is shown. */
   @ViewChild('previewCanvas') previewCanvas?: ElementRef<HTMLCanvasElement>;
 
   /** The box the stage canvas is fitted into, and the element whose size the preview follows. */
   @ViewChild('previewStage') previewStage?: ElementRef<HTMLElement>;
 
-  /** Which card is previewed. Null before the dialog has ever been opened. */
+  /** Which card is previewed. Null before the Preview tab has ever been shown. */
   previewCardId: string | null = null;
 
-  /** True while the dialog is open, which is what a control change checks before composing. */
-  previewOpen = false;
+  /**
+   * True while the stage is attached and composing, which is what a control change checks before
+   * composing. Not bound in the template, so the view hooks may change it.
+   */
+  previewActive = false;
 
   previewBusy = false;
 
@@ -1947,50 +2169,18 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   private previewPan: { pointerId: number; x: number; y: number; left: number; top: number } | null = null;
 
-  /** Registered outside Angular on open and removed on close. */
+  /** Registered outside Angular on attach and removed on detach. */
   private previewViewportListeners: [string, EventListener, AddEventListenerOptions?][] = [];
+
+  /**
+   * The element those listeners are on. Kept rather than re-read from `previewViewport`, which is
+   * already gone when the panel leaves the DOM before the teardown runs.
+   */
+  private previewListenedViewport: HTMLElement | null = null;
 
   /** The card the stage is showing, or null where the current slice no longer draws it. */
   get previewCard(): ComparisonFigureCard | null {
     return this.exportableCards.find(card => card.id === this.previewCardId) ?? null;
-  }
-
-  /** Which settings tab the preview aside shows. Kept across figures and across openings. */
-  previewTab: FigurePreviewTab = 'export';
-
-  readonly previewTabs: readonly { readonly id: FigurePreviewTab; readonly label: string }[] = [
-    { id: 'export', label: 'Export' },
-    { id: 'style', label: 'Style' }
-  ];
-
-  selectPreviewTab(tab: FigurePreviewTab): void {
-    this.previewTab = tab;
-    this.cdr.markForCheck();
-  }
-
-  /** Left/Right move and wrap, Home/End jump to the ends; focus follows selection. */
-  onPreviewTabKeydown(event: KeyboardEvent, index: number): void {
-    const targets: Record<string, number> = {
-      ArrowRight: index + 1,
-      ArrowLeft: index - 1,
-      Home: 0,
-      End: this.previewTabs.length - 1
-    };
-    const requested = targets[event.key];
-    if (requested === undefined) {
-      return;
-    }
-    event.preventDefault();
-    const next = (requested + this.previewTabs.length) % this.previewTabs.length;
-    const tab = this.previewTabs[next].id;
-    this.selectPreviewTab(tab);
-    this.cdr.detectChanges();
-    document.getElementById(`mc-preview-tab-${tab}`)?.focus();
-  }
-
-  /** The Style tab's control set for the previewed figure. */
-  get previewStyleKind(): FigureStylePanelKind {
-    return this.familyOf(this.previewCard);
   }
 
   /** The card's Better badge arrow, turned toward the better side. */
@@ -2009,39 +2199,28 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return card ? `Preview of ${card.ariaLabel}` : 'Figure preview';
   }
 
-  /** Opens on the given card, or on the first one where the header's own control opened it. */
-  openFigurePreview(card?: ComparisonFigureCard): void {
-    const target = card ?? this.exportableCards[0];
-    if (!target) {
-      return;
-    }
-    this.previewCardId = target.id;
-    this.previewRefusal = '';
-    this.previewOpen = true;
+  /**
+   * Starts composing onto a stage that has just been rendered.
+   *
+   * The toolbar's tooltip anchors render behind the panel's @if, which the polyfill's first scan
+   * never saw.
+   */
+  private attachPreview(): void {
     this.previewView = 'default';
-
-    // The figure select and the stage render from state this method has just changed, so they have
-    // to hold it before the dialog is promoted to the top layer.
-    this.cdr.detectChanges();
-    this.figurePreviewDialog?.nativeElement.showModal();
+    this.previewRefusal = '';
+    this.previewActive = true;
     this.observeStage();
+    refreshAnchorPositioning();
     this.schedulePreview();
   }
 
-  closeFigurePreview(): void {
-    this.figurePreviewDialog?.nativeElement.close();
-  }
-
   /**
-   * Drops the composition and keeps the dialog's own close event off the wizard that contains it.
-   *
-   * The host closes the whole wizard from its own dialog's `close`, and this one is a descendant of
-   * it. The stage is blanked rather than left holding the last figure: reopening on another card
-   * would show the previous one until the first composition landed.
+   * Stops composing and drops the composition. The stage is blanked rather than left holding the
+   * last figure: returning on another card would show the previous one until the first composition
+   * landed.
    */
-  onFigurePreviewClosed(event?: Event): void {
-    event?.stopPropagation();
-    this.previewOpen = false;
+  private detachPreview(): void {
+    this.previewActive = false;
     this.cancelScheduledPreview();
     this.disconnectStageObserver();
     this.previewSeq++;
@@ -2063,29 +2242,30 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.stepPreview(1);
   }
 
+  /** The Style tab follows, so it always edits the figure on the stage. */
   selectPreviewCard(id: string): void {
     this.previewCardId = id;
+    const card = this.previewCard;
+    if (card) {
+      this.styleFamily = this.familyOf(card);
+    }
     this.schedulePreview();
     this.cdr.markForCheck();
   }
 
-  /** Delegates, so the preview and the card buttons cannot drift apart in what they write. */
+  /** Delegates, so the preview and *Download all* cannot drift apart in what they write. */
   async downloadPreviewedFigure(): Promise<void> {
     const card = this.previewCard;
-    if (card) {
+    if (card && this.canExport) {
       await this.downloadFigure(card);
     }
   }
 
   async copyPreviewedFigure(): Promise<void> {
     const card = this.previewCard;
-    if (card) {
+    if (card && this.canExport) {
       await this.copyFigure(card);
     }
-  }
-
-  async downloadAllFromPreview(): Promise<void> {
-    await this.downloadAllFigures();
   }
 
   get previewZoomRange(): PreviewZoomRange {
@@ -2228,7 +2408,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /** Coalesces a burst of control changes — a held arrow key, a typed size — into one composition. */
   private schedulePreview(): void {
-    if (!this.previewOpen) {
+    if (!this.previewActive) {
       return;
     }
     this.cancelScheduledPreview();
@@ -2254,7 +2434,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * squeezed into the box after the fact.
    *
    * Nothing here produces a blob or an object URL — the composed canvas is drawn straight onto the
-   * on-screen one — so a closed dialog leaves nothing to revoke.
+   * on-screen one — so a detached preview leaves nothing to revoke.
    */
   private async renderPreview(): Promise<void> {
     const card = this.previewCard;
@@ -2384,7 +2564,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    *
    * Window resizes, a split screen and browser zoom all arrive here rather than through three
    * separate listeners, and the debounce behind `schedulePreview` collapses a drag into one
-   * composition. Absent outside a browser, where the dialog is never laid out to begin with.
+   * composition. Absent outside a browser, where the stage is never laid out to begin with.
    */
   private observeStage(): void {
     this.disconnectStageObserver();
@@ -2403,7 +2583,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   private disconnectStageObserver(): void {
     this.previewResizeObserver?.disconnect();
     this.previewResizeObserver = null;
-    const viewport = this.previewViewport?.nativeElement;
+    const viewport = this.previewListenedViewport;
     for (const [type, listener, options] of this.previewViewportListeners) {
       viewport?.removeEventListener(type, listener, options);
     }
@@ -2415,6 +2595,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.previewWheelFactor = 1;
     this.previewWheelAnchor = null;
     this.endPreviewPan();
+    this.previewListenedViewport = null;
   }
 
   /**
@@ -2502,6 +2683,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       }
     });
     this.previewViewportListeners = listeners;
+    this.previewListenedViewport = viewport;
   }
 
   private endPreviewPan(): void {
@@ -2510,7 +2692,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       return;
     }
     this.previewPan = null;
-    const viewport = this.previewViewport?.nativeElement;
+    const viewport = this.previewListenedViewport ?? this.previewViewport?.nativeElement;
     viewport?.classList.remove('is-panning');
     if (viewport?.hasPointerCapture?.(pan.pointerId)) {
       viewport.releasePointerCapture(pan.pointerId);
@@ -3062,10 +3244,17 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       })
       : null;
 
+    // A refetch can take the previewed figure out of the set.
+    if (this.previewCardId !== null && this.previewCard === null) {
+      this.previewCardId = this.exportableCards[0]?.id ?? null;
+    }
+
     // Every caller of this method changes what the template renders, and several of them are
     // outside change detection: a filter control, the reduced-motion listener, the resize
     // observer. Marking here is what makes the figures, the notices and the table agree.
     this.cdr.markForCheck();
+    // A no-op unless the Preview tab is composing, which follows every rebuild.
+    this.schedulePreview();
   }
 
   /**

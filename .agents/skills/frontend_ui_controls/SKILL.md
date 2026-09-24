@@ -196,6 +196,7 @@ you already read the label, it is noise; drop it.
 | trash | Delete Runs, Delete All Suite Runs | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
 | refresh / rotate | Refresh, Re-score Run, Re-run Failed Questions | "This runs again" — the circular-arrow convention is universal |
 | file-with-arrow | Download Markdown Report | "A file arrives on your disk" |
+| archive | Download all figures | "Several files arrive as one archive" |
 | layers | Create Default Suites | A stack: several suites are created at once from the built-in catalog |
 | upload | Import Suite from YAML, Upload Snapshot | A file leaves the user's disk and enters the application; the arrow points out of the tray |
 | zap | Generate Questions | AI generation: content is produced from the snapshot, not typed in |
@@ -225,6 +226,11 @@ Snapshot Suite Wizard* button uses the same glyph, since it opens the same thing
 *Changed 2026-09-17: trash also covers **removing an attached file** in `app-file-picker` (§4a).
 It still means "this thing goes away"; an ✕ was rejected because ✕ already means *close this
 dialog*, and it sits in the header of the very dialogs the picker renders in.*
+
+*Changed 2026-09-24: the model comparison's preview became a tab of step 4. Its icon-only view
+controls use* maximize *(Fit to screen),* home *(Reset view) and a 1:1 glyph (Actual pixels); the
+cards' "open in preview" moved from* maximize-2 *to* eye*, the glyph Run History already uses for
+"view".*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -559,8 +565,8 @@ selectSubTab(tab: 'run' | 'history' | 'suites'): void {
 
 ### 5b. Settings sections
 
-A long settings panel — the figure preview's Style tab is the reference — is a stack of
-**non-exclusive** native disclosures, not a row of tabs:
+A long settings panel — the Style tab of the model comparison's figure sidebar is the
+reference — is a stack of **non-exclusive** native disclosures, not a row of tabs:
 
 ```html
 <details class="gh-disclosure gh-disclosure--section" id="mc-style-bar-section-bars"
