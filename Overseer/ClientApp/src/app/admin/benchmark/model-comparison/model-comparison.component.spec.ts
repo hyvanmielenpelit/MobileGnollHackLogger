@@ -19,6 +19,7 @@ import {
   errorBarPlugin
 } from './model-comparison-charts';
 import { DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
+import type { FigureStyle } from './figure-style';
 import type { DirectLabelBlock, DirectLabelPluginOptions } from './model-comparison-charts';
 import { formatComputedAt } from './figure-chrome';
 import type { FigureChrome, FigureFooter } from './figure-chrome';
@@ -286,7 +287,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   /** Selects one tab of the step-4 settings sidebar by clicking it. */
-  function openSidebarTab(tab: 'emphasis' | 'export' | 'style'): void {
+  function openSidebarTab(tab: 'emphasis' | 'style' | 'download'): void {
     (fixture.debugElement.query(By.css(`#mc-side-tab-${tab}`)).nativeElement as HTMLButtonElement).click();
     fixture.detectChanges();
   }
@@ -946,7 +947,7 @@ describe('ModelComparisonComponent', () => {
 
   it('offers a WebP quality for the figures only while WebP is the chosen format', async () => {
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('export');
+    openSidebarTab('download');
     expect(component.figureTab).withContext('no preview is needed to reach the export settings')
       .toBe('charts');
 
@@ -1820,7 +1821,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   // -------------------------------------------------------------------------------------------
-  // Export resolution in the sidebar's Export tab, and the Preview tab that shows its effect
+  // Export resolution in the sidebar's Download tab, and the Preview tab that shows its effect
   // -------------------------------------------------------------------------------------------
 
   /** The Preview tab's button in the figure bar. */
@@ -1889,7 +1890,7 @@ describe('ModelComparisonComponent', () => {
 
   it('shows the two custom size inputs only for Custom, and names what will be written', () => {
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('export');
+    openSidebarTab('download');
     // The control opens on the test machine's own display, which the pixel counts below are not
     // about; every one of them is the composition at 100 %.
     component.onExportDensityChange(1);
@@ -1915,7 +1916,7 @@ describe('ModelComparisonComponent', () => {
 
   it('refuses an out-of-range custom size in words, and will not export under one', () => {
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('export');
+    openSidebarTab('download');
     component.onExportDensityChange(1);
     component.onExportResolutionChange('custom');
     component.customExportHeight = 10;
@@ -1935,7 +1936,7 @@ describe('ModelComparisonComponent', () => {
   it('opens the density on the reader’s own display, and says which option that is', () => {
     withDisplayDensity(2);
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('export');
+    openSidebarTab('download');
 
     expect(component.exportDensitySelection).toBe(2);
     expect(component.exportDensity).toBe(2);
@@ -1949,7 +1950,7 @@ describe('ModelComparisonComponent', () => {
     // 110 % browser zoom on a 200 % display.
     withDisplayDensity(2.2);
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('export');
+    openSidebarTab('download');
 
     expect(component.exportDensitySelection).toBe('custom');
     expect(component.customExportDensityPercent).toBe(220);
@@ -1961,7 +1962,7 @@ describe('ModelComparisonComponent', () => {
   it('offers every Windows display scaling step, and Custom below them', () => {
     withDisplayDensity(1);
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('export');
+    openSidebarTab('download');
 
     const options = fixture.debugElement
       .queryAll(By.css('#mc-export-density option'))
@@ -1974,7 +1975,7 @@ describe('ModelComparisonComponent', () => {
 
   it('multiplies the written size by the density in the read-out and the Download all summary', () => {
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('export');
+    openSidebarTab('download');
     component.onExportResolutionChange('fullhd');
 
     component.onExportDensityChange(2);
@@ -1996,7 +1997,7 @@ describe('ModelComparisonComponent', () => {
 
   it('names the density on the on-screen size, and no fixed factor', () => {
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('export');
+    openSidebarTab('download');
     component.onExportDensityChange(1.5);
     refresh();
 
@@ -2008,7 +2009,7 @@ describe('ModelComparisonComponent', () => {
 
   it('refuses a custom density outside its bounds, and will not export under one', () => {
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('export');
+    openSidebarTab('download');
     component.onExportDensityChange('custom');
     component.onCustomDensityChange(900);
     refresh();
@@ -2016,7 +2017,7 @@ describe('ModelComparisonComponent', () => {
     expect(component.customDensityError).toContain(`${component.maxExportDensityPercent}`);
     expect(component.exportSizeError).toBe(component.customDensityError);
     expect(component.canExport).toBeFalse();
-    expect(textOf('#mc-side-panel-export .mc-export-error')).toContain('800');
+    expect(textOf('#mc-side-panel-download .mc-export-error')).toContain('800');
 
     component.onCustomDensityChange(150);
     refresh();
@@ -2027,7 +2028,7 @@ describe('ModelComparisonComponent', () => {
 
   it('refuses a bitmap the browser could not allocate, and marks every export control unavailable', () => {
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('export');
+    openSidebarTab('download');
     openPreview();
     component.onExportResolutionChange('custom');
     component.onCustomWidthChange(8000);
@@ -2081,7 +2082,7 @@ describe('ModelComparisonComponent', () => {
 
   it('derives the other custom side from the locked ratio', () => {
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('export');
+    openSidebarTab('download');
     component.onExportResolutionChange('custom');
     component.customExportWidth = 1920;
     component.customExportHeight = 1080;
@@ -2309,11 +2310,11 @@ describe('ModelComparisonComponent', () => {
     render(buildDto(comparableSet(3)), 4);
 
     expectTabContract('.mc-fig-sidebar-tabs', 'Figure settings sections', 'mc-side-tab-', 'mc-side-panel-',
-      ['Emphasis', 'Export', 'Style'], () => component.sidebarTab);
+      ['Emphasis', 'Style', 'Download'], () => component.sidebarTab);
     // Only the selected section's panel is rendered.
-    expect(fixture.debugElement.query(By.css('#mc-side-panel-style'))).not.toBeNull();
+    expect(fixture.debugElement.query(By.css('#mc-side-panel-download'))).not.toBeNull();
     expect(fixture.debugElement.query(By.css('#mc-side-panel-emphasis'))).toBeNull();
-    expect(fixture.debugElement.query(By.css('#mc-side-panel-export'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('#mc-side-panel-style'))).toBeNull();
   });
 
   it('offers Charts and Preview as tabs with the full tab contract', () => {
@@ -2336,7 +2337,7 @@ describe('ModelComparisonComponent', () => {
     expect(has('#mc-style-bar-heading')).toBeTrue();
     expect(has('#mc-style-scatter-heading')).toBeFalse();
     expect(textOf('#mc-side-panel-style')).toContain(
-      'Plot changes apply to the page and every export; caption sizes and the footer, to the preview and exports.');
+      'Every change here applies to the page, the preview and every download.');
 
     // Switching figure keeps the tab, and the set follows the figure's kind.
     component.selectPreviewCard(component.scatterCards[0].id);
@@ -2351,7 +2352,7 @@ describe('ModelComparisonComponent', () => {
     expect(has('#mc-style-bar-heading')).toBeFalse();
     expect(has('#mc-style-scatter-heading')).toBeFalse();
     expect(has('#mc-style-profile-heading')).toBeTrue();
-    expect(textOf('.fsp-note')).toContain('Chart text follows Text size on the Export tab.');
+    expect(textOf('.fsp-note')).toContain('Chart text follows Text size on the Download tab.');
   });
 
   it('stores a style change at once, persists it, and rebuilds the figures after the debounce', () => {
@@ -2409,6 +2410,115 @@ describe('ModelComparisonComponent', () => {
       jasmine.clock().tick(150);
       expect(kinds()).toEqual(before.filter(kind => kind !== 'questions'));
       expect(component.scatterCards[0].chrome.badges.some(badge => badge.kind === 'questions')).toBeTrue();
+    } finally {
+      jasmine.clock().uninstall();
+    }
+  });
+
+  /** A part of one page card on the Charts tab, or null while it is not rendered. */
+  function cardPart(cardId: string, selector: string): HTMLElement | null {
+    return (fixture.nativeElement as HTMLElement)
+      .querySelector<HTMLElement>(`figure.mc-card[aria-labelledby="${cardId}-title"] ${selector}`);
+  }
+
+  function cardPartSize(cardId: string, selector: string): string {
+    const part = cardPart(cardId, selector);
+    expect(part).withContext(`${cardId} ${selector}`).not.toBeNull();
+    return part ? getComputedStyle(part).fontSize : '';
+  }
+
+  /** Applies one family's style change the way the Style tab does, and re-renders without a tick. */
+  function changeFamilyStyle<K extends 'bar' | 'scatter' | 'profile'>(
+    family: K, change: Partial<FigureStyle[K]>
+  ): void {
+    component.onFigureStyleChange({
+      ...component.figureStyle,
+      [family]: { ...component.figureStyle[family], ...change }
+    });
+    refresh();
+  }
+
+  it('sizes the page card titles from each family\'s Heading size', () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    jasmine.clock().install();
+    try {
+      changeFamilyStyle('bar', { titleSizePx: 30 });
+      expect(component.panelCards.length).toBe(3);
+      for (const card of component.panelCards) {
+        expect(cardPartSize(card.id, '.mc-card-title')).withContext(card.id).toBe('30px');
+      }
+      expect(cardPartSize(component.scatterCards[0].id, '.mc-card-title')).toBe('18px');
+    } finally {
+      jasmine.clock().uninstall();
+    }
+  });
+
+  it('sizes the page badges, the Better badge and its arrow from Badge text size', () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    jasmine.clock().install();
+    try {
+      changeFamilyStyle('scatter', { badgeTextSizePx: 20 });
+      const id = component.scatterCards[0].id;
+      expect(cardPartSize(id, '.mc-badge')).toBe('20px');
+      expect(cardPartSize(id, '.mc-direction')).toBe('20px');
+      const arrow = cardPart(id, '.mc-direction-arrow');
+      expect(arrow).not.toBeNull();
+      expect(getComputedStyle(arrow!).width).toBe('26px');
+      expect(cardPartSize(component.panelCards[0].id, '.mc-badge')).toBe('11px');
+    } finally {
+      jasmine.clock().uninstall();
+    }
+  });
+
+  it('shows the figure footer on every page card, and drops it where Show footer is off', () => {
+    render(buildDto(comparableSet(3)), 4);
+    const footers = (cardId: string): HTMLElement[] => Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>(
+        `figure.mc-card[aria-labelledby="${cardId}-title"] .mc-card-footer`));
+    const cards = [...component.panelCards, component.profileCard!, ...component.scatterCards];
+    for (const card of cards) {
+      const found = footers(card.id);
+      expect(found.length).withContext(card.id).toBe(1);
+      expect(found[0].textContent).toContain('GnollHack Player Assistance Benchmark Suite');
+      expect(found[0].textContent).toContain('Computed');
+    }
+
+    jasmine.clock().install();
+    try {
+      changeFamilyStyle('profile', { footer: false });
+      expect(footers(component.profileCard!.id).length).toBe(0);
+      for (const card of component.panelCards) {
+        expect(footers(card.id).length).withContext(card.id).toBe(1);
+      }
+    } finally {
+      jasmine.clock().uninstall();
+    }
+  });
+
+  it('sizes the page footer from Footer text size', () => {
+    render(buildDto(comparableSet(3)), 4);
+
+    jasmine.clock().install();
+    try {
+      changeFamilyStyle('bar', { footerTextSizePx: 16 });
+      expect(cardPartSize(component.panelCards[0].id, '.mc-card-footer')).toBe('16px');
+      expect(cardPartSize(component.scatterCards[0].id, '.mc-card-footer')).toBe('12px');
+    } finally {
+      jasmine.clock().uninstall();
+    }
+  });
+
+  it('follows a style change on the page at once, before the charts rebuild', () => {
+    render(buildDto(comparableSet(3)), 4);
+    const id = component.profileCard!.id;
+    expect(cardPartSize(id, '.mc-card-title')).toBe('18px');
+
+    jasmine.clock().install();
+    try {
+      changeFamilyStyle('profile', { titleSizePx: 24 });
+      expect(cardPartSize(id, '.mc-card-title')).toBe('24px');
     } finally {
       jasmine.clock().uninstall();
     }
@@ -2531,7 +2641,7 @@ describe('ModelComparisonComponent', () => {
 
   it('feeds the Text size range into the export layout, and disables it for On-screen', async () => {
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('export');
+    openSidebarTab('download');
     openPreview(component.panelCards[0]);
 
     const range = styleControl('mc-export-text-scale');
@@ -2574,7 +2684,7 @@ describe('ModelComparisonComponent', () => {
         },
         footer: { suite: 'Suite A', computedAt: 'Current catalog, 3 Sep 2026' }
       });
-    openSidebarTab('export');
+    openSidebarTab('download');
     openPreview(card);
 
     component.onExportResolutionChange('custom');
@@ -2586,7 +2696,7 @@ describe('ModelComparisonComponent', () => {
     expect(component.previewRefusal).toContain(card.title);
     // The target size, which is what Download would write and what it would refuse.
     expect(component.previewRefusal).toContain('1280 × 720 px');
-    expect(textOf('#mc-side-panel-export .mc-export-error')).toContain('1280 × 720 px');
+    expect(textOf('#mc-side-panel-download .mc-export-error')).toContain('1280 × 720 px');
     expect(component.previewCanvas!.nativeElement.width).toBe(0);
     expect(component.previewBusy).toBeFalse();
   });
@@ -3581,12 +3691,12 @@ describe('ModelComparisonComponent', () => {
 
   it('restores the sidebar tab, and falls back to Emphasis on an unknown or malformed one', () => {
     render(buildDto(comparableSet(3)), 4);
-    openSidebarTab('export');
-    expect(storedSidebar()).toEqual({ version: 1, collapsed: false, tab: 'export' });
+    openSidebarTab('download');
+    expect(storedSidebar()).toEqual({ version: 1, collapsed: false, tab: 'download' });
 
     let second = secondInstance();
-    expect(second.componentInstance.sidebarTab).toBe('export');
-    expect((second.nativeElement as HTMLElement).querySelector('#mc-side-panel-export')).not.toBeNull();
+    expect(second.componentInstance.sidebarTab).toBe('download');
+    expect((second.nativeElement as HTMLElement).querySelector('#mc-side-panel-download')).not.toBeNull();
     second.destroy();
 
     localStorage.setItem(FIGURE_SIDEBAR_STORAGE_KEY, JSON.stringify({ version: 1, collapsed: 'yes', tab: 'layout' }));
@@ -3599,6 +3709,38 @@ describe('ModelComparisonComponent', () => {
     second = secondInstance();
     expect(second.componentInstance.sidebarTab).toBe('emphasis');
     second.destroy();
+  });
+
+  it('opens Download for a stored tab of its earlier name, export', () => {
+    render(buildDto(comparableSet(3)), 4);
+    localStorage.setItem(FIGURE_SIDEBAR_STORAGE_KEY, JSON.stringify({ version: 1, collapsed: false, tab: 'export' }));
+
+    const second = secondInstance();
+    expect(second.componentInstance.sidebarTab).toBe('download');
+    expect((second.nativeElement as HTMLElement).querySelector('#mc-side-panel-download')).not.toBeNull();
+    second.destroy();
+  });
+
+  it('says on the Download tab that its settings affect downloads only', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openSidebarTab('download');
+
+    expect(textOf('#mc-side-panel-download .mc-download-scope')).toContain('These settings affect downloads only.');
+  });
+
+  it('centres Download all and the sidebar toggle on the figure bar', () => {
+    render(buildDto(comparableSet(3)), 4);
+    expect(component.figureTab).toBe('charts');
+
+    const box = (selector: string): DOMRect =>
+      (fixture.debugElement.query(By.css(selector)).nativeElement as HTMLElement).getBoundingClientRect();
+    const bar = box('.mc-fig-bar');
+    // The bar's 1 px bottom border is not part of the height the buttons centre on.
+    const barCentre = bar.top + (bar.height - 1) / 2;
+    for (const selector of ['.mc-fig-download-all', '.mc-fig-sidebar-toggle']) {
+      const button = box(selector);
+      expect(Math.abs(button.top + button.height / 2 - barCentre)).withContext(selector).toBeLessThanOrEqual(1);
+    }
   });
 
   it('keeps every chart canvas alive, inert and invisible under the Preview tab, and exports from it', async () => {

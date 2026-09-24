@@ -179,7 +179,7 @@ export class FigureStylePanelComponent {
   rangeHint(family: StyleFamily, control: RangeControl<string>): string {
     const hint = control.hint ?? '';
     if (control.key === 'footerTextSizePx' && !this.figureStyle[family].footer) {
-      return `${hint} Available while the footer is shown.`;
+      return hint ? `${hint} Available while the footer is shown.` : 'Available while the footer is shown.';
     }
     return hint;
   }

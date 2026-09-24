@@ -5,7 +5,7 @@
   <div class="fsp-range" [class.fsp-disabled]="rangeDisabled(family, control.key)">
     <div class="fsp-range-head">
       <label [for]="controlId(family, control.key)">{{ control.label }}</label>
-      @if (control.hint) {
+      @if (rangeHint(family, control)) {
         <app-info-tip [tipId]="tipId(family, control.key)" [subject]="control.label">{{ rangeHint(family, control) }}</app-info-tip>
       }
       @if (family === 'bar' && control.key === 'maxBarWidthPx') {
@@ -24,7 +24,7 @@
            [value]="rangeValue(family, control.key)"
            [disabled]="rangeDisabled(family, control.key)"
            [attr.aria-valuetext]="valueText(family, control)"
-           [attr.aria-describedby]="control.hint ? tipId(family, control.key) : null"
+           [attr.aria-describedby]="rangeHint(family, control) ? tipId(family, control.key) : null"
            (input)="onRange(family, control, $event)">
   </div>
 </ng-template>
@@ -74,7 +74,7 @@
   </details>
 </ng-template>
 
-<!-- Footer: whether the composed figure carries it, and its size. -->
+<!-- Footer: whether the figure carries it, and its size. -->
 <ng-template #footerSection let-family="family" let-section="section">
   <details class="gh-disclosure gh-disclosure--section" [id]="sectionId(family, 'footer')"
            [open]="isOpen(family, 'footer')" (toggle)="onSectionToggle(family, 'footer', $event)">
@@ -87,7 +87,7 @@
                  (change)="setFamily(family, 'footer', checkedOf($event))">
           Show footer
         </label>
-        <app-info-tip [tipId]="tipId(family, 'footer')" subject="Show footer">The suite and computation time under the figure, in the preview and exports.</app-info-tip>
+        <app-info-tip [tipId]="tipId(family, 'footer')" subject="Show footer">The suite and computation time under the figure, on the page, in the preview and in downloads.</app-info-tip>
       </div>
       <ng-container *ngTemplateOutlet="range; context: { family: family, control: footerControl }"></ng-container>
     </div>
@@ -365,7 +365,7 @@
         <ng-container *ngTemplateOutlet="footerSection; context: { family: 'profile', section: section('profile', 'footer') }"></ng-container>
       </div>
 
-      <p class="fsp-note">Chart text follows Text size on the Export tab.</p>
+      <p class="fsp-note">Chart text follows Text size on the Download tab.</p>
 
       <div class="fsp-actions">
         <button type="button" class="btn-ghost" id="mc-style-profile-reset" (click)="resetProfile()">Reset profile style</button>

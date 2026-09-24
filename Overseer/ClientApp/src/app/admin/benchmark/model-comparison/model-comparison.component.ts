@@ -178,7 +178,7 @@ export const FIGURE_STYLE_STORAGE_KEY = 'overseer.modelComparison.figureStyle';
 export type FigureViewTab = 'charts' | 'preview';
 
 /** The figure settings sidebar's three tabs, in order. */
-export type FigureSidebarTab = 'emphasis' | 'export' | 'style';
+export type FigureSidebarTab = 'emphasis' | 'style' | 'download';
 
 /**
  * Where the sidebar's collapsed state and tab are kept, per browser, as
@@ -186,7 +186,7 @@ export type FigureSidebarTab = 'emphasis' | 'export' | 'style';
  */
 export const FIGURE_SIDEBAR_STORAGE_KEY = 'overseer.modelComparison.figureSidebar';
 
-const FIGURE_SIDEBAR_TABS: readonly FigureSidebarTab[] = ['emphasis', 'export', 'style'];
+const FIGURE_SIDEBAR_TABS: readonly FigureSidebarTab[] = ['emphasis', 'style', 'download'];
 
 /** The stored sidebar state, field by field; the default wherever storage is absent or unreadable. */
 function readStoredFigureSidebar(): { collapsed: boolean; tab: FigureSidebarTab } {
@@ -197,7 +197,9 @@ function readStoredFigureSidebar(): { collapsed: boolean; tab: FigureSidebarTab 
     if (stored === null || typeof stored !== 'object') {
       return fallback;
     }
-    const { collapsed, tab } = stored as { collapsed?: unknown; tab?: unknown };
+    const { collapsed, tab: storedTab } = stored as { collapsed?: unknown; tab?: unknown };
+    // 'export' is the Download tab's earlier stored name.
+    const tab = storedTab === 'export' ? 'download' : storedTab;
     return {
       collapsed: typeof collapsed === 'boolean' ? collapsed : fallback.collapsed,
       tab: FIGURE_SIDEBAR_TABS.includes(tab as FigureSidebarTab) ? tab as FigureSidebarTab : fallback.tab
@@ -1382,7 +1384,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * The size and format in one line, for the *Download all* tooltip.
    *
    * The figure bar carries the settings as a read-out rather than as controls: the controls live in
-   * the sidebar's Export tab, beside the preview that shows their effect.
+   * the sidebar's Download tab, beside the preview that shows their effect.
    */
   get exportSummary(): string {
     const format = this.exportFormat === 'webp'
@@ -1789,7 +1791,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     const style = this.figureStyle[this.familyOf(card)];
     return {
       chrome: { ...card.chrome, notes: [...card.chrome.notes, ...this.setFigureNotes] },
-      footer: style.footer ? this.exportFooter() : { suite: '', computedAt: '' },
+      footer: style.footer ? this.figureFooter : { suite: '', computedAt: '' },
       textSizes: {
         titlePx: style.titleSizePx,
         badgePx: style.badgeTextSizePx,
@@ -1797,6 +1799,36 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       }
     };
   }
+
+  /** The card's caption sizes as CSS custom properties, so the page follows the Style tab. */
+  cardChromeVars(card: ComparisonFigureCard): Record<string, string> {
+    if (this.cardChromeVarsFrom !== this.figureStyle) {
+      this.cardChromeVarsFrom = this.figureStyle;
+      this.cardChromeVarsByFamily = new Map();
+    }
+    const family = this.familyOf(card);
+    let vars = this.cardChromeVarsByFamily.get(family);
+    if (!vars) {
+      const style = this.figureStyle[family];
+      vars = {
+        '--mc-title-size': `${style.titleSizePx}px`,
+        '--mc-badge-size': `${style.badgeTextSizePx}px`,
+        '--mc-footer-size': `${style.footerTextSizePx}px`
+      };
+      this.cardChromeVarsByFamily.set(family, vars);
+    }
+    return vars;
+  }
+
+  /** Whether the card's family shows the figure footer. */
+  cardFooterShown(card: ComparisonFigureCard): boolean {
+    return this.figureStyle[this.familyOf(card)].footer;
+  }
+
+  // One record per family, rebuilt only when `figureStyle` is replaced, so change detection sees a
+  // stable style map between edits.
+  private cardChromeVarsFrom: FigureStyle | null = null;
+  private cardChromeVarsByFamily = new Map<FigureStylePanelKind, Record<string, string>>();
 
   /** Which style family a card draws from: the bar panels, the trade-off scatters or the profile. */
   private familyOf(card: ComparisonFigureCard | null | undefined): FigureStylePanelKind {
@@ -1866,8 +1898,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return `Computed ${this.tableProvenance.computedAt}`;
   }
 
-  /** The figure footer: the suite and the computation time, in the composer's own two-sided layout. */
-  private exportFooter(): FigureFooter {
+  /**
+   * The figure footer: the suite and the computation time, in the composer's own two-sided layout.
+   * The page cards show the same text under each figure whose family has the footer on.
+   */
+  get figureFooter(): FigureFooter {
     const dto = this.comparison;
     return {
       suite: dto?.baselineSuiteName || 'Suite not set',
@@ -1939,7 +1974,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   // ---------------------------------------------------------------------------------------------
   // The step-4 workspace
   //
-  // A collapsible settings sidebar (Emphasis, Export, Style) beside two views of the figures:
+  // A collapsible settings sidebar (Emphasis, Style, Download) beside two views of the figures:
   // Charts, every card, and Preview, one figure composed at export size. Every control exists once.
   // ---------------------------------------------------------------------------------------------
 
@@ -1959,8 +1994,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   readonly sidebarTabs: readonly { readonly id: FigureSidebarTab; readonly label: string }[] = [
     { id: 'emphasis', label: 'Emphasis' },
-    { id: 'export', label: 'Export' },
-    { id: 'style', label: 'Style' }
+    { id: 'style', label: 'Style' },
+    { id: 'download', label: 'Download' }
   ];
 
   /** Focus stays on the toggle, which sits outside the sidebar and is always rendered. */

@@ -118,7 +118,7 @@ describe('FigureStylePanelComponent', () => {
       'mc-style-profile-footerTextSizePx'
     ]);
     expect(inputs.filter(input => input.type === 'checkbox').every(input => input.checked)).toBeTrue();
-    expect(host().querySelector('.fsp-note')?.textContent?.trim()).toBe('Chart text follows Text size on the Export tab.');
+    expect(host().querySelector('.fsp-note')?.textContent?.trim()).toBe('Chart text follows Text size on the Download tab.');
     const reset = host().querySelector('#mc-style-profile-reset') as HTMLButtonElement;
     expect(reset.textContent!.trim()).toBe('Reset profile style');
   });
@@ -478,7 +478,8 @@ describe('FigureStylePanelComponent', () => {
     render('scatter');
     const heading = control('mc-style-scatter-titleSizePx');
     expect(heading.max).toBe('48');
-    expect(hintOf(heading).trim()).toBe('Preview and exports only.');
+    expect(heading.getAttribute('aria-describedby')).toBeNull();
+    expect(host().querySelector('#mc-style-scatter-titleSizePx-tip')).toBeNull();
     setRange(heading, 30);
     expect(emitted[0].scatter.titleSizePx).toBe(30);
     expect(emitted[0].bar).toBe(DEFAULT_FIGURE_STYLE.bar);
@@ -496,7 +497,7 @@ describe('FigureStylePanelComponent', () => {
     expect(emitted[0].bar.footer).toBeFalse();
     acceptLast();
     expect(control('mc-style-bar-footerTextSizePx').disabled).toBeTrue();
-    expect(hintOf(control('mc-style-bar-footerTextSizePx'))).toContain('Available while the footer is shown.');
+    expect(hintOf(control('mc-style-bar-footerTextSizePx'))).toBe('Available while the footer is shown.');
     expect(host().querySelector('#mc-style-bar-section-footer .gh-disclosure-summary-value')?.textContent?.trim()).toBe('hidden');
   });
 });

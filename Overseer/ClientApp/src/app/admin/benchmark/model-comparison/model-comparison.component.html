@@ -928,13 +928,28 @@
           }
         </ng-template>
 
+        <!-- The composed figure's footer on the page card, last in the card's foot as it is last in
+             the composed figure; shown while the card's family has the footer on. -->
+        <ng-template #cardFooter let-card>
+          @if (cardFooterShown(card) && (figureFooter.suite || figureFooter.computedAt)) {
+            <p class="mc-card-footer">
+              @if (figureFooter.suite) {
+                <span class="mc-card-footer-suite"><span class="mc-card-footer-label">Suite</span> {{ figureFooter.suite }}</span>
+              }
+              @if (figureFooter.computedAt) {
+                <span class="mc-card-footer-computed">Computed {{ figureFooter.computedAt }}</span>
+              }
+            </p>
+          }
+        </ng-template>
+
         @if (showFigures) {
           <div class="mc-fig-workspace" [class.is-collapsed]="sidebarCollapsed">
 
             <!-- ===================================================================================
                  THE SETTINGS SIDEBAR
 
-                 Emphasis, Export and Style: every control that changes the figures, once. Collapsed
+                 Emphasis, Style and Download: every control that changes the figures, once. Collapsed
                  by its toggle in the figure bar, which stays rendered outside it.
                  =================================================================================== -->
             <aside id="mc-fig-sidebar" class="mc-fig-sidebar" aria-label="Figure settings"
@@ -1012,12 +1027,44 @@
                 </div>
               }
 
-              @if (sidebarTab === 'export') {
+              @if (sidebarTab === 'style') {
+                <div class="mc-side-panel" role="tabpanel" id="mc-side-panel-style"
+                     aria-labelledby="mc-side-tab-style" tabindex="0">
+                  <!-- Real radios styled as a segmented row, so the arrow keys move between them. -->
+                  <fieldset class="mc-style-family">
+                    <legend>Figures to style</legend>
+                    @for (family of styleFamilies; track family.kind) {
+                      <label class="mc-style-family-option">
+                        <input type="radio" name="mc-style-family" class="mc-style-family-input"
+                               [id]="'mc-style-family-' + family.kind" [value]="family.kind"
+                               [checked]="effectiveStyleFamily === family.kind"
+                               (change)="selectStyleFamily(family.kind)">
+                        {{ family.label }}
+                      </label>
+                    }
+                  </fieldset>
+                  <p class="mc-field-hint mc-style-scope">Every change here applies to the page, the preview and every download.</p>
+                  <!-- The trade-off toggles call the page's own handlers, so the panel owns no second copy
+                       of that state. -->
+                  <app-figure-style-panel [kind]="effectiveStyleFamily" [figureStyle]="figureStyle"
+                                          [directLabels]="scatterDirectLabels" [inlineValues]="scatterInlineValues"
+                                          (figureStyleChange)="onFigureStyleChange($event)"
+                                          (directLabelsChange)="onScatterDirectLabelsChange($event)"
+                                          (inlineValuesChange)="onScatterInlineValuesChange($event)"></app-figure-style-panel>
+                  @if (previewRefusal) {
+                    <p class="mc-export-error" role="alert">{{ previewRefusal }}</p>
+                  }
+                </div>
+              }
+
+              @if (sidebarTab === 'download') {
                 <!-- Visible labels, not `visually-hidden` ones: a labelled form is what a reader
                      configuring four settings at once needs. -->
-                <div class="mc-side-panel" role="tabpanel" id="mc-side-panel-export"
-                     aria-labelledby="mc-side-tab-export" tabindex="0">
+                <div class="mc-side-panel" role="tabpanel" id="mc-side-panel-download"
+                     aria-labelledby="mc-side-tab-download" tabindex="0">
                   <h4 id="mc-preview-controls-title" class="mc-section-title">Size and format</h4>
+                  <p class="mc-field-hint mc-download-scope">These settings affect downloads only. The Preview tab
+                    shows a figure as it will download; the Charts tab does not change.</p>
 
                   <label for="mc-export-resolution">Size and aspect ratio</label>
                   <select id="mc-export-resolution" class="gh-input"
@@ -1122,36 +1169,6 @@
                   }
                 </div>
               }
-
-              @if (sidebarTab === 'style') {
-                <div class="mc-side-panel" role="tabpanel" id="mc-side-panel-style"
-                     aria-labelledby="mc-side-tab-style" tabindex="0">
-                  <!-- Real radios styled as a segmented row, so the arrow keys move between them. -->
-                  <fieldset class="mc-style-family">
-                    <legend>Figures to style</legend>
-                    @for (family of styleFamilies; track family.kind) {
-                      <label class="mc-style-family-option">
-                        <input type="radio" name="mc-style-family" class="mc-style-family-input"
-                               [id]="'mc-style-family-' + family.kind" [value]="family.kind"
-                               [checked]="effectiveStyleFamily === family.kind"
-                               (change)="selectStyleFamily(family.kind)">
-                        {{ family.label }}
-                      </label>
-                    }
-                  </fieldset>
-                  <p class="mc-field-hint mc-style-scope">Plot changes apply to the page and every export; caption sizes and the footer, to the preview and exports.</p>
-                  <!-- The trade-off toggles call the page's own handlers, so the panel owns no second copy
-                       of that state. -->
-                  <app-figure-style-panel [kind]="effectiveStyleFamily" [figureStyle]="figureStyle"
-                                          [directLabels]="scatterDirectLabels" [inlineValues]="scatterInlineValues"
-                                          (figureStyleChange)="onFigureStyleChange($event)"
-                                          (directLabelsChange)="onScatterDirectLabelsChange($event)"
-                                          (inlineValuesChange)="onScatterInlineValuesChange($event)"></app-figure-style-panel>
-                  @if (previewRefusal) {
-                    <p class="mc-export-error" role="alert">{{ previewRefusal }}</p>
-                  }
-                </div>
-              }
             </aside>
 
             <div class="mc-fig-main">
@@ -1236,7 +1253,7 @@
                     <!-- P1 — three linked panels, one shared model order, one unit each. -->
                     <div class="mc-panels">
                       @for (card of panelCards; track card.id) {
-                        <figure class="mc-card" [attr.aria-labelledby]="card.id + '-title'">
+                        <figure class="mc-card" [attr.aria-labelledby]="card.id + '-title'" [style]="cardChromeVars(card)">
                           <figcaption class="mc-card-head">
                             <h5 class="mc-card-title" [id]="card.id + '-title'">{{ card.chrome.title }}</h5>
                             <ul class="mc-meta" aria-label="About this figure">
@@ -1299,6 +1316,7 @@
                                 }
                               </ul>
                             }
+                            <ng-container *ngTemplateOutlet="cardFooter; context: { $implicit: card }"></ng-container>
                           </div>
                         </figure>
                       }
@@ -1306,7 +1324,7 @@
 
                     <!-- P2 — the companion. Suppressed at two entries: two polylines cross once or not at all. -->
                     @if (profileCard; as profile) {
-                      <figure class="mc-card" [attr.aria-labelledby]="profile.id + '-title'">
+                      <figure class="mc-card" [attr.aria-labelledby]="profile.id + '-title'" [style]="cardChromeVars(profile)">
                         <figcaption class="mc-card-head">
                           <h5 class="mc-card-title" [id]="profile.id + '-title'">{{ profile.chrome.title }}</h5>
                           <ul class="mc-meta" aria-label="About this figure">
@@ -1379,6 +1397,7 @@
                               }
                             </ul>
                           }
+                          <ng-container *ngTemplateOutlet="cardFooter; context: { $implicit: profile }"></ng-container>
                         </div>
                       </figure>
                     } @else if (shape === 'pair') {
@@ -1391,7 +1410,7 @@
                     <!-- S1-S3 — the trade-off scatters. -->
                     <div class="mc-grid">
                       @for (card of scatterCards; track card.id) {
-                        <figure class="mc-card" [attr.aria-labelledby]="card.id + '-title'">
+                        <figure class="mc-card" [attr.aria-labelledby]="card.id + '-title'" [style]="cardChromeVars(card)">
                           <figcaption class="mc-card-head">
                             <h5 class="mc-card-title" [id]="card.id + '-title'">{{ card.chrome.title }}</h5>
                             <ul class="mc-meta" aria-label="About this figure">
@@ -1453,6 +1472,7 @@
                                 }
                               </ul>
                             }
+                            <ng-container *ngTemplateOutlet="cardFooter; context: { $implicit: card }"></ng-container>
                           </div>
                         </figure>
                       }

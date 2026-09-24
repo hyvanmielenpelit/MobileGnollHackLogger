@@ -11,7 +11,7 @@ import type { FigureBadgeKind } from './figure-chrome';
 export type BarOrientationChoice = 'auto' | 'vertical' | 'horizontal';
 export type ScatterLegendPosition = 'bottom' | 'right';
 
-/** The composed figure's caption text; the page cards keep their own typography. */
+/** The figure's caption text, on the page card and in the composed figure. */
 export interface FigureChromeStyle {
   readonly titleSizePx: number;
   readonly badgeTextSizePx: number;
@@ -184,12 +184,10 @@ export const SCATTER_RANGE_CONTROLS: readonly RangeControl<NumericScatterStyleKe
   textSizeControl('axisTitleSizePx', 'Axis titles'),
 ];
 
-const CHROME_SIZE_HINT = 'Preview and exports only.';
-
 export const CHROME_RANGE_CONTROLS: readonly RangeControl<NumericChromeStyleKey>[] = [
-  textSizeControl('titleSizePx', 'Heading size', CHROME_SIZE_HINT),
-  textSizeControl('badgeTextSizePx', 'Badge text size', CHROME_SIZE_HINT),
-  textSizeControl('footerTextSizePx', 'Footer text size', CHROME_SIZE_HINT),
+  textSizeControl('titleSizePx', 'Heading size'),
+  textSizeControl('badgeTextSizePx', 'Badge text size'),
+  textSizeControl('footerTextSizePx', 'Footer text size'),
 ];
 
 /** One badge's *Show* checkbox, which the style panel's template loops over. */
