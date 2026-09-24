@@ -383,6 +383,12 @@ describe('ModelComparisonComponent', () => {
     const rows = fixture.debugElement.queryAll(By.css('table.mc-table tbody tr'));
     expect((rows[0].nativeElement as HTMLElement).querySelector('.reasoning-badge')?.textContent?.trim())
       .toBe('pro');
+    // Thinking level, reasoning mode, then the provider last.
+    const badgeOrder = Array.from((rows[0].nativeElement as HTMLElement).querySelector('.mc-model-row')!.children)
+      .map(child => ['thinking-badge', 'reasoning-badge', 'provider-badge']
+        .find(name => child.classList.contains(name)))
+      .filter(name => name != null);
+    expect(badgeOrder).toEqual(['thinking-badge', 'reasoning-badge', 'provider-badge']);
     expect((rows[1].nativeElement as HTMLElement).querySelector('.reasoning-badge')).toBeNull();
 
     component.goToStep(4);

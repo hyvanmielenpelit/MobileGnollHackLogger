@@ -701,13 +701,13 @@
                                       [style.background-color]="g.hue" aria-hidden="true"></span>
                               }
                               <span class="mc-model-name">{{ entry.modelDisplayName || entry.label }}</span>
-                              <app-provider-badge [provider]="entry.provider"></app-provider-badge>
                               @if (entry.thinkingLevel) {
                                 <span class="thinking-badge">{{ entry.thinkingLevel }}</span>
                               }
                               @if (showReasoningBadge(entry.reasoningMode)) {
                                 <span class="reasoning-badge">{{ entry.reasoningMode }}</span>
                               }
+                              <app-provider-badge [provider]="entry.provider"></app-provider-badge>
                             </div>
                             <span class="mc-source">{{ sourceLabel(entry) }}</span>
                           </div>

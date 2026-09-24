@@ -3,8 +3,8 @@ import { ProviderBadgeComponent } from '../provider-badge/provider-badge.compone
 import { showReasoningBadge } from '../../utils/model-badge-format.util';
 
 /**
- * One model identity on one line: the name, then its provider, thinking level and reasoning mode
- * badges, wrapping as a unit when the column is narrow. The badge classes are global
+ * One model identity on one line: the name, then its thinking level, reasoning mode and provider
+ * badges in that order, wrapping as a unit when the column is narrow. The badge classes are global
  * (`styles.scss`); this component owns only the layout.
  */
 @Component({

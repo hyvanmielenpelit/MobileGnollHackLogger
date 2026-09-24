@@ -49,6 +49,15 @@ describe('ModelIdentityComponent', () => {
     expect(render({ reasoningMode: null }).querySelector('.reasoning-badge')).toBeNull();
   });
 
+  it('orders the badges thinking level, reasoning mode, then provider last', () => {
+    const host = render({ provider: 'OpenAI', thinkingLevel: 'max', reasoningMode: 'pro' });
+
+    const order = Array.from(host.children).map(child =>
+      ['model-identity-name', 'thinking-badge', 'reasoning-badge', 'provider-badge']
+        .find(name => child.classList.contains(name)));
+    expect(order).toEqual(['model-identity-name', 'thinking-badge', 'reasoning-badge', 'provider-badge']);
+  });
+
   it('prefixes each badge with visually-hidden context for assistive technology', () => {
     const host = render({ thinkingLevel: 'max', reasoningMode: 'pro' });
 
