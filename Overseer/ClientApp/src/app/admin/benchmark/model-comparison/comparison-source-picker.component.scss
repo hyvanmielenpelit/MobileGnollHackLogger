@@ -695,7 +695,7 @@
   /* A cell keeps its table-cell display: a flex `<th>` drops out of the column grid entirely. */
   .col-name {
     text-align: left;
-    min-width: 180px;
+    min-width: 220px;
   }
 
   /* Body rows only: the header's padding sits on its sort button, and the filter row sets its own. */
@@ -703,6 +703,23 @@
   tbody > tr > th {
     padding-block: 6px;
   }
+}
+
+/* A group's model and badges, with its name as a caption beneath: the same stacking as step 3's
+   model cell and source line. */
+.csp-model-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+/* Wrapped, never truncated, so the whole name is always readable. */
+.csp-group-caption {
+  font-size: 11px;
+  color: #898781;
+  letter-spacing: 0.02em;
+  overflow-wrap: anywhere;
 }
 
 .csp-row-selected > * {

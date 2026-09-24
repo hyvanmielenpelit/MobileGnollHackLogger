@@ -4806,7 +4806,7 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `GET /api/admin/benchmark/runs/series/active`: The series being driven, or the most recent resumable one; 204 when there is none.
 - `POST /api/admin/benchmark/runs/series/{id}/cancel`: Cancel the in-flight member and the series. Terminal, and not resumable.
 - `POST /api/admin/benchmark/runs/series/{id}/resume`: Continue from `CompletedRunCount + 1`. Answers **409** naming the moved hash when the instrument changed since member 1; `acknowledgeInstrumentChange` proceeds and forces the resulting group to Tier C.
-- `GET /api/admin/benchmark/runs/groups`, `GET .../groups/{id}`: Analysis groups, with tier, member rows, latest-analysis id and a staleness flag.
+- `GET /api/admin/benchmark/runs/groups`, `GET .../groups/{id}`: Analysis groups, with tier, member rows, latest-analysis id and a staleness flag, and the tested model's identity (display name, provider, model id, thinking level, reasoning mode) taken from the newest member run.
 - `POST /api/admin/benchmark/runs/groups/preview`: The tier a set of runs *would* resolve to, without creating anything. This is what the group builder shows while runs are still being selected.
 - `POST /api/admin/benchmark/runs/groups`, `PUT .../groups/{id}`, `DELETE .../groups/{id}`: Group CRUD. Creation and membership edits **refuse below Tier B** with the differing keys named, and permit Tier C only with an explicit `crossCondition`.
 - `POST /api/admin/benchmark/runs/groups/{id}/analysis`: Compute and persist the statistics; an optional `compareWithGroupId` adds the paired comparison. Refuses a Tier C set: such a set is two conditions, and a pooled index over it would describe neither.

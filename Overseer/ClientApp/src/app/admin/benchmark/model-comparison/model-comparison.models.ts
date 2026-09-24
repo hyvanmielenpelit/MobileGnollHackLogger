@@ -455,6 +455,38 @@ export function sourceLabel(entry: { sourceKind: string; sourceId: number }): st
   return entry.sourceKind === 'Group' ? `Analysis group ${entry.sourceId}` : `Run ${entry.sourceId}`;
 }
 
+const ISO_DATE_SEGMENT = /^\d{4}-\d{2}-\d{2}$/;
+const RUN_COUNT_SEGMENT = /^R=\d+$/;
+
+/**
+ * Whether an analysis group's name only repeats facts its row already shows, so it can be left
+ * unrendered: every `' · '`-separated segment is the suite name, the model name, an ISO date or a
+ * run count. That covers both generators — `BenchmarkSeriesOrchestrator`'s
+ * `Suite · Model · yyyy-MM-dd · R=n` and `defaultGroupName` in `benchmark.component.ts`,
+ * `Suite · R=n` — and a third generator must produce the same segments or its names are shown.
+ * Anything a user typed fails the test.
+ */
+export function isGeneratedGroupName(
+  name: string,
+  suiteName: string | null | undefined,
+  modelName: string | null | undefined
+): boolean {
+  const trimmed = name.trim();
+  if (trimmed === '') {
+    return false;
+  }
+  const suite = suiteName?.trim() ?? '';
+  const model = modelName?.trim() ?? '';
+  return trimmed.split(' · ').every(part => {
+    const segment = part.trim();
+    return segment !== ''
+      && ((suite !== '' && segment === suite)
+        || (model !== '' && segment === model)
+        || ISO_DATE_SEGMENT.test(segment)
+        || RUN_COUNT_SEGMENT.test(segment));
+  });
+}
+
 /** The condition everything else is compared against: ordinal 1, or the first one on offer. */
 function referenceConditionOf(
   index: BenchmarkComparabilityIndexDto | null

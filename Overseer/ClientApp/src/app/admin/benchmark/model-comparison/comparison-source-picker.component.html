@@ -92,9 +92,9 @@
         <div class="gh-datatable-scroll">
           <table class="gh-table gh-datatable csp-table">
             <caption class="visually-hidden">
-              Benchmark runs offered as comparison points: compare, id, suite, tested model, status,
-              comparability condition, Intelligence Index and start time. Only a completed run may be
-              compared.
+              Benchmark runs offered as comparison points: compare, id, suite, tested model with its
+              thinking level and reasoning mode, status, comparability condition, Intelligence Index
+              and start time. Only a completed run may be compared.
             </caption>
             <thead>
               <tr>
@@ -126,7 +126,7 @@
                          (ngModelChange)="runTable.setFilter('suiteName', $event); onTableChanged()">
                 </td>
                 <td>
-                  <label class="visually-hidden" for="csp-f-run-model">Filter by tested model</label>
+                  <label class="visually-hidden" for="csp-f-run-model">Filter by tested model, thinking level or reasoning mode</label>
                   <input id="csp-f-run-model" type="text" class="gh-input gh-filter-input" placeholder="Tested model"
                          [ngModel]="runTable.filters['testedModel']" [ngModelOptions]="{ standalone: true }"
                          (ngModelChange)="runTable.setFilter('testedModel', $event); onTableChanged()">
@@ -179,7 +179,12 @@
                     </td>
                     <td class="col-center col-id">#{{ run.id }}</td>
                     <td>{{ run.suiteName }}</td>
-                    <td>{{ run.testedModelDisplayNameUsed }}</td>
+                    <td>
+                      <app-model-identity [name]="run.testedModelDisplayNameUsed"
+                                          [provider]="run.testedModelProviderUsed"
+                                          [thinkingLevel]="run.testedModelThinkingLevelUsed"
+                                          [reasoningMode]="run.testedModelReasoningModeUsed"></app-model-identity>
+                    </td>
                     <td>{{ runStatus(run) }}</td>
                     <td class="col-center">
                       <span class="csp-condition-cell">
@@ -250,14 +255,18 @@
         <div class="gh-datatable-scroll">
           <table class="gh-table gh-datatable csp-table">
             <caption class="visually-hidden">
-              Analysis groups offered as comparison points: compare, name, comparability tier,
-              comparability condition, run count, creation date and analysis state.
+              Analysis groups offered as comparison points: compare, id, tested model with its
+              thinking level and reasoning mode, suite, comparability tier, condition, run count,
+              creation date and analysis state.
             </caption>
             <thead>
               <tr>
                 <th app-sort-header [state]="groupTable" column="selected" label="Compare"
                     class="col-center col-selected" (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="groupTable" column="name" label="Group" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="groupTable" column="id" label="ID"
+                    class="col-center col-id" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="groupTable" column="testedModel" label="Tested Model" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="groupTable" column="suiteName" label="Suite" (changed)="onTableChanged()"></th>
                 <th app-sort-header [state]="groupTable" column="tier" label="Tier" (changed)="onTableChanged()"></th>
                 <th app-sort-header [state]="groupTable" column="condition" label="Condition"
                     class="col-center" (changed)="onTableChanged()"></th>
@@ -273,11 +282,18 @@
                             (click)="groupTable.clearFilters(); onTableChanged()">Clear filters</button>
                   }
                 </td>
+                <td></td>
                 <td>
-                  <label class="visually-hidden" for="csp-f-group-name">Filter by group name</label>
-                  <input id="csp-f-group-name" type="text" class="gh-input gh-filter-input" placeholder="Name"
-                         [ngModel]="groupTable.filters['name']" [ngModelOptions]="{ standalone: true }"
-                         (ngModelChange)="groupTable.setFilter('name', $event); onTableChanged()">
+                  <label class="visually-hidden" for="csp-f-group-model">Filter by tested model or group name</label>
+                  <input id="csp-f-group-model" type="text" class="gh-input gh-filter-input" placeholder="Tested model or name"
+                         [ngModel]="groupTable.filters['testedModel']" [ngModelOptions]="{ standalone: true }"
+                         (ngModelChange)="groupTable.setFilter('testedModel', $event); onTableChanged()">
+                </td>
+                <td>
+                  <label class="visually-hidden" for="csp-f-group-suite">Filter by suite</label>
+                  <input id="csp-f-group-suite" type="text" class="gh-input gh-filter-input" placeholder="Suite"
+                         [ngModel]="groupTable.filters['suiteName']" [ngModelOptions]="{ standalone: true }"
+                         (ngModelChange)="groupTable.setFilter('suiteName', $event); onTableChanged()">
                 </td>
                 <td>
                   <label class="visually-hidden" for="csp-f-group-tier">Filter by tier</label>
@@ -309,18 +325,34 @@
             </thead>
             <tbody>
               @if (groupTable.noMatches(groups)) {
-                <tr><td colspan="7" class="text-muted">No groups match these filters.</td></tr>
+                <tr><td colspan="9" class="text-muted">No groups match these filters.</td></tr>
               } @else {
                 @for (group of groupTable.view(groups); track group.id) {
                   <tr [class.csp-row-selected]="isGroupSelected(group.id)">
                     <td class="col-center col-selected">
                       <label class="csp-check" [for]="'csp-group-' + group.id">
                         <input type="checkbox" [id]="'csp-group-' + group.id"
-                               [attr.aria-label]="'Compare analysis group ' + group.name"
+                               [attr.aria-label]="'Compare ' + groupSubject(group)"
                                [checked]="isGroupSelected(group.id)" (change)="toggleGroup(group)">
                       </label>
                     </td>
-                    <th scope="row" class="col-name">{{ group.name }}</th>
+                    <td class="col-center col-id">#{{ group.id }}</td>
+                    <th scope="row" class="col-name">
+                      <!-- The model leads; the group's name is a caption under it only when it says
+                           something the row's own columns do not. The flex lives on the inner div:
+                           a flex <th> drops out of the column grid. -->
+                      <div class="csp-model-cell">
+                        @if (groupModelName(group); as modelName) {
+                          <app-model-identity [name]="modelName" [provider]="group.testedModelProvider"
+                                              [thinkingLevel]="group.testedModelThinkingLevel"
+                                              [reasoningMode]="group.testedModelReasoningMode"></app-model-identity>
+                        }
+                        @if (groupCaption(group); as caption) {
+                          <span class="csp-group-caption">{{ caption }}</span>
+                        }
+                      </div>
+                    </th>
+                    <td>{{ group.suiteName }}</td>
                     <td>
                       <span [class]="'csp-tier ' + tierClass(group.tier)">
                         {{ group.tierLabel || tierName(group.tier) }}
@@ -331,7 +363,7 @@
                         <span [class]="conditionBadgeClass('group:' + group.id)">{{ conditionLabel('group:' + group.id) }}</span>
                         @if (hasConditionDetail('group:' + group.id)) {
                           <button type="button" class="action-btn csp-condition-detail"
-                                  [attr.aria-label]="'Comparability detail for group ' + group.name"
+                                  [attr.aria-label]="'Comparability detail for ' + groupSubject(group)"
                                   [attr.interestfor]="conditionTipId('group:' + group.id)"
                                   [attr.style]="'anchor-name: --' + conditionTipId('group:' + group.id)"
                                   (click)="openConditionDetail('group:' + group.id, $event)">

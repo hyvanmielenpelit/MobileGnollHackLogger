@@ -374,6 +374,26 @@ describe('ModelComparisonComponent', () => {
       .toBe('Run 2');
   });
 
+  it('badges a non-baseline reasoning mode in the table and the emphasis list, and never standard', () => {
+    const entries = comparableSet(2);
+    entries[0] = { ...entries[0], reasoningMode: 'pro' };
+    entries[1] = { ...entries[1], reasoningMode: 'standard' };
+    render(buildDto(entries), 3);
+
+    const rows = fixture.debugElement.queryAll(By.css('table.mc-table tbody tr'));
+    expect((rows[0].nativeElement as HTMLElement).querySelector('.reasoning-badge')?.textContent?.trim())
+      .toBe('pro');
+    expect((rows[1].nativeElement as HTMLElement).querySelector('.reasoning-badge')).toBeNull();
+
+    component.goToStep(4);
+    fixture.detectChanges();
+    // The list follows the plotted order, not the table's, so the badges are counted rather than indexed.
+    expect(fixture.debugElement.queryAll(By.css('.mc-emphasis-list li')).length).toBe(2);
+    const badges = fixture.debugElement.queryAll(By.css('.mc-emphasis-list .reasoning-badge'))
+      .map(badge => (badge.nativeElement as HTMLElement).textContent?.trim());
+    expect(badges).toEqual(['pro']);
+  });
+
   it('keeps an excluded entry in the table even though no figure can draw it', () => {
     render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringMethodVersion'])]), 3);
 

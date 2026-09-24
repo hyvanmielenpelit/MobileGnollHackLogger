@@ -3454,6 +3454,8 @@ public class AdminBenchmarkController : ControllerBase
                     TestedModelDisplayNameUsed = r.TestedModelSnapshot.Label()!,
                     TestedModelProviderUsed = r.TestedModelSnapshot.Provider,
                     TestedModelIdUsed = r.TestedModelSnapshot.ModelId,
+                    TestedModelThinkingLevelUsed = r.TestedModelSnapshot.ThinkingLevel,
+                    TestedModelReasoningModeUsed = r.TestedModelSnapshot.ReasoningMode,
                     TestedModelEndpoint = SystemAiConfigurationSnapshotStore.DescribeEndpoint(r.TestedModelSnapshot),
                     AssessorModelConfigurationId = r.AssessorModelConfigurationId,
                     AssessorModelDisplayNameUsed = r.AssessorModelSnapshot.Label()!,
@@ -5009,14 +5011,23 @@ public class AdminBenchmarkController : ControllerBase
         var latest = await _groupAnalysisService.GetLatestAnalysisAsync(group.Id);
 
         // The name the newest member run was made under; the live suite's only for an empty group.
+        // The tested model comes from the same run: a persisted group is candidate-identical.
         var memberRunIds = group.Members.Select(m => m.BenchmarkRunId).ToList();
-        string? memberSuiteName = memberRunIds.Count == 0
+        var newest = memberRunIds.Count == 0
             ? null
             : await _dbContext.BenchmarkRuns
                 .Where(r => memberRunIds.Contains(r.Id))
                 .OrderByDescending(r => r.StartedAtUtc)
                 .ThenByDescending(r => r.Id)
-                .Select(r => r.SuiteName)
+                .Select(r => new
+                {
+                    r.SuiteName,
+                    r.TestedModelSnapshot.DisplayName,
+                    r.TestedModelSnapshot.ModelId,
+                    r.TestedModelSnapshot.Provider,
+                    r.TestedModelSnapshot.ThinkingLevel,
+                    r.TestedModelSnapshot.ReasoningMode
+                })
                 .FirstOrDefaultAsync();
 
         var dto = new BenchmarkRunGroupDto
@@ -5024,7 +5035,12 @@ public class AdminBenchmarkController : ControllerBase
             Id = group.Id,
             Name = group.Name,
             BenchmarkSuiteId = group.BenchmarkSuiteId,
-            SuiteName = memberSuiteName ?? group.BenchmarkSuite?.Name,
+            SuiteName = newest?.SuiteName ?? group.BenchmarkSuite?.Name,
+            TestedModelDisplayName = newest?.DisplayName ?? newest?.ModelId,
+            TestedModelProvider = newest?.Provider,
+            TestedModelId = newest?.ModelId,
+            TestedModelThinkingLevel = newest?.ThinkingLevel,
+            TestedModelReasoningMode = newest?.ReasoningMode,
             Tier = group.Tier.ToString(),
             TierLabel = DescribeTier(group.Tier),
             ComparabilityKeyHash = group.ComparabilityKeyHash,

@@ -139,6 +139,7 @@ import {
 } from './preview-view';
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
 import { ToastComponent, ToastNotice } from '../../../shared/toast/toast.component';
+import { showReasoningBadge } from '../../../utils/model-badge-format.util';
 import {
   COMPARISON_TABLE_COLUMNS,
   ComparisonTableProvenance,
@@ -260,11 +261,12 @@ export type ComparabilityStrictness = 'all' | 'comparableOnly';
 /** A degenerate shape the entry set can take, each of which is rendered differently. */
 export type ComparisonShape = 'empty' | 'none' | 'single' | 'pair' | 'full';
 
-/** One plotted model in the emphasis selector: the name it is drawn under, and its thinking level. */
+/** One plotted model in the emphasis selector: the name it is drawn under, its thinking level and reasoning mode. */
 export interface EmphasisOption {
   readonly key: string;
   readonly name: string;
   readonly thinkingLevel: string | null;
+  readonly reasoningMode: string | null;
 }
 
 /** One statistic in the single-entry KPI row, where a chart would be one bar and say nothing. */
@@ -1115,8 +1117,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /**
    * The plotted entries as the emphasis selector names them.
    *
-   * The chart entry carries only the axis label, so the display name and the thinking level are
-   * read off the payload beside it — the same two facts the comparison table's model cell shows.
+   * The chart entry carries only the axis label, so the display name, the thinking level and the
+   * reasoning mode are read off the payload beside it — the same facts the comparison table's model
+   * cell shows.
    */
   get emphasisOptions(): EmphasisOption[] {
     return this.plotted.map(entry => {
@@ -1124,10 +1127,13 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       return {
         key: entry.key,
         name: dto?.modelDisplayName || entry.label,
-        thinkingLevel: dto?.thinkingLevel ?? null
+        thinkingLevel: dto?.thinkingLevel ?? null,
+        reasoningMode: dto?.reasoningMode ?? null
       };
     });
   }
+
+  readonly showReasoningBadge = showReasoningBadge;
 
   /** `Run 48` or `Analysis group 3` — the run line under a model name in the table. */
   sourceLabel(entry: { sourceKind: string; sourceId: number }): string {

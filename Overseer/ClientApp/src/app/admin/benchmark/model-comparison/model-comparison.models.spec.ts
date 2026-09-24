@@ -1,6 +1,7 @@
 import {
   buildConditionLegend,
   conditionDetailFor,
+  isGeneratedGroupName,
   normalizeThinkingLevel,
   parseConfigurationValue,
   questionCoverageNotes,
@@ -611,6 +612,27 @@ describe('normalizeThinkingLevel', () => {
     for (const value of [null, undefined, '', '   ']) {
       expect(normalizeThinkingLevel(value)).withContext(String(value)).toBeNull();
     }
+  });
+});
+
+describe('isGeneratedGroupName', () => {
+  const suite = 'GnollHack Player Assistance Benchmark Suite';
+  const model = 'GPT-5.6 Luna';
+
+  it("is true for the series orchestrator's name and for the multi-run tab's default", () => {
+    expect(isGeneratedGroupName(`${suite} · ${model} · 2026-09-07 · R=3`, suite, model)).toBeTrue();
+    expect(isGeneratedGroupName(`${suite} · R=3`, suite, model)).toBeTrue();
+  });
+
+  it('is false for a renamed group and for an empty name', () => {
+    expect(isGeneratedGroupName('Luna baseline after the prompt fix', suite, model)).toBeFalse();
+    expect(isGeneratedGroupName(`${suite} · ${model} · baseline · R=3`, suite, model)).toBeFalse();
+    expect(isGeneratedGroupName('', suite, model)).toBeFalse();
+    expect(isGeneratedGroupName('   ', suite, model)).toBeFalse();
+  });
+
+  it('is false when the suite in the name is not the suite passed in', () => {
+    expect(isGeneratedGroupName(`Old Suite Name · ${model} · 2026-09-07 · R=3`, suite, model)).toBeFalse();
   });
 });
 

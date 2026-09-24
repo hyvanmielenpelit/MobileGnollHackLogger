@@ -19,6 +19,7 @@ import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { exactFilter, TableState } from '../../../shared/data-table/table-state';
 import { SortHeaderComponent } from '../../../shared/data-table/sort-header.component';
 import { TablePagerComponent } from '../../../shared/data-table/table-pager.component';
+import { ModelIdentityComponent } from '../../../shared/model-identity/model-identity.component';
 import type {
   BenchmarkRunGroupDto,
   BenchmarkRunSummaryDto
@@ -28,6 +29,7 @@ import {
   SHORT_HASH_LENGTH,
   buildConditionLegend,
   conditionDetailFor,
+  isGeneratedGroupName,
   selectedConditions,
   sourceLabel,
   summarizeConditionDifference
@@ -216,7 +218,7 @@ function conditionHueClass(ordinal: number | null): string {
 @Component({
   selector: 'app-comparison-source-picker',
   standalone: true,
-  imports: [CommonModule, FormsModule, SortHeaderComponent, TablePagerComponent],
+  imports: [CommonModule, FormsModule, SortHeaderComponent, TablePagerComponent, ModelIdentityComponent],
   templateUrl: './comparison-source-picker.component.html',
   styleUrls: ['./comparison-source-picker.component.scss']
 })
@@ -265,7 +267,7 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
       selected: r => (this.isRunSelected(r.id) ? 1 : 0),
       id: r => r.id,
       suiteName: r => r.suiteName,
-      testedModel: r => r.testedModelDisplayNameUsed,
+      testedModel: r => this.runModelText(r),
       status: r => this.runStatus(r),
       qualityIndex: r => r.qualityIndex ?? r.finalScore,
       startedAtUtc: r => new Date(r.startedAtUtc),
@@ -274,7 +276,7 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
     },
     {
       suiteName: r => r.suiteName,
-      testedModel: r => r.testedModelDisplayNameUsed,
+      testedModel: r => this.runModelText(r),
       status: exactFilter(r => this.runStatus(r)),
       selected: exactFilter(r => (this.isRunSelected(r.id) ? 'yes' : 'no')),
       condition: exactFilter(r => this.conditionLabel(runKey(r)))
@@ -284,7 +286,9 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
   readonly groupTable = new TableState<BenchmarkRunGroupDto>('createdAtUtc', 'desc').registerAccessors(
     {
       selected: g => (this.isGroupSelected(g.id) ? 1 : 0),
-      name: g => g.name,
+      id: g => g.id,
+      testedModel: g => this.groupModelText(g),
+      suiteName: g => g.suiteName,
       tier: g => g.tierLabel || String(g.tier),
       runCount: g => g.runCount,
       createdAtUtc: g => new Date(g.createdAtUtc),
@@ -293,7 +297,9 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
       condition: g => this.conditionOrdinal(groupKey(g)) ?? Number.MAX_SAFE_INTEGER
     },
     {
-      name: g => g.name,
+      // The name stays searchable here even where the row does not render it.
+      testedModel: g => `${this.groupModelText(g)} ${g.name}`,
+      suiteName: g => g.suiteName,
       tier: exactFilter(g => String(g.tier)),
       selected: exactFilter(g => (this.isGroupSelected(g.id) ? 'yes' : 'no')),
       condition: exactFilter(g => this.conditionLabel(groupKey(g)))
@@ -1250,6 +1256,51 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
       seen.add(this.runStatus(run));
     }
     return Array.from(seen).sort();
+  }
+
+  /** The tested model with its thinking level and reasoning mode, so `max` or `pro` filters too. */
+  runModelText(run: BenchmarkRunSummaryDto): string {
+    return [run.testedModelDisplayNameUsed, run.testedModelThinkingLevelUsed, run.testedModelReasoningModeUsed]
+      .filter(part => !!part?.trim())
+      .join(' ');
+  }
+
+  /** The group's tested model, or null for an empty group, which has no member run to read it from. */
+  groupModelName(group: BenchmarkRunGroupDto): string | null {
+    return group.testedModelDisplayName?.trim() || group.testedModelId?.trim() || null;
+  }
+
+  /** The group's tested model with its thinking level and reasoning mode, as the run table has it. */
+  groupModelText(group: BenchmarkRunGroupDto): string {
+    return [this.groupModelName(group), group.testedModelThinkingLevel, group.testedModelReasoningMode]
+      .filter(part => !!part?.trim())
+      .join(' ');
+  }
+
+  /**
+   * The group's name under its model, or null when the name only repeats the row's own columns.
+   * With no model to lead with, the name is the row's only line whatever it says.
+   */
+  groupCaption(group: BenchmarkRunGroupDto): string | null {
+    const modelName = this.groupModelName(group);
+    if (modelName != null && isGeneratedGroupName(group.name, group.suiteName, modelName)) {
+      return null;
+    }
+    return group.name.trim() || null;
+  }
+
+  /** `analysis group 12, GPT-5.6 Luna`, plus the name where the row shows it: the row's accessible subject. */
+  groupSubject(group: BenchmarkRunGroupDto): string {
+    const parts = [`analysis group ${group.id}`];
+    const modelName = this.groupModelName(group);
+    if (modelName != null) {
+      parts.push(modelName);
+    }
+    const caption = this.groupCaption(group);
+    if (caption != null) {
+      parts.push(`"${caption}"`);
+    }
+    return parts.join(', ');
   }
 
   analysisState(group: BenchmarkRunGroupDto): string {

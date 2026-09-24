@@ -1520,6 +1520,8 @@ export interface BenchmarkRunSummaryDto {
   testedModelDisplayNameUsed: string;
   testedModelProviderUsed: string;
   testedModelIdUsed: string;
+  testedModelThinkingLevelUsed?: string | null;
+  testedModelReasoningModeUsed?: string | null;
   assessorModelConfigurationId?: number | null;
   assessorModelDisplayNameUsed: string;
   startedByUserName?: string | null;
@@ -1732,6 +1734,12 @@ export interface BenchmarkRunGroupDto {
   name: string;
   benchmarkSuiteId?: number | null;
   suiteName?: string | null;
+  /** The newest member run's candidate, shared by every member; null for an empty group. */
+  testedModelDisplayName?: string | null;
+  testedModelProvider?: string | null;
+  testedModelId?: string | null;
+  testedModelThinkingLevel?: string | null;
+  testedModelReasoningMode?: string | null;
   tier: BenchmarkComparabilityTier;
   tierLabel: string;
   comparabilityKeyHash?: string | null;

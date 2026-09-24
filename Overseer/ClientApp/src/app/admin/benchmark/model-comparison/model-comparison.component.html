@@ -691,8 +691,8 @@
                         <th scope="row" class="col-name">
                           <!-- The name, its badges and the source line, stacked. The flex lives on
                                the inner divs: a flex <th> drops out of the column grid entirely.
-                               The cell shows the display name and the thinking level rides beside it
-                               as a badge, so the level is not printed twice. The name is plain text:
+                               The cell shows the display name and the thinking level and reasoning mode
+                               ride beside it as badges, so the level is not printed twice. The name is plain text:
                                emphasis is chosen on step 4, where its effect is visible. -->
                           <div class="mc-model-cell">
                             <div class="mc-model-row">
@@ -704,6 +704,9 @@
                               <app-provider-badge [provider]="entry.provider"></app-provider-badge>
                               @if (entry.thinkingLevel) {
                                 <span class="thinking-badge">{{ entry.thinkingLevel }}</span>
+                              }
+                              @if (showReasoningBadge(entry.reasoningMode)) {
+                                <span class="reasoning-badge">{{ entry.reasoningMode }}</span>
                               }
                             </div>
                             <span class="mc-source">{{ sourceLabel(entry) }}</span>
@@ -1010,6 +1013,9 @@
                             <span class="mc-emphasis-name">{{ option.name }}</span>
                             @if (option.thinkingLevel) {
                               <span class="thinking-badge">{{ option.thinkingLevel }}</span>
+                            }
+                            @if (showReasoningBadge(option.reasoningMode)) {
+                              <span class="reasoning-badge">{{ option.reasoningMode }}</span>
                             }
                           </label>
                         </li>

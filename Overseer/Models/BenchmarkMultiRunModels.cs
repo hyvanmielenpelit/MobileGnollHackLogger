@@ -174,6 +174,17 @@ public class BenchmarkRunGroupDto
     public string Name { get; set; } = string.Empty;
     public long? BenchmarkSuiteId { get; set; }
     public string? SuiteName { get; set; }
+
+    /// <summary>
+    /// The newest member run's candidate. Every member shares it, because a persisted group is
+    /// candidate-identical at every tier. All five are null for an empty group.
+    /// </summary>
+    public string? TestedModelDisplayName { get; set; }
+    public string? TestedModelProvider { get; set; }
+    public string? TestedModelId { get; set; }
+    public string? TestedModelThinkingLevel { get; set; }
+    public string? TestedModelReasoningMode { get; set; }
+
     public string Tier { get; set; } = string.Empty;
     public string TierLabel { get; set; } = string.Empty;
     public string? ComparabilityKeyHash { get; set; }

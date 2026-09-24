@@ -1484,6 +1484,8 @@ public class BenchmarkRunSummaryDto
     public string TestedModelDisplayNameUsed { get; set; } = string.Empty;
     public string TestedModelProviderUsed { get; set; } = string.Empty;
     public string TestedModelIdUsed { get; set; } = string.Empty;
+    public string? TestedModelThinkingLevelUsed { get; set; }
+    public string? TestedModelReasoningModeUsed { get; set; }
 
     /// <summary>"official", or a fingerprinted description of the custom endpoint the candidate ran against.</summary>
     public string TestedModelEndpoint { get; set; } = string.Empty;

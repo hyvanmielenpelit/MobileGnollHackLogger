@@ -1,0 +1,11 @@
+<!-- Each badge carries a visually-hidden prefix: a bare MAX or PRO means nothing read aloud. -->
+<span class="model-identity-name">{{ name }}</span>
+@if (hasProvider) {
+  <app-provider-badge [provider]="provider"></app-provider-badge>
+}
+@if (hasThinkingLevel) {
+  <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ thinkingLevel }}</span>
+}
+@if (hasReasoningMode) {
+  <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ reasoningMode }}</span>
+}

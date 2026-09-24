@@ -44,6 +44,8 @@ describe('ComparisonSourcePickerComponent', () => {
       testedModelDisplayNameUsed: `Model ${id}`,
       testedModelProviderUsed: 'Google',
       testedModelIdUsed: 'gemini-2.5-flash',
+      testedModelThinkingLevelUsed: null,
+      testedModelReasoningModeUsed: null,
       assessorModelConfigurationId: 2,
       assessorModelDisplayNameUsed: 'Claude Opus',
       startedByUserName: 'admin',
@@ -74,6 +76,11 @@ describe('ComparisonSourcePickerComponent', () => {
       name: `Group ${id}`,
       benchmarkSuiteId: 5,
       suiteName: 'GnollHack Player Assistance Benchmark Suite',
+      testedModelDisplayName: null,
+      testedModelProvider: null,
+      testedModelId: null,
+      testedModelThinkingLevel: null,
+      testedModelReasoningMode: null,
       tier: 'Replicate',
       tierLabel: 'Tier A — Replicate',
       comparabilityKeyHash: 'abc123',
@@ -358,6 +365,140 @@ describe('ComparisonSourcePickerComponent', () => {
       .nativeElement as HTMLElement).textContent ?? '';
     expect(groupsText).toContain('Choose another suite');
     expect(groupsText).toContain('build a group');
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // Model identity
+  // -------------------------------------------------------------------------------------------
+
+  /** A group the series orchestrator named, carrying its tested model. */
+  function buildModelGroup(overrides: Partial<BenchmarkRunGroupDto> = {}): BenchmarkRunGroupDto {
+    return buildGroup({
+      name: 'GnollHack Player Assistance Benchmark Suite · GPT-5.6 Luna · 2026-09-07 · R=3',
+      testedModelDisplayName: 'GPT-5.6 Luna',
+      testedModelProvider: 'OpenAI',
+      testedModelId: 'gpt-5.6-luna',
+      testedModelThinkingLevel: 'max',
+      testedModelReasoningMode: 'pro',
+      ...overrides
+    });
+  }
+
+  function bodyRows(): HTMLElement[] {
+    return fixture.debugElement.queryAll(By.css('.csp-table tbody tr'))
+      .map(row => row.nativeElement as HTMLElement);
+  }
+
+  it('badges each run with its thinking level and a non-baseline reasoning mode', () => {
+    render({
+      runs: [
+        buildRun({ id: 1, testedModelThinkingLevelUsed: 'max', testedModelReasoningModeUsed: 'pro' }),
+        buildRun({ id: 2, testedModelThinkingLevelUsed: 'high', testedModelReasoningModeUsed: 'default' })
+      ]
+    });
+
+    const [first, second] = [...bodyRows()].sort((a, b) =>
+      (a.querySelector('.col-id')?.textContent ?? '').localeCompare(b.querySelector('.col-id')?.textContent ?? ''));
+    expect(first.querySelector('app-model-identity .model-identity-name')?.textContent?.trim()).toBe('Model 1');
+    expect(first.querySelector('app-model-identity .provider-badge')?.textContent?.trim()).toBe('Google');
+    expect(first.querySelector('.thinking-badge')?.textContent).toContain('max');
+    expect(first.querySelector('.reasoning-badge')?.textContent).toContain('pro');
+    expect(second.querySelector('.thinking-badge')?.textContent).toContain('high');
+    expect(second.querySelector('.reasoning-badge')).toBeNull();
+  });
+
+  it('filters runs by reasoning mode through the tested model filter', () => {
+    render({
+      runs: [
+        buildRun({ id: 1, testedModelReasoningModeUsed: 'pro' }),
+        buildRun({ id: 2, testedModelReasoningModeUsed: 'standard' })
+      ]
+    });
+
+    component.runTable.setFilter('testedModel', 'pro');
+    fixture.detectChanges();
+
+    expect(component.runTable.view(component.runs).map(r => r.id)).toEqual([1]);
+  });
+
+  it('leads a group row with its model and badges, and hides a generated name', () => {
+    render({ groups: [buildModelGroup({ id: 12 })] });
+    component.selectSourceTab('groups');
+    fixture.detectChanges();
+
+    const row = bodyRows()[0];
+    expect(row.querySelector('.col-id')?.textContent?.trim()).toBe('#12');
+    const header = row.querySelector('th[scope="row"]') as HTMLElement;
+    expect(header.querySelector('.model-identity-name')?.textContent?.trim()).toBe('GPT-5.6 Luna');
+    expect(header.querySelector('.provider-badge')?.textContent?.trim()).toBe('OpenAI');
+    expect(header.querySelector('.thinking-badge')?.textContent).toContain('max');
+    expect(header.querySelector('.reasoning-badge')?.textContent).toContain('pro');
+    expect(header.querySelector('.csp-group-caption')).toBeNull();
+    expect(row.textContent).toContain('GnollHack Player Assistance Benchmark Suite');
+  });
+
+  it('shows a renamed group\'s name as a caption under its model', () => {
+    render({ groups: [buildModelGroup({ name: 'Luna baseline after the prompt fix' })] });
+    component.selectSourceTab('groups');
+    fixture.detectChanges();
+
+    const header = bodyRows()[0].querySelector('th[scope="row"]') as HTMLElement;
+    expect(header.querySelector('.model-identity-name')?.textContent?.trim()).toBe('GPT-5.6 Luna');
+    expect(header.querySelector('.csp-group-caption')?.textContent?.trim()).toBe('Luna baseline after the prompt fix');
+  });
+
+  it('shows an empty group\'s name as its only line', () => {
+    render({ groups: [buildGroup({ name: 'Suite · R=0', runCount: 0 })] });
+    component.selectSourceTab('groups');
+    fixture.detectChanges();
+
+    const header = bodyRows()[0].querySelector('th[scope="row"]') as HTMLElement;
+    expect(header.querySelector('app-model-identity')).toBeNull();
+    expect(header.querySelector('.csp-group-caption')?.textContent?.trim()).toBe('Suite · R=0');
+  });
+
+  it('matches the group model filter against the model name and the group name', () => {
+    const groups = [
+      buildModelGroup({ id: 1 }),
+      buildModelGroup({
+        id: 2,
+        name: 'Claude comparison set',
+        testedModelDisplayName: 'Claude Opus',
+        testedModelProvider: 'Anthropic',
+        testedModelThinkingLevel: 'high',
+        testedModelReasoningMode: null
+      })
+    ];
+    render({ groups });
+
+    component.groupTable.setFilter('testedModel', 'luna');
+    expect(component.groupTable.view(component.groups).map(g => g.id)).toEqual([1]);
+
+    component.groupTable.setFilter('testedModel', 'comparison set');
+    expect(component.groupTable.view(component.groups).map(g => g.id)).toEqual([2]);
+  });
+
+  it('names a group checkbox by its id and model', () => {
+    render({ groups: [buildModelGroup({ id: 12 })] });
+    component.selectSourceTab('groups');
+    fixture.detectChanges();
+
+    const box = fixture.debugElement.query(By.css('#csp-group-12')).nativeElement as HTMLInputElement;
+    expect(box.getAttribute('aria-label')).toBe('Compare analysis group 12, GPT-5.6 Luna');
+  });
+
+  it('lays the group table out in nine columns, the no-matches row included', () => {
+    render({ groups: [buildModelGroup()] });
+    component.selectSourceTab('groups');
+    fixture.detectChanges();
+
+    expect(fixture.debugElement.queryAll(By.css('.csp-table thead tr:first-child th')).length).toBe(9);
+    expect(fixture.debugElement.queryAll(By.css('.csp-table thead tr.gh-filter-row td')).length).toBe(9);
+
+    component.groupTable.setFilter('testedModel', 'no such model');
+    component.onTableChanged();
+    const empty = fixture.debugElement.query(By.css('.csp-table tbody td')).nativeElement as HTMLTableCellElement;
+    expect(empty.colSpan).toBe(9);
   });
 
   // -------------------------------------------------------------------------------------------

@@ -1,0 +1,13 @@
+:host {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* A long custom model id wraps rather than widening the table. */
+.model-identity-name {
+  color: #e4e4e7;
+  overflow-wrap: anywhere;
+}
