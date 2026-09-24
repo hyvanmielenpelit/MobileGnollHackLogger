@@ -1167,6 +1167,9 @@
                 @if (comparison.unpairedItemCount) {
                   {{ comparison.unpairedItemCount }} item(s) appear on one side only and are excluded.
                 }
+                @if (comparison.revisionMismatchedItemCount) {
+                  {{ comparison.revisionMismatchedItemCount }} item(s) were graded under different rubric revisions on the two sides and are excluded.
+                }
                 Differences are this group minus the baseline.
               </p>
 

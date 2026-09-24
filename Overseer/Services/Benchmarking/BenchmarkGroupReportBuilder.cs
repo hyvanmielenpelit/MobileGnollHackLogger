@@ -884,7 +884,9 @@ public static class BenchmarkGroupReportBuilder
         sb.AppendLine($"**Treatment:** {treatmentName} — runs {string.Join(", ", cmp.TreatmentRunIds)}");
         sb.AppendLine();
         sb.AppendLine($"Paired by question on per-item cross-run mean quality. Differences are **treatment minus baseline**, so a positive value means the treatment scored higher. {cmp.PairedItemCount} item(s) paired" +
-                      (cmp.UnpairedItemCount > 0 ? $"; {cmp.UnpairedItemCount} present on one side only and excluded — a pair needs two halves, and imputing one would invent the finding." : "."));
+                      (cmp.UnpairedItemCount > 0 ? $"; {cmp.UnpairedItemCount} present on one side only and excluded — a pair needs two halves, and imputing one would invent the finding" : "") +
+                      (cmp.RevisionMismatchedItemCount > 0 ? $"; {cmp.RevisionMismatchedItemCount} graded under different rubric revisions on the two sides and excluded — they were graded against different answer keys" : "") +
+                      ".");
         sb.AppendLine();
 
         sb.AppendLine($"- **Mean paired difference:** {Inv(cmp.MeanDifference, "F2")} points" +

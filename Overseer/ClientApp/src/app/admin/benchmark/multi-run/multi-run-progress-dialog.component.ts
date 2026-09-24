@@ -103,6 +103,7 @@ interface GroupComparisonShape {
   treatmentRunIds?: number[];
   pairedItemCount?: number;
   unpairedItemCount?: number;
+  revisionMismatchedItemCount?: number;
   meanDifference?: number;
   differenceStandardDeviation?: number | null;
   differenceConfidenceHalfWidth?: number | null;
@@ -1140,7 +1141,8 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
       lines.push(`Compared with group ${analysis?.comparedWithGroupId ?? 'n/a'} (${analysis?.comparedWithGroupName ?? 'n/a'})`);
       lines.push(`Baseline runs: ${comparison.baselineRunIds?.join(', ') || 'none'}`);
       lines.push(`Treatment runs: ${comparison.treatmentRunIds?.join(', ') || 'none'}`);
-      lines.push(`Paired items: ${comparison.pairedItemCount ?? 0}, unpaired and excluded: ${comparison.unpairedItemCount ?? 0}`);
+      lines.push(`Paired items: ${comparison.pairedItemCount ?? 0}, unpaired and excluded: ${comparison.unpairedItemCount ?? 0}, `
+        + `rubric revision mismatched and excluded: ${comparison.revisionMismatchedItemCount ?? 0}`);
       lines.push(`Mean paired difference: ${this.num(comparison.meanDifference)}, `
         + `SD ${comparison.differenceStandardDeviation == null ? 'n/a' : this.num(comparison.differenceStandardDeviation)}, `
         + `95% half-width ${comparison.differenceConfidenceHalfWidth == null ? 'n/a' : this.num(comparison.differenceConfidenceHalfWidth)}, `

@@ -766,7 +766,7 @@ describe('figure-export', () => {
       });
       const entries = [entry('A', 0.0761), entry('B', 0.0428)];
       const context: ModelComparisonContext = {
-        scoredItemsMin: 18, scoredItemsMax: 18, suiteItemCount: 18, questionsAskedPerRun: 18,
+        scoredItemsMin: 18, scoredItemsMax: 18, examItemCount: 18, questionsAskedPerRun: 18,
         pricingBasisLabel: 'Current', pricingBasis: 'Current', pricedOn: '', suiteName: 'Suite'
       };
       const spec = buildSmallMultiples(entries, {

@@ -49,6 +49,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<BenchmarkRunGroupMember> BenchmarkRunGroupMembers { get; set; } = null!;
         public DbSet<BenchmarkGroupAnalysis> BenchmarkGroupAnalyses { get; set; } = null!;
         public DbSet<SystemAiConfigurationSnapshot> SystemAiConfigurationSnapshots { get; set; } = null!;
+        public DbSet<BenchmarkRunBoardSnapshot> BenchmarkRunBoardSnapshots { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -271,6 +272,18 @@ namespace MobileGnollHackLogger.Data
 
             modelBuilder.Entity<BenchmarkRun>()
                 .HasIndex(r => r.StartedAtUtc);
+
+            /* The boards runs were graded with: append-only and content-addressed, like the
+               configuration snapshots. Restrict keeps a run's board from disappearing. */
+            modelBuilder.Entity<BenchmarkRunBoardSnapshot>()
+                .HasIndex(s => s.Sha256)
+                .IsUnique();
+
+            modelBuilder.Entity<BenchmarkRun>()
+                .HasOne(r => r.BoardSnapshot)
+                .WithMany()
+                .HasForeignKey(r => r.BoardSnapshotId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<BenchmarkScoringProfile>()
                 .HasIndex(p => p.Name)

@@ -61,13 +61,11 @@ export function modelComparisonQueryParams(query: BenchmarkModelComparisonQuery)
 /** The quality axis: the Intelligence Index with its 95 % interval and the two components behind it. */
 export interface BenchmarkModelComparisonQualityDto {
   pointEstimate: number;
-  /** Items behind the estimate: suite questions with a scored answer. */
+  /** Items behind the estimate: questions with a scored answer. */
   itemCount: number;
-  /** Questions the suite holds now: `itemCount + revisedItemCount + unscoredItemCount`. */
-  suiteItemCount: number;
-  /** Questions whose every otherwise-scored answer was graded under an older rubric revision. */
-  revisedItemCount: number;
-  /** Questions with no scored answer at all: failed, skipped, canceled, ungraded or never asked. */
+  /** Questions these runs were asked: `itemCount + unscoredItemCount`. */
+  examItemCount: number;
+  /** Questions asked with no answer that counts: failed, skipped, canceled or ungraded. */
   unscoredItemCount: number;
   intervalHalfWidth?: number | null;
   intervalLower?: number | null;
@@ -1118,7 +1116,7 @@ export function toChartEntries(dto: BenchmarkModelComparisonDto | null): ModelCo
  *
  * `scoredItemsMin` and `scoredItemsMax` span the charted entries' scored item counts, which can
  * differ: an entry's failed, skipped or ungraded answers leave questions out of its index alone.
- * `suiteItemCount` is shared, because the suite is a Fundamental key; the max tolerates a payload
+ * `examItemCount` is shared, because the suite is a Fundamental key; the max tolerates a payload
  * without the field, which reads as 0 (unknown). `questionsAskedPerRun` is null when the charted
  * entries asked different numbers of questions, or none reported it.
  */
@@ -1131,7 +1129,7 @@ export function toChartContext(dto: BenchmarkModelComparisonDto | null): ModelCo
   return {
     scoredItemsMin: scored.length > 0 ? Math.min(...scored) : 0,
     scoredItemsMax: scored.length > 0 ? Math.max(...scored) : 0,
-    suiteItemCount: charted.reduce((max, entry) => Math.max(max, entry.quality?.suiteItemCount ?? 0), 0),
+    examItemCount: charted.reduce((max, entry) => Math.max(max, entry.quality?.examItemCount ?? 0), 0),
     questionsAskedPerRun: asked.length > 0 && asked.every(n => Math.abs(n - asked[0]) <= 1e-9) ? asked[0] : null,
     pricingBasisLabel: dto?.pricingBasisLabel || dto?.pricingBasis || 'Unknown pricing basis',
     pricingBasis: dto?.pricingBasis ?? '',
@@ -1141,28 +1139,12 @@ export function toChartContext(dto: BenchmarkModelComparisonDto | null): ModelCo
 }
 
 /**
- * Why the charted entries' indices cover fewer questions than the suite holds. Revised rubrics are
- * one info note, since the item revisions are a Fundamental key and every charted entry loses the
- * same questions; an entry's own unscored questions are a warning each, because indices over
- * different item sets are not strictly the same exam. Empty when every suite question is scored.
+ * Why the charted entries' indices cover fewer questions than these runs were asked. An entry's
+ * own unscored questions are a warning each, because indices over different item sets are not
+ * strictly the same exam. Empty when every asked question is scored.
  */
 export function questionCoverageNotes(entries: readonly BenchmarkModelComparisonEntryDto[]): FigureNote[] {
   const notes: FigureNote[] = [];
-  const suite = entries.reduce((max, entry) => Math.max(max, entry.quality?.suiteItemCount ?? 0), 0);
-
-  const revised = entries.reduce((max, entry) => Math.max(max, entry.quality?.revisedItemCount ?? 0), 0);
-  if (revised > 0) {
-    const one = revised === 1;
-    const scope = suite > 0
-      ? `${revised} of the suite's ${suite} questions ${one ? 'is' : 'are'}`
-      : `${revised} ${one ? 'question is' : 'questions are'}`;
-    notes.push({
-      text: `${scope} left out: ${one ? 'its rubric was' : 'their rubrics were'} revised after these runs, ` +
-        `so the stored grades are for the old ${one ? 'rubric' : 'rubrics'}. ` +
-        `Runs made from now on include ${one ? 'it' : 'them'}.`,
-      tone: 'info',
-    });
-  }
 
   for (const entry of entries) {
     const unscored = entry.quality?.unscoredItemCount ?? 0;

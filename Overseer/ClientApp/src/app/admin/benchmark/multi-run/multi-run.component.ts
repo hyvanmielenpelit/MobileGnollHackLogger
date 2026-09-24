@@ -268,7 +268,10 @@ export interface MultiRunComparison {
   baselineRunIds?: number[];
   treatmentRunIds?: number[];
   pairedItemCount: number;
+  /** Items present on one side only, excluded from pairing. */
   unpairedItemCount?: number;
+  /** Items on both sides but graded under different rubric revisions, excluded from pairing. */
+  revisionMismatchedItemCount?: number;
   meanDifference: number;
   differenceStandardDeviation?: number | null;
   differenceConfidenceHalfWidth?: number | null;

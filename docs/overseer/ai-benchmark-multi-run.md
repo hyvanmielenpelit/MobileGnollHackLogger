@@ -136,6 +136,14 @@ flags over an explicit run set; those are **reused, never reimplemented**, and t
 itself (`BenchmarkItemAnalysis.Samples`) is shared, so a group's denominators and the suite-health
 panel's denominators cannot drift apart.
 
+**The items come from the member runs, not the live suite.** `BenchmarkRunExam.Build` builds one
+item per question the members answered (keyed on `BenchmarkQuestionIdUsed ?? BenchmarkQuestionId`),
+carrying the revision the members were graded under, so the predicate's *answered against the
+item's revision* is the graded revision. Editing, deleting, adding or reordering questions, renaming
+the suite or deleting it changes none of a group's figures; a group whose suite was deleted still
+analyses. Paired comparison pairs an item only when both groups were graded under the same revision
+of it; the rest are counted as `RevisionMismatchedItemCount` and excluded.
+
 The group layer adds only what a replicate set makes meaningful:
 
 | Figure | Definition | Undefined when |

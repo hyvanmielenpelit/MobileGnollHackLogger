@@ -487,7 +487,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   entries: readonly BenchmarkModelComparisonEntryDto[] = [];
   figures: ComparisonFigureSet | null = null;
   context: ModelComparisonContext = {
-    scoredItemsMin: 0, scoredItemsMax: 0, suiteItemCount: 0, questionsAskedPerRun: null,
+    scoredItemsMin: 0, scoredItemsMax: 0, examItemCount: 0, questionsAskedPerRun: null,
     pricingBasisLabel: '', pricingBasis: '', pricedOn: '', suiteName: ''
   };
   orientation: BarOrientation = 'vertical';
@@ -3323,6 +3323,18 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   onTableExportFormatChange(value: TableExportFormat): void {
     this.tableExportFormat = value;
+  }
+
+  /** The format select's option text for each format. */
+  private static readonly TABLE_EXPORT_FORMAT_NAMES: Readonly<Record<TableExportFormat, string>> = {
+    xlsx: 'Excel (.xlsx)', csv: 'CSV', tsv: 'TSV', md: 'Markdown',
+    json: 'JSON', html: 'HTML', png: 'PNG', webp: 'WebP',
+  };
+
+  /** Names the download button after the chosen format; the ellipsis says a column dialog opens first. */
+  get tableDownloadLabel(): string {
+    const name = ModelComparisonComponent.TABLE_EXPORT_FORMAT_NAMES[this.tableExportFormat] ?? this.tableExportFormat;
+    return `Download the table as ${name}…`;
   }
 
   /** Encodes the filtered, sorted, unpaged table in the chosen format and saves it. */

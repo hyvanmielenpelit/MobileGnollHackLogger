@@ -54,6 +54,23 @@ public class BenchmarkRunAnswer
     /// </summary>
     public int? ItemRevisionUsed { get; set; }
 
+    /// <summary>
+    /// The rubric (<see cref="BenchmarkQuestion.ExpectedPoints"/>) this answer is graded against,
+    /// copied when the answer row is created. Every re-grade reads this, never the live question,
+    /// so a later rubric edit or question delete does not change what an old answer is graded on.
+    /// Null is a real value — the question had no rubric points — only when
+    /// <see cref="ExpectedPointsRecorded"/> is true.
+    /// </summary>
+    public string? ExpectedPointsUsed { get; set; }
+
+    /// <summary>
+    /// True when <see cref="ExpectedPointsUsed"/> holds the rubric as it was; false when the rubric
+    /// is not known (an answer from before the column whose question had since changed or gone).
+    /// An unrecorded rubric refuses every re-grade of the answer rather than falling back to the
+    /// live question.
+    /// </summary>
+    public bool ExpectedPointsRecorded { get; set; }
+
     public string QuestionText { get; set; } = default!;
 
     public BenchmarkDifficulty Difficulty { get; set; } = BenchmarkDifficulty.Simple;

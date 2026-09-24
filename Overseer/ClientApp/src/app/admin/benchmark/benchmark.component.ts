@@ -113,15 +113,18 @@ interface BenchmarkComparisonSelection {
 }
 
 /**
- * One row of the run progress list: a suite question merged with its answer, if the run
- * has produced one yet. The executor writes an answer row only after the model replies, so
- * a question with no answer row is either dispatched or not: `BenchmarkRunDetailDto.
- * inFlightOrderIndexes` — server-side state kept by `BenchmarkRunManager` — is what tells
- * the two apart. In flight is 'Answering'; everything else with no answer is 'Pending'.
+ * One row of the run progress list: one of the run's answers, under its stored order index and
+ * question text, or, during the run's first pass, a suite question with no answer yet. The
+ * executor writes an answer row only after the model replies, so a question with no answer row
+ * is either dispatched or not: `BenchmarkRunDetailDto.inFlightOrderIndexes` — server-side state
+ * kept by `BenchmarkRunManager` — is what tells the two apart. In flight is 'Answering';
+ * everything else with no answer is 'Pending'.
  */
 export interface BenchmarkRunProgressRow {
   orderIndex: number;
   questionText: string;
+  /** The answer this row shows; null or absent for a question the first pass has not answered yet. */
+  answer?: BenchmarkRunAnswerDto | null;
   /**
    * Formatted answer status, or 'Answering' while the provider request is in flight, or
    * 'Pending' when the run has not dispatched this question yet, or 'Verifying' /
@@ -2452,9 +2455,15 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       buttonText: 'Delete Suite',
       buttonClass: 'btn-gh btn-gh-delete',
       action: () => {
+        this.actionErrorMessage = null;
         this.benchmarkService.deleteSuite(id).subscribe({
           next: () => this.loadSuites(),
-          error: (err) => console.error('Failed to delete suite', err)
+          error: (err) => {
+            this.actionErrorMessage = typeof err?.error === 'string' && err.error
+              ? err.error
+              : err?.error?.message || 'Failed to delete suite.';
+            this.cdr.detectChanges();
+          }
         });
       }
     });
@@ -4298,29 +4307,48 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   /**
-   * The suite's questions merged with whatever answers the run has produced. Falls back to
-   * the answers alone when the suite fetch has not landed (or failed), so the list is never
-   * empty while the run is visibly progressing.
+   * True while the run's first pass is executing: Running with no re-run scope, no re-run being
+   * launched and no re-run ever started. Only then can the suite hold questions the run has yet
+   * to answer; a re-run rewrites answer rows the run already has.
+   */
+  get runIsFirstPass(): boolean {
+    return this.runIsRunning
+      && !this.runHasRerunScope
+      && !this.rerunLaunchPending
+      && this.activeRunDetail?.rerunStartedAtUtc == null;
+  }
+
+  /**
+   * The run's own answers, each under its stored order index and question text, so a suite that
+   * has since lost or gained questions never changes what a run shows. While the first pass is
+   * executing, the suite's questions with no answer yet are added as Pending or Answering,
+   * matched to the answers by question id.
    */
   get runProgressRows(): BenchmarkRunProgressRow[] {
     const run = this.activeRunDetail;
     if (!run) return [];
 
-    // Keyed both ways, because the question id is the reliable key and not every answer has
-    // one: a suite reorder rewrites order indexes and touches no stored answer, so matching on
-    // the index alone rendered a reordered suite's earlier runs against the wrong questions.
-    const answersByQuestionId = new Map<number, BenchmarkRunAnswerDto>();
-    const answersByIndex = new Map<number, BenchmarkRunAnswerDto>();
-    for (const a of run.answers) {
-      answersByIndex.set(a.orderIndex, a);
-      if (a.benchmarkQuestionId != null) {
-        answersByQuestionId.set(a.benchmarkQuestionId, a);
+    const source: { orderIndex: number; questionText: string; answer: BenchmarkRunAnswerDto | null }[] =
+      run.answers.map(a => ({ orderIndex: a.orderIndex, questionText: a.questionText, answer: a }));
+
+    if (this.runIsFirstPass) {
+      const answeredQuestionIds = new Set<number>();
+      const takenIndexes = new Set<number>();
+      for (const a of run.answers) {
+        takenIndexes.add(a.orderIndex);
+        if (a.benchmarkQuestionId != null) {
+          answeredQuestionIds.add(a.benchmarkQuestionId);
+        }
+      }
+      // An index an answer already holds is never listed twice: the rows are tracked by it.
+      for (const q of this.runProgressQuestions) {
+        if ((q.id != null && answeredQuestionIds.has(q.id)) || takenIndexes.has(q.orderIndex)) {
+          continue;
+        }
+        takenIndexes.add(q.orderIndex);
+        source.push({ orderIndex: q.orderIndex, questionText: q.questionText, answer: null });
       }
     }
-
-    const source = this.runProgressQuestions.length > 0
-      ? this.runProgressQuestions.map(q => ({ id: q.id, orderIndex: q.orderIndex, questionText: q.questionText }))
-      : run.answers.map(a => ({ id: a.benchmarkQuestionId ?? null, orderIndex: a.orderIndex, questionText: a.questionText }));
 
     const inFlight = new Set<number>(run.inFlightOrderIndexes ?? []);
     const verifying = new Set<number>(run.inFlightVerificationOrderIndexes ?? []);
@@ -4329,14 +4357,15 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     const rerunAnswered = new Set<number>(run.rerunAnsweredOrderIndexes ?? []);
     const rerunRunning = this.runIsRunning && this.runHasRerunScope;
 
-    return [...source]
+    return source
       .sort((a, b) => a.orderIndex - b.orderIndex)
       .map(q => {
-        const ans = (q.id != null ? answersByQuestionId.get(q.id) : undefined) ?? answersByIndex.get(q.orderIndex);
+        const ans = q.answer;
         if (!ans) {
           return {
             orderIndex: q.orderIndex,
             questionText: q.questionText,
+            answer: null,
             status: inFlight.has(q.orderIndex) ? 'Answering' : 'Pending',
             assessmentStatus: '',
             errorMessage: null
@@ -4349,6 +4378,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           return {
             orderIndex: q.orderIndex,
             questionText: q.questionText,
+            answer: ans,
             status: verifying.has(q.orderIndex) ? 'Verifying' : 'SecondOpinion',
             assessmentStatus: this.formatAssessmentStatus(ans.assessmentStatus),
             errorMessage: ans.errorMessage ?? null
@@ -4361,6 +4391,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           return {
             orderIndex: q.orderIndex,
             questionText: q.questionText,
+            answer: ans,
             status: 'Answering',
             assessmentStatus: '',
             errorMessage: null
@@ -4373,6 +4404,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           return {
             orderIndex: q.orderIndex,
             questionText: q.questionText,
+            answer: ans,
             status: 'Pending',
             assessmentStatus: '',
             errorMessage: null
@@ -4385,6 +4417,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           return {
             orderIndex: q.orderIndex,
             questionText: q.questionText,
+            answer: ans,
             status: 'Pending',
             assessmentStatus: '',
             errorMessage: null
@@ -4394,6 +4427,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         return {
           orderIndex: q.orderIndex,
           questionText: q.questionText,
+          answer: ans,
           status: this.formatAnswerStatus(ans.status),
           assessmentStatus: this.formatAssessmentStatus(ans.assessmentStatus),
           errorMessage: ans.errorMessage ?? null
@@ -4403,7 +4437,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /**
    * Order indexes a failed-question re-run is repairing, captured when the re-run is launched.
-   * The row list itself is unchanged: every question of the suite stays listed, and a question
+   * The row list itself is unchanged: every answer of the run stays listed, and a question
    * outside the re-run keeps the status it already has. Empty when no re-run is in progress.
    */
   rerunScopeOrderIndexes: number[] = [];
@@ -4924,7 +4958,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (run && this.runProgressRows.length > 0) {
       lines.push('--- QUESTIONS ---');
       for (const row of this.runProgressRows) {
-        const ans = run.answers.find(a => a.orderIndex === row.orderIndex);
+        const ans = row.answer;
         if (!ans) {
           lines.push(`[Q${row.orderIndex}] status=${row.status === 'Answering' ? 'Answering' : 'Pending'}`);
           continue;
@@ -5084,8 +5118,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       this.startRunElapsedTicker();
     }
 
-    // Resolved here and not in the poll handler: the suite's questions are static for the
-    // life of a run, so one fetch per dialog open is one more than strictly necessary.
+    // Resolved here and not in the poll handler: the suite's questions only supply the first
+    // pass's not-yet-answered rows, so one fetch per dialog open is enough.
     const suiteId = this.activeRunDetail?.benchmarkSuiteId ?? this.selectedSuiteId;
     if (suiteId != null && this.runProgressQuestionsSuiteId !== suiteId) {
       this.loadRunProgressQuestions(suiteId);
@@ -7596,10 +7630,15 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.cdr.detectChanges();
   }
 
-  get selectedRunGameSnapshotId(): number | null {
-    if (!this.selectedRunDetail) return null;
-    const suite = this.suites.find(s => s.id === this.selectedRunDetail!.benchmarkSuiteId);
-    return suite?.gameSnapshotId ?? null;
+  /** The run was made with a board: it has a stored board record, or recorded the board's hash. */
+  get selectedRunHasBoard(): boolean {
+    const run = this.selectedRunDetail;
+    return !!run && (run.hasBoardRecord === true || !!run.gameSnapshotSha256Used);
+  }
+
+  /** Opens the board this run was made with, read-only, from the run's own board record. */
+  openRunBoard(runId: number): void {
+    this.snapshotViewer?.openReadOnly(this.benchmarkService.getRunBoard(runId), 'The board this run was made with.');
   }
 
   openSuiteHealthForRubrics(suite: BenchmarkSuiteDto): void {

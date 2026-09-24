@@ -997,7 +997,7 @@ export interface BenchmarkRunAnswerDto {
   previousQualityScore?: number | null;
   reassessmentCount?: number;
 
-  /** When a failed-question re-run replaced this attempt. Null for an attempt that was never re-run. */
+  /** When a re-run (failed-question or single-answer) replaced this attempt. Null for an attempt that was never re-run. */
   rerunAtUtc?: string | null;
   /** Enum name of the replaced attempt's status, e.g. `ProviderError`. Set only alongside rerunAtUtc. */
   rerunOfStatus?: string | null;
@@ -1277,7 +1277,7 @@ export interface BenchmarkRunDetailDto {
   inFlightOrderIndexes?: number[];
 
   /**
-   * Order indexes the run's most recent failed-question re-run is scoped to. Reported while the
+   * Order indexes the run's most recent re-run (failed-question or single-answer) is scoped to. Reported while the
    * re-run executes and still after it finishes, until this process starts another run or
    * restarts; empty for a run it never re-ran.
    */
@@ -1306,7 +1306,7 @@ export interface BenchmarkRunDetailDto {
   inFlightSecondOpinionOrderIndexes?: number[];
 
   /**
-   * The instrument the most recent failed-question re-run executed under. Non-null only on a run
+   * The instrument the most recent re-run (failed-question or single-answer) executed under. Non-null only on a run
    * that was re-run; when either differs from the run's own fingerprint, the run's answers were
    * not all produced under one instrument.
    */
@@ -1339,8 +1339,21 @@ export interface BenchmarkRunDetailDto {
   boardFactsCheck?: BoardFactsCheckDto | null;
   /** The board's `Snapshot format: N` at launch. Null when the board text did not state one. */
   gameSnapshotFormatVersionUsed?: number | null;
+  /** SHA-256 of the board text the run was launched with. Null when the suite had no board. */
+  gameSnapshotSha256Used?: string | null;
+  /** True when the run has a stored board record, which `getRunBoard` returns. */
+  hasBoardRecord?: boolean;
 
   answers: BenchmarkRunAnswerDto[];
+}
+
+/** The board a run was made with, served from the run's own stored board record. */
+export interface BenchmarkRunBoardDto {
+  name: string | null;
+  sanitizedText: string;
+  digestText: string | null;
+  charCount: number;
+  sha256: string;
 }
 
 export interface BenchmarkBoardDeliveryDto {
@@ -1982,6 +1995,14 @@ export class AdminBenchmarkService {
 
   getRun(id: number): Observable<BenchmarkRunDetailDto> {
     return this.http.get<BenchmarkRunDetailDto>(`/api/admin/benchmark/runs/${id}`);
+  }
+
+  /**
+   * The board the run was made with, from its own stored board record. 404 when the run had no
+   * board; 409 with the refusal message as a plain string body when the board is unknown.
+   */
+  getRunBoard(runId: number): Observable<BenchmarkRunBoardDto> {
+    return this.http.get<BenchmarkRunBoardDto>(`/api/admin/benchmark/runs/${runId}/board`);
   }
 
   /** The full per-call tool record for one answer, ordered by `sortOrder`. Loaded lazily — see the run detail dialog's tool-call disclosure. */

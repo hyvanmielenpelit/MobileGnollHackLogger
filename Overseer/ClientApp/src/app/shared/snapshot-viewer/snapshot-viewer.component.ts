@@ -1,7 +1,8 @@
 import { Component, ElementRef, EventEmitter, Input, OnDestroy, Output, ViewChild, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { AdminBenchmarkService, BenchmarkGameSnapshotDto, BoardFactsCheckDto } from '../../services/admin-benchmark.service';
+import { Observable, Subscription, isObservable } from 'rxjs';
+import { AdminBenchmarkService, BenchmarkGameSnapshotDto, BenchmarkRunBoardDto, BoardFactsCheckDto } from '../../services/admin-benchmark.service';
 import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
 import { SnapshotTextEditorComponent } from './snapshot-text-editor.component';
 import { DIGEST_MAX_CHARS, SnapshotDigestEditorComponent } from './snapshot-digest-editor.component';
@@ -62,6 +63,21 @@ export class SnapshotViewerComponent implements OnDestroy {
   ];
   activeTab: SnapshotSection = 'snapshot';
 
+  /**
+   * True while the viewer shows a board that is not a stored snapshot — a run's own board record —
+   * which has no snapshot id and is never edited, downloaded or deleted from here.
+   */
+  readOnly = false;
+  readOnlyBoard: BenchmarkRunBoardDto | null = null;
+  /** The line above a read-only board saying whose board it is. */
+  readOnlyNote: string | null = null;
+  private readOnlySub: Subscription | undefined;
+
+  /** The tabs rendered: all three, or the snapshot tab alone in read-only mode. */
+  get visibleSections(): ReadonlyArray<{ id: SnapshotSection; label: string }> {
+    return this.readOnly ? this.sections.filter(s => s.id === 'snapshot') : this.sections;
+  }
+
   editName = '';
   editNotes = '';
   editGnollHackVersion = '';
@@ -103,6 +119,47 @@ export class SnapshotViewerComponent implements OnDestroy {
     this.loadSnapshot();
   }
 
+  /**
+   * Shows a board read-only: the snapshot tab alone, with no edit, download or delete control.
+   * `board` is the board itself, or the request for it; a failed request shows its message.
+   */
+  openReadOnly(board: BenchmarkRunBoardDto | Observable<BenchmarkRunBoardDto>, note: string) {
+    if (this.viewerDialog?.nativeElement) {
+      ensureOverlayPolyfills();
+      if (!this.viewerDialog.nativeElement.open) this.viewerDialog.nativeElement.showModal();
+    }
+    this.resetState();
+    this.snapshot = null;
+    this.snapshotId = null;
+    this.readOnly = true;
+    this.readOnlyNote = note;
+    this.error = null;
+
+    if (!isObservable(board)) {
+      this.showReadOnlyBoard(board);
+      return;
+    }
+    this.loading = true;
+    this.cdr.detectChanges();
+    this.readOnlySub = board.subscribe({
+      next: (data) => this.showReadOnlyBoard(data),
+      error: (err) => {
+        const body = err?.error;
+        this.error = (typeof body === 'string' && body) || body?.message
+          || 'Failed to load the board this run was made with.';
+        this.loading = false;
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  private showReadOnlyBoard(board: BenchmarkRunBoardDto) {
+    this.readOnlyBoard = board;
+    this.loading = false;
+    this.cdr.detectChanges();
+    this.viewerTitle?.nativeElement.focus({ preventScroll: true });
+  }
+
   /* The header close button; unsaved edits on either tab ask first. */
   requestClose() {
     if (this.saving) return;
@@ -133,6 +190,7 @@ export class SnapshotViewerComponent implements OnDestroy {
   ngOnDestroy() {
     clearTimeout(this.copiedShaTimer);
     clearTimeout(this.saveStatusTimer);
+    this.readOnlySub?.unsubscribe();
   }
 
   loadSnapshot() {
@@ -219,7 +277,8 @@ export class SnapshotViewerComponent implements OnDestroy {
 
   /* Arrow keys wrap, Home and End jump; selection follows focus. */
   onTabKeydown(event: KeyboardEvent, index: number) {
-    const count = this.sections.length;
+    const sections = this.visibleSections;
+    const count = sections.length;
     let nextIndex: number;
     switch (event.key) {
       case 'ArrowRight': nextIndex = (index + 1) % count; break;
@@ -229,7 +288,7 @@ export class SnapshotViewerComponent implements OnDestroy {
       default: return;
     }
     event.preventDefault();
-    const next = this.sections[nextIndex].id;
+    const next = sections[nextIndex].id;
     this.selectTab(next);
     document.getElementById(`snapshot-tab-${next}-${this.uid}`)?.focus();
   }
@@ -672,5 +731,10 @@ export class SnapshotViewerComponent implements OnDestroy {
     this.downloadAfterSave = false;
     this.deleting = false;
     this.deleteError = null;
+    this.readOnlySub?.unsubscribe();
+    this.readOnlySub = undefined;
+    this.readOnly = false;
+    this.readOnlyBoard = null;
+    this.readOnlyNote = null;
   }
 }

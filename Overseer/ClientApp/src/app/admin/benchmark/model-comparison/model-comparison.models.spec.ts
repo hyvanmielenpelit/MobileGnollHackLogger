@@ -510,7 +510,7 @@ function buildComparisonEntry(
     costDegraded: false,
     quality: quality === null
       ? null
-      : { pointEstimate: 80, itemCount: 18, suiteItemCount: 18, revisedItemCount: 0, unscoredItemCount: 0, ...quality },
+      : { pointEstimate: 80, itemCount: 18, examItemCount: 18, unscoredItemCount: 0, ...quality },
     cost: null,
     ...overrides
   } as unknown as BenchmarkModelComparisonEntryDto;
@@ -521,49 +521,48 @@ function buildComparison(entries: BenchmarkModelComparisonEntryDto[]): Benchmark
 }
 
 describe('toChartContext', () => {
-  it('spans the charted entries\' scored counts against the suite', () => {
+  it('spans the charted entries\' scored counts against the exam', () => {
     const same = toChartContext(buildComparison([
-      buildComparisonEntry('a', { itemCount: 16 }),
-      buildComparisonEntry('b', { itemCount: 16 })
+      buildComparisonEntry('a', { itemCount: 16, unscoredItemCount: 2 }),
+      buildComparisonEntry('b', { itemCount: 16, unscoredItemCount: 2 })
     ]));
-    expect([same.scoredItemsMin, same.scoredItemsMax, same.suiteItemCount]).toEqual([16, 16, 18]);
+    expect([same.scoredItemsMin, same.scoredItemsMax, same.examItemCount]).toEqual([16, 16, 18]);
 
     const differing = toChartContext(buildComparison([
-      buildComparisonEntry('a', { itemCount: 16 }),
-      buildComparisonEntry('b', { itemCount: 15 })
+      buildComparisonEntry('a', { itemCount: 16, unscoredItemCount: 2 }),
+      buildComparisonEntry('b', { itemCount: 15, unscoredItemCount: 3 })
     ]));
-    expect([differing.scoredItemsMin, differing.scoredItemsMax, differing.suiteItemCount]).toEqual([15, 16, 18]);
+    expect([differing.scoredItemsMin, differing.scoredItemsMax, differing.examItemCount]).toEqual([15, 16, 18]);
+  });
+
+  it('reads the exam size from examItemCount, whatever the suite holds now', () => {
+    const context = toChartContext(buildComparison([
+      buildComparisonEntry('a', { itemCount: 18, examItemCount: 18 }),
+      buildComparisonEntry('b', { itemCount: 18, examItemCount: 18 })
+    ]));
+    expect([context.scoredItemsMin, context.scoredItemsMax, context.examItemCount]).toEqual([18, 18, 18]);
   });
 
   it('is all zeros with no charted entry, and ignores excluded ones', () => {
     const none = toChartContext(buildComparison([
       buildComparisonEntry('x', null, { excluded: true })
     ]));
-    expect([none.scoredItemsMin, none.scoredItemsMax, none.suiteItemCount]).toEqual([0, 0, 0]);
+    expect([none.scoredItemsMin, none.scoredItemsMax, none.examItemCount]).toEqual([0, 0, 0]);
   });
 });
 
 describe('questionCoverageNotes', () => {
-  it('is empty when every charted entry scored every suite question', () => {
+  it('is empty when every charted entry scored every asked question', () => {
     expect(questionCoverageNotes([buildComparisonEntry('a', {}), buildComparisonEntry('b', {})])).toEqual([]);
   });
 
-  it('adds one info note for rubrics revised after the runs', () => {
+  it('adds no note about rubric revisions', () => {
     const notes = questionCoverageNotes([
-      buildComparisonEntry('a', { itemCount: 16, revisedItemCount: 2 }),
-      buildComparisonEntry('b', { itemCount: 16, revisedItemCount: 2 })
+      buildComparisonEntry('a', { itemCount: 18, examItemCount: 18 }),
+      buildComparisonEntry('b', { itemCount: 18, examItemCount: 18 })
     ]);
-    expect(notes).toEqual([{
-      text: "2 of the suite's 18 questions are left out: their rubrics were revised after these runs, " +
-        'so the stored grades are for the old rubrics. Runs made from now on include them.',
-      tone: 'info'
-    }]);
-
-    const single = questionCoverageNotes([buildComparisonEntry('a', { itemCount: 17, revisedItemCount: 1 })]);
-    expect(single[0].text).toBe(
-      "1 of the suite's 18 questions is left out: its rubric was revised after these runs, " +
-      'so the stored grades are for the old rubric. Runs made from now on include it.'
-    );
+    expect(notes).toEqual([]);
+    expect(notes.some(note => note.tone === 'info')).toBeFalse();
   });
 
   it('warns once per entry with unscored questions, naming the entry', () => {
@@ -577,14 +576,17 @@ describe('questionCoverageNotes', () => {
     }]);
   });
 
-  it('lists the revised note before the per-entry warnings when both apply', () => {
+  it('warns for each entry with unscored questions, in entry order', () => {
     const notes = questionCoverageNotes([
-      buildComparisonEntry('a', { itemCount: 13, revisedItemCount: 2, unscoredItemCount: 3 }),
-      buildComparisonEntry('b', { itemCount: 16, revisedItemCount: 2 })
+      buildComparisonEntry('a', { itemCount: 15, unscoredItemCount: 3 }),
+      buildComparisonEntry('b', { itemCount: 16, unscoredItemCount: 2 })
     ]);
-    expect(notes.map(note => note.tone)).toEqual(['info', 'warning']);
-    expect(notes[1].text).toBe(
+    expect(notes.map(note => note.tone)).toEqual(['warning', 'warning']);
+    expect(notes[0].text).toBe(
       'a: 3 questions have no scored answer (failed, skipped or ungraded) and are left out of its index.'
+    );
+    expect(notes[1].text).toBe(
+      'b: 2 questions have no scored answer (failed, skipped or ungraded) and are left out of its index.'
     );
   });
 });

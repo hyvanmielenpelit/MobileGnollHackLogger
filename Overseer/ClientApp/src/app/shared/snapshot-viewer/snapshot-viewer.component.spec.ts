@@ -1053,4 +1053,64 @@ describe('SnapshotViewerComponent', () => {
       expect(textEditor().dirty).toBeTrue();
     });
   });
+
+  describe('read-only mode', () => {
+    const runBoard = {
+      name: 'Run 55 board',
+      sanitizedText: 'Line 1\nLine 2',
+      digestText: null,
+      charCount: 13,
+      sha256: 'feedbeef00112233'
+    };
+
+    function openReadOnly(board: unknown = runBoard) {
+      component.openReadOnly(board as any, 'The board this run was made with.');
+      fixture.detectChanges();
+    }
+
+    it('renders the snapshot tab alone, with no edit, download or delete control', () => {
+      openReadOnly();
+
+      expect(tabs().map(t => (t.textContent ?? '').trim())).toEqual(['Game Snapshot']);
+      expect(tab('metadata')).toBeNull();
+      expect(tab('delete')).toBeNull();
+      expect(host.querySelector('#editBoardName')).toBeNull();
+      expect(host.querySelector('.delete-snapshot-btn')).toBeNull();
+      expect(host.querySelector('.save-all-btn')).toBeNull();
+      expect(host.querySelector('.revert-all-btn')).toBeNull();
+      expect(host.querySelector('.viewer-footer')).toBeNull();
+      expect(host.querySelector('.normalize-line-endings-btn')).toBeNull();
+      expect(fixture.debugElement.query(By.directive(SnapshotTextEditorComponent))).toBeNull();
+      expect(fixture.debugElement.query(By.directive(SnapshotDigestEditorComponent))).toBeNull();
+      expect(host.querySelector('.download-btn')).toBeNull();
+      expect(mockBenchmarkService.getSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('shows the board text, its size and hash, and the line naming whose board it is', () => {
+      openReadOnly();
+
+      expect((host.querySelector('.readonly-note')?.textContent ?? '').trim()).toBe('The board this run was made with.');
+      expect(host.querySelector('.readonly-board-text')?.textContent).toBe('Line 1\nLine 2');
+      expect(host.querySelector('.readonly-board .sha-box')?.textContent).toBe('feedbeef00112233');
+      expect((host.querySelector('h3')?.textContent ?? '').trim()).toBe('Run 55 board');
+    });
+
+    it('loads the board from a request and shows a refusal message in the viewer', () => {
+      openReadOnly(throwError(() => ({ status: 409, error: 'The board this run was made with is unknown.' })));
+
+      const alert = host.querySelector('.viewer-body .alert-danger');
+      expect(alert?.textContent).toContain('The board this run was made with is unknown.');
+      expect(tabs().length).toBe(0);
+    });
+
+    it('returns to the full editor on the next ordinary open', () => {
+      openReadOnly();
+      component.close();
+
+      openWith(snapshotWith(buildBoard()));
+
+      expect(component.readOnly).toBeFalse();
+      expect(tabs().length).toBe(3);
+    });
+  });
 });

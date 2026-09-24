@@ -149,35 +149,26 @@ public class BenchmarkService
         await db.SaveChangesAsync(CancellationToken.None);
     }
 
-    // The loads of the three secondary grading paths. Each includes the suite's board, which every
-    // grading prompt reads; BenchmarkBoardGuard refuses a grading pass whose load did not.
+    // The loads of the three secondary grading paths. Each includes the run's board record, which
+    // every grading prompt reads; BenchmarkBoardGuard refuses a grading pass whose load did not.
+    // Rubrics come from the answers themselves (BenchmarkRunExamRecord), never from the suite.
 
-    /// <summary>The answer, its run, the run's suite with questions and board, and the assessor, for re-assessment.</summary>
+    /// <summary>The answer, its run and the run's board record, for re-assessment.</summary>
     internal static IQueryable<BenchmarkRunAnswer> ReassessmentAnswerQuery(ApplicationDbContext db) =>
         db.BenchmarkRunAnswers
             .Include(a => a.BenchmarkRun)
-            .ThenInclude(r => r.BenchmarkSuite)
-            .ThenInclude(s => s!.Questions)
-            .Include(a => a.BenchmarkRun)
-            .ThenInclude(r => r.BenchmarkSuite)
-            .ThenInclude(s => s!.GameSnapshot);
+            .ThenInclude(r => r.BoardSnapshot);
 
-    /// <summary>The run with its answers, assessor and suite (questions and board), for retrying failed assessments.</summary>
+    /// <summary>The run with its answers and board record, for retrying failed assessments.</summary>
     internal static IQueryable<BenchmarkRun> RetryAssessmentsRunQuery(ApplicationDbContext db) =>
         db.BenchmarkRuns
             .Include(r => r.Answers)
-            .Include(r => r.BenchmarkSuite)
-            .ThenInclude(s => s!.Questions)
-            .Include(r => r.BenchmarkSuite)
-            .ThenInclude(s => s!.GameSnapshot);
+            .Include(r => r.BoardSnapshot);
 
-    /// <summary>The run with its suite (questions and board), for an assessor calibration.</summary>
+    /// <summary>The run with its board record, for an assessor calibration.</summary>
     internal static IQueryable<BenchmarkRun> CalibrationRunQuery(ApplicationDbContext db) =>
         db.BenchmarkRuns
-            .Include(r => r.BenchmarkSuite)
-            .ThenInclude(s => s!.Questions)
-            .Include(r => r.BenchmarkSuite)
-            .ThenInclude(s => s!.GameSnapshot);
+            .Include(r => r.BoardSnapshot);
 
     /// <summary>Why a re-run was refused for a run that recorded no candidate prompt options.</summary>
     internal static string MissingPromptOptionsMessage(BenchmarkRun run) =>
@@ -365,6 +356,20 @@ public class BenchmarkService
             : null;
     }
 
+    /// <summary>
+    /// Points <see cref="BenchmarkRun.BoardSnapshot"/> at the append-only record of the board the
+    /// run's suite carries at launch: the text and digest every later grading and re-run of this run
+    /// reads. A suite without a board leaves it null.
+    /// </summary>
+    internal static async Task StampBoardRecordAsync(ApplicationDbContext db, BenchmarkRun run, CancellationToken ct)
+    {
+        var board = run.BenchmarkSuite?.GameSnapshot;
+        if (board == null)
+            return;
+
+        run.BoardSnapshot = await BenchmarkRunBoardSnapshotStore.GetOrCreateAsync(db, board, ct);
+    }
+
     public async Task RunAsync(long runId, CancellationToken cancellationToken, bool verboseMode = false)
     {
         var runStopwatch = Stopwatch.StartNew();
@@ -467,6 +472,7 @@ public class BenchmarkService
             run.SpeedMeasurementDegraded = maxParallel > 1;
 
             StampBoardProvenance(run, questions);
+            await StampBoardRecordAsync(db, run, cancellationToken);
 
             int reviewedCount = questions.Count(q => !q.IsGenerated || (q.ReviewedAtRevision != null && q.ReviewedAtRevision == q.ItemRevision));
             run.SuiteReviewedQuestionCountAtStart = reviewedCount;
@@ -744,10 +750,7 @@ public class BenchmarkService
 
             var run = await db.BenchmarkRuns
                 .Include(r => r.Answers)
-                .Include(r => r.BenchmarkSuite)
-                .ThenInclude(s => s!.Questions)
-                .Include(r => r.BenchmarkSuite)
-                .ThenInclude(s => s!.GameSnapshot)
+                .Include(r => r.BoardSnapshot)
                 .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
 
             if (run == null)
@@ -759,6 +762,14 @@ public class BenchmarkService
             if (!IsCurrentScoringMethod(run))
             {
                 await RestoreTerminalStatusAsync(db, run, ScoringMethodRefusal(run));
+                _runManager.Complete(runId);
+                return;
+            }
+
+            // The run-level stages after the re-executed answers read every answer's rubric.
+            if (BenchmarkRunExamRecord.RefusalFor(run, run.Answers) is { } recordRefusal)
+            {
+                await RestoreTerminalStatusAsync(db, run, recordRefusal);
                 _runManager.Complete(runId);
                 return;
             }
@@ -819,9 +830,11 @@ public class BenchmarkService
             // dialog counts instead.
             _runManager.SetRerunScope(runId, failedAnswers.Select(a => a.OrderIndex));
 
-            run.Status = BenchmarkRunStatus.Running;
-            run.RerunStartedAtUtc = DateTime.UtcNow;
-            run.RerunCompletedAtUtc = null;
+            var promptOptions = BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson!);
+            string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
+            var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode);
+
+            BeginRerun(run, systemPrompt);
             await db.SaveChangesAsync(cancellationToken);
 
             var profile = run.ScoringProfileId.HasValue
@@ -833,21 +846,8 @@ public class BenchmarkService
             int maxResultLength = _configuration.GetValue<int>("Benchmark:MaxResultLength", 10000);
             int maxCallsPerSession = _configuration.GetValue<int>("Benchmark:MaxCallsPerSession", 50);
 
-            var promptOptions = BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson!);
-            string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
-            var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode);
-
-            // The re-run's own instrument, recorded in its own columns. The five original
-            // fingerprints describe the instrument the run's other answers were produced under, and
-            // they are the only record that the prompt did not move between two runs; overwriting
-            // them falsifies the provenance of every answer this pass does not touch.
-            PopulateRerunInstrumentFingerprint(run, systemPrompt);
-
             VerifyCandidateDeliveryBeforeRun(
                 run, testedConfig, systemPrompt, segmentedPrompt, failedAnswers.FirstOrDefault()?.QuestionText, isRerun: true);
-
-            var suiteQuestions = (run.BenchmarkSuite?.Questions ?? new List<BenchmarkQuestion>())
-                .ToDictionary(q => q.OrderIndex, q => q.ExpectedPoints);
 
             _runManager.MarkStage(runId, BenchmarkRunStage.Answering);
 
@@ -861,9 +861,8 @@ public class BenchmarkService
                     maxResultLength, maxCallsPerSession, cancellationToken);
                 _runManager.MarkRerunAnswered(runId, answer.OrderIndex);
 
-                suiteQuestions.TryGetValue(answer.OrderIndex, out var ep);
                 await ExecutePerQuestionAssessmentAsync(
-                    db, configService, run, answer, ep,
+                    db, configService, run, answer, BenchmarkRunExamRecord.Rubric(answer),
                     assessorConfig, assessorApiKey, scoringConstants, cancellationToken);
                 _runManager.MarkRerunScored(runId, answer.OrderIndex);
             }
@@ -1111,7 +1110,7 @@ public class BenchmarkService
         {
             new { role = "system", content = systemPrompt }
         };
-        var board = run.BenchmarkSuite?.GameSnapshot;
+        var board = BenchmarkRunExamRecord.Board(run);
         if (board != null)
         {
             seed.Add(new
@@ -1159,7 +1158,7 @@ public class BenchmarkService
             seedHistory,
             segmentedPrompt,
             systemPrompt,
-            run.BenchmarkSuite?.GameSnapshot?.SanitizedText,
+            RunBoardText(run),
             questionNumber);
     }
 
@@ -1245,10 +1244,16 @@ public class BenchmarkService
     internal const string GradingSystemPrompt =
         "You are an objective AI benchmark evaluator. Strictly adhere to the requested JSON response format.";
 
-    /// <summary>The board block every per-question grading role reads ahead of the question; null for a suite without a board.</summary>
+    /// <summary>The board text the run was made with, from its record; null when it had no board.</summary>
+    internal static string? RunBoardText(BenchmarkRun run) => BenchmarkRunExamRecord.Board(run)?.SanitizedText;
+
+    /// <summary>The name of the board the run was made with, as the run recorded it; null when it had no board.</summary>
+    internal static string? RunBoardName(BenchmarkRun run) => BenchmarkRunExamRecord.Board(run) != null ? run.GameSnapshotNameUsed : null;
+
+    /// <summary>The board block every per-question grading role reads ahead of the question; null for a run without a board.</summary>
     internal static string? GradingBoardBlock(BenchmarkRun run)
         => BenchmarkAssessmentPrompt.BuildGradingBoardBlock(
-            run.BenchmarkSuite?.GameSnapshot?.Name, run.BenchmarkSuite?.GameSnapshot?.SanitizedText);
+            RunBoardName(run), RunBoardText(run));
 
     /// <summary>
     /// Runs <see cref="BenchmarkGradingRequestProbe"/> against <paramref name="request"/> through
@@ -1291,8 +1296,8 @@ public class BenchmarkService
             "claim verifier",
             request.SystemPrompt ?? string.Empty,
             BenchmarkClaimVerificationPrompt.BuildBoardBlock(
-                run.BenchmarkSuite?.GameSnapshot?.Name, run.BenchmarkSuite?.GameSnapshot?.SanitizedText),
-            run.BenchmarkSuite?.GameSnapshot?.SanitizedText,
+                RunBoardName(run), RunBoardText(run)),
+            RunBoardText(run),
             BenchmarkClaimVerificationPrompt.QuestionBlockMarker,
             questionNumber);
 
@@ -1306,7 +1311,7 @@ public class BenchmarkService
             role,
             request.SegmentedPrompt?.FullPrompt ?? request.SystemPrompt ?? string.Empty,
             GradingBoardBlock(run),
-            run.BenchmarkSuite?.GameSnapshot?.SanitizedText,
+            RunBoardText(run),
             BenchmarkAssessmentPrompt.QuestionBlockMarker,
             questionNumber);
 
@@ -1527,6 +1532,10 @@ public class BenchmarkService
             BenchmarkQuestionId = question.Id,
             BenchmarkQuestionIdUsed = question.Id,
             ItemRevisionUsed = question.ItemRevision,
+
+            // The rubric every later re-grade of this answer reads.
+            ExpectedPointsUsed = question.ExpectedPoints,
+            ExpectedPointsRecorded = true,
 
             QuestionText = question.QuestionText,
             Difficulty = question.Difficulty,
@@ -2615,14 +2624,10 @@ public class BenchmarkService
             "Benchmark run {RunId}: outlier sweep re-grading {Count} answer(s) more than {Delta} points below the median of {Median}.",
             run.Id, candidates.Count, delta, median);
 
-        var suiteQuestions = await db.BenchmarkQuestions
-            .Where(q => q.BenchmarkSuiteId == run.BenchmarkSuiteId)
-            .ToDictionaryAsync(q => q.OrderIndex, q => q.ExpectedPoints, cancellationToken);
-
         foreach (var answer in candidates)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            suiteQuestions.TryGetValue(answer.OrderIndex, out var expectedPoints);
+            string? expectedPoints = BenchmarkRunExamRecord.Rubric(answer);
 
             try
             {
@@ -2711,10 +2716,6 @@ public class BenchmarkService
             "Benchmark run {RunId}: sample top-up re-grading {Count} answer(s) to reach the configured minimum sample of {MinimumSample} ({AlreadyGraded} already graded twice).",
             run.Id, candidates.Count, minimumSample, alreadyGraded);
 
-        var suiteQuestions = await db.BenchmarkQuestions
-            .Where(q => q.BenchmarkSuiteId == run.BenchmarkSuiteId)
-            .ToDictionaryAsync(q => q.OrderIndex, q => q.ExpectedPoints, cancellationToken);
-
         // "Lowest quality score first" is the selection rule and was never an execution order, so
         // the selected opinions run concurrently under the same bound the per-question grading
         // pipeline uses. Each owns a DI scope and re-loads its answer by Id there, so no DbContext
@@ -2730,7 +2731,7 @@ public class BenchmarkService
                 try
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    suiteQuestions.TryGetValue(selected.OrderIndex, out var expectedPoints);
+                    string? expectedPoints = BenchmarkRunExamRecord.Rubric(selected);
 
                     using var scope = _scopeFactory.CreateScope();
                     var sDb = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -2840,10 +2841,6 @@ public class BenchmarkService
             "Benchmark run {RunId}: running claim verification for {Count} answer(s) with unverified or disputed claims using {Verifier}.",
             run.Id, candidateAnswers.Count, verifierConfig.DisplayName ?? verifierConfig.ModelId);
 
-        var suiteQuestions = await db.BenchmarkQuestions
-            .Where(q => q.BenchmarkSuiteId == run.BenchmarkSuiteId)
-            .ToDictionaryAsync(q => q.OrderIndex, q => q.ExpectedPoints, cancellationToken);
-
         // Optional deterministic verifier token budget (analysis_v4.md § 8.2): cost is unbounded
         // by default because a run-level cap on claim *count* would still let one expensive answer
         // (run 14: ~103 k input tokens per answer) blow the budget alone. Default 0 = unlimited, so
@@ -2874,7 +2871,7 @@ public class BenchmarkService
                 continue;
             }
 
-            suiteQuestions.TryGetValue(answer.OrderIndex, out var expectedPoints);
+            string? expectedPoints = BenchmarkRunExamRecord.Rubric(answer);
 
             await VerifyAnswerClaimsAsync(
                 db, configService, run, answer, verifierConfig, verifierApiKey, expectedPoints, cancellationToken);
@@ -3053,13 +3050,7 @@ public class BenchmarkService
             return;
         }
 
-        if (expectedPoints == null)
-        {
-            expectedPoints = await db.BenchmarkQuestions
-                .Where(q => q.BenchmarkSuiteId == run.BenchmarkSuiteId && q.OrderIndex == answer.OrderIndex)
-                .Select(q => q.ExpectedPoints)
-                .FirstOrDefaultAsync(cancellationToken);
-        }
+        expectedPoints ??= BenchmarkRunExamRecord.Rubric(answer);
 
         var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
         int toolCallBudget = _configuration.GetValue<int>("Benchmark:ClaimVerification:ToolCallBudget", 15);
@@ -3083,8 +3074,8 @@ public class BenchmarkService
             isCriticalErrorAdjudication: isCriticalErrorAdjudication,
             isOutOfRubricAdjudication: isOutOfRubricAdjudication,
             assessorEvidence: accuracyEvidence,
-            boardName: run.BenchmarkSuite?.GameSnapshot?.Name,
-            boardText: run.BenchmarkSuite?.GameSnapshot?.SanitizedText,
+            boardName: RunBoardName(run),
+            boardText: RunBoardText(run),
             criticalErrorQuoteContext: isCriticalErrorAdjudication
                 ? BenchmarkClaimVerificationPrompt.CriticalErrorQuoteContext(answer.AnswerText, answer.CriticalErrorQuote)
                 : null,
@@ -4177,6 +4168,12 @@ public class BenchmarkService
             return;
         }
 
+        if (BenchmarkRunExamRecord.BoardUnknown(run))
+        {
+            _logger.LogWarning("Assessor calibration of benchmark run {RunId} refused: {Reason}", runId, BenchmarkRunExamRecord.BoardNotRecordedRefusal);
+            return;
+        }
+
         var calibration = new BenchmarkAssessorCalibration
         {
             BenchmarkRunId = run.Id,
@@ -4204,8 +4201,6 @@ public class BenchmarkService
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
-        var suiteQuestions = run.BenchmarkSuite?.Questions ?? new List<BenchmarkQuestion>();
-
         var profile = run.ScoringProfileId.HasValue
             ? await _scoringProfileService.GetProfileByIdAsync(run.ScoringProfileId.Value) ?? await _scoringProfileService.GetDefaultProfileAsync()
             : await _scoringProfileService.GetDefaultProfileAsync();
@@ -4215,6 +4210,7 @@ public class BenchmarkService
         var deltas = new List<int>();
         int disagreements = 0;
         var sw = Stopwatch.StartNew();
+        int unrecordedRubricCount = 0;
 
         foreach (var answer in answers)
         {
@@ -4228,11 +4224,15 @@ public class BenchmarkService
                 continue;
             }
 
-            // Prefers the stored question key; the order index is the fallback for a historical
-            // answer that has none, which is the case a suite reorder gets wrong.
-            string? expectedPoints = answer.BenchmarkQuestionId.HasValue
-                ? suiteQuestions.FirstOrDefault(q => q.Id == answer.BenchmarkQuestionId.Value)?.ExpectedPoints
-                : suiteQuestions.FirstOrDefault(q => q.OrderIndex == answer.OrderIndex)?.ExpectedPoints;
+            // Only the rubric the answer was graded against can calibrate against its verdict.
+            if (!answer.ExpectedPointsRecorded)
+            {
+                unrecordedRubricCount++;
+                calibration.SkippedAnswerCount++;
+                continue;
+            }
+
+            string? expectedPoints = BenchmarkRunExamRecord.Rubric(answer);
 
             AssessorVerdict verdict;
             try
@@ -4298,6 +4298,13 @@ public class BenchmarkService
         }
 
         sw.Stop();
+        if (unrecordedRubricCount > 0)
+        {
+            _logger.LogWarning(
+                "Calibration of run {RunId} skipped {Count} answer(s) whose rubric was not recorded.",
+                run.Id, unrecordedRubricCount);
+        }
+
         calibration.DurationMs = sw.ElapsedMilliseconds;
         calibration.DisagreementCount = disagreements;
         calibration.MeanAbsDelta = deltas.Count > 0 ? deltas.Average() : null;
@@ -4773,25 +4780,6 @@ public class BenchmarkService
             assessorConfig.DisplayName ?? assessorConfig.ModelId, answer.QualityScore.Value);
     }
 
-    /// <summary>
-    /// The suite question an answer belongs to. Prefers the stored foreign key and falls back to
-    /// the order index only where there is none — a historical answer the backfill could not
-    /// match unambiguously. The fallback is wrong after a reorder, which is exactly why the key
-    /// exists; keeping it is still better than returning nothing for every pre-key answer.
-    /// </summary>
-    private static BenchmarkQuestion? MatchSuiteQuestion(BenchmarkRun run, BenchmarkRunAnswer answer)
-    {
-        var questions = run.BenchmarkSuite?.Questions;
-        if (questions == null) return null;
-
-        if (answer.BenchmarkQuestionId.HasValue)
-        {
-            return questions.FirstOrDefault(q => q.Id == answer.BenchmarkQuestionId.Value);
-        }
-
-        return questions.FirstOrDefault(q => q.OrderIndex == answer.OrderIndex);
-    }
-
     /// <summary>Trigger names, stored on the answer and printed in the report.</summary>
     internal static class SecondOpinionTriggers
     {
@@ -5247,6 +5235,7 @@ public class BenchmarkService
             {
                 OrderIndex = a.OrderIndex,
                 QuestionText = a.QuestionText,
+                ExpectedPoints = BenchmarkRunExamRecord.Rubric(a),
                 AccuracyLevel = a.AccuracyLevel,
                 CompletenessLevel = a.CompletenessLevel,
                 ConcisenessLevel = a.ConcisenessLevel,
@@ -5292,30 +5281,9 @@ public class BenchmarkService
             };
         }).ToList();
 
-        string? boardName = null;
-        string? boardDigest = null;
-        if (run.BenchmarkSuiteId.HasValue)
-        {
-            var suiteQuestions = await db.BenchmarkQuestions
-                .Where(q => q.BenchmarkSuiteId == run.BenchmarkSuiteId.Value)
-                .ToDictionaryAsync(q => q.OrderIndex, q => q.ExpectedPoints, cancellationToken);
-
-            foreach (var s in summaries)
-            {
-                if (suiteQuestions.TryGetValue(s.OrderIndex, out var ep))
-                {
-                    s.ExpectedPoints = ep;
-                }
-            }
-
-            // Queried rather than read off run.BenchmarkSuite: not every caller loads the suite.
-            var board = await db.BenchmarkSuites
-                .Where(s => s.Id == run.BenchmarkSuiteId.Value && s.GameSnapshot != null)
-                .Select(s => new { s.GameSnapshot!.Name, s.GameSnapshot.DigestText })
-                .FirstOrDefaultAsync(cancellationToken);
-            boardName = board?.Name;
-            boardDigest = board?.DigestText;
-        }
+        var board = BenchmarkRunExamRecord.Board(run);
+        string? boardName = board != null ? run.GameSnapshotNameUsed : null;
+        string? boardDigest = board?.DigestText;
 
         string synthesisPrompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt(run.SuiteName, summaries, boardName, boardDigest);
         // No board block: the synthesis reads the board's digest inside its prompt, never the whole board.
@@ -6061,8 +6029,7 @@ public class BenchmarkService
         // past every handler and past the finally that releases the run manager, leaving the row
         // reading Running with no owner. The cancellation check is the first statement in the try.
         var answer = await db.BenchmarkRunAnswers
-            .Include(a => a.BenchmarkRun).ThenInclude(r => r.BenchmarkSuite).ThenInclude(s => s!.Questions)
-            .Include(a => a.BenchmarkRun).ThenInclude(r => r.BenchmarkSuite).ThenInclude(s => s!.GameSnapshot)
+            .Include(a => a.BenchmarkRun).ThenInclude(r => r.BoardSnapshot)
             .FirstOrDefaultAsync(a => a.Id == answerId, CancellationToken.None);
 
         if (answer == null)
@@ -6087,6 +6054,12 @@ public class BenchmarkService
             if (!IsCurrentScoringMethod(run))
             {
                 await RestoreTerminalStatusAsync(db, run, ScoringMethodRefusal(run));
+                return;
+            }
+
+            if (BenchmarkRunExamRecord.RefusalFor(run, new[] { answer }) is { } recordRefusal)
+            {
+                await RestoreTerminalStatusAsync(db, run, recordRefusal);
                 return;
             }
 
@@ -6118,8 +6091,11 @@ public class BenchmarkService
 
             string testedApiKey = _cryptoService.Decrypt(testedConfig.EncryptedApiKey, testedConfig.ApiKeyNonce!, testedConfig.ApiKeyTag!, "SYSTEM_API_KEY");
 
-            run.Status = BenchmarkRunStatus.Running;
-            run.CompletedAtUtc = null;
+            var promptOptions = BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson!);
+            string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
+            var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode);
+
+            BeginRerun(run, systemPrompt);
             await db.SaveChangesAsync(cancellationToken);
 
             answer.AccuracyLevel = null;
@@ -6153,15 +6129,10 @@ public class BenchmarkService
             int maxCallsPerSession = _configuration.GetValue<int>("Benchmark:MaxCallsPerSession", 50);
             int maxToolCallsPerQuestion = ResolveToolCallBudget();
 
-            var promptOptions = BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson!);
-            string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
-            var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode);
-            PopulateInstrumentFingerprint(run, systemPrompt);
-
             VerifyCandidateDeliveryBeforeRun(
                 run, testedConfig, systemPrompt, segmentedPrompt, answer.QuestionText, isRerun: true);
 
-            string? expectedPoints = MatchSuiteQuestion(run, answer)?.ExpectedPoints;
+            string? expectedPoints = BenchmarkRunExamRecord.Rubric(answer);
 
             // A one-question scope, on the same contract as the failed-question re-run: the row is
             // overwritten in place, so the suite totals say nothing about this pass.
@@ -6178,14 +6149,20 @@ public class BenchmarkService
                 assessorConfig, assessorApiKey, scoringConstants, cancellationToken);
             _runManager.MarkRerunScored(runId, answer.OrderIndex);
 
+            run.RerunCompletedAtUtc = DateTime.UtcNow;
+
             var allAnswers = await db.BenchmarkRunAnswers
                 .Where(a => a.BenchmarkRunId == run.Id)
                 .ToListAsync(CancellationToken.None);
-            BenchmarkRunFinalizer.Apply(run, allAnswers);
+
+            // preserveCompletedAt: the run's elapsed wall time is the original execution's; the
+            // re-run's own span is in the two Rerun columns.
+            BenchmarkRunFinalizer.Apply(run, allAnswers, preserveCompletedAt: true);
             await db.SaveChangesAsync(CancellationToken.None);
         }
         catch (OperationCanceledException)
         {
+            run.RerunCompletedAtUtc = DateTime.UtcNow;
             await RestoreTerminalStatusAsync(db, run, "Answer re-run canceled.");
         }
         catch (Exception ex)
@@ -6193,6 +6170,7 @@ public class BenchmarkService
             _logger.LogError(ex, "Rerun failed for answer {AnswerId}.", answerId);
             run.Status = BenchmarkRunStatus.CompletedWithErrors;
             run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(ex.Message);
+            run.RerunCompletedAtUtc = DateTime.UtcNow;
             await db.SaveChangesAsync(CancellationToken.None);
         }
         finally
@@ -6274,6 +6252,19 @@ public class BenchmarkService
                 return;
             }
 
+            if (BenchmarkRunExamRecord.RefusalFor(run, new[] { answer }) is { } recordRefusal)
+            {
+                if (trial)
+                {
+                    await RestoreCapturedStatusAsync(db, run, originalStatus, originalCompletedAtUtc);
+                }
+                else
+                {
+                    await RestoreTerminalStatusAsync(db, run, recordRefusal);
+                }
+                return;
+            }
+
             var (assessorConfig, assessorApiKey, error) = await ResolveAssessorAsync(db, run, assessorConfigId, cancellationToken);
             if (assessorConfig == null || assessorApiKey == null)
             {
@@ -6303,12 +6294,7 @@ public class BenchmarkService
                 : await _scoringProfileService.GetDefaultProfileAsync();
             var constants = _scoringProfileService.ToConstants(profile);
 
-            string? expectedPoints = null;
-            if (run.BenchmarkSuite != null)
-            {
-                var suiteQ = MatchSuiteQuestion(run, answer);
-                expectedPoints = suiteQ?.ExpectedPoints;
-            }
+            string? expectedPoints = BenchmarkRunExamRecord.Rubric(answer);
 
             if (trial)
             {
@@ -6399,6 +6385,7 @@ public class BenchmarkService
         // reading Running with no owner. The cancellation check is the first statement in the try.
         var run = await db.BenchmarkRuns
             .Include(r => r.Answers)
+            .Include(r => r.BoardSnapshot)
             .FirstOrDefaultAsync(r => r.Id == runId, CancellationToken.None);
 
         if (run == null)
@@ -6413,6 +6400,13 @@ public class BenchmarkService
             // Before the assessor is resolved, so a retry launched with an already-cancelled token
             // takes the restore path below rather than failing on whatever it touched first.
             cancellationToken.ThrowIfCancellationRequested();
+
+            // The synthesis reads every answer's rubric and the board's digest.
+            if (BenchmarkRunExamRecord.RefusalFor(run, run.Answers) is { } recordRefusal)
+            {
+                await RestoreTerminalStatusAsync(db, run, recordRefusal);
+                return;
+            }
 
             var (assessorConfig, assessorApiKey, error) = await ResolveAssessorAsync(db, run, assessorConfigId, cancellationToken);
             if (assessorConfig == null || assessorApiKey == null)
@@ -6490,6 +6484,17 @@ public class BenchmarkService
                 return;
             }
 
+            var unscoredAnswers = run.Answers
+                .Where(a => a.AssessmentStatus != BenchmarkAssessmentStatus.Scored)
+                .OrderBy(a => a.OrderIndex)
+                .ToList();
+
+            if (BenchmarkRunExamRecord.RefusalFor(run, unscoredAnswers) is { } recordRefusal)
+            {
+                await RestoreTerminalStatusAsync(db, run, recordRefusal);
+                return;
+            }
+
             var (assessorConfig, assessorApiKey, error) = await ResolveAssessorAsync(db, run, assessorConfigId, cancellationToken);
             if (assessorConfig == null || assessorApiKey == null)
             {
@@ -6506,14 +6511,6 @@ public class BenchmarkService
                 : await _scoringProfileService.GetDefaultProfileAsync();
             var constants = _scoringProfileService.ToConstants(profile);
 
-            var suiteQuestions = (run.BenchmarkSuite?.Questions ?? new List<BenchmarkQuestion>())
-                .ToDictionary(q => q.OrderIndex, q => q.ExpectedPoints);
-
-            var unscoredAnswers = run.Answers
-                .Where(a => a.AssessmentStatus != BenchmarkAssessmentStatus.Scored)
-                .OrderBy(a => a.OrderIndex)
-                .ToList();
-
             foreach (var answer in unscoredAnswers)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -6522,7 +6519,7 @@ public class BenchmarkService
                     return;
                 }
 
-                string? expectedPoints = suiteQuestions.TryGetValue(answer.OrderIndex, out var ep) ? ep : null;
+                string? expectedPoints = BenchmarkRunExamRecord.Rubric(answer);
                 await ExecutePerQuestionAssessmentAsync(
                     db, configService, run, answer, expectedPoints,
                     assessorConfig, assessorApiKey, constants, cancellationToken);
@@ -6564,13 +6561,12 @@ public class BenchmarkService
         // what the handlers there need in order to restore the status. Cancelling it would throw
         // past every handler and past the finally that releases the run manager, leaving the row
         // reading Running with no owner. The cancellation check is the first statement in the try.
-        // The suite's board is part of the verifier's prompt from harness 29, so this path loads it
-        // as the two run-level paths already do; without it a retry would verify board claims
+        // The run's board is part of the verifier's prompt from harness 29, so this path loads its
+        // record as the two run-level paths do; without it a retry would verify board claims
         // against the rubric alone.
         var run = await db.BenchmarkRuns
             .Include(r => r.Answers)
-            .Include(r => r.BenchmarkSuite)
-            .ThenInclude(s => s!.GameSnapshot)
+            .Include(r => r.BoardSnapshot)
             .FirstOrDefaultAsync(r => r.Id == runId, CancellationToken.None);
 
         if (run == null)
@@ -6589,6 +6585,13 @@ public class BenchmarkService
             if (!IsCurrentScoringMethod(run))
             {
                 await RestoreTerminalStatusAsync(db, run, ScoringMethodRefusal(run));
+                return;
+            }
+
+            // Verification picks its answers among all of the run's; any of them reads its rubric.
+            if (BenchmarkRunExamRecord.RefusalFor(run, run.Answers) is { } recordRefusal)
+            {
+                await RestoreTerminalStatusAsync(db, run, recordRefusal);
                 return;
             }
 
@@ -6671,6 +6674,11 @@ public class BenchmarkService
         return new SegmentedPrompt(frozen, session, volatileSuffix);
     }
 
+    /// <summary>
+    /// The five instrument fingerprints of a run's first execution. Called only for a first run and
+    /// for the throwaway probe of <see cref="ComputeCurrentInstrumentFingerprintAsync"/>; re-runs use
+    /// <see cref="PopulateRerunInstrumentFingerprint"/>.
+    /// </summary>
     internal void PopulateInstrumentFingerprint(BenchmarkRun run, string systemPrompt)
     {
         using var sha256 = SHA256.Create();
@@ -6706,7 +6714,7 @@ public class BenchmarkService
     }
 
     /// <summary>
-    /// The instrument a failed-question re-run executed under, written to the three <c>Rerun*</c>
+    /// The instrument the most recent re-run (failed-question or single-answer) executed under, written to the three <c>Rerun*</c>
     /// instrument columns: the two fingerprints that a code or guide change can move, and the harness
     /// version the re-run's code carries. The three corpus heads belong to the corpora, which a re-run
     /// reads exactly as the original run did, and duplicating them would invite a reader to compare a
@@ -6719,6 +6727,21 @@ public class BenchmarkService
         run.RerunCandidateSystemPromptSha256 = Convert.ToHexString(promptHash).ToLowerInvariant();
         run.RerunToolGuidesSha256 = ComputeToolGuidesSha256();
         run.RerunHarnessVersion = BenchmarkAssessmentPrompt.HarnessVersion;
+    }
+
+    /// <summary>
+    /// Marks a re-run (failed-question or single-answer) as started: Running, its own span opened and
+    /// its instrument recorded in the <c>Rerun*</c> columns. The five original fingerprints and
+    /// <see cref="BenchmarkRun.CompletedAtUtc"/> are left alone: they describe the instrument and the
+    /// elapsed wall time of the execution that produced the run's other answers, and they are the
+    /// only record that the prompt did not move between two runs.
+    /// </summary>
+    internal void BeginRerun(BenchmarkRun run, string systemPrompt)
+    {
+        run.Status = BenchmarkRunStatus.Running;
+        run.RerunStartedAtUtc = DateTime.UtcNow;
+        run.RerunCompletedAtUtc = null;
+        PopulateRerunInstrumentFingerprint(run, systemPrompt);
     }
 
     internal static string? ComputeToolGuidesSha256()

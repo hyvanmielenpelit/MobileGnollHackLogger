@@ -254,6 +254,7 @@ public class BenchmarkServiceTests
             {
                 new BenchmarkRunAnswer
                 {
+                    ExpectedPointsRecorded = true,
                     OrderIndex = 1,
                     QuestionText = "Question 1",
                     Difficulty = BenchmarkDifficulty.Simple,
@@ -275,6 +276,7 @@ public class BenchmarkServiceTests
                 },
                 new BenchmarkRunAnswer
                 {
+                    ExpectedPointsRecorded = true,
                     OrderIndex = 2,
                     QuestionText = "Question 2",
                     Difficulty = BenchmarkDifficulty.Intermediate,
@@ -786,6 +788,7 @@ public class BenchmarkServiceTests
             {
                 run.Answers.Add(new BenchmarkRunAnswer
                 {
+                    ExpectedPointsRecorded = true,
                     OrderIndex = i,
                     QuestionText = $"Q{i}",
                     AnswerText = $"A{i}",
@@ -803,6 +806,7 @@ public class BenchmarkServiceTests
             // The zero the rescore must keep in the index: a question the model failed to answer.
             run.Answers.Add(new BenchmarkRunAnswer
             {
+                ExpectedPointsRecorded = true,
                 OrderIndex = 4,
                 QuestionText = "Q4",
                 AnswerText = string.Empty,
@@ -974,6 +978,7 @@ public class BenchmarkServiceTests
             {
                 new BenchmarkRunAnswer
                 {
+                    ExpectedPointsRecorded = true,
                     OrderIndex = 1,
                     Status = BenchmarkAnswerStatus.Ok,
                     QualityScore = 25,
@@ -1004,6 +1009,7 @@ public class BenchmarkServiceTests
     {
         var answer = new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             AnswerFlags = (int)(BenchmarkAnswerFlags.ContestedVerdict | BenchmarkAnswerFlags.UnevidencedDeduction),
             QualityScore = 80
         };
@@ -1021,6 +1027,7 @@ public class BenchmarkServiceTests
     {
         var answer = new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             AnswerFlags = (int)BenchmarkAnswerFlags.UnevidencedDeduction,
             UnverifiedClaimCount = 3,
             AccuracyLevel = 2,
@@ -1088,6 +1095,7 @@ public class BenchmarkServiceTests
 
             var answer = new BenchmarkRunAnswer
             {
+                ExpectedPointsRecorded = true,
                 BenchmarkRunId = runId,
                 OrderIndex = 1,
                 QuestionText = "Question 1",
@@ -1226,6 +1234,7 @@ public class BenchmarkServiceTests
     {
         var answer = new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             AnswerFlags = (int)BenchmarkAnswerFlags.UnevidencedDeduction,
             UnverifiedClaimCount = 2,
             AccuracyLevel = 4,
@@ -1247,6 +1256,7 @@ public class BenchmarkServiceTests
     {
         var answer = new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             AnswerFlags = (int)BenchmarkAnswerFlags.RefutedClaim,
             QualityScore = 85
         };
@@ -1264,6 +1274,7 @@ public class BenchmarkServiceTests
     {
         var answer = new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             AnswerFlags = (int)BenchmarkAnswerFlags.OmissionAsAccuracy,
             QualityScore = 85
         };
@@ -1282,6 +1293,7 @@ public class BenchmarkServiceTests
         // When claim verification positively supported all claims, the UnverifiedClaims trigger does not fire
         var answer = new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             UnverifiedClaimCount = 3,
             AccuracyLevel = 3,
             ClaimsSupportedCount = 3,
@@ -1303,6 +1315,7 @@ public class BenchmarkServiceTests
     {
         var answer = new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             UnverifiedClaimCount = 3,
             AccuracyLevel = 3,
             ClaimsSupportedCount = 2,
@@ -1536,6 +1549,7 @@ public class BenchmarkServiceTests
     {
         var answer = new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             OrderIndex = 12,
             CriticalErrorQuote = "Exceptional body armor gives +2 AC and +1 blocking.",
             AnswerText = "Exceptional body armor gives +2 AC and +1 blocking. Elite shields give +3 AC and +1 blocking.",
@@ -1657,6 +1671,7 @@ public class BenchmarkServiceTests
             {
                 seedDb.BenchmarkRunAnswers.Add(new BenchmarkRunAnswer
                 {
+                    ExpectedPointsRecorded = true,
                     BenchmarkRunId = runId,
                     OrderIndex = orderIndex,
                     QuestionText = $"Q{orderIndex}",
@@ -1866,6 +1881,7 @@ public class BenchmarkServiceTests
 
             seedDb.BenchmarkRunAnswers.Add(new BenchmarkRunAnswer
             {
+                ExpectedPointsRecorded = true,
                 BenchmarkRunId = runId,
                 OrderIndex = 1,
                 QuestionText = "Question 1",
@@ -1881,6 +1897,7 @@ public class BenchmarkServiceTests
             {
                 seedDb.BenchmarkRunAnswers.Add(new BenchmarkRunAnswer
                 {
+                    ExpectedPointsRecorded = true,
                     BenchmarkRunId = runId,
                     OrderIndex = orderIndex,
                     QuestionText = $"Question {orderIndex}",
@@ -1935,6 +1952,7 @@ public class BenchmarkServiceTests
     {
         return new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             OrderIndex = orderIndex,
             QuestionText = $"Question {orderIndex}",
             Difficulty = difficulty,

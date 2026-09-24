@@ -45,19 +45,20 @@ public class BenchmarkGradingRequestProbeTests
     private static BenchmarkRun RunWith(bool withBoard)
     {
         var suite = new BenchmarkSuite { Id = 1, Name = "Snapshot Suite" };
-        if (withBoard)
-        {
-            suite.GameSnapshot = new BenchmarkGameSnapshot
-            {
-                Id = 7,
-                Name = "Tommi2",
-                SanitizedText = BoardText,
-                Sha256 = new string('0', 64),
-                CaptureMethod = "YamlImport"
-            };
-        }
+        BenchmarkRunBoardSnapshot? board = withBoard
+            ? new BenchmarkRunBoardSnapshot { Id = 7, Sha256 = new string('1', 64), SanitizedText = BoardText, CharCount = BoardText.Length }
+            : null;
 
-        return new BenchmarkRun { Id = 54, SuiteName = "Snapshot Suite", BenchmarkSuite = suite };
+        return new BenchmarkRun
+        {
+            Id = 54,
+            SuiteName = "Snapshot Suite",
+            BenchmarkSuite = suite,
+            GameSnapshotNameUsed = board != null ? "Tommi2" : null,
+            GameSnapshotSha256Used = board != null ? new string('0', 64) : null,
+            BoardSnapshotId = board?.Id,
+            BoardSnapshot = board
+        };
     }
 
     /// <summary>The assessor's request for one answer, built the way the grading paths build it.</summary>

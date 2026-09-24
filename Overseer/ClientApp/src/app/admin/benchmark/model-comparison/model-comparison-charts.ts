@@ -96,8 +96,8 @@ export interface ModelComparisonContext {
   readonly scoredItemsMin: number;
   /** Most scored questions behind any charted entry's index. */
   readonly scoredItemsMax: number;
-  /** Questions the suite holds, or 0 when unknown. */
-  readonly suiteItemCount: number;
+  /** Questions these runs were asked, or 0 when unknown. */
+  readonly examItemCount: number;
   /** The asked count every charted entry shares, or null when they differ. Labels only; no arithmetic reads it. */
   readonly questionsAskedPerRun: number | null;
   /** The pricing basis and its date, as the view's header, methods block and table name it. */
@@ -812,7 +812,7 @@ function countBadges(plotted: readonly ModelComparisonEntry[], context: ModelCom
   return [
     { text: `${plotted.length} ${plotted.length === 1 ? 'model' : 'models'}`, tone: 'neutral', kind: 'models' },
     runsBadge(plotted),
-    questionsBadge(context.scoredItemsMin, context.scoredItemsMax, context.suiteItemCount),
+    questionsBadge(context.scoredItemsMin, context.scoredItemsMax, context.examItemCount),
   ];
 }
 

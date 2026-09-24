@@ -462,8 +462,9 @@ public class BenchmarkComparabilityIndexTests
     }
 
     [Fact]
-    public async Task LargestConditionKeys_SetsDisplayValueOnTheSuiteRow_WhenTheSuiteHasAName()
+    public async Task LargestConditionKeys_SetsDisplayValueOnTheSuiteRow_FromTheNameTheRunsRecorded()
     {
+        // The live suite has since been renamed; the row shows the name the run was made under.
         var options = NewDatabase();
         await SeedAsync(options, new[] { Run(1) });
         using (var db = new ApplicationDbContext(options))
@@ -474,7 +475,7 @@ public class BenchmarkComparabilityIndexTests
 
         var dto = await IndexAsync(options, runIds: new long[] { 1 });
 
-        Assert.Equal("NetHack Wiki Suite (#5)", KeyValue(dto, BenchmarkComparabilityKey.SuiteKey).DisplayValue);
+        Assert.Equal("GnollHack Player Assistance Benchmark Suite (#5)", KeyValue(dto, BenchmarkComparabilityKey.SuiteKey).DisplayValue);
 
         // Suite is the one must-match value whose meaning lives in another table; every other row
         // has no friendlier rendering than its raw value.
@@ -484,10 +485,12 @@ public class BenchmarkComparabilityIndexTests
     }
 
     [Fact]
-    public async Task LargestConditionKeys_LeavesTheSuiteRowsDisplayValueNull_WhenTheSuiteHasNoName()
+    public async Task LargestConditionKeys_LeavesTheSuiteRowsDisplayValueNull_WhenTheRunsRecordedNoName()
     {
         var options = NewDatabase();
-        await SeedAsync(options, new[] { Run(1) });
+        var run = Run(1);
+        run.SuiteName = string.Empty;
+        await SeedAsync(options, new[] { run });
 
         var dto = await IndexAsync(options, runIds: new long[] { 1 });
 

@@ -334,6 +334,7 @@ public class BenchmarkRunLauncher
             BenchmarkSuiteIdUsed = suite.Id,
             SuiteName = suite.Name,
             DefaultSuiteKeyUsed = suite.DefaultSuiteKey,
+            DefaultSuiteVersionUsed = suite.DefaultSuiteVersion,
             TestedModelConfigurationId = testedConfig.Id,
             TestedModelSnapshot = testedSnapshot,
 

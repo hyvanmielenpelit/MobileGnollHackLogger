@@ -86,6 +86,7 @@ public class BenchmarkScoringVersionGuardTests
         // unscored assessment (retry assessments) and a failed verification (retry verification).
         run.Answers.Add(new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             QuestionText = "Q1",
             AnswerText = "A1",
             Status = BenchmarkAnswerStatus.Ok,
@@ -100,6 +101,7 @@ public class BenchmarkScoringVersionGuardTests
         });
         run.Answers.Add(new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             QuestionText = "Q2",
             AnswerText = string.Empty,
             Status = BenchmarkAnswerStatus.ProviderError,
@@ -336,6 +338,7 @@ public class BenchmarkScoringVersionGuardTests
             };
             run.Answers.Add(new BenchmarkRunAnswer
             {
+                ExpectedPointsRecorded = true,
                 OrderIndex = 1,
                 QuestionText = "Q1",
                 AnswerText = "A1",

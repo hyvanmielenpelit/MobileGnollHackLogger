@@ -542,6 +542,7 @@ describe('MultiRunComponent', () => {
       treatmentRunIds: [51, 52, 53],
       pairedItemCount: 18,
       unpairedItemCount: 0,
+      revisionMismatchedItemCount: 0,
       meanDifference: 2.4,
       differenceStandardDeviation: 6.1,
       differenceConfidenceHalfWidth: 3.0,
@@ -570,6 +571,30 @@ describe('MultiRunComponent', () => {
     // The primary/secondary ordering is a claim about the method, not a layout choice.
     expect(comparison.indexOf('Wilcoxon p (primary)')).toBeLessThan(comparison.indexOf('Paired t p (secondary)'));
     expect(text('.mr-comparison-table tbody tr')).toContain('exploratory');
+    expect(comparison).not.toContain('different rubric revisions');
+  });
+
+  it('should say how many items were excluded for a rubric revision mismatch, under the unpaired line', () => {
+    const analysis = buildAnalysis({ comparedWithGroupId: 9, comparedWithGroupName: 'Baseline' });
+    analysis.comparison = {
+      baselineRunIds: [41],
+      treatmentRunIds: [51],
+      pairedItemCount: 15,
+      unpairedItemCount: 1,
+      revisionMismatchedItemCount: 2,
+      meanDifference: 1.0,
+      wilcoxon: { sampleSize: 15, zeroDifferenceCount: 0, statistic: 40, pValue: 0.3, method: 'exact', tiesPresent: false },
+      pairedT: { sampleSize: 15, meanDifference: 1.0, tStatistic: 0.9, pValue: 0.38 },
+      itemComparisons: [],
+      falseDiscoveryRate: 0.05,
+      exploratoryNote: null
+    } as any;
+    openAnalysed(analysis);
+
+    const note = text('.mr-comparison .section-note');
+    expect(note).toContain('1 item(s) appear on one side only and are excluded.');
+    expect(note).toContain('2 item(s) were graded under different rubric revisions on the two sides and are excluded.');
+    expect(note.indexOf('appear on one side only')).toBeLessThan(note.indexOf('different rubric revisions'));
   });
 
   // --- Formatting ---

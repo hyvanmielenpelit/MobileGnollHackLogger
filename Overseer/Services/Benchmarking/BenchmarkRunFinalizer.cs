@@ -508,7 +508,7 @@ public static class BenchmarkRunFinalizer
 
     /// <summary>
     /// <paramref name="preserveCompletedAt"/> keeps an already-recorded <c>CompletedAtUtc</c>: a
-    /// failed-question re-run finishes long after the run it repairs, and the run's elapsed wall time
+    /// re-run (failed-question or single-answer) finishes long after the run it repairs, and the run's elapsed wall time
     /// belongs to the original execution. The default is the first-run behaviour.
     ///
     /// When any answer has a terminal failure (<see cref="HasTerminalFailure"/>), the Quality Index,

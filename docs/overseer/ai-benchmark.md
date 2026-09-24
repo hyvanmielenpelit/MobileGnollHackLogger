@@ -828,15 +828,17 @@ re-run all change what a report — or a comparison across the boundary — mean
   line for it. `SpeedIndex` itself does not move: it was already computed only over `Status == Ok`
   answers, so the filter had already excluded them.
 - **The re-run's own fingerprint and timestamp columns.** Migration `BenchmarkHarness18Integrity`
-  adds four nullable `BenchmarkRun` columns for a failed-question re-run's own instrument:
+  adds four nullable `BenchmarkRun` columns for a re-run's own instrument — the failed-question
+  re-run's, and from 2026-09-24 the single-answer re-run's as well, so they describe the most recent
+  re-run of either kind (§ *Runs Are Independent of Later Suite Changes*):
   `RerunCandidateSystemPromptSha256`, `RerunToolGuidesSha256`, `RerunStartedAtUtc`,
   `RerunCompletedAtUtc`. The re-run records its own fingerprints instead of overwriting the run's
   original five, because those five are the only record that the instrument did not move between
   two runs; overwriting them on a re-run would falsify the provenance of every answer the re-run
   did not touch. The same reasoning covers the wall clock: `CompletedAtUtc` and `TotalDurationMs`
   stay the original execution's, and `BenchmarkRunFinalizer.Apply` gained an optional
-  `preserveCompletedAt` parameter (default `false`, the previous behaviour) that
-  `BenchmarkService.RunFailedQuestionsAsync` passes as `true` — a re-run launched hours later must
+  `preserveCompletedAt` parameter (default `false`, the previous behaviour) that both re-run paths
+  (`RunFailedQuestionsAsync` and `RerunSingleQuestionAsync`) pass as `true` — a re-run launched hours later must
   not absorb that interval into the run's own elapsed time. **All four columns read as "not
   recorded" on a run that was never re-run, never as zero.** Harness 22 later added a fifth,
   nullable `RerunHarnessVersion` (`nvarchar(16)`) alongside these four, stamped with the re-run's
@@ -1775,7 +1777,8 @@ harness 21 — a run stamped 22 differs from a run stamped 21 on `HarnessVersion
   `AddBenchmarkRerunHarnessVersion`) records the harness version the re-run itself ran under,
   stamped by `PopulateRerunInstrumentFingerprint` from `BenchmarkAssessmentPrompt.HarnessVersion`,
   and mapped through to the admin DTO. The exported report now renders a **"Repaired by a
-  failed-question re-run"** manifest block whenever `RerunStartedAtUtc` is set — not only when the
+  re-run"** manifest block (worded *failed-question re-run* before 2026-09-24, when the single-answer
+  re-run began recording into the same columns) whenever `RerunStartedAtUtc` is set — not only when the
   re-run's prompt or ToolGuides hash differs from the original run's — naming the re-run's own span
   and its harness version, printing *"not recorded (re-run predates harness 22)"* for a re-run
   stamped before this round. The End Time line is now labelled **"original execution"**, followed by
@@ -2481,6 +2484,98 @@ from stored data.
   recomputing is one click.
 - **What moves.** `$ / question` drops wherever answers were lost or rubrics revised, by the ratio of
   scored to asked. Whole-suite cost does not change: it is each entry's own mean run cost.
+
+### Runs Are Independent of Later Suite Changes (2026-09-24) — No Version Bump
+
+*Prompted by a Model Comparison of two old runs whose step 4 left questions out because their
+rubrics had been edited since.* A finished run is a closed record: editing, adding, deleting or
+reordering questions or rubrics, replacing or editing the board, and renaming or deleting the suite
+change nothing an old run shows, how it is re-graded, or how it compares. No suite operation is
+refused because old runs exist. `HarnessVersion` and `ScoringMethodVersion` do not move: a new run's
+grading input is byte-identical — the same rubric and board, now read from the run's own copy.
+
+- **The exam record** (migration `AddBenchmarkRunExamRecord`). Each answer stores the rubric it is
+  graded against (`ExpectedPointsUsed`, with `ExpectedPointsRecorded` separating "no rubric" from
+  "not known"), written when the answer row is created. Each run points at the board it was asked
+  and graded with (`BoardSnapshotId`) in the new append-only, content-addressed
+  `BenchmarkRunBoardSnapshots` table, written at launch beside the `GameSnapshot*Used` fields, and
+  records `DefaultSuiteVersionUsed`. See § 5 for the fields.
+- **The backfill, and its limits.** The migration records an answer's rubric only where its question
+  still exists at the revision the answer was made against — every text, band or rubric write bumps
+  `ItemRevision`, so an equal revision means an equal rubric — and links every run to a board record
+  where a live board still has the hash the run recorded; a `THROW` self-check fails the migration
+  if a run whose board still exists is left unlinked. What it cannot recover:
+  - an answer whose question was edited or deleted before this change has no recoverable rubric;
+  - an answer from before `AddBenchmarkQuestionIdentity` (2026-09-03) has no `ItemRevisionUsed`, so
+    its rubric is not provable and stays unrecorded even when the question is unchanged;
+  - a run whose board was replaced or edited before this change has no recoverable board;
+  - a backfilled board carries today's digest, which matters only to final synthesis;
+  - `DefaultSuiteVersionUsed` stays null for old runs, and the report prints the key alone, as it
+    effectively did before.
+- **Statistics read the runs, not the suite.** `BenchmarkRunExam.Build(runs)` builds detached
+  questions from the answer rows (§ 4, *Stable item identity*). `ItemRevision` is the highest graded
+  revision among a question's counted answers, `AssessedDifficulty` the rounded mean of the answers'
+  weights, and text, order and rubric come from the newest run. Group statistics, Multi-Run analysis
+  and Model Comparison compute over it; a group whose suite was deleted now analyses rather than
+  refusing, and a comparison entry of a deleted suite is measured rather than excluded. Mixed
+  revisions across runs already differ on the Fundamental key `SuiteItemRevisions`, so such a set is
+  *not comparable* and never pooled.
+- **Re-grading an old run reads its record.** `BenchmarkRunExamRecord.Rubric(answer)` and
+  `.Board(run)` replace every live-suite lookup on the grading paths — re-run failed questions,
+  re-run one answer, re-assess (applied and trial), retry failed assessments, retry claim
+  verification, rerun synthesis, the outlier sweep, the sample top-up and assessor calibration — and
+  `BenchmarkBoardGuard` checks the run's board record. Where the record is missing, the operation
+  refuses the whole run before anything changes: the controller returns `400` with a message starting
+  *Refused:* that names the questions by stored order (the *Action Error* box shows it), and the service
+  guards again, restoring the run's terminal status with the message in `ErrorMessage`. Assessor
+  calibration instead skips answers without a recorded rubric and logs the count. Today these
+  re-grades would have used the wrong rubric or none, silently.
+- **DTO changes.** `BenchmarkModelComparisonQualityDto.SuiteItemCount` is renamed `ExamItemCount` (the
+  questions these runs were asked) and `RevisedItemCount` is removed: nothing is left out for a later
+  rubric edit any more, so the revised-rubric coverage note is gone and the questions badge reads
+  *18 questions* for a fully scored 18-question exam, whatever the suite holds now.
+  `ItemCount + UnscoredItemCount == ExamItemCount`. The run detail DTO gains `GameSnapshotSha256Used`
+  and `HasBoardRecord`, and `GET api/admin/benchmark/runs/{id}/board` returns the run's board record
+  (`404` without a board, `409` when it is unknown). *View Game Snapshot* on the run detail opens that
+  board read-only.
+- **The `Compare` guard.** `BenchmarkGroupStatistics.Compare` pairs an item only when both sides'
+  `ItemRevision` agree; the rest go to the new `BenchmarkGroupComparison.RevisionMismatchedItemCount`,
+  and the report and Multi-Run note say so. `UnpairedItemCount` keeps meaning "present on one side
+  only".
+- **Names.** Group DTOs, group report file names and the comparability index show the name the runs
+  recorded (`SuiteName`), not the live suite's.
+- **Suite-operation hygiene.** `ReorderQuestions` returns `400` unless its list is a permutation of
+  the suite's question ids, and a refused *Delete Suite* (a run of it in progress) now shows its
+  message instead of failing silently.
+- **Stored Multi-Run analyses keep their figures until recomputed.** Sets graded under since-edited
+  rubrics move when recomputed: their questions are no longer left out.
+- **Model Comparison, step 3.** *Download table* and *Copy as Markdown* are icon-only `.action-btn`s
+  (file-with-arrow and copy glyphs) with `interestfor` tooltips and `aria-disabled` when there is
+  nothing to export, vertically centred beside the format select with a 12 px gap. The download
+  button's name follows the selected format (*Download the table as Excel (.xlsx)…*).
+
+#### The single-answer re-run keeps the run's provenance
+
+**The defect.** Re-running one answer called `PopulateInstrumentFingerprint`, overwriting the run's
+`CandidateSystemPromptSha256`, `CandidateSystemPromptText`, `ToolGuidesSha256` and the three corpus
+heads with the values current at re-run time, and cleared `CompletedAtUtc`, so the run's end moved to
+the re-run's end and its elapsed wall time absorbed the whole gap (a re-run that threw left no end
+time at all). Those fingerprints are what the comparability keys and the report's reproduction line
+read, so one re-run under a changed prompt relabelled every untouched answer and could move the run
+into or out of a comparison group; and the report's *Re-run under a different instrument* warning could
+never fire for it.
+
+**The fix.** Both re-run paths start through `BenchmarkService.BeginRerun`, which records the
+re-run's own prompt hash, ToolGuides hash and harness version in the `Rerun*` columns and opens its
+span; the single-answer re-run keeps `CompletedAtUtc`, closes `RerunCompletedAtUtc` on success,
+error and cancellation, and finalizes with `preserveCompletedAt: true`. Its endpoint sets
+`RerunStartedAtUtc` and clears `ErrorMessage` when it flips the run to Running, as the failed-question
+endpoint does. The `Rerun*` columns now describe the most recent re-run of either kind; the report's
+block reads *Repaired by a re-run*, or *Re-run under a different instrument* when the prompt or
+guides moved.
+
+**Known limit.** A run already re-run this way keeps the overwritten values: the originals were not
+kept anywhere.
 
 ### Comparison Figure Number Format and Axis Titles (2026-09-24) — No Version Bump
 
@@ -4121,6 +4216,15 @@ runs, and assuming it matches the current revision would be a claim the data doe
 Anything that merges questions with answers now prefers the FK and falls back to the order index
 only where there is none.
 
+**Suite Health reads the live questions; everything about runs reads the runs** (2026-09-24). Suite
+Health's subject is today's question, so it keeps passing the live suite. Group statistics, Multi-Run
+analysis and Model Comparison compute over `BenchmarkRunExam.Build(runs)`: one question per
+`BenchmarkItemAnalysis.QuestionKey` (`BenchmarkQuestionIdUsed ?? BenchmarkQuestionId`), with the text,
+order, rubric, revision and weight the runs recorded. A question deleted since stays in that exam
+through `BenchmarkQuestionIdUsed`; one added since is not part of it. The run progress dialog lists a
+run's own answers under their stored order index and text. Re-grading reads each answer's recorded
+rubric and the run's recorded board. See § *Runs Are Independent of Later Suite Changes*.
+
 ### Item statistics
 
 `BenchmarkItemAnalysis` — pure computation over stored runs, no AI calls, no writes.
@@ -4274,6 +4378,9 @@ BenchmarkSuite (1) ────┴───< (N) BenchmarkQuestion
 - **`BenchmarkRunAnswer`**: Order index, question text, sanitized visible answer text, thought text (reasoning), dimensional levels (0–6), dimensional scores, `QualityScore`, `SpeedScore`, `CriticalError`, `AssessedDifficulty`, `AssessmentStatus`, assessor comment, token/duration metrics, the assessor's evidence (`AssessmentEvidenceJson`, `CriticalErrorQuote`, `UnverifiedClaimCount`, `UnverifiedClaimsJson`), the second-opinion verdict and its `SecondOpinionTrigger`, re-assessment provenance (`PreviousQualityScore`, `ReassessedAtUtc`, `ReassessmentCount`), and the snapshot of every model that graded it (`AssessedByModelSnapshotId`, `SecondOpinionByModelSnapshotId`, `ClaimVerificationByModelSnapshotId`, `ReassessedByModelSnapshotId`, `EvidenceInformedByModelSnapshotId`).
 - **`BenchmarkRunAnswer` termination provenance**: `TerminationReason` describes what the harness loop did (canceled, budget exhausted, iteration limit, completed); `ProviderFinishReason` is the provider's own verbatim reason for ending the response, unmapped. Read together they separate an empty answer the model produced — a normal stop with no text, scored 0 from scoring method 10 — from one a transport defect destroyed, which stays unscored. Null means "not recorded" and never "stopped normally".
 - **`BenchmarkRunAnswer` item identity**: `BenchmarkQuestionId` (nullable FK, `DeleteBehavior.SetNull`) and `ItemRevisionUsed`. The stable link between an answer and the question it answers; before it existed, `OrderIndex` was the only link and a suite reorder silently re-attached every earlier run's answers to the wrong questions. Null means "unlinked" and is excluded from item analysis rather than guessed at.
+- **`BenchmarkRunAnswer` rubric record**: `ExpectedPointsUsed` (nvarchar(max), null) and `ExpectedPointsRecorded` (bit). The rubric the answer is graded against, copied when the answer row is created; every re-grade reads it, never the live question. `ExpectedPointsRecorded = false` means the rubric is not known, and any re-grade of that answer is refused; with it true, a null `ExpectedPointsUsed` means the question had no rubric points.
+- **`BenchmarkRun` exam record**: `BoardSnapshotId` (nullable FK to `BenchmarkRunBoardSnapshot`, `Restrict`) — the board text and digest the run was asked and graded with, null when the run had no board; a non-null `GameSnapshotSha256Used` with a null `BoardSnapshotId` means the board is unknown. `DefaultSuiteVersionUsed` (int, null) — the default-suite version at launch, which the report prints after the key.
+- **`BenchmarkRunBoardSnapshot`**: `Sha256` (`char(64)`, unique), `SanitizedText`, `DigestText`, `CharCount`, `CreatedAtUtc`. Append-only and content-addressed: the key is the lower-case hex SHA-256 of the UTF-16LE `SanitizedText + "\0" + (DigestText ?? "")`, so a digest change is a new row. No suite operation edits or deletes a row; written through `BenchmarkRunBoardSnapshotStore.GetOrCreateAsync` at launch.
 - **`BenchmarkAssessorCalibration`**: One non-destructive re-grading of a run by an alternative assessor — the assessor's settings snapshot (`AssessorModelSnapshotId`), `AnswerCount`, `SkippedAnswerCount`, `MeanAbsDelta`, `DisagreementCount`, token and duration cost, and `VerdictsJson`. Admin-UI only: it never appears in the Markdown report, because a calibration is an experiment about graders rather than a property of the run.
 - **`BenchmarkRunAnswerToolCall`** (from harness 17): One row per tool call **attempted** during an answer's turn — `SortOrder`, `IterationIndex`, `Name`, `ToolCallId`, `Status`, `ArgsText`, `Result`, `Error`, `QueueWaitMs`, `ExecutionMs`, `Depth`, `AgentName`, `ArgsTruncated`, `ResultTruncated`, `ResultLengthChars` — cascade-deleted with `BenchmarkRunAnswer` and indexed on `(BenchmarkRunAnswerId, SortOrder)`. `ArgsText` and `Result` are pruned by age; every other field survives the prune. See **Harness Version 17 Updates**.
 

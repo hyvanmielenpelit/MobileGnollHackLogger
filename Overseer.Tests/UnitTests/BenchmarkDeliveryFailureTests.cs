@@ -122,6 +122,17 @@ public class BenchmarkDeliveryFailureTests
                     Sha256 = new string('0', 64),
                     CaptureMethod = "YamlImport"
                 }
+            },
+            // As the launch stamps it: the run's own record of the board it is asked with.
+            GameSnapshotNameUsed = "Tommi2",
+            GameSnapshotSha256Used = new string('0', 64),
+            BoardSnapshotId = 1,
+            BoardSnapshot = new BenchmarkRunBoardSnapshot
+            {
+                Id = 1,
+                Sha256 = BenchmarkRunBoardSnapshotStore.ComputeSha256(BoardText, null),
+                SanitizedText = BoardText,
+                CharCount = BoardText.Length
             }
         });
 

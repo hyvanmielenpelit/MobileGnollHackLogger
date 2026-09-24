@@ -1133,10 +1133,19 @@
 }
 
 /* The table's own toolbar is a block in the section column rather than a row beside the heading:
-   a format select and two labelled buttons do not fit next to a heading at a narrow dialog width,
-   and wrapping them under it is what happens anyway. */
+   a format select and its two icon buttons, download and copy, centred on one line and wrapping
+   under each other at a narrow dialog width. */
 .mc-table-export {
+  display: flex;
+  align-items: center;
   flex-wrap: wrap;
+  gap: 12px;
+}
+
+.mc-table-export-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* --- The download column chooser --- */
@@ -1517,7 +1526,12 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
+}
 
+/* The Single tab's icon buttons and the table toolbar's: spaced by their row's gap, and dimmed while
+   they refuse. */
+.mc-preview-group,
+.mc-table-export-actions {
   .action-btn {
     margin-left: 0;
 

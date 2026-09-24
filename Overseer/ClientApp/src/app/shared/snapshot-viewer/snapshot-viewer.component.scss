@@ -145,9 +145,16 @@
     }
 
     > app-snapshot-text-editor,
-    > .metadata-form {
+    > .metadata-form,
+    > .readonly-board {
       flex: 1 1 auto;
     }
+  }
+
+  .readonly-note {
+    flex-shrink: 0;
+    margin: 0;
+    color: var(--nav-color);
   }
 
   @media (max-width: 600px) {
@@ -222,8 +229,9 @@
 /* The provenance strip, the fields and the digest editor. Only the digest editor grows;
    overflow: clip rather than hidden keeps the form's automatic minimum height, so the panel
    scrolls instead of the digest editor being cut off. The two-column row collapses on the form's
-   own width, not the viewport's. */
-.metadata-form {
+   own width, not the viewport's. The read-only board borrows the frame and the provenance strip. */
+.metadata-form,
+.readonly-board {
   container-type: inline-size;
   display: flex;
   flex-direction: column;
@@ -372,6 +380,20 @@
       padding-inline: 8px;
     }
   }
+}
+
+/* The read-only board text: as stored, unwrapped, scrolled with the panel. */
+.readonly-board-text {
+  margin: 0;
+  padding: 12px 16px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre;
+  overflow-x: auto;
+  color: var(--font-color);
+  background: transparent;
+  border: 0;
 }
 
 /* The Delete page: a warning and its one action. */

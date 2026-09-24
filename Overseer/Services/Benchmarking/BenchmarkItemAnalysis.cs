@@ -230,7 +230,7 @@ public static class BenchmarkItemAnalysis
         // Every answer of every considered run, whether or not it is usable, so the banner can
         // say how much of the record this analysis had to leave out.
         var allAnswers = runs.SelectMany(r => r.Answers ?? new List<BenchmarkRunAnswer>()).ToList();
-        int linked = allAnswers.Count(a => a.BenchmarkQuestionId.HasValue && questionIds.Contains(a.BenchmarkQuestionId.Value));
+        int linked = allAnswers.Count(a => QuestionKey(a) is long key && questionIds.Contains(key));
         int unlinked = allAnswers.Count - linked;
 
         var items = new List<BenchmarkItemStatistics>(questions.Count);
@@ -259,10 +259,21 @@ public static class BenchmarkItemAnalysis
     }
 
     /// <summary>
-    /// One sample per run: the run, and its scored answer to <paramref name="question"/>.
+    /// The question an answer was produced for: <see cref="BenchmarkRunAnswer.BenchmarkQuestionIdUsed"/>,
+    /// which survives the question's deletion, else the foreign key. Null for an unlinked answer.
+    /// </summary>
+    public static long? QuestionKey(BenchmarkRunAnswer answer)
+        => answer.BenchmarkQuestionIdUsed ?? answer.BenchmarkQuestionId;
+
+    /// <summary>
+    /// One sample per run: the run, and its scored answer to <paramref name="question"/>, matched on
+    /// <see cref="QuestionKey"/>.
     ///
     /// An answer counts only when it is <c>Ok</c>, carries a quality score, and was answered
-    /// against the question's current revision. A null <c>ItemRevisionUsed</c> is included and
+    /// against <paramref name="question"/>'s revision. Suite Health passes the live questions, so
+    /// that is the current revision there; group statistics pass the questions
+    /// <see cref="BenchmarkRunExam"/> builds from the runs, so it is the revision the runs were
+    /// graded under. A null <c>ItemRevisionUsed</c> is included and
     /// counted, not dropped: it means the answer predates the column, so the revision it was
     /// written against is unknowable. Dropping those would leave the table empty for every suite
     /// that already has runs, and assuming they match the current revision would be a claim the
@@ -283,7 +294,7 @@ public static class BenchmarkItemAnalysis
         foreach (var run in runs)
         {
             var answer = (run.Answers ?? new List<BenchmarkRunAnswer>())
-                .FirstOrDefault(a => a.BenchmarkQuestionId == question.Id
+                .FirstOrDefault(a => QuestionKey(a) == question.Id
                                      && BenchmarkRunFinalizer.CountsTowardQualityIndex(a)
                                      && a.QualityScore.HasValue
                                      && (a.ItemRevisionUsed == null || a.ItemRevisionUsed == question.ItemRevision));

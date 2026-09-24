@@ -88,8 +88,7 @@ describe('ModelComparisonComponent', () => {
       quality: {
         pointEstimate: 68,
         itemCount: 18,
-        suiteItemCount: 18,
-        revisedItemCount: 0,
+        examItemCount: 18,
         unscoredItemCount: 0,
         intervalHalfWidth: 6.4,
         intervalLower: 61.6,
@@ -2550,20 +2549,27 @@ describe('ModelComparisonComponent', () => {
     }
   });
 
-  it('states the scored questions in the badge and says why the rest are left out, in the export too', () => {
+  it('reads the badge off the exam the runs were asked, with no left-out note for a revised rubric', () => {
+    // A fully scored 18-question exam, whatever the suite holds now.
+    render(buildDto(comparableSet(2)), 4);
+
+    expect(component.setFigureNotes.some(note => note.tone === 'info' && /left out/.test(note.text))).toBeFalse();
+    expect(component.setFigureNotes.some(note => /revised/.test(note.text))).toBeFalse();
+
+    const s1 = component.scatterCards[0];
+    expect(s1.chrome.badges.find(badge => badge.kind === 'questions')?.text).toBe('18 questions');
+    expect(exportNotesOf(s1).some(text => /revised/.test(text))).toBeFalse();
+  });
+
+  it('states the scored questions against the exam in the badge when some went unscored', () => {
     const entries = comparableSet(2).map(entry => ({
       ...entry,
-      quality: { ...entry.quality!, itemCount: 16, revisedItemCount: 2 }
+      quality: { ...entry.quality!, itemCount: 16, unscoredItemCount: 2 }
     }));
     render(buildDto(entries), 4);
 
-    const revisedNote = "2 of the suite's 18 questions are left out: their rubrics were revised after these runs, " +
-      'so the stored grades are for the old rubrics. Runs made from now on include them.';
-    expect(component.setFigureNotes).toContain({ text: revisedNote, tone: 'info' });
-
     const s1 = component.scatterCards[0];
     expect(s1.chrome.badges.find(badge => badge.kind === 'questions')?.text).toBe('16 of 18 questions');
-    expect(exportNotesOf(s1)).toContain(revisedNote);
   });
 
   it('warns only about the plotted entries\' unscored questions', () => {
@@ -3299,6 +3305,12 @@ describe('ModelComparisonComponent', () => {
     return { names, load };
   }
 
+  /** The table toolbar's two icon buttons: download, then copy. */
+  function tableExportButtons(): HTMLButtonElement[] {
+    return fixture.debugElement.queryAll(By.css('.mc-table-export-actions .action-btn'))
+      .map(button => button.nativeElement as HTMLButtonElement);
+  }
+
   it('offers the eight table formats with Excel first, and a Markdown copy beside the download', () => {
     render(buildDto(comparableSet(4)), 3);
 
@@ -3308,13 +3320,94 @@ describe('ModelComparisonComponent', () => {
       .toEqual(['xlsx', 'csv', 'tsv', 'md', 'json', 'html', 'png', 'webp']);
     // A placeholder is not a label, and this control carries no visible one.
     expect(fixture.debugElement.query(By.css('label[for="mc-table-export-format"]'))).toBeTruthy();
-    expect(textOf('.mc-table-export')).toContain('Download table');
-    expect(textOf('.mc-table-export')).toContain('Copy as Markdown');
+
+    const group = fixture.debugElement.query(By.css('.mc-table-export-actions')).nativeElement as HTMLElement;
+    expect(group.getAttribute('role')).toBe('group');
+    expect(group.getAttribute('aria-label')).toBe('Export the table');
+
+    const [download, copy] = tableExportButtons();
+    expect(tableExportButtons().length).toBe(2);
+    expect(download.getAttribute('type')).toBe('button');
+    expect(download.getAttribute('aria-label')).toBe('Download the table as Excel (.xlsx)…');
+    expect(copy.getAttribute('aria-label')).toBe('Copy the table to the clipboard as Markdown');
+    expect(download.classList).not.toContain('btn-gh');
+    expect(copy.classList).not.toContain('btn-gh');
+
+    // The download's name follows the format select.
+    select.value = 'csv';
+    select.dispatchEvent(new Event('change'));
+    refresh();
+    expect(component.tableExportFormat).toBe('csv');
+    expect(tableExportButtons()[0].getAttribute('aria-label')).toBe('Download the table as CSV…');
+
     // The suite and the pricing basis are in the wizard header; the line under the intro carries
     // only the computation time.
     expect(textOf('.mc-table-computed')).toContain('Computed');
     expect(textOf('.mc-table-computed')).not.toContain('Current catalog');
     expect(component.tableProvenance.conditionSignature).toBe('9c79137965e4');
+  });
+
+  it('gives each table export button an interest tooltip rather than a title', () => {
+    render(buildDto(comparableSet(4)), 3);
+
+    const tips = tableExportButtons().map(button => {
+      expect(button.hasAttribute('title')).toBeFalse();
+      const tipId = button.getAttribute('interestfor');
+      expect(tipId).toBeTruthy();
+      expect(button.getAttribute('style') ?? '').toMatch(new RegExp(`anchor-name:\\s*--${tipId}`));
+      const tip = fixture.nativeElement.querySelector(`#${tipId}`) as HTMLElement;
+      expect(tip.getAttribute('popover')).toBe('hint');
+      expect(tip.classList).toContain('gh-tooltip');
+      expect(tip.getAttribute('style') ?? '').toMatch(new RegExp(`position-anchor:\\s*--${tipId}`));
+      return (tip.textContent ?? '').trim();
+    });
+    expect(tips).toEqual(['Download the table as Excel (.xlsx)…', 'Copy as Markdown']);
+  });
+
+  it('marks both table export buttons aria-disabled, not disabled, with no entries', () => {
+    render(buildDto([]), 3);
+
+    const buttons = tableExportButtons();
+    expect(buttons.length).toBe(2);
+    for (const button of buttons) {
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(button.disabled).toBeFalse();
+    }
+  });
+
+  it('leaves both table export buttons enabled while there are entries', () => {
+    render(buildDto(comparableSet(2)), 3);
+
+    for (const button of tableExportButtons()) {
+      expect(button.hasAttribute('aria-disabled')).toBeFalse();
+    }
+  });
+
+  it('calls the export handlers from the table buttons, which refuse while nothing can be exported', () => {
+    render(buildDto([]), 3);
+    const open = spyOn(component, 'openTableColumnDialog').and.callThrough();
+    const copy = spyOn(component, 'copyTableMarkdown').and.callThrough();
+
+    const [downloadButton, copyButton] = tableExportButtons();
+    downloadButton.click();
+    copyButton.click();
+
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(copy).toHaveBeenCalledTimes(1);
+    expect(component.tableColumnsDialogRef?.nativeElement.open ?? false).toBeFalse();
+  });
+
+  it('opens the column chooser from the table download button', () => {
+    render(buildDto(comparableSet(3)), 3);
+    const open = spyOn(component, 'openTableColumnDialog').and.stub();
+    const copy = spyOn(component, 'copyTableMarkdown').and.returnValue(Promise.resolve());
+
+    const [downloadButton, copyButton] = tableExportButtons();
+    downloadButton.click();
+    copyButton.click();
+
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(copy).toHaveBeenCalledTimes(1);
   });
 
   it('offers a WebP quality for the table only while WebP is the chosen format', async () => {
@@ -4813,7 +4906,7 @@ describe('model-comparison adapter', () => {
     const context = toChartContext(null);
     expect(context.scoredItemsMin).toBe(0);
     expect(context.scoredItemsMax).toBe(0);
-    expect(context.suiteItemCount).toBe(0);
+    expect(context.examItemCount).toBe(0);
     expect(context.pricingBasisLabel).toBe('Unknown pricing basis');
     expect(context.pricingBasis).toBe('');
     expect(context.pricedOn).toBe('');

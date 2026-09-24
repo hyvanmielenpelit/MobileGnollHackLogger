@@ -552,7 +552,8 @@ public class AdminBenchmarkController : ControllerBase
     /// <summary>
     /// Deletes a suite and its questions. Runs, series and groups that referenced the suite are
     /// kept with a null suite reference: they are the record of measurements that actually
-    /// happened, and each carries its own suite-name snapshot.
+    /// happened. Runs and series carry their own suite-name snapshot; a group shows its newest
+    /// member run's.
     /// </summary>
     [HttpDelete("suites/{id}")]
     public async Task<IActionResult> DeleteSuite(long id)
@@ -1464,10 +1465,19 @@ public class AdminBenchmarkController : ControllerBase
             .Where(q => q.BenchmarkSuiteId == suiteId)
             .ToListAsync();
 
-        var dict = questions.ToDictionary(q => q.Id);
-        for (int i = 0; i < request.OrderedIds.Length; i++)
+        // A partial or repeated list would leave two questions on one order index.
+        var orderedIds = request.OrderedIds ?? Array.Empty<long>();
+        if (orderedIds.Length != questions.Count
+            || orderedIds.Distinct().Count() != orderedIds.Length
+            || !questions.All(q => orderedIds.Contains(q.Id)))
         {
-            if (dict.TryGetValue(request.OrderedIds[i], out var q))
+            return BadRequest("The new order must list every question of the suite exactly once.");
+        }
+
+        var dict = questions.ToDictionary(q => q.Id);
+        for (int i = 0; i < orderedIds.Length; i++)
+        {
+            if (dict.TryGetValue(orderedIds[i], out var q))
             {
                 q.OrderIndex = i + 1;
             }
@@ -3076,6 +3086,8 @@ public class AdminBenchmarkController : ControllerBase
             DefaultSuiteKeyUsed = run.DefaultSuiteKeyUsed,
             BoardFactsCheck = BenchmarkBoardFactsChecker.Deserialize(run.BoardFactsCheckJson),
             GameSnapshotFormatVersionUsed = run.GameSnapshotFormatVersionUsed,
+            GameSnapshotSha256Used = run.GameSnapshotSha256Used,
+            HasBoardRecord = run.BoardSnapshotId != null,
             ToolFamilyCounts = toolRouting.FamilyCalls.ToDictionary(
                 kv => kv.Key switch
                 {
@@ -3665,6 +3677,11 @@ public class AdminBenchmarkController : ControllerBase
         var answer = run.Answers.FirstOrDefault(a => a.Id == answerId);
         if (answer == null) return NotFound();
 
+        if (BenchmarkRunExamRecord.RefusalFor(run, new[] { answer }) is { } recordRefusal)
+        {
+            return BadRequest(recordRefusal);
+        }
+
         long? targetAssessorId = request?.AssessorModelConfigurationId ?? run.AssessorModelConfigurationId;
         var (assessorValid, assessorError) = await ValidateAssessorConfigurationAsync(targetAssessorId);
         if (!assessorValid)
@@ -3741,6 +3758,11 @@ public class AdminBenchmarkController : ControllerBase
         if (!BenchmarkService.IsCurrentScoringMethod(run))
         {
             return BadRequest(BenchmarkService.ScoringMethodRefusal(run));
+        }
+
+        if (BenchmarkRunExamRecord.BoardUnknown(run))
+        {
+            return BadRequest(BenchmarkRunExamRecord.BoardNotRecordedRefusal);
         }
 
         var (assessorValid, assessorError) = await ValidateAssessorConfigurationAsync(request.AssessorModelConfigurationId);
@@ -3835,6 +3857,11 @@ public class AdminBenchmarkController : ControllerBase
         var answer = run.Answers.FirstOrDefault(a => a.Id == answerId);
         if (answer == null) return NotFound();
 
+        if (BenchmarkRunExamRecord.RefusalFor(run, new[] { answer }) is { } recordRefusal)
+        {
+            return BadRequest(recordRefusal);
+        }
+
         if (string.IsNullOrWhiteSpace(answer.QuestionText))
         {
             return BadRequest("Question text is empty.");
@@ -3870,6 +3897,9 @@ public class AdminBenchmarkController : ControllerBase
         // Marked here for the same reason as RerunFailedQuestions: the client polls the moment
         // this returns, and the row must not still read its previous terminal status.
         run.Status = BenchmarkRunStatus.Running;
+        run.RerunStartedAtUtc = DateTime.UtcNow;
+        run.RerunCompletedAtUtc = null;
+        run.ErrorMessage = null;
         await _dbContext.SaveChangesAsync();
 
         _ = Task.Run(() => _benchmarkService.RerunSingleQuestionAsync(run.Id, answerId, request?.AssessorModelConfigurationId, cts.Token));
@@ -3903,6 +3933,11 @@ public class AdminBenchmarkController : ControllerBase
         if (run.Answers.Count == 0)
         {
             return BadRequest("This run has no answers to synthesize.");
+        }
+
+        if (BenchmarkRunExamRecord.RefusalFor(run, run.Answers) is { } recordRefusal)
+        {
+            return BadRequest(recordRefusal);
         }
 
         long? targetAssessorId = request?.AssessorModelConfigurationId ?? run.AssessorModelConfigurationId;
@@ -3961,6 +3996,11 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest("This run has no unscored assessments to retry.");
         }
 
+        if (BenchmarkRunExamRecord.RefusalFor(run, run.Answers.Where(a => a.AssessmentStatus != BenchmarkAssessmentStatus.Scored)) is { } recordRefusal)
+        {
+            return BadRequest(recordRefusal);
+        }
+
         long? targetAssessorId = request?.AssessorModelConfigurationId ?? run.AssessorModelConfigurationId;
         var (assessorValid, assessorError) = await ValidateAssessorConfigurationAsync(targetAssessorId);
         if (!assessorValid)
@@ -4015,6 +4055,11 @@ public class AdminBenchmarkController : ControllerBase
         if (!run.Answers.Any(a => !string.IsNullOrWhiteSpace(a.ClaimVerificationError)))
         {
             return BadRequest("This run has no failed claim verifications to retry.");
+        }
+
+        if (BenchmarkRunExamRecord.RefusalFor(run, run.Answers) is { } recordRefusal)
+        {
+            return BadRequest(recordRefusal);
         }
 
         long? targetVerifierId = request?.AssessorModelConfigurationId ?? run.ClaimVerifierModelConfigurationId;
@@ -4126,6 +4171,11 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest("This run has no failed, provider-error or empty answers to re-run.");
         }
 
+        if (BenchmarkRunExamRecord.RefusalFor(run, run.Answers) is { } recordRefusal)
+        {
+            return BadRequest(recordRefusal);
+        }
+
         var cts = new CancellationTokenSource();
         if (!_runManager.TryStart(run.Id, cts, out _))
         {
@@ -4147,6 +4197,35 @@ public class AdminBenchmarkController : ControllerBase
         return Accepted(new { runId = run.Id });
     }
 
+    /// <summary>
+    /// The board the run was made with, from its own record: never the suite's current board, which
+    /// may have been edited, replaced or deleted since. 404 when the run had no board, 409 when its
+    /// board was not recorded.
+    /// </summary>
+    [HttpGet("runs/{id}/board")]
+    public async Task<IActionResult> GetRunBoard(long id)
+    {
+        var run = await _dbContext.BenchmarkRuns
+            .AsNoTracking()
+            .Include(r => r.BoardSnapshot)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (run == null || run.GameSnapshotSha256Used == null) return NotFound();
+
+        if (run.BoardSnapshot == null)
+        {
+            return Conflict(BenchmarkRunExamRecord.BoardNotRecordedRefusal);
+        }
+
+        return Ok(new BenchmarkRunBoardDto
+        {
+            Name = run.GameSnapshotNameUsed,
+            SanitizedText = run.BoardSnapshot.SanitizedText,
+            DigestText = run.BoardSnapshot.DigestText,
+            CharCount = run.BoardSnapshot.CharCount,
+            Sha256 = run.GameSnapshotSha256Used
+        });
+    }
     [HttpGet("runs/{id}/report")]
     public async Task<IActionResult> GetRunReport(long id)
     {
@@ -4929,12 +5008,23 @@ public class AdminBenchmarkController : ControllerBase
     {
         var latest = await _groupAnalysisService.GetLatestAnalysisAsync(group.Id);
 
+        // The name the newest member run was made under; the live suite's only for an empty group.
+        var memberRunIds = group.Members.Select(m => m.BenchmarkRunId).ToList();
+        string? memberSuiteName = memberRunIds.Count == 0
+            ? null
+            : await _dbContext.BenchmarkRuns
+                .Where(r => memberRunIds.Contains(r.Id))
+                .OrderByDescending(r => r.StartedAtUtc)
+                .ThenByDescending(r => r.Id)
+                .Select(r => r.SuiteName)
+                .FirstOrDefaultAsync();
+
         var dto = new BenchmarkRunGroupDto
         {
             Id = group.Id,
             Name = group.Name,
             BenchmarkSuiteId = group.BenchmarkSuiteId,
-            SuiteName = group.BenchmarkSuite?.Name,
+            SuiteName = memberSuiteName ?? group.BenchmarkSuite?.Name,
             Tier = group.Tier.ToString(),
             TierLabel = DescribeTier(group.Tier),
             ComparabilityKeyHash = group.ComparabilityKeyHash,
@@ -5131,7 +5221,12 @@ public class AdminBenchmarkController : ControllerBase
             group, result, comparability, members, comparison, comparisonGroupName,
             GetOverseerVersion(), analysis.ComputedAtUtc);
 
-        string suiteName = group.BenchmarkSuite?.Name ?? "benchmark";
+        string suiteName = members
+            .OrderByDescending(r => r.StartedAtUtc)
+            .ThenByDescending(r => r.Id)
+            .FirstOrDefault()?.SuiteName
+            ?? group.BenchmarkSuite?.Name
+            ?? "benchmark";
         string modelName = members.FirstOrDefault()?.TestedModelSnapshot.Label() ?? "model";
 
         string filename =

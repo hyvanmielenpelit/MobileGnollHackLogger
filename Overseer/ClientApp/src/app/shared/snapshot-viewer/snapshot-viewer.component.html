@@ -7,7 +7,7 @@
           <line x1="8" y1="2" x2="8" y2="18"></line>
           <line x1="16" y1="6" x2="16" y2="22"></line>
         </svg>
-        {{ snapshot?.name || 'Game Snapshot' }}
+        {{ snapshot?.name || readOnlyBoard?.name || 'Game Snapshot' }}
       </h3>
       @if (snapshot?.suiteName) {
         <span class="bound-suite-pill">Suite: {{ snapshot?.suiteName }}</span>
@@ -21,9 +21,9 @@
     </button>
   </div>
 
-  @if (!loading && !error && snapshot) {
+  @if (!loading && !error && (snapshot || readOnlyBoard)) {
     <div class="gh-tabs snapshot-tabs" role="tablist" aria-label="Game snapshot sections">
-      @for (section of sections; track section.id; let i = $index) {
+      @for (section of visibleSections; track section.id; let i = $index) {
         <button type="button" role="tab" class="gh-tab"
                 [id]="'snapshot-tab-' + section.id + '-' + uid"
                 [attr.aria-controls]="'snapshot-panel-' + section.id + '-' + uid"
@@ -108,6 +108,21 @@
         <div class="alert-content">
           <span class="alert-body"><strong>Error:</strong> {{ error }}</span>
         </div>
+      </div>
+    } @else if (readOnly && readOnlyBoard) {
+      <!-- Read-only: the board as stored, with no editor, download, metadata or delete. -->
+      <div class="snapshot-panel snapshot-panel-snapshot snapshot-panel-readonly" role="tabpanel" tabindex="0"
+           [id]="'snapshot-panel-snapshot-' + uid" [attr.aria-labelledby]="'snapshot-tab-snapshot-' + uid">
+        @if (readOnlyNote) {
+          <p class="readonly-note">{{ readOnlyNote }}</p>
+        }
+        <section class="readonly-board" [attr.aria-labelledby]="'snapshot-tab-snapshot-' + uid">
+          <dl class="meta-strip" aria-label="Board provenance">
+            <div class="fact"><dt>Size</dt><dd>{{ readOnlyBoard.charCount | number }} chars</dd></div>
+            <div class="fact fact-sha"><dt>SHA-256</dt><dd><code class="sha-box">{{ readOnlyBoard.sha256 }}</code></dd></div>
+          </dl>
+          <pre class="readonly-board-text">{{ readOnlyBoard.sanitizedText }}</pre>
+        </section>
       </div>
     } @else if (snapshot) {
       <div class="snapshot-panel snapshot-panel-snapshot" role="tabpanel" tabindex="0"

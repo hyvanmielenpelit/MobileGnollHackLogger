@@ -49,6 +49,11 @@ public class BenchmarkGroupAnalysisService
     public sealed record LoadedGroup
     {
         public BenchmarkRunGroup Group { get; init; } = default!;
+
+        /// <summary>
+        /// The live suite the group is bound to, for display only; null once it is deleted. Statistics
+        /// never read it: they compute over <see cref="BenchmarkRunExam"/>, built from the runs.
+        /// </summary>
         public BenchmarkSuite? Suite { get; init; }
         public IReadOnlyList<BenchmarkRun> Runs { get; init; } = Array.Empty<BenchmarkRun>();
         public BenchmarkComparabilityResult Comparability { get; init; } = new();
@@ -108,11 +113,6 @@ public class BenchmarkGroupAnalysisService
             return (null, null, "Group not found.");
         }
 
-        if (loaded.Suite == null)
-        {
-            return (null, null, "The group is not bound to a suite, so its items cannot be identified.");
-        }
-
         if (loaded.Runs.Count < 2)
         {
             return (null, null, "A group analysis needs at least two member runs.");
@@ -139,9 +139,11 @@ public class BenchmarkGroupAnalysisService
         var options = BenchmarkGroupStatisticsOptions.FromComparability(loaded.Comparability);
         var costs = await ResolveCostsAsync(loaded.Runs);
 
+        // The exam the members sat, from their own answers: the live suite may have changed since.
+        var exam = BenchmarkRunExam.Build(loaded.Runs);
         var result = BenchmarkGroupStatistics.Compute(
-            loaded.Suite,
-            loaded.Suite.Questions.ToList(),
+            exam.Suite,
+            exam.Questions,
             loaded.Runs,
             costs,
             options);
@@ -219,7 +221,7 @@ public class BenchmarkGroupAnalysisService
     private async Task<BenchmarkGroupStatisticsResult?> ComputeForComparisonAsync(long groupId, CancellationToken ct)
     {
         var loaded = await LoadGroupAsync(groupId, ct);
-        if (loaded?.Suite == null || loaded.Runs.Count < 2) return null;
+        if (loaded == null || loaded.Runs.Count < 2) return null;
 
         var tier = loaded.Comparability.Tier;
         if (tier == BenchmarkComparabilityTier.NotComparable
@@ -231,9 +233,10 @@ public class BenchmarkGroupAnalysisService
         var options = BenchmarkGroupStatisticsOptions.FromComparability(loaded.Comparability);
         var costs = await ResolveCostsAsync(loaded.Runs);
 
+        var exam = BenchmarkRunExam.Build(loaded.Runs);
         return BenchmarkGroupStatistics.Compute(
-            loaded.Suite,
-            loaded.Suite.Questions.ToList(),
+            exam.Suite,
+            exam.Questions,
             loaded.Runs,
             costs,
             options);

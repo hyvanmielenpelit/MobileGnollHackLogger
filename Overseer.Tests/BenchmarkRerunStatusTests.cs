@@ -113,6 +113,7 @@ public class BenchmarkRerunStatusTests
         run.RerunCompletedAtUtc = DateTime.UtcNow.AddMinutes(-40);
         run.Answers.Add(new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             QuestionText = "Q1",
             AnswerText = "A1",
             Status = BenchmarkAnswerStatus.ProviderError,
@@ -140,6 +141,7 @@ public class BenchmarkRerunStatusTests
         var run = BuildSeedRun(suite, modelA, modelC);
         var answer = new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             QuestionText = "Q1",
             AnswerText = "A1",
             Status = BenchmarkAnswerStatus.Ok,
@@ -164,6 +166,7 @@ public class BenchmarkRerunStatusTests
         var run = BuildSeedRun(suite, modelA, modelC);
         run.Answers.Add(new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             QuestionText = "Q1",
             AnswerText = "A1",
             Status = BenchmarkAnswerStatus.Ok,
@@ -187,6 +190,7 @@ public class BenchmarkRerunStatusTests
         var run = BuildSeedRun(suite, modelA, modelC);
         run.Answers.Add(new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             QuestionText = "Q1",
             AnswerText = "A1",
             Status = BenchmarkAnswerStatus.Ok,
@@ -211,6 +215,7 @@ public class BenchmarkRerunStatusTests
         var run = BuildSeedRun(suite, modelA, modelC);
         run.Answers.Add(new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             QuestionText = "Q1",
             AnswerText = "A1",
             Status = BenchmarkAnswerStatus.Ok,
@@ -235,6 +240,7 @@ public class BenchmarkRerunStatusTests
         var run = BuildSeedRun(suite, modelA, modelC);
         var answer = new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             QuestionText = "Q1",
             AnswerText = "A1",
             Status = BenchmarkAnswerStatus.Ok,
@@ -268,6 +274,7 @@ public class BenchmarkRerunStatusTests
         run.Status = BenchmarkRunStatus.Running; // as the controller now leaves it before Task.Run
         run.Answers.Add(new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             QuestionText = "Q1",
             AnswerText = "A1",
             Status = BenchmarkAnswerStatus.Ok,
@@ -309,6 +316,7 @@ public class BenchmarkRerunStatusTests
         run.CompletedAtUtc = null;
         var answer = new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             QuestionText = "Q1",
             AnswerText = "A1",
             Status = BenchmarkAnswerStatus.Ok,
@@ -363,6 +371,7 @@ public class BenchmarkRerunStatusTests
         run.TotalQuestionCount = 1;
         run.Answers.Add(new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             QuestionText = "Q1",
             AnswerText = "A1",
             Status = BenchmarkAnswerStatus.ProviderError,
@@ -402,6 +411,7 @@ public class BenchmarkRerunStatusTests
         run.TotalQuestionCount = 1;
         run.Answers.Add(new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             QuestionText = "Q1",
             AnswerText = "A1",
             Status = BenchmarkAnswerStatus.Ok,
@@ -434,6 +444,7 @@ public class BenchmarkRerunStatusTests
         run.TotalQuestionCount = 1;
         run.Answers.Add(new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             QuestionText = "Q1",
             AnswerText = "A1",
             Status = BenchmarkAnswerStatus.ProviderError,
@@ -461,6 +472,7 @@ public class BenchmarkRerunStatusTests
         run.TotalQuestionCount = 1;
         run.Answers.Add(new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             QuestionText = "Q1",
             AnswerText = string.Empty,
             Status = BenchmarkAnswerStatus.EmptyAnswer,
@@ -486,6 +498,7 @@ public class BenchmarkRerunStatusTests
         run.TotalQuestionCount = 1;
         run.Answers.Add(new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             QuestionText = "Q1",
             AnswerText = "A1",
             Status = BenchmarkAnswerStatus.Ok,
@@ -512,6 +525,7 @@ public class BenchmarkRerunStatusTests
         run.TotalQuestionCount = 2;
         run.Answers.Add(new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             QuestionText = "Q1",
             AnswerText = "A1",
             Status = BenchmarkAnswerStatus.ProviderError,
@@ -538,6 +552,7 @@ public class BenchmarkRerunStatusTests
         run.TotalQuestionCount = 1;
         run.Answers.Add(new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             QuestionText = "Q1",
             AnswerText = "A1",
             Status = BenchmarkAnswerStatus.ProviderError,
@@ -565,6 +580,7 @@ public class BenchmarkRerunStatusTests
         run.TotalQuestionCount = 2;
         run.Answers.Add(new BenchmarkRunAnswer
         {
+            ExpectedPointsRecorded = true,
             QuestionText = "Q1",
             AnswerText = "A1",
             Status = BenchmarkAnswerStatus.ProviderError,

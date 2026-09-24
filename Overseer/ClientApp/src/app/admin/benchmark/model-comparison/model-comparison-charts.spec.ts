@@ -125,7 +125,7 @@ function expectClose(actual: readonly number[], expected: readonly number[]): vo
 const CONTEXT: ModelComparisonContext = {
   scoredItemsMin: 10,
   scoredItemsMax: 10,
-  suiteItemCount: 10,
+  examItemCount: 10,
   questionsAskedPerRun: 10,
   pricingBasisLabel: 'Current catalog, 2026-09-07',
   pricingBasis: 'Current',
@@ -578,7 +578,7 @@ describe('model-comparison-charts', () => {
       const entries = [full, partial];
       const figure = buildSmallMultiples(entries, {
         ...smallMultiplesOptions({ costMeasure: 'candidateSuite' }),
-        context: { ...CONTEXT, scoredItemsMin: 12, scoredItemsMax: 18, suiteItemCount: 18 },
+        context: { ...CONTEXT, scoredItemsMin: 12, scoredItemsMax: 18, examItemCount: 18 },
         glyphs: buildIdentityGlyphs(entries),
       });
 
@@ -698,14 +698,14 @@ describe('model-comparison-charts', () => {
       expect(figure.speed.chrome.detail).toBe('');
     });
 
-    it('states the scored questions against the suite when fewer than all are scored', () => {
+    it('states the scored questions against the exam when fewer than all are scored', () => {
       const figure = buildSmallMultiples(PROFILE_FIXTURE, {
         ...smallMultiplesOptions(),
-        context: { ...CONTEXT, scoredItemsMin: 16, scoredItemsMax: 16, suiteItemCount: 18 },
+        context: { ...CONTEXT, scoredItemsMin: 16, scoredItemsMax: 16, examItemCount: 18 },
       });
       const badge = figure.quality.chrome.badges.find((b) => b.kind === 'questions');
       expect(badge?.text).toBe('16 of 18 questions');
-      expect(badge?.ariaLabel).toBe("16 of the suite's 18 questions scored");
+      expect(badge?.ariaLabel).toBe('16 of 18 asked questions scored');
     });
 
     it('gives every panel scriptable value labels, past the SD whisker with a grace margin', () => {
@@ -1054,7 +1054,7 @@ describe('model-comparison-charts', () => {
       ...CONTEXT,
       scoredItemsMin: 18,
       scoredItemsMax: 18,
-      suiteItemCount: 18,
+      examItemCount: 18,
       questionsAskedPerRun: 18,
     };
     const SCREENSHOT_OPTIONS = {

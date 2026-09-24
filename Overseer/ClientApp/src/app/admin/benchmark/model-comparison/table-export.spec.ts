@@ -56,8 +56,7 @@ describe('table-export', () => {
       quality: {
         pointEstimate: 68,
         itemCount: 18,
-        suiteItemCount: 18,
-        revisedItemCount: 0,
+        examItemCount: 18,
         unscoredItemCount: 0,
         intervalHalfWidth: 6.4,
         intervalLower: 61.6,

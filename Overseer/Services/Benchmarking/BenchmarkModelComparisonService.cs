@@ -13,8 +13,9 @@ using Overseer.Models;
 using Overseer.Services;
 
 /// <summary>
-/// One point of a comparison with everything needed to measure it already loaded: the suite and its
-/// items, the runs with their answers, and the price card each run's candidate spend is costed at.
+/// One point of a comparison with everything needed to measure it already loaded: the exam its runs
+/// sat (<see cref="BenchmarkRunExam"/>, built from their answers, never the live suite), the runs
+/// with their answers, and the price card each run's candidate spend is costed at.
 ///
 /// <para>Pricing is resolved by the I/O layer and handed in, so the arithmetic that turns stored
 /// token totals into a comparable cost is pure and can be asserted against a fixture with known
@@ -32,8 +33,10 @@ public sealed record BenchmarkModelComparisonSource
 
     public string? SourceName { get; init; }
 
+    /// <summary>The exam's suite identity, detached. Null only for a source with no runs.</summary>
     public BenchmarkSuite? Suite { get; init; }
 
+    /// <summary>The questions the runs were asked, as they recorded them. Detached.</summary>
     public IReadOnlyList<BenchmarkQuestion> Questions { get; init; } = Array.Empty<BenchmarkQuestion>();
 
     public IReadOnlyList<BenchmarkRun> Runs { get; init; } = Array.Empty<BenchmarkRun>();
@@ -139,7 +142,7 @@ public static class BenchmarkModelComparison
             .ToList();
 
         var measurable = members
-            .Where(s => s.Refusal == null && s.Suite != null && s.Runs.Count > 0)
+            .Where(s => s.Refusal == null && s.Runs.Count > 0)
             .ToList();
 
         // The Current basis recomputes every entry's cost from one catalog, so the stored snapshots
@@ -155,7 +158,7 @@ public static class BenchmarkModelComparison
         var entries = new List<BenchmarkModelComparisonEntryDto>();
         foreach (var source in members)
         {
-            entries.Add(source.Refusal != null || source.Suite == null || source.Runs.Count == 0
+            entries.Add(source.Refusal != null || source.Runs.Count == 0
                 ? BuildRefusedEntry(source)
                 : BuildEntry(source, verdicts[source.Key], comparability, basis, today));
         }
@@ -194,7 +197,7 @@ public static class BenchmarkModelComparison
         entry.Excluded = true;
         entry.Comparable = false;
         entry.Explanation = source.Refusal
-            ?? "Excluded: this entry has no suite or no runs, so nothing about it can be measured.";
+            ?? "Excluded: this entry has no runs, so nothing about it can be measured.";
         return entry;
     }
 
@@ -235,7 +238,7 @@ public static class BenchmarkModelComparison
         var costs = BuildCosts(source, out bool pricingResolved, out ModelPricing? card);
         var options = BuildStatisticsOptions(source, verdict);
         var statistics = BenchmarkGroupStatistics.Compute(
-            source.Suite!, source.Questions, source.Runs, costs, options);
+            source.Suite ?? BenchmarkRunExam.Build(source.Runs).Suite, source.Questions, source.Runs, costs, options);
 
         entry.Quality = BuildQuality(source, statistics);
         entry.Speed = BuildSpeed(statistics);
@@ -370,15 +373,13 @@ public static class BenchmarkModelComparison
         BenchmarkModelComparisonSource source, BenchmarkGroupStatisticsResult statistics)
     {
         var index = statistics.Index;
-        var (revised, unscored) = ClassifyUnscoredItems(source.Questions, source.Runs, statistics);
 
         return new BenchmarkModelComparisonQualityDto
         {
             PointEstimate = index.PointEstimate,
             ItemCount = statistics.ItemCount,
-            SuiteItemCount = source.Questions.Count,
-            RevisedItemCount = revised,
-            UnscoredItemCount = unscored,
+            ExamItemCount = source.Questions.Count,
+            UnscoredItemCount = CountUnscoredItems(source.Questions, statistics),
             IntervalHalfWidth = index.CombinedHalfWidth,
             IntervalLower = index.CombinedLower,
             IntervalUpper = index.CombinedUpper,
@@ -396,37 +397,15 @@ public static class BenchmarkModelComparison
     }
 
     /// <summary>
-    /// Sorts the suite questions missing from <paramref name="statistics"/> into those left out only
-    /// because their answers were graded under an older rubric revision, and those with no scored
-    /// answer at all. Both counts are over questions not in the statistics, so together with its
-    /// item count they always sum to the suite size.
+    /// The exam's questions missing from <paramref name="statistics"/>: asked, with no answer that
+    /// counts. Together with the statistics' item count they always sum to the exam size.
     /// </summary>
-    private static (int Revised, int Unscored) ClassifyUnscoredItems(
+    private static int CountUnscoredItems(
         IReadOnlyList<BenchmarkQuestion> questions,
-        IReadOnlyList<BenchmarkRun> runs,
         BenchmarkGroupStatisticsResult statistics)
     {
         var scored = statistics.Items.Select(i => i.QuestionId).ToHashSet();
-        int revised = 0;
-        int unscored = 0;
-
-        foreach (var question in questions)
-        {
-            if (scored.Contains(question.Id)) continue;
-
-            // A sample in every respect but the revision check in BenchmarkItemAnalysis.Samples.
-            bool gradedUnderOlderRevision = runs.Any(r => (r.Answers ?? new List<BenchmarkRunAnswer>())
-                .Any(a => a.BenchmarkQuestionId == question.Id
-                          && BenchmarkRunFinalizer.CountsTowardQualityIndex(a)
-                          && a.QualityScore.HasValue
-                          && a.ItemRevisionUsed != null
-                          && a.ItemRevisionUsed != question.ItemRevision));
-
-            if (gradedUnderOlderRevision) revised++;
-            else unscored++;
-        }
-
-        return (revised, unscored);
+        return questions.Count(q => !scored.Contains(q.Id));
     }
 
     private static BenchmarkModelComparisonSpeedDto BuildSpeed(BenchmarkGroupStatisticsResult statistics)
@@ -602,19 +581,6 @@ public class BenchmarkModelComparisonService
             return (null, $"Run(s) not found: {string.Join(", ", missingRuns)}.");
         }
 
-        var suiteIds = runs.Where(r => r.BenchmarkSuiteId.HasValue).Select(r => r.BenchmarkSuiteId!.Value)
-            .Concat(groups.Where(g => g.BenchmarkSuiteId.HasValue).Select(g => g.BenchmarkSuiteId!.Value))
-            .Distinct()
-            .ToList();
-
-        var suites = suiteIds.Count == 0
-            ? new List<BenchmarkSuite>()
-            : await _db.BenchmarkSuites
-                .Include(s => s.Questions)
-                .Where(s => suiteIds.Contains(s.Id))
-                .ToListAsync(ct);
-
-        var suitesById = suites.ToDictionary(s => s.Id);
         var pricing = await ResolveCandidatePricingAsync(runs, basis, today);
 
         var sources = new List<BenchmarkModelComparisonSource>();
@@ -627,7 +593,6 @@ public class BenchmarkModelComparisonService
                 kind: "Run",
                 sourceId: runId,
                 name: null,
-                suite: run.BenchmarkSuiteId.HasValue ? suitesById.GetValueOrDefault(run.BenchmarkSuiteId.Value) : null,
                 members: new[] { run },
                 pricing: pricing,
                 refusal: RefuseRun(run)));
@@ -643,14 +608,11 @@ public class BenchmarkModelComparisonService
                 .OrderBy(r => r.Id)
                 .ToList();
 
-            long? suiteId = group.BenchmarkSuiteId ?? members.FirstOrDefault()?.BenchmarkSuiteId;
-
             sources.Add(BuildSource(
                 key: $"group:{groupId}",
                 kind: "Group",
                 sourceId: groupId,
                 name: group.Name,
-                suite: suiteId.HasValue ? suitesById.GetValueOrDefault(suiteId.Value) : null,
                 members: members,
                 pricing: pricing,
                 refusal: RefuseGroup(group, members)));
@@ -666,30 +628,29 @@ public class BenchmarkModelComparisonService
         return (result, null);
     }
 
-    private static BenchmarkModelComparisonSource BuildSource(
+    /// <summary>A point over <paramref name="members"/>, measured on the exam they sat.</summary>
+    internal static BenchmarkModelComparisonSource BuildSource(
         string key,
         string kind,
         long sourceId,
         string? name,
-        BenchmarkSuite? suite,
         IReadOnlyList<BenchmarkRun> members,
         IReadOnlyDictionary<long, ModelPricing?> pricing,
         string? refusal)
     {
+        var exam = BenchmarkRunExam.Build(members);
         return new BenchmarkModelComparisonSource
         {
             Key = key,
             SourceKind = kind,
             SourceId = sourceId,
             SourceName = name,
-            Suite = suite,
-            Questions = suite?.Questions.OrderBy(q => q.OrderIndex).ToList() ?? new List<BenchmarkQuestion>(),
+            Suite = members.Count > 0 ? exam.Suite : null,
+            Questions = exam.Questions,
             Runs = members,
             CandidatePricing = members
                 .ToDictionary(r => r.Id, r => pricing.GetValueOrDefault(r.Id)),
-            Refusal = refusal ?? (suite == null
-                ? "Excluded: this entry is not bound to a suite, so its items cannot be identified."
-                : null)
+            Refusal = refusal
         };
     }
 

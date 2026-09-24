@@ -97,6 +97,7 @@ describe('AdminBenchmarkComponent', () => {
       'uploadSuiteSnapshot',
       'deleteSnapshot',
       'getSnapshot',
+      'getRunBoard',
       'getActiveQuestionGeneration',
       'getBoardFactsCheck'
     ]);
@@ -1060,6 +1061,25 @@ describe('AdminBenchmarkComponent', () => {
     component.executeConfirmAction();
 
     expect(benchmarkServiceMock.deleteSuite).toHaveBeenCalledWith(42);
+  });
+
+  it('should show the refusal a Delete Suite comes back with, rather than only logging it', () => {
+    const refusal = 'The suite has runs. Delete its runs first.';
+    benchmarkServiceMock.deleteSuite.and.returnValue(throwError(() => ({ status: 409, error: refusal })));
+    const logged = spyOn(console, 'error');
+    component.activeSubTab = 'suites';
+    component.suites = [
+      { id: 42, name: 'Target Suite', description: 'Test', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null, questionCount: 1, assessedQuestionCount: 0, difficultyFullyAssessed: false }
+    ];
+    fixture.detectChanges();
+
+    component.deleteSuite(42);
+    component.executeConfirmAction();
+
+    expect(component.actionErrorMessage).toBe(refusal);
+    expect(logged).not.toHaveBeenCalledWith('Failed to delete suite', jasmine.anything());
+    const alert = fixture.nativeElement.querySelector('#bm-panel-suites .alert-danger .alert-message') as HTMLElement;
+    expect(alert?.textContent?.trim()).toBe(refusal);
   });
 
   it('should open difficultyAssessorDialog on clicking Assess Question Difficulty without calling rateSuiteDifficulty immediately', () => {
@@ -2145,7 +2165,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should merge suite questions with answers and mark unanswered questions Pending', () => {
-      component.activeRunDetail = buildRun({ answers: [buildAnswer(2)] });
+      component.activeRunDetail = buildRun({ answers: [buildAnswer(2, { benchmarkQuestionId: 2 })] });
       component.runProgressQuestions = [
         { id: 1, benchmarkSuiteId: 1, orderIndex: 1, questionText: 'First question', difficulty: 1, expectedPoints: null, createdAtUtc: '2026-09-01T00:00:00Z' },
         { id: 2, benchmarkSuiteId: 1, orderIndex: 2, questionText: 'Second question', difficulty: 1, expectedPoints: null, createdAtUtc: '2026-09-01T00:00:00Z' },
@@ -3731,6 +3751,152 @@ describe('AdminBenchmarkComponent', () => {
       component.activeRunDetail = buildRerunRun({ rerunAnsweredOrderIndexes: [2] }, { status: 'Ok', assessmentStatus: 'Scored' });
       row = component.runProgressRows[1];
       expect(component.runRowChipLabel(row)).toBe('Scored');
+    });
+
+    it("should list a finished run's own answers only, whatever its suite lost or gained since", () => {
+      // The suite lost question 12 (answered as Q2) and gained question 40, which now sits at Q2.
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Completed',
+        totalQuestionCount: 3,
+        answers: [
+          buildScoredAnswer(1, { benchmarkQuestionId: 11, questionText: 'Stored question 1' }),
+          buildScoredAnswer(2, { benchmarkQuestionId: null, questionText: 'Deleted question, as asked' }),
+          buildScoredAnswer(3, { benchmarkQuestionId: 13, questionText: 'Stored question 3' })
+        ]
+      });
+      component.runProgressQuestions = [
+        { id: 11, orderIndex: 1, questionText: 'Question 1 as the suite words it now' },
+        { id: 40, orderIndex: 2, questionText: 'A question added after the run' },
+        { id: 13, orderIndex: 3, questionText: 'Question 3 as the suite words it now' }
+      ] as any;
+
+      const rows = component.runProgressRows;
+
+      expect(rows.map(r => r.orderIndex)).toEqual([1, 2, 3]);
+      expect(rows.map(r => r.questionText))
+        .toEqual(['Stored question 1', 'Deleted question, as asked', 'Stored question 3']);
+      expect(rows.map(r => component.runRowChipLabel(r))).toEqual(['Scored', 'Scored', 'Scored']);
+      expect(rows.every(r => r.answer != null)).toBeTrue();
+    });
+
+    it('should add a question the first pass has not answered yet, matched by question id rather than order index', () => {
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running',
+        totalQuestionCount: 3,
+        inFlightOrderIndexes: [3],
+        answers: [buildScoredAnswer(1, { benchmarkQuestionId: 11 })]
+      });
+      component.runProgressQuestions = [
+        { id: 11, orderIndex: 1, questionText: 'Question 1' },
+        { id: 12, orderIndex: 2, questionText: 'Question 2' },
+        { id: 13, orderIndex: 3, questionText: 'Question 3' }
+      ] as any;
+
+      const rows = component.runProgressRows;
+
+      expect(rows.map(r => r.orderIndex)).toEqual([1, 2, 3]);
+      expect(rows[0].questionText).toBe('Question 1');
+      expect(rows[0].answer?.benchmarkQuestionId).toBe(11);
+      expect(rows[1].status).toBe('Pending');
+      expect(rows[1].answer).toBeNull();
+      expect(rows[2].status).toBe('Answering');
+    });
+
+    it('should add no live question while a re-run is running, even one the suite gained since', () => {
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running',
+        totalQuestionCount: 2,
+        rerunScopeOrderIndexes: [2],
+        rerunAnsweredOrderIndexes: [],
+        answers: [
+          buildScoredAnswer(1, { benchmarkQuestionId: 11 }),
+          buildScoredAnswer(2, { benchmarkQuestionId: 12, status: 'ProviderError', assessmentStatus: 'Failed' })
+        ]
+      });
+      component.runProgressQuestions = [
+        { id: 11, orderIndex: 1, questionText: 'Question 1' },
+        { id: 12, orderIndex: 2, questionText: 'Question 2' },
+        { id: 40, orderIndex: 3, questionText: 'A question added after the run' }
+      ] as any;
+
+      expect(component.runIsFirstPass).toBeFalse();
+      expect(component.runProgressRows.map(r => r.orderIndex)).toEqual([1, 2]);
+
+      // A single-answer re-run whose scope the server has not reported yet is still not a first pass.
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Running',
+        totalQuestionCount: 2,
+        rerunStartedAtUtc: '2026-09-24T10:00:00Z',
+        answers: [buildScoredAnswer(1, { benchmarkQuestionId: 11 }), buildScoredAnswer(2, { benchmarkQuestionId: 12 })]
+      });
+      expect(component.runIsFirstPass).toBeFalse();
+      expect(component.runProgressRows.map(r => r.orderIndex)).toEqual([1, 2]);
+    });
+
+    it("should write each question's diagnostics line from its own answer", () => {
+      component.activeRunDetail = buildCompletedRun({
+        status: 'Completed',
+        totalQuestionCount: 2,
+        answers: [
+          buildScoredAnswer(1, { benchmarkQuestionId: 11, durationMs: 1111 }),
+          buildScoredAnswer(2, { benchmarkQuestionId: null, durationMs: 2222 })
+        ]
+      });
+      component.runProgressQuestions = [
+        { id: 40, orderIndex: 2, questionText: 'A question added after the run' }
+      ] as any;
+
+      const diagnostics = component.runDiagnosticsText;
+
+      expect(diagnostics).toMatch(/\[Q1\][^\n]*duration=1111ms/);
+      expect(diagnostics).toMatch(/\[Q2\][^\n]*duration=2222ms/);
+      expect(diagnostics).not.toContain('[Q2] status=Pending');
+    });
+
+    function viewGameSnapshotButton(): HTMLButtonElement | undefined {
+      const buttons: HTMLButtonElement[] = Array.from(fixture.nativeElement.querySelectorAll('.modal-actions-bar button'));
+      return buttons.find(b => (b.textContent || '').includes('View Game Snapshot'));
+    }
+
+    it("should open the run's own board read-only from View Game Snapshot", () => {
+      const board = { name: 'Run board', sanitizedText: 'Line 1\nLine 2', digestText: null, charCount: 13, sha256: 'feedbeef' };
+      benchmarkServiceMock.getRunBoard.and.returnValue(of(board));
+      component.selectedRunDetail = buildCompletedRun({ hasBoardRecord: true, gameSnapshotSha256Used: 'feedbeef' });
+      fixture.detectChanges();
+
+      const button = viewGameSnapshotButton();
+      expect(button).toBeTruthy();
+      button!.click();
+
+      expect(benchmarkServiceMock.getRunBoard).toHaveBeenCalledWith(55);
+      const viewer = component.snapshotViewer!;
+      expect(viewer.readOnly).toBeTrue();
+      expect(viewer.readOnlyBoard).toEqual(board);
+
+      const dialog = viewer.viewerDialog.nativeElement;
+      expect(dialog.open).toBeTrue();
+      expect(dialog.textContent).toContain('The board this run was made with.');
+      expect(dialog.querySelector('.readonly-board-text')?.textContent).toBe('Line 1\nLine 2');
+      expect(Array.from(dialog.querySelectorAll('[role="tab"]')).map(t => (t.textContent || '').trim()))
+        .toEqual(['Game Snapshot']);
+      expect(dialog.querySelector('.delete-snapshot-btn')).toBeNull();
+      expect(dialog.querySelector('.save-all-btn')).toBeNull();
+      expect(dialog.querySelector('app-snapshot-text-editor')).toBeNull();
+
+      viewer.close();
+    });
+
+    it('should offer View Game Snapshot for a run that recorded only its board hash', () => {
+      component.selectedRunDetail = buildCompletedRun({ gameSnapshotSha256Used: 'feedbeef' });
+      expect(component.selectedRunHasBoard).toBeTrue();
+    });
+
+    it('should hide View Game Snapshot for a run made without a board', () => {
+      component.selectedRunDetail = buildCompletedRun();
+      fixture.detectChanges();
+
+      expect(component.selectedRunHasBoard).toBeFalse();
+      expect(viewGameSnapshotButton()).toBeUndefined();
     });
 
     it("should measure Elapsed from the re-run's own start while a re-run scope is active", () => {

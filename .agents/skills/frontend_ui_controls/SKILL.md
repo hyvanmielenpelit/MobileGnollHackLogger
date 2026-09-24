@@ -198,6 +198,7 @@ you already read the label, it is noise; drop it.
 | undo (curved arrow back) | Reset a settings section to its defaults | "Back to where it started" — distinct from rotate, which means "runs again" |
 | file-with-arrow | Download Markdown Report | "A file arrives on your disk" |
 | archive | Download all figures | "Several files arrive as one archive" |
+| copy (two rectangles) | Copy figure, Copy the table as Markdown | "Copies to the clipboard" — nothing is saved to disk |
 | layers | Create Default Suites | A stack: several suites are created at once from the built-in catalog |
 | upload | Import Suite from YAML, Upload Snapshot | A file leaves the user's disk and enters the application; the arrow points out of the tray |
 | zap | Generate Questions | AI generation: content is produced from the snapshot, not typed in |
@@ -241,6 +242,11 @@ with the* undo *glyph; rotate was not reused, because it already means "runs aga
 Single view". The *All* toolbar's **Fit height** uses* maximize*, the fitting glyph* Single *already
 uses for Fit to screen; the new **Figure size** section's reset uses* undo *like the other Style
 sections.*
+
+*Changed 2026-09-24: the model comparison's step 3 **Download table** and **Copy as Markdown** became
+icon-only `.action-btn`s beside the format select, using* file-with-arrow *and* copy*, with
+`interestfor` tooltips and `aria-disabled` when there is nothing to export. The copy glyph, already
+used by Copy figure, joined the table above.*
 
 **Leave the icon off when the label is already the whole message:**
 

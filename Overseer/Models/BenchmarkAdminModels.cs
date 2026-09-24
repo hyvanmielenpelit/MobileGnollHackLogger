@@ -1008,6 +1008,14 @@ public class BenchmarkRunDetailDto
     /// </summary>
     public int? GameSnapshotFormatVersionUsed { get; set; }
 
+    /// <summary>The SHA-256 of the board the run was made with; null when it had no board.</summary>
+    public string? GameSnapshotSha256Used { get; set; }
+
+    /// <summary>
+    /// True when the run's own record of its board is stored and <c>GET runs/{id}/board</c> returns
+    /// it. False with a non-null <see cref="GameSnapshotSha256Used"/> means the board is unknown.
+    /// </summary>
+    public bool HasBoardRecord { get; set; }
     /// <summary>
     /// H3. Run-wide tool calls by family, keyed "source", "wiki", "lookup", "knowledgeBase", "other", and
     /// the count of answered questions that made no knowledge-base call. Classified once, on the server, by
@@ -1154,7 +1162,7 @@ public class BenchmarkRunDetailDto
     public int AnswerFramingOpenerAnswerCount { get; set; }
 
     /// <summary>
-    /// The instrument the most recent failed-question re-run executed under. Non-null only on a run
+    /// The instrument the most recent re-run (failed-question or single-answer) executed under. Non-null only on a run
     /// that was re-run; when either differs from the run's own fingerprint, the run's answers were
     /// not all produced under one instrument.
     /// </summary>
@@ -1832,3 +1840,15 @@ public class ReviewBenchmarkQuestionRequest
     public bool? Reviewed { get; set; }
 }
 
+/// <summary>
+/// The board a run was asked and graded with, from its own record. <see cref="Sha256"/> is the board's
+/// own hash as the run recorded it.
+/// </summary>
+public class BenchmarkRunBoardDto
+{
+    public string? Name { get; set; }
+    public string SanitizedText { get; set; } = string.Empty;
+    public string? DigestText { get; set; }
+    public int CharCount { get; set; }
+    public string Sha256 { get; set; } = string.Empty;
+}

@@ -3,6 +3,9 @@ namespace Overseer.Tests.UnitTests;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
 using Overseer.Tests.Helpers;
@@ -1030,6 +1033,98 @@ public class BenchmarkGroupStatisticsTests
 
         Assert.Equal(2, comparison.PairedItemCount);
         Assert.Equal(1, comparison.UnpairedItemCount);
+        Assert.Equal(0, comparison.RevisionMismatchedItemCount);
+    }
+
+    [Fact]
+    public void Compare_ExcludesAnItemGradedUnderDifferentRubricRevisions_AsRevisionMismatched_NotUnpaired()
+    {
+        // Both sides answered all three questions, but the treatment was graded after a rubric
+        // repair on Q3: the two halves of that pair were graded against different answer keys.
+        var baselineQuestions = Questions(50, 50, 50);
+        var treatmentQuestions = Questions(50, 50, 50);
+        treatmentQuestions[2].ItemRevision = 2;
+
+        var baseline = BenchmarkGroupStatistics.Compute(Suite(), baselineQuestions, new[]
+        {
+            Run(1, baselineQuestions, new[] { 60, 70, 80 }),
+            Run(2, baselineQuestions, new[] { 62, 72, 82 })
+        });
+
+        var treatmentRuns = new[]
+        {
+            Run(3, treatmentQuestions, new[] { 70, 80, 90 }),
+            Run(4, treatmentQuestions, new[] { 72, 82, 92 })
+        };
+        foreach (var run in treatmentRuns) run.Answers[2].ItemRevisionUsed = 2;
+        var treatment = BenchmarkGroupStatistics.Compute(Suite(), treatmentQuestions, treatmentRuns);
+
+        var comparison = BenchmarkGroupStatistics.Compare(baseline, treatment);
+
+        Assert.Equal(2, comparison.PairedItemCount);
+        Assert.Equal(0, comparison.UnpairedItemCount);
+        Assert.Equal(1, comparison.RevisionMismatchedItemCount);
+        Assert.DoesNotContain(comparison.ItemComparisons, i => i.QuestionId == 3);
+    }
+
+    // --- A group's figures are independent of later suite changes --------------------------------
+
+    private static object Figures(BenchmarkGroupStatisticsResult r) => new
+    {
+        r.ItemCount,
+        r.Index.PointEstimate,
+        r.Index.ItemSamplingHalfWidth,
+        Items = string.Join(";", r.Items.Select(i => $"{i.QuestionId}:{i.ItemRevision}:{i.OrderIndex}:{i.QuestionText}:{i.Mean}")),
+        r.Speed.PooledAnswerCount,
+        Dimensions = string.Join(";", r.Dimensions.Select(d => $"{d.Dimension}:{d.Mean}"))
+    };
+
+    [Fact]
+    public async Task GroupAnalysis_IsUnchangedByEverySuiteOperation_AndBySuiteDeletion()
+    {
+        var options = BenchmarkRunExamTests.InMemoryOptions();
+        var seeded = await BenchmarkRunExamTests.SeedSuiteWithRunsAsync(options);
+
+        async Task<BenchmarkGroupStatisticsResult> AnalyseAsync()
+        {
+            await using var db = new ApplicationDbContext(options);
+            var service = new BenchmarkGroupAnalysisService(db, NullLogger<BenchmarkGroupAnalysisService>.Instance);
+            var (analysis, result, error) = await service.AnalyseAsync(seeded.GroupId, null, ct: TestContext.Current.CancellationToken);
+            Assert.True(analysis != null, error);
+            return result!;
+        }
+
+        var before = await AnalyseAsync();
+        Assert.Equal(3, before.ItemCount);
+        Assert.Equal(80.0, before.Index.PointEstimate, 9);
+
+        await BenchmarkRunExamTests.MutateSuiteEveryWayAsync(options, seeded);
+        var afterEdits = await AnalyseAsync();
+        Assert.Equal(Figures(before), Figures(afterEdits));
+
+        await BenchmarkRunExamTests.DeleteSuiteAsync(options, seeded);
+        var afterDelete = await AnalyseAsync();
+        Assert.Equal(Figures(before), Figures(afterDelete));
+    }
+
+    [Fact]
+    public async Task GroupAnalysis_OfADeletedSuite_TracksNoExamEntity()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var options = BenchmarkRunExamTests.InMemoryOptions();
+        var seeded = await BenchmarkRunExamTests.SeedSuiteWithRunsAsync(options);
+        await BenchmarkRunExamTests.DeleteSuiteAsync(options, seeded);
+
+        await using var db = new ApplicationDbContext(options);
+        var service = new BenchmarkGroupAnalysisService(db, NullLogger<BenchmarkGroupAnalysisService>.Instance);
+        var (analysis, result, error) = await service.AnalyseAsync(seeded.GroupId, null, ct: ct);
+
+        Assert.True(analysis != null, error);
+        Assert.Equal(3, result!.ItemCount);
+        Assert.Empty(db.ChangeTracker.Entries<BenchmarkQuestion>());
+        Assert.Empty(db.ChangeTracker.Entries<BenchmarkSuite>());
+        Assert.Equal(0, await db.BenchmarkSuites.CountAsync(ct));
+        Assert.Equal(0, await db.BenchmarkQuestions.CountAsync(ct));
     }
 
     [Fact]

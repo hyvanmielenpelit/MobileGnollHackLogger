@@ -216,12 +216,8 @@ public static class BenchmarkReportBuilder
     /// origin genuinely was never recorded, which is a different fact from a harness-24-or-later
     /// run that recorded a null (a custom suite).</para>
     ///
-    /// <para>The suite's own <c>DefaultSuiteVersion</c> is read from <see cref="BenchmarkRun.BenchmarkSuite"/>,
-    /// which the caller may not have loaded — the version is appended only when that navigation is
-    /// present, its <c>DefaultSuiteKey</c> still matches this run's <c>DefaultSuiteKeyUsed</c> (the
-    /// suite could have been deleted and a differently-keyed one re-imported since), and its
-    /// <c>DefaultSuiteVersion</c> is not null. Otherwise the key is printed alone rather than
-    /// guessing a version.</para>
+    /// <para>The version is <see cref="BenchmarkRun.DefaultSuiteVersionUsed"/>, recorded at launch;
+    /// a run made before it was recorded prints the key alone rather than guessing a version.</para>
     /// </summary>
     private static string SuiteOriginText(BenchmarkRun run)
     {
@@ -236,13 +232,9 @@ public static class BenchmarkReportBuilder
             return "custom suite";
         }
 
-        string versionSuffix = string.Empty;
-        if (run.BenchmarkSuite != null &&
-            string.Equals(run.BenchmarkSuite.DefaultSuiteKey, run.DefaultSuiteKeyUsed, StringComparison.Ordinal) &&
-            run.BenchmarkSuite.DefaultSuiteVersion.HasValue)
-        {
-            versionSuffix = $" (v{run.BenchmarkSuite.DefaultSuiteVersion.Value.ToString(CultureInfo.InvariantCulture)})";
-        }
+        string versionSuffix = run.DefaultSuiteVersionUsed.HasValue
+            ? $" (v{run.DefaultSuiteVersionUsed.Value.ToString(CultureInfo.InvariantCulture)})"
+            : string.Empty;
 
         return $"default suite `{run.DefaultSuiteKeyUsed}`{versionSuffix}";
     }
@@ -1228,7 +1220,7 @@ public static class BenchmarkReportBuilder
             }
             else
             {
-                sb.AppendLine($"> **Repaired by a failed-question re-run** from {rerunSpan} under harness {rerunHarness} (this run: {runHarness}). Candidate System Prompt and ToolGuides SHA-256 matched the run's own, so the answers are on one prompt instrument; the harness build differs where the versions differ.");
+                sb.AppendLine($"> **Repaired by a re-run** from {rerunSpan} under harness {rerunHarness} (this run: {runHarness}). Candidate System Prompt and ToolGuides SHA-256 matched the run's own, so the answers are on one prompt instrument; the harness build differs where the versions differ.");
             }
         }
 
@@ -2183,7 +2175,7 @@ public static class BenchmarkReportBuilder
             // does not, so no residual is meaningful there.
             if (run.RerunStartedAtUtc.HasValue)
             {
-                sb.AppendLine($"*Stage durations include the failed-question re-run ({RerunSpan(run)}), which lies outside the original wall clock; overlap is not computed for a repaired run.*");
+                sb.AppendLine($"*Stage durations include the re-run ({RerunSpan(run)}), which lies outside the original wall clock; overlap is not computed for a repaired run.*");
             }
             else if (run.MaxParallelQuestionsUsed > 1)
             {
@@ -4008,7 +4000,7 @@ public static class BenchmarkReportBuilder
     }
 
     /// <summary>
-    /// The most recent failed-question re-run's span, "start to end UTC (duration)". The end reads
+    /// The most recent re-run's (failed-question or single-answer) span, "start to end UTC (duration)". The end reads
     /// "unrecorded end" while the re-run is still running or when a stale stamp predates the start.
     /// </summary>
     private static string RerunSpan(BenchmarkRun run)
@@ -4053,7 +4045,7 @@ public static class BenchmarkReportBuilder
     {
         foreach (var a in answers)
         {
-            if (IsKnowledgeBaseTopicText(a.QuestionText) || IsKnowledgeBaseTopicText(a.BenchmarkQuestion?.ExpectedPoints))
+            if (IsKnowledgeBaseTopicText(a.QuestionText) || IsKnowledgeBaseTopicText(a.ExpectedPointsUsed))
             {
                 return true;
             }

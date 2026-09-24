@@ -494,6 +494,27 @@ describe('MultiRunProgressDialogComponent', () => {
     expect(capture).toContain('Q4 (id 70)');
   });
 
+  it('should count the rubric revision mismatches beside the unpaired items in the comparison capture', () => {
+    const analysis = buildAnalysis();
+    (analysis as any).comparedWithGroupId = 8;
+    (analysis as any).comparedWithGroupName = 'Baseline';
+    (analysis as any).comparison = {
+      baselineRunIds: [31], treatmentRunIds: [41],
+      pairedItemCount: 15, unpairedItemCount: 1, revisionMismatchedItemCount: 2,
+      meanDifference: 1.5
+    };
+    serviceMock.analyseRunGroup.and.returnValue(of(analysis));
+    open(buildSeries({
+      status: 'Completed', completedRunCount: 3, autoCreatedGroupId: 9,
+      members: [buildMember(), buildMember({ index: 2, runId: 42 }), buildMember({ index: 3, runId: 43 })]
+    }));
+
+    const capture = component.groupAnalysisDiagnosticsText;
+
+    expect(capture).toContain(
+      'Paired items: 15, unpaired and excluded: 1, rubric revision mismatched and excluded: 2');
+  });
+
   // --- Clipboard ------------------------------------------------------------------------------
 
   it('should surface a clipboard rejection rather than throwing it away', async () => {

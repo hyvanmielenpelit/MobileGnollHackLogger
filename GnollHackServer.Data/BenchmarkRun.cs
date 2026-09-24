@@ -270,6 +270,21 @@ public class BenchmarkRun
     [MaxLength(64)]
     public string? DefaultSuiteKeyUsed { get; set; }
 
+    /// <summary>
+    /// The default-suite version of the suite this run was launched against. Null for a custom
+    /// suite, and for a run made before runs recorded it.
+    /// </summary>
+    public int? DefaultSuiteVersionUsed { get; set; }
+
+    /// <summary>
+    /// The exact board text and digest this run was asked and graded with, in the append-only
+    /// <see cref="BenchmarkRunBoardSnapshot"/> table. Every re-grade and re-run reads this, never the
+    /// suite's current board. Null when the run had no board (<see cref="GameSnapshotSha256Used"/>
+    /// null); a non-null hash with a null record means the board is unknown, and re-grading refuses.
+    /// </summary>
+    public long? BoardSnapshotId { get; set; }
+    public BenchmarkRunBoardSnapshot? BoardSnapshot { get; set; }
+
     [MaxLength(128)]
     public string? GameSnapshotNameUsed { get; set; }
 
@@ -636,7 +651,7 @@ public class BenchmarkRun
     public string? SourceCodeHeadSha { get; set; }
 
     /// <summary>
-    /// The instrument a failed-question re-run executed under, recorded separately so the five
+    /// The instrument the most recent re-run (failed-question or single-answer) executed under, recorded separately so the five
     /// fingerprints above keep describing the instrument the run's other answers were produced
     /// under. Those five are the only record that the prompt did not move between two runs, so a
     /// re-run must not overwrite them: it would falsify the provenance of every answer it did not
@@ -653,20 +668,20 @@ public class BenchmarkRun
     public string? RerunToolGuidesSha256 { get; set; }
 
     /// <summary>
-    /// <c>BenchmarkAssessmentPrompt.HarnessVersion</c> the most recent failed-question re-run
+    /// <c>BenchmarkAssessmentPrompt.HarnessVersion</c> the most recent re-run (failed-question or single-answer)
     /// executed under. <see cref="HarnessVersion"/> stays the original execution's.
     /// </summary>
     [MaxLength(16)]
     public string? RerunHarnessVersion { get; set; }
 
     /// <summary>
-    /// When the most recent failed-question re-run began. <see cref="CompletedAtUtc"/> and
+    /// When the most recent re-run (failed-question or single-answer) began. <see cref="CompletedAtUtc"/> and
     /// <see cref="TotalDurationMs"/> stay the original execution's, which is the run's elapsed wall
     /// time; a re-run started hours later would otherwise absorb the interval into it.
     /// </summary>
     public DateTime? RerunStartedAtUtc { get; set; }
 
-    /// <summary>When the most recent failed-question re-run finished.</summary>
+    /// <summary>When the most recent re-run (failed-question or single-answer) finished.</summary>
     public DateTime? RerunCompletedAtUtc { get; set; }
 
     // Total wall-clock time spent executing tool batches across the run. Subtracting this

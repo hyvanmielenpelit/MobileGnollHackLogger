@@ -3,6 +3,7 @@ namespace Overseer.Tests.UnitTests;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
@@ -205,39 +206,74 @@ public class BenchmarkModelComparisonServiceTests
 
     // --- Question coverage ---------------------------------------------------------------------------
 
-    private static void AssertCoverageSumsToSuite(BenchmarkModelComparisonQualityDto quality)
-        => Assert.Equal(quality.SuiteItemCount,
-            quality.ItemCount + quality.RevisedItemCount + quality.UnscoredItemCount);
+    private static void AssertCoverageSumsToExam(BenchmarkModelComparisonQualityDto quality)
+        => Assert.Equal(quality.ExamItemCount, quality.ItemCount + quality.UnscoredItemCount);
 
     [Fact]
-    public void EveryQuestionScoredAgainstItsCurrentRubric_CoversTheWholeSuite()
+    public void EveryQuestionScored_CoversTheWholeExam()
     {
         var quality = Entry(Build(new[] { Source("a", Card(), Run(1)) }), "a").Quality!;
 
-        Assert.Equal(3, quality.SuiteItemCount);
+        Assert.Equal(3, quality.ExamItemCount);
         Assert.Equal(3, quality.ItemCount);
-        Assert.Equal(0, quality.RevisedItemCount);
         Assert.Equal(0, quality.UnscoredItemCount);
-        AssertCoverageSumsToSuite(quality);
+        AssertCoverageSumsToExam(quality);
     }
 
     [Fact]
-    public void RubricsRevisedAfterTheRuns_AreCountedAsRevised_NotUnscored()
+    public void RubricsRevisedAfterTheRuns_StayInTheIndex()
     {
-        // A rubric repair imported after the run bumps ItemRevision on questions 2 and 3, so the
-        // stored grades for them no longer count.
-        var questions = Questions();
-        questions[1].ItemRevision = 2;
-        questions[2].ItemRevision = 2;
-        var source = Source("a", Card(), Run(1)) with { Questions = questions };
+        // The source is measured on the exam its runs sat, built from their answers. A rubric repair
+        // imported afterwards bumps ItemRevision on the live questions only, which this never reads.
+        var run = Run(1);
 
+        var source = BenchmarkModelComparisonService.BuildSource(
+            "a", "Run", 1, null, new[] { run }, new Dictionary<long, ModelPricing?> { [1] = Card() }, null);
         var quality = Entry(Build(new[] { source }), "a").Quality!;
 
-        Assert.Equal(3, quality.SuiteItemCount);
-        Assert.Equal(2, quality.RevisedItemCount);
-        Assert.Equal(quality.SuiteItemCount - 2, quality.ItemCount);
+        Assert.Equal(3, quality.ExamItemCount);
+        Assert.Equal(3, quality.ItemCount);
         Assert.Equal(0, quality.UnscoredItemCount);
-        AssertCoverageSumsToSuite(quality);
+        Assert.Equal(80.0, quality.PointEstimate, 9);
+        AssertCoverageSumsToExam(quality);
+    }
+
+    [Fact]
+    public async Task TheComparison_IsUnchangedByEverySuiteOperation_AndBySuiteDeletion()
+    {
+        var options = BenchmarkRunExamTests.InMemoryOptions();
+        var seeded = await BenchmarkRunExamTests.SeedSuiteWithRunsAsync(options);
+
+        async Task<BenchmarkModelComparisonDto> CompareAsync()
+        {
+            await using var db = new ApplicationDbContext(options);
+            var service = new BenchmarkModelComparisonService(db);
+            var (result, error) = await service.CompareAsync(new BenchmarkModelComparisonRequest
+            {
+                RunIds = { seeded.RunIds[0] },
+                GroupIds = { seeded.GroupId },
+                PricingBasis = BenchmarkModelComparisonPricingBasis.AsRun
+            }, TestContext.Current.CancellationToken);
+            Assert.True(result != null, error);
+            return result!;
+        }
+
+        static string Figures(BenchmarkModelComparisonDto dto) => string.Join(" | ", dto.Entries
+            .OrderBy(e => e.Key)
+            .Select(e => $"{e.Key}:{e.Excluded}:{e.SuiteId}:{e.SuiteName}:{e.Quality?.PointEstimate}:{e.Quality?.ItemCount}:"
+                + $"{e.Quality?.ExamItemCount}:{e.Quality?.UnscoredItemCount}:{e.Quality?.IntervalHalfWidth}"));
+
+        var before = await CompareAsync();
+        Assert.All(before.Entries, e => Assert.False(e.Excluded, e.Explanation));
+        Assert.All(before.Entries, e => Assert.Equal(3, e.Quality!.ExamItemCount));
+
+        await BenchmarkRunExamTests.MutateSuiteEveryWayAsync(options, seeded);
+        Assert.Equal(Figures(before), Figures(await CompareAsync()));
+
+        await BenchmarkRunExamTests.DeleteSuiteAsync(options, seeded);
+        var afterDelete = await CompareAsync();
+        Assert.Equal(Figures(before), Figures(afterDelete));
+        Assert.Equal("Isolation Suite", afterDelete.BaselineSuiteName);
     }
 
     [Fact]
@@ -249,11 +285,10 @@ public class BenchmarkModelComparisonServiceTests
 
         var quality = Entry(Build(new[] { Source("a", Card(), run) }), "a").Quality!;
 
-        Assert.Equal(3, quality.SuiteItemCount);
+        Assert.Equal(3, quality.ExamItemCount);
         Assert.Equal(2, quality.ItemCount);
-        Assert.Equal(0, quality.RevisedItemCount);
         Assert.Equal(1, quality.UnscoredItemCount);
-        AssertCoverageSumsToSuite(quality);
+        AssertCoverageSumsToExam(quality);
     }
 
     // --- Exclusion withholds the measures ------------------------------------------------------------
@@ -402,21 +437,6 @@ public class BenchmarkModelComparisonServiceTests
         Assert.Equal(3.0, entry.Cost.QuestionsAskedPerRun!.Value, 9);
     }
 
-    [Fact]
-    public void CostPerQuestion_DividesByQuestionsAsked_AfterARubricRevision()
-    {
-        // A rubric repair on Q3 after the run removes its grade from the index, not its spend.
-        var questions = Questions();
-        questions[2].ItemRevision = 2;
-        var source = Source("a", Card(),
-            Run(1, inputTokens: 1_000_000, outputTokens: 200_000, cacheReadTokens: 400_000)) with { Questions = questions };
-
-        var entry = Entry(Build(new[] { source }), "a");
-
-        Assert.Equal(2, entry.Quality!.ItemCount);
-        Assert.Equal(3.28 / 3.0, entry.Cost!.CandidateCostPerQuestionUsd!.Value, 6);
-        Assert.Equal(3.0, entry.Cost.QuestionsAskedPerRun!.Value, 9);
-    }
 
     [Fact]
     public void DifferingPricingSnapshot_DegradesCostUnderAsRun_AndLeavesQualityIntact()

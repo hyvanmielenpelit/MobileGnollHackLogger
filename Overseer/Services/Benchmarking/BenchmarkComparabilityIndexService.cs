@@ -136,7 +136,7 @@ public class BenchmarkComparabilityIndexService
 
         await LoadItemRevisionsAsync(runsById, wantedRunIds, ct);
 
-        var suiteNames = await LoadSuiteNamesAsync(runs, ct);
+        var suiteNames = SuiteNames(runs);
 
         var sources = BuildSources(runIds, groupIds, groups, runsById);
         var result = Build(sources, suiteNames, DateTime.UtcNow);
@@ -199,34 +199,21 @@ public class BenchmarkComparabilityIndexService
     }
 
     /// <summary>
-    /// The names of the suites the loaded runs were taken from, by suite id.
+    /// The names of the suites the loaded runs were taken from, by the suite id the key renders
+    /// (<c>BenchmarkSuiteIdUsed ?? BenchmarkSuiteId</c>): the name the newest such run recorded.
     ///
     /// <para>The suite id is a must-match key, so a condition's members share one suite by
     /// construction and this map exists only to let the legend read the suite as a name instead of
-    /// as a bare number. Two projected columns over the distinct ids of at most
-    /// <see cref="MaxRunIds"/> runs, untracked: the value it decorates is still the id itself.</para>
+    /// as a bare number. It reads the runs' own <see cref="BenchmarkRun.SuiteName"/>, so a record
+    /// shows the name it was made under, after a rename or a delete as well.</para>
     /// </summary>
-    private async Task<IReadOnlyDictionary<long, string>> LoadSuiteNamesAsync(
-        IReadOnlyList<BenchmarkRun> runs, CancellationToken ct)
-    {
-        var suiteIds = runs
-            .Where(r => r.BenchmarkSuiteId.HasValue)
-            .Select(r => r.BenchmarkSuiteId!.Value)
-            .Distinct()
-            .ToList();
-
-        if (suiteIds.Count == 0) return new Dictionary<long, string>();
-
-        var rows = await _db.BenchmarkSuites
-            .AsNoTracking()
-            .Where(s => suiteIds.Contains(s.Id))
-            .Select(s => new { s.Id, s.Name })
-            .ToListAsync(ct);
-
-        return rows
-            .Where(s => !string.IsNullOrWhiteSpace(s.Name))
-            .ToDictionary(s => s.Id, s => s.Name);
-    }
+    internal static IReadOnlyDictionary<long, string> SuiteNames(IReadOnlyList<BenchmarkRun> runs)
+        => runs
+            .Where(r => (r.BenchmarkSuiteIdUsed ?? r.BenchmarkSuiteId).HasValue && !string.IsNullOrWhiteSpace(r.SuiteName))
+            .GroupBy(r => (r.BenchmarkSuiteIdUsed ?? r.BenchmarkSuiteId)!.Value)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(r => r.StartedAtUtc).ThenByDescending(r => r.Id).First().SuiteName);
 
     /// <summary>
     /// The offered sources in request order — runs first, then groups — which is the order the

@@ -765,6 +765,7 @@ public class BenchmarkAccusedQuoteAdjudicationTests
             run.Answers.Add(new BenchmarkRunAnswer
             {
                 QuestionText = "Q", AnswerText = "A", OrderIndex = 1,
+                ExpectedPointsRecorded = true,
                 Status = BenchmarkAnswerStatus.Ok,
                 AssessmentStatus = BenchmarkAssessmentStatus.Scored,
                 ClaimVerificationError = "timeout",

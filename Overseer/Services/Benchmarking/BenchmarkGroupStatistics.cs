@@ -838,11 +838,17 @@ public sealed record BenchmarkGroupComparison
     public IReadOnlyList<long> BaselineRunIds { get; init; } = Array.Empty<long>();
     public IReadOnlyList<long> TreatmentRunIds { get; init; } = Array.Empty<long>();
 
-    /// <summary>Items answered by at least one run on <b>both</b> sides. Only these are paired.</summary>
+    /// <summary>Items answered by at least one run on <b>both</b> sides under the same rubric revision. Only these are paired.</summary>
     public int PairedItemCount { get; init; }
 
     /// <summary>Items present in one group and not the other, and therefore excluded.</summary>
     public int UnpairedItemCount { get; init; }
+
+    /// <summary>
+    /// Items present in both groups but graded under different rubric revisions on the two sides,
+    /// and therefore excluded: the two sides were graded against different answer keys.
+    /// </summary>
+    public int RevisionMismatchedItemCount { get; init; }
 
     /// <summary>Mean of the per-item differences, treatment minus baseline.</summary>
     public double MeanDifference { get; init; }
@@ -897,7 +903,12 @@ public sealed record BenchmarkGroupComparison
 /// <item><b>Per-item statistics that <see cref="BenchmarkItemAnalysis"/> already computes are
 /// reused, never reimplemented.</b> The sample predicate itself comes from
 /// <see cref="BenchmarkItemAnalysis.Samples"/>, so a group's denominators and the suite-health
-/// panel's denominators cannot drift apart.</item>
+/// panel's denominators cannot drift apart. Callers pass the questions
+/// <see cref="BenchmarkRunExam"/> builds from the members' answers, so the predicate's revision is
+/// the one the members were graded under, never the live suite's.</item>
+/// <item>The speed, dimension and usage pools match answers on
+/// <see cref="BenchmarkItemAnalysis.QuestionKey"/> and do not check <c>ItemRevisionUsed</c>: speed
+/// and usage do not depend on the rubric, and the dimension pool keeps its own membership rule.</item>
 /// <item><b>The two uncertainty components are reported separately before they are combined.</b>
 /// One shrinks with more runs and one does not, and a single interval hides which.</item>
 /// </list>
@@ -1275,8 +1286,8 @@ public static class BenchmarkGroupStatistics
         var pooled = members
             .SelectMany(m => m.Answers ?? new List<BenchmarkRunAnswer>())
             .Where(a => a.Status == BenchmarkAnswerStatus.Ok
-                        && a.BenchmarkQuestionId.HasValue
-                        && questionIds.Contains(a.BenchmarkQuestionId.Value))
+                        && BenchmarkItemAnalysis.QuestionKey(a) is long key
+                        && questionIds.Contains(key))
             .Select(a => (double)a.ModelTimeMs)
             .ToList();
 
@@ -1286,8 +1297,8 @@ public static class BenchmarkGroupStatistics
         var pooledTtft = members
             .SelectMany(m => m.Answers ?? new List<BenchmarkRunAnswer>())
             .Where(a => a.Status == BenchmarkAnswerStatus.Ok
-                        && a.BenchmarkQuestionId.HasValue
-                        && questionIds.Contains(a.BenchmarkQuestionId.Value)
+                        && BenchmarkItemAnalysis.QuestionKey(a) is long key
+                        && questionIds.Contains(key)
                         && a.TimeToFirstTokenMs.HasValue)
             .Select(a => (double)a.TimeToFirstTokenMs!.Value)
             .ToList();
@@ -1297,8 +1308,8 @@ public static class BenchmarkGroupStatistics
         var perRunTotalModelTime = members
             .Select(m => (m.Answers ?? new List<BenchmarkRunAnswer>())
                 .Where(a => a.Status == BenchmarkAnswerStatus.Ok
-                            && a.BenchmarkQuestionId.HasValue
-                            && questionIds.Contains(a.BenchmarkQuestionId.Value))
+                            && BenchmarkItemAnalysis.QuestionKey(a) is long key
+                            && questionIds.Contains(key))
                 .Sum(a => (double)a.ModelTimeMs))
             .ToList();
 
@@ -1358,8 +1369,8 @@ public static class BenchmarkGroupStatistics
             {
                 var scored = (member.Answers ?? new List<BenchmarkRunAnswer>())
                     .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a)
-                                && a.BenchmarkQuestionId.HasValue
-                                && questionIds.Contains(a.BenchmarkQuestionId.Value)
+                                && BenchmarkItemAnalysis.QuestionKey(a) is long key
+                                && questionIds.Contains(key)
                                 && score(a).HasValue)
                     .ToList();
 
@@ -1369,7 +1380,7 @@ public static class BenchmarkGroupStatistics
 
                 foreach (var answer in scored)
                 {
-                    long questionId = answer.BenchmarkQuestionId!.Value;
+                    long questionId = BenchmarkItemAnalysis.QuestionKey(answer)!.Value;
                     if (!byQuestion.TryGetValue(questionId, out var list))
                     {
                         list = new List<double>();
@@ -1427,8 +1438,8 @@ public static class BenchmarkGroupStatistics
         var answers = members
             .SelectMany(m => m.Answers ?? new List<BenchmarkRunAnswer>())
             .Where(a => a.Status == BenchmarkAnswerStatus.Ok
-                        && a.BenchmarkQuestionId.HasValue
-                        && questionIds.Contains(a.BenchmarkQuestionId.Value))
+                        && BenchmarkItemAnalysis.QuestionKey(a) is long key
+                        && questionIds.Contains(key))
             .ToList();
 
         var byFamily = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -1653,8 +1664,9 @@ public static class BenchmarkGroupStatistics
     /// <b>treatment minus baseline</b>, so a positive mean difference means the treatment scored
     /// higher.
     ///
-    /// Only items answered on both sides are paired; the rest are counted and excluded, because a
-    /// pair needs two halves and imputing one would invent the finding.
+    /// Only items answered on both sides, under the same rubric revision, are paired; the rest are
+    /// counted and excluded, because a pair needs two halves graded against one answer key and
+    /// imputing one would invent the finding.
     /// </summary>
     public static BenchmarkGroupComparison Compare(
         BenchmarkGroupStatisticsResult baseline,
@@ -1667,8 +1679,10 @@ public static class BenchmarkGroupStatistics
         var baseByQuestion = baseline.Items.ToDictionary(i => i.QuestionId);
         var treatByQuestion = treatment.Items.ToDictionary(i => i.QuestionId);
 
-        var pairedIds = baseByQuestion.Keys.Intersect(treatByQuestion.Keys).ToList();
-        int unpaired = baseByQuestion.Count + treatByQuestion.Count - 2 * pairedIds.Count;
+        var sharedIds = baseByQuestion.Keys.Intersect(treatByQuestion.Keys).ToList();
+        int unpaired = baseByQuestion.Count + treatByQuestion.Count - 2 * sharedIds.Count;
+        var pairedIds = sharedIds.Where(id => baseByQuestion[id].ItemRevision == treatByQuestion[id].ItemRevision).ToList();
+        int revisionMismatched = sharedIds.Count - pairedIds.Count;
 
         var ordered = pairedIds
             .Select(id => (Baseline: baseByQuestion[id], Treatment: treatByQuestion[id]))
@@ -1739,6 +1753,7 @@ public static class BenchmarkGroupStatistics
             TreatmentRunIds = treatment.RunIds,
             PairedItemCount = ordered.Count,
             UnpairedItemCount = unpaired,
+            RevisionMismatchedItemCount = revisionMismatched,
             MeanDifference = meanDiff,
             DifferenceStandardDeviation = diffSd,
             DifferenceConfidenceHalfWidth = halfWidth,

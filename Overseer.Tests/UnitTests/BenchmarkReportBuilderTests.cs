@@ -2127,6 +2127,44 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
+    public void SuiteOrigin_PrintsTheDefaultSuiteVersionTheRunRecorded_AndNoneWhenUnrecorded()
+    {
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+        run.HarnessVersion = "24";
+        run.DefaultSuiteKeyUsed = "player-assistance";
+        run.DefaultSuiteVersionUsed = 3;
+
+        Assert.Contains("- **Suite origin:** default suite `player-assistance` (v3)", BenchmarkReportBuilder.BuildMarkdownReport(run));
+
+        run.DefaultSuiteVersionUsed = null;
+        Assert.Contains("- **Suite origin:** default suite `player-assistance`\n", BenchmarkReportBuilder.BuildMarkdownReport(run).Replace("\r\n", "\n"));
+    }
+
+    [Fact]
+    public void KnowledgeBaseRouting_ReadsTheRubricTheAnswerRecorded()
+    {
+        // The question text names no knowledge-base topic; only the recorded rubric does.
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.QuestionText = "In GnollHack, what do Exceptional and Elite give to body armor?";
+        q1.ToolCallSummary = "wiki_search×1";
+        q1.ExpectedPointsUsed = "- Points the player to the Settings menu.";
+        q1.ExpectedPointsRecorded = true;
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        Assert.Contains("Knowledge base under-use:", BenchmarkReportBuilder.BuildMarkdownReport(run));
+
+        // Nothing recorded: no rubric to read, so no routing line.
+        var q2 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q2.QuestionText = "In GnollHack, what do Exceptional and Elite give to body armor?";
+        q2.ToolCallSummary = "wiki_search×1";
+        var runWithout = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q2);
+        BenchmarkRunFinalizer.Apply(runWithout, new[] { q2 });
+
+        Assert.DoesNotContain("Knowledge base under-use:", BenchmarkReportBuilder.BuildMarkdownReport(runWithout));
+    }
+
+    [Fact]
     public void DirectionalAgreement_SentenceAbsentBelowThresholdAndPresentAtOrAbove()
     {
         // Case 1: n = 1 (below threshold of 3)
@@ -2910,7 +2948,7 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.Contains("> **Repaired by a failed-question re-run** from ", report);
+        Assert.Contains("> **Repaired by a re-run** from ", report);
         Assert.Contains("(12m 8s) under harness not recorded (re-run predates harness 22) (this run: 21)", report);
         Assert.DoesNotContain("Re-run under a different instrument", report);
         Assert.Contains("- **End Time (UTC, original execution):**", report);
@@ -2930,7 +2968,7 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.Contains("> **Repaired by a failed-question re-run** from ", report);
+        Assert.Contains("> **Repaired by a re-run** from ", report);
         Assert.Contains("to unrecorded end UTC under harness 22 (this run: 21)", report);
     }
 
@@ -2947,7 +2985,24 @@ public class BenchmarkReportBuilderTests
 
         Assert.Contains("> **Re-run under a different instrument.**", report);
         Assert.Contains("under harness 22 (this run: 21)", report);
-        Assert.DoesNotContain("**Repaired by a failed-question re-run**", report);
+        Assert.DoesNotContain("**Repaired by a re-run**", report);
+    }
+
+    [Fact]
+    public void RepairedRun_UnderAChangedPrompt_RendersTheDifferentInstrumentBlock()
+    {
+        // What a single-answer re-run under a changed candidate prompt now records: the run's own
+        // prompt hash stays, and the re-run's differs.
+        var run = RepairedSequentialRun();
+        run.RerunCandidateSystemPromptSha256 = "dddd";
+        run.RerunStartedAtUtc = new DateTime(2026, 9, 11, 9, 50, 0, DateTimeKind.Utc);
+        run.RerunCompletedAtUtc = new DateTime(2026, 9, 11, 9, 51, 0, DateTimeKind.Utc);
+        run.RerunHarnessVersion = "21";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("> **Re-run under a different instrument.**", report);
+        Assert.DoesNotContain("**Repaired by a re-run**", report);
     }
 
     [Fact]
@@ -2961,7 +3016,7 @@ public class BenchmarkReportBuilderTests
 
         Assert.Contains("- **End Time (UTC):**", report);
         Assert.DoesNotContain("Re-run span", report);
-        Assert.DoesNotContain("Repaired by a failed-question re-run", report);
+        Assert.DoesNotContain("Repaired by a re-run", report);
         Assert.Contains("*Measured overlap:", report);
     }
 

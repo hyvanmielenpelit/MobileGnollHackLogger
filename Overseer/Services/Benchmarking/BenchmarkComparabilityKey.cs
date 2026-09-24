@@ -849,7 +849,7 @@ public static class BenchmarkComparabilityKey
         var parts = answers
             .Select(a => new
             {
-                QuestionId = a.BenchmarkQuestionIdUsed ?? a.BenchmarkQuestionId,
+                QuestionId = BenchmarkItemAnalysis.QuestionKey(a),
                 a.ItemRevisionUsed
             })
             .Where(a => a.QuestionId.HasValue)
@@ -869,10 +869,11 @@ public static class BenchmarkComparabilityKey
 
     /// <summary>
     /// The assessed difficulty of every question this run answered, as <c>questionId:difficulty</c>
-    /// pairs in question-id order. Assess Difficulty rewrites <see cref="BenchmarkRunAnswer.AssessedDifficulty"/>
-    /// without bumping <see cref="BenchmarkRunAnswer.ItemRevisionUsed"/>, so this is a distinct
-    /// Fundamental key from <see cref="ItemRevisionSignature"/> rather than folded into it: two runs
-    /// can agree on every item revision and still have been weighted by two different exams.
+    /// pairs in question-id order. A run's weights are those its answers recorded at creation. Assess
+    /// Difficulty writes only the question (<c>BenchmarkQuestionAssessment.ApplySnapshot</c>) and bumps
+    /// no <see cref="BenchmarkQuestion.ItemRevision"/>, so two runs made either side of it can agree on
+    /// every item revision and still have been weighted by two different exams; this is therefore a
+    /// distinct Fundamental key from <see cref="ItemRevisionSignature"/> rather than folded into it.
     ///
     /// An answer whose difficulty was never assessed renders as <c>?</c>, following the same
     /// convention as <see cref="ItemRevisionSignature"/>. Unlinked answers are skipped.
@@ -883,7 +884,7 @@ public static class BenchmarkComparabilityKey
         var parts = answers
             .Select(a => new
             {
-                QuestionId = a.BenchmarkQuestionIdUsed ?? a.BenchmarkQuestionId,
+                QuestionId = BenchmarkItemAnalysis.QuestionKey(a),
                 a.AssessedDifficulty
             })
             .Where(a => a.QuestionId.HasValue)

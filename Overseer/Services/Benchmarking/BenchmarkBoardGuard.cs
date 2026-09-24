@@ -4,41 +4,51 @@ using System;
 using MobileGnollHackLogger.Data;
 
 /// <summary>
-/// Refuses to grade a snapshot suite without its board. Every grading prompt reads the board
-/// through <c>run.BenchmarkSuite?.GameSnapshot</c>, which is null both when the suite has no board
-/// and when the load that fetched the run did not include it; lazy loading is off, so the second
-/// case would otherwise grade rubric-only without a word.
+/// Refuses to grade a run made with a board without that board. Every grading prompt reads the
+/// board through the run's own record (<see cref="BenchmarkRunExamRecord.Board"/>), which is null
+/// when the run had no board; a record that is unknown, or that the load did not include, would
+/// otherwise grade rubric-only without a word, because lazy loading is off.
 /// </summary>
 public static class BenchmarkBoardGuard
 {
     /// <summary>
-    /// Throws <see cref="InvalidOperationException"/> when the run's suite references a board that
-    /// was not loaded with it.
+    /// Throws <see cref="InvalidOperationException"/> when the run was made with a board whose record
+    /// is not stored, or was not loaded with the run.
     /// </summary>
     public static void RequireBoardLoaded(BenchmarkRun run)
     {
-        if (run.BenchmarkSuite?.GameSnapshotId != null && run.BenchmarkSuite.GameSnapshot == null)
+        if (run.GameSnapshotSha256Used == null)
+        {
+            return;
+        }
+
+        if (run.BoardSnapshotId == null)
         {
             throw new InvalidOperationException(
-                $"Benchmark run {run.Id}: suite {run.BenchmarkSuite.Id} ('{run.BenchmarkSuite.Name}') has game snapshot "
-                + $"{run.BenchmarkSuite.GameSnapshotId} but it was not loaded with the run; refusing to grade without the board.");
+                $"Benchmark run {run.Id}: {BenchmarkRunExamRecord.BoardNotRecordedRefusal}");
+        }
+
+        if (run.BoardSnapshot == null)
+        {
+            throw new InvalidOperationException(
+                $"Benchmark run {run.Id}: board record {run.BoardSnapshotId} ('{run.GameSnapshotNameUsed}') was not loaded with the run; "
+                + "refusing to grade without the board.");
         }
     }
 
     /// <summary>
-    /// The board characters a grading prompt built from <paramref name="run"/> carries: the
-    /// sanitized text's length, zero when the suite has a board that did not reach the prompt, and
-    /// null when the suite has no board.
+    /// The board characters a grading prompt built from <paramref name="run"/> carries: the recorded
+    /// text's length, zero when the run had a board that did not reach the prompt, and null when the
+    /// run had no board.
     /// </summary>
     public static int? BoardCharsSent(BenchmarkRun run)
     {
-        var suite = run.BenchmarkSuite;
-        if (suite == null || (suite.GameSnapshotId == null && suite.GameSnapshot == null))
+        if (run.GameSnapshotSha256Used == null)
         {
             return null;
         }
 
-        string? text = suite.GameSnapshot?.SanitizedText;
+        string? text = run.BoardSnapshot?.SanitizedText;
         return string.IsNullOrWhiteSpace(text) ? 0 : text.Length;
     }
 }

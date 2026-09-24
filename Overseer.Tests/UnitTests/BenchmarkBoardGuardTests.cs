@@ -15,19 +15,42 @@ using Xunit;
 /// retry failed assessments and assessor calibration. Each load test reads through a fresh
 /// DbContext, because a context that seeded the rows fixes up the navigation whether or not the
 /// query included it, and would pass for a load that forgot the board. Also the launch-time stamp
-/// of the rubrics' BOARD FACTS check.
+/// of the rubrics' BOARD FACTS check, and of the run's own board record.
 /// </summary>
 public class BenchmarkBoardGuardTests
 {
     private const string BoardText = "Dungeon Level 3\nHP: 12/60\na - a blessed +1 quarterstaff (weapon in hands)";
     private const string BoardLabel = "--- GAME CONTEXT BOARD (GROUND TRUTH REFERENCE DATA) ---";
 
+    /// <summary>A run as launched from a suite: the suite's live board, before the run stamps anything.</summary>
     private static BenchmarkRun RunWith(long? snapshotId, BenchmarkGameSnapshot? snapshot) => BenchmarkModelSnapshots.Attach(new BenchmarkRun
     {
         Id = 7,
         SuiteName = "Snapshot suite",
         BenchmarkSuite = new BenchmarkSuite { Id = 3, Name = "Snapshot suite", GameSnapshotId = snapshotId, GameSnapshot = snapshot }
     });
+
+    /// <summary>
+    /// A run as graded: its board hash, and its board record by id and, when <paramref name="loaded"/>,
+    /// as a loaded navigation.
+    /// </summary>
+    private static BenchmarkRun GradedRun(bool hasBoard, long? recordId, bool loaded) => BenchmarkModelSnapshots.Attach(new BenchmarkRun
+    {
+        Id = 7,
+        SuiteName = "Snapshot suite",
+        GameSnapshotNameUsed = hasBoard ? "Board" : null,
+        GameSnapshotSha256Used = hasBoard ? "board-sha" : null,
+        BoardSnapshotId = recordId,
+        BoardSnapshot = loaded && recordId != null ? Record() : null
+    });
+
+    private static BenchmarkRunBoardSnapshot Record() => new()
+    {
+        Id = 11,
+        Sha256 = BenchmarkRunBoardSnapshotStore.ComputeSha256(BoardText, null),
+        SanitizedText = BoardText,
+        CharCount = BoardText.Length
+    };
 
     private static BenchmarkGameSnapshot Snapshot() => new()
     {
@@ -39,32 +62,51 @@ public class BenchmarkBoardGuardTests
     };
 
     [Fact]
-    public void RequireBoardLoaded_SnapshotReferencedButNotLoaded_Throws()
+    public void RequireBoardLoaded_RecordReferencedButNotLoaded_Throws()
     {
-        var ex = Assert.Throws<InvalidOperationException>(() => BenchmarkBoardGuard.RequireBoardLoaded(RunWith(11, null)));
+        var ex = Assert.Throws<InvalidOperationException>(() => BenchmarkBoardGuard.RequireBoardLoaded(GradedRun(true, 11, loaded: false)));
 
         Assert.Contains("run 7", ex.Message);
-        Assert.Contains("suite 3", ex.Message);
+        Assert.Contains("board record 11", ex.Message);
     }
 
     [Fact]
-    public void RequireBoardLoaded_SuiteWithoutABoard_Passes()
+    public void RequireBoardLoaded_BoardNotRecorded_Throws()
     {
-        BenchmarkBoardGuard.RequireBoardLoaded(RunWith(null, null));
+        var ex = Assert.Throws<InvalidOperationException>(() => BenchmarkBoardGuard.RequireBoardLoaded(GradedRun(true, null, loaded: false)));
+
+        Assert.Contains(BenchmarkRunExamRecord.BoardNotRecordedRefusal, ex.Message);
     }
 
     [Fact]
-    public void RequireBoardLoaded_BoardLoaded_Passes()
+    public void RequireBoardLoaded_RunWithoutABoard_Passes()
     {
-        BenchmarkBoardGuard.RequireBoardLoaded(RunWith(11, Snapshot()));
+        BenchmarkBoardGuard.RequireBoardLoaded(GradedRun(false, null, loaded: false));
+    }
+
+    [Fact]
+    public void RequireBoardLoaded_RecordLoaded_Passes()
+    {
+        BenchmarkBoardGuard.RequireBoardLoaded(GradedRun(true, 11, loaded: true));
+    }
+
+    [Fact]
+    public void RequireBoardLoaded_ReadsTheRunsRecord_NeverTheSuitesCurrentBoard()
+    {
+        // The suite's board was replaced after the run; the run's record is what is graded with.
+        var run = GradedRun(true, 11, loaded: true);
+        run.BenchmarkSuite = new BenchmarkSuite { Id = 3, Name = "Snapshot suite", GameSnapshotId = 99 };
+
+        BenchmarkBoardGuard.RequireBoardLoaded(run);
+        Assert.Contains("a - a blessed +1 quarterstaff", BenchmarkService.GradingBoardBlock(run));
     }
 
     [Fact]
     public void BoardCharsSent_IsTheBoardLength_ZeroWhenMissing_NullWithoutABoard()
     {
-        Assert.Equal(BoardText.Length, BenchmarkBoardGuard.BoardCharsSent(RunWith(11, Snapshot())));
-        Assert.Equal(0, BenchmarkBoardGuard.BoardCharsSent(RunWith(11, null)));
-        Assert.Null(BenchmarkBoardGuard.BoardCharsSent(RunWith(null, null)));
+        Assert.Equal(BoardText.Length, BenchmarkBoardGuard.BoardCharsSent(GradedRun(true, 11, loaded: true)));
+        Assert.Equal(0, BenchmarkBoardGuard.BoardCharsSent(GradedRun(true, 11, loaded: false)));
+        Assert.Null(BenchmarkBoardGuard.BoardCharsSent(GradedRun(false, null, loaded: false)));
     }
 
     private static DbContextOptions<ApplicationDbContext> Options(string name) =>
@@ -90,6 +132,14 @@ public class BenchmarkBoardGuardTests
         {
             SuiteName = "Snapshot suite",
             BenchmarkSuite = suite,
+            GameSnapshotNameUsed = "Board",
+            GameSnapshotSha256Used = "board-sha",
+            BoardSnapshot = new BenchmarkRunBoardSnapshot
+            {
+                Sha256 = BenchmarkRunBoardSnapshotStore.ComputeSha256(BoardText, null),
+                SanitizedText = BoardText,
+                CharCount = BoardText.Length
+            },
             TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "TestProvider", modelId: "candidate-model", displayName: "Candidate"),
             AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "TestProvider", modelId: "assessor-model", displayName: "Assessor"),
             Status = BenchmarkRunStatus.Completed
@@ -99,7 +149,9 @@ public class BenchmarkBoardGuardTests
             BenchmarkRun = run,
             OrderIndex = 1,
             QuestionText = "What is wielded?",
-            AnswerText = "A blessed +1 quarterstaff."
+            AnswerText = "A blessed +1 quarterstaff.",
+            ExpectedPointsUsed = "- the quarterstaff",
+            ExpectedPointsRecorded = true
         };
         db.BenchmarkRunAnswers.Add(answer);
         await db.SaveChangesAsync(ct);
@@ -118,7 +170,7 @@ public class BenchmarkBoardGuardTests
             answer.OrderIndex,
             answer.QuestionText,
             BenchmarkDifficulty.Simple,
-            run.BenchmarkSuite!.Questions.Single().ExpectedPoints,
+            answer.ExpectedPointsRecorded ? BenchmarkRunExamRecord.Rubric(answer) : null,
             answer.AnswerText,
             BenchmarkAnswerStatus.Ok,
             boardGivenAbove: boardBlock != null);
@@ -189,12 +241,14 @@ public class BenchmarkBoardGuardTests
     }
 
     [Fact]
-    public void ASuiteWithoutABoard_SendsNoBoardMessage_AndNoPointerToOne()
+    public void ARunWithoutABoard_SendsNoBoardMessage_AndNoPointerToOne()
     {
-        var run = RunWith(null, null);
-        run.BenchmarkSuite!.Questions.Add(new BenchmarkQuestion { QuestionText = "Q", ExpectedPoints = "- p", OrderIndex = 1 });
+        var run = GradedRun(false, null, loaded: false);
 
-        var seed = AssessorSeedFor(run, new BenchmarkRunAnswer { OrderIndex = 1, QuestionText = "Q", AnswerText = "A." });
+        var seed = AssessorSeedFor(run, new BenchmarkRunAnswer
+        {
+            OrderIndex = 1, QuestionText = "Q", AnswerText = "A.", ExpectedPointsUsed = "- p", ExpectedPointsRecorded = true
+        });
 
         Assert.Equal(new[] { "system", "user" }, seed.Select(Role));
         Assert.DoesNotContain(BenchmarkAssessmentPrompt.BoardGivenAboveLine, Content(seed[1]));
@@ -272,9 +326,29 @@ public class BenchmarkBoardGuardTests
         using var db = new ApplicationDbContext(Options(name));
         var run = await db.BenchmarkRuns
             .Include(r => r.BenchmarkSuite)
-            .ThenInclude(s => s!.Questions)
+            .ThenInclude(s => s!.GameSnapshot)
             .FirstAsync(TestContext.Current.CancellationToken);
 
         Assert.Throws<InvalidOperationException>(() => BenchmarkBoardGuard.RequireBoardLoaded(run));
+    }
+
+    [Fact]
+    public async Task LaunchStamp_PointsTheRunAtARecordOfItsSuitesBoard()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = new ApplicationDbContext(Options(Guid.NewGuid().ToString()));
+        var run = RunWith(11, Snapshot());
+
+        BenchmarkService.StampBoardProvenance(run, Array.Empty<BenchmarkQuestion>());
+        await BenchmarkService.StampBoardRecordAsync(db, run, ct);
+
+        Assert.NotNull(run.BoardSnapshot);
+        Assert.Equal(BoardText, run.BoardSnapshot!.SanitizedText);
+        Assert.Equal("board-sha", run.GameSnapshotSha256Used);
+        Assert.Equal(1, await db.BenchmarkRunBoardSnapshots.CountAsync(ct));
+
+        var withoutBoard = RunWith(null, null);
+        await BenchmarkService.StampBoardRecordAsync(db, withoutBoard, ct);
+        Assert.Null(withoutBoard.BoardSnapshot);
     }
 }

@@ -153,20 +153,20 @@ export function runsBadge(plotted: readonly { readonly runCount: number }[]): Fi
   return { text, tone: 'neutral', kind: 'runs' };
 }
 
-/** Scored questions per plotted entry against the suite: `18 questions`, `16 of 18 questions`, `15–16 of 18 questions`. */
-export function questionsBadge(min: number, max: number, suite: number): FigureBadge {
+/** Scored questions per plotted entry against the questions the runs were asked: `18 questions`, `16 of 18 questions`, `15–16 of 18 questions`. */
+export function questionsBadge(min: number, max: number, asked: number): FigureBadge {
   const scored = min === max ? `${min}` : `${min}–${max}`;
-  if (suite <= 0) {
+  if (asked <= 0) {
     return { text: `${scored} ${min === max && min === 1 ? 'question' : 'questions'}`, tone: 'neutral', kind: 'questions' };
   }
-  if (min === suite && max === suite) {
-    return { text: `${suite} ${suite === 1 ? 'question' : 'questions'}`, tone: 'neutral', kind: 'questions' };
+  if (min === asked && max === asked) {
+    return { text: `${asked} ${asked === 1 ? 'question' : 'questions'}`, tone: 'neutral', kind: 'questions' };
   }
-  const noun = suite === 1 ? 'question' : 'questions';
+  const noun = asked === 1 ? 'question' : 'questions';
   return {
-    text: `${scored} of ${suite} ${noun}`,
+    text: `${scored} of ${asked} ${noun}`,
     tone: 'neutral',
-    ariaLabel: `${scored} of the suite's ${suite} ${noun} scored`,
+    ariaLabel: `${scored} of ${asked} asked ${noun} scored`,
     kind: 'questions',
   };
 }
