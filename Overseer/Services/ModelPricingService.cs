@@ -393,10 +393,10 @@ public class ModelPricingService
             }
         }
 
-        var liveCandidate = await ResolveForConfigurationAsync(run.TestedModelConfigurationId, run.TestedModelProviderUsed, run.TestedModelIdUsed);
-        var liveAssessor = await ResolveForConfigurationAsync(run.AssessorModelConfigurationId, run.AssessorModelProviderUsed, run.AssessorModelIdUsed);
-        var liveVerifier = await ResolveForConfigurationAsync(run.ClaimVerifierModelConfigurationId, run.ClaimVerifierProviderUsed, run.ClaimVerifierModelIdUsed);
-        var liveSecondOpinion = await ResolveForConfigurationAsync(run.SecondOpinionAssessorModelConfigurationId, run.SecondOpinionAssessorModelProviderUsed, run.SecondOpinionAssessorModelIdUsed);
+        var liveCandidate = await ResolveForConfigurationAsync(run.TestedModelConfigurationId, run.TestedModelSnapshot.Provider, run.TestedModelSnapshot.ModelId);
+        var liveAssessor = await ResolveForConfigurationAsync(run.AssessorModelConfigurationId, run.AssessorModelSnapshot.Provider, run.AssessorModelSnapshot.ModelId);
+        var liveVerifier = await ResolveForConfigurationAsync(run.ClaimVerifierModelConfigurationId, run.ClaimVerifierModelSnapshot?.Provider, run.ClaimVerifierModelSnapshot?.ModelId);
+        var liveSecondOpinion = await ResolveForConfigurationAsync(run.SecondOpinionAssessorModelConfigurationId, run.SecondOpinionAssessorModelSnapshot?.Provider, run.SecondOpinionAssessorModelSnapshot?.ModelId);
 
         return new BenchmarkRunPricing(liveCandidate, liveAssessor, liveVerifier, liveSecondOpinion, IsSnapshot: false);
     }
@@ -685,7 +685,7 @@ public class ModelPricingService
                 run.TotalLongContextInputTokens, run.TotalLongContextOutputTokens,
                 run.TotalLongContextCacheReadTokens, run.TotalLongContextCacheCreationTokens,
                 actualServiceTier: servedTier,
-                requestedServiceTier: run.TestedModelServiceTierUsed)
+                requestedServiceTier: run.TestedModelSnapshot.ServiceTier)
             : default;
 
         // Every stored Total*InputTokens column is a *total* prompt figure that already contains the

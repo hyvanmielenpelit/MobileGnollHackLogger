@@ -17,7 +17,9 @@ using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Agents;
 using Overseer.Services.Benchmarking;
+using Overseer.Services.Privacy;
 using Overseer.Services.Providers;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 public class BenchmarkComplianceGuardTests
@@ -54,12 +56,8 @@ public class BenchmarkComplianceGuardTests
         return new BenchmarkRun
         {
             SuiteName = suiteName,
-            TestedModelProviderUsed = "Google",
-            TestedModelDisplayNameUsed = "Gemini Pro",
-            TestedModelIdUsed = "gemini-2.5-pro",
-            AssessorModelProviderUsed = "Anthropic",
-            AssessorModelDisplayNameUsed = "Claude Sonnet",
-            AssessorModelIdUsed = "claude-3-7-sonnet",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-2.5-pro", displayName: "Gemini Pro"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-7-sonnet", displayName: "Claude Sonnet"),
             StartedAtUtc = startedAtUtc ?? DateTime.UtcNow
         };
     }
@@ -135,12 +133,12 @@ public class BenchmarkComplianceGuardTests
 
         // 1 run on Suite 1 with Model A
         var r1 = CreateTestRun("Suite1", DateTime.UtcNow.AddMinutes(-30));
-        r1.TestedModelIdUsed = "model-a";
+        r1.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "model-a", displayName: "Gemini Pro");
         db.BenchmarkRuns.Add(r1);
 
         // 1 run on Suite 2 with Model B
         var r2 = CreateTestRun("Suite2", DateTime.UtcNow.AddMinutes(-10));
-        r2.TestedModelIdUsed = "model-b";
+        r2.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "model-b", displayName: "Gemini Pro");
         db.BenchmarkRuns.Add(r2);
         await db.SaveChangesAsync(ct);
 
@@ -246,6 +244,8 @@ public class BenchmarkComplianceGuardTests
 
         var difficultyJobManager = new BenchmarkDifficultyJobManager();
 
+        var endpointPolicy = new EndpointPolicy(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build());
+
         var benchmarkService = new BenchmarkService(
             scopeFactory,
             null!,
@@ -254,13 +254,14 @@ public class BenchmarkComplianceGuardTests
             runManager,
             difficultyJobManager,
             scoringProfileService,
+            endpointPolicy,
             config,
             NullLogger<BenchmarkService>.Instance);
 
         // StartRun delegates every validation to the launcher, so this one must be real: it is
         // the code path these tests are about. The orchestrator is only entered when RunCount > 1,
         // which these tests do not do, but it is cheap to build and a null would be a trap.
-        var runLauncher = new BenchmarkRunLauncher(db, benchmarkService, runManager, guard);
+        var runLauncher = new BenchmarkRunLauncher(db, benchmarkService, runManager, guard, endpointPolicy);
         var seriesOrchestrator = new BenchmarkSeriesOrchestrator(
             scopeFactory, runManager, NullLogger<BenchmarkSeriesOrchestrator>.Instance);
 
@@ -435,12 +436,8 @@ public class BenchmarkComplianceGuardTests
         {
             BenchmarkSuiteId = suite.Id,
             SuiteName = suite.Name,
-            TestedModelProviderUsed = "Google",
-            TestedModelDisplayNameUsed = "Gemini",
-            TestedModelIdUsed = "gemini",
-            AssessorModelProviderUsed = "Anthropic",
-            AssessorModelDisplayNameUsed = "Claude",
-            AssessorModelIdUsed = "claude",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini", displayName: "Gemini"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude", displayName: "Claude"),
             StartedAtUtc = DateTime.UtcNow.AddHours(-2)
         };
         var answer = new BenchmarkRunAnswer
@@ -485,12 +482,8 @@ public class BenchmarkComplianceGuardTests
         {
             BenchmarkSuiteId = suite.Id,
             SuiteName = suite.Name,
-            TestedModelProviderUsed = "Google",
-            TestedModelDisplayNameUsed = "Gemini",
-            TestedModelIdUsed = "gemini",
-            AssessorModelProviderUsed = "Anthropic",
-            AssessorModelDisplayNameUsed = "Claude",
-            AssessorModelIdUsed = "claude",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini", displayName: "Gemini"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude", displayName: "Claude"),
             StartedAtUtc = DateTime.UtcNow.AddHours(-2),
             Status = BenchmarkRunStatus.Completed
         };
@@ -550,12 +543,8 @@ public class BenchmarkComplianceGuardTests
         {
             BenchmarkSuiteId = suite.Id,
             SuiteName = suite.Name,
-            TestedModelProviderUsed = "Google",
-            TestedModelDisplayNameUsed = "Gemini",
-            TestedModelIdUsed = "gemini",
-            AssessorModelProviderUsed = "Anthropic",
-            AssessorModelDisplayNameUsed = "Claude",
-            AssessorModelIdUsed = "claude"
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini", displayName: "Gemini"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude", displayName: "Claude")
         };
         run1.Answers.Add(new BenchmarkRunAnswer { QuestionText = "Q1", AnswerText = "12345", OrderIndex = 1 });
         run1.Answers.Add(new BenchmarkRunAnswer { QuestionText = "Q2", AnswerText = "67890", OrderIndex = 2 });
@@ -564,12 +553,8 @@ public class BenchmarkComplianceGuardTests
         {
             BenchmarkSuiteId = suite.Id,
             SuiteName = suite.Name,
-            TestedModelProviderUsed = "Google",
-            TestedModelDisplayNameUsed = "Gemini",
-            TestedModelIdUsed = "gemini",
-            AssessorModelProviderUsed = "Anthropic",
-            AssessorModelDisplayNameUsed = "Claude",
-            AssessorModelIdUsed = "claude"
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini", displayName: "Gemini"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude", displayName: "Claude")
         };
         run2.Answers.Add(new BenchmarkRunAnswer { QuestionText = "Q1", AnswerText = "abc", OrderIndex = 1 });
 

@@ -354,6 +354,42 @@ public class EndpointPolicy
             return AiEndpointDescriptor.Official;
         }
 
+        return BuildDescriptor(baseUrl, customHeadersJson, apiVersion);
+    }
+
+    /// <summary>
+    /// Builds a descriptor from recorded values and <b>never falls back</b>: when they no longer
+    /// validate the call fails, so a benchmark can never run against an endpoint other than the one
+    /// it records. Blank <paramref name="baseUrl"/> and <paramref name="customHeadersJson"/> are the
+    /// official endpoint, whatever <paramref name="apiVersion"/> holds, as in
+    /// <see cref="Resolve(string?, string?, string?)"/>.
+    /// </summary>
+    public bool TryResolveStrict(
+        string? baseUrl, string? customHeadersJson, string? apiVersion,
+        out AiEndpointDescriptor endpoint, out string? error)
+    {
+        if (string.IsNullOrWhiteSpace(baseUrl) && string.IsNullOrWhiteSpace(customHeadersJson))
+        {
+            endpoint = AiEndpointDescriptor.Official;
+            error = null;
+            return true;
+        }
+
+        var result = ValidateWithoutDns(baseUrl, customHeadersJson, apiVersion);
+        if (!result.IsValid)
+        {
+            endpoint = AiEndpointDescriptor.Official;
+            error = result.Error;
+            return false;
+        }
+
+        endpoint = BuildDescriptor(baseUrl, customHeadersJson, apiVersion);
+        error = null;
+        return true;
+    }
+
+    private static AiEndpointDescriptor BuildDescriptor(string? baseUrl, string? customHeadersJson, string? apiVersion)
+    {
         IReadOnlyDictionary<string, string>? headers = null;
         if (!string.IsNullOrWhiteSpace(customHeadersJson))
         {

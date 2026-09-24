@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 public class BenchmarkItemAnalysisTests
@@ -50,8 +51,8 @@ public class BenchmarkItemAnalysisTests
             Id = runId,
             BenchmarkSuiteId = 5,
             SuiteName = "GnollHack Player Assistance Benchmark Suite",
-            TestedModelIdUsed = testedModelId,
-            AssessorModelIdUsed = assessorModelId,
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(modelId: testedModelId),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: assessorModelId),
             ScoringMethodVersion = scoringMethodVersion,
             QualityIndex = runQualityIndex,
             Answers = new List<BenchmarkRunAnswer>

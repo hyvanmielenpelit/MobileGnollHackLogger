@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 /// <summary>
@@ -45,20 +46,22 @@ public class BenchmarkComparabilityIndexTests
             Status = BenchmarkRunStatus.Completed,
             StartedAtUtc = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc).AddHours(id),
 
-            TestedModelProviderUsed = "OpenAI",
-            TestedModelIdUsed = modelId,
-            TestedModelDisplayNameUsed = modelId,
-            TestedModelThinkingLevelUsed = "high",
-            TestedModelReasoningModeUsed = "enabled",
-            TestedModelReasoningSummaryUsed = "auto",
-            TestedModelServiceTierUsed = "default",
-            TestedModelMaxOutputTokensUsed = 32000,
-            TestedModelParallelExecutionModeUsed = MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled,
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(
+                provider: "OpenAI",
+                modelId: modelId,
+                displayName: modelId,
+                thinkingLevel: "high",
+                reasoningMode: "enabled",
+                reasoningSummary: "auto",
+                serviceTier: "default",
+                maxOutputTokens: 32000,
+                parallelExecutionMode: MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled),
 
-            AssessorModelProviderUsed = "Google",
-            AssessorModelIdUsed = "gemini-3.7-pro",
-            AssessorModelDisplayNameUsed = "Gemini 3.7 Pro",
-            AssessorModelParallelExecutionModeUsed = MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled,
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(
+                provider: "Google",
+                modelId: "gemini-3.7-pro",
+                displayName: "Gemini 3.7 Pro",
+                parallelExecutionMode: MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled),
 
             CandidatePromptOptionsJson = "{\"verboseMode\":false,\"spoilerFreeMode\":false,\"overseerMode\":0}",
             CandidateSystemPromptSha256 = "e9b3e9a7c4d1b8f0a2e6c9d3b7f1a4e8",

@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 /// <summary>
@@ -45,8 +46,8 @@ public class BenchmarkGroupStatisticsTests
             Id = runId,
             BenchmarkSuiteId = 5,
             SuiteName = "GnollHack Player Assistance Benchmark Suite",
-            TestedModelIdUsed = "gpt-5.6-luna",
-            AssessorModelIdUsed = "gemini-3.7-pro",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5.6-luna"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-pro"),
             ScoringMethodVersion = 8,
             SpeedIndex = speedIndex
         };

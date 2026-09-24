@@ -192,6 +192,7 @@ public class BenchmarkGroupAnalysisService
         // view and the analysis can never disagree about what kind of set this is.
         loaded.Group.Tier = (BenchmarkRunGroupTier)tier;
         loaded.Group.ComparabilityKeyHash = loaded.Comparability.ComparabilityKeyHash;
+        loaded.Group.ComparabilityKeyVersion = BenchmarkComparabilityKey.DefinitionVersion;
         loaded.Group.TierReasonsJson = SerialiseTierReasons(loaded.Comparability);
         loaded.Group.ModifiedAtUtc = DateTime.UtcNow;
 

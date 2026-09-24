@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 // System.Linq declares a ParallelExecutionMode of its own, so the unqualified name is
@@ -42,9 +43,8 @@ public class BenchmarkGroupReportBuilderTests
             Id = runId,
             BenchmarkSuiteId = 5,
             SuiteName = "GnollHack Player Assistance Benchmark Suite",
-            TestedModelIdUsed = "gpt-5.6-luna",
-            TestedModelDisplayNameUsed = "GPT-5.6 Luna",
-            AssessorModelIdUsed = "gemini-3.7-flash",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5.6-luna", displayName: "GPT-5.6 Luna"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gemini-3.7-flash"),
             ScoringMethodVersion = 8,
             HarnessVersion = "12",
             SpeedIndex = speedIndex,
@@ -344,7 +344,7 @@ public class BenchmarkGroupReportBuilderTests
         foreach (var run in runs)
         {
             run.CandidatePromptOptionsJson = Options;
-            run.TestedModelParallelExecutionModeUsed = ParallelExecutionMode.Enabled;
+            run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5.6-luna", displayName: "GPT-5.6 Luna", parallelExecutionMode: ParallelExecutionMode.Enabled);
         }
 
         var result = BenchmarkGroupStatistics.Compute(suite, questions, runs);
@@ -381,7 +381,7 @@ public class BenchmarkGroupReportBuilderTests
         foreach (var run in runs)
         {
             run.CandidatePromptOptionsJson = Options;
-            run.TestedModelParallelExecutionModeUsed = mode;
+            run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5.6-luna", displayName: "GPT-5.6 Luna", parallelExecutionMode: mode);
         }
 
         var result = BenchmarkGroupStatistics.Compute(suite, questions, runs);

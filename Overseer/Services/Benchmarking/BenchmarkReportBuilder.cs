@@ -111,7 +111,7 @@ public static class BenchmarkReportBuilder
             return "prompt and board delivery verified against the provider request body before the first question.";
         }
 
-        bool isOpenAi = (run.TestedModelProviderUsed ?? string.Empty)
+        bool isOpenAi = (run.TestedModelSnapshot.Provider ?? string.Empty)
             .Contains("openai", StringComparison.OrdinalIgnoreCase);
 
         if (hasGameSnapshot)
@@ -612,7 +612,7 @@ public static class BenchmarkReportBuilder
     private static string EvidenceInformedRegradeLine(BenchmarkRun run, BenchmarkRunAnswer a)
     {
         string? json = a.EvidenceInformedJson;
-        string regrader = ReadJsonString(json, "assessor") ?? a.AssessedByModelDisplayNameUsed ?? "assessor";
+        string regrader = a.EvidenceInformedByModelSnapshot.Label() ?? ReadJsonString(json, "assessor") ?? a.AssessedByModelSnapshot.Label() ?? "assessor";
         var withdrawn = BenchmarkService.ReadEvidenceInformedWithdrawn(json);
         string withdrew = withdrawn.Count > 0 ? string.Join("; ", withdrawn) : "nothing";
 
@@ -1053,7 +1053,7 @@ public static class BenchmarkReportBuilder
         string suiteDisplay = !string.IsNullOrEmpty(run.GameSnapshotNameUsed)
             ? $"suite **{run.SuiteName}** (Snapshot: **{run.GameSnapshotNameUsed}**)"
             : $"suite **{run.SuiteName}**";
-        sb.AppendLine($"This report contains the automated domain knowledge, reasoning, and efficiency benchmark results for {suiteDisplay}, evaluated against model **{run.TestedModelDisplayNameUsed}** ({run.TestedModelProviderUsed} / {run.TestedModelIdUsed}).");
+        sb.AppendLine($"This report contains the automated domain knowledge, reasoning, and efficiency benchmark results for {suiteDisplay}, evaluated against model **{run.TestedModelSnapshot.Label()}** ({run.TestedModelSnapshot.Provider} / {run.TestedModelSnapshot.ModelId}).");
         sb.AppendLine($"Run conducted on {Stamp(run.StartedAtUtc)} UTC" + (!string.IsNullOrEmpty(run.StartedByUser?.UserName) ? $" by {run.StartedByUser.UserName}." : "."));
         sb.AppendLine();
         sb.AppendLine("> *Note:* This benchmark evaluates domain-specific roguelike intelligence, codebase comprehension, and tool usage within the GnollHack Overseer harness. Scoring uses Behaviorally Anchored Rating Scales (BARS), weighted geometric aggregation, and logarithmic speed decay.");
@@ -1143,7 +1143,7 @@ public static class BenchmarkReportBuilder
         // Speed Index that describes the profile more than the model: the 2026-09-03 run scored
         // a max-thinking model 65 on speed beside 91 on intelligence. Say so where the reader
         // meets the number, rather than leaving it to be inferred from the thinking level.
-        string candidateThinking = run.TestedModelThinkingLevelUsed ?? string.Empty;
+        string candidateThinking = run.TestedModelSnapshot.ThinkingLevel ?? string.Empty;
         bool deliberatingCandidate =
             candidateThinking.Equals("high", StringComparison.OrdinalIgnoreCase) ||
             candidateThinking.Equals("max", StringComparison.OrdinalIgnoreCase);
@@ -1179,10 +1179,10 @@ public static class BenchmarkReportBuilder
         // priors; an assessor and a second opinion drawn from one provider is the arrangement in
         // which the "independent reader" is least independent, and a reader of the agreement
         // figures below needs to know which of the two produced them.
-        var pairingProviders = new List<string?> { run.TestedModelProviderUsed, run.AssessorModelProviderUsed };
+        var pairingProviders = new List<string?> { run.TestedModelSnapshot.Provider, run.AssessorModelSnapshot.Provider };
         if (run.SecondOpinionAssessorModelConfigurationId.HasValue)
         {
-            pairingProviders.Add(run.SecondOpinionAssessorModelProviderUsed);
+            pairingProviders.Add(run.SecondOpinionAssessorModelSnapshot?.Provider);
         }
         int distinctProviders = pairingProviders
             .Where(p => !string.IsNullOrWhiteSpace(p))
@@ -1190,10 +1190,10 @@ public static class BenchmarkReportBuilder
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Count();
         sb.AppendLine(run.SecondOpinionAssessorModelConfigurationId.HasValue
-            ? $"- **Assessor Pairing:** candidate {run.TestedModelProviderUsed}, assessor {run.AssessorModelProviderUsed}, second opinion {run.SecondOpinionAssessorModelProviderUsed} — {distinctProviders} distinct provider(s)"
-            : $"- **Assessor Pairing:** candidate {run.TestedModelProviderUsed}, assessor {run.AssessorModelProviderUsed} — {distinctProviders} distinct provider(s), no second opinion");
+            ? $"- **Assessor Pairing:** candidate {run.TestedModelSnapshot.Provider}, assessor {run.AssessorModelSnapshot.Provider}, second opinion {run.SecondOpinionAssessorModelSnapshot?.Provider} — {distinctProviders} distinct provider(s)"
+            : $"- **Assessor Pairing:** candidate {run.TestedModelSnapshot.Provider}, assessor {run.AssessorModelSnapshot.Provider} — {distinctProviders} distinct provider(s), no second opinion");
         if (run.SecondOpinionAssessorModelConfigurationId.HasValue &&
-            string.Equals(run.AssessorModelProviderUsed, run.SecondOpinionAssessorModelProviderUsed, StringComparison.OrdinalIgnoreCase))
+            string.Equals(run.AssessorModelSnapshot.Provider, run.SecondOpinionAssessorModelSnapshot?.Provider, StringComparison.OrdinalIgnoreCase))
         {
             sb.AppendLine("  - *The assessor and the second opinion come from the same provider, so the second verdict is a weaker check than a cross-provider one: two models from one family share training data and failure modes, and can agree for reasons that have nothing to do with the answer.*");
         }
@@ -1249,15 +1249,16 @@ public static class BenchmarkReportBuilder
         sb.AppendLine();
 
         sb.AppendLine("### Model Under Test");
-        sb.AppendLine($"- **Display Name:** {run.TestedModelDisplayNameUsed}");
-        sb.AppendLine($"- **Provider:** {run.TestedModelProviderUsed}");
-        sb.AppendLine($"- **Model ID:** {run.TestedModelIdUsed}");
-        sb.AppendLine($"- **Thinking Level:** {run.TestedModelThinkingLevelUsed ?? "Default"}");
-        sb.AppendLine($"- **Reasoning Mode:** {run.TestedModelReasoningModeUsed ?? "Default"}");
-        sb.AppendLine($"- **Reasoning Summary:** {run.TestedModelReasoningSummaryUsed ?? "Default"}");
-        sb.AppendLine($"- **Requested Service Tier:** {run.TestedModelServiceTierUsed ?? "Default"}");
-        sb.AppendLine($"- **Max Output Tokens:** {(run.TestedModelMaxOutputTokensUsed.HasValue ? run.TestedModelMaxOutputTokensUsed.Value.ToString() : "Default")}");
-        sb.AppendLine($"- **Parallel Tool Calls:** {run.TestedModelParallelExecutionModeUsed} *(provider-side tool batching)*");
+        sb.AppendLine($"- **Display Name:** {run.TestedModelSnapshot.Label()}");
+        sb.AppendLine($"- **Provider:** {run.TestedModelSnapshot.Provider}");
+        sb.AppendLine($"- **Model ID:** {run.TestedModelSnapshot.ModelId}");
+        sb.AppendLine($"- **Endpoint:** {SystemAiConfigurationSnapshotStore.DescribeEndpoint(run.TestedModelSnapshot)}");
+        sb.AppendLine($"- **Thinking Level:** {run.TestedModelSnapshot.ThinkingLevel ?? "Default"}");
+        sb.AppendLine($"- **Reasoning Mode:** {run.TestedModelSnapshot.ReasoningMode ?? "Default"}");
+        sb.AppendLine($"- **Reasoning Summary:** {run.TestedModelSnapshot.ReasoningSummary ?? "Default"}");
+        sb.AppendLine($"- **Requested Service Tier:** {run.TestedModelSnapshot.ServiceTier ?? "Default"}");
+        sb.AppendLine($"- **Max Output Tokens:** {(run.TestedModelSnapshot.MaxOutputTokens.HasValue ? run.TestedModelSnapshot.MaxOutputTokens.Value.ToString() : "Default")}");
+        sb.AppendLine($"- **Parallel Tool Calls:** {run.TestedModelSnapshot.ParallelExecutionMode ?? MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled} *(provider-side tool batching)*");
         sb.AppendLine();
 
         sb.AppendLine("### Chat Prompt Under Test");
@@ -1266,7 +1267,7 @@ public static class BenchmarkReportBuilder
         {
             sb.AppendLine("The candidate is graded under the **production Overseer chat system prompt** (`ChatService.BuildSystemPrompt`), not a benchmark-specific prompt. Every quality verdict below is a verdict on the prompt real users receive.");
             sb.AppendLine();
-            sb.AppendLine($"- **Tool batching policy:** {run.TestedModelParallelExecutionModeUsed} — {ParallelPolicyDescription(run.TestedModelParallelExecutionModeUsed)}");
+            sb.AppendLine($"- **Tool batching policy:** {run.TestedModelSnapshot.ParallelExecutionMode ?? MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled} — {ParallelPolicyDescription(run.TestedModelSnapshot.ParallelExecutionMode ?? MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled)}");
             sb.AppendLine("- *Configuration not recorded for this run.*");
         }
         else
@@ -1287,7 +1288,7 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Mode:** {modeStr} · **Response style:** {styleStr}");
             sb.AppendLine($"- **Tools:** {toolsStr} · **Web search:** {webStr} · **Subagents:** {subagentsStr} · **Source code references:** {srcStr}");
             sb.AppendLine($"- **Spoiler-free mode:** {spoilerStr} · **Active game:** {activeGameStr} · **Message history:** {historyStr} · **Game snapshot:** {(promptOpts.HasGameSnapshot ? "yes" : "no")}");
-            sb.AppendLine($"- **Tool batching policy:** {run.TestedModelParallelExecutionModeUsed} — {ParallelPolicyDescription(run.TestedModelParallelExecutionModeUsed)}");
+            sb.AppendLine($"- **Tool batching policy:** {run.TestedModelSnapshot.ParallelExecutionMode ?? MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled} — {ParallelPolicyDescription(run.TestedModelSnapshot.ParallelExecutionMode ?? MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled)}");
             sb.AppendLine("- **Pre-injected wiki context:** none — live chat pre-injects relevant articles, so this run is a strictly harder configuration than production and its tool counts are an upper bound on chat's.");
             string? delivery = DeliveryStatement(run, promptOpts.HasGameSnapshot);
             if (delivery != null)
@@ -1305,11 +1306,16 @@ public static class BenchmarkReportBuilder
         sb.AppendLine();
 
         sb.AppendLine("### Assessment Model");
-        sb.AppendLine($"- **Display Name:** {run.AssessorModelDisplayNameUsed}");
-        sb.AppendLine($"- **Provider:** {run.AssessorModelProviderUsed}");
-        sb.AppendLine($"- **Model ID:** {run.AssessorModelIdUsed}");
-        sb.AppendLine($"- **Thinking Level:** {run.AssessorModelThinkingLevelUsed ?? "Default"}");
-        sb.AppendLine($"- **Reasoning Mode:** {run.AssessorModelReasoningModeUsed ?? "Default"}");
+        sb.AppendLine($"- **Display Name:** {run.AssessorModelSnapshot.Label()}");
+        sb.AppendLine($"- **Provider:** {run.AssessorModelSnapshot.Provider}");
+        sb.AppendLine($"- **Model ID:** {run.AssessorModelSnapshot.ModelId}");
+        string assessorEndpoint = SystemAiConfigurationSnapshotStore.DescribeEndpoint(run.AssessorModelSnapshot);
+        if (assessorEndpoint != "official")
+        {
+            sb.AppendLine($"- **Endpoint:** {assessorEndpoint}");
+        }
+        sb.AppendLine($"- **Thinking Level:** {run.AssessorModelSnapshot.ThinkingLevel ?? "Default"}");
+        sb.AppendLine($"- **Reasoning Mode:** {run.AssessorModelSnapshot.ReasoningMode ?? "Default"}");
         sb.AppendLine();
 
         // Named whether or not one was used: "no second opinion" is itself a fact about how the
@@ -1317,11 +1323,16 @@ public static class BenchmarkReportBuilder
         sb.AppendLine("### Second Opinion Assessor");
         if (run.SecondOpinionAssessorModelConfigurationId.HasValue)
         {
-            sb.AppendLine($"- **Display Name:** {run.SecondOpinionAssessorModelDisplayNameUsed}");
-            sb.AppendLine($"- **Provider:** {run.SecondOpinionAssessorModelProviderUsed}");
-            sb.AppendLine($"- **Model ID:** {run.SecondOpinionAssessorModelIdUsed}");
-            sb.AppendLine($"- **Thinking Level:** {run.SecondOpinionAssessorModelThinkingLevelUsed ?? "Default"}");
-            sb.AppendLine($"- **Reasoning Mode:** {run.SecondOpinionAssessorModelReasoningModeUsed ?? "Default"}");
+            sb.AppendLine($"- **Display Name:** {run.SecondOpinionAssessorModelSnapshot.Label()}");
+            sb.AppendLine($"- **Provider:** {run.SecondOpinionAssessorModelSnapshot?.Provider}");
+            sb.AppendLine($"- **Model ID:** {run.SecondOpinionAssessorModelSnapshot?.ModelId}");
+            string secondOpinionEndpoint = SystemAiConfigurationSnapshotStore.DescribeEndpoint(run.SecondOpinionAssessorModelSnapshot);
+            if (secondOpinionEndpoint != "official")
+            {
+                sb.AppendLine($"- **Endpoint:** {secondOpinionEndpoint}");
+            }
+            sb.AppendLine($"- **Thinking Level:** {run.SecondOpinionAssessorModelSnapshot?.ThinkingLevel ?? "Default"}");
+            sb.AppendLine($"- **Reasoning Mode:** {run.SecondOpinionAssessorModelSnapshot?.ReasoningMode ?? "Default"}");
             var configuredMode = ModeOf(run);
             sb.AppendLine($"- **Mode:** {configuredMode}{ModeGloss(configuredMode)} Advisory throughout: the first verdict is what scored.");
             if (configuredMode is BenchmarkSecondOpinionMode.Flagged or BenchmarkSecondOpinionMode.FlaggedAndOutliers)
@@ -1384,21 +1395,26 @@ public static class BenchmarkReportBuilder
         sb.AppendLine("### Claim Verifier");
         if (run.ClaimVerifierModelConfigurationId.HasValue)
         {
-            sb.AppendLine($"- **Display Name:** {run.ClaimVerifierDisplayNameUsed}");
-            sb.AppendLine($"- **Provider:** {run.ClaimVerifierProviderUsed}");
-            sb.AppendLine($"- **Model ID:** {run.ClaimVerifierModelIdUsed}");
-            sb.AppendLine($"- **Thinking Level:** {run.ClaimVerifierThinkingLevelUsed ?? "Default"}");
-            sb.AppendLine($"- **Reasoning Mode:** {run.ClaimVerifierReasoningModeUsed ?? "Default"}");
+            sb.AppendLine($"- **Display Name:** {run.ClaimVerifierModelSnapshot.Label()}");
+            sb.AppendLine($"- **Provider:** {run.ClaimVerifierModelSnapshot?.Provider}");
+            sb.AppendLine($"- **Model ID:** {run.ClaimVerifierModelSnapshot?.ModelId}");
+            string claimVerifierEndpoint = SystemAiConfigurationSnapshotStore.DescribeEndpoint(run.ClaimVerifierModelSnapshot);
+            if (claimVerifierEndpoint != "official")
+            {
+                sb.AppendLine($"- **Endpoint:** {claimVerifierEndpoint}");
+            }
+            sb.AppendLine($"- **Thinking Level:** {run.ClaimVerifierModelSnapshot?.ThinkingLevel ?? "Default"}");
+            sb.AppendLine($"- **Reasoning Mode:** {run.ClaimVerifierModelSnapshot?.ReasoningMode ?? "Default"}");
             sb.AppendLine("- **Role:** Verifies unverified factual claims against source code and wiki using read-only tools. Advisory throughout: nothing here is read by any scoring path.");
-            if (!string.IsNullOrWhiteSpace(run.TestedModelProviderUsed) &&
-                string.Equals(run.TestedModelProviderUsed, run.ClaimVerifierProviderUsed, StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrWhiteSpace(run.TestedModelSnapshot.Provider) &&
+                string.Equals(run.TestedModelSnapshot.Provider, run.ClaimVerifierModelSnapshot?.Provider, StringComparison.OrdinalIgnoreCase))
             {
                 sb.AppendLine("  - *The verifier and the candidate come from the same provider: the tools supply the evidence rather than the model's memory, so this is not worthless — but it is the weakest available pairing.*");
             }
             if (run.SecondOpinionAssessorModelConfigurationId.HasValue &&
                 (run.SecondOpinionAssessorModelConfigurationId == run.ClaimVerifierModelConfigurationId ||
-                 (!string.IsNullOrWhiteSpace(run.SecondOpinionAssessorModelIdUsed) &&
-                  string.Equals(run.SecondOpinionAssessorModelIdUsed, run.ClaimVerifierModelIdUsed, StringComparison.OrdinalIgnoreCase))))
+                 (!string.IsNullOrWhiteSpace(run.SecondOpinionAssessorModelSnapshot?.ModelId) &&
+                  string.Equals(run.SecondOpinionAssessorModelSnapshot?.ModelId, run.ClaimVerifierModelSnapshot?.ModelId, StringComparison.OrdinalIgnoreCase))))
             {
                 sb.AppendLine("  - *Same model as the second-opinion assessor. Under blind mode the second reader is given the verification findings, so a refuted claim and a harsh second opinion on the same answer are one finding, not two independent ones.*");
             }
@@ -1813,7 +1829,7 @@ public static class BenchmarkReportBuilder
         bool cacheCreationUnreported =
             run.TotalCacheCreationTokens == 0 &&
             run.TotalCacheReadTokens > 0 &&
-            string.Equals(run.TestedModelProviderUsed, "OpenAI", StringComparison.OrdinalIgnoreCase);
+            string.Equals(run.TestedModelSnapshot.Provider, "OpenAI", StringComparison.OrdinalIgnoreCase);
         sb.AppendLine(cacheCreationUnreported
             ? "- **Total Cache Creation Tokens:** n/a *(not reported by this provider)*"
             : $"- **Total Cache Creation Tokens:** {Inv(run.TotalCacheCreationTokens, "N0")}");
@@ -2002,26 +2018,26 @@ public static class BenchmarkReportBuilder
                     sb.AppendLine("- **Estimated Cost:** not available as a single total — the participating roles do not price in comparable units; see the per-role figures below.");
                 }
 
-                sb.AppendLine($"  - Candidate ({run.TestedModelIdUsed}): ${Inv(candidateTotalCost, "F2")} ({CostParts(roleParts.Candidate, candidateCard)})");
+                sb.AppendLine($"  - Candidate ({run.TestedModelSnapshot.ModelId}): ${Inv(candidateTotalCost, "F2")} ({CostParts(roleParts.Candidate, candidateCard)})");
 
                 if (hasAssessor && assessorPricing != null)
                 {
-                    sb.AppendLine($"  - Assessor ({run.AssessorModelIdUsed}): ${Inv(assessorTotalCost, "F2")} ({CostParts(roleParts.Assessor, assessorPricing)})");
+                    sb.AppendLine($"  - Assessor ({run.AssessorModelSnapshot.ModelId}): ${Inv(assessorTotalCost, "F2")} ({CostParts(roleParts.Assessor, assessorPricing)})");
                 }
 
                 if (hasSecondOpinion && secondOpinionPricing != null)
                 {
-                    sb.AppendLine($"  - Second Opinion ({run.SecondOpinionAssessorModelIdUsed}): ${Inv(secondOpinionTotalCost, "F2")} ({CostParts(roleParts.SecondOpinion, secondOpinionPricing)})");
+                    sb.AppendLine($"  - Second Opinion ({run.SecondOpinionAssessorModelSnapshot?.ModelId}): ${Inv(secondOpinionTotalCost, "F2")} ({CostParts(roleParts.SecondOpinion, secondOpinionPricing)})");
                 }
 
                 if (hasVerifier && verifierPricing != null)
                 {
-                    sb.AppendLine($"  - Claim Verifier ({run.ClaimVerifierModelIdUsed}): ${Inv(verifierTotalCost, "F2")} ({CostParts(roleParts.ClaimVerifier, verifierPricing)})");
+                    sb.AppendLine($"  - Claim Verifier ({run.ClaimVerifierModelSnapshot?.ModelId}): ${Inv(verifierTotalCost, "F2")} ({CostParts(roleParts.ClaimVerifier, verifierPricing)})");
                 }
 
                 if (hasSynthesis && assessorPricing != null)
                 {
-                    sb.AppendLine($"  - Synthesis ({run.AssessorModelIdUsed}): ${Inv(synthesisTotalCost, "F2")} ({CostParts(roleParts.Synthesis, assessorPricing)})");
+                    sb.AppendLine($"  - Synthesis ({run.AssessorModelSnapshot.ModelId}): ${Inv(synthesisTotalCost, "F2")} ({CostParts(roleParts.Synthesis, assessorPricing)})");
                 }
 
                 // Printed after the five role lines, so they stay contiguous, rather than between
@@ -2104,7 +2120,7 @@ public static class BenchmarkReportBuilder
                 }
 
                 decimal servedTierMultiplier = ModelPricingService.ResolveServiceTierMultiplier(
-                    candidateCard, servedServiceTier, run.TestedModelServiceTierUsed);
+                    candidateCard, servedServiceTier, run.TestedModelSnapshot.ServiceTier);
                 if (servedTierMultiplier != 1.0m && !string.IsNullOrEmpty(servedServiceTier))
                 {
                     sb.AppendLine(
@@ -2696,7 +2712,7 @@ public static class BenchmarkReportBuilder
         {
             var agreementMode = ModeOf(run);
             int answeredForAgreement = answers.Count(BenchmarkRunFinalizer.CountsTowardQualityIndex);
-            string assessorName = run.SecondOpinionAssessorModelDisplayNameUsed ?? "configured assessor";
+            string assessorName = run.SecondOpinionAssessorModelSnapshot.Label() ?? "configured assessor";
 
             sb.AppendLine("### Assessor Agreement");
             sb.AppendLine($"- **Mode:** {agreementMode}{ModeGloss(agreementMode)}");
@@ -3521,17 +3537,17 @@ public static class BenchmarkReportBuilder
                     string triggerPart = string.IsNullOrWhiteSpace(a.SecondOpinionTrigger)
                         ? string.Empty
                         : $" (trigger: {TriggerLabel(a.SecondOpinionTrigger)})";
-                    sb.AppendLine($"> - **Second Opinion ({a.SecondOpinionByModelDisplayNameUsed}):** {a.SecondOpinionQualityScore.Value} / 100, critical error {secondCritical} — {agreement} with the first verdict{triggerPart}. Advisory; the first verdict is what scored.");
+                    sb.AppendLine($"> - **Second Opinion ({a.SecondOpinionByModelSnapshot.Label()}):** {a.SecondOpinionQualityScore.Value} / 100, critical error {secondCritical} — {agreement} with the first verdict{triggerPart}. Advisory; the first verdict is what scored.");
                 }
                 if (!string.IsNullOrWhiteSpace(a.ClaimVerificationError))
                 {
-                    string verifierName = a.ClaimVerificationByModelDisplayNameUsed ?? run.ClaimVerifierDisplayNameUsed ?? "claim verifier";
+                    string verifierName = a.ClaimVerificationByModelSnapshot.Label() ?? run.ClaimVerifierModelSnapshot.Label() ?? "claim verifier";
                     string err = BenchmarkAssessmentFailure.Truncate(a.ClaimVerificationError, 200) ?? a.ClaimVerificationError;
                     sb.AppendLine($"> - **Claim Verification ({verifierName}):** failed — {err}. The unverified claims above were not checked{ClaimVerificationSpendText(a)}.{ClaimVerificationRawTextHead(a)}");
                 }
                 if (!string.IsNullOrWhiteSpace(a.ClaimVerificationJson) || a.ClaimsSupportedCount.HasValue || a.ClaimsRefutedCount.HasValue || a.ClaimsIndeterminateCount.HasValue)
                 {
-                    string verifierName = a.ClaimVerificationByModelDisplayNameUsed ?? run.ClaimVerifierDisplayNameUsed ?? "claim verifier";
+                    string verifierName = a.ClaimVerificationByModelSnapshot.Label() ?? run.ClaimVerifierModelSnapshot.Label() ?? "claim verifier";
                     int sCount = a.ClaimsSupportedCount ?? 0;
                     int rCount = a.ClaimsRefutedCount ?? 0;
                     int iCount = a.ClaimsIndeterminateCount ?? 0;
@@ -3586,7 +3602,7 @@ public static class BenchmarkReportBuilder
                 if (a.AssessedByModelConfigurationId.HasValue &&
                     a.AssessedByModelConfigurationId != run.AssessorModelConfigurationId)
                 {
-                    sb.AppendLine($"> - **Assessed by:** {a.AssessedByModelDisplayNameUsed} ({a.AssessedByModelProviderUsed}, {a.AssessedByModelIdUsed}) — differs from this run's assessor");
+                    sb.AppendLine($"> - **Assessed by:** {a.AssessedByModelSnapshot.Label()} ({a.AssessedByModelSnapshot?.Provider}, {a.AssessedByModelSnapshot?.ModelId}) — differs from this run's assessor");
                 }
                 // A published index can move after publication. Where it did, the report says so
                 // on the answer that moved, with the score it replaced.
@@ -3595,7 +3611,7 @@ public static class BenchmarkReportBuilder
                     string previous = a.PreviousQualityScore.HasValue
                         ? $"{a.PreviousQualityScore.Value} / 100"
                         : "not recorded";
-                    sb.AppendLine($"> - **Re-assessed:** {a.ReassessmentCount} time(s), most recently {(a.ReassessedAtUtc.HasValue ? Stamp(a.ReassessedAtUtc.Value) + " UTC" : "at an unrecorded time")} by {a.ReassessedByModelDisplayNameUsed ?? "an unrecorded model"} — the first verdict scored {previous} and this one replaced it.");
+                    sb.AppendLine($"> - **Re-assessed:** {a.ReassessmentCount} time(s), most recently {(a.ReassessedAtUtc.HasValue ? Stamp(a.ReassessedAtUtc.Value) + " UTC" : "at an unrecorded time")} by {a.ReassessedByModelSnapshot.Label() ?? "an unrecorded model"} — the first verdict scored {previous} and this one replaced it.");
                 }
                 sb.AppendLine();
             }
@@ -3616,12 +3632,12 @@ public static class BenchmarkReportBuilder
         sb.AppendLine();
         sb.AppendLine("### Compliance & Evaluation Terms");
         sb.AppendLine($"- **Purpose Statement:** {run.PurposeStatementUsed ?? "Internal evaluation of candidate AI models for the Overseer assistant within GnollHack. Benchmark outputs are third-party generated content used solely for automated capability evaluation and scoring, and are not used for training, fine-tuning, distilling, or developing competing AI models."}");
-        sb.AppendLine($"- **Third-Party Model Content:** Outputs generated by **{run.TestedModelDisplayNameUsed}** ({run.TestedModelProviderUsed}) and evaluated by **{run.AssessorModelDisplayNameUsed}** ({run.AssessorModelProviderUsed}) are third-party content evaluated solely for domain-specific benchmark scoring and operational model selection.");
+        sb.AppendLine($"- **Third-Party Model Content:** Outputs generated by **{run.TestedModelSnapshot.Label()}** ({run.TestedModelSnapshot.Provider}) and evaluated by **{run.AssessorModelSnapshot.Label()}** ({run.AssessorModelSnapshot.Provider}) are third-party content evaluated solely for domain-specific benchmark scoring and operational model selection.");
         sb.AppendLine("- **Distillation / Training Prohibition:** No prompt, completion, or evaluation output in this benchmark is used for model training, fine-tuning, distillation, or developing competing AI models.");
-        bool isSameProvider = string.Equals(run.TestedModelProviderUsed, run.AssessorModelProviderUsed, StringComparison.OrdinalIgnoreCase);
+        bool isSameProvider = string.Equals(run.TestedModelSnapshot.Provider, run.AssessorModelSnapshot.Provider, StringComparison.OrdinalIgnoreCase);
         if (isSameProvider)
         {
-            sb.AppendLine($"- **Same-Provider Evaluation Notice:** Both candidate model ({run.TestedModelDisplayNameUsed}) and assessor model ({run.AssessorModelDisplayNameUsed}) belong to the same provider ({run.TestedModelProviderUsed}). Same-provider evaluation acknowledged: **{(run.SameProviderAcknowledged ? "Yes" : "No")}**.");
+            sb.AppendLine($"- **Same-Provider Evaluation Notice:** Both candidate model ({run.TestedModelSnapshot.Label()}) and assessor model ({run.AssessorModelSnapshot.Label()}) belong to the same provider ({run.TestedModelSnapshot.Provider}). Same-provider evaluation acknowledged: **{(run.SameProviderAcknowledged ? "Yes" : "No")}**.");
         }
         sb.AppendLine();
         sb.AppendLine("### Aggregation Formulas");
@@ -3632,7 +3648,7 @@ public static class BenchmarkReportBuilder
         sb.AppendLine("- **Intelligence Index:** $\\Sigma(\\text{Difficulty}(q) \\cdot \\text{Quality}(q)) / \\Sigma(\\text{Difficulty}(q))$ over answered questions and unanswered questions alike, the latter at 0 — an unanswered question is a failed question. Quality only: the Speed Index is reported separately by design and is not folded in.");
         sb.AppendLine("- **Speed Index:** equal-weight mean of $Speed(q)$ over answered questions only, since an answer that does not exist has no latency. Difficulty enters through $Target(q)$, not through the weight; weighting here as well would count difficulty twice and pull the index toward the floor.");
         sb.AppendLine();
-        sb.AppendLine($"> **Comparing Speed Indices:** thinking level dominates model time, so a Speed Index is comparable between runs at the same thinking level and misleading across levels. This run used thinking level **{run.TestedModelThinkingLevelUsed ?? "Default"}**.");
+        sb.AppendLine($"> **Comparing Speed Indices:** thinking level dominates model time, so a Speed Index is comparable between runs at the same thinking level and misleading across levels. This run used thinking level **{run.TestedModelSnapshot.ThinkingLevel ?? "Default"}**.");
         sb.AppendLine();
         if (run.SpeedMeasurementDegraded)
         {
@@ -3867,7 +3883,7 @@ public static class BenchmarkReportBuilder
                 {
                     claimNote = $" [Claims: {d.ClaimsSupportedCount ?? 0} supported, {d.ClaimsRefutedCount ?? 0} refuted, {d.ClaimsIndeterminateCount ?? 0} indeterminate]";
                 }
-                sb.AppendLine($"- **Question {d.OrderIndex}:** first {d.QualityScore ?? 0} / 100 (critical error {(d.CriticalError ? "yes" : "no")}, {d.AssessedByModelDisplayNameUsed}) vs second {d.SecondOpinionQualityScore!.Value} / 100 (critical error {(d.SecondOpinionCriticalError == true ? "yes" : "no")}, {d.SecondOpinionByModelDisplayNameUsed}){claimNote}");
+                sb.AppendLine($"- **Question {d.OrderIndex}:** first {d.QualityScore ?? 0} / 100 (critical error {(d.CriticalError ? "yes" : "no")}, {d.AssessedByModelSnapshot.Label()}) vs second {d.SecondOpinionQualityScore!.Value} / 100 (critical error {(d.SecondOpinionCriticalError == true ? "yes" : "no")}, {d.SecondOpinionByModelSnapshot.Label()}){claimNote}");
                 string? secondReaderComment = ReadSecondOpinionComment(d.SecondOpinionJson);
                 if (secondReaderComment != null)
                 {

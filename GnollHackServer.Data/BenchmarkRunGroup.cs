@@ -70,6 +70,12 @@ public class BenchmarkRunGroup
     public string? ComparabilityKeyHash { get; set; }
 
     /// <summary>
+    /// The comparability key definition version that produced <see cref="ComparabilityKeyHash"/>.
+    /// Null for a hash computed before versions were recorded.
+    /// </summary>
+    public int? ComparabilityKeyVersion { get; set; }
+
+    /// <summary>
     /// The keys that differed when the tier was resolved, as JSON, with the runs they differed on.
     /// A tier verdict with no reasons is unusable in a dialog or a bug report.
     /// </summary>

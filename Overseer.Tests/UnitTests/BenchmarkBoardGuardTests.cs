@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 /// <summary>
@@ -21,12 +22,12 @@ public class BenchmarkBoardGuardTests
     private const string BoardText = "Dungeon Level 3\nHP: 12/60\na - a blessed +1 quarterstaff (weapon in hands)";
     private const string BoardLabel = "--- GAME CONTEXT BOARD (GROUND TRUTH REFERENCE DATA) ---";
 
-    private static BenchmarkRun RunWith(long? snapshotId, BenchmarkGameSnapshot? snapshot) => new()
+    private static BenchmarkRun RunWith(long? snapshotId, BenchmarkGameSnapshot? snapshot) => BenchmarkModelSnapshots.Attach(new BenchmarkRun
     {
         Id = 7,
         SuiteName = "Snapshot suite",
         BenchmarkSuite = new BenchmarkSuite { Id = 3, Name = "Snapshot suite", GameSnapshotId = snapshotId, GameSnapshot = snapshot }
-    };
+    });
 
     private static BenchmarkGameSnapshot Snapshot() => new()
     {
@@ -89,12 +90,8 @@ public class BenchmarkBoardGuardTests
         {
             SuiteName = "Snapshot suite",
             BenchmarkSuite = suite,
-            TestedModelDisplayNameUsed = "Candidate",
-            TestedModelProviderUsed = "TestProvider",
-            TestedModelIdUsed = "candidate-model",
-            AssessorModelDisplayNameUsed = "Assessor",
-            AssessorModelProviderUsed = "TestProvider",
-            AssessorModelIdUsed = "assessor-model",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "TestProvider", modelId: "candidate-model", displayName: "Candidate"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "TestProvider", modelId: "assessor-model", displayName: "Assessor"),
             Status = BenchmarkRunStatus.Completed
         };
         var answer = new BenchmarkRunAnswer

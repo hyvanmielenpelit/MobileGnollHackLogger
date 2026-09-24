@@ -14,6 +14,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
 using Overseer.Services;
 using Overseer.Services.Benchmarking;
+using Overseer.Services.Privacy;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 /// <summary>
@@ -696,8 +698,9 @@ public class BenchmarkAccusedQuoteAdjudicationTests
             var answer = new BenchmarkRunAnswer { QuestionText = "Q", AnswerText = "A", OrderIndex = 1 };
             var run = new BenchmarkRun
             {
-                SuiteName = "S", TestedModelDisplayNameUsed = "c", TestedModelProviderUsed = "p", TestedModelIdUsed = "m",
-                AssessorModelDisplayNameUsed = "a", AssessorModelProviderUsed = "p", AssessorModelIdUsed = "m",
+                SuiteName = "S",
+                TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "p", modelId: "m", displayName: "c"),
+                AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "p", modelId: "m", displayName: "a"),
                 StartedAtUtc = DateTime.UtcNow
             };
             run.Answers.Add(answer);
@@ -750,8 +753,9 @@ public class BenchmarkAccusedQuoteAdjudicationTests
         {
             var run = new BenchmarkRun
             {
-                SuiteName = "S", TestedModelDisplayNameUsed = "c", TestedModelProviderUsed = "p", TestedModelIdUsed = "m",
-                AssessorModelDisplayNameUsed = "a", AssessorModelProviderUsed = "p", AssessorModelIdUsed = "m",
+                SuiteName = "S",
+                TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "p", modelId: "m", displayName: "c"),
+                AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "p", modelId: "m", displayName: "a"),
                 StartedAtUtc = DateTime.UtcNow.AddHours(-1),
                 CompletedAtUtc = DateTime.UtcNow,
                 Status = BenchmarkRunStatus.Running,
@@ -788,10 +792,12 @@ public class BenchmarkAccusedQuoteAdjudicationTests
     {
         var services = new ServiceCollection();
         var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
         return new BenchmarkService(
             scopeFactory, null!, null!, null!, new BenchmarkRunManager(), new BenchmarkDifficultyJobManager(),
             new BenchmarkScoringProfileService(scopeFactory, NullLogger<BenchmarkScoringProfileService>.Instance),
-            new ConfigurationBuilder().AddInMemoryCollection(settings).Build(),
+            new EndpointPolicy(configuration),
+            configuration,
             NullLogger<BenchmarkService>.Instance);
     }
 
@@ -803,10 +809,12 @@ public class BenchmarkAccusedQuoteAdjudicationTests
         services.AddScoped<SystemAiConfigService>();
         services.AddSingleton<ILogger<SystemAiConfigService>>(NullLogger<SystemAiConfigService>.Instance);
         var scopeFactory = services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+        var configuration = new ConfigurationBuilder().Build();
         var service = new BenchmarkService(
             scopeFactory, null!, null!, null!, runManager, new BenchmarkDifficultyJobManager(),
             new BenchmarkScoringProfileService(scopeFactory, NullLogger<BenchmarkScoringProfileService>.Instance),
-            new ConfigurationBuilder().Build(),
+            new EndpointPolicy(configuration),
+            configuration,
             NullLogger<BenchmarkService>.Instance);
         return (service, runManager);
     }

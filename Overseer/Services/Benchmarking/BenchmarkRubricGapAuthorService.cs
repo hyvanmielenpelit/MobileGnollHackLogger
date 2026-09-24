@@ -13,6 +13,8 @@ using Microsoft.Extensions.Logging;
 using MobileGnollHackLogger.Data;
 using Overseer.Services;
 using Overseer.Services.Agents;
+using Overseer.Services.Privacy;
+using Overseer.Services.Providers;
 
 /// <summary>The outcome of parsing one drafting response.</summary>
 public sealed class BenchmarkRubricGapAuthorDraftParseResult
@@ -46,6 +48,7 @@ public class BenchmarkRubricGapAuthorService
     private readonly BenchmarkRubricGapAuthorJobManager _jobManager;
     private readonly AgentLoopRunner _agentLoopRunner;
     private readonly CryptoService _cryptoService;
+    private readonly EndpointPolicy _endpointPolicy;
     private readonly IConfiguration _configuration;
     private readonly ILogger<BenchmarkRubricGapAuthorService> _logger;
 
@@ -69,6 +72,7 @@ public class BenchmarkRubricGapAuthorService
         BenchmarkRubricGapAuthorJobManager jobManager,
         AgentLoopRunner agentLoopRunner,
         CryptoService cryptoService,
+        EndpointPolicy endpointPolicy,
         IConfiguration configuration,
         ILogger<BenchmarkRubricGapAuthorService> logger)
     {
@@ -76,9 +80,19 @@ public class BenchmarkRubricGapAuthorService
         _jobManager = jobManager;
         _agentLoopRunner = agentLoopRunner;
         _cryptoService = cryptoService;
+        _endpointPolicy = endpointPolicy;
         _configuration = configuration;
         _logger = logger;
     }
+
+    /// <summary>The recorded endpoint, resolved strictly: a refused custom endpoint fails the call instead of falling back.</summary>
+    private AiEndpointDescriptor EndpointFor(SystemAiApiConfiguration config)
+        => _endpointPolicy.TryResolveStrict(config.BaseUrl, config.CustomHeadersJson, config.ApiVersion, out var endpoint, out var error)
+            ? endpoint
+            : throw new InvalidOperationException(EndpointRefusal(config, error));
+
+    private static string EndpointRefusal(SystemAiApiConfiguration config, string? error)
+        => $"Configuration '{config.DisplayName}': its custom endpoint is not allowed by the endpoint policy: {error}";
 
     /// <summary>
     /// A cluster may be drafted against only when a claim verifier checked one of its occurrences
@@ -245,11 +259,29 @@ public class BenchmarkRubricGapAuthorService
                 return;
             }
 
-            var config = await db.SystemAiApiConfigurations
+            var liveConfig = await db.SystemAiApiConfigurations
                 .FirstOrDefaultAsync(c => c.Id == job.AuthorConfigId, ct);
-            if (config == null || !config.IsEnabled)
+            if (liveConfig == null || !liveConfig.IsEnabled)
             {
                 job.AddLog("Author model configuration not found or disabled.", "error");
+                job.SetStatus(BenchmarkRubricGapAuthorJobStatus.Failed);
+                return;
+            }
+
+            // Every draft runs with the settings captured when the job started.
+            var authorSnapshot = job.AuthorSnapshotId > 0
+                ? await db.SystemAiConfigurationSnapshots.FindAsync(new object[] { job.AuthorSnapshotId }, ct)
+                : null;
+            if (!SystemAiConfigurationSnapshotStore.TryBind(liveConfig, authorSnapshot, out var config, out var bindError))
+            {
+                job.AddLog(bindError ?? SystemAiConfigurationSnapshotStore.MismatchMessage, "error");
+                job.SetStatus(BenchmarkRubricGapAuthorJobStatus.Failed);
+                return;
+            }
+
+            if (!_endpointPolicy.TryResolveStrict(config!.BaseUrl, config.CustomHeadersJson, config.ApiVersion, out _, out var endpointError))
+            {
+                job.AddLog(EndpointRefusal(config, endpointError), "error");
                 job.SetStatus(BenchmarkRubricGapAuthorJobStatus.Failed);
                 return;
             }
@@ -410,6 +442,7 @@ public class BenchmarkRubricGapAuthorService
             ProviderName = config.Provider,
             ModelId = config.ModelId,
             ApiKey = apiKey,
+            Endpoint = EndpointFor(config),
             ModelDisplayName = config.DisplayName,
             SystemPrompt = BenchmarkRubricGapAuthorPrompt.SystemPrompt,
             ThinkingLevel = config.ThinkingLevel,

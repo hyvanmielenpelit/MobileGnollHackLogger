@@ -133,6 +133,15 @@
                         </div>
                       }
                     }
+                    @if (group.comparabilityKeyStale) {
+                      <span class="mr-badge mr-badge-stale"
+                            [attr.interestfor]="'mr-tip-keystale-' + group.id"
+                            [attr.style]="'anchor-name: --mr-tip-keystale-' + group.id">Comparability definition changed</span>
+                      <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="'mr-tip-keystale-' + group.id"
+                           [attr.style]="'position-anchor: --mr-tip-keystale-' + group.id">
+                        Comparability definition changed — re-analyse to refresh the key hash.
+                      </div>
+                    }
                   </td>
                   <td class="col-actions">
                     <!-- View first, matching the Run History row's order. -->
@@ -467,6 +476,9 @@
           </span>
           @if (selectedGroup.analysisStale) {
             <span class="mr-badge mr-badge-stale">Stale analysis</span>
+          }
+          @if (selectedGroup.comparabilityKeyStale) {
+            <span class="mr-badge mr-badge-stale">Comparability definition changed — re-analyse to refresh the key hash.</span>
           }
           <button type="button" class="btn-icon-action" aria-label="Close multi-run analysis" (click)="closeGroup()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;" aria-hidden="true">

@@ -970,6 +970,19 @@ warning, and `ConfigHealthService` raises an error alert naming the configuratio
 rather than failing hard is how an operator withdraws an endpoint; the alert is what stops that
 fallback being invisible.
 
+**Benchmark calls are the exception: they resolve strictly and never fall back.** Every
+benchmark request — candidate, graders, and the question-generation, rubric-check, rubric-gap and
+suite-description jobs — goes through `EndpointPolicy.TryResolveStrict`, which applies the same
+cheap checks and **fails the call** when a stored endpoint no longer validates. A benchmark records
+which endpoint it ran against, and one that silently called the official endpoint instead would be
+recording something false. Launch runs the full `Validate`, DNS included, for each role, and refuses
+the run naming the configuration and the reason. The endpoint a run used is recorded in its model
+settings snapshots (`SystemAiConfigurationSnapshot.BaseUrl`, `ApiVersion`, `CustomHeadersJson`),
+which **never store a credential** — the API key stays only on the live configuration row, and a
+deleted configuration takes it with it. Reports and comparability keys show the endpoint as
+`official` or a hostless fingerprint, never the host. See `ai-benchmark.md`, *Model Configuration
+Snapshots*.
+
 #### The three URL layers
 
 The descriptor carries an **auth style**, not just a URL, because the same base URL means
@@ -1139,6 +1152,16 @@ rather than entering the 30-day trash, and **all four** deletion paths honour th
 the two that fire with no user gesture, quota eviction and nightly expiry. Expiry purges rather
 than soft-deletes, because a 30-day TTL plus a 30-day grace period is 60 days of retention under
 a 30-day promise.
+
+**Deleting a system AI configuration keeps its AI logs.** `SystemAiUsageLog` and
+`SystemAiErrorLog` refer to the configuration by a plain attribution id, not a foreign key, and
+each row copies the model identity it was recorded under (`Provider`, `ModelId`,
+`ModelDisplayName`), so the Errors list and the telemetry summary still name a deleted
+configuration's rows. What the delete removes is the configuration's user and group assignments
+and every `UserSystemModelConfidentialTrust` decision for it; benchmark history is unaffected
+(`ai-benchmark.md`, *Model Configuration Snapshots*). Usage logs have **no retention sweep**:
+dismissed error logs are pruned after 90 days, usage logs are kept until a retention setting is
+added for them.
 
 ### 5.7 The encryption half
 

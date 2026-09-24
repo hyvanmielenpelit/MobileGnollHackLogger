@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 /// <summary>
@@ -33,28 +34,32 @@ public class BenchmarkCrossModelComparabilityTests
             BenchmarkSuiteId = 5,
             SuiteName = "GnollHack Player Assistance Benchmark Suite",
 
-            TestedModelProviderUsed = "OpenAI",
-            TestedModelIdUsed = modelId,
-            TestedModelDisplayNameUsed = modelId,
-            TestedModelThinkingLevelUsed = "high",
-            TestedModelReasoningModeUsed = "enabled",
-            TestedModelReasoningSummaryUsed = "auto",
-            TestedModelServiceTierUsed = "default",
-            TestedModelMaxOutputTokensUsed = 32000,
-            TestedModelParallelExecutionModeUsed = MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled,
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(
+                provider: "OpenAI",
+                modelId: modelId,
+                displayName: modelId,
+                thinkingLevel: "high",
+                reasoningMode: "enabled",
+                reasoningSummary: "auto",
+                serviceTier: "default",
+                maxOutputTokens: 32000,
+                parallelExecutionMode: MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled),
 
-            AssessorModelProviderUsed = "Google",
-            AssessorModelIdUsed = "gemini-3.7-pro",
-            AssessorModelDisplayNameUsed = "Gemini 3.7 Pro",
-            AssessorModelParallelExecutionModeUsed = MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled,
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(
+                provider: "Google",
+                modelId: "gemini-3.7-pro",
+                displayName: "Gemini 3.7 Pro",
+                parallelExecutionMode: MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled),
 
-            SecondOpinionAssessorModelProviderUsed = "Anthropic",
-            SecondOpinionAssessorModelIdUsed = "claude-opus-5",
+            SecondOpinionAssessorModelSnapshot = BenchmarkModelSnapshots.Model(
+                provider: "Anthropic",
+                modelId: "claude-opus-5"),
             SecondOpinionModeUsed = 1,
             SecondOpinionBlindUsed = true,
 
-            ClaimVerifierProviderUsed = "Anthropic",
-            ClaimVerifierModelIdUsed = "claude-opus-5",
+            ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(
+                provider: "Anthropic",
+                modelId: "claude-opus-5"),
 
             CandidatePromptOptionsJson = "{\"verboseMode\":false,\"spoilerFreeMode\":false,\"overseerMode\":0}",
             CandidateSystemPromptSha256 = PromptSha,
@@ -101,13 +106,14 @@ public class BenchmarkCrossModelComparabilityTests
     // --- The model axis: what these points are allowed to differ on -------------------------------
 
     [Fact]
-    public void ModelAxisKeys_AreTheEightCandidateKeys_AndPromptOptionsIsNotOneOfThem()
+    public void ModelAxisKeys_AreTheNineCandidateKeys_AndPromptOptionsIsNotOneOfThem()
     {
-        Assert.Equal(8, BenchmarkCrossModelComparability.ModelAxisKeys.Count);
+        Assert.Equal(9, BenchmarkCrossModelComparability.ModelAxisKeys.Count);
 
         Assert.Contains(BenchmarkComparabilityKey.CandidateModelKey, BenchmarkCrossModelComparability.ModelAxisKeys);
         Assert.Contains(BenchmarkComparabilityKey.CandidateThinkingLevelKey, BenchmarkCrossModelComparability.ModelAxisKeys);
         Assert.Contains(BenchmarkComparabilityKey.CandidateParallelExecutionModeKey, BenchmarkCrossModelComparability.ModelAxisKeys);
+        Assert.Contains(BenchmarkComparabilityKey.CandidateEndpointKey, BenchmarkCrossModelComparability.ModelAxisKeys);
 
         // The configuration is not the model. A set with mixed prompt options is not comparable.
         Assert.DoesNotContain(BenchmarkComparabilityKey.CandidatePromptOptionsKey, BenchmarkCrossModelComparability.ModelAxisKeys);
@@ -136,7 +142,7 @@ public class BenchmarkCrossModelComparabilityTests
         // That mode is a model-axis key here, so a point that differs only on batching mode must not
         // also read as a prompt-options difference and exclude itself.
         var b = Run(14);
-        b.TestedModelParallelExecutionModeUsed = MobileGnollHackLogger.Data.ParallelExecutionMode.Disabled;
+        b.TestedModelSnapshot.ParallelExecutionMode = MobileGnollHackLogger.Data.ParallelExecutionMode.Disabled;
 
         var result = BenchmarkCrossModelComparability.Resolve(new[] { Entry("a", Run(13)), Entry("b", b) });
 
@@ -297,7 +303,7 @@ public class BenchmarkCrossModelComparabilityTests
         // Comparing models as configured is the point of the view, and thinking level dominates
         // model time. So it is disclosed rather than blocked.
         var b = Run(14, "gemini-3.8-flash-lite");
-        b.TestedModelThinkingLevelUsed = "low";
+        b.TestedModelSnapshot.ThinkingLevel = "low";
 
         var result = BenchmarkCrossModelComparability.Resolve(new[] { Entry("a", Run(13)), Entry("b", b) });
 

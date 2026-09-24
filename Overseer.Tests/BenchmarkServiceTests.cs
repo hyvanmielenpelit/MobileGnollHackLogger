@@ -17,6 +17,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
 using Overseer.Services;
 using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 public class BenchmarkServiceTests
@@ -231,12 +232,8 @@ public class BenchmarkServiceTests
         {
             Id = 101,
             SuiteName = "GnollHack Core Suite",
-            TestedModelDisplayNameUsed = "Claude 3.5 Sonnet",
-            TestedModelProviderUsed = "Anthropic",
-            TestedModelIdUsed = "claude-3-5-sonnet-20241022",
-            AssessorModelDisplayNameUsed = "Claude Opus",
-            AssessorModelProviderUsed = "Anthropic",
-            AssessorModelIdUsed = "claude-3-opus",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-5-sonnet-20241022", displayName: "Claude 3.5 Sonnet"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-opus", displayName: "Claude Opus"),
             StartedAtUtc = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc),
             CompletedAtUtc = new DateTime(2026, 9, 1, 12, 5, 30, DateTimeKind.Utc),
             TotalDurationMs = 330000,
@@ -471,13 +468,9 @@ public class BenchmarkServiceTests
         {
             Id = 1,
             SuiteName = "Test Suite",
-            TestedModelDisplayNameUsed = "Tested Model",
-            TestedModelProviderUsed = "Anthropic",
-            TestedModelIdUsed = "claude-3-5-sonnet",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-5-sonnet", displayName: "Tested Model"),
             AssessorModelConfigurationId = 10,
-            AssessorModelDisplayNameUsed = "Original Assessor",
-            AssessorModelProviderUsed = "Anthropic",
-            AssessorModelIdUsed = "claude-3-5-sonnet",
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-5-sonnet", displayName: "Original Assessor"),
             Status = BenchmarkRunStatus.Completed,
             Answers = new List<BenchmarkRunAnswer>
             {
@@ -490,9 +483,7 @@ public class BenchmarkServiceTests
                     AssessmentStatus = BenchmarkAssessmentStatus.Scored,
                     QualityScore = 80,
                     AssessedByModelConfigurationId = 20, // Differs!
-                    AssessedByModelDisplayNameUsed = "Override Assessor",
-                    AssessedByModelProviderUsed = "Anthropic",
-                    AssessedByModelIdUsed = "claude-3-opus",
+                    AssessedByModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-opus", displayName: "Override Assessor"),
                     AssessedAtUtc = new DateTime(2026, 9, 2, 12, 0, 0, DateTimeKind.Utc)
                 },
                 new()
@@ -504,9 +495,7 @@ public class BenchmarkServiceTests
                     AssessmentStatus = BenchmarkAssessmentStatus.Scored,
                     QualityScore = 80,
                     AssessedByModelConfigurationId = 10, // Matches run assessor!
-                    AssessedByModelDisplayNameUsed = "Original Assessor",
-                    AssessedByModelProviderUsed = "Anthropic",
-                    AssessedByModelIdUsed = "claude-3-5-sonnet"
+                    AssessedByModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-5-sonnet", displayName: "Original Assessor")
                 }
             }
         };
@@ -529,19 +518,15 @@ public class BenchmarkServiceTests
             .Options;
         await using (var db = new ApplicationDbContext(dbOptions))
         {
-            var run = new BenchmarkRun
+            var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
             {
                 Id = 1,
                 SuiteName = "Test Suite",
-                TestedModelDisplayNameUsed = "Model A",
-                TestedModelProviderUsed = "Provider A",
-                TestedModelIdUsed = "model-a",
-                AssessorModelDisplayNameUsed = "Model B",
-                AssessorModelProviderUsed = "Provider B",
-                AssessorModelIdUsed = "model-b",
+                TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider A", modelId: "model-a", displayName: "Model A"),
+                AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider B", modelId: "model-b", displayName: "Model B"),
                 Status = BenchmarkRunStatus.Running,
                 StartedAtUtc = DateTime.UtcNow.AddHours(-1)
-            };
+            });
             db.BenchmarkRuns.Add(run);
             await db.SaveChangesAsync(ct);
         }
@@ -557,6 +542,7 @@ public class BenchmarkServiceTests
             null!,
             new BenchmarkRunManager(),
             new BenchmarkDifficultyJobManager(),
+            null!,
             null!,
             new ConfigurationBuilder().Build(),
             NullLogger<BenchmarkService>.Instance);
@@ -591,6 +577,7 @@ public class BenchmarkServiceTests
             null!,
             new BenchmarkRunManager(),
             manager,
+            null!,
             null!,
             new ConfigurationBuilder().Build(),
             NullLogger<BenchmarkService>.Instance);
@@ -638,16 +625,12 @@ public class BenchmarkServiceTests
             .Options;
         await using (var db = new ApplicationDbContext(dbOptions))
         {
-            var run = new BenchmarkRun
+            var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
             {
                 Id = 2,
                 SuiteName = "Test Suite",
-                TestedModelDisplayNameUsed = "Model A",
-                TestedModelProviderUsed = "Provider A",
-                TestedModelIdUsed = "model-a",
-                AssessorModelDisplayNameUsed = "Model B",
-                AssessorModelProviderUsed = "Provider B",
-                AssessorModelIdUsed = "model-b",
+                TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider A", modelId: "model-a", displayName: "Model A"),
+                AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider B", modelId: "model-b", displayName: "Model B"),
                 Status = BenchmarkRunStatus.Running,
                 StartedAtUtc = DateTime.UtcNow.AddHours(-1),
                 Answers = new List<BenchmarkRunAnswer>
@@ -666,7 +649,7 @@ public class BenchmarkServiceTests
                         OutputTokens = 900
                     }
                 }
-            };
+            });
             db.BenchmarkRuns.Add(run);
             await db.SaveChangesAsync(ct);
         }
@@ -682,6 +665,7 @@ public class BenchmarkServiceTests
             null!,
             new BenchmarkRunManager(),
             new BenchmarkDifficultyJobManager(),
+            null!,
             null!,
             new ConfigurationBuilder().Build(),
             NullLogger<BenchmarkService>.Instance);
@@ -724,16 +708,12 @@ public class BenchmarkServiceTests
             .Options;
         await using (var db = new ApplicationDbContext(dbOptions))
         {
-            db.BenchmarkRuns.Add(new BenchmarkRun
+            db.BenchmarkRuns.Add(BenchmarkModelSnapshots.Attach(new BenchmarkRun
             {
                 Id = 3,
                 SuiteName = "Test Suite",
-                TestedModelDisplayNameUsed = "Model A",
-                TestedModelProviderUsed = "Provider A",
-                TestedModelIdUsed = "model-a",
-                AssessorModelDisplayNameUsed = "Model B",
-                AssessorModelProviderUsed = "Provider B",
-                AssessorModelIdUsed = "model-b",
+                TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider A", modelId: "model-a", displayName: "Model A"),
+                AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider B", modelId: "model-b", displayName: "Model B"),
                 Status = BenchmarkRunStatus.Canceled,
                 StartedAtUtc = DateTime.UtcNow.AddHours(-1),
                 CompletedAtUtc = DateTime.UtcNow,
@@ -755,7 +735,7 @@ public class BenchmarkServiceTests
                         DurationMs = 2000
                     }
                 }
-            });
+            }));
             await db.SaveChangesAsync(ct);
         }
 
@@ -787,16 +767,12 @@ public class BenchmarkServiceTests
             .Options;
         await using (var db = new ApplicationDbContext(dbOptions))
         {
-            var run = new BenchmarkRun
+            var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
             {
                 Id = 4,
                 SuiteName = "Test Suite",
-                TestedModelDisplayNameUsed = "Model A",
-                TestedModelProviderUsed = "Provider A",
-                TestedModelIdUsed = "model-a",
-                AssessorModelDisplayNameUsed = "Model B",
-                AssessorModelProviderUsed = "Provider B",
-                AssessorModelIdUsed = "model-b",
+                TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider A", modelId: "model-a", displayName: "Model A"),
+                AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider B", modelId: "model-b", displayName: "Model B"),
                 Status = BenchmarkRunStatus.CompletedWithErrors,
                 StartedAtUtc = DateTime.UtcNow.AddHours(-1),
                 CompletedAtUtc = DateTime.UtcNow,
@@ -804,7 +780,7 @@ public class BenchmarkServiceTests
                 UnweightedQualityIndex = 11,
                 QualityIndexStandardError = 99.0,
                 Answers = new List<BenchmarkRunAnswer>()
-            };
+            });
 
             for (int i = 1; i <= 3; i++)
             {
@@ -981,6 +957,7 @@ public class BenchmarkServiceTests
             new BenchmarkRunManager(),
             new BenchmarkDifficultyJobManager(),
             new BenchmarkScoringProfileService(scopeFactory, NullLogger<BenchmarkScoringProfileService>.Instance),
+            null!,
             new ConfigurationBuilder().Build(),
             NullLogger<BenchmarkService>.Instance);
     }
@@ -1096,13 +1073,12 @@ public class BenchmarkServiceTests
             var run = new BenchmarkRun
             {
                 SuiteName = "Suite",
-                TestedModelDisplayNameUsed = "Model T",
-                TestedModelProviderUsed = "Provider T",
-                TestedModelIdUsed = "model-t",
-                AssessorModelDisplayNameUsed = "Model A",
-                AssessorModelProviderUsed = "Provider A",
-                AssessorModelIdUsed = "model-a",
+                TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider T", modelId: "model-t", displayName: "Model T"),
+                AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider A", modelId: "model-a", displayName: "Model A"),
                 ClaimVerifierModelConfigurationId = 10,
+                // The provider must match `config` above, or SystemAiConfigurationSnapshotStore.Bind
+                // refuses the pairing before RunClaimVerificationAsync ever reaches the gating below.
+                ClaimVerifierModelSnapshot = SystemAiConfigurationSnapshotStore.FromConfiguration(config),
                 Status = BenchmarkRunStatus.Running,
                 StartedAtUtc = DateTime.UtcNow
             };
@@ -1138,6 +1114,7 @@ public class BenchmarkServiceTests
             new BenchmarkRunManager(),
             new BenchmarkDifficultyJobManager(),
             null!,
+            new Overseer.Services.Privacy.EndpointPolicy(configuration),
             configuration,
             NullLogger<BenchmarkService>.Instance);
 
@@ -1177,6 +1154,7 @@ public class BenchmarkServiceTests
         var request = BenchmarkService.BuildClaimVerificationRequest(
             verifierConfig,
             "api-key-test",
+            Overseer.Services.Providers.AiEndpointDescriptor.Official,
             prompt,
             new List<string> { "repo_search" },
             maxOutputTokens: 1024,
@@ -1214,6 +1192,7 @@ public class BenchmarkServiceTests
         var request = BenchmarkService.BuildClaimVerificationRequest(
             verifierConfig,
             "api-key-test",
+            Overseer.Services.Providers.AiEndpointDescriptor.Official,
             "test prompt",
             new List<string> { "repo_search", "c_code_definition" },
             maxOutputTokens: 1024,
@@ -1408,7 +1387,7 @@ public class BenchmarkServiceTests
             .Build();
 
         var service = new BenchmarkService(
-            null!, null!, null!, null!, null!, null!, null!,
+            null!, null!, null!, null!, null!, null!, null!, null!,
             config,
             NullLogger<BenchmarkService>.Instance);
 
@@ -1456,7 +1435,7 @@ public class BenchmarkServiceTests
             .Build();
 
         var service = new BenchmarkService(
-            null!, null!, null!, null!, null!, null!, null!,
+            null!, null!, null!, null!, null!, null!, null!, null!,
             config,
             NullLogger<BenchmarkService>.Instance);
 
@@ -1490,7 +1469,7 @@ public class BenchmarkServiceTests
                 .Build();
 
             var service = new BenchmarkService(
-                null!, null!, null!, null!, null!, null!, null!,
+                null!, null!, null!, null!, null!, null!, null!, null!,
                 config,
                 NullLogger<BenchmarkService>.Instance);
 
@@ -1534,7 +1513,7 @@ public class BenchmarkServiceTests
                 .Build();
 
             var service = new BenchmarkService(
-                null!, null!, null!, null!, null!, null!, null!,
+                null!, null!, null!, null!, null!, null!, null!, null!,
                 config,
                 NullLogger<BenchmarkService>.Instance);
 
@@ -1660,20 +1639,16 @@ public class BenchmarkServiceTests
         long runId;
         await using (var seedDb = new ApplicationDbContext(dbOptions))
         {
-            var seededRun = new BenchmarkRun
+            var seededRun = BenchmarkModelSnapshots.Attach(new BenchmarkRun
             {
                 SuiteName = "Suite",
-                TestedModelDisplayNameUsed = "Model T",
-                TestedModelProviderUsed = "Provider T",
-                TestedModelIdUsed = "model-t",
-                AssessorModelDisplayNameUsed = "Model A",
-                AssessorModelProviderUsed = "Provider A",
-                AssessorModelIdUsed = "model-a",
+                TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider T", modelId: "model-t", displayName: "Model T"),
+                AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider A", modelId: "model-a", displayName: "Model A"),
                 SecondOpinionAssessorModelConfigurationId = 999,
                 SecondOpinionModeUsed = (int)mode,
                 Status = BenchmarkRunStatus.Running,
                 StartedAtUtc = DateTime.UtcNow
-            };
+            });
             seedDb.BenchmarkRuns.Add(seededRun);
             await seedDb.SaveChangesAsync();
             runId = seededRun.Id;
@@ -1720,6 +1695,7 @@ public class BenchmarkServiceTests
             // dialog can show a re-graded row as re-grading. The instance is inert for a run it
             // does not own, which is every run here.
             new BenchmarkRunManager(),
+            null!,
             null!,
             null!,
             new ConfigurationBuilder().Build(),
@@ -1858,7 +1834,7 @@ public class BenchmarkServiceTests
         long runId;
         await using (var seedDb = new ApplicationDbContext(dbOptions))
         {
-            seedDb.SystemAiApiConfigurations.Add(new SystemAiApiConfiguration
+            var verifierConfig = new SystemAiApiConfiguration
             {
                 Id = 10,
                 DisplayName = "Verifier Model",
@@ -1869,18 +1845,18 @@ public class BenchmarkServiceTests
                 EncryptedApiKey = cipher,
                 ApiKeyNonce = nonce,
                 ApiKeyTag = tag
-            });
+            };
+            seedDb.SystemAiApiConfigurations.Add(verifierConfig);
 
             var run = new BenchmarkRun
             {
                 SuiteName = "Suite",
-                TestedModelDisplayNameUsed = "Model T",
-                TestedModelProviderUsed = "Provider T",
-                TestedModelIdUsed = "model-t",
-                AssessorModelDisplayNameUsed = "Model A",
-                AssessorModelProviderUsed = "Provider A",
-                AssessorModelIdUsed = "model-a",
+                TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider T", modelId: "model-t", displayName: "Model T"),
+                AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider A", modelId: "model-a", displayName: "Model A"),
                 ClaimVerifierModelConfigurationId = 10,
+                // The provider must match verifierConfig above, or SystemAiConfigurationSnapshotStore.Bind
+                // refuses the pairing before RunClaimVerificationAsync can reach the token budget gate.
+                ClaimVerifierModelSnapshot = SystemAiConfigurationSnapshotStore.FromConfiguration(verifierConfig),
                 Status = BenchmarkRunStatus.Running,
                 StartedAtUtc = DateTime.UtcNow
             };
@@ -1930,6 +1906,7 @@ public class BenchmarkServiceTests
             new BenchmarkRunManager(),
             new BenchmarkDifficultyJobManager(),
             null!,
+            new Overseer.Services.Privacy.EndpointPolicy(configuration),
             configuration,
             NullLogger<BenchmarkService>.Instance);
 
@@ -1982,12 +1959,8 @@ public class BenchmarkServiceTests
         {
             Id = 501,
             BenchmarkSuiteId = 6,
-            TestedModelDisplayNameUsed = "Candidate",
-            TestedModelProviderUsed = "Anthropic",
-            TestedModelIdUsed = "candidate-model",
-            AssessorModelDisplayNameUsed = "Assessor",
-            AssessorModelProviderUsed = "Anthropic",
-            AssessorModelIdUsed = "assessor-model",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "candidate-model", displayName: "Candidate"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "assessor-model", displayName: "Assessor"),
             Status = BenchmarkRunStatus.Completed,
             StartedAtUtc = new DateTime(2026, 9, 9, 6, 0, 0, DateTimeKind.Utc),
             CompletedAtUtc = new DateTime(2026, 9, 9, 6, 30, 0, DateTimeKind.Utc),
@@ -2064,8 +2037,8 @@ public class BenchmarkServiceTests
         run.TotalSynthesisOutputTokens = 8_000;
         run.TotalSynthesisCacheReadTokens = 20_000;
         run.TotalSynthesisCacheCreationTokens = 5_000;
-        run.ClaimVerifierModelIdUsed = "verifier-model";
-        run.SecondOpinionAssessorModelIdUsed = "second-model";
+        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "verifier-model");
+        run.SecondOpinionAssessorModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "second-model");
 
         var card = new ModelPricing(
             InputPerMillion: 3.00m,
@@ -2121,7 +2094,7 @@ public class BenchmarkServiceTests
         run.TotalLongContextOutputTokens = 60_000;
         run.TotalLongContextCacheReadTokens = 200_000;
         run.TotalLongContextCacheCreationTokens = 50_000;
-        run.TestedModelServiceTierUsed = "priority";
+        run.TestedModelSnapshot.ServiceTier = "priority";
 
         var candidateCard = new ModelPricing(
             InputPerMillion: 3.00m,
@@ -2314,7 +2287,7 @@ public class BenchmarkServiceTests
         run.SecondOpinionModeUsed = (int)BenchmarkSecondOpinionMode.FlaggedPlusSample;
         run.SecondOpinionBlindUsed = true;
         run.SecondOpinionAssessorModelConfigurationId = 3;
-        run.SecondOpinionAssessorModelIdUsed = "second-model";
+        run.SecondOpinionAssessorModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "second-model");
 
         string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.0");
 

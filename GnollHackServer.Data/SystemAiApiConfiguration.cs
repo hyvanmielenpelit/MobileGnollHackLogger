@@ -172,6 +172,4 @@ public class SystemAiApiConfiguration : IRateLimitedEntity
 
     public ICollection<UserSystemAiApiConfiguration>? UserAssignments { get; set; }
     public ICollection<GroupSystemAiApiConfiguration>? GroupAssignments { get; set; }
-    public ICollection<SystemAiUsageLog>? UsageLogs { get; set; }
-    public ICollection<SystemAiErrorLog>? ErrorLogs { get; set; }
 }

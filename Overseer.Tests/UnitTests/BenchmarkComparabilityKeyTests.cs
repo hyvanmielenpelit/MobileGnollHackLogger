@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 /// <summary>
@@ -29,28 +30,32 @@ public class BenchmarkComparabilityKeyTests
             BenchmarkSuiteId = 5,
             SuiteName = "GnollHack Player Assistance Benchmark Suite",
 
-            TestedModelProviderUsed = "OpenAI",
-            TestedModelIdUsed = "gpt-5.6-luna",
-            TestedModelDisplayNameUsed = "GPT-5.6 Luna",
-            TestedModelThinkingLevelUsed = "high",
-            TestedModelReasoningModeUsed = "enabled",
-            TestedModelReasoningSummaryUsed = "auto",
-            TestedModelServiceTierUsed = "default",
-            TestedModelMaxOutputTokensUsed = 32000,
-            TestedModelParallelExecutionModeUsed = MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled,
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(
+                provider: "OpenAI",
+                modelId: "gpt-5.6-luna",
+                displayName: "GPT-5.6 Luna",
+                thinkingLevel: "high",
+                reasoningMode: "enabled",
+                reasoningSummary: "auto",
+                serviceTier: "default",
+                maxOutputTokens: 32000,
+                parallelExecutionMode: MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled),
 
-            AssessorModelProviderUsed = "Google",
-            AssessorModelIdUsed = "gemini-3.7-pro",
-            AssessorModelDisplayNameUsed = "Gemini 3.7 Pro",
-            AssessorModelParallelExecutionModeUsed = MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled,
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(
+                provider: "Google",
+                modelId: "gemini-3.7-pro",
+                displayName: "Gemini 3.7 Pro",
+                parallelExecutionMode: MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled),
 
-            SecondOpinionAssessorModelProviderUsed = "Anthropic",
-            SecondOpinionAssessorModelIdUsed = "claude-opus-5",
+            SecondOpinionAssessorModelSnapshot = BenchmarkModelSnapshots.Model(
+                provider: "Anthropic",
+                modelId: "claude-opus-5"),
             SecondOpinionModeUsed = 1,
             SecondOpinionBlindUsed = true,
 
-            ClaimVerifierProviderUsed = "Anthropic",
-            ClaimVerifierModelIdUsed = "claude-opus-5",
+            ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(
+                provider: "Anthropic",
+                modelId: "claude-opus-5"),
 
             CandidatePromptOptionsJson = "{\"verboseMode\":false,\"spoilerFreeMode\":false,\"overseerMode\":0}",
             CandidateSystemPromptSha256 = PromptSha,
@@ -227,7 +232,7 @@ public class BenchmarkComparabilityKeyTests
     {
         var a = Run(13);
         var b = Run(14);
-        b.TestedModelIdUsed = "claude-opus-5";
+        b.TestedModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "claude-opus-5");
 
         var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
 
@@ -298,6 +303,7 @@ public class BenchmarkComparabilityKeyTests
             BenchmarkComparabilityKey.CandidateServiceTierKey,
             BenchmarkComparabilityKey.CandidateMaxOutputTokensKey,
             BenchmarkComparabilityKey.CandidateParallelExecutionModeKey,
+            BenchmarkComparabilityKey.CandidateEndpointKey,
             BenchmarkComparabilityKey.CandidatePromptOptionsKey,
             BenchmarkComparabilityKey.CandidateSystemPromptKey,
             BenchmarkComparabilityKey.ToolGuidesKey,
@@ -806,4 +812,94 @@ public class BenchmarkComparabilityKeyTests
 
     private static string Value(IReadOnlyList<BenchmarkComparabilityKeyEntry> keys, string name)
         => keys.Single(k => k.Name == name).Value;
+
+    // -- Definition version 2: grader signatures, endpoints, unrecorded values ------------------
+
+    private static string KeyValue(BenchmarkRun run, string name)
+        => BenchmarkComparabilityKey.Extract(run).Single(k => k.Name == name).Value;
+
+    [Fact]
+    public void GraderSignatures_ShareOneShape_WithTheEffectiveCapAndTheEndpoint()
+    {
+        var run = Run(13);
+        run.AssessorEffectiveMaxOutputTokens = 32000;
+        run.ClaimVerifierEffectiveMaxOutputTokens = 16000;
+
+        Assert.Equal(
+            "provider=Google;model=gemini-3.7-pro;thinking=(none);reasoningMode=(none);reasoningSummary=(none);"
+            + "serviceTier=(none);maxOutputTokens=32000;endpoint=official",
+            KeyValue(run, BenchmarkComparabilityKey.AssessorConfigurationKey));
+        Assert.Equal(
+            "provider=Anthropic;model=claude-opus-5;thinking=(none);reasoningMode=(none);reasoningSummary=(none);"
+            + "serviceTier=(none);maxOutputTokens=16000;endpoint=official",
+            KeyValue(run, BenchmarkComparabilityKey.ClaimVerifierConfigurationKey));
+        Assert.StartsWith(
+            "provider=Anthropic;model=claude-opus-5;thinking=(none);reasoningMode=(none);reasoningSummary=(none);"
+            + "serviceTier=(none);maxOutputTokens=(not recorded);endpoint=official;mode=1;blind=1;",
+            KeyValue(run, BenchmarkComparabilityKey.SecondOpinionConfigurationKey));
+    }
+
+    [Fact]
+    public void AnAbsentGrader_RendersNone_NotNotRecorded()
+    {
+        var run = Run(13);
+        run.ClaimVerifierModelSnapshot = null;
+
+        Assert.DoesNotContain(BenchmarkComparabilityKey.NotRecorded,
+            KeyValue(run, BenchmarkComparabilityKey.ClaimVerifierConfigurationKey));
+    }
+
+    [Fact]
+    public void AnIncompleteSnapshot_RendersNotRecorded_SoItNeverMatchesARecordedUnset()
+    {
+        var legacy = Run(13);
+        legacy.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-pro",
+            parallelExecutionMode: null, isComplete: false);
+        var current = Run(14);
+        current.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-pro");
+
+        Assert.Contains("reasoningSummary=(not recorded)", KeyValue(legacy, BenchmarkComparabilityKey.AssessorConfigurationKey));
+        Assert.NotEqual(
+            KeyValue(legacy, BenchmarkComparabilityKey.AssessorConfigurationKey),
+            KeyValue(current, BenchmarkComparabilityKey.AssessorConfigurationKey));
+    }
+
+    [Fact]
+    public void TheParallelMode_IsNotPartOfTheAssessorSignature()
+    {
+        var a = Run(13);
+        var b = Run(14);
+        b.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-pro",
+            displayName: "Gemini 3.7 Pro", parallelExecutionMode: MobileGnollHackLogger.Data.ParallelExecutionMode.Disabled);
+
+        Assert.Equal(
+            KeyValue(a, BenchmarkComparabilityKey.AssessorConfigurationKey),
+            KeyValue(b, BenchmarkComparabilityKey.AssessorConfigurationKey));
+    }
+
+    [Fact]
+    public void CandidateEndpoint_IsACandidateKey_WithAFingerprintCarryingNoListSeparators()
+    {
+        var official = Run(13);
+        var custom = Run(14);
+        custom.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6-luna",
+            baseUrl: "https://gw.example.com/openai", apiVersion: "2024-10-21");
+
+        var key = BenchmarkComparabilityKey.Extract(custom).Single(k => k.Name == BenchmarkComparabilityKey.CandidateEndpointKey);
+
+        Assert.Equal(BenchmarkComparabilityKeyKind.Candidate, key.Kind);
+        Assert.Equal("official", KeyValue(official, BenchmarkComparabilityKey.CandidateEndpointKey));
+        Assert.StartsWith("custom-", key.Value);
+        Assert.DoesNotContain(";", key.Value);
+        Assert.DoesNotContain("=", key.Value);
+        Assert.DoesNotContain("example.com", key.Value);
+        Assert.NotEqual(BenchmarkComparabilityKey.ComputeKeyHash(official), BenchmarkComparabilityKey.ComputeKeyHash(custom));
+    }
+
+    [Fact]
+    public void TheDefinitionVersion_IsTwo()
+    {
+        // Stored beside every persisted key hash; a group analysed under another version reads as stale.
+        Assert.Equal(2, BenchmarkComparabilityKey.DefinitionVersion);
+    }
 }

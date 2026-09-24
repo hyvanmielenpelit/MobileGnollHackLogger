@@ -58,7 +58,7 @@ public static class BenchmarkToolCallLogBuilder
         sb.AppendLine($"# Tool Call Log — Run {run.Id}");
         sb.AppendLine();
         sb.AppendLine($"- **Suite:** {run.SuiteName}");
-        sb.AppendLine($"- **Model:** {run.TestedModelDisplayNameUsed}");
+        sb.AppendLine($"- **Model:** {run.TestedModelSnapshot.Label()}");
         sb.AppendLine($"- **Harness Version:** {run.HarnessVersion ?? "1 (unversioned legacy)"}");
         sb.AppendLine($"- **Started (UTC):** {Stamp(run.StartedAtUtc)}");
         sb.AppendLine($"- **Candidate System Prompt SHA-256:** {run.CandidateSystemPromptSha256 ?? "not recorded"}");

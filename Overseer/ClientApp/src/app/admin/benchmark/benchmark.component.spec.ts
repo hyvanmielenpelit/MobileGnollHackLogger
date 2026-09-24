@@ -242,6 +242,31 @@ describe('AdminBenchmarkComponent', () => {
     fixture.detectChanges();
   });
 
+  it('should open a run requested through openRunId exactly once, and report it handled', () => {
+    const viewRunDetail = spyOn(component, 'viewRunDetail');
+    const handled = spyOn(component.openRunHandled, 'emit');
+
+    component.openRunId = 123;
+    component.openRunId = null;
+
+    expect(viewRunDetail).toHaveBeenCalledOnceWith(123);
+    expect(handled).toHaveBeenCalledTimes(1);
+  });
+
+  it('should open a run requested before its view existed once the view is initialised', async () => {
+    const early = TestBed.createComponent(AdminBenchmarkComponent);
+    const viewRunDetail = spyOn(early.componentInstance, 'viewRunDetail');
+    early.componentInstance.openRunId = 77;
+
+    expect(viewRunDetail).not.toHaveBeenCalled();
+
+    early.detectChanges();
+    await Promise.resolve();
+
+    expect(viewRunDetail).toHaveBeenCalledOnceWith(77);
+    early.destroy();
+  });
+
   it('should create and load suites', () => {
     expect(component).toBeTruthy();
     expect(component.suites.length).toBe(1);

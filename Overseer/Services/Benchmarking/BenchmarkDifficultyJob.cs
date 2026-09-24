@@ -42,6 +42,9 @@ public class BenchmarkDifficultyJob
     public long AssessorConfigId { get; set; }
     public string AssessorDisplayName { get; set; } = string.Empty;
 
+    /// <summary>The assessor settings captured at job start; every rating runs with and records these.</summary>
+    public long AssessorSnapshotId { get; set; }
+
     /// <summary>The admin who started the job; usage is recorded against them.</summary>
     public string? StartedByUserId { get; set; }
 

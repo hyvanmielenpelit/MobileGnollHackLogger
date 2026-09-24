@@ -326,6 +326,27 @@ public class BenchmarkSeriesOrchestrator
             };
         }
 
+        // The next member is admitted by the launcher's rules, so a request it would now refuse — a
+        // model configuration deleted while the series was stopped, say — is refused here, by name,
+        // rather than stopping the series again on its next member.
+        var storedRequest = DeserializeRequest(series);
+        if (storedRequest != null)
+        {
+            var launcher = scope.ServiceProvider.GetRequiredService<BenchmarkRunLauncher>();
+            var invalid = await launcher.ValidateRequestAsync(storedRequest, ct);
+            if (invalid != null)
+            {
+                return new BenchmarkSeriesStartResult
+                {
+                    Outcome = invalid.Outcome == BenchmarkRunLaunchOutcome.SpendDenied
+                        ? BenchmarkSeriesStartOutcome.SpendDenied
+                        : BenchmarkSeriesStartOutcome.Invalid,
+                    SeriesId = series.Id,
+                    Error = "This series cannot be resumed: " + invalid.Error
+                };
+            }
+        }
+
         var changed = await GetChangedInstrumentHashesAsync(scope.ServiceProvider, db, series, ct);
         if (changed.Count > 0 && !acknowledgeInstrumentChange)
         {
@@ -854,7 +875,7 @@ public class BenchmarkSeriesOrchestrator
                 series.Id, tier, string.Join(", ", comparability.Differences.Select(d => d.Describe())));
         }
 
-        string modelName = members[0].TestedModelDisplayNameUsed ?? members[0].TestedModelIdUsed ?? "Unknown model";
+        string modelName = members[0].TestedModelSnapshot.Label() ?? "Unknown model";
         string name = $"{series.SuiteName} · {modelName} · {series.StartedAtUtc:yyyy-MM-dd} · R={members.Count}";
 
         var group = new BenchmarkRunGroup
@@ -863,6 +884,7 @@ public class BenchmarkSeriesOrchestrator
             BenchmarkSuiteId = series.BenchmarkSuiteId,
             Tier = tier,
             ComparabilityKeyHash = comparability.ComparabilityKeyHash,
+            ComparabilityKeyVersion = BenchmarkComparabilityKey.DefinitionVersion,
             TierReasonsJson = JsonSerializer.Serialize(new
             {
                 matchedKeys = comparability.MatchedKeys,

@@ -108,6 +108,13 @@ hashes, defined at every tier. Equal sets hash equally regardless of the order t
 and a set whose membership changes hashes differently, which is what lets a stored analysis be
 recognised as stale.
 
+The hash is only as stable as the key definitions that produced it. `BenchmarkComparabilityKey.DefinitionVersion`
+is stored beside it in `BenchmarkRunGroup.ComparabilityKeyVersion` whenever a group's hash is written
+(creation, membership edit, analysis, and the group a series creates). A group whose stored version is
+not the current one carries `comparabilityKeyStale` and shows a *Comparability definition changed*
+badge beside *Stale analysis*; re-analysing it refreshes the hash and the version. The next key
+definition change only has to bump the constant.
+
 ### 3.3 Composite keys
 
 The assessor, second-opinion and claim-verifier configurations, the scoring profile (id **and**

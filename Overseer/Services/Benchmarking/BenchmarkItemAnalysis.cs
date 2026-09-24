@@ -245,8 +245,8 @@ public static class BenchmarkItemAnalysis
             SuiteName = suite.Name,
             QuestionCount = questions.Count,
             RunCount = runs.Count,
-            DistinctModelCount = DistinctCount(runs.Select(r => r.TestedModelIdUsed)),
-            DistinctAssessorCount = DistinctCount(runs.Select(r => r.AssessorModelIdUsed)),
+            DistinctModelCount = DistinctCount(runs.Select(r => r.TestedModelSnapshot.ModelId)),
+            DistinctAssessorCount = DistinctCount(runs.Select(r => r.AssessorModelSnapshot.ModelId)),
             DistinctScoringMethodVersionCount = runs.Select(r => r.ScoringMethodVersion).Distinct().Count(),
             LinkedAnswerCount = linked,
             UnlinkedAnswerCount = unlinked,
@@ -330,7 +330,7 @@ public static class BenchmarkItemAnalysis
             ? empirical - question.AssessedDifficulty.Value
             : null;
 
-        int distinctAssessors = DistinctCount(samples.Select(s => s.Answer.AssessedByModelIdUsed ?? s.Run.AssessorModelIdUsed));
+        int distinctAssessors = DistinctCount(samples.Select(s => s.Answer.AssessedByModelSnapshot?.ModelId ?? s.Run.AssessorModelSnapshot.ModelId));
         int distinctMethods = samples.Select(s => s.Run.ScoringMethodVersion).Distinct().Count();
 
         var budgetBound = samples.Where(s =>
@@ -357,7 +357,7 @@ public static class BenchmarkItemAnalysis
             AuthoredDifficulty = question.Difficulty,
             ItemRevision = question.ItemRevision,
             RunCount = runCount,
-            DistinctModelCount = DistinctCount(samples.Select(s => s.Run.TestedModelIdUsed)),
+            DistinctModelCount = DistinctCount(samples.Select(s => s.Run.TestedModelSnapshot.ModelId)),
             DistinctAssessorCount = distinctAssessors,
             DistinctScoringMethodVersionCount = distinctMethods,
             UnknownRevisionCount = samples.Count(s => s.Answer.ItemRevisionUsed == null),

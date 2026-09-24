@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using MobileGnollHackLogger.Data;
 using Overseer.Services;
 using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 /// <summary>
@@ -81,7 +82,7 @@ public class BenchmarkPerRoleCostTests
     public void ApplyTotals_RollsTheFourGradingBucketsUpWithoutPoolingThem()
     {
         // The synthesis figures are run-level and are written elsewhere; the rollup must leave them alone.
-        var run = new BenchmarkRun
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
         {
             Id = 1,
             TotalQuestionCount = 2,
@@ -90,7 +91,7 @@ public class BenchmarkPerRoleCostTests
             TotalSynthesisCacheReadTokens = 5_000,
             TotalSynthesisCacheCreationTokens = 500,
             TotalSynthesisDurationMs = 3_300
-        };
+        });
 
         var answers = GradedAnswers();
 
@@ -129,7 +130,7 @@ public class BenchmarkPerRoleCostTests
     [Fact]
     public void ComputeRunRoleCosts_LegacyRunWithZeroesInEveryNewColumn_CostsWhatItAlwaysDid()
     {
-        var run = new BenchmarkRun
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
         {
             TotalInputTokens = 1_000_000,
             TotalOutputTokens = 100_000,
@@ -139,7 +140,7 @@ public class BenchmarkPerRoleCostTests
             TotalAssessmentOutputTokens = 20_000,
             TotalClaimVerificationInputTokens = 50_000,
             TotalClaimVerificationOutputTokens = 5_000
-        };
+        });
 
         var costs = ModelPricingService.ComputeRunRoleCosts(run, Pricing());
 
@@ -164,13 +165,13 @@ public class BenchmarkPerRoleCostTests
     {
         // Each Total*InputTokens column is a total prompt figure that already contains the cache reads
         // and cache writes stored beside it, so the three must partition rather than overlap.
-        var run = new BenchmarkRun
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
         {
             TotalAssessmentInputTokens = 1_000_000,
             TotalAssessmentOutputTokens = 100_000,
             TotalAssessmentCacheReadTokens = 400_000,
             TotalAssessmentCacheCreationTokens = 50_000
-        };
+        });
 
         var costs = ModelPricingService.ComputeRunRoleCosts(run, Pricing());
 
@@ -190,7 +191,7 @@ public class BenchmarkPerRoleCostTests
     [Fact]
     public void ComputeRunRoleCosts_SumsFiveRolesIntoItsTotal_AndGradingIsTheLastFour()
     {
-        var run = new BenchmarkRun();
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun());
         BenchmarkRunFinalizer.ApplyTotals(run, GradedAnswers());
         run.TotalSynthesisInputTokens = 40_000;
         run.TotalSynthesisOutputTokens = 4_000;
@@ -219,11 +220,11 @@ public class BenchmarkPerRoleCostTests
         const long synthesisInput = 40_000;
         const long synthesisOutput = 4_000;
 
-        var finalized = new BenchmarkRun
+        var finalized = BenchmarkModelSnapshots.Attach(new BenchmarkRun
         {
             TotalSynthesisInputTokens = synthesisInput,
             TotalSynthesisOutputTokens = synthesisOutput
-        };
+        });
         BenchmarkRunFinalizer.ApplyTotals(finalized, answers);
 
         // The mid-run path: the same sums, while the run's own columns are still zero.
@@ -231,7 +232,7 @@ public class BenchmarkPerRoleCostTests
         var longContext = BenchmarkRunFinalizer.ComputeCandidateLongContextTotals(answers);
         var grading = BenchmarkRunFinalizer.SumGradingTotals(answers);
 
-        var live = new BenchmarkRun
+        var live = BenchmarkModelSnapshots.Attach(new BenchmarkRun
         {
             TotalInputTokens = candidate.TotalInputTokens,
             TotalOutputTokens = candidate.TotalOutputTokens,
@@ -264,7 +265,7 @@ public class BenchmarkPerRoleCostTests
 
             TotalSynthesisInputTokens = synthesisInput,
             TotalSynthesisOutputTokens = synthesisOutput
-        };
+        });
 
         Assert.Equal(
             ModelPricingService.ComputeRunRoleCosts(finalized, Pricing()),
@@ -274,13 +275,13 @@ public class BenchmarkPerRoleCostTests
     [Fact]
     public void ComputeRunRoleCosts_PricesTheSynthesisOnTheAssessorsCard()
     {
-        var run = new BenchmarkRun
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
         {
             TotalSynthesisInputTokens = 200_000,
             TotalSynthesisOutputTokens = 20_000,
             TotalSynthesisCacheReadTokens = 10_000,
             TotalSynthesisCacheCreationTokens = 1_000
-        };
+        });
 
         var costs = ModelPricingService.ComputeRunRoleCosts(run, Pricing());
 
@@ -307,13 +308,13 @@ public class BenchmarkPerRoleCostTests
     [Fact]
     public void ComputeRunRoleCosts_WhenARoleThatSpentTokensHasNoCard_SuppressesTheTotal()
     {
-        var run = new BenchmarkRun
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
         {
             TotalInputTokens = 500_000,
             TotalOutputTokens = 50_000,
             TotalSecondOpinionInputTokens = 100_000,
             TotalSecondOpinionOutputTokens = 10_000
-        };
+        });
 
         var pricing = new BenchmarkRunPricing(
             Candidate: CandidateCard,
@@ -334,13 +335,13 @@ public class BenchmarkPerRoleCostTests
     [Fact]
     public void ComputeRunRoleCosts_SourceIsMixedWhenOneParticipatingRoleIsOverridden()
     {
-        var run = new BenchmarkRun
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
         {
             TotalInputTokens = 500_000,
             TotalOutputTokens = 50_000,
             TotalAssessmentInputTokens = 100_000,
             TotalAssessmentOutputTokens = 10_000
-        };
+        });
 
         var custom = AssessorCard with { Source = ModelPricingSource.Custom };
         var pricing = new BenchmarkRunPricing(
@@ -364,13 +365,13 @@ public class BenchmarkPerRoleCostTests
     [Fact]
     public void ComputeRunRoleCosts_SynthesisAloneStillResolvesTheAssessorsSource()
     {
-        var run = new BenchmarkRun
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
         {
             TotalInputTokens = 500_000,
             TotalOutputTokens = 50_000,
             TotalSynthesisInputTokens = 100_000,
             TotalSynthesisOutputTokens = 10_000
-        };
+        });
 
         var pricing = new BenchmarkRunPricing(
             Candidate: CandidateCard,

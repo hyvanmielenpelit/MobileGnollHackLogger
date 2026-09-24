@@ -166,7 +166,8 @@ public static class BenchmarkCrossModelComparability
         BenchmarkComparabilityKey.CandidateReasoningSummaryKey,
         BenchmarkComparabilityKey.CandidateServiceTierKey,
         BenchmarkComparabilityKey.CandidateMaxOutputTokensKey,
-        BenchmarkComparabilityKey.CandidateParallelExecutionModeKey
+        BenchmarkComparabilityKey.CandidateParallelExecutionModeKey,
+        BenchmarkComparabilityKey.CandidateEndpointKey
     };
 
     /// <summary>

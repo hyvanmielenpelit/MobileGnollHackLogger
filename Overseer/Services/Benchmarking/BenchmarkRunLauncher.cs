@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
+using Overseer.Services.Privacy;
 using Sentry;
 
 /// <summary>
@@ -81,6 +82,7 @@ public class BenchmarkRunLauncher
     private readonly BenchmarkService _benchmarkService;
     private readonly BenchmarkRunManager _runManager;
     private readonly BenchmarkComplianceGuard _complianceGuard;
+    private readonly EndpointPolicy _endpointPolicy;
     private readonly ModelPricingService? _modelPricingService;
 
     public BenchmarkRunLauncher(
@@ -88,12 +90,14 @@ public class BenchmarkRunLauncher
         BenchmarkService benchmarkService,
         BenchmarkRunManager runManager,
         BenchmarkComplianceGuard complianceGuard,
+        EndpointPolicy endpointPolicy,
         ModelPricingService? modelPricingService = null)
     {
         _dbContext = dbContext;
         _benchmarkService = benchmarkService;
         _runManager = runManager;
         _complianceGuard = complianceGuard;
+        _endpointPolicy = endpointPolicy;
         _modelPricingService = modelPricingService;
     }
 
@@ -222,6 +226,23 @@ public class BenchmarkRunLauncher
             secondOpinionConfig = null;
         }
 
+        // Full validation, DNS included: the run records this endpoint and will call nothing else.
+        foreach (var (role, config) in new (string, SystemAiApiConfiguration?)[]
+        {
+            ("Tested model", testedConfig), ("Assessor", assessorConfig),
+            ("Second opinion assessor", secondOpinionConfig), ("Claim verifier", claimVerifierConfig)
+        })
+        {
+            if (config == null) continue;
+            var endpoint = _endpointPolicy.Validate(config.BaseUrl, config.CustomHeadersJson, config.ApiVersion);
+            if (!endpoint.IsValid)
+            {
+                return (BenchmarkRunLaunchResult.Fail(
+                    BenchmarkRunLaunchOutcome.Invalid,
+                    $"{role} configuration '{config.DisplayName}': its custom endpoint is not allowed by the endpoint policy: {endpoint.Error}"), null);
+            }
+        }
+
         bool isSameProvider = _complianceGuard.IsSameProvider(testedConfig, assessorConfig);
         if (isSameProvider && !request.AcknowledgeSameProvider)
         {
@@ -297,6 +318,16 @@ public class BenchmarkRunLauncher
         string? pricingSnapshotJson = BuildPricingSnapshotJson(
             testedConfig, assessorConfig, secondOpinionConfig, claimVerifierConfig);
 
+        // Captured before the run is added, so each capture on the still-clean context saves at once.
+        var testedSnapshot = await SystemAiConfigurationSnapshotStore.CaptureAsync(_dbContext, testedConfig, ct);
+        var assessorSnapshot = await SystemAiConfigurationSnapshotStore.CaptureAsync(_dbContext, assessorConfig, ct);
+        var secondOpinionSnapshot = secondOpinionConfig != null
+            ? await SystemAiConfigurationSnapshotStore.CaptureAsync(_dbContext, secondOpinionConfig, ct)
+            : null;
+        var claimVerifierSnapshot = claimVerifierConfig != null
+            ? await SystemAiConfigurationSnapshotStore.CaptureAsync(_dbContext, claimVerifierConfig, ct)
+            : null;
+
         var run = new BenchmarkRun
         {
             BenchmarkSuiteId = suite.Id,
@@ -304,36 +335,23 @@ public class BenchmarkRunLauncher
             SuiteName = suite.Name,
             DefaultSuiteKeyUsed = suite.DefaultSuiteKey,
             TestedModelConfigurationId = testedConfig.Id,
-            TestedModelDisplayNameUsed = testedConfig.DisplayName,
-            TestedModelProviderUsed = testedConfig.Provider,
-            TestedModelIdUsed = testedConfig.ModelId,
-            TestedModelThinkingLevelUsed = testedConfig.ThinkingLevel,
-            TestedModelReasoningModeUsed = testedConfig.ReasoningMode,
-            TestedModelReasoningSummaryUsed = testedConfig.ReasoningSummary,
-            TestedModelServiceTierUsed = testedConfig.ServiceTier,
-            TestedModelMaxOutputTokensUsed = testedConfig.MaxOutputTokens,
-            TestedModelParallelExecutionModeUsed = testedConfig.ParallelExecutionMode,
+            TestedModelSnapshot = testedSnapshot,
 
             AssessorModelConfigurationId = assessorConfig.Id,
-            AssessorModelDisplayNameUsed = assessorConfig.DisplayName,
-            AssessorModelProviderUsed = assessorConfig.Provider,
-            AssessorModelIdUsed = assessorConfig.ModelId,
-            AssessorModelThinkingLevelUsed = assessorConfig.ThinkingLevel,
-            AssessorModelReasoningModeUsed = assessorConfig.ReasoningMode,
+            AssessorModelSnapshot = assessorSnapshot,
+            AssessorEffectiveMaxOutputTokens = _benchmarkService.ResolveAssessorOutputCap(assessorSnapshot.MaxOutputTokens),
 
             SecondOpinionAssessorModelConfigurationId = secondOpinionConfig?.Id,
-            SecondOpinionAssessorModelDisplayNameUsed = secondOpinionConfig?.DisplayName,
-            SecondOpinionAssessorModelProviderUsed = secondOpinionConfig?.Provider,
-            SecondOpinionAssessorModelIdUsed = secondOpinionConfig?.ModelId,
-            SecondOpinionAssessorModelThinkingLevelUsed = secondOpinionConfig?.ThinkingLevel,
-            SecondOpinionAssessorModelReasoningModeUsed = secondOpinionConfig?.ReasoningMode,
+            SecondOpinionAssessorModelSnapshot = secondOpinionSnapshot,
+            SecondOpinionEffectiveMaxOutputTokens = secondOpinionSnapshot != null
+                ? _benchmarkService.ResolveAssessorOutputCap(secondOpinionSnapshot.MaxOutputTokens)
+                : null,
 
             ClaimVerifierModelConfigurationId = claimVerifierConfig?.Id,
-            ClaimVerifierDisplayNameUsed = claimVerifierConfig?.DisplayName,
-            ClaimVerifierProviderUsed = claimVerifierConfig?.Provider,
-            ClaimVerifierModelIdUsed = claimVerifierConfig?.ModelId,
-            ClaimVerifierThinkingLevelUsed = claimVerifierConfig?.ThinkingLevel,
-            ClaimVerifierReasoningModeUsed = claimVerifierConfig?.ReasoningMode,
+            ClaimVerifierModelSnapshot = claimVerifierSnapshot,
+            ClaimVerifierEffectiveMaxOutputTokens = claimVerifierSnapshot != null
+                ? _benchmarkService.ClaimVerifierOutputCap
+                : null,
 
             // Left at Off (0) when the operator did not override, so the service stamps the
             // scoring profile's own default at run start.

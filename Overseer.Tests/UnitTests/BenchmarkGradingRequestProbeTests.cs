@@ -243,7 +243,7 @@ public class BenchmarkGradingRequestProbeTests
 
         return BenchmarkService.BuildClaimVerificationRequest(
             new SystemAiApiConfiguration { Id = 5, Provider = providerName, ModelId = "probe", DisplayName = "Verifier" },
-            "api-key-test", prompt, new List<string> { "source_code_search" },
+            "api-key-test", AiEndpointDescriptor.Official, prompt, new List<string> { "source_code_search" },
             maxOutputTokens: 1024, toolIterations: 5, totalModelCalls: 10, toolCallBudget: 15,
             maxResultLength: 2000, runId: run.Id, orderIndex: 4, startedByUserId: "user-1");
     }

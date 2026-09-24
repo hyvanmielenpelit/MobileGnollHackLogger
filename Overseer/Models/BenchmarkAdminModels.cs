@@ -758,12 +758,19 @@ public class BenchmarkRunDetailDto
     public int? TestedModelMaxOutputTokensUsed { get; set; }
     public ParallelExecutionMode TestedModelParallelExecutionModeUsed { get; set; }
 
+    /// <summary>"official", or a fingerprinted description of the custom endpoint the candidate ran against.</summary>
+    public string TestedModelEndpoint { get; set; } = string.Empty;
+
     public long? AssessorModelConfigurationId { get; set; }
     public string AssessorModelDisplayNameUsed { get; set; } = string.Empty;
     public string AssessorModelProviderUsed { get; set; } = string.Empty;
     public string AssessorModelIdUsed { get; set; } = string.Empty;
     public string? AssessorModelThinkingLevelUsed { get; set; }
     public string? AssessorModelReasoningModeUsed { get; set; }
+
+    /// <summary>"official", or a fingerprinted description of the custom endpoint the assessor graded against.</summary>
+    public string AssessorModelEndpoint { get; set; } = string.Empty;
+
     public bool AssessorAvailable { get; set; }
 
     /// <summary>Null when the run was started without a second-opinion assessor.</summary>
@@ -774,6 +781,9 @@ public class BenchmarkRunDetailDto
     public string? SecondOpinionAssessorModelThinkingLevelUsed { get; set; }
     public string? SecondOpinionAssessorModelReasoningModeUsed { get; set; }
 
+    /// <summary>"official", or a fingerprinted description of the custom endpoint the second-opinion assessor graded against; null when the run has no second-opinion assessor.</summary>
+    public string? SecondOpinionAssessorModelEndpoint { get; set; }
+
     /// <summary>Null when the run was started without a claim verifier.</summary>
     public long? ClaimVerifierModelConfigurationId { get; set; }
     public string? ClaimVerifierDisplayNameUsed { get; set; }
@@ -781,6 +791,9 @@ public class BenchmarkRunDetailDto
     public string? ClaimVerifierModelIdUsed { get; set; }
     public string? ClaimVerifierThinkingLevelUsed { get; set; }
     public string? ClaimVerifierReasoningModeUsed { get; set; }
+
+    /// <summary>"official", or a fingerprinted description of the custom endpoint the claim verifier ran against; null when the run has no claim verifier.</summary>
+    public string? ClaimVerifierModelEndpoint { get; set; }
 
     public string? StartedByUserId { get; set; }
     public string? StartedByUserName { get; set; }
@@ -1455,8 +1468,16 @@ public class BenchmarkRunSummaryDto
     public string TestedModelDisplayNameUsed { get; set; } = string.Empty;
     public string TestedModelProviderUsed { get; set; } = string.Empty;
     public string TestedModelIdUsed { get; set; } = string.Empty;
+
+    /// <summary>"official", or a fingerprinted description of the custom endpoint the candidate ran against.</summary>
+    public string TestedModelEndpoint { get; set; } = string.Empty;
+
     public long? AssessorModelConfigurationId { get; set; }
     public string AssessorModelDisplayNameUsed { get; set; } = string.Empty;
+
+    /// <summary>"official", or a fingerprinted description of the custom endpoint the assessor graded against.</summary>
+    public string AssessorModelEndpoint { get; set; } = string.Empty;
+
     public string? StartedByUserName { get; set; }
     public BenchmarkRunStatus Status { get; set; }
     public DateTime StartedAtUtc { get; set; }

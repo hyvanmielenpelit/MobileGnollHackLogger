@@ -45,7 +45,13 @@ public class AdminMaintenanceHistoryTests
         var metadataService = new ModelMetadataService();
         var pricingService = new ModelPricingService(metadataService, db);
         var endpointPolicy = new Overseer.Services.Privacy.EndpointPolicy(config);
-        var controller = new AdminController(db, config, null!, cryptoService, governor, endpointPolicy, pricingService);
+        var usageGuard = new SystemConfigUsageGuard(
+            db,
+            new Overseer.Services.Benchmarking.BenchmarkDifficultyJobManager(),
+            new Overseer.Services.Benchmarking.BenchmarkGenerationJobManager(),
+            new Overseer.Services.Benchmarking.BenchmarkRubricCheckJobManager(),
+            new Overseer.Services.Benchmarking.BenchmarkRubricGapAuthorJobManager());
+        var controller = new AdminController(db, config, null!, cryptoService, governor, endpointPolicy, usageGuard, pricingService);
 
         return (controller, db);
     }

@@ -199,6 +199,7 @@ public class SystemAiConfigService
                 TotalDurationMs = totalDurationMs,
                 ModelId = config.ModelId,
                 Provider = config.Provider,
+                ModelDisplayName = config.DisplayName,
                 RoleContext = roleContext
             };
             _dbContext.SystemAiUsageLogs.Add(log);
@@ -248,6 +249,9 @@ public class SystemAiConfigService
         }
     }
 
+    // SystemAiErrorLog.ErrorMessage column width.
+    private const int MaxErrorMessageLength = 2048;
+
     public async Task RecordErrorAsync(long configId, string errorMessage)
     {
         var config = await _dbContext.SystemAiApiConfigurations.FindAsync(configId);
@@ -256,8 +260,11 @@ public class SystemAiConfigService
         var log = new SystemAiErrorLog
         {
             SystemAiApiConfigurationId = configId,
+            Provider = config.Provider,
+            ModelId = config.ModelId,
+            ModelDisplayName = config.DisplayName,
             TimestampUtc = DateTime.UtcNow,
-            ErrorMessage = errorMessage
+            ErrorMessage = errorMessage.Length <= MaxErrorMessageLength ? errorMessage : errorMessage[..MaxErrorMessageLength]
         };
         _dbContext.SystemAiErrorLogs.Add(log);
 

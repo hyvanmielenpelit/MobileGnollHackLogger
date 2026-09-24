@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 public class BenchmarkToolCallLogBuilderTests
@@ -14,7 +15,8 @@ public class BenchmarkToolCallLogBuilderTests
         {
             Id = 30,
             SuiteName = "Tool Call Log Suite",
-            TestedModelDisplayNameUsed = "Model X",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(),
             HarnessVersion = "18",
             StartedAtUtc = new DateTime(2026, 9, 10, 8, 0, 0, DateTimeKind.Utc),
             CandidateSystemPromptSha256 = "abc123",

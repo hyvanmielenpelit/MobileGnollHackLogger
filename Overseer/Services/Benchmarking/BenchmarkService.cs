@@ -18,6 +18,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Agents;
+using Overseer.Services.Privacy;
 using Overseer.Services.Providers;
 
 public class BenchmarkService
@@ -29,6 +30,7 @@ public class BenchmarkService
     private readonly BenchmarkRunManager _runManager;
     private readonly BenchmarkDifficultyJobManager _difficultyJobManager;
     private readonly BenchmarkScoringProfileService _scoringProfileService;
+    private readonly EndpointPolicy _endpointPolicy;
     private readonly IConfiguration _configuration;
     private readonly ILogger<BenchmarkService> _logger;
     private BenchmarkCitationLivenessCheck? _citationLivenessCheck;
@@ -51,6 +53,7 @@ public class BenchmarkService
         BenchmarkRunManager runManager,
         BenchmarkDifficultyJobManager difficultyJobManager,
         BenchmarkScoringProfileService scoringProfileService,
+        EndpointPolicy endpointPolicy,
         IConfiguration configuration,
         ILogger<BenchmarkService> logger)
     {
@@ -61,6 +64,7 @@ public class BenchmarkService
         _runManager = runManager;
         _difficultyJobManager = difficultyJobManager;
         _scoringProfileService = scoringProfileService;
+        _endpointPolicy = endpointPolicy;
         _configuration = configuration;
         _logger = logger;
     }
@@ -156,14 +160,12 @@ public class BenchmarkService
             .ThenInclude(s => s!.Questions)
             .Include(a => a.BenchmarkRun)
             .ThenInclude(r => r.BenchmarkSuite)
-            .ThenInclude(s => s!.GameSnapshot)
-            .Include(a => a.BenchmarkRun.AssessorModelConfiguration);
+            .ThenInclude(s => s!.GameSnapshot);
 
     /// <summary>The run with its answers, assessor and suite (questions and board), for retrying failed assessments.</summary>
     internal static IQueryable<BenchmarkRun> RetryAssessmentsRunQuery(ApplicationDbContext db) =>
         db.BenchmarkRuns
             .Include(r => r.Answers)
-            .Include(r => r.AssessorModelConfiguration)
             .Include(r => r.BenchmarkSuite)
             .ThenInclude(s => s!.Questions)
             .Include(r => r.BenchmarkSuite)
@@ -218,28 +220,103 @@ public class BenchmarkService
         }
     }
 
-    private async Task<(SystemAiApiConfiguration? Config, string? ApiKey, string? Error)> ResolveAssessorAsync(
-        ApplicationDbContext db, BenchmarkRun run, long? overrideConfigId, CancellationToken ct)
+    private static async Task<SystemAiApiConfiguration?> FindConfigurationAsync(ApplicationDbContext db, long? id, CancellationToken ct)
+        => id.HasValue ? await db.SystemAiApiConfigurations.FindAsync(new object[] { id.Value }, ct) : null;
+
+    /// <summary>The output cap an assessor or second-opinion call sends when launch recorded none.</summary>
+    public int ResolveAssessorOutputCap(int? configured)
+        => configured ?? _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
+
+    /// <summary>The output cap every claim-verifier call sends when launch recorded none.</summary>
+    public int ClaimVerifierOutputCap
+        => _configuration.GetValue<int>("Benchmark:ClaimVerification:MaxOutputTokens", 16000);
+
+    /// <summary>
+    /// The output cap a grader call sends: the run's recorded effective cap when <paramref name="config"/>
+    /// is bound to the run's own snapshot for that role, otherwise the cap resolved for this configuration.
+    /// </summary>
+    internal int GraderOutputCap(SystemAiApiConfiguration config, long? roleSnapshotId, int? roleEffectiveCap)
     {
-        SystemAiApiConfiguration? config;
-        if (overrideConfigId.HasValue)
+        var snapshot = SystemAiConfigurationSnapshotStore.SnapshotOf(config);
+        if (snapshot != null && roleSnapshotId.HasValue && snapshot.Id == roleSnapshotId.Value && roleEffectiveCap.HasValue)
+            return roleEffectiveCap.Value;
+        return ResolveAssessorOutputCap(config.MaxOutputTokens);
+    }
+
+    /// <summary>
+    /// The configuration a benchmark call runs with. Settings and endpoint come from the recorded
+    /// snapshot and credentials from the live row (<see cref="SystemAiConfigurationSnapshotStore.Bind"/>);
+    /// the endpoint is resolved strictly, so a call never goes anywhere other than where it is recorded.
+    /// </summary>
+    private (SystemAiApiConfiguration? Config, string? Error) BindRecorded(
+        SystemAiApiConfiguration? live, SystemAiConfigurationSnapshot? recorded, string missingMessage)
+    {
+        if (live == null)
+            return (null, missingMessage);
+
+        if (!SystemAiConfigurationSnapshotStore.TryBind(live, recorded, out var bound, out var bindError))
+            return (null, bindError);
+
+        if (!_endpointPolicy.TryResolveStrict(bound!.BaseUrl, bound.CustomHeadersJson, bound.ApiVersion, out _, out var endpointError))
+            return (null, EndpointRefusal(bound, endpointError));
+
+        return (bound, null);
+    }
+
+    private static string EndpointRefusal(SystemAiApiConfiguration config, string? error)
+        => $"Configuration '{config.DisplayName}': its custom endpoint is not allowed by the endpoint policy: {error}";
+
+    /// <summary>The endpoint a bound configuration's requests go to. Never the official endpoint in place of a refused custom one.</summary>
+    internal AiEndpointDescriptor EndpointFor(SystemAiApiConfiguration config)
+    {
+        if (!_endpointPolicy.TryResolveStrict(config.BaseUrl, config.CustomHeadersJson, config.ApiVersion, out var endpoint, out var error))
+            throw new InvalidOperationException(EndpointRefusal(config, error));
+        return endpoint;
+    }
+
+    /// <summary>
+    /// The snapshot to record for a grader call made with <paramref name="config"/>, tracked by
+    /// <paramref name="db"/>: the one it was bound from, or a capture of its settings for a live row.
+    /// </summary>
+    private static async Task<SystemAiConfigurationSnapshot> GraderSnapshotAsync(
+        ApplicationDbContext db, SystemAiApiConfiguration config, CancellationToken ct)
+        => SystemAiConfigurationSnapshotStore.Track(db, SystemAiConfigurationSnapshotStore.SnapshotOf(config))
+           ?? await SystemAiConfigurationSnapshotStore.CaptureAsync(db, config, ct);
+
+    /// <summary>The run's assessor, or an override captured now.</summary>
+    internal Task<(SystemAiApiConfiguration? Config, string? ApiKey, string? Error)> ResolveAssessorAsync(
+        ApplicationDbContext db, BenchmarkRun run, long? overrideConfigId, CancellationToken ct)
+        => overrideConfigId.HasValue
+            ? ResolveGraderAsync(db, overrideConfigId.Value, null, "The specified assessor configuration was not found.", ct)
+            : ResolveGraderAsync(db, run.AssessorModelConfigurationId, run.AssessorModelSnapshot, "Run assessor configuration was not found.", ct);
+
+    /// <summary>The run's claim verifier, with the settings it was launched with.</summary>
+    internal Task<(SystemAiApiConfiguration? Config, string? ApiKey, string? Error)> ResolveClaimVerifierAsync(
+        ApplicationDbContext db, BenchmarkRun run, CancellationToken ct)
+        => ResolveGraderAsync(db, run.ClaimVerifierModelConfigurationId, run.ClaimVerifierModelSnapshot, "The claim verifier configuration was not found.", ct);
+
+    /// <summary>The run's second-opinion assessor, with the settings it was launched with.</summary>
+    internal Task<(SystemAiApiConfiguration? Config, string? ApiKey, string? Error)> ResolveSecondOpinionAsync(
+        ApplicationDbContext db, BenchmarkRun run, CancellationToken ct)
+        => ResolveGraderAsync(db, run.SecondOpinionAssessorModelConfigurationId, run.SecondOpinionAssessorModelSnapshot, "The second-opinion assessor configuration was not found.", ct);
+
+    /// <summary>
+    /// A grader's usable configuration and key. With <paramref name="recorded"/> the configuration is
+    /// bound to it; without, the live settings are captured now and recorded as the grader's.
+    /// </summary>
+    private async Task<(SystemAiApiConfiguration? Config, string? ApiKey, string? Error)> ResolveGraderAsync(
+        ApplicationDbContext db, long? configId, SystemAiConfigurationSnapshot? recorded, string missingMessage, CancellationToken ct)
+    {
+        var live = await FindConfigurationAsync(db, configId, ct);
+        if (live != null && recorded == null)
         {
-            config = await db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == overrideConfigId.Value, ct);
-            if (config == null)
-            {
-                return (null, null, "The specified assessor configuration was not found.");
-            }
+            recorded = await SystemAiConfigurationSnapshotStore.CaptureAsync(db, live, ct);
         }
-        else
+
+        var (config, bindError) = BindRecorded(live, recorded, missingMessage);
+        if (config == null)
         {
-            config = run.AssessorModelConfiguration ??
-                (run.AssessorModelConfigurationId.HasValue
-                    ? await db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == run.AssessorModelConfigurationId.Value, ct)
-                    : null);
-            if (config == null)
-            {
-                return (null, null, "Run assessor configuration was not found.");
-            }
+            return (null, null, bindError);
         }
 
         if (!config.IsEnabled)
@@ -302,8 +379,6 @@ public class BenchmarkService
                 .ThenInclude(s => s!.Questions)
                 .Include(r => r.BenchmarkSuite)
                 .ThenInclude(s => s!.GameSnapshot)
-                .Include(r => r.TestedModelConfiguration)
-                .Include(r => r.AssessorModelConfiguration)
                 .FirstOrDefaultAsync(r => r.Id == runId, cancellationToken);
 
             if (run == null)
@@ -313,14 +388,19 @@ public class BenchmarkService
                 return;
             }
 
-            var testedConfig = run.TestedModelConfiguration;
-            var assessorConfig = run.AssessorModelConfiguration;
+            const string missingConfigMessage = "Tested or assessor model configuration missing or has no API key.";
+            var (testedConfig, testedBindError) = BindRecorded(
+                await FindConfigurationAsync(db, run.TestedModelConfigurationId, cancellationToken),
+                run.TestedModelSnapshot, missingConfigMessage);
+            var (assessorConfig, assessorBindError) = BindRecorded(
+                await FindConfigurationAsync(db, run.AssessorModelConfigurationId, cancellationToken),
+                run.AssessorModelSnapshot, missingConfigMessage);
 
             if (testedConfig == null || string.IsNullOrWhiteSpace(testedConfig.EncryptedApiKey) ||
                 assessorConfig == null || string.IsNullOrWhiteSpace(assessorConfig.EncryptedApiKey))
             {
                 run.Status = BenchmarkRunStatus.Failed;
-                run.ErrorMessage = "Tested or assessor model configuration missing or has no API key.";
+                run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(testedBindError ?? assessorBindError ?? missingConfigMessage);
                 run.CompletedAtUtc = DateTime.UtcNow;
                 await db.SaveChangesAsync(cancellationToken);
                 _runManager.Complete(runId);
@@ -363,8 +443,7 @@ public class BenchmarkService
 
             if (run.ClaimVerifierModelConfigurationId.HasValue)
             {
-                var (verifierConfig, verifierApiKey, verifierError) = await ResolveAssessorAsync(
-                    db, run, run.ClaimVerifierModelConfigurationId.Value, cancellationToken);
+                var (verifierConfig, verifierApiKey, verifierError) = await ResolveClaimVerifierAsync(db, run, cancellationToken);
                 if (verifierConfig == null || verifierApiKey == null)
                 {
                     _logger.LogWarning(
@@ -665,8 +744,6 @@ public class BenchmarkService
 
             var run = await db.BenchmarkRuns
                 .Include(r => r.Answers)
-                .Include(r => r.TestedModelConfiguration)
-                .Include(r => r.AssessorModelConfiguration)
                 .Include(r => r.BenchmarkSuite)
                 .ThenInclude(s => s!.Questions)
                 .Include(r => r.BenchmarkSuite)
@@ -686,13 +763,18 @@ public class BenchmarkService
                 return;
             }
 
-            var testedConfig = run.TestedModelConfiguration;
-            var assessorConfig = run.AssessorModelConfiguration;
+            const string missingConfigMessage = "the tested or assessor model configuration is missing or has no API key.";
+            var (testedConfig, testedBindError) = BindRecorded(
+                await FindConfigurationAsync(db, run.TestedModelConfigurationId, cancellationToken),
+                run.TestedModelSnapshot, missingConfigMessage);
+            var (assessorConfig, assessorBindError) = BindRecorded(
+                await FindConfigurationAsync(db, run.AssessorModelConfigurationId, cancellationToken),
+                run.AssessorModelSnapshot, missingConfigMessage);
 
             if (testedConfig == null || string.IsNullOrWhiteSpace(testedConfig.EncryptedApiKey) ||
                 assessorConfig == null || string.IsNullOrWhiteSpace(assessorConfig.EncryptedApiKey))
             {
-                await RestoreTerminalStatusAsync(db, run, "Failed-question re-run could not start: the tested or assessor model configuration is missing or has no API key.");
+                await RestoreTerminalStatusAsync(db, run, "Failed-question re-run could not start: " + (testedBindError ?? assessorBindError ?? missingConfigMessage));
                 _runManager.Complete(runId);
                 return;
             }
@@ -702,8 +784,7 @@ public class BenchmarkService
 
             if (run.ClaimVerifierModelConfigurationId.HasValue)
             {
-                var (verifierConfig, verifierApiKey, verifierError) = await ResolveAssessorAsync(
-                    db, run, run.ClaimVerifierModelConfigurationId.Value, cancellationToken);
+                var (verifierConfig, verifierApiKey, verifierError) = await ResolveClaimVerifierAsync(db, run, cancellationToken);
                 if (verifierConfig == null || verifierApiKey == null)
                 {
                     _logger.LogWarning(
@@ -1264,6 +1345,7 @@ public class BenchmarkService
             ProviderName = testedConfig.Provider,
             ModelId = testedConfig.ModelId,
             ApiKey = testedApiKey,
+            Endpoint = EndpointFor(testedConfig),
             ModelDisplayName = testedConfig.DisplayName,
             SystemPrompt = systemPrompt,
             FrozenPrefix = segmentedPrompt?.FrozenPrefix,
@@ -1544,6 +1626,7 @@ public class BenchmarkService
             ProviderName = testedConfig.Provider,
             ModelId = testedConfig.ModelId,
             ApiKey = testedApiKey,
+            Endpoint = EndpointFor(testedConfig),
             ModelDisplayName = testedConfig.DisplayName,
             SystemPrompt = systemPrompt,
             FrozenPrefix = segmentedPrompt?.FrozenPrefix,
@@ -1909,13 +1992,12 @@ public class BenchmarkService
             prompt,
             boardBlock);
 
-        int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
-
         var runRequest = new AgentRunRequest
         {
             ProviderName = assessorConfig.Provider,
             ModelId = assessorConfig.ModelId,
             ApiKey = assessorApiKey,
+            Endpoint = EndpointFor(assessorConfig),
             ModelDisplayName = assessorConfig.DisplayName,
             SystemPrompt = gradingPrompt.FullPrompt,
             SegmentedPrompt = gradingPrompt,
@@ -1923,7 +2005,7 @@ public class BenchmarkService
             ReasoningMode = assessorConfig.ReasoningMode,
             ReasoningSummary = assessorConfig.ReasoningSummary,
             ServiceTier = assessorConfig.ServiceTier,
-            MaxOutputTokens = assessorConfig.MaxOutputTokens ?? assessorMaxTokens,
+            MaxOutputTokens = GraderOutputCap(assessorConfig, run.AssessorModelSnapshotId, run.AssessorEffectiveMaxOutputTokens),
             MaxToolIterations = 0,
             EnableToolUse = false,
             EnableWebSearch = false,
@@ -2214,9 +2296,7 @@ public class BenchmarkService
         answer.AssessmentRawText = CapAssessmentRawText(parseResult.RawText ?? runResult.FinalText);
 
         answer.AssessedByModelConfigurationId = assessorConfig.Id;
-        answer.AssessedByModelDisplayNameUsed = assessorConfig.DisplayName;
-        answer.AssessedByModelProviderUsed = assessorConfig.Provider;
-        answer.AssessedByModelIdUsed = assessorConfig.ModelId;
+        answer.AssessedByModelSnapshot = await GraderSnapshotAsync(db, assessorConfig, CancellationToken.None);
         answer.AssessedAtUtc = DateTime.UtcNow;
 
         await db.SaveChangesAsync(CancellationToken.None);
@@ -2247,8 +2327,7 @@ public class BenchmarkService
         {
             try
             {
-                var (verifierConfig, verifierApiKey, resolveError) = await ResolveAssessorAsync(
-                    db, run, run.ClaimVerifierModelConfigurationId.Value, cancellationToken);
+                var (verifierConfig, verifierApiKey, resolveError) = await ResolveClaimVerifierAsync(db, run, cancellationToken);
                 if (verifierConfig != null && verifierApiKey != null)
                 {
                     await VerifyAnswerClaimsAsync(
@@ -2731,8 +2810,7 @@ public class BenchmarkService
     {
         if (!run.ClaimVerifierModelConfigurationId.HasValue) return;
 
-        var (verifierConfig, verifierApiKey, resolveError) = await ResolveAssessorAsync(
-            db, run, run.ClaimVerifierModelConfigurationId.Value, cancellationToken);
+        var (verifierConfig, verifierApiKey, resolveError) = await ResolveClaimVerifierAsync(db, run, cancellationToken);
 
         if (verifierConfig == null || verifierApiKey == null)
         {
@@ -2987,7 +3065,7 @@ public class BenchmarkService
         int toolCallBudget = _configuration.GetValue<int>("Benchmark:ClaimVerification:ToolCallBudget", 15);
         int toolIterations = _configuration.GetValue<int>("Benchmark:ClaimVerification:ToolIterations", 8);
         int totalModelCalls = _configuration.GetValue<int>("Benchmark:ClaimVerification:TotalModelCalls", 12);
-        int maxOutputTokens = _configuration.GetValue<int>("Benchmark:ClaimVerification:MaxOutputTokens", 16000);
+        int maxOutputTokens = run.ClaimVerifierEffectiveMaxOutputTokens ?? ClaimVerifierOutputCap;
         int timeoutSeconds = _configuration.GetValue<int>("Benchmark:ClaimVerification:TimeoutSeconds", 300);
         int maxResultLength = _configuration.GetValue<int>("Benchmark:MaxResultLength", 10000);
 
@@ -3019,6 +3097,7 @@ public class BenchmarkService
         var runRequest = BuildClaimVerificationRequest(
             verifierConfig,
             verifierApiKey,
+            EndpointFor(verifierConfig),
             prompt,
             allowedTools,
             maxOutputTokens,
@@ -3090,7 +3169,7 @@ public class BenchmarkService
             answer.ClaimVerificationCacheCreationTokens = cacheCreationTokens;
             answer.ClaimVerificationDurationMs = sw.ElapsedMilliseconds;
             answer.ClaimVerificationToolCallCount = toolCallsCount;
-            answer.ClaimVerificationByModelDisplayNameUsed = verifierConfig.DisplayName ?? verifierConfig.ModelId;
+            answer.ClaimVerificationByModelSnapshot = await GraderSnapshotAsync(db, verifierConfig, CancellationToken.None);
             answer.ClaimVerificationError = BenchmarkAssessmentFailure.Truncate(terminalError, BenchmarkAssessmentFailure.MaxClaimVerificationErrorLength);
             answer.ClaimVerificationRawText = null;
             _logger.LogWarning(
@@ -3160,7 +3239,7 @@ public class BenchmarkService
             answer.ClaimVerificationCacheCreationTokens = cacheCreationTokens;
             answer.ClaimVerificationDurationMs = sw.ElapsedMilliseconds;
             answer.ClaimVerificationToolCallCount = toolCallsCount;
-            answer.ClaimVerificationByModelDisplayNameUsed = verifierConfig.DisplayName ?? verifierConfig.ModelId;
+            answer.ClaimVerificationByModelSnapshot = await GraderSnapshotAsync(db, verifierConfig, CancellationToken.None);
 
             if (!string.IsNullOrWhiteSpace(terminalError))
             {
@@ -3419,8 +3498,7 @@ public class BenchmarkService
                 return;
             }
 
-            var (assessorConfig, assessorApiKey, resolveError) = await ResolveAssessorAsync(
-                db, run, run.AssessorModelConfigurationId.Value, cancellationToken);
+            var (assessorConfig, assessorApiKey, resolveError) = await ResolveAssessorAsync(db, run, null, cancellationToken);
             if (assessorConfig == null || assessorApiKey == null)
             {
                 _logger.LogWarning(
@@ -3564,11 +3642,9 @@ public class BenchmarkService
 
             answer.EvidenceInformedQualityScore = quality;
             answer.EvidenceInformedCriticalError = res.CriticalError;
+            answer.EvidenceInformedByModelSnapshot = await GraderSnapshotAsync(db, assessorConfig, CancellationToken.None);
             answer.EvidenceInformedJson = JsonSerializer.Serialize(new
             {
-                assessor = assessorConfig.DisplayName ?? assessorConfig.ModelId,
-                provider = assessorConfig.Provider,
-                modelId = assessorConfig.ModelId,
                 assessedAtUtc = DateTime.UtcNow,
                 accuracyLevel = res.AccuracyLevel,
                 completenessLevel = res.CompletenessLevel,
@@ -3975,6 +4051,7 @@ public class BenchmarkService
     internal static AgentRunRequest BuildClaimVerificationRequest(
         SystemAiApiConfiguration verifierConfig,
         string verifierApiKey,
+        AiEndpointDescriptor endpoint,
         string prompt,
         List<string> allowedTools,
         int maxOutputTokens,
@@ -3991,6 +4068,7 @@ public class BenchmarkService
             ProviderName = verifierConfig.Provider,
             ModelId = verifierConfig.ModelId,
             ApiKey = verifierApiKey,
+            Endpoint = endpoint,
             ModelDisplayName = verifierConfig.DisplayName,
             SystemPrompt = "You verify individual factual claims about GnollHack against the game's own source code and wiki. Strictly adhere to the requested JSON response format.",
             ThinkingLevel = verifierConfig.ThinkingLevel,
@@ -4113,13 +4191,7 @@ public class BenchmarkService
             return;
         }
 
-        calibration.AssessorDisplayNameUsed = assessorConfig.DisplayName ?? assessorConfig.ModelId;
-        calibration.AssessorProviderUsed = assessorConfig.Provider;
-        calibration.AssessorModelIdUsed = assessorConfig.ModelId;
-        calibration.AssessorThinkingLevelUsed = assessorConfig.ThinkingLevel;
-        calibration.AssessorReasoningModeUsed = assessorConfig.ReasoningMode;
-        calibration.AssessorServiceTierUsed = assessorConfig.ServiceTier;
-        calibration.AssessorMaxOutputTokensUsed = assessorConfig.MaxOutputTokens;
+        calibration.AssessorModelSnapshot = await GraderSnapshotAsync(db, assessorConfig, cancellationToken);
 
         var answers = await db.BenchmarkRunAnswers
             .Where(a => a.BenchmarkRunId == run.Id)
@@ -4242,7 +4314,7 @@ public class BenchmarkService
 
         _logger.LogInformation(
             "Calibration of run {RunId} with {Model}: {Count} answer(s), mean absolute delta {Delta}, {Disagreements} disagreement(s).",
-            run.Id, calibration.AssessorDisplayNameUsed, calibration.AnswerCount,
+            run.Id, calibration.AssessorModelSnapshot.Label(), calibration.AnswerCount,
             calibration.MeanAbsDelta, calibration.DisagreementCount);
     }
 
@@ -4398,13 +4470,12 @@ public class BenchmarkService
             prompt,
             GradingBoardBlock(run));
 
-        int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
-
         return new AgentRunRequest
         {
             ProviderName = assessorConfig.Provider,
             ModelId = assessorConfig.ModelId,
             ApiKey = assessorApiKey,
+            Endpoint = EndpointFor(assessorConfig),
             ModelDisplayName = assessorConfig.DisplayName,
             SystemPrompt = gradingPrompt.FullPrompt,
             SegmentedPrompt = gradingPrompt,
@@ -4412,7 +4483,7 @@ public class BenchmarkService
             ReasoningMode = assessorConfig.ReasoningMode,
             ReasoningSummary = assessorConfig.ReasoningSummary,
             ServiceTier = assessorConfig.ServiceTier,
-            MaxOutputTokens = assessorConfig.MaxOutputTokens ?? assessorMaxTokens,
+            MaxOutputTokens = GraderOutputCap(assessorConfig, run.AssessorModelSnapshotId, run.AssessorEffectiveMaxOutputTokens),
             MaxToolIterations = 0,
             EnableToolUse = false,
             EnableWebSearch = false,
@@ -4467,6 +4538,11 @@ public class BenchmarkService
             return (null, "The selected analysis model is invalid, disabled, missing an API key, or not configured with the Benchmark role.", 0, 0, 0);
         }
 
+        if (!_endpointPolicy.TryResolveStrict(config.BaseUrl, config.CustomHeadersJson, config.ApiVersion, out _, out var endpointError))
+        {
+            return (null, EndpointRefusal(config, endpointError), 0, 0, 0);
+        }
+
         string apiKey = _cryptoService.Decrypt(config.EncryptedApiKey, config.ApiKeyNonce!, config.ApiKeyTag!, "SYSTEM_API_KEY");
 
         // Question texts only: no rubrics, no answers, no scores, no item statistics.
@@ -4494,6 +4570,7 @@ public class BenchmarkService
             ProviderName = config.Provider,
             ModelId = config.ModelId,
             ApiKey = apiKey,
+            Endpoint = EndpointFor(config),
             ModelDisplayName = config.DisplayName,
             SystemPrompt = "You are an objective GnollHack domain analyst. Strictly adhere to the requested JSON response format.",
             ThinkingLevel = config.ThinkingLevel,
@@ -4659,14 +4736,11 @@ public class BenchmarkService
 
         answer.SecondOpinionQualityScore = trialQuality;
         answer.SecondOpinionCriticalError = res.CriticalError;
-        answer.SecondOpinionByModelDisplayNameUsed = assessorConfig.DisplayName ?? assessorConfig.ModelId;
+        answer.SecondOpinionByModelSnapshot = await GraderSnapshotAsync(db, assessorConfig, CancellationToken.None);
         answer.SecondOpinionTrigger = SecondOpinionTriggers.Manual;
         answer.SecondOpinionBoardChars = verdict.BoardChars;
         answer.SecondOpinionJson = JsonSerializer.Serialize(new
         {
-            assessor = assessorConfig.DisplayName ?? assessorConfig.ModelId,
-            provider = assessorConfig.Provider,
-            modelId = assessorConfig.ModelId,
             assessedAtUtc = DateTime.UtcNow,
             trial = true,
             accuracyLevel = res.AccuracyLevel,
@@ -4781,8 +4855,7 @@ public class BenchmarkService
 
         int firstQualityScore = answer.QualityScore.Value;
 
-        var (secondConfig, secondApiKey, resolveError) = await ResolveAssessorAsync(
-            db, run, run.SecondOpinionAssessorModelConfigurationId.Value, cancellationToken);
+        var (secondConfig, secondApiKey, resolveError) = await ResolveSecondOpinionAsync(db, run, cancellationToken);
 
         if (secondConfig == null || secondApiKey == null)
         {
@@ -4863,13 +4936,12 @@ public class BenchmarkService
             prompt,
             GradingBoardBlock(run));
 
-        int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
-
         var runRequest = new AgentRunRequest
         {
             ProviderName = secondConfig.Provider,
             ModelId = secondConfig.ModelId,
             ApiKey = secondApiKey,
+            Endpoint = EndpointFor(secondConfig),
             ModelDisplayName = secondConfig.DisplayName,
             SystemPrompt = gradingPrompt.FullPrompt,
             SegmentedPrompt = gradingPrompt,
@@ -4877,7 +4949,7 @@ public class BenchmarkService
             ReasoningMode = secondConfig.ReasoningMode,
             ReasoningSummary = secondConfig.ReasoningSummary,
             ServiceTier = secondConfig.ServiceTier,
-            MaxOutputTokens = secondConfig.MaxOutputTokens ?? assessorMaxTokens,
+            MaxOutputTokens = GraderOutputCap(secondConfig, run.SecondOpinionAssessorModelSnapshotId, run.SecondOpinionEffectiveMaxOutputTokens),
             MaxToolIterations = 0,
             EnableToolUse = false,
             EnableWebSearch = false,
@@ -4989,15 +5061,12 @@ public class BenchmarkService
 
         answer.SecondOpinionQualityScore = secondQuality;
         answer.SecondOpinionCriticalError = second.CriticalError;
-        answer.SecondOpinionByModelDisplayNameUsed = secondConfig.DisplayName ?? secondConfig.ModelId;
+        answer.SecondOpinionByModelSnapshot = await GraderSnapshotAsync(db, secondConfig, CancellationToken.None);
         answer.SecondOpinionTrigger = trigger;
         // A parsed verdict came from a turn whose delivery probe passed.
         answer.SecondOpinionBoardChars = BenchmarkBoardGuard.BoardCharsSent(run);
         answer.SecondOpinionJson = JsonSerializer.Serialize(new
         {
-            assessor = secondConfig.DisplayName ?? secondConfig.ModelId,
-            provider = secondConfig.Provider,
-            modelId = secondConfig.ModelId,
             assessedAtUtc = DateTime.UtcNow,
             accuracyLevel = second.AccuracyLevel,
             completenessLevel = second.CompletenessLevel,
@@ -5250,13 +5319,12 @@ public class BenchmarkService
             null,
             synthesisPrompt);
 
-        int assessorMaxTokens = _configuration.GetValue<int>("Benchmark:AssessorMaxOutputTokens", 32000);
-
         var runRequest = new AgentRunRequest
         {
             ProviderName = assessorConfig.Provider,
             ModelId = assessorConfig.ModelId,
             ApiKey = assessorApiKey,
+            Endpoint = EndpointFor(assessorConfig),
             ModelDisplayName = assessorConfig.DisplayName,
             SystemPrompt = gradingPrompt.FullPrompt,
             SegmentedPrompt = gradingPrompt,
@@ -5264,7 +5332,7 @@ public class BenchmarkService
             ReasoningMode = assessorConfig.ReasoningMode,
             ReasoningSummary = assessorConfig.ReasoningSummary,
             ServiceTier = assessorConfig.ServiceTier,
-            MaxOutputTokens = assessorConfig.MaxOutputTokens ?? assessorMaxTokens,
+            MaxOutputTokens = GraderOutputCap(assessorConfig, run.AssessorModelSnapshotId, run.AssessorEffectiveMaxOutputTokens),
             MaxToolIterations = 0,
             EnableToolUse = false,
             EnableWebSearch = false,
@@ -5412,16 +5480,24 @@ public class BenchmarkService
             return;
         }
 
-        var assessorConfig = await db.SystemAiApiConfigurations.FindAsync(new object[] { job.AssessorConfigId }, cancellationToken);
+        // Every rating runs with, and records, the settings captured when the job started.
+        var assessorSnapshot = job.AssessorSnapshotId > 0
+            ? await db.SystemAiConfigurationSnapshots.FindAsync(new object[] { job.AssessorSnapshotId }, cancellationToken)
+            : null;
+        var (assessorConfig, assessorBindError) = BindRecorded(
+            await db.SystemAiApiConfigurations.FindAsync(new object[] { job.AssessorConfigId }, cancellationToken),
+            assessorSnapshot, "Assessor model configuration missing or has no API key.");
         if (assessorConfig == null || string.IsNullOrWhiteSpace(assessorConfig.EncryptedApiKey))
         {
-            job.AddLog("Assessor model configuration missing or has no API key.", "error");
+            job.AddLog(assessorBindError ?? "Assessor model configuration missing or has no API key.", "error");
             job.SetStatus(BenchmarkDifficultyJobStatus.Failed);
             _difficultyJobManager.Complete(job.Id, BenchmarkDifficultyJobStatus.Failed);
             return;
         }
 
         string assessorApiKey = _cryptoService.Decrypt(assessorConfig.EncryptedApiKey, assessorConfig.ApiKeyNonce!, assessorConfig.ApiKeyTag!, "SYSTEM_API_KEY");
+
+        var difficultySnapshot = await GraderSnapshotAsync(db, assessorConfig, cancellationToken);
 
         var targetQuestionIds = new HashSet<long>(job.Items.Select(i => i.QuestionId));
         var questionsToRate = suite.Questions
@@ -5644,7 +5720,7 @@ public class BenchmarkService
                 {
                     if (ratingsById.TryGetValue(q.Id, out var parsedItem))
                     {
-                        BenchmarkQuestionAssessment.ApplySnapshot(q, parsedItem.Difficulty, assessorConfig, DateTime.UtcNow);
+                        BenchmarkQuestionAssessment.ApplySnapshot(q, parsedItem.Difficulty, assessorConfig.Id, difficultySnapshot, DateTime.UtcNow);
                         job.SetItemRated(q.Id, parsedItem.Difficulty);
                         matchedQuestionIds.Add(q.Id);
                     }
@@ -5663,7 +5739,7 @@ public class BenchmarkService
                         job.AddLog($"Question ID mismatch: returned id {parsedItem.Id} positionally matched to question {q.Id} (order {q.OrderIndex}).", "warning");
                         _logger.LogWarning("Difficulty assessment ID mismatch: model returned id {ModelId} for question {QuestionId}", parsedItem.Id, q.Id);
 
-                        BenchmarkQuestionAssessment.ApplySnapshot(q, parsedItem.Difficulty, assessorConfig, DateTime.UtcNow);
+                        BenchmarkQuestionAssessment.ApplySnapshot(q, parsedItem.Difficulty, assessorConfig.Id, difficultySnapshot, DateTime.UtcNow);
                         job.SetItemRated(q.Id, parsedItem.Difficulty);
                         matchedQuestionIds.Add(q.Id);
                     }
@@ -5779,6 +5855,7 @@ public class BenchmarkService
             ProviderName = assessorConfig.Provider,
             ModelId = assessorConfig.ModelId,
             ApiKey = assessorApiKey,
+            Endpoint = EndpointFor(assessorConfig),
             ModelDisplayName = assessorConfig.DisplayName,
             SystemPrompt = "You are an objective game mechanics expert. Rate the difficulty of the questions based strictly on the JSON schema requested.",
             ThinkingLevel = assessorConfig.ThinkingLevel,
@@ -5979,8 +6056,6 @@ public class BenchmarkService
         // past every handler and past the finally that releases the run manager, leaving the row
         // reading Running with no owner. The cancellation check is the first statement in the try.
         var answer = await db.BenchmarkRunAnswers
-            .Include(a => a.BenchmarkRun).ThenInclude(r => r.TestedModelConfiguration)
-            .Include(a => a.BenchmarkRun).ThenInclude(r => r.AssessorModelConfiguration)
             .Include(a => a.BenchmarkRun).ThenInclude(r => r.BenchmarkSuite).ThenInclude(s => s!.Questions)
             .Include(a => a.BenchmarkRun).ThenInclude(r => r.BenchmarkSuite).ThenInclude(s => s!.GameSnapshot)
             .FirstOrDefaultAsync(a => a.Id == answerId, CancellationToken.None);
@@ -6010,11 +6085,14 @@ public class BenchmarkService
                 return;
             }
 
-            var testedConfig = run.TestedModelConfiguration;
+            var (testedConfig, testedBindError) = BindRecorded(
+                await FindConfigurationAsync(db, run.TestedModelConfigurationId, cancellationToken),
+                run.TestedModelSnapshot, "Tested model configuration missing or has no API key.");
             if (testedConfig == null || string.IsNullOrWhiteSpace(testedConfig.EncryptedApiKey))
             {
-                answer.AssessmentError = BenchmarkAssessmentFailure.Truncate("Tested model configuration missing or has no API key.");
-                await RestoreTerminalStatusAsync(db, run, "Tested model configuration missing or has no API key.");
+                string testedError = testedBindError ?? "Tested model configuration missing or has no API key.";
+                answer.AssessmentError = BenchmarkAssessmentFailure.Truncate(testedError);
+                await RestoreTerminalStatusAsync(db, run, testedError);
                 return;
             }
 
@@ -6054,9 +6132,8 @@ public class BenchmarkService
             answer.ReviewComment = null;
             answer.AssessmentError = null;
             answer.AssessedByModelConfigurationId = null;
-            answer.AssessedByModelDisplayNameUsed = null;
-            answer.AssessedByModelProviderUsed = null;
-            answer.AssessedByModelIdUsed = null;
+            answer.AssessedByModelSnapshot = null;
+            answer.AssessedByModelSnapshotId = null;
             answer.AssessedAtUtc = null;
             answer.AssessmentStatus = BenchmarkAssessmentStatus.Pending;
             await db.SaveChangesAsync(cancellationToken);
@@ -6260,8 +6337,7 @@ public class BenchmarkService
 
                 answer.ReassessmentCount++;
                 answer.ReassessedAtUtc = DateTime.UtcNow;
-                answer.ReassessedByModelDisplayNameUsed =
-                    assessorConfig.DisplayName ?? assessorConfig.ModelId;
+                answer.ReassessedByModelSnapshot = await GraderSnapshotAsync(db, assessorConfig, CancellationToken.None);
             }
 
             var allAnswers = await db.BenchmarkRunAnswers
@@ -6318,7 +6394,6 @@ public class BenchmarkService
         // reading Running with no owner. The cancellation check is the first statement in the try.
         var run = await db.BenchmarkRuns
             .Include(r => r.Answers)
-            .Include(r => r.AssessorModelConfiguration)
             .FirstOrDefaultAsync(r => r.Id == runId, CancellationToken.None);
 
         if (run == null)
@@ -6512,9 +6587,17 @@ public class BenchmarkService
                 return;
             }
 
+            // An override verifier becomes the run's verifier, recorded with the settings it runs with.
             if (verifierConfigId.HasValue)
             {
+                var overrideVerifier = await FindConfigurationAsync(db, verifierConfigId, cancellationToken);
+                var overrideSnapshot = overrideVerifier != null
+                    ? await SystemAiConfigurationSnapshotStore.CaptureAsync(db, overrideVerifier, cancellationToken)
+                    : null;
                 run.ClaimVerifierModelConfigurationId = verifierConfigId.Value;
+                run.ClaimVerifierModelSnapshot = overrideSnapshot;
+                if (overrideSnapshot == null) run.ClaimVerifierModelSnapshotId = null;
+                run.ClaimVerifierEffectiveMaxOutputTokens ??= ClaimVerifierOutputCap;
             }
 
             var failedAnswers = run.Answers

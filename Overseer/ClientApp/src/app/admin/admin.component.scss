@@ -433,6 +433,26 @@
   }
 }
 
+.delete-config-dialog {
+  max-width: 560px;
+
+  .delete-config-blocker-list,
+  .delete-config-impact-list {
+    margin: 12px 0;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .delete-config-blocker-list li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+  }
+}
+
 @media (max-width: 768px) {
   .table-responsive {
     border: none !important;

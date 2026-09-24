@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using MobileGnollHackLogger.Data;
 using Overseer.Services;
 using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 public class BenchmarkReportBuilderTests
@@ -25,12 +26,8 @@ public class BenchmarkReportBuilderTests
             {
                 Id = 10,
                 SuiteName = "Invariant Suite",
-                TestedModelDisplayNameUsed = "Model A",
-                TestedModelProviderUsed = "Provider A",
-                TestedModelIdUsed = "model-a",
-                AssessorModelDisplayNameUsed = "Assessor B",
-                AssessorModelProviderUsed = "Provider B",
-                AssessorModelIdUsed = "assessor-b",
+                TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider A", modelId: "model-a", displayName: "Model A"),
+                AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider B", modelId: "assessor-b", displayName: "Assessor B"),
                 Status = BenchmarkRunStatus.Completed,
                 StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
                 CompletedAtUtc = DateTime.UtcNow,
@@ -85,8 +82,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 42,
             SuiteName = "Harness Test Suite",
-            TestedModelDisplayNameUsed = "Model X",
-            AssessorModelDisplayNameUsed = "Assessor Y",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
             Status = BenchmarkRunStatus.CompletedWithErrors,
             StartedAtUtc = DateTime.UtcNow.AddMinutes(-10),
             CompletedAtUtc = DateTime.UtcNow,
@@ -169,8 +166,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 43,
             SuiteName = "Budget Suite",
-            TestedModelDisplayNameUsed = "Model X",
-            AssessorModelDisplayNameUsed = "Assessor Y",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
             Status = BenchmarkRunStatus.CompletedWithLimits,
             StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
             CompletedAtUtc = DateTime.UtcNow,
@@ -212,8 +209,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 45,
             SuiteName = "Second Opinion Suite",
-            TestedModelDisplayNameUsed = "Model X",
-            AssessorModelDisplayNameUsed = "Assessor Y",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
             Status = BenchmarkRunStatus.Completed,
             StartedAtUtc = DateTime.UtcNow,
             Answers = new List<BenchmarkRunAnswer>()
@@ -224,13 +221,9 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("**None selected.**", BenchmarkReportBuilder.BuildMarkdownReport(run));
 
         run.SecondOpinionAssessorModelConfigurationId = 7;
-        run.SecondOpinionAssessorModelDisplayNameUsed = "Claude Reviewer";
-        run.SecondOpinionAssessorModelProviderUsed = "Anthropic";
-        run.SecondOpinionAssessorModelIdUsed = "claude-reviewer-1";
+        run.SecondOpinionAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-reviewer-1", displayName: "Claude Reviewer");
         run.ClaimVerifierModelConfigurationId = 8;
-        run.ClaimVerifierDisplayNameUsed = "Verifier Model";
-        run.ClaimVerifierProviderUsed = "Google";
-        run.ClaimVerifierModelIdUsed = "gemini-3.7-flash";
+        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Verifier Model");
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
@@ -247,8 +240,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 44,
             SuiteName = "Version Suite",
-            TestedModelDisplayNameUsed = "Model X",
-            AssessorModelDisplayNameUsed = "Assessor Y",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
             Status = BenchmarkRunStatus.Completed,
             StartedAtUtc = DateTime.UtcNow,
             Answers = new List<BenchmarkRunAnswer>()
@@ -267,8 +260,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 5,
             SuiteName = "Difficulty Bucketing Suite",
-            TestedModelDisplayNameUsed = "Model D",
-            AssessorModelDisplayNameUsed = "Assessor D",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model D"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor D"),
             Status = BenchmarkRunStatus.Completed,
             StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
             CompletedAtUtc = DateTime.UtcNow,
@@ -389,8 +382,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 50,
             SuiteName = "Heading Suite",
-            TestedModelDisplayNameUsed = "Model X",
-            AssessorModelDisplayNameUsed = "Assessor Y",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
             Status = BenchmarkRunStatus.Completed,
             StartedAtUtc = DateTime.UtcNow,
             TotalQuestionCount = 1,
@@ -432,8 +425,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 51,
             SuiteName = "Advisory Suite",
-            TestedModelDisplayNameUsed = "Model X",
-            AssessorModelDisplayNameUsed = "Assessor Y",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
             Status = BenchmarkRunStatus.Completed,
             StartedAtUtc = DateTime.UtcNow,
             TotalQuestionCount = 1,
@@ -466,8 +459,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 52,
             SuiteName = "Advisory Suite",
-            TestedModelDisplayNameUsed = "Model X",
-            AssessorModelDisplayNameUsed = "Assessor Y",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
             Status = BenchmarkRunStatus.Completed,
             StartedAtUtc = DateTime.UtcNow,
             TotalQuestionCount = 2,
@@ -516,8 +509,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 53,
             SuiteName = "Scrub Suite",
-            TestedModelDisplayNameUsed = "Model X",
-            AssessorModelDisplayNameUsed = "Assessor Y",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
             Status = BenchmarkRunStatus.Completed,
             StartedAtUtc = DateTime.UtcNow,
             TotalQuestionCount = 2,
@@ -564,8 +557,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 54,
             SuiteName = "Critical Error Suite",
-            TestedModelDisplayNameUsed = "Model X",
-            AssessorModelDisplayNameUsed = "Assessor Y",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
             Status = BenchmarkRunStatus.Completed,
             StartedAtUtc = DateTime.UtcNow,
             TotalQuestionCount = 2,
@@ -610,8 +603,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 55,
             SuiteName = "No Critical Error Suite",
-            TestedModelDisplayNameUsed = "Model X",
-            AssessorModelDisplayNameUsed = "Assessor Y",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
             Status = BenchmarkRunStatus.Completed,
             StartedAtUtc = DateTime.UtcNow,
             TotalQuestionCount = 1,
@@ -643,8 +636,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 56,
             SuiteName = "Contested Error Suite",
-            TestedModelDisplayNameUsed = "Model X",
-            AssessorModelDisplayNameUsed = "Assessor Y",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
             Status = BenchmarkRunStatus.Completed,
             StartedAtUtc = DateTime.UtcNow,
             TotalQuestionCount = 2,
@@ -691,8 +684,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 57,
             SuiteName = "Split Error Suite",
-            TestedModelDisplayNameUsed = "Model X",
-            AssessorModelDisplayNameUsed = "Assessor Y",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
             Status = BenchmarkRunStatus.Completed,
             StartedAtUtc = DateTime.UtcNow,
             TotalQuestionCount = 2,
@@ -751,13 +744,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 6,
             SuiteName = "GnollHack Player Assistance Benchmark Suite",
-            TestedModelDisplayNameUsed = "GPT-5.6 Luna",
-            TestedModelProviderUsed = "OpenAI",
-            TestedModelIdUsed = "gpt-5.6-luna",
-            TestedModelThinkingLevelUsed = "max",
-            AssessorModelDisplayNameUsed = "Gemini 3.7 Flash",
-            AssessorModelProviderUsed = "Google",
-            AssessorModelIdUsed = "gemini-3.7-flash",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6-luna", displayName: "GPT-5.6 Luna", thinkingLevel: "max"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash"),
             Status = BenchmarkRunStatus.Completed,
             StartedAtUtc = DateTime.UtcNow.AddMinutes(-36),
             CompletedAtUtc = DateTime.UtcNow,
@@ -888,7 +876,7 @@ public class BenchmarkReportBuilderTests
     public void CacheCreationTokens_PrintZero_WhenTheProviderDoesReportThem()
     {
         var run = HarnessV6Run(ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 25));
-        run.TestedModelProviderUsed = "Anthropic";
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: run.TestedModelSnapshot.ModelId, displayName: run.TestedModelSnapshot.DisplayName, thinkingLevel: run.TestedModelSnapshot.ThinkingLevel);
         run.TotalCacheReadTokens = 4102396;
         run.TotalCacheCreationTokens = 0;
 
@@ -912,7 +900,7 @@ public class BenchmarkReportBuilderTests
     public void ProfileFit_IsSilentForAModelThatIsNotDeliberating()
     {
         var run = HarnessV6Run(ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 25));
-        run.TestedModelThinkingLevelUsed = "low";
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: run.TestedModelSnapshot.Provider, modelId: run.TestedModelSnapshot.ModelId, displayName: run.TestedModelSnapshot.DisplayName, thinkingLevel: "low");
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
@@ -1216,15 +1204,14 @@ public class BenchmarkReportBuilderTests
         q1.SecondOpinionQualityScore = 85;
         q1.SecondOpinionDisagreed = true;
         q1.SecondOpinionTrigger = "BelowThreshold";
-        q1.SecondOpinionByModelDisplayNameUsed = "Claude Opus 5";
+        q1.SecondOpinionByModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Claude Opus 5");
 
         var run = HarnessV7Run(
             BenchmarkSecondOpinionMode.Flagged,
             q1,
             ScoredAnswer(2, BenchmarkDifficulty.Advanced, 85, 99));
         run.SecondOpinionAssessorModelConfigurationId = 4;
-        run.SecondOpinionAssessorModelDisplayNameUsed = "Claude Opus 5";
-        run.SecondOpinionAssessorModelProviderUsed = "Anthropic";
+        run.SecondOpinionAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-opus-5", displayName: "Claude Opus 5");
         run.SecondOpinionGradedAnswerCount = 1;
         run.SecondOpinionMeanAbsDelta = 25.0;
 
@@ -1273,8 +1260,7 @@ public class BenchmarkReportBuilderTests
 
         var run = HarnessV7Run(BenchmarkSecondOpinionMode.All, q1, q2);
         run.SecondOpinionAssessorModelConfigurationId = 4;
-        run.SecondOpinionAssessorModelDisplayNameUsed = "Claude Opus 5";
-        run.SecondOpinionAssessorModelProviderUsed = "Anthropic";
+        run.SecondOpinionAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-opus-5", displayName: "Claude Opus 5");
         run.SecondOpinionGradedAnswerCount = 2;
         run.SecondOpinionMeanAbsDelta = 3.0;
 
@@ -1543,7 +1529,7 @@ public class BenchmarkReportBuilderTests
         q1.ReassessmentCount = 1;
         q1.PreviousQualityScore = 60;
         q1.ReassessedAtUtc = new DateTime(2026, 9, 4, 8, 30, 0, DateTimeKind.Utc);
-        q1.ReassessedByModelDisplayNameUsed = "Claude Opus 5";
+        q1.ReassessedByModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Claude Opus 5");
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(
             HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
@@ -1559,8 +1545,7 @@ public class BenchmarkReportBuilderTests
             BenchmarkSecondOpinionMode.All,
             ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90));
         run.SecondOpinionAssessorModelConfigurationId = 4;
-        run.SecondOpinionAssessorModelDisplayNameUsed = "Gemini 3.7 Pro";
-        run.SecondOpinionAssessorModelProviderUsed = "Google";
+        run.SecondOpinionAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-pro", displayName: "Gemini 3.7 Pro");
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
@@ -1575,8 +1560,7 @@ public class BenchmarkReportBuilderTests
             BenchmarkSecondOpinionMode.All,
             ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90));
         run.SecondOpinionAssessorModelConfigurationId = 4;
-        run.SecondOpinionAssessorModelDisplayNameUsed = "Claude Opus 5";
-        run.SecondOpinionAssessorModelProviderUsed = "Anthropic";
+        run.SecondOpinionAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-opus-5", displayName: "Claude Opus 5");
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
@@ -1606,8 +1590,7 @@ public class BenchmarkReportBuilderTests
 
         var run = HarnessV7Run(BenchmarkSecondOpinionMode.Flagged, q1, q2);
         run.SecondOpinionAssessorModelConfigurationId = 4;
-        run.SecondOpinionAssessorModelDisplayNameUsed = "Claude Opus 5";
-        run.SecondOpinionAssessorModelProviderUsed = "Anthropic";
+        run.SecondOpinionAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-opus-5", displayName: "Claude Opus 5");
         run.SecondOpinionGradedAnswerCount = 0;
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
@@ -1661,9 +1644,7 @@ public class BenchmarkReportBuilderTests
 
         var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
         run.ClaimVerifierModelConfigurationId = 7;
-        run.ClaimVerifierDisplayNameUsed = "Verifier Model";
-        run.ClaimVerifierProviderUsed = "Google";
-        run.ClaimVerifierModelIdUsed = "gemini-3.7-pro";
+        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-pro", displayName: "Verifier Model");
 
         BenchmarkRunFinalizer.Apply(run, new[] { q1 });
 
@@ -1745,7 +1726,7 @@ public class BenchmarkReportBuilderTests
         q1.ClaimsIndeterminateCount = 0;
 
         var run = HarnessV7Run(BenchmarkSecondOpinionMode.Flagged, q1);
-        run.SecondOpinionAssessorModelDisplayNameUsed = "Second Assessor";
+        run.SecondOpinionAssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Second Assessor");
         run.SecondOpinionBlindUsed = true;
         BenchmarkRunFinalizer.Apply(run, new[] { q1 });
 
@@ -1822,7 +1803,7 @@ public class BenchmarkReportBuilderTests
 
         var oldOpenAiRun = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
         oldOpenAiRun.HarnessVersion = "28";
-        oldOpenAiRun.TestedModelProviderUsed = "OpenAI";
+        oldOpenAiRun.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6-luna", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
         oldOpenAiRun.CandidatePromptOptionsJson =
             new BenchmarkCandidatePromptOptions { HasGameSnapshot = false }.ToCanonicalJson();
         BenchmarkRunFinalizer.Apply(oldOpenAiRun, new[] { q1 });
@@ -1833,7 +1814,7 @@ public class BenchmarkReportBuilderTests
         // Nothing was wrong with a pre-29 run on another provider with no board, so nothing is said.
         var unaffected = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
         unaffected.HarnessVersion = "28";
-        unaffected.TestedModelProviderUsed = "Google";
+        unaffected.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gpt-5.6-luna", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
         unaffected.CandidatePromptOptionsJson =
             new BenchmarkCandidatePromptOptions { HasGameSnapshot = false }.ToCanonicalJson();
         BenchmarkRunFinalizer.Apply(unaffected, new[] { q1 });
@@ -2180,7 +2161,7 @@ public class BenchmarkReportBuilderTests
     {
         var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
         var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
-        run.TestedModelParallelExecutionModeUsed = ParallelExecutionMode.OnRequest;
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6-luna", displayName: "GPT-5.6 Luna", thinkingLevel: "max", parallelExecutionMode: ParallelExecutionMode.OnRequest);
         run.CandidatePromptOptionsJson = new BenchmarkCandidatePromptOptions { VerboseMode = true }.ToCanonicalJson();
         BenchmarkRunFinalizer.Apply(run, new[] { q1 });
 
@@ -2216,8 +2197,8 @@ public class BenchmarkReportBuilderTests
     {
         var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
         var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
-        run.TestedModelIdUsed = "gpt-5.6";
-        run.AssessorModelIdUsed = "gemini-3.7-flash";
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
+        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
         BenchmarkRunFinalizer.Apply(run, new[] { q1 });
         run.TotalAssessmentInputTokens = 1000;
         run.TotalAssessmentOutputTokens = 200;
@@ -2239,9 +2220,9 @@ public class BenchmarkReportBuilderTests
     {
         var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
         var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
-        run.TestedModelIdUsed = "gpt-5.6";
-        run.AssessorModelIdUsed = "gemini-3.7-flash";
-        run.ClaimVerifierModelIdUsed = "gpt-5-mini";
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
+        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
+        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5-mini");
         run.TotalInputTokens = 1_000_000;
         run.TotalCacheReadTokens = 800_000;
         run.TotalOutputTokens = 50_000;
@@ -2274,9 +2255,9 @@ public class BenchmarkReportBuilderTests
         // an operator steers by, and before H4 it appeared nowhere.
         var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
         var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
-        run.TestedModelIdUsed = "gpt-5.6";
-        run.AssessorModelIdUsed = "gemini-3.7-flash";
-        run.ClaimVerifierModelIdUsed = "gpt-5-mini";
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
+        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
+        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5-mini");
         run.TotalInputTokens = 200_000;
         run.TotalOutputTokens = 30_000;
         run.TotalAssessmentInputTokens = 100_000;
@@ -2310,10 +2291,10 @@ public class BenchmarkReportBuilderTests
         // can read the cost of every role in one unbroken block before the yield commentary.
         var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
         var run = HarnessV7Run(BenchmarkSecondOpinionMode.All, q1);
-        run.TestedModelIdUsed = "gpt-5.6";
-        run.AssessorModelIdUsed = "gemini-3.7-flash";
-        run.SecondOpinionAssessorModelIdUsed = "gemini-3.7-pro";
-        run.ClaimVerifierModelIdUsed = "gpt-5-mini";
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
+        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
+        run.SecondOpinionAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-pro");
+        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5-mini");
         run.TotalInputTokens = 200_000;
         run.TotalOutputTokens = 30_000;
         run.TotalAssessmentInputTokens = 100_000;
@@ -2357,9 +2338,9 @@ public class BenchmarkReportBuilderTests
         // with a zero denominator — "no claims" and "no verifier" are different facts.
         var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
         var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
-        run.TestedModelIdUsed = "gpt-5.6";
-        run.AssessorModelIdUsed = "gemini-3.7-flash";
-        run.ClaimVerifierModelIdUsed = "gpt-5-mini";
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
+        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
+        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5-mini");
         run.TotalInputTokens = 200_000;
         run.TotalOutputTokens = 30_000;
         run.TotalAssessmentInputTokens = 100_000;
@@ -2483,9 +2464,7 @@ public class BenchmarkReportBuilderTests
             BenchmarkSecondOpinionMode.FlaggedPlusSample,
             ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90));
         run.SecondOpinionAssessorModelConfigurationId = 7;
-        run.SecondOpinionAssessorModelDisplayNameUsed = "Claude Reviewer";
-        run.SecondOpinionAssessorModelProviderUsed = "Anthropic";
-        run.SecondOpinionAssessorModelIdUsed = "claude-reviewer-1";
+        run.SecondOpinionAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-reviewer-1", displayName: "Claude Reviewer");
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
@@ -2838,9 +2817,9 @@ public class BenchmarkReportBuilderTests
         var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
         var run = HarnessV7Run(BenchmarkSecondOpinionMode.All, q1);
         run.HarnessVersion = "15";
-        run.TestedModelIdUsed = "gpt-5.6";
-        run.AssessorModelIdUsed = "gemini-3.7-flash";
-        run.SecondOpinionAssessorModelIdUsed = "gemini-3.7-pro";
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
+        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
+        run.SecondOpinionAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-pro");
         run.TotalInputTokens = 1_000_000;
         run.TotalOutputTokens = 50_000;
         run.TotalAssessmentInputTokens = 200_000;
@@ -3646,8 +3625,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 60,
             SuiteName = "Terminal Failure Suite",
-            TestedModelDisplayNameUsed = "Model X",
-            AssessorModelDisplayNameUsed = "Assessor Y",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
             Status = BenchmarkRunStatus.CompletedWithErrors,
             StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
             CompletedAtUtc = DateTime.UtcNow,
@@ -3677,8 +3656,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 61,
             SuiteName = "Terminal Failure Suite",
-            TestedModelDisplayNameUsed = "Model X",
-            AssessorModelDisplayNameUsed = "Assessor Y",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
             Status = BenchmarkRunStatus.CompletedWithErrors,
             StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
             CompletedAtUtc = DateTime.UtcNow,
@@ -3708,8 +3687,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 62,
             SuiteName = "Terminal Failure Suite",
-            TestedModelDisplayNameUsed = "Model X",
-            AssessorModelDisplayNameUsed = "Assessor Y",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
             Status = BenchmarkRunStatus.CompletedWithErrors,
             StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
             CompletedAtUtc = DateTime.UtcNow,
@@ -3734,8 +3713,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 63,
             SuiteName = "Terminal Failure Suite",
-            TestedModelDisplayNameUsed = "Model X",
-            AssessorModelDisplayNameUsed = "Assessor Y",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
             Status = BenchmarkRunStatus.CompletedWithErrors,
             StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
             CompletedAtUtc = DateTime.UtcNow,
@@ -3764,8 +3743,8 @@ public class BenchmarkReportBuilderTests
         {
             Id = 64,
             SuiteName = "Canceled Answer Suite",
-            TestedModelDisplayNameUsed = "Model X",
-            AssessorModelDisplayNameUsed = "Assessor Y",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
             Status = BenchmarkRunStatus.CompletedWithErrors,
             StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
             CompletedAtUtc = DateTime.UtcNow,
@@ -4079,9 +4058,9 @@ public class BenchmarkReportBuilderTests
             RoleItem(1, "Charged and false.", BenchmarkClaimVerdict.Refuted, "src/zap.c:9", BenchmarkClaimRoles.AccusedQuote)
         });
         var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
-        run.TestedModelIdUsed = "gpt-5.6";
-        run.AssessorModelIdUsed = "gemini-3.7-flash";
-        run.ClaimVerifierModelIdUsed = "gpt-5-mini";
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
+        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
+        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5-mini");
         run.TotalInputTokens = 200_000;
         run.TotalOutputTokens = 30_000;
         run.TotalAssessmentInputTokens = 100_000;
@@ -4227,9 +4206,9 @@ public class BenchmarkReportBuilderTests
             RoleItem(1, "The assessor's own statement.", BenchmarkClaimVerdict.Refuted, "src/zap.c:9", BenchmarkClaimRoles.AssessorStatement)
         });
         var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
-        run.TestedModelIdUsed = "gpt-5.6";
-        run.AssessorModelIdUsed = "gemini-3.7-flash";
-        run.ClaimVerifierModelIdUsed = "gpt-5-mini";
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
+        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
+        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5-mini");
         run.TotalInputTokens = 200_000;
         run.TotalOutputTokens = 30_000;
         run.TotalAssessmentInputTokens = 100_000;

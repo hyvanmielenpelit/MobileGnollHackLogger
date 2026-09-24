@@ -294,6 +294,20 @@ describe('MultiRunComponent', () => {
     expect(allText('.mr-badge-stale')).toContain('Stale analysis');
   });
 
+  it('should show the comparability-definition badge only for a group whose key hash is stale', () => {
+    serviceMock.getRunGroups.and.returnValue(of([
+      buildGroup({ id: 1, name: 'Stale key', comparabilityKeyStale: true, createdAtUtc: '2026-09-07T10:00:00Z' }),
+      buildGroup({ id: 2, name: 'Current key', comparabilityKeyStale: false, createdAtUtc: '2026-09-06T10:00:00Z' })
+    ]));
+    open();
+
+    const rows: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.mr-group-table tbody tr'));
+    const badgeText = (row: HTMLElement) =>
+      Array.from(row.querySelectorAll('.mr-badge-stale')).map(e => e.textContent || '').join(' ');
+    expect(badgeText(rows[0])).toContain('Comparability definition changed');
+    expect(badgeText(rows[1])).not.toContain('Comparability definition changed');
+  });
+
   // --- Report download ---
 
   it('should disable the row download control while the group has no analysis', () => {

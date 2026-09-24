@@ -47,17 +47,11 @@ public class BenchmarkRubricAdditionAcceptance
     /// <summary>The first claim of the cluster the draft answered, so the row is readable on its own.</summary>
     public string? ClusterClaim { get; set; }
 
+    // Attribution only, not a foreign key: deleting a configuration never touches history.
     public long? AuthorModelConfigurationId { get; set; }
-    public SystemAiApiConfiguration? AuthorModelConfiguration { get; set; }
 
-    [MaxLength(64)]
-    public string? AuthorProviderUsed { get; set; }
-
-    [MaxLength(128)]
-    public string? AuthorModelIdUsed { get; set; }
-
-    [MaxLength(256)]
-    public string? AuthorModelDisplayName { get; set; }
+    public long? AuthorModelSnapshotId { get; set; }
+    public SystemAiConfigurationSnapshot? AuthorModelSnapshot { get; set; }
 
     [MaxLength(450)]
     public string? AcceptedByUserId { get; set; }

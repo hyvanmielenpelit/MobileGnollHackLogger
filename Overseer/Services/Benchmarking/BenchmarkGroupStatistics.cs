@@ -1528,10 +1528,12 @@ public static class BenchmarkGroupStatistics
         bool recorded = !string.IsNullOrWhiteSpace(first.CandidatePromptOptionsJson);
         var options = BenchmarkCandidatePromptOptions.FromJson(first.CandidatePromptOptionsJson);
 
-        string signature = options.ComparabilitySignature(first.TestedModelParallelExecutionModeUsed);
+        string signature = options.ComparabilitySignature(
+            first.TestedModelSnapshot.ParallelExecutionMode ?? MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled);
         bool divergent = members.Skip(1).Any(m =>
             BenchmarkCandidatePromptOptions.FromJson(m.CandidatePromptOptionsJson)
-                .ComparabilitySignature(m.TestedModelParallelExecutionModeUsed) != signature);
+                .ComparabilitySignature(m.TestedModelSnapshot.ParallelExecutionMode
+                    ?? MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled) != signature);
 
         return new BenchmarkGroupPromptUnderTest
         {
@@ -1549,7 +1551,8 @@ public static class BenchmarkGroupStatistics
             HasMessageHistory = options.HasMessageHistory,
             HasWikiContext = options.HasWikiContext,
             HasGameSnapshot = options.HasGameSnapshot,
-            ParallelMode = first.TestedModelParallelExecutionModeUsed
+            ParallelMode = first.TestedModelSnapshot.ParallelExecutionMode
+                ?? MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled
         };
     }
 

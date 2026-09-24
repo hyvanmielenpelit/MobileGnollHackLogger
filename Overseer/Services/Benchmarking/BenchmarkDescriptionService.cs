@@ -13,6 +13,8 @@ using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Agents;
+using Overseer.Services.Privacy;
+using Overseer.Services.Providers;
 
 /// <summary>
 /// Drafts a suite description with a single model call. Synchronous by design: the result, its
@@ -29,6 +31,7 @@ public class BenchmarkDescriptionService
     private readonly ApplicationDbContext _db;
     private readonly AgentLoopRunner _agentLoopRunner;
     private readonly CryptoService _cryptoService;
+    private readonly EndpointPolicy _endpointPolicy;
     private readonly SystemAiConfigService _configService;
     private readonly ModelPricingService _pricingService;
     private readonly IConfiguration _configuration;
@@ -38,6 +41,7 @@ public class BenchmarkDescriptionService
         ApplicationDbContext db,
         AgentLoopRunner agentLoopRunner,
         CryptoService cryptoService,
+        EndpointPolicy endpointPolicy,
         SystemAiConfigService configService,
         ModelPricingService pricingService,
         IConfiguration configuration,
@@ -46,6 +50,7 @@ public class BenchmarkDescriptionService
         _db = db;
         _agentLoopRunner = agentLoopRunner;
         _cryptoService = cryptoService;
+        _endpointPolicy = endpointPolicy;
         _configService = configService;
         _pricingService = pricingService;
         _configuration = configuration;
@@ -72,6 +77,12 @@ public class BenchmarkDescriptionService
         {
             throw new InvalidOperationException(
                 "The selected generator model is invalid, disabled, missing an API key, or not configured with the Benchmark role.");
+        }
+
+        if (!_endpointPolicy.TryResolveStrict(config.BaseUrl, config.CustomHeadersJson, config.ApiVersion, out var endpoint, out var endpointError))
+        {
+            throw new InvalidOperationException(
+                $"Configuration '{config.DisplayName}': its custom endpoint is not allowed by the endpoint policy: {endpointError}");
         }
 
         var questions = suite.Questions.OrderBy(q => q.OrderIndex).ToList();
@@ -135,6 +146,7 @@ public class BenchmarkDescriptionService
                 ProviderName = config.Provider,
                 ModelId = config.ModelId,
                 ApiKey = apiKey,
+                Endpoint = endpoint,
                 ModelDisplayName = config.DisplayName,
                 SystemPrompt = "You are an expert GnollHack benchmark author and game mechanics expert.",
                 ThinkingLevel = config.ThinkingLevel,

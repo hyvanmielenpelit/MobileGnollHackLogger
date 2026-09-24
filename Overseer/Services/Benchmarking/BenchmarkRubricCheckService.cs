@@ -13,6 +13,8 @@ using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Agents;
+using Overseer.Services.Privacy;
+using Overseer.Services.Providers;
 
 public class BenchmarkRubricCheckService
 {
@@ -20,6 +22,7 @@ public class BenchmarkRubricCheckService
     private readonly BenchmarkRubricCheckJobManager _jobManager;
     private readonly AgentLoopRunner _agentLoopRunner;
     private readonly CryptoService _cryptoService;
+    private readonly EndpointPolicy _endpointPolicy;
     private readonly ILogger<BenchmarkRubricCheckService> _logger;
 
     public BenchmarkRubricCheckService(
@@ -27,14 +30,25 @@ public class BenchmarkRubricCheckService
         BenchmarkRubricCheckJobManager jobManager,
         AgentLoopRunner agentLoopRunner,
         CryptoService cryptoService,
+        EndpointPolicy endpointPolicy,
         ILogger<BenchmarkRubricCheckService> logger)
     {
         _scopeFactory = scopeFactory;
         _jobManager = jobManager;
         _agentLoopRunner = agentLoopRunner;
         _cryptoService = cryptoService;
+        _endpointPolicy = endpointPolicy;
         _logger = logger;
     }
+    /// <summary>The recorded endpoint, resolved strictly: a refused custom endpoint fails the call instead of falling back.</summary>
+    private AiEndpointDescriptor EndpointFor(SystemAiApiConfiguration config)
+        => _endpointPolicy.TryResolveStrict(config.BaseUrl, config.CustomHeadersJson, config.ApiVersion, out var endpoint, out var error)
+            ? endpoint
+            : throw new InvalidOperationException(EndpointRefusal(config, error));
+
+    private static string EndpointRefusal(SystemAiApiConfiguration config, string? error)
+        => $"Configuration '{config.DisplayName}': its custom endpoint is not allowed by the endpoint policy: {error}";
+
 
     public async Task RunRubricCheckAsync(string jobId, CancellationToken ct)
     {
@@ -64,6 +78,13 @@ public class BenchmarkRubricCheckService
             if (config == null || !config.IsEnabled)
             {
                 job.AddLog("Checker model configuration not found or disabled.", "error");
+                job.SetStatus(BenchmarkRubricCheckJobStatus.Failed);
+                return;
+            }
+
+            if (!_endpointPolicy.TryResolveStrict(config.BaseUrl, config.CustomHeadersJson, config.ApiVersion, out _, out var endpointError))
+            {
+                job.AddLog(EndpointRefusal(config, endpointError), "error");
                 job.SetStatus(BenchmarkRubricCheckJobStatus.Failed);
                 return;
             }
@@ -198,6 +219,7 @@ public class BenchmarkRubricCheckService
             ProviderName = config.Provider,
             ModelId = config.ModelId,
             ApiKey = apiKey,
+            Endpoint = EndpointFor(config),
             ModelDisplayName = config.DisplayName,
             SystemPrompt = "You are an objective GnollHack verification and fact-checking engine.",
             ThinkingLevel = config.ThinkingLevel,

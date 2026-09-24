@@ -255,15 +255,14 @@ public static class BenchmarkModelComparison
         var ordered = source.Runs.OrderBy(r => r.StartedAtUtc).ToList();
         var representative = ordered.LastOrDefault();
 
-        string displayName = representative?.TestedModelDisplayNameUsed
-            ?? representative?.TestedModelIdUsed
+        string displayName = representative?.TestedModelSnapshot.Label()
             ?? source.SourceName
             ?? source.Key;
 
         string label = displayName;
-        if (thinkingLevelInLabel && !string.IsNullOrWhiteSpace(representative?.TestedModelThinkingLevelUsed))
+        if (thinkingLevelInLabel && !string.IsNullOrWhiteSpace(representative?.TestedModelSnapshot.ThinkingLevel))
         {
-            label = $"{displayName} ({representative!.TestedModelThinkingLevelUsed})";
+            label = $"{displayName} ({representative!.TestedModelSnapshot.ThinkingLevel})";
         }
 
         return new BenchmarkModelComparisonEntryDto
@@ -276,16 +275,16 @@ public static class BenchmarkModelComparison
             RunCount = source.Runs.Count,
             SuiteId = source.Suite?.Id ?? representative?.BenchmarkSuiteId,
             SuiteName = source.Suite?.Name ?? representative?.SuiteName,
-            Provider = representative?.TestedModelProviderUsed ?? string.Empty,
-            ModelId = representative?.TestedModelIdUsed ?? string.Empty,
+            Provider = representative?.TestedModelSnapshot.Provider ?? string.Empty,
+            ModelId = representative?.TestedModelSnapshot.ModelId ?? string.Empty,
             ModelDisplayName = displayName,
-            ThinkingLevel = representative?.TestedModelThinkingLevelUsed,
-            ReasoningMode = representative?.TestedModelReasoningModeUsed,
-            ReasoningSummary = representative?.TestedModelReasoningSummaryUsed,
-            ServiceTier = representative?.TestedModelServiceTierUsed,
-            MaxOutputTokens = representative?.TestedModelMaxOutputTokensUsed,
+            ThinkingLevel = representative?.TestedModelSnapshot.ThinkingLevel,
+            ReasoningMode = representative?.TestedModelSnapshot.ReasoningMode,
+            ReasoningSummary = representative?.TestedModelSnapshot.ReasoningSummary,
+            ServiceTier = representative?.TestedModelSnapshot.ServiceTier,
+            MaxOutputTokens = representative?.TestedModelSnapshot.MaxOutputTokens,
             // Qualified: System.Linq declares a type of the same name.
-            ParallelExecutionMode = (representative?.TestedModelParallelExecutionModeUsed
+            ParallelExecutionMode = (representative?.TestedModelSnapshot.ParallelExecutionMode
                 ?? MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled).ToString(),
             Label = label,
             FirstRunStartedAtUtc = ordered.Count > 0 ? ordered[0].StartedAtUtc : default,
@@ -325,7 +324,7 @@ public static class BenchmarkModelComparison
                 run.TotalLongContextInputTokens, run.TotalLongContextOutputTokens,
                 run.TotalLongContextCacheReadTokens, run.TotalLongContextCacheCreationTokens,
                 actualServiceTier: servedTier,
-                requestedServiceTier: run.TestedModelServiceTierUsed);
+                requestedServiceTier: run.TestedModelSnapshot.ServiceTier);
 
             costs.Add(new BenchmarkGroupRunCost
             {
@@ -753,7 +752,7 @@ public class BenchmarkModelComparisonService
             {
                 cards[run.Id] = basis == BenchmarkModelComparisonPricingBasis.AsRun
                     ? (await _pricingService.ResolveForRunAsync(run)).Candidate
-                    : _pricingService.ResolveDefault(run.TestedModelProviderUsed, run.TestedModelIdUsed, today);
+                    : _pricingService.ResolveDefault(run.TestedModelSnapshot.Provider, run.TestedModelSnapshot.ModelId, today);
             }
             catch (Exception ex)
             {

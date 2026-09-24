@@ -23,6 +23,7 @@ public class AdminController : ControllerBase
     private readonly ModelPricingService? _modelPricingService;
 
     private readonly Overseer.Services.Privacy.EndpointPolicy _endpointPolicy;
+    private readonly SystemConfigUsageGuard _usageGuard;
 
     public AdminController(
         ApplicationDbContext dbContext,
@@ -31,6 +32,7 @@ public class AdminController : ControllerBase
         CryptoService cryptoService,
         Overseer.Services.Providers.AiRequestGovernor governor,
         Overseer.Services.Privacy.EndpointPolicy endpointPolicy,
+        SystemConfigUsageGuard usageGuard,
         ModelPricingService? modelPricingService = null)
     {
         _dbContext = dbContext;
@@ -39,6 +41,7 @@ public class AdminController : ControllerBase
         _cryptoService = cryptoService;
         _governor = governor;
         _endpointPolicy = endpointPolicy;
+        _usageGuard = usageGuard;
         _modelPricingService = modelPricingService;
     }
 
@@ -549,11 +552,36 @@ public class AdminController : ControllerBase
         return Ok();
     }
 
+    /// <summary>Whether the configuration can be deleted now, what is using it, and what a delete removes and keeps.</summary>
+    [HttpGet("systemconfigs/{id}/deletion-check")]
+    public async Task<IActionResult> GetSystemConfigDeletionCheck(long id, CancellationToken ct)
+    {
+        var config = await _dbContext.SystemAiApiConfigurations.FindAsync(new object[] { id }, ct);
+        if (config == null) return NotFound();
+
+        return Ok(await _usageGuard.CheckDeletionAsync(config, ct));
+    }
+
+    /// <summary>
+    /// Deletes the configuration unless something is calling its model right now. Benchmark history
+    /// and usage and error logs are kept: none of them depends on the configuration row.
+    /// </summary>
     [HttpDelete("systemconfigs/{id}")]
     public async Task<IActionResult> DeleteSystemConfig(long id)
     {
         var config = await _dbContext.SystemAiApiConfigurations.FindAsync(id);
         if (config == null) return NotFound();
+
+        // Checked again here, not only in the dialog: a run may have started since.
+        var blockers = await _usageGuard.FindActiveUsesAsync(id);
+        if (blockers.Count > 0)
+        {
+            return Conflict(new
+            {
+                error = $"'{config.DisplayName}' is in use by a benchmark right now and cannot be deleted until it finishes or is cancelled.",
+                blockers
+            });
+        }
 
         _dbContext.SystemAiApiConfigurations.Remove(config);
         await _dbContext.SaveChangesAsync();
@@ -1021,15 +1049,15 @@ public class AdminController : ControllerBase
     [HttpGet("errors")]
     public async Task<IActionResult> GetErrors()
     {
+        // The row's own copy, never a join: an error outlives the configuration it was recorded against.
         var errors = await _dbContext.SystemAiErrorLogs
-            .Include(e => e.SystemAiApiConfiguration)
             .Where(e => !e.IsDismissed)
             .OrderByDescending(e => e.TimestampUtc)
             .Select(e => new SystemAiErrorLogDto
             {
                 Id = e.Id,
                 SystemAiApiConfigurationId = e.SystemAiApiConfigurationId,
-                ConfigurationName = e.SystemAiApiConfiguration.DisplayName,
+                ConfigurationName = e.ModelDisplayName ?? e.ModelId ?? ("Deleted configuration #" + e.SystemAiApiConfigurationId),
                 ErrorMessage = e.ErrorMessage,
                 HttpStatusCode = e.HttpStatusCode,
                 TimestampUtc = e.TimestampUtc

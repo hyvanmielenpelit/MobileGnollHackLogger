@@ -301,62 +301,26 @@ public class BenchmarkRun
     public int SuiteReviewedQuestionCountAtStart { get; set; }
 
     // Tested Model Config snapshot
+    // Attribution only, not a foreign key: deleting a configuration never touches history.
     public long? TestedModelConfigurationId { get; set; }
-    public SystemAiApiConfiguration? TestedModelConfiguration { get; set; }
 
-    [MaxLength(64)]
-    public string TestedModelProviderUsed { get; set; } = default!;
-
-    [MaxLength(128)]
-    public string TestedModelIdUsed { get; set; } = default!;
-
-    [MaxLength(256)]
-    public string TestedModelDisplayNameUsed { get; set; } = default!;
-
-    [MaxLength(32)]
-    public string? TestedModelThinkingLevelUsed { get; set; }
-
-    [MaxLength(32)]
-    public string? TestedModelReasoningModeUsed { get; set; }
-
-    [MaxLength(32)]
-    public string? TestedModelReasoningSummaryUsed { get; set; }
-
-    [MaxLength(64)]
-    public string? TestedModelServiceTierUsed { get; set; }
-
-    public int? TestedModelMaxOutputTokensUsed { get; set; }
-
-    public ParallelExecutionMode TestedModelParallelExecutionModeUsed { get; set; } = ParallelExecutionMode.Enabled;
+    /// <summary>The settings and endpoint the candidate ran with.</summary>
+    public long TestedModelSnapshotId { get; set; }
+    public SystemAiConfigurationSnapshot TestedModelSnapshot { get; set; } = default!;
 
     // Assessor Model Config snapshot
+    // Attribution only, not a foreign key: deleting a configuration never touches history.
     public long? AssessorModelConfigurationId { get; set; }
-    public SystemAiApiConfiguration? AssessorModelConfiguration { get; set; }
 
-    [MaxLength(64)]
-    public string AssessorModelProviderUsed { get; set; } = default!;
+    /// <summary>The settings and endpoint the run's assessor grades with.</summary>
+    public long AssessorModelSnapshotId { get; set; }
+    public SystemAiConfigurationSnapshot AssessorModelSnapshot { get; set; } = default!;
 
-    [MaxLength(128)]
-    public string AssessorModelIdUsed { get; set; } = default!;
-
-    [MaxLength(256)]
-    public string AssessorModelDisplayNameUsed { get; set; } = default!;
-
-    [MaxLength(32)]
-    public string? AssessorModelThinkingLevelUsed { get; set; }
-
-    [MaxLength(32)]
-    public string? AssessorModelReasoningModeUsed { get; set; }
-
-    [MaxLength(32)]
-    public string? AssessorModelReasoningSummaryUsed { get; set; }
-
-    [MaxLength(64)]
-    public string? AssessorModelServiceTierUsed { get; set; }
-
-    public int? AssessorModelMaxOutputTokensUsed { get; set; }
-
-    public ParallelExecutionMode AssessorModelParallelExecutionModeUsed { get; set; } = ParallelExecutionMode.Enabled;
+    /// <summary>
+    /// The output cap actually sent on every assessor call of this run, harness fallback included.
+    /// Fixed at launch. Null means not recorded.
+    /// </summary>
+    public int? AssessorEffectiveMaxOutputTokens { get; set; }
 
     // Second Opinion Assessor snapshot.
     //
@@ -365,46 +329,28 @@ public class BenchmarkRun
     // agreement, not a second reading. Like every other model choice for a run, this one is
     // made in the start dialog and recorded here — a SystemAiApiConfiguration id is a database
     // identity and belongs nowhere near a settings file.
+    // Attribution only, not a foreign key: deleting a configuration never touches history.
     public long? SecondOpinionAssessorModelConfigurationId { get; set; }
-    public SystemAiApiConfiguration? SecondOpinionAssessorModelConfiguration { get; set; }
 
-    [MaxLength(64)]
-    public string? SecondOpinionAssessorModelProviderUsed { get; set; }
+    public long? SecondOpinionAssessorModelSnapshotId { get; set; }
+    public SystemAiConfigurationSnapshot? SecondOpinionAssessorModelSnapshot { get; set; }
 
-    [MaxLength(128)]
-    public string? SecondOpinionAssessorModelIdUsed { get; set; }
-
-    [MaxLength(256)]
-    public string? SecondOpinionAssessorModelDisplayNameUsed { get; set; }
-
-    [MaxLength(32)]
-    public string? SecondOpinionAssessorModelThinkingLevelUsed { get; set; }
-
-    [MaxLength(32)]
-    public string? SecondOpinionAssessorModelReasoningModeUsed { get; set; }
+    /// <summary>The output cap actually sent on every second-opinion call. Fixed at launch.</summary>
+    public int? SecondOpinionEffectiveMaxOutputTokens { get; set; }
 
     // Claim Verifier snapshot.
     //
     // Null means this run performs no claim verification. Like every other model choice for a run,
     // this one is made in the start dialog and recorded here — a SystemAiApiConfiguration id is a
     // database identity and belongs nowhere near a settings file.
+    // Attribution only, not a foreign key: deleting a configuration never touches history.
     public long? ClaimVerifierModelConfigurationId { get; set; }
-    public SystemAiApiConfiguration? ClaimVerifierModelConfiguration { get; set; }
 
-    [MaxLength(64)]
-    public string? ClaimVerifierProviderUsed { get; set; }
+    public long? ClaimVerifierModelSnapshotId { get; set; }
+    public SystemAiConfigurationSnapshot? ClaimVerifierModelSnapshot { get; set; }
 
-    [MaxLength(128)]
-    public string? ClaimVerifierModelIdUsed { get; set; }
-
-    [MaxLength(256)]
-    public string? ClaimVerifierDisplayNameUsed { get; set; }
-
-    [MaxLength(32)]
-    public string? ClaimVerifierThinkingLevelUsed { get; set; }
-
-    [MaxLength(32)]
-    public string? ClaimVerifierReasoningModeUsed { get; set; }
+    /// <summary>The output cap actually sent on every claim-verifier call. Fixed at launch.</summary>
+    public int? ClaimVerifierEffectiveMaxOutputTokens { get; set; }
 
     // Run metadata
     [MaxLength(450)]

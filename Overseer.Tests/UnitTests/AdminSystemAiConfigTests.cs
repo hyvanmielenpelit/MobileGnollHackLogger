@@ -43,7 +43,13 @@ public class AdminSystemAiConfigTests
         var metadataService = new ModelMetadataService();
         var pricingService = new ModelPricingService(metadataService, db);
         var endpointPolicy = new Overseer.Services.Privacy.EndpointPolicy(config);
-        var controller = new AdminController(db, config, null!, cryptoService, governor, endpointPolicy, pricingService);
+        var usageGuard = new SystemConfigUsageGuard(
+            db,
+            new Overseer.Services.Benchmarking.BenchmarkDifficultyJobManager(),
+            new Overseer.Services.Benchmarking.BenchmarkGenerationJobManager(),
+            new Overseer.Services.Benchmarking.BenchmarkRubricCheckJobManager(),
+            new Overseer.Services.Benchmarking.BenchmarkRubricGapAuthorJobManager());
+        var controller = new AdminController(db, config, null!, cryptoService, governor, endpointPolicy, usageGuard, pricingService);
 
         return (controller, db, cryptoService);
     }
@@ -410,5 +416,125 @@ public class AdminSystemAiConfigTests
         var updateResult = await controller.UpdateSystemConfig(initial.Id, updateRequest);
         var badRequest = Assert.IsType<BadRequestObjectResult>(updateResult);
         Assert.Equal("Prices cannot be negative.", badRequest.Value);
+    }
+
+    // -- Deleting a configuration ---------------------------------------------------------------
+
+    private static async Task<SystemAiApiConfiguration> AddConfigAsync(ApplicationDbContext db)
+    {
+        var config = new SystemAiApiConfiguration { DisplayName = "Doomed Model", Provider = "OpenAI", ModelId = "gpt-doomed", IsEnabled = true, ModelRole = 7 };
+        db.SystemAiApiConfigurations.Add(config);
+        await db.SaveChangesAsync();
+        return config;
+    }
+
+    private static async Task<BenchmarkRun> AddRunAsync(ApplicationDbContext db, long configId, BenchmarkRunStatus status)
+    {
+        var run = new BenchmarkRun
+        {
+            SuiteName = "Sokoban basics",
+            Status = status,
+            TestedModelConfigurationId = configId,
+            AssessorModelConfigurationId = configId,
+            TestedModelSnapshot = Overseer.Tests.Helpers.BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-doomed", displayName: "Doomed Model"),
+            AssessorModelSnapshot = Overseer.Tests.Helpers.BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-doomed", displayName: "Doomed Model")
+        };
+        db.BenchmarkRuns.Add(run);
+        await db.SaveChangesAsync();
+        return run;
+    }
+
+    [Fact]
+    public async Task DeleteSystemConfig_Unreferenced_DeletesIt()
+    {
+        var (controller, db, _) = CreateTestController();
+        var config = await AddConfigAsync(db);
+
+        Assert.IsType<OkResult>(await controller.DeleteSystemConfig(config.Id));
+
+        Assert.False(await db.SystemAiApiConfigurations.AnyAsync(c => c.Id == config.Id, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task DeleteSystemConfig_UsedByACompletedRun_Succeeds_AndLeavesTheRunsHistoryIntact()
+    {
+        var (controller, db, _) = CreateTestController();
+        var config = await AddConfigAsync(db);
+        var run = await AddRunAsync(db, config.Id, BenchmarkRunStatus.Completed);
+        long testedSnapshotId = run.TestedModelSnapshotId;
+
+        Assert.IsType<OkResult>(await controller.DeleteSystemConfig(config.Id));
+
+        db.ChangeTracker.Clear();
+        var reloaded = await db.BenchmarkRuns.SingleAsync(r => r.Id == run.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(config.Id, reloaded.TestedModelConfigurationId);
+        Assert.Equal(config.Id, reloaded.AssessorModelConfigurationId);
+        Assert.Equal(testedSnapshotId, reloaded.TestedModelSnapshotId);
+        Assert.Equal("gpt-doomed", reloaded.TestedModelSnapshot.ModelId);
+        Assert.Equal("Doomed Model", reloaded.AssessorModelSnapshot.DisplayName);
+    }
+
+    [Fact]
+    public async Task DeleteSystemConfig_UsedByARunningRun_IsRefusedWithItsBlockers()
+    {
+        var (controller, db, _) = CreateTestController();
+        var config = await AddConfigAsync(db);
+        var run = await AddRunAsync(db, config.Id, BenchmarkRunStatus.Running);
+
+        var conflict = Assert.IsType<ConflictObjectResult>(await controller.DeleteSystemConfig(config.Id));
+
+        var blockers = Assert.IsType<List<SystemConfigBlockerDto>>(conflict.Value!.GetType().GetProperty("blockers")!.GetValue(conflict.Value));
+        var blocker = Assert.Single(blockers);
+        Assert.Equal(run.Id, blocker.RunId);
+        Assert.Equal(new[] { "model under test", "assessor" }, blocker.Roles);
+        Assert.True(await db.SystemAiApiConfigurations.AnyAsync(c => c.Id == config.Id, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task DeletionCheck_CountsWhatADeleteKeepsAndRemoves()
+    {
+        var (controller, db, _) = CreateTestController();
+        var config = await AddConfigAsync(db);
+        await AddRunAsync(db, config.Id, BenchmarkRunStatus.Completed);
+        db.UserSystemAiApiConfigurations.Add(new UserSystemAiApiConfiguration { AspNetUserId = "u1", SystemAiApiConfigurationId = config.Id });
+        db.GroupSystemAiApiConfigurations.Add(new GroupSystemAiApiConfiguration { GroupId = 1, SystemAiApiConfigurationId = config.Id });
+        db.UserSystemModelConfidentialTrusts.Add(new UserSystemModelConfidentialTrust { AspNetUserId = "u1", SystemAiApiConfigurationId = config.Id, UserTrustsForConfidential = true });
+        db.UserSystemModelConfidentialTrusts.Add(new UserSystemModelConfidentialTrust { AspNetUserId = "u2", SystemAiApiConfigurationId = config.Id });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var ok = Assert.IsType<OkObjectResult>(await controller.GetSystemConfigDeletionCheck(config.Id, TestContext.Current.CancellationToken));
+        var check = Assert.IsType<SystemConfigDeletionCheckDto>(ok.Value);
+
+        Assert.True(check.CanDelete);
+        Assert.Equal("Doomed Model", check.DisplayName);
+        Assert.Equal(1, check.BenchmarkRunReferenceCount);
+        Assert.Equal(1, check.UserAssignmentCount);
+        Assert.Equal(1, check.GroupAssignmentCount);
+        Assert.Equal(2, check.ConfidentialTrustCount);
+        Assert.Equal(0, check.StoppedSeriesCount);
+    }
+
+    [Fact]
+    public async Task DeleteSystemConfig_KeepsItsUsageAndErrorLogs_AndErrorsStillListUnderTheCopiedName()
+    {
+        var (controller, db, _) = CreateTestController();
+        var config = await AddConfigAsync(db);
+        var configService = new SystemAiConfigService(db, NullLogger<SystemAiConfigService>.Instance);
+        await configService.RecordErrorAsync(config.Id, new string('x', 3000));
+        db.SystemAiUsageLogs.Add(new SystemAiUsageLog
+        {
+            SystemAiApiConfigurationId = config.Id, AspNetUserId = "u1", Provider = "OpenAI", ModelId = "gpt-doomed",
+            ModelDisplayName = "Doomed Model", TimestampUtc = DateTime.UtcNow, InputTokens = 10, OutputTokens = 5
+        });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        Assert.IsType<OkResult>(await controller.DeleteSystemConfig(config.Id));
+
+        Assert.Equal(1, await db.SystemAiUsageLogs.CountAsync(l => l.SystemAiApiConfigurationId == config.Id, TestContext.Current.CancellationToken));
+        var errorLog = await db.SystemAiErrorLogs.SingleAsync(l => l.SystemAiApiConfigurationId == config.Id, TestContext.Current.CancellationToken);
+        Assert.Equal(2048, errorLog.ErrorMessage!.Length);
+
+        var errors = Assert.IsAssignableFrom<IEnumerable<SystemAiErrorLogDto>>(Assert.IsType<OkObjectResult>(await controller.GetErrors()).Value);
+        Assert.Equal("Doomed Model", Assert.Single(errors).ConfigurationName);
     }
 }

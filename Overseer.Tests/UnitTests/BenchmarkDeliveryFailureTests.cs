@@ -13,8 +13,10 @@ using MobileGnollHackLogger.Data;
 using Overseer.Controllers;
 using Overseer.Services;
 using Overseer.Services.Benchmarking;
+using Overseer.Services.Privacy;
 using Overseer.Services.Providers;
 using Overseer.Services.Tools;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -101,10 +103,11 @@ public class BenchmarkDeliveryFailureTests
             new BenchmarkRunManager(),
             new BenchmarkDifficultyJobManager(),
             new BenchmarkScoringProfileService(scopeFactory, NullLogger<BenchmarkScoringProfileService>.Instance),
+            new EndpointPolicy(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build()),
             new ConfigurationBuilder().Build(),
             NullLogger<BenchmarkService>.Instance);
 
-        var run = new BenchmarkRun
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
         {
             Id = 1,
             BenchmarkSuite = new BenchmarkSuite
@@ -120,7 +123,7 @@ public class BenchmarkDeliveryFailureTests
                     CaptureMethod = "YamlImport"
                 }
             }
-        };
+        });
 
         var question = new BenchmarkQuestion
         {

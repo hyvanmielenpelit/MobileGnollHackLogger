@@ -5,12 +5,13 @@ using System.Collections.Generic;
 using System.Linq;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 public class BenchmarkQuestionAssessmentTests
 {
     [Fact]
-    public void ApplySnapshot_PopulatesAllElevenFields_UsesDisplayNameWhenPresent()
+    public void ApplySnapshot_PopulatesTheDifficultySnapshot_UsesDisplayNameWhenPresent()
     {
         var question = new BenchmarkQuestion
         {
@@ -34,20 +35,22 @@ public class BenchmarkQuestionAssessmentTests
 
         var now = new DateTime(2026, 9, 2, 12, 0, 0, DateTimeKind.Utc);
         var originalModified = question.ModifiedAtUtc;
+        var snapshot = SystemAiConfigurationSnapshotStore.FromConfiguration(config);
 
-        BenchmarkQuestionAssessment.ApplySnapshot(question, 75, config, now);
+        BenchmarkQuestionAssessment.ApplySnapshot(question, 75, config.Id, snapshot, now);
 
         Assert.Equal(75, question.AssessedDifficulty);
-        Assert.Equal("Claude 3.5 Sonnet", question.AssessedDifficultyModel);
         Assert.Equal(now, question.AssessedDifficultyAtUtc);
         Assert.Equal(42L, question.AssessedDifficultyModelConfigurationId);
-        Assert.Equal("Anthropic", question.AssessedDifficultyProviderUsed);
-        Assert.Equal("claude-3-5-sonnet-20241022", question.AssessedDifficultyModelIdUsed);
-        Assert.Equal("High", question.AssessedDifficultyThinkingLevelUsed);
-        Assert.Equal("Extended", question.AssessedDifficultyReasoningModeUsed);
-        Assert.Equal("Detailed", question.AssessedDifficultyReasoningSummaryUsed);
-        Assert.Equal("standard_only", question.AssessedDifficultyServiceTierUsed);
-        Assert.Equal(8192, question.AssessedDifficultyMaxOutputTokensUsed);
+        Assert.Same(snapshot, question.AssessedDifficultyModelSnapshot);
+        Assert.Equal("Claude 3.5 Sonnet", question.AssessedDifficultyModelSnapshot.Label());
+        Assert.Equal("Anthropic", question.AssessedDifficultyModelSnapshot.Provider);
+        Assert.Equal("claude-3-5-sonnet-20241022", question.AssessedDifficultyModelSnapshot.ModelId);
+        Assert.Equal("High", question.AssessedDifficultyModelSnapshot.ThinkingLevel);
+        Assert.Equal("Extended", question.AssessedDifficultyModelSnapshot.ReasoningMode);
+        Assert.Equal("Detailed", question.AssessedDifficultyModelSnapshot.ReasoningSummary);
+        Assert.Equal("standard_only", question.AssessedDifficultyModelSnapshot.ServiceTier);
+        Assert.Equal(8192, question.AssessedDifficultyModelSnapshot.MaxOutputTokens);
 
         // Does not touch ModifiedAtUtc
         Assert.Equal(originalModified, question.ModifiedAtUtc);
@@ -64,43 +67,34 @@ public class BenchmarkQuestionAssessmentTests
             ModelId = "gpt-4o",
             DisplayName = null!
         };
+        var snapshot = SystemAiConfigurationSnapshotStore.FromConfiguration(config);
 
-        BenchmarkQuestionAssessment.ApplySnapshot(question, 50, config, DateTime.UtcNow);
+        BenchmarkQuestionAssessment.ApplySnapshot(question, 50, config.Id, snapshot, DateTime.UtcNow);
 
-        Assert.Equal("gpt-4o", question.AssessedDifficultyModel);
+        Assert.Equal("gpt-4o", question.AssessedDifficultyModelSnapshot.Label());
     }
 
     [Fact]
-    public void Clear_NullsAllElevenFields()
+    public void Clear_NullsTheDifficultySnapshot()
     {
         var question = new BenchmarkQuestion
         {
             AssessedDifficulty = 60,
-            AssessedDifficultyModel = "GPT-4o",
             AssessedDifficultyAtUtc = DateTime.UtcNow,
             AssessedDifficultyModelConfigurationId = 10,
-            AssessedDifficultyProviderUsed = "OpenAI",
-            AssessedDifficultyModelIdUsed = "gpt-4o",
-            AssessedDifficultyThinkingLevelUsed = "Default",
-            AssessedDifficultyReasoningModeUsed = "Standard",
-            AssessedDifficultyReasoningSummaryUsed = "Auto",
-            AssessedDifficultyServiceTierUsed = "Auto",
-            AssessedDifficultyMaxOutputTokensUsed = 4096
+            AssessedDifficultyModelSnapshot = BenchmarkModelSnapshots.Model(
+                provider: "OpenAI", modelId: "gpt-4o", displayName: "GPT-4o", thinkingLevel: "Default",
+                reasoningMode: "Standard", reasoningSummary: "Auto", serviceTier: "Auto", maxOutputTokens: 4096),
+            AssessedDifficultyModelSnapshotId = 99
         };
 
         BenchmarkQuestionAssessment.Clear(question);
 
         Assert.Null(question.AssessedDifficulty);
-        Assert.Null(question.AssessedDifficultyModel);
         Assert.Null(question.AssessedDifficultyAtUtc);
         Assert.Null(question.AssessedDifficultyModelConfigurationId);
-        Assert.Null(question.AssessedDifficultyProviderUsed);
-        Assert.Null(question.AssessedDifficultyModelIdUsed);
-        Assert.Null(question.AssessedDifficultyThinkingLevelUsed);
-        Assert.Null(question.AssessedDifficultyReasoningModeUsed);
-        Assert.Null(question.AssessedDifficultyReasoningSummaryUsed);
-        Assert.Null(question.AssessedDifficultyServiceTierUsed);
-        Assert.Null(question.AssessedDifficultyMaxOutputTokensUsed);
+        Assert.Null(question.AssessedDifficultyModelSnapshot);
+        Assert.Null(question.AssessedDifficultyModelSnapshotId);
     }
 
     [Fact]

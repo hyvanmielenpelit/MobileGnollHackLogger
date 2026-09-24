@@ -12,6 +12,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
+using Overseer.Services.Privacy;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 /// <summary>
@@ -241,7 +243,7 @@ public class BenchmarkEvidenceInformedRegradeTests
 
     // --- The one predicate ------------------------------------------------------------------
 
-    private static BenchmarkRun RunStamped(string harness) => new() { HarnessVersion = harness };
+    private static BenchmarkRun RunStamped(string harness) => BenchmarkModelSnapshots.Attach(new BenchmarkRun { HarnessVersion = harness });
 
     [Fact]
     public void Eligibility_AValidatedRecordCountsWhenItPassed()
@@ -297,6 +299,7 @@ public class BenchmarkEvidenceInformedRegradeTests
         var service = new BenchmarkService(
             scopeFactory, null!, null!, null!, new BenchmarkRunManager(), new BenchmarkDifficultyJobManager(),
             new BenchmarkScoringProfileService(scopeFactory, NullLogger<BenchmarkScoringProfileService>.Instance),
+            new EndpointPolicy(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build()),
             new ConfigurationBuilder().Build(), NullLogger<BenchmarkService>.Instance);
 
         var answer = new BenchmarkRunAnswer
@@ -310,7 +313,7 @@ public class BenchmarkEvidenceInformedRegradeTests
 
         await using var db = new ApplicationDbContext(dbOptions);
         await service.ExecutePerQuestionAssessmentAsync(
-            db, null!, new BenchmarkRun(), answer, null, new SystemAiApiConfiguration(), "key",
+            db, null!, BenchmarkModelSnapshots.Attach(new BenchmarkRun()), answer, null, new SystemAiApiConfiguration(), "key",
             BenchmarkScoringConstants.Default, CancellationToken.None);
 
         Assert.Equal(expectedAssessment, answer.AssessmentStatus);

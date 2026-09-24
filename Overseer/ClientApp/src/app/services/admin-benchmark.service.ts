@@ -1019,6 +1019,8 @@ export interface BenchmarkRunDetailDto {
   testedModelServiceTierUsed?: string | null;
   testedModelMaxOutputTokensUsed?: number | null;
   testedModelParallelExecutionModeUsed: number;
+  /** "official", or "custom (…; fingerprint …)". Never a hostname. */
+  testedModelEndpoint?: string | null;
 
   assessorModelConfigurationId?: number | null;
   assessorModelDisplayNameUsed: string;
@@ -1026,6 +1028,7 @@ export interface BenchmarkRunDetailDto {
   assessorModelIdUsed: string;
   assessorModelThinkingLevelUsed?: string | null;
   assessorModelReasoningModeUsed?: string | null;
+  assessorModelEndpoint?: string | null;
   assessorAvailable?: boolean;
 
   /** Null when the run was started without a second-opinion assessor. */
@@ -1035,6 +1038,7 @@ export interface BenchmarkRunDetailDto {
   secondOpinionAssessorModelIdUsed?: string | null;
   secondOpinionAssessorModelThinkingLevelUsed?: string | null;
   secondOpinionAssessorModelReasoningModeUsed?: string | null;
+  secondOpinionAssessorModelEndpoint?: string | null;
 
   /** Null when the run was started without a claim verifier. */
   claimVerifierModelConfigurationId?: number | null;
@@ -1043,6 +1047,7 @@ export interface BenchmarkRunDetailDto {
   claimVerifierModelIdUsed?: string | null;
   claimVerifierThinkingLevelUsed?: string | null;
   claimVerifierReasoningModeUsed?: string | null;
+  claimVerifierModelEndpoint?: string | null;
 
   startedByUserId?: string | null;
   startedByUserName?: string | null;
@@ -1713,6 +1718,8 @@ export interface BenchmarkRunGroupDto {
   tier: BenchmarkComparabilityTier;
   tierLabel: string;
   comparabilityKeyHash?: string | null;
+  /** The stored hash was computed under another comparability key definition; re-analyse to refresh it. */
+  comparabilityKeyStale?: boolean;
   crossCondition: boolean;
   notes?: string | null;
   createdFromSeriesId?: number | null;

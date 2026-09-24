@@ -48,6 +48,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<BenchmarkRunGroup> BenchmarkRunGroups { get; set; } = null!;
         public DbSet<BenchmarkRunGroupMember> BenchmarkRunGroupMembers { get; set; } = null!;
         public DbSet<BenchmarkGroupAnalysis> BenchmarkGroupAnalyses { get; set; } = null!;
+        public DbSet<SystemAiConfigurationSnapshot> SystemAiConfigurationSnapshots { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -112,6 +113,60 @@ namespace MobileGnollHackLogger.Data
                 .WithMany()
                 .HasForeignKey(l => l.DismissedByUserId)
                 .HasPrincipalKey(u => u.Id);
+
+            modelBuilder.Entity<SystemAiErrorLog>()
+                .HasIndex(l => new { l.SystemAiApiConfigurationId, l.TimestampUtc });
+
+            /* Benchmark history references the settings it ran with through these append-only,
+               content-addressed snapshots, never through the mutable configuration. Restrict keeps
+               a recorded setting from disappearing; AutoInclude keeps any query from forgetting it. */
+            modelBuilder.Entity<SystemAiConfigurationSnapshot>()
+                .HasIndex(s => s.Sha256)
+                .IsUnique();
+
+            modelBuilder.Entity<BenchmarkRun>(e =>
+            {
+                e.HasOne(r => r.TestedModelSnapshot).WithMany().HasForeignKey(r => r.TestedModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
+                e.HasOne(r => r.AssessorModelSnapshot).WithMany().HasForeignKey(r => r.AssessorModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
+                e.HasOne(r => r.SecondOpinionAssessorModelSnapshot).WithMany().HasForeignKey(r => r.SecondOpinionAssessorModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
+                e.HasOne(r => r.ClaimVerifierModelSnapshot).WithMany().HasForeignKey(r => r.ClaimVerifierModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
+                e.Navigation(r => r.TestedModelSnapshot).AutoInclude();
+                e.Navigation(r => r.AssessorModelSnapshot).AutoInclude();
+                e.Navigation(r => r.SecondOpinionAssessorModelSnapshot).AutoInclude();
+                e.Navigation(r => r.ClaimVerifierModelSnapshot).AutoInclude();
+            });
+
+            modelBuilder.Entity<BenchmarkRunAnswer>(e =>
+            {
+                e.HasOne(a => a.AssessedByModelSnapshot).WithMany().HasForeignKey(a => a.AssessedByModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
+                e.HasOne(a => a.SecondOpinionByModelSnapshot).WithMany().HasForeignKey(a => a.SecondOpinionByModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
+                e.HasOne(a => a.ClaimVerificationByModelSnapshot).WithMany().HasForeignKey(a => a.ClaimVerificationByModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
+                e.HasOne(a => a.ReassessedByModelSnapshot).WithMany().HasForeignKey(a => a.ReassessedByModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
+                e.HasOne(a => a.EvidenceInformedByModelSnapshot).WithMany().HasForeignKey(a => a.EvidenceInformedByModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
+                e.Navigation(a => a.AssessedByModelSnapshot).AutoInclude();
+                e.Navigation(a => a.SecondOpinionByModelSnapshot).AutoInclude();
+                e.Navigation(a => a.ClaimVerificationByModelSnapshot).AutoInclude();
+                e.Navigation(a => a.ReassessedByModelSnapshot).AutoInclude();
+                e.Navigation(a => a.EvidenceInformedByModelSnapshot).AutoInclude();
+            });
+
+            modelBuilder.Entity<BenchmarkQuestion>(e =>
+            {
+                e.HasOne(q => q.AssessedDifficultyModelSnapshot).WithMany().HasForeignKey(q => q.AssessedDifficultyModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
+                e.Navigation(q => q.AssessedDifficultyModelSnapshot).AutoInclude();
+            });
+
+            modelBuilder.Entity<BenchmarkAssessorCalibration>(e =>
+            {
+                e.HasOne(c => c.AssessorModelSnapshot).WithMany().HasForeignKey(c => c.AssessorModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
+                e.Navigation(c => c.AssessorModelSnapshot).AutoInclude();
+            });
+
+            modelBuilder.Entity<BenchmarkRubricAdditionAcceptance>(e =>
+            {
+                e.HasOne(a => a.AuthorModelSnapshot).WithMany().HasForeignKey(a => a.AuthorModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
+                e.Navigation(a => a.AuthorModelSnapshot).AutoInclude();
+            });
 
             modelBuilder.Entity<ChatSession>()
                 .HasIndex(s => new { s.AspNetUserId, s.IsDeleted, s.LastMessageUtc })
@@ -193,11 +248,6 @@ namespace MobileGnollHackLogger.Data
                 .HasForeignKey(q => q.BenchmarkSuiteId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            modelBuilder.Entity<BenchmarkQuestion>()
-                .HasOne(q => q.AssessedDifficultyModelConfiguration)
-                .WithMany()
-                .HasForeignKey(q => q.AssessedDifficultyModelConfigurationId)
-                .OnDelete(DeleteBehavior.ClientSetNull);
 
             modelBuilder.Entity<BenchmarkRun>()
                 .HasOne(r => r.BenchmarkSuite)
@@ -205,17 +255,6 @@ namespace MobileGnollHackLogger.Data
                 .HasForeignKey(r => r.BenchmarkSuiteId)
                 .OnDelete(DeleteBehavior.ClientSetNull);
 
-            modelBuilder.Entity<BenchmarkRun>()
-                .HasOne(r => r.TestedModelConfiguration)
-                .WithMany()
-                .HasForeignKey(r => r.TestedModelConfigurationId)
-                .OnDelete(DeleteBehavior.ClientSetNull);
-
-            modelBuilder.Entity<BenchmarkRun>()
-                .HasOne(r => r.AssessorModelConfiguration)
-                .WithMany()
-                .HasForeignKey(r => r.AssessorModelConfigurationId)
-                .OnDelete(DeleteBehavior.ClientSetNull);
 
             modelBuilder.Entity<BenchmarkRun>()
                 .HasOne(r => r.StartedByUser)
@@ -276,11 +315,6 @@ namespace MobileGnollHackLogger.Data
             modelBuilder.Entity<BenchmarkRunAnswer>()
                 .HasIndex(a => new { a.BenchmarkQuestionId, a.ItemRevisionUsed });
 
-            modelBuilder.Entity<BenchmarkRunAnswer>()
-                .HasOne(a => a.AssessedByModelConfiguration)
-                .WithMany()
-                .HasForeignKey(a => a.AssessedByModelConfigurationId)
-                .OnDelete(DeleteBehavior.ClientSetNull);
 
             // Cascade with the run: a calibration is a measurement *of* that run's answers and
             // means nothing without them, unlike the answers themselves, which are the record.
@@ -290,11 +324,6 @@ namespace MobileGnollHackLogger.Data
                 .HasForeignKey(c => c.BenchmarkRunId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            modelBuilder.Entity<BenchmarkAssessorCalibration>()
-                .HasOne(c => c.AssessorModelConfiguration)
-                .WithMany()
-                .HasForeignKey(c => c.AssessorModelConfigurationId)
-                .OnDelete(DeleteBehavior.ClientSetNull);
 
             modelBuilder.Entity<BenchmarkAssessorCalibration>()
                 .HasIndex(c => new { c.BenchmarkRunId, c.CreatedAtUtc });
@@ -307,11 +336,6 @@ namespace MobileGnollHackLogger.Data
                 .HasForeignKey(a => a.BenchmarkQuestionId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            modelBuilder.Entity<BenchmarkRubricAdditionAcceptance>()
-                .HasOne(a => a.AuthorModelConfiguration)
-                .WithMany()
-                .HasForeignKey(a => a.AuthorModelConfigurationId)
-                .OnDelete(DeleteBehavior.ClientSetNull);
 
             modelBuilder.Entity<BenchmarkRubricAdditionAcceptance>()
                 .HasIndex(a => new { a.BenchmarkQuestionId, a.AcceptedAtUtc });

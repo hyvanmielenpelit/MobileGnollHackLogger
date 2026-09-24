@@ -127,20 +127,14 @@ public class BenchmarkRunAnswer
     [MaxLength(2048)]
     public string? AssessmentError { get; set; }
 
-    // Assessor snapshot for THIS answer's score. Populated on every per-question
-    // assessment; it differs from BenchmarkRun.Assessor*Used only when a manual retry
-    // was run with a different assessor because the original was unavailable.
+    // Assessor for THIS answer's score. Populated on every per-question assessment; it differs
+    // from BenchmarkRun.AssessorModelSnapshot only when a manual retry was run with a different
+    // assessor because the original was unavailable.
+    // Attribution only, not a foreign key: deleting a configuration never touches history.
     public long? AssessedByModelConfigurationId { get; set; }
-    public SystemAiApiConfiguration? AssessedByModelConfiguration { get; set; }
 
-    [MaxLength(256)]
-    public string? AssessedByModelDisplayNameUsed { get; set; }
-
-    [MaxLength(64)]
-    public string? AssessedByModelProviderUsed { get; set; }
-
-    [MaxLength(128)]
-    public string? AssessedByModelIdUsed { get; set; }
+    public long? AssessedByModelSnapshotId { get; set; }
+    public SystemAiConfigurationSnapshot? AssessedByModelSnapshot { get; set; }
 
     public DateTime? AssessedAtUtc { get; set; }
 
@@ -238,8 +232,9 @@ public class BenchmarkRunAnswer
     public int? SecondOpinionCacheCreationTokens { get; set; }
     public long? SecondOpinionDurationMs { get; set; }
 
-    [MaxLength(256)]
-    public string? SecondOpinionByModelDisplayNameUsed { get; set; }
+    /// <summary>The model that produced <see cref="SecondOpinionJson"/>.</summary>
+    public long? SecondOpinionByModelSnapshotId { get; set; }
+    public SystemAiConfigurationSnapshot? SecondOpinionByModelSnapshot { get; set; }
 
     public int? SecondOpinionQualityScore { get; set; }
 
@@ -306,6 +301,10 @@ public class BenchmarkRunAnswer
     /// </summary>
     public string? EvidenceInformedJson { get; set; }
 
+    /// <summary>The model that produced <see cref="EvidenceInformedJson"/>.</summary>
+    public long? EvidenceInformedByModelSnapshotId { get; set; }
+    public SystemAiConfigurationSnapshot? EvidenceInformedByModelSnapshot { get; set; }
+
     /// <summary>
     /// Claims the assessor could neither confirm nor refute against the rubric, verbatim from
     /// the answer, as a JSON array. Under scoring method v6 these do not reduce Accuracy — the
@@ -335,8 +334,9 @@ public class BenchmarkRunAnswer
     public int? ClaimsRefutedCount { get; set; }
     public int? ClaimsIndeterminateCount { get; set; }
 
-    [MaxLength(256)]
-    public string? ClaimVerificationByModelDisplayNameUsed { get; set; }
+    /// <summary>The model that produced <see cref="ClaimVerificationJson"/>.</summary>
+    public long? ClaimVerificationByModelSnapshotId { get; set; }
+    public SystemAiConfigurationSnapshot? ClaimVerificationByModelSnapshot { get; set; }
 
     public int? ClaimVerificationInputTokens { get; set; }
     public int? ClaimVerificationOutputTokens { get; set; }
@@ -364,8 +364,8 @@ public class BenchmarkRunAnswer
     /// </summary>
     public DateTime? ReassessedAtUtc { get; set; }
 
-    [MaxLength(256)]
-    public string? ReassessedByModelDisplayNameUsed { get; set; }
+    public long? ReassessedByModelSnapshotId { get; set; }
+    public SystemAiConfigurationSnapshot? ReassessedByModelSnapshot { get; set; }
 
     /// <summary>
     /// The quality score this answer carried before the <b>first</b> re-assessment. A later

@@ -13,6 +13,8 @@ using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Agents;
+using Overseer.Services.Privacy;
+using Overseer.Services.Providers;
 
 public class BenchmarkGenerationService
 {
@@ -21,6 +23,7 @@ public class BenchmarkGenerationService
     private readonly AgentLoopRunner _agentLoopRunner;
     private readonly CryptoService _cryptoService;
     private readonly BenchmarkComplianceGuard _complianceGuard;
+    private readonly EndpointPolicy _endpointPolicy;
     private readonly ILogger<BenchmarkGenerationService> _logger;
 
     public BenchmarkGenerationService(
@@ -29,6 +32,7 @@ public class BenchmarkGenerationService
         AgentLoopRunner agentLoopRunner,
         CryptoService cryptoService,
         BenchmarkComplianceGuard complianceGuard,
+        EndpointPolicy endpointPolicy,
         ILogger<BenchmarkGenerationService> logger)
     {
         _scopeFactory = scopeFactory;
@@ -36,8 +40,18 @@ public class BenchmarkGenerationService
         _agentLoopRunner = agentLoopRunner;
         _cryptoService = cryptoService;
         _complianceGuard = complianceGuard;
+        _endpointPolicy = endpointPolicy;
         _logger = logger;
     }
+    /// <summary>The recorded endpoint, resolved strictly: a refused custom endpoint fails the call instead of falling back.</summary>
+    private AiEndpointDescriptor EndpointFor(SystemAiApiConfiguration config)
+        => _endpointPolicy.TryResolveStrict(config.BaseUrl, config.CustomHeadersJson, config.ApiVersion, out var endpoint, out var error)
+            ? endpoint
+            : throw new InvalidOperationException(EndpointRefusal(config, error));
+
+    private static string EndpointRefusal(SystemAiApiConfiguration config, string? error)
+        => $"Configuration '{config.DisplayName}': its custom endpoint is not allowed by the endpoint policy: {error}";
+
 
     public async Task RunGenerationAsync(string jobId, CancellationToken ct)
     {
@@ -76,6 +90,13 @@ public class BenchmarkGenerationService
             if (config == null || !config.IsEnabled)
             {
                 job.AddLog("Generator model configuration not found or disabled.", "error");
+                job.SetStatus(BenchmarkGenerationJobStatus.Failed);
+                return;
+            }
+
+            if (!_endpointPolicy.TryResolveStrict(config.BaseUrl, config.CustomHeadersJson, config.ApiVersion, out _, out var endpointError))
+            {
+                job.AddLog(EndpointRefusal(config, endpointError), "error");
                 job.SetStatus(BenchmarkGenerationJobStatus.Failed);
                 return;
             }
@@ -439,6 +460,7 @@ public class BenchmarkGenerationService
             ProviderName = config.Provider,
             ModelId = config.ModelId,
             ApiKey = apiKey,
+            Endpoint = EndpointFor(config),
             ModelDisplayName = config.DisplayName,
             SystemPrompt = "You are an expert GnollHack benchmark author and game mechanics expert.",
             ThinkingLevel = config.ThinkingLevel,

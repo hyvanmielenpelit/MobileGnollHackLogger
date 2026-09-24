@@ -141,7 +141,7 @@ Prompted by the 2026-09-03 GPT-5.6 Luna run, which was reported as `CompletedWit
 - **Real provenance.** The report's Overseer version comes from the running assembly instead of a hard-coded `1.0.0`, and the harness version is a code constant (`BenchmarkAssessmentPrompt.HarnessVersion`) rather than a configuration key an operator can edit without changing the harness.
 - **Critical error requires a quoted claim (v5).** An omission can never be a critical error — that is what COMPLETENESS grades. The assessor must return `criticalErrorQuote`, copied verbatim from the graded answer; `BenchmarkAssessmentParser` demotes an unverifiable claim to `criticalError = false` and records why in the comment. Scores are **not** comparable with v4.
 - **Deduction evidence.** Assessors state, per dimension, which rubric point a deduction rests on — or that it rests on their own knowledge instead. Stored in `AssessmentEvidenceJson` and shown in the report and the run detail.
-- **Second opinion.** A run may name a **second opinion assessor**, selected in the start dialog like every other model and recorded on the run (`BenchmarkRun.SecondOpinionAssessorModelConfigurationId` plus the usual snapshot columns). It is optional and off by default; when none is selected, no answer is re-graded. There is deliberately **no fallback to the run's own assessor** — a model checking its own verdict produces agreement, not a second reading. The trigger is a critical error, or a quality score below the scoring profile's `SecondOpinionQualityThreshold` (default 50; `0` disables the score trigger and leaves second opinions to critical errors alone). Both verdicts are kept. The **first stays authoritative for scoring**; a material disagreement — more than 15 quality points, or a split on `criticalError` — sets `SecondOpinionDisagreed` and surfaces as a `DISPUTED` badge and a Disputed Assessments report section, for a human to settle with the existing re-assess action.
+- **Second opinion.** A run may name a **second opinion assessor**, selected in the start dialog like every other model and recorded on the run (`BenchmarkRun.SecondOpinionAssessorModelConfigurationId` plus its settings snapshot, `SecondOpinionAssessorModelSnapshotId` — see **Model Configuration Snapshots**). It is optional and off by default; when none is selected, no answer is re-graded. There is deliberately **no fallback to the run's own assessor** — a model checking its own verdict produces agreement, not a second reading. The trigger is a critical error, or a quality score below the scoring profile's `SecondOpinionQualityThreshold` (default 50; `0` disables the score trigger and leaves second opinions to critical errors alone). Both verdicts are kept. The **first stays authoritative for scoring**; a material disagreement — more than 15 quality points, or a split on `criticalError` — sets `SecondOpinionDisagreed` and surfaces as a `DISPUTED` badge and a Disputed Assessments report section, for a human to settle with the existing re-assess action.
 
   Neither the model nor the threshold is a configuration key. A `SystemAiApiConfiguration` id is a database identity that means nothing in a settings file and cannot be picked by an administrator; the threshold sits on the scoring profile so it is snapshotted into the run and a report can say what produced its second verdicts.
 - **Assessor cost.** Per-answer `AssessmentInputTokens`, `AssessmentOutputTokens` and `AssessmentDurationMs`, aggregated onto the run, and reported in a Harness Cost block. The candidate token totals stay the candidate's alone.
@@ -266,7 +266,7 @@ The changes:
   results screen shows a matching tile. Neither number replaces the other — they answer different
   questions, and the gap between them is invisible from either alone.
 - **Re-assessment provenance.** An applied re-assess now records `PreviousQualityScore`,
-  `ReassessedAtUtc`, `ReassessedByModelDisplayNameUsed` and increments `ReassessmentCount`; a second
+  `ReassessedAtUtc`, the re-assessing model (`ReassessedByModelSnapshotId`) and increments `ReassessmentCount`; a second
   re-assess leaves `PreviousQualityScore` at the *original*, so the record always says what the published
   index was before anyone touched it. `ReassessedAnswerCount` surfaces on the run, and the report says on
   the answer that moved that a published index has moved since publication.
@@ -3064,7 +3064,10 @@ so the comparison view already refuses to pool across the boundary.
   it and are not excluded from the comparison view. `ComputeKeyHash` hashes every `Name=Value`, so
   **every run's key hash changes**, and every stored `BenchmarkRunGroup.ComparabilityKeyHash` is stale.
   Nothing compares that column for equality; re-analyse a stored group analysis to refresh it, as
-  already advised for the narrowed scoring-profile key.
+  already advised for the narrowed scoring-profile key. From comparability key definition version 2
+  (2026-09-24) the version that produced a stored hash is recorded beside it
+  (`BenchmarkRunGroup.ComparabilityKeyVersion`), and a hash of another version is flagged stale in the
+  multi-run view; see **Model Configuration Snapshots**.
 
 - **`ContestedAccuracyDeduction` names its cause (A2).** The flag is raised when the verifier refutes
   the own-knowledge basis of an out-of-rubric Accuracy deduction, **or** supports a sentence the
@@ -3830,7 +3833,9 @@ flipping from about +30 on the three Sol-graded runs to −13.3 on the Gemini-gr
 effect five to ten times the spread between the candidates themselves. The comparison view's
 comparability index enforced the rule automatically, putting run 46 in its own condition and
 excluding it from the figures, because `AssessorConfiguration`, `SecondOpinionConfiguration` and
-`ClaimVerifierConfiguration` are `Instrument` keys.
+`ClaimVerifierConfiguration` are `Instrument` keys. From key definition version 2 each of the three
+carries the grader's full recorded settings, the output cap its calls actually sent and its endpoint
+(see **Model Configuration Snapshots**).
 
 ### The roster, and why the destination is Anthropic
 
@@ -4154,13 +4159,76 @@ BenchmarkSuite (1) ────┴───< (N) BenchmarkQuestion
 
 - **`BenchmarkScoringProfile`**: Name, `IsDefault`, dimensional weights, `LevelScoresJson`, `CriticalErrorCeiling`, `SpeedTargetMs`, `SpeedDecayK`, `MaxParallelQuestions`, `SecondOpinionQualityThreshold`, `SecondOpinionMode`, `SecondOpinionOutlierDeltaPoints`.
 - **`BenchmarkSuite`**: Unique suite name, description (accepts Markdown, rendered as sanitized HTML), timestamps, and questions.
-- **`BenchmarkQuestion`**: Order index, `ItemRevision` (bumped whenever the question text, band or rubric changes — an edited question is a different item), question text, difficulty tier, `AssessedDifficulty` ($1\text{--}100$), `AssessedDifficultyModel` (display name of assessing model), `AssessedDifficultyAtUtc`, expected rubric points, and assessor configuration snapshot (`AssessedDifficultyModelConfigurationId`, `AssessedDifficultyProviderUsed`, `AssessedDifficultyModelIdUsed`, `AssessedDifficultyThinkingLevelUsed`, `AssessedDifficultyReasoningModeUsed`, `AssessedDifficultyReasoningSummaryUsed`, `AssessedDifficultyServiceTierUsed`, `AssessedDifficultyMaxOutputTokensUsed`).
-- **`BenchmarkRun`**: Tested and assessor snapshot fields, run status, `QualityIndex`, `UnweightedQualityIndex`, `SpeedIndex`, `TotalAnswerDurationMs`, `ScoringProfileId`, `ScoringProfileSnapshotJson`, `ScoringMethodVersion`, `HarnessVersion`, the instrument fingerprint (`CandidateSystemPromptSha256`, `CandidateSystemPromptText`, `ToolGuidesSha256`) and the corpus fingerprints (`KnowledgeBaseHeadSha`, and from harness 16 `WikiHeadSha` and `SourceCodeHeadSha` — Git HEAD SHAs of the GnollHack wiki and source corpora, where null means "not recorded", never "no corpus"), `DifficultyFallbackUsed` (set when a scored answer carries no assessed difficulty and is therefore weighted by its authored band's fallback — from scoring method 10 that is how an unanswered question is weighted), `SpeedMeasurementDegraded`, `MaxParallelQuestionsUsed`, `AnsweredQuestionCount` and `UnansweredQuestionCount` (questions the model failed to answer — not the complement of the former, since a provider error and a question that never ran are neither), the integrity counts (`TransportDefectAnswerCount`, `RecoveredAnswerCount`, `AdvisoryFlagAnswerCount`, `ContestedVerdictAnswerCount`, `ReassessedAnswerCount`), the second-opinion record (`SecondOpinionModeUsed`, `SecondOpinionGradedAnswerCount`, `SecondOpinionMeanAbsDelta`), token accounting, and assessment synthesis.
-- **`BenchmarkRunAnswer`**: Order index, question text, sanitized visible answer text, thought text (reasoning), dimensional levels (0–6), dimensional scores, `QualityScore`, `SpeedScore`, `CriticalError`, `AssessedDifficulty`, `AssessmentStatus`, assessor comment, token/duration metrics, the assessor's evidence (`AssessmentEvidenceJson`, `CriticalErrorQuote`, `UnverifiedClaimCount`, `UnverifiedClaimsJson`), the second-opinion verdict and its `SecondOpinionTrigger`, and re-assessment provenance (`PreviousQualityScore`, `ReassessedAtUtc`, `ReassessedByModelDisplayNameUsed`, `ReassessmentCount`).
+- **`BenchmarkQuestion`**: Order index, `ItemRevision` (bumped whenever the question text, band or rubric changes — an edited question is a different item), question text, difficulty tier, `AssessedDifficulty` ($1\text{--}100$), `AssessedDifficultyAtUtc`, expected rubric points, and the assessing model: `AssessedDifficultyModelSnapshotId` (its recorded settings, display name included) and `AssessedDifficultyModelConfigurationId` (attribution only).
+- **`BenchmarkRun`**: The four model roles, each as a settings snapshot (`TestedModelSnapshotId` and `AssessorModelSnapshotId`, required; `SecondOpinionAssessorModelSnapshotId` and `ClaimVerifierModelSnapshotId`, null for an absent role) beside an attribution-only `…ModelConfigurationId`, the effective grader output caps (`AssessorEffectiveMaxOutputTokens`, `SecondOpinionEffectiveMaxOutputTokens`, `ClaimVerifierEffectiveMaxOutputTokens`), run status, `QualityIndex`, `UnweightedQualityIndex`, `SpeedIndex`, `TotalAnswerDurationMs`, `ScoringProfileId`, `ScoringProfileSnapshotJson`, `ScoringMethodVersion`, `HarnessVersion`, the instrument fingerprint (`CandidateSystemPromptSha256`, `CandidateSystemPromptText`, `ToolGuidesSha256`) and the corpus fingerprints (`KnowledgeBaseHeadSha`, and from harness 16 `WikiHeadSha` and `SourceCodeHeadSha` — Git HEAD SHAs of the GnollHack wiki and source corpora, where null means "not recorded", never "no corpus"), `DifficultyFallbackUsed` (set when a scored answer carries no assessed difficulty and is therefore weighted by its authored band's fallback — from scoring method 10 that is how an unanswered question is weighted), `SpeedMeasurementDegraded`, `MaxParallelQuestionsUsed`, `AnsweredQuestionCount` and `UnansweredQuestionCount` (questions the model failed to answer — not the complement of the former, since a provider error and a question that never ran are neither), the integrity counts (`TransportDefectAnswerCount`, `RecoveredAnswerCount`, `AdvisoryFlagAnswerCount`, `ContestedVerdictAnswerCount`, `ReassessedAnswerCount`), the second-opinion record (`SecondOpinionModeUsed`, `SecondOpinionGradedAnswerCount`, `SecondOpinionMeanAbsDelta`), token accounting, and assessment synthesis.
+- **`BenchmarkRunAnswer`**: Order index, question text, sanitized visible answer text, thought text (reasoning), dimensional levels (0–6), dimensional scores, `QualityScore`, `SpeedScore`, `CriticalError`, `AssessedDifficulty`, `AssessmentStatus`, assessor comment, token/duration metrics, the assessor's evidence (`AssessmentEvidenceJson`, `CriticalErrorQuote`, `UnverifiedClaimCount`, `UnverifiedClaimsJson`), the second-opinion verdict and its `SecondOpinionTrigger`, re-assessment provenance (`PreviousQualityScore`, `ReassessedAtUtc`, `ReassessmentCount`), and the snapshot of every model that graded it (`AssessedByModelSnapshotId`, `SecondOpinionByModelSnapshotId`, `ClaimVerificationByModelSnapshotId`, `ReassessedByModelSnapshotId`, `EvidenceInformedByModelSnapshotId`).
 - **`BenchmarkRunAnswer` termination provenance**: `TerminationReason` describes what the harness loop did (canceled, budget exhausted, iteration limit, completed); `ProviderFinishReason` is the provider's own verbatim reason for ending the response, unmapped. Read together they separate an empty answer the model produced — a normal stop with no text, scored 0 from scoring method 10 — from one a transport defect destroyed, which stays unscored. Null means "not recorded" and never "stopped normally".
 - **`BenchmarkRunAnswer` item identity**: `BenchmarkQuestionId` (nullable FK, `DeleteBehavior.SetNull`) and `ItemRevisionUsed`. The stable link between an answer and the question it answers; before it existed, `OrderIndex` was the only link and a suite reorder silently re-attached every earlier run's answers to the wrong questions. Null means "unlinked" and is excluded from item analysis rather than guessed at.
-- **`BenchmarkAssessorCalibration`**: One non-destructive re-grading of a run by an alternative assessor — the assessor snapshot, `AnswerCount`, `SkippedAnswerCount`, `MeanAbsDelta`, `DisagreementCount`, token and duration cost, and `VerdictsJson`. Admin-UI only: it never appears in the Markdown report, because a calibration is an experiment about graders rather than a property of the run.
+- **`BenchmarkAssessorCalibration`**: One non-destructive re-grading of a run by an alternative assessor — the assessor's settings snapshot (`AssessorModelSnapshotId`), `AnswerCount`, `SkippedAnswerCount`, `MeanAbsDelta`, `DisagreementCount`, token and duration cost, and `VerdictsJson`. Admin-UI only: it never appears in the Markdown report, because a calibration is an experiment about graders rather than a property of the run.
 - **`BenchmarkRunAnswerToolCall`** (from harness 17): One row per tool call **attempted** during an answer's turn — `SortOrder`, `IterationIndex`, `Name`, `ToolCallId`, `Status`, `ArgsText`, `Result`, `Error`, `QueueWaitMs`, `ExecutionMs`, `Depth`, `AgentName`, `ArgsTruncated`, `ResultTruncated`, `ResultLengthChars` — cascade-deleted with `BenchmarkRunAnswer` and indexed on `(BenchmarkRunAnswerId, SortOrder)`. `ArgsText` and `Result` are pruned by age; every other field survives the prune. See **Harness Version 17 Updates**.
+
+### Model Configuration Snapshots
+
+Benchmark history never depends on a `SystemAiApiConfiguration` row. Every model a benchmark used is
+recorded as a row of **`SystemAiConfigurationSnapshot`**, an append-only, content-addressed table: one
+row per distinct combination of settings ever used, keyed by `Sha256`, never updated and never deleted.
+
+- **Fields.** `Provider`, `ModelId`, `DisplayName`, `ThinkingLevel`, `ReasoningMode`,
+  `ReasoningSummary`, `ServiceTier`, `MaxOutputTokens` (the configuration's own value),
+  `ParallelExecutionMode`, and the endpoint — `BaseUrl`, `ApiVersion`, `CustomHeadersJson`, where null
+  means the provider's official endpoint. The API key, the chat-only `MaxInputTokens`, pricing (frozen
+  per role in `BenchmarkRun.PricingSnapshotJson`), posture, rate limits and notes are deliberately not
+  stored.
+- **Hash.** The SHA-256 of the UTF-16LE canonical text `SystemAiConfigurationSnapshot/1\n` followed by
+  one `Name=value\n` line per **non-null** field in ordinal name order, as lower-case hex
+  (`SystemAiConfigurationSnapshotStore.ComputeSha256`). Null fields are omitted, so adding a nullable
+  field later moves no existing hash.
+- **`IsComplete`.** False only for rows backfilled from the legacy inline columns
+  (`DecoupleHistoryFromSystemAiConfigurations`), which did not record every setting. On such a row a
+  null field means **not recorded**; the comparability keys render it `(not recorded)`, never `(none)`.
+  Legacy candidate rows recorded everything and are complete. Every legacy call went to the official
+  endpoint, so their null endpoint fields are true.
+- **References.** Twelve foreign keys point here, all `Restrict` and all auto-included: the four run
+  roles, the five per-answer graders, the difficulty assessor, the calibration assessor and the rubric
+  author. The `…ModelConfigurationId` columns beside them are plain attribution ids, not foreign keys:
+  they keep "the run had a second opinion" and "graded by a different assessor" answerable, and default
+  the re-run dialogs, but deleting a configuration never touches them.
+
+**A run executes with the settings it recorded.** Launch captures a snapshot for each role and the
+output cap each grader's calls will send (`AssessorEffectiveMaxOutputTokens` and its two siblings,
+harness fallbacks included). Every later model call of the run — candidate, assessor, second opinion,
+claim verifier, re-runs and re-assessments — takes its settings **and endpoint** from the role's
+snapshot and only its key from the live configuration (`SystemAiConfigurationSnapshotStore.Bind`). A
+mid-run edit therefore changes nothing. If the live configuration's provider or endpoint no longer
+matches the snapshot, the key cannot call the recorded model and the call fails with *"The
+configuration's provider or endpoint changed since this run was launched; its key cannot call the
+recorded model."* A retry, re-assess or calibration with an **override** configuration captures that
+configuration's snapshot at that moment and records it on the answer or run. Difficulty and rubric-gap
+jobs capture at job start.
+
+**Endpoints.** Benchmark calls use the configuration's custom endpoint, resolved strictly through
+`EndpointPolicy.TryResolveStrict`: a stored endpoint the policy no longer accepts fails the call and is
+never replaced by the official endpoint, because a benchmark that silently called somewhere other than
+where it records would be worse than one that fails. Launch validates each role's endpoint in full,
+DNS included. Reports and the run view show the endpoint as *official* or *custom (…; fingerprint …)*,
+never its hostname; the comparability keys carry it as `official` or `custom-<12 hex>`.
+
+**Deleting a configuration.** Always possible unless something is calling its model right now — a
+running run, an active series, or a difficulty, question-generation, rubric-check or rubric-gap job.
+`GET /api/admin/systemconfigs/{id}/deletion-check` reports the blockers and what a delete removes (user
+and group assignments, users' confidentiality decisions) and keeps (benchmark history, usage and error
+logs); `DELETE` re-checks and answers `409` with the blockers. A stopped series is not a blocker, but
+resuming it after the delete is refused because its configuration no longer exists.
+
+**Comparability key definition version 2.** `BenchmarkComparabilityKey.DefinitionVersion` is stored
+beside every persisted group key hash in `BenchmarkRunGroup.ComparabilityKeyVersion`; a group whose
+stored version differs is flagged *Comparability definition changed* until re-analysed. Version 2 reads
+the candidate keys from the tested snapshot, adds `CandidateEndpoint` (a model-axis key), and gives all
+three grader signatures one shape:
+`provider;model;thinking;reasoningMode;reasoningSummary;serviceTier;maxOutputTokens=<effective cap>;endpoint`,
+the second opinion adding its `mode`, `blind` and `minimumSample`. `parallelMode` left the grader
+signature: it shapes only the candidate's system prompt. Runs recorded before version 2 read as a
+different grader instrument from later runs, which is the truth.
 
 ### Difficulty Assessment Lifecycle
 1. **Explicit Assessor Selection**: Question and suite difficulty ratings are explicit actions where the administrator chooses any benchmark-capable System AI Configuration via a modal selector dialog.

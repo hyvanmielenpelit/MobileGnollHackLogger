@@ -4,7 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { of, Subject, throwError } from 'rxjs';
 import { AdminComponent } from './admin.component';
-import { AdminService, UsersResponse, GroupDto, SystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult, MaintenanceRunLog, AiTelemetrySummaryDto, AiGovernorStatusDto, AiGovernorKeyStatusDto } from '../services/admin.service';
+import { AdminService, UsersResponse, GroupDto, SystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult, MaintenanceRunLog, AiTelemetrySummaryDto, AiGovernorStatusDto, AiGovernorKeyStatusDto, SystemConfigDeletionCheckDto, SystemConfigBlockerDto } from '../services/admin.service';
 import { createEmptyFilter } from './config-filter/config-filter.model';
 
 describe('AdminComponent', () => {
@@ -787,6 +787,221 @@ describe('AdminComponent', () => {
       expect(button.hasAttribute('title')).toBeFalse();
       const tip: HTMLElement | null = fixture.nativeElement.querySelector('#' + button.getAttribute('interestfor'));
       expect(tip?.getAttribute('popover')).toBe('hint');
+    });
+  });
+
+  describe('delete config dialog', () => {
+    const baseConfig: SystemAiConfigDto = {
+      id: 42, displayName: "Prod GPT-5", provider: 'openai', modelId: 'gpt-5',
+      thinkingLevel: null, reasoningMode: null, reasoningSummary: null, serviceTier: null,
+      maxInputTokens: null, maxOutputTokens: null, orderIndex: 0, isEnabled: true, hasApiKey: true,
+      isSystemWide: true,
+      maxDailyChatRequests: null, maxMonthlyChatRequests: null, maxTotalChatRequests: null,
+      dailyChatRequestsCount: 0, monthlyChatRequestsCount: 0, totalChatRequestsCount: 0,
+      maxDailyTitleRequests: null, maxMonthlyTitleRequests: null, maxTotalTitleRequests: null,
+      dailyTitleRequestsCount: 0, monthlyTitleRequestsCount: 0, totalTitleRequestsCount: 0,
+      maxDailyChatTokens: null, maxMonthlyChatTokens: null, maxTotalChatTokens: null,
+      dailyChatTokensCount: 0, monthlyChatTokensCount: 0, totalChatTokensCount: 0,
+      maxDailyTitleTokens: null, maxMonthlyTitleTokens: null, maxTotalTitleTokens: null,
+      dailyTitleTokensCount: 0, monthlyTitleTokensCount: 0, totalTitleTokensCount: 0,
+      modelRole: 1, parallelExecutionMode: 2
+    };
+
+    const blocker = (overrides: Partial<SystemConfigBlockerDto> = {}): SystemConfigBlockerDto => ({
+      kind: 'run', id: '900', runId: 900,
+      label: "Benchmark run #900 on suite 'Core'",
+      roles: ['assessor', 'claim verifier'],
+      startedAtUtc: '2026-09-20T10:00:00Z',
+      ...overrides
+    });
+
+    const blockedCheck = (blockers: SystemConfigBlockerDto[] = [blocker()]): SystemConfigDeletionCheckDto => ({
+      configId: 42, displayName: "Prod GPT-5", canDelete: false, blockers,
+      benchmarkRunReferenceCount: 3, stoppedSeriesCount: 0,
+      userAssignmentCount: 2, groupAssignmentCount: 1, confidentialTrustCount: 0
+    });
+
+    const deletableCheck = (overrides: Partial<SystemConfigDeletionCheckDto> = {}): SystemConfigDeletionCheckDto => ({
+      configId: 42, displayName: "Prod GPT-5", canDelete: true, blockers: [],
+      benchmarkRunReferenceCount: 5, stoppedSeriesCount: 2,
+      userAssignmentCount: 3, groupAssignmentCount: 1, confidentialTrustCount: 4,
+      ...overrides
+    });
+
+    const dialogEl = (): HTMLDialogElement => fixture.nativeElement.querySelector('dialog.delete-config-dialog');
+    const rowDeleteButton = (): HTMLButtonElement =>
+      fixture.nativeElement.querySelector(`button[aria-label="Delete config ${baseConfig.displayName}"]`);
+    const footerButton = (text: string): HTMLButtonElement =>
+      (Array.from(dialogEl().querySelectorAll('.dialog-actions button')) as HTMLButtonElement[])
+        .find(b => (b.textContent ?? '').includes(text))!;
+
+    let toastSpy: jasmine.Spy;
+
+    beforeEach(() => {
+      // Served by the load ngOnInit runs on the first detectChanges, which would replace a list set directly.
+      (adminService.getSystemConfigs as jasmine.Spy).and.returnValue(of([{ ...baseConfig }]));
+      component.selectTab('configs');
+      fixture.detectChanges();
+      toastSpy = spyOn(component, 'showAdminToast');
+      spyOn(component.deleteConfigDialog.nativeElement, 'showModal');
+      spyOn(component.deleteConfigDialog.nativeElement, 'close');
+    });
+
+    it('renders the row delete button with a distinct aria-label, an interestfor tooltip, and no title', () => {
+      const button = rowDeleteButton();
+      expect(button.getAttribute('type')).toBe('button');
+      expect(button.hasAttribute('title')).toBeFalse();
+      const tip = fixture.nativeElement.querySelector('#' + button.getAttribute('interestfor'));
+      expect(tip?.getAttribute('popover')).toBe('hint');
+    });
+
+    it('checks first, then opens directly in the blocked state naming each blocker, its roles and its start time', () => {
+      spyOn(adminService, 'getSystemConfigDeletionCheck').and.returnValue(of(blockedCheck()));
+
+      rowDeleteButton().click();
+      fixture.detectChanges();
+
+      expect(component.deleteConfigDialog.nativeElement.showModal).toHaveBeenCalled();
+      expect(dialogEl().querySelector('#delete-config-title')!.textContent)
+        .toContain("'Prod GPT-5' can't be deleted right now");
+
+      const reason = dialogEl().querySelector('#delete-config-desc')!;
+      expect(reason.getAttribute('role')).toBeNull(); // Not a race switch: no live announcement needed.
+
+      const item = dialogEl().querySelector('.delete-config-blocker-list li')!;
+      expect(item.textContent).toContain("Benchmark run #900 on suite 'Core'");
+      expect(item.textContent).toContain('as the assessor and the claim verifier');
+      expect(item.textContent).toContain('2026-09-20');
+
+      expect(item.querySelector('button')!.textContent).toContain('Open run #900');
+
+      const deleteBtn = footerButton('Delete');
+      expect(deleteBtn.getAttribute('aria-disabled')).toBe('true');
+      expect(deleteBtn.getAttribute('aria-describedby')).toBe('delete-config-desc');
+    });
+
+    it('opens directly in the deletable state with the impact list', () => {
+      spyOn(adminService, 'getSystemConfigDeletionCheck').and.returnValue(of(deletableCheck()));
+
+      rowDeleteButton().click();
+      fixture.detectChanges();
+
+      expect(dialogEl().querySelector('#delete-config-title')!.textContent).toContain("Delete 'Prod GPT-5'?");
+      const list = dialogEl().querySelector('#delete-config-desc')!;
+      expect(list.textContent).toContain('5 runs are unaffected');
+      expect(list.textContent).toContain('3 user and 1 group assignments will be removed');
+      expect(list.textContent).toContain("4 users' confidentiality decisions");
+      expect(list.textContent).toContain('2 stopped benchmark series');
+      expect(list.textContent).toContain('Usage and error logs are kept');
+    });
+
+    it('omits the confidentiality and stopped-series lines when their counts are zero', () => {
+      spyOn(adminService, 'getSystemConfigDeletionCheck')
+        .and.returnValue(of(deletableCheck({ confidentialTrustCount: 0, stoppedSeriesCount: 0 })));
+
+      rowDeleteButton().click();
+      fixture.detectChanges();
+
+      const list = dialogEl().querySelector('#delete-config-desc')!;
+      expect(list.textContent).not.toContain('confidentiality');
+      expect(list.textContent).not.toContain('stopped benchmark series');
+    });
+
+    it('opens in the error state when the pre-check itself fails', () => {
+      spyOn(adminService, 'getSystemConfigDeletionCheck')
+        .and.returnValue(throwError(() => ({ status: 500, error: 'Deletion check is down' })));
+
+      rowDeleteButton().click();
+      fixture.detectChanges();
+
+      expect(component.deleteConfigDialog.nativeElement.showModal).toHaveBeenCalled();
+      const error = dialogEl().querySelector('.error-message[role="alert"]');
+      expect(error?.textContent).toContain('Deletion check is down');
+    });
+
+    it('Check Again re-runs the check and switches state in place', () => {
+      const checkSpy = spyOn(adminService, 'getSystemConfigDeletionCheck')
+        .and.returnValues(of(blockedCheck()), of(deletableCheck()));
+
+      rowDeleteButton().click();
+      fixture.detectChanges();
+      expect(dialogEl().querySelector('#delete-config-title')!.textContent).toContain("can't be deleted right now");
+
+      footerButton('Check Again').click();
+      fixture.detectChanges();
+
+      expect(checkSpy).toHaveBeenCalledTimes(2);
+      expect(dialogEl().querySelector('#delete-config-title')!.textContent).toContain("Delete 'Prod GPT-5'?");
+      expect(component.deleteConfigDialog.nativeElement.showModal).toHaveBeenCalledTimes(1); // Still open; not re-shown.
+    });
+
+    it('closes the dialog, switches to the Benchmark tab and hands off the run id on "Open run #N"', () => {
+      spyOn(adminService, 'getSystemConfigDeletionCheck').and.returnValue(of(blockedCheck()));
+
+      rowDeleteButton().click();
+      fixture.detectChanges();
+
+      dialogEl().querySelector<HTMLButtonElement>('.delete-config-blocker-list button')!.click();
+      fixture.detectChanges();
+
+      expect(component.deleteConfigDialog.nativeElement.close).toHaveBeenCalled();
+      expect(component.activeTab).toBe('benchmark');
+      expect(component.pendingRunId).toBe(900);
+    });
+
+    it('switches a deletable dialog to blocked with a live-announced reason on a 409 race', () => {
+      spyOn(adminService, 'getSystemConfigDeletionCheck').and.returnValue(of(deletableCheck()));
+      spyOn(adminService, 'deleteSystemConfig').and.returnValue(throwError(() => ({
+        status: 409,
+        error: { error: "'Prod GPT-5' is in use by a benchmark right now.", blockers: [blocker()] }
+      })));
+
+      rowDeleteButton().click();
+      fixture.detectChanges();
+
+      footerButton('Delete').click();
+      fixture.detectChanges();
+
+      expect(dialogEl().querySelector('#delete-config-title')!.textContent).toContain("can't be deleted right now");
+      const reason = dialogEl().querySelector('#delete-config-desc')!;
+      expect(reason.getAttribute('role')).toBe('alert');
+      expect(component.deleteConfigDialog.nativeElement.close).not.toHaveBeenCalled();
+    });
+
+    it('shows an inline error and keeps the dialog open for any other delete failure', () => {
+      spyOn(adminService, 'getSystemConfigDeletionCheck').and.returnValue(of(deletableCheck()));
+      spyOn(adminService, 'deleteSystemConfig').and.returnValue(throwError(() => ({
+        status: 500, error: 'Something else went wrong.'
+      })));
+
+      rowDeleteButton().click();
+      fixture.detectChanges();
+
+      footerButton('Delete').click();
+      fixture.detectChanges();
+
+      expect(dialogEl().querySelector('#delete-config-title')!.textContent).toContain("Delete 'Prod GPT-5'?");
+      const error = dialogEl().querySelector('.error-message[role="alert"]');
+      expect(error?.textContent).toContain('Something else went wrong.');
+      expect(component.deleteConfigDialog.nativeElement.close).not.toHaveBeenCalled();
+      expect(footerButton('Delete').getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('deletes on success: removes the row, closes the dialog and shows the kept-history toast', () => {
+      spyOn(adminService, 'getSystemConfigDeletionCheck').and.returnValue(of(deletableCheck()));
+      spyOn(adminService, 'deleteSystemConfig').and.returnValue(of(undefined));
+
+      rowDeleteButton().click();
+      fixture.detectChanges();
+
+      footerButton('Delete').click();
+      fixture.detectChanges();
+
+      expect(component.configs.find(c => c.id === 42)).toBeUndefined();
+      expect(component.deleteConfigDialog.nativeElement.close).toHaveBeenCalled();
+      expect(toastSpy).toHaveBeenCalledWith(
+        "Deleted 'Prod GPT-5'. Benchmark history and usage logs are kept.", 'success'
+      );
     });
   });
 });

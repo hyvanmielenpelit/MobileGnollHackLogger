@@ -243,6 +243,20 @@ public static class BenchmarkComparabilityKey
     /// <summary>Rendering of an absent value. Two absent values compare equal.</summary>
     public const string NoValue = "(none)";
 
+    /// <summary>
+    /// Rendering of a setting the run never recorded — a field of a backfilled, incomplete model
+    /// snapshot, or an effective output cap from before caps were recorded. Distinct from
+    /// <see cref="NoValue"/>, so a run that recorded nothing can never match one that recorded "unset".
+    /// </summary>
+    public const string NotRecorded = "(not recorded)";
+
+    /// <summary>
+    /// The version of the key definitions <see cref="Extract"/> implements. Stored beside every
+    /// persisted <see cref="ComputeKeyHash"/> result; a stored hash of another version is stale.
+    /// Bump it whenever a key is added, removed or rendered differently.
+    /// </summary>
+    public const int DefinitionVersion = 2;
+
     // Key names are constants because the UI, the diagnostics text and the tests all name them,
     // and a differing key reported by a string literal in three places drifts.
     public const string SuiteKey = "BenchmarkSuiteId";
@@ -257,6 +271,7 @@ public static class BenchmarkComparabilityKey
     public const string CandidateServiceTierKey = "CandidateServiceTier";
     public const string CandidateMaxOutputTokensKey = "CandidateMaxOutputTokens";
     public const string CandidateParallelExecutionModeKey = "CandidateParallelExecutionMode";
+    public const string CandidateEndpointKey = "CandidateEndpoint";
     public const string CandidatePromptOptionsKey = "CandidatePromptOptions";
     public const string CandidateSystemPromptKey = "CandidateSystemPromptSha256";
     public const string ToolGuidesKey = "ToolGuidesSha256";
@@ -393,6 +408,13 @@ public static class BenchmarkComparabilityKey
                 + "of how the subject was configured.",
                 BenchmarkComparabilityValueKind.Text),
 
+            CandidateEndpointKey => Info(name,
+                "Candidate endpoint",
+                "Where the candidate's requests went: the provider's official endpoint or a custom one, "
+                + "identified by fingerprint. A difference means the same model may have been served "
+                + "by a different deployment.",
+                BenchmarkComparabilityValueKind.Text),
+
             CandidatePromptOptionsKey => Info(name,
                 "Candidate prompt options",
                 "The production chat prompt configuration the model was graded under: a difference "
@@ -511,6 +533,8 @@ public static class BenchmarkComparabilityKey
     {
         ArgumentNullException.ThrowIfNull(run);
 
+        var tested = run.TestedModelSnapshot;
+
         var keys = new List<BenchmarkComparabilityKeyEntry>
         {
             // --- Fundamental: the exam and its answer key -----------------------------------
@@ -523,21 +547,23 @@ public static class BenchmarkComparabilityKey
             Key(GameSnapshotKey, BenchmarkComparabilityKeyKind.Fundamental, Render(run.GameSnapshotSha256Used)),
 
             // --- Candidate specification ------------------------------------------------------
-            Key(CandidateProviderKey, BenchmarkComparabilityKeyKind.Candidate, Render(run.TestedModelProviderUsed)),
-            Key(CandidateModelKey, BenchmarkComparabilityKeyKind.Candidate, Render(run.TestedModelIdUsed)),
-            Key(CandidateThinkingLevelKey, BenchmarkComparabilityKeyKind.Candidate, Render(run.TestedModelThinkingLevelUsed)),
-            Key(CandidateReasoningModeKey, BenchmarkComparabilityKeyKind.Candidate, Render(run.TestedModelReasoningModeUsed)),
-            Key(CandidateReasoningSummaryKey, BenchmarkComparabilityKeyKind.Candidate, Render(run.TestedModelReasoningSummaryUsed)),
-            Key(CandidateServiceTierKey, BenchmarkComparabilityKeyKind.Candidate, Render(run.TestedModelServiceTierUsed)),
-            Key(CandidateMaxOutputTokensKey, BenchmarkComparabilityKeyKind.Candidate, Render(run.TestedModelMaxOutputTokensUsed)),
-            Key(CandidateParallelExecutionModeKey, BenchmarkComparabilityKeyKind.Candidate, Render((int)run.TestedModelParallelExecutionModeUsed)),
+            Key(CandidateProviderKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.Provider)),
+            Key(CandidateModelKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.ModelId)),
+            Key(CandidateThinkingLevelKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.ThinkingLevel)),
+            Key(CandidateReasoningModeKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.ReasoningMode)),
+            Key(CandidateReasoningSummaryKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.ReasoningSummary)),
+            Key(CandidateServiceTierKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.ServiceTier)),
+            Key(CandidateMaxOutputTokensKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.MaxOutputTokens)),
+            Key(CandidateParallelExecutionModeKey, BenchmarkComparabilityKeyKind.Candidate,
+                Recorded(tested, (int?)tested?.ParallelExecutionMode)),
+            Key(CandidateEndpointKey, BenchmarkComparabilityKeyKind.Candidate, EndpointSignature(tested)),
 
             // The prompt options and the parallel mode travel together through the same signature
             // BenchmarkCandidatePromptOptions already defines, so there is one definition of "the
             // same prompt configuration" rather than two that can drift.
             Key(CandidatePromptOptionsKey, BenchmarkComparabilityKeyKind.Candidate,
                 BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson)
-                    .ComparabilitySignature(run.TestedModelParallelExecutionModeUsed)),
+                    .ComparabilitySignature(tested?.ParallelExecutionMode ?? MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled)),
 
             // --- Instrument -------------------------------------------------------------------
             Key(CandidateSystemPromptKey, BenchmarkComparabilityKeyKind.Instrument, Render(run.CandidateSystemPromptSha256)),
@@ -875,33 +901,38 @@ public static class BenchmarkComparabilityKey
         return string.Join(",", parts);
     }
 
-    private static string AssessorSignature(BenchmarkRun run)
+    /// <summary>
+    /// One signature shape for every grader role: the role's recorded settings, the output cap its
+    /// calls actually sent, and its endpoint. The parallel mode is deliberately absent: it shapes
+    /// only the candidate's system prompt, never a grader call. An absent role renders every field
+    /// as <see cref="NoValue"/>; a present role's unrecorded field renders as <see cref="NotRecorded"/>.
+    /// </summary>
+    private static IEnumerable<string> GraderFields(SystemAiConfigurationSnapshot? grader, int? effectiveMaxOutputTokens)
     {
-        return string.Join(";", new[]
+        return new[]
         {
-            $"provider={Render(run.AssessorModelProviderUsed)}",
-            $"model={Render(run.AssessorModelIdUsed)}",
-            $"thinking={Render(run.AssessorModelThinkingLevelUsed)}",
-            $"reasoningMode={Render(run.AssessorModelReasoningModeUsed)}",
-            $"reasoningSummary={Render(run.AssessorModelReasoningSummaryUsed)}",
-            $"serviceTier={Render(run.AssessorModelServiceTierUsed)}",
-            $"maxOutputTokens={Render(run.AssessorModelMaxOutputTokensUsed)}",
-            $"parallelMode={(int)run.AssessorModelParallelExecutionModeUsed}"
-        });
+            $"provider={Recorded(grader, grader?.Provider)}",
+            $"model={Recorded(grader, grader?.ModelId)}",
+            $"thinking={Recorded(grader, grader?.ThinkingLevel)}",
+            $"reasoningMode={Recorded(grader, grader?.ReasoningMode)}",
+            $"reasoningSummary={Recorded(grader, grader?.ReasoningSummary)}",
+            $"serviceTier={Recorded(grader, grader?.ServiceTier)}",
+            $"maxOutputTokens={(grader == null ? NoValue : effectiveMaxOutputTokens.HasValue ? Render(effectiveMaxOutputTokens) : NotRecorded)}",
+            $"endpoint={EndpointSignature(grader)}"
+        };
     }
+
+    private static string AssessorSignature(BenchmarkRun run)
+        => string.Join(";", GraderFields(run.AssessorModelSnapshot, run.AssessorEffectiveMaxOutputTokens));
 
     private static string SecondOpinionSignature(BenchmarkRun run)
     {
-        return string.Join(";", new[]
+        return string.Join(";", GraderFields(run.SecondOpinionAssessorModelSnapshot, run.SecondOpinionEffectiveMaxOutputTokens).Concat(new[]
         {
-            $"provider={Render(run.SecondOpinionAssessorModelProviderUsed)}",
-            $"model={Render(run.SecondOpinionAssessorModelIdUsed)}",
-            $"thinking={Render(run.SecondOpinionAssessorModelThinkingLevelUsed)}",
-            $"reasoningMode={Render(run.SecondOpinionAssessorModelReasoningModeUsed)}",
             $"mode={run.SecondOpinionModeUsed.ToString(CultureInfo.InvariantCulture)}",
             $"blind={(run.SecondOpinionBlindUsed ? "1" : "0")}",
             $"minimumSample={SecondOpinionMinimumSample(run)}"
-        });
+        }));
     }
 
     /// <summary>
@@ -919,15 +950,11 @@ public static class BenchmarkComparabilityKey
     }
 
     private static string ClaimVerifierSignature(BenchmarkRun run)
-    {
-        return string.Join(";", new[]
-        {
-            $"provider={Render(run.ClaimVerifierProviderUsed)}",
-            $"model={Render(run.ClaimVerifierModelIdUsed)}",
-            $"thinking={Render(run.ClaimVerifierThinkingLevelUsed)}",
-            $"reasoningMode={Render(run.ClaimVerifierReasoningModeUsed)}"
-        });
-    }
+        => string.Join(";", GraderFields(run.ClaimVerifierModelSnapshot, run.ClaimVerifierEffectiveMaxOutputTokens));
+
+    /// <summary><c>official</c> or <c>custom-&lt;fingerprint&gt;</c>; <see cref="NoValue"/> for an absent role.</summary>
+    private static string EndpointSignature(SystemAiConfigurationSnapshot? snapshot)
+        => snapshot == null ? NoValue : SystemAiConfigurationSnapshotStore.EndpointFingerprint(snapshot);
 
     /// <summary>
     /// The whole per-question budget configuration the run recorded: the tool-call budget, and the
@@ -967,6 +994,16 @@ public static class BenchmarkComparabilityKey
 
     private static string Render(long? value)
         => value.HasValue ? value.Value.ToString(CultureInfo.InvariantCulture) : NoValue;
+
+    /// <summary>
+    /// A snapshot field: <see cref="NoValue"/> for an absent snapshot or a recorded "unset", and
+    /// <see cref="NotRecorded"/> for a null on an incomplete snapshot.
+    /// </summary>
+    private static string Recorded(SystemAiConfigurationSnapshot? snapshot, string? value)
+        => snapshot != null && !snapshot.IsComplete && string.IsNullOrWhiteSpace(value) ? NotRecorded : Render(value);
+
+    private static string Recorded(SystemAiConfigurationSnapshot? snapshot, int? value)
+        => snapshot != null && !snapshot.IsComplete && !value.HasValue ? NotRecorded : Render(value);
 
     /// <summary>
     /// A JSON snapshot's first twelve hash characters. The snapshot itself is far too long to put

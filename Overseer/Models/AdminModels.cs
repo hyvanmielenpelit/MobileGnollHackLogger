@@ -384,3 +384,47 @@ public class EndpointPolicySummaryDto
     public List<string> AllowedHeaderNames { get; set; } = new();
     public bool AllowLoopback { get; set; }
 }
+
+/// <summary>Something using a system configuration right now, which a delete would interrupt.</summary>
+public class SystemConfigBlockerDto
+{
+    /// <summary>"run", "series", "difficultyJob", "generationJob", "rubricCheckJob" or "rubricGapAuthorJob".</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    /// <summary>The run or series id, or the job id.</summary>
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>A benchmark run id when <see cref="Kind"/> is "run", so the UI can open it.</summary>
+    public long? RunId { get; set; }
+
+    public string Label { get; set; } = string.Empty;
+
+    /// <summary>The roles the configuration plays, in words ("assessor", "claim verifier").</summary>
+    public List<string> Roles { get; set; } = new();
+
+    public DateTime StartedAtUtc { get; set; }
+}
+
+/// <summary>Whether a system configuration can be deleted now, and what a delete removes and keeps.</summary>
+public class SystemConfigDeletionCheckDto
+{
+    public long ConfigId { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public bool CanDelete { get; set; }
+    public List<SystemConfigBlockerDto> Blockers { get; set; } = new();
+
+    /// <summary>Benchmark runs naming the configuration. Informational: their history is kept.</summary>
+    public int BenchmarkRunReferenceCount { get; set; }
+
+    /// <summary>Stopped series naming the configuration. Informational: resuming them will be refused.</summary>
+    public int StoppedSeriesCount { get; set; }
+
+    /// <summary>Removed with the configuration.</summary>
+    public int UserAssignmentCount { get; set; }
+
+    /// <summary>Removed with the configuration.</summary>
+    public int GroupAssignmentCount { get; set; }
+
+    /// <summary>Users' confidentiality decisions for this model. Removed with the configuration.</summary>
+    public int ConfidentialTrustCount { get; set; }
+}

@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, OnChanges, AfterViewInit, SimpleChanges, Input, ChangeDetectorRef, HostListener, ViewChild, ElementRef, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, OnChanges, AfterViewInit, SimpleChanges, Input, Output, EventEmitter, ChangeDetectorRef, HostListener, ViewChild, ElementRef, inject } from '@angular/core';
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -255,6 +255,22 @@ interface BenchmarkRunSettings {
 })
 export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy, OnChanges {
   @Input() systemConfigs: SystemAiConfigDto[] = [];
+
+  /**
+   * A run the host page asks to open in the run detail dialog. Opened once the view exists, after
+   * which `openRunHandled` tells the host to clear its request.
+   */
+  @Input() set openRunId(id: number | null | undefined) {
+    this.pendingOpenRunId = id ?? null;
+    if (this.viewInitialised) {
+      this.openPendingRun();
+    }
+  }
+
+  @Output() openRunHandled = new EventEmitter<void>();
+
+  private pendingOpenRunId: number | null = null;
+  private viewInitialised = false;
 
   @ViewChild('suiteDialog') suiteDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('questionsDialog') questionsDialog!: ElementRef<HTMLDialogElement>;
@@ -998,6 +1014,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * outside the dialog's own border box closes it. A no-op in every browser that has `closedby`.
    */
   ngAfterViewInit(): void {
+    this.viewInitialised = true;
+    // Deferred: opening emits to the host, which must not change its bindings inside this check.
+    if (this.pendingOpenRunId != null) {
+      queueMicrotask(() => this.openPendingRun());
+    }
+
     if ('closedBy' in HTMLDialogElement.prototype) {
       return;
     }
@@ -5399,6 +5421,16 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       ?? this.historyRuns.find(r => this.selectedRunIds.has(r.id))?.suiteName
       ?? 'Runs';
     return `${suite} · R=${this.selectedRunIds.size}`;
+  }
+
+  private openPendingRun(): void {
+    if (this.pendingOpenRunId == null) {
+      return;
+    }
+    const runId = this.pendingOpenRunId;
+    this.pendingOpenRunId = null;
+    this.viewRunDetail(runId);
+    this.openRunHandled.emit();
   }
 
   viewRunDetail(runId: number) {

@@ -7,8 +7,18 @@ public class SystemAiErrorLog
 {
     public long Id { get; set; }
 
+    // Attribution only, not a foreign key: deleting a configuration never touches its logs.
     public long SystemAiApiConfigurationId { get; set; }
-    public SystemAiApiConfiguration SystemAiApiConfiguration { get; set; } = default!;
+
+    // The configuration's identity when the error was recorded. Null on legacy rows.
+    [MaxLength(64)]
+    public string? Provider { get; set; }
+
+    [MaxLength(128)]
+    public string? ModelId { get; set; }
+
+    [MaxLength(256)]
+    public string? ModelDisplayName { get; set; }
 
     [MaxLength(2048)]
     public string? ErrorMessage { get; set; }

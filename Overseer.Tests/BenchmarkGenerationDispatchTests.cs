@@ -52,6 +52,7 @@ public class BenchmarkGenerationDispatchTests
         var services = new ServiceCollection();
         services.AddScoped(_ => new ApplicationDbContext(dbOptions));
         services.AddSingleton(config);
+        services.AddSingleton<Overseer.Services.Privacy.EndpointPolicy>();
         services.AddScoped<BenchmarkComplianceGuard>();
         services.AddScoped<SystemAiConfigService>();
         services.AddSingleton<ILogger<SystemAiConfigService>>(NullLogger<SystemAiConfigService>.Instance);

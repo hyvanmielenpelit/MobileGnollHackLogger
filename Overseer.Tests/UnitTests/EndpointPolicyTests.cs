@@ -459,4 +459,46 @@ public class EndpointPolicyTests
 
         Assert.Equal(new[] { "gateway.example.com", "localhost" }, policy.AllowedLiteralHosts);
     }
+
+    // -- Strict resolution (benchmarks) ------------------------------------------------------
+
+    [Fact]
+    public void TryResolveStrict_BlankEndpoint_IsOfficialWhateverTheApiVersion()
+    {
+        var policy = CreatePolicy();
+
+        bool ok = policy.TryResolveStrict(null, "  ", "2024-10-21", out var endpoint, out var error);
+
+        Assert.True(ok);
+        Assert.Null(error);
+        Assert.Same(AiEndpointDescriptor.Official, endpoint);
+    }
+
+    [Fact]
+    public void TryResolveStrict_RefusedEndpoint_FailsInsteadOfFallingBackToOfficial()
+    {
+        /* Resolve falls back to the official endpoint for a stored value that stops validating.
+           A benchmark must never do that: it would call a different endpoint than the one it records. */
+        var policy = CreatePolicy(hostPatterns: new[] { "allowed.example.com" });
+
+        bool ok = policy.TryResolveStrict("https://other.example.com", null, null, out _, out var error);
+
+        Assert.False(ok);
+        Assert.Contains("other.example.com", error);
+        Assert.False(policy.Resolve("https://other.example.com", null, null).IsCustom);
+    }
+
+    [Fact]
+    public void TryResolveStrict_AllowedEndpoint_ReturnsTheCustomDescriptor()
+    {
+        var policy = CreatePolicy(hostPatterns: new[] { "gw.example.com" });
+
+        bool ok = policy.TryResolveStrict("https://gw.example.com/openai/", null, "2024-10-21", out var endpoint, out var error);
+
+        Assert.True(ok);
+        Assert.Null(error);
+        Assert.True(endpoint.IsCustom);
+        Assert.Equal("https://gw.example.com/openai", endpoint.BaseUrl);
+        Assert.Equal(AiEndpointAuthStyle.AzureApiKey, endpoint.AuthStyle);
+    }
 }

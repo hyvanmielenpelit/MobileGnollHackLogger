@@ -279,6 +279,7 @@ builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkGroupAnalysis
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkModelComparisonService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkComparabilityIndexService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRunLauncher>();
+builder.Services.AddScoped<Overseer.Services.SystemConfigUsageGuard>();
 // Singleton: it drives a series across many requests and outlives every one of them, creating its
 // own scope per member.
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkSeriesOrchestrator>();

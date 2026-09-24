@@ -296,9 +296,16 @@
                       <button class="action-btn" title="Rate Limits" (click)="openRateLimitsDialog('system', config)">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
                       </button>
-                      <button class="action-btn action-btn-danger" title="Delete Config" (click)="deleteConfig(config)">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                      <button type="button" class="action-btn action-btn-danger"
+                              [attr.aria-label]="'Delete config ' + (config.displayName || config.modelId)"
+                              [attr.aria-disabled]="deleteConfigCheckingId === config.id ? 'true' : null"
+                              [attr.interestfor]="'tip-delete-config-' + config.id"
+                              [attr.style]="'anchor-name: --tip-delete-config-' + config.id"
+                              (click)="requestDeleteConfig(config)">
+                        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                       </button>
+                      <div popover="hint" class="gh-tooltip" [id]="'tip-delete-config-' + config.id"
+                           [attr.style]="'position-anchor: --tip-delete-config-' + config.id">Delete config</div>
                     </div>
                   </div>
                 }
@@ -1071,7 +1078,7 @@
         <!-- AI BENCHMARK TAB -->
         @if (activeTab === 'benchmark') {
           <div role="tabpanel" id="admin-panel-benchmark" aria-labelledby="admin-tab-benchmark" tabindex="0">
-            <app-admin-benchmark [systemConfigs]="configs"></app-admin-benchmark>
+            <app-admin-benchmark [systemConfigs]="configs" [openRunId]="pendingRunId" (openRunHandled)="pendingRunId = null"></app-admin-benchmark>
           </div>
         }
       </div>
@@ -1190,6 +1197,82 @@
     <button class="btn-gh btn-gh-cancel" (click)="closeConfirmDialog()">Cancel</button>
     <button [class]="confirmButtonClass || 'btn-gh btn-gh-delete'" (click)="executeConfirmAction()">{{ confirmButtonText || 'Confirm' }}</button>
   </div>
+</dialog>
+
+<dialog #deleteConfigDialog class="gh-dialog delete-config-dialog"
+        aria-labelledby="delete-config-title" aria-describedby="delete-config-desc"
+        (cancel)="closeDeleteConfigDialog()">
+  @if (deleteConfigState === 'blocked' && deleteConfigCheck) {
+    <h3 id="delete-config-title">'{{ deleteConfigName }}' can't be deleted right now</h3>
+    <p id="delete-config-desc" [attr.role]="deleteConfigReasonIsLive ? 'alert' : null">
+      A benchmark is using this configuration at the moment. Deleting it now would stop that
+      benchmark's calls to this model partway through and leave its results incomplete.
+    </p>
+    <ul class="delete-config-blocker-list">
+      @for (blocker of deleteConfigCheck.blockers; track blocker.kind + blocker.id) {
+        <li>
+          {{ blocker.label }} — {{ formatBlockerRoles(blocker.roles) }}, started
+          {{ blocker.startedAtUtc | date:'yyyy-MM-dd HH:mm:ss':'UTC' }} UTC.
+          @if (blocker.kind === 'run' && blocker.runId != null) {
+            <button type="button" class="btn-ghost" (click)="openBlockerRun(blocker)">Open run #{{ blocker.runId }}</button>
+          }
+        </li>
+      }
+    </ul>
+    <p>What you can do: wait for it to finish, or cancel it, then try again.</p>
+    <div class="dialog-actions">
+      <button type="button" class="btn-gh btn-gh-cancel" autofocus (click)="closeDeleteConfigDialog()">Close</button>
+      <button type="button" class="btn-gh"
+              [attr.aria-disabled]="deleteConfigCheckingId === deleteConfigTarget?.id ? 'true' : null"
+              (click)="recheckDeleteConfig()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+        Check Again
+      </button>
+      <button type="button" class="btn-gh btn-gh-delete" aria-disabled="true"
+              aria-describedby="delete-config-desc"
+              (click)="refuseBlockedDelete()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+        Delete
+      </button>
+    </div>
+  } @else if (deleteConfigState === 'deletable' && deleteConfigCheck) {
+    <h3 id="delete-config-title">Delete '{{ deleteConfigName }}'?</h3>
+    <ul id="delete-config-desc" class="delete-config-impact-list">
+      <li>Benchmark history keeps its own record of these settings; {{ deleteConfigCheck.benchmarkRunReferenceCount }} runs are unaffected.</li>
+      <li>{{ deleteConfigCheck.userAssignmentCount }} user and {{ deleteConfigCheck.groupAssignmentCount }} group assignments will be removed.</li>
+      @if (deleteConfigCheck.confidentialTrustCount > 0) {
+        <li>{{ deleteConfigCheck.confidentialTrustCount }} users' confidentiality decisions for this model will be removed.</li>
+      }
+      @if (deleteConfigCheck.stoppedSeriesCount > 0) {
+        <li>{{ deleteConfigCheck.stoppedSeriesCount }} stopped benchmark series name this configuration and can no longer be resumed.</li>
+      }
+      <li>Usage and error logs are kept.</li>
+    </ul>
+    @if (deleteConfigActionError) {
+      <p class="error-message" role="alert">{{ deleteConfigActionError }}</p>
+    }
+    <div class="dialog-actions">
+      <button type="button" class="btn-gh btn-gh-cancel" autofocus (click)="closeDeleteConfigDialog()">Cancel</button>
+      <button type="button" class="btn-gh btn-gh-delete"
+              [attr.aria-disabled]="deleteConfigDeleting ? 'true' : null"
+              (click)="confirmDeleteConfig()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+        {{ deleteConfigDeleting ? 'Deleting…' : 'Delete' }}
+      </button>
+    </div>
+  } @else {
+    <h3 id="delete-config-title">'{{ deleteConfigName }}' couldn't be checked</h3>
+    <p id="delete-config-desc" class="error-message" role="alert">{{ deleteConfigCheckError }}</p>
+    <div class="dialog-actions">
+      <button type="button" class="btn-gh btn-gh-cancel" autofocus (click)="closeDeleteConfigDialog()">Close</button>
+      <button type="button" class="btn-gh"
+              [attr.aria-disabled]="deleteConfigCheckingId === deleteConfigTarget?.id ? 'true' : null"
+              (click)="recheckDeleteConfig()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+        Check Again
+      </button>
+    </div>
+  }
 </dialog>
 
 <dialog #maintenanceRunDialog class="gh-dialog dialog-wide maintenance-run-dialog"

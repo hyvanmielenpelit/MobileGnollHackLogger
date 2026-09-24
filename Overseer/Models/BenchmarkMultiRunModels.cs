@@ -177,6 +177,12 @@ public class BenchmarkRunGroupDto
     public string Tier { get; set; } = string.Empty;
     public string TierLabel { get; set; } = string.Empty;
     public string? ComparabilityKeyHash { get; set; }
+
+    /// <summary>
+    /// True when the stored hash was computed under another comparability key definition; the group
+    /// must be re-analysed to refresh it.
+    /// </summary>
+    public bool ComparabilityKeyStale { get; set; }
     public bool CrossCondition { get; set; }
     public string? Notes { get; set; }
     public long? CreatedFromSeriesId { get; set; }

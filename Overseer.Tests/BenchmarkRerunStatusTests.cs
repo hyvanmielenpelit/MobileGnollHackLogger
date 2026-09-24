@@ -14,6 +14,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 /// <summary>
@@ -72,6 +73,7 @@ public class BenchmarkRerunStatusTests
             runManager,
             difficultyJobManager,
             scoringProfileService,
+            new Overseer.Services.Privacy.EndpointPolicy(config),
             config,
             NullLogger<BenchmarkService>.Instance);
 
@@ -86,14 +88,11 @@ public class BenchmarkRerunStatusTests
             BenchmarkSuiteId = suite.Id,
             SuiteName = suite.Name,
             TestedModelConfigurationId = modelA.Id,
-            TestedModelProviderUsed = modelA.Provider!,
-            TestedModelIdUsed = modelA.ModelId!,
-            TestedModelDisplayNameUsed = modelA.DisplayName!,
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: modelA.Provider, modelId: modelA.ModelId, displayName: modelA.DisplayName),
             AssessorModelConfigurationId = modelC.Id,
-            AssessorModelProviderUsed = modelC.Provider!,
-            AssessorModelIdUsed = modelC.ModelId!,
-            AssessorModelDisplayNameUsed = modelC.DisplayName!,
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: modelC.Provider, modelId: modelC.ModelId, displayName: modelC.DisplayName),
             ClaimVerifierModelConfigurationId = modelC.Id,
+            ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(provider: modelC.Provider, modelId: modelC.ModelId, displayName: modelC.DisplayName),
             // Graded under this build's method, or every re-run and re-grade below is refused.
             ScoringMethodVersion = BenchmarkAssessmentPrompt.ScoringMethodVersion,
             StartedAtUtc = DateTime.UtcNow.AddHours(-2),

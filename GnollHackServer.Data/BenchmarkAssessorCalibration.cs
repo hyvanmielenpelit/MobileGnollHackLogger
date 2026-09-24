@@ -29,28 +29,11 @@ public class BenchmarkAssessorCalibration
     // The assessor under evaluation, snapshotted exactly as the run snapshots its own models:
     // a configuration can be edited or deleted afterwards, and a calibration that cannot say
     // what produced it is worthless as evidence.
+    // Attribution only, not a foreign key: deleting a configuration never touches history.
     public long? AssessorModelConfigurationId { get; set; }
-    public SystemAiApiConfiguration? AssessorModelConfiguration { get; set; }
 
-    [MaxLength(256)]
-    public string? AssessorDisplayNameUsed { get; set; }
-
-    [MaxLength(64)]
-    public string? AssessorProviderUsed { get; set; }
-
-    [MaxLength(128)]
-    public string? AssessorModelIdUsed { get; set; }
-
-    [MaxLength(32)]
-    public string? AssessorThinkingLevelUsed { get; set; }
-
-    [MaxLength(32)]
-    public string? AssessorReasoningModeUsed { get; set; }
-
-    [MaxLength(64)]
-    public string? AssessorServiceTierUsed { get; set; }
-
-    public int? AssessorMaxOutputTokensUsed { get; set; }
+    public long? AssessorModelSnapshotId { get; set; }
+    public SystemAiConfigurationSnapshot? AssessorModelSnapshot { get; set; }
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 

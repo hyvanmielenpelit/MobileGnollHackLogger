@@ -13,6 +13,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 /// <summary>
@@ -58,6 +59,7 @@ public class BenchmarkSeriesOrchestratorTests
         services.AddScoped<BenchmarkComplianceGuard>();
         services.AddSingleton<BenchmarkRunManager>();
         services.AddSingleton<BenchmarkDifficultyJobManager>();
+        services.AddSingleton<Overseer.Services.Privacy.EndpointPolicy>();
 
         // The resume path's instrument guard resolves BenchmarkService to recompute the three
         // hashes. The fixture's series record no member-1 hashes, so the guard short-circuits
@@ -81,6 +83,7 @@ public class BenchmarkSeriesOrchestratorTests
             new BenchmarkScoringProfileService(
                 sp.GetRequiredService<IServiceScopeFactory>(),
                 NullLogger<BenchmarkScoringProfileService>.Instance),
+            sp.GetRequiredService<Overseer.Services.Privacy.EndpointPolicy>(),
             config,
             NullLogger<BenchmarkService>.Instance));
 
@@ -357,12 +360,8 @@ public class BenchmarkSeriesOrchestratorTests
         {
             BenchmarkSuiteId = suite.Id,
             SuiteName = suite.Name,
-            TestedModelDisplayNameUsed = "Candidate",
-            TestedModelProviderUsed = "TestProvider",
-            TestedModelIdUsed = "candidate-model",
-            AssessorModelDisplayNameUsed = "Assessor",
-            AssessorModelProviderUsed = "TestProvider",
-            AssessorModelIdUsed = "assessor-model",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "TestProvider", modelId: "candidate-model", displayName: "Candidate"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "TestProvider", modelId: "assessor-model", displayName: "Assessor"),
             StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
             Status = BenchmarkRunStatus.Completed
         });
@@ -373,6 +372,33 @@ public class BenchmarkSeriesOrchestratorTests
         var result = await orchestrator.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false, ct);
 
         Assert.Equal(BenchmarkSeriesStartOutcome.SpendDenied, result.Outcome);
+    }
+
+    [Fact]
+    public async Task Resume_AfterItsConfigurationWasDeleted_IsRefusedNamingTheRole()
+    {
+        /* A stopped series does not block deleting a configuration it names. Resuming it afterwards
+           must be refused cleanly, by the launcher's own rule, rather than stopping again on its
+           next member. */
+        var ct = TestContext.Current.CancellationToken;
+        var config = CreateConfig();
+        var (factory, dbName) = CreateScopeFactory(config);
+        using var db = CreateDbContext(dbName);
+        var suite = await SeedSuiteAndConfigsAsync(db);
+        var series = await SeedSeriesAsync(db, suite, BenchmarkRunSeriesStatus.Stopped, stopReason: BenchmarkRunSeriesStopReason.MemberFailed);
+
+        db.SystemAiApiConfigurations.Remove(await db.SystemAiApiConfigurations.SingleAsync(c => c.Id == 1, ct));
+        await db.SaveChangesAsync(ct);
+
+        var orchestrator = CreateOrchestrator(factory, new BenchmarkRunManager());
+
+        var result = await orchestrator.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false, ct);
+
+        Assert.Equal(BenchmarkSeriesStartOutcome.Invalid, result.Outcome);
+        Assert.Contains("Tested model configuration", result.Error);
+
+        using var readback = CreateDbContext(dbName);
+        Assert.Equal(BenchmarkRunSeriesStatus.Stopped, (await readback.BenchmarkRunSeries.SingleAsync(s => s.Id == series.Id, ct)).Status);
     }
 
     [Fact]
@@ -428,12 +454,8 @@ public class BenchmarkSeriesOrchestratorTests
         {
             BenchmarkSuiteId = suite.Id,
             SuiteName = suite.Name,
-            TestedModelDisplayNameUsed = "Candidate",
-            TestedModelProviderUsed = "TestProvider",
-            TestedModelIdUsed = "candidate-model",
-            AssessorModelDisplayNameUsed = "Assessor",
-            AssessorModelProviderUsed = "TestProvider",
-            AssessorModelIdUsed = "assessor-model",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "TestProvider", modelId: "candidate-model", displayName: "Candidate"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "TestProvider", modelId: "assessor-model", displayName: "Assessor"),
             RunSeriesId = series.Id,
             RunSeriesIndex = 2,
             Status = BenchmarkRunStatus.Running,
@@ -555,12 +577,8 @@ public class BenchmarkSeriesOrchestratorTests
     {
         BenchmarkSuiteId = suite.Id,
         SuiteName = suite.Name,
-        TestedModelDisplayNameUsed = "Candidate",
-        TestedModelProviderUsed = "TestProvider",
-        TestedModelIdUsed = "candidate-model",
-        AssessorModelDisplayNameUsed = "Assessor",
-        AssessorModelProviderUsed = "TestProvider",
-        AssessorModelIdUsed = "assessor-model",
+        TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "TestProvider", modelId: "candidate-model", displayName: "Candidate"),
+        AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "TestProvider", modelId: "assessor-model", displayName: "Assessor"),
         RunSeriesId = series.Id,
         RunSeriesIndex = 1,
         Status = BenchmarkRunStatus.Completed,
@@ -655,12 +673,8 @@ public class BenchmarkSeriesOrchestratorTests
             {
                 BenchmarkSuiteId = suite.Id,
                 SuiteName = suite.Name,
-                TestedModelDisplayNameUsed = "Candidate",
-                TestedModelProviderUsed = "TestProvider",
-                TestedModelIdUsed = "candidate-model",
-                AssessorModelDisplayNameUsed = "Assessor",
-                AssessorModelProviderUsed = "TestProvider",
-                AssessorModelIdUsed = "assessor-model",
+                TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "TestProvider", modelId: "candidate-model", displayName: "Candidate"),
+                AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "TestProvider", modelId: "assessor-model", displayName: "Assessor"),
                 RunSeriesId = series.Id,
                 RunSeriesIndex = index,
                 Status = BenchmarkRunStatus.Completed,

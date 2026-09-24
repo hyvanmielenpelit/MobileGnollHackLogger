@@ -122,16 +122,16 @@ public class AdminBenchmarkController : ControllerBase
         ReviewedByUserId = q.ReviewedByUserId,
         IsReviewed = !q.IsGenerated || (q.ReviewedAtRevision != null && q.ReviewedAtRevision == q.ItemRevision),
         AssessedDifficulty = q.AssessedDifficulty,
-        AssessedDifficultyModel = q.AssessedDifficultyModel,
+        AssessedDifficultyModel = q.AssessedDifficultyModelSnapshot.Label(),
         AssessedDifficultyAtUtc = q.AssessedDifficultyAtUtc,
         AssessedDifficultyModelConfigurationId = q.AssessedDifficultyModelConfigurationId,
-        AssessedDifficultyProviderUsed = q.AssessedDifficultyProviderUsed,
-        AssessedDifficultyModelIdUsed = q.AssessedDifficultyModelIdUsed,
-        AssessedDifficultyThinkingLevelUsed = q.AssessedDifficultyThinkingLevelUsed,
-        AssessedDifficultyReasoningModeUsed = q.AssessedDifficultyReasoningModeUsed,
-        AssessedDifficultyReasoningSummaryUsed = q.AssessedDifficultyReasoningSummaryUsed,
-        AssessedDifficultyServiceTierUsed = q.AssessedDifficultyServiceTierUsed,
-        AssessedDifficultyMaxOutputTokensUsed = q.AssessedDifficultyMaxOutputTokensUsed,
+        AssessedDifficultyProviderUsed = q.AssessedDifficultyModelSnapshot?.Provider,
+        AssessedDifficultyModelIdUsed = q.AssessedDifficultyModelSnapshot?.ModelId,
+        AssessedDifficultyThinkingLevelUsed = q.AssessedDifficultyModelSnapshot?.ThinkingLevel,
+        AssessedDifficultyReasoningModeUsed = q.AssessedDifficultyModelSnapshot?.ReasoningMode,
+        AssessedDifficultyReasoningSummaryUsed = q.AssessedDifficultyModelSnapshot?.ReasoningSummary,
+        AssessedDifficultyServiceTierUsed = q.AssessedDifficultyModelSnapshot?.ServiceTier,
+        AssessedDifficultyMaxOutputTokensUsed = q.AssessedDifficultyModelSnapshot?.MaxOutputTokens,
         CreatedAtUtc = q.CreatedAtUtc,
         ModifiedAtUtc = q.ModifiedAtUtc
     };
@@ -412,6 +412,8 @@ public class AdminBenchmarkController : ControllerBase
 
         string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
 
+        var assessorSnapshot = await SystemAiConfigurationSnapshotStore.CaptureAndSaveAsync(_dbContext, assessorConfig, CancellationToken.None);
+
         var cts = new CancellationTokenSource();
         var job = new BenchmarkDifficultyJob
         {
@@ -420,6 +422,7 @@ public class AdminBenchmarkController : ControllerBase
             Scope = selection.Scope,
             AssessorConfigId = assessorConfig.Id,
             AssessorDisplayName = assessorConfig.DisplayName,
+            AssessorSnapshotId = assessorSnapshot.Id,
             StartedByUserId = string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId,
             Cts = cts,
             Items = targetQuestions.Select(q => new BenchmarkDifficultyJobItem
@@ -630,16 +633,9 @@ public class AdminBenchmarkController : ControllerBase
                 Difficulty = q.Difficulty,
                 ExpectedPoints = q.ExpectedPoints,
                 AssessedDifficulty = q.AssessedDifficulty,
-                AssessedDifficultyModel = q.AssessedDifficultyModel,
                 AssessedDifficultyAtUtc = q.AssessedDifficultyAtUtc,
                 AssessedDifficultyModelConfigurationId = q.AssessedDifficultyModelConfigurationId,
-                AssessedDifficultyProviderUsed = q.AssessedDifficultyProviderUsed,
-                AssessedDifficultyModelIdUsed = q.AssessedDifficultyModelIdUsed,
-                AssessedDifficultyThinkingLevelUsed = q.AssessedDifficultyThinkingLevelUsed,
-                AssessedDifficultyReasoningModeUsed = q.AssessedDifficultyReasoningModeUsed,
-                AssessedDifficultyReasoningSummaryUsed = q.AssessedDifficultyReasoningSummaryUsed,
-                AssessedDifficultyServiceTierUsed = q.AssessedDifficultyServiceTierUsed,
-                AssessedDifficultyMaxOutputTokensUsed = q.AssessedDifficultyMaxOutputTokensUsed,
+                AssessedDifficultyModelSnapshotId = q.AssessedDifficultyModelSnapshotId,
                 CreatedAtUtc = DateTime.UtcNow,
                 ModifiedAtUtc = DateTime.UtcNow
             });
@@ -1058,8 +1054,8 @@ public class AdminBenchmarkController : ControllerBase
                 a.ItemRevisionUsed,
                 a.UnverifiedClaimsJson,
                 a.ClaimVerificationJson,
-                Provider = a.BenchmarkRun.TestedModelProviderUsed,
-                ModelId = a.BenchmarkRun.TestedModelIdUsed
+                Provider = a.BenchmarkRun.TestedModelSnapshot.Provider,
+                ModelId = a.BenchmarkRun.TestedModelSnapshot.ModelId
             })
             .AsNoTracking()
             .ToListAsync(ct);
@@ -2577,14 +2573,15 @@ public class AdminBenchmarkController : ControllerBase
         string startedByUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
         var cts = new CancellationTokenSource();
 
+        var authorSnapshot = await SystemAiConfigurationSnapshotStore.CaptureAndSaveAsync(_dbContext, authorConfig, ct);
+
         var job = new BenchmarkRubricGapAuthorJob
         {
             SuiteId = suite.Id,
             SuiteName = suite.Name,
             AuthorConfigId = authorConfig.Id,
             AuthorDisplayName = authorConfig.DisplayName,
-            AuthorProviderUsed = authorConfig.Provider,
-            AuthorModelIdUsed = authorConfig.ModelId,
+            AuthorSnapshotId = authorSnapshot.Id,
             Instructions = string.IsNullOrWhiteSpace(request.Instructions) ? null : request.Instructions.Trim(),
             StartedByUserId = string.IsNullOrEmpty(startedByUserId) ? null : startedByUserId,
             Cts = cts,
@@ -2714,9 +2711,7 @@ public class AdminBenchmarkController : ControllerBase
             Citation = draft?.Citation,
             ClusterClaim = draft?.Claims.FirstOrDefault(),
             AuthorModelConfigurationId = job?.AuthorConfigId,
-            AuthorProviderUsed = job?.AuthorProviderUsed,
-            AuthorModelIdUsed = job?.AuthorModelIdUsed,
-            AuthorModelDisplayName = job?.AuthorDisplayName,
+            AuthorModelSnapshotId = job != null && job.AuthorSnapshotId > 0 ? job.AuthorSnapshotId : null,
             AcceptedByUserId = string.IsNullOrEmpty(acceptedByUserId) ? null : acceptedByUserId,
             AcceptedAtUtc = DateTime.UtcNow
         };
@@ -2732,7 +2727,7 @@ public class AdminBenchmarkController : ControllerBase
             ItemRevisionAfter = acceptance.ItemRevisionAfter,
             AcceptedVerbatim = acceptance.AcceptedVerbatim,
             Citation = acceptance.Citation,
-            AuthorModelDisplayName = acceptance.AuthorModelDisplayName,
+            AuthorModelDisplayName = job?.AuthorDisplayName,
             AcceptedAtUtc = acceptance.AcceptedAtUtc,
             ExpectedPoints = question.ExpectedPoints
         });
@@ -2805,10 +2800,10 @@ public class AdminBenchmarkController : ControllerBase
             {
                 RunId = r.Id,
                 AssessorModelConfigurationId = r.AssessorModelConfigurationId,
-                AssessorModelDisplayNameUsed = r.AssessorModelDisplayNameUsed,
-                AssessorModelProviderUsed = r.AssessorModelProviderUsed,
+                AssessorModelDisplayNameUsed = r.AssessorModelSnapshot.Label(),
+                AssessorModelProviderUsed = r.AssessorModelSnapshot.Provider,
                 SecondOpinionAssessorModelConfigurationId = r.SecondOpinionAssessorModelConfigurationId,
-                SecondOpinionAssessorModelDisplayNameUsed = r.SecondOpinionAssessorModelDisplayNameUsed,
+                SecondOpinionAssessorModelDisplayNameUsed = r.SecondOpinionAssessorModelSnapshot.Label(),
                 CompletedAtUtc = r.CompletedAtUtc,
                 HarnessVersion = r.HarnessVersion,
                 ScoringMethodVersion = r.ScoringMethodVersion
@@ -2963,37 +2958,41 @@ public class AdminBenchmarkController : ControllerBase
             BenchmarkSuiteId = run.BenchmarkSuiteId,
             SuiteName = run.SuiteName,
             TestedModelConfigurationId = run.TestedModelConfigurationId,
-            TestedModelDisplayNameUsed = run.TestedModelDisplayNameUsed,
-            TestedModelProviderUsed = run.TestedModelProviderUsed,
-            TestedModelIdUsed = run.TestedModelIdUsed,
-            TestedModelThinkingLevelUsed = run.TestedModelThinkingLevelUsed,
-            TestedModelReasoningModeUsed = run.TestedModelReasoningModeUsed,
-            TestedModelReasoningSummaryUsed = run.TestedModelReasoningSummaryUsed,
-            TestedModelServiceTierUsed = run.TestedModelServiceTierUsed,
-            TestedModelMaxOutputTokensUsed = run.TestedModelMaxOutputTokensUsed,
-            TestedModelParallelExecutionModeUsed = run.TestedModelParallelExecutionModeUsed,
+            TestedModelDisplayNameUsed = run.TestedModelSnapshot.Label()!,
+            TestedModelProviderUsed = run.TestedModelSnapshot.Provider,
+            TestedModelIdUsed = run.TestedModelSnapshot.ModelId,
+            TestedModelThinkingLevelUsed = run.TestedModelSnapshot.ThinkingLevel,
+            TestedModelReasoningModeUsed = run.TestedModelSnapshot.ReasoningMode,
+            TestedModelReasoningSummaryUsed = run.TestedModelSnapshot.ReasoningSummary,
+            TestedModelServiceTierUsed = run.TestedModelSnapshot.ServiceTier,
+            TestedModelMaxOutputTokensUsed = run.TestedModelSnapshot.MaxOutputTokens,
+            TestedModelParallelExecutionModeUsed = run.TestedModelSnapshot.ParallelExecutionMode ?? MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled,
+            TestedModelEndpoint = SystemAiConfigurationSnapshotStore.DescribeEndpoint(run.TestedModelSnapshot),
 
             AssessorModelConfigurationId = run.AssessorModelConfigurationId,
-            AssessorModelDisplayNameUsed = run.AssessorModelDisplayNameUsed,
-            AssessorModelProviderUsed = run.AssessorModelProviderUsed,
-            AssessorModelIdUsed = run.AssessorModelIdUsed,
-            AssessorModelThinkingLevelUsed = run.AssessorModelThinkingLevelUsed,
-            AssessorModelReasoningModeUsed = run.AssessorModelReasoningModeUsed,
+            AssessorModelDisplayNameUsed = run.AssessorModelSnapshot.Label()!,
+            AssessorModelProviderUsed = run.AssessorModelSnapshot.Provider,
+            AssessorModelIdUsed = run.AssessorModelSnapshot.ModelId,
+            AssessorModelThinkingLevelUsed = run.AssessorModelSnapshot.ThinkingLevel,
+            AssessorModelReasoningModeUsed = run.AssessorModelSnapshot.ReasoningMode,
+            AssessorModelEndpoint = SystemAiConfigurationSnapshotStore.DescribeEndpoint(run.AssessorModelSnapshot),
             AssessorAvailable = assessorAvailable,
 
             SecondOpinionAssessorModelConfigurationId = run.SecondOpinionAssessorModelConfigurationId,
-            SecondOpinionAssessorModelDisplayNameUsed = run.SecondOpinionAssessorModelDisplayNameUsed,
-            SecondOpinionAssessorModelProviderUsed = run.SecondOpinionAssessorModelProviderUsed,
-            SecondOpinionAssessorModelIdUsed = run.SecondOpinionAssessorModelIdUsed,
-            SecondOpinionAssessorModelThinkingLevelUsed = run.SecondOpinionAssessorModelThinkingLevelUsed,
-            SecondOpinionAssessorModelReasoningModeUsed = run.SecondOpinionAssessorModelReasoningModeUsed,
+            SecondOpinionAssessorModelDisplayNameUsed = run.SecondOpinionAssessorModelSnapshot.Label(),
+            SecondOpinionAssessorModelProviderUsed = run.SecondOpinionAssessorModelSnapshot?.Provider,
+            SecondOpinionAssessorModelIdUsed = run.SecondOpinionAssessorModelSnapshot?.ModelId,
+            SecondOpinionAssessorModelThinkingLevelUsed = run.SecondOpinionAssessorModelSnapshot?.ThinkingLevel,
+            SecondOpinionAssessorModelReasoningModeUsed = run.SecondOpinionAssessorModelSnapshot?.ReasoningMode,
+            SecondOpinionAssessorModelEndpoint = SystemAiConfigurationSnapshotStore.DescribeEndpoint(run.SecondOpinionAssessorModelSnapshot),
 
             ClaimVerifierModelConfigurationId = run.ClaimVerifierModelConfigurationId,
-            ClaimVerifierDisplayNameUsed = run.ClaimVerifierDisplayNameUsed,
-            ClaimVerifierProviderUsed = run.ClaimVerifierProviderUsed,
-            ClaimVerifierModelIdUsed = run.ClaimVerifierModelIdUsed,
-            ClaimVerifierThinkingLevelUsed = run.ClaimVerifierThinkingLevelUsed,
-            ClaimVerifierReasoningModeUsed = run.ClaimVerifierReasoningModeUsed,
+            ClaimVerifierDisplayNameUsed = run.ClaimVerifierModelSnapshot.Label(),
+            ClaimVerifierProviderUsed = run.ClaimVerifierModelSnapshot?.Provider,
+            ClaimVerifierModelIdUsed = run.ClaimVerifierModelSnapshot?.ModelId,
+            ClaimVerifierThinkingLevelUsed = run.ClaimVerifierModelSnapshot?.ThinkingLevel,
+            ClaimVerifierReasoningModeUsed = run.ClaimVerifierModelSnapshot?.ReasoningMode,
+            ClaimVerifierModelEndpoint = SystemAiConfigurationSnapshotStore.DescribeEndpoint(run.ClaimVerifierModelSnapshot),
 
             StartedByUserId = run.StartedByUserId,
             StartedByUserName = run.StartedByUser?.UserName,
@@ -3242,9 +3241,9 @@ public class AdminBenchmarkController : ControllerBase
                             .ToList()
                         : new List<string>(),
                     AssessedByModelConfigurationId = a.AssessedByModelConfigurationId,
-                    AssessedByModelDisplayNameUsed = a.AssessedByModelDisplayNameUsed,
-                    AssessedByModelProviderUsed = a.AssessedByModelProviderUsed,
-                    AssessedByModelIdUsed = a.AssessedByModelIdUsed,
+                    AssessedByModelDisplayNameUsed = a.AssessedByModelSnapshot.Label(),
+                    AssessedByModelProviderUsed = a.AssessedByModelSnapshot?.Provider,
+                    AssessedByModelIdUsed = a.AssessedByModelSnapshot?.ModelId,
                     AssessedAtUtc = a.AssessedAtUtc,
                     AssessmentInputTokens = a.AssessmentInputTokens,
                     AssessmentOutputTokens = a.AssessmentOutputTokens,
@@ -3255,7 +3254,7 @@ public class AdminBenchmarkController : ControllerBase
                     UnverifiedClaimsJson = a.UnverifiedClaimsJson,
                     SecondOpinionQualityScore = a.SecondOpinionQualityScore,
                     SecondOpinionCriticalError = a.SecondOpinionCriticalError,
-                    SecondOpinionByModelDisplayNameUsed = a.SecondOpinionByModelDisplayNameUsed,
+                    SecondOpinionByModelDisplayNameUsed = a.SecondOpinionByModelSnapshot.Label(),
                     SecondOpinionJson = a.SecondOpinionJson,
                     SecondOpinionDisagreed = a.SecondOpinionDisagreed,
                     SecondOpinionTrigger = a.SecondOpinionTrigger,
@@ -3270,7 +3269,7 @@ public class AdminBenchmarkController : ControllerBase
                     ClaimsSupportedCount = a.ClaimsSupportedCount,
                     ClaimsRefutedCount = a.ClaimsRefutedCount,
                     ClaimsIndeterminateCount = a.ClaimsIndeterminateCount,
-                    ClaimVerificationByModelDisplayNameUsed = a.ClaimVerificationByModelDisplayNameUsed,
+                    ClaimVerificationByModelDisplayNameUsed = a.ClaimVerificationByModelSnapshot.Label(),
                     ClaimVerificationInputTokens = a.ClaimVerificationInputTokens,
                     ClaimVerificationOutputTokens = a.ClaimVerificationOutputTokens,
                     ClaimVerificationDurationMs = a.ClaimVerificationDurationMs,
@@ -3278,7 +3277,7 @@ public class AdminBenchmarkController : ControllerBase
                     ClaimVerificationError = a.ClaimVerificationError,
                     ClaimVerificationRawText = a.ClaimVerificationRawText,
                     ReassessedAtUtc = a.ReassessedAtUtc,
-                    ReassessedByModelDisplayNameUsed = a.ReassessedByModelDisplayNameUsed,
+                    ReassessedByModelDisplayNameUsed = a.ReassessedByModelSnapshot.Label(),
                     PreviousQualityScore = a.PreviousQualityScore,
                     ReassessmentCount = a.ReassessmentCount,
                     RerunAtUtc = a.RerunAtUtc,
@@ -3352,7 +3351,7 @@ public class AdminBenchmarkController : ControllerBase
         return new BenchmarkRun
         {
             Id = run.Id,
-            TestedModelServiceTierUsed = run.TestedModelServiceTierUsed,
+            TestedModelSnapshot = run.TestedModelSnapshot,
 
             TotalInputTokens = candidate.TotalInputTokens,
             TotalOutputTokens = candidate.TotalOutputTokens,
@@ -3433,11 +3432,13 @@ public class AdminBenchmarkController : ControllerBase
                     BenchmarkSuiteId = r.BenchmarkSuiteId,
                     SuiteName = r.SuiteName,
                     TestedModelConfigurationId = r.TestedModelConfigurationId,
-                    TestedModelDisplayNameUsed = r.TestedModelDisplayNameUsed,
-                    TestedModelProviderUsed = r.TestedModelProviderUsed,
-                    TestedModelIdUsed = r.TestedModelIdUsed,
+                    TestedModelDisplayNameUsed = r.TestedModelSnapshot.Label()!,
+                    TestedModelProviderUsed = r.TestedModelSnapshot.Provider,
+                    TestedModelIdUsed = r.TestedModelSnapshot.ModelId,
+                    TestedModelEndpoint = SystemAiConfigurationSnapshotStore.DescribeEndpoint(r.TestedModelSnapshot),
                     AssessorModelConfigurationId = r.AssessorModelConfigurationId,
-                    AssessorModelDisplayNameUsed = r.AssessorModelDisplayNameUsed,
+                    AssessorModelDisplayNameUsed = r.AssessorModelSnapshot.Label()!,
+                    AssessorModelEndpoint = SystemAiConfigurationSnapshotStore.DescribeEndpoint(r.AssessorModelSnapshot),
                     StartedByUserName = r.StartedByUser != null ? r.StartedByUser.UserName : null,
                     Status = r.Status,
                     StartedAtUtc = r.StartedAtUtc,
@@ -3474,17 +3475,13 @@ public class AdminBenchmarkController : ControllerBase
                 AnswerRowCount = r.Answers.Count,
                 r.PricingSnapshotJson,
                 r.TestedModelConfigurationId,
-                r.TestedModelProviderUsed,
-                r.TestedModelIdUsed,
+                r.TestedModelSnapshot,
                 r.AssessorModelConfigurationId,
-                r.AssessorModelProviderUsed,
-                r.AssessorModelIdUsed,
+                r.AssessorModelSnapshot,
                 r.ClaimVerifierModelConfigurationId,
-                r.ClaimVerifierProviderUsed,
-                r.ClaimVerifierModelIdUsed,
+                r.ClaimVerifierModelSnapshot,
                 r.SecondOpinionAssessorModelConfigurationId,
-                r.SecondOpinionAssessorModelProviderUsed,
-                r.SecondOpinionAssessorModelIdUsed,
+                r.SecondOpinionAssessorModelSnapshot,
                 r.TotalInputTokens,
                 r.TotalOutputTokens,
                 r.TotalCacheReadTokens,
@@ -3493,7 +3490,6 @@ public class AdminBenchmarkController : ControllerBase
                 r.TotalLongContextOutputTokens,
                 r.TotalLongContextCacheReadTokens,
                 r.TotalLongContextCacheCreationTokens,
-                r.TestedModelServiceTierUsed,
                 // The tier the provider actually served, pulled as a scalar subquery rather than by loading
                 // every answer: costing must use the served tier, and the history list has no other access
                 // to it. Null for a run whose provider reported none.
@@ -3534,17 +3530,13 @@ public class AdminBenchmarkController : ControllerBase
                 {
                     PricingSnapshotJson = item.PricingSnapshotJson,
                     TestedModelConfigurationId = item.TestedModelConfigurationId,
-                    TestedModelProviderUsed = item.TestedModelProviderUsed,
-                    TestedModelIdUsed = item.TestedModelIdUsed,
+                    TestedModelSnapshot = item.TestedModelSnapshot,
                     AssessorModelConfigurationId = item.AssessorModelConfigurationId,
-                    AssessorModelProviderUsed = item.AssessorModelProviderUsed,
-                    AssessorModelIdUsed = item.AssessorModelIdUsed,
+                    AssessorModelSnapshot = item.AssessorModelSnapshot,
                     ClaimVerifierModelConfigurationId = item.ClaimVerifierModelConfigurationId,
-                    ClaimVerifierProviderUsed = item.ClaimVerifierProviderUsed,
-                    ClaimVerifierModelIdUsed = item.ClaimVerifierModelIdUsed,
+                    ClaimVerifierModelSnapshot = item.ClaimVerifierModelSnapshot,
                     SecondOpinionAssessorModelConfigurationId = item.SecondOpinionAssessorModelConfigurationId,
-                    SecondOpinionAssessorModelProviderUsed = item.SecondOpinionAssessorModelProviderUsed,
-                    SecondOpinionAssessorModelIdUsed = item.SecondOpinionAssessorModelIdUsed,
+                    SecondOpinionAssessorModelSnapshot = item.SecondOpinionAssessorModelSnapshot,
                     TotalInputTokens = item.TotalInputTokens,
                     TotalOutputTokens = item.TotalOutputTokens,
                     TotalCacheReadTokens = item.TotalCacheReadTokens,
@@ -3553,7 +3545,6 @@ public class AdminBenchmarkController : ControllerBase
                     TotalLongContextOutputTokens = item.TotalLongContextOutputTokens,
                     TotalLongContextCacheReadTokens = item.TotalLongContextCacheReadTokens,
                     TotalLongContextCacheCreationTokens = item.TotalLongContextCacheCreationTokens,
-                    TestedModelServiceTierUsed = item.TestedModelServiceTierUsed,
                     TotalAssessmentInputTokens = item.TotalAssessmentInputTokens,
                     TotalAssessmentOutputTokens = item.TotalAssessmentOutputTokens,
                     TotalAssessmentCacheReadTokens = item.TotalAssessmentCacheReadTokens,
@@ -3686,7 +3677,7 @@ public class AdminBenchmarkController : ControllerBase
         {
             return Conflict(
                 "This answer already has a second opinion from " +
-                $"{answer.SecondOpinionByModelDisplayNameUsed ?? "another assessor"}. " +
+                $"{answer.SecondOpinionByModelSnapshot.Label() ?? "another assessor"}. " +
                 "Re-send with replaceExistingSecondOpinion to overwrite it.");
         }
 
@@ -3784,10 +3775,10 @@ public class AdminBenchmarkController : ControllerBase
             {
                 Id = c.Id,
                 BenchmarkRunId = c.BenchmarkRunId,
-                AssessorDisplayNameUsed = c.AssessorDisplayNameUsed,
-                AssessorProviderUsed = c.AssessorProviderUsed,
-                AssessorModelIdUsed = c.AssessorModelIdUsed,
-                AssessorThinkingLevelUsed = c.AssessorThinkingLevelUsed,
+                AssessorDisplayNameUsed = c.AssessorModelSnapshot.Label(),
+                AssessorProviderUsed = c.AssessorModelSnapshot != null ? c.AssessorModelSnapshot.Provider : null,
+                AssessorModelIdUsed = c.AssessorModelSnapshot != null ? c.AssessorModelSnapshot.ModelId : null,
+                AssessorThinkingLevelUsed = c.AssessorModelSnapshot != null ? c.AssessorModelSnapshot.ThinkingLevel : null,
                 CreatedAtUtc = c.CreatedAtUtc,
                 CreatedByUserName = c.CreatedByUserName,
                 AnswerCount = c.AnswerCount,
@@ -4171,7 +4162,7 @@ public class AdminBenchmarkController : ControllerBase
             ? await _modelPricingService.ResolveForRunAsync(run)
             : null;
         string markdown = BenchmarkReportBuilder.BuildMarkdownReport(run, GetOverseerVersion(), runPricing);
-        string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelDisplayNameUsed)}_{run.StartedAtUtc:yyyyMMdd_HHmmss}.md";
+        string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelSnapshot.Label()!)}_{run.StartedAtUtc:yyyyMMdd_HHmmss}.md";
 
         return File(Encoding.UTF8.GetBytes(markdown), "text/markdown; charset=utf-8", filename);
     }
@@ -4194,7 +4185,7 @@ public class AdminBenchmarkController : ControllerBase
         if (run == null) return NotFound();
 
         string markdown = BenchmarkToolCallLogBuilder.Build(run, run.Answers);
-        string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelDisplayNameUsed)}_run{run.Id}_tool_calls.md";
+        string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelSnapshot.Label()!)}_run{run.Id}_tool_calls.md";
 
         return File(Encoding.UTF8.GetBytes(markdown), "text/markdown; charset=utf-8", filename);
     }
@@ -4635,6 +4626,7 @@ public class AdminBenchmarkController : ControllerBase
             BenchmarkSuiteId = runs[0].BenchmarkSuiteId,
             Tier = (BenchmarkRunGroupTier)(int)comparability.Tier,
             ComparabilityKeyHash = comparability.ComparabilityKeyHash,
+            ComparabilityKeyVersion = BenchmarkComparabilityKey.DefinitionVersion,
             TierReasonsJson = BenchmarkGroupAnalysisService.SerialiseTierReasons(comparability),
             CrossCondition = request.CrossCondition,
             Notes = request.Notes,
@@ -4712,6 +4704,7 @@ public class AdminBenchmarkController : ControllerBase
             group.BenchmarkSuiteId = runs[0].BenchmarkSuiteId;
             group.Tier = (BenchmarkRunGroupTier)(int)comparability.Tier;
             group.ComparabilityKeyHash = comparability.ComparabilityKeyHash;
+            group.ComparabilityKeyVersion = BenchmarkComparabilityKey.DefinitionVersion;
             group.TierReasonsJson = BenchmarkGroupAnalysisService.SerialiseTierReasons(comparability);
         }
 
@@ -4938,6 +4931,7 @@ public class AdminBenchmarkController : ControllerBase
             Tier = group.Tier.ToString(),
             TierLabel = DescribeTier(group.Tier),
             ComparabilityKeyHash = group.ComparabilityKeyHash,
+            ComparabilityKeyStale = group.ComparabilityKeyVersion != BenchmarkComparabilityKey.DefinitionVersion,
             CrossCondition = group.CrossCondition,
             Notes = group.Notes,
             CreatedFromSeriesId = group.CreatedFromSeriesId,
@@ -4968,7 +4962,7 @@ public class AdminBenchmarkController : ControllerBase
                     Status = run.Status.ToString(),
                     QualityIndex = run.QualityIndex,
                     SpeedIndex = run.SpeedIndex,
-                    TestedModelDisplayName = run.TestedModelDisplayNameUsed,
+                    TestedModelDisplayName = run.TestedModelSnapshot.Label()!,
                     ShortFingerprint = ShortFingerprint(run.CandidateSystemPromptSha256),
                     AddedAtUtc = member.AddedAtUtc
                 });
@@ -5131,7 +5125,7 @@ public class AdminBenchmarkController : ControllerBase
             GetOverseerVersion(), analysis.ComputedAtUtc);
 
         string suiteName = group.BenchmarkSuite?.Name ?? "benchmark";
-        string modelName = members.FirstOrDefault()?.TestedModelDisplayNameUsed ?? "model";
+        string modelName = members.FirstOrDefault()?.TestedModelSnapshot.Label() ?? "model";
 
         string filename =
             $"{SanitizeFilename(suiteName)}_{SanitizeFilename(modelName)}_multirun_R{members.Count}_" +

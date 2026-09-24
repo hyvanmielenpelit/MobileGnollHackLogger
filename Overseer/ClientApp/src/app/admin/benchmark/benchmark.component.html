@@ -3981,6 +3981,14 @@
               }
             </dd>
           </div>
+          @if (activeRunDetail.testedModelEndpoint) {
+            <div class="run-model-row">
+              <dt>Endpoint</dt>
+              <dd>
+                <span class="model-name">{{ activeRunDetail.testedModelEndpoint }}</span>
+              </dd>
+            </div>
+          }
           <div class="run-model-row">
             <dt>Evaluator</dt>
             <dd>
@@ -3993,6 +4001,9 @@
               }
               @if (activeRunDetail.assessorModelProviderUsed) {
                 <app-provider-badge [provider]="activeRunDetail.assessorModelProviderUsed"></app-provider-badge>
+              }
+              @if (activeRunDetail.assessorModelEndpoint && activeRunDetail.assessorModelEndpoint !== 'official') {
+                <span class="model-name">Endpoint: {{ activeRunDetail.assessorModelEndpoint }}</span>
               }
             </dd>
           </div>
@@ -4009,6 +4020,9 @@
                 }
                 @if (activeRunDetail.secondOpinionAssessorModelProviderUsed) {
                   <app-provider-badge [provider]="activeRunDetail.secondOpinionAssessorModelProviderUsed"></app-provider-badge>
+                }
+                @if (activeRunDetail.secondOpinionAssessorModelEndpoint && activeRunDetail.secondOpinionAssessorModelEndpoint !== 'official') {
+                  <span class="model-name">Endpoint: {{ activeRunDetail.secondOpinionAssessorModelEndpoint }}</span>
                 }
                 @if (formatSecondOpinionMode(activeRunDetail.secondOpinionModeUsed)) {
                   <span class="second-opinion-mode-badge" [title]="secondOpinionModeHintOf(activeRunDetail.secondOpinionModeUsed)">{{ formatSecondOpinionMode(activeRunDetail.secondOpinionModeUsed) }}</span>
@@ -4029,6 +4043,9 @@
                 }
                 @if (activeRunDetail.claimVerifierProviderUsed) {
                   <app-provider-badge [provider]="activeRunDetail.claimVerifierProviderUsed"></app-provider-badge>
+                }
+                @if (activeRunDetail.claimVerifierModelEndpoint && activeRunDetail.claimVerifierModelEndpoint !== 'official') {
+                  <span class="model-name">Endpoint: {{ activeRunDetail.claimVerifierModelEndpoint }}</span>
                 }
               </dd>
             </div>

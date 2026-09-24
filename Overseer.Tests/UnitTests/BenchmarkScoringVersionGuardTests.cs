@@ -15,6 +15,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 /// <summary>
@@ -52,6 +53,7 @@ public class BenchmarkScoringVersionGuardTests
             runManager,
             new BenchmarkDifficultyJobManager(),
             new BenchmarkScoringProfileService(scopeFactory, NullLogger<BenchmarkScoringProfileService>.Instance),
+            new Overseer.Services.Privacy.EndpointPolicy(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build()),
             config,
             NullLogger<BenchmarkService>.Instance);
 
@@ -63,26 +65,22 @@ public class BenchmarkScoringVersionGuardTests
     private static BenchmarkRun BuildRun(
         BenchmarkSuite suite, SystemAiApiConfiguration tested, SystemAiApiConfiguration assessor, int scoringMethod)
     {
-        var run = new BenchmarkRun
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
         {
             Status = BenchmarkRunStatus.CompletedWithErrors,
             BenchmarkSuiteId = suite.Id,
             SuiteName = suite.Name,
             TestedModelConfigurationId = tested.Id,
-            TestedModelProviderUsed = tested.Provider!,
-            TestedModelIdUsed = tested.ModelId!,
-            TestedModelDisplayNameUsed = tested.DisplayName!,
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: tested.Provider!, modelId: tested.ModelId!, displayName: tested.DisplayName!),
             AssessorModelConfigurationId = assessor.Id,
-            AssessorModelProviderUsed = assessor.Provider!,
-            AssessorModelIdUsed = assessor.ModelId!,
-            AssessorModelDisplayNameUsed = assessor.DisplayName!,
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: assessor.Provider!, modelId: assessor.ModelId!, displayName: assessor.DisplayName!),
             ClaimVerifierModelConfigurationId = assessor.Id,
             CandidatePromptOptionsJson = "{}",
             ScoringMethodVersion = scoringMethod,
             TotalQuestionCount = 2,
             StartedAtUtc = FixedCompletedAt.AddHours(-1),
             CompletedAtUtc = FixedCompletedAt
-        };
+        });
 
         // One answer each operation below would act on: a provider error (re-run failed), an
         // unscored assessment (retry assessments) and a failed verification (retry verification).
@@ -158,7 +156,7 @@ public class BenchmarkScoringVersionGuardTests
     [Fact]
     public void Refusal_NamesTheRunAndBothMethods()
     {
-        var run = new BenchmarkRun { Id = 53, ScoringMethodVersion = 10 };
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun { Id = 53, ScoringMethodVersion = 10 });
 
         Assert.False(BenchmarkService.IsCurrentScoringMethod(run));
         Assert.Equal(
@@ -328,12 +326,8 @@ public class BenchmarkScoringVersionGuardTests
             {
                 Id = 53,
                 SuiteName = "Suite",
-                TestedModelDisplayNameUsed = "Candidate",
-                TestedModelProviderUsed = "Provider",
-                TestedModelIdUsed = "candidate",
-                AssessorModelDisplayNameUsed = "Assessor",
-                AssessorModelProviderUsed = "Provider",
-                AssessorModelIdUsed = "assessor",
+                TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider", modelId: "candidate", displayName: "Candidate"),
+                AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider", modelId: "assessor", displayName: "Assessor"),
                 Status = BenchmarkRunStatus.Completed,
                 StartedAtUtc = FixedCompletedAt.AddHours(-1),
                 CompletedAtUtc = FixedCompletedAt,

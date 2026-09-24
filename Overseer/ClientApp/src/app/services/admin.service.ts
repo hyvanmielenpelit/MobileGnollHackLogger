@@ -130,6 +130,38 @@ export interface SystemAiConfigDto {
   apiVersion?: string | null;
 }
 
+/** Something using a system configuration right now, which a delete would interrupt. */
+export interface SystemConfigBlockerDto {
+  /** "run", "series", "difficultyJob", "generationJob", "rubricCheckJob" or "rubricGapAuthorJob". */
+  kind: string;
+  /** The run or series id, or the job id. */
+  id: string;
+  /** A benchmark run id when `kind` is "run", so the UI can open it. */
+  runId?: number | null;
+  label: string;
+  /** The roles the configuration plays, in words ("assessor", "claim verifier"). */
+  roles: string[];
+  startedAtUtc: string;
+}
+
+/** Whether a system configuration can be deleted now, and what a delete removes and keeps. */
+export interface SystemConfigDeletionCheckDto {
+  configId: number;
+  displayName: string;
+  canDelete: boolean;
+  blockers: SystemConfigBlockerDto[];
+  /** Benchmark runs naming the configuration. Informational: their history is kept. */
+  benchmarkRunReferenceCount: number;
+  /** Stopped series naming the configuration. Informational: resuming them will be refused. */
+  stoppedSeriesCount: number;
+  /** Removed with the configuration. */
+  userAssignmentCount: number;
+  /** Removed with the configuration. */
+  groupAssignmentCount: number;
+  /** Users' confidentiality decisions for this model. Removed with the configuration. */
+  confidentialTrustCount: number;
+}
+
 export interface UserSystemAiConfigDto {
   id: number;
   systemAiApiConfigurationId: number;
@@ -500,6 +532,10 @@ export class AdminService {
 
   deleteSystemConfig(id: number): Observable<void> {
     return this.http.delete<void>(`/api/admin/systemconfigs/${id}`);
+  }
+
+  getSystemConfigDeletionCheck(id: number): Observable<SystemConfigDeletionCheckDto> {
+    return this.http.get<SystemConfigDeletionCheckDto>(`/api/admin/systemconfigs/${id}/deletion-check`);
   }
 
   resetSystemConfig(id: number, counterName?: string): Observable<void> {

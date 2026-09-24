@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy, AfterViewInit, inject, ViewChild, Element
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
-import { AdminService, UserDto, GroupDto, SystemAiConfigDto, UserSystemAiConfigDto, GroupSystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult, MaintenanceRunLog, AiTelemetrySummaryDto, AiGovernorStatusDto } from '../services/admin.service';
+import { AdminService, UserDto, GroupDto, SystemAiConfigDto, UserSystemAiConfigDto, GroupSystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult, MaintenanceRunLog, AiTelemetrySummaryDto, AiGovernorStatusDto, SystemConfigDeletionCheckDto, SystemConfigBlockerDto } from '../services/admin.service';
 import { AiModelFormComponent, AiModelFormResult } from '../shared/ai-model-form/ai-model-form.component';
 import { ProviderBadgeComponent } from '../shared/provider-badge/provider-badge.component';
 import { ConfigAnalyticsComponent } from './config-analytics/config-analytics.component';
@@ -268,6 +268,7 @@ export class AdminComponent implements OnInit, OnDestroy, AfterViewInit {
   @ViewChild('editConfigOverrideDialog') editConfigOverrideDialog!: ElementRef<HTMLDialogElement>;
   
   @ViewChild('analyticsDialog') analyticsDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('deleteConfigDialog') deleteConfigDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('adminToast') adminToast?: ElementRef<HTMLElement>;
   @ViewChild('maintenanceRunDialog') maintenanceRunDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('maintenanceRunHeading') maintenanceRunHeading?: ElementRef<HTMLElement>;
@@ -660,23 +661,154 @@ export class AdminComponent implements OnInit, OnDestroy, AfterViewInit {
     return err?.error?.message || 'The configuration could not be saved.';
   }
 
-  deleteConfig(config: SystemAiConfigDto) {
-    this.openConfirmationModal(
-      'Delete Config',
-      `Are you sure you want to delete config ${config.displayName}?`,
-      () => {
-        this.adminService.deleteSystemConfig(config.id).subscribe({
-          next: () => {
-            this.configs = this.configs.filter(c => c.id !== config.id);
-            this.applyConfigFilters();
-          },
-          error: () => {}
-        });
-      },
-      'Delete',
-      'btn-gh btn-gh-delete'
-    );
+  // --- Delete System Config Dialog ---
+  // A dedicated dialog, not the generic confirm: a delete can be blocked by an active
+  // benchmark, and the generic confirm dialog closes before the action completes, so it
+  // cannot show a blocked state or switch state in place on a race.
+  deleteConfigTarget: SystemAiConfigDto | null = null;
+  deleteConfigCheck: SystemConfigDeletionCheckDto | null = null;
+  deleteConfigState: 'blocked' | 'deletable' | 'checkFailed' = 'deletable';
+  deleteConfigCheckError: string | null = null;
+  deleteConfigActionError: string | null = null;
+  /** True only while the blocked reason changed without a focus move (a 409 race on confirm). */
+  deleteConfigReasonIsLive = false;
+  /** The config id currently being (re)checked, so only that row's button shows busy. */
+  deleteConfigCheckingId: number | null = null;
+  deleteConfigDeleting = false;
+
+  /** The name shown in the dialog's heading and messages. */
+  get deleteConfigName(): string {
+    return this.deleteConfigCheck?.displayName
+      || this.deleteConfigTarget?.displayName
+      || this.deleteConfigTarget?.modelId
+      || '';
   }
+
+  /** "as the assessor and the claim verifier" — the roles a blocker plays, joined in words. */
+  formatBlockerRoles(roles: string[]): string {
+    const named = roles.map(r => 'the ' + r);
+    if (named.length === 0) return '';
+    if (named.length === 1) return 'as ' + named[0];
+    return 'as ' + named.slice(0, -1).join(', ') + ' and ' + named[named.length - 1];
+  }
+
+  /** `BadRequest`/`Conflict` bodies arrive as either a plain string or `{ error: string }`. */
+  private describeDeleteConfigError(err: any, fallback: string): string {
+    const raw = err?.error?.error ?? err?.error;
+    return typeof raw === 'string' && raw.trim() ? raw : fallback;
+  }
+
+  private applyDeleteConfigCheck(check: SystemConfigDeletionCheckDto): void {
+    this.deleteConfigCheck = check;
+    this.deleteConfigState = check.canDelete ? 'deletable' : 'blocked';
+    this.deleteConfigCheckError = null;
+    this.deleteConfigActionError = null;
+  }
+
+  /** Runs the deletion check, then opens the dialog with the final content already in place. */
+  requestDeleteConfig(config: SystemAiConfigDto): void {
+    if (this.deleteConfigCheckingId != null) {
+      return;
+    }
+    this.deleteConfigTarget = config;
+    this.deleteConfigCheckingId = config.id;
+    this.deleteConfigReasonIsLive = false;
+    this.adminService.getSystemConfigDeletionCheck(config.id).subscribe({
+      next: (check) => {
+        this.deleteConfigCheckingId = null;
+        this.applyDeleteConfigCheck(check);
+        this.deleteConfigDialog.nativeElement.showModal();
+      },
+      error: (err) => {
+        this.deleteConfigCheckingId = null;
+        this.deleteConfigCheck = null;
+        this.deleteConfigState = 'checkFailed';
+        this.deleteConfigCheckError = this.describeDeleteConfigError(err, "Could not check whether this configuration can be deleted.");
+        this.deleteConfigDialog.nativeElement.showModal();
+      }
+    });
+  }
+
+  /** Re-runs the deletion check and switches the open dialog's state in place. */
+  recheckDeleteConfig(): void {
+    const target = this.deleteConfigTarget;
+    if (!target || this.deleteConfigCheckingId != null) {
+      return;
+    }
+    this.deleteConfigCheckingId = target.id;
+    this.deleteConfigReasonIsLive = false;
+    this.adminService.getSystemConfigDeletionCheck(target.id).subscribe({
+      next: (check) => {
+        this.deleteConfigCheckingId = null;
+        this.applyDeleteConfigCheck(check);
+      },
+      error: (err) => {
+        this.deleteConfigCheckingId = null;
+        this.deleteConfigCheck = null;
+        this.deleteConfigState = 'checkFailed';
+        this.deleteConfigCheckError = this.describeDeleteConfigError(err, "Could not check whether this configuration can be deleted.");
+      }
+    });
+  }
+
+  /** The blocked-state Delete button is aria-disabled; the check above already explains why. */
+  refuseBlockedDelete(): void {
+    // Intentionally inert: the reason is the blocked-state message, not a new one here.
+  }
+
+  closeDeleteConfigDialog(): void {
+    this.deleteConfigDialog.nativeElement.close();
+    this.deleteConfigTarget = null;
+    this.deleteConfigCheck = null;
+    this.deleteConfigCheckError = null;
+    this.deleteConfigActionError = null;
+    this.deleteConfigReasonIsLive = false;
+    this.deleteConfigDeleting = false;
+  }
+
+  confirmDeleteConfig(): void {
+    const target = this.deleteConfigTarget;
+    if (!target || this.deleteConfigState !== 'deletable' || this.deleteConfigDeleting) {
+      return;
+    }
+    this.deleteConfigDeleting = true;
+    this.deleteConfigActionError = null;
+    this.adminService.deleteSystemConfig(target.id).subscribe({
+      next: () => {
+        this.configs = this.configs.filter(c => c.id !== target.id);
+        this.applyConfigFilters();
+        const name = target.displayName || target.modelId;
+        this.closeDeleteConfigDialog();
+        this.showAdminToast(`Deleted '${name}'. Benchmark history and usage logs are kept.`, 'success');
+      },
+      error: (err) => {
+        this.deleteConfigDeleting = false;
+        if (err?.status === 409 && Array.isArray(err?.error?.blockers)) {
+          if (this.deleteConfigCheck) {
+            this.deleteConfigCheck = { ...this.deleteConfigCheck, canDelete: false, blockers: err.error.blockers as SystemConfigBlockerDto[] };
+          }
+          this.deleteConfigState = 'blocked';
+          this.deleteConfigReasonIsLive = true;
+        } else {
+          this.deleteConfigActionError = this.describeDeleteConfigError(err, 'The configuration could not be deleted.');
+        }
+      }
+    });
+  }
+
+  /** Closes the dialog and hands the run off to the Benchmark tab's run detail dialog. */
+  openBlockerRun(blocker: SystemConfigBlockerDto): void {
+    if (blocker.runId == null) {
+      return;
+    }
+    const runId = blocker.runId;
+    this.closeDeleteConfigDialog();
+    this.selectTab('benchmark');
+    this.pendingRunId = runId;
+  }
+
+  /** A run the delete-config dialog asked the Benchmark tab to open; cleared once it has. */
+  pendingRunId: number | null = null;
 
   selectedConfigForLimits: any = null;
   limitContext: 'system' | 'user' | 'group' = 'system';

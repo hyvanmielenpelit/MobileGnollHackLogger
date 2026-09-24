@@ -17,6 +17,7 @@ using Overseer.Controllers;
 using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 /// <summary>
@@ -254,17 +255,21 @@ public class BenchmarkRubricGapAuthorTests
         return question;
     }
 
-    private static BenchmarkRubricGapAuthorJob SeedJob(
-        BenchmarkRubricGapAuthorJobManager jobs, long questionId, string proposedText)
+    private static async Task<BenchmarkRubricGapAuthorJob> SeedJobAsync(
+        ApplicationDbContext db, BenchmarkRubricGapAuthorJobManager jobs, long questionId, string proposedText)
     {
+        // The settings captured at job start, the way BenchmarkModelSnapshots.Model builds them.
+        var authorSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-opus-5", displayName: "Claude Opus 5");
+        db.SystemAiConfigurationSnapshots.Add(authorSnapshot);
+        await db.SaveChangesAsync();
+
         var job = new BenchmarkRubricGapAuthorJob
         {
             SuiteId = 1,
             SuiteName = "Suite",
             AuthorConfigId = 7,
             AuthorDisplayName = "Claude Opus 5",
-            AuthorProviderUsed = "Anthropic",
-            AuthorModelIdUsed = "claude-opus-5",
+            AuthorSnapshotId = authorSnapshot.Id,
             Cts = new CancellationTokenSource(),
             Drafts =
             {
@@ -289,7 +294,7 @@ public class BenchmarkRubricGapAuthorTests
     {
         var (controller, db, jobs) = CreateController();
         var question = await SeedQuestionAsync(db, "Mentions infravision.");
-        var job = SeedJob(jobs, question.Id, "Gnolls gain infravision at experience level 1.");
+        var job = await SeedJobAsync(db, jobs, question.Id, "Gnolls gain infravision at experience level 1.");
 
         var result = await controller.AcceptRubricAddition(question.Id, new AcceptRubricAdditionRequest
         {
@@ -321,7 +326,7 @@ public class BenchmarkRubricGapAuthorTests
     {
         var (controller, db, jobs) = CreateController();
         var question = await SeedQuestionAsync(db, null);
-        var job = SeedJob(jobs, question.Id, "Gnolls gain infravision at experience level 1.");
+        var job = await SeedJobAsync(db, jobs, question.Id, "Gnolls gain infravision at experience level 1.");
 
         await controller.AcceptRubricAddition(question.Id, new AcceptRubricAdditionRequest
         {
@@ -346,7 +351,7 @@ public class BenchmarkRubricGapAuthorTests
     {
         var (controller, db, jobs) = CreateController();
         var question = await SeedQuestionAsync(db, null);
-        var job = SeedJob(jobs, question.Id, "Gnolls gain infravision at experience level 1.");
+        var job = await SeedJobAsync(db, jobs, question.Id, "Gnolls gain infravision at experience level 1.");
 
         await controller.AcceptRubricAddition(question.Id, new AcceptRubricAdditionRequest
         {
@@ -367,7 +372,7 @@ public class BenchmarkRubricGapAuthorTests
     {
         var (controller, db, jobs) = CreateController();
         var question = await SeedQuestionAsync(db, null);
-        var job = SeedJob(jobs, question.Id, "Gnolls gain infravision at experience level 1.");
+        var job = await SeedJobAsync(db, jobs, question.Id, "Gnolls gain infravision at experience level 1.");
 
         await controller.AcceptRubricAddition(question.Id, new AcceptRubricAdditionRequest
         {
@@ -379,9 +384,9 @@ public class BenchmarkRubricGapAuthorTests
         var acceptance = Assert.Single(db.BenchmarkRubricAdditionAcceptances);
         Assert.Equal("monst.c:1420", acceptance.Citation);
         Assert.Equal(7, acceptance.AuthorModelConfigurationId);
-        Assert.Equal("Anthropic", acceptance.AuthorProviderUsed);
-        Assert.Equal("claude-opus-5", acceptance.AuthorModelIdUsed);
-        Assert.Equal("Claude Opus 5", acceptance.AuthorModelDisplayName);
+        Assert.Equal("Anthropic", acceptance.AuthorModelSnapshot?.Provider);
+        Assert.Equal("claude-opus-5", acceptance.AuthorModelSnapshot?.ModelId);
+        Assert.Equal("Claude Opus 5", acceptance.AuthorModelSnapshot?.Label());
         Assert.Equal("Gnolls gain infravision at experience level 1", acceptance.ClusterClaim);
         Assert.Equal("operator-1", acceptance.AcceptedByUserId);
     }
@@ -406,7 +411,7 @@ public class BenchmarkRubricGapAuthorTests
         db.BenchmarkQuestions.Add(other);
         await db.SaveChangesAsync(ct);
 
-        var job = SeedJob(jobs, question.Id, "Gnolls gain infravision at experience level 1.");
+        var job = await SeedJobAsync(db, jobs, question.Id, "Gnolls gain infravision at experience level 1.");
         await controller.AcceptRubricAddition(question.Id, new AcceptRubricAdditionRequest
         {
             AcceptedText = "Gnolls gain infravision at experience level 1.",
@@ -445,7 +450,7 @@ public class BenchmarkRubricGapAuthorTests
         var (controller, db, jobs) = CreateController();
         var question = await SeedQuestionAsync(db, "Existing.");
         // The draft names a different question than the route does.
-        var job = SeedJob(jobs, question.Id + 999, "Gnolls gain infravision at experience level 1.");
+        var job = await SeedJobAsync(db, jobs, question.Id + 999, "Gnolls gain infravision at experience level 1.");
 
         var result = await controller.AcceptRubricAddition(question.Id, new AcceptRubricAdditionRequest
         {

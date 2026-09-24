@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 /// <summary>
@@ -39,20 +40,14 @@ public class BenchmarkRunLimitsTests
 
     private static void AddRunStartedHoursAgo(ApplicationDbContext db, double hours)
     {
-        db.BenchmarkRuns.Add(new BenchmarkRun
+        // The model snapshots are required and irrelevant here: the guard counts rows by
+        // StartedAtUtc alone. Attached so the fixture saves, not because their values matter.
+        db.BenchmarkRuns.Add(BenchmarkModelSnapshots.Attach(new BenchmarkRun
         {
             SuiteName = "Suite",
-            // The model columns are required and irrelevant here: the guard counts rows by
-            // StartedAtUtc alone. Filled so the fixture saves, not because their values matter.
-            TestedModelDisplayNameUsed = "Candidate",
-            TestedModelProviderUsed = "TestProvider",
-            TestedModelIdUsed = "candidate-model",
-            AssessorModelDisplayNameUsed = "Assessor",
-            AssessorModelProviderUsed = "TestProvider",
-            AssessorModelIdUsed = "assessor-model",
             StartedAtUtc = DateTime.UtcNow.AddHours(-hours),
             Status = BenchmarkRunStatus.Completed
-        });
+        }));
     }
 
     [Fact]

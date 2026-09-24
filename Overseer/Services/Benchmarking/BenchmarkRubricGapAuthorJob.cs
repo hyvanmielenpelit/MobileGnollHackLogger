@@ -61,9 +61,8 @@ public class BenchmarkRubricGapAuthorJob
     public long AuthorConfigId { get; set; }
     public string AuthorDisplayName { get; set; } = string.Empty;
 
-    /// <summary>The provider and model id actually used, recorded on every acceptance.</summary>
-    public string AuthorProviderUsed { get; set; } = string.Empty;
-    public string AuthorModelIdUsed { get; set; } = string.Empty;
+    /// <summary>The author settings captured at job start; every draft runs with them and every acceptance records them.</summary>
+    public long AuthorSnapshotId { get; set; }
 
     /// <summary>The operator's free-text instructions, kept so the job's output is explainable.</summary>
     public string? Instructions { get; set; }
