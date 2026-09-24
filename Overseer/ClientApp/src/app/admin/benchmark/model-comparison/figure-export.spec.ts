@@ -2,6 +2,7 @@ import { Chart } from 'chart.js';
 import { unzipSync } from 'fflate';
 
 import {
+  DEFAULT_FIGURE_TEXT_SIZES,
   DEFAULT_WEBP_QUALITY,
   FIGURE_EXPORT_DENSITY_PRESETS,
   FIGURE_EXPORT_LAYOUT_HEIGHT,
@@ -280,35 +281,115 @@ describe('figure-export', () => {
   describe('direction', () => {
     const topLeft = { x: 'left', y: 'top', label: 'Better' } as const;
 
-    it('draws no Better marker: the plot carries it', () => {
-      const texts: string[] = [];
+    /** Records every `fillText` with its position, and every `rotate` angle. */
+    function spyDrawing(): { texts: { text: string; x: number; y: number }[]; rotations: number[] } {
+      const texts: { text: string; x: number; y: number }[] = [];
+      const rotations: number[] = [];
       const realFillText = CanvasRenderingContext2D.prototype.fillText;
+      const realRotate = CanvasRenderingContext2D.prototype.rotate;
       spyOn(CanvasRenderingContext2D.prototype, 'fillText').and.callFake(function (
         this: CanvasRenderingContext2D,
         ...args: any[]
       ) {
-        texts.push(String(args[0]));
+        texts.push({ text: String(args[0]), x: args[1], y: args[2] });
         return (realFillText as any).apply(this, args);
       } as any);
-      const rotate = spyOn(CanvasRenderingContext2D.prototype, 'rotate').and.callThrough();
+      spyOn(CanvasRenderingContext2D.prototype, 'rotate').and.callFake(function (
+        this: CanvasRenderingContext2D,
+        angle: number
+      ) {
+        rotations.push(angle);
+        return realRotate.call(this, angle);
+      } as any);
+      return { texts, rotations };
+    }
 
-      composeFigureImage(request({ chrome: figureChrome({ direction: topLeft }) }));
+    it('draws the Better badge on the badge row, its arrow turned toward the better corner', () => {
+      const drawing = spyDrawing();
+      composeFigureImage(request({
+        chrome: figureChrome({ ...headerOnlyChrome(), badges: [{ text: '2 models', tone: 'neutral' }], direction: topLeft }),
+        footer: figureFooter(emptyFooter)
+      }));
 
-      expect(texts).not.toContain('Better');
-      expect(rotate).not.toHaveBeenCalled();
+      const better = drawing.texts.find(entry => entry.text === 'Better');
+      const badge = drawing.texts.find(entry => entry.text === '2 models');
+      expect(better).toBeDefined();
+      // Both texts sit the badge padding below the top of the one shared row.
+      expect(better!.y).toBe(badge!.y);
+      expect(better!.x).toBeGreaterThan(badge!.x);
+      expect(drawing.rotations.length).toBe(1);
+      expect(drawing.rotations[0]).toBeCloseTo((270 * Math.PI) / 180, 9);
     });
 
-    it('wraps the header at the full content width with a direction present', () => {
+    it('draws no Better badge when the chrome carries no direction', () => {
+      const drawing = spyDrawing();
+      composeFigureImage(request({ chrome: figureChrome() }));
+      expect(drawing.texts.map(entry => entry.text)).not.toContain('Better');
+      expect(drawing.rotations.length).toBe(0);
+    });
+
+    it('narrows the badge rows by the pill and the gap, and adds no height beside existing badges', () => {
       const title = 'Intelligence against speed across every model in the comparable set';
+      const badges: FigureBadge[] = [
+        { text: '8 models', tone: 'neutral' },
+        { text: '1–3 runs each', tone: 'neutral' },
+        { text: '16 of 18 questions', tone: 'neutral' },
+        { text: 'Catalog prices · 7 Sep 2026', tone: 'pricing' }
+      ];
       const withDirection = measureFigureChrome(
-        sourceOf({ ...headerOnlyChrome(), title, direction: topLeft }, emptyFooter),
+        sourceOf({ ...headerOnlyChrome(), title, badges, direction: topLeft }, emptyFooter),
         400
       );
-      const without = measureFigureChrome(sourceOf({ ...headerOnlyChrome(), title }, emptyFooter), 400);
+      const without = measureFigureChrome(sourceOf({ ...headerOnlyChrome(), title, badges }, emptyFooter), 400);
 
       expect(withDirection.titleLines).toEqual(without.titleLines);
-      expect(withDirection.badgeRows.length).toBe(without.badgeRows.length);
-      expect(withDirection.height).toBe(without.height);
+      expect(withDirection.direction).not.toBeNull();
+      expect(withDirection.direction!.width).toBeGreaterThan(0);
+      const allowed = 400 - withDirection.direction!.width - 6;
+      for (const row of withDirection.badgeRows) {
+        const rowWidth = row.badges.reduce((sum, entry) => sum + entry.width, 0) + (row.badges.length - 1) * 6;
+        expect(rowWidth).toBeLessThanOrEqual(allowed);
+      }
+
+      const short: FigureBadge[] = [{ text: '2 models', tone: 'neutral' }];
+      const shortWith = measureFigureChrome(sourceOf({ ...headerOnlyChrome(), badges: short, direction: topLeft }, emptyFooter), 400);
+      const shortWithout = measureFigureChrome(sourceOf({ ...headerOnlyChrome(), badges: short }, emptyFooter), 400);
+      expect(shortWith.badgeRows.length).toBe(1);
+      expect(shortWith.height).toBe(shortWithout.height);
+    });
+
+    it('takes a badge row of its own when there are no other badges', () => {
+      const alone = measureFigureChrome(sourceOf({ ...headerOnlyChrome(), badges: [], direction: topLeft }, emptyFooter), 400);
+      const bare = measureFigureChrome(sourceOf({ ...headerOnlyChrome(), badges: [] }, emptyFooter), 400);
+      expect(alone.badgeRows.length).toBe(0);
+      // The gap above the row, and one badge height: 11 px text plus 3 px padding on each side.
+      expect(alone.height - bare.height).toBe(6 + 17);
+    });
+
+    it('measures exactly the height the composition draws with the Better badge alone on its row', () => {
+      const canvas = sourceCanvas();
+      const figure = request({
+        canvas,
+        chrome: figureChrome({ ...headerOnlyChrome(), badges: [], direction: { y: 'top', label: 'Better' } }),
+        footer: figureFooter(emptyFooter)
+      });
+      const measured = measureFigureChrome(figure, 400);
+
+      let composed!: HTMLCanvasElement;
+      const plotTop = plotTopOf(canvas, () => { composed = composeFigureImage({ ...figure, density: 1 }); });
+
+      expect(composed.height).toBe(measured.height + onScreen.height);
+      expect(plotTop + onScreen.height + 20).toBe(composed.height);
+    });
+
+    it('sizes the pill with the badge text', () => {
+      const small = measureFigureChrome(sourceOf({ ...headerOnlyChrome(), badges: [], direction: topLeft }, emptyFooter), 400);
+      const large = measureFigureChrome(
+        { ...sourceOf({ ...headerOnlyChrome(), badges: [], direction: topLeft }, emptyFooter), textSizes: { ...DEFAULT_FIGURE_TEXT_SIZES, badgePx: 22 } },
+        400
+      );
+      expect(large.direction!.width).toBeGreaterThan(small.direction!.width);
+      expect(large.height - small.height).toBe(11);
     });
 
     it('measures exactly the height the composition draws, with a direction present', () => {
@@ -384,6 +465,48 @@ describe('figure-export', () => {
       expect(withDetail.height).toBeGreaterThan(bare.height);
       expect(withHighlight.height).toBeGreaterThan(bare.height);
       expect(withKey.height).toBeGreaterThan(bare.height);
+    });
+
+    it('measures the default caption sizes exactly as it did with fixed ones', () => {
+      expect(DEFAULT_FIGURE_TEXT_SIZES).toEqual({ titlePx: 18, badgePx: 11, footerPx: 12 });
+      const source = sourceOf({ ...headerOnlyChrome(), title: 'Intelligence', badges: [{ text: '2 models', tone: 'neutral' }] });
+      const implicit = measureFigureChrome(source, 400);
+      const explicit = measureFigureChrome({ ...source, textSizes: DEFAULT_FIGURE_TEXT_SIZES }, 400);
+      expect(explicit.height).toBe(implicit.height);
+      // Padding, one 18 px title line, one 17 px badge row, the plot gap and a 17 px footer line.
+      expect(implicit.height).toBe(20 * 2 + 25 + (6 + 17) + 16 + (12 + 17));
+    });
+
+    it('grows with each larger caption size, and adds no height for an empty footer', () => {
+      const source = sourceOf({ ...headerOnlyChrome(), title: 'Intelligence', badges: [{ text: '2 models', tone: 'neutral' }] });
+      const base = measureFigureChrome(source, 400).height;
+      const sized = (sizes: Partial<typeof DEFAULT_FIGURE_TEXT_SIZES>): number =>
+        measureFigureChrome({ ...source, textSizes: { ...DEFAULT_FIGURE_TEXT_SIZES, ...sizes } }, 400).height;
+
+      expect(sized({ titlePx: 48 })).toBe(base - 25 + Math.round(48 * 1.4));
+      expect(sized({ badgePx: 20 })).toBe(base + 9);
+      expect(sized({ footerPx: 16 })).toBe(base - 17 + Math.round(16 * 1.4));
+
+      const hidden = measureFigureChrome(sourceOf({ ...headerOnlyChrome(), title: 'Intelligence', badges: [{ text: '2 models', tone: 'neutral' }] }, emptyFooter), 400);
+      expect(hidden.footer.height).toBe(0);
+      expect(hidden.height).toBe(base - (12 + 17));
+      const hiddenLarge = measureFigureChrome(
+        { ...sourceOf({ ...headerOnlyChrome(), title: 'Intelligence', badges: [{ text: '2 models', tone: 'neutral' }] }, emptyFooter), textSizes: { ...DEFAULT_FIGURE_TEXT_SIZES, footerPx: 48 } },
+        400
+      );
+      expect(hiddenLarge.height).toBe(hidden.height);
+    });
+
+    it('measures exactly the height the composition draws at larger caption sizes', () => {
+      const canvas = sourceCanvas();
+      const figure = request({
+        canvas,
+        chrome: figureChrome({ direction: { x: 'right', label: 'Better' } }),
+        textSizes: { titlePx: 40, badgePx: 24, footerPx: 30 }
+      });
+      const measured = measureFigureChrome(figure, 400);
+      const composed = composeFigureImage({ ...figure, density: 1 });
+      expect(composed.height).toBe(measured.height + onScreen.height);
     });
   });
 

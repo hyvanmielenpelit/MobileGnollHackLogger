@@ -1,7 +1,7 @@
 /**
  * Chart core for the cross-model benchmark comparison view: the palette, the per-model identity
- * glyphs, the measure definitions, the Pareto-frontier computation, the error-bar, dominated-region,
- * direct-label and direction-marker plugins and the configurations for the six figures (S1-S3 scatters, P1's three linked panels, P2's profile plot).
+ * glyphs, the measure definitions, the Pareto-frontier computation, the error-bar, dominated-region
+ * and direct-label plugins and the configurations for the six figures (S1-S3 scatters, P1's three linked panels, P2's profile plot).
  *
  * The module is pure TypeScript: it constructs no components, touches no DOM node and imports
  * nothing from Angular, so its spec runs without a TestBed fixture. The one browser API it reaches
@@ -13,7 +13,7 @@ import ChartDataLabels from 'chartjs-plugin-datalabels';
 import type { Chart, ChartConfiguration, ChartType, DefaultDataPoint, Plugin, Point } from 'chart.js';
 import { chooseScaleType, formatTick, linearDomain, logDomain, timeUnitFor } from './axis-domain';
 import type { AxisBounds, AxisTickKind, ScaleType, TimeUnit } from './axis-domain';
-import { figureDirectionRotation, pricingBadge, pricingNote, questionsBadge, runsBadge, visibleBadges } from './figure-chrome';
+import { pricingBadge, pricingNote, questionsBadge, runsBadge, visibleBadges } from './figure-chrome';
 import type { FigureBadge, FigureChrome, FigureDirection, FigureKeyItem, FigureNote } from './figure-chrome';
 import { DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
 import type { FigureStyle } from './figure-style';
@@ -717,7 +717,7 @@ export const dominatedRegionPlugin: Plugin = {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Which corner of a scatter is the good one. Drawn on the plot by {@link directionMarkerPlugin},
+ * Which corner of a scatter is the good one. Drawn as the Better badge on the figure's badge row,
  * never as a reversed axis.
  */
 export type PreferredCorner = FigureDirection;
@@ -1458,109 +1458,6 @@ export const directLabelPlugin: Plugin = {
 };
 
 // ---------------------------------------------------------------------------------------------
-// The direction marker on a scatter
-// ---------------------------------------------------------------------------------------------
-
-/** The gap between the marker's bottom edge and the plot area's top. */
-export const DIRECTION_MARKER_GAP = 6;
-
-/** The marker's colours: border, fill, then ink. */
-const DIRECTION_MARKER_COLORS = { border: 'rgba(224, 186, 109, 0.55)', fill: 'rgba(224, 186, 109, 0.1)', text: '#e0ba6d' } as const;
-
-/** What the marker plugin reads off the chart options. */
-export interface DirectionMarkerPluginOptions {
-  readonly direction: FigureDirection;
-  readonly fontSizePx: number;
-}
-
-/** The marker pill's geometry at text size `size`; the pill height is what the scatter reserves above the plot. */
-export function directionMarkerMetrics(size: number): {
-  height: number;
-  arrowSize: number;
-  arrowStroke: number;
-  padStart: number;
-  padEnd: number;
-  arrowGap: number;
-  borderWidth: number;
-  font: string;
-} {
-  return {
-    height: Math.round(size * 2),
-    arrowSize: Math.round(size * 1.3),
-    arrowStroke: 2,
-    padStart: 5,
-    padEnd: 9,
-    arrowGap: 5,
-    borderWidth: 1,
-    font: `700 ${size}px "Lato", system-ui, sans-serif`,
-  };
-}
-
-/**
- * Draws the "Better" pill, its arrow turned toward the better corner, just above the plot's
- * top-right corner, in the top padding the scatter reserves for it. Drawing it on the canvas is what
- * carries it into every export path with no composer code.
- */
-export const directionMarkerPlugin: Plugin = {
-  id: 'overseerDirectionMarker',
-  afterDraw(chart, _args, pluginOptions): void {
-    const options = pluginOptions as unknown as DirectionMarkerPluginOptions | undefined;
-    const ctx = chart.ctx;
-    const area = chart.chartArea;
-    if (!ctx || !area || !options?.direction) {
-      return;
-    }
-    const metrics = directionMarkerMetrics(options.fontSizePx ?? 11);
-    const label = options.direction.label;
-
-    ctx.save();
-    ctx.font = metrics.font;
-    const width = metrics.padStart + metrics.arrowSize + metrics.arrowGap + ctx.measureText(label).width + metrics.padEnd;
-    const x = area.right - width;
-    const y = area.top - DIRECTION_MARKER_GAP - metrics.height;
-
-    ctx.beginPath();
-    if (typeof ctx.roundRect === 'function') {
-      ctx.roundRect(x, y, width, metrics.height, metrics.height / 2);
-    } else {
-      ctx.rect(x, y, width, metrics.height);
-    }
-    ctx.fillStyle = DIRECTION_MARKER_COLORS.fill;
-    ctx.fill();
-    ctx.strokeStyle = DIRECTION_MARKER_COLORS.border;
-    ctx.lineWidth = metrics.borderWidth;
-    ctx.stroke();
-
-    // The up-right arrow in its own 24-unit box, rotated toward the better corner.
-    ctx.save();
-    ctx.translate(x + metrics.padStart + metrics.arrowSize / 2, y + metrics.height / 2);
-    ctx.rotate((figureDirectionRotation(options.direction) * Math.PI) / 180);
-    ctx.scale(metrics.arrowSize / 24, metrics.arrowSize / 24);
-    ctx.translate(-12, -12);
-    ctx.beginPath();
-    ctx.moveTo(7, 17);
-    ctx.lineTo(17, 7);
-    ctx.moveTo(8, 7);
-    ctx.lineTo(17, 7);
-    ctx.lineTo(17, 16);
-    ctx.strokeStyle = DIRECTION_MARKER_COLORS.text;
-    // The context is scaled, so the stroke is restated in box units.
-    ctx.lineWidth = (metrics.arrowStroke * 24) / metrics.arrowSize;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.stroke();
-    ctx.restore();
-
-    ctx.font = metrics.font;
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = DIRECTION_MARKER_COLORS.text;
-    ctx.fillText(label, x + metrics.padStart + metrics.arrowSize + metrics.arrowGap, y + metrics.height / 2);
-    ctx.restore();
-  },
-};
-
-// ---------------------------------------------------------------------------------------------
 // S1-S3: the scatters
 // ---------------------------------------------------------------------------------------------
 
@@ -1737,8 +1634,12 @@ function isMeasured(entry: ModelComparisonEntry, x: ScatterAxisSpec, y: ScatterA
 function resolveAxis(
   spec: ScatterAxisSpec,
   plotted: readonly ModelComparisonEntry[],
-  axisStyle: { readonly whiskers: boolean; readonly textSizePx: number; readonly gridlines: boolean } =
-    { whiskers: true, textSizePx: 11, gridlines: true },
+  axisStyle: {
+    readonly whiskers: boolean;
+    readonly textSizePx: number;
+    readonly titleSizePx: number;
+    readonly gridlines: boolean;
+  } = { whiskers: true, textSizePx: 11, titleSizePx: 12, gridlines: true },
 ) {
   const values: number[] = [];
   const lows: number[] = [];
@@ -1782,7 +1683,7 @@ function resolveAxis(
       type,
       min,
       max,
-      title: axisTitle(title, spec.better, axisStyle.textSizePx + 1),
+      title: axisTitle(title, spec.better, axisStyle.titleSizePx),
       grid: gridOptions(axisStyle.gridlines),
       border: { color: CHART_INK.baseline },
       afterBuildTicks: (scale: { ticks: { value: number }[] }): void => {
@@ -1894,7 +1795,12 @@ function buildScatter(
     };
   });
 
-  const axisStyle = { whiskers: style.intervals, textSizePx: style.axisTextSizePx, gridlines: style.gridlines };
+  const axisStyle = {
+    whiskers: style.intervals,
+    textSizePx: style.axisTextSizePx,
+    titleSizePx: style.axisTitleSizePx,
+    gridlines: style.gridlines,
+  };
   const xResolved = resolveAxis(xAxis, plotted, axisStyle);
   const yResolved = resolveAxis(yAxis, plotted, axisStyle);
 
@@ -1933,15 +1839,12 @@ function buildScatter(
   };
 
   const highlightedIndex = plotted.findIndex((entry) => entry.key === highlightedKey);
-  const marker = directionMarkerMetrics(style.axisTextSizePx);
 
   const config: ChartConfiguration<'scatter', ErrorBarPoint[]> = {
     type: 'scatter',
     data: { datasets },
     options: {
       ...baseOptions(reducedMotion),
-      // A band of its own above the plot for the direction marker, clear of every tick and plate.
-      layout: { padding: { top: marker.height + DIRECTION_MARKER_GAP + 4 } },
       scales: {
         x: xResolved.scale,
         y: yResolved.scale,
@@ -1998,10 +1901,6 @@ function buildScatter(
               } satisfies DirectLabelPluginOptions,
             }
           : {}),
-        [directionMarkerPlugin.id]: {
-          direction: preferredCorner,
-          fontSizePx: style.axisTextSizePx,
-        } satisfies DirectionMarkerPluginOptions,
       },
     },
   };
@@ -2058,7 +1957,7 @@ function buildScatter(
   const chrome: FigureChrome = {
     title,
     badges,
-    direction: preferredCorner,
+    ...(style.hiddenBadges.includes('direction') ? {} : { direction: preferredCorner }),
     detail: hasCostAxis ? pricingNote(context.pricingBasis) : '',
     key,
     highlight,
@@ -2071,13 +1970,11 @@ function buildScatter(
     chrome,
     preferredCorner,
     config,
-    // The shading goes under everything; a leader line draws over a whisker rather than under it;
-    // the marker sits outside the plot area and goes last.
+    // The shading goes under everything; a leader line draws over a whisker rather than under it.
     plugins: [
       ...(style.dominatedShading ? [dominatedRegionPlugin] : []),
       ...(style.intervals ? [errorBarPlugin] : []),
       ...(annotate ? [directLabelPlugin] : []),
-      directionMarkerPlugin,
     ],
   };
 }
@@ -2244,9 +2141,16 @@ function buildPanel(
     return Math.abs(scale.getPixelForValue(value + errHigh) - scale.getPixelForValue(value));
   };
 
+  // The Better badge says which end is better, so the value-axis title says it only while the
+  // badge is hidden.
+  const directionShown = !style.hiddenBadges.includes('direction');
+  const direction: FigureDirection = orientation === 'vertical'
+    ? { y: better === 'higher' ? 'top' : 'bottom', label: 'Better' }
+    : { x: better === 'higher' ? 'right' : 'left', label: 'Better' };
+
   const categoryScale = {
     type: 'category' as const,
-    title: axisTitle('Model', undefined, style.axisTextSizePx + 1),
+    title: axisTitle('Model', undefined, style.axisTitleSizePx),
     grid: { display: false },
     border: { color: CHART_INK.baseline },
     ticks: {
@@ -2262,7 +2166,7 @@ function buildPanel(
     beginAtZero: true,
     min: 0,
     max: axisMax,
-    title: axisTitle(axisTitleText, better, style.axisTextSizePx + 1),
+    title: axisTitle(axisTitleText, directionShown ? undefined : better, style.axisTitleSizePx),
     grid: gridOptions(style.gridlines),
     border: { color: CHART_INK.baseline },
     // The tick decimals follow Chart.js's own step, read off the first two ticks. The unit is the
@@ -2356,6 +2260,7 @@ function buildPanel(
       ...countBadges(plotted, context),
       ...(costPanel ? [pricingBadge(context.pricingBasis, context.pricedOn)] : []),
     ], style.hiddenBadges),
+    ...(directionShown ? { direction } : {}),
     detail: costPanel ? pricingNote(context.pricingBasis) : '',
     key: [],
     highlight: '',

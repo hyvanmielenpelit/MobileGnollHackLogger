@@ -1,15 +1,21 @@
 import {
   BADGE_CONTROLS,
   BAR_RANGE_CONTROLS,
+  CHROME_RANGE_CONTROLS,
   DEFAULT_FIGURE_STYLE,
   HIDDEN_INTERVALS_NOTE,
+  MAX_TEXT_SIZE_PX,
   SCATTER_RANGE_CONTROLS,
+  badgeControlsFor,
   normalizeFigureStyle
 } from './figure-style';
 
 describe('figure-style', () => {
+  const chromeDefaults = { titleSizePx: 18, badgeTextSizePx: 11, footerTextSizePx: 12, footer: true };
+
   it('defaults to the values the figures were drawn with before any control existed', () => {
     expect(DEFAULT_FIGURE_STYLE.bar).toEqual({
+      ...chromeDefaults,
       orientation: 'auto',
       gapPercent: 28,
       maxBarWidthPx: 24,
@@ -22,11 +28,13 @@ describe('figure-style', () => {
       valueLabels: true,
       valueLabelSizePx: 11,
       axisTextSizePx: 11,
+      axisTitleSizePx: 12,
       singleRunMarker: true,
       gridlines: true,
       hiddenBadges: []
     });
     expect(DEFAULT_FIGURE_STYLE.scatter).toEqual({
+      ...chromeDefaults,
       markRadiusPx: 6,
       intervals: true,
       hiddenIntervalsNote: true,
@@ -35,11 +43,12 @@ describe('figure-style', () => {
       frontierWidthPx: 2,
       labelTextSizePx: 11,
       axisTextSizePx: 11,
+      axisTitleSizePx: 12,
       legendPosition: 'bottom',
       gridlines: true,
       hiddenBadges: []
     });
-    expect(DEFAULT_FIGURE_STYLE.profile).toEqual({ hiddenBadges: [] });
+    expect(DEFAULT_FIGURE_STYLE.profile).toEqual({ ...chromeDefaults, hiddenBadges: [] });
     // 0.8 × 0.9, the two percentages the bars were drawn with.
     expect(1 - DEFAULT_FIGURE_STYLE.bar.gapPercent / 100).toBeCloseTo(0.72, 9);
     expect(HIDDEN_INTERVALS_NOTE).toBe(
@@ -57,6 +66,82 @@ describe('figure-style', () => {
       expect(value).withContext(control.key).toBeGreaterThanOrEqual(control.min);
       expect(value).withContext(control.key).toBeLessThanOrEqual(control.max);
     }
+    for (const control of CHROME_RANGE_CONTROLS) {
+      for (const family of ['bar', 'scatter', 'profile'] as const) {
+        const value = DEFAULT_FIGURE_STYLE[family][control.key];
+        expect(value).withContext(`${family} ${control.key}`).toBeGreaterThanOrEqual(control.min);
+        expect(value).withContext(`${family} ${control.key}`).toBeLessThanOrEqual(control.max);
+      }
+    }
+  });
+
+  it('caps every text size at 48 px', () => {
+    const textKeys = ['valueLabelSizePx', 'axisTextSizePx', 'axisTitleSizePx', 'labelTextSizePx',
+      'titleSizePx', 'badgeTextSizePx', 'footerTextSizePx'];
+    const controls = [...BAR_RANGE_CONTROLS, ...SCATTER_RANGE_CONTROLS, ...CHROME_RANGE_CONTROLS]
+      .filter(control => textKeys.includes(control.key));
+    expect(controls.length).toBe(9);
+    for (const control of controls) {
+      expect(control.max).withContext(control.key).toBe(MAX_TEXT_SIZE_PX);
+      expect(control.min).withContext(control.key).toBe(8);
+    }
+    expect(MAX_TEXT_SIZE_PX).toBe(48);
+
+    const sixty = { titleSizePx: 60, badgeTextSizePx: 60, footerTextSizePx: 60, axisTextSizePx: 60, axisTitleSizePx: 60 };
+    const style = normalizeFigureStyle({
+      bar: { ...sixty, valueLabelSizePx: 60 },
+      scatter: { ...sixty, labelTextSizePx: 60 },
+      profile: { titleSizePx: 60, badgeTextSizePx: 60, footerTextSizePx: 60 }
+    });
+    for (const key of ['titleSizePx', 'badgeTextSizePx', 'footerTextSizePx', 'axisTextSizePx', 'axisTitleSizePx', 'valueLabelSizePx'] as const) {
+      expect(style.bar[key]).withContext(`bar ${key}`).toBe(48);
+    }
+    for (const key of ['titleSizePx', 'badgeTextSizePx', 'footerTextSizePx', 'axisTextSizePx', 'axisTitleSizePx', 'labelTextSizePx'] as const) {
+      expect(style.scatter[key]).withContext(`scatter ${key}`).toBe(48);
+    }
+    for (const key of ['titleSizePx', 'badgeTextSizePx', 'footerTextSizePx'] as const) {
+      expect(style.profile[key]).withContext(`profile ${key}`).toBe(48);
+    }
+  });
+
+  it('keeps the caption sizes and the footer per family', () => {
+    const style = normalizeFigureStyle({
+      bar: { titleSizePx: 24, footer: false },
+      scatter: { badgeTextSizePx: 14 },
+      profile: { footerTextSizePx: 9, footer: 'no' }
+    });
+    expect(style.bar.titleSizePx).toBe(24);
+    expect(style.bar.footer).toBeFalse();
+    expect(style.scatter.titleSizePx).toBe(18);
+    expect(style.scatter.badgeTextSizePx).toBe(14);
+    expect(style.scatter.footer).toBeTrue();
+    expect(style.profile.footerTextSizePx).toBe(9);
+    expect(style.profile.footer).toBeTrue();
+  });
+
+  it('reads a style stored without axis title sizes as the axis value size + 1, clamped', () => {
+    const style = normalizeFigureStyle({ version: 1, bar: { axisTextSizePx: 16 }, scatter: { axisTextSizePx: 48 } });
+    expect(style.bar.axisTitleSizePx).toBe(17);
+    expect(style.scatter.axisTitleSizePx).toBe(48);
+    expect(normalizeFigureStyle({ version: 1, bar: {} }).bar.axisTitleSizePx).toBe(12);
+
+    const stored = normalizeFigureStyle({ bar: { axisTextSizePx: 16, axisTitleSizePx: 10 } });
+    expect(stored.bar.axisTitleSizePx).toBe(10);
+  });
+
+  it('offers the Better badge for bars and trade-offs, first, but not for the profile', () => {
+    expect(badgeControlsFor('bar').map(control => control.kind)).toEqual(['direction', 'models', 'runs', 'questions', 'pricing']);
+    expect(badgeControlsFor('scatter')[0].kind).toBe('direction');
+    expect(badgeControlsFor('bar')[0].hint).toContain('value axis');
+    expect(badgeControlsFor('scatter')[0].hint).toBe('An arrow toward the better corner of the chart.');
+    expect(badgeControlsFor('profile').map(control => control.kind)).toEqual(['models', 'runs', 'questions', 'pricing']);
+
+    const style = normalizeFigureStyle({
+      bar: { hiddenBadges: ['runs', 'direction'] },
+      profile: { hiddenBadges: ['direction'] }
+    });
+    expect(style.bar.hiddenBadges).toEqual(['direction', 'runs']);
+    expect(style.profile.hiddenBadges).toEqual(['direction']);
   });
 
   it('accepts anything without throwing and falls back to the default', () => {
@@ -76,7 +161,7 @@ describe('figure-style', () => {
     expect(style.bar.maxBarWidthPx).toBe(8);
     expect(style.bar.cornerRadiusPx).toBe(4);
     expect(style.bar.outlineWidthPx).toBe(1);
-    expect(style.bar.valueLabelSizePx).toBe(28);
+    expect(style.bar.valueLabelSizePx).toBe(48);
     expect(style.bar.axisTextSizePx).toBe(11);
     expect(style.scatter.markRadiusPx).toBe(3);
     expect(style.scatter.frontierWidthPx).toBe(6);
@@ -158,7 +243,7 @@ describe('figure-style', () => {
   });
 
   it('keeps known badge kinds once each, in control order, and drops the rest', () => {
-    expect(BADGE_CONTROLS.map(control => control.kind)).toEqual(['models', 'runs', 'questions', 'pricing']);
+    expect(BADGE_CONTROLS.map(control => control.kind)).toEqual(['direction', 'models', 'runs', 'questions', 'pricing']);
     const style = normalizeFigureStyle({
       bar: { hiddenBadges: ['pricing', 'models'] },
       scatter: { hiddenBadges: ['runs', 'colour', 'runs', 7, null, 'questions'] },
@@ -180,7 +265,8 @@ describe('figure-style', () => {
     for (const value of [undefined, null, 'profile', [], 42]) {
       expect(normalizeFigureStyle({ profile: value }).profile).withContext(String(value)).toEqual(DEFAULT_FIGURE_STYLE.profile);
     }
-    expect(normalizeFigureStyle({ profile: { hiddenBadges: ['runs'], extra: 1 } }).profile).toEqual({ hiddenBadges: ['runs'] });
+    expect(normalizeFigureStyle({ profile: { hiddenBadges: ['runs'], extra: 1 } }).profile)
+      .toEqual({ ...DEFAULT_FIGURE_STYLE.profile, hiddenBadges: ['runs'] });
   });
 
   it('reads a version-1 style stored before the badge and marker fields existed with them at their defaults', () => {

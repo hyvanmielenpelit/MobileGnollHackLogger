@@ -1,4 +1,26 @@
-import { questionsBadge } from './figure-chrome';
+import { figureDirectionRotation, figureDirectionText, questionsBadge } from './figure-chrome';
+
+describe('figureDirectionRotation and figureDirectionText', () => {
+  it('turns the up-right arrow toward each corner of a trade-off plot', () => {
+    expect(figureDirectionRotation({ x: 'right', y: 'top', label: 'Better' })).toBe(0);
+    expect(figureDirectionRotation({ x: 'right', y: 'bottom', label: 'Better' })).toBe(90);
+    expect(figureDirectionRotation({ x: 'left', y: 'bottom', label: 'Better' })).toBe(180);
+    expect(figureDirectionRotation({ x: 'left', y: 'top', label: 'Better' })).toBe(270);
+  });
+
+  it('turns it straight along one axis for a bar chart', () => {
+    expect(figureDirectionRotation({ y: 'top', label: 'Better' })).toBe(315);
+    expect(figureDirectionRotation({ x: 'right', label: 'Better' })).toBe(45);
+    expect(figureDirectionRotation({ y: 'bottom', label: 'Better' })).toBe(135);
+    expect(figureDirectionRotation({ x: 'left', label: 'Better' })).toBe(225);
+  });
+
+  it('spells out only the sides present', () => {
+    expect(figureDirectionText({ x: 'left', y: 'top', label: 'Better' })).toBe('Better toward the top left');
+    expect(figureDirectionText({ y: 'top', label: 'Better' })).toBe('Better toward the top');
+    expect(figureDirectionText({ x: 'right', label: 'Better' })).toBe('Better toward the right');
+  });
+});
 
 describe('questionsBadge', () => {
   it('names the suite size alone when every plotted entry scored every question', () => {

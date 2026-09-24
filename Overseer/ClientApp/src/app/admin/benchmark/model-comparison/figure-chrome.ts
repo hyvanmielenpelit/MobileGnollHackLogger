@@ -9,7 +9,7 @@
 export type FigureBadgeTone = 'neutral' | 'pricing';
 
 /** Which badge a figure's badge is, so the style can hide it by kind. */
-export type FigureBadgeKind = 'models' | 'runs' | 'questions' | 'pricing';
+export type FigureBadgeKind = 'direction' | 'models' | 'runs' | 'questions' | 'pricing';
 
 export interface FigureBadge {
   readonly text: string;
@@ -24,10 +24,13 @@ export function visibleBadges(badges: readonly FigureBadge[], hidden: readonly F
   return badges.filter((badge) => badge.kind === undefined || !hidden.includes(badge.kind));
 }
 
-/** Which corner of a trade-off plot is better, and the word the marker shows. */
+/**
+ * Where a figure is better, and the word the marker shows. Diagonal on a trade-off plot; one axis
+ * on a bar chart. At least one of `x` and `y` is present.
+ */
 export interface FigureDirection {
-  readonly x: 'left' | 'right';
-  readonly y: 'top' | 'bottom';
+  readonly x?: 'left' | 'right';
+  readonly y?: 'top' | 'bottom';
   readonly label: string;
 }
 
@@ -42,8 +45,8 @@ export interface FigureChrome {
   readonly title: string;
   readonly badges: readonly FigureBadge[];
   /**
-   * The better corner of a two-axis plot. The plot draws the marker itself; the chrome keeps it for
-   * the text summary.
+   * The better direction, drawn as the Better badge at the end of the badge row; absent when hidden
+   * or when the figure has none.
    */
   readonly direction?: FigureDirection;
   /** One short sentence under the badges, or ''. Used only for the pricing basis on cost figures. */
@@ -57,17 +60,22 @@ export interface FigureChrome {
 /** The export's last line: suite on the left, computation time on the right. */
 export interface FigureFooter { readonly suite: string; readonly computedAt: string; }
 
-/** Clockwise rotation, in degrees, that turns the marker's up-right arrow toward the better corner. */
+/** Clockwise rotation, in degrees, that turns the marker's up-right arrow toward the better side. */
 export function figureDirectionRotation(direction: FigureDirection): number {
-  if (direction.y === 'top') {
-    return direction.x === 'right' ? 0 : 270;
+  const { x, y } = direction;
+  if (y === 'top') {
+    return x === 'right' ? 0 : x === 'left' ? 270 : 315;
   }
-  return direction.x === 'right' ? 90 : 180;
+  if (y === 'bottom') {
+    return x === 'right' ? 90 : x === 'left' ? 180 : 135;
+  }
+  return x === 'left' ? 225 : 45;
 }
 
-/** The marker spelled out, e.g. `Better toward the top left`. */
+/** The marker spelled out, e.g. `Better toward the top left` or `Better toward the top`. */
 export function figureDirectionText(direction: FigureDirection): string {
-  return `${direction.label} toward the ${direction.y} ${direction.x}`;
+  const parts = [direction.y, direction.x].filter((part) => part !== undefined);
+  return `${direction.label} toward the ${parts.join(' ')}`;
 }
 
 /**

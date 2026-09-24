@@ -9,8 +9,8 @@
  * 1. **The caveats are composited into the image.** The whole reason the comparison view refuses to
  *    hide what it could not compare is that a chart is more persuasive than a table. A figure
  *    exported as a bare canvas and pasted into a document would drop exactly the notices that stop
- *    it being misread, so the title, badges, detail, key, highlight, every note and the footer are
- *    drawn into the same bitmap as the plot. A scatter's direction marker is drawn by the plot itself.
+ *    it being misread, so the title, badges and the Better badge, detail, key, highlight, every
+ *    note and the footer are drawn into the same bitmap as the plot.
  * 2. **The background is opaque.** Chart.js canvases are transparent; a PNG of one dropped into a
  *    light document renders as dark-on-dark and is unreadable.
  * 3. **An explicit resolution buys sharpness, not more content.** Every explicit size composes in
@@ -35,6 +35,7 @@ import type {
   FigureKeyItem,
   FigureNoteTone
 } from './figure-chrome';
+import { figureDirectionRotation } from './figure-chrome';
 import {
   PREVIEW_MAX_ZOOM,
   PreviewViewRequest,
@@ -268,14 +269,27 @@ export interface FigureExportLayout {
   readonly pixelHeight: number;
 }
 
+/** The composed figure's caption sizes, in layout px. */
+export interface FigureChromeTextSizes {
+  readonly titlePx: number;
+  /** Also sizes the Better badge. */
+  readonly badgePx: number;
+  /** The footer's body text; its `SUITE` eyebrow keeps the 10 : 12 ratio to it. */
+  readonly footerPx: number;
+}
+
+export const DEFAULT_FIGURE_TEXT_SIZES: FigureChromeTextSizes = { titlePx: 18, badgePx: 11, footerPx: 12 };
+
 /** One figure, with every piece of chrome the exported image must carry. */
 export interface FigureExportRequest {
   /** The live chart canvas, or one rendered by {@link renderPlotOffscreen}. Read, never mutated. */
   readonly canvas: HTMLCanvasElement;
   /** Title, badges, direction, detail, key, highlight and notes: everything the card and the export share. */
   readonly chrome: FigureChrome;
-  /** The export's last line: suite on the left, computation time on the right. */
+  /** The export's last line: suite on the left, computation time on the right. An empty one draws nothing. */
   readonly footer: FigureFooter;
+  /** Absent draws at {@link DEFAULT_FIGURE_TEXT_SIZES}. */
+  readonly textSizes?: FigureChromeTextSizes;
   readonly format: FigureExportFormat;
   /** From {@link resolveFigureLayout}. Absent composes at the on-screen size and density. */
   readonly layout?: FigureExportLayout | null;
@@ -295,8 +309,6 @@ export interface FigureExportResult {
 
 /** Layout constants, in CSS pixels before the density transform is applied. */
 const PADDING = 20;
-const TITLE_SIZE = 18;
-const BODY_SIZE = 12;
 const LINE_GAP = 6;
 const RULE_GAP = 12;
 
@@ -306,14 +318,20 @@ const PLOT_GAP = 16;
 /** The narrowest content column a figure is laid out in. */
 const MIN_CONTENT_WIDTH = 360;
 
-/** Badge pill geometry and typography. */
-const BADGE_TEXT_SIZE = 11;
+/** Badge pill geometry; the text size and the pill height come from the request's badge size. */
 const BADGE_RADIUS = 4;
 const BADGE_BORDER_WIDTH = 1;
 const BADGE_PAD_X = 7;
 const BADGE_PAD_Y = 3;
 const BADGE_GAP = 6;
-const BADGE_HEIGHT = BADGE_TEXT_SIZE + BADGE_PAD_Y * 2;
+
+/** The Better badge: padding either side, the arrow-to-label gap and the arrow's stroke floor. */
+const DIRECTION_PAD_START = BADGE_PAD_X - 1;
+const DIRECTION_PAD_END = BADGE_PAD_X + 2;
+const DIRECTION_ARROW_GAP = 5;
+const DIRECTION_ARROW_MIN_STROKE = 2;
+/** The Better badge's border and fill; its ink is {@link FIGURE_TITLE_COLOR}. Match `.mc-direction` on the page card. */
+const DIRECTION_COLORS = { border: 'rgba(224, 186, 109, 0.55)', fill: 'rgba(224, 186, 109, 0.1)' } as const;
 
 /** The detail line under the badge row. */
 const DETAIL_SIZE = 12;
@@ -337,7 +355,6 @@ const NOTE_INDENT = 10;
 
 /** The footer's eyebrow label and the gap it leaves before the suite name and the right column. */
 const FOOTER_LABEL_TEXT = 'SUITE';
-const FOOTER_LABEL_SIZE = 10;
 const FOOTER_LABEL_GAP = 8;
 const FOOTER_LABEL_LETTER_SPACING = 1;
 const FOOTER_MIN_GAP = 16;
@@ -598,11 +615,18 @@ export function composeFigureImage(request: FigureExportRequest): HTMLCanvasElem
   context.textBaseline = 'top';
   let y = PADDING;
 
-  y = drawBlock(context, chrome.titleLines, PADDING, y, TITLE_SIZE, '600', FIGURE_TITLE_COLOR);
+  const sizes = chrome.sizes;
+  y = drawBlock(context, chrome.titleLines, PADDING, y, sizes.titlePx, '600', FIGURE_TITLE_COLOR);
 
-  if (chrome.badgeRows.length > 0) {
+  const badgeRowCount = badgeRowCountOf(chrome);
+  if (badgeRowCount > 0) {
     y += LINE_GAP;
-    y = drawBadgeRows(context, chrome.badgeRows, PADDING, y);
+    drawBadgeRows(context, chrome.badgeRows, PADDING, y, sizes);
+    if (chrome.direction) {
+      // Right-aligned on the first badge row, which it shares the height of.
+      drawDirectionBadge(context, chrome.direction, PADDING + contentWidth - chrome.direction.width, y, sizes);
+    }
+    y += badgeRowCount * sizes.badgeHeight + (badgeRowCount - 1) * BADGE_GAP;
   }
 
   if (chrome.detailLines.length > 0) {
@@ -640,7 +664,7 @@ export function composeFigureImage(request: FigureExportRequest): HTMLCanvasElem
     context.lineTo(width - PADDING, Math.round(y) + 0.5);
     context.stroke();
     y += RULE_GAP / 2;
-    drawFooter(context, chrome.footer, PADDING, y, width - PADDING * 2);
+    drawFooter(context, chrome.footer, PADDING, y, width - PADDING * 2, sizes);
   }
 
   return target;
@@ -896,10 +920,31 @@ interface MeasuredFooter {
   readonly height: number;
 }
 
+/** The Better badge: its arrow's rotation, its word and the pill width it measured at. */
+interface MeasuredDirection {
+  readonly rotation: number;
+  readonly label: string;
+  readonly width: number;
+}
+
+/** The request's caption sizes, resolved into every size the measure and draw paths read. */
+interface ResolvedTextSizes {
+  readonly titlePx: number;
+  readonly badgePx: number;
+  readonly badgeHeight: number;
+  readonly footerPx: number;
+  readonly footerLabelPx: number;
+  readonly footerLineHeight: number;
+}
+
 /** Everything the composition draws around the plot, wrapped to a content column and summed. */
 export interface MeasuredChrome {
+  readonly sizes: ResolvedTextSizes;
   readonly titleLines: string[];
+  /** Narrowed by the Better badge's width, when there is one, so no badge runs under it. */
   readonly badgeRows: readonly MeasuredBadgeRow[];
+  /** Drawn right-aligned on the first badge row, or on a row of its own when there are no badges. */
+  readonly direction: MeasuredDirection | null;
   readonly detailLines: string[];
   readonly keyRows: readonly MeasuredKeyRow[];
   readonly highlightLines: string[];
@@ -924,9 +969,18 @@ export function measureFigureChrome(source: FigureChromeSource, contentWidth: nu
     measure ? wrapText(measure, text, contentWidth, size, weight) : (text ? [text] : []);
 
   const chrome = source.chrome;
-  const titleLines = wrap(chrome.title, TITLE_SIZE, '600');
+  const sizes = resolveTextSizes(source.textSizes ?? DEFAULT_FIGURE_TEXT_SIZES);
+  const titleLines = wrap(chrome.title, sizes.titlePx, '600');
+  const direction = chrome.direction
+    ? {
+        rotation: figureDirectionRotation(chrome.direction),
+        label: chrome.direction.label,
+        width: measure ? directionBadgeWidth(measure, chrome.direction.label, sizes) : 0
+      }
+    : null;
+  const badgeWidth = direction ? contentWidth - direction.width - BADGE_GAP : contentWidth;
   const badgeRows: MeasuredBadgeRow[] = measure
-    ? wrapBadges(measure, chrome.badges, contentWidth)
+    ? wrapBadges(measure, chrome.badges, badgeWidth, sizes.badgePx)
     : (chrome.badges.length > 0 ? [{ badges: chrome.badges.map(badge => ({ badge, width: 0 })) }] : []);
   const detailLines = wrap(chrome.detail, DETAIL_SIZE, '400');
   const keyRows: MeasuredKeyRow[] = measure
@@ -935,11 +989,12 @@ export function measureFigureChrome(source: FigureChromeSource, contentWidth: nu
   const highlightLines = wrap(chrome.highlight, HIGHLIGHT_SIZE, '600');
   const noteBlocks: MeasuredNote[] =
     chrome.notes.map(note => ({ tone: note.tone, lines: wrap(note.text, NOTE_SIZE, '400') }));
-  const footer = measureFooter(measure, source.footer, contentWidth);
+  const footer = measureFooter(measure, source.footer, contentWidth, sizes);
 
-  let headerHeight = blockHeight(titleLines, TITLE_SIZE);
-  if (badgeRows.length > 0) {
-    headerHeight += LINE_GAP + badgeRows.length * BADGE_HEIGHT + (badgeRows.length - 1) * BADGE_GAP;
+  let headerHeight = blockHeight(titleLines, sizes.titlePx);
+  const badgeRowCount = badgeRowCountOf({ badgeRows, direction });
+  if (badgeRowCount > 0) {
+    headerHeight += LINE_GAP + badgeRowCount * sizes.badgeHeight + (badgeRowCount - 1) * BADGE_GAP;
   }
   if (detailLines.length > 0) {
     headerHeight += LINE_GAP + blockHeight(detailLines, DETAIL_SIZE);
@@ -961,16 +1016,44 @@ export function measureFigureChrome(source: FigureChromeSource, contentWidth: nu
     height += RULE_GAP + footer.height;
   }
 
-  return { titleLines, badgeRows, detailLines, keyRows, highlightLines, noteBlocks, footer, height };
+  return { sizes, titleLines, badgeRows, direction, detailLines, keyRows, highlightLines, noteBlocks, footer, height };
+}
+
+function resolveTextSizes(sizes: FigureChromeTextSizes): ResolvedTextSizes {
+  return {
+    titlePx: sizes.titlePx,
+    badgePx: sizes.badgePx,
+    badgeHeight: sizes.badgePx + BADGE_PAD_Y * 2,
+    footerPx: sizes.footerPx,
+    footerLabelPx: Math.round(sizes.footerPx * 10 / 12),
+    footerLineHeight: Math.round(sizes.footerPx * 1.4)
+  };
+}
+
+/** The badge rows, or one row for the Better badge alone when there are no other badges. */
+function badgeRowCountOf(chrome: Pick<MeasuredChrome, 'badgeRows' | 'direction'>): number {
+  return Math.max(chrome.badgeRows.length, chrome.direction ? 1 : 0);
+}
+
+/** The Better badge's arrow side, in layout px. */
+function directionArrowSize(sizes: ResolvedTextSizes): number {
+  return Math.round(sizes.badgePx * 1.3);
+}
+
+function directionBadgeWidth(context: CanvasRenderingContext2D, label: string, sizes: ResolvedTextSizes): number {
+  context.font = fontOf(sizes.badgePx, '700');
+  return DIRECTION_PAD_START + directionArrowSize(sizes) + DIRECTION_ARROW_GAP
+    + context.measureText(label).width + DIRECTION_PAD_END;
 }
 
 /** Wraps badge pills into rows that fit `maxWidth`, greedily, in the order given. */
 function wrapBadges(
   context: CanvasRenderingContext2D,
   badges: readonly FigureBadge[],
-  maxWidth: number
+  maxWidth: number,
+  size: number
 ): MeasuredBadgeRow[] {
-  context.font = fontOf(BADGE_TEXT_SIZE, '400');
+  context.font = fontOf(size, '400');
   const rows: MeasuredBadgeRow[] = [];
   let current: { badge: FigureBadge; width: number }[] = [];
   let rowWidth = 0;
@@ -1030,7 +1113,8 @@ function wrapKeyItems(
 function measureFooter(
   context: CanvasRenderingContext2D | null,
   footer: FigureFooter,
-  contentWidth: number
+  contentWidth: number,
+  sizes: ResolvedTextSizes
 ): MeasuredFooter {
   const suite = (footer.suite ?? '').trim();
   const computedText = footer.computedAt ? `Computed ${footer.computedAt}` : '';
@@ -1038,13 +1122,13 @@ function measureFooter(
     return { labelText: '', suiteText: '', computedText: '', twoLines: false, height: 0 };
   }
   const labelText = suite === '' ? '' : FOOTER_LABEL_TEXT;
-  const lineHeight = Math.round(BODY_SIZE * 1.4);
+  const lineHeight = sizes.footerLineHeight;
   if (!context) {
     return { labelText, suiteText: suite, computedText, twoLines: false, height: lineHeight };
   }
 
-  const labelWidth = labelText === '' ? 0 : letterSpacedWidth(context, labelText, FOOTER_LABEL_SIZE);
-  context.font = fontOf(BODY_SIZE, '400');
+  const labelWidth = labelText === '' ? 0 : letterSpacedWidth(context, labelText, sizes.footerLabelPx);
+  context.font = fontOf(sizes.footerPx, '400');
   const suiteWidth = suite === '' ? 0 : context.measureText(suite).width;
   const computedWidth = computedText === '' ? 0 : context.measureText(computedText).width;
   const gapAfterLabel = labelText !== '' && suite !== '' ? FOOTER_LABEL_GAP : 0;
@@ -1200,16 +1284,17 @@ function drawBadgeRows(
   context: CanvasRenderingContext2D,
   rows: readonly MeasuredBadgeRow[],
   x: number,
-  y: number
+  y: number,
+  sizes: ResolvedTextSizes
 ): number {
   let cursorY = y;
   for (const row of rows) {
     let cursorX = x;
     for (const { badge, width } of row.badges) {
-      drawBadge(context, badge, cursorX, cursorY, width, BADGE_HEIGHT);
+      drawBadge(context, badge, cursorX, cursorY, width, sizes);
       cursorX += width + BADGE_GAP;
     }
-    cursorY += BADGE_HEIGHT + BADGE_GAP;
+    cursorY += sizes.badgeHeight + BADGE_GAP;
   }
   return cursorY - BADGE_GAP;
 }
@@ -1221,18 +1306,72 @@ function drawBadge(
   x: number,
   y: number,
   width: number,
-  height: number
+  sizes: ResolvedTextSizes
 ): void {
   const tone = BADGE_TONE_COLORS[badge.tone];
-  pathRoundedRect(context, x, y, width, height, BADGE_RADIUS);
+  pathRoundedRect(context, x, y, width, sizes.badgeHeight, BADGE_RADIUS);
   context.fillStyle = tone.fill;
   context.fill();
   context.strokeStyle = tone.border;
   context.lineWidth = BADGE_BORDER_WIDTH;
   context.stroke();
-  context.font = fontOf(BADGE_TEXT_SIZE, '400');
+  context.font = fontOf(sizes.badgePx, '400');
   context.fillStyle = tone.text;
   context.fillText(badge.text, x + BADGE_PAD_X, y + BADGE_PAD_Y);
+}
+
+/** The Better badge: a full-radius gold pill holding the arrow, turned toward the better side, and its word. */
+function drawDirectionBadge(
+  context: CanvasRenderingContext2D,
+  direction: MeasuredDirection,
+  x: number,
+  y: number,
+  sizes: ResolvedTextSizes
+): void {
+  const height = sizes.badgeHeight;
+  pathRoundedRect(context, x, y, direction.width, height, height / 2);
+  context.fillStyle = DIRECTION_COLORS.fill;
+  context.fill();
+  context.strokeStyle = DIRECTION_COLORS.border;
+  context.lineWidth = BADGE_BORDER_WIDTH;
+  context.stroke();
+
+  const arrowSize = directionArrowSize(sizes);
+  drawDirectionArrow(
+    context, x + DIRECTION_PAD_START + arrowSize / 2, y + height / 2, arrowSize, direction.rotation, FIGURE_TITLE_COLOR);
+
+  context.font = fontOf(sizes.badgePx, '700');
+  context.fillStyle = FIGURE_TITLE_COLOR;
+  context.fillText(direction.label, x + DIRECTION_PAD_START + arrowSize + DIRECTION_ARROW_GAP, y + BADGE_PAD_Y);
+}
+
+/** The up-right arrow in its own 24-unit box, centred on `(centerX, centerY)` and rotated clockwise by `rotation` degrees. */
+function drawDirectionArrow(
+  context: CanvasRenderingContext2D,
+  centerX: number,
+  centerY: number,
+  size: number,
+  rotation: number,
+  color: string
+): void {
+  context.save();
+  context.translate(centerX, centerY);
+  context.rotate((rotation * Math.PI) / 180);
+  context.scale(size / 24, size / 24);
+  context.translate(-12, -12);
+  context.beginPath();
+  context.moveTo(7, 17);
+  context.lineTo(17, 7);
+  context.moveTo(8, 7);
+  context.lineTo(17, 7);
+  context.lineTo(17, 16);
+  context.strokeStyle = color;
+  // The context is scaled, so the stroke is stated in box units.
+  context.lineWidth = (Math.max(DIRECTION_ARROW_MIN_STROKE, size / 7) * 24) / size;
+  context.lineCap = 'round';
+  context.lineJoin = 'round';
+  context.stroke();
+  context.restore();
 }
 
 /** A rectangular path, rounded where `roundRect` is available and square otherwise. */
@@ -1349,24 +1488,25 @@ function drawFooter(
   footer: MeasuredFooter,
   x: number,
   y: number,
-  contentWidth: number
+  contentWidth: number,
+  sizes: ResolvedTextSizes
 ): number {
   if (footer.height === 0) {
     return y;
   }
-  const lineHeight = Math.round(BODY_SIZE * 1.4);
+  const lineHeight = sizes.footerLineHeight;
   let cursorX = x;
   if (footer.labelText !== '') {
     context.fillStyle = FIGURE_MUTED_COLOR;
-    cursorX += drawLetterSpacedText(context, footer.labelText, cursorX, y, FOOTER_LABEL_SIZE) + FOOTER_LABEL_GAP;
+    cursorX += drawLetterSpacedText(context, footer.labelText, cursorX, y, sizes.footerLabelPx) + FOOTER_LABEL_GAP;
   }
   if (footer.suiteText !== '') {
-    context.font = fontOf(BODY_SIZE, '400');
+    context.font = fontOf(sizes.footerPx, '400');
     context.fillStyle = FIGURE_BODY_COLOR;
     context.fillText(footer.suiteText, cursorX, y);
   }
   if (footer.computedText !== '') {
-    context.font = fontOf(BODY_SIZE, '400');
+    context.font = fontOf(sizes.footerPx, '400');
     context.fillStyle = FIGURE_MUTED_COLOR;
     const computedWidth = context.measureText(footer.computedText).width;
     const computedY = footer.twoLines ? y + lineHeight : y;

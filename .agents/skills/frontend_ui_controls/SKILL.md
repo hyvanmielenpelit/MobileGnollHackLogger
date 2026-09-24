@@ -411,6 +411,32 @@ host holds a file (hosts reset its value so the same file can be picked again), 
 - The chat composer's hidden multi-file attachment input is a different control and does not
   use this component.
 
+### 4b. Info buttons: `app-info-tip`
+
+A hint that would otherwise be a paragraph under a control — what a setting does, why it is
+disabled — goes into `app-info-tip` from `app/shared/info-tip/` when the panel is dense enough
+that the paragraphs would bury the controls.
+
+```html
+<input type="checkbox" id="mc-style-bar-filledBars" aria-describedby="mc-style-bar-filledBars-tip" ...>
+<app-info-tip tipId="mc-style-bar-filledBars-tip" subject="Filled bars">{{ filledBarsHint }}</app-info-tip>
+```
+
+- **The button is `.gh-info-btn`**: a bare 14 px Feather *info* glyph in a **24×24 px** target
+  (WCAG 2.5.8), defined in `styles.scss`. Its name is *About {subject}*, so several tips in one
+  panel are told apart (§4.1). It is not a fifth action-button class: it performs no action and
+  is only ever rendered by `app-info-tip`.
+- **The tooltip is the §4.2 pattern**: `interestfor` + `popover="hint"`, with the
+  `.gh-tooltip-multiline` modifier and explicit anchor names. The component writes all of it and
+  calls `ensureOverlayPolyfills()`; `tipId` must be unique in the document, since it is both the
+  tooltip's `id` and the anchor name.
+- **The control keeps its description.** Its `aria-describedby` points at `tipId`.
+  `aria-describedby` reads hidden content, so a screen-reader user tabbing through the controls
+  still hears every hint without finding the (i) button. This is the control's own attribute,
+  not one added to the tooltip, so §4.2's second rule is not broken.
+- **Short text only.** One or two sentences. Content longer than a multiline tooltip holds, or
+  content with interactive steps, belongs in a dialog.
+
 ---
 
 ## 5. Tabs
@@ -530,6 +556,38 @@ selectSubTab(tab: 'run' | 'history' | 'suites'): void {
   if (tab === 'suites') { this.loadSuites(); }
 }
 ```
+
+### 5b. Settings sections
+
+A long settings panel — the figure preview's Style tab is the reference — is a stack of
+**non-exclusive** native disclosures, not a row of tabs:
+
+```html
+<details class="gh-disclosure gh-disclosure--section" id="mc-style-bar-section-bars"
+         [open]="isOpen('bar', 'bars')" (toggle)="onSectionToggle('bar', 'bars', $event)">
+  <summary>
+    <span class="gh-disclosure-summary-title">Bars</span>
+    <span class="gh-disclosure-summary-value" aria-hidden="true">{{ readout('bar', 'bars') }}</span>
+  </summary>
+  <div class="gh-disclosure-body">...</div>
+</details>
+```
+
+- **It is a section, not a tab (§1).** Nothing is swapped in place, and several sections can be
+  open at once, so a reader can compare one against another. No `name=` exclusive accordion.
+- **The summary holds text only**: the title and a one-line read-out of the section's current
+  values, which `.gh-disclosure--section` shows only while the section is closed. The read-out is
+  `aria-hidden="true"`: the controls announce their own values once the section is open, and a
+  summary name that changes on every drag step is noise. No button, input or link inside a
+  summary — interactive content there is invalid.
+- **Open state is a per-viewer convenience** in `localStorage`, every read and write in
+  `try/catch`, with a default (the first section open) when the store is empty or unavailable.
+  Follow the native `toggle` event rather than the summary's click, so a key press and a bound
+  `open` are tracked too.
+- **A radio group keeps its own `<fieldset>` and `<legend>`** inside the section; the section
+  replaces only the outer bordered grouping box.
+- The open and close animation (`interpolate-size` and `::details-content`) is a progressive
+  enhancement in `styles.scss`, switched off under `prefers-reduced-motion: reduce`.
 
 ---
 
@@ -812,6 +870,15 @@ Diff this against your markup before calling button, tab or table work finished.
 **File pickers**
 - [ ] Every single-file upload is `app-file-picker` (§4a); no bare `<input type="file" class="gh-input">` remains.
 - [ ] Each picker's `inputId` is unique in the document, and the host clears its state on `(cleared)`.
+
+**Info buttons and settings sections**
+- [ ] A hint moved out of a paragraph is an `app-info-tip` (§4b) named *About {subject}*, with a
+      document-unique `tipId`.
+- [ ] The control the hint describes keeps `aria-describedby` pointing at that `tipId`.
+- [ ] A long settings panel is a stack of non-exclusive `.gh-disclosure--section` elements (§5b),
+      each summary holding text only, its read-out `aria-hidden`.
+- [ ] Section open state lives in `localStorage` behind `try/catch`, with a default when absent.
+- [ ] Radio groups inside a section keep their own `<fieldset>` and `<legend>`.
 
 **Tabs**
 - [ ] Every tab in the row has an icon, or none of them does.

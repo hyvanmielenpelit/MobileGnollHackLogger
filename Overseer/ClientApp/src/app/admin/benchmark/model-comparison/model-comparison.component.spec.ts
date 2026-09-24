@@ -15,7 +15,6 @@ import {
   MEAN_TIME_NO_INTERVAL_NOTE,
   P1_STACK_BREAKPOINT_PX,
   directLabelPlugin,
-  directionMarkerPlugin,
   errorBarPlugin
 } from './model-comparison-charts';
 import { DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
@@ -509,10 +508,8 @@ describe('ModelComparisonComponent', () => {
     expect(scatterFigures[1].queryAll(By.css('.mc-badge--pricing')).length).toBeGreaterThan(0);
   });
 
-  it('draws the better corner on each scatter plot, not in its card head', () => {
+  it('ends each scatter and bar card head\'s badge row with the Better badge', () => {
     render(buildDto(comparableSet(3)), 4);
-
-    expect(fixture.debugElement.queryAll(By.css('.mc-direction')).length).toBe(0);
 
     const scatterFigures = fixture.debugElement.queryAll(By.css('.mc-grid .mc-card'));
     expect(scatterFigures.length).toBe(3);
@@ -522,12 +519,46 @@ describe('ModelComparisonComponent', () => {
     expect(label(1)).toContain('Better toward the top left');
     expect(label(2)).toContain('Better toward the bottom left');
 
-    for (const card of component.scatterCards) {
-      expect(card.plugins).withContext(card.id).toContain(directionMarkerPlugin);
-    }
-    for (const figure of scatterFigures) {
+    const panelFigures = fixture.debugElement.queryAll(By.css('.mc-panels .mc-card'));
+    expect(panelFigures.length).toBe(3);
+    for (const figure of [...scatterFigures, ...panelFigures]) {
+      const items = figure.queryAll(By.css('.mc-card-head .mc-meta > li'));
+      const pill = items[items.length - 1].nativeElement as HTMLElement;
+      expect(pill.classList).toContain('mc-direction');
+      expect(figure.queryAll(By.css('.mc-direction')).length).toBe(1);
+      expect(pill.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
       const badgeTexts = figure.queryAll(By.css('.mc-badge')).map(badge => (badge.nativeElement as HTMLElement).textContent!);
       expect(badgeTexts.some(badgeText => badgeText.includes('Better'))).toBeFalse();
+    }
+    const spoken = (figure: DebugElement): string =>
+      (figure.query(By.css('.mc-direction .visually-hidden')).nativeElement as HTMLElement).textContent!.trim();
+    expect(spoken(scatterFigures[2])).toBe('Better toward the bottom left');
+    // Intelligence is better higher: up on vertical bars, right on horizontal ones.
+    expect(spoken(panelFigures[0])).toBe(
+      component.effectiveOrientation === 'vertical' ? 'Better toward the top' : 'Better toward the right');
+    const arrow = scatterFigures[0].query(By.css('.mc-direction-arrow')).nativeElement as SVGElement;
+    expect(arrow.style.rotate).toBe('270deg');
+  });
+
+  it('shows no Better badge where the style hides it, or on the profile', () => {
+    render(buildDto(comparableSet(3)), 4);
+    expect(fixture.debugElement.queryAll(By.css('.mc-direction')).length).toBe(6);
+
+    jasmine.clock().install();
+    try {
+      component.onFigureStyleChange({
+        ...DEFAULT_FIGURE_STYLE,
+        bar: { ...DEFAULT_FIGURE_STYLE.bar, hiddenBadges: ['direction'] },
+        scatter: { ...DEFAULT_FIGURE_STYLE.scatter, hiddenBadges: ['direction'] }
+      });
+      jasmine.clock().tick(150);
+      fixture.detectChanges();
+      expect(fixture.debugElement.queryAll(By.css('.mc-direction')).length).toBe(0);
+      for (const card of [...component.panelCards, ...component.scatterCards]) {
+        expect(card.chrome.direction).withContext(card.id).toBeUndefined();
+      }
+    } finally {
+      jasmine.clock().uninstall();
     }
   });
 
@@ -543,13 +574,15 @@ describe('ModelComparisonComponent', () => {
     expect(fixture.debugElement.queryAll(By.css('.mc-card-side')).length).toBe(0);
   });
 
-  it('draws no direction marker on the panels or the profile', () => {
+  it('draws no Better marker on any plot canvas', () => {
     render(buildDto(comparableSet(3)), 4);
 
-    for (const card of component.panelCards) {
-      expect(card.plugins).withContext(card.id).not.toContain(directionMarkerPlugin);
+    for (const card of component.exportableCards) {
+      expect(card.plugins.map(plugin => plugin.id)).withContext(card.id).not.toContain('overseerDirectionMarker');
+      // The export finds a card's live canvas by this id, which no rebuild changes.
+      expect(fixture.debugElement.queryAll(By.css(`canvas[data-figure-id="${card.id}"]`)).length).withContext(card.id).toBe(1);
     }
-    expect(component.profileCard!.plugins).not.toContain(directionMarkerPlugin);
+    expect(component.profileCard!.chrome.direction).toBeUndefined();
   });
 
   // -------------------------------------------------------------------------------------------
@@ -2218,7 +2251,8 @@ describe('ModelComparisonComponent', () => {
     const has = (selector: string): boolean => fixture.debugElement.query(By.css(selector)) !== null;
     expect(has('#mc-style-bar-heading')).toBeTrue();
     expect(has('#mc-style-scatter-heading')).toBeFalse();
-    expect(textOf('#mc-preview-panel-style')).toContain('Changes apply to the figures on the page and to every export.');
+    expect(textOf('#mc-preview-panel-style')).toContain(
+      'Plot changes apply to the page and every export; caption sizes and the footer, to the preview and exports.');
 
     // Switching figure keeps the tab, and the set follows the figure's kind.
     component.selectPreviewCard(component.scatterCards[0].id);
@@ -2232,7 +2266,7 @@ describe('ModelComparisonComponent', () => {
     expect(has('#mc-style-bar-heading')).toBeFalse();
     expect(has('#mc-style-scatter-heading')).toBeFalse();
     expect(has('#mc-style-profile-heading')).toBeTrue();
-    expect(textOf('.fsp-note')).toContain('The profile plot has no other style controls.');
+    expect(textOf('.fsp-note')).toContain('Chart text follows Text size on the Export tab.');
   });
 
   it('stores a style change at once, persists it, and rebuilds the figures after the debounce', () => {
@@ -3169,6 +3203,31 @@ describe('ModelComparisonComponent', () => {
     const chromeText = chrome.notes.map(note => note.text).join(' ');
     expect(chromeText).not.toContain('condition');
     expect(chromeText).not.toContain('entries charted');
+  });
+
+  it('composes each figure at its own family\'s caption sizes, and empties the footer where it is hidden', () => {
+    render(buildDto(comparableSet(3)), 4);
+    const exportChrome = (card: ComparisonFigureCard) => (component as unknown as {
+      exportChrome(card: ComparisonFigureCard): { footer: FigureFooter; textSizes?: { titlePx: number; badgePx: number; footerPx: number } };
+    }).exportChrome(card);
+
+    expect(exportChrome(component.panelCards[0]).textSizes).toEqual({ titlePx: 18, badgePx: 11, footerPx: 12 });
+
+    component.figureStyle = {
+      bar: { ...DEFAULT_FIGURE_STYLE.bar, titleSizePx: 30, badgeTextSizePx: 14, footerTextSizePx: 16 },
+      scatter: { ...DEFAULT_FIGURE_STYLE.scatter, footer: false },
+      profile: { ...DEFAULT_FIGURE_STYLE.profile, titleSizePx: 22 }
+    };
+
+    const bar = exportChrome(component.panelCards[1]);
+    expect(bar.textSizes).toEqual({ titlePx: 30, badgePx: 14, footerPx: 16 });
+    expect(bar.footer.suite).toBe('GnollHack Player Assistance Benchmark Suite');
+
+    const scatter = exportChrome(component.scatterCards[0]);
+    expect(scatter.textSizes).toEqual({ titlePx: 18, badgePx: 11, footerPx: 12 });
+    expect(scatter.footer).toEqual({ suite: '', computedAt: '' });
+
+    expect(exportChrome(component.profileCard!).textSizes!.titlePx).toBe(22);
   });
 
   it('writes one image and no archive for a single figure from the preview', async () => {

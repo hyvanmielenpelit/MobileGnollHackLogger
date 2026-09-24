@@ -504,6 +504,29 @@
   }
 }
 
+/* The Better badge, last on the badge row and pushed to its right end; on a narrow card it wraps
+   onto a line of its own, still right-aligned. The export composer draws the same pill
+   (`figure-export.ts`). */
+.mc-direction {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 6px;
+  border: 1px solid rgba(224, 186, 109, 0.55);
+  border-radius: 999px;
+  background: rgba(224, 186, 109, 0.1);
+  color: #e0ba6d;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.mc-direction-arrow {
+  flex: none;
+}
+
 .mc-card-detail {
   margin: 0;
   font-size: 12px;
@@ -1539,7 +1562,7 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   gap: 16px;
   padding: 16px 20px;

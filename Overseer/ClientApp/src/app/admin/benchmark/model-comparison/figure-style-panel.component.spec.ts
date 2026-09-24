@@ -1,6 +1,10 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { FigureStylePanelComponent, FigureStylePanelKind } from './figure-style-panel.component';
+import {
+  FIGURE_STYLE_PANEL_OPEN_KEY,
+  FigureStylePanelComponent,
+  FigureStylePanelKind
+} from './figure-style-panel.component';
 import { DEFAULT_FIGURE_STYLE, FigureStyle, HIDDEN_INTERVALS_NOTE } from './figure-style';
 import { FRONTIER_UNCERTAINTY_NOTE, MEAN_TIME_NO_INTERVAL_NOTE } from './model-comparison-charts';
 
@@ -48,41 +52,73 @@ describe('FigureStylePanelComponent', () => {
     return host().querySelector(`#${id}`)?.textContent ?? '';
   }
 
-  beforeEach(async () => {
-    await TestBed.configureTestingModule({ imports: [FigureStylePanelComponent] }).compileComponents();
+  function create(): void {
     fixture = TestBed.createComponent(FigureStylePanelComponent);
     emitted = [];
     fixture.componentInstance.figureStyleChange.subscribe(style => emitted.push(style));
+  }
+
+  beforeEach(async () => {
+    localStorage.removeItem(FIGURE_STYLE_PANEL_OPEN_KEY);
+    await TestBed.configureTestingModule({ imports: [FigureStylePanelComponent] }).compileComponents();
+    create();
   });
+
+  afterEach(() => {
+    localStorage.removeItem(FIGURE_STYLE_PANEL_OPEN_KEY);
+  });
+
+  /** The section titles, in the order the panel stacks them. */
+  function sectionTitles(): string[] {
+    return Array.from(host().querySelectorAll('details.gh-disclosure--section > summary .gh-disclosure-summary-title'))
+      .map(title => title.textContent!.trim());
+  }
+
+  function section(id: string): HTMLDetailsElement {
+    const element = host().querySelector<HTMLDetailsElement>(`#${id}`);
+    expect(element).withContext(id).not.toBeNull();
+    return element!;
+  }
+
+  /** Opens or closes a section the way a click does: the property flips, then 	oggle fires. */
+  function toggleSection(id: string): void {
+    const details = section(id);
+    details.open = !details.open;
+    details.dispatchEvent(new Event('toggle'));
+    fixture.detectChanges();
+  }
 
   it('renders the bar set for a bar figure and not the trade-off set', () => {
     render('bar');
     expect(host().querySelector('#mc-style-bar-heading')?.textContent).toContain('Bar charts — Intelligence, Speed and Cost');
     expect(host().querySelector('#mc-style-scatter-heading')).toBeNull();
-    const legends = Array.from(host().querySelectorAll('fieldset.gh-fieldset > legend')).map(l => l.textContent!.trim());
-    expect(legends).toEqual(['Bars', 'Uncertainty', 'Text', 'Layout', 'Badges']);
+    expect(sectionTitles()).toEqual(['Heading and badges', 'Bars', 'Values and axes', 'Uncertainty', 'Footer', 'Layout']);
   });
 
   it('renders the trade-off set for a scatter and not the bar set', () => {
     render('scatter');
     expect(host().querySelector('#mc-style-scatter-heading')?.textContent).toContain('Trade-off charts — all three');
     expect(host().querySelector('#mc-style-bar-heading')).toBeNull();
-    const legends = Array.from(host().querySelectorAll('fieldset.gh-fieldset > legend')).map(l => l.textContent!.trim());
-    expect(legends).toEqual(['Marks', 'Uncertainty and frontier', 'Labels', 'Text', 'Layout', 'Badges']);
+    expect(sectionTitles()).toEqual(['Heading and badges', 'Marks and frontier', 'Labels and legend', 'Axes', 'Uncertainty', 'Footer']);
   });
 
-  it('renders the badge checkboxes, the note and a reset button for the profile', () => {
+  it('renders the caption sections, the note and a reset button for the profile', () => {
     render('profile');
     expect(host().querySelector('#mc-style-profile-heading')?.textContent).toContain('Profile plot');
     const inputs = Array.from(host().querySelectorAll<HTMLInputElement>('input'));
+    expect(sectionTitles()).toEqual(['Heading and badges', 'Footer']);
     expect(inputs.map(input => input.id)).toEqual([
+      'mc-style-profile-titleSizePx',
+      'mc-style-profile-badgeTextSizePx',
       'mc-style-profile-badge-models',
       'mc-style-profile-badge-runs',
       'mc-style-profile-badge-questions',
-      'mc-style-profile-badge-pricing'
+      'mc-style-profile-badge-pricing',
+      'mc-style-profile-footer',
+      'mc-style-profile-footerTextSizePx'
     ]);
-    expect(inputs.every(input => input.type === 'checkbox' && input.checked)).toBeTrue();
-    expect(host().textContent).toContain('The profile plot has no other style controls. Text size on the Export tab applies to it.');
+    expect(inputs.filter(input => input.type === 'checkbox').every(input => input.checked)).toBeTrue();
+    expect(host().querySelector('.fsp-note')?.textContent?.trim()).toBe('Chart text follows Text size on the Export tab.');
     const reset = host().querySelector('#mc-style-profile-reset') as HTMLButtonElement;
     expect(reset.textContent!.trim()).toBe('Reset profile style');
   });
@@ -99,8 +135,8 @@ describe('FigureStylePanelComponent', () => {
     acceptLast();
     expect(control('mc-style-bar-singleRunMarker').checked).toBeFalse();
     const hint = hintOf(control('mc-style-bar-filledBars'));
-    expect(hint).toContain('With the n = 1 marker off, a filled single-run bar looks like any other');
-    expect(hint).not.toContain('marks a single run either way');
+    expect(hint).toBe('Single-run bars are outlined unless this is on; multi-run bars are always filled. '
+      + 'With the n = 1 marker off, only the runs badge shows how many runs each bar has.');
 
     fixture.componentInstance.resetBar();
     expect(emitted[emitted.length - 1].bar.singleRunMarker).toBeTrue();
@@ -138,7 +174,7 @@ describe('FigureStylePanelComponent', () => {
 
   it('ties the pricing badge checkbox to its hint', () => {
     render('bar');
-    expect(hintOf(control('mc-style-bar-badge-pricing'))).toBe('Only figures with a cost axis carry it.');
+    expect(hintOf(control('mc-style-bar-badge-pricing')).trim()).toBe('Only on figures with a cost axis.');
     expect(control('mc-style-bar-badge-models').getAttribute('aria-describedby')).toBeNull();
   });
 
@@ -146,7 +182,7 @@ describe('FigureStylePanelComponent', () => {
     const changed: FigureStyle = {
       bar: { ...DEFAULT_FIGURE_STYLE.bar, hiddenBadges: ['runs'] },
       scatter: { ...DEFAULT_FIGURE_STYLE.scatter, hiddenBadges: ['models'] },
-      profile: { hiddenBadges: ['questions', 'pricing'] }
+      profile: { ...DEFAULT_FIGURE_STYLE.profile, hiddenBadges: ['questions', 'pricing'] }
     };
     render('profile', changed);
     (host().querySelector('#mc-style-profile-reset') as HTMLButtonElement).click();
@@ -186,7 +222,7 @@ describe('FigureStylePanelComponent', () => {
     render('bar');
     const filled = control('mc-style-bar-filledBars');
     expect(filled.checked).toBeFalse();
-    expect(hintOf(filled)).toContain('n = 1');
+    expect(hintOf(filled).trim()).toBe('Single-run bars are outlined unless this is on; multi-run bars are always filled.');
 
     setChecked(filled, true);
     expect(emitted[0].bar).toEqual({ ...DEFAULT_FIGURE_STYLE.bar, filledBars: true });
@@ -316,5 +352,151 @@ describe('FigureStylePanelComponent', () => {
       const ids = Array.from(host().querySelectorAll('[id]')).map(element => element.id);
       expect(new Set(ids).size).withContext(kind).toBe(ids.length);
     }
+  });
+  it('opens the first section of each family by default and leaves the rest closed', () => {
+    for (const kind of ['bar', 'scatter', 'profile'] as const) {
+      render(kind);
+      const sections = Array.from(host().querySelectorAll<HTMLDetailsElement>('details.gh-disclosure--section'));
+      expect(sections[0].id).withContext(kind).toBe(`mc-style-${kind}-section-heading`);
+      expect(sections.map(details => details.open)).withContext(kind)
+        .toEqual(sections.map((_details, index) => index === 0));
+    }
+  });
+
+  it('keeps several sections open at once, and remembers them in local storage', () => {
+    render('bar');
+    toggleSection('mc-style-bar-section-bars');
+    toggleSection('mc-style-bar-section-footer');
+    expect(section('mc-style-bar-section-heading').open).toBeTrue();
+    expect(section('mc-style-bar-section-bars').open).toBeTrue();
+    expect(section('mc-style-bar-section-footer').open).toBeTrue();
+
+    toggleSection('mc-style-bar-section-heading');
+    const stored = JSON.parse(localStorage.getItem(FIGURE_STYLE_PANEL_OPEN_KEY)!);
+    expect(stored.bar).toEqual(['bars', 'footer']);
+    expect(stored.scatter).toEqual(['heading']);
+
+    fixture.destroy();
+    create();
+    render('bar');
+    expect(section('mc-style-bar-section-heading').open).toBeFalse();
+    expect(section('mc-style-bar-section-bars').open).toBeTrue();
+    expect(section('mc-style-bar-section-footer').open).toBeTrue();
+    render('scatter');
+    expect(section('mc-style-scatter-section-heading').open).toBeTrue();
+  });
+
+  it('falls back to the default sections, silently, when storage throws', () => {
+    fixture.destroy();
+    spyOn(Storage.prototype, 'getItem').and.throwError('blocked');
+    spyOn(Storage.prototype, 'setItem').and.throwError('blocked');
+    expect(() => create()).not.toThrow();
+    render('bar');
+    expect(section('mc-style-bar-section-heading').open).toBeTrue();
+    expect(section('mc-style-bar-section-bars').open).toBeFalse();
+    expect(() => toggleSection('mc-style-bar-section-bars')).not.toThrow();
+    expect(section('mc-style-bar-section-bars').open).toBeTrue();
+  });
+
+  it('ignores a malformed stored value', () => {
+    fixture.destroy();
+    localStorage.setItem(FIGURE_STYLE_PANEL_OPEN_KEY, JSON.stringify({ bar: ['layout', 'nonsense', 3], scatter: 'all' }));
+    create();
+    render('bar');
+    expect(section('mc-style-bar-section-layout').open).toBeTrue();
+    expect(section('mc-style-bar-section-heading').open).toBeFalse();
+    render('scatter');
+    expect(section('mc-style-scatter-section-heading').open).toBeTrue();
+  });
+
+  it('expands and collapses every section of the shown family', () => {
+    render('scatter');
+    (host().querySelector('#mc-style-scatter-expand') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    const sections = (): HTMLDetailsElement[] =>
+      Array.from(host().querySelectorAll<HTMLDetailsElement>('details.gh-disclosure--section'));
+    expect(sections().every(details => details.open)).toBeTrue();
+    expect(JSON.parse(localStorage.getItem(FIGURE_STYLE_PANEL_OPEN_KEY)!).scatter.length).toBe(6);
+
+    (host().querySelector('#mc-style-scatter-collapse') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(sections().some(details => details.open)).toBeFalse();
+    expect(JSON.parse(localStorage.getItem(FIGURE_STYLE_PANEL_OPEN_KEY)!).bar).toEqual(['heading']);
+  });
+
+  it('summarizes each section in a read-out hidden from assistive technology', () => {
+    render('bar');
+    const readout = (name: string): HTMLElement =>
+      host().querySelector(`#mc-style-bar-section-${name} > summary .gh-disclosure-summary-value`) as HTMLElement;
+    expect(readout('heading').getAttribute('aria-hidden')).toBe('true');
+    expect(readout('heading').textContent!.trim()).toBe('18 px · badges 11 px · Better, models, runs, questions, pricing');
+    expect(readout('values').textContent!.trim()).toBe('values 11 px · axis 11/12 px · n = 1');
+    expect(readout('uncertainty').textContent!.trim()).toBe('shown · Speed note');
+    expect(readout('footer').textContent!.trim()).toBe('shown · 12 px');
+    expect(readout('layout').textContent!.trim()).toBe('automatic · gridlines');
+    for (const summary of Array.from(host().querySelectorAll('details.gh-disclosure--section > summary'))) {
+      expect(summary.querySelector('button, input, a')).toBeNull();
+    }
+  });
+
+  it('puts every hint into an info tip the control is described by, and no hint paragraph remains', () => {
+    for (const kind of ['bar', 'scatter', 'profile'] as const) {
+      render(kind);
+      expect(host().querySelectorAll('.gh-fieldset-hint').length).withContext(kind).toBe(0);
+      const described = Array.from(host().querySelectorAll('[aria-describedby]'));
+      expect(described.length).withContext(kind).toBeGreaterThan(0);
+      for (const element of described) {
+        const id = element.getAttribute('aria-describedby')!;
+        const tip = host().querySelector(`#${id}`);
+        expect(tip?.getAttribute('popover')).withContext(`${kind} ${id}`).toBe('hint');
+        expect(tip?.closest('app-info-tip')).withContext(`${kind} ${id}`).not.toBeNull();
+        expect(id.endsWith('-tip')).withContext(`${kind} ${id}`).toBeTrue();
+      }
+      for (const button of Array.from(host().querySelectorAll('app-info-tip button'))) {
+        expect(button.getAttribute('aria-label')).withContext(kind).toMatch(/^About /);
+      }
+    }
+  });
+
+  it('offers the Better badge for bars and trade-offs, with its own tip, but not for the profile', () => {
+    render('bar');
+    const bar = control('mc-style-bar-badge-direction');
+    expect(bar.checked).toBeTrue();
+    expect(hintOf(bar)).toContain('toward the better end of the value axis');
+    setChecked(bar, false);
+    expect(emitted[0].bar.hiddenBadges).toEqual(['direction']);
+    expect(emitted[0].scatter.hiddenBadges).toEqual([]);
+
+    render('scatter');
+    expect(hintOf(control('mc-style-scatter-badge-direction')).trim()).toBe('An arrow toward the better corner of the chart.');
+
+    render('profile');
+    expect(host().querySelector('#mc-style-profile-badge-direction')).toBeNull();
+  });
+
+  it('sizes the caption text of one family, up to 48 px', () => {
+    render('scatter');
+    const heading = control('mc-style-scatter-titleSizePx');
+    expect(heading.max).toBe('48');
+    expect(hintOf(heading).trim()).toBe('Preview and exports only.');
+    setRange(heading, 30);
+    expect(emitted[0].scatter.titleSizePx).toBe(30);
+    expect(emitted[0].bar).toBe(DEFAULT_FIGURE_STYLE.bar);
+
+    setRange(control('mc-style-scatter-axisTitleSizePx'), 20);
+    expect(emitted[1].scatter.axisTitleSizePx).toBe(20);
+    expect(control('mc-style-scatter-labelTextSizePx').max).toBe('48');
+  });
+
+  it('hides the footer and disables its size, saying why', () => {
+    render('bar');
+    const size = control('mc-style-bar-footerTextSizePx');
+    expect(size.disabled).toBeFalse();
+    setChecked(control('mc-style-bar-footer'), false);
+    expect(emitted[0].bar.footer).toBeFalse();
+    acceptLast();
+    expect(control('mc-style-bar-footerTextSizePx').disabled).toBeTrue();
+    expect(hintOf(control('mc-style-bar-footerTextSizePx'))).toContain('Available while the footer is shown.');
+    expect(host().querySelector('#mc-style-bar-section-footer .gh-disclosure-summary-value')?.textContent?.trim()).toBe('hidden');
   });
 });

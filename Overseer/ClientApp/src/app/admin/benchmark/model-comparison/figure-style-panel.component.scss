@@ -8,6 +8,14 @@
   gap: 12px;
 }
 
+.fsp-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
 .fsp-heading {
   margin: 0;
   font-size: 14px;
@@ -15,38 +23,34 @@
   color: var(--primary-color, #d4af37);
 }
 
-.fsp-group {
+.fsp-head-actions {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  gap: 6px;
 }
 
-.fsp-indent {
-  margin-left: 30px;
+.fsp-toggle-all {
+  min-height: 28px;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.fsp-section-stack {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
+}
+
+.fsp-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 2px;
 }
 
 .fsp-range {
   display: flex;
   flex-direction: column;
   gap: 4px;
-
-  > label {
-    font-size: 13px;
-  }
-
-  .gh-fieldset-hint {
-    font-size: 12px;
-  }
-}
-
-.fsp-range-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
 
   input[type="range"] {
     width: 100%;
@@ -60,18 +64,100 @@
     }
 
     &:disabled {
-      opacity: 0.45;
       cursor: not-allowed;
     }
   }
 }
 
+/* Label, tip and value on one line; the value, and a No limit checkbox before it, at the end. */
+.fsp-range-head {
+  display: flex;
+  align-items: center;
+  gap: 2px 4px;
+  min-height: 24px;
+
+  > label {
+    font-size: 13px;
+  }
+
+  .fsp-inline-check {
+    margin-inline-start: auto;
+    gap: 6px;
+    font-size: 12px;
+  }
+}
+
 .fsp-range-value {
-  min-width: 5.5em;
+  margin-inline-start: auto;
+  min-width: 4.5em;
   text-align: right;
   font-variant-numeric: tabular-nums;
   font-size: 13px;
   color: #d4d4d8;
+
+  .fsp-inline-check + & {
+    margin-inline-start: 8px;
+  }
+}
+
+/* One checkbox and its tip. */
+.fsp-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+
+  .checkbox-label {
+    font-size: 13px;
+  }
+}
+
+.fsp-range-head,
+.fsp-check,
+.fsp-show-grid {
+  input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+/* A dependent option under its parent checkbox. */
+.fsp-indent {
+  margin-inline-start: 26px;
+}
+
+.fsp-disabled {
+  opacity: 0.55;
+
+  input {
+    cursor: not-allowed;
+  }
+}
+
+.fsp-show {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fsp-show-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fsp-subheading {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #a1a1aa;
+}
+
+.fsp-show-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
 }
 
 .fsp-choice {
@@ -84,6 +170,9 @@
   min-width: 0;
 
   > legend {
+    display: flex;
+    align-items: center;
+    gap: 4px;
     width: 100%;
     margin-bottom: 4px;
     padding: 0;
@@ -99,12 +188,13 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  font-size: 13px;
   cursor: pointer;
   user-select: none;
 
   input[type="radio"] {
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     margin: 0;
     accent-color: var(--primary-color, #d4af37);
 
@@ -117,16 +207,22 @@
 
 .checkbox-label input[type="checkbox"]:disabled {
   cursor: not-allowed;
-  opacity: 0.45;
 }
 
+/* Stays reachable at the bottom of a long, expanded panel, over the dialog's own ground. */
 .fsp-actions {
+  position: sticky;
+  bottom: 0;
   display: flex;
   justify-content: flex-end;
+  padding: 10px 0 2px;
+  border-top: 1px solid var(--border-glass);
+  background: rgb(20, 20, 20);
 }
 
 .fsp-note {
   margin: 0;
+  font-size: 13px;
   color: #aaa;
   line-height: 1.45;
 }

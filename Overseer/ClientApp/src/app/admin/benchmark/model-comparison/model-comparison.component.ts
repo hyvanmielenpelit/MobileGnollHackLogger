@@ -23,7 +23,16 @@ import { BaseChartDirective } from 'ng2-charts';
 import type { ChartConfiguration, ChartType, Plugin } from 'chart.js';
 
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
-import { FigureChrome, FigureFooter, FigureNote, figureSummary, formatComputedAt } from './figure-chrome';
+import {
+  FigureChrome,
+  FigureDirection,
+  FigureFooter,
+  FigureNote,
+  figureDirectionRotation,
+  figureDirectionText,
+  figureSummary,
+  formatComputedAt
+} from './figure-chrome';
 import { DEFAULT_FIGURE_STYLE, FigureStyle, normalizeFigureStyle } from './figure-style';
 import { FigureStylePanelComponent, FigureStylePanelKind } from './figure-style-panel.component';
 import { exactFilter, TableState } from '../../../shared/data-table/table-state';
@@ -1711,12 +1720,27 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     }
   }
 
-  /** One card's chrome: everything the exported image carries besides the plot itself. */
+  /**
+   * One card's chrome: everything the exported image carries besides the plot itself, at its
+   * family's caption sizes, with the footer emptied while the family hides it.
+   */
   private exportChrome(card: ComparisonFigureCard): FigureExportChrome {
+    const style = this.figureStyle[this.familyOf(card)];
     return {
       chrome: { ...card.chrome, notes: [...card.chrome.notes, ...this.setFigureNotes] },
-      footer: this.exportFooter()
+      footer: style.footer ? this.exportFooter() : { suite: '', computedAt: '' },
+      textSizes: {
+        titlePx: style.titleSizePx,
+        badgePx: style.badgeTextSizePx,
+        footerPx: style.footerTextSizePx
+      }
     };
+  }
+
+  /** Which style family a card draws from: the bar panels, the trade-off scatters or the profile. */
+  private familyOf(card: ComparisonFigureCard | null | undefined): FigureStylePanelKind {
+    const type = card?.type;
+    return type === 'bar' ? 'bar' : type === 'scatter' ? 'scatter' : 'profile';
   }
 
   /** The live canvas's CSS box, which the on-screen layout is measured against. */
@@ -1831,10 +1855,13 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return parts.join(' ');
   }
 
-  /** The canvas belonging to one card, located by the aria-label the card gave it. */
+  /**
+   * The canvas belonging to one card, located by the card id the template writes on it. Not by its
+   * aria-label: that text follows the chrome, which a rebuild can change before the view catches up.
+   */
   private canvasFor(card: ComparisonFigureCard): HTMLCanvasElement | null {
     const directive = this.chartDirectives?.find(
-      candidate => this.canvasOf(candidate)?.getAttribute('aria-label') === card.ariaLabel
+      candidate => this.canvasOf(candidate)?.getAttribute('data-figure-id') === card.id
     );
     return directive ? this.canvasOf(directive) : null;
   }
@@ -1963,8 +1990,17 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /** The Style tab's control set for the previewed figure. */
   get previewStyleKind(): FigureStylePanelKind {
-    const type = this.previewCard?.type;
-    return type === 'bar' ? 'bar' : type === 'scatter' ? 'scatter' : 'profile';
+    return this.familyOf(this.previewCard);
+  }
+
+  /** The card's Better badge arrow, turned toward the better side. */
+  directionRotation(direction: FigureDirection): number {
+    return figureDirectionRotation(direction);
+  }
+
+  /** The card's Better badge spelled out for assistive technology. */
+  directionText(direction: FigureDirection): string {
+    return figureDirectionText(direction);
   }
 
   /** The stage is a `role="img"`, so it carries the card's own summary rather than a bare noun. */

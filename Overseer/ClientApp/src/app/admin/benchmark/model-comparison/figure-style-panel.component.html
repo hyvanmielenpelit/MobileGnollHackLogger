@@ -1,140 +1,230 @@
-<!-- One range row: a visible label, the range, its value beside it and an optional hint. The
+<!-- One range row: the label, an optional tip and the value on one line, the slider below. The
      `<output>` is hidden from assistive technology: the range already announces its value text,
      and a live output would speak on every step of a drag. -->
 <ng-template #range let-family="family" let-control="control">
-  <div class="fsp-range">
-    <label [for]="controlId(family, control.key)">{{ control.label }}</label>
-    <div class="fsp-range-row">
-      <input type="range" [id]="controlId(family, control.key)"
-             [min]="control.min" [max]="control.max" [step]="control.step"
-             [value]="rangeValue(family, control.key)"
-             [disabled]="rangeDisabled(family, control.key)"
-             [attr.aria-valuetext]="valueText(family, control)"
-             [attr.aria-describedby]="control.hint ? controlId(family, control.key) + '-hint' : null"
-             (input)="onRange(family, control, $event)">
+  <div class="fsp-range" [class.fsp-disabled]="rangeDisabled(family, control.key)">
+    <div class="fsp-range-head">
+      <label [for]="controlId(family, control.key)">{{ control.label }}</label>
+      @if (control.hint) {
+        <app-info-tip [tipId]="tipId(family, control.key)" [subject]="control.label">{{ rangeHint(family, control) }}</app-info-tip>
+      }
+      @if (family === 'bar' && control.key === 'maxBarWidthPx') {
+        <label class="checkbox-label fsp-inline-check">
+          <input type="checkbox" id="mc-style-bar-noBarWidthLimit"
+                 [checked]="bar.maxBarWidthPx === null"
+                 (change)="onNoBarWidthLimit(checkedOf($event))">
+          No limit
+        </label>
+      }
       <output class="fsp-range-value" aria-hidden="true"
               [attr.for]="controlId(family, control.key)">{{ valueLabel(family, control) }}</output>
     </div>
-    @if (control.hint) {
-      <p class="gh-fieldset-hint" [id]="controlId(family, control.key) + '-hint'">{{ control.hint }}</p>
-    }
+    <input type="range" [id]="controlId(family, control.key)"
+           [min]="control.min" [max]="control.max" [step]="control.step"
+           [value]="rangeValue(family, control.key)"
+           [disabled]="rangeDisabled(family, control.key)"
+           [attr.aria-valuetext]="valueText(family, control)"
+           [attr.aria-describedby]="control.hint ? tipId(family, control.key) : null"
+           (input)="onRange(family, control, $event)">
   </div>
 </ng-template>
 
-<!-- One family's badge checkboxes: every badge kind, each shown or hidden on its own. -->
-<ng-template #badges let-family="family">
-  <fieldset class="gh-fieldset fsp-group">
-    <legend>Badges</legend>
-    @for (c of badgeControls; track c.kind) {
-      <label class="checkbox-label">
-        <input type="checkbox" [id]="badgeControlId(family, c.kind)"
-               [checked]="badgeShown(family, c.kind)"
-               [attr.aria-describedby]="c.hint ? badgeControlId(family, c.kind) + '-hint' : null"
-               (change)="setBadgeShown(family, c.kind, checkedOf($event))">
-        Show {{ c.label }}
-      </label>
-      @if (c.hint) {
-        <p class="gh-fieldset-hint" [id]="badgeControlId(family, c.kind) + '-hint'">{{ c.hint }}</p>
+<!-- One collapsible section. The summary holds text only: the title and a read-out of the values,
+     which is hidden from assistive technology because the controls announce their own values. -->
+<ng-template #sectionSummary let-family="family" let-section="section">
+  <summary>
+    <span class="gh-disclosure-summary-title">{{ section.title }}</span>
+    <span class="gh-disclosure-summary-value" aria-hidden="true">{{ readout(family, section.name) }}</span>
+  </summary>
+</ng-template>
+
+<!-- Heading and badges: the two caption sizes, then every badge the family offers. -->
+<ng-template #headingSection let-family="family">
+  <details class="gh-disclosure gh-disclosure--section" [id]="sectionId(family, 'heading')"
+           [open]="isOpen(family, 'heading')" (toggle)="onSectionToggle(family, 'heading', $event)">
+    <ng-container *ngTemplateOutlet="sectionSummary; context: { family: family, section: section(family, 'heading') }"></ng-container>
+    <div class="gh-disclosure-body fsp-section-body">
+      @for (control of headingControls; track control.key) {
+        <ng-container *ngTemplateOutlet="range; context: { family: family, control: control }"></ng-container>
       }
-    }
-    <p class="gh-fieldset-hint">A hidden badge is left out of the figure on the page, in the preview and in every export.</p>
-  </fieldset>
+      <div class="fsp-show" role="group" [attr.aria-labelledby]="controlId(family, 'badges-label')"
+           [attr.aria-describedby]="tipId(family, 'badges')">
+        <div class="fsp-show-head">
+          <span class="fsp-subheading" [id]="controlId(family, 'badges-label')">Show</span>
+          <app-info-tip [tipId]="tipId(family, 'badges')" subject="hidden badges">Hidden badges are left out on the page, in the preview and in every export.</app-info-tip>
+        </div>
+        <div class="fsp-show-grid">
+          @for (c of badgeControlsOf(family); track c.kind) {
+            <div class="fsp-check">
+              <label class="checkbox-label">
+                <input type="checkbox" [id]="badgeControlId(family, c.kind)"
+                       [checked]="badgeShown(family, c.kind)"
+                       [attr.aria-describedby]="c.hint ? badgeControlId(family, c.kind) + '-tip' : null"
+                       (change)="setBadgeShown(family, c.kind, checkedOf($event))">
+                {{ c.label }}
+              </label>
+              @if (c.hint) {
+                <app-info-tip [tipId]="badgeControlId(family, c.kind) + '-tip'" [subject]="c.label">{{ c.hint }}</app-info-tip>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  </details>
+</ng-template>
+
+<!-- Footer: whether the composed figure carries it, and its size. -->
+<ng-template #footerSection let-family="family" let-section="section">
+  <details class="gh-disclosure gh-disclosure--section" [id]="sectionId(family, 'footer')"
+           [open]="isOpen(family, 'footer')" (toggle)="onSectionToggle(family, 'footer', $event)">
+    <ng-container *ngTemplateOutlet="sectionSummary; context: { family: family, section: section }"></ng-container>
+    <div class="gh-disclosure-body fsp-section-body">
+      <div class="fsp-check">
+        <label class="checkbox-label">
+          <input type="checkbox" [id]="controlId(family, 'footer')" [checked]="footerShown(family)"
+                 [attr.aria-describedby]="tipId(family, 'footer')"
+                 (change)="setFamily(family, 'footer', checkedOf($event))">
+          Show footer
+        </label>
+        <app-info-tip [tipId]="tipId(family, 'footer')" subject="Show footer">The suite and computation time under the figure, in the preview and exports.</app-info-tip>
+      </div>
+      <ng-container *ngTemplateOutlet="range; context: { family: family, control: footerControl }"></ng-container>
+    </div>
+  </details>
+</ng-template>
+
+<!-- The family's heading, with Expand all and Collapse all beside it. -->
+<ng-template #panelHead let-family="family" let-title="title">
+  <div class="fsp-head">
+    <h5 class="fsp-heading" [id]="'mc-style-' + family + '-heading'">{{ title }}</h5>
+    <div class="fsp-head-actions">
+      <button type="button" class="btn-ghost fsp-toggle-all" [id]="'mc-style-' + family + '-expand'"
+              (click)="expandAll(family)">Expand all</button>
+      <button type="button" class="btn-ghost fsp-toggle-all" [id]="'mc-style-' + family + '-collapse'"
+              (click)="collapseAll(family)">Collapse all</button>
+    </div>
+  </div>
 </ng-template>
 
 @switch (kind) {
   @case ('bar') {
     <section class="fsp" aria-labelledby="mc-style-bar-heading">
-      <h5 class="fsp-heading" id="mc-style-bar-heading">Bar charts — Intelligence, Speed and Cost</h5>
+      <ng-container *ngTemplateOutlet="panelHead; context: { family: 'bar', title: 'Bar charts — Intelligence, Speed and Cost' }"></ng-container>
 
-      <fieldset class="gh-fieldset fsp-group">
-        <legend>Bars</legend>
-        @for (control of barBarsControls; track control.key) {
-          <ng-container *ngTemplateOutlet="range; context: { family: 'bar', control: control }"></ng-container>
-          @if (control.key === 'maxBarWidthPx') {
-            <label class="checkbox-label fsp-indent">
-              <input type="checkbox" id="mc-style-bar-noBarWidthLimit"
-                     [checked]="bar.maxBarWidthPx === null"
-                     (change)="onNoBarWidthLimit(checkedOf($event))">
-              No limit
-            </label>
-          }
-        }
-        <label class="checkbox-label">
-          <input type="checkbox" id="mc-style-bar-filledBars" [checked]="bar.filledBars"
-                 aria-describedby="mc-style-bar-filledBars-hint"
-                 (change)="setBar('filledBars', checkedOf($event))">
-          Filled bars
-        </label>
-        <p class="gh-fieldset-hint" id="mc-style-bar-filledBars-hint">{{ filledBarsHint }}</p>
-        <p class="gh-fieldset-hint">A bar fills its model's slot less the space, up to the maximum width; past that width the space grows.</p>
-      </fieldset>
+      <div class="fsp-section-stack">
+        <ng-container *ngTemplateOutlet="headingSection; context: { family: 'bar' }"></ng-container>
 
-      <fieldset class="gh-fieldset fsp-group">
-        <legend>Uncertainty</legend>
-        <label class="checkbox-label">
-          <input type="checkbox" id="mc-style-bar-intervals" [checked]="bar.intervals"
-                 (change)="setBar('intervals', checkedOf($event))">
-          Show uncertainty bars
-        </label>
-        <div class="fsp-indent">
-          <label class="checkbox-label">
-            <input type="checkbox" id="mc-style-bar-hiddenIntervalsNote"
-                   [checked]="bar.hiddenIntervalsNote" [disabled]="bar.intervals"
-                   aria-describedby="mc-style-bar-hiddenIntervalsNote-hint"
-                   (change)="setBar('hiddenIntervalsNote', checkedOf($event))">
-            Say so in the caption when they are hidden
-          </label>
-          <p class="gh-fieldset-hint" id="mc-style-bar-hiddenIntervalsNote-hint">{{ hiddenIntervalsHint }}@if (bar.intervals) { Available once the uncertainty bars are hidden.}</p>
-        </div>
-        <label class="checkbox-label">
-          <input type="checkbox" id="mc-style-bar-meanTimeNoIntervalNote"
-                 [checked]="bar.meanTimeNoIntervalNote"
-                 aria-describedby="mc-style-bar-meanTimeNoIntervalNote-hint"
-                 (change)="setBar('meanTimeNoIntervalNote', checkedOf($event))">
-          Note on the Speed panel that mean time has no uncertainty bar
-        </label>
-        <p class="gh-fieldset-hint" id="mc-style-bar-meanTimeNoIntervalNote-hint">{{ meanTimeHint }}</p>
-      </fieldset>
+        <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('bar', 'bars')"
+                 [open]="isOpen('bar', 'bars')" (toggle)="onSectionToggle('bar', 'bars', $event)">
+          <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'bar', section: section('bar', 'bars') }"></ng-container>
+          <div class="gh-disclosure-body fsp-section-body">
+            @for (control of barBarsControls; track control.key) {
+              <ng-container *ngTemplateOutlet="range; context: { family: 'bar', control: control }"></ng-container>
+            }
+            <div class="fsp-check">
+              <label class="checkbox-label">
+                <input type="checkbox" id="mc-style-bar-filledBars" [checked]="bar.filledBars"
+                       aria-describedby="mc-style-bar-filledBars-tip"
+                       (change)="setBar('filledBars', checkedOf($event))">
+                Filled bars
+              </label>
+              <app-info-tip tipId="mc-style-bar-filledBars-tip" subject="Filled bars">{{ filledBarsHint }}</app-info-tip>
+            </div>
+          </div>
+        </details>
 
-      <fieldset class="gh-fieldset fsp-group">
-        <legend>Text</legend>
-        <ng-container *ngTemplateOutlet="range; context: { family: 'bar', control: barAxisControl }"></ng-container>
-        <label class="checkbox-label">
-          <input type="checkbox" id="mc-style-bar-singleRunMarker" [checked]="bar.singleRunMarker"
-                 (change)="setBar('singleRunMarker', checkedOf($event))">
-          Show n = 1 under single-run model names
-        </label>
-        <label class="checkbox-label">
-          <input type="checkbox" id="mc-style-bar-valueLabels" [checked]="bar.valueLabels"
-                 (change)="setBar('valueLabels', checkedOf($event))">
-          Show values on bars
-        </label>
-        <ng-container *ngTemplateOutlet="range; context: { family: 'bar', control: barValueControl }"></ng-container>
-      </fieldset>
+        <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('bar', 'values')"
+                 [open]="isOpen('bar', 'values')" (toggle)="onSectionToggle('bar', 'values', $event)">
+          <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'bar', section: section('bar', 'values') }"></ng-container>
+          <div class="gh-disclosure-body fsp-section-body">
+            <div class="fsp-check">
+              <label class="checkbox-label">
+                <input type="checkbox" id="mc-style-bar-valueLabels" [checked]="bar.valueLabels"
+                       (change)="setBar('valueLabels', checkedOf($event))">
+                Show values on bars
+              </label>
+            </div>
+            <ng-container *ngTemplateOutlet="range; context: { family: 'bar', control: barValueControl }"></ng-container>
+            <div class="fsp-check">
+              <label class="checkbox-label">
+                <input type="checkbox" id="mc-style-bar-singleRunMarker" [checked]="bar.singleRunMarker"
+                       (change)="setBar('singleRunMarker', checkedOf($event))">
+                Show n = 1 under single-run model names
+              </label>
+            </div>
+            @for (control of barAxisControls; track control.key) {
+              <ng-container *ngTemplateOutlet="range; context: { family: 'bar', control: control }"></ng-container>
+            }
+          </div>
+        </details>
 
-      <fieldset class="gh-fieldset fsp-group">
-        <legend>Layout</legend>
-        <fieldset class="fsp-choice" aria-describedby="mc-style-bar-orientation-hint">
-          <legend>Orientation</legend>
-          @for (option of orientationOptions; track option.value) {
-            <label class="fsp-radio">
-              <input type="radio" name="mc-style-bar-orientation"
-                     [id]="'mc-style-bar-orientation-' + option.value"
-                     [value]="option.value" [checked]="bar.orientation === option.value"
-                     (change)="setBar('orientation', option.value)">
-              {{ option.label }}
-            </label>
-          }
-        </fieldset>
-        <p class="gh-fieldset-hint" id="mc-style-bar-orientation-hint">Automatic turns the bars horizontal when the figures are narrow.</p>
-        <label class="checkbox-label">
-          <input type="checkbox" id="mc-style-bar-gridlines" [checked]="bar.gridlines"
-                 (change)="setBar('gridlines', checkedOf($event))">
-          Gridlines
-        </label>
-      </fieldset>
+        <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('bar', 'uncertainty')"
+                 [open]="isOpen('bar', 'uncertainty')" (toggle)="onSectionToggle('bar', 'uncertainty', $event)">
+          <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'bar', section: section('bar', 'uncertainty') }"></ng-container>
+          <div class="gh-disclosure-body fsp-section-body">
+            <div class="fsp-check">
+              <label class="checkbox-label">
+                <input type="checkbox" id="mc-style-bar-intervals" [checked]="bar.intervals"
+                       (change)="setBar('intervals', checkedOf($event))">
+                Show uncertainty bars
+              </label>
+            </div>
+            <div class="fsp-check fsp-indent" [class.fsp-disabled]="bar.intervals">
+              <label class="checkbox-label">
+                <input type="checkbox" id="mc-style-bar-hiddenIntervalsNote"
+                       [checked]="bar.hiddenIntervalsNote" [disabled]="bar.intervals"
+                       aria-describedby="mc-style-bar-hiddenIntervalsNote-tip"
+                       (change)="setBar('hiddenIntervalsNote', checkedOf($event))">
+                Say so in the caption when they are hidden
+              </label>
+              <app-info-tip tipId="mc-style-bar-hiddenIntervalsNote-tip" subject="the hidden-bars caption">{{ hiddenIntervalsHint('bar') }}</app-info-tip>
+            </div>
+            <div class="fsp-check">
+              <label class="checkbox-label">
+                <input type="checkbox" id="mc-style-bar-meanTimeNoIntervalNote"
+                       [checked]="bar.meanTimeNoIntervalNote"
+                       aria-describedby="mc-style-bar-meanTimeNoIntervalNote-tip"
+                       (change)="setBar('meanTimeNoIntervalNote', checkedOf($event))">
+                Note on the Speed panel that mean time has no uncertainty bar
+              </label>
+              <app-info-tip tipId="mc-style-bar-meanTimeNoIntervalNote-tip" subject="the Speed panel note">{{ meanTimeHint }}</app-info-tip>
+            </div>
+          </div>
+        </details>
 
-      <ng-container *ngTemplateOutlet="badges; context: { family: 'bar' }"></ng-container>
+        <ng-container *ngTemplateOutlet="footerSection; context: { family: 'bar', section: section('bar', 'footer') }"></ng-container>
+
+        <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('bar', 'layout')"
+                 [open]="isOpen('bar', 'layout')" (toggle)="onSectionToggle('bar', 'layout', $event)">
+          <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'bar', section: section('bar', 'layout') }"></ng-container>
+          <div class="gh-disclosure-body fsp-section-body">
+            <fieldset class="fsp-choice" aria-labelledby="mc-style-bar-orientation-label"
+                      aria-describedby="mc-style-bar-orientation-tip">
+              <legend>
+                <span id="mc-style-bar-orientation-label">Orientation</span>
+                <app-info-tip tipId="mc-style-bar-orientation-tip" subject="Orientation">Automatic turns bars horizontal in narrow figures.</app-info-tip>
+              </legend>
+              @for (option of orientationOptions; track option.value) {
+                <label class="fsp-radio">
+                  <input type="radio" name="mc-style-bar-orientation"
+                         [id]="'mc-style-bar-orientation-' + option.value"
+                         [value]="option.value" [checked]="bar.orientation === option.value"
+                         (change)="setBar('orientation', option.value)">
+                  {{ option.label }}
+                </label>
+              }
+            </fieldset>
+            <div class="fsp-check">
+              <label class="checkbox-label">
+                <input type="checkbox" id="mc-style-bar-gridlines" [checked]="bar.gridlines"
+                       (change)="setBar('gridlines', checkedOf($event))">
+                Gridlines
+              </label>
+            </div>
+          </div>
+        </details>
+      </div>
 
       <div class="fsp-actions">
         <button type="button" class="btn-ghost" id="mc-style-bar-reset" (click)="resetBar()">Reset bar style</button>
@@ -144,92 +234,121 @@
 
   @case ('scatter') {
     <section class="fsp" aria-labelledby="mc-style-scatter-heading">
-      <h5 class="fsp-heading" id="mc-style-scatter-heading">Trade-off charts — all three</h5>
+      <ng-container *ngTemplateOutlet="panelHead; context: { family: 'scatter', title: 'Trade-off charts — all three' }"></ng-container>
 
-      <fieldset class="gh-fieldset fsp-group">
-        <legend>Marks</legend>
-        <ng-container *ngTemplateOutlet="range; context: { family: 'scatter', control: scatterMarkControl }"></ng-container>
-      </fieldset>
+      <div class="fsp-section-stack">
+        <ng-container *ngTemplateOutlet="headingSection; context: { family: 'scatter' }"></ng-container>
 
-      <fieldset class="gh-fieldset fsp-group">
-        <legend>Uncertainty and frontier</legend>
-        <label class="checkbox-label">
-          <input type="checkbox" id="mc-style-scatter-intervals" [checked]="scatter.intervals"
-                 (change)="setScatter('intervals', checkedOf($event))">
-          Show uncertainty bars
-        </label>
-        <div class="fsp-indent">
-          <label class="checkbox-label">
-            <input type="checkbox" id="mc-style-scatter-hiddenIntervalsNote"
-                   [checked]="scatter.hiddenIntervalsNote" [disabled]="scatter.intervals"
-                   aria-describedby="mc-style-scatter-hiddenIntervalsNote-hint"
-                   (change)="setScatter('hiddenIntervalsNote', checkedOf($event))">
-            Say so in the caption when they are hidden
-          </label>
-          <p class="gh-fieldset-hint" id="mc-style-scatter-hiddenIntervalsNote-hint">{{ hiddenIntervalsHint }}@if (scatter.intervals) { Available once the uncertainty bars are hidden.}</p>
-        </div>
-        <label class="checkbox-label">
-          <input type="checkbox" id="mc-style-scatter-frontierIntervalsNote"
-                 [checked]="scatter.frontierIntervalsNote"
-                 aria-describedby="mc-style-scatter-frontierIntervalsNote-hint"
-                 (change)="setScatter('frontierIntervalsNote', checkedOf($event))">
-          Note when frontier differences are within the intervals
-        </label>
-        <p class="gh-fieldset-hint" id="mc-style-scatter-frontierIntervalsNote-hint">{{ frontierHint }}</p>
-        <label class="checkbox-label">
-          <input type="checkbox" id="mc-style-scatter-dominatedShading" [checked]="scatter.dominatedShading"
-                 (change)="setScatter('dominatedShading', checkedOf($event))">
-          Shade the region the frontier beats
-        </label>
-        <ng-container *ngTemplateOutlet="range; context: { family: 'scatter', control: scatterFrontierControl }"></ng-container>
-      </fieldset>
+        <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('scatter', 'marks')"
+                 [open]="isOpen('scatter', 'marks')" (toggle)="onSectionToggle('scatter', 'marks', $event)">
+          <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'scatter', section: section('scatter', 'marks') }"></ng-container>
+          <div class="gh-disclosure-body fsp-section-body">
+            <ng-container *ngTemplateOutlet="range; context: { family: 'scatter', control: scatterMarkControl }"></ng-container>
+            <ng-container *ngTemplateOutlet="range; context: { family: 'scatter', control: scatterFrontierControl }"></ng-container>
+            <div class="fsp-check">
+              <label class="checkbox-label">
+                <input type="checkbox" id="mc-style-scatter-dominatedShading" [checked]="scatter.dominatedShading"
+                       (change)="setScatter('dominatedShading', checkedOf($event))">
+                Shade the region the frontier beats
+              </label>
+            </div>
+          </div>
+        </details>
 
-      <fieldset class="gh-fieldset fsp-group">
-        <legend>Labels</legend>
-        <label class="checkbox-label">
-          <input type="checkbox" id="mc-style-scatter-directLabels" [checked]="directLabels"
-                 (change)="directLabelsChange.emit(checkedOf($event))">
-          Label models inside the chart
-        </label>
-        <label class="checkbox-label">
-          <input type="checkbox" id="mc-style-scatter-inlineValues" [checked]="inlineValues"
-                 (change)="inlineValuesChange.emit(checkedOf($event))">
-          Show values in the chart
-        </label>
-        <ng-container *ngTemplateOutlet="range; context: { family: 'scatter', control: scatterLabelControl }"></ng-container>
-      </fieldset>
+        <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('scatter', 'labels')"
+                 [open]="isOpen('scatter', 'labels')" (toggle)="onSectionToggle('scatter', 'labels', $event)">
+          <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'scatter', section: section('scatter', 'labels') }"></ng-container>
+          <div class="gh-disclosure-body fsp-section-body">
+            <div class="fsp-check">
+              <label class="checkbox-label">
+                <input type="checkbox" id="mc-style-scatter-directLabels" [checked]="directLabels"
+                       (change)="directLabelsChange.emit(checkedOf($event))">
+                Label models inside the chart
+              </label>
+            </div>
+            <div class="fsp-check">
+              <label class="checkbox-label">
+                <input type="checkbox" id="mc-style-scatter-inlineValues" [checked]="inlineValues"
+                       (change)="inlineValuesChange.emit(checkedOf($event))">
+                Show values in the chart
+              </label>
+            </div>
+            <ng-container *ngTemplateOutlet="range; context: { family: 'scatter', control: scatterLabelControl }"></ng-container>
+            <fieldset class="fsp-choice" [disabled]="directLabels"
+                      aria-labelledby="mc-style-scatter-legend-label"
+                      [attr.aria-describedby]="directLabels ? 'mc-style-scatter-legend-tip' : null">
+              <legend>
+                <span id="mc-style-scatter-legend-label">Legend position</span>
+                @if (directLabels) {
+                  <app-info-tip tipId="mc-style-scatter-legend-tip" subject="Legend position">Hidden while models are labelled in the chart.</app-info-tip>
+                }
+              </legend>
+              @for (option of legendOptions; track option.value) {
+                <label class="fsp-radio">
+                  <input type="radio" name="mc-style-scatter-legend"
+                         [id]="'mc-style-scatter-legend-' + option.value"
+                         [value]="option.value" [checked]="scatter.legendPosition === option.value"
+                         (change)="setScatter('legendPosition', option.value)">
+                  {{ option.label }}
+                </label>
+              }
+            </fieldset>
+          </div>
+        </details>
 
-      <fieldset class="gh-fieldset fsp-group">
-        <legend>Text</legend>
-        <ng-container *ngTemplateOutlet="range; context: { family: 'scatter', control: scatterAxisControl }"></ng-container>
-      </fieldset>
+        <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('scatter', 'axes')"
+                 [open]="isOpen('scatter', 'axes')" (toggle)="onSectionToggle('scatter', 'axes', $event)">
+          <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'scatter', section: section('scatter', 'axes') }"></ng-container>
+          <div class="gh-disclosure-body fsp-section-body">
+            @for (control of scatterAxisControls; track control.key) {
+              <ng-container *ngTemplateOutlet="range; context: { family: 'scatter', control: control }"></ng-container>
+            }
+            <div class="fsp-check">
+              <label class="checkbox-label">
+                <input type="checkbox" id="mc-style-scatter-gridlines" [checked]="scatter.gridlines"
+                       (change)="setScatter('gridlines', checkedOf($event))">
+                Gridlines
+              </label>
+            </div>
+          </div>
+        </details>
 
-      <fieldset class="gh-fieldset fsp-group">
-        <legend>Layout</legend>
-        <fieldset class="fsp-choice" [disabled]="directLabels"
-                  [attr.aria-describedby]="directLabels ? 'mc-style-scatter-legend-hint' : null">
-          <legend>Legend position</legend>
-          @for (option of legendOptions; track option.value) {
-            <label class="fsp-radio">
-              <input type="radio" name="mc-style-scatter-legend"
-                     [id]="'mc-style-scatter-legend-' + option.value"
-                     [value]="option.value" [checked]="scatter.legendPosition === option.value"
-                     (change)="setScatter('legendPosition', option.value)">
-              {{ option.label }}
-            </label>
-          }
-        </fieldset>
-        @if (directLabels) {
-          <p class="gh-fieldset-hint" id="mc-style-scatter-legend-hint">The legend is hidden while models are labelled inside the chart.</p>
-        }
-        <label class="checkbox-label">
-          <input type="checkbox" id="mc-style-scatter-gridlines" [checked]="scatter.gridlines"
-                 (change)="setScatter('gridlines', checkedOf($event))">
-          Gridlines
-        </label>
-      </fieldset>
+        <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('scatter', 'uncertainty')"
+                 [open]="isOpen('scatter', 'uncertainty')" (toggle)="onSectionToggle('scatter', 'uncertainty', $event)">
+          <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'scatter', section: section('scatter', 'uncertainty') }"></ng-container>
+          <div class="gh-disclosure-body fsp-section-body">
+            <div class="fsp-check">
+              <label class="checkbox-label">
+                <input type="checkbox" id="mc-style-scatter-intervals" [checked]="scatter.intervals"
+                       (change)="setScatter('intervals', checkedOf($event))">
+                Show uncertainty bars
+              </label>
+            </div>
+            <div class="fsp-check fsp-indent" [class.fsp-disabled]="scatter.intervals">
+              <label class="checkbox-label">
+                <input type="checkbox" id="mc-style-scatter-hiddenIntervalsNote"
+                       [checked]="scatter.hiddenIntervalsNote" [disabled]="scatter.intervals"
+                       aria-describedby="mc-style-scatter-hiddenIntervalsNote-tip"
+                       (change)="setScatter('hiddenIntervalsNote', checkedOf($event))">
+                Say so in the caption when they are hidden
+              </label>
+              <app-info-tip tipId="mc-style-scatter-hiddenIntervalsNote-tip" subject="the hidden-bars caption">{{ hiddenIntervalsHint('scatter') }}</app-info-tip>
+            </div>
+            <div class="fsp-check">
+              <label class="checkbox-label">
+                <input type="checkbox" id="mc-style-scatter-frontierIntervalsNote"
+                       [checked]="scatter.frontierIntervalsNote"
+                       aria-describedby="mc-style-scatter-frontierIntervalsNote-tip"
+                       (change)="setScatter('frontierIntervalsNote', checkedOf($event))">
+                Note when frontier differences are within the intervals
+              </label>
+              <app-info-tip tipId="mc-style-scatter-frontierIntervalsNote-tip" subject="the frontier note">{{ frontierHint }}</app-info-tip>
+            </div>
+          </div>
+        </details>
 
-      <ng-container *ngTemplateOutlet="badges; context: { family: 'scatter' }"></ng-container>
+        <ng-container *ngTemplateOutlet="footerSection; context: { family: 'scatter', section: section('scatter', 'footer') }"></ng-container>
+      </div>
 
       <div class="fsp-actions">
         <button type="button" class="btn-ghost" id="mc-style-scatter-reset" (click)="resetScatter()">Reset trade-off style</button>
@@ -239,11 +358,14 @@
 
   @default {
     <section class="fsp" aria-labelledby="mc-style-profile-heading">
-      <h5 class="fsp-heading" id="mc-style-profile-heading">Profile plot</h5>
+      <ng-container *ngTemplateOutlet="panelHead; context: { family: 'profile', title: 'Profile plot' }"></ng-container>
 
-      <ng-container *ngTemplateOutlet="badges; context: { family: 'profile' }"></ng-container>
+      <div class="fsp-section-stack">
+        <ng-container *ngTemplateOutlet="headingSection; context: { family: 'profile' }"></ng-container>
+        <ng-container *ngTemplateOutlet="footerSection; context: { family: 'profile', section: section('profile', 'footer') }"></ng-container>
+      </div>
 
-      <p class="fsp-note">The profile plot has no other style controls. Text size on the Export tab applies to it.</p>
+      <p class="fsp-note">Chart text follows Text size on the Export tab.</p>
 
       <div class="fsp-actions">
         <button type="button" class="btn-ghost" id="mc-style-profile-reset" (click)="resetProfile()">Reset profile style</button>

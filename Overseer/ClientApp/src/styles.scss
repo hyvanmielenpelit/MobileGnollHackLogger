@@ -443,6 +443,7 @@ a:hover {
   .btn-ghost,
   .gh-tab,
   .action-btn,
+  .gh-info-btn,
   .btn-icon-action,
   .gh-th-sort,
   .gh-sort-caret,
@@ -1281,8 +1282,51 @@ label.checkbox-label,
   }
 }
 
+/* A settings section: the summary carries a one-line read-out of the section's values, shown only
+   while it is closed, and the body animates open where `::details-content` and `interpolate-size`
+   exist; elsewhere it opens instantly. */
+.gh-disclosure--section {
+  interpolate-size: allow-keywords;
+
+  > summary {
+    min-width: 0;
+  }
+
+  .gh-disclosure-summary-title {
+    flex: none;
+  }
+
+  .gh-disclosure-summary-value {
+    margin-inline-start: auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 400;
+    color: #a1a1aa;
+  }
+
+  &[open] .gh-disclosure-summary-value {
+    display: none;
+  }
+
+  &::details-content {
+    block-size: 0;
+    overflow: clip;
+    transition: block-size 0.2s ease, content-visibility 0.2s allow-discrete;
+  }
+
+  &[open]::details-content {
+    block-size: auto;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .gh-disclosure > summary::before {
+    transition: none;
+  }
+  .gh-disclosure--section::details-content {
     transition: none;
   }
 }
@@ -2185,6 +2229,39 @@ app-table-pager {
   svg {
     width: 16px;
     height: 16px;
+  }
+}
+
+/* The (i) button of `app-info-tip`: a bare glyph in a 24 px target that shows a hint tooltip. */
+.gh-info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #a1a1aa;
+  cursor: help;
+  transition: color 0.15s ease;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--primary-color);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+  }
+
+  svg {
+    width: 14px;
+    height: 14px;
   }
 }
 

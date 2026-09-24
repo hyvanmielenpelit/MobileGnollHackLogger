@@ -7,7 +7,6 @@ import {
   CHART_SURFACE,
   DEFAULT_MODEL_SORT,
   DE_EMPHASIS_FILL,
-  DIRECTION_MARKER_GAP,
   DOMINATED_REGION_FILL,
   FRONTIER_UNCERTAINTY_NOTE,
   IDENTITY_SHAPES,
@@ -26,8 +25,6 @@ import {
   buildSpeedCostScatter,
   computeParetoFrontier,
   directLabelPlugin,
-  directionMarkerMetrics,
-  directionMarkerPlugin,
   dominatedRegionPlugin,
   errorBarPlugin,
   formatQuestionsAsked,
@@ -50,7 +47,6 @@ import type {
   DirectLabelBox,
   DirectLabelPluginOptions,
   DirectLabelValue,
-  DirectionMarkerPluginOptions,
   ModelComparisonContext,
   ModelComparisonEntry,
   SmallMultiplesOptions,
@@ -524,17 +520,15 @@ describe('model-comparison-charts', () => {
       expect(pointsOf(index.speed.config)[0]['y']).toBe(100);
 
       expect(titleLines(scaleOf(ttft.speed.config, 'y'))[0]).toContain('Time to first token');
-      expect(scaleOf(ttft.speed.config, 'y').title?.text).toContain('lower is better');
+      // The Better badge says which end is better, so the value-axis title does not.
+      expect(titleLines(scaleOf(ttft.speed.config, 'y')).length).toBe(1);
       expect(scaleOf(ttft.speed.config, 'y').max).toBeUndefined();
       const ttftPoint = pointsOf(ttft.speed.config)[0];
       expect(ttftPoint['y']).toBe(500);
       expect(ttftPoint['yErrHigh']).toBe(1300);
 
       // 900 ms is the largest mean, so the panel stays in milliseconds.
-      expect(scaleOf(mean.speed.config, 'y').title?.text).toEqual([
-        'Mean time per question (ms)',
-        'lower is better',
-      ]);
+      expect(scaleOf(mean.speed.config, 'y').title?.text).toBe('Mean time per question (ms)');
       const meanPoint = pointsOf(mean.speed.config)[0];
       expect(meanPoint['y']).toBe(PROFILE_FIXTURE[0].modelTimeMeanMs);
       expect(meanPoint['yErrLow']).toBeUndefined();
@@ -545,10 +539,7 @@ describe('model-comparison-charts', () => {
       });
 
       // 9000 ms is past a second, so the title and the ticks switch to seconds together.
-      expect(scaleOf(total.speed.config, 'y').title?.text).toEqual([
-        'Total time for the suite (s)',
-        'lower is better',
-      ]);
+      expect(scaleOf(total.speed.config, 'y').title?.text).toBe('Total time for the suite (s)');
       const totalTick = scaleOf(total.speed.config, 'y').ticks?.callback;
       expect(totalTick?.(0, 0, [{ value: 0 }, { value: 2000 }])).toBe('0 s');
       expect(totalTick?.(2000, 1, [{ value: 0 }, { value: 2000 }])).toBe('2 s');
@@ -1124,20 +1115,21 @@ describe('model-comparison-charts', () => {
       expect(s3.chrome.direction).toEqual({ x: 'left', y: 'bottom', label: 'Better' });
     });
 
-    it('puts the direction on the scatters only, and never in a badge', () => {
+    it('puts the direction on the scatters and the bars, never on the profile and never in a badge', () => {
       const figures = buildComparisonFigures(SCREENSHOT, { context: SCREENSHOT_CONTEXT });
       const { quality, speed, cost } = figures.smallMultiples;
-      const undirected = [quality, speed, cost, figures.profile];
-      const scatters = [figures.qualitySpeed, figures.qualityCost, figures.speedCost];
-      for (const figure of [...undirected, ...scatters]) {
+      const directed = [quality, speed, cost, figures.qualitySpeed, figures.qualityCost, figures.speedCost];
+      for (const figure of [...directed, figures.profile]) {
         expect(figure.chrome.badges.some((badge) => badge.text.includes('Better'))).withContext(figure.id).toBeFalse();
       }
-      for (const figure of undirected) {
-        expect(figure.chrome.direction).withContext(figure.id).toBeUndefined();
-      }
-      for (const figure of scatters) {
+      expect(figures.profile.chrome.direction).toBeUndefined();
+      for (const figure of directed) {
         expect(figure.chrome.direction).withContext(figure.id).toBeDefined();
       }
+      expect(quality.chrome.direction).toEqual({ y: 'top', label: 'Better' });
+      // Mean time per question, the default speed measure, is better lower.
+      expect(speed.chrome.direction).toEqual({ y: 'bottom', label: 'Better' });
+      expect(cost.chrome.direction).toEqual({ y: 'bottom', label: 'Better' });
     });
 
     it('puts the pricing badge on S2, S3, P1 cost and P2 only', () => {
@@ -1708,10 +1700,7 @@ describe('model-comparison-charts', () => {
     it('defaults the speed measure to mean model time, everywhere the measure is read', () => {
       const figures = buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT });
 
-      expect(scaleOf(figures.smallMultiples.speed.config, 'y').title?.text).toEqual([
-        'Mean time per question (ms)',
-        'lower is better',
-      ]);
+      expect(scaleOf(figures.smallMultiples.speed.config, 'y').title?.text).toBe('Mean time per question (ms)');
       expect(titleLines(scaleOf(figures.qualitySpeed.config, 'x'))[0]).toContain('Mean time per question');
       expect(titleLines(scaleOf(figures.speedCost.config, 'x'))[0]).toContain('Mean time per question');
       expect(figures.profile.config.data.labels).toContain('Speed (mean model time)');
@@ -1824,7 +1813,7 @@ describe('model-comparison-charts', () => {
 
       it('hides the value labels and the value-axis grid on request, and sizes the text', () => {
         const figure = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({
-          style: style({ valueLabels: false, gridlines: false, axisTextSizePx: 16, valueLabelSizePx: 18 }),
+          style: style({ valueLabels: false, gridlines: false, axisTextSizePx: 16, axisTitleSizePx: 20, valueLabelSizePx: 18 }),
         }));
         const datalabels = figure.quality.config.options?.plugins?.datalabels as {
           display?: unknown;
@@ -1839,7 +1828,13 @@ describe('model-comparison-charts', () => {
         };
         expect(value.grid?.display).toBeFalse();
         expect(value.ticks?.font?.size).toBe(16);
-        expect(value.title?.font?.size).toBe(17);
+        expect(value.title?.font?.size).toBe(20);
+        const category = scaleOf(figure.quality.config, 'x') as ScaleProbe & {
+          ticks?: { font?: { size?: number } };
+          title?: { font?: { size?: number } };
+        };
+        expect(category.ticks?.font?.size).toBe(16);
+        expect(category.title?.font?.size).toBe(20);
       });
 
       it('hides the whiskers, moves the labels to the bar ends and says so, but not where none would draw', () => {
@@ -1908,7 +1903,14 @@ describe('model-comparison-charts', () => {
         const spec = buildQualitySpeedScatter(PROFILE_FIXTURE, {
           ...BASE_FIGURE_OPTIONS,
           speedMeasure: 'ttftP50',
-          style: style({}, { markRadiusPx: 10, frontierWidthPx: 4, legendPosition: 'right', axisTextSizePx: 16, gridlines: false }),
+          style: style({}, {
+            markRadiusPx: 10,
+            frontierWidthPx: 4,
+            legendPosition: 'right',
+            axisTextSizePx: 16,
+            axisTitleSizePx: 22,
+            gridlines: false,
+          }),
         });
         const datasets = datasetsOf(spec.config);
         expect(datasets[0]['radius']).toBe(10);
@@ -1924,7 +1926,7 @@ describe('model-comparison-charts', () => {
           grid?: { display?: boolean };
         };
         expect(x.ticks?.font?.size).toBe(16);
-        expect(x.title?.font?.size).toBe(17);
+        expect(x.title?.font?.size).toBe(22);
         expect(x.grid?.display).toBeFalse();
 
         const small = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, style: style({}, { markRadiusPx: 3 }) });
@@ -2018,53 +2020,83 @@ describe('model-comparison-charts', () => {
       });
     });
 
-    describe('the direction marker', () => {
-      it('is registered last on every scatter, with the figure direction, over reserved padding', () => {
-        const figures = buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT });
-        for (const spec of [figures.qualitySpeed, figures.qualityCost, figures.speedCost]) {
-          expect(spec.plugins[spec.plugins.length - 1]).withContext(spec.id).toBe(directionMarkerPlugin);
-          const options = (spec.config.options?.plugins as Record<string, DirectionMarkerPluginOptions>)[directionMarkerPlugin.id];
-          expect(options.direction).withContext(spec.id).toEqual(spec.chrome.direction!);
-          expect(options.fontSizePx).withContext(spec.id).toBe(11);
-          const padding = (spec.config.options as { layout?: { padding?: { top?: number } } }).layout?.padding?.top;
-          expect(padding).withContext(spec.id).toBe(directionMarkerMetrics(11).height + DIRECTION_MARKER_GAP + 4);
-        }
-        expect(figures.qualitySpeed.plugins).toEqual([dominatedRegionPlugin, errorBarPlugin, directionMarkerPlugin]);
-        for (const spec of [figures.smallMultiples.quality, figures.smallMultiples.speed, figures.smallMultiples.cost, figures.profile]) {
-          expect((spec as unknown as ChartSpec).plugins).withContext(spec.id).not.toContain(directionMarkerPlugin);
-        }
+    describe('the Better badge', () => {
+      const valueScaleOf = (spec: { config: unknown }, orientation: 'vertical' | 'horizontal'): ScaleProbe =>
+        scaleOf(spec.config, orientation === 'vertical' ? 'y' : 'x');
 
-        const large = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, style: style({}, { axisTextSizePx: 16 }) });
-        const largePadding = (large.config.options as { layout?: { padding?: { top?: number } } }).layout?.padding?.top;
-        expect(largePadding).toBe(directionMarkerMetrics(16).height + DIRECTION_MARKER_GAP + 4);
-        expect(directionMarkerMetrics(11).height).toBe(22);
+      it('points each bar panel along its value axis toward better, in both orientations', () => {
+        const vertical = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ speedMeasure: 'meanModelTime' }));
+        expect(vertical.quality.chrome.direction).toEqual({ y: 'top', label: 'Better' });
+        expect(vertical.speed.chrome.direction).toEqual({ y: 'bottom', label: 'Better' });
+        expect(vertical.cost.chrome.direction).toEqual({ y: 'bottom', label: 'Better' });
+
+        const horizontal = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({
+          speedMeasure: 'speedIndex',
+          orientation: 'horizontal',
+        }));
+        expect(horizontal.quality.chrome.direction).toEqual({ x: 'right', label: 'Better' });
+        expect(horizontal.speed.chrome.direction).toEqual({ x: 'right', label: 'Better' });
+        expect(horizontal.cost.chrome.direction).toEqual({ x: 'left', label: 'Better' });
+
+        // The arrow follows the axis as drawn: no bar value axis is reversed.
+        for (const [figure, orientation] of [[vertical, 'vertical'], [horizontal, 'horizontal']] as const) {
+          for (const panel of [figure.quality, figure.speed, figure.cost]) {
+            expect((valueScaleOf(panel, orientation) as { reverse?: boolean }).reverse).withContext(panel.id).toBeUndefined();
+          }
+        }
       });
 
-      it('draws a pill whose right edge is the plot area\'s and whose bottom sits above it', () => {
-        const rects: number[][] = [];
-        const texts: string[] = [];
-        const noop = (): void => undefined;
-        const ctx = {
-          save: noop, restore: noop, beginPath: noop, fill: noop, stroke: noop, translate: noop, rotate: noop,
-          scale: noop, moveTo: noop, lineTo: noop, rect: noop,
-          roundRect: (...args: number[]) => rects.push(args),
-          measureText: (text: string) => ({ width: text.length * 6 }),
-          fillText: (text: string) => texts.push(text),
-          font: '', fillStyle: '', strokeStyle: '', lineWidth: 0, lineCap: '', lineJoin: '', textAlign: '', textBaseline: '',
-        };
-        const chart = { ctx, chartArea: { left: 50, top: 40, right: 400, bottom: 300 } };
-        directionMarkerPlugin.afterDraw?.(
-          chart as unknown as Chart,
-          {} as never,
-          { direction: { x: 'left', y: 'top', label: 'Better' }, fontSizePx: 11 } as never,
-        );
+      it('drops the bar value-axis "is better" line while the badge shows, and brings it back when hidden', () => {
+        const shown = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ speedMeasure: 'meanModelTime' }));
+        const hidden = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({
+          speedMeasure: 'meanModelTime',
+          style: style({ hiddenBadges: ['direction'] }),
+        }));
 
-        expect(rects.length).toBe(1);
-        const [x, y, width, height] = rects[0];
-        expect(x + width).toBe(400);
-        expect(y + height).toBe(40 - DIRECTION_MARKER_GAP);
-        expect(height).toBe(22);
-        expect(texts).toEqual(['Better']);
+        expect(titleLines(scaleOf(shown.quality.config, 'y'))).toEqual(['Intelligence Index (0-100)']);
+        expect(titleLines(scaleOf(shown.speed.config, 'y'))).toEqual(['Mean time per question (ms)']);
+        expect(titleLines(scaleOf(hidden.quality.config, 'y'))).toEqual(['Intelligence Index (0-100)', 'higher is better']);
+        expect(titleLines(scaleOf(hidden.speed.config, 'y'))).toEqual(['Mean time per question (ms)', 'lower is better']);
+        expect(titleLines(scaleOf(hidden.cost.config, 'y'))[1]).toBe('lower is better');
+        for (const panel of [hidden.quality, hidden.speed, hidden.cost]) {
+          expect(panel.chrome.direction).withContext(panel.id).toBeUndefined();
+        }
+      });
+
+      it('keeps both scatter axis titles on two lines, with the badge shown or hidden', () => {
+        for (const hiddenBadges of [[], ['direction']] as const) {
+          const spec = buildQualitySpeedScatter(PROFILE_FIXTURE, {
+            ...BASE_FIGURE_OPTIONS,
+            style: style({}, { hiddenBadges: [...hiddenBadges] }),
+          });
+          expect(titleLines(scaleOf(spec.config, 'x'))[1]).withContext(`${hiddenBadges}`).toBe('lower is better');
+          expect(titleLines(scaleOf(spec.config, 'y'))[1]).withContext(`${hiddenBadges}`).toBe('higher is better');
+          expect(spec.chrome.direction).withContext(`${hiddenBadges}`)
+            .toEqual(hiddenBadges.length === 0 ? { x: 'left', y: 'top', label: 'Better' } : undefined);
+        }
+      });
+
+      it('leaves the plot of a scatter alone: no reserved top padding and no marker plugin', () => {
+        const figures = buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT });
+        for (const spec of [figures.qualitySpeed, figures.qualityCost, figures.speedCost]) {
+          const layout = (spec.config.options as { layout?: { padding?: { top?: number } } }).layout;
+          expect(layout?.padding?.top).withContext(spec.id).toBeUndefined();
+          expect(Object.keys(spec.config.options?.plugins ?? {})).withContext(spec.id).not.toContain('overseerDirectionMarker');
+        }
+        expect(figures.qualitySpeed.plugins).toEqual([dominatedRegionPlugin, errorBarPlugin]);
+      });
+
+      it('hides only its own family\'s badge', () => {
+        const figures = buildComparisonFigures(PROFILE_FIXTURE, {
+          context: CONTEXT,
+          style: style({}, { hiddenBadges: ['direction'] }),
+        });
+        for (const spec of [figures.qualitySpeed, figures.qualityCost, figures.speedCost]) {
+          expect(spec.chrome.direction).withContext(spec.id).toBeUndefined();
+        }
+        for (const spec of [figures.smallMultiples.quality, figures.smallMultiples.speed, figures.smallMultiples.cost]) {
+          expect(spec.chrome.direction).withContext(spec.id).toBeDefined();
+        }
       });
     });
 

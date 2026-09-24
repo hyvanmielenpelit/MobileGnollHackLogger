@@ -11,7 +11,16 @@ import type { FigureBadgeKind } from './figure-chrome';
 export type BarOrientationChoice = 'auto' | 'vertical' | 'horizontal';
 export type ScatterLegendPosition = 'bottom' | 'right';
 
-export interface BarFigureStyle {
+/** The composed figure's caption text; the page cards keep their own typography. */
+export interface FigureChromeStyle {
+  readonly titleSizePx: number;
+  readonly badgeTextSizePx: number;
+  readonly footerTextSizePx: number;
+  /** The suite and computation-time line under the composed figure. */
+  readonly footer: boolean;
+}
+
+export interface BarFigureStyle extends FigureChromeStyle {
   readonly orientation: BarOrientationChoice;
   /** Space between bars, as a percentage of each model's slot. */
   readonly gapPercent: number;
@@ -29,15 +38,16 @@ export interface BarFigureStyle {
   readonly meanTimeNoIntervalNote: boolean;
   readonly valueLabels: boolean;
   readonly valueLabelSizePx: number;
-  /** Ticks; axis titles are this + 1. */
+  /** Tick and category labels. */
   readonly axisTextSizePx: number;
+  readonly axisTitleSizePx: number;
   /** `n = 1` under a single-run model's name. */
   readonly singleRunMarker: boolean;
   readonly gridlines: boolean;
   readonly hiddenBadges: readonly FigureBadgeKind[];
 }
 
-export interface ScatterFigureStyle {
+export interface ScatterFigureStyle extends FigureChromeStyle {
   readonly markRadiusPx: number;
   /** Uncertainty bars (whiskers) on both axes. */
   readonly intervals: boolean;
@@ -50,14 +60,15 @@ export interface ScatterFigureStyle {
   readonly frontierWidthPx: number;
   /** Direct-label name; value lines are this - 1. */
   readonly labelTextSizePx: number;
-  /** Ticks and the Better marker; axis titles are this + 1. */
+  /** Tick labels. */
   readonly axisTextSizePx: number;
+  readonly axisTitleSizePx: number;
   readonly legendPosition: ScatterLegendPosition;
   readonly gridlines: boolean;
   readonly hiddenBadges: readonly FigureBadgeKind[];
 }
 
-export interface ProfileFigureStyle {
+export interface ProfileFigureStyle extends FigureChromeStyle {
   readonly hiddenBadges: readonly FigureBadgeKind[];
 }
 
@@ -68,9 +79,18 @@ export interface FigureStyle {
   readonly profile: ProfileFigureStyle;
 }
 
+/** The composer's caption sizes and a shown footer. */
+const DEFAULT_CHROME_STYLE: FigureChromeStyle = {
+  titleSizePx: 18,
+  badgeTextSizePx: 11,
+  footerTextSizePx: 12,
+  footer: true,
+};
+
 /** Equal to the values the figures were drawn with before any control existed. */
 export const DEFAULT_FIGURE_STYLE: FigureStyle = {
   bar: {
+    ...DEFAULT_CHROME_STYLE,
     orientation: 'auto',
     gapPercent: 28,
     maxBarWidthPx: 24,
@@ -83,11 +103,13 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
     valueLabels: true,
     valueLabelSizePx: 11,
     axisTextSizePx: 11,
+    axisTitleSizePx: 12,
     singleRunMarker: true,
     gridlines: true,
     hiddenBadges: [],
   },
   scatter: {
+    ...DEFAULT_CHROME_STYLE,
     markRadiusPx: 6,
     intervals: true,
     hiddenIntervalsNote: true,
@@ -96,11 +118,13 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
     frontierWidthPx: 2,
     labelTextSizePx: 11,
     axisTextSizePx: 11,
+    axisTitleSizePx: 12,
     legendPosition: 'bottom',
     gridlines: true,
     hiddenBadges: [],
   },
   profile: {
+    ...DEFAULT_CHROME_STYLE,
     hiddenBadges: [],
   },
 };
@@ -109,9 +133,15 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
 export const HIDDEN_INTERVALS_NOTE =
   'Uncertainty bars are hidden in this figure, so it does not show how precise each value is.';
 
+/** The largest size any text-size control offers. */
+export const MAX_TEXT_SIZE_PX = 48;
+const MIN_TEXT_SIZE_PX = 8;
+
 export type NumericBarStyleKey = 'gapPercent' | 'maxBarWidthPx' | 'cornerRadiusPx' | 'outlineWidthPx'
-  | 'valueLabelSizePx' | 'axisTextSizePx';
-export type NumericScatterStyleKey = 'markRadiusPx' | 'frontierWidthPx' | 'labelTextSizePx' | 'axisTextSizePx';
+  | 'valueLabelSizePx' | 'axisTextSizePx' | 'axisTitleSizePx';
+export type NumericScatterStyleKey = 'markRadiusPx' | 'frontierWidthPx' | 'labelTextSizePx' | 'axisTextSizePx'
+  | 'axisTitleSizePx';
+export type NumericChromeStyleKey = 'titleSizePx' | 'badgeTextSizePx' | 'footerTextSizePx';
 
 /** One range control: its label, bounds and unit, which the style panel's template loops over. */
 export interface RangeControl<TKey extends string> {
@@ -124,28 +154,42 @@ export interface RangeControl<TKey extends string> {
   readonly unit: 'px' | '%';
 }
 
+function textSizeControl<TKey extends string>(key: TKey, label: string, hint?: string): RangeControl<TKey> {
+  return { key, label, ...(hint ? { hint } : {}), min: MIN_TEXT_SIZE_PX, max: MAX_TEXT_SIZE_PX, step: 1, unit: 'px' };
+}
+
 export const BAR_RANGE_CONTROLS: readonly RangeControl<NumericBarStyleKey>[] = [
-  { key: 'gapPercent', label: 'Space between bars', min: 0, max: 90, step: 1, unit: '%' },
-  { key: 'maxBarWidthPx', label: 'Maximum bar width', min: 8, max: 480, step: 1, unit: 'px' },
-  { key: 'cornerRadiusPx', label: 'Corner radius', min: 0, max: 16, step: 1, unit: 'px' },
+  { key: 'gapPercent', label: 'Space between bars', hint: "Share of each model's slot left empty.", min: 0, max: 90, step: 1, unit: '%' },
   {
-    key: 'outlineWidthPx',
-    label: 'Outline width',
-    hint: 'Unless the bars are filled, a single-run bar is drawn as an outline only, so the outline never goes below 1 px.',
-    min: 1,
-    max: 6,
+    key: 'maxBarWidthPx',
+    label: 'Maximum bar width',
+    hint: 'Past this width the space between bars grows instead.',
+    min: 8,
+    max: 480,
     step: 1,
     unit: 'px',
   },
-  { key: 'axisTextSizePx', label: 'Axis text size', hint: 'Axis titles are 1 px larger.', min: 8, max: 28, step: 1, unit: 'px' },
-  { key: 'valueLabelSizePx', label: 'Value text size', min: 8, max: 28, step: 1, unit: 'px' },
+  { key: 'cornerRadiusPx', label: 'Corner radius', min: 0, max: 16, step: 1, unit: 'px' },
+  { key: 'outlineWidthPx', label: 'Outline width', hint: 'Outlined bars need at least 1 px.', min: 1, max: 6, step: 1, unit: 'px' },
+  textSizeControl('valueLabelSizePx', 'Value labels'),
+  textSizeControl('axisTextSizePx', 'Axis values'),
+  textSizeControl('axisTitleSizePx', 'Axis titles'),
 ];
 
 export const SCATTER_RANGE_CONTROLS: readonly RangeControl<NumericScatterStyleKey>[] = [
   { key: 'markRadiusPx', label: 'Mark size', min: 3, max: 14, step: 1, unit: 'px' },
   { key: 'frontierWidthPx', label: 'Frontier line width', min: 1, max: 6, step: 1, unit: 'px' },
-  { key: 'labelTextSizePx', label: 'Label text size', min: 8, max: 24, step: 1, unit: 'px' },
-  { key: 'axisTextSizePx', label: 'Axis text size', hint: 'Also sizes the Better marker.', min: 8, max: 28, step: 1, unit: 'px' },
+  textSizeControl('labelTextSizePx', 'Model labels'),
+  textSizeControl('axisTextSizePx', 'Axis values'),
+  textSizeControl('axisTitleSizePx', 'Axis titles'),
+];
+
+const CHROME_SIZE_HINT = 'Preview and exports only.';
+
+export const CHROME_RANGE_CONTROLS: readonly RangeControl<NumericChromeStyleKey>[] = [
+  textSizeControl('titleSizePx', 'Heading size', CHROME_SIZE_HINT),
+  textSizeControl('badgeTextSizePx', 'Badge text size', CHROME_SIZE_HINT),
+  textSizeControl('footerTextSizePx', 'Footer text size', CHROME_SIZE_HINT),
 ];
 
 /** One badge's *Show* checkbox, which the style panel's template loops over. */
@@ -155,12 +199,28 @@ export interface BadgeControl {
   readonly hint?: string;
 }
 
+/** Every badge kind, the Better badge first: it ends the badge row on the figure and heads the list. */
 export const BADGE_CONTROLS: readonly BadgeControl[] = [
+  { kind: 'direction', label: 'Better badge' },
   { kind: 'models', label: 'Number of models' },
   { kind: 'runs', label: 'Runs behind each model' },
   { kind: 'questions', label: 'Number of questions' },
-  { kind: 'pricing', label: 'Pricing basis', hint: 'Only figures with a cost axis carry it.' },
+  { kind: 'pricing', label: 'Pricing basis', hint: 'Only on figures with a cost axis.' },
 ];
+
+const DIRECTION_BADGE_HINTS = {
+  bar: 'An arrow toward the better end of the value axis. While shown, the axis title leaves out "higher is better".',
+  scatter: 'An arrow toward the better corner of the chart.',
+} as const;
+
+/** The badge checkboxes one family offers; the profile has no better direction, so no Better badge. */
+export function badgeControlsFor(family: 'bar' | 'scatter' | 'profile'): readonly BadgeControl[] {
+  if (family === 'profile') {
+    return BADGE_CONTROLS.filter((control) => control.kind !== 'direction');
+  }
+  return BADGE_CONTROLS.map((control) =>
+    control.kind === 'direction' ? { ...control, hint: DIRECTION_BADGE_HINTS[family] } : control);
+}
 
 /** The descriptor for one key, which every numeric field has. */
 export function barRangeControl(key: NumericBarStyleKey): RangeControl<NumericBarStyleKey> {
@@ -169,6 +229,10 @@ export function barRangeControl(key: NumericBarStyleKey): RangeControl<NumericBa
 
 export function scatterRangeControl(key: NumericScatterStyleKey): RangeControl<NumericScatterStyleKey> {
   return SCATTER_RANGE_CONTROLS.find((control) => control.key === key)!;
+}
+
+export function chromeRangeControl(key: NumericChromeStyleKey): RangeControl<NumericChromeStyleKey> {
+  return CHROME_RANGE_CONTROLS.find((control) => control.key === key)!;
 }
 
 /** A number rounded to the control's step and clamped into its range, or the fallback. */
@@ -200,12 +264,30 @@ function normalizeBadgeKinds(value: unknown): FigureBadgeKind[] {
   return BADGE_CONTROLS.map((control) => control.kind).filter((kind) => value.includes(kind));
 }
 
+function normalizeChrome(v: Record<string, unknown>): FigureChromeStyle {
+  const d = DEFAULT_CHROME_STYLE;
+  const numeric = (key: NumericChromeStyleKey): number => clampToControl(v[key], chromeRangeControl(key), d[key]);
+  return {
+    titleSizePx: numeric('titleSizePx'),
+    badgeTextSizePx: numeric('badgeTextSizePx'),
+    footerTextSizePx: numeric('footerTextSizePx'),
+    footer: booleanOr(v['footer'], d.footer),
+  };
+}
+
+/** A stored axis title size, or, for a style stored before it existed, the axis value size + 1. */
+function axisTitleSize(v: Record<string, unknown>, axisTextSizePx: number, control: RangeControl<string>): number {
+  return clampToControl(v['axisTitleSizePx'], control, clampToControl(axisTextSizePx + 1, control, axisTextSizePx));
+}
+
 function normalizeBar(value: unknown): BarFigureStyle {
   const d = DEFAULT_FIGURE_STYLE.bar;
   const v = isRecord(value) ? value : {};
   const numeric = (key: NumericBarStyleKey): number =>
     clampToControl(v[key], barRangeControl(key), d[key] ?? barRangeControl(key).min);
+  const axisTextSizePx = numeric('axisTextSizePx');
   return {
+    ...normalizeChrome(v),
     orientation: oneOf(v['orientation'], ['auto', 'vertical', 'horizontal'] as const, d.orientation),
     gapPercent: numeric('gapPercent'),
     maxBarWidthPx: v['maxBarWidthPx'] === null ? null : numeric('maxBarWidthPx'),
@@ -217,7 +299,8 @@ function normalizeBar(value: unknown): BarFigureStyle {
     meanTimeNoIntervalNote: booleanOr(v['meanTimeNoIntervalNote'], d.meanTimeNoIntervalNote),
     valueLabels: booleanOr(v['valueLabels'], d.valueLabels),
     valueLabelSizePx: numeric('valueLabelSizePx'),
-    axisTextSizePx: numeric('axisTextSizePx'),
+    axisTextSizePx,
+    axisTitleSizePx: axisTitleSize(v, axisTextSizePx, barRangeControl('axisTitleSizePx')),
     singleRunMarker: booleanOr(v['singleRunMarker'], d.singleRunMarker),
     gridlines: booleanOr(v['gridlines'], d.gridlines),
     hiddenBadges: normalizeBadgeKinds(v['hiddenBadges']),
@@ -229,7 +312,9 @@ function normalizeScatter(value: unknown): ScatterFigureStyle {
   const v = isRecord(value) ? value : {};
   const numeric = (key: NumericScatterStyleKey): number =>
     clampToControl(v[key], scatterRangeControl(key), d[key]);
+  const axisTextSizePx = numeric('axisTextSizePx');
   return {
+    ...normalizeChrome(v),
     markRadiusPx: numeric('markRadiusPx'),
     intervals: booleanOr(v['intervals'], d.intervals),
     hiddenIntervalsNote: booleanOr(v['hiddenIntervalsNote'], d.hiddenIntervalsNote),
@@ -237,7 +322,8 @@ function normalizeScatter(value: unknown): ScatterFigureStyle {
     dominatedShading: booleanOr(v['dominatedShading'], d.dominatedShading),
     frontierWidthPx: numeric('frontierWidthPx'),
     labelTextSizePx: numeric('labelTextSizePx'),
-    axisTextSizePx: numeric('axisTextSizePx'),
+    axisTextSizePx,
+    axisTitleSizePx: axisTitleSize(v, axisTextSizePx, scatterRangeControl('axisTitleSizePx')),
     legendPosition: oneOf(v['legendPosition'], ['bottom', 'right'] as const, d.legendPosition),
     gridlines: booleanOr(v['gridlines'], d.gridlines),
     hiddenBadges: normalizeBadgeKinds(v['hiddenBadges']),
@@ -246,7 +332,7 @@ function normalizeScatter(value: unknown): ScatterFigureStyle {
 
 function normalizeProfile(value: unknown): ProfileFigureStyle {
   const v = isRecord(value) ? value : {};
-  return { hiddenBadges: normalizeBadgeKinds(v['hiddenBadges']) };
+  return { ...normalizeChrome(v), hiddenBadges: normalizeBadgeKinds(v['hiddenBadges']) };
 }
 
 /**
