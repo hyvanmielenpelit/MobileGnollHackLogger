@@ -2578,7 +2578,7 @@ describe('ModelComparisonComponent', () => {
       : entry);
     render(buildDto(entries), 4);
 
-    const warning = 'Model 3: 1 question has no scored answer (failed, skipped or ungraded) and is left out of its index.';
+    const warning = 'Gemini 2.5 Flash (medium): 1 question has no scored answer (failed, skipped or ungraded) and is left out of its index.';
     expect(component.setFigureNotes).toContain({ text: warning, tone: 'warning' });
 
     component.toggleEntry('run:3');

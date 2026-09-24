@@ -31,6 +31,7 @@ describe('figure-style', () => {
       axisTitleSizePx: 12,
       axisTitleBreak: 'auto',
       singleRunMarker: true,
+      thinkingLevelBreak: false,
       gridlines: true,
       hiddenBadges: []
     });
@@ -46,6 +47,7 @@ describe('figure-style', () => {
       axisTextSizePx: 11,
       axisTitleSizePx: 12,
       legendPosition: 'bottom',
+      thinkingLevelBreak: false,
       gridlines: true,
       hiddenBadges: []
     });
@@ -251,6 +253,21 @@ describe('figure-style', () => {
       expect(normalizeFigureStyle({ bar: { singleRunMarker: value } }).bar.singleRunMarker)
         .withContext(String(value)).toBeTrue();
     }
+  });
+
+  it('keeps the thinking level break per family when set and reads anything but a boolean as off', () => {
+    const style = normalizeFigureStyle({ bar: { thinkingLevelBreak: true }, scatter: { thinkingLevelBreak: true } });
+    expect(style.bar.thinkingLevelBreak).toBeTrue();
+    expect(style.scatter.thinkingLevelBreak).toBeTrue();
+    expect(normalizeFigureStyle({ bar: { thinkingLevelBreak: true } }).scatter.thinkingLevelBreak).toBeFalse();
+    for (const value of ['true', 1, null, undefined]) {
+      const repaired = normalizeFigureStyle({ bar: { thinkingLevelBreak: value }, scatter: { thinkingLevelBreak: value } });
+      expect(repaired.bar.thinkingLevelBreak).withContext(String(value)).toBeFalse();
+      expect(repaired.scatter.thinkingLevelBreak).withContext(String(value)).toBeFalse();
+    }
+    const stored = normalizeFigureStyle({ bar: { gapPercent: 10 }, scatter: { markRadiusPx: 9 } });
+    expect(stored.bar.thinkingLevelBreak).toBeFalse();
+    expect(stored.scatter.thinkingLevelBreak).toBeFalse();
   });
 
   it('keeps known badge kinds once each, in control order, and drops the rest', () => {

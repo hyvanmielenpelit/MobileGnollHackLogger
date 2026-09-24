@@ -36,6 +36,8 @@ import {
   formatQuestionsAsked,
   glyphFor,
   measureDirectLabelBlock,
+  modelLabelLines,
+  modelLabelText,
   normalizeProfile,
   placeDirectLabels,
   segmentIntersectsRect,
@@ -2203,6 +2205,147 @@ describe('model-comparison-charts', () => {
           } else {
             expect(spec.chrome.badges).withContext(spec.id).toEqual(plainById.get(spec.id)!.chrome.badges);
           }
+        }
+      });
+    });
+
+    describe('the thinking level line', () => {
+      const leveled = (key: string, name: string, thinkingLevel: string | null, runCount = 3): ModelComparisonEntry =>
+        makeEntry({ key, name, thinkingLevel, label: modelLabelText(name, thinkingLevel), runCount });
+      const LEVELED = [
+        leveled('luna', 'GPT-5.6 Luna', 'max'),
+        leveled('flash', 'Gemini 3.7 Flash', 'high'),
+        leveled('plain', 'Plain Model', null),
+      ];
+
+      it('composes the one-line label and breaks it only when asked and a level exists', () => {
+        expect(modelLabelText('GPT-5.6 Luna', 'max')).toBe('GPT-5.6 Luna (max)');
+        expect(modelLabelText('GPT-5.6 Luna', null)).toBe('GPT-5.6 Luna');
+        expect(modelLabelText('GPT-5.6 Luna', undefined)).toBe('GPT-5.6 Luna');
+
+        const [luna, , plain] = LEVELED;
+        expect(modelLabelLines(luna, false)).toBe('GPT-5.6 Luna (max)');
+        expect(modelLabelLines(luna, true)).toEqual(['GPT-5.6 Luna', '(max)']);
+        expect(modelLabelLines(plain, true)).toBe('Plain Model');
+        // An entry built without the parts is never broken.
+        expect(modelLabelLines(makeEntry({ key: 'bare' }), true)).toBe('bare');
+      });
+
+      for (const orientation of ['vertical', 'horizontal'] as const) {
+        it(`puts the level on its own tick line in all three ${orientation} bar panels when on`, () => {
+          const build = (thinkingLevelBreak: boolean) => buildSmallMultiples(LEVELED, {
+            ...smallMultiplesOptions({ orientation, style: style({ thinkingLevelBreak }) }),
+            glyphs: buildIdentityGlyphs(LEVELED),
+          });
+          const off = build(false);
+          const on = build(true);
+          for (const panel of [off.quality, off.speed, off.cost]) {
+            expect(panel.config.data.labels).withContext(panel.id)
+              .toEqual(['GPT-5.6 Luna (max)', 'Gemini 3.7 Flash (high)', 'Plain Model']);
+          }
+          for (const panel of [on.quality, on.speed, on.cost]) {
+            expect(panel.config.data.labels).withContext(panel.id)
+              .toEqual([['GPT-5.6 Luna', '(max)'], ['Gemini 3.7 Flash', '(high)'], 'Plain Model']);
+          }
+        });
+      }
+
+      it('puts n = 1 after the level line on a single-run model', () => {
+        const entries = [leveled('once', 'GPT-5.6 Luna', 'max', 1), leveled('plain', 'Plain Model', null, 1)];
+        const build = (thinkingLevelBreak: boolean) => buildSmallMultiples(entries, {
+          ...smallMultiplesOptions({ style: style({ thinkingLevelBreak }) }),
+          glyphs: buildIdentityGlyphs(entries),
+        });
+        for (const panel of [build(true).quality, build(true).speed, build(true).cost]) {
+          expect(panel.config.data.labels).withContext(panel.id)
+            .toEqual([['GPT-5.6 Luna', '(max)', 'n = 1'], ['Plain Model', 'n = 1']]);
+        }
+        expect(build(false).quality.config.data.labels)
+          .toEqual([['GPT-5.6 Luna (max)', 'n = 1'], ['Plain Model', 'n = 1']]);
+      });
+
+      it('measures a two-line name one name line taller and as wide as its widest line', () => {
+        const ctx = { font: '', measureText: (text: string) => ({ width: text.length * 6 }) };
+        const values = [{ label: 'Intelligence', text: '82.4' }];
+        const oneLine = measureDirectLabelBlock(ctx as unknown as CanvasRenderingContext2D, {
+          name: 'GPT-5.6 Luna (max)', values, hue: '#3987e5',
+        });
+        const twoLines = measureDirectLabelBlock(ctx as unknown as CanvasRenderingContext2D, {
+          name: ['GPT-5.6 Luna', '(max)'], values, hue: '#3987e5',
+        });
+        expect(twoLines.height).toBe(oneLine.height + 12);
+        expect(twoLines.width).toBeGreaterThanOrEqual(12 + 'GPT-5.6 Luna'.length * 6);
+        expect(twoLines.width).toBe(12 + Math.max('GPT-5.6 Luna'.length * 6, 72 + 8 + 24));
+      });
+
+      it('breaks the scatter plate names only when the option is on', () => {
+        const blocks = (thinkingLevelBreak: boolean) => {
+          const spec = buildQualitySpeedScatter(LEVELED, {
+            ...BASE_FIGURE_OPTIONS,
+            glyphs: buildIdentityGlyphs(LEVELED),
+            directLabels: true,
+            style: style({}, { thinkingLevelBreak }),
+          });
+          return (spec.config.options?.plugins as Record<string, DirectLabelPluginOptions>)[directLabelPlugin.id].blocks;
+        };
+        expect(blocks(false).map((b) => b.name)).toEqual(['GPT-5.6 Luna (max)', 'Gemini 3.7 Flash (high)', 'Plain Model']);
+        expect(blocks(true).map((b) => b.name))
+          .toEqual([['GPT-5.6 Luna', '(max)'], ['Gemini 3.7 Flash', '(high)'], 'Plain Model']);
+      });
+
+      describe('the scatter legend', () => {
+        beforeAll(() => {
+          Chart.register(...APP_CHART_REGISTRABLES);
+        });
+
+        type LegendLabels = { generateLabels?: (chart: Chart) => { text: string | string[]; datasetIndex?: number }[] };
+        const legendLabels = (scatter: Partial<ScatterFigureStyle>, directLabels = false): LegendLabels => {
+          const spec = buildQualitySpeedScatter(LEVELED, {
+            ...BASE_FIGURE_OPTIONS,
+            glyphs: buildIdentityGlyphs(LEVELED),
+            directLabels,
+            style: style({}, scatter),
+          });
+          return spec.config.options?.plugins?.legend?.labels as LegendLabels;
+        };
+
+        it('wraps only a right legend, with the option on and no direct labels', () => {
+          expect(legendLabels({ legendPosition: 'right', thinkingLevelBreak: true }).generateLabels).toBeDefined();
+          expect(legendLabels({ legendPosition: 'bottom', thinkingLevelBreak: true }).generateLabels).toBeUndefined();
+          expect(legendLabels({ legendPosition: 'right', thinkingLevelBreak: false }).generateLabels).toBeUndefined();
+          expect(legendLabels({ legendPosition: 'right', thinkingLevelBreak: true }, true).generateLabels).toBeUndefined();
+        });
+
+        it('gives model items two lines and leaves the frontier item as it is', () => {
+          const defaults = [
+            { text: 'GPT-5.6 Luna (max)', datasetIndex: 0 },
+            { text: 'Gemini 3.7 Flash (high)', datasetIndex: 1 },
+            { text: 'Plain Model', datasetIndex: 2 },
+            { text: 'Pareto frontier', datasetIndex: 3 },
+          ];
+          spyOn(Chart.defaults.plugins.legend.labels, 'generateLabels')
+            .and.returnValue(defaults as unknown as ReturnType<typeof Chart.defaults.plugins.legend.labels.generateLabels>);
+          const generate = legendLabels({ legendPosition: 'right', thinkingLevelBreak: true }).generateLabels!;
+          expect(generate({} as Chart).map((item) => item.text)).toEqual([
+            ['GPT-5.6 Luna', '(max)'],
+            ['Gemini 3.7 Flash', '(high)'],
+            'Plain Model',
+            'Pareto frontier',
+          ]);
+        });
+      });
+
+      it('keeps the profile legend on one line, with the level, whatever the option', () => {
+        for (const figureStyle of [style(), style({ thinkingLevelBreak: true }, { thinkingLevelBreak: true })]) {
+          const spec = buildProfilePlot(LEVELED, {
+            ...BASE_FIGURE_OPTIONS,
+            glyphs: buildIdentityGlyphs(LEVELED),
+            speedMeasure: 'speedIndex',
+            costMeasure: 'candidateSuite',
+            style: figureStyle,
+          });
+          expect(datasetsOf(spec.config).map((d) => d['label']))
+            .toEqual(['GPT-5.6 Luna (max)', 'Gemini 3.7 Flash (high)', 'Plain Model']);
         }
       });
     });

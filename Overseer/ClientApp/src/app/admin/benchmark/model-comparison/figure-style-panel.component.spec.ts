@@ -146,6 +146,38 @@ describe('FigureStylePanelComponent', () => {
     expect(emitted[emitted.length - 1].bar.singleRunMarker).toBeTrue();
   });
 
+  it('switches the thinking level line of one family at a time and names it in the read-out', () => {
+    const readout = (family: string, name: string): string =>
+      host().querySelector(`#mc-style-${family}-section-${name} > summary .gh-disclosure-summary-value`)!.textContent!.trim();
+
+    render('bar');
+    const bar = control('mc-style-bar-thinkingLevelBreak');
+    expect(bar.checked).toBeFalse();
+    expect(readout('bar', 'values')).not.toContain('level on own line');
+    setChecked(bar, true);
+    expect(emitted[0].bar).toEqual({ ...DEFAULT_FIGURE_STYLE.bar, thinkingLevelBreak: true });
+    expect(emitted[0].scatter).toBe(DEFAULT_FIGURE_STYLE.scatter);
+    acceptLast();
+    expect(control('mc-style-bar-thinkingLevelBreak').checked).toBeTrue();
+    expect(readout('bar', 'values')).toBe('values 11 px · axis 11/12 px · n = 1 · level on own line');
+    fixture.componentInstance.resetBar();
+    expect(emitted[emitted.length - 1].bar.thinkingLevelBreak).toBeFalse();
+
+    emitted.length = 0;
+    render('scatter');
+    const scatter = control('mc-style-scatter-thinkingLevelBreak');
+    expect(scatter.checked).toBeFalse();
+    expect(hintOf(scatter)).toContain('A legend at the bottom keeps each name on one line.');
+    expect(readout('scatter', 'labels')).not.toContain('level on own line');
+    setChecked(scatter, true);
+    expect(emitted[0].scatter).toEqual({ ...DEFAULT_FIGURE_STYLE.scatter, thinkingLevelBreak: true });
+    expect(emitted[0].bar).toEqual(DEFAULT_FIGURE_STYLE.bar);
+    acceptLast();
+    expect(readout('scatter', 'labels')).toContain('level on own line');
+    fixture.componentInstance.resetScatter();
+    expect(emitted[emitted.length - 1].scatter.thinkingLevelBreak).toBeFalse();
+  });
+
   it('hides and shows one badge of one family at a time', () => {
     render('bar');
     const questions = control('mc-style-bar-badge-questions');

@@ -10,7 +10,8 @@
  */
 
 import ChartDataLabels from 'chartjs-plugin-datalabels';
-import type { Chart, ChartConfiguration, ChartType, DefaultDataPoint, FontSpec, Plugin, Point, Scale } from 'chart.js';
+import { Chart } from 'chart.js';
+import type { ChartConfiguration, ChartType, DefaultDataPoint, FontSpec, Plugin, Point, Scale } from 'chart.js';
 import { toFont } from 'chart.js/helpers';
 import { chooseScaleType, formatTick, linearDomain, logDomain, timeUnitFor } from './axis-domain';
 import type { AxisBounds, AxisTickKind, ScaleType, TimeUnit } from './axis-domain';
@@ -34,8 +35,15 @@ import type { NumberFormatStyle, NumberMeasure, NumberSamples } from './measure-
 export interface ModelComparisonEntry {
   /** Stable identity of the entry across sorts, filters and reloads. Drives the identity glyph. */
   readonly key: string;
-  /** Display name, used on axes, in legends and in direct labels. */
+  /**
+   * Display name followed by the thinking level in parentheses (`GPT-5.6 Luna (max)`): the
+   * one-line form, used wherever a label is not broken.
+   */
   readonly label: string;
+  /** The display name without the thinking level. Absent: `label` is never broken. */
+  readonly name?: string;
+  /** Lower-case thinking level, or null/absent when the entry has none. */
+  readonly thinkingLevel?: string | null;
   /** R - the number of runs behind the entry. R = 1 draws hollow marks and carries no cost SD. */
   readonly runCount: number;
 
@@ -108,6 +116,18 @@ export interface ModelComparisonContext {
   readonly pricedOn: string;
   /** Suite name, for figure titles. */
   readonly suiteName: string;
+}
+
+/** `GPT-5.6 Luna (max)`; the name alone when there is no thinking level. */
+export function modelLabelText(name: string, thinkingLevel: string | null | undefined): string {
+  return thinkingLevel ? `${name} (${thinkingLevel})` : name;
+}
+
+/** The label's drawn lines: the name, then `(level)` under it when broken; otherwise the one-line label. */
+export function modelLabelLines(entry: ModelComparisonEntry, breakThinkingLevel: boolean): string | string[] {
+  return breakThinkingLevel && entry.name && entry.thinkingLevel
+    ? [entry.name, `(${entry.thinkingLevel})`]
+    : entry.label;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1287,11 +1307,18 @@ export interface DirectLabelValue {
 
 /** What one mark's plate carries. A block with neither a name nor values draws nothing. */
 export interface DirectLabelBlock {
-  /** The model's name; absent when the legend names the marks. */
-  readonly name?: string;
+  /** The model's name, one line or several; absent when the legend names the marks. */
+  readonly name?: string | readonly string[];
   readonly values: readonly DirectLabelValue[];
   /** The mark's glyph hue, drawn as the plate's left rule. */
   readonly hue: string;
+}
+
+function directLabelNameLines(name: string | readonly string[] | undefined): readonly string[] {
+  if (name === undefined) {
+    return [];
+  }
+  return (typeof name === 'string' ? [name] : name).filter((line) => line.length > 0);
 }
 
 /** What the plugin reads off the chart options: one block per model dataset, in dataset order. */
@@ -1322,7 +1349,11 @@ export function measureDirectLabelBlock(
 ): { width: number; height: number; labelColumn: number; valueColumn: number } {
   const metrics = directLabelMetrics(size);
   ctx.font = metrics.nameFont;
-  const nameWidth = block.name ? ctx.measureText(block.name).width : 0;
+  const nameLines = directLabelNameLines(block.name);
+  let nameWidth = 0;
+  for (const line of nameLines) {
+    nameWidth = Math.max(nameWidth, ctx.measureText(line).width);
+  }
 
   ctx.font = metrics.valueFont;
   let labelColumn = 0;
@@ -1341,7 +1372,7 @@ export function measureDirectLabelBlock(
       Math.max(nameWidth, valuesWidth),
     height:
       DIRECT_LABEL_PAD_Y * 2 +
-      (block.name ? metrics.nameLineHeight : 0) +
+      nameLines.length * metrics.nameLineHeight +
       block.values.length * metrics.valueLineHeight,
     labelColumn,
     valueColumn,
@@ -1456,7 +1487,7 @@ export const directLabelPlugin: Plugin = {
     // Keyed by dataset index, so two models sharing a label cannot collide in the placer's map.
     const plates = new Map<string, { block: DirectLabelBlock; labelColumn: number; valueColumn: number }>();
     blocks.forEach((block, datasetIndex) => {
-      if (!block.name && block.values.length === 0) {
+      if (directLabelNameLines(block.name).length === 0 && block.values.length === 0) {
         return;
       }
       const meta = chart.getDatasetMeta(datasetIndex);
@@ -1512,12 +1543,15 @@ export const directLabelPlugin: Plugin = {
       const textRight = box.x + box.width - DIRECT_LABEL_PAD_X;
       let lineTop = box.y + DIRECT_LABEL_PAD_Y;
 
-      if (plate.block.name) {
+      const nameLines = directLabelNameLines(plate.block.name);
+      if (nameLines.length > 0) {
         ctx.font = text.nameFont;
         ctx.textAlign = 'left';
         ctx.fillStyle = accented ? ACCENT : CHART_INK.secondary;
-        ctx.fillText(plate.block.name, textLeft, lineTop + text.nameLineHeight / 2);
-        lineTop += text.nameLineHeight;
+        for (const line of nameLines) {
+          ctx.fillText(line, textLeft, lineTop + text.nameLineHeight / 2);
+          lineTop += text.nameLineHeight;
+        }
       }
 
       ctx.font = text.valueFont;
@@ -1836,7 +1870,7 @@ export const FRONTIER_UNCERTAINTY_NOTE =
 function directLabelBlock(
   entry: ModelComparisonEntry,
   axes: readonly (readonly [ScatterAxisSpec, (value: number) => string])[],
-  options: { glyphs: ReadonlyMap<string, IdentityGlyph>; named: boolean; valued: boolean },
+  options: { glyphs: ReadonlyMap<string, IdentityGlyph>; named: boolean; valued: boolean; breakThinkingLevel: boolean },
 ): DirectLabelBlock {
   const values: DirectLabelValue[] = [];
   if (options.valued) {
@@ -1848,7 +1882,7 @@ function directLabelBlock(
     }
   }
   return {
-    name: options.named ? entry.label : undefined,
+    name: options.named ? modelLabelLines(entry, options.breakThinkingLevel) : undefined,
     values,
     hue: glyphFor(options.glyphs, entry.key).hue,
   };
@@ -1951,6 +1985,17 @@ function buildScatter(
             usePointStyle: true,
             // The frontier is an annotation, not a series, so it stays out of the identity legend.
             filter: (item) => item.text !== PARETO_FRONTIER_LABEL,
+            // Only a vertical legend stacks an array's lines; a horizontal one would overlap them.
+            ...(!directLabels && style.legendPosition === 'right' && style.thinkingLevelBreak
+              ? {
+                  generateLabels: (chart: Chart) =>
+                    Chart.defaults.plugins.legend.labels.generateLabels(chart).map((item) =>
+                      item.datasetIndex !== undefined && item.datasetIndex < plotted.length
+                        // Chart.js 4 draws an array as stacked lines; its typings declare a string.
+                        ? { ...item, text: modelLabelLines(plotted[item.datasetIndex], true) as string }
+                        : item),
+                }
+              : {}),
           },
         },
         tooltip: {
@@ -1984,6 +2029,7 @@ function buildScatter(
                   glyphs,
                   named: directLabels,
                   valued: inlineValues,
+                  breakThinkingLevel: style.thinkingLevelBreak,
                 })),
                 highlightedIndex: highlightedIndex < 0 ? undefined : highlightedIndex,
                 fontSizePx: style.labelTextSizePx,
@@ -2477,9 +2523,13 @@ export function buildSmallMultiples(
   // One label list for all three panels. A two-line tick block on one panel alone would shrink
   // that panel's plot area and put its bars out of line with the other two, which share a height
   // and a model order.
-  const categoryLabels: PanelCategoryLabel[] = plotted.map((e) =>
-    e.runCount === 1 && barStyle.singleRunMarker ? [e.label, 'n = 1'] : e.label,
-  );
+  const categoryLabels: PanelCategoryLabel[] = plotted.map((e) => {
+    const lines = ([] as string[]).concat(modelLabelLines(e, barStyle.thinkingLevelBreak));
+    if (e.runCount === 1 && barStyle.singleRunMarker) {
+      lines.push('n = 1');
+    }
+    return lines.length === 1 ? lines[0] : lines;
+  });
 
   return {
     quality: buildPanel(

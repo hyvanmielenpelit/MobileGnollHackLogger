@@ -67,7 +67,10 @@ export const FIGURE_STYLE_SECTIONS: Readonly<Record<StyleFamily, readonly Figure
     {
       name: 'values',
       title: 'Values and axes',
-      keys: ['valueLabels', 'valueLabelSizePx', 'singleRunMarker', 'axisTextSizePx', 'axisTitleSizePx', 'axisTitleBreak']
+      keys: [
+        'valueLabels', 'valueLabelSizePx', 'singleRunMarker', 'thinkingLevelBreak', 'axisTextSizePx', 'axisTitleSizePx',
+        'axisTitleBreak'
+      ]
     },
     NUMBERS_SECTION,
     { name: 'uncertainty', title: 'Uncertainty', keys: ['intervals', 'hiddenIntervalsNote', 'meanTimeNoIntervalNote'] },
@@ -77,7 +80,7 @@ export const FIGURE_STYLE_SECTIONS: Readonly<Record<StyleFamily, readonly Figure
   scatter: [
     { name: 'heading', title: 'Heading and badges', keys: HEADING_KEYS },
     { name: 'marks', title: 'Marks and frontier', keys: ['markRadiusPx', 'frontierWidthPx', 'dominatedShading'] },
-    { name: 'labels', title: 'Labels and legend', keys: ['labelTextSizePx', 'legendPosition'] },
+    { name: 'labels', title: 'Labels and legend', keys: ['labelTextSizePx', 'legendPosition', 'thinkingLevelBreak'] },
     NUMBERS_SECTION,
     { name: 'axes', title: 'Axes', keys: ['axisTextSizePx', 'axisTitleSizePx', 'gridlines'] },
     { name: 'uncertainty', title: 'Uncertainty', keys: ['intervals', 'hiddenIntervalsNote', 'frontierIntervalsNote'] },
@@ -598,7 +601,8 @@ export class FigureStylePanelComponent implements OnInit {
           bar.valueLabels ? `values ${bar.valueLabelSizePx} px` : 'no values',
           `axis ${bar.axisTextSizePx}/${bar.axisTitleSizePx} px`,
           ...(bar.axisTitleBreak === 'auto' ? [] : [bar.axisTitleBreak === 'always' ? 'title always broken' : 'title never broken']),
-          ...(bar.singleRunMarker ? ['n = 1'] : [])
+          ...(bar.singleRunMarker ? ['n = 1'] : []),
+          ...(bar.thinkingLevelBreak ? ['level on own line'] : [])
         ].join(' · ');
       case 'layout': {
         const orientation = this.orientationOptions.find((option) => option.value === bar.orientation)?.label ?? '';
@@ -622,7 +626,8 @@ export class FigureStylePanelComponent implements OnInit {
         const plates = [...(this.directLabels ? ['names'] : []), ...(this.inlineValues ? ['values'] : [])];
         return [
           plates.length > 0 ? `${plates.join(' and ')} ${scatter.labelTextSizePx} px` : 'no labels',
-          this.directLabels ? 'no legend' : `legend ${scatter.legendPosition}`
+          this.directLabels ? 'no legend' : `legend ${scatter.legendPosition}`,
+          ...(scatter.thinkingLevelBreak ? ['level on own line'] : [])
         ].join(' · ');
       }
       case 'axes':

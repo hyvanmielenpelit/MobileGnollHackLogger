@@ -13,6 +13,7 @@
 
 import type { BenchmarkComparabilityDifferenceDto } from '../../../services/admin-benchmark.service';
 import type { FigureNote } from './figure-chrome';
+import { modelLabelText } from './model-comparison-charts';
 import type { ModelComparisonContext, ModelComparisonEntry } from './model-comparison-charts';
 
 export type { BenchmarkComparabilityDifferenceDto };
@@ -1065,6 +1066,26 @@ export function unmeasuredAxes(entry: BenchmarkModelComparisonEntryDto): string[
 }
 
 /**
+ * A stored thinking level as chart labels print it: trimmed, first letter lower-cased, the rest
+ * verbatim. Null when there is none.
+ */
+export function normalizeThinkingLevel(level: string | null | undefined): string | null {
+  const trimmed = level?.trim() ?? '';
+  return trimmed.length === 0 ? null : trimmed.charAt(0).toLowerCase() + trimmed.slice(1);
+}
+
+/**
+ * An entry's chart label, always carrying its thinking level: `GPT-5.6 Luna (max)`. The server's
+ * `label` appends the level only when the set mixes levels, so it is not used while the entry
+ * carries a display name.
+ */
+function chartLabel(entry: BenchmarkModelComparisonEntryDto): Pick<ModelComparisonEntry, 'label' | 'name' | 'thinkingLevel'> {
+  const name = entry.modelDisplayName || entry.modelId || entry.label;
+  const thinkingLevel = normalizeThinkingLevel(entry.thinkingLevel);
+  return { label: modelLabelText(name, thinkingLevel), name, thinkingLevel };
+}
+
+/**
  * Adapts one response onto the chart core's `ModelComparisonEntry`.
  *
  * Every entry is mapped, excluded ones included: they are counted, named and tabulated, and the
@@ -1079,7 +1100,7 @@ export function toChartEntries(dto: BenchmarkModelComparisonDto | null): ModelCo
   }
   return dto.entries.map(entry => ({
     key: entry.key,
-    label: entry.label || entry.modelDisplayName || entry.modelId,
+    ...chartLabel(entry),
     runCount: entry.runCount,
 
     intelligenceIndex: entry.quality?.pointEstimate ?? UNMEASURED,
@@ -1153,7 +1174,7 @@ export function questionCoverageNotes(entries: readonly BenchmarkModelComparison
     }
     const one = unscored === 1;
     notes.push({
-      text: `${entry.label || entry.modelDisplayName || entry.modelId}: ${unscored} ` +
+      text: `${chartLabel(entry).label}: ${unscored} ` +
         `${one ? 'question has' : 'questions have'} no scored answer (failed, skipped or ungraded) and ` +
         `${one ? 'is' : 'are'} left out of its index.`,
       tone: 'warning',

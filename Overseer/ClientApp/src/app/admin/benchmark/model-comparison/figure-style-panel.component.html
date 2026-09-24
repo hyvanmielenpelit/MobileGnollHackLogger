@@ -215,6 +215,13 @@
                   Show n = 1 under single-run model names
                 </label>
               </div>
+              <div class="fsp-check">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="mc-style-bar-thinkingLevelBreak" [checked]="bar.thinkingLevelBreak"
+                         (change)="setBar('thinkingLevelBreak', checkedOf($event))">
+                  Put the thinking level on its own line
+                </label>
+              </div>
               @for (control of barAxisControls; track control.key) {
                 <ng-container *ngTemplateOutlet="range; context: { family: 'bar', control: control }"></ng-container>
               }
@@ -365,6 +372,15 @@
                          (change)="onInlineValues(checkedOf($event))">
                   Show values in the chart
                 </label>
+              </div>
+              <div class="fsp-check">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="mc-style-scatter-thinkingLevelBreak" [checked]="scatter.thinkingLevelBreak"
+                         aria-describedby="mc-style-scatter-thinkingLevelBreak-tip"
+                         (change)="setScatter('thinkingLevelBreak', checkedOf($event))">
+                  Put the thinking level on its own line
+                </label>
+                <app-info-tip tipId="mc-style-scatter-thinkingLevelBreak-tip" subject="the thinking level line">Applies to model names drawn in the chart and to a legend on the right. A legend at the bottom keeps each name on one line.</app-info-tip>
               </div>
               <ng-container *ngTemplateOutlet="range; context: { family: 'scatter', control: scatterLabelControl }"></ng-container>
               <fieldset class="fsp-choice" [disabled]="directLabels"

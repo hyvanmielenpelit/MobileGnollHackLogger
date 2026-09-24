@@ -1,6 +1,7 @@
 import {
   buildConditionLegend,
   conditionDetailFor,
+  normalizeThinkingLevel,
   parseConfigurationValue,
   questionCoverageNotes,
   summarizeConditionDifference,
@@ -576,6 +577,17 @@ describe('questionCoverageNotes', () => {
     }]);
   });
 
+  it('names the entry with its thinking level, as the figures do', () => {
+    const notes = questionCoverageNotes([
+      buildComparisonEntry('run:1', { itemCount: 17, unscoredItemCount: 1 }, {
+        label: 'GPT-5.6 Luna', modelDisplayName: 'GPT-5.6 Luna', thinkingLevel: 'max'
+      })
+    ]);
+    expect(notes[0].text).toBe(
+      'GPT-5.6 Luna (max): 1 question has no scored answer (failed, skipped or ungraded) and is left out of its index.'
+    );
+  });
+
   it('warns for each entry with unscored questions, in entry order', () => {
     const notes = questionCoverageNotes([
       buildComparisonEntry('a', { itemCount: 15, unscoredItemCount: 3 }),
@@ -588,6 +600,46 @@ describe('questionCoverageNotes', () => {
     expect(notes[1].text).toBe(
       'b: 2 questions have no scored answer (failed, skipped or ungraded) and are left out of its index.'
     );
+  });
+});
+
+describe('normalizeThinkingLevel', () => {
+  it('trims, lower-cases the first letter only, and is null without a level', () => {
+    expect(normalizeThinkingLevel('Max')).toBe('max');
+    expect(normalizeThinkingLevel(' xhigh ')).toBe('xhigh');
+    expect(normalizeThinkingLevel('XHigh')).toBe('xHigh');
+    for (const value of [null, undefined, '', '   ']) {
+      expect(normalizeThinkingLevel(value)).withContext(String(value)).toBeNull();
+    }
+  });
+});
+
+describe('toChartEntries labels', () => {
+  function chartEntry(overrides: Partial<BenchmarkModelComparisonEntryDto>) {
+    return toChartEntries(buildComparison([buildComparisonEntry('run:1', {}, overrides)]))[0];
+  }
+
+  it('always follows the display name with the thinking level in parentheses', () => {
+    const entry = chartEntry({ label: 'GPT-5.6 Luna', modelDisplayName: 'GPT-5.6 Luna', thinkingLevel: 'max' });
+    expect(entry.label).toBe('GPT-5.6 Luna (max)');
+    expect(entry.name).toBe('GPT-5.6 Luna');
+    expect(entry.thinkingLevel).toBe('max');
+  });
+
+  it('starts the level with a lower-case letter', () => {
+    expect(chartEntry({ modelDisplayName: 'GPT-5.6 Luna', thinkingLevel: 'Max' }).label).toBe('GPT-5.6 Luna (max)');
+  });
+
+  it('adds no parentheses without a thinking level', () => {
+    for (const thinkingLevel of [null, '  ']) {
+      const entry = chartEntry({ modelDisplayName: 'GPT-5.6 Luna', thinkingLevel });
+      expect(entry.label).withContext(String(thinkingLevel)).toBe('GPT-5.6 Luna');
+      expect(entry.thinkingLevel).withContext(String(thinkingLevel)).toBeNull();
+    }
+  });
+
+  it('does not repeat a level the server label already carries', () => {
+    expect(chartEntry({ label: 'X (low)', modelDisplayName: 'X', thinkingLevel: 'low' }).label).toBe('X (low)');
   });
 });
 

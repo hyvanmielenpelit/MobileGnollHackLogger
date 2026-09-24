@@ -49,6 +49,8 @@ export interface BarFigureStyle extends FigureChromeStyle {
   readonly axisTitleBreak: AxisTitleBreak;
   /** `n = 1` under a single-run model's name. */
   readonly singleRunMarker: boolean;
+  /** The thinking level on a line of its own under the model name. */
+  readonly thinkingLevelBreak: boolean;
   readonly gridlines: boolean;
   readonly hiddenBadges: readonly FigureBadgeKind[];
 }
@@ -70,6 +72,8 @@ export interface ScatterFigureStyle extends FigureChromeStyle {
   readonly axisTextSizePx: number;
   readonly axisTitleSizePx: number;
   readonly legendPosition: ScatterLegendPosition;
+  /** The thinking level on a line of its own under the model name. */
+  readonly thinkingLevelBreak: boolean;
   readonly gridlines: boolean;
   readonly hiddenBadges: readonly FigureBadgeKind[];
 }
@@ -117,6 +121,7 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
     axisTitleSizePx: 12,
     axisTitleBreak: 'auto',
     singleRunMarker: true,
+    thinkingLevelBreak: false,
     gridlines: true,
     hiddenBadges: [],
   },
@@ -132,6 +137,7 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
     axisTextSizePx: 11,
     axisTitleSizePx: 12,
     legendPosition: 'bottom',
+    thinkingLevelBreak: false,
     gridlines: true,
     hiddenBadges: [],
   },
@@ -314,6 +320,7 @@ function normalizeBar(value: unknown): BarFigureStyle {
     axisTitleSizePx: axisTitleSize(v, axisTextSizePx, barRangeControl('axisTitleSizePx')),
     axisTitleBreak: oneOf(v['axisTitleBreak'], ['auto', 'always', 'never'] as const, d.axisTitleBreak),
     singleRunMarker: booleanOr(v['singleRunMarker'], d.singleRunMarker),
+    thinkingLevelBreak: booleanOr(v['thinkingLevelBreak'], d.thinkingLevelBreak),
     gridlines: booleanOr(v['gridlines'], d.gridlines),
     hiddenBadges: normalizeBadgeKinds(v['hiddenBadges']),
   };
@@ -337,6 +344,7 @@ function normalizeScatter(value: unknown): ScatterFigureStyle {
     axisTextSizePx,
     axisTitleSizePx: axisTitleSize(v, axisTextSizePx, scatterRangeControl('axisTitleSizePx')),
     legendPosition: oneOf(v['legendPosition'], ['bottom', 'right'] as const, d.legendPosition),
+    thinkingLevelBreak: booleanOr(v['thinkingLevelBreak'], d.thinkingLevelBreak),
     gridlines: booleanOr(v['gridlines'], d.gridlines),
     hiddenBadges: normalizeBadgeKinds(v['hiddenBadges']),
   };
