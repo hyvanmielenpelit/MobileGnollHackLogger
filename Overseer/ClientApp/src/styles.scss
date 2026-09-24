@@ -1305,6 +1305,7 @@ label.checkbox-label,
 
     &::before {
       content: "";
+      flex: none;
       width: 8px;
       height: 8px;
       border-right: 2px solid currentColor;
