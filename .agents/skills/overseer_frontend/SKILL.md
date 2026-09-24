@@ -265,8 +265,8 @@ To find specific popups, look in the corresponding component's `.html` template:
   Cross-model comparison, step 4)**
   - No preview dialog: step 4 is a workspace. A collapsible sidebar has three tabs — Emphasis,
     Export (size, aspect ratio, density, format, quality, text size) and Style
-    (`app-figure-style-panel` under a *Bar panels / Profile / Trade-offs* family selector that
-    follows the previewed figure) — and its collapsed state and tab are kept in
+    (`app-figure-style-panel` under a segmented *Bar panels / Profile / Trade-offs* tab row that
+    follows the previewed figure; each settings section has its own reset button) — and its collapsed state and tab are kept in
     `localStorage['overseer.modelComparison.figureSidebar']`. Beside it, a Charts / Preview tab
     pair: Charts holds the cards, each with one *Open in preview* (eye) button; Preview composes
     one figure exactly as it will be exported, with zoom, Copy and Download. *Download all* sits in

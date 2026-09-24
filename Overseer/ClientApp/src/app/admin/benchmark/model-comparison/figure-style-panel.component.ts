@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 
 import type { FigureBadgeKind } from './figure-chrome';
@@ -20,39 +20,48 @@ import {
 } from './figure-style';
 import { FRONTIER_UNCERTAINTY_NOTE, MEAN_TIME_NO_INTERVAL_NOTE } from './model-comparison-charts';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
+import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 
 /** Which control set the panel shows: the bar panels', the trade-off scatters', or the profile's. */
 export type FigureStylePanelKind = 'bar' | 'scatter' | 'profile';
 
 type StyleFamily = 'bar' | 'scatter' | 'profile';
 
-/** One collapsible section: its key within the family and its summary title. */
+/** One collapsible section: its key within the family, its summary title and the style fields it edits. */
 export interface FigureStyleSection {
   readonly name: string;
   readonly title: string;
+  readonly keys: readonly string[];
 }
 
-/** Each family's sections, in the order the panel stacks them. */
+const HEADING_KEYS = ['titleSizePx', 'badgeTextSizePx', 'hiddenBadges'] as const;
+const FOOTER_KEYS = ['footer', 'footerTextSizePx'] as const;
+
+/** Each family's sections, in the order the panel stacks them. Together they claim every style field once. */
 export const FIGURE_STYLE_SECTIONS: Readonly<Record<StyleFamily, readonly FigureStyleSection[]>> = {
   bar: [
-    { name: 'heading', title: 'Heading and badges' },
-    { name: 'bars', title: 'Bars' },
-    { name: 'values', title: 'Values and axes' },
-    { name: 'uncertainty', title: 'Uncertainty' },
-    { name: 'footer', title: 'Footer' },
-    { name: 'layout', title: 'Layout' }
+    { name: 'heading', title: 'Heading and badges', keys: HEADING_KEYS },
+    { name: 'bars', title: 'Bars', keys: ['gapPercent', 'maxBarWidthPx', 'cornerRadiusPx', 'outlineWidthPx', 'filledBars'] },
+    {
+      name: 'values',
+      title: 'Values and axes',
+      keys: ['valueLabels', 'valueLabelSizePx', 'singleRunMarker', 'axisTextSizePx', 'axisTitleSizePx']
+    },
+    { name: 'uncertainty', title: 'Uncertainty', keys: ['intervals', 'hiddenIntervalsNote', 'meanTimeNoIntervalNote'] },
+    { name: 'footer', title: 'Footer', keys: FOOTER_KEYS },
+    { name: 'layout', title: 'Layout', keys: ['orientation', 'gridlines'] }
   ],
   scatter: [
-    { name: 'heading', title: 'Heading and badges' },
-    { name: 'marks', title: 'Marks and frontier' },
-    { name: 'labels', title: 'Labels and legend' },
-    { name: 'axes', title: 'Axes' },
-    { name: 'uncertainty', title: 'Uncertainty' },
-    { name: 'footer', title: 'Footer' }
+    { name: 'heading', title: 'Heading and badges', keys: HEADING_KEYS },
+    { name: 'marks', title: 'Marks and frontier', keys: ['markRadiusPx', 'frontierWidthPx', 'dominatedShading'] },
+    { name: 'labels', title: 'Labels and legend', keys: ['labelTextSizePx', 'legendPosition'] },
+    { name: 'axes', title: 'Axes', keys: ['axisTextSizePx', 'axisTitleSizePx', 'gridlines'] },
+    { name: 'uncertainty', title: 'Uncertainty', keys: ['intervals', 'hiddenIntervalsNote', 'frontierIntervalsNote'] },
+    { name: 'footer', title: 'Footer', keys: FOOTER_KEYS }
   ],
   profile: [
-    { name: 'heading', title: 'Heading and badges' },
-    { name: 'footer', title: 'Footer' }
+    { name: 'heading', title: 'Heading and badges', keys: HEADING_KEYS },
+    { name: 'footer', title: 'Footer', keys: FOOTER_KEYS }
   ]
 };
 
@@ -73,12 +82,25 @@ const BADGE_READOUT_NAMES: Record<FigureBadgeKind, string> = {
   pricing: 'pricing'
 };
 
+/** Equal to the page's initial `scatterDirectLabels` and `scatterInlineValues`. */
+const DEFAULT_DIRECT_LABELS = false;
+const DEFAULT_INLINE_VALUES = true;
+
+/** Equal field values; a badge list compares element by element, as the wizard keeps it in order. */
+function sameStyleValue(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((item, index) => item === b[index]);
+  }
+  return a === b;
+}
+
 /**
- * The preview dialog's Style tab: one control set for the three bar panels, another for the three
+ * The sidebar's Style tab: one control set for the three bar panels, another for the three
  * trade-off charts, and a caption set for the profile, each as a stack of collapsible sections.
  *
  * Every style change is emitted as a whole new style, and the wizard owns the style, its persistence
- * and the rebuild. The panel keeps only the last finite bar width and which sections are open.
+ * and the rebuild. The panel keeps only the last finite bar width, which sections are open and the
+ * status line of the last reset.
  */
 @Component({
   selector: 'app-figure-style-panel',
@@ -88,7 +110,7 @@ const BADGE_READOUT_NAMES: Record<FigureBadgeKind, string> = {
   styleUrls: ['./figure-style-panel.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class FigureStylePanelComponent {
+export class FigureStylePanelComponent implements OnInit {
   @Input() kind: FigureStylePanelKind = 'bar';
 
   @Input() figureStyle: FigureStyle = DEFAULT_FIGURE_STYLE;
@@ -142,8 +164,15 @@ export class FigureStylePanelComponent {
   /** Open section keys, `bar.heading` and the like. */
   openSections: Set<string> = this.readOpenSections();
 
+  /** What the status region announces after a reset; cleared by the next control change. */
+  resetStatus = '';
+
   /** Where *No limit* returns to when it is unticked. */
   private lastBarWidthPx = DEFAULT_FIGURE_STYLE.bar.maxBarWidthPx ?? 24;
+
+  ngOnInit(): void {
+    ensureOverlayPolyfills();
+  }
 
   get bar(): BarFigureStyle {
     return this.figureStyle.bar;
@@ -247,6 +276,7 @@ export class FigureStylePanelComponent {
 
   /** Emits the style with one field of one family replaced. */
   setFamily(family: StyleFamily, key: string, value: unknown): void {
+    this.resetStatus = '';
     this.figureStyleChange.emit({ ...this.figureStyle, [family]: { ...this.figureStyle[family], [key]: value } });
   }
 
@@ -283,17 +313,86 @@ export class FigureStylePanelComponent {
     return (event.target as HTMLInputElement).checked;
   }
 
+  onDirectLabels(on: boolean): void {
+    this.resetStatus = '';
+    this.directLabelsChange.emit(on);
+  }
+
+  onInlineValues(on: boolean): void {
+    this.resetStatus = '';
+    this.inlineValuesChange.emit(on);
+  }
+
   resetBar(): void {
     this.lastBarWidthPx = DEFAULT_FIGURE_STYLE.bar.maxBarWidthPx ?? 24;
     this.figureStyleChange.emit({ ...this.figureStyle, bar: DEFAULT_FIGURE_STYLE.bar });
+    this.resetStatus = 'Bar style reset to defaults.';
   }
 
   resetScatter(): void {
     this.figureStyleChange.emit({ ...this.figureStyle, scatter: DEFAULT_FIGURE_STYLE.scatter });
+    this.resetPageToggles();
+    this.resetStatus = 'Trade-off style reset to defaults.';
   }
 
   resetProfile(): void {
     this.figureStyleChange.emit({ ...this.figureStyle, profile: DEFAULT_FIGURE_STYLE.profile });
+    this.resetStatus = 'Profile style reset to defaults.';
+  }
+
+  /** Whether every field the section edits, and for Labels and legend the two page toggles, is at its default. */
+  sectionIsDefault(family: StyleFamily, name: string): boolean {
+    const fieldsDefault = this.sectionFieldsDefault(family, name);
+    if (family === 'scatter' && name === 'labels') {
+      return fieldsDefault && this.directLabels === DEFAULT_DIRECT_LABELS && this.inlineValues === DEFAULT_INLINE_VALUES;
+    }
+    return fieldsDefault;
+  }
+
+  /** Returns one section to its defaults, leaving every other field as it is. */
+  resetSection(family: StyleFamily, name: string): void {
+    if (this.sectionIsDefault(family, name)) {
+      return;
+    }
+    const section = this.section(family, name);
+    if (!this.sectionFieldsDefault(family, name)) {
+      const defaults = DEFAULT_FIGURE_STYLE[family] as unknown as Record<string, unknown>;
+      const reset = Object.fromEntries(section.keys.map((key) => [key, defaults[key]]));
+      if (family === 'bar' && name === 'bars') {
+        this.lastBarWidthPx = DEFAULT_FIGURE_STYLE.bar.maxBarWidthPx ?? 24;
+      }
+      this.figureStyleChange.emit({ ...this.figureStyle, [family]: { ...this.figureStyle[family], ...reset } });
+    }
+    if (family === 'scatter' && name === 'labels') {
+      this.resetPageToggles();
+    }
+    this.resetStatus = `${section.title} reset to defaults.`;
+  }
+
+  /** The reset button's accessible name. */
+  resetLabel(family: StyleFamily, name: string): string {
+    return `Reset ${this.section(family, name).title} to defaults`;
+  }
+
+  /** The reset button's tooltip. */
+  resetTip(family: StyleFamily, name: string): string {
+    return this.sectionIsDefault(family, name) ? 'Already at defaults' : 'Reset to defaults';
+  }
+
+  private sectionFieldsDefault(family: StyleFamily, name: string): boolean {
+    const current = this.figureStyle[family] as unknown as Record<string, unknown>;
+    const defaults = DEFAULT_FIGURE_STYLE[family] as unknown as Record<string, unknown>;
+    return this.section(family, name).keys.every((key) => sameStyleValue(current[key], defaults[key]));
+  }
+
+  /** The two trade-off toggles the page owns, emitted only where they differ from their defaults. */
+  private resetPageToggles(): void {
+    if (this.directLabels !== DEFAULT_DIRECT_LABELS) {
+      this.directLabelsChange.emit(DEFAULT_DIRECT_LABELS);
+    }
+    if (this.inlineValues !== DEFAULT_INLINE_VALUES) {
+      this.inlineValuesChange.emit(DEFAULT_INLINE_VALUES);
+    }
   }
 
   // --- Sections -----------------------------------------------------------------------------

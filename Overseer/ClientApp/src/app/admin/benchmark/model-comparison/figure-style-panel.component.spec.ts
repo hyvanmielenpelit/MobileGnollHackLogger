@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import {
   FIGURE_STYLE_PANEL_OPEN_KEY,
+  FIGURE_STYLE_SECTIONS,
   FigureStylePanelComponent,
   FigureStylePanelKind
 } from './figure-style-panel.component';
@@ -97,7 +98,7 @@ describe('FigureStylePanelComponent', () => {
 
   it('renders the trade-off set for a scatter and not the bar set', () => {
     render('scatter');
-    expect(host().querySelector('#mc-style-scatter-heading')?.textContent).toContain('Trade-off charts — all three');
+    expect(host().querySelector('#mc-style-scatter-heading')?.textContent?.trim()).toBe('Trade-off charts');
     expect(host().querySelector('#mc-style-bar-heading')).toBeNull();
     expect(sectionTitles()).toEqual(['Heading and badges', 'Marks and frontier', 'Labels and legend', 'Axes', 'Uncertainty', 'Footer']);
   });
@@ -499,5 +500,135 @@ describe('FigureStylePanelComponent', () => {
     expect(control('mc-style-bar-footerTextSizePx').disabled).toBeTrue();
     expect(hintOf(control('mc-style-bar-footerTextSizePx'))).toBe('Available while the footer is shown.');
     expect(host().querySelector('#mc-style-bar-section-footer .gh-disclosure-summary-value')?.textContent?.trim()).toBe('hidden');
+  });
+
+  // --- Section resets ---------------------------------------------------------------------------
+
+  function resetButton(id: string): HTMLButtonElement {
+    const element = host().querySelector<HTMLButtonElement>(`#${id}`);
+    expect(element).withContext(id).not.toBeNull();
+    return element!;
+  }
+
+  function statusText(): string {
+    return host().querySelector('[role="status"]')?.textContent?.trim() ?? '';
+  }
+
+  it('claims every style field of each family in exactly one section', () => {
+    for (const kind of ['bar', 'scatter', 'profile'] as const) {
+      const keys = FIGURE_STYLE_SECTIONS[kind].flatMap(section => [...section.keys]);
+      expect(new Set(keys).size).withContext(`${kind} duplicates`).toBe(keys.length);
+      expect([...keys].sort()).withContext(kind).toEqual(Object.keys(DEFAULT_FIGURE_STYLE[kind]).sort());
+    }
+  });
+
+  it('gives every section a named reset button with a tooltip, disabled at defaults', () => {
+    for (const kind of ['bar', 'scatter', 'profile'] as const) {
+      fixture.componentRef.setInput('inlineValues', kind === 'scatter');
+      render(kind);
+      const sections = Array.from(host().querySelectorAll('.fsp-section'));
+      expect(sections.length).withContext(kind).toBe(FIGURE_STYLE_SECTIONS[kind].length);
+      sections.forEach((wrapper, index) => {
+        const title = FIGURE_STYLE_SECTIONS[kind][index].title;
+        const buttons = wrapper.querySelectorAll('.fsp-section-reset');
+        expect(buttons.length).withContext(`${kind} ${title}`).toBe(1);
+        const button = buttons[0] as HTMLButtonElement;
+        expect(button.getAttribute('aria-label')).toBe(`Reset ${title} to defaults`);
+        expect(button.getAttribute('aria-disabled')).withContext(`${kind} ${title}`).toBe('true');
+        expect(button.closest('summary')).toBeNull();
+        expect(button.closest('details')).toBeNull();
+        const tip = host().querySelector(`#${button.getAttribute('interestfor')}`);
+        expect(tip?.getAttribute('popover')).withContext(`${kind} ${title}`).toBe('hint');
+        expect(tip?.textContent?.trim()).toBe('Already at defaults');
+      });
+    }
+  });
+
+  it('resets one section only, and lights its button while it differs', () => {
+    const changed: FigureStyle = {
+      ...DEFAULT_FIGURE_STYLE,
+      bar: { ...DEFAULT_FIGURE_STYLE.bar, titleSizePx: 30, gapPercent: 10 }
+    };
+    render('bar', changed);
+    const bars = resetButton('mc-style-bar-section-bars-reset');
+    expect(bars.getAttribute('aria-disabled')).toBeNull();
+    expect(host().querySelector('#mc-style-bar-section-bars-reset-tip')?.textContent?.trim()).toBe('Reset to defaults');
+    expect(resetButton('mc-style-bar-section-values-reset').getAttribute('aria-disabled')).toBe('true');
+
+    bars.click();
+    expect(emitted.length).toBe(1);
+    expect(emitted[0].bar).toEqual({ ...changed.bar, gapPercent: DEFAULT_FIGURE_STYLE.bar.gapPercent });
+    expect(emitted[0].scatter).toBe(changed.scatter);
+    expect(emitted[0].profile).toBe(changed.profile);
+  });
+
+  it('emits nothing from a reset button already at defaults', () => {
+    render('bar');
+    resetButton('mc-style-bar-section-bars-reset').click();
+    resetButton('mc-style-bar-section-heading-reset').click();
+    expect(emitted).toEqual([]);
+    expect(statusText()).toBe('');
+  });
+
+  it('resets a closed section', () => {
+    render('bar', { ...DEFAULT_FIGURE_STYLE, bar: { ...DEFAULT_FIGURE_STYLE.bar, titleSizePx: 30 } });
+    toggleSection('mc-style-bar-section-heading');
+    expect(section('mc-style-bar-section-heading').open).toBeFalse();
+    resetButton('mc-style-bar-section-heading-reset').click();
+    expect(emitted[0].bar).toEqual(DEFAULT_FIGURE_STYLE.bar);
+  });
+
+  it('resets the two page toggles with the Labels and legend section', () => {
+    const named: boolean[] = [];
+    const valued: boolean[] = [];
+    fixture.componentInstance.directLabelsChange.subscribe(on => named.push(on));
+    fixture.componentInstance.inlineValuesChange.subscribe(on => valued.push(on));
+    fixture.componentRef.setInput('directLabels', true);
+    fixture.componentRef.setInput('inlineValues', false);
+    render('scatter');
+    const labels = resetButton('mc-style-scatter-section-labels-reset');
+    expect(labels.getAttribute('aria-disabled')).toBeNull();
+
+    labels.click();
+    expect(named).toEqual([false]);
+    expect(valued).toEqual([true]);
+    expect(emitted.length).withContext('the style fields were already at defaults').toBe(0);
+  });
+
+  it('announces a reset in the status region and clears it on the next change', () => {
+    render('bar', { ...DEFAULT_FIGURE_STYLE, bar: { ...DEFAULT_FIGURE_STYLE.bar, gapPercent: 10 } });
+    expect(statusText()).toBe('');
+    resetButton('mc-style-bar-section-bars-reset').click();
+    fixture.detectChanges();
+    expect(statusText()).toBe('Bars reset to defaults.');
+
+    acceptLast();
+    setRange(control('mc-style-bar-gapPercent'), 12);
+    expect(statusText()).toBe('');
+
+    resetButton('mc-style-bar-reset').click();
+    fixture.detectChanges();
+    expect(statusText()).toBe('Bar style reset to defaults.');
+  });
+
+  it('resets the two page toggles with the whole trade-off style', () => {
+    const named: boolean[] = [];
+    const valued: boolean[] = [];
+    fixture.componentInstance.directLabelsChange.subscribe(on => named.push(on));
+    fixture.componentInstance.inlineValuesChange.subscribe(on => valued.push(on));
+    fixture.componentRef.setInput('directLabels', true);
+    fixture.componentRef.setInput('inlineValues', false);
+    render('scatter');
+    (host().querySelector('#mc-style-scatter-reset') as HTMLButtonElement).click();
+    expect(named).toEqual([false]);
+    expect(valued).toEqual([true]);
+    expect(emitted[0].scatter).toEqual(DEFAULT_FIGURE_STYLE.scatter);
+
+    fixture.componentRef.setInput('directLabels', false);
+    fixture.componentRef.setInput('inlineValues', true);
+    fixture.detectChanges();
+    (host().querySelector('#mc-style-scatter-reset') as HTMLButtonElement).click();
+    expect(named.length).withContext('no toggle emission at its default').toBe(1);
+    expect(valued.length).toBe(1);
   });
 });

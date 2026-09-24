@@ -445,10 +445,10 @@ describe('ModelComparisonComponent', () => {
     return plugins?.[directLabelPlugin.id]?.blocks as DirectLabelBlock[] | undefined;
   }
 
-  /** Opens the sidebar's Style tab on one family, through the real tab and radio. */
+  /** Opens the sidebar's Style tab on one family, through the real tabs. */
   function openStyleFamily(kind: 'bar' | 'profile' | 'scatter'): void {
     openSidebarTab('style');
-    (fixture.debugElement.query(By.css(`#mc-style-family-${kind}`)).nativeElement as HTMLInputElement).click();
+    (fixture.debugElement.query(By.css(`#mc-style-family-tab-${kind}`)).nativeElement as HTMLButtonElement).click();
     fixture.detectChanges();
   }
 
@@ -2336,8 +2336,7 @@ describe('ModelComparisonComponent', () => {
     const has = (selector: string): boolean => fixture.debugElement.query(By.css(selector)) !== null;
     expect(has('#mc-style-bar-heading')).toBeTrue();
     expect(has('#mc-style-scatter-heading')).toBeFalse();
-    expect(textOf('#mc-side-panel-style')).toContain(
-      'Every change here applies to the page, the preview and every download.');
+    expect(textOf('#mc-side-panel-style')).not.toContain('Every change here applies');
 
     // Switching figure keeps the tab, and the set follows the figure's kind.
     component.selectPreviewCard(component.scatterCards[0].id);
@@ -3826,11 +3825,11 @@ describe('ModelComparisonComponent', () => {
   it('keeps the Style tab on the previewed figure\'s family, and moves the preview to a chosen one', () => {
     render(buildDto(comparableSet(3)), 4);
     openSidebarTab('style');
-    const families = (): string[] => fixture.debugElement.queryAll(By.css('.mc-style-family-option'))
+    const families = (): string[] => fixture.debugElement.queryAll(By.css('.mc-style-family-tabs [role="tab"]'))
       .map(option => ((option.nativeElement as HTMLElement).textContent ?? '').trim());
     expect(families()).toEqual(['Bar panels', 'Profile', 'Trade-offs']);
-    expect((fixture.debugElement.query(By.css('.mc-style-family legend')).nativeElement as HTMLElement)
-      .textContent!.trim()).toBe('Figures to style');
+    expect((fixture.debugElement.query(By.css('.mc-style-family-tabs')).nativeElement as HTMLElement)
+      .getAttribute('aria-label')).toBe('Figures to style');
 
     // On the Charts tab, choosing a family moves nothing.
     openStyleFamily('scatter');
@@ -3847,6 +3846,66 @@ describe('ModelComparisonComponent', () => {
     expect(component.previewCardId).toBe(component.panelCards[0].id);
     component.selectStyleFamily('profile');
     expect(component.previewCardId).toBe(component.profileCard!.id);
+  });
+
+  it('offers the style families as tabs with the full tab contract', () => {
+    render(buildDto(comparableSet(3)), 4);
+    openSidebarTab('style');
+
+    const kinds = ['bar', 'profile', 'scatter'];
+    const tabs = (): HTMLButtonElement[] =>
+      fixture.debugElement.queryAll(By.css('.mc-style-family-tabs [role="tab"]'))
+        .map(tab => tab.nativeElement as HTMLButtonElement);
+    const tablist = fixture.debugElement.query(By.css('.mc-style-family-tabs')).nativeElement as HTMLElement;
+    expect(tablist.getAttribute('role')).toBe('tablist');
+    expect(tablist.getAttribute('aria-label')).toBe('Figures to style');
+    expect(component.effectiveStyleFamily).toBe('bar');
+
+    const expectSelected = (selected: number): void => {
+      tabs().forEach((tab, index) => {
+        expect(tab.id).toBe(`mc-style-family-tab-${kinds[index]}`);
+        expect(tab.getAttribute('aria-controls')).toBe(`mc-style-family-panel-${kinds[index]}`);
+        expect(tab.getAttribute('aria-selected')).toBe(index === selected ? 'true' : 'false');
+        expect(tab.getAttribute('tabindex')).toBe(index === selected ? '0' : '-1');
+      });
+      const panels = fixture.debugElement.queryAll(By.css('.mc-style-family-panel'));
+      expect(panels.length).withContext('only the selected family\'s panel exists').toBe(1);
+      const panel = panels[0].nativeElement as HTMLElement;
+      expect(panel.getAttribute('role')).toBe('tabpanel');
+      expect(panel.id).toBe(`mc-style-family-panel-${kinds[selected]}`);
+      expect(panel.getAttribute('aria-labelledby')).toBe(`mc-style-family-tab-${kinds[selected]}`);
+      expect(panel.getAttribute('tabindex')).toBe('0');
+    };
+    expectSelected(0);
+
+    const press = (index: number, key: string): void => {
+      tabs()[index].dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      refresh();
+    };
+
+    press(0, 'ArrowRight');
+    expect(component.styleFamily).toBe('profile');
+    expectSelected(1);
+    expect(document.activeElement).toBe(tabs()[1]);
+
+    press(1, 'Home');
+    expect(component.styleFamily).toBe('bar');
+    expect(document.activeElement).toBe(tabs()[0]);
+
+    press(0, 'ArrowLeft');
+    expect(component.styleFamily).withContext('Left wraps to the last tab').toBe('scatter');
+    expectSelected(2);
+    expect(document.activeElement).toBe(tabs()[2]);
+
+    press(2, 'ArrowRight');
+    expect(component.styleFamily).withContext('Right wraps to the first tab').toBe('bar');
+    expect(document.activeElement).toBe(tabs()[0]);
+
+    press(0, 'End');
+    expect(component.styleFamily).toBe('scatter');
+    expect(document.activeElement).toBe(tabs()[2]);
+
+    expect(fixture.debugElement.query(By.css('input[type="radio"][name="mc-style-family"]'))).toBeNull();
   });
 
   it('offers no Profile family where the profile is suppressed', () => {

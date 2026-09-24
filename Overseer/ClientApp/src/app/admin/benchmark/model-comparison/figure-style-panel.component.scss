@@ -40,6 +40,22 @@
   gap: 8px;
 }
 
+/* A section and its reset button, which sits over the summary row's end. */
+.fsp-section {
+  position: relative;
+
+  > details > summary {
+    padding-inline-end: 50px;
+  }
+}
+
+.fsp-section-reset {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 8px;
+  margin: 0;
+}
+
 .fsp-section-body {
   display: flex;
   flex-direction: column;

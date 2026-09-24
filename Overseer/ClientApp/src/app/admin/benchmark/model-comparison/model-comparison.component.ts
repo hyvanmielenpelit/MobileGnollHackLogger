@@ -2132,6 +2132,19 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.cdr.markForCheck();
   }
 
+  /** Left/Right move and wrap, Home/End jump to the ends; focus follows selection. */
+  onStyleFamilyKeydown(event: KeyboardEvent, index: number): void {
+    const families = this.styleFamilies;
+    const next = this.rovingTabIndex(event, index, families.length);
+    if (next === null) {
+      return;
+    }
+    const kind = families[next].kind;
+    this.selectStyleFamily(kind);
+    this.cdr.detectChanges();
+    document.getElementById(`mc-style-family-tab-${kind}`)?.focus();
+  }
+
   // ---------------------------------------------------------------------------------------------
   // The figure preview
   //

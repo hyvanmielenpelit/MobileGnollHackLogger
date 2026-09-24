@@ -1030,27 +1030,30 @@
               @if (sidebarTab === 'style') {
                 <div class="mc-side-panel" role="tabpanel" id="mc-side-panel-style"
                      aria-labelledby="mc-side-tab-style" tabindex="0">
-                  <!-- Real radios styled as a segmented row, so the arrow keys move between them. -->
-                  <fieldset class="mc-style-family">
-                    <legend>Figures to style</legend>
-                    @for (family of styleFamilies; track family.kind) {
-                      <label class="mc-style-family-option">
-                        <input type="radio" name="mc-style-family" class="mc-style-family-input"
-                               [id]="'mc-style-family-' + family.kind" [value]="family.kind"
-                               [checked]="effectiveStyleFamily === family.kind"
-                               (change)="selectStyleFamily(family.kind)">
-                        {{ family.label }}
-                      </label>
+                  <!-- The family tabs swap the control set below in place, so they are tabs; the segmented look
+                       keeps them apart from the sidebar's own tab row above. -->
+                  <div class="gh-tabs gh-tabs-segmented mc-style-family-tabs" role="tablist" aria-label="Figures to style">
+                    @for (family of styleFamilies; track family.kind; let i = $index) {
+                      <button type="button" role="tab" class="gh-tab"
+                              [id]="'mc-style-family-tab-' + family.kind"
+                              [attr.aria-controls]="'mc-style-family-panel-' + family.kind"
+                              [attr.aria-selected]="effectiveStyleFamily === family.kind"
+                              [attr.tabindex]="effectiveStyleFamily === family.kind ? 0 : -1"
+                              (keydown)="onStyleFamilyKeydown($event, i)"
+                              (click)="selectStyleFamily(family.kind)">{{ family.label }}</button>
                     }
-                  </fieldset>
-                  <p class="mc-field-hint mc-style-scope">Every change here applies to the page, the preview and every download.</p>
-                  <!-- The trade-off toggles call the page's own handlers, so the panel owns no second copy
-                       of that state. -->
-                  <app-figure-style-panel [kind]="effectiveStyleFamily" [figureStyle]="figureStyle"
-                                          [directLabels]="scatterDirectLabels" [inlineValues]="scatterInlineValues"
-                                          (figureStyleChange)="onFigureStyleChange($event)"
-                                          (directLabelsChange)="onScatterDirectLabelsChange($event)"
-                                          (inlineValuesChange)="onScatterInlineValuesChange($event)"></app-figure-style-panel>
+                  </div>
+                  <div class="mc-style-family-panel" role="tabpanel" tabindex="0"
+                       [id]="'mc-style-family-panel-' + effectiveStyleFamily"
+                       [attr.aria-labelledby]="'mc-style-family-tab-' + effectiveStyleFamily">
+                    <!-- The trade-off toggles call the page's own handlers, so the panel owns no second copy
+                         of that state. -->
+                    <app-figure-style-panel [kind]="effectiveStyleFamily" [figureStyle]="figureStyle"
+                                            [directLabels]="scatterDirectLabels" [inlineValues]="scatterInlineValues"
+                                            (figureStyleChange)="onFigureStyleChange($event)"
+                                            (directLabelsChange)="onScatterDirectLabelsChange($event)"
+                                            (inlineValuesChange)="onScatterInlineValuesChange($event)"></app-figure-style-panel>
+                  </div>
                   @if (previewRefusal) {
                     <p class="mc-export-error" role="alert">{{ previewRefusal }}</p>
                   }

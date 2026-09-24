@@ -1581,71 +1581,13 @@
   }
 }
 
-.mc-style-scope {
-  margin-bottom: 2px;
-}
-
 .mc-download-scope {
   margin-bottom: 2px;
 }
 
-/* The style family as a segmented row of real radios: the input is hidden but stays focusable, and
-   its label carries the checked and focus states. */
-.mc-style-family {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-self: flex-start;
-  margin: 0;
-  padding: 0;
-  border: 1px solid var(--border-glass);
-  border-radius: 6px;
-  overflow: hidden;
-
-  legend {
-    float: left;
-    width: 100%;
-    margin-bottom: 6px;
-    padding: 0;
-    font-size: 13px;
-    color: #c3c2b7;
-  }
-}
-
-.mc-style-family-option {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  padding: 5px 12px;
-  font-size: 13px;
-  color: var(--font-color);
-  cursor: pointer;
-
-  & + & {
-    border-inline-start: 1px solid var(--border-glass);
-  }
-
-  &:hover {
-    color: var(--primary-color);
-  }
-
-  &:has(:checked) {
-    background: rgba(212, 175, 55, 0.15);
-    color: var(--primary-color);
-  }
-
-  &:has(:focus-visible) {
-    outline: 2px solid var(--primary-color);
-    outline-offset: -2px;
-  }
-}
-
-.mc-style-family-input {
-  position: absolute;
-  opacity: 0;
-  width: 1px;
-  height: 1px;
-  margin: 0;
-  pointer-events: none;
+.mc-style-family-panel:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
 }
 
 /* A range with its value beside it, as the Style tab lays out its own. */

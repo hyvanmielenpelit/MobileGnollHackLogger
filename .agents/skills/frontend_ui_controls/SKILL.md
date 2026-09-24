@@ -195,6 +195,7 @@ you already read the label, it is noise; drop it.
 | play | Start Benchmark, Acknowledge & Start Run | "This begins now", and it reinforces the consequence of a button that starts real work |
 | trash | Delete Runs, Delete All Suite Runs | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
 | refresh / rotate | Refresh, Re-score Run, Re-run Failed Questions | "This runs again" — the circular-arrow convention is universal |
+| undo (curved arrow back) | Reset a settings section to its defaults | "Back to where it started" — distinct from rotate, which means "runs again" |
 | file-with-arrow | Download Markdown Report | "A file arrives on your disk" |
 | archive | Download all figures | "Several files arrive as one archive" |
 | layers | Create Default Suites | A stack: several suites are created at once from the built-in catalog |
@@ -231,6 +232,9 @@ dialog*, and it sits in the header of the very dialogs the picker renders in.*
 controls use* maximize *(Fit to screen),* home *(Reset view) and a 1:1 glyph (Actual pixels); the
 cards' "open in preview" moved from* maximize-2 *to* eye*, the glyph Run History already uses for
 "view".*
+
+*Changed 2026-09-24: the model comparison's Style sections gained a per-section reset icon button
+with the* undo *glyph; rotate was not reused, because it already means "runs again".*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -455,6 +459,7 @@ treatment with horizontal scroll-snap and scroll-edge indicator support.
 | `.gh-tabs` | The `role="tablist"` container |
 | `.gh-tab` | Each tab button |
 | `.gh-tabs-secondary` | Modifier on the container for a **nested** row — smaller type, tighter spacing, fainter rule, so it reads as subordinate to the row above it |
+| `.gh-tabs-segmented` | Modifier for a small fixed set of views nested under another tab row: equal segments in one rounded track, so it does not read as a second row at the same level |
 
 ### The markup contract
 
@@ -592,6 +597,11 @@ reference — is a stack of **non-exclusive** native disclosures, not a row of t
   `open` are tracked too.
 - **A radio group keeps its own `<fieldset>` and `<legend>`** inside the section; the section
   replaces only the outer bordered grouping box.
+- **A section may carry a reset icon button** (`.action-btn`, undo glyph) positioned over the
+  summary row's end. It is a sibling after `<details>` inside a positioned wrapper: never inside
+  `<summary>`, and never in the body, which is hidden while the section is closed. It is named
+  "Reset {title} to defaults", it is `aria-disabled` while the section is at its defaults, and a
+  `role="status"` line announces the reset.
 - The open and close animation (`interpolate-size` and `::details-content`) is a progressive
   enhancement in `styles.scss`, switched off under `prefers-reduced-motion: reduce`.
 
@@ -885,6 +895,8 @@ Diff this against your markup before calling button, tab or table work finished.
       each summary holding text only, its read-out `aria-hidden`.
 - [ ] Section open state lives in `localStorage` behind `try/catch`, with a default when absent.
 - [ ] Radio groups inside a section keep their own `<fieldset>` and `<legend>`.
+- [ ] A section reset button sits after `<details>` in a positioned wrapper, outside both the summary
+      and the body, and is named *Reset {title} to defaults*.
 
 **Tabs**
 - [ ] Every tab in the row has an icon, or none of them does.
@@ -893,7 +905,8 @@ Diff this against your markup before calling button, tab or table work finished.
 - [ ] Every panel: `role="tabpanel"`, `id`, `aria-labelledby`, `tabindex="0"` — and not on a `<table>`.
 - [ ] Arrow keys move and wrap; Home/End work; focus follows selection.
 - [ ] Appearance is driven by `[aria-selected="true"]`, with no parallel active class.
-- [ ] A nested row uses `.gh-tabs-secondary`.
+- [ ] A nested row uses `.gh-tabs-secondary`, or `.gh-tabs-segmented` for a small fixed set of
+      views under another tab row.
 
 **Data tables**
 - [ ] The table renders `state.view(sourceRows)`; **no source array is sorted in place**, and
