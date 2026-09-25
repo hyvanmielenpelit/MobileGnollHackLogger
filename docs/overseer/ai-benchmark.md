@@ -2766,6 +2766,64 @@ All of it is stored with the figure style (`overseer.modelComparison.figureStyle
 `version: 1`, with new `appearance` and `table` records); a style stored before reads them at their
 defaults.
 
+### Model Comparison: Total Run Cost Measure and Column (2026-09-25) — No Version Bump
+
+*Prompted by run cards and cost estimates, which need what one benchmark run of a model costs.*
+Display only: nothing here grades anything, and `HarnessVersion`, `ScoringMethodVersion`,
+`CandidateSystemPromptSha256` and `ToolGuidesSha256` do not move. No database change.
+
+**What the total is.** The mean cost of one run behind an entry with every role included —
+candidate, assessor, second opinion, claim verifier and final synthesis — and its sample SD across
+the entry's runs (null at R = 1). Each run is costed by `ModelPricingService.ComputeRunRoleCosts`,
+the function the run report's `### Harness Cost` prints, so on the *As-run* basis an R = 1 entry's
+total equals that report's total. The endpoint carries it on the cost object as
+`totalRunCostPerRunUsd`, `totalRunCostSdUsd` and `totalRunCostUnavailableReason`. It is computed on
+its own path: grading roles never enter the per-run costs handed to `BenchmarkGroupStatistics`,
+which sums every role it is given and would otherwise turn every candidate figure into a total.
+
+**When there is none.** The total is null, with a one-sentence reason, when any run behind the
+entry:
+
+- **predates harness 15** (`BenchmarkModelComparison.PerRoleCostTrackingHarnessVersion`), which
+  first recorded second opinion and final synthesis tokens as roles of their own. An older run's
+  total would be understated rather than unknown, so it is refused;
+- has no resolvable candidate price card; or
+- has a grading role that spent tokens and has no price card (`BenchmarkRoleCosts.Incomplete`).
+
+An excluded entry carries no cost object at all, so no total either.
+
+**Pricing bases.** *As-run* reads each run's stored `PricingSnapshotJson` for every role, as the run
+report does. *Current* prices every role from today's catalog for that role's stored provider and
+model id, the same rule it already applies to the candidate; custom per-configuration overrides are
+not consulted for any role on this basis, which keeps the grader and candidate figures consistent with each
+other.
+
+**The cost measure.** Step 3 → Data → Measures → *Cost measure* offers *Total run cost including
+grading roles* beside the default *Candidate cost for the whole suite*. Candidate cost stays the
+default, because it is what a model would cost as the chat assistant; grading spend is most of a
+run and none of it transfers. The option is enabled only when at least two entries can be charted
+and **every** one of them carries a total — an axis missing some bars would rank models on a figure
+that is absent for some of them. Otherwise it is shown disabled, labelled *— not available*, and
+the hint names the first entry without a total and why. A comparison that arrives without totals
+while the total is selected falls back to candidate cost.
+
+**The table column.** The step 3 table has a new default column, **Total $ / run, with grading**,
+directly after *Candidate $ / question*. It prints the total, with `± SD` at R ≥ 2, and an
+*Unavailable* badge whose tooltip carries the reason when the total is null. Like the other
+combined columns it has three parts, each also offered as a column of its own in the Columns picker
+(hidden by default): *Total $/run incl. grading* and *Total $/run SD* (money) and *Total $/run
+unavailable because* (text). The data formats (XLSX, CSV, TSV, JSON) write the three parts as typed
+columns; the reading formats (Markdown, HTML, the image) write the combined text, such as
+`$1.2345 ± $0.0567`, or `— · <reason>`. The table now has 29 parts and 31 display columns, of which
+9 are shown by default.
+
+**Saved layouts.** The column layout in `overseer.modelComparison.tableColumns` is now written as
+`version: 2`. A version-1 layout (or one with no version) is migrated once on load: the new column
+is inserted right after *Candidate $ / question*, and shown when that column is shown. A version-2
+layout is never migrated again, so an admin who hides the column keeps it hidden. Without the
+migration the general repair rule would have appended the new column hidden, and it would have
+looked missing to exactly the admins using the table.
+
 ### Harness Version 29 Updates
 
 Prompted by the analysis of runs 50 and 51, the first two runs of a game-snapshot suite, which showed that

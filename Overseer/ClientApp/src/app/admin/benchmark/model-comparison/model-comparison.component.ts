@@ -154,6 +154,7 @@ import {
   ComparisonTableModel,
   ComparisonTableProvenance,
   DEFAULT_TABLE_COLUMNS,
+  TABLE_COLUMN_CONFIG_VERSION,
   TABLE_DISPLAY_COLUMNS,
   TableColumnConfig,
   TableDisplayColumn,
@@ -171,6 +172,7 @@ import {
   formatMsText,
   formatUsdText,
   measureTableImage,
+  migrateTableColumnConfig,
   normalizeTableColumnConfig,
   populatedColumnKeys,
   resolveTableImageLayout,
@@ -206,8 +208,9 @@ const SLOW_COMPARISON_MS = 15_000;
 export const FIGURE_STYLE_STORAGE_KEY = 'overseer.modelComparison.figureStyle';
 
 /**
- * Where the table's column configuration is kept, per browser, as `{ version: 1, order, shown }`.
- * Read and written in `try/catch`, and repaired on read; never required.
+ * Where the table's column configuration is kept, per browser, as
+ * `{ version: TABLE_COLUMN_CONFIG_VERSION, order, shown }`. Read and written in `try/catch`, and
+ * migrated and repaired on read; never required.
  */
 export const TABLE_COLUMNS_STORAGE_KEY = 'overseer.modelComparison.tableColumns';
 
@@ -330,11 +333,11 @@ function readStoredFigureSidebar(): StoredFigureSidebar {
   }
 }
 
-/** The stored column configuration, repaired; today's eight columns wherever storage is absent or unreadable. */
+/** The stored column configuration, migrated and repaired; today's nine columns wherever storage is absent or unreadable. */
 function readStoredTableColumns(): TableColumnConfig {
   try {
     const raw = localStorage.getItem(TABLE_COLUMNS_STORAGE_KEY);
-    return raw === null ? DEFAULT_TABLE_COLUMNS : normalizeTableColumnConfig(JSON.parse(raw));
+    return raw === null ? DEFAULT_TABLE_COLUMNS : migrateTableColumnConfig(JSON.parse(raw));
   } catch {
     return DEFAULT_TABLE_COLUMNS;
   }
@@ -621,9 +624,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   speedMeasure: SpeedMeasure = 'meanModelTime';
 
   /**
-   * Candidate cost for the whole suite. There is no second measure to switch to: the endpoint's cost
-   * object is candidate-only by design, so no run total including grading roles exists to plot, and
-   * the control shows that option disabled rather than omitting it silently.
+   * Candidate cost for the whole suite by default: what the model would cost as the chat assistant.
+   * The run total including grading roles is offered when every charted entry carries one, and is
+   * shown disabled with its reason otherwise.
    */
   costMeasure: CostMeasure = 'candidateSuite';
 
@@ -1569,6 +1572,28 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** Entries that carry measures: every entry that is not excluded. */
   get measuredEntryCount(): number {
     return this.entries.filter(entry => !entry.excluded).length;
+  }
+
+  /** Entries a chart can draw: not excluded, and carrying a quality figure. */
+  private get chartableEntries(): BenchmarkModelComparisonEntryDto[] {
+    return this.entries.filter(entry => !entry.excluded && entry.quality != null);
+  }
+
+  /**
+   * The run total including grading roles can be charted: at least two chartable entries, and every
+   * one of them carries it. All or nothing, because an axis missing some bars would rank models on a
+   * figure that is absent for some of them.
+   */
+  get totalRunCostAvailable(): boolean {
+    const chartable = this.chartableEntries;
+    return chartable.length >= 2
+      && chartable.every(entry => Number.isFinite(entry.cost?.totalRunCostPerRunUsd ?? Number.NaN));
+  }
+
+  /** Why the run total cannot be charted, naming the first chartable entry that lacks it; null when it can. */
+  get totalRunCostUnavailableReason(): string | null {
+    const missing = this.chartableEntries.find(entry => entry.cost?.totalRunCostUnavailableReason);
+    return missing ? `${missing.label}: ${missing.cost!.totalRunCostUnavailableReason}` : null;
   }
 
   /** Measured entries whose Speed Index sits at the ceiling. */
@@ -4047,7 +4072,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.shownColumnKeys = new Set(this.shownColumns.map(column => column.key));
     this.tableCaption = this.captionFor(this.shownColumns);
     try {
-      localStorage.setItem(TABLE_COLUMNS_STORAGE_KEY, JSON.stringify({ version: 1, order: config.order, shown: config.shown }));
+      localStorage.setItem(TABLE_COLUMNS_STORAGE_KEY, JSON.stringify({ version: TABLE_COLUMN_CONFIG_VERSION, order: config.order, shown: config.shown }));
     } catch {
       // Private mode or blocked storage: the columns still apply for this session.
     }
@@ -4627,6 +4652,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       this.chartSource = this.comparison;
       this.chartEntries = toChartEntries(this.comparison);
       this.context = toChartContext(this.comparison);
+      // A total chosen on an earlier comparison would draw an empty cost panel on this one.
+      if (this.costMeasure === 'totalRun' && !this.totalRunCostAvailable) {
+        this.costMeasure = 'candidateSuite';
+      }
     }
     this.refreshTableCells();
     this.refreshFigureTheme();

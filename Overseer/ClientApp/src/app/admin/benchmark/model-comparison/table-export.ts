@@ -139,7 +139,7 @@ export const XLSX_MEDIA_TYPE =
  * The columns, in reading order: identity first, then the comparability verdict, then the three
  * measured axes with their uncertainty beside them, then everything that qualifies the verdict.
  *
- * Twenty-six of them — every field the on-screen table renders plus the configuration keys it
+ * Twenty-nine of them — every field the on-screen table renders plus the configuration keys it
  * shows only in a tooltip, because an exported table is read away from the tooltips.
  */
 export const COMPARISON_TABLE_COLUMNS: readonly ComparisonTableColumn[] = [
@@ -162,6 +162,9 @@ export const COMPARISON_TABLE_COLUMNS: readonly ComparisonTableColumn[] = [
   { key: 'speedIndexSaturated', header: 'Saturated', kind: 'boolean' },
   { key: 'costPerQuestion', header: 'Candidate $/question', kind: 'money' },
   { key: 'costPerRun', header: 'Candidate $/run', kind: 'money' },
+  { key: 'totalRunCost', header: 'Total $/run incl. grading', kind: 'money' },
+  { key: 'totalRunCostSd', header: 'Total $/run SD', kind: 'money' },
+  { key: 'totalRunCostUnavailable', header: 'Total $/run unavailable because', kind: 'text' },
   { key: 'pricingResolved', header: 'Pricing resolved', kind: 'boolean' },
   { key: 'scheduledChange', header: 'Scheduled price change', kind: 'text' },
   { key: 'differsOn', header: 'Differs on', kind: 'text' },
@@ -174,14 +177,14 @@ export const COMPARISON_TABLE_COLUMNS: readonly ComparisonTableColumn[] = [
 // ------------------------------------------------------------------------------------------------
 // The display columns
 //
-// What the admin shows, hides and orders: the eight columns of the on-screen table, some of which
-// combine several parts, and the twenty remaining parts as columns of their own. Reading formats
+// What the admin shows, hides and orders: the nine columns of the on-screen table, some of which
+// combine several parts, and the twenty-two remaining parts as columns of their own. Reading formats
 // keep a combined column combined; data formats write its parts as typed columns.
 // ------------------------------------------------------------------------------------------------
 
 /** How the Interactive table renders a display column's cells. */
 export type TableColumnRenderer =
-  'model' | 'runs' | 'state' | 'intelligence' | 'speedIndex' | 'timings' | 'cost' | 'notes' | 'text';
+  'model' | 'runs' | 'state' | 'intelligence' | 'speedIndex' | 'timings' | 'cost' | 'totalCost' | 'notes' | 'text';
 
 export interface TableDisplayColumn {
   /** Equal to the part key for a single-value column. */
@@ -233,6 +236,13 @@ const COMBINED_TABLE_COLUMNS: readonly TableDisplayColumn[] = [
     sortPart: 'costPerQuestion'
   },
   {
+    key: 'totalCost',
+    header: 'Total $ / run, with grading',
+    renderer: 'totalCost',
+    parts: ['totalRunCost', 'totalRunCostSd', 'totalRunCostUnavailable'],
+    sortPart: 'totalRunCost'
+  },
+  {
     key: 'notes',
     header: 'Notes',
     renderer: 'notes',
@@ -242,10 +252,10 @@ const COMBINED_TABLE_COLUMNS: readonly TableDisplayColumn[] = [
 ];
 
 /** Parts that are the primary of a combined column and are never offered on their own. */
-const COMBINED_PRIMARY_PARTS: ReadonlySet<string> = new Set(['label', 'runCount', 'state', 'intelligenceIndex', 'speedIndex', 'costPerQuestion']);
+const COMBINED_PRIMARY_PARTS: ReadonlySet<string> = new Set(['label', 'runCount', 'state', 'intelligenceIndex', 'speedIndex', 'costPerQuestion', 'totalRunCost']);
 
 /**
- * The 28 display columns: the eight of the on-screen table in its order, then every other part as a
+ * The 31 display columns: the nine of the on-screen table in its order, then every other part as a
  * column of its own, in {@link COMPARISON_TABLE_COLUMNS} order.
  */
 export const TABLE_DISPLAY_COLUMNS: readonly TableDisplayColumn[] = [
@@ -267,7 +277,7 @@ const DISPLAY_COLUMNS_BY_KEY: ReadonlyMap<string, TableDisplayColumn> =
 const PART_COLUMNS_BY_KEY: ReadonlyMap<string, ComparisonTableColumn> =
   new Map(COMPARISON_TABLE_COLUMNS.map(column => [column.key, column]));
 
-/** Today's on-screen table: its eight columns shown, in its order, then the rest hidden. */
+/** Today's on-screen table: its nine columns shown, in its order, then the rest hidden. */
 export const DEFAULT_TABLE_COLUMNS: TableColumnConfig = {
   order: TABLE_DISPLAY_COLUMNS.map(column => column.key),
   shown: COMBINED_TABLE_COLUMNS.map(column => column.key)
@@ -302,6 +312,34 @@ export function normalizeTableColumnConfig(value: unknown): TableColumnConfig {
   const shownSet = new Set(Array.isArray(record['shown']) ? known(record['shown']) : DEFAULT_TABLE_COLUMNS.shown);
   shownSet.add(TABLE_MODEL_COLUMN_KEY);
   return { order, shown: order.filter(key => shownSet.has(key)) };
+}
+
+/** The saved-layout version this build writes. */
+export const TABLE_COLUMN_CONFIG_VERSION = 2;
+
+/**
+ * A saved layout brought up to the current version, then normalized. Version 2 introduced the
+ * total-cost column: a version-1 layout gets it directly after the candidate cost column, shown
+ * when that column is shown.
+ */
+export function migrateTableColumnConfig(value: unknown): TableColumnConfig {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return normalizeTableColumnConfig(value);
+  }
+  const record = value as Record<string, unknown>;
+  const version = record['version'];
+  const order = record['order'];
+  if ((version === undefined || (typeof version === 'number' && version < 2))
+      && Array.isArray(order) && !order.includes('totalCost')) {
+    const costAt = order.indexOf('cost');
+    const migratedOrder = costAt < 0
+      ? [...order, 'totalCost']
+      : [...order.slice(0, costAt + 1), 'totalCost', ...order.slice(costAt + 1)];
+    const shown = record['shown'];
+    const migratedShown = Array.isArray(shown) && shown.includes('cost') ? [...shown, 'totalCost'] : shown;
+    return normalizeTableColumnConfig({ ...record, order: migratedOrder, shown: migratedShown });
+  }
+  return normalizeTableColumnConfig(record);
 }
 
 /** Whether two configurations show the same columns in the same order. */
@@ -376,6 +414,14 @@ export function readingCellText(
         text('costPerQuestion'),
         kept('pricingResolved')?.raw === false ? 'unpriced' : null,
         scheduled ? `price change ${scheduled.text}` : null
+      ]);
+    }
+    case 'totalCost': {
+      const sd = kept('totalRunCostSd');
+      const why = kept('totalRunCostUnavailable');
+      return joined([
+        sd ? `${text('totalRunCost')} ± ${sd.text}` : text('totalRunCost'),
+        why ? why.text : null
       ]);
     }
     case 'notes': {
@@ -549,6 +595,9 @@ export function comparisonTableCells(entry: BenchmarkModelComparisonEntryDto): R
     speedIndexSaturated: flagCell(table === null ? null : table.speedIndexSaturated),
     costPerQuestion: usdCell(cost?.candidateCostPerQuestionUsd),
     costPerRun: usdCell(cost?.candidateCostPerRunUsd),
+    totalRunCost: usdCell(cost?.totalRunCostPerRunUsd),
+    totalRunCostSd: usdCell(cost?.totalRunCostSdUsd),
+    totalRunCostUnavailable: textCell(cost?.totalRunCostUnavailableReason),
     pricingResolved: flagCell(cost === null ? null : cost.pricingResolved),
     scheduledChange: textCell(cost?.scheduledChangeEffectiveFrom),
     differsOn: listCell(entry.excludingKeys),

@@ -49,6 +49,13 @@ public sealed record BenchmarkModelComparisonSource
         = new Dictionary<long, ModelPricing?>();
 
     /// <summary>
+    /// Every role's price card per run id, on the comparison's basis. Only the run total reads it; the
+    /// candidate axis reads <see cref="CandidatePricing"/>. A run missing here has no total.
+    /// </summary>
+    public IReadOnlyDictionary<long, BenchmarkRunPricing?> RunPricing { get; init; }
+        = new Dictionary<long, BenchmarkRunPricing?>();
+
+    /// <summary>
     /// Set when the point cannot be measured at all — a group whose own members do not pool, or a
     /// run with no usable result. Such a source is excluded before comparability is resolved, so it
     /// can neither be charted nor drag the baseline towards its own condition.
@@ -81,6 +88,9 @@ public static class BenchmarkModelComparison
 
     /// <summary>How far a scheduled price change may be in the future and still be worth warning about.</summary>
     public const int ScheduledPriceChangeHorizonMonths = 12;
+
+    /// <summary>The first harness to record second opinion and final synthesis tokens as roles of their own.</summary>
+    public const int PerRoleCostTrackingHarnessVersion = 15;
 
     /// <summary>
     /// The measures this view refuses to chart for a set of <paramref name="chartableCount"/>
@@ -240,9 +250,11 @@ public static class BenchmarkModelComparison
         var statistics = BenchmarkGroupStatistics.Compute(
             source.Suite ?? BenchmarkRunExam.Build(source.Runs).Suite, source.Questions, source.Runs, costs, options);
 
+        var total = BuildTotalRunCost(source);
+
         entry.Quality = BuildQuality(source, statistics);
         entry.Speed = BuildSpeed(statistics);
-        entry.Cost = BuildCost(statistics, basis, card, pricingResolved, today);
+        entry.Cost = BuildCost(statistics, basis, card, pricingResolved, total, today);
         entry.Table = BuildTable(source, statistics);
 
         return entry;
@@ -343,6 +355,55 @@ public static class BenchmarkModelComparison
     }
 
     /// <summary>
+    /// The mean cost of one run with every role included, its sample SD across runs, or the reason
+    /// there is none. Costed through <see cref="ModelPricingService.ComputeRunRoleCosts"/>, the costing
+    /// the run report prints, and kept apart from <see cref="BuildCosts"/>: the group statistics sum
+    /// every role they are handed, so a grading role there would turn every candidate figure into a
+    /// total.
+    /// </summary>
+    private static (double? Mean, double? Sd, string? Reason) BuildTotalRunCost(BenchmarkModelComparisonSource source)
+    {
+        var totals = new List<double>(source.Runs.Count);
+
+        foreach (var run in source.Runs)
+        {
+            // Earlier harnesses counted no synthesis and folded the second opinion into the assessor,
+            // so their total would be understated rather than unknown.
+            if (!int.TryParse(run.HarnessVersion, NumberStyles.Integer, CultureInfo.InvariantCulture, out int harness)
+                || harness < PerRoleCostTrackingHarnessVersion)
+            {
+                return (null, null,
+                    $"Run {run.Id} predates per-role cost tracking (harness {PerRoleCostTrackingHarnessVersion}), "
+                    + "so its final synthesis is not counted.");
+            }
+
+            source.RunPricing.TryGetValue(run.Id, out var pricing);
+            if (pricing?.Candidate == null)
+            {
+                return (null, null, $"Run {run.Id} has no resolvable pricing.");
+            }
+
+            var roleCosts = ModelPricingService.ComputeRunRoleCosts(
+                run, pricing, BenchmarkRunFinalizer.ResolveServedServiceTier(run.Answers));
+            if (roleCosts.Incomplete)
+            {
+                return (null, null, $"A grading role of run {run.Id} that spent tokens has no price card.");
+            }
+
+            totals.Add((double)roleCosts.Total);
+        }
+
+        if (totals.Count == 0) return (null, null, "The entry has no runs.");
+
+        double mean = totals.Average();
+        double? sd = totals.Count >= 2
+            ? Math.Sqrt(totals.Sum(t => (t - mean) * (t - mean)) / (totals.Count - 1))
+            : null;
+
+        return (mean, sd, null);
+    }
+
+    /// <summary>
     /// The degraded flags a point's own statistics are computed under: its internal comparability
     /// tier, widened by whatever the cross-model set degrades. A point whose own runs are Tier A can
     /// still sit on a degraded axis, because the axis is a property of the set.
@@ -434,6 +495,7 @@ public static class BenchmarkModelComparison
         BenchmarkModelComparisonPricingBasis basis,
         ModelPricing? card,
         bool pricingResolved,
+        (double? Mean, double? Sd, string? Reason) total,
         DateOnly today)
     {
         var cost = statistics.Cost;
@@ -444,6 +506,9 @@ public static class BenchmarkModelComparison
             CandidateCostPerQuestionUsd = pricingResolved ? cost?.CostPerQuestion : null,
             CandidateCostPerRunUsd = pricingResolved ? cost?.MeanCostPerRun : null,
             CandidateTotalCostUsd = pricingResolved ? cost?.TotalCost : null,
+            TotalRunCostPerRunUsd = total.Mean,
+            TotalRunCostSdUsd = total.Mean.HasValue ? total.Sd : null,
+            TotalRunCostUnavailableReason = total.Mean.HasValue ? null : total.Reason,
             QuestionsAskedPerRun = pricingResolved ? cost?.QuestionsAskedPerRun : null,
             Basis = basis.ToString(),
             PricingAsOf = card?.AsOf,
@@ -581,7 +646,8 @@ public class BenchmarkModelComparisonService
             return (null, $"Run(s) not found: {string.Join(", ", missingRuns)}.");
         }
 
-        var pricing = await ResolveCandidatePricingAsync(runs, basis, today);
+        var runPricing = await ResolveRunPricingAsync(runs, basis, today);
+        var pricing = runPricing.ToDictionary(kv => kv.Key, kv => kv.Value?.Candidate);
 
         var sources = new List<BenchmarkModelComparisonSource>();
 
@@ -595,7 +661,8 @@ public class BenchmarkModelComparisonService
                 name: null,
                 members: new[] { run },
                 pricing: pricing,
-                refusal: RefuseRun(run)));
+                refusal: RefuseRun(run),
+                runPricing: runPricing));
         }
 
         foreach (long groupId in groupIds)
@@ -615,7 +682,8 @@ public class BenchmarkModelComparisonService
                 name: group.Name,
                 members: members,
                 pricing: pricing,
-                refusal: RefuseGroup(group, members)));
+                refusal: RefuseGroup(group, members),
+                runPricing: runPricing));
         }
 
         var result = BenchmarkModelComparison.Build(sources, basis, today, DateTime.UtcNow);
@@ -636,7 +704,8 @@ public class BenchmarkModelComparisonService
         string? name,
         IReadOnlyList<BenchmarkRun> members,
         IReadOnlyDictionary<long, ModelPricing?> pricing,
-        string? refusal)
+        string? refusal,
+        IReadOnlyDictionary<long, BenchmarkRunPricing?>? runPricing = null)
     {
         var exam = BenchmarkRunExam.Build(members);
         return new BenchmarkModelComparisonSource
@@ -650,6 +719,8 @@ public class BenchmarkModelComparisonService
             Runs = members,
             CandidatePricing = members
                 .ToDictionary(r => r.Id, r => pricing.GetValueOrDefault(r.Id)),
+            RunPricing = members
+                .ToDictionary(r => r.Id, r => runPricing?.GetValueOrDefault(r.Id)),
             Refusal = refusal
         };
     }
@@ -693,18 +764,18 @@ public class BenchmarkModelComparisonService
     }
 
     /// <summary>
-    /// The candidate price card for every run, on the requested basis.
+    /// Every role's price card for every run, on the requested basis.
     ///
     /// <para><c>AsRun</c> reads each run's own stored snapshot; <c>Current</c> reads today's catalog
-    /// for the run's provider and model id. Either way the token counts are the invariant, so
+    /// for each role's provider and model id. Either way the token counts are the invariant, so
     /// switching basis is arithmetic over columns the run already carries.</para>
     /// </summary>
-    private async Task<Dictionary<long, ModelPricing?>> ResolveCandidatePricingAsync(
+    private async Task<Dictionary<long, BenchmarkRunPricing?>> ResolveRunPricingAsync(
         IReadOnlyList<BenchmarkRun> runs,
         BenchmarkModelComparisonPricingBasis basis,
         DateOnly today)
     {
-        var cards = new Dictionary<long, ModelPricing?>();
+        var cards = new Dictionary<long, BenchmarkRunPricing?>();
         if (_pricingService == null) return cards;
 
         foreach (var run in runs)
@@ -712,8 +783,16 @@ public class BenchmarkModelComparisonService
             try
             {
                 cards[run.Id] = basis == BenchmarkModelComparisonPricingBasis.AsRun
-                    ? (await _pricingService.ResolveForRunAsync(run)).Candidate
-                    : _pricingService.ResolveDefault(run.TestedModelSnapshot.Provider, run.TestedModelSnapshot.ModelId, today);
+                    ? await _pricingService.ResolveForRunAsync(run)
+                    : new BenchmarkRunPricing(
+                        Candidate: _pricingService.ResolveDefault(
+                            run.TestedModelSnapshot.Provider, run.TestedModelSnapshot.ModelId, today),
+                        Assessor: run.AssessorModelSnapshot == null ? null : _pricingService.ResolveDefault(
+                            run.AssessorModelSnapshot.Provider, run.AssessorModelSnapshot.ModelId, today),
+                        ClaimVerifier: run.ClaimVerifierModelSnapshot == null ? null : _pricingService.ResolveDefault(
+                            run.ClaimVerifierModelSnapshot.Provider, run.ClaimVerifierModelSnapshot.ModelId, today),
+                        SecondOpinion: run.SecondOpinionAssessorModelSnapshot == null ? null : _pricingService.ResolveDefault(
+                            run.SecondOpinionAssessorModelSnapshot.Provider, run.SecondOpinionAssessorModelSnapshot.ModelId, today));
             }
             catch (Exception ex)
             {

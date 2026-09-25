@@ -604,9 +604,9 @@
                     </p>
 
                     <!--
-                      The second option is present and disabled rather than absent: the axis exists as
-                      a concept and this endpoint cannot supply it, and saying so is more honest than a
-                      control that looks like it was never considered.
+                      The second option is always present, and disabled with its stated reason only
+                      when this comparison cannot supply it: a control that vanished would look like it
+                      was never considered.
                     -->
                     <fieldset class="gh-choice" aria-describedby="mc-cost-measure-hint">
                       <legend>Cost measure</legend>
@@ -618,11 +618,21 @@
                       </label>
                       <label class="gh-radio">
                         <input type="radio" name="mc-cost-measure" id="mc-cost-measure-totalRun"
-                               value="totalRun" disabled>
-                        Total run cost including grading roles — not available
+                               value="totalRun" [checked]="costMeasure === 'totalRun'"
+                               [disabled]="!totalRunCostAvailable"
+                               (change)="onCostMeasureChange('totalRun')">
+                        Total run cost including grading roles@if (!totalRunCostAvailable) { — not available}
                       </label>
                     </fieldset>
-                    <p class="mc-field-hint" id="mc-cost-measure-hint">The endpoint returns candidate spend only: grading-role cost is most of a run and none of it transfers to the chat assistant.</p>
+                    <p class="mc-field-hint" id="mc-cost-measure-hint">
+                      Candidate cost is what the model would cost as the chat assistant.
+                      @if (totalRunCostAvailable) {
+                        The run total adds the grading roles, which is what one benchmark run of this
+                        model costs, and none of it transfers to the chat assistant.
+                      } @else {
+                        {{ totalRunCostUnavailableReason }}
+                      }
+                    </p>
                   </fieldset>
                 }
 
@@ -1633,6 +1643,22 @@
                                             }
                                             @if (entry.cost?.scheduledChangeEffectiveFrom && !isColumnShown('scheduledChange')) {
                                               <span class="mc-badge mc-scheduled">Price change {{ entry.cost?.scheduledChangeEffectiveFrom }}</span>
+                                            }
+                                          </div>
+                                        </td>
+                                      }
+                                      @case ('totalCost') {
+                                        <td>
+                                          <div class="mc-cell-stack">
+                                            <span class="mc-nowrap">{{ formatUsd(entry.cost?.totalRunCostPerRunUsd) }}@if (entry.cost?.totalRunCostSdUsd != null && !isColumnShown('totalRunCostSd')) {<span class="mc-interval">± {{ formatUsd(entry.cost?.totalRunCostSdUsd) }}</span>}</span>
+                                            @if (entry.cost?.totalRunCostPerRunUsd == null && entry.cost?.totalRunCostUnavailableReason && !isColumnShown('totalRunCostUnavailable')) {
+                                              <span class="mc-badge mc-unpriced"
+                                                    [attr.interestfor]="tipId('total', entry.key)"
+                                                    [attr.style]="'anchor-name: --' + tipId('total', entry.key)">Unavailable</span>
+                                              <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('total', entry.key)"
+                                                   [attr.style]="'position-anchor: --' + tipId('total', entry.key)">
+                                                {{ entry.cost?.totalRunCostUnavailableReason }}
+                                              </div>
                                             }
                                           </div>
                                         </td>

@@ -106,14 +106,21 @@ export interface BenchmarkModelComparisonSpeedDto {
 /**
  * The cost axis: candidate spend per question asked, in USD.
  *
- * Candidate-only by design — grading-role spend is most of a run's cost and none of it transfers to
- * the chat assistant — which is why no field here totals a run including its graders.
+ * Candidate spend is the default axis — grading-role spend is most of a run's cost and none of it
+ * transfers to the chat assistant. The run total including graders rides beside it as an opt-in
+ * measure: what one benchmark run of this model costs.
  */
 export interface BenchmarkModelComparisonCostDto {
   /** Null unless a price card resolved for every run behind the entry; an unknown cost is never zero. */
   candidateCostPerQuestionUsd?: number | null;
   candidateCostPerRunUsd?: number | null;
   candidateTotalCostUsd?: number | null;
+  /** Mean cost of one run with every grading role included. Null unless every run is harness 15+ and fully priced. */
+  totalRunCostPerRunUsd?: number | null;
+  /** Sample SD of the per-run total across runs. Null below R = 2, or when the total is null. */
+  totalRunCostSdUsd?: number | null;
+  /** Why the run total is null, in one sentence. Null when it is present. */
+  totalRunCostUnavailableReason?: string | null;
   /** Questions each run behind the entry asked, averaged: the denominator of the per-question cost. */
   questionsAskedPerRun?: number | null;
   /** `AsRun` or `Current`, echoing the basis the whole comparison was computed on. */
@@ -1054,7 +1061,7 @@ export function summarizeConditionDifference(row: ConditionDetailRow): Condition
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Three fields the chart core declares that this endpoint does not carry, named once here so the
+ * Two fields the chart core declares that this endpoint does not carry, named once here so the
  * view can say so out loud rather than each caller rediscovering it. `modelTimeMeanMs`,
  * `totalModelTimeMs` and `totalModelTimeSdMs` are deliberately not in this set — the DTO does carry
  * them, and {@link toChartEntries} maps them below like every other measured field:
@@ -1063,13 +1070,10 @@ export function summarizeConditionDifference(row: ConditionDetailRow): Condition
  *   interval under that measure and the saturation notice carries the caveat instead.
  * - **`candidateCostPerQuestionSdUsd`** — the cost object carries no dispersion field at any R, so a
  *   cost bar never gets an interval and an R = 1 entry keeps its explicit `n = 1` marker.
- * - **`totalRunCostUsd`** — the cost object is candidate-only by design, because grading-role spend
- *   is not transferable to the chat assistant. There is no run total including graders to switch to.
  */
 export const UNSUPPLIED_CHART_FIELDS: readonly string[] = [
   'speedIndexSd',
   'candidateCostPerQuestionSdUsd',
-  'totalRunCostUsd',
 ];
 
 /**
@@ -1154,8 +1158,8 @@ export function toChartEntries(dto: BenchmarkModelComparisonDto | null): ModelCo
     candidateCostPerQuestionUsd: entry.cost?.candidateCostPerQuestionUsd ?? UNMEASURED,
     candidateCostPerQuestionSdUsd: null,
     candidateCostPerRunUsd: entry.cost?.candidateCostPerRunUsd ?? UNMEASURED,
-    totalRunCostUsd: UNMEASURED,
-    totalRunCostSdUsd: null,
+    totalRunCostUsd: entry.cost?.totalRunCostPerRunUsd ?? UNMEASURED,
+    totalRunCostSdUsd: entry.cost?.totalRunCostSdUsd ?? null,
 
     speedDegraded: entry.speedDegraded,
     costDegraded: entry.costDegraded,

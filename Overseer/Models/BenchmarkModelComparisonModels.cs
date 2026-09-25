@@ -153,9 +153,13 @@ public class BenchmarkModelComparisonSpeedDto
 /// <summary>
 /// The cost axis: candidate spend per question, in USD.
 ///
-/// <para>Candidate-only, because grading roles are most of a run's cost and grading spend is not
-/// transferable to the chat assistant. Per question rather than per run, because run cost scales
-/// with suite size and would compare suites instead of models.</para>
+/// <para>The axis charted by default is candidate spend, because grading roles are most of a run's
+/// cost and grading spend is not transferable to the chat assistant. Per question rather than per
+/// run, because run cost scales with suite size and would compare suites instead of models.</para>
+///
+/// <para>The run total including every grading role is carried beside it as an opt-in measure. It
+/// answers a different question — what one benchmark run of this model costs — and none of its
+/// grading share transfers to the chat assistant.</para>
 /// </summary>
 public class BenchmarkModelComparisonCostDto
 {
@@ -169,6 +173,19 @@ public class BenchmarkModelComparisonCostDto
 
     public double? CandidateCostPerRunUsd { get; set; }
     public double? CandidateTotalCostUsd { get; set; }
+
+    /// <summary>
+    /// Mean cost of one run behind the entry with every role included: candidate, assessor, second
+    /// opinion, claim verifier and final synthesis. Null unless every run resolved a card for every role
+    /// that spent tokens, and every run recorded per-role usage (harness 15 or later).
+    /// </summary>
+    public double? TotalRunCostPerRunUsd { get; set; }
+
+    /// <summary>Sample SD of the per-run total across the entry's runs. Null below two runs, or when the total is null.</summary>
+    public double? TotalRunCostSdUsd { get; set; }
+
+    /// <summary>Why <see cref="TotalRunCostPerRunUsd"/> is null, in one sentence. Null when it is present.</summary>
+    public string? TotalRunCostUnavailableReason { get; set; }
 
     /// <summary>Questions each run behind the entry asked, averaged: the denominator of <see cref="CandidateCostPerQuestionUsd"/>.</summary>
     public double? QuestionsAskedPerRun { get; set; }

@@ -677,3 +677,28 @@ describe('toChartEntries candidate run cost', () => {
     expect(Number.isNaN(unpriced.candidateCostPerRunUsd)).toBeTrue();
   });
 });
+
+describe('toChartEntries total run cost', () => {
+  it('reads the run total and its SD off the cost object, and is UNMEASURED and null without them', () => {
+    const [total, noTotal, noCost] = toChartEntries(buildComparison([
+      buildComparisonEntry('total', {}, {
+        cost: { candidateCostPerQuestionUsd: 0.01, totalRunCostPerRunUsd: 0.92, totalRunCostSdUsd: 0.04 } as BenchmarkModelComparisonCostDto
+      }),
+      buildComparisonEntry('noTotal', {}, {
+        cost: {
+          candidateCostPerQuestionUsd: 0.01,
+          totalRunCostPerRunUsd: null,
+          totalRunCostSdUsd: null,
+          totalRunCostUnavailableReason: 'Run 3 has no resolvable pricing.'
+        } as BenchmarkModelComparisonCostDto
+      }),
+      buildComparisonEntry('noCost', {})
+    ]));
+    expect(total.totalRunCostUsd).toBe(0.92);
+    expect(total.totalRunCostSdUsd).toBe(0.04);
+    expect(Number.isNaN(noTotal.totalRunCostUsd)).toBeTrue();
+    expect(noTotal.totalRunCostSdUsd).toBeNull();
+    expect(Number.isNaN(noCost.totalRunCostUsd)).toBeTrue();
+    expect(noCost.totalRunCostSdUsd).toBeNull();
+  });
+});

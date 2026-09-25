@@ -20,6 +20,7 @@ import {
   encodeComparisonTable,
   formatUsdText,
   measureTableImage,
+  migrateTableColumnConfig,
   normalizeTableColumnConfig,
   populatedColumnKeys,
   readingCellText,
@@ -104,6 +105,9 @@ describe('table-export', () => {
         candidateCostPerQuestionUsd: 0.0432,
         candidateCostPerRunUsd: 0.7776,
         candidateTotalCostUsd: 2.3328,
+        totalRunCostPerRunUsd: 1.2345,
+        totalRunCostSdUsd: 0.0567,
+        totalRunCostUnavailableReason: null,
         basis: 'Current',
         pricingAsOf: '2026-09-01',
         pricingResolved: true,
@@ -139,7 +143,7 @@ describe('table-export', () => {
     };
   }
 
-  /** Every display column shown, in catalogue order: in the data flavour, all twenty-six parts. */
+  /** Every display column shown, in catalogue order: in the data flavour, all twenty-nine parts. */
   const ALL_COLUMNS: TableColumnConfig = {
     order: TABLE_DISPLAY_COLUMNS.map(column => column.key),
     shown: TABLE_DISPLAY_COLUMNS.map(column => column.key)
@@ -180,10 +184,10 @@ describe('table-export', () => {
   // The model
   // -------------------------------------------------------------------------------------------
 
-  it('declares twenty-six columns, and a cell for every one of them on every row', () => {
+  it('declares twenty-nine columns, and a cell for every one of them on every row', () => {
     const built = model([buildEntry(), buildEntry({ key: 'run:2', sourceId: 44 })]);
 
-    expect(built.columns.length).toBe(26);
+    expect(built.columns.length).toBe(29);
     expect(new Set(built.columns.map(column => column.key)))
       .toEqual(new Set(COMPARISON_TABLE_COLUMNS.map(column => column.key)));
     expect(built.rows.length).toBe(2);
@@ -283,11 +287,11 @@ describe('table-export', () => {
   // The display columns and the two flavours
   // -------------------------------------------------------------------------------------------
 
-  it('catalogues 28 display columns that cover every part, each primary once and each other part as its own column', () => {
-    expect(TABLE_DISPLAY_COLUMNS.length).toBe(28);
-    expect(new Set(TABLE_DISPLAY_COLUMNS.map(column => column.key)).size).toBe(28);
+  it('catalogues 31 display columns that cover every part, each primary once and each other part as its own column', () => {
+    expect(TABLE_DISPLAY_COLUMNS.length).toBe(31);
+    expect(new Set(TABLE_DISPLAY_COLUMNS.map(column => column.key)).size).toBe(31);
     const singles = TABLE_DISPLAY_COLUMNS.filter(column => column.renderer === 'text');
-    expect(singles.length).toBe(20);
+    expect(singles.length).toBe(22);
     expect(singles.every(column => column.parts.length === 1 && column.parts[0] === column.key && column.sortPart === column.key)).toBeTrue();
     const primaries = TABLE_DISPLAY_COLUMNS.filter(column => column.renderer !== 'text').map(column => column.parts[0]);
     const covered = new Set([...singles.map(column => column.key), ...primaries.filter(part => !singles.some(s => s.key === part))]);
@@ -295,17 +299,20 @@ describe('table-export', () => {
     expect(TABLE_DISPLAY_COLUMNS.find(column => column.key === 'notes')!.sortPart).toBeNull();
   });
 
-  it('defaults to the eight on-screen columns in today\'s order, the rest hidden', () => {
+  it('defaults to the nine on-screen columns in today\'s order, the rest hidden', () => {
     expect(shownTableColumns(DEFAULT_TABLE_COLUMNS).map(column => column.header))
-      .toEqual(['Model', 'R', 'State', 'Intelligence Index', 'Speed Index', 'Timings', 'Candidate $ / question', 'Notes']);
-    expect(DEFAULT_TABLE_COLUMNS.order.length).toBe(28);
+      .toEqual([
+        'Model', 'R', 'State', 'Intelligence Index', 'Speed Index', 'Timings', 'Candidate $ / question',
+        'Total $ / run, with grading', 'Notes'
+      ]);
+    expect(DEFAULT_TABLE_COLUMNS.order.length).toBe(31);
   });
 
   it('combines a column\'s parts in the reading flavour, worded as on screen', () => {
     const built = buildComparisonTableModel([buildEntry({ runCount: 1, reasoningMode: 'extended' })], provenance(), DEFAULT_TABLE_COLUMNS, 'reading');
     const cells = built.rows[0].cells;
 
-    expect(built.columns.length).toBe(8);
+    expect(built.columns.length).toBe(9);
     expect(cells['model'].text).toBe('Gemini 2.5 Flash · medium · extended · Google · Run 43');
     expect(cells['runs'].text).toBe('1 · n = 1');
     expect(cells['stateCol'].text).toBe('Comparable · Comparable with the baseline on every must-match key.');
@@ -313,7 +320,51 @@ describe('table-export', () => {
     expect(cells['speedIndexCol'].text).toBe('88.0');
     expect(cells['timings'].text).toBe('Model 28.4 s · Suite 511.2 s · TTFT 4200 ms / 12.5 s');
     expect(cells['cost'].text).toBe('$0.0432');
+    expect(cells['totalCost'].text).toBe('$1.2345 ± $0.0567');
     expect(cells['notes'].text).toBe('2 unstable items');
+  });
+
+  it('words the total-cost cell with its SD, without one at R = 1, and with the reason when the total is absent', () => {
+    const reading = (entry: BenchmarkModelComparisonEntryDto): string =>
+      buildComparisonTableModel([entry], provenance(), DEFAULT_TABLE_COLUMNS, 'reading').rows[0].cells['totalCost'].text;
+    const cost = buildEntry().cost!;
+
+    expect(reading(buildEntry())).toBe('$1.2345 ± $0.0567');
+    expect(reading(buildEntry({ runCount: 1, cost: { ...cost, totalRunCostSdUsd: null } }))).toBe('$1.2345');
+    expect(reading(buildEntry({
+      cost: {
+        ...cost,
+        totalRunCostPerRunUsd: null,
+        totalRunCostSdUsd: null,
+        totalRunCostUnavailableReason: 'Run 12 predates per-role cost tracking (harness 15), so its final synthesis is not counted.'
+      }
+    }))).toBe('— · Run 12 predates per-role cost tracking (harness 15), so its final synthesis is not counted.');
+
+    // The SD shown as a column of its own is left out of the combined cell.
+    const config: TableColumnConfig = { order: DEFAULT_TABLE_COLUMNS.order, shown: [...DEFAULT_TABLE_COLUMNS.shown, 'totalRunCostSd'] };
+    expect(buildComparisonTableModel([buildEntry()], provenance(), config, 'reading').rows[0].cells['totalCost'].text).toBe('$1.2345');
+  });
+
+  it('types the three total-cost parts in the data flavour', () => {
+    const [row] = model().rows;
+    expect(row.cells['totalRunCost']).toEqual({ raw: 1.2345, text: '$1.2345' });
+    expect(row.cells['totalRunCostSd']).toEqual({ raw: 0.0567, text: '$0.0567' });
+    expect(row.cells['totalRunCostUnavailable'].raw).toBeNull();
+
+    const kinds = new Map(COMPARISON_TABLE_COLUMNS.map(column => [column.key, column.kind]));
+    expect(kinds.get('totalRunCost')).toBe('money');
+    expect(kinds.get('totalRunCostSd')).toBe('money');
+    expect(kinds.get('totalRunCostUnavailable')).toBe('text');
+
+    const absent = comparisonTableCells(buildEntry({
+      cost: { ...buildEntry().cost!, totalRunCostPerRunUsd: null, totalRunCostSdUsd: null, totalRunCostUnavailableReason: 'Run 7 has no resolvable pricing.' }
+    }));
+    expect(absent['totalRunCost'].raw).toBeNull();
+    expect(absent['totalRunCostUnavailable'].raw).toBe('Run 7 has no resolvable pricing.');
+
+    const data = buildComparisonTableModel([buildEntry()], provenance(), DEFAULT_TABLE_COLUMNS, 'data').columns.map(column => column.key);
+    expect(data.slice(data.indexOf('totalRunCost'), data.indexOf('totalRunCost') + 3))
+      .toEqual(['totalRunCost', 'totalRunCostSd', 'totalRunCostUnavailable']);
   });
 
   it('leaves a part out of its combined cell while the part is shown as its own column', () => {
@@ -343,7 +394,7 @@ describe('table-export', () => {
     // ± is shown before Intelligence Index, so it is written there, and not again inside the index's parts.
     expect(keys.indexOf('intervalHalfWidth')).toBeLessThan(keys.indexOf('intelligenceIndex'));
     expect(keys.slice(0, 4)).toEqual(['label', 'thinkingLevel', 'provider', 'source']);
-    expect(buildComparisonTableModel([buildEntry()], provenance(), DEFAULT_TABLE_COLUMNS, 'data').columns.length).toBe(23);
+    expect(buildComparisonTableModel([buildEntry()], provenance(), DEFAULT_TABLE_COLUMNS, 'data').columns.length).toBe(26);
   });
 
   it('repairs a stored configuration: unknown keys dropped, missing ones appended hidden, the model always shown', () => {
@@ -352,11 +403,49 @@ describe('table-export', () => {
       shown: ['notes', 'nope']
     });
     expect(repaired.order.slice(0, 2)).toEqual(['notes', 'model']);
-    expect(repaired.order.length).toBe(28);
+    expect(repaired.order.length).toBe(31);
     expect(repaired.shown).toEqual(['notes', 'model']);
     expect(normalizeTableColumnConfig(null)).toEqual({ order: DEFAULT_TABLE_COLUMNS.order, shown: DEFAULT_TABLE_COLUMNS.shown });
     expect(sameTableColumnConfig(normalizeTableColumnConfig('x'), DEFAULT_TABLE_COLUMNS)).toBeTrue();
     expect(sameTableColumnConfig(repaired, DEFAULT_TABLE_COLUMNS)).toBeFalse();
+  });
+
+  describe('migrating a saved layout', () => {
+    /** A version-1 layout as the previous build saved it: every then-known key, no total-cost column. */
+    function versionOne(shown: string[]): Record<string, unknown> {
+      return { version: 1, order: DEFAULT_TABLE_COLUMNS.order.filter(key => key !== 'totalCost'), shown };
+    }
+
+    it('puts the total-cost column right after candidate cost, shown, when candidate cost is shown', () => {
+      const migrated = migrateTableColumnConfig(versionOne(['model', 'runs', 'cost', 'notes']));
+
+      expect(migrated.order[migrated.order.indexOf('cost') + 1]).toBe('totalCost');
+      expect(migrated.shown).toEqual(['model', 'runs', 'cost', 'totalCost', 'notes']);
+      expect(migrated.order.length).toBe(31);
+    });
+
+    it('adds it hidden when candidate cost is hidden', () => {
+      const migrated = migrateTableColumnConfig(versionOne(['model', 'runs', 'notes']));
+
+      expect(migrated.order[migrated.order.indexOf('cost') + 1]).toBe('totalCost');
+      expect(migrated.shown).not.toContain('totalCost');
+    });
+
+    it('treats a layout with no version as version 1', () => {
+      const { version: _version, ...unversioned } = versionOne(['model', 'cost']);
+      expect(migrateTableColumnConfig(unversioned).shown).toEqual(['model', 'cost', 'totalCost']);
+    });
+
+    it('leaves a version-2 layout as saved, so a column the admin hid stays hidden', () => {
+      const saved = { version: 2, order: DEFAULT_TABLE_COLUMNS.order, shown: ['model', 'cost'] };
+      expect(migrateTableColumnConfig(saved)).toEqual({ order: DEFAULT_TABLE_COLUMNS.order, shown: ['model', 'cost'] });
+    });
+
+    it('falls back to the defaults for a missing or garbage value', () => {
+      for (const value of [null, undefined, 'x', 7, [], {}]) {
+        expect(sameTableColumnConfig(migrateTableColumnConfig(value), DEFAULT_TABLE_COLUMNS)).withContext(String(value)).toBeTrue();
+      }
+    });
   });
 
   // -------------------------------------------------------------------------------------------
@@ -411,7 +500,7 @@ describe('table-export', () => {
 
     expect(text.startsWith('\uFEFF')).toBeTrue();
     const columns = dataLines(text)[0].split('\t');
-    expect(columns.length).toBe(26);
+    expect(columns.length).toBe(29);
     expect(columns[columnIndex(built, 'explanation')]).toBe('before after');
   });
 
@@ -426,7 +515,7 @@ describe('table-export', () => {
     expect(text).toContain('Flash \\| medium');
     // Header, separator and one body row, each with the same number of cells.
     expect(rows.length).toBe(3);
-    expect(rows.map(row => row.split(' | ').length)).toEqual([26, 26, 26]);
+    expect(rows.map(row => row.split(' | ').length)).toEqual([29, 29, 29]);
   });
 
   it('carries the provenance as a caption and the notices as a list', () => {
@@ -444,7 +533,7 @@ describe('table-export', () => {
       rows: Record<string, unknown>[];
     };
 
-    expect(parsed.columns.length).toBe(26);
+    expect(parsed.columns.length).toBe(29);
     expect(parsed.columns.map(column => column.key))
       .toEqual(model().columns.map(column => column.key));
     // Numbers, not the strings the human formats carry.
@@ -480,17 +569,17 @@ describe('table-export', () => {
   // The spreadsheet
   // -------------------------------------------------------------------------------------------
 
-  it('writes one sheet of twenty-six columns and a header row, and a second of provenance', async () => {
+  it('writes one sheet of twenty-nine columns and a header row, and a second of provenance', async () => {
     const captured = captureXlsx();
 
     const blob = await toXlsx(model([buildEntry(), buildEntry({ key: 'run:2', sourceId: 44 })]));
 
     expect(captured.sheets.length).toBe(2);
     expect(captured.sheets[0].sheet).toBe('Comparison');
-    // A frozen header, so twenty-six columns stay identifiable after a scroll.
+    // A frozen header, so twenty-nine columns stay identifiable after a scroll.
     expect(captured.sheets[0].stickyRowsCount).toBe(1);
     expect(captured.sheets[0].data.length).toBe(3);
-    expect(captured.sheets[0].data.every((row: unknown[]) => row.length === 26)).toBeTrue();
+    expect(captured.sheets[0].data.every((row: unknown[]) => row.length === 29)).toBeTrue();
     expect(captured.sheets[1].sheet).toBe('Provenance');
 
     expect(blob.size).toBeGreaterThan(0);
@@ -549,7 +638,7 @@ describe('table-export', () => {
   });
 
   describe('image size, theme and row style', () => {
-    /** The image's own model: today's eight columns, combined as on screen. */
+    /** The image's own model: today's nine columns, combined as on screen. */
     function readingModel(count = 3): ComparisonTableModel {
       const entries = Array.from({ length: count }, (_unused, index) =>
         buildEntry({ key: `run:${index + 1}`, sourceId: 43 + index }));
@@ -602,7 +691,7 @@ describe('table-export', () => {
       expect(TABLE_IMAGE_SCALE).toBe(2);
       expect(refusal).toBeNull();
       expect(layout!.scale).toBe(2);
-      expect(layout!.columnCount).toBe(8);
+      expect(layout!.columnCount).toBe(9);
       expect(layout!.rowCount).toBe(3);
       expect(implicit.width).toBe(layout!.pixelWidth);
       expect(implicit.height).toBe(layout!.pixelHeight);
@@ -683,7 +772,7 @@ describe('table-export', () => {
       const { layout, refusal } = resolveTableImageLayout(built, { size: box(320, 4000) });
 
       expect(layout).toBeNull();
-      const named = /^The 8 selected columns need at least (\d+) px of width at this text size\. Choose fewer columns in the Table tab, a width of (\d+) px or more, or a smaller text size\.$/.exec(refusal!);
+      const named = /^The 9 selected columns need at least (\d+) px of width at this text size\. Choose fewer columns in the Table tab, a width of (\d+) px or more, or a smaller text size\.$/.exec(refusal!);
       expect(named).not.toBeNull();
       const minimum = Number(named![1]);
       expect(Number(named![2])).toBe(minimum);

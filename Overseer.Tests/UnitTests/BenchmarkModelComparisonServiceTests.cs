@@ -511,6 +511,122 @@ public class BenchmarkModelComparisonServiceTests
         Assert.Null(Entry(dto, "a").Cost!.ScheduledChangeEffectiveFrom);
     }
 
+    // --- Total run cost, grading roles included ---------------------------------------------------------
+
+    /// <summary>$1 / M input, $5 / M output. Every grading role in these fixtures is priced on it.</summary>
+    private static ModelPricing GraderCard() => new(1m, 5m);
+
+    /// <summary>
+    /// A harness-15 run whose candidate costs $3.28 (see <see cref="CurrentBasis_RepricesFromStoredTokenTotals"/>)
+    /// plus <paramref name="extraCandidateOutput"/> output tokens at $10 / M, and whose graders cost
+    /// $2.70 on <see cref="GraderCard"/>:
+    ///   assessor        1,000,000 in, 100,000 out = $1.00 + $0.50 = $1.50
+    ///   second opinion    500,000 in,  50,000 out = $0.50 + $0.25 = $0.75
+    ///   claim verifier    200,000 in,  20,000 out = $0.20 + $0.10 = $0.30
+    ///   synthesis         100,000 in,  10,000 out = $0.10 + $0.05 = $0.15
+    /// </summary>
+    private static BenchmarkRun GradedRun(long id, long extraCandidateOutput = 0)
+    {
+        var run = Run(id, inputTokens: 1_000_000, outputTokens: 200_000 + extraCandidateOutput, cacheReadTokens: 400_000);
+        run.HarnessVersion = "15";
+        run.TotalAssessmentInputTokens = 1_000_000;
+        run.TotalAssessmentOutputTokens = 100_000;
+        run.TotalSecondOpinionInputTokens = 500_000;
+        run.TotalSecondOpinionOutputTokens = 50_000;
+        run.TotalClaimVerificationInputTokens = 200_000;
+        run.TotalClaimVerificationOutputTokens = 20_000;
+        run.TotalSynthesisInputTokens = 100_000;
+        run.TotalSynthesisOutputTokens = 10_000;
+        return run;
+    }
+
+    private static BenchmarkRunPricing AllRoles(ModelPricing? grader)
+        => new(Candidate: Card(), Assessor: grader, ClaimVerifier: grader, SecondOpinion: grader);
+
+    private static BenchmarkModelComparisonSource PricedSource(
+        string key, BenchmarkRunPricing pricing, params BenchmarkRun[] runs)
+        => Source(key, pricing.Candidate, runs) with
+        {
+            RunPricing = runs.ToDictionary(r => r.Id, _ => (BenchmarkRunPricing?)pricing)
+        };
+
+    [Fact]
+    public void TotalRunCost_IsCandidatePlusEveryGradingRole()
+    {
+        var cost = Entry(Build(new[] { PricedSource("a", AllRoles(GraderCard()), GradedRun(1)) }), "a").Cost!;
+
+        // $3.28 candidate + $2.70 grading.
+        Assert.Equal(5.98, cost.TotalRunCostPerRunUsd!.Value, 6);
+        Assert.Null(cost.TotalRunCostUnavailableReason);
+
+        // Grader tokens never reach the candidate figures.
+        Assert.Equal(3.28, cost.CandidateCostPerRunUsd!.Value, 6);
+        Assert.Equal(3.28 / 3.0, cost.CandidateCostPerQuestionUsd!.Value, 6);
+    }
+
+    [Fact]
+    public void TotalRunCost_HasSampleSd_AtTwoRuns_AndNoneAtOne()
+    {
+        // The second run spends 100,000 more candidate output tokens: $1.00 more, so $6.98.
+        // Mean $6.48; sample SD sqrt((0.5² + 0.5²) / 1) = sqrt(0.5).
+        var pooled = Entry(Build(new[]
+        {
+            PricedSource("a", AllRoles(GraderCard()), GradedRun(1), GradedRun(2, extraCandidateOutput: 100_000))
+        }), "a").Cost!;
+
+        Assert.Equal(6.48, pooled.TotalRunCostPerRunUsd!.Value, 6);
+        Assert.Equal(Math.Sqrt(0.5), pooled.TotalRunCostSdUsd!.Value, 6);
+
+        var single = Entry(Build(new[] { PricedSource("a", AllRoles(GraderCard()), GradedRun(1)) }), "a").Cost!;
+        Assert.Null(single.TotalRunCostSdUsd);
+    }
+
+    [Fact]
+    public void TotalRunCost_IsNull_WhenAGradingRoleIsUnpriced()
+    {
+        var pricing = AllRoles(GraderCard()) with { SecondOpinion = null };
+        var cost = Entry(Build(new[] { PricedSource("a", pricing, GradedRun(1)) }), "a").Cost!;
+
+        Assert.Null(cost.TotalRunCostPerRunUsd);
+        Assert.Null(cost.TotalRunCostSdUsd);
+        Assert.Contains("no price card", cost.TotalRunCostUnavailableReason);
+
+        // The candidate figures still stand.
+        Assert.True(cost.PricingResolved);
+        Assert.Equal(3.28, cost.CandidateCostPerRunUsd!.Value, 6);
+    }
+
+    [Fact]
+    public void TotalRunCost_IsNull_ForARunBeforeHarness15()
+    {
+        var old = GradedRun(1);
+        old.HarnessVersion = "14";
+
+        var cost = Entry(Build(new[] { PricedSource("a", AllRoles(GraderCard()), old) }), "a").Cost!;
+
+        Assert.Null(cost.TotalRunCostPerRunUsd);
+        Assert.Contains("harness 15", cost.TotalRunCostUnavailableReason);
+        Assert.Equal(3.28, cost.CandidateCostPerRunUsd!.Value, 6);
+    }
+
+    [Fact]
+    public void TotalRunCost_IsNull_OnAnExcludedEntry()
+    {
+        var old = GradedRun(3);
+        old.ScoringMethodVersion = 8;
+
+        var dto = Build(new[]
+        {
+            PricedSource("a", AllRoles(GraderCard()), GradedRun(1)),
+            PricedSource("b", AllRoles(GraderCard()), GradedRun(2)),
+            PricedSource("c", AllRoles(GraderCard()), old)
+        });
+
+        Assert.True(Entry(dto, "c").Excluded);
+        Assert.Null(Entry(dto, "c").Cost);
+        Assert.NotNull(Entry(dto, "a").Cost!.TotalRunCostPerRunUsd);
+    }
+
     // --- Speed -----------------------------------------------------------------------------------------
 
     [Fact]

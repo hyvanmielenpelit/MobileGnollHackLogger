@@ -31,6 +31,7 @@ import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 import {
   BenchmarkComparabilityIndexDto,
   BenchmarkComparabilityIndexEntryDto,
+  BenchmarkModelComparisonCostDto,
   BenchmarkModelComparisonDto,
   BenchmarkModelComparisonEntryDto,
   ComparisonSelectedSource,
@@ -122,6 +123,9 @@ describe('ModelComparisonComponent', () => {
         candidateCostPerQuestionUsd: 0.0123,
         candidateCostPerRunUsd: 0.2214,
         candidateTotalCostUsd: 0.6642,
+        totalRunCostPerRunUsd: 0.9876,
+        totalRunCostSdUsd: 0.0432,
+        totalRunCostUnavailableReason: null,
         basis: 'Current',
         pricingAsOf: '2026-09-01',
         pricingResolved: true,
@@ -350,10 +354,10 @@ describe('ModelComparisonComponent', () => {
   it('carries the three timings in one labelled column, after Speed Index', () => {
     renderTable(buildDto(comparableSet(1)));
 
-    // Model, R, State, Intelligence Index, Speed Index, Timings, Candidate $ / question, Notes.
+    // Model, R, State, Intelligence Index, Speed Index, Timings, Candidate $ / question, Total $ / run, Notes.
     const headers = fixture.debugElement.queryAll(By.css('table.mc-table thead tr:first-child th'))
       .map(header => (header.nativeElement as HTMLElement).textContent?.trim() ?? '');
-    expect(headers.length).toBe(8);
+    expect(headers.length).toBe(9);
     expect(headers[3]).toContain('Intelligence Index');
     expect(headers[4]).toContain('Speed Index');
     expect(headers[5]).toContain('Timings');
@@ -763,13 +767,56 @@ describe('ModelComparisonComponent', () => {
       .toContain('has no uncertainty bar');
   });
 
-  it('offers no total-run cost measure, because the endpoint carries candidate spend only', () => {
+  /** The comparable set with one entry's run total withheld for `reason`. */
+  function setWithoutTotal(count: number, reason: string): BenchmarkModelComparisonEntryDto[] {
+    const entries = comparableSet(count);
+    entries[1] = {
+      ...entries[1],
+      cost: { ...entries[1].cost!, totalRunCostPerRunUsd: null, totalRunCostSdUsd: null, totalRunCostUnavailableReason: reason }
+    };
+    return entries;
+  }
+
+  const PRE_HARNESS_15 = 'Run 2 predates per-role cost tracking (harness 15), so its final synthesis is not counted.';
+
+  it('offers the total-run cost measure when every charted entry carries a total, and charts it', () => {
     render(buildDto(comparableSet(3)), 3);
 
-    const option = fixture.debugElement.query(By.css('#mc-side-panel-data #mc-cost-measure-totalRun'));
-    expect(option).toBeTruthy();
-    expect((option.nativeElement as HTMLInputElement).disabled).toBeTrue();
-    expect((option.nativeElement as HTMLInputElement).type).toBe('radio');
+    const option = fixture.debugElement.query(By.css('#mc-side-panel-data #mc-cost-measure-totalRun'))
+      .nativeElement as HTMLInputElement;
+    expect(option.type).toBe('radio');
+    expect(option.disabled).toBeFalse();
+    expect(option.parentElement!.textContent).not.toContain('not available');
+    expect(textOf('#mc-cost-measure-hint')).toContain('what one benchmark run of this model costs');
+
+    chooseRadio('mc-cost-measure-totalRun');
+
+    expect(component.costMeasure).toBe('totalRun');
+    expect(option.checked).toBeTrue();
+  });
+
+  it('disables the total-run cost measure with the reason in the hint when one entry has no total', () => {
+    render(buildDto(setWithoutTotal(3, PRE_HARNESS_15)), 3);
+
+    const option = fixture.debugElement.query(By.css('#mc-side-panel-data #mc-cost-measure-totalRun'))
+      .nativeElement as HTMLInputElement;
+    expect(option.disabled).toBeTrue();
+    expect(option.parentElement!.textContent).toContain('not available');
+    expect(component.totalRunCostAvailable).toBeFalse();
+    expect(textOf('#mc-cost-measure-hint')).toContain(`Model 2: ${PRE_HARNESS_15}`);
+  });
+
+  it('falls back to candidate cost when a new comparison cannot supply the run total', () => {
+    render(buildDto(comparableSet(3)), 3);
+    chooseRadio('mc-cost-measure-totalRun');
+    expect(component.costMeasure).toBe('totalRun');
+
+    fixture.componentRef.setInput('comparison', buildDto(setWithoutTotal(3, PRE_HARNESS_15)));
+    fixture.detectChanges();
+
+    expect(component.costMeasure).toBe('candidateSuite');
+    expect((fixture.debugElement.query(By.css('#mc-cost-measure-candidateSuite')).nativeElement as HTMLInputElement).checked)
+      .toBeTrue();
   });
 
   it('keeps only Scope and the entries on step 2, and says where the measures and the order went', () => {
@@ -3638,16 +3685,16 @@ describe('ModelComparisonComponent', () => {
     expect(header).toContain('TTFT P90 ms');
     expect(header).not.toContain('Timings');
     expect(header).not.toContain('Model id');
-    expect(component.exportStatus).toMatch(/8 columns, written as \d+\./);
-    expect(component.tableScopeLine).toMatch(/^3 entries \(filters applied, current order, all pages\) · 8 columns, written as \d+$/);
+    expect(component.exportStatus).toMatch(/9 columns, written as \d+\./);
+    expect(component.tableScopeLine).toMatch(/^3 entries \(filters applied, current order, all pages\) · 9 columns, written as \d+$/);
 
     chooseTableFormat('md');
     await component.downloadTable();
     const markdown = await saved.blobs[1].text();
     expect(markdown).toContain('Timings');
     expect(markdown).not.toContain('Model time mean ms');
-    expect(component.exportStatus).toContain('8 columns.');
-    expect(component.tableScopeLine).toBe('3 entries (filters applied, current order, all pages) · 8 columns');
+    expect(component.exportStatus).toContain('9 columns.');
+    expect(component.tableScopeLine).toBe('3 entries (filters applied, current order, all pages) · 9 columns');
   });
 
   it('writes the table image in the shared image format at the table image size, naming its pixels', async () => {
@@ -3870,13 +3917,13 @@ describe('ModelComparisonComponent', () => {
     const info = /^Fit the table: (\d+) × (\d+) px at this text size — the whole table with its (\d+) shown columns and 3 rows\.$/
       .exec(component.tableFitInfo);
     expect(info).withContext(component.tableFitInfo).not.toBeNull();
-    expect(info![3]).toBe('8');
+    expect(info![3]).toBe('9');
     expect(textOf('#mc-table-image-fit-info')).toBe(component.tableFitInfo);
 
     component.onTableColumnsChange(columnsWith({ hide: ['notes', 'timings'] }));
     await component.measureTableImageNow();
     const narrower = /^Fit the table: (\d+) × (\d+) px/.exec(component.tableFitInfo)!;
-    expect(component.tableFitInfo).toContain('its 6 shown columns');
+    expect(component.tableFitInfo).toContain('its 7 shown columns');
     expect(Number(narrower[1])).toBeLessThan(Number(info![1]));
 
     // A preset names its minimum in its refusal instead.
@@ -4091,20 +4138,21 @@ describe('ModelComparisonComponent', () => {
     renderTable(buildDto(entries));
 
     expect(tableHeaders()).toEqual([
-      'Model', 'R', 'State', 'Intelligence Index', 'Speed Index', 'Timings', 'Candidate $ / question', 'Notes'
+      'Model', 'R', 'State', 'Intelligence Index', 'Speed Index', 'Timings', 'Candidate $ / question',
+      'Total $ / run, with grading', 'Notes'
     ]);
-    expect(fixture.debugElement.queryAll(By.css('table.mc-table thead th[app-sort-header]')).length).toBe(7);
+    expect(fixture.debugElement.queryAll(By.css('table.mc-table thead th[app-sort-header]')).length).toBe(8);
     expect(textOf('table.mc-table caption')).toContain(
-      'Model, R, State, Intelligence Index, Speed Index, Timings, Candidate $ / question, Notes');
+      'Model, R, State, Intelligence Index, Speed Index, Timings, Candidate $ / question, Total $ / run, with grading, Notes');
 
     const filters = fixture.debugElement.queryAll(By.css('.gh-filter-row td'))
       .map(cell => cell.nativeElement as HTMLElement);
-    expect(filters.length).toBe(8);
+    expect(filters.length).toBe(9);
     expect(filters[0].querySelector('#mc-f-label')).toBeTruthy();
     expect(filters[2].querySelector('#mc-f-state')).toBeTruthy();
 
     const row = tableRowOf('Run 1');
-    expect(row.children.length).toBe(8);
+    expect(row.children.length).toBe(9);
     expect(row.children[0].tagName).toBe('TH');
     expect(row.children[1].classList).toContain('col-center');
     expect(row.querySelector('.mc-state')?.getAttribute('interestfor')).toBeTruthy();
@@ -4126,10 +4174,11 @@ describe('ModelComparisonComponent', () => {
     refresh();
 
     expect(tableHeaders()).toEqual([
-      'Model', 'R', 'State', 'Candidate $ / question', 'Intelligence Index', 'Speed Index', 'Timings', '±'
+      'Model', 'R', 'State', 'Candidate $ / question', 'Intelligence Index', 'Speed Index', 'Timings',
+      'Total $ / run, with grading', '±'
     ]);
     expect(JSON.parse(localStorage.getItem(TABLE_COLUMNS_STORAGE_KEY)!)).toEqual({
-      version: 1, order, shown: component.tableColumns.shown
+      version: 2, order, shown: component.tableColumns.shown
     });
     // The ± is its own column now, so the Intelligence Index cell stops printing it.
     const row = tableRowOf('Run 1');
@@ -4199,7 +4248,7 @@ describe('ModelComparisonComponent', () => {
 
   it('restores the column configuration from storage and repairs it', () => {
     localStorage.setItem(TABLE_COLUMNS_STORAGE_KEY, JSON.stringify({
-      version: 1, order: ['cost', 'bogus', 'model', 'cost'], shown: ['cost', 'bogus']
+      version: 2, order: ['cost', 'bogus', 'model', 'cost'], shown: ['cost', 'bogus']
     }));
     let stored = TestBed.createComponent(ModelComparisonComponent);
     const columns = stored.componentInstance.tableColumns;
@@ -4215,6 +4264,43 @@ describe('ModelComparisonComponent', () => {
     stored = TestBed.createComponent(ModelComparisonComponent);
     expect(stored.componentInstance.tableColumns).toEqual(DEFAULT_TABLE_COLUMNS);
     stored.destroy();
+  });
+
+  it('shows the total-cost column on load to an admin whose version-1 layout predates it', () => {
+    localStorage.setItem(TABLE_COLUMNS_STORAGE_KEY, JSON.stringify({
+      version: 1,
+      order: DEFAULT_TABLE_COLUMNS.order.filter(key => key !== 'totalCost'),
+      shown: DEFAULT_TABLE_COLUMNS.shown.filter(key => key !== 'totalCost')
+    }));
+    fixture.destroy();
+    fixture = TestBed.createComponent(ModelComparisonComponent);
+    component = fixture.componentInstance;
+
+    renderTable(buildDto(comparableSet(2)));
+
+    const headers = tableHeaders();
+    expect(headers[headers.indexOf('Candidate $ / question') + 1]).toBe('Total $ / run, with grading');
+  });
+
+  it('renders the run total with its SD in the total-cost cell', () => {
+    renderTable(buildDto(comparableSet(2)));
+
+    const cell = tableRowOf('Run 1').children[tableHeaders().indexOf('Total $ / run, with grading')] as HTMLElement;
+    expect(cell.querySelector('.mc-nowrap')?.textContent).toContain('$0.9876');
+    expect(cell.querySelector('.mc-interval')?.textContent).toContain('± $0.0432');
+    expect(cell.querySelector('.mc-badge')).toBeNull();
+  });
+
+  it('marks the total-cost cell Unavailable, with the reason in its tooltip, when the total is null', () => {
+    renderTable(buildDto(setWithoutTotal(2, PRE_HARNESS_15)));
+
+    const cell = tableRowOf('Run 2').children[tableHeaders().indexOf('Total $ / run, with grading')] as HTMLElement;
+    expect(cell.querySelector('.mc-nowrap')?.textContent?.trim()).toBe('—');
+    expect(cell.querySelector('.mc-interval')).toBeNull();
+    const badge = cell.querySelector('.mc-badge') as HTMLElement;
+    expect(badge.textContent?.trim()).toBe('Unavailable');
+    const tip = cell.querySelector(`#${badge.getAttribute('interestfor')}`) as HTMLElement;
+    expect(tip.textContent).toContain('harness 15');
   });
 
   it('computes the Columns empty set from the rows passing the filters, not in the template', () => {
@@ -4321,7 +4407,7 @@ describe('ModelComparisonComponent', () => {
     const canvas = fixture.debugElement.query(By.css('#mc-fig-panel-tablePreview canvas.mc-preview-canvas'))
       .nativeElement as HTMLCanvasElement;
     expect(canvas.getAttribute('role')).toBe('img');
-    expect(canvas.getAttribute('aria-label')).toBe('Table preview: 3 entries, 8 columns');
+    expect(canvas.getAttribute('aria-label')).toBe('Table preview: 3 entries, 9 columns');
     expect(canvas.width).toBeGreaterThan(0);
     expect(textOf('.mc-table-preview-notes')).toContain(
       'Previewing the image export. The chosen format, Excel (.xlsx), has no appearance of its own.');
@@ -5713,10 +5799,56 @@ describe('model-comparison adapter', () => {
     expect(Number.isNaN(entry.totalModelTimeMs)).toBeTrue();
     expect(Number.isNaN(entry.candidateCostPerQuestionUsd)).toBeTrue();
     expect(Number.isNaN(entry.candidateCostPerRunUsd)).toBeTrue();
+    // No cost object, so no run total: NaN, like every other absent measure.
     expect(Number.isNaN(entry.totalRunCostUsd)).toBeTrue();
+    expect(entry.totalRunCostSdUsd).toBeNull();
     expect(entry.candidateCostPerQuestionSdUsd).toBeNull();
     expect(entry.speedIndexSd).toBeNull();
     expect(entry.totalModelTimeSdMs).toBeNull();
+  });
+
+  it('maps the run total including grading roles when the payload carries one, and NaN when it is null', () => {
+    const cost: BenchmarkModelComparisonCostDto = {
+      candidateCostPerQuestionUsd: 0.0123,
+      candidateCostPerRunUsd: 0.2214,
+      totalRunCostPerRunUsd: 0.9876,
+      totalRunCostSdUsd: 0.0432,
+      basis: 'Current',
+      pricingResolved: true,
+      degraded: false
+    };
+    const measured = (key: string, overrides: Partial<BenchmarkModelComparisonCostDto>): BenchmarkModelComparisonEntryDto =>
+      ({ ...excluded, key, excluded: false, comparable: true, state: 'Comparable', excludingKeys: [], cost: { ...cost, ...overrides } });
+    const [withTotal, withoutTotal] = toChartEntries({
+      pricingBasis: 'Current',
+      pricingBasisLabel: 'Current catalog',
+      computedAtUtc: '2026-09-07T12:00:00Z',
+      baselineSuiteId: 5,
+      baselineSuiteName: 'Suite',
+      baselineEntryKeys: [],
+      baselineKeyValues: {},
+      baselineSignature: '',
+      modelAxisKeys: [],
+      entries: [
+        measured('run:1', {}),
+        measured('run:2', {
+          totalRunCostPerRunUsd: null,
+          totalRunCostSdUsd: null,
+          totalRunCostUnavailableReason: 'Run 2 has no resolvable pricing.'
+        })
+      ],
+      comparableCount: 2,
+      excludedCount: 0,
+      thinkingLevelsDiffer: false,
+      speedAxisCaveat: null,
+      explanation: '',
+      excludedMeasures: []
+    });
+
+    expect(withTotal.totalRunCostUsd).toBe(0.9876);
+    expect(withTotal.totalRunCostSdUsd).toBe(0.0432);
+    expect(Number.isNaN(withoutTotal.totalRunCostUsd)).toBeTrue();
+    expect(withoutTotal.totalRunCostSdUsd).toBeNull();
   });
 
   it('reads the question counts and the pricing label off the payload header', () => {
