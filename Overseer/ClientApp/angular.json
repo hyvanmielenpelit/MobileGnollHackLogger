@@ -36,6 +36,7 @@
             ],
             "styles": [
               "src/fonts.scss",
+              "src/figure-fonts.scss",
               "src/styles.scss",
               "node_modules/katex/dist/katex.min.css"
             ],
@@ -117,6 +118,7 @@
             ],
             "styles": [
               "src/fonts.scss",
+              "src/figure-fonts.scss",
               "src/styles.scss",
               "node_modules/katex/dist/katex.min.css"
             ],

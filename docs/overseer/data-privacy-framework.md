@@ -139,10 +139,21 @@ directly in `wwwroot/` would be erased by the next build.
 > *"Unable to locate stylesheet: C:onts.css"*. Listing the file in `styles` is what makes it
 > a build input instead of a runtime fetch.
 
-**To refresh them**: fetch the `css2` stylesheet for both families with a current browser user
+The model comparison's figures and table image can also be drawn in one of six further families
+— **Inter, Roboto, Geist, IBM Plex Sans, Source Sans 3 and Open Sans** — chosen in the wizard's
+Theme tab. They are vendored the same way: one variable `woff2` file per family and subset
+(weights 400–700), named `<family>-normal-400-700-<subset>.woff2`, with their `@font-face` blocks
+in a second compiled stylesheet, `Overseer/ClientApp/src/figure-fonts.scss`, listed in
+`angular.json` after `fonts.scss`. `@font-face` is lazy, so a visitor downloads one of these files
+only when a chart is drawn in that family, and then from `'self'`: the CSP is unchanged.
+
+**To refresh them**: fetch the `css2` stylesheet for the families with a current browser user
 agent, download each `woff2` URL it names into `public/fonts/`, and regenerate the `@font-face`
 blocks with their `unicode-range` values intact. Keep the subset split — dropping `latin-ext`
-would silently degrade non-ASCII text.
+would silently degrade non-ASCII text. Cinzel and Lato go to `fonts.scss`; the six figure
+families go to `figure-fonts.scss`, from one request naming all six:
+`https://fonts.googleapis.com/css2?family=Inter:wght@400..700&family=Roboto:wght@400..700&family=Geist:wght@400..700&family=IBM+Plex+Sans:wght@400..700&family=Source+Sans+3:wght@400..700&family=Open+Sans:wght@400..700&display=swap`,
+keeping only its `latin` and `latin-ext` faces.
 
 If self-hosting is ever reversed, the CSP must become
 `style-src … https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:`

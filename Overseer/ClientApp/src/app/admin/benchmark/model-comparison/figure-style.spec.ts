@@ -33,6 +33,8 @@ describe('figure-style', () => {
       singleRunMarker: true,
       thinkingLevelBreak: false,
       gridlines: true,
+      axisTitleWeight: 400,
+      plotFrame: false,
       hiddenBadges: []
     });
     expect(DEFAULT_FIGURE_STYLE.scatter).toEqual({
@@ -49,9 +51,28 @@ describe('figure-style', () => {
       legendPosition: 'bottom',
       thinkingLevelBreak: false,
       gridlines: true,
+      axisTitleWeight: 400,
+      plotFrame: false,
       hiddenBadges: []
     });
     expect(DEFAULT_FIGURE_STYLE.profile).toEqual({ ...chromeDefaults, hiddenBadges: [] });
+    expect(DEFAULT_FIGURE_STYLE.appearance).toEqual({
+      theme: 'dark',
+      background: 'theme',
+      backgroundColor: '#ffffff',
+      previewBackdrop: 'checkerboard',
+      previewBackdropColor: '#ffffff',
+      fontFamily: 'default',
+      headingWeight: 600,
+      labelWeight: 400,
+      headingColor: null,
+      textColor: null,
+      border: false,
+      borderWidthPx: 1,
+      borderRadiusPx: 0,
+      borderColor: null
+    });
+    expect(DEFAULT_FIGURE_STYLE.table).toEqual({ rowBands: true, rowRules: false });
     expect(DEFAULT_FIGURE_STYLE.numbers).toEqual({
       intelligenceIndex: 0,
       speedIndex: 0,
@@ -192,7 +213,7 @@ describe('figure-style', () => {
     });
     expect(style.bar).toEqual({ ...DEFAULT_FIGURE_STYLE.bar, gapPercent: 10, gridlines: false });
     expect(style.scatter).toEqual({ ...DEFAULT_FIGURE_STYLE.scatter, markRadiusPx: 9, dominatedShading: false });
-    expect(Object.keys(style)).toEqual(['bar', 'scatter', 'profile', 'numbers']);
+    expect(Object.keys(style)).toEqual(['bar', 'scatter', 'profile', 'numbers', 'appearance', 'table']);
     expect('colour' in style.bar).toBeFalse();
   });
 
@@ -365,5 +386,68 @@ describe('figure-style', () => {
     expect(style.numbers).not.toBe(DEFAULT_FIGURE_STYLE.numbers);
     expect(normalizeFigureStyle({}).numbers).not.toBe(DEFAULT_FIGURE_STYLE.numbers);
     expect(style.numbers.intelligenceIndex).toBe(3);
+  });
+
+  it('reads a style stored before the theme existed with the appearance and table at their defaults', () => {
+    const style = normalizeFigureStyle({ bar: { gapPercent: 10 }, scatter: {}, profile: {}, numbers: {} });
+    expect(style.appearance).toEqual(DEFAULT_FIGURE_STYLE.appearance);
+    expect(style.table).toEqual(DEFAULT_FIGURE_STYLE.table);
+    expect(style.bar.axisTitleWeight).toBe(400);
+    expect(style.bar.plotFrame).toBeFalse();
+    expect(style.scatter.axisTitleWeight).toBe(400);
+    expect(style.scatter.plotFrame).toBeFalse();
+  });
+
+  it('keeps valid appearance fields and repairs the rest one by one', () => {
+    const style = normalizeFigureStyle({
+      appearance: {
+        theme: 'light',
+        background: 'custom',
+        backgroundColor: '#ABCDEF',
+        previewBackdrop: 'color',
+        previewBackdropColor: 'red',
+        fontFamily: 'inter',
+        headingWeight: 700,
+        labelWeight: 450,
+        headingColor: '#112233',
+        textColor: null,
+        border: true,
+        borderWidthPx: 20,
+        borderRadiusPx: 12.4,
+        borderColor: '#12345',
+        extra: 1
+      },
+      table: { rowBands: false, rowRules: 'yes' }
+    });
+    expect(style.appearance).toEqual({
+      ...DEFAULT_FIGURE_STYLE.appearance,
+      theme: 'light',
+      background: 'custom',
+      backgroundColor: '#abcdef',
+      previewBackdrop: 'color',
+      fontFamily: 'inter',
+      headingWeight: 700,
+      headingColor: '#112233',
+      border: true,
+      borderWidthPx: 8,
+      borderRadiusPx: 12
+    });
+    expect('extra' in style.appearance).toBeFalse();
+    expect(style.table).toEqual({ rowBands: false, rowRules: false });
+
+    const invalid = normalizeFigureStyle({
+      appearance: { theme: 'sepia', background: 'none', fontFamily: 'comic', headingWeight: '700', borderRadiusPx: -3 }
+    });
+    expect(invalid.appearance).toEqual({ ...DEFAULT_FIGURE_STYLE.appearance, borderRadiusPx: 0 });
+    for (const value of [null, [], 'dark', 3]) {
+      expect(normalizeFigureStyle({ appearance: value }).appearance).withContext(String(value)).toEqual(DEFAULT_FIGURE_STYLE.appearance);
+    }
+  });
+
+  it('accepts only the four font weights for the axis titles', () => {
+    const style = normalizeFigureStyle({ bar: { axisTitleWeight: 600, plotFrame: true }, scatter: { axisTitleWeight: 300 } });
+    expect(style.bar.axisTitleWeight).toBe(600);
+    expect(style.bar.plotFrame).toBeTrue();
+    expect(style.scatter.axisTitleWeight).toBe(400);
   });
 });

@@ -171,9 +171,9 @@
    The filter row
    ========================================================================== */
 
-/* The query root for the two fieldsets, so they respond to the panel they sit in rather than to
-   the window. Nothing with a popover may become a containment context, which is why the container
-   is this wrapper and not the section around it. */
+/* The query root for the Scope fieldset, so it responds to the panel it sits in rather than to the
+   window. Nothing with a popover may become a containment context, which is why the container is
+   this wrapper and not the section around it. */
 .mc-filters-container {
   container-type: inline-size;
 }
@@ -196,16 +196,8 @@
   grid-template-columns: 1fr;
 }
 
-.mc-fieldset-measures {
-  grid-template-columns: 1fr;
-}
-
 /* 720px is `P1_STACK_BREAKPOINT_PX`, the width below which P1's bars turn horizontal. */
 @container (min-width: 720px) {
-  .mc-filters {
-    grid-template-columns: 2fr 1fr;
-  }
-
   .mc-fieldset-scope {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -559,7 +551,7 @@
    ========================================================================== */
 
 /*
- * Eight columns, several of which carry a value and its qualifiers. Every such cell is a flex
+ * The shown columns, several of which carry a value and its qualifiers. Every such cell is a flex
  * column with the value on the first line, so a badge or a basis wraps under the number it belongs
  * to instead of widening the column; the values themselves never wrap, and only the headings and
  * the Notes prose do.
@@ -753,7 +745,48 @@
 }
 
 /* ==========================================================================
-   Emphasis, on the step whose figures it paints
+   The Data tab: measures, model order and emphasis, beside the charts they change
+   ========================================================================== */
+
+/* Three stacked groups, each a themed fieldset with its own legend; the radio groups inside are
+   the global `.gh-choice` / `.gh-radio`. */
+.mc-data-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mc-order-actions {
+  display: flex;
+  justify-content: flex-end;
+
+  .gh-filter-clear[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+/* The line naming the table's order, with *Use model order* beside it once a header sorts it. */
+.mc-table-order {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.mc-table-order-line {
+  margin: 0;
+  font-size: 12px;
+  color: #c3c2b7;
+}
+
+.mc-table-order--side {
+  justify-content: space-between;
+}
+
+/* ==========================================================================
+   Emphasis, in the Data tab beside the charts it paints
    ========================================================================== */
 
 .mc-emphasis {
@@ -896,8 +929,8 @@
 }
 
 /* The only scroller in the dialog. `overscroll-behavior: contain` stops a wheel gesture that
-   reaches the end of a long table from chaining into the page behind the dialog. Step 4 hands
-   scrolling to its sidebar and its panels, so its figure bar never scrolls away. */
+   reaches the end of a long list from chaining into the page behind the dialog. Step 3 hands
+   scrolling to its sidebar and its panels, so its view bar never scrolls away. */
 .mc-step {
   flex: 1;
   min-width: 0;
@@ -1071,7 +1104,7 @@
   color: var(--primary-color);
 }
 
-/* The busy state of a refetch from steps 2–4, where Next is not blocked and carries no spinner.
+/* The busy state of a refetch from steps 2 and 3, where Next is not blocked and carries no spinner.
    On a line of its own under the step position, centred like it. */
 .mc-wizard-busy {
   display: flex;
@@ -1090,23 +1123,13 @@
   justify-content: flex-end;
 }
 
-/* On the table and figure steps the notices are a reminder beside the export controls, not the
-   primary reading; step 2 renders the same set at full size. */
+/* On step 3 the notices are a reminder beside the export controls, not the primary reading;
+   step 2 renders the same set at full size. */
 .mc-notices-compact {
   font-size: 12px;
 }
 
-/* --- Export resolution controls --- */
-
-.mc-export-dimension {
-  width: 90px;
-}
-
-.mc-export-dimensions {
-  margin: 0;
-  font-size: 12px;
-  color: #8b8b90;
-}
+/* --- Export refusals --- */
 
 .mc-export-error {
   margin: 0;
@@ -1114,7 +1137,7 @@
   color: var(--primary-color);
 }
 
-/* --- The table step --- */
+/* --- The Interactive table --- */
 
 /* The computation time, in the same words every exported file carries it in. Muted: it qualifies
    the table rather than titling it. */
@@ -1132,85 +1155,53 @@
   gap: 10px;
 }
 
-/* The table's own toolbar is a block in the section column rather than a row beside the heading:
-   a format select and its two icon buttons, download and copy, centred on one line and wrapping
-   under each other at a narrow dialog width. */
-.mc-table-export {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
+/* A single-value column's text: one value, so it keeps the row's top alignment and a readable
+   measure without a stack of its own. */
+.mc-text-cell {
+  max-width: 36ch;
 }
 
-.mc-table-export-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+/* --- The Download tab --- */
 
-/* --- The download column chooser --- */
-
-/* A header / note / actions / grid column. `dialog:not([open])` in `styles.scss` hides it when it
-   is closed with an `!important` of its own, so `display` needs no open-state gate here; there is
-   no exit transition whose length it would have to survive. */
-.mc-columns-dialog {
+/* Its sections stacked: the formats, the sizes, the scope line and the actions. */
+.mc-download-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-
-  .dialog-header {
-    margin-bottom: 0;
-  }
-
-  .dialog-actions {
-    margin-top: 0;
-  }
+  gap: 6px;
 }
 
-.mc-columns-actions {
+/* What the chosen table format will write, under the sections it depends on. */
+.mc-table-scope {
+  margin: 0;
+  font-size: 12px;
+  color: #c3c2b7;
+}
+
+.mc-download-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 8px 12px;
-}
 
-/* Twenty-six checkboxes: a grid that scrolls inside the dialog rather than a dialog that grows past
-   the viewport. `overscroll-behavior` keeps the wizard behind it from scrolling at either end. */
-.mc-columns-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 6px 16px;
-  max-height: 50dvh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
+  .btn-gh[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+    filter: grayscale(0.6);
+  }
 
-/* `.checkbox-label` is a flex row, so its own gap already separates this from the header text. */
-.mc-column-empty {
-  padding: 0 5px;
-  border-radius: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  font-size: 10px;
-  letter-spacing: 0.03em;
-  color: #898781;
-}
-
-.mc-columns-count {
-  margin: 0 auto 0 0;
-  align-self: center;
-  font-size: 12px;
-  color: #8b8b90;
-}
-
-@media (max-width: 500px) {
-  /* `.dialog-actions` stacks in column-reverse below this width, where an auto left margin would
-     only add a gap above the count. */
-  .mc-columns-count {
-    margin: 0;
-    align-self: stretch;
+  .btn-ghost[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 }
 
-/* --- The figures step: settings sidebar, figure bar, All and Single --- */
+/* The Table tab's status line, which names a filter a hidden column took with it. Always rendered,
+   so its live region exists before it first speaks. */
+.mc-columns-status {
+  margin: 0;
+}
+
+/* --- Step 3's workspace: settings sidebar, view bar, the chart views and the table views --- */
 
 /* The sidebar and the main area side by side, collapsing to one column on the workspace's own
    width rather than the viewport's: the wizard is already narrower than the window on a split
@@ -1256,7 +1247,7 @@
   }
 }
 
-/* The Emphasis / Export / Style strip stays put while the panel under it scrolls with the sidebar.
+/* The sidebar's tab strip stays put while the panel under it scrolls with the sidebar.
    Opaque, in the wizard's own ground like `.mc-wizard-steps`, so the scrolled panel does not show
    through. */
 .mc-fig-sidebar-tabs {
@@ -1279,8 +1270,8 @@
   }
 }
 
-/* The Figure size section and its reset button, which sits over the summary row's end, as the
-   Style panel's own sections place theirs. */
+/* The Image format section and its reset button, which sits over the summary row's end, as the
+   style panel's own sections place theirs. */
 .mc-size-section {
   position: relative;
 
@@ -1313,37 +1304,7 @@
   outline-offset: 2px;
 }
 
-/* A range with its value beside it, as the Style tab lays out its own. */
-.mc-range {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.mc-range-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-
-  input[type="range"] {
-    width: 100%;
-    min-width: 0;
-    margin: 0;
-    accent-color: var(--primary-color);
-
-    &:focus-visible {
-      outline: 2px solid var(--primary-color);
-      outline-offset: 3px;
-    }
-
-    &:disabled {
-      opacity: 0.45;
-      cursor: not-allowed;
-    }
-  }
-}
-
+/* A zoom read-out beside its slider. */
 .mc-range-value {
   min-width: 4em;
   text-align: right;
@@ -1352,12 +1313,21 @@
   color: #d4d4d8;
 }
 
-/* The figure bar above whichever view is shown, in a grid row of its own so it never scrolls. */
+/* The view bar above whichever view is shown, and the line saying why nothing is charted where
+   that applies, each in a row of its own so neither scrolls; the panels take the rest. */
 .mc-fig-main {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
+}
+
+.mc-fig-unavailable {
+  flex: none;
+  margin: 0;
+  padding: 8px 24px 0;
+  font-size: 12px;
+  color: var(--primary-color);
 }
 
 /* One rule line under the whole bar, in the secondary tab row's colour; the tab row drops its own.
@@ -1383,13 +1353,23 @@
   padding-top: 6px;
 }
 
-.mc-fig-download-all {
+/* The view's own actions at the bar's end: Download all charts, or Copy table and Download table. */
+.mc-fig-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-inline-start: auto;
+
+  .btn-ghost[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
 }
 
-/* Both panels fill the same box; each scrolls inside its own viewport, never the panel itself. */
+/* Every panel fills the same box; each scrolls inside its own viewport or, for the table, itself. */
 .mc-fig-panels {
   position: relative;
+  flex: 1;
   min-height: 0;
 }
 
@@ -1406,6 +1386,15 @@
     outline: 2px solid var(--primary-color);
     outline-offset: -2px;
   }
+}
+
+/* The Interactive table scrolls vertically as a panel of its own, so the view bar stays put; the
+   horizontal scroll stays on `.gh-datatable-scroll`, with the pagers outside it. The section rhythm
+   is step 2's. */
+.mc-fig-panel--table {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  gap: 24px;
 }
 
 /* --- The All tab --- */
@@ -1502,17 +1491,10 @@
   border-radius: 6px;
 }
 
-/* The step's own padding, where no workspace renders. */
-.mc-fig-empty {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 16px 24px 24px;
-}
+/* --- The Single chart and the Table preview; the toolbar's groups also lay out the All tab's zoom --- */
 
-/* --- The Single tab; its toolbar's groups also lay out the All tab's zoom --- */
-
-/* Figure, zoom and export groups; wraps on a narrow panel, the export group kept at the end. */
+/* Figure (or the table's label), zoom and export groups; wraps on a narrow panel, the export group
+   kept at the end. */
 .mc-preview-toolbar {
   flex: none;
   display: flex;
@@ -1528,10 +1510,10 @@
   gap: 6px;
 }
 
-/* The Single tab's icon buttons and the table toolbar's: spaced by their row's gap, and dimmed while
-   they refuse. */
+/* The stage's icon buttons and the view bar's: spaced by their row's gap, and dimmed while they
+   refuse. */
 .mc-preview-group,
-.mc-table-export-actions {
+.mc-fig-actions {
   .action-btn {
     margin-left: 0;
 
@@ -1585,9 +1567,37 @@
   text-align: left;
 }
 
-/* Near-black rather than the card ground: the composition carries its own opaque background, and a
-   stage in the same colour would hide where the image ends. The stage does not scroll; the viewport
-   inside it does, so a scrollbar never changes the measured box. */
+/* The Table preview's toolbar names what it shows where the Single chart has its figure picker. */
+.mc-preview-label {
+  margin: 0;
+  font-family: "Cinzel", serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--primary-color);
+}
+
+/* Under the Table preview's stage: the written pixel size or the refusal, and the note that the
+   preview is the image export whatever format is chosen. */
+.mc-table-preview-notes {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mc-table-preview-size {
+  margin: 0;
+  font-size: 12px;
+  color: #8b8b90;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Near-black rather than the card ground: the composition carries its own background, and a stage
+   in the same colour would hide where the image ends. With a transparent background the canvas
+   itself paints the preview backdrop behind the bitmap (`.is-transparent-figure`). The stage does
+   not scroll; the viewport inside it does, so a scrollbar never changes the measured box. */
 .mc-preview-stage {
   position: relative;
   flex: 1;
@@ -1639,6 +1649,14 @@
   position: absolute;
   top: 12px;
   right: 12px;
+}
+
+/* A transparent background, shown over the preview backdrop: the element's own CSS background,
+   behind the bitmap, so a written file never contains it. The colour arrives as
+   `--mc-figure-backdrop`, inherited from the canvas's scroller; without it, the checkerboard. */
+.mc-all-canvas.is-transparent-figure,
+.mc-preview-canvas.is-transparent-figure {
+  background: var(--mc-figure-backdrop, repeating-conic-gradient(#8a8a8a 0 25%, #bdbdbd 0 50%) 0 0 / 16px 16px);
 }
 
 /* Controls first, then the figures: a reader on a narrow screen is still configuring a size, and

@@ -1,0 +1,82 @@
+<p class="visually-hidden" [id]="idPrefix + '-instructions'">Drag a {{ itemNoun }} by its grip, or use its Move up and Move down buttons.</p>
+
+<ol #list class="rl-list" [attr.aria-label]="listLabel || null" [attr.aria-describedby]="idPrefix + '-instructions'">
+  @for (item of items; track item.key; let i = $index, first = $first, last = $last) {
+    @let rid = rowId(item.key);
+    @if (i === dividerIndex) {
+      <li role="presentation" class="rl-divider"><span class="rl-divider-text">{{ dividerText }}</span></li>
+    }
+    <li class="rl-row" [class.is-locked]="!!item.locked">
+      <span class="rl-grip" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="16" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true" focusable="false">
+          <circle cx="2.5" cy="3" r="1.5"></circle>
+          <circle cx="7.5" cy="3" r="1.5"></circle>
+          <circle cx="2.5" cy="8" r="1.5"></circle>
+          <circle cx="7.5" cy="8" r="1.5"></circle>
+          <circle cx="2.5" cy="13" r="1.5"></circle>
+          <circle cx="7.5" cy="13" r="1.5"></circle>
+        </svg>
+      </span>
+
+      @if (checkable) {
+        <label class="checkbox-label rl-check">
+          <input type="checkbox" [id]="rid + '-check'"
+                 [checked]="!!item.locked || !!item.checked"
+                 [disabled]="!!item.locked"
+                 [attr.aria-label]="item.label"
+                 [attr.aria-describedby]="checkboxDescribedBy(item, rid)"
+                 (change)="onCheckboxChange(item, $event)">
+          <ng-container [ngTemplateOutlet]="rowBody" [ngTemplateOutletContext]="{ $implicit: item, rid: rid }" />
+        </label>
+        @if (item.locked && item.lockedReason) {
+          <app-info-tip [tipId]="rid + '-lock-tip'" [subject]="item.label">{{ item.lockedReason }}</app-info-tip>
+        }
+      } @else {
+        <ng-container [ngTemplateOutlet]="rowBody" [ngTemplateOutletContext]="{ $implicit: item, rid: rid }" />
+      }
+
+      <span class="rl-moves">
+        <button type="button" class="action-btn rl-move" [id]="rid + '-up'"
+                [attr.aria-label]="'Move ' + item.label + ' up'"
+                [attr.aria-disabled]="first ? 'true' : null"
+                [attr.interestfor]="rid + '-up-tip'"
+                [attr.style]="'anchor-name: --' + rid + '-up'"
+                (click)="move(item.key, 'up')">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg>
+        </button>
+        <div popover="hint" class="gh-tooltip" [id]="rid + '-up-tip'"
+             [attr.style]="'position-anchor: --' + rid + '-up'">Move up</div>
+        <button type="button" class="action-btn rl-move" [id]="rid + '-down'"
+                [attr.aria-label]="'Move ' + item.label + ' down'"
+                [attr.aria-disabled]="last ? 'true' : null"
+                [attr.interestfor]="rid + '-down-tip'"
+                [attr.style]="'anchor-name: --' + rid + '-down'"
+                (click)="move(item.key, 'down')">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>
+        </button>
+        <div popover="hint" class="gh-tooltip" [id]="rid + '-down-tip'"
+             [attr.style]="'position-anchor: --' + rid + '-down'">Move down</div>
+      </span>
+    </li>
+  }
+</ol>
+
+<p class="visually-hidden" role="status">{{ status }}</p>
+
+<!-- The row body: the host's template or the label, then the tags. -->
+<ng-template #rowBody let-item let-rid="rid">
+  <span class="rl-body">
+    @if (itemTemplate) {
+      <span class="rl-custom"><ng-container [ngTemplateOutlet]="itemTemplate" [ngTemplateOutletContext]="{ $implicit: item }" /></span>
+    } @else {
+      <span class="rl-label">{{ item.label }}</span>
+    }
+    @if (item.tags?.length) {
+      <span class="rl-tags" [id]="rid + '-tags'">
+        @for (tag of item.tags; track $index) {
+          <span class="rl-tag">{{ tag }}</span>
+        }
+      </span>
+    }
+  </span>
+</ng-template>

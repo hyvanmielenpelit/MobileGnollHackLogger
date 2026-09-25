@@ -18,7 +18,9 @@ import type { AxisBounds, AxisTickKind, ScaleType, TimeUnit } from './axis-domai
 import { pricingBadge, pricingNote, questionsBadge, runsBadge, visibleBadges } from './figure-chrome';
 import type { FigureBadge, FigureChrome, FigureDirection, FigureKeyItem, FigureNote } from './figure-chrome';
 import { DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
-import type { AxisTitleBreak, FigureStyle, ScatterFigureStyle } from './figure-style';
+import type { AxisTitleBreak, FigureFontWeight, FigureStyle, ScatterFigureStyle } from './figure-style';
+import { resolveFigureTheme } from './figure-theme';
+import type { ResolvedFigureTheme } from './figure-theme';
 import { DEFAULT_MEASURE_DECIMALS, costNumberMeasure, formatMeasure, speedNumberMeasure } from './measure-format';
 import type { NumberFormatStyle, NumberMeasure, NumberSamples } from './measure-format';
 
@@ -135,38 +137,49 @@ export function modelLabelLines(entry: ModelComparisonEntry, breakThinkingLevel:
 // ---------------------------------------------------------------------------------------------
 
 /**
- * The composited chart surface. Overseer is dark-only - `styles.scss` sets a white-on-black body
- * with no `prefers-color-scheme` handling - and the panels these charts sit in are `--bg-glass`,
- * `rgba(17, 17, 17, 0.65)`, over the page. Over black that composites to `#0b0b0b`
- * (17 x 0.65 = 11.05 -> 0x0b), which is the surface every contrast figure below is measured against.
- * There is one palette, selected for this surface, not a light one flipped.
+ * The dark theme's composited chart surface. The panels these charts sit in on the page are
+ * `--bg-glass`, `rgba(17, 17, 17, 0.65)`, over Overseer's black body, which composites to `#0b0b0b`
+ * (17 x 0.65 = 11.05 -> 0x0b). The builders draw from the resolved figure theme
+ * (`figure-theme.ts`); this constant and the others below are the dark theme's values, which a
+ * build without a theme draws in.
  */
 export const CHART_SURFACE = '#0b0b0b';
 
 /**
  * The categorical series hues, in fixed order, assigned in sequence and never cycled past three.
+ * There are two palettes, one per theme, each selected for its own ground rather than one flipped
+ * into the other: the dark one for the dark export ground `#181818`, the light one for white,
+ * PowerPoint's default slide.
  *
  * Three, not eight, because every figure that uses hue for identity here is an all-pairs form -
  * a scatter, where any two marks can end up side by side - and an all-pairs palette caps at three
  * slots. The eight models are separated instead by a hue x shape composite (see
  * {@link IDENTITY_SHAPES}), which is the documented treatment past the three-hue ceiling.
  *
- * Validate with, from the dataviz skill's base directory:
- *   node scripts/validate_palette.js "#3987e5,#d95926,#199e70" --mode dark --surface "#0b0b0b"
+ * Validate both with, from the dataviz skill's base directory:
+ *   node scripts/validate_palette.js "#3987e5,#d95926,#199e70" --mode dark --surface "#181818" --pairs all
+ *   node scripts/validate_palette.js "#2a78d6,#eb6834,#18a070" --mode light --surface "#ffffff" --pairs all
  */
 export const CATEGORICAL_PALETTE_DARK = ['#3987e5', '#d95926', '#199e70'] as const;
+
+/** The light theme's hues. The third is darker than the reference aqua so that it keeps 3:1 on white. */
+export const CATEGORICAL_PALETTE_LIGHT = ['#2a78d6', '#eb6834', '#18a070'] as const;
 
 /** The exact string the palette validator takes, so the check is a copy-paste and never a retype. */
 export const PALETTE_VALIDATION_INPUT: string = CATEGORICAL_PALETTE_DARK.join(',');
 
+/** {@link PALETTE_VALIDATION_INPUT} for the light palette. */
+export const PALETTE_VALIDATION_INPUT_LIGHT: string = CATEGORICAL_PALETTE_LIGHT.join(',');
+
 /**
- * The emphasis accent: Overseer's own `--gh-gold`. It is an emphasis token, not a series identity
- * colour - it marks whichever model is hovered or selected and never carries identity on its own -
- * so it stays out of the categorical set the validator gates. Contrast on `#0b0b0b` is ~10.7:1.
+ * The dark theme's emphasis accent: Overseer's own `--gh-gold`. It is an emphasis token, not a
+ * series identity colour - it marks whichever model is hovered or selected and never carries
+ * identity on its own - so it stays out of the categorical set the validator gates. Contrast on
+ * `#0b0b0b` is ~10.7:1.
  */
 export const ACCENT = '#e0ba6d';
 
-/** Chart chrome and ink. Text always wears these, never a series hue. */
+/** The dark theme's chart chrome and ink. Text always wears the ink, never a series hue. */
 export const CHART_INK = {
   primary: '#ffffff',
   secondary: '#c3c2b7',
@@ -176,14 +189,14 @@ export const CHART_INK = {
 } as const;
 
 /**
- * De-emphasis for marks that are not the emphasised one: the muted ink at 45 % over the surface.
+ * The dark theme's de-emphasis for marks that are not the emphasised one: the muted ink at 45 % over the surface.
  * It reuses a documented ink rather than introducing an undocumented gray, and the opacity keeps it
  * well below the axis labels drawn in the same hue at full strength.
  */
 export const DE_EMPHASIS_FILL = 'rgba(137, 135, 129, 0.45)';
 export const DE_EMPHASIS_STROKE = '#898781';
 
-/** Tooltip chrome, matching the surrounding admin views. */
+/** Tooltip chrome, matching the surrounding admin views. On screen only, so it keeps the dark theme. */
 const TOOLTIP_STYLE = {
   backgroundColor: 'rgba(22, 22, 22, 0.95)',
   titleColor: CHART_INK.primary,
@@ -193,6 +206,31 @@ const TOOLTIP_STYLE = {
   padding: 10,
   cornerRadius: 6,
 } as const;
+
+/** What a builder draws in when its options carry no theme: the dark theme, the constants above. */
+const DEFAULT_THEME: ResolvedFigureTheme = resolveFigureTheme();
+
+function themeOf(options: { readonly theme?: ResolvedFigureTheme }): ResolvedFigureTheme {
+  return options.theme ?? DEFAULT_THEME;
+}
+
+/** The ticks' and direct labels' family under the Overseer default font; the other sites keep Chart.js's. */
+const LATO_STACK = '"Lato", system-ui, sans-serif';
+
+/** A Chart.js weight, or nothing at 400, which is the `normal` a site without a weight already draws. */
+function weightKey(weight: FigureFontWeight): { weight?: number } {
+  return weight === 400 ? {} : { weight };
+}
+
+/** The bundled family, or nothing under the Overseer default, where each site keeps its own family. */
+function familyKey(theme: ResolvedFigureTheme): { family?: string } {
+  return theme.fonts.chartStack === null ? {} : { family: theme.fonts.chartStack };
+}
+
+/** `{ [key]: value }` where the value differs from the plugin's dark default, so a dark build adds no key. */
+function unlessDefault<K extends string>(key: K, value: string, fallback: string): Partial<Record<K, string>> {
+  return value === fallback ? {} : ({ [key]: value } as Record<K, string>);
+}
 
 // ---------------------------------------------------------------------------------------------
 // Identity glyphs
@@ -217,9 +255,12 @@ export const MAX_PLOTTED_ENTRIES = 8;
  * The order deliberately does not depend on the current sort or the current filter selection, so a
  * reader who has learned a model's glyph keeps it: filtering a model out never repaints the
  * survivors. Excluded entries take no glyph - they are never plotted, and their table row carries
- * the differing comparability keys instead.
+ * the differing comparability keys instead. The hues come from `palette`, the theme's categorical set.
  */
-export function buildIdentityGlyphs(entries: readonly ModelComparisonEntry[]): Map<string, IdentityGlyph> {
+export function buildIdentityGlyphs(
+  entries: readonly ModelComparisonEntry[],
+  palette: readonly string[] = CATEGORICAL_PALETTE_DARK,
+): Map<string, IdentityGlyph> {
   const glyphs = new Map<string, IdentityGlyph>();
   let slot = 0;
   for (const entry of entries) {
@@ -227,8 +268,8 @@ export function buildIdentityGlyphs(entries: readonly ModelComparisonEntry[]): M
       continue;
     }
     glyphs.set(entry.key, {
-      hue: CATEGORICAL_PALETTE_DARK[slot % CATEGORICAL_PALETTE_DARK.length],
-      shape: IDENTITY_SHAPES[Math.floor(slot / CATEGORICAL_PALETTE_DARK.length) % IDENTITY_SHAPES.length],
+      hue: palette[slot % palette.length],
+      shape: IDENTITY_SHAPES[Math.floor(slot / palette.length) % IDENTITY_SHAPES.length],
     });
     slot += 1;
   }
@@ -237,7 +278,7 @@ export function buildIdentityGlyphs(entries: readonly ModelComparisonEntry[]): M
 
 const FALLBACK_GLYPH: IdentityGlyph = { hue: CATEGORICAL_PALETTE_DARK[0], shape: IDENTITY_SHAPES[0] };
 
-/** Looks a glyph up by entry key, falling back to slot one rather than throwing inside a render. */
+/** Looks a glyph up by entry key, falling back to the dark palette's slot one rather than throwing inside a render. */
 export function glyphFor(glyphs: ReadonlyMap<string, IdentityGlyph>, key: string): IdentityGlyph {
   return glyphs.get(key) ?? FALLBACK_GLYPH;
 }
@@ -254,12 +295,14 @@ export type SpeedMeasure = 'meanModelTime' | 'totalModelTime' | 'ttftP50' | 'spe
 /** P1's cost panel switches between these two. The scatters always use candidate cost per question. */
 export type CostMeasure = 'candidateSuite' | 'totalRun';
 
-export type ModelSortKey = 'intelligenceIndex' | 'speed' | 'cost' | 'label';
+export type ModelSortKey = 'intelligenceIndex' | 'speed' | 'cost' | 'label' | 'custom';
 export type SortDirection = 'asc' | 'desc';
 
 export interface ModelSort {
   readonly key: ModelSortKey;
   readonly direction: SortDirection;
+  /** Entry keys in the admin's order; read only while `key` is `'custom'`, which ignores `direction`. */
+  readonly customOrder?: readonly string[];
 }
 
 /** One order control drives all three P1 panels; this is where it starts. */
@@ -323,6 +366,9 @@ export function speedLowerIsBetter(measure: SpeedMeasure): boolean {
  * The direction is the measure's own numeric direction, not "best first": ascending cost is the
  * cheapest first and ascending Intelligence Index is the weakest first, which is what a column
  * header arrow leads a reader to expect.
+ *
+ * `custom` orders by each entry's position in `sort.customOrder` and has no direction; entries the
+ * list does not name follow the named ones.
  */
 export function sortEntriesForComparison(
   entries: readonly ModelComparisonEntry[],
@@ -331,11 +377,22 @@ export function sortEntriesForComparison(
   costMeasure: CostMeasure,
   context: ModelComparisonContext,
 ): ModelComparisonEntry[] {
-  const sign = sort.direction === 'asc' ? 1 : -1;
+  const sign = sort.key === 'custom' || sort.direction === 'asc' ? 1 : -1;
+  const customRank = new Map<string, number>();
+  if (sort.key === 'custom') {
+    (sort.customOrder ?? []).forEach((key, index) => {
+      if (!customRank.has(key)) {
+        customRank.set(key, index);
+      }
+    });
+  }
   const ordered = [...entries];
   ordered.sort((a, b) => {
     let delta = 0;
     switch (sort.key) {
+      case 'custom':
+        delta = (customRank.get(a.key) ?? Number.MAX_SAFE_INTEGER) - (customRank.get(b.key) ?? Number.MAX_SAFE_INTEGER);
+        break;
       case 'intelligenceIndex':
         delta = a.intelligenceIndex - b.intelligenceIndex;
         break;
@@ -410,6 +467,27 @@ export function selectPlottedEntries(
     );
   }
   return { plotted, overflow, excluded, notices };
+}
+
+/**
+ * Every entry's key in the model order the charts use, so the table and the charts cannot disagree:
+ * the comparable entries by {@link sortEntriesForComparison}, then the excluded ones, which have no
+ * measures to sort by, by label. Under `custom` the list places excluded entries too.
+ */
+export function modelOrderKeys(
+  entries: readonly ModelComparisonEntry[],
+  sort: ModelSort,
+  speedMeasure: SpeedMeasure,
+  costMeasure: CostMeasure,
+  context: ModelComparisonContext,
+): string[] {
+  if (sort.key === 'custom') {
+    return sortEntriesForComparison(entries, sort, speedMeasure, costMeasure, context).map((e) => e.key);
+  }
+  const comparable = sortEntriesForComparison(
+    entries.filter((e) => !e.excluded), sort, speedMeasure, costMeasure, context);
+  const excluded = entries.filter((e) => e.excluded).sort((a, b) => a.label.localeCompare(b.label));
+  return [...comparable, ...excluded].map((e) => e.key);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -495,6 +573,12 @@ function isErrorBarPoint(value: unknown): value is ErrorBarPoint {
   return typeof point.x === 'number' && typeof point.y === 'number';
 }
 
+/** What the error-bar plugin reads off the chart options. */
+export interface ErrorBarPluginOptions {
+  /** The whisker stroke. Defaults to the dark theme's muted ink. */
+  readonly color?: string;
+}
+
 /**
  * Draws the uncertainty every mark in this view is required to carry. Chart.js 4 has no error bars
  * and adding a dependency for a few strokes is not worth the bundle, so this lives here, where the
@@ -502,14 +586,15 @@ function isErrorBarPoint(value: unknown): value is ErrorBarPoint {
  */
 export const errorBarPlugin: Plugin = {
   id: 'overseerErrorBars',
-  afterDatasetsDraw(chart): void {
+  afterDatasetsDraw(chart, _args, pluginOptions): void {
     const ctx = chart.ctx;
     const area = chart.chartArea;
     if (!ctx || !area) {
       return;
     }
+    const options = pluginOptions as unknown as ErrorBarPluginOptions | undefined;
     ctx.save();
-    ctx.strokeStyle = CHART_INK.muted;
+    ctx.strokeStyle = options?.color ?? CHART_INK.muted;
     ctx.lineWidth = ERROR_BAR_LINE_WIDTH;
 
     chart.data.datasets.forEach((dataset, datasetIndex) => {
@@ -686,8 +771,14 @@ export function computeParetoFrontier(
   return { frontier: ordered, steps, boundary };
 }
 
-/** The dominated region's fill: faint enough that marks and gridlines read straight through it. */
+/** The dark theme's dominated-region fill: faint enough that marks and gridlines read straight through it. */
 export const DOMINATED_REGION_FILL = 'rgba(255, 255, 255, 0.04)';
+
+/** What the dominated-region plugin reads off the chart options. */
+export interface DominatedRegionPluginOptions {
+  /** Defaults to {@link DOMINATED_REGION_FILL}. */
+  readonly fill?: string;
+}
 
 /**
  * Shades the region every frontier member beats on both axes. The polygon is the frontier dataset's
@@ -697,7 +788,7 @@ export const DOMINATED_REGION_FILL = 'rgba(255, 255, 255, 0.04)';
  */
 export const dominatedRegionPlugin: Plugin = {
   id: 'overseerDominatedRegion',
-  beforeDatasetsDraw(chart): void {
+  beforeDatasetsDraw(chart, _args, pluginOptions): void {
     const ctx = chart.ctx;
     const area = chart.chartArea;
     if (!ctx || !area) {
@@ -729,11 +820,60 @@ export const dominatedRegionPlugin: Plugin = {
     }
     ctx.lineTo(vertices[0].x, vertices[vertices.length - 1].y);
     ctx.closePath();
-    ctx.fillStyle = DOMINATED_REGION_FILL;
+    ctx.fillStyle = (pluginOptions as unknown as DominatedRegionPluginOptions | undefined)?.fill ?? DOMINATED_REGION_FILL;
     ctx.fill();
     ctx.restore();
   },
 };
+
+/** What the plot-frame plugin reads off the chart options. */
+export interface PlotFramePluginOptions {
+  /** Defaults to the dark theme's axis baseline. */
+  readonly color?: string;
+}
+
+/**
+ * A 1 px hairline around the plot area, drawn last so it sits over the gridlines and the marks'
+ * clipped edges. A figure family carries it only while its style's `plotFrame` is on.
+ */
+export const plotFramePlugin: Plugin = {
+  id: 'overseerPlotFrame',
+  afterDraw(chart, _args, pluginOptions): void {
+    const ctx = chart.ctx;
+    const area = chart.chartArea;
+    if (!ctx || !area) {
+      return;
+    }
+    ctx.save();
+    ctx.strokeStyle = (pluginOptions as unknown as PlotFramePluginOptions | undefined)?.color ?? CHART_INK.baseline;
+    ctx.lineWidth = 1;
+    // Half a pixel in, so the 1 px stroke covers whole pixels inside the area rather than straddling its edge.
+    ctx.strokeRect(area.left + 0.5, area.top + 0.5, area.right - area.left - 1, area.bottom - area.top - 1);
+    ctx.restore();
+  },
+};
+
+/** A figure spec's plugins with the plot frame appended while the family draws one. */
+function withPlotFrame(plugins: Plugin[], frame: boolean): Plugin[] {
+  return frame ? [...plugins, plotFramePlugin] : plugins;
+}
+
+/** The plot frame's options entry while the family draws one; nothing otherwise. */
+function plotFrameOptions(theme: ResolvedFigureTheme, frame: boolean) {
+  return frame ? { [plotFramePlugin.id]: { color: theme.frameColor } satisfies PlotFramePluginOptions } : {};
+}
+
+/** The error-bar plugin's options entry where the theme's whisker ink is not the dark default. */
+function errorBarOptions(theme: ResolvedFigureTheme) {
+  const options: ErrorBarPluginOptions = unlessDefault('color', theme.chart.inkMuted, CHART_INK.muted);
+  return options.color === undefined ? {} : { [errorBarPlugin.id]: options };
+}
+
+/** The dominated-region plugin's options entry where the theme's fill is not the dark default. */
+function dominatedRegionOptions(theme: ResolvedFigureTheme) {
+  const options: DominatedRegionPluginOptions = unlessDefault('fill', theme.chart.dominatedRegionFill, DOMINATED_REGION_FILL);
+  return options.fill === undefined ? {} : { [dominatedRegionPlugin.id]: options };
+}
 
 // ---------------------------------------------------------------------------------------------
 // Figure plumbing
@@ -784,6 +924,8 @@ export interface FigureOptions {
   readonly inlineValues?: boolean;
   /** Bar and trade-off styling. Defaults to {@link DEFAULT_FIGURE_STYLE}. */
   readonly style?: FigureStyle;
+  /** Colours and fonts. Absent: the dark theme, whatever `style.appearance` says. */
+  readonly theme?: ResolvedFigureTheme;
 }
 
 /** Effective hit radius is `radius + hitRadius`, so the target is 36 px across - well over the 24 px floor. */
@@ -807,24 +949,43 @@ function baseOptions(reducedMotion: boolean) {
   };
 }
 
-function gridOptions(display = true) {
-  return { display, color: CHART_INK.gridline, lineWidth: 1, drawTicks: false };
+function gridOptions(display = true, theme: ResolvedFigureTheme = DEFAULT_THEME) {
+  return { display, color: theme.chart.gridline, lineWidth: 1, drawTicks: false };
 }
 
-function tickOptions(size = 11) {
-  return { color: CHART_INK.muted, font: { family: '"Lato", system-ui, sans-serif', size } };
+/** Tick labels, always at weight 400. */
+function tickOptions(size = 11, theme: ResolvedFigureTheme = DEFAULT_THEME) {
+  return { color: theme.chart.inkMuted, font: { family: theme.fonts.chartStack ?? LATO_STACK, size } };
+}
+
+/** The family and weight an axis title draws in beyond its size; empty keeps the Chart.js default. */
+interface AxisTitleFont {
+  readonly theme?: ResolvedFigureTheme;
+  readonly weight?: FigureFontWeight;
 }
 
 /** Draws the axis label on its own line and, when given a direction, a "lower/higher is better" second line. */
-function axisTitle(text: string | string[], better?: BetterDirection, size = 12) {
+function axisTitle(text: string | string[], better?: BetterDirection, size = 12, font: AxisTitleFont = {}) {
+  const theme = font.theme ?? DEFAULT_THEME;
   return {
     display: true,
     text: better
       ? [...(Array.isArray(text) ? text : [text]), better === 'lower' ? 'lower is better' : 'higher is better']
       : text,
-    color: CHART_INK.secondary,
-    font: { size },
+    color: theme.chart.inkSecondary,
+    font: { size, ...familyKey(theme), ...weightKey(font.weight ?? 400) },
   };
+}
+
+/** The font keys of a label a figure's label weight applies to: value labels, direct-label names, legends. */
+function labelFont(theme: ResolvedFigureTheme): { family?: string; weight?: number } {
+  return { ...familyKey(theme), ...weightKey(theme.fonts.labelWeight) };
+}
+
+/** A legend's `labels.font` where the theme sets a family or weight; nothing otherwise. */
+function legendFont(theme: ResolvedFigureTheme): { font?: { family?: string; weight?: number } } {
+  const font = labelFont(theme);
+  return Object.keys(font).length === 0 ? {} : { font };
 }
 
 /** The badges every figure opens with: how many models, how many runs behind each, how many questions. */
@@ -916,11 +1077,17 @@ function breakTitleToFit(unbroken: readonly string[], broken: readonly string[])
 }
 
 /** A bar value axis's title options, and the `afterFit` that decides its break while it is Automatic. */
-function valueAxisTitle(text: string, better: BetterDirection | undefined, mode: AxisTitleBreak, size: number) {
+function valueAxisTitle(
+  text: string,
+  better: BetterDirection | undefined,
+  mode: AxisTitleBreak,
+  size: number,
+  font: AxisTitleFont = {},
+) {
   const { unbroken, broken } = axisTitleLines(text, better);
   const lines = mode === 'always' && broken ? broken : unbroken;
   return {
-    title: axisTitle([...lines], undefined, size),
+    title: axisTitle([...lines], undefined, size, font),
     ...(mode === 'auto' && broken ? { afterFit: breakTitleToFit(unbroken, broken) } : {}),
   };
 }
@@ -955,19 +1122,28 @@ function degradedNotices(plotted: readonly ModelComparisonEntry[], axes: readonl
 /** The default label size, matching the axis ticks so a direct label reads as chart chrome. */
 const DIRECT_LABEL_DEFAULT_SIZE = 11;
 
+/** The family and name weight a plate draws in. Absent: Lato, and the name at 400. */
+export interface DirectLabelFont {
+  readonly family?: string;
+  readonly nameWeight?: FigureFontWeight;
+}
+
 /**
  * Fonts and line boxes of a plate at name size `size`: the value lines a step under the name so the
  * name stays the plate's headline, and both line boxes `size + 1`, since measured text carries no height.
+ * The name takes the label weight; the value lines stay at 400.
  */
-function directLabelMetrics(size: number): {
+function directLabelMetrics(size: number, font: DirectLabelFont = {}): {
   nameFont: string;
   valueFont: string;
   nameLineHeight: number;
   valueLineHeight: number;
 } {
+  const family = font.family ?? LATO_STACK;
+  const nameWeight = font.nameWeight ?? 400;
   return {
-    nameFont: `${size}px "Lato", system-ui, sans-serif`,
-    valueFont: `${size - 1}px "Lato", system-ui, sans-serif`,
+    nameFont: `${nameWeight === 400 ? '' : `${nameWeight} `}${size}px ${family}`,
+    valueFont: `${size - 1}px ${family}`,
     nameLineHeight: size + 1,
     valueLineHeight: size + 1,
   };
@@ -1333,6 +1509,18 @@ export interface DirectLabelPluginOptions {
   readonly markRadiusPx?: number;
   /** Whether plates avoid the drawn whiskers. False when the figure hides them. Defaults to true. */
   readonly avoidWhiskers?: boolean;
+  /** The plates' font family. Defaults to Lato. */
+  readonly fontFamily?: string;
+  /** The name's weight; value lines stay at 400. Defaults to 400. */
+  readonly nameFontWeight?: FigureFontWeight;
+  /** The backing plate. Defaults to the dark theme's chart surface. */
+  readonly surfaceColor?: string;
+  /** The highlighted plate's rule and name. Defaults to the dark theme's accent. */
+  readonly accentColor?: string;
+  /** Names and values. Defaults to the dark theme's secondary ink. */
+  readonly inkColor?: string;
+  /** Leaders and measure names. Defaults to the dark theme's muted ink. */
+  readonly mutedColor?: string;
 }
 
 /**
@@ -1346,8 +1534,9 @@ export function measureDirectLabelBlock(
   ctx: CanvasRenderingContext2D,
   block: DirectLabelBlock,
   size: number = DIRECT_LABEL_DEFAULT_SIZE,
+  font: DirectLabelFont = {},
 ): { width: number; height: number; labelColumn: number; valueColumn: number } {
-  const metrics = directLabelMetrics(size);
+  const metrics = directLabelMetrics(size, font);
   ctx.font = metrics.nameFont;
   const nameLines = directLabelNameLines(block.name);
   let nameWidth = 0;
@@ -1474,9 +1663,14 @@ export const directLabelPlugin: Plugin = {
       return;
     }
     const size = options?.fontSizePx ?? DIRECT_LABEL_DEFAULT_SIZE;
-    const text = directLabelMetrics(size);
+    const font: DirectLabelFont = { family: options?.fontFamily, nameWeight: options?.nameFontWeight };
+    const text = directLabelMetrics(size, font);
     const markRadius = (options?.markRadiusPx ?? POINT_RADIUS) + 3;
     const avoidWhiskers = options?.avoidWhiskers ?? true;
+    const surface = options?.surfaceColor ?? CHART_SURFACE;
+    const accent = options?.accentColor ?? ACCENT;
+    const ink = options?.inkColor ?? CHART_INK.secondary;
+    const muted = options?.mutedColor ?? CHART_INK.muted;
 
     ctx.save();
     ctx.textBaseline = 'middle';
@@ -1500,7 +1694,7 @@ export const directLabelPlugin: Plugin = {
         return;
       }
       const key = String(datasetIndex);
-      const metrics = measureDirectLabelBlock(ctx, block, size);
+      const metrics = measureDirectLabelBlock(ctx, block, size, font);
       anchors.push({ key, x: element.x, y: element.y, width: metrics.width, height: metrics.height });
       plates.set(key, { block, labelColumn: metrics.labelColumn, valueColumn: metrics.valueColumn });
       // The whiskers `errorBarPlugin` has already drawn, so a plate does not land on one.
@@ -1517,7 +1711,7 @@ export const directLabelPlugin: Plugin = {
     const highlighted = options?.highlightedIndex === undefined ? undefined : String(options.highlightedIndex);
 
     // Leaders first, so a plate covers the end of its own line rather than the line crossing it.
-    ctx.strokeStyle = CHART_INK.muted;
+    ctx.strokeStyle = muted;
     ctx.lineWidth = 1;
     for (const box of boxes) {
       strokeLeader(ctx, box, markRadius);
@@ -1531,12 +1725,12 @@ export const directLabelPlugin: Plugin = {
       const accented = box.key === highlighted;
       // A backing plate, so a label crossing a gridline stays readable without an outline halo.
       ctx.globalAlpha = DIRECT_LABEL_PLATE_ALPHA;
-      ctx.fillStyle = CHART_SURFACE;
+      ctx.fillStyle = surface;
       ctx.fillRect(box.x, box.y, box.width, box.height);
       ctx.globalAlpha = 1;
 
       // The hue rule ties the plate to its mark, which in legend mode is its only identity.
-      ctx.fillStyle = accented ? ACCENT : plate.block.hue;
+      ctx.fillStyle = accented ? accent : plate.block.hue;
       ctx.fillRect(box.x, box.y, DIRECT_LABEL_RULE_WIDTH, box.height);
 
       const textLeft = box.x + DIRECT_LABEL_RULE_WIDTH + DIRECT_LABEL_RULE_GAP + DIRECT_LABEL_PAD_X;
@@ -1547,7 +1741,7 @@ export const directLabelPlugin: Plugin = {
       if (nameLines.length > 0) {
         ctx.font = text.nameFont;
         ctx.textAlign = 'left';
-        ctx.fillStyle = accented ? ACCENT : CHART_INK.secondary;
+        ctx.fillStyle = accented ? accent : ink;
         for (const line of nameLines) {
           ctx.fillText(line, textLeft, lineTop + text.nameLineHeight / 2);
           lineTop += text.nameLineHeight;
@@ -1558,10 +1752,10 @@ export const directLabelPlugin: Plugin = {
       for (const value of plate.block.values) {
         const middle = lineTop + text.valueLineHeight / 2;
         ctx.textAlign = 'left';
-        ctx.fillStyle = CHART_INK.muted;
+        ctx.fillStyle = muted;
         ctx.fillText(value.label, textLeft, middle);
         ctx.textAlign = 'right';
-        ctx.fillStyle = CHART_INK.secondary;
+        ctx.fillStyle = ink;
         ctx.fillText(value.text, textRight, middle);
         lineTop += text.valueLineHeight;
       }
@@ -1743,14 +1937,20 @@ interface ScatterAxisStyle {
   readonly textSizePx: number;
   readonly titleSizePx: number;
   readonly gridlines: boolean;
+  /** Absent: 400. */
+  readonly titleWeight?: FigureFontWeight;
+  /** Absent: the dark theme. */
+  readonly theme?: ResolvedFigureTheme;
 }
 
-function scatterAxisStyle(style: ScatterFigureStyle): ScatterAxisStyle {
+function scatterAxisStyle(style: ScatterFigureStyle, theme?: ResolvedFigureTheme): ScatterAxisStyle {
   return {
     whiskers: style.intervals,
     textSizePx: style.axisTextSizePx,
     titleSizePx: style.axisTitleSizePx,
     gridlines: style.gridlines,
+    titleWeight: style.axisTitleWeight,
+    theme,
   };
 }
 
@@ -1799,6 +1999,7 @@ function resolveAxis(
   const parenthetical = [spec.kind === 'time' ? unit : 'USD', ...(type === 'logarithmic' ? ['log scale'] : [])];
   const title = spec.kind === 'index' ? spec.baseTitle : `${spec.baseTitle} (${parenthetical.join(', ')})`;
   const format = (value: number): string => formatTick(value, { kind: spec.kind, unit, step });
+  const theme = axisStyle.theme ?? DEFAULT_THEME;
 
   return {
     type,
@@ -1811,14 +2012,14 @@ function resolveAxis(
       type,
       min,
       max,
-      title: axisTitle(title, spec.better, axisStyle.titleSizePx),
-      grid: gridOptions(axisStyle.gridlines),
-      border: { color: CHART_INK.baseline },
+      title: axisTitle(title, spec.better, axisStyle.titleSizePx, { theme, weight: axisStyle.titleWeight }),
+      grid: gridOptions(axisStyle.gridlines, theme),
+      border: { color: theme.chart.baseline },
       afterBuildTicks: (scale: { ticks: { value: number }[] }): void => {
         scale.ticks = ticks.map((value) => ({ value }));
       },
       ticks: {
-        ...tickOptions(axisStyle.textSizePx),
+        ...tickOptions(axisStyle.textSizePx, theme),
         autoSkip: true,
         autoSkipPadding: 10,
         maxRotation: 0,
@@ -1888,6 +2089,23 @@ function directLabelBlock(
   };
 }
 
+/**
+ * The direct-label plugin's font and colour keys that differ from its defaults: a family under a
+ * bundled font, a name weight other than 400, and the colours where the theme's are not the dark ones.
+ */
+function directLabelThemeOptions(
+  theme: ResolvedFigureTheme,
+): Pick<DirectLabelPluginOptions, 'fontFamily' | 'nameFontWeight' | 'surfaceColor' | 'accentColor' | 'inkColor' | 'mutedColor'> {
+  return {
+    ...(theme.fonts.chartStack === null ? {} : { fontFamily: theme.fonts.chartStack }),
+    ...(theme.fonts.labelWeight === 400 ? {} : { nameFontWeight: theme.fonts.labelWeight }),
+    ...unlessDefault('surfaceColor', theme.chart.surface, CHART_SURFACE),
+    ...unlessDefault('accentColor', theme.chart.accent, ACCENT),
+    ...unlessDefault('inkColor', theme.chart.inkSecondary, CHART_INK.secondary),
+    ...unlessDefault('mutedColor', theme.chart.inkMuted, CHART_INK.muted),
+  };
+}
+
 function buildScatter(
   id: string,
   title: string,
@@ -1899,6 +2117,7 @@ function buildScatter(
 ): ChartSpec<'scatter', ErrorBarPoint[]> {
   const { context, glyphs, reducedMotion, highlightedKey } = options;
   const style = (options.style ?? DEFAULT_FIGURE_STYLE).scatter;
+  const theme = themeOf(options);
   const directLabels = options.directLabels ?? false;
   const inlineValues = options.inlineValues ?? false;
   // One plugin carries both: names and values share a plate, and so share its placement.
@@ -1915,14 +2134,14 @@ function buildScatter(
       data: [scatterPoint(entry, xAxis, yAxis)],
       pointStyle: glyph.shape,
       backgroundColor: hollow ? 'transparent' : glyph.hue,
-      borderColor: highlighted ? ACCENT : hollow ? glyph.hue : CHART_SURFACE,
+      borderColor: highlighted ? theme.chart.accent : hollow ? glyph.hue : theme.chart.surface,
       borderWidth: 2,
       ...radii,
       showLine: false,
     };
   });
 
-  const axisStyle = scatterAxisStyle(style);
+  const axisStyle = scatterAxisStyle(style, theme);
   const xResolved = resolveAxis(xAxis, plotted, axisStyle);
   const yResolved = resolveAxis(yAxis, plotted, axisStyle);
   // Plates and tooltips write each value in its axis's unit, to the measure's decimal setting.
@@ -1949,7 +2168,7 @@ function buildScatter(
       data: pareto.boundary.map((p) => ({ x: p.x, y: p.y })),
       pointStyle: 'circle',
       backgroundColor: 'transparent',
-      borderColor: CHART_INK.secondary,
+      borderColor: theme.chart.inkSecondary,
       borderWidth: style.frontierWidthPx,
       radius: 0,
       hoverRadius: 0,
@@ -1981,8 +2200,9 @@ function buildScatter(
           display: !directLabels,
           position: style.legendPosition,
           labels: {
-            color: CHART_INK.secondary,
+            color: theme.chart.inkSecondary,
             usePointStyle: true,
+            ...legendFont(theme),
             // The frontier is an annotation, not a series, so it stays out of the identity legend.
             filter: (item) => item.text !== PARETO_FRONTIER_LABEL,
             // Only a vertical legend stacks an array's lines; a horizontal one would overlap them.
@@ -2036,9 +2256,13 @@ function buildScatter(
                 markRadiusPx: style.markRadiusPx,
                 // A hidden whisker must not push a plate away from empty space.
                 avoidWhiskers: style.intervals,
+                ...directLabelThemeOptions(theme),
               } satisfies DirectLabelPluginOptions,
             }
           : {}),
+        ...(style.intervals ? errorBarOptions(theme) : {}),
+        ...(style.dominatedShading ? dominatedRegionOptions(theme) : {}),
+        ...plotFrameOptions(theme, style.plotFrame),
       },
     },
   };
@@ -2109,11 +2333,11 @@ function buildScatter(
     preferredCorner,
     config,
     // The shading goes under everything; a leader line draws over a whisker rather than under it.
-    plugins: [
+    plugins: withPlotFrame([
       ...(style.dominatedShading ? [dominatedRegionPlugin] : []),
       ...(style.intervals ? [errorBarPlugin] : []),
       ...(annotate ? [directLabelPlugin] : []),
-    ],
+    ], style.plotFrame),
   };
 }
 
@@ -2240,6 +2464,7 @@ function buildPanel(
 ): ChartSpec<'bar', ErrorBarPoint[], PanelCategoryLabel> {
   const { context, reducedMotion, highlightedKey, selectedKeys, orientation } = options;
   const style = (options.style ?? DEFAULT_FIGURE_STYLE).bar;
+  const theme = themeOf(options);
   const emphasised = new Set<string>(selectedKeys ?? []);
   if (highlightedKey) {
     emphasised.add(highlightedKey);
@@ -2258,13 +2483,13 @@ function buildPanel(
     if (!hasEmphasis) {
       return hollow(entry) ? 'transparent' : panelHue;
     }
-    return emphasised.has(entry.key) ? (hollow(entry) ? 'transparent' : ACCENT) : DE_EMPHASIS_FILL;
+    return emphasised.has(entry.key) ? (hollow(entry) ? 'transparent' : theme.chart.accent) : theme.chart.deEmphasisFill;
   });
   const strokes = plotted.map((entry) => {
     if (!hasEmphasis) {
       return panelHue;
     }
-    return emphasised.has(entry.key) ? ACCENT : DE_EMPHASIS_STROKE;
+    return emphasised.has(entry.key) ? theme.chart.accent : theme.chart.deEmphasisStroke;
   });
 
   // Places a value label past the SD whisker rather than on top of it: zero when the entry carries
@@ -2286,14 +2511,15 @@ function buildPanel(
     ? { y: better === 'higher' ? 'top' : 'bottom', label: 'Better' }
     : { x: better === 'higher' ? 'right' : 'left', label: 'Better' };
 
+  const titleFont: AxisTitleFont = { theme, weight: style.axisTitleWeight };
   const categoryScale = {
     type: 'category' as const,
-    title: axisTitle('Model', undefined, style.axisTitleSizePx),
+    title: axisTitle('Model', undefined, style.axisTitleSizePx, titleFont),
     grid: { display: false },
-    border: { color: CHART_INK.baseline },
+    border: { color: theme.chart.baseline },
     ticks: {
-      ...tickOptions(style.axisTextSizePx),
-      color: CHART_INK.secondary,
+      ...tickOptions(style.axisTextSizePx, theme),
+      color: theme.chart.inkSecondary,
       maxRotation: orientation === 'vertical' ? 45 : 0,
     },
   };
@@ -2304,13 +2530,13 @@ function buildPanel(
     beginAtZero: true,
     min: 0,
     max: axisMax,
-    ...valueAxisTitle(axisTitleText, directionShown ? undefined : better, style.axisTitleBreak, style.axisTitleSizePx),
-    grid: gridOptions(style.gridlines),
-    border: { color: CHART_INK.baseline },
+    ...valueAxisTitle(axisTitleText, directionShown ? undefined : better, style.axisTitleBreak, style.axisTitleSizePx, titleFont),
+    grid: gridOptions(style.gridlines, theme),
+    border: { color: theme.chart.baseline },
     // The tick decimals follow Chart.js's own step, read off the first two ticks. The unit is the
     // axis title's, so a zero tick reads `0 s` on a seconds axis.
     ticks: {
-      ...tickOptions(style.axisTextSizePx),
+      ...tickOptions(style.axisTextSizePx, theme),
       callback: (value: string | number, _index: number, ticks: readonly { value: number }[]) =>
         formatTick(Number(value), {
           ...tick,
@@ -2371,16 +2597,18 @@ function buildPanel(
           align: orientation === 'vertical' ? ('top' as const) : ('right' as const),
           clamp: true,
           offset: (ctx: DataLabelCtx) => whiskerLength(ctx) + 4,
-          color: CHART_INK.secondary,
-          font: { size: style.valueLabelSizePx },
+          color: theme.chart.inkSecondary,
+          font: { size: style.valueLabelSizePx, ...labelFont(theme) },
         },
+        ...(style.intervals ? errorBarOptions(theme) : {}),
+        ...plotFrameOptions(theme, style.plotFrame),
       },
     },
   };
 
-  const plugins: Plugin[] = style.intervals
+  const plugins: Plugin[] = withPlotFrame(style.intervals
     ? [errorBarPlugin, ChartDataLabels as Plugin]
-    : [ChartDataLabels as Plugin];
+    : [ChartDataLabels as Plugin], style.plotFrame);
 
   const drawsWhisker = plotted.some((_entry, index) =>
     [errLows[index], errHighs[index]].some((err) => drawnWhisker(err) > 0),
@@ -2438,6 +2666,7 @@ export function buildSmallMultiples(
 ): SmallMultiplesFigure {
   const { context, speedMeasure, costMeasure } = options;
   const barStyle = (options.style ?? DEFAULT_FIGURE_STYLE).bar;
+  const hues = themeOf(options).chart.categorical;
 
   const qualityValues = plotted.map((e) => e.intelligenceIndex);
   const qualityErr = plotted.map((e) => e.intelligenceIndexCi95HalfWidth);
@@ -2537,7 +2766,7 @@ export function buildSmallMultiples(
       'Intelligence',
       plotted,
       categoryLabels,
-      CATEGORICAL_PALETTE_DARK[0],
+      hues[0],
       'Intelligence Index (0-100)',
       'higher',
       100,
@@ -2555,7 +2784,7 @@ export function buildSmallMultiples(
       'Speed',
       plotted,
       categoryLabels,
-      CATEGORICAL_PALETTE_DARK[1],
+      hues[1],
       speedTitle,
       speedLowerIsBetter(speedMeasure) ? 'lower' : 'higher',
       speedMeasure === 'speedIndex' ? 100 : undefined,
@@ -2573,7 +2802,7 @@ export function buildSmallMultiples(
       'Cost',
       plotted,
       categoryLabels,
-      CATEGORICAL_PALETTE_DARK[2],
+      hues[2],
       costTitle,
       'lower',
       undefined,
@@ -2756,6 +2985,7 @@ export function buildProfilePlot(
   options: ProfileOptions,
 ): ChartSpec<'line', (number | null)[], string> {
   const { context, glyphs, reducedMotion, highlightedKey, selectedKeys } = options;
+  const theme = themeOf(options);
   const normalization = prepareProfile(plotted, {
     context,
     speedMeasure: options.speedMeasure,
@@ -2770,18 +3000,18 @@ export function buildProfilePlot(
   const hasEmphasis = emphasised.size > 0;
   // Eight equally coloured polylines is the failure this form is notorious for. Emphasis is the
   // remedy; categorical hues are only legible here when at most three models are selected.
-  const categoricalEmphasis = hasEmphasis && emphasised.size <= CATEGORICAL_PALETTE_DARK.length;
+  const categoricalEmphasis = hasEmphasis && emphasised.size <= theme.chart.categorical.length;
 
   const datasets = normalization.rows.map((row) => {
     const glyph = glyphFor(glyphs, row.key);
     const isEmphasised = emphasised.has(row.key);
     const colour = !hasEmphasis
-      ? DE_EMPHASIS_STROKE
+      ? theme.chart.deEmphasisStroke
       : isEmphasised
         ? categoricalEmphasis
           ? glyph.hue
-          : ACCENT
-        : DE_EMPHASIS_STROKE;
+          : theme.chart.accent
+        : theme.chart.deEmphasisStroke;
     return {
       label: row.label,
       data: [...row.values],
@@ -2792,7 +3022,7 @@ export function buildProfilePlot(
       pointRadius: POINT_RADIUS - 2,
       pointHoverRadius: POINT_HOVER_RADIUS - 2,
       pointHitRadius: POINT_HIT_RADIUS,
-      pointBorderColor: CHART_SURFACE,
+      pointBorderColor: theme.chart.surface,
       pointBorderWidth: 2,
       borderCapStyle: 'round' as const,
       borderJoinStyle: 'round' as const,
@@ -2812,26 +3042,27 @@ export function buildProfilePlot(
       scales: {
         x: {
           type: 'category',
-          grid: gridOptions(),
-          border: { color: CHART_INK.baseline },
-          ticks: { ...tickOptions(), color: CHART_INK.secondary },
+          grid: gridOptions(true, theme),
+          border: { color: theme.chart.baseline },
+          ticks: { ...tickOptions(11, theme), color: theme.chart.inkSecondary },
         },
         y: {
           type: 'linear',
           min: 0,
           max: 1,
-          title: axisTitle(['Normalized, 0-1', 'up is better on every axis']),
-          grid: gridOptions(),
-          border: { color: CHART_INK.baseline },
+          // The profile has no axis title weight of its own, so its title stays at 400.
+          title: axisTitle(['Normalized, 0-1', 'up is better on every axis'], undefined, 12, { theme }),
+          grid: gridOptions(true, theme),
+          border: { color: theme.chart.baseline },
           // The tick values carry no absolute meaning, so only the two ends are labelled.
-          ticks: { ...tickOptions(), callback: (value) => (Number(value) === 0 || Number(value) === 1 ? String(value) : '') },
+          ticks: { ...tickOptions(11, theme), callback: (value) => (Number(value) === 0 || Number(value) === 1 ? String(value) : '') },
         },
       },
       plugins: {
         legend: {
           display: true,
           position: 'bottom',
-          labels: { color: CHART_INK.secondary, usePointStyle: true },
+          labels: { color: theme.chart.inkSecondary, usePointStyle: true, ...legendFont(theme) },
         },
         tooltip: {
           ...TOOLTIP_STYLE,
@@ -2913,6 +3144,8 @@ export interface FigureSetOptions {
   readonly selectedKeys?: readonly string[];
   /** Bar and trade-off styling. Defaults to {@link DEFAULT_FIGURE_STYLE}. */
   readonly style?: FigureStyle;
+  /** Colours and fonts. Absent: resolved from `style.appearance`, so no style and no theme draw dark. */
+  readonly theme?: ResolvedFigureTheme;
   /**
    * The complete, unfiltered set the glyphs were assigned from. Pass it whenever the caller draws a
    * subset, so filtering a model out never repaints the survivors.
@@ -2931,8 +3164,9 @@ export function buildComparisonFigures(
   const costMeasure = options.costMeasure ?? 'candidateSuite';
   const orientation = options.orientation ?? 'vertical';
   const reducedMotion = options.reducedMotion ?? false;
+  const theme = options.theme ?? resolveFigureTheme(options.style?.appearance);
 
-  const glyphs = buildIdentityGlyphs(options.glyphSource ?? entries);
+  const glyphs = buildIdentityGlyphs(options.glyphSource ?? entries, theme.chart.categorical);
   const selection = selectPlottedEntries(entries, sort, speedMeasure, costMeasure, context);
 
   const figureOptions: FigureOptions = {
@@ -2945,6 +3179,7 @@ export function buildComparisonFigures(
     directLabels: options.directLabels ?? false,
     inlineValues: options.inlineValues ?? false,
     style: options.style ?? DEFAULT_FIGURE_STYLE,
+    theme,
   };
   const smallMultiplesOptions: SmallMultiplesOptions = {
     ...figureOptions,

@@ -7910,13 +7910,13 @@ describe('AdminBenchmarkComponent', () => {
       expect(state.textContent).toContain('2 of 3 entries');
     });
 
-    it('lists the four wizard steps under the titles the wizard itself uses', () => {
+    it('lists the three wizard steps under the titles the wizard itself uses', () => {
       fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
       fixture.detectChanges();
 
       const items = Array.from(
         fixture.nativeElement.querySelectorAll('.mc-launcher ol.mc-launcher-steps > li')) as HTMLElement[];
-      expect(items.length).toBe(4);
+      expect(items.length).toBe(3);
       expect(items.map(item => item.querySelector('strong')?.textContent?.trim()))
         .toEqual(COMPARISON_WIZARD_STEPS.map(step => step.title));
     });

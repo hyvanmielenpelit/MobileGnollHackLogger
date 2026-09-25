@@ -1,0 +1,122 @@
+<div class="ess-section">
+  <details class="gh-disclosure gh-disclosure--section" [id]="idPrefix + '-section'"
+           [open]="open" (toggle)="onToggle($event)">
+    <summary>
+      <span class="gh-disclosure-summary-title">{{ title }}</span>
+      <span class="gh-disclosure-summary-value" aria-hidden="true">{{ readout }}</span>
+    </summary>
+    <div class="gh-disclosure-body ess-body">
+      <label [for]="idPrefix + '-resolution'">Size and aspect ratio</label>
+      <select [id]="idPrefix + '-resolution'" class="gh-input"
+              [attr.aria-describedby]="errorId"
+              [ngModel]="settings.resolutionId" [ngModelOptions]="{ standalone: true }"
+              (ngModelChange)="onResolutionChange($event)">
+        @if (allowFit) {
+          <option [value]="fitResolutionId">Fit the table</option>
+        }
+        @for (group of presetGroups; track group.label) {
+          <optgroup [label]="group.label">
+            @for (preset of group.presets; track preset.id) {
+              <option [value]="preset.id">{{ preset.label }}</option>
+            }
+          </optgroup>
+        }
+        <optgroup label="Custom">
+          <option value="custom">Custom…</option>
+        </optgroup>
+      </select>
+
+      @if (isCustomResolution) {
+        <label [for]="idPrefix + '-width'">Width in pixels</label>
+        <input [id]="idPrefix + '-width'" type="number" class="gh-input ess-dimension"
+               [min]="minDimension" [max]="maxDimension" step="10"
+               [attr.aria-describedby]="dimensionDescribedBy"
+               [ngModel]="settings.customWidthPx" [ngModelOptions]="{ standalone: true }"
+               (ngModelChange)="onCustomWidthChange($event)">
+        <label [for]="idPrefix + '-height'">Height in pixels</label>
+        <input [id]="idPrefix + '-height'" type="number" class="gh-input ess-dimension"
+               [min]="minDimension" [max]="maxDimension" step="10"
+               [attr.aria-describedby]="dimensionDescribedBy"
+               [ngModel]="settings.customHeightPx" [ngModelOptions]="{ standalone: true }"
+               (ngModelChange)="onCustomHeightChange($event)">
+        <label class="checkbox-label">
+          <input type="checkbox" [ngModel]="customRatioLocked" [ngModelOptions]="{ standalone: true }"
+                 (ngModelChange)="lockCustomRatio($event)">
+          Keep {{ aspectLabel }}
+        </label>
+        @if (allowFit && fitInfo) {
+          <p class="ess-fit-info" [id]="idPrefix + '-fit-info'" role="status">{{ fitInfo }}</p>
+        }
+      }
+
+      <!-- One density for every size, defaulting to the display's own: the read-out below is what
+           keeps that single rule honest about what a size will write. -->
+      <label [for]="idPrefix + '-density'">Pixel density</label>
+      <select [id]="idPrefix + '-density'" class="gh-input ess-quality"
+              [attr.aria-describedby]="errorId"
+              [ngModel]="settings.densitySelection" [ngModelOptions]="{ standalone: true }"
+              (ngModelChange)="onDensityChange($event)">
+        @for (d of densityPresets; track d) {
+          <option [ngValue]="d">{{ densityOptionLabel(d) }}</option>
+        }
+        <option [ngValue]="'custom'">Custom…</option>
+      </select>
+      @if (isCustomDensity) {
+        <label [for]="idPrefix + '-density-custom'">Density in percent</label>
+        <input [id]="idPrefix + '-density-custom'" type="number" class="gh-input ess-dimension"
+               [min]="minDensityPercent" [max]="maxDensityPercent" step="5"
+               [attr.aria-describedby]="errorId"
+               [ngModel]="settings.customDensityPercent" [ngModelOptions]="{ standalone: true }"
+               (ngModelChange)="onCustomDensityChange($event)">
+      }
+
+      @if (isFit) {
+        <p class="ess-field-hint">The image is as large as the table; density sets its sharpness.</p>
+      } @else {
+        <!-- Text size composes at a smaller or larger box at the same pixel size, so the caption,
+             notes and the plot's own text scale together. -->
+        <div class="ess-range">
+          <label [for]="idPrefix + '-text-scale'">Text size</label>
+          <div class="ess-range-row">
+            <input [id]="idPrefix + '-text-scale'" type="range"
+                   [min]="minTextScalePercent" [max]="maxTextScalePercent" step="5"
+                   [value]="settings.textScalePercent"
+                   [attr.aria-valuetext]="settings.textScalePercent + ' percent'"
+                   [attr.aria-describedby]="textScaleDescribedBy"
+                   (input)="onTextScaleChange(+$any($event.target).value)">
+            <output class="ess-range-value" aria-hidden="true"
+                    [attr.for]="idPrefix + '-text-scale'">{{ settings.textScalePercent }} %</output>
+          </div>
+          @if (textSizeHint) {
+            <p class="ess-field-hint" [id]="idPrefix + '-text-scale-hint'">{{ textSizeHint }}</p>
+          }
+        </div>
+      }
+
+      @if (dimensionsLabel) {
+        <p class="ess-dimensions">{{ dimensionsLabel }}</p>
+      }
+      @if (errors.any) {
+        <p class="ess-error" [id]="idPrefix + '-resolution-error'" role="alert">{{ errors.any }}</p>
+      }
+    </div>
+  </details>
+  <button type="button" class="action-btn ess-reset" [id]="idPrefix + '-reset'"
+          [attr.aria-label]="'Reset ' + title + ' to defaults'"
+          [attr.aria-disabled]="isDefault ? 'true' : null"
+          [attr.interestfor]="idPrefix + '-reset-tip'" [attr.style]="'anchor-name: --' + idPrefix + '-reset'"
+          (click)="onReset()">
+    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+         viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M9 14 4 9l5-5"></path>
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"></path>
+    </svg>
+  </button>
+  <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-reset-tip'"
+       [attr.style]="'position-anchor: --' + idPrefix + '-reset'">{{ resetTip }}</div>
+</div>
+<p class="visually-hidden" role="status">{{ resetStatus }}</p>
+@if (refusal) {
+  <p class="ess-error" role="alert">{{ refusal }}</p>
+}

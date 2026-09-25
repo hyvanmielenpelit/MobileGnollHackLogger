@@ -248,6 +248,16 @@ icon-only `.action-btn`s beside the format select, using* file-with-arrow *and* 
 `interestfor` tooltips and `aria-disabled` when there is nothing to export. The copy glyph, already
 used by Copy figure, joined the table above.*
 
+*Changed 2026-09-25: the model comparison became three steps, and its table a view of step 3.
+**Move up** / **Move down** in a reorderable list (`app-reorderable-list`, §4c) use Feather*
+arrow-up *and* arrow-down *— not the chevrons, which mean* Show / Hide *state; the row's grip is
+decorative, and every drag has these buttons as its alternative. The* table *glyph marks the
+**Interactive table** view tab and* image *the **Table preview** tab. **Copy table** keeps the*
+copy *glyph, and its accessible name and tooltip follow the chosen format (*Copy the table as an
+image*, *… as cells for Excel*, *… as a formatted table*, *… as Markdown*). A colour setting is a
+**colour row**: a visible label, a native colour input and a hex text field that mirror each other.
+The download-time column chooser dialog is gone; the Table tab's **Columns** section replaces it.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
@@ -459,6 +469,26 @@ that the paragraphs would bury the controls.
 - **Short text only.** One or two sentences. Content longer than a multiline tooltip holds, or
   content with interactive steps, belongs in a dialog.
 
+### 4c. Reorderable lists: `app-reorderable-list`
+
+**The** component for letting a user put items in an order — the model comparison's custom model
+order and its table columns both use it. Reach for it rather than writing a third drag
+implementation. It lives in `app/shared/reorderable-list/` and knows nothing about its callers.
+
+- **Every drag has a button alternative.** Each row has a decorative grip (`aria-hidden`, not a Tab
+  stop) for pointer dragging, and *Move up* / *Move down* `.action-btn`s named *Move <label> up* /
+  *down* — the keyboard, switch and single-pointer path (WCAG 2.2 §2.5.7, §2.1.1). Focus stays on
+  the pressed button after a move, and moves to the other one at an end, where the pressed one
+  becomes `aria-disabled`.
+- **One announcement per committed move**, in the component's own `role="status"` line: *<label>
+  moved to position <n> of <total>.* Nothing is announced mid-drag.
+- **It never reorders its own input.** It emits `orderChange` (on drop, never per pointer move) and
+  `checkedChange`, and renders what the parent hands back. Motion during a drag is transforms only.
+- Options: `checkable` rows with a `.checkbox-label` checkbox (a `locked` item is checked, disabled
+  and explained with an `app-info-tip`), small tags, an `itemTemplate` for a richer row body, and a
+  non-interactive divider at `dividerIndex`.
+- `@angular/cdk` drag-drop is not used: it offers no keyboard or single-pointer path.
+
 ---
 
 ## 5. Tabs
@@ -582,7 +612,7 @@ selectSubTab(tab: 'run' | 'history' | 'suites'): void {
 
 ### 5b. Settings sections
 
-A long settings panel — the Style tab of the model comparison's figure sidebar is the
+A long settings panel — the Theme and Charts tabs of the model comparison's sidebar are the
 reference — is a stack of **non-exclusive** native disclosures, not a row of tabs:
 
 ```html

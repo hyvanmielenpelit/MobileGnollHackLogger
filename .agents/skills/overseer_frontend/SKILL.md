@@ -138,6 +138,7 @@ The short version, so you know whether you need it:
 - **Dimensions & Theme**: Checkbox inputs are sized at 20x20px with a 10px flex gap between the input and text, and styled with the golden theme accent color (`accent-color: var(--primary-color, #d4af37)`).
 - **Multi-Line Alignment (`.align-start`)**: When the checkbox copy spans multiple lines or contains descriptive subtext, add the `.align-start` class modifier to top-align the checkbox with the first line of text.
 - **Centralized Styling**: Checkbox styling is managed centrally in `src/styles.scss`. Do not duplicate checkbox CSS rules in component SCSS files.
+- **Radio groups** use the global `.gh-choice` fieldset (its `<legend>` names the group) with one `<label class="gh-radio">` wrapping each radio input, also from `src/styles.scss`.
 
 ## Project Structure and Navigation
 
@@ -262,40 +263,62 @@ To find specific popups, look in the corresponding component's `.html` template:
     only where that source actually differs.
 
 - **Model Comparison (`model-comparison.component.html`, Admin → AI Benchmark → Run History →
-  Cross-model comparison, step 4)**
-  - No preview dialog: step 4 is a workspace. A collapsible sidebar has three tabs — Emphasis,
-    Style and Download (format and, where the format has one, quality). Style opens with a
-    **Figure size** section (size and aspect ratio with *Custom* width and height, pixel density,
-    text size, the pixel readout, and its own reset) above `app-figure-style-panel` under a
-    segmented *Bar panels / Profile / Trade-offs* tab row that follows the figure in *Single*; each
-    settings section has its own reset button. There is no *On-screen* size: a figure always has an
-    export size, Full HD (1920 × 1080) by default, kept in
-    `localStorage['overseer.modelComparison.figureSize']` (an unknown or `onscreen` id reads as
-    `fullhd`). The sidebar's collapsed state, tab, Figure size open state and the active view are
-    kept in `localStorage['overseer.modelComparison.figureSidebar']`.
-  - Beside it, an **All / Single** tab pair (accessible names *All figures* and *Single figure*;
-    a stored `charts` reads as `all`, `preview` as `single`). **Both show bitmaps composed by the
-    export pipeline** — `resolveFigureLayout`, `renderPlotOffscreen` from each card's Chart.js
-    configuration, then the chrome — the same code that writes the downloaded file, so what is on
-    the page is what is downloaded. No `BaseChartDirective` renders on step 4 and nothing reads a
-    live chart canvas; the component registers the `provideCharts` registerables itself for that
-    reason. *All* shows every figure as a focusable tile (`<canvas role="img">` named by the
-    figure's title and subtitle; Enter or a click opens it in *Single*; the eye button, *Open in
-    Single view*, is not a separate Tab stop) in a natively scrolling grid, with Zoom out, a *Zoom*
-    slider, Zoom in, the percent readout and **Fit height** — the default, re-applied on resize
-    until the user zooms — and the keys `+`/`=`, `-` and `0`. A tile's CSS size is its export size
-    over the preview pixel ratio times the zoom, so 100 % means actual pixels in both tabs. Tiles
-    are composed at display resolution, 120 ms after the last change and then on the next frame,
-    only when within one viewport height of view, with a generation counter discarding a stale
-    composition. The figures in *All* have no Chart.js hover tooltips (a deliberate trade for
-    page-equals-download). *Single* shows one figure with zoom, drag-pan, *Fit to screen*,
-    *Actual pixels*, *Reset view*, Copy and Download, and opens on the figure last activated in
-    *All*. *Download all* sits in the figure bar above both.
-  - Style applies to every figure and every export and is kept in
-    `localStorage['overseer.modelComparison.figureStyle']`. A figure with its uncertainty bars
-    hidden says so in a caption note unless that note is switched off too; the
-    frontier-within-intervals note has its own switch, and so does the Speed panel's mean-time
-    note. Warning notes have none.
+  Cross-model comparison)** — three steps: *1. Sources · 2. Comparability & filters · 3. Charts &
+  table*. Step 2 keeps only what decides which entries can be compared: the *Scope* fieldset
+  (pricing basis, comparability) and the *Entries in the charts* checklist. Step 3 is reachable as
+  soon as a comparison exists.
+  - No preview dialog: step 3 is a workspace with four view tabs — **All charts** (grid), **Single
+    chart** (eye), **Interactive table** (table) and **Table preview** (image). When nothing can be
+    charted the two chart tabs are `aria-disabled`, the reason is shown, and the step opens on
+    *Interactive table*. The view bar holds the sidebar toggle, the tab row and contextual actions
+    (*Download all charts*; *Copy table* and *Download table* in the table views).
+  - **The sidebar follows the view.** Chart views show **Data · Theme · Charts · Download**; table
+    views show **Data · Theme · Table · Download**. A tab in both sets stays selected across a view
+    change; only *Charts* and *Table* swap. Stored tabs migrate `emphasis` → `data`, `style` →
+    `charts`, `download` / `export` → `download`. The sidebar's collapsed state, tab and view are in
+    `localStorage['overseer.modelComparison.figureSidebar']`.
+    - **Data**: *Measures* (speed and cost measure), *Model order* and *Emphasis*, as radio groups
+      apart from the emphasis checklist; the table views show only *Model order*. *Order by* has a
+      **Custom** choice: an `app-reorderable-list` of every entry, with a divider where the charts
+      stop plotting, *table only* tags and *Reset custom order*; the custom order lives for the
+      wizard session only. **One model order drives the charts and the table**: the Interactive
+      table, the Table preview and every table export follow it until a column header is clicked,
+      and *Use model order* returns to it.
+    - **Theme**: `app-figure-style-panel kind="appearance"` — dark or light theme, theme /
+      transparent / custom background with a never-exported preview backdrop, one of six
+      self-hosted font families or *Overseer default*, heading and label weights, heading and text
+      colours with contrast warnings, and a figure border. It reaches every chart and the table
+      image.
+    - **Charts**: the segmented *Bar panels / Profile / Trade-offs* tab row over
+      `app-figure-style-panel`.
+    - **Table**: `app-table-settings-panel` — *Columns* (an `app-reorderable-list` of the 28
+      display columns, checkable, *Model* locked; *Default columns*, *Only columns with values*, *All
+      columns*) and *Image layout* (row bands, row rules). One column configuration drives the
+      Interactive table, the Table preview and every download and copy; reading formats keep a
+      combined column combined, data formats write its parts, and no value is written twice.
+    - **Download**: chart views — *Chart size* (`app-export-size-section`, id prefix `mc-export`),
+      *Image format*, *Download all charts*; table views — *Table format* (Excel, CSV, TSV, Markdown,
+      JSON, HTML, Image), *Table image size* (`app-export-size-section` with *Fit the table*, id
+      prefix `mc-table-image`, the *Fit the table* size shown as information in custom mode), the
+      same *Image format*, a scope line, *Download table* and *Copy table*, whose name follows the
+      format.
+  - **Every chart view shows bitmaps composed by the export pipeline** — `resolveFigureLayout`,
+    `renderPlotOffscreen` from each card's Chart.js configuration, then the chrome — the same code
+    that writes the downloaded file, so what is on the page is what is downloaded. No
+    `BaseChartDirective` renders on step 3 and nothing reads a live chart canvas; the component
+    registers the `provideCharts` registerables itself for that reason. *All charts* shows every
+    chart as a focusable tile (`<canvas role="img">` named by its title and subtitle; Enter or a
+    click opens it in *Single chart*) in a natively scrolling grid with a zoom group and **Fit
+    height**; tiles are composed at display resolution, debounced, only near the viewport, with a
+    generation counter discarding a stale composition. *Single chart* has zoom, drag-pan, *Fit to
+    screen*, *Actual pixels*, *Reset view*, Copy and Download. *Table preview* reuses that stage for
+    the table image, with its own view state opening at Fit. Every composition first awaits the
+    chosen font (`ensureFigureFont`).
+  - Stored per browser: `overseer.modelComparison.figureStyle` (the per-family styles plus
+    `appearance` and `table`), `figureSize`, `tableImageSize`, `tableColumns`, `download` (table
+    format, image format, WebP quality) and `tableSettingsOpen`. A figure with its uncertainty bars
+    hidden says so in a caption note unless that note is switched off too; warning notes have no
+    switch.
 
 ## Component Reuse and State Management
 

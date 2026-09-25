@@ -15,6 +15,52 @@ export type ScatterLegendPosition = 'bottom' | 'right';
 /** Whether a bar value-axis title puts its final parenthetical on a line of its own. */
 export type AxisTitleBreak = 'auto' | 'always' | 'never';
 
+export type FigureThemeName = 'dark' | 'light';
+export type FigureBackgroundMode = 'theme' | 'transparent' | 'custom';
+/** What the page draws behind a transparent figure; never part of an export. */
+export type FigurePreviewBackdrop = 'checkerboard' | 'color';
+export type FigureFontId = 'default' | 'inter' | 'roboto' | 'geist' | 'ibm-plex-sans' | 'source-sans-3' | 'open-sans';
+export type FigureFontWeight = 400 | 500 | 600 | 700;
+
+export const FIGURE_THEME_NAMES: readonly FigureThemeName[] = ['dark', 'light'];
+export const FIGURE_BACKGROUND_MODES: readonly FigureBackgroundMode[] = ['theme', 'transparent', 'custom'];
+export const FIGURE_PREVIEW_BACKDROPS: readonly FigurePreviewBackdrop[] = ['checkerboard', 'color'];
+export const FIGURE_FONT_IDS: readonly FigureFontId[] =
+  ['default', 'inter', 'roboto', 'geist', 'ibm-plex-sans', 'source-sans-3', 'open-sans'];
+export const FIGURE_FONT_WEIGHTS: readonly FigureFontWeight[] = [400, 500, 600, 700];
+
+/** Shared by every chart and the table image. */
+export interface FigureAppearanceStyle {
+  readonly theme: FigureThemeName;
+  readonly background: FigureBackgroundMode;
+  /** `#rrggbb`, painted while `background` is `custom`. */
+  readonly backgroundColor: string;
+  readonly previewBackdrop: FigurePreviewBackdrop;
+  /** `#rrggbb`, shown while the backdrop is `color`. */
+  readonly previewBackdropColor: string;
+  readonly fontFamily: FigureFontId;
+  /** Chart titles; the table's title and header row. */
+  readonly headingWeight: FigureFontWeight;
+  /** Value labels, direct labels and legends; the table's cells. */
+  readonly labelWeight: FigureFontWeight;
+  /** Null follows the theme. */
+  readonly headingColor: string | null;
+  /** Null follows the theme. */
+  readonly textColor: string | null;
+  readonly border: boolean;
+  readonly borderWidthPx: number;
+  readonly borderRadiusPx: number;
+  /** Null follows the theme. */
+  readonly borderColor: string | null;
+}
+
+/** Table image only. */
+export interface TableImageStyle {
+  readonly rowBands: boolean;
+  /** A hairline under every row. */
+  readonly rowRules: boolean;
+}
+
 /** The figure's caption text, on the page card and in the composed figure. */
 export interface FigureChromeStyle {
   readonly titleSizePx: number;
@@ -52,6 +98,9 @@ export interface BarFigureStyle extends FigureChromeStyle {
   /** The thinking level on a line of its own under the model name. */
   readonly thinkingLevelBreak: boolean;
   readonly gridlines: boolean;
+  readonly axisTitleWeight: FigureFontWeight;
+  /** A hairline box around the plot area. */
+  readonly plotFrame: boolean;
   readonly hiddenBadges: readonly FigureBadgeKind[];
 }
 
@@ -75,6 +124,9 @@ export interface ScatterFigureStyle extends FigureChromeStyle {
   /** The thinking level on a line of its own under the model name. */
   readonly thinkingLevelBreak: boolean;
   readonly gridlines: boolean;
+  readonly axisTitleWeight: FigureFontWeight;
+  /** A hairline box around the plot area. */
+  readonly plotFrame: boolean;
   readonly hiddenBadges: readonly FigureBadgeKind[];
 }
 
@@ -89,7 +141,33 @@ export interface FigureStyle {
   readonly profile: ProfileFigureStyle;
   /** Decimal places per measure, in every family that shows the measure. */
   readonly numbers: NumberFormatStyle;
+  /** Theme, background, fonts and border of every chart and the table image. */
+  readonly appearance: FigureAppearanceStyle;
+  readonly table: TableImageStyle;
 }
+
+/** Dark, on the theme background, in the Overseer font, without a border: the drawing before any theme existed. */
+export const DEFAULT_APPEARANCE_STYLE: FigureAppearanceStyle = {
+  theme: 'dark',
+  background: 'theme',
+  backgroundColor: '#ffffff',
+  previewBackdrop: 'checkerboard',
+  previewBackdropColor: '#ffffff',
+  fontFamily: 'default',
+  headingWeight: 600,
+  labelWeight: 400,
+  headingColor: null,
+  textColor: null,
+  border: false,
+  borderWidthPx: 1,
+  borderRadiusPx: 0,
+  borderColor: null,
+};
+
+export const DEFAULT_TABLE_IMAGE_STYLE: TableImageStyle = {
+  rowBands: true,
+  rowRules: false,
+};
 
 /** The composer's caption sizes and a shown footer. */
 const DEFAULT_CHROME_STYLE: FigureChromeStyle = {
@@ -123,6 +201,8 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
     singleRunMarker: true,
     thinkingLevelBreak: false,
     gridlines: true,
+    axisTitleWeight: 400,
+    plotFrame: false,
     hiddenBadges: [],
   },
   scatter: {
@@ -139,6 +219,8 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
     legendPosition: 'bottom',
     thinkingLevelBreak: false,
     gridlines: true,
+    axisTitleWeight: 400,
+    plotFrame: false,
     hiddenBadges: [],
   },
   profile: {
@@ -146,6 +228,8 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
     hiddenBadges: [],
   },
   numbers: DEFAULT_MEASURE_DECIMALS,
+  appearance: DEFAULT_APPEARANCE_STYLE,
+  table: DEFAULT_TABLE_IMAGE_STYLE,
 };
 
 /** The caption note a figure carries when its uncertainty bars are hidden and would have drawn. */
@@ -208,6 +292,25 @@ export const CHROME_RANGE_CONTROLS: readonly RangeControl<NumericChromeStyleKey>
   textSizeControl('badgeTextSizePx', 'Badge text size'),
   textSizeControl('footerTextSizePx', 'Footer text size'),
 ];
+
+export type NumericAppearanceStyleKey = 'borderWidthPx' | 'borderRadiusPx';
+
+export const APPEARANCE_RANGE_CONTROLS: readonly RangeControl<NumericAppearanceStyleKey>[] = [
+  { key: 'borderWidthPx', label: 'Border width', min: 1, max: 8, step: 1, unit: 'px' },
+  {
+    key: 'borderRadiusPx',
+    label: 'Corner radius',
+    hint: 'Also rounds the background.',
+    min: 0,
+    max: 32,
+    step: 1,
+    unit: 'px',
+  },
+];
+
+export function appearanceRangeControl(key: NumericAppearanceStyleKey): RangeControl<NumericAppearanceStyleKey> {
+  return APPEARANCE_RANGE_CONTROLS.find((control) => control.key === key)!;
+}
 
 /** One badge's *Show* checkbox, which the style panel's template loops over. */
 export interface BadgeControl {
@@ -273,6 +376,24 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback
   return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
 }
 
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
+/** A `#rrggbb` colour, lower-cased, or the fallback. */
+export function normalizeHexColor(value: unknown, fallback: string): string {
+  return typeof value === 'string' && HEX_COLOR.test(value) ? value.toLowerCase() : fallback;
+}
+
+/** A `#rrggbb` colour, lower-cased, or null; anything else takes the fallback. */
+function nullableHexColor(value: unknown, fallback: string | null): string | null {
+  return value === null ? null : typeof value === 'string' && HEX_COLOR.test(value) ? value.toLowerCase() : fallback;
+}
+
+function fontWeightOr(value: unknown, fallback: FigureFontWeight): FigureFontWeight {
+  return typeof value === 'number' && (FIGURE_FONT_WEIGHTS as readonly number[]).includes(value)
+    ? (value as FigureFontWeight)
+    : fallback;
+}
+
 /** Known kinds only, each once, in {@link BADGE_CONTROLS} order, so equal selections serialise alike. */
 function normalizeBadgeKinds(value: unknown): FigureBadgeKind[] {
   if (!Array.isArray(value)) {
@@ -322,6 +443,8 @@ function normalizeBar(value: unknown): BarFigureStyle {
     singleRunMarker: booleanOr(v['singleRunMarker'], d.singleRunMarker),
     thinkingLevelBreak: booleanOr(v['thinkingLevelBreak'], d.thinkingLevelBreak),
     gridlines: booleanOr(v['gridlines'], d.gridlines),
+    axisTitleWeight: fontWeightOr(v['axisTitleWeight'], d.axisTitleWeight),
+    plotFrame: booleanOr(v['plotFrame'], d.plotFrame),
     hiddenBadges: normalizeBadgeKinds(v['hiddenBadges']),
   };
 }
@@ -346,7 +469,41 @@ function normalizeScatter(value: unknown): ScatterFigureStyle {
     legendPosition: oneOf(v['legendPosition'], ['bottom', 'right'] as const, d.legendPosition),
     thinkingLevelBreak: booleanOr(v['thinkingLevelBreak'], d.thinkingLevelBreak),
     gridlines: booleanOr(v['gridlines'], d.gridlines),
+    axisTitleWeight: fontWeightOr(v['axisTitleWeight'], d.axisTitleWeight),
+    plotFrame: booleanOr(v['plotFrame'], d.plotFrame),
     hiddenBadges: normalizeBadgeKinds(v['hiddenBadges']),
+  };
+}
+
+export function normalizeAppearance(value: unknown): FigureAppearanceStyle {
+  const d = DEFAULT_APPEARANCE_STYLE;
+  const v = isRecord(value) ? value : {};
+  const numeric = (key: NumericAppearanceStyleKey): number =>
+    clampToControl(v[key], appearanceRangeControl(key), d[key]);
+  return {
+    theme: oneOf(v['theme'], FIGURE_THEME_NAMES, d.theme),
+    background: oneOf(v['background'], FIGURE_BACKGROUND_MODES, d.background),
+    backgroundColor: normalizeHexColor(v['backgroundColor'], d.backgroundColor),
+    previewBackdrop: oneOf(v['previewBackdrop'], FIGURE_PREVIEW_BACKDROPS, d.previewBackdrop),
+    previewBackdropColor: normalizeHexColor(v['previewBackdropColor'], d.previewBackdropColor),
+    fontFamily: oneOf(v['fontFamily'], FIGURE_FONT_IDS, d.fontFamily),
+    headingWeight: fontWeightOr(v['headingWeight'], d.headingWeight),
+    labelWeight: fontWeightOr(v['labelWeight'], d.labelWeight),
+    headingColor: nullableHexColor(v['headingColor'], d.headingColor),
+    textColor: nullableHexColor(v['textColor'], d.textColor),
+    border: booleanOr(v['border'], d.border),
+    borderWidthPx: numeric('borderWidthPx'),
+    borderRadiusPx: numeric('borderRadiusPx'),
+    borderColor: nullableHexColor(v['borderColor'], d.borderColor),
+  };
+}
+
+function normalizeTableImageStyle(value: unknown): TableImageStyle {
+  const d = DEFAULT_TABLE_IMAGE_STYLE;
+  const v = isRecord(value) ? value : {};
+  return {
+    rowBands: booleanOr(v['rowBands'], d.rowBands),
+    rowRules: booleanOr(v['rowRules'], d.rowRules),
   };
 }
 
@@ -377,5 +534,7 @@ export function normalizeFigureStyle(value: unknown): FigureStyle {
     scatter: normalizeScatter(v['scatter']),
     profile: normalizeProfile(v['profile']),
     numbers: normalizeNumbers(v['numbers']),
+    appearance: normalizeAppearance(v['appearance']),
+    table: normalizeTableImageStyle(v['table']),
   };
 }

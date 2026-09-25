@@ -1,0 +1,51 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The section and its reset button, which sits over the summary row's end, as every settings
+   section in this sidebar places its own (frontend_ui_controls §5b). */
+.tsp-section {
+  position: relative;
+
+  > details > summary {
+    padding-inline-end: 50px;
+  }
+}
+
+.tsp-reset {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 8px;
+  margin: 0;
+
+  &[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+.tsp-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 2px;
+
+  .checkbox-label {
+    margin: 0;
+  }
+}
+
+.tsp-field-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #898781;
+}
+
+.tsp-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}

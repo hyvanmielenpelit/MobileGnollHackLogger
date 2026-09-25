@@ -2637,6 +2637,135 @@ stored before them reads both at their defaults.
   print, mean and total times show one decimal instead of two, and every time value follows its
   figure's unit.
 
+### Model Comparison: Three Steps, Theme and Fonts, View-Aware Sidebar (2026-09-25) — No Version Bump
+
+*Prompted by exporting the comparison into slide decks and web pages, where a dark-only figure and a
+content-sized table image rarely fit.* Display only: nothing here grades anything, and
+`HarnessVersion`, `ScoringMethodVersion`, `CandidateSystemPromptSha256` and `ToolGuidesSha256` do
+not move. With no stored settings the charts and the table image look exactly as before.
+
+**Steps.** The wizard has three steps instead of four; the separate *Table* step is gone and its
+table is a view of the last step.
+
+| Step | Title | Holds |
+|------|-------|-------|
+| 1 | Sources | The runs and analysis groups to compare |
+| 2 | Comparability & filters | *Scope* (pricing basis, comparability) and *Entries in the charts* |
+| 3 | Charts & table | Every chart and the comparison table, with their settings and exports |
+
+Step 3 is reachable as soon as a comparison exists. When nothing in the set can be charted, the two
+chart views are `aria-disabled` with the reason shown, and the step opens on the table.
+
+**Views.** Step 3 has four view tabs: **All charts** (grid), **Single chart** (eye), **Interactive
+table** (table) and **Table preview** (image). The Interactive table is today's sortable, filterable
+table in the application's own dark UI; the Table preview shows the table image on the Single chart
+stage — same zoom, fit, pan and keys, with its own view state opening at Fit to screen — and always
+previews the image export, with a note when another Table format is chosen. Leaving a chart view
+releases the chart bitmaps; leaving the Table preview releases its bitmap.
+
+**The sidebar follows the view.** Chart views show **Data · Theme · Charts · Download**; both table
+views show **Data · Theme · Table · Download**. A tab shared by both sets stays selected across a view
+change; only *Charts* and *Table* swap. A stored tab from before is migrated: `emphasis` → `data`,
+`style` → `charts`, `export` → `download`.
+
+| Setting | Charts | Table image | Tab |
+|---------|:------:|:-----------:|-----|
+| Speed measure, cost measure | ✓ | — | Data → Measures |
+| Model order (incl. *Custom*), direction | ✓ | ✓ (rows) | Data → Model order |
+| Emphasised models | ✓ | — | Data → Emphasis |
+| Pricing basis, comparability, entries in the charts | ✓ | pricing basis only | step 2 |
+| Theme, background, preview backdrop, font, weights, text colours, border | ✓ | ✓ | Theme |
+| Per-family chart settings, axis title weight, plot frame | ✓ | — | Charts |
+| Columns | — | ✓ (every output) | Table → Columns |
+| Row bands, row rules | — | ✓ | Table → Image layout |
+| Image format and WebP quality | ✓ | ✓ | Download (shared) |
+| Chart size | ✓ | — | Download → Chart size |
+| Table format, table image size | — | ✓ | Download (table views) |
+
+*Speed measure*, *Cost measure*, *Model order* and *Order direction* moved from step 2 to the Data
+tab as radio groups, beside the charts they change; step 2 keeps what decides *which* entries can be
+compared, and its note says where the others went. In the table views the Data tab shows only
+*Model order*.
+
+**Model order.** *Order by* offers Intelligence Index, Speed, Cost, Name and **Custom**. Custom shows
+every entry in a list that is rearranged by dragging its grip or with its *Move up* / *Move down*
+buttons (the keyboard and single-pointer path), announcing each move. The list is seeded from the
+order in effect, marks where the charts stop plotting (an entry dragged above the line enters the
+charts), tags entries that are never charted *table only*, and *Reset custom order* returns it to
+Intelligence Index, descending. *Direction* is disabled while Custom is chosen. The custom order lives
+for the wizard session and is not stored. **One model order drives the charts and the table**: the
+Interactive table, the Table preview and every table export follow it — so the table's default row
+order is now the model order, and *State* is one header click away — until a column header is
+clicked; *Use model order* (above the table and in the Data tab), and any change to the model order,
+return to it. The charts and the table share one comparator, so they cannot disagree.
+
+**Columns.** The Table tab's *Columns* section lists all 28 display columns — the eight on-screen
+columns, some of which combine several values (*Model*, *R*, *State*, *Intelligence Index*, *Speed
+Index*, *Timings*, *Candidate $ / question*, *Notes*), and the other twenty single values as columns
+of their own — to show or hide with a checkbox and to reorder by drag and drop or the move buttons.
+*Model* is always shown but can move. Quick actions: *Default columns* (today's eight, in today's
+order), *Only columns with values*, *All columns*. One configuration drives the Interactive table,
+the Table preview and every download and copy, and is stored per browser
+(`overseer.modelComparison.tableColumns`). Reading formats (the on-screen table, the image, Markdown,
+HTML) keep a combined column combined, worded as on screen; data formats (Excel, CSV, TSV, JSON)
+write its parts as typed columns in its place. **No value is written twice**: a part shown as its own
+column is left out of its combined cell, and in a data format a part already written is skipped.
+Hiding a column that has an active filter clears that filter, with a status line. **The default
+download columns changed**: a download used to write every populated column of the 26; it now writes
+the eight on-screen columns (split into their parts in data formats). *All columns* restores the full
+set in one click.
+
+**Table export.** The step's separate table export controls and the download-time column dialog are
+gone. The Download tab in the table views holds the **Table format** (Excel, CSV, TSV, Markdown,
+JSON, HTML, or *Image (PNG or WebP)*), the **Table image size** and the shared **Image format**, a
+scope line, and *Download table* / *Copy table*, which the view bar repeats. *Copy table* follows the
+format: Image copies a PNG (also when WebP is chosen), Excel copies cells with an HTML fallback, HTML
+copies a formatted table with a plain-text fallback, and Markdown, CSV, TSV and JSON copy their text
+without the byte-order mark the files carry. Format, image format and WebP quality are stored per
+browser (`overseer.modelComparison.download`); the charts' and the table's WebP quality are one
+setting.
+
+**Table image size.** Separate from the chart size, because a table and a chart are very different
+shapes, and stored on its own (`overseer.modelComparison.tableImageSize`). Two modes:
+
+- **Fit the table** (default): the image is as large as the table, at the chosen density — at the
+  default 200 % exactly the content-sized 2× image the table was always written as.
+- **A preset or a custom size**, in **plain pixels**: the table is laid out in `W / T × H / T`
+  layout px for text size `T` and written at exactly `W·D × H·D` for density `D`, spanning the
+  width. A size too narrow or too short is refused with the minimum named, and download and copy are
+  disabled with that reason. In custom mode the section shows the *Fit the table* size at the current
+  text size — `W × H px` for the shown columns and the rows passing the filters — as information,
+  not a default; typed in, it fits the table with no spare space.
+
+This deliberately differs from the charts' rule, which composes in a box of at least 960 × 540
+layout px that density maps onto the bitmap, so a chart's content never changes with the resolution.
+Under that rule whether a table fits would depend only on the aspect ratio and the text size, and no
+pixel size could be named as "the size the table fits in". A table's content is fixed by its rows and
+columns, so the useful question is how many pixels it needs, and plain pixels answer it.
+
+**Theme and fonts.** The Theme tab reaches every chart and the table image, on the page, in the
+previews and in every export, through one resolved theme:
+
+- **Theme**: *Dark* (today's palette) or *Light* (measured on white, PowerPoint's default slide,
+  with its own validated series hues `#2a78d6`, `#eb6834`, `#18a070`).
+- **Background**: the theme's, **transparent**, or a custom colour. A transparent export carries
+  alpha in PNG, WebP and the clipboard PNG. On the page a transparent figure is shown over a
+  checkerboard or a chosen **preview backdrop** colour, which is never exported.
+- **Font**: *Overseer default* or one of six self-hosted families (Inter, Roboto, Geist, IBM Plex
+  Sans, Source Sans 3, Open Sans; see the data privacy framework § 3.2), loaded before anything is
+  measured, with a status line when loading fails. Heading and label weights, 400–700.
+- **Text colour**: heading and text colours, each following the theme unless set; warnings name
+  headings below 3:1, text below 4.5:1 and series below 3:1 against the background, the backdrop
+  colour, or the theme's own ground under the checkerboard. Warning notes, pricing badges, the accent
+  and the series hues stay theme-owned.
+- **Borders**: an optional figure border with width, corner radius (which also rounds the
+  background, leaving transparent corners) and colour.
+
+The Charts tab adds *Axis title weight* and *Frame the plot area* to the bar and trade-off panels.
+All of it is stored with the figure style (`overseer.modelComparison.figureStyle`, still
+`version: 1`, with new `appearance` and `table` records); a style stored before reads them at their
+defaults.
+
 ### Harness Version 29 Updates
 
 Prompted by the analysis of runs 50 and 51, the first two runs of a game-snapshot suite, which showed that

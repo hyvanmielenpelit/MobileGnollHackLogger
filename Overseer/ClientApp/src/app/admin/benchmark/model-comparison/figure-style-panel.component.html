@@ -1,3 +1,40 @@
+<!-- A colour: a visible label, a native swatch (RGB only, hence the mirrored hex field for a
+     value typed by hand) and the hex text field itself. The hex field clears its own error as
+     soon as its text changes and validates on change/blur; both mirror each other and emit only
+     a valid `#rrggbb`. -->
+<ng-template #color let-key="key" let-label="label" let-disabled="disabled">
+  <div class="fsp-color-row" [class.fsp-disabled]="disabled">
+    <label [for]="controlId('appearance', key)">{{ label }}</label>
+    <input type="color" class="fsp-color-swatch" [id]="controlId('appearance', key)"
+           [value]="appearanceColorValue(key)" [disabled]="disabled"
+           (input)="onColorPick(key, $event)">
+    <input type="text" class="gh-input fsp-color-hex" [id]="controlId('appearance', key) + '-hex'"
+           [attr.aria-label]="label + ' hex value'"
+           maxlength="7" spellcheck="false" autocomplete="off" pattern="#[0-9a-fA-F]{6}"
+           [value]="appearanceColorValue(key)" [disabled]="disabled"
+           [attr.aria-invalid]="hexError(key) ? 'true' : null"
+           [attr.aria-describedby]="hexError(key) ? hexErrorId(key) : null"
+           (input)="onHexInput(key)" (change)="onHexCommit(key, $event)" (blur)="onHexCommit(key, $event)">
+    @if (hexError(key)) {
+      <span class="fsp-color-error" [id]="hexErrorId(key)" role="alert">{{ hexError(key) }}</span>
+    }
+  </div>
+</ng-template>
+
+<!-- A colour that can follow the theme instead of holding a fixed value: the checkbox, then the
+     colour row itself, disabled while the checkbox is ticked or the row does not apply. -->
+<ng-template #followColor let-key="key" let-label="label" let-rowDisabled="rowDisabled">
+  <div class="fsp-check">
+    <label class="checkbox-label">
+      <input type="checkbox" [id]="controlId('appearance', key) + '-follow'"
+             [checked]="followsTheme(key)" [disabled]="rowDisabled"
+             (change)="onFollowTheme(key, checkedOf($event))">
+      Follow theme
+    </label>
+  </div>
+  <ng-container *ngTemplateOutlet="color; context: { key: key, label: label, disabled: rowDisabled || followsTheme(key) }"></ng-container>
+</ng-template>
+
 <!-- One range row: the label, an optional tip and the value on one line, the slider below. The
      `<output>` is hidden from assistive technology: the range already announces its value text,
      and a live output would speak on every step of a drag. -->
@@ -225,18 +262,30 @@
               @for (control of barAxisControls; track control.key) {
                 <ng-container *ngTemplateOutlet="range; context: { family: 'bar', control: control }"></ng-container>
               }
-              <fieldset class="fsp-choice" aria-labelledby="mc-style-bar-axisTitleBreak-label"
+              <fieldset class="gh-choice" aria-labelledby="mc-style-bar-axisTitleBreak-label"
                         aria-describedby="mc-style-bar-axisTitleBreak-tip">
                 <legend>
                   <span id="mc-style-bar-axisTitleBreak-label">Axis title line break</span>
                   <app-info-tip tipId="mc-style-bar-axisTitleBreak-tip" subject="Axis title line break">Automatic moves the part in parentheses to a second line when the title is longer than its axis.</app-info-tip>
                 </legend>
                 @for (option of axisTitleBreakOptions; track option.value) {
-                  <label class="fsp-radio">
+                  <label class="gh-radio">
                     <input type="radio" name="mc-style-bar-axisTitleBreak"
                            [id]="'mc-style-bar-axisTitleBreak-' + option.value"
                            [value]="option.value" [checked]="bar.axisTitleBreak === option.value"
                            (change)="setBar('axisTitleBreak', option.value)">
+                    {{ option.label }}
+                  </label>
+                }
+              </fieldset>
+              <fieldset class="gh-choice" aria-labelledby="mc-style-bar-axisTitleWeight-label">
+                <legend><span id="mc-style-bar-axisTitleWeight-label">Axis title weight</span></legend>
+                @for (option of fontWeightOptions; track option.value) {
+                  <label class="gh-radio">
+                    <input type="radio" name="mc-style-bar-axisTitleWeight"
+                           [id]="'mc-style-bar-axisTitleWeight-' + option.value"
+                           [value]="option.value" [checked]="bar.axisTitleWeight === option.value"
+                           (change)="setBar('axisTitleWeight', option.value)">
                     {{ option.label }}
                   </label>
                 }
@@ -292,14 +341,14 @@
                    [open]="isOpen('bar', 'layout')" (toggle)="onSectionToggle('bar', 'layout', $event)">
             <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'bar', section: section('bar', 'layout') }"></ng-container>
             <div class="gh-disclosure-body fsp-section-body">
-              <fieldset class="fsp-choice" aria-labelledby="mc-style-bar-orientation-label"
+              <fieldset class="gh-choice" aria-labelledby="mc-style-bar-orientation-label"
                         aria-describedby="mc-style-bar-orientation-tip">
                 <legend>
                   <span id="mc-style-bar-orientation-label">Orientation</span>
                   <app-info-tip tipId="mc-style-bar-orientation-tip" subject="Orientation">Automatic turns bars horizontal in narrow figures.</app-info-tip>
                 </legend>
                 @for (option of orientationOptions; track option.value) {
-                  <label class="fsp-radio">
+                  <label class="gh-radio">
                     <input type="radio" name="mc-style-bar-orientation"
                            [id]="'mc-style-bar-orientation-' + option.value"
                            [value]="option.value" [checked]="bar.orientation === option.value"
@@ -313,6 +362,13 @@
                   <input type="checkbox" id="mc-style-bar-gridlines" [checked]="bar.gridlines"
                          (change)="setBar('gridlines', checkedOf($event))">
                   Gridlines
+                </label>
+              </div>
+              <div class="fsp-check">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="mc-style-bar-plotFrame" [checked]="bar.plotFrame"
+                         (change)="setBar('plotFrame', checkedOf($event))">
+                  Frame the plot area
                 </label>
               </div>
             </div>
@@ -383,7 +439,7 @@
                 <app-info-tip tipId="mc-style-scatter-thinkingLevelBreak-tip" subject="the thinking level line">Applies to model names drawn in the chart and to a legend on the right. A legend at the bottom keeps each name on one line.</app-info-tip>
               </div>
               <ng-container *ngTemplateOutlet="range; context: { family: 'scatter', control: scatterLabelControl }"></ng-container>
-              <fieldset class="fsp-choice" [disabled]="directLabels"
+              <fieldset class="gh-choice" [disabled]="directLabels"
                         aria-labelledby="mc-style-scatter-legend-label"
                         [attr.aria-describedby]="directLabels ? 'mc-style-scatter-legend-tip' : null">
                 <legend>
@@ -393,7 +449,7 @@
                   }
                 </legend>
                 @for (option of legendOptions; track option.value) {
-                  <label class="fsp-radio">
+                  <label class="gh-radio">
                     <input type="radio" name="mc-style-scatter-legend"
                            [id]="'mc-style-scatter-legend-' + option.value"
                            [value]="option.value" [checked]="scatter.legendPosition === option.value"
@@ -422,6 +478,25 @@
                   <input type="checkbox" id="mc-style-scatter-gridlines" [checked]="scatter.gridlines"
                          (change)="setScatter('gridlines', checkedOf($event))">
                   Gridlines
+                </label>
+              </div>
+              <fieldset class="gh-choice" aria-labelledby="mc-style-scatter-axisTitleWeight-label">
+                <legend><span id="mc-style-scatter-axisTitleWeight-label">Axis title weight</span></legend>
+                @for (option of fontWeightOptions; track option.value) {
+                  <label class="gh-radio">
+                    <input type="radio" name="mc-style-scatter-axisTitleWeight"
+                           [id]="'mc-style-scatter-axisTitleWeight-' + option.value"
+                           [value]="option.value" [checked]="scatter.axisTitleWeight === option.value"
+                           (change)="setScatter('axisTitleWeight', option.value)">
+                    {{ option.label }}
+                  </label>
+                }
+              </fieldset>
+              <div class="fsp-check">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="mc-style-scatter-plotFrame" [checked]="scatter.plotFrame"
+                         (change)="setScatter('plotFrame', checkedOf($event))">
+                  Frame the plot area
                 </label>
               </div>
             </div>
@@ -475,6 +550,171 @@
     </section>
   }
 
+  @case ('appearance') {
+    <section class="fsp" aria-labelledby="mc-style-appearance-heading">
+      <ng-container *ngTemplateOutlet="panelHead; context: { family: 'appearance', title: 'Theme and fonts — every chart and the table image' }"></ng-container>
+      <p class="visually-hidden" role="status">{{ resetStatus }}</p>
+
+      <div class="fsp-section-stack">
+        <div class="fsp-section">
+          <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('appearance', 'theme')"
+                   [open]="isOpen('appearance', 'theme')" (toggle)="onSectionToggle('appearance', 'theme', $event)">
+            <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'appearance', section: section('appearance', 'theme') }"></ng-container>
+            <div class="gh-disclosure-body fsp-section-body">
+              <fieldset class="gh-choice" aria-labelledby="mc-style-appearance-theme-label">
+                <legend><span id="mc-style-appearance-theme-label">Theme</span></legend>
+                @for (option of themeOptions; track option.value) {
+                  <label class="gh-radio">
+                    <input type="radio" name="mc-style-appearance-theme"
+                           [id]="'mc-style-appearance-theme-' + option.value"
+                           [value]="option.value" [checked]="appearance.theme === option.value"
+                           (change)="setAppearance('theme', option.value)">
+                    {{ option.label }}
+                  </label>
+                }
+              </fieldset>
+
+              <fieldset class="gh-choice" aria-labelledby="mc-style-appearance-background-label">
+                <legend><span id="mc-style-appearance-background-label">Background</span></legend>
+                @for (option of backgroundOptions; track option.value) {
+                  <label class="gh-radio">
+                    <input type="radio" name="mc-style-appearance-background"
+                           [id]="'mc-style-appearance-background-' + option.value"
+                           [value]="option.value" [checked]="appearance.background === option.value"
+                           (change)="setAppearance('background', option.value)">
+                    {{ option.label }}
+                  </label>
+                }
+              </fieldset>
+              <ng-container *ngTemplateOutlet="color; context: { key: 'backgroundColor', label: 'Background colour', disabled: appearance.background !== 'custom' }"></ng-container>
+
+              <fieldset class="gh-choice" [disabled]="appearance.background !== 'transparent'"
+                        aria-labelledby="mc-style-appearance-previewBackdrop-label"
+                        aria-describedby="mc-style-appearance-previewBackdrop-tip">
+                <legend>
+                  <span id="mc-style-appearance-previewBackdrop-label">Preview backdrop</span>
+                  <app-info-tip tipId="mc-style-appearance-previewBackdrop-tip" subject="Preview backdrop">Only changes how a transparent figure looks on the page and in the preview; never drawn into an export.</app-info-tip>
+                </legend>
+                @for (option of previewBackdropOptions; track option.value) {
+                  <label class="gh-radio">
+                    <input type="radio" name="mc-style-appearance-previewBackdrop"
+                           [id]="'mc-style-appearance-previewBackdrop-' + option.value"
+                           [value]="option.value" [checked]="appearance.previewBackdrop === option.value"
+                           (change)="setAppearance('previewBackdrop', option.value)">
+                    {{ option.label }}
+                  </label>
+                }
+              </fieldset>
+              <ng-container *ngTemplateOutlet="color; context: { key: 'previewBackdropColor', label: 'Preview backdrop colour', disabled: appearance.background !== 'transparent' || appearance.previewBackdrop !== 'color' }"></ng-container>
+            </div>
+          </details>
+          <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'appearance', name: 'theme' }"></ng-container>
+        </div>
+
+        <div class="fsp-section">
+          <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('appearance', 'font')"
+                   [open]="isOpen('appearance', 'font')" (toggle)="onSectionToggle('appearance', 'font', $event)">
+            <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'appearance', section: section('appearance', 'font') }"></ng-container>
+            <div class="gh-disclosure-body fsp-section-body">
+              <div class="fsp-number">
+                <label [for]="controlId('appearance', 'fontFamily')">Font family</label>
+                <select class="gh-input" [id]="controlId('appearance', 'fontFamily')"
+                        aria-describedby="mc-style-appearance-fontFamily-tip"
+                        (change)="onFontFamily($event)">
+                  @for (font of fontOptions; track font.id) {
+                    <option [value]="font.id" [selected]="font.id === appearance.fontFamily">{{ font.label }}</option>
+                  }
+                </select>
+                <app-info-tip tipId="mc-style-appearance-fontFamily-tip" subject="Font family">Overseer default has Regular and Bold faces; the other weights round to the nearest one it has.</app-info-tip>
+              </div>
+
+              <fieldset class="gh-choice" aria-labelledby="mc-style-appearance-headingWeight-label"
+                        aria-describedby="mc-style-appearance-headingWeight-tip">
+                <legend>
+                  <span id="mc-style-appearance-headingWeight-label">Headings</span>
+                  <app-info-tip tipId="mc-style-appearance-headingWeight-tip" subject="Headings">Chart titles; the table's title and header row.</app-info-tip>
+                </legend>
+                @for (option of fontWeightOptions; track option.value) {
+                  <label class="gh-radio">
+                    <input type="radio" name="mc-style-appearance-headingWeight"
+                           [id]="'mc-style-appearance-headingWeight-' + option.value"
+                           [value]="option.value" [checked]="appearance.headingWeight === option.value"
+                           (change)="setAppearance('headingWeight', option.value)">
+                    {{ option.label }}
+                  </label>
+                }
+              </fieldset>
+
+              <fieldset class="gh-choice" aria-labelledby="mc-style-appearance-labelWeight-label"
+                        aria-describedby="mc-style-appearance-labelWeight-tip">
+                <legend>
+                  <span id="mc-style-appearance-labelWeight-label">Labels and values</span>
+                  <app-info-tip tipId="mc-style-appearance-labelWeight-tip" subject="Labels and values">Value labels, model labels and legends; the table's cells.</app-info-tip>
+                </legend>
+                @for (option of fontWeightOptions; track option.value) {
+                  <label class="gh-radio">
+                    <input type="radio" name="mc-style-appearance-labelWeight"
+                           [id]="'mc-style-appearance-labelWeight-' + option.value"
+                           [value]="option.value" [checked]="appearance.labelWeight === option.value"
+                           (change)="setAppearance('labelWeight', option.value)">
+                    {{ option.label }}
+                  </label>
+                }
+              </fieldset>
+
+              <p role="status" id="mc-style-appearance-fontLoadStatus">{{ fontLoadStatus }}</p>
+            </div>
+          </details>
+          <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'appearance', name: 'font' }"></ng-container>
+        </div>
+
+        <div class="fsp-section">
+          <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('appearance', 'colors')"
+                   [open]="isOpen('appearance', 'colors')" (toggle)="onSectionToggle('appearance', 'colors', $event)">
+            <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'appearance', section: section('appearance', 'colors') }"></ng-container>
+            <div class="gh-disclosure-body fsp-section-body">
+              <ng-container *ngTemplateOutlet="followColor; context: { key: 'headingColor', label: 'Heading colour', rowDisabled: false }"></ng-container>
+              <ng-container *ngTemplateOutlet="followColor; context: { key: 'textColor', label: 'Text colour', rowDisabled: false }"></ng-container>
+              @if (colorWarnings().length > 0) {
+                <ul class="fsp-warnings" role="status">
+                  @for (warning of colorWarnings(); track warning) {
+                    <li>{{ warning }}</li>
+                  }
+                </ul>
+              }
+            </div>
+          </details>
+          <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'appearance', name: 'colors' }"></ng-container>
+        </div>
+
+        <div class="fsp-section">
+          <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('appearance', 'border')"
+                   [open]="isOpen('appearance', 'border')" (toggle)="onSectionToggle('appearance', 'border', $event)">
+            <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'appearance', section: section('appearance', 'border') }"></ng-container>
+            <div class="gh-disclosure-body fsp-section-body">
+              <div class="fsp-check">
+                <label class="checkbox-label">
+                  <input type="checkbox" [id]="controlId('appearance', 'border')" [checked]="appearance.border"
+                         (change)="setAppearance('border', checkedOf($event))">
+                  Figure border
+                </label>
+              </div>
+              @for (control of appearanceBorderControls; track control.key) {
+                <ng-container *ngTemplateOutlet="range; context: { family: 'appearance', control: control }"></ng-container>
+              }
+              <ng-container *ngTemplateOutlet="followColor; context: { key: 'borderColor', label: 'Border colour', rowDisabled: !appearance.border }"></ng-container>
+            </div>
+          </details>
+          <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'appearance', name: 'border' }"></ng-container>
+        </div>
+      </div>
+
+      <div class="fsp-actions">
+        <button type="button" class="btn-ghost" id="mc-style-appearance-reset" (click)="resetAppearance()">Reset theme and fonts</button>
+      </div>
+    </section>
+  }
+
   @default {
     <section class="fsp" aria-labelledby="mc-style-profile-heading">
       <ng-container *ngTemplateOutlet="panelHead; context: { family: 'profile', title: 'Profile plot' }"></ng-container>
@@ -486,7 +726,7 @@
         <ng-container *ngTemplateOutlet="footerSection; context: { family: 'profile', section: section('profile', 'footer') }"></ng-container>
       </div>
 
-      <p class="fsp-note">Chart text follows Text size under Figure size.</p>
+      <p class="fsp-note">Chart text follows Text size under Download → Chart size.</p>
 
       <div class="fsp-actions">
         <button type="button" class="btn-ghost" id="mc-style-profile-reset" (click)="resetProfile()">Reset profile style</button>

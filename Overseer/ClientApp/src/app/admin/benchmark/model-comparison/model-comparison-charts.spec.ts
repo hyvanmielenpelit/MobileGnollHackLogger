@@ -9,6 +9,7 @@ import {
   buildNumberSamples,
   splitAxisTitle,
   CATEGORICAL_PALETTE_DARK,
+  CATEGORICAL_PALETTE_LIGHT,
   CHART_INK,
   CHART_SURFACE,
   DEFAULT_MODEL_SORT,
@@ -19,6 +20,7 @@ import {
   MEAN_TIME_NO_INTERVAL_NOTE,
   MAX_PLOTTED_ENTRIES,
   PALETTE_VALIDATION_INPUT,
+  PALETTE_VALIDATION_INPUT_LIGHT,
   PROFILE_AXIS_ORDER,
   P1_STACK_BREAKPOINT_PX,
   ReducedMotionWatcher,
@@ -40,9 +42,12 @@ import {
   modelLabelText,
   normalizeProfile,
   placeDirectLabels,
+  plotFramePlugin,
   segmentIntersectsRect,
   segmentsIntersect,
+  modelOrderKeys,
   selectPlottedEntries,
+  sortEntriesForComparison,
   speedLowerIsBetter,
   speedValue,
   suiteCostSdUsd,
@@ -58,12 +63,21 @@ import type {
   DirectLabelBox,
   DirectLabelPluginOptions,
   DirectLabelValue,
+  FigureSetOptions,
   ModelComparisonContext,
   ModelComparisonEntry,
   SmallMultiplesOptions,
 } from './model-comparison-charts';
-import { DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
-import type { BarFigureStyle, FigureStyle, ProfileFigureStyle, ScatterFigureStyle } from './figure-style';
+import { DEFAULT_APPEARANCE_STYLE, DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
+import type {
+  BarFigureStyle,
+  FigureAppearanceStyle,
+  FigureStyle,
+  ProfileFigureStyle,
+  ScatterFigureStyle,
+} from './figure-style';
+import { figureFont } from './figure-fonts';
+import { resolveFigureTheme } from './figure-theme';
 import type { NumberFormatStyle } from './measure-format';
 import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 import { CONFIG_ANALYTICS_CHART_TYPE } from '../../config-analytics/config-analytics.component';
@@ -228,6 +242,27 @@ describe('model-comparison-charts', () => {
     it('keeps the emphasis accent out of the categorical set', () => {
       expect(CATEGORICAL_PALETTE_DARK as readonly string[]).not.toContain(ACCENT);
     });
+
+    it('exports the light palette and its validator input verbatim', () => {
+      expect(CATEGORICAL_PALETTE_LIGHT).toEqual(['#2a78d6', '#eb6834', '#18a070']);
+      expect(PALETTE_VALIDATION_INPUT_LIGHT).toBe('#2a78d6,#eb6834,#18a070');
+      expect(resolveFigureTheme({ ...DEFAULT_APPEARANCE_STYLE, theme: 'light' }).chart.categorical)
+        .toEqual([...CATEGORICAL_PALETTE_LIGHT]);
+    });
+
+    it('keeps the exported constants the dark theme resolves to', () => {
+      const dark = resolveFigureTheme().chart;
+      expect(dark.surface).toBe(CHART_SURFACE);
+      expect(dark.categorical).toEqual([...CATEGORICAL_PALETTE_DARK]);
+      expect(dark.accent).toBe(ACCENT);
+      expect(dark.inkPrimary).toBe(CHART_INK.primary);
+      expect(dark.inkSecondary).toBe(CHART_INK.secondary);
+      expect(dark.inkMuted).toBe(CHART_INK.muted);
+      expect(dark.gridline).toBe(CHART_INK.gridline);
+      expect(dark.baseline).toBe(CHART_INK.baseline);
+      expect(dark.deEmphasisFill).toBe(DE_EMPHASIS_FILL);
+      expect(dark.dominatedRegionFill).toBe(DOMINATED_REGION_FILL);
+    });
   });
 
   describe('identity glyphs', () => {
@@ -291,6 +326,71 @@ describe('model-comparison-charts', () => {
       expect(selection.plotted.map((e) => e.key)).toEqual(['ok']);
       expect(selection.excluded.map((e) => e.key)).toEqual(['v9']);
       expect(selection.notices.join(' ')).toContain('not comparable');
+    });
+  });
+
+  describe('the custom model order', () => {
+    const three = [
+      makeEntry({ key: 'a', label: 'Alpha', intelligenceIndex: 90 }),
+      makeEntry({ key: 'b', label: 'Beta', intelligenceIndex: 60 }),
+      makeEntry({ key: 'c', label: 'Gamma', intelligenceIndex: 30 }),
+    ];
+
+    it('orders by the list, ignoring the direction', () => {
+      for (const direction of ['asc', 'desc'] as const) {
+        const ordered = sortEntriesForComparison(
+          three, { key: 'custom', direction, customOrder: ['c', 'a', 'b'] }, 'speedIndex', 'candidateSuite', CONTEXT);
+        expect(ordered.map((e) => e.key)).withContext(direction).toEqual(['c', 'a', 'b']);
+      }
+    });
+
+    it('puts entries the list does not name after the named ones, by label', () => {
+      const withMore = [...three, makeEntry({ key: 'd', label: 'Delta' })];
+      const ordered = sortEntriesForComparison(
+        withMore, { key: 'custom', direction: 'desc', customOrder: ['b'] }, 'speedIndex', 'candidateSuite', CONTEXT);
+      expect(ordered.map((e) => e.key)).toEqual(['b', 'a', 'd', 'c']);
+    });
+
+    it('lets the plot cap follow the custom order', () => {
+      const nine = Array.from({ length: 9 }, (_, i) =>
+        makeEntry({ key: `m${i}`, label: `Model ${i}`, intelligenceIndex: 90 - i }));
+      const customOrder = ['m8', ...nine.slice(0, 8).map((e) => e.key)];
+      const selection = selectPlottedEntries(
+        nine, { key: 'custom', direction: 'desc', customOrder }, 'speedIndex', 'candidateSuite', CONTEXT);
+      expect(selection.plotted[0].key).toBe('m8');
+      expect(selection.overflow.map((e) => e.key)).toEqual(['m7']);
+    });
+
+    it('keeps the default sort unchanged', () => {
+      expect(DEFAULT_MODEL_SORT.customOrder).toBeUndefined();
+    });
+  });
+
+  describe('modelOrderKeys', () => {
+    const entries = [
+      makeEntry({ key: 'x', label: 'Zed', excluded: true, excludedReasonKeys: ['ScoringMethodVersion'] }),
+      makeEntry({ key: 'a', label: 'Alpha', intelligenceIndex: 40 }),
+      makeEntry({ key: 'w', label: 'Why', excluded: true, excludedReasonKeys: ['ScoringMethodVersion'] }),
+      makeEntry({ key: 'b', label: 'Beta', intelligenceIndex: 80 }),
+    ];
+
+    it('lists the comparable entries in chart order, then the excluded ones by label', () => {
+      expect(modelOrderKeys(entries, DEFAULT_MODEL_SORT, 'speedIndex', 'candidateSuite', CONTEXT))
+        .toEqual(['b', 'a', 'w', 'x']);
+      expect(modelOrderKeys(entries, { key: 'intelligenceIndex', direction: 'asc' }, 'speedIndex', 'candidateSuite', CONTEXT))
+        .toEqual(['a', 'b', 'w', 'x']);
+    });
+
+    it('lets a custom order place excluded entries', () => {
+      expect(modelOrderKeys(
+        entries, { key: 'custom', direction: 'desc', customOrder: ['x', 'a', 'b', 'w'] }, 'speedIndex', 'candidateSuite', CONTEXT))
+        .toEqual(['x', 'a', 'b', 'w']);
+    });
+
+    it('agrees with the charts\' own order for the comparable entries', () => {
+      const plotted = selectPlottedEntries(entries, DEFAULT_MODEL_SORT, 'speedIndex', 'candidateSuite', CONTEXT).plotted;
+      const keys = modelOrderKeys(entries, DEFAULT_MODEL_SORT, 'speedIndex', 'candidateSuite', CONTEXT);
+      expect(keys.slice(0, plotted.length)).toEqual(plotted.map((e) => e.key));
     });
   });
 
@@ -1753,6 +1853,8 @@ describe('model-comparison-charts', () => {
       scatter: { ...DEFAULT_FIGURE_STYLE.scatter, ...scatter },
       profile: { ...DEFAULT_FIGURE_STYLE.profile, ...profile },
       numbers: DEFAULT_FIGURE_STYLE.numbers,
+      appearance: DEFAULT_FIGURE_STYLE.appearance,
+      table: DEFAULT_FIGURE_STYLE.table,
     });
 
     const noteTexts = (spec: { chrome: { notes: readonly { text: string }[] } }): string[] =>
@@ -3060,5 +3162,422 @@ describe('the automatic title break on a real chart', () => {
       const two = mount(spec, 420, height, 2);
       expect(titleText(two.scales['y'])).withContext(String(height)).toEqual(titleText(one.scales['y']));
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// The figure theme: colours, fonts and the plot frame
+// ---------------------------------------------------------------------------------------------
+
+describe('the figure theme in the charts', () => {
+  const LATO = '"Lato", system-ui, sans-serif';
+
+  interface FontProbe {
+    family?: string;
+    weight?: number | string;
+    size?: number;
+  }
+
+  interface ThemedScaleProbe {
+    title?: { color?: string; font?: FontProbe };
+    ticks?: { color?: string; font?: FontProbe };
+    grid?: { color?: string };
+    border?: { color?: string };
+  }
+
+  function themedScale(config: unknown, axis: 'x' | 'y'): ThemedScaleProbe {
+    return (config as { options?: { scales?: Record<string, ThemedScaleProbe> } }).options?.scales?.[axis] ?? {};
+  }
+
+  function pluginsOf(config: unknown): Record<string, Record<string, unknown> | undefined> {
+    return (config as { options: { plugins: Record<string, Record<string, unknown> | undefined> } }).options.plugins;
+  }
+
+  function legendLabels(config: unknown): Record<string, unknown> & { font?: FontProbe } {
+    return (pluginsOf(config)['legend'] as { labels: Record<string, unknown> & { font?: FontProbe } }).labels;
+  }
+
+  function datalabelsFont(config: unknown): FontProbe | undefined {
+    return (pluginsOf(config)['datalabels'] as { font?: FontProbe }).font;
+  }
+
+  function directOptions(config: unknown): DirectLabelPluginOptions {
+    return pluginsOf(config)[directLabelPlugin.id] as unknown as DirectLabelPluginOptions;
+  }
+
+  function styled(
+    appearance: Partial<FigureAppearanceStyle>,
+    bar: Partial<BarFigureStyle> = {},
+    scatter: Partial<ScatterFigureStyle> = {},
+  ): FigureStyle {
+    return {
+      ...DEFAULT_FIGURE_STYLE,
+      bar: { ...DEFAULT_FIGURE_STYLE.bar, ...bar },
+      scatter: { ...DEFAULT_FIGURE_STYLE.scatter, ...scatter },
+      appearance: { ...DEFAULT_APPEARANCE_STYLE, ...appearance },
+    };
+  }
+
+  function figuresWith(options: Partial<FigureSetOptions> = {}) {
+    return buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT, ...options });
+  }
+
+  /** Every configuration and plugin list, with callbacks reduced to a marker so two builds compare as text. */
+  function snapshot(figures: ReturnType<typeof buildComparisonFigures>): string {
+    return JSON.stringify(
+      allSpecs(figures).map((spec) => ({ id: spec.id, config: spec.config, plugins: spec.plugins.map((plugin) => plugin.id) })),
+      (_key, value: unknown) => (typeof value === 'function' ? '[function]' : value),
+    );
+  }
+
+  describe('the default output', () => {
+    const extra: Partial<FigureSetOptions> = { directLabels: true, inlineValues: true, selectedKeys: ['A'], highlightedKey: 'B' };
+
+    it('is the same with no theme, the default style, and the dark theme passed explicitly', () => {
+      const bare = figuresWith(extra);
+      expect(snapshot(figuresWith({ ...extra, style: DEFAULT_FIGURE_STYLE }))).toBe(snapshot(bare));
+      expect(snapshot(figuresWith({ ...extra, theme: resolveFigureTheme() }))).toBe(snapshot(bare));
+      expect(snapshot(figuresWith({ ...extra, theme: resolveFigureTheme(DEFAULT_APPEARANCE_STYLE) }))).toBe(snapshot(bare));
+    });
+
+    it('sets no family, weight or colour key where none was set before a theme existed', () => {
+      const figures = figuresWith();
+      const labelled = figuresWith({ directLabels: true });
+
+      const scatterX = themedScale(figures.qualitySpeed.config, 'x');
+      expect(scatterX.ticks?.font).toEqual({ family: LATO, size: 11 });
+      expect(scatterX.title?.font).toEqual({ size: 12 });
+      expect('font' in legendLabels(figures.qualitySpeed.config)).toBeFalse();
+      expect(Object.keys(pluginsOf(figures.qualitySpeed.config))).toEqual(['legend', 'tooltip', 'datalabels']);
+      expect(Object.keys(directOptions(labelled.qualitySpeed.config)))
+        .toEqual(['blocks', 'highlightedIndex', 'fontSizePx', 'markRadiusPx', 'avoidWhiskers']);
+
+      const panel = figures.smallMultiples.quality.config;
+      expect(themedScale(panel, 'x').ticks?.font).toEqual({ family: LATO, size: 11 });
+      expect(themedScale(panel, 'x').title?.font).toEqual({ size: 12 });
+      expect(themedScale(panel, 'y').title?.font).toEqual({ size: 12 });
+      expect(datalabelsFont(panel)).toEqual({ size: 11 });
+      expect(Object.keys(pluginsOf(panel))).toEqual(['legend', 'tooltip', 'datalabels']);
+
+      const profile = figures.profile.config;
+      expect(themedScale(profile, 'y').title?.font).toEqual({ size: 12 });
+      expect(legendLabels(profile)).toEqual({ color: CHART_INK.secondary, usePointStyle: true });
+    });
+  });
+
+  describe('the light theme', () => {
+    const light = styled({ theme: 'light' });
+    const theme = resolveFigureTheme(light.appearance);
+
+    it('reaches the surface, the inks, the gridlines and the axis baseline', () => {
+      const figures = figuresWith({ style: light });
+      const x = themedScale(figures.qualitySpeed.config, 'x');
+      expect(x.ticks?.color).toBe(theme.chart.inkMuted);
+      expect(x.ticks?.color).not.toBe(CHART_INK.muted);
+      expect(x.grid?.color).toBe(theme.chart.gridline);
+      expect(x.border?.color).toBe(theme.chart.baseline);
+      expect(x.title?.color).toBe(theme.chart.inkSecondary);
+      // A solid mark wears a ring of the surface it sits on.
+      expect(datasetsOf(figures.qualitySpeed.config)[1]['borderColor']).toBe('#ffffff');
+      expect(legendLabels(figures.qualitySpeed.config)['color']).toBe(theme.chart.inkSecondary);
+
+      const panel = figures.smallMultiples.quality.config;
+      expect(themedScale(panel, 'x').ticks?.color).toBe(theme.chart.inkSecondary);
+      expect(themedScale(panel, 'y').ticks?.color).toBe(theme.chart.inkMuted);
+      expect(themedScale(panel, 'y').grid?.color).toBe(theme.chart.gridline);
+      expect((pluginsOf(panel)['datalabels'] as { color?: string }).color).toBe(theme.chart.inkSecondary);
+
+      const profile = datasetsOf(figures.profile.config);
+      expect(profile.every((dataset) => dataset['pointBorderColor'] === '#ffffff')).toBeTrue();
+      expect(profile.every((dataset) => dataset['borderColor'] === theme.chart.deEmphasisStroke)).toBeTrue();
+    });
+
+    it('gives the glyphs and the three panels the light hues', () => {
+      const figures = figuresWith({ style: light });
+      expect(PROFILE_FIXTURE.map((entry) => glyphFor(figures.glyphs, entry.key).hue)).toEqual([...CATEGORICAL_PALETTE_LIGHT]);
+      expect(datasetsOf(figures.smallMultiples.quality.config)[0]['backgroundColor']).toEqual(Array(3).fill('#2a78d6'));
+      expect(datasetsOf(figures.smallMultiples.speed.config)[0]['backgroundColor']).toEqual(Array(3).fill('#eb6834'));
+      expect(datasetsOf(figures.smallMultiples.cost.config)[0]['backgroundColor']).toEqual(Array(3).fill('#18a070'));
+    });
+
+    it('marks emphasis in the light accent and the rest in the light de-emphasis', () => {
+      const figures = figuresWith({ style: light, selectedKeys: ['A'], highlightedKey: 'A' });
+      const bars = datasetsOf(figures.smallMultiples.quality.config)[0];
+      expect(bars['backgroundColor']).toEqual(['#9a6b12', theme.chart.deEmphasisFill, theme.chart.deEmphasisFill]);
+      expect(bars['borderColor']).toEqual(['#9a6b12', theme.chart.deEmphasisStroke, theme.chart.deEmphasisStroke]);
+      expect(datasetsOf(figures.qualitySpeed.config)[0]['borderColor']).toBe(theme.chart.accent);
+      // One emphasised model keeps its own identity hue on the profile.
+      expect(datasetsOf(figures.profile.config)[0]['borderColor']).toBe(CATEGORICAL_PALETTE_LIGHT[0]);
+    });
+
+    it('hands the plugins their colours through the chart options', () => {
+      const figures = figuresWith({ style: light, directLabels: true });
+      const scatter = pluginsOf(figures.qualitySpeed.config);
+      expect(scatter[errorBarPlugin.id]).toEqual({ color: theme.chart.inkMuted });
+      expect(scatter[dominatedRegionPlugin.id]).toEqual({ fill: 'rgba(11, 11, 11, 0.04)' });
+      const direct = directOptions(figures.qualitySpeed.config);
+      expect(direct.surfaceColor).toBe('#ffffff');
+      expect(direct.accentColor).toBe(theme.chart.accent);
+      expect(direct.inkColor).toBe(theme.chart.inkSecondary);
+      expect(direct.mutedColor).toBe(theme.chart.inkMuted);
+      expect(pluginsOf(figures.smallMultiples.cost.config)[errorBarPlugin.id]).toEqual({ color: theme.chart.inkMuted });
+    });
+  });
+
+  it('carries only the colours that differ from the dark defaults', () => {
+    const custom = styled({ background: 'custom', backgroundColor: '#202020' });
+    const figures = figuresWith({ style: custom, directLabels: true });
+    expect(datasetsOf(figures.qualitySpeed.config)[1]['borderColor']).toBe('#202020');
+    const direct = directOptions(figures.qualitySpeed.config);
+    expect(direct.surfaceColor).toBe('#202020');
+    expect('accentColor' in direct).toBeFalse();
+    expect('inkColor' in direct).toBeFalse();
+    expect(pluginsOf(figures.qualitySpeed.config)[errorBarPlugin.id]).toBeUndefined();
+  });
+
+  describe('the plugins draw in the colours they are given', () => {
+    it('strokes the whiskers in the option colour', () => {
+      const strokes: unknown[] = [];
+      const ctx = {
+        save: () => undefined,
+        restore: () => undefined,
+        beginPath: () => undefined,
+        moveTo: () => undefined,
+        lineTo: () => undefined,
+        stroke: () => {
+          strokes.push(ctx.strokeStyle);
+        },
+        strokeStyle: '',
+        lineWidth: 0,
+      };
+      const scale = { type: 'linear', min: 0, getPixelForValue: (value: number) => value };
+      const chart = {
+        ctx,
+        chartArea: { left: 0, top: 0, right: 100, bottom: 100 },
+        data: { datasets: [{ data: [{ x: 1, y: 10, yErrLow: 1, yErrHigh: 1 }] }] },
+        scales: { x: scale, y: scale },
+        getDatasetMeta: () => ({ hidden: false, xAxisID: 'x', yAxisID: 'y', data: [{ x: 5, y: 5 }] }),
+      };
+      errorBarPlugin.afterDatasetsDraw?.(chart as unknown as Chart, {} as never, { color: '#6b6a66' } as never, false);
+      expect(strokes).toEqual(['#6b6a66']);
+    });
+
+    it('fills the dominated region in the option fill', () => {
+      const fills: unknown[] = [];
+      const noop = (): void => undefined;
+      const ctx = {
+        save: noop,
+        restore: noop,
+        beginPath: noop,
+        rect: noop,
+        clip: noop,
+        moveTo: noop,
+        lineTo: noop,
+        closePath: noop,
+        fill: () => {
+          fills.push(ctx.fillStyle);
+        },
+        fillStyle: '',
+      };
+      const chart = {
+        ctx,
+        chartArea: { left: 0, top: 0, right: 400, bottom: 300 },
+        data: { datasets: [{ label: 'A' }, { label: 'Pareto frontier' }] },
+        getDatasetMeta: () => ({ hidden: false, data: [{ x: 400, y: 50 }, { x: 100, y: 50 }, { x: 100, y: 300 }] }),
+      };
+      dominatedRegionPlugin.beforeDatasetsDraw?.(chart as unknown as Chart, {} as never, { fill: 'rgba(11, 11, 11, 0.04)' } as never);
+      expect(fills).toEqual(['rgba(11, 11, 11, 0.04)']);
+    });
+
+    it('draws the direct-label plates, names and leaders in the option colours', () => {
+      const fills: unknown[] = [];
+      const rectFills: unknown[] = [];
+      const strokes: unknown[] = [];
+      const noop = (): void => undefined;
+      const ctx = {
+        save: noop,
+        restore: noop,
+        beginPath: noop,
+        moveTo: noop,
+        lineTo: noop,
+        stroke: () => {
+          strokes.push(ctx.strokeStyle);
+        },
+        fillRect: () => {
+          rectFills.push(ctx.fillStyle);
+        },
+        fillText: () => {
+          fills.push(ctx.fillStyle);
+        },
+        measureText: (text: string) => ({ width: text.length * 6 }),
+        strokeStyle: '',
+        fillStyle: '',
+        globalAlpha: 1,
+        lineWidth: 0,
+        font: '',
+        textBaseline: '',
+        textAlign: '',
+      };
+      const marks = [{ x: 100, y: 100 }, { x: 200, y: 180 }];
+      const chart = {
+        ctx,
+        chartArea: { left: 0, top: 0, right: 400, bottom: 300 },
+        data: { datasets: marks.map(() => ({ data: [] })) },
+        getDatasetMeta: (index: number) => ({ hidden: false, data: marks[index] ? [marks[index]] : [] }),
+      };
+      const options: DirectLabelPluginOptions = {
+        blocks: [
+          { name: 'Model A', values: [], hue: '#2a78d6' },
+          { name: 'Model B', values: [], hue: '#eb6834' },
+        ],
+        highlightedIndex: 1,
+        surfaceColor: '#ffffff',
+        accentColor: '#9a6b12',
+        inkColor: '#52514e',
+        mutedColor: '#6b6a66',
+      };
+      directLabelPlugin.afterDatasetsDraw?.(chart as unknown as Chart, {} as never, options as never, false);
+
+      expect(rectFills).toContain('#ffffff');
+      expect(rectFills).not.toContain(CHART_SURFACE);
+      expect(fills).toContain('#9a6b12');
+      expect(fills).toContain('#52514e');
+      expect(fills).not.toContain(ACCENT);
+      expect(strokes.every((stroke) => stroke === '#6b6a66')).toBeTrue();
+    });
+  });
+
+  describe('fonts', () => {
+    const inter = figureFont('inter').stack;
+
+    it('sets a bundled family on ticks, axis titles, legends, value labels and direct labels', () => {
+      const style = styled({ fontFamily: 'inter' });
+      const figures = figuresWith({ style });
+      const labelled = figuresWith({ style, directLabels: true });
+
+      const scatterX = themedScale(figures.qualitySpeed.config, 'x');
+      expect(scatterX.ticks?.font?.family).toBe(inter);
+      expect(scatterX.title?.font?.family).toBe(inter);
+      expect(legendLabels(figures.qualitySpeed.config).font?.family).toBe(inter);
+      expect(directOptions(labelled.qualitySpeed.config).fontFamily).toBe(inter);
+
+      const panel = figures.smallMultiples.quality.config;
+      expect(themedScale(panel, 'x').ticks?.font?.family).toBe(inter);
+      expect(themedScale(panel, 'x').title?.font?.family).toBe(inter);
+      expect(themedScale(panel, 'y').ticks?.font?.family).toBe(inter);
+      expect(themedScale(panel, 'y').title?.font?.family).toBe(inter);
+      expect(datalabelsFont(panel)?.family).toBe(inter);
+
+      const profile = figures.profile.config;
+      expect(themedScale(profile, 'x').ticks?.font?.family).toBe(inter);
+      expect(themedScale(profile, 'y').title?.font?.family).toBe(inter);
+      expect(legendLabels(profile).font?.family).toBe(inter);
+
+      // At the default weights nothing carries a weight key.
+      expect(scatterX.ticks?.font?.weight).toBeUndefined();
+      expect(scatterX.title?.font?.weight).toBeUndefined();
+      expect(datalabelsFont(panel)?.weight).toBeUndefined();
+    });
+
+    it('draws value labels, legends and direct-label names in the label weight, and ticks at 400', () => {
+      const style = styled({ labelWeight: 600 });
+      const figures = figuresWith({ style });
+      const labelled = figuresWith({ style, directLabels: true });
+
+      expect(datalabelsFont(figures.smallMultiples.speed.config)).toEqual({ size: 11, weight: 600 });
+      expect(legendLabels(figures.qualitySpeed.config).font).toEqual({ weight: 600 });
+      expect(legendLabels(figures.profile.config).font).toEqual({ weight: 600 });
+      expect(directOptions(labelled.qualitySpeed.config).nameFontWeight).toBe(600);
+      expect('fontFamily' in directOptions(labelled.qualitySpeed.config)).toBeFalse();
+
+      const scatterX = themedScale(figures.qualitySpeed.config, 'x');
+      expect(scatterX.ticks?.font).toEqual({ family: LATO, size: 11 });
+      expect(scatterX.title?.font).toEqual({ size: 12 });
+    });
+
+    it('draws each family\'s axis titles in its own axis title weight, and the profile\'s at 400', () => {
+      const figures = figuresWith({ style: styled({}, { axisTitleWeight: 700 }, { axisTitleWeight: 500 }) });
+
+      const panel = figures.smallMultiples.cost.config;
+      expect(themedScale(panel, 'x').title?.font).toEqual({ size: 12, weight: 700 });
+      expect(themedScale(panel, 'y').title?.font).toEqual({ size: 12, weight: 700 });
+      expect(themedScale(panel, 'y').ticks?.font?.weight).toBeUndefined();
+
+      expect(themedScale(figures.speedCost.config, 'x').title?.font).toEqual({ size: 12, weight: 500 });
+      expect(themedScale(figures.speedCost.config, 'y').title?.font).toEqual({ size: 12, weight: 500 });
+      expect(themedScale(figures.speedCost.config, 'y').ticks?.font?.weight).toBeUndefined();
+
+      expect(themedScale(figures.profile.config, 'y').title?.font).toEqual({ size: 12 });
+    });
+
+    it('measures a plate in the family and the name weight it is given', () => {
+      const fonts: string[] = [];
+      const ctx = {
+        set font(value: string) {
+          fonts.push(value);
+        },
+        get font(): string {
+          return fonts[fonts.length - 1] ?? '';
+        },
+        measureText: (text: string) => ({ width: text.length * 6 }),
+      };
+      const block: DirectLabelBlock = { name: 'Model A', values: [{ label: 'Intelligence', text: '82.4' }], hue: '#3987e5' };
+
+      measureDirectLabelBlock(ctx as unknown as CanvasRenderingContext2D, block, 11);
+      expect(fonts).toEqual([`11px ${LATO}`, `10px ${LATO}`]);
+
+      fonts.length = 0;
+      measureDirectLabelBlock(ctx as unknown as CanvasRenderingContext2D, block, 11, { family: inter, nameWeight: 600 });
+      expect(fonts).toEqual([`600 11px ${inter}`, `10px ${inter}`]);
+    });
+  });
+
+  describe('the plot frame', () => {
+    const scatters = (figures: ReturnType<typeof buildComparisonFigures>) =>
+      [figures.qualitySpeed, figures.qualityCost, figures.speedCost];
+    const panels = (figures: ReturnType<typeof buildComparisonFigures>) =>
+      [figures.smallMultiples.quality, figures.smallMultiples.speed, figures.smallMultiples.cost];
+
+    it('is off by default', () => {
+      const figures = figuresWith();
+      expect(allSpecs(figures).some((spec) => spec.plugins.includes(plotFramePlugin))).toBeFalse();
+      expect(allSpecs(figures).some((spec) => pluginsOf(spec.config)[plotFramePlugin.id] !== undefined)).toBeFalse();
+    });
+
+    it('frames the bar panels from the bar style and the scatters from the trade-off style', () => {
+      const barFramed = figuresWith({ style: styled({}, { plotFrame: true }) });
+      expect(panels(barFramed).every((spec) => spec.plugins.includes(plotFramePlugin))).toBeTrue();
+      expect(scatters(barFramed).some((spec) => spec.plugins.includes(plotFramePlugin))).toBeFalse();
+      expect(pluginsOf(barFramed.smallMultiples.speed.config)[plotFramePlugin.id]).toEqual({ color: CHART_INK.baseline });
+
+      const scatterFramed = figuresWith({ style: styled({}, {}, { plotFrame: true }) });
+      expect(scatters(scatterFramed).every((spec) => spec.plugins.includes(plotFramePlugin))).toBeTrue();
+      expect(panels(scatterFramed).some((spec) => spec.plugins.includes(plotFramePlugin))).toBeFalse();
+    });
+
+    it('never frames the profile, and takes the theme\'s frame colour', () => {
+      const style = styled({ theme: 'light' }, { plotFrame: true }, { plotFrame: true });
+      const figures = figuresWith({ style });
+      expect(figures.profile.plugins).not.toContain(plotFramePlugin);
+      expect(pluginsOf(figures.profile.config)[plotFramePlugin.id]).toBeUndefined();
+      expect(pluginsOf(figures.qualityCost.config)[plotFramePlugin.id])
+        .toEqual({ color: resolveFigureTheme(style.appearance).frameColor });
+    });
+
+    it('strokes a 1 px hairline around the plot area', () => {
+      const calls: { op: string; args: unknown[]; strokeStyle: string; lineWidth: number }[] = [];
+      const ctx = {
+        save: () => undefined,
+        restore: () => undefined,
+        strokeRect: (...args: unknown[]) => {
+          calls.push({ op: 'strokeRect', args, strokeStyle: ctx.strokeStyle, lineWidth: ctx.lineWidth });
+        },
+        strokeStyle: '',
+        lineWidth: 0,
+      };
+      const chart = { ctx, chartArea: { left: 10, top: 20, right: 400, bottom: 300 } };
+      plotFramePlugin.afterDraw?.(chart as unknown as Chart, {} as never, { color: '#c3c2b7' } as never);
+      expect(calls).toEqual([{ op: 'strokeRect', args: [10.5, 20.5, 389, 279], strokeStyle: '#c3c2b7', lineWidth: 1 }]);
+    });
   });
 });

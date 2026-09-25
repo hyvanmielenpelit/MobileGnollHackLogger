@@ -176,49 +176,68 @@
   gap: 8px 12px;
 }
 
-.fsp-choice {
+/* One colour: a visible label, a native swatch and its mirrored hex field, wrapping on a narrow
+   sidebar. The swatch is native and RGB only (Baseline), at least 24 x 24 px per WCAG 2.5.8. */
+.fsp-color-row {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 6px 18px;
-  margin: 0;
-  padding: 0;
-  border: 0;
+  gap: 8px;
   min-width: 0;
 
-  > legend {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    width: 100%;
-    margin-bottom: 4px;
-    padding: 0;
+  > label {
     font-size: 13px;
-  }
-
-  &:disabled {
-    opacity: 0.55;
+    min-width: 8em;
   }
 }
 
-.fsp-radio {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
+.fsp-color-swatch {
+  width: 28px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--border-glass);
+  border-radius: 4px;
+  background: transparent;
   cursor: pointer;
-  user-select: none;
+  color-scheme: dark;
 
-  input[type="radio"] {
-    width: 16px;
-    height: 16px;
-    margin: 0;
-    accent-color: var(--primary-color, #d4af37);
-
-    &:focus-visible {
-      outline: 2px solid var(--primary-color, #d4af37);
-      outline-offset: 2px;
-    }
+  &:focus-visible {
+    outline: 2px solid var(--primary-color, #d4af37);
+    outline-offset: 2px;
   }
+}
+
+.fsp-color-hex {
+  width: 9em;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+  text-transform: lowercase;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color, #d4af37);
+    outline-offset: 2px;
+  }
+
+  &[aria-invalid="true"] {
+    border-color: #ff6b6b;
+  }
+}
+
+.fsp-color-error {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: #ff6b6b;
+}
+
+/* The Text colour section's faint-colour warnings: visible prose, not colour alone. */
+.fsp-warnings {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #ffb74d;
 }
 
 /* One Number format row: the label over a full-width select, closer together than the rows. */

@@ -33,18 +33,35 @@ import {
   formatComputedAt
 } from './figure-chrome';
 import {
-  DEFAULT_FIGURE_RESOLUTION_ID,
+  FIT_RESOLUTION_ID,
   FigureSizeSettings,
   defaultFigureSize,
+  defaultTableImageSize,
   readStoredFigureSize,
+  readStoredTableImageSize,
+  resolveSizeDensity,
+  resolveSizeResolution,
   sameFigureSize,
-  writeStoredFigureSize
+  sizeDimensionsLabel,
+  sizeErrors,
+  sizeReadout,
+  writeStoredFigureSize,
+  writeStoredTableImageSize
 } from './figure-size';
-import { DEFAULT_FIGURE_STYLE, FigureStyle, normalizeFigureStyle } from './figure-style';
+import { DEFAULT_FIGURE_STYLE, FigureAppearanceStyle, FigureStyle, TableImageStyle, normalizeFigureStyle } from './figure-style';
 import { FigureStylePanelComponent, FigureStylePanelKind } from './figure-style-panel.component';
-import { exactFilter, TableState } from '../../../shared/data-table/table-state';
+import { ResolvedFigureTheme, resolveFigureTheme } from './figure-theme';
+import { figureFont } from './figure-fonts';
+import { ensureFigureFont } from './figure-font-loader';
+import { ExportSizeSectionComponent } from './export-size-section.component';
+import { TableSettingsPanelComponent } from './table-settings-panel.component';
+import { exactFilter, SortAccessor, TableState } from '../../../shared/data-table/table-state';
 import { SortHeaderComponent } from '../../../shared/data-table/sort-header.component';
 import { TablePagerComponent } from '../../../shared/data-table/table-pager.component';
+import {
+  ReorderableListComponent,
+  ReorderableListItem
+} from '../../../shared/reorderable-list/reorderable-list.component';
 import {
   BarOrientation,
   ComparisonFigureSet,
@@ -65,6 +82,7 @@ import {
   buildNumberSamples,
   formatQuestionsAsked,
   glyphFor,
+  modelOrderKeys,
   normalizeProfile
 } from './model-comparison-charts';
 import type { NumberSamples } from './measure-format';
@@ -84,15 +102,8 @@ import {
 } from './model-comparison.models';
 import {
   DEFAULT_WEBP_QUALITY,
-  FIGURE_EXPORT_DENSITY_PRESETS,
-  FIGURE_EXPORT_MAX_DENSITY_PERCENT,
-  FIGURE_EXPORT_MAX_DIMENSION,
   FIGURE_EXPORT_MAX_TEXT_SCALE_PERCENT,
-  FIGURE_EXPORT_MIN_DENSITY_PERCENT,
-  FIGURE_EXPORT_MIN_DIMENSION,
   FIGURE_EXPORT_MIN_TEXT_SCALE_PERCENT,
-  FIGURE_EXPORT_PRESETS,
-  FIGURE_EXPORT_PRESET_GROUPS,
   FigureArchiveEntry,
   FigureExportFormat,
   FigureExportLayout,
@@ -103,7 +114,6 @@ import {
   WEBP_QUALITY_OPTIONS,
   WebpQuality,
   aspectRatioLabel,
-  bitmapRefusal,
   buildFigureArchive,
   composeFigureImage,
   copyImageToClipboard,
@@ -112,7 +122,6 @@ import {
   encodeFigureImage,
   figureArchiveFilename,
   figureExportFilename,
-  layoutBoxFor,
   previewLayoutFor,
   renderPlotOffscreen,
   resolveFigureLayout,
@@ -141,28 +150,41 @@ import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-
 import { ToastComponent, ToastNotice } from '../../../shared/toast/toast.component';
 import { showReasoningBadge } from '../../../utils/model-badge-format.util';
 import {
-  COMPARISON_TABLE_COLUMNS,
+  ComparisonTableCell,
+  ComparisonTableModel,
   ComparisonTableProvenance,
-  TableExportFormat,
+  DEFAULT_TABLE_COLUMNS,
+  TABLE_DISPLAY_COLUMNS,
+  TableColumnConfig,
+  TableDisplayColumn,
+  TableExportResult,
+  TableFileFormat,
+  TableImageOptions,
+  TableImageSize,
+  TableModelFlavour,
   buildComparisonTableModel,
   comparisonStateLabel,
+  comparisonTableCells,
+  composeTableImage,
   encodeComparisonTable,
   formatIndexText,
   formatMsText,
   formatUsdText,
+  measureTableImage,
+  normalizeTableColumnConfig,
   populatedColumnKeys,
-  tableExportFilename,
-  toMarkdown
+  resolveTableImageLayout,
+  shownTableColumns,
+  tableClipboardPayload,
+  tableDisplayColumn,
+  tableExportFilename
 } from './table-export';
 
 /**
- * Which wizard step is on screen. Four, in a fixed order: sources, then filters, then the table,
- * then the figures.
- *
- * The table comes before the figures deliberately. It is the artefact that carries the numbers, so
- * a reader who steps through in order meets the record before the pictures drawn from it.
+ * Which wizard step is on screen. Three, in a fixed order: sources, then comparability and
+ * filters, then the charts and the table.
  */
-export type ComparisonWizardStep = 1 | 2 | 3 | 4;
+export type ComparisonWizardStep = 1 | 2 | 3;
 
 /**
  * Every wizard step with its title and a one-line summary of what it is for.
@@ -174,8 +196,7 @@ export const COMPARISON_WIZARD_STEPS: readonly {
 }[] = [
   { step: 1, title: 'Sources', summary: 'Choose the runs or groups to compare.' },
   { step: 2, title: 'Comparability & filters', summary: 'See which of them can be charted together.' },
-  { step: 3, title: 'Table', summary: 'Read the results side by side.' },
-  { step: 4, title: 'Figures', summary: 'View the charts and export them.' }
+  { step: 3, title: 'Charts & table', summary: 'View the charts and the table, and export them.' }
 ];
 
 /** How long a comparison may run before the footer offers the ways out. */
@@ -185,22 +206,86 @@ const SLOW_COMPARISON_MS = 15_000;
 export const FIGURE_STYLE_STORAGE_KEY = 'overseer.modelComparison.figureStyle';
 
 /**
- * Step 4's two views of the figures, both composed by the export pipeline: every figure, or one
- * figure with zoom and pan.
+ * Where the table's column configuration is kept, per browser, as `{ version: 1, order, shown }`.
+ * Read and written in `try/catch`, and repaired on read; never required.
  */
-export type FigureViewTab = 'all' | 'single';
-
-/** The figure settings sidebar's three tabs, in order. */
-export type FigureSidebarTab = 'emphasis' | 'style' | 'download';
+export const TABLE_COLUMNS_STORAGE_KEY = 'overseer.modelComparison.tableColumns';
 
 /**
- * Where the sidebar's collapsed state and tab, the figure view and whether the Style tab's Figure
- * size section is open are kept, per browser, as `{ version: 1, collapsed, tab, view,
- * figureSizeOpen }`. Read and written in `try/catch`; never required.
+ * Where the Download tab's formats are kept, per browser, as `{ version: 1, tableFormat,
+ * imageFormat, webpQuality }`. Read and written in `try/catch`, validated field by field.
+ */
+export const DOWNLOAD_SETTINGS_STORAGE_KEY = 'overseer.modelComparison.download';
+
+/**
+ * Step 3's four views: every chart, one chart with zoom and pan, the sortable table, and the table
+ * image with zoom and pan. The charts and the table image are composed by the export pipeline.
+ */
+export type FigureViewTab = 'all' | 'single' | 'table' | 'tablePreview';
+
+/** The two views that show charts. */
+export function isChartView(tab: FigureViewTab): boolean {
+  return tab === 'all' || tab === 'single';
+}
+
+/** The two views that show the table. */
+export function isTableView(tab: FigureViewTab): boolean {
+  return tab === 'table' || tab === 'tablePreview';
+}
+
+/** The settings sidebar's tabs. Which of them are shown depends on the view group. */
+export type FigureSidebarTab = 'data' | 'theme' | 'charts' | 'table' | 'download';
+
+/** One sidebar tab as the tab row renders it. */
+export interface FigureSidebarTabOption {
+  readonly id: FigureSidebarTab;
+  readonly label: string;
+}
+
+/** The chart views' tabs, in order. */
+export const CHART_VIEW_SIDEBAR_TABS: readonly FigureSidebarTabOption[] = [
+  { id: 'data', label: 'Data' },
+  { id: 'theme', label: 'Theme' },
+  { id: 'charts', label: 'Charts' },
+  { id: 'download', label: 'Download' }
+];
+
+/** The table views' tabs, in order: the chart views' with Table in place of Charts. */
+export const TABLE_VIEW_SIDEBAR_TABS: readonly FigureSidebarTabOption[] = [
+  { id: 'data', label: 'Data' },
+  { id: 'theme', label: 'Theme' },
+  { id: 'table', label: 'Table' },
+  { id: 'download', label: 'Download' }
+];
+
+/**
+ * The tab to show with a view: the chosen one, except that Charts and Table swap for each other
+ * across the two view groups. Data, Theme and Download are in both sets and never change.
+ */
+export function sidebarTabForView(tab: FigureSidebarTab, view: FigureViewTab): FigureSidebarTab {
+  if (isTableView(view)) {
+    return tab === 'charts' ? 'table' : tab;
+  }
+  return tab === 'table' ? 'charts' : tab;
+}
+
+/**
+ * Where the sidebar's collapsed state and tab, the view and the Download tab's section open states
+ * are kept, per browser, as `{ version: 1, collapsed, tab, view, figureSizeOpen,
+ * tableImageSizeOpen, imageFormatOpen }`. Read and written in `try/catch`; never required.
  */
 export const FIGURE_SIDEBAR_STORAGE_KEY = 'overseer.modelComparison.figureSidebar';
 
-const FIGURE_SIDEBAR_TABS: readonly FigureSidebarTab[] = ['emphasis', 'style', 'download'];
+const FIGURE_SIDEBAR_TABS: readonly FigureSidebarTab[] = ['data', 'theme', 'charts', 'table', 'download'];
+
+const FIGURE_VIEW_TABS: readonly FigureViewTab[] = ['all', 'single', 'table', 'tablePreview'];
+
+/** Earlier stored tab names: Emphasis became Data, Style became Charts, Export became Download. */
+const MIGRATED_SIDEBAR_TABS: Readonly<Record<string, FigureSidebarTab>> = {
+  emphasis: 'data',
+  style: 'charts',
+  export: 'download'
+};
 
 /** The stored workspace layout, field by field. */
 interface StoredFigureSidebar {
@@ -208,32 +293,102 @@ interface StoredFigureSidebar {
   readonly tab: FigureSidebarTab;
   readonly view: FigureViewTab;
   readonly figureSizeOpen: boolean;
+  readonly tableImageSizeOpen: boolean;
+  readonly imageFormatOpen: boolean;
 }
 
 /** The stored sidebar state, field by field; the default wherever storage is absent or unreadable. */
 function readStoredFigureSidebar(): StoredFigureSidebar {
-  const fallback: StoredFigureSidebar = { collapsed: false, tab: 'emphasis', view: 'all', figureSizeOpen: true };
+  const fallback: StoredFigureSidebar = {
+    collapsed: false, tab: 'data', view: 'all', figureSizeOpen: true, tableImageSizeOpen: true, imageFormatOpen: true
+  };
   try {
     const raw = localStorage.getItem(FIGURE_SIDEBAR_STORAGE_KEY);
     const stored: unknown = raw === null ? null : JSON.parse(raw);
     if (stored === null || typeof stored !== 'object') {
       return fallback;
     }
-    const { collapsed, tab: storedTab, view: storedView, figureSizeOpen } =
-      stored as { collapsed?: unknown; tab?: unknown; view?: unknown; figureSizeOpen?: unknown };
-    // 'export' is the Download tab's earlier stored name.
-    const tab = storedTab === 'export' ? 'download' : storedTab;
+    const { collapsed, tab: storedTab, view: storedView, figureSizeOpen, tableImageSizeOpen, imageFormatOpen } =
+      stored as {
+        collapsed?: unknown; tab?: unknown; view?: unknown;
+        figureSizeOpen?: unknown; tableImageSizeOpen?: unknown; imageFormatOpen?: unknown;
+      };
+    const tab = typeof storedTab === 'string' ? MIGRATED_SIDEBAR_TABS[storedTab] ?? storedTab : storedTab;
     // 'charts' and 'preview' are the All and Single views' earlier stored names.
     const view = storedView === 'charts' ? 'all' : storedView === 'preview' ? 'single' : storedView;
+    const flag = (value: unknown, otherwise: boolean): boolean => typeof value === 'boolean' ? value : otherwise;
     return {
-      collapsed: typeof collapsed === 'boolean' ? collapsed : fallback.collapsed,
+      collapsed: flag(collapsed, fallback.collapsed),
       tab: FIGURE_SIDEBAR_TABS.includes(tab as FigureSidebarTab) ? tab as FigureSidebarTab : fallback.tab,
-      view: view === 'all' || view === 'single' ? view : fallback.view,
-      figureSizeOpen: typeof figureSizeOpen === 'boolean' ? figureSizeOpen : fallback.figureSizeOpen
+      view: FIGURE_VIEW_TABS.includes(view as FigureViewTab) ? view as FigureViewTab : fallback.view,
+      figureSizeOpen: flag(figureSizeOpen, fallback.figureSizeOpen),
+      tableImageSizeOpen: flag(tableImageSizeOpen, fallback.tableImageSizeOpen),
+      imageFormatOpen: flag(imageFormatOpen, fallback.imageFormatOpen)
     };
   } catch {
     return fallback;
   }
+}
+
+/** The stored column configuration, repaired; today's eight columns wherever storage is absent or unreadable. */
+function readStoredTableColumns(): TableColumnConfig {
+  try {
+    const raw = localStorage.getItem(TABLE_COLUMNS_STORAGE_KEY);
+    return raw === null ? DEFAULT_TABLE_COLUMNS : normalizeTableColumnConfig(JSON.parse(raw));
+  } catch {
+    return DEFAULT_TABLE_COLUMNS;
+  }
+}
+
+/** The Download tab's formats, as stored. */
+interface StoredDownloadSettings {
+  readonly tableFormat: TableFileFormat;
+  readonly imageFormat: FigureExportFormat;
+  readonly webpQuality: WebpQuality;
+}
+
+const TABLE_FILE_FORMATS: readonly TableFileFormat[] = ['xlsx', 'csv', 'tsv', 'md', 'json', 'html', 'image'];
+
+/** The stored formats, field by field; Excel, PNG and 85 wherever a field is absent or unreadable. */
+function readStoredDownloadSettings(): StoredDownloadSettings {
+  const fallback: StoredDownloadSettings = { tableFormat: 'xlsx', imageFormat: 'png', webpQuality: DEFAULT_WEBP_QUALITY };
+  try {
+    const raw = localStorage.getItem(DOWNLOAD_SETTINGS_STORAGE_KEY);
+    const stored: unknown = raw === null ? null : JSON.parse(raw);
+    if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) {
+      return fallback;
+    }
+    const { tableFormat, imageFormat, webpQuality } =
+      stored as { tableFormat?: unknown; imageFormat?: unknown; webpQuality?: unknown };
+    return {
+      tableFormat: TABLE_FILE_FORMATS.includes(tableFormat as TableFileFormat)
+        ? tableFormat as TableFileFormat
+        : fallback.tableFormat,
+      imageFormat: imageFormat === 'png' || imageFormat === 'webp' ? imageFormat : fallback.imageFormat,
+      webpQuality: WEBP_QUALITY_OPTIONS.includes(webpQuality as WebpQuality)
+        ? webpQuality as WebpQuality
+        : fallback.webpQuality
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+/** The chart families the Charts tab styles; the Theme tab's appearance is not one of them. */
+type ChartStyleFamily = Exclude<FigureStylePanelKind, 'appearance'>;
+
+/** The filter each filterable display column carries, by display key. */
+const TABLE_COLUMN_FILTERS: Readonly<Record<string, string>> = { model: 'label', stateCol: 'state' };
+
+/** The TableState sort column of the model order, which no header carries. */
+const MODEL_ORDER_SORT = 'modelOrder';
+
+/** Every entry's cells, by part key, as `comparisonTableCells` builds them. */
+type EntryCells = Readonly<Record<string, ComparisonTableCell>>;
+
+/** A cell's raw value as a sort key: a flag sorts as 1 or 0, and an absent value last. */
+function sortKeyOf(raw: string | number | boolean | null): string | number | null {
+  return typeof raw === 'boolean' ? (raw ? 1 : 0) : raw;
 }
 
 /** The All tab's scroller padding, in CSS px; `.mc-all-viewport` in the stylesheet matches it. */
@@ -305,11 +460,11 @@ export interface ComparisonFigureCard {
  *
  * Three display rules here are load-bearing rather than cosmetic:
  *
- * 1. **The table has a step of its own, is never behind a toggle, and opens before the figures
- *    do.** A chart is far more persuasive than a table, and a reader will trust six figures
- *    without checking twenty-three comparability keys. The canvases are `role="img"` summaries;
- *    the table is the artefact that carries the numbers, the states and the differing keys, and
- *    its step opens over a set no figure can draw.
+ * 1. **The table is a view of the charts step, always available, and the one that opens over a
+ *    set no chart can draw.** A chart is far more persuasive than a table, and a reader will trust
+ *    six figures without checking twenty-three comparability keys. The canvases are `role="img"`
+ *    summaries; the table is the artefact that carries the numbers, the states and the differing
+ *    keys.
  * 2. **An excluded entry stays visible and stays explained.** The service refuses to return measures
  *    for one, so it can never reach a figure; dropping it from the view as well would make an
  *    unchartable model invisible, which is exactly how a reader concludes a set is comparable when
@@ -322,12 +477,16 @@ export interface ComparisonFigureCard {
  * set. Controls that decide which sources are in the request at all are a different stage of the
  * same task and belong to the source picker, next to the tables they scope — which is why suite
  * scope lives there and pricing basis, which changes only the cost arithmetic over an unchanged
- * set, lives here.
+ * set, lives here. How the charts measure and order the models is set beside them, in step 3's
+ * Data tab.
  */
 @Component({
   selector: 'app-benchmark-model-comparison',
   standalone: true,
-  imports: [CommonModule, FormsModule, SortHeaderComponent, TablePagerComponent, ProviderBadgeComponent, ToastComponent, FigureStylePanelComponent],
+  imports: [
+    CommonModule, FormsModule, SortHeaderComponent, TablePagerComponent, ProviderBadgeComponent, ToastComponent,
+    FigureStylePanelComponent, ExportSizeSectionComponent, TableSettingsPanelComponent, ReorderableListComponent
+  ],
   templateUrl: './model-comparison.component.html',
   styleUrls: ['./model-comparison.component.scss']
 })
@@ -432,12 +591,20 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   strictness: ComparabilityStrictness = 'all';
 
   /**
-   * P1's model order, shared by all three panels and by every other figure's series order.
+   * P1's model order, shared by all three panels, by every other figure's series order and by the
+   * table's rows until a column header is clicked.
    *
    * One control, not three: panels that sorted independently would stop a row meaning one model,
    * which is the whole reason the three are drawn as small multiples rather than separately.
    */
   sort: ModelSort = DEFAULT_MODEL_SORT;
+
+  /**
+   * The Custom order's entry keys, kept for the wizard's lifetime and never stored in the browser.
+   * Null until Custom is first chosen, which seeds it from the order in effect; kept while another
+   * key is chosen, so returning to Custom restores it.
+   */
+  customOrder: string[] | null = null;
 
   /**
    * Mean model time per question by default, not time to first token and not Speed Index.
@@ -472,8 +639,20 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** Draws each scatter mark's two measured values beside it, so an exported figure states them. */
   scatterInlineValues = true;
 
-  /** Bar and trade-off styling, applied to the page and to every export alike. */
+  /** Bar and trade-off styling, the theme and the table image's layout, applied to the page and to every export alike. */
   figureStyle: FigureStyle = DEFAULT_FIGURE_STYLE;
+
+  /**
+   * The theme resolved from `figureStyle.appearance`, once per rebuild or appearance change, and
+   * read by every chart, every figure's chrome and the table image.
+   */
+  figureTheme: ResolvedFigureTheme = resolveFigureTheme(DEFAULT_FIGURE_STYLE.appearance);
+
+  /** The appearance `figureTheme` was resolved from. */
+  private themedAppearance: FigureAppearanceStyle = DEFAULT_FIGURE_STYLE.appearance;
+
+  /** Whether the chosen font family loaded, for the Theme tab's status line. Empty for Overseer default. */
+  fontLoadStatus = '';
 
   /** Pending rebuild after a style change, so a range drag rebuilds once it pauses. */
   private styleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -498,7 +677,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   profileAxes: ProfileNormalization | null = null;
 
   /** What each family's Number format options preview on; replaced only by a rebuild. */
-  numberSamples: Readonly<Record<FigureStylePanelKind, NumberSamples>> = { bar: {}, scatter: {}, profile: {} };
+  numberSamples: Readonly<Record<ChartStyleFamily, NumberSamples>> = { bar: {}, scatter: {}, profile: {} };
 
   /** The hard ceiling the chart core enforces; the picker names it so the cap is never a surprise. */
   readonly maxPlottedEntries = MAX_PLOTTED_ENTRIES;
@@ -508,29 +687,90 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   private unsubscribeReducedMotion: (() => void) | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
-  /** The element `resizeObserver` watches; a new one, after step 4 is rendered again, is re-observed. */
+  /** The element `resizeObserver` watches; a new one, after the chart views are rendered again, is re-observed. */
   private observedChartsHost: HTMLElement | null = null;
 
+  // --- The model order, as the table and the Custom list read it ---
+
   /**
-   * Sort, filter and page state for the table view.
-   *
-   * State sorts on a rank rather than the label so the first click puts the entries a reader has to
-   * check — excluded, then degraded — at the top instead of ordering them alphabetically.
-   *
-   * The three timings share one column and one sort key, the mean model time per question: it is the
-   * figure the scoring profile targets, and the suite total is that mean multiplied by a constant
-   * item count. Sorting on the suite total or on TTFT P50 is available in the exported table, which
-   * carries every timing as a column of its own.
+   * Every entry's position in the model order, excluded and deselected ones included. Rebuilt only
+   * when the order, the measures or the entries change; the table's `modelOrder` sort reads it.
    */
-  readonly entryTable = new TableState<BenchmarkModelComparisonEntryDto>('state', 'desc').registerAccessors(
+  private modelOrderRank = new Map<string, number>();
+
+  /** Every entry key in the model order: the Custom list's rows. */
+  private modelOrderKeyList: readonly string[] = [];
+
+  /** What `modelOrderRank` was computed from, so a rebuild that changes none of it keeps it. */
+  private modelOrderInputs: {
+    readonly sort: ModelSort;
+    readonly speedMeasure: SpeedMeasure;
+    readonly costMeasure: CostMeasure;
+    readonly entries: readonly ModelComparisonEntry[];
+  } | null = null;
+
+  /** The Custom list's rows, rebuilt with the figures while Custom is chosen. */
+  customOrderItems: readonly ReorderableListItem[] = [];
+
+  /** Where the Custom list draws the plot cap's line, or null while every chartable entry is charted. */
+  customOrderDividerIndex: number | null = null;
+
+  /** Whether the Custom list already equals Intelligence Index, descending, where its reset has nothing to do. */
+  customOrderIsDefault = true;
+
+  // --- The table's cells and columns ---
+
+  /** Every entry's cells, by entry key, built once per comparison and read by the template, the sorts and every export. */
+  private tableCellsByKey = new Map<string, EntryCells>();
+
+  /** Every entry, by key, for the Custom list's rows. */
+  private entriesByKey = new Map<string, BenchmarkModelComparisonEntryDto>();
+
+  /** The entry array the two maps above were built from. */
+  private cellsSource: readonly BenchmarkModelComparisonEntryDto[] | null = null;
+
+  /**
+   * Which display columns are shown, and the order of all of them: one configuration for the
+   * Interactive table, the Table preview and every download and copy. Remembered per browser.
+   */
+  tableColumns: TableColumnConfig = readStoredTableColumns();
+
+  /** The shown display columns, in order; rebuilt only when the configuration changes. */
+  shownColumns: readonly TableDisplayColumn[] = shownTableColumns(this.tableColumns);
+
+  /** The shown display keys, which the combined renderers read to leave out a part shown on its own. */
+  shownColumnKeys: ReadonlySet<string> = new Set(this.shownColumns.map(column => column.key));
+
+  /** The table's generated caption: its shown columns, named. */
+  tableCaption = this.captionFor(this.shownColumns);
+
+  /** Display columns with no value on any row passing the filters, for the Table tab's `empty` tags. */
+  columnEmptyKeys: ReadonlySet<string> = new Set<string>();
+
+  /** The filters `columnEmptyKeys` was computed under, so a sort or a page change keeps it. */
+  private columnEmptySignature: string | null = null;
+
+  /** Why a filter was just cleared: its column was hidden. Cleared by the next column change. */
+  tableColumnsStatus = '';
+
+  /**
+   * Sort, filter and page state for the Interactive table.
+   *
+   * The rows open in the model order — the order the charts use — through the `modelOrder` sort,
+   * which no header carries; clicking a header sorts by that column instead, and *Use model order*
+   * returns to it. State is one header click away, and sorts on a rank rather than the label so
+   * the entries a reader has to check — excluded, then degraded — come first instead of
+   * alphabetically.
+   *
+   * Every sortable display column sorts by the raw value of its primary part, read from
+   * `tableCellsByKey`. The combined Timings column sorts by the mean model time per question: it is
+   * the figure the scoring profile targets, and the suite total is that mean times a constant item
+   * count; the other timings sort as columns of their own once shown.
+   */
+  readonly entryTable = new TableState<BenchmarkModelComparisonEntryDto>(MODEL_ORDER_SORT, 'asc').registerAccessors(
     {
-      label: e => e.label,
-      runCount: e => e.runCount,
-      state: e => this.stateOrder(e),
-      intelligenceIndex: e => e.quality?.pointEstimate ?? null,
-      modelTimeMeanMs: e => e.speed?.modelTimeMeanMs ?? null,
-      speedIndex: e => e.table?.meanSpeedIndex ?? null,
-      costPerQuestion: e => e.cost?.candidateCostPerQuestionUsd ?? null
+      [MODEL_ORDER_SORT]: e => this.modelOrderRank.get(e.key) ?? null,
+      ...this.displaySortAccessors()
     },
     {
       label: e => e.label,
@@ -547,6 +787,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       chartDefaults.set(this.chartsConfig.defaults);
     }
     this.figureStyle = this.readStoredFigureStyle();
+    // A stored bundled font starts loading now, so the first composition rarely waits for it.
+    if (this.figureStyle.appearance.fontFamily !== 'default') {
+      void this.loadFigureFont();
+    }
     this.unsubscribeReducedMotion = this.reducedMotion.subscribe(() => this.rebuild());
     this.rebuild();
   }
@@ -570,7 +814,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.emphasisKeys = [];
     this.highlightedKey = null;
     this.entryTable.page = 1;
+    this.reconcileCustomOrder();
     this.rebuild();
+    this.refreshColumnEmpty(true);
+    this.scheduleTableMeasure();
 
     // Not on the first change: that one is the initial binding, and step 1 is where the wizard
     // opens regardless of what the host already holds.
@@ -588,15 +835,14 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * The figure views' box lives inside the figure branch, so it does not exist on the pass that
-   * runs `ngAfterViewInit` for a set that starts empty or incomparable, and it is a new element each
-   * time step 4 is rendered again. The observer is attached whenever the element it watches is not
-   * the one on the page.
+   * The views' box lives inside step 3, so it does not exist on the pass that runs
+   * `ngAfterViewInit`, and it is a new element each time step 3 is rendered again. The observer is
+   * attached whenever the element it watches is not the one on the page.
    *
-   * Both views can leave the DOM or come back without a tab click — a refetch takes the figures
-   * away or returns them, and leaving step 4 removes them. Leaving tears down only unbound state,
-   * since a bound field changed inside this hook faults the check; returning re-attaches outside the
-   * check pass.
+   * The stage and the All tiles can leave the DOM or come back without a tab click — a refetch
+   * takes the charts away or returns them, and leaving step 3 removes them. Leaving tears down only
+   * unbound state, since a bound field changed inside this hook faults the check; returning
+   * re-attaches outside the check pass.
    */
   ngAfterViewChecked(): void {
     const host = this.chartsHost?.nativeElement ?? null;
@@ -612,11 +858,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       this.disconnectStageObserver();
       this.previewActive = false;
       this.previewSeq++;
-    } else if (this.figureTab === 'single' && this.previewStage && !this.previewActive && !this.previewAttachQueued) {
+    } else if (this.stageViewShown && this.previewStage && !this.previewActive && !this.previewAttachQueued) {
       this.previewAttachQueued = true;
       queueMicrotask(() => {
         this.previewAttachQueued = false;
-        if (this.figureTab === 'single' && this.previewStage && !this.previewActive) {
+        if (this.stageViewShown && this.previewStage && !this.previewActive) {
           this.attachPreview();
           this.cdr.markForCheck();
         }
@@ -624,11 +870,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     }
     if (this.allActive && !this.allViewport) {
       this.teardownAll();
-    } else if (this.figureTab === 'all' && this.allViewport && !this.allActive && !this.allAttachQueued) {
+    } else if (this.effectiveFigureTab === 'all' && this.allViewport && !this.allActive && !this.allAttachQueued) {
       this.allAttachQueued = true;
       queueMicrotask(() => {
         this.allAttachQueued = false;
-        if (this.figureTab === 'all' && this.allViewport && !this.allActive) {
+        if (this.effectiveFigureTab === 'all' && this.allViewport && !this.allActive) {
           this.attachAll();
           this.cdr.markForCheck();
         }
@@ -649,43 +895,38 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.disconnectStageObserver();
     this.cancelScheduledPreview();
     this.cancelScheduledStyle();
+    this.cancelScheduledTableMeasure();
     this.teardownAll();
   }
 
   // ---------------------------------------------------------------------------------------------
   // The wizard
   //
-  // Four steps in a fixed order, with the step header as a tablist and Previous / Next as the
+  // Three steps in a fixed order, with the step header as a tablist and Previous / Next as the
   // primary traversal. Next is enabled only when the current step's selection is valid, and where
   // it is not, the reason is rendered as text beside it rather than left to a disabled button.
   // ---------------------------------------------------------------------------------------------
 
   step: ComparisonWizardStep = 1;
 
-  readonly steps: readonly ComparisonWizardStep[] = [1, 2, 3, 4];
+  readonly steps: readonly ComparisonWizardStep[] = [1, 2, 3];
 
   readonly stepTitles = Object.fromEntries(
     COMPARISON_WIZARD_STEPS.map(entry => [entry.step, entry.title])
   ) as Record<ComparisonWizardStep, string>;
 
   /**
-   * Steps 2 and 3 need a computed comparison; step 4 additionally needs something chartable.
+   * Steps 2 and 3 need a computed comparison and nothing else.
    *
-   * The table step is reachable over a set no figure can draw, which is the point of it: an
+   * Step 3 is reachable over a set no chart can draw, which is the point of its table views: an
    * incomparable set still has measures, states and differing keys to read, and the step that
-   * carries them must not close behind the same gate as the pictures.
+   * carries them must not close behind the same gate as the pictures. Only its chart views refuse.
    *
    * An unreachable step is `aria-disabled`, not `disabled`: it stays in the focus order, so a
    * keyboard reader still learns the step exists and can read why it is unavailable.
    */
   isStepReachable(step: ComparisonWizardStep): boolean {
-    if (step === 1) {
-      return true;
-    }
-    if (this.comparison === null) {
-      return false;
-    }
-    return step === 2 || step === 3 || this.showFigures;
+    return step === 1 || this.comparison !== null;
   }
 
   get canGoPrevious(): boolean {
@@ -698,9 +939,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     }
     if (this.step === 2) {
       return this.comparison !== null;
-    }
-    if (this.step === 3) {
-      return this.showFigures;
     }
     return true;
   }
@@ -717,7 +955,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /** Compare while the current selection has no computed comparison; Next once it does. */
   get nextLabel(): string {
-    if (this.step === 4) {
+    if (this.step === 3) {
       return 'Close';
     }
     if (this.comparing) {
@@ -746,15 +984,12 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         'compared in one request. A comparison over every stored run is a slow query and an ' +
         'unreadable figure.';
     }
-    // Step 2 has no blocked state once a comparison exists, and step 4 is the last one, so what is
-    // left is step 3 refusing to open the figures: the shape of the set is the reason.
-    return this.shape === 'single'
-      ? 'Only one entry is plotted; a comparison needs two.'
-      : 'Nothing in this set may be charted together.';
+    // Step 2 has no blocked state once a comparison exists, and step 3 is the last one.
+    return '';
   }
 
   /**
-   * The busy line of a refetch from steps 2–4, where Next is not blocked and carries no spinner.
+   * The busy line of a refetch from steps 2 and 3, where Next is not blocked and carries no spinner.
    * Empty on step 1, whose busy state is the footer button and `nextBlockedReason`.
    */
   get refetchStatus(): string {
@@ -880,12 +1115,13 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (!this.isStepReachable(step)) {
       return;
     }
-    if (this.step === 4 && step !== 4) {
+    if (this.step === 3 && step !== 3) {
       // While the views still exist. `figureTab` is kept, so returning re-attaches the one shown.
       this.detachPreview();
       this.detachAll();
     }
     this.step = step;
+    this.scheduleTableMeasure();
     // Marked, like every other mutator here: several callers are outside a template event —
     // ngOnChanges, the keyboard handler, the host reopening the dialog.
     this.cdr.markForCheck();
@@ -898,7 +1134,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   nextStep(): void {
-    if (this.step === 4) {
+    if (this.step === 3) {
       this.closeRequested.emit();
       return;
     }
@@ -955,7 +1191,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    */
   private applyComparisonToStep(previous: BenchmarkModelComparisonDto | null | undefined): void {
     const next: ComparisonWizardStep = this.comparison === null ? 1 : !previous ? 2 : this.step;
-    if (this.step === 4 && next !== 4) {
+    if (this.step === 3 && next !== 3) {
       this.detachPreview();
       this.detachAll();
     }
@@ -977,6 +1213,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   // ---------------------------------------------------------------------------------------------
   // Client-side filter controls — these re-render every figure against the same slice
+  //
+  // The entry selection and the strictness are on step 2, beside what decides which entries can be
+  // compared. The measures and the model order are in step 3's Data tab, beside the charts they
+  // change; the model order also orders the table.
   // ---------------------------------------------------------------------------------------------
 
   /**
@@ -1002,14 +1242,67 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.rebuild();
   }
 
+  /**
+   * Custom is seeded, the first time it is chosen, from the order in effect at that moment; another
+   * key keeps the custom order for a later return. Every model-order change also returns the table
+   * to the model order, because the admin has just said how the models should be ordered.
+   */
   onSortKeyChange(value: ModelSortKey): void {
-    this.sort = { key: value, direction: this.sort.direction };
+    if (value === 'custom') {
+      if (this.customOrder === null) {
+        this.customOrder = modelOrderKeys(this.chartEntries, this.sort, this.speedMeasure, this.costMeasure, this.context);
+      }
+      this.sort = { key: 'custom', direction: this.sort.direction, customOrder: this.customOrder };
+    } else {
+      this.sort = { key: value, direction: this.sort.direction };
+    }
+    this.resetTableToModelOrder();
     this.rebuild();
   }
 
   onSortDirectionChange(value: SortDirection): void {
-    this.sort = { key: this.sort.key, direction: value };
+    this.sort = { ...this.sort, direction: value };
+    this.resetTableToModelOrder();
     this.rebuild();
+  }
+
+  /** One committed move of the Custom list — a drop or a Move button — and one rebuild for it. */
+  onCustomOrderChange(keys: readonly string[]): void {
+    this.customOrder = [...keys];
+    this.sort = { key: 'custom', direction: this.sort.direction, customOrder: this.customOrder };
+    this.resetTableToModelOrder();
+    this.rebuild();
+  }
+
+  /** Re-seeds the Custom list from Intelligence Index, descending. Refused while it already is that. */
+  resetCustomOrder(): void {
+    if (this.customOrderIsDefault) {
+      return;
+    }
+    this.onCustomOrderChange(this.defaultModelOrderKeys(this.chartEntries));
+  }
+
+  /** Every entry key under Intelligence Index, descending: what Custom resets to and appends new entries by. */
+  private defaultModelOrderKeys(entries: readonly ModelComparisonEntry[]): string[] {
+    return modelOrderKeys(entries, DEFAULT_MODEL_SORT, this.speedMeasure, this.costMeasure, toChartContext(this.comparison));
+  }
+
+  /**
+   * On a new payload, the Custom order drops the keys no longer present and appends the new ones in
+   * Intelligence Index, descending order.
+   */
+  private reconcileCustomOrder(): void {
+    if (this.customOrder === null) {
+      return;
+    }
+    const entries = toChartEntries(this.comparison);
+    const present = new Set(entries.map(entry => entry.key));
+    const kept = this.customOrder.filter(key => present.has(key));
+    const keptSet = new Set(kept);
+    this.customOrder = [...kept, ...this.defaultModelOrderKeys(entries).filter(key => !keptSet.has(key))];
+    if (this.sort.key === 'custom') {
+      this.sort = { ...this.sort, customOrder: this.customOrder };
+    }
   }
 
   onSpeedMeasureChange(value: SpeedMeasure): void {
@@ -1023,7 +1316,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * Both scatter toggles live in the sidebar's Style tab and, through `rebuild`, re-compose
+   * Both scatter toggles live in the sidebar's Charts tab and, through `rebuild`, re-compose
    * whichever figure view is shown.
    */
   onScatterDirectLabelsChange(on: boolean): void {
@@ -1038,17 +1331,75 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /**
    * Stores the style at once, so the panel's own controls follow it, persists it, and rebuilds the
-   * six figures once the change pauses: a range drag fires on every step.
+   * six figures and the table image once the change pauses: a range drag or a colour picker fires on
+   * every step. A newly chosen font starts loading at once.
    */
   onFigureStyleChange(style: FigureStyle): void {
+    const previousFont = this.figureStyle.appearance.fontFamily;
     this.figureStyle = normalizeFigureStyle(style);
     this.writeStoredFigureStyle(this.figureStyle);
+    if (this.figureStyle.appearance.fontFamily !== previousFont) {
+      void this.loadFigureFont();
+    }
     this.cancelScheduledStyle();
     this.styleTimer = setTimeout(() => {
       this.styleTimer = null;
       this.rebuild();
+      this.scheduleTableMeasure();
     }, this.previewDebounceMs);
     this.cdr.markForCheck();
+  }
+
+  /** The Table tab's Image layout section: row bands and row rules, kept in the figure style. */
+  onTableStyleChange(table: TableImageStyle): void {
+    this.onFigureStyleChange({ ...this.figureStyle, table });
+  }
+
+  /**
+   * Loads the chosen font family before anything is measured with it, and says in the Theme tab
+   * whether it loaded. Every composition awaits this first: a canvas does not wait for web fonts,
+   * and a layout measured in the fallback and drawn in the face would disagree with itself.
+   */
+  private async loadFigureFont(): Promise<void> {
+    const id = this.figureStyle.appearance.fontFamily;
+    const loaded = await ensureFigureFont(id);
+    const label = figureFont(id).label;
+    const status = id === 'default'
+      ? ''
+      : loaded
+        ? `${label} is loaded.`
+        : `${label} could not be loaded, so the charts and the table use the fallback font.`;
+    // A later choice may have replaced this one while it loaded.
+    if (id === this.figureStyle.appearance.fontFamily && status !== this.fontLoadStatus) {
+      this.fontLoadStatus = status;
+      this.cdr.markForCheck();
+    }
+  }
+
+  /** Resolves the theme once per appearance, so every composition reads one cached object. */
+  private refreshFigureTheme(): void {
+    const appearance = this.figureStyle.appearance;
+    if (appearance !== this.themedAppearance) {
+      this.themedAppearance = appearance;
+      this.figureTheme = resolveFigureTheme(appearance);
+    }
+  }
+
+  /** A transparent background, which the page shows over the preview backdrop and never exports. */
+  get isTransparentFigure(): boolean {
+    return this.figureStyle.appearance.background === 'transparent';
+  }
+
+  /**
+   * The backdrop colour as a custom property, set on the canvases' scroller so the canvases
+   * inherit it: the Single stage's canvas has its size written into its own style attribute, which
+   * a bound one would overwrite. Null keeps the stylesheet's checkerboard.
+   */
+  get figureBackdropStyle(): string | null {
+    const appearance = this.figureStyle.appearance;
+    return appearance.background === 'transparent' && appearance.previewBackdrop === 'color'
+      ? `--mc-figure-backdrop: ${appearance.previewBackdropColor}`
+      : null;
   }
 
   /** The forced orientation, or the container-driven one while the style says Automatic. */
@@ -1090,7 +1441,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * be exported and recompose on every pass of the pointer. Clearing is always accepted.
    */
   setHighlight(key: string | null): void {
-    if (this.highlightedKey === key || (key !== null && this.figureTab === 'single')) {
+    if (this.highlightedKey === key || (key !== null && this.effectiveFigureTab === 'single')) {
       return;
     }
     this.highlightedKey = key;
@@ -1140,8 +1491,34 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return sourceLabel(entry);
   }
 
+  /**
+   * After a sort, a filter or a page change. The Columns `empty` set follows the filters; the Table
+   * preview and the *Fit the table* information follow the filters and the order. A page change
+   * changes neither, so neither is redone for it.
+   */
   onTableChanged(): void {
+    this.refreshColumnEmpty();
+    const signature = this.tableViewSignature();
+    if (signature !== this.lastTableViewSignature) {
+      this.lastTableViewSignature = signature;
+      this.scheduleTableOutputs();
+    }
     this.cdr.detectChanges();
+  }
+
+  /** The sort and the filters `onTableChanged` last saw. */
+  private lastTableViewSignature = '';
+
+  private tableViewSignature(): string {
+    return JSON.stringify([this.entryTable.sortColumn, this.entryTable.sortDirection, this.entryTable.filters]);
+  }
+
+  /** Recomposes the Table preview, if shown, and re-measures the table image. */
+  private scheduleTableOutputs(): void {
+    if (this.figureTab === 'tablePreview') {
+      this.schedulePreview();
+    }
+    this.scheduleTableMeasure();
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -1308,20 +1685,19 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   // pasted into a document would drop exactly the caveats that stop it being misread.
   // ---------------------------------------------------------------------------------------------
 
-  exportFormat: FigureExportFormat = 'png';
+  private readonly storedDownload = readStoredDownloadSettings();
+
+  /** The image format every chart and the table image are written in; remembered per browser. */
+  exportFormat: FigureExportFormat = this.storedDownload.imageFormat;
 
   /** The qualities a WebP export may be written at, offered whenever WebP is the chosen format. */
   readonly webpQualityOptions = WEBP_QUALITY_OPTIONS;
 
   /**
-   * WebP quality for the figures and for the table, held separately.
-   *
-   * Two settings rather than one: the two exports already choose their formats independently, and a
-   * shared quality would make a figure's setting silently rewrite the table's.
+   * The WebP quality of every chart and of the table image. One setting, because the image format it
+   * qualifies is one shared setting too; remembered per browser.
    */
-  figureWebpQuality: WebpQuality = DEFAULT_WEBP_QUALITY;
-
-  tableWebpQuality: WebpQuality = DEFAULT_WEBP_QUALITY;
+  webpQuality: WebpQuality = this.storedDownload.webpQuality;
 
   /**
    * Set while any export is running — figure download, table download, either clipboard copy.
@@ -1350,25 +1726,19 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.exportNotice = null;
   }
 
-  // --- Figure size ---
+  // --- Chart size and table image size ---
   //
-  // Presets plus a custom width and height, a pixel density and a text size, held as one
-  // `FigureSizeSettings` in the Style tab. They shape every figure: the All tab, the Single tab and
-  // every download compose at them. Every size composes at one layout width and scales, so a 4K
-  // figure and a Full HD figure differ in pixels and not in relative type size; the density then
-  // multiplies the bitmap of whichever size was chosen, leaving the composition alone.
-
-  readonly exportPresets = FIGURE_EXPORT_PRESETS;
-
-  /** The same presets as the picker renders them: one `<optgroup>` per aspect ratio. */
-  readonly exportPresetGroups = FIGURE_EXPORT_PRESET_GROUPS;
-
-  readonly minExportDimension = FIGURE_EXPORT_MIN_DIMENSION;
-  readonly maxExportDimension = FIGURE_EXPORT_MAX_DIMENSION;
-
-  readonly exportDensityPresets = FIGURE_EXPORT_DENSITY_PRESETS;
-  readonly minExportDensityPercent = FIGURE_EXPORT_MIN_DENSITY_PERCENT;
-  readonly maxExportDensityPercent = FIGURE_EXPORT_MAX_DENSITY_PERCENT;
+  // Two `FigureSizeSettings`, each hosted by an `app-export-size-section` in the Download tab, which
+  // owns the controls, the custom-ratio lock and the reset's status line.
+  //
+  // The chart size shapes every chart: the All tab, the Single tab and every download compose at
+  // it. Every chart size composes at one layout width and scales, so a 4K chart and a Full HD chart
+  // differ in pixels and not in relative type size; the density then multiplies the bitmap of
+  // whichever size was chosen, leaving the composition alone.
+  //
+  // The table image size is its own, because a table and a chart are very different shapes: *Fit
+  // the table*, or a box in plain pixels, where the table either fits or is refused with the minimum
+  // it needs (`resolveTableImageLayout`).
 
   /**
    * The display's density when the component initialised, which the matching option is labelled
@@ -1380,16 +1750,25 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   readonly displayDensity = displayDensity();
 
   /**
-   * Size, density and text size, as the Style tab's Figure size section sets them. Read from
-   * storage when the component is created and written on every change; replaced, never mutated.
+   * Size, density and text size of every chart, as the Download tab's Chart size section sets
+   * them. Read from storage when the component is created and written on every change; replaced,
+   * never mutated.
    */
   figureSize: FigureSizeSettings = readStoredFigureSize(this.displayDensity);
 
-  /** On, one custom side follows the other so the shape survives a change of size. */
-  customRatioLocked = false;
+  /** Full HD, the display's own density and 100 % text: what the Chart size section resets to. */
+  readonly defaultChartSize: FigureSizeSettings = defaultFigureSize(this.displayDensity);
 
-  /** The ratio the lock captured, which is what the unedited side is derived from. */
-  private customRatio = 16 / 9;
+  /** The table image's size, stored apart from the charts'. */
+  tableImageSize: FigureSizeSettings = readStoredTableImageSize();
+
+  /** *Fit the table* at 200 % and 100 % text: the table image as it was always written. */
+  readonly defaultTableImageSize: FigureSizeSettings = defaultTableImageSize();
+
+  /** The one-line meaning of 100 % text in each size section. */
+  readonly chartTextSizeHint = 'Scales the caption, notes and chart text together without changing the pixel size.';
+  readonly tableTextSizeHint =
+    '100 % draws the table text at the size Fit the table uses; the table is laid out in the pixels above, before density.';
 
   get isCustomResolution(): boolean {
     return this.figureSize.resolutionId === 'custom';
@@ -1397,18 +1776,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /** The chosen preset, or the custom pair clamped into the supported range. */
   get exportResolution(): FigureExportResolution {
-    if (!this.isCustomResolution) {
-      return this.exportPresets.find(preset => preset.id === this.figureSize.resolutionId)
-        ?? this.exportPresets.find(preset => preset.id === DEFAULT_FIGURE_RESOLUTION_ID)
-        ?? this.exportPresets[0];
-    }
-    return {
-      id: 'custom',
-      label: 'Custom',
-      group: 'Custom',
-      widthPx: this.clampDimension(this.figureSize.customWidthPx),
-      heightPx: this.clampDimension(this.figureSize.customHeightPx)
-    };
+    return resolveSizeResolution(this.figureSize);
   }
 
   get isCustomDensity(): boolean {
@@ -1417,23 +1785,12 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /** The chosen factor: a listed preset, or the custom percentage clamped into its bounds. */
   get exportDensity(): number {
-    const selection = this.figureSize.densitySelection;
-    if (selection !== 'custom') {
-      return selection;
-    }
-    return this.clampDensityPercent(this.figureSize.customDensityPercent) / 100;
+    return resolveSizeDensity(this.figureSize);
   }
 
   /** The percentage the read-outs name the current density by. */
   get exportDensityLabel(): string {
     return densityPercentLabel(this.exportDensity);
-  }
-
-  /** One option's text, with the one that matches the reader's own display marked as such. */
-  densityOptionLabel(preset: number): string {
-    return preset === this.displayDensity
-      ? `${densityPercentLabel(preset)} (this display)`
-      : densityPercentLabel(preset);
   }
 
   /** The current size's shape, e.g. `16:9`. */
@@ -1443,19 +1800,19 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * The size and format in one line, for the *Download all* tooltip.
+   * The size and format in one line, for the *Download all charts* tooltip.
    *
-   * The figure bar carries the settings as a read-out rather than as controls: the size lives in
-   * the sidebar's Style tab and the format in its Download tab, beside the figures they shape.
+   * The view bar carries the settings as a read-out rather than as controls: the size and the
+   * format live in the sidebar's Download tab.
    */
   get exportSummary(): string {
     const format = this.exportFormat === 'webp'
-      ? `WebP q${this.figureWebpQuality}`
+      ? `WebP q${this.webpQuality}`
       : 'PNG';
     return `${this.exportResolution.label} · ${this.exportDensityLabel} · ${format}`;
   }
 
-  /** What *Download all* would do now, or why it will not. */
+  /** What *Download all charts* would do now, or why it will not. */
   get downloadAllTooltip(): string {
     if (this.exporting) {
       return 'An export is running.';
@@ -1463,39 +1820,17 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (this.exportSizeError !== '') {
       return this.exportSizeError;
     }
-    return `All figures as one archive — ${this.exportSummary}`;
+    return `All charts as one archive — ${this.exportSummary}`;
   }
 
   /** An out-of-range custom size, named. Empty while the current setting is usable. */
   get customResolutionError(): string {
-    if (!this.isCustomResolution) {
-      return '';
-    }
-    const bad = [
-      this.isUsableDimension(this.figureSize.customWidthPx) ? '' : 'width',
-      this.isUsableDimension(this.figureSize.customHeightPx) ? '' : 'height'
-    ].filter(name => name !== '');
-    if (bad.length === 0) {
-      return '';
-    }
-    return `The figure ${bad.join(' and ')} must be between ${this.minExportDimension} and ` +
-      `${this.maxExportDimension} px.`;
+    return sizeErrors(this.figureSize).customResolution;
   }
 
   /** An out-of-range custom density, named. Empty while the current setting is usable. */
   get customDensityError(): string {
-    if (!this.isCustomDensity) {
-      return '';
-    }
-    const percent = this.figureSize.customDensityPercent;
-    const usable = Number.isFinite(percent)
-      && percent >= this.minExportDensityPercent
-      && percent <= this.maxExportDensityPercent;
-    if (usable) {
-      return '';
-    }
-    return `The pixel density must be between ${this.minExportDensityPercent} and ` +
-      `${this.maxExportDensityPercent} %.`;
+    return sizeErrors(this.figureSize).customDensity;
   }
 
   /**
@@ -1503,60 +1838,40 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * which is the more specific complaint and is what the reader has to fix first.
    */
   get exportDensityError(): string {
-    if (this.customResolutionError !== '' || this.customDensityError !== '') {
-      return '';
-    }
-    const resolution = this.exportResolution;
-    return bitmapRefusal(resolution.widthPx, resolution.heightPx, this.exportDensity) ?? '';
+    return sizeErrors(this.figureSize).bitmap;
   }
 
   /** The one message the size, the custom sides and the density all describe themselves by. */
   get exportSizeError(): string {
-    return this.customResolutionError || this.customDensityError || this.exportDensityError;
+    return sizeErrors(this.figureSize).any;
   }
 
   /** What the current setting will actually write, in the reader's own units. */
   get exportDimensionsLabel(): string {
-    const resolution = this.exportResolution;
-    const percent = this.exportDensityLabel;
-    const density = this.exportDensity;
-    const box = layoutBoxFor(resolution.widthPx, resolution.heightPx, this.exportTextScale);
-    const written = `${Math.round(resolution.widthPx * density)} × ` +
-      `${Math.round(resolution.heightPx * density)} px`;
-    // At 100 % the requested size and the written one are the same number, and printing it twice
-    // would read as an error rather than as a multiplication.
-    const requested = density === 1
-      ? `at ${percent}`
-      : `(${resolution.widthPx} × ${resolution.heightPx} at ${percent})`;
-    return `${written} ${requested} — laid out at ` +
-      `${Math.round(box.layoutWidth)} × ${Math.round(box.layoutHeight)}, ` +
-      `${this.formatDensity(box.density * density)}× density`;
+    return sizeDimensionsLabel(this.figureSize);
   }
 
-  /** The closed Figure size section's one-line read-out. */
+  /** The closed Chart size section's one-line read-out. */
   get figureSizeReadout(): string {
-    const resolution = this.exportResolution;
-    const size = this.isCustomResolution
-      ? `Custom ${resolution.widthPx} × ${resolution.heightPx}`
-      : resolution.label;
-    return `${size} · ${this.exportDensityLabel} · text ${this.figureSize.textScalePercent} %`;
+    return sizeReadout(this.figureSize);
   }
 
-  /** Whether the Figure size section holds its defaults, which is when its reset has nothing to do. */
+  /** Whether the Chart size section holds its defaults, which is when its reset has nothing to do. */
   get figureSizeIsDefault(): boolean {
-    return sameFigureSize(this.figureSize, defaultFigureSize(this.displayDensity));
+    return sameFigureSize(this.figureSize, this.defaultChartSize);
   }
 
-  /** What the Figure size section's status line announces after a reset; cleared by the next change. */
-  figureSizeResetStatus = '';
-
-  /** Restores Full HD, the display's own density and 100 % text. The custom ratio lock is left alone. */
+  /** Restores Full HD, the display's own density and 100 % text. */
   resetFigureSize(): void {
     if (this.figureSizeIsDefault) {
       return;
     }
-    this.setFigureSize(defaultFigureSize(this.displayDensity));
-    this.figureSizeResetStatus = 'Figure size reset to defaults.';
+    this.setFigureSize(this.defaultChartSize);
+  }
+
+  /** The Chart size section's whole new settings. */
+  onFigureSizeChange(settings: FigureSizeSettings): void {
+    this.setFigureSize(settings);
   }
 
   onExportResolutionChange(value: string): void {
@@ -1571,41 +1886,13 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.setFigureSize({ customDensityPercent: percent });
   }
 
-  /**
-   * Captures the current shape when the lock goes on, and releases it when it goes off.
-   *
-   * Captured rather than held from the preset the reader came from: the two fields are what is on
-   * screen, and a lock that snapped them to some earlier ratio would change the size it was asked
-   * to preserve.
-   */
-  lockCustomRatio(locked: boolean): void {
-    this.customRatioLocked = locked;
-    if (locked) {
-      const width = this.clampDimension(this.figureSize.customWidthPx);
-      const height = this.clampDimension(this.figureSize.customHeightPx);
-      this.customRatio = height > 0 ? width / height : 1;
-    }
-    this.cdr.markForCheck();
-  }
-
   onCustomWidthChange(width: number): void {
-    this.setFigureSize(this.customRatioLocked
-      ? { customWidthPx: width, customHeightPx: this.clampDimension(Math.round(width / this.customRatio)) }
-      : { customWidthPx: width });
+    this.setFigureSize({ customWidthPx: width });
   }
 
   onCustomHeightChange(height: number): void {
-    this.setFigureSize(this.customRatioLocked
-      ? { customHeightPx: height, customWidthPx: this.clampDimension(Math.round(height * this.customRatio)) }
-      : { customHeightPx: height });
+    this.setFigureSize({ customHeightPx: height });
   }
-
-  onFigureWebpQualityChange(value: WebpQuality): void {
-    this.figureWebpQuality = value;
-  }
-
-  readonly minExportTextScalePercent = FIGURE_EXPORT_MIN_TEXT_SCALE_PERCENT;
-  readonly maxExportTextScalePercent = FIGURE_EXPORT_MAX_TEXT_SCALE_PERCENT;
 
   /** The text size as the factor the layout resolver takes. */
   get exportTextScale(): number {
@@ -1616,25 +1903,105 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   onExportTextScaleChange(percent: number): void {
     const value = Number.isFinite(percent) ? Math.round(percent) : 100;
     this.setFigureSize({
-      textScalePercent: Math.min(this.maxExportTextScalePercent, Math.max(this.minExportTextScalePercent, value))
+      textScalePercent: Math.min(FIGURE_EXPORT_MAX_TEXT_SCALE_PERCENT, Math.max(FIGURE_EXPORT_MIN_TEXT_SCALE_PERCENT, value))
     });
   }
 
   /**
-   * Replaces the size, stores it and re-composes whichever view is shown. The All tab's tiles take
-   * their new box at once; their bitmaps follow once the change pauses.
+   * Replaces the chart size, stores it and re-composes the chart view shown. The All tab's tiles
+   * take their new box at once; their bitmaps follow once the change pauses. The table image is not
+   * touched: it has a size of its own.
    */
   private setFigureSize(patch: Partial<FigureSizeSettings>): void {
     this.figureSize = { ...this.figureSize, ...patch };
     writeStoredFigureSize(this.figureSize);
-    this.figureSizeResetStatus = '';
-    this.schedulePreview();
+    if (this.figureTab === 'single') {
+      this.schedulePreview();
+    }
     if (this.allActive) {
       this.refreshAllGeometry();
       this.markAllStale();
       this.scheduleAllCompose();
     }
     this.cdr.markForCheck();
+  }
+
+  /** Whether the Table image size section holds its defaults. */
+  get tableImageSizeIsDefault(): boolean {
+    return sameFigureSize(this.tableImageSize, this.defaultTableImageSize);
+  }
+
+  /** The Table image size section's whole new settings. */
+  onTableImageSizeChange(settings: FigureSizeSettings): void {
+    this.setTableImageSize(settings);
+  }
+
+  /** Restores *Fit the table* at 200 % and 100 % text. */
+  resetTableImageSize(): void {
+    if (!this.tableImageSizeIsDefault) {
+      this.setTableImageSize(this.defaultTableImageSize);
+    }
+  }
+
+  /** Replaces the table image size, stores it, and re-composes only what depends on it: the Table preview. */
+  private setTableImageSize(settings: FigureSizeSettings): void {
+    this.tableImageSize = { ...settings };
+    writeStoredTableImageSize(this.tableImageSize);
+    this.scheduleTableOutputs();
+    this.cdr.markForCheck();
+  }
+
+  // --- Image format ---
+
+  onExportFormatChange(value: FigureExportFormat): void {
+    this.exportFormat = value;
+    this.imageFormatResetStatus = '';
+    this.writeStoredDownload();
+    this.cdr.markForCheck();
+  }
+
+  onWebpQualityChange(value: WebpQuality): void {
+    this.webpQuality = value;
+    this.imageFormatResetStatus = '';
+    this.writeStoredDownload();
+    this.cdr.markForCheck();
+  }
+
+  /** The closed Image format section's one-line read-out. */
+  get imageFormatReadout(): string {
+    return this.exportFormat === 'webp' ? `WebP · quality ${this.webpQuality}` : 'PNG';
+  }
+
+  get imageFormatIsDefault(): boolean {
+    return this.exportFormat === 'png' && this.webpQuality === DEFAULT_WEBP_QUALITY;
+  }
+
+  /** What the Image format section's status line announces after a reset; cleared by the next change. */
+  imageFormatResetStatus = '';
+
+  /** Restores PNG, and 85 for a later WebP. */
+  resetImageFormat(): void {
+    if (this.imageFormatIsDefault) {
+      return;
+    }
+    this.exportFormat = 'png';
+    this.webpQuality = DEFAULT_WEBP_QUALITY;
+    this.writeStoredDownload();
+    this.imageFormatResetStatus = 'Image format reset to defaults.';
+    this.cdr.markForCheck();
+  }
+
+  private writeStoredDownload(): void {
+    try {
+      localStorage.setItem(DOWNLOAD_SETTINGS_STORAGE_KEY, JSON.stringify({
+        version: 1,
+        tableFormat: this.tableFormat,
+        imageFormat: this.exportFormat,
+        webpQuality: this.webpQuality
+      }));
+    } catch {
+      // Private mode or blocked storage: the formats still apply for this session.
+    }
   }
 
   /** Every card currently rendered, in the order the template draws them. */
@@ -1648,11 +2015,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   get canExport(): boolean {
     return !this.exporting && this.exportableCards.length > 0 && this.exportSizeError === '';
-  }
-
-  onExportFormatChange(value: FigureExportFormat): void {
-    this.exportFormat = value;
-    this.schedulePreview();
   }
 
   async downloadFigure(card: ComparisonFigureCard): Promise<void> {
@@ -1784,6 +2146,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     refusal: string | null;
     pixels: string;
   }> {
+    // The chrome is measured before it is drawn, so the face has to be there first.
+    await this.loadFigureFont();
     const chrome = this.exportChrome(card);
     const { layout, refusal } = resolveFigureLayout(chrome, resolution, this.exportDensity, this.exportTextScale);
     if (!layout) {
@@ -1796,7 +2160,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     }
     return {
       // Quality is read only by the WebP encoder, so the clipboard's fixed PNG ignores it.
-      result: await encodeFigureImage(composed, format, this.figureWebpQuality),
+      result: await encodeFigureImage(composed, format, this.webpQuality),
       refusal: null,
       pixels: `${layout.pixelWidth} × ${layout.pixelHeight} px`
     };
@@ -1813,6 +2177,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     layout: FigureExportLayout,
     format: FigureExportFormat = this.exportFormat
   ): Promise<HTMLCanvasElement | null> {
+    await this.loadFigureFont();
     const plot = await renderPlotOffscreen(
       { type: card.type, data: card.data, options: card.options, plugins: card.plugins },
       layout
@@ -1822,7 +2187,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /**
    * One card's chrome: everything the exported image carries besides the plot itself, at its
-   * family's caption sizes, with the footer emptied while the family hides it.
+   * family's caption sizes, with the footer emptied while the family hides it, in the theme.
    */
   private exportChrome(card: ComparisonFigureCard): FigureExportChrome {
     const style = this.figureStyle[this.familyOf(card)];
@@ -1833,42 +2198,15 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         titlePx: style.titleSizePx,
         badgePx: style.badgeTextSizePx,
         footerPx: style.footerTextSizePx
-      }
+      },
+      theme: this.figureTheme
     };
   }
 
   /** Which style family a card draws from: the bar panels, the trade-off scatters or the profile. */
-  private familyOf(card: ComparisonFigureCard | null | undefined): FigureStylePanelKind {
+  private familyOf(card: ComparisonFigureCard | null | undefined): ChartStyleFamily {
     const type = card?.type;
     return type === 'bar' ? 'bar' : type === 'scatter' ? 'scatter' : 'profile';
-  }
-
-  private clampDimension(value: number): number {
-    if (!Number.isFinite(value)) {
-      return this.minExportDimension;
-    }
-    return Math.min(this.maxExportDimension, Math.max(this.minExportDimension, Math.round(value)));
-  }
-
-  private clampDensityPercent(value: number): number {
-    if (!Number.isFinite(value)) {
-      return 100;
-    }
-    return Math.min(
-      this.maxExportDensityPercent,
-      Math.max(this.minExportDensityPercent, Math.round(value))
-    );
-  }
-
-  private isUsableDimension(value: number): boolean {
-    return Number.isFinite(value)
-      && value >= this.minExportDimension
-      && value <= this.maxExportDimension;
-  }
-
-  /** `2` rather than `2.00`, and `1.33` rather than `1.3333333`. */
-  private formatDensity(density: number): string {
-    return Number.isInteger(density) ? String(density) : density.toFixed(2);
   }
 
   /**
@@ -1946,82 +2284,171 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   // ---------------------------------------------------------------------------------------------
-  // The step-4 workspace
+  // The step-3 workspace
   //
-  // A collapsible settings sidebar (Emphasis, Style, Download) beside two views of the figures:
-  // All, every figure, and Single, one figure with zoom and pan. Both show figures composed by the
-  // export pipeline at the figure size, so the page and a download are the same image. Every
-  // control exists once.
+  // A collapsible settings sidebar beside four views: All charts, Single chart, the Interactive
+  // table and the Table preview. The chart views and the Table preview show images composed by the
+  // export pipeline, so the page and a download are the same image. The sidebar's tabs follow the
+  // view group — Data · Theme · Charts · Download beside the charts, Data · Theme · Table · Download
+  // beside the table — so a tab never holds a setting that does not apply to the view it is shown
+  // with. Every control exists once.
   // ---------------------------------------------------------------------------------------------
 
   private readonly storedSidebar = readStoredFigureSidebar();
 
-  /** All by default; kept across steps and remembered per browser. */
+  /** All charts by default; kept across steps and remembered per browser. */
   figureTab: FigureViewTab = this.storedSidebar.view;
 
-  readonly figureTabs: readonly { readonly id: FigureViewTab; readonly label: string; readonly name: string }[] = [
-    { id: 'all', label: 'All', name: 'All figures' },
-    { id: 'single', label: 'Single', name: 'Single figure' }
+  /** The four views. Each label is also the tab's accessible name. */
+  readonly figureTabs: readonly { readonly id: FigureViewTab; readonly label: string }[] = [
+    { id: 'all', label: 'All charts' },
+    { id: 'single', label: 'Single chart' },
+    { id: 'table', label: 'Interactive table' },
+    { id: 'tablePreview', label: 'Table preview' }
   ];
+
+  readonly isChartView = isChartView;
+  readonly isTableView = isTableView;
+
+  /**
+   * The view on screen: the chosen one, or the Interactive table while a chart view is chosen and
+   * nothing can be charted. The chosen one is kept, so a refetch that makes the set chartable again
+   * returns to it.
+   */
+  get effectiveFigureTab(): FigureViewTab {
+    return isChartView(this.figureTab) && !this.showFigures ? 'table' : this.figureTab;
+  }
+
+  /** The Single chart or the Table preview, the two views that share the zoom-and-pan stage. */
+  get stageViewShown(): boolean {
+    const tab = this.effectiveFigureTab;
+    return tab === 'single' || tab === 'tablePreview';
+  }
+
+  /** A chart view's tab refuses while nothing can be charted, and says why. */
+  isFigureTabUnavailable(tab: FigureViewTab): boolean {
+    return isChartView(tab) && !this.showFigures;
+  }
 
   sidebarCollapsed = this.storedSidebar.collapsed;
 
+  /** The chosen sidebar tab. `effectiveSidebarTab` is what the current view group shows of it. */
   sidebarTab: FigureSidebarTab = this.storedSidebar.tab;
 
-  /** Whether the Style tab's Figure size section is open. Open by default. */
-  figureSizeOpen = this.storedSidebar.figureSizeOpen;
-
-  /** Follows the native `toggle`, which fires for a click, a key and a bound `open` alike. */
-  onFigureSizeToggle(event: Event): void {
-    const open = (event.target as HTMLDetailsElement).open;
-    if (open === this.figureSizeOpen) {
-      return;
-    }
-    this.figureSizeOpen = open;
-    this.writeStoredSidebar();
+  /** The tabs the current view group shows, in order. */
+  get visibleSidebarTabs(): readonly FigureSidebarTabOption[] {
+    return isTableView(this.effectiveFigureTab) ? TABLE_VIEW_SIDEBAR_TABS : CHART_VIEW_SIDEBAR_TABS;
   }
 
-  readonly sidebarTabs: readonly { readonly id: FigureSidebarTab; readonly label: string }[] = [
-    { id: 'emphasis', label: 'Emphasis' },
-    { id: 'style', label: 'Style' },
-    { id: 'download', label: 'Download' }
-  ];
+  /** The tab shown: Charts and Table swap for each other with the view group; the rest are in both sets. */
+  get effectiveSidebarTab(): FigureSidebarTab {
+    return sidebarTabForView(this.sidebarTab, this.effectiveFigureTab);
+  }
+
+  /** Whether the Download tab's Chart size section is open. Open by default. */
+  figureSizeOpen = this.storedSidebar.figureSizeOpen;
+
+  /** Whether the Download tab's Table image size section is open. Open by default. */
+  tableImageSizeOpen = this.storedSidebar.tableImageSizeOpen;
+
+  /** Whether the Download tab's Image format section is open. Open by default. */
+  imageFormatOpen = this.storedSidebar.imageFormatOpen;
+
+  onFigureSizeOpenChange(open: boolean): void {
+    if (open !== this.figureSizeOpen) {
+      this.figureSizeOpen = open;
+      this.writeStoredSidebar();
+    }
+  }
+
+  onTableImageSizeOpenChange(open: boolean): void {
+    if (open !== this.tableImageSizeOpen) {
+      this.tableImageSizeOpen = open;
+      this.writeStoredSidebar();
+      this.scheduleTableMeasure();
+    }
+  }
+
+  /** Follows the native `toggle`, which fires for a click, a key and a bound `open` alike. */
+  onImageFormatToggle(event: Event): void {
+    const open = (event.target as HTMLDetailsElement).open;
+    if (open !== this.imageFormatOpen) {
+      this.imageFormatOpen = open;
+      this.writeStoredSidebar();
+    }
+  }
 
   /** Focus stays on the toggle, which sits outside the sidebar and is always rendered. */
   toggleSidebar(): void {
     this.sidebarCollapsed = !this.sidebarCollapsed;
     this.writeStoredSidebar();
+    this.scheduleTableMeasure();
     this.cdr.markForCheck();
   }
 
   selectSidebarTab(tab: FigureSidebarTab): void {
     this.sidebarTab = tab;
     this.writeStoredSidebar();
+    this.scheduleTableMeasure();
     this.cdr.markForCheck();
   }
 
-  /** Left/Right move and wrap, Home/End jump to the ends; focus follows selection. */
+  /** Left/Right move and wrap, Home/End jump to the ends, over the visible tabs; focus follows selection. */
   onSidebarTabKeydown(event: KeyboardEvent, index: number): void {
-    const next = this.rovingTabIndex(event, index, this.sidebarTabs.length);
+    const tabs = this.visibleSidebarTabs;
+    const next = this.rovingTabIndex(event, index, tabs.length);
     if (next === null) {
       return;
     }
-    const tab = this.sidebarTabs[next].id;
+    const tab = tabs[next].id;
     this.selectSidebarTab(tab);
     this.cdr.detectChanges();
     document.getElementById(`mc-side-tab-${tab}`)?.focus();
   }
 
   /**
-   * Switches the figure view. Each view attaches once its panel exists, and detaches while its
-   * elements still do. Single opens on the figure last activated on All, or the first.
+   * The Single chart's view, kept while the Table preview borrows the stage, so returning to Single
+   * shows it as it was left. Leaving for any other view forgets it.
+   */
+  private singleViewMemo: { view: PreviewViewRequest; targetKey: string | null } | null = null;
+
+  /**
+   * Switches the view. Each view attaches once its panel exists, and detaches while its elements
+   * still do: leaving a chart view for a table view drops every chart bitmap, and leaving the Table
+   * preview drops its bitmap. The chart views refuse while nothing can be charted. Single opens on
+   * the chart last activated on All, or the first; the Table preview opens at Fit to screen.
+   *
+   * The sidebar keeps a tab both view groups show; Charts and Table swap for each other.
    */
   selectFigureTab(tab: FigureViewTab): void {
-    if (tab === this.figureTab) {
+    if (this.isFigureTabUnavailable(tab)) {
       return;
     }
-    if (tab === 'single') {
+    const current = this.effectiveFigureTab;
+    if (tab === current) {
+      if (tab !== this.figureTab) {
+        this.figureTab = tab;
+        this.writeStoredSidebar();
+      }
+      return;
+    }
+
+    if (current === 'all') {
       this.detachAll();
+    }
+    const memo = current === 'single' && tab === 'tablePreview'
+      ? { view: this.previewView, targetKey: this.previewTargetKey }
+      : null;
+    if (current === 'single' || current === 'tablePreview') {
+      this.detachPreview();
+    }
+    if (tab !== 'tablePreview' && tab !== 'single') {
+      this.singleViewMemo = null;
+    } else if (memo) {
+      this.singleViewMemo = memo;
+    }
+
+    if (tab === 'single') {
       if (this.previewCard === null) {
         this.previewCardId = this.exportableCards[0]?.id ?? null;
       }
@@ -2030,19 +2457,29 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         this.styleFamily = this.familyOf(card);
       }
       this.setHighlight(null);
-      this.figureTab = 'single';
-      this.writeStoredSidebar();
-      this.cdr.detectChanges();
-      this.attachPreview();
-    } else {
-      this.detachPreview();
-      this.figureTab = 'all';
-      this.writeStoredSidebar();
-      this.cdr.detectChanges();
-      this.attachAll();
     }
+
+    this.sidebarTab = sidebarTabForView(this.sidebarTab, tab);
+    this.figureTab = tab;
+    this.writeStoredSidebar();
+    this.cdr.detectChanges();
+
+    if (tab === 'all') {
+      this.attachAll();
+    } else if (tab === 'single') {
+      const restored = this.singleViewMemo;
+      this.singleViewMemo = null;
+      this.attachPreview(restored?.view ?? 'default');
+      if (restored) {
+        this.previewTargetKey = restored.targetKey;
+      }
+    } else if (tab === 'tablePreview') {
+      this.attachPreview('fitScreen');
+    }
+    this.scheduleTableMeasure();
   }
 
+  /** Left/Right move and wrap, Home/End jump to the ends; focus follows selection, onto a refusing tab too. */
   onFigureTabKeydown(event: KeyboardEvent, index: number): void {
     const next = this.rovingTabIndex(event, index, this.figureTabs.length);
     if (next === null) {
@@ -2100,21 +2537,59 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         collapsed: this.sidebarCollapsed,
         tab: this.sidebarTab,
         view: this.figureTab,
-        figureSizeOpen: this.figureSizeOpen
+        figureSizeOpen: this.figureSizeOpen,
+        tableImageSizeOpen: this.tableImageSizeOpen,
+        imageFormatOpen: this.imageFormatOpen
       }));
     } catch {
       // Private mode or blocked storage: the layout still applies for this session.
     }
   }
 
+  // --- The Data tab's radio groups ---
+
+  readonly speedMeasureOptions: readonly { readonly value: SpeedMeasure; readonly label: string }[] = [
+    { value: 'meanModelTime', label: 'Model time per question, mean' },
+    { value: 'totalModelTime', label: 'Candidate model time for the whole suite' },
+    { value: 'ttftP50', label: 'Time to first token, P50' },
+    { value: 'speedIndex', label: 'Speed Index (0-100)' }
+  ];
+
+  readonly sortKeyOptions: readonly { readonly value: ModelSortKey; readonly label: string }[] = [
+    { value: 'intelligenceIndex', label: 'Intelligence Index' },
+    { value: 'speed', label: 'Speed' },
+    { value: 'cost', label: 'Cost' },
+    { value: 'label', label: 'Name' },
+    { value: 'custom', label: 'Custom' }
+  ];
+
+  readonly sortDirectionOptions: readonly { readonly value: SortDirection; readonly label: string }[] = [
+    { value: 'desc', label: 'Descending' },
+    { value: 'asc', label: 'Ascending' }
+  ];
+
+  /** The model order in words: `Intelligence Index, descending`, or `custom`. */
+  get modelOrderDescription(): string {
+    if (this.sort.key === 'custom') {
+      return 'custom';
+    }
+    const key = this.sortKeyOptions.find(option => option.value === this.sort.key)?.label ?? this.sort.key;
+    return `${key}, ${this.sort.direction === 'desc' ? 'descending' : 'ascending'}`;
+  }
+
+  /** The Custom list row's display name, glyph and badges, read off the payload. */
+  customOrderEntry(key: string): BenchmarkModelComparisonEntryDto | null {
+    return this.entriesByKey.get(key) ?? null;
+  }
+
   // --- Style family ---
 
-  /** Which family the Style tab edits. Follows the figure on the Single tab. */
-  styleFamily: FigureStylePanelKind = 'bar';
+  /** Which family the Charts tab edits. Follows the figure on the Single tab. */
+  styleFamily: ChartStyleFamily = 'bar';
 
   /** The families with a rendered card, in card order. */
-  get styleFamilies(): { kind: FigureStylePanelKind; label: string }[] {
-    const families: { kind: FigureStylePanelKind; label: string }[] = [{ kind: 'bar', label: 'Bar panels' }];
+  get styleFamilies(): { kind: ChartStyleFamily; label: string }[] {
+    const families: { kind: ChartStyleFamily; label: string }[] = [{ kind: 'bar', label: 'Bar panels' }];
     if (this.profileCard) {
       families.push({ kind: 'profile', label: 'Profile' });
     }
@@ -2124,13 +2599,13 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return families;
   }
 
-  /** The family the Style tab renders: `bar` where the chosen one has no card in this set. */
-  get effectiveStyleFamily(): FigureStylePanelKind {
+  /** The family the Charts tab renders: `bar` where the chosen one has no card in this set. */
+  get effectiveStyleFamily(): ChartStyleFamily {
     return this.styleFamilies.some(family => family.kind === this.styleFamily) ? this.styleFamily : 'bar';
   }
 
   /** On the Single tab, the stage moves to the first figure of the chosen family. */
-  selectStyleFamily(kind: FigureStylePanelKind): void {
+  selectStyleFamily(kind: ChartStyleFamily): void {
     this.styleFamily = kind;
     if (this.figureTab === 'single' && this.familyOf(this.previewCard) !== kind) {
       const target = this.exportableCards.find(card => this.familyOf(card) === kind);
@@ -2155,16 +2630,18 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   // ---------------------------------------------------------------------------------------------
-  // The Single tab
+  // The Single chart and Table preview stage
   //
-  // One figure at a time, composed by the same pipeline the download uses and drawn onto a canvas
+  // One image at a time, composed by the same pipeline the download uses and drawn onto a canvas
   // with zoom and pan: the size, the aspect ratio and the text size are chosen against the image
-  // they produce rather than against a file already on disk. A figure whose caveats do not fit the
-  // chosen box is refused here, in the same words the download would refuse it in. The `preview`
-  // names below are this tab's.
+  // they produce rather than against a file already on disk. The stage shows one of two sources —
+  // the chart picked on the Single tab, or the table image on the Table preview — with one set of
+  // view handlers; each view opens with its own view state. An image the chosen box cannot hold is
+  // refused here, in the same words the download would refuse it in. The `preview` names below are
+  // the stage's.
   // ---------------------------------------------------------------------------------------------
 
-  /** The stage the composed image is drawn onto. Present while the Single tab is shown. */
+  /** The stage the composed image is drawn onto. Present while the Single chart or the Table preview is shown. */
   @ViewChild('previewCanvas') previewCanvas?: ElementRef<HTMLCanvasElement>;
 
   /** The box the stage canvas is fitted into, and the element whose size the preview follows. */
@@ -2241,24 +2718,36 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return this.exportableCards.find(card => card.id === this.previewCardId) ?? null;
   }
 
-  /** The stage is a `role="img"`, so it carries the card's own summary rather than a bare noun. */
+  /**
+   * The stage is a `role="img"`, so it carries the card's own summary, or the table's size, rather
+   * than a bare noun.
+   */
   get previewAriaLabel(): string {
+    if (this.figureTab === 'tablePreview') {
+      const rows = this.entryTable.filteredCount(this.entries);
+      return `Table preview: ${rows} ${rows === 1 ? 'entry' : 'entries'}, ` +
+        `${this.shownColumns.length} ${this.shownColumns.length === 1 ? 'column' : 'columns'}`;
+    }
     const card = this.previewCard;
     return card ? `Preview of ${card.ariaLabel}` : 'Figure preview';
   }
 
+  /** The Table preview's written pixel size, `2960 × 1240 px`, from the last composition; empty while refused. */
+  tablePreviewPixels = '';
+
   /**
-   * Starts composing onto a stage that has just been rendered — after a tab change, or when step 4
-   * opens on a remembered Single tab, where no figure has been chosen yet.
+   * Starts composing onto a stage that has just been rendered — after a tab change, or when step 3
+   * opens on a remembered Single chart or Table preview, where no figure has been chosen yet. The
+   * Single chart opens in the default view; the Table preview at Fit to screen.
    *
    * The toolbar's tooltip anchors render behind the panel's @if, which the polyfill's first scan
    * never saw.
    */
-  private attachPreview(): void {
+  private attachPreview(view: PreviewViewRequest = this.figureTab === 'tablePreview' ? 'fitScreen' : 'default'): void {
     if (this.previewCard === null) {
       this.previewCardId = this.exportableCards[0]?.id ?? null;
     }
-    this.previewView = 'default';
+    this.previewView = view;
     this.previewRefusal = '';
     this.previewActive = true;
     this.observeStage();
@@ -2268,8 +2757,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /**
    * Stops composing and drops the composition. The stage is blanked rather than left holding the
-   * last figure: returning on another card would show the previous one until the first composition
-   * landed.
+   * last image: returning on another card would show the previous one until the first composition
+   * landed, and the Table preview's bitmap is released with it.
    */
   private detachPreview(): void {
     this.previewActive = false;
@@ -2277,6 +2766,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.disconnectStageObserver();
     this.previewSeq++;
     this.previewBusy = false;
+    this.tablePreviewPixels = '';
     this.previewView = 'default';
     this.previewTargetKey = null;
     this.previewTargetPixels = null;
@@ -2294,7 +2784,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.stepPreview(1);
   }
 
-  /** The Style tab follows, so it always edits the figure on the stage. */
+  /** The Charts tab follows, so it always edits the figure on the stage. */
   selectPreviewCard(id: string): void {
     this.previewCardId = id;
     const card = this.previewCard;
@@ -2305,7 +2795,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.cdr.markForCheck();
   }
 
-  /** Delegates, so the preview and *Download all* cannot drift apart in what they write. */
+  /** Delegates, so the preview and *Download all charts* cannot drift apart in what they write. */
   async downloadPreviewedFigure(): Promise<void> {
     const card = this.previewCard;
     if (card && this.canExport) {
@@ -2489,6 +2979,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * stage's — so a detached stage leaves nothing to revoke.
    */
   private async renderPreview(): Promise<void> {
+    if (this.figureTab === 'tablePreview') {
+      await this.renderTablePreview();
+      return;
+    }
     const card = this.previewCard;
     if (!card || !this.previewCanvas) {
       return;
@@ -2500,6 +2994,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.cdr.markForCheck();
 
     try {
+      await this.loadFigureFont();
+      if (sequence !== this.previewSeq) {
+        return;
+      }
       const chrome = this.exportChrome(card);
       const target = resolveFigureLayout(chrome, this.exportResolution, this.exportDensity, this.exportTextScale);
       if (!target.layout) {
@@ -2551,6 +3049,97 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       }
     } catch {
       this.previewRefusal = 'This figure could not be composed at that size.';
+      this.blankPreview();
+    } finally {
+      if (sequence === this.previewSeq) {
+        this.previewBusy = false;
+      }
+      this.cdr.markForCheck();
+    }
+  }
+
+  /**
+   * The Table preview: the table image the download would write, at the table image size, in the
+   * reading flavour, over the rows passing the filters in the current order.
+   *
+   * The target layout decides the pixel count and any refusal, as for a chart; the stage then gets
+   * the same image drawn at the display-resolution raster its box affords, under
+   * `PREVIEW_MAX_RASTER_PIXELS`, so a long table at 4K never allocates a 4K bitmap for a preview.
+   */
+  private async renderTablePreview(): Promise<void> {
+    if (!this.previewCanvas) {
+      return;
+    }
+    const sequence = ++this.previewSeq;
+    this.previewBusy = true;
+    this.previewRefusal = '';
+    this.cdr.markForCheck();
+
+    try {
+      await this.loadFigureFont();
+      if (sequence !== this.previewSeq) {
+        return;
+      }
+      const model = this.tableModel('reading');
+      const options = this.tableImageOptions();
+      const sizeError = sizeErrors(this.tableImageSize, 'image').any;
+      const target = sizeError === ''
+        ? resolveTableImageLayout(model, options)
+        : { layout: null, refusal: sizeError };
+      if (!target.layout) {
+        this.previewRefusal = target.refusal ?? '';
+        this.tablePreviewPixels = '';
+        this.blankPreview();
+        return;
+      }
+      const table = target.layout;
+      this.tablePreviewPixels = `${table.pixelWidth} × ${table.pixelHeight} px`;
+
+      const targetKey = `${table.pixelWidth}x${table.pixelHeight}`;
+      if (targetKey !== this.previewTargetKey) {
+        this.previewTargetKey = targetKey;
+        if (typeof this.previewView === 'number') {
+          this.previewView = 'fitScreen';
+        }
+      }
+
+      // The stage fitter reads only the box and the bitmap; a table has no plot box.
+      const asFigure: FigureExportLayout = {
+        layoutWidth: table.layoutWidth,
+        layoutHeight: table.layoutHeight,
+        plotWidth: 0,
+        plotHeight: 0,
+        density: table.scale,
+        pixelWidth: table.pixelWidth,
+        pixelHeight: table.pixelHeight
+      };
+      const stage = this.measureStage();
+      const fit = stage ? previewLayoutFor(asFigure, stage, this.previewView) : null;
+      if (!fit) {
+        this.blankPreview();
+        return;
+      }
+
+      const composed = composeTableImage(model, { ...options, previewRaster: fit.layout.pixelWidth / table.layoutWidth });
+      if (sequence !== this.previewSeq) {
+        return;
+      }
+      const centre = this.captureViewCentre();
+      this.previewScreenFitZoom = fit.screenFitZoom;
+      this.previewTargetPixels = { width: table.pixelWidth, height: table.pixelHeight };
+      this.previewDpr = Math.min(4, Math.max(1, stage!.devicePixelRatio));
+      this.previewPaintedRasterZoom = fit.rasterZoom;
+      this.previewRasterCapped = fit.rasterCapped;
+      this.paintPreview(composed);
+      this.applyPreviewViewSize();
+      this.restoreViewCentre(centre);
+      const wanted = previewRasterZoom(this.previewZoomValue, table.pixelWidth, table.pixelHeight).zoom;
+      if (Math.abs(wanted - fit.rasterZoom) > fit.rasterZoom * 1e-9) {
+        this.schedulePreview();
+      }
+    } catch {
+      this.previewRefusal = 'The table image could not be composed at that size.';
+      this.tablePreviewPixels = '';
       this.blankPreview();
     } finally {
       if (sequence === this.previewSeq) {
@@ -3220,6 +3809,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (!this.allActive || this.allTargetPixels === null) {
       return;
     }
+    await this.loadFigureFont();
+    if (generation !== this.allGeneration || !this.allActive) {
+      return;
+    }
     const resolution = this.exportResolution;
     const density = this.exportDensity;
     const textScale = this.exportTextScale;
@@ -3312,201 +3905,468 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   // ---------------------------------------------------------------------------------------------
-  // Table export
+  // The table: its cells, its columns, its order, and its export and copy
   //
-  // The scope is every entry passing the current filters, in the current sort, across all pages —
-  // never the visible page, which is why this reads `viewAll` rather than `view`. The status line
-  // says so in as many words: a file holding ten of forty rows, with nothing on it to say which
-  // ten, is worse than no file.
+  // One column configuration decides the Interactive table's columns, the Table preview's and every
+  // download's and copy's. Every write covers every entry passing the current filters, in the
+  // current order, across all pages — never the visible page, which is why this reads `viewAll`
+  // rather than `view`. The toast says so in as many words: a file holding ten of forty rows, with
+  // nothing on it to say which ten, is worse than no file.
   // ---------------------------------------------------------------------------------------------
 
-  tableExportFormat: TableExportFormat = 'xlsx';
+  // --- Cells and sorts ---
 
-  /** Nothing to write from an empty comparison, and never two writes at once. */
-  get canExportTable(): boolean {
-    return this.entries.length > 0 && !this.exporting;
+  /** Each sortable display column's sort: the raw value of its primary part, and State by its rank. */
+  private displaySortAccessors(): Record<string, SortAccessor<BenchmarkModelComparisonEntryDto>> {
+    const accessors: Record<string, SortAccessor<BenchmarkModelComparisonEntryDto>> = {};
+    for (const column of TABLE_DISPLAY_COLUMNS) {
+      const part = column.sortPart;
+      if (part === null) {
+        continue;
+      }
+      accessors[column.key] = column.key === 'stateCol'
+        ? e => this.stateOrder(e)
+        : e => sortKeyOf(this.tableCell(e, part)?.raw ?? null);
+    }
+    return accessors;
   }
 
-  onTableExportFormatChange(value: TableExportFormat): void {
-    this.tableExportFormat = value;
+  /** One entry's cell for one part, from the cells built once per comparison. */
+  tableCell(entry: BenchmarkModelComparisonEntryDto, part: string): ComparisonTableCell | undefined {
+    return this.tableCellsByKey.get(entry.key)?.[part];
   }
 
-  /** The format select's option text for each format. */
-  private static readonly TABLE_EXPORT_FORMAT_NAMES: Readonly<Record<TableExportFormat, string>> = {
-    xlsx: 'Excel (.xlsx)', csv: 'CSV', tsv: 'TSV', md: 'Markdown',
-    json: 'JSON', html: 'HTML', png: 'PNG', webp: 'WebP',
-  };
-
-  /** Names the download button after the chosen format; the ellipsis says a column dialog opens first. */
-  get tableDownloadLabel(): string {
-    const name = ModelComparisonComponent.TABLE_EXPORT_FORMAT_NAMES[this.tableExportFormat] ?? this.tableExportFormat;
-    return `Download the table as ${name}…`;
+  /** One part's text as the table prints it, for the single-value columns. */
+  cellText(entry: BenchmarkModelComparisonEntryDto, part: string): string {
+    return this.tableCell(entry, part)?.text ?? '—';
   }
-
-  /** Encodes the filtered, sorted, unpaged table in the chosen format and saves it. */
-  async downloadTable(): Promise<void> {
-    await this.writeTable(this.entryTable.viewAll(this.entries));
-  }
-
-  // ---------------------------------------------------------------------------------------------
-  // The download column chooser
-  //
-  // The exported table carries twenty-six columns, of which a given comparison populates rather
-  // fewer: a comparable, fully priced set leaves the differing-key and scheduled-price columns
-  // empty on every row. The chooser opens with exactly the populated ones ticked and marks the rest
-  // as empty, so a reader who wants them has to ask for them and never has to guess which blank
-  // column is a missing measure and which is a column this set never fills.
-  // ---------------------------------------------------------------------------------------------
-
-  @ViewChild('tableColumnsDialog') tableColumnsDialogRef?: ElementRef<HTMLDialogElement>;
-
-  /** Every exportable column, in the order the file writes them. */
-  readonly tableColumns = COMPARISON_TABLE_COLUMNS;
-
-  /** Keys chosen in the column dialog; null until the first download seeds it. */
-  private tableColumnSelection: Set<string> | null = null;
 
   /**
-   * The rows the open dialog will write, captured when it opened so a filter change mid-dialog
-   * cannot desync them.
+   * Whether a part is shown as a column of its own. A combined cell leaves such a part out, so no
+   * value is printed twice; with the default columns nothing is left out.
    */
-  private pendingTableRows: BenchmarkModelComparisonEntryDto[] = [];
+  isColumnShown(key: string): boolean {
+    return this.shownColumnKeys.has(key);
+  }
 
-  /** Columns with no value on any row of the captured set, marked as empty in the chooser. */
-  tableColumnEmpty = new Set<string>();
-
-  /** The control the chooser was opened from, so focus returns where the reader left it. */
-  private tableColumnTrigger: HTMLElement | null = null;
-
-  openTableColumnDialog(event?: Event): void {
-    if (!this.canExportTable) {
+  /** Builds every entry's cells once per payload; a rebuild over the same payload keeps them. */
+  private refreshTableCells(): void {
+    if (this.entries === this.cellsSource) {
       return;
     }
-    this.tableColumnTrigger = (event?.currentTarget as HTMLElement | null) ?? null;
+    this.cellsSource = this.entries;
+    this.tableCellsByKey = new Map(this.entries.map(entry => [entry.key, comparisonTableCells(entry)] as const));
+    this.entriesByKey = new Map(this.entries.map(entry => [entry.key, entry] as const));
+  }
 
-    const rows = this.entryTable.viewAll(this.entries);
-    this.pendingTableRows = rows;
-    const populated = populatedColumnKeys(buildComparisonTableModel(rows, this.tableProvenance));
-    const populatedKeys = new Set(populated);
-    this.tableColumnEmpty = new Set(
-      this.tableColumns.filter(column => !populatedKeys.has(column.key)).map(column => column.key)
-    );
-
-    // Seeded once and then kept for the wizard's lifetime: a reader who ticked four columns for one
-    // download wants the same four for the next, not the default back again.
-    if (this.tableColumnSelection === null) {
-      this.tableColumnSelection = new Set(populated);
+  /**
+   * The Table tab's `empty` set: display columns with no value on any row passing the filters.
+   * Recomputed only when the filters or the entries change, never from the template.
+   */
+  private refreshColumnEmpty(force = false): void {
+    const signature = JSON.stringify(this.entryTable.filters);
+    if (!force && signature === this.columnEmptySignature) {
+      return;
     }
-
-    // The checkboxes are rendered from state this method has just changed, so they have to hold it
-    // before the dialog is promoted to the top layer.
-    this.cdr.detectChanges();
-    this.tableColumnsDialogRef?.nativeElement.showModal();
+    this.columnEmptySignature = signature;
+    const rows = this.entryTable.viewAll(this.entries)
+      .map(entry => this.tableCellsByKey.get(entry.key) ?? comparisonTableCells(entry));
+    const populated = new Set(populatedColumnKeys(rows));
+    this.columnEmptyKeys = new Set(TABLE_DISPLAY_COLUMNS.map(column => column.key).filter(key => !populated.has(key)));
   }
 
-  isTableColumnSelected(key: string): boolean {
-    return this.tableColumnSelection?.has(key) ?? false;
+  // --- The order of the rows ---
+
+  /** The column header the table is sorted by, or null while it follows the model order. */
+  get tableSortedBy(): TableDisplayColumn | null {
+    const column = this.entryTable.sortColumn;
+    return column === MODEL_ORDER_SORT ? null : tableDisplayColumn(column) ?? null;
   }
 
-  toggleTableColumn(key: string): void {
-    const selection = this.tableColumnSelection ?? new Set<string>();
-    if (selection.has(key)) {
-      selection.delete(key);
+  /** *Use model order*, above the table and in the Data tab. */
+  useModelOrder(): void {
+    this.resetTableToModelOrder();
+    this.onTableChanged();
+  }
+
+  /** Returns the rows to the model order, on page 1. Every model-order change does this too. */
+  private resetTableToModelOrder(): void {
+    this.entryTable.sortColumn = MODEL_ORDER_SORT;
+    this.entryTable.sortDirection = 'asc';
+    this.entryTable.page = 1;
+  }
+
+  /** The order a write follows, as the toast names it. */
+  get tableOrderPhrase(): string {
+    const sorted = this.tableSortedBy;
+    return sorted
+      ? `current order (sorted by ${sorted.header})`
+      : `current order (model order: ${this.modelOrderDescription})`;
+  }
+
+  // --- Columns ---
+
+  /**
+   * The Table tab's Columns section: stores the configuration, clears the filter of a column just
+   * hidden, returns a sort on a column just hidden to the model order, and re-composes the Table
+   * preview and the *Fit the table* information.
+   */
+  onTableColumnsChange(config: TableColumnConfig): void {
+    const next = normalizeTableColumnConfig(config);
+    const nowShown = new Set(next.shown);
+    const hidden = this.tableColumns.shown.filter(key => !nowShown.has(key));
+    this.setTableColumns(next);
+
+    const cleared: string[] = [];
+    for (const key of hidden) {
+      const filter = TABLE_COLUMN_FILTERS[key];
+      if (filter !== undefined && (this.entryTable.filters[filter] ?? '') !== '') {
+        this.entryTable.setFilter(filter, '');
+        cleared.push(tableDisplayColumn(key)?.header ?? key);
+      }
+      if (this.entryTable.sortColumn === key) {
+        this.resetTableToModelOrder();
+      }
+    }
+    this.tableColumnsStatus = cleared.length === 0
+      ? ''
+      : cleared.length === 1
+        ? `The ${cleared[0]} filter was cleared because its column is hidden.`
+        : `The ${cleared.join(' and ')} filters were cleared because their columns are hidden.`;
+
+    this.refreshColumnEmpty();
+    this.lastTableViewSignature = this.tableViewSignature();
+    this.scheduleTableOutputs();
+    this.cdr.markForCheck();
+  }
+
+  /** Replaces the configuration, stores it, and rebuilds the memoised column list and caption. */
+  private setTableColumns(config: TableColumnConfig): void {
+    this.tableColumns = config;
+    this.shownColumns = shownTableColumns(config);
+    this.shownColumnKeys = new Set(this.shownColumns.map(column => column.key));
+    this.tableCaption = this.captionFor(this.shownColumns);
+    try {
+      localStorage.setItem(TABLE_COLUMNS_STORAGE_KEY, JSON.stringify({ version: 1, order: config.order, shown: config.shown }));
+    } catch {
+      // Private mode or blocked storage: the columns still apply for this session.
+    }
+  }
+
+  /** The table's `<caption>`: the shown columns, named in order. */
+  private captionFor(columns: readonly TableDisplayColumn[]): string {
+    return `Cross-model comparison entries, one row per entry: ${columns.map(column => column.header).join(', ')}.`;
+  }
+
+  // --- Formats ---
+
+  /** The Download tab's Table format; remembered per browser. */
+  tableFormat: TableFileFormat = this.storedDownload.tableFormat;
+
+  /** Seven formats, so a select; each with the one line the Download tab says about it. */
+  readonly tableFormatOptions: readonly { readonly value: TableFileFormat; readonly label: string; readonly description: string }[] = [
+    { value: 'xlsx', label: 'Excel (.xlsx)', description: 'Numbers stay numbers; a second sheet holds the provenance.' },
+    { value: 'csv', label: 'CSV', description: 'One typed column per value, comma-separated, for any spreadsheet or script.' },
+    { value: 'tsv', label: 'TSV', description: 'One typed column per value, tab-separated, for pasting into a spreadsheet.' },
+    { value: 'md', label: 'Markdown', description: 'The table as on screen, as a Markdown table for a document or a chat message.' },
+    { value: 'json', label: 'JSON', description: 'One typed value per field, with the provenance, for scripts and notebooks.' },
+    { value: 'html', label: 'HTML', description: 'The table as on screen, as a web page carrying its provenance.' },
+    { value: 'image', label: 'Image (PNG or WebP)', description: 'A picture of the table in the Theme tab\'s look, at the Table image size below.' }
+  ];
+
+  onTableFormatChange(value: TableFileFormat): void {
+    this.tableFormat = value;
+    this.writeStoredDownload();
+    this.scheduleTableMeasure();
+    this.cdr.markForCheck();
+  }
+
+  /** The chosen format's one line. */
+  get tableFormatDescription(): string {
+    return this.tableFormatOptions.find(option => option.value === this.tableFormat)?.description ?? '';
+  }
+
+  /**
+   * Reading formats (Markdown, HTML, the image) keep a combined column combined, as on screen; data
+   * formats (Excel, CSV, TSV, JSON) write its parts as typed columns.
+   */
+  tableFlavour(format: TableFileFormat = this.tableFormat): TableModelFlavour {
+    return format === 'md' || format === 'html' || format === 'image' ? 'reading' : 'data';
+  }
+
+  /** What the chosen format is called in the download's name: the image is named by the image format. */
+  get tableFormatName(): string {
+    if (this.tableFormat === 'image') {
+      return this.exportFormat === 'webp' ? 'WebP' : 'PNG';
+    }
+    return this.tableFormatOptions.find(option => option.value === this.tableFormat)?.label ?? this.tableFormat;
+  }
+
+  /** Download table's accessible name. */
+  get downloadTableName(): string {
+    return `Download the table as ${this.tableFormatName}`;
+  }
+
+  /** Copy table's accessible name, which says what it writes: the clipboard takes what the format can paste as. */
+  get copyTableName(): string {
+    switch (this.tableFormat) {
+      case 'image':
+        return this.exportFormat === 'webp'
+          ? 'Copy the table as an image (copied as PNG)'
+          : 'Copy the table as an image';
+      case 'xlsx':
+        return 'Copy the table as cells for Excel';
+      case 'html':
+        return 'Copy the table as a formatted table';
+      case 'md':
+        return 'Copy the table as Markdown';
+      default:
+        return `Copy the table as ${this.tableFormat.toUpperCase()}`;
+    }
+  }
+
+  /** The Download tab shows the table image's size and format for the Image format, and whenever the Table preview is shown. */
+  get showTableImageSettings(): boolean {
+    return this.tableFormat === 'image' || this.effectiveFigureTab === 'tablePreview';
+  }
+
+  /** What the chosen format will write, as the Download tab's status line names it. */
+  get tableScopeLine(): string {
+    const rows = this.entryTable.filteredCount(this.entries);
+    const columns = this.shownColumns.length;
+    const scope = `${rows} ${rows === 1 ? 'entry' : 'entries'} (filters applied, current order, all pages) · ` +
+      `${columns} ${columns === 1 ? 'column' : 'columns'}`;
+    if (this.tableFlavour() === 'reading') {
+      return scope;
+    }
+    const written = new Set(this.shownColumns.flatMap(column => column.parts)).size;
+    return written === columns ? scope : `${scope}, written as ${written}`;
+  }
+
+  // --- The table image's size, refusal and *Fit the table* information ---
+
+  /** The table image's written size, `2960 × 1240 px`, from the last measurement; empty while refused. */
+  tableImageWritten = '';
+
+  /** Why the table image cannot be written at its size, from the last measurement. Empty while it fits. */
+  tableImageRefusal = '';
+
+  /**
+   * The part of `tableImageRefusal` the layout gives — too few pixels for the columns or the rows —
+   * rather than an out-of-range field, which the size section names beside the field itself.
+   */
+  private tableImageLayoutRefusal = '';
+
+  /** The Download tab's closing alert: the table image's layout refusal, while Image is the format. */
+  get tableImageLayoutAlert(): string {
+    return this.tableFormat === 'image' ? this.tableImageLayoutRefusal : '';
+  }
+
+  /** *Fit the table* in custom mode: the size that holds the whole table at this text size. */
+  tableFitInfo = '';
+
+  private tableMeasureTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Bumped by every measurement, so a slow one does not overwrite a newer one. */
+  private tableMeasureSeq = 0;
+
+  /** How long the measurement waits for typing, ticking or dragging to pause. */
+  private readonly tableMeasureQuietMs = 120;
+
+  /** Whether the Download tab's Table image size section is on screen and open. */
+  private get tableImageSectionShown(): boolean {
+    return !this.sidebarCollapsed
+      && this.effectiveSidebarTab === 'download'
+      && this.showTableImageSettings
+      && this.tableImageSizeOpen;
+  }
+
+  /** The Table image size section's written-size line in fit mode, where the size depends on the table. */
+  get tableImageWrittenLabel(): string {
+    return this.tableImageSize.resolutionId === FIT_RESOLUTION_ID && this.tableImageWritten !== ''
+      ? `${this.tableImageWritten} — the whole table at ${densityPercentLabel(resolveSizeDensity(this.tableImageSize))}`
+      : '';
+  }
+
+  /**
+   * Re-measures the table image 120 ms after the last change that affects it: the columns, the rows
+   * passing the filters, the size, the font, the weights and the row style. Only while a table view
+   * is shown, where the buttons, the Table preview and the size section read the result.
+   */
+  private scheduleTableMeasure(): void {
+    this.cancelScheduledTableMeasure();
+    if (this.step !== 3 || !isTableView(this.effectiveFigureTab)) {
+      return;
+    }
+    this.tableMeasureTimer = setTimeout(() => {
+      this.tableMeasureTimer = null;
+      void this.measureTableImageNow();
+    }, this.tableMeasureQuietMs);
+  }
+
+  private cancelScheduledTableMeasure(): void {
+    if (this.tableMeasureTimer !== null) {
+      clearTimeout(this.tableMeasureTimer);
+      this.tableMeasureTimer = null;
+    }
+  }
+
+  /**
+   * The measurement itself, memoised in three fields: the refusal and the written size whenever the
+   * image is what the table views write or show, and the *Fit the table* information only while the
+   * size section is shown in custom mode. Public so a spec can run it without the timer.
+   */
+  async measureTableImageNow(): Promise<void> {
+    const sequence = ++this.tableMeasureSeq;
+    if (!this.showTableImageSettings || this.entries.length === 0) {
+      this.tableImageWritten = '';
+      this.tableImageRefusal = '';
+      this.tableImageLayoutRefusal = '';
+      this.tableFitInfo = '';
+      this.cdr.markForCheck();
+      return;
+    }
+    await this.loadFigureFont();
+    if (sequence !== this.tableMeasureSeq) {
+      return;
+    }
+    const model = this.tableModel('reading');
+    const sizeError = sizeErrors(this.tableImageSize, 'image').any;
+    const target = sizeError === '' ? resolveTableImageLayout(model, this.tableImageOptions()) : null;
+    this.tableImageLayoutRefusal = target?.refusal ?? '';
+    this.tableImageRefusal = sizeError || this.tableImageLayoutRefusal;
+    this.tableImageWritten = target?.layout ? `${target.layout.pixelWidth} × ${target.layout.pixelHeight} px` : '';
+
+    if (this.tableImageSize.resolutionId === 'custom' && this.tableImageSectionShown) {
+      const fit = measureTableImage(model, {
+        theme: this.figureTheme,
+        tableStyle: this.figureStyle.table,
+        textScale: this.tableImageSize.textScalePercent / 100
+      });
+      const rows = model.rows.length;
+      const columns = model.columns.length;
+      this.tableFitInfo = `Fit the table: ${fit.widthPx} × ${fit.heightPx} px at this text size — the whole ` +
+        `table with its ${columns} shown ${columns === 1 ? 'column' : 'columns'} and ${rows} ` +
+        `${rows === 1 ? 'row' : 'rows'}.`;
     } else {
-      selection.add(key);
+      this.tableFitInfo = '';
     }
-    this.tableColumnSelection = selection;
     this.cdr.markForCheck();
   }
 
-  selectAllTableColumns(): void {
-    this.tableColumnSelection = new Set(this.tableColumns.map(column => column.key));
-    this.cdr.markForCheck();
+  /** The table image refuses the chosen size, which disables Download table and Copy table while Image is chosen. */
+  get tableWriteRefusal(): string {
+    return this.tableFormat === 'image' ? this.tableImageRefusal : '';
   }
 
-  selectPopulatedTableColumns(): void {
-    this.tableColumnSelection = new Set(
-      this.tableColumns
-        .filter(column => !this.tableColumnEmpty.has(column.key))
-        .map(column => column.key)
-    );
-    this.cdr.markForCheck();
+  /** Nothing to write from an empty comparison, never two writes at once, and nothing at a refused size. */
+  get canExportTable(): boolean {
+    return this.entries.length > 0 && !this.exporting && this.tableWriteRefusal === '';
   }
 
-  get tableColumnSelectedCount(): number {
-    return this.tableColumnSelection?.size ?? 0;
+  /** Download table's tooltip: its name, or why it will not. */
+  get downloadTableTooltip(): string {
+    return this.tableActionTooltip(this.downloadTableName);
   }
 
-  /** Closes the chooser and writes the rows it was opened over, in the chosen columns. */
-  async confirmTableDownload(): Promise<void> {
-    const rows = this.pendingTableRows.length > 0
-      ? this.pendingTableRows
-      : this.entryTable.viewAll(this.entries);
-    this.tableColumnsDialogRef?.nativeElement.close();
-    await this.writeTable(rows);
+  /** Copy table's tooltip: its name, or why it will not. */
+  get copyTableTooltip(): string {
+    return this.tableActionTooltip(this.copyTableName);
   }
+
+  private tableActionTooltip(name: string): string {
+    if (this.exporting) {
+      return 'An export is running.';
+    }
+    if (this.entries.length === 0) {
+      return 'Nothing to export: the comparison has no entries.';
+    }
+    return this.tableWriteRefusal || name;
+  }
+
+  /** The rows every write takes: filters applied, current order, all pages. */
+  private tableRows(): BenchmarkModelComparisonEntryDto[] {
+    return this.entryTable.viewAll(this.entries);
+  }
+
+  /** The table in one flavour, over the given rows, in the column configuration and with the cells built once. */
+  private tableModel(
+    flavour: TableModelFlavour,
+    rows: readonly BenchmarkModelComparisonEntryDto[] = this.tableRows()
+  ): ComparisonTableModel {
+    return buildComparisonTableModel(rows, this.tableProvenance, this.tableColumns, flavour, this.tableCellsByKey);
+  }
+
+  /** The table image's theme, row style and size: *Fit the table* at a density, or a box in plain pixels. */
+  private tableImageOptions(): TableImageOptions {
+    const settings = this.tableImageSize;
+    const density = resolveSizeDensity(settings);
+    let size: TableImageSize;
+    if (settings.resolutionId === FIT_RESOLUTION_ID) {
+      size = { mode: 'fit', density };
+    } else {
+      const resolution = resolveSizeResolution(settings);
+      size = {
+        mode: 'box',
+        widthPx: resolution.widthPx,
+        heightPx: resolution.heightPx,
+        density,
+        textScale: settings.textScalePercent / 100
+      };
+    }
+    return { theme: this.figureTheme, tableStyle: this.figureStyle.table, size };
+  }
+
+  // --- Download and copy ---
 
   /**
-   * Keeps the chooser's own close and cancel events off the wizard dialog that contains it, and
-   * returns focus to the control it was opened from.
-   *
-   * The host closes the whole wizard from its own dialog's `close`, and this one is a descendant of
-   * it. Escape fires `cancel` and then `close`; only the second is acted on, because the chooser is
-   * still modal during the first. `cancel` is never prevented — a close request the dialog refuses
-   * to honour is a trapped reader.
+   * The one write path: the rows passing the filters, in the current order, across all pages, in
+   * the chosen format's flavour and the column configuration. The image is written in the shared
+   * image format at the table image size, or refused in the words the Table preview uses.
    */
-  onTableColumnsDialogClose(event: Event): void {
-    event.stopPropagation();
-    if (event.type !== 'close') {
-      return;
-    }
-    const trigger = this.tableColumnTrigger;
-    this.tableColumnTrigger = null;
-    if (trigger?.isConnected) {
-      trigger.focus();
-    }
-    this.cdr.markForCheck();
-  }
-
-  /**
-   * The columns one download writes: what the chooser holds, or every populated column where the
-   * chooser has never been opened.
-   *
-   * Both branches come out in the order {@link COMPARISON_TABLE_COLUMNS} declares, which is the
-   * order the file is read in; the order a reader ticked boxes in is not it.
-   */
-  private tableColumnKeys(rows: readonly BenchmarkModelComparisonEntryDto[]): string[] {
-    const selection = this.tableColumnSelection;
-    if (selection !== null) {
-      return this.tableColumns.filter(column => selection.has(column.key)).map(column => column.key);
-    }
-    return populatedColumnKeys(buildComparisonTableModel(rows, this.tableProvenance));
-  }
-
-  /** The one write path, shared by the direct download and by the chooser's Download. */
-  private async writeTable(rows: readonly BenchmarkModelComparisonEntryDto[]): Promise<void> {
+  async downloadTable(): Promise<void> {
     if (!this.canExportTable) {
       return;
     }
-    const format = this.tableExportFormat;
+    const rows = this.tableRows();
+    const format = this.tableFormat;
+    const flavour = this.tableFlavour(format);
     this.exporting = true;
     this.exportNotice = null;
     this.cdr.markForCheck();
 
     try {
-      const columnKeys = this.tableColumnKeys(rows);
-      const model = buildComparisonTableModel(rows, this.tableProvenance, columnKeys);
-      const encoded = await encodeComparisonTable(model, format, { webpQuality: this.tableWebpQuality });
+      const model = this.tableModel(flavour, rows);
+      let pixels = '';
+      let encoded: TableExportResult;
+      if (format === 'image') {
+        await this.loadFigureFont();
+        const options = this.tableImageOptions();
+        const sizeError = sizeErrors(this.tableImageSize, 'image').any;
+        const target = sizeError === '' ? resolveTableImageLayout(model, options) : { layout: null, refusal: sizeError };
+        if (!target.layout) {
+          this.announce(target.refusal ?? 'The table image could not be written at this size.', 'error');
+          return;
+        }
+        pixels = ` at ${target.layout.pixelWidth} × ${target.layout.pixelHeight} px`;
+        encoded = await encodeComparisonTable(model, this.exportFormat, { webpQuality: this.webpQuality, ...options });
+      } else {
+        encoded = await encodeComparisonTable(model, format);
+      }
       const filename = tableExportFilename(encoded.format);
       saveFigureBlob(encoded.blob, filename);
 
       const noun = rows.length === 1 ? 'entry' : 'entries';
+      const shown = this.shownColumns.length;
+      const columns = flavour === 'reading'
+        ? `${shown} ${shown === 1 ? 'column' : 'columns'}`
+        : `${shown} ${shown === 1 ? 'column' : 'columns'}, written as ${model.columns.length}`;
       const fallback = encoded.fellBackToPng
         ? ' This browser cannot encode WebP, so the file was written as PNG.'
         : '';
       this.announce(
-        `Table saved as ${filename} — ${rows.length} ${noun}, current sort, filters applied, ` +
-        `all pages, ${columnKeys.length} of ${this.tableColumns.length} columns.${fallback}`,
+        `Table saved as ${filename} — ${rows.length} ${noun}, ${this.tableOrderPhrase}, filters applied, ` +
+        `all pages, ${columns}${pixels}.${fallback}`,
         'success'
       );
     } catch {
@@ -3518,35 +4378,74 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * Copies the same rows as a GFM table.
+   * Copies the same rows in what the chosen format pastes as: a PNG for the image (WebP included,
+   * because every engine that implements `ClipboardItem` rejects `image/webp` in one), cells for
+   * Excel, a formatted table for HTML, and the text of Markdown, CSV, TSV and JSON.
    *
-   * Markdown rather than the chosen format: the clipboard's destination is a document or a chat
-   * message, and a pasted spreadsheet or a pasted HTML document is not one. Both the refusal and
-   * the absence of the API land as inline text — a bare console error tells the reader nothing.
+   * A text payload falls back to `writeText` where `ClipboardItem` is missing; an image cannot. Every
+   * refusal and every missing API lands as inline text — a bare console error tells the reader
+   * nothing.
    */
-  async copyTableMarkdown(): Promise<void> {
+  async copyTable(): Promise<void> {
     if (!this.canExportTable) {
       return;
     }
-    const rows = this.entryTable.viewAll(this.entries);
+    const rows = this.tableRows();
+    const format = this.tableFormat;
     this.exporting = true;
     this.exportNotice = null;
     this.cdr.markForCheck();
 
+    const noun = rows.length === 1 ? 'entry' : 'entries';
+    const scope = `${this.tableOrderPhrase}, filters applied, all pages`;
     try {
-      const clipboard = navigator.clipboard as Clipboard | undefined;
-      if (!clipboard || typeof clipboard.writeText !== 'function') {
-        this.announce(
-          'This browser cannot copy text to the clipboard — download the table instead.',
-          'error'
-        );
+      const model = this.tableModel(this.tableFlavour(format), rows);
+      if (format === 'image') {
+        await this.loadFigureFont();
+        const options = this.tableImageOptions();
+        const sizeError = sizeErrors(this.tableImageSize, 'image').any;
+        const target = sizeError === '' ? resolveTableImageLayout(model, options) : { layout: null, refusal: sizeError };
+        if (!target.layout) {
+          this.announce(target.refusal ?? 'The table image could not be copied at this size.', 'error');
+          return;
+        }
+        const encoded = await encodeComparisonTable(model, 'png', options);
+        const outcome = await copyImageToClipboard(encoded.blob);
+        if (outcome === 'copied') {
+          this.announce(
+            `Copied ${rows.length} ${noun} as an image (PNG, ${target.layout.pixelWidth} × ` +
+            `${target.layout.pixelHeight} px) — ${scope}.`,
+            'success'
+          );
+        } else if (outcome === 'unsupported') {
+          this.announce('This browser cannot copy images — download the table instead.', 'error');
+        } else {
+          this.announce('The clipboard write was refused.', 'error');
+        }
         return;
       }
-      await clipboard.writeText(toMarkdown(buildComparisonTableModel(rows, this.tableProvenance)));
-      this.announce(
-        `Copied ${rows.length} ${rows.length === 1 ? 'entry' : 'entries'} as Markdown.`,
-        'success'
-      );
+
+      const payload = tableClipboardPayload(model, format);
+      const clipboard = navigator.clipboard as Clipboard | undefined;
+      const canWriteItems = !!clipboard && typeof clipboard.write === 'function' && typeof ClipboardItem !== 'undefined';
+      if (canWriteItems) {
+        const parts: Record<string, Blob> = { 'text/plain': new Blob([payload.text], { type: 'text/plain' }) };
+        if (payload.html !== undefined) {
+          parts['text/html'] = new Blob([payload.html], { type: 'text/html' });
+        }
+        await clipboard!.write([new ClipboardItem(parts)]);
+      } else if (clipboard && typeof clipboard.writeText === 'function') {
+        await clipboard.writeText(payload.text);
+      } else {
+        this.announce('This browser cannot copy text to the clipboard — download the table instead.', 'error');
+        return;
+      }
+      const what = format === 'xlsx'
+        ? 'cells for Excel'
+        : format === 'html'
+          ? 'a formatted table'
+          : format === 'md' ? 'Markdown' : format.toUpperCase();
+      this.announce(`Copied ${rows.length} ${noun} as ${what} — ${scope}.`, 'success');
     } catch {
       this.announce('The clipboard write was refused.', 'error');
     } finally {
@@ -3712,16 +4611,25 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return entry.state === 'Degraded' ? 1 : 0;
   }
 
+  /** The payload `chartEntries` and `context` were derived from. */
+  private chartSource: BenchmarkModelComparisonDto | null | undefined = undefined;
+
   /**
-   * Rebuilds every figure from one entry set, one order and one glyph assignment.
+   * Rebuilds every figure from one entry set, one order, one glyph assignment and one theme, and
+   * with them the model order the table and the Custom list read.
    *
    * The glyph source is the whole payload rather than the current slice, so deselecting a model
    * never repaints the survivors — a reader who has learned a model's hue and shape keeps it.
    */
   private rebuild(): void {
     this.entries = this.comparison?.entries ?? [];
-    this.chartEntries = toChartEntries(this.comparison);
-    this.context = toChartContext(this.comparison);
+    if (this.comparison !== this.chartSource) {
+      this.chartSource = this.comparison;
+      this.chartEntries = toChartEntries(this.comparison);
+      this.context = toChartContext(this.comparison);
+    }
+    this.refreshTableCells();
+    this.refreshFigureTheme();
 
     const stateByKey = new Map(this.entries.map(entry => [entry.key, entry.state] as const));
     const input = this.chartEntries.filter(entry => {
@@ -3748,9 +4656,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       highlightedKey: this.highlightedKey,
       selectedKeys: this.emphasisKeys,
       glyphSource: this.chartEntries,
-      style: this.figureStyle
+      style: this.figureStyle,
+      theme: this.figureTheme
     });
 
+    this.refreshModelOrder();
     const plotted = this.figures.selection.plotted;
     this.profileAxes = plotted.length >= 2
       ? normalizeProfile(plotted, {
@@ -3782,12 +4692,54 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     // outside change detection: a filter control, the reduced-motion listener, the resize
     // observer. Marking here is what makes the figures, the notices and the table agree.
     this.cdr.markForCheck();
-    // No-ops unless the Single stage or the All tiles are composing, which follow every rebuild.
+    // No-ops unless the stage or the All tiles are composing, which follow every rebuild.
     this.schedulePreview();
     if (this.allActive) {
       this.markAllStale();
       this.scheduleAllCompose();
     }
+  }
+
+  /**
+   * The model order over every entry, and the Custom list built from it. The rank is recomputed only
+   * when the order, the measures or the entries changed; the list's tags and divider follow the
+   * figures, so they are rebuilt with them while Custom is chosen.
+   */
+  private refreshModelOrder(): void {
+    const inputs = this.modelOrderInputs;
+    if (!inputs || inputs.sort !== this.sort || inputs.speedMeasure !== this.speedMeasure
+        || inputs.costMeasure !== this.costMeasure || inputs.entries !== this.chartEntries) {
+      this.modelOrderInputs = {
+        sort: this.sort, speedMeasure: this.speedMeasure, costMeasure: this.costMeasure, entries: this.chartEntries
+      };
+      this.modelOrderKeyList = modelOrderKeys(this.chartEntries, this.sort, this.speedMeasure, this.costMeasure, this.context);
+      this.modelOrderRank = new Map(this.modelOrderKeyList.map((key, index) => [key, index] as const));
+      const reset = this.defaultModelOrderKeys(this.chartEntries);
+      this.customOrderIsDefault = this.sort.key !== 'custom'
+        || (reset.length === this.modelOrderKeyList.length && reset.every((key, index) => key === this.modelOrderKeyList[index]));
+    }
+
+    if (this.sort.key !== 'custom') {
+      this.customOrderItems = [];
+      this.customOrderDividerIndex = null;
+      return;
+    }
+    const selection = this.figures?.selection;
+    const plotted = new Set((selection?.plotted ?? []).map(entry => entry.key));
+    const overflow = new Set((selection?.overflow ?? []).map(entry => entry.key));
+    this.customOrderItems = this.modelOrderKeyList.map(key => ({
+      key,
+      label: this.entriesByKey.get(key)?.label ?? key,
+      tags: plotted.has(key) || overflow.has(key) ? [] : ['table only']
+    }));
+    // The line sits under the last charted entry, and only where the cap left chartable entries out.
+    let lastPlotted = -1;
+    this.modelOrderKeyList.forEach((key, index) => {
+      if (plotted.has(key)) {
+        lastPlotted = index;
+      }
+    });
+    this.customOrderDividerIndex = overflow.size > 0 && lastPlotted >= 0 ? lastPlotted + 1 : null;
   }
 
   /**

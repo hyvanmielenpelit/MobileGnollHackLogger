@@ -5,19 +5,35 @@ import type { FigureBadgeKind } from './figure-chrome';
 import {
   BadgeControl,
   BarFigureStyle,
+  DEFAULT_APPEARANCE_STYLE,
   DEFAULT_FIGURE_STYLE,
+  FIGURE_BACKGROUND_MODES,
+  FIGURE_FONT_WEIGHTS,
+  FIGURE_PREVIEW_BACKDROPS,
+  FIGURE_THEME_NAMES,
+  FigureAppearanceStyle,
+  FigureBackgroundMode,
+  FigureFontId,
+  FigureFontWeight,
+  FigurePreviewBackdrop,
   FigureStyle,
+  FigureThemeName,
   HIDDEN_INTERVALS_NOTE,
+  NumericAppearanceStyleKey,
   NumericBarStyleKey,
   ProfileFigureStyle,
   RangeControl,
   ScatterFigureStyle,
+  appearanceRangeControl,
   badgeControlsFor,
   barRangeControl,
   chromeRangeControl,
   clampToControl,
+  normalizeHexColor,
   scatterRangeControl
 } from './figure-style';
+import { FIGURE_FONTS, figureFont } from './figure-fonts';
+import { appearanceWarnings } from './figure-theme';
 import {
   DEFAULT_MEASURE_DECIMALS,
   MAX_MEASURE_DECIMALS,
@@ -35,10 +51,13 @@ import type { CostMeasure, SpeedMeasure } from './model-comparison-charts';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 
-/** Which control set the panel shows: the bar panels', the trade-off scatters', or the profile's. */
-export type FigureStylePanelKind = 'bar' | 'scatter' | 'profile';
+/** Which control set the panel shows: the bar panels', the trade-off scatters', the profile's, or the theme tab's. */
+export type FigureStylePanelKind = 'bar' | 'scatter' | 'profile' | 'appearance';
 
 type StyleFamily = 'bar' | 'scatter' | 'profile';
+
+/** Every kind the generic section, range and reset methods operate over. */
+type PanelFamily = StyleFamily | 'appearance';
 
 /**
  * One collapsible section: its key within the family, its summary title and the style fields it
@@ -60,7 +79,7 @@ const FOOTER_KEYS = ['footer', 'footerTextSizePx'] as const;
  * Each family's sections, in the order the panel stacks them. Together a family's sections claim
  * every one of its style fields once; the shared Number format section edits `numbers`.
  */
-export const FIGURE_STYLE_SECTIONS: Readonly<Record<StyleFamily, readonly FigureStyleSection[]>> = {
+export const FIGURE_STYLE_SECTIONS: Readonly<Record<PanelFamily, readonly FigureStyleSection[]>> = {
   bar: [
     { name: 'heading', title: 'Heading and badges', keys: HEADING_KEYS },
     { name: 'bars', title: 'Bars', keys: ['gapPercent', 'maxBarWidthPx', 'cornerRadiusPx', 'outlineWidthPx', 'filledBars'] },
@@ -69,20 +88,20 @@ export const FIGURE_STYLE_SECTIONS: Readonly<Record<StyleFamily, readonly Figure
       title: 'Values and axes',
       keys: [
         'valueLabels', 'valueLabelSizePx', 'singleRunMarker', 'thinkingLevelBreak', 'axisTextSizePx', 'axisTitleSizePx',
-        'axisTitleBreak'
+        'axisTitleBreak', 'axisTitleWeight'
       ]
     },
     NUMBERS_SECTION,
     { name: 'uncertainty', title: 'Uncertainty', keys: ['intervals', 'hiddenIntervalsNote', 'meanTimeNoIntervalNote'] },
     { name: 'footer', title: 'Footer', keys: FOOTER_KEYS },
-    { name: 'layout', title: 'Layout', keys: ['orientation', 'gridlines'] }
+    { name: 'layout', title: 'Layout', keys: ['orientation', 'gridlines', 'plotFrame'] }
   ],
   scatter: [
     { name: 'heading', title: 'Heading and badges', keys: HEADING_KEYS },
     { name: 'marks', title: 'Marks and frontier', keys: ['markRadiusPx', 'frontierWidthPx', 'dominatedShading'] },
     { name: 'labels', title: 'Labels and legend', keys: ['labelTextSizePx', 'legendPosition', 'thinkingLevelBreak'] },
     NUMBERS_SECTION,
-    { name: 'axes', title: 'Axes', keys: ['axisTextSizePx', 'axisTitleSizePx', 'gridlines'] },
+    { name: 'axes', title: 'Axes', keys: ['axisTextSizePx', 'axisTitleSizePx', 'gridlines', 'axisTitleWeight', 'plotFrame'] },
     { name: 'uncertainty', title: 'Uncertainty', keys: ['intervals', 'hiddenIntervalsNote', 'frontierIntervalsNote'] },
     { name: 'footer', title: 'Footer', keys: FOOTER_KEYS }
   ],
@@ -90,6 +109,12 @@ export const FIGURE_STYLE_SECTIONS: Readonly<Record<StyleFamily, readonly Figure
     { name: 'heading', title: 'Heading and badges', keys: HEADING_KEYS },
     NUMBERS_SECTION,
     { name: 'footer', title: 'Footer', keys: FOOTER_KEYS }
+  ],
+  appearance: [
+    { name: 'theme', title: 'Theme and background', keys: ['theme', 'background', 'backgroundColor', 'previewBackdrop', 'previewBackdropColor'] },
+    { name: 'font', title: 'Font', keys: ['fontFamily', 'headingWeight', 'labelWeight'] },
+    { name: 'colors', title: 'Text colour', keys: ['headingColor', 'textColor'] },
+    { name: 'border', title: 'Borders', keys: ['border', 'borderWidthPx', 'borderRadiusPx', 'borderColor'] }
   ]
 };
 
@@ -100,12 +125,12 @@ export interface NumberOption {
 }
 
 /**
- * Where the open sections are kept, per browser, as `{ bar: [...], scatter: [...], profile: [...] }`.
- * A family missing from the stored value opens its first section.
+ * Where the open sections are kept, per browser, as `{ bar: [...], scatter: [...], profile: [...],
+ * appearance: [...] }`. A family missing from the stored value opens its first section.
  */
 export const FIGURE_STYLE_PANEL_OPEN_KEY = 'overseer.figureStylePanel.open';
 
-const FAMILIES: readonly StyleFamily[] = ['bar', 'scatter', 'profile'];
+const FAMILIES: readonly PanelFamily[] = ['bar', 'scatter', 'profile', 'appearance'];
 
 /** The badge names a Heading and badges read-out lists. */
 const BADGE_READOUT_NAMES: Record<FigureBadgeKind, string> = {
@@ -115,6 +140,25 @@ const BADGE_READOUT_NAMES: Record<FigureBadgeKind, string> = {
   questions: 'questions',
   pricing: 'pricing'
 };
+
+const THEME_LABELS: Record<FigureThemeName, string> = { dark: 'Dark', light: 'Light' };
+const BACKGROUND_LABELS: Record<FigureBackgroundMode, string> = {
+  theme: 'Theme',
+  transparent: 'Transparent',
+  custom: 'Custom colour'
+};
+const PREVIEW_BACKDROP_LABELS: Record<FigurePreviewBackdrop, string> = { checkerboard: 'Checkerboard', color: 'Colour' };
+const FONT_WEIGHT_LABELS: Record<FigureFontWeight, string> = {
+  400: 'Regular 400',
+  500: 'Medium 500',
+  600: 'Semibold 600',
+  700: 'Bold 700'
+};
+
+/** A colour that can follow the theme instead of holding a fixed hex value. */
+type NullableAppearanceColorKey = 'headingColor' | 'textColor' | 'borderColor';
+type AppearanceColorKey = 'backgroundColor' | 'previewBackdropColor' | NullableAppearanceColorKey;
+const NULLABLE_APPEARANCE_COLOR_KEYS: readonly NullableAppearanceColorKey[] = ['headingColor', 'textColor', 'borderColor'];
 
 /** Equal to the page's initial `scatterDirectLabels` and `scatterInlineValues`. */
 const DEFAULT_DIRECT_LABELS = false;
@@ -129,12 +173,14 @@ function sameStyleValue(a: unknown, b: unknown): boolean {
 }
 
 /**
- * The sidebar's Style tab: one control set for the three bar panels, another for the three
- * trade-off charts, and a caption set for the profile, each as a stack of collapsible sections.
+ * The sidebar's Theme tab and Style sections: one control set for the three bar panels, another
+ * for the three trade-off charts, a caption set for the profile, and the theme, font and border
+ * controls shared by every chart and the table image — each as a stack of collapsible sections.
  *
  * Every style change is emitted as a whole new style, and the wizard owns the style, its persistence
- * and the rebuild. The panel keeps only the last finite bar width, which sections are open and the
- * status line of the last reset.
+ * and the rebuild. The panel keeps only the last finite bar width, the last chosen colour of a
+ * field that can follow the theme, which sections are open, hex-field errors and the status line of
+ * the last reset.
  */
 @Component({
   selector: 'app-figure-style-panel',
@@ -164,6 +210,9 @@ export class FigureStylePanelComponent implements OnInit {
   /** The shown family's plotted values the decimal options preview on. */
   @Input() numberSamples: NumberSamples = {};
 
+  /** The bundled font's load state, shown only by the appearance kind. */
+  @Input() fontLoadStatus = '';
+
   @Output() figureStyleChange = new EventEmitter<FigureStyle>();
   @Output() directLabelsChange = new EventEmitter<boolean>();
   @Output() inlineValuesChange = new EventEmitter<boolean>();
@@ -182,6 +231,9 @@ export class FigureStylePanelComponent implements OnInit {
   readonly scatterFrontierControl = scatterRangeControl('frontierWidthPx');
   readonly scatterLabelControl = scatterRangeControl('labelTextSizePx');
   readonly scatterAxisControls = [scatterRangeControl('axisTextSizePx'), scatterRangeControl('axisTitleSizePx')];
+
+  readonly appearanceBorderControls: readonly RangeControl<NumericAppearanceStyleKey>[] =
+    (['borderWidthPx', 'borderRadiusPx'] as const).map(appearanceRangeControl);
 
   readonly badgeControls: Readonly<Record<StyleFamily, readonly BadgeControl[]>> = {
     bar: badgeControlsFor('bar'),
@@ -206,6 +258,14 @@ export class FigureStylePanelComponent implements OnInit {
     { value: 'never', label: 'Never' }
   ] as const;
 
+  /** Regular / Medium / Semibold / Bold: shared by the appearance weights and each family's axis title weight. */
+  readonly fontWeightOptions = FIGURE_FONT_WEIGHTS.map((value) => ({ value, label: FONT_WEIGHT_LABELS[value] }));
+
+  readonly themeOptions = FIGURE_THEME_NAMES.map((value) => ({ value, label: THEME_LABELS[value] }));
+  readonly backgroundOptions = FIGURE_BACKGROUND_MODES.map((value) => ({ value, label: BACKGROUND_LABELS[value] }));
+  readonly previewBackdropOptions = FIGURE_PREVIEW_BACKDROPS.map((value) => ({ value, label: PREVIEW_BACKDROP_LABELS[value] }));
+  readonly fontOptions = FIGURE_FONTS;
+
   readonly measureNames = MEASURE_NAMES;
 
   /** The caption text each note checkbox adds, quoted verbatim in its tip. */
@@ -218,8 +278,14 @@ export class FigureStylePanelComponent implements OnInit {
   /** What the status region announces after a reset; cleared by the next control change. */
   resetStatus = '';
 
+  /** The hex field's own inline error, per colour field; cleared as soon as its text is edited. */
+  hexErrors: Partial<Record<AppearanceColorKey, string>> = {};
+
   /** Where *No limit* returns to when it is unticked. */
   private lastBarWidthPx = DEFAULT_FIGURE_STYLE.bar.maxBarWidthPx ?? 24;
+
+  /** Where a colour that can follow the theme returns to when it is switched back to a fixed value. */
+  private lastNullableColor: Partial<Record<NullableAppearanceColorKey, string>> = {};
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
@@ -235,6 +301,10 @@ export class FigureStylePanelComponent implements OnInit {
 
   get profile(): ProfileFigureStyle {
     return this.figureStyle.profile;
+  }
+
+  get appearance(): FigureAppearanceStyle {
+    return this.figureStyle.appearance;
   }
 
   /** The *Filled bars* tip, which mentions the `n = 1` marker only while it is off. */
@@ -256,28 +326,37 @@ export class FigureStylePanelComponent implements OnInit {
   }
 
   /** A range's tip, with the reason it is disabled where that is not shown beside it. */
-  rangeHint(family: StyleFamily, control: RangeControl<string>): string {
+  rangeHint(family: PanelFamily, control: RangeControl<string>): string {
     const hint = control.hint ?? '';
-    if (control.key === 'footerTextSizePx' && !this.figureStyle[family].footer) {
+    if (control.key === 'footerTextSizePx' && family !== 'appearance' && !this.figureStyle[family].footer) {
       return hint ? `${hint} Available while the footer is shown.` : 'Available while the footer is shown.';
     }
     return hint;
   }
 
-  controlId(family: StyleFamily, key: string): string {
+  controlId(family: PanelFamily, key: string): string {
     return `mc-style-${family}-${key}`;
   }
 
-  tipId(family: StyleFamily, key: string): string {
+  tipId(family: PanelFamily, key: string): string {
     return `${this.controlId(family, key)}-tip`;
   }
 
-  rangeValue(family: StyleFamily, key: string): number {
+  rangeValue(family: PanelFamily, key: string): number {
     const value = (this.figureStyle[family] as unknown as Record<string, number | null>)[key];
     return value ?? this.lastBarWidthPx;
   }
 
-  rangeDisabled(family: StyleFamily, key: string): boolean {
+  rangeDisabled(family: PanelFamily, key: string): boolean {
+    if (family === 'appearance') {
+      if (key === 'borderWidthPx') {
+        return !this.appearance.border;
+      }
+      if (key === 'borderRadiusPx') {
+        return !this.appearance.border && this.appearance.background === 'transparent';
+      }
+      return false;
+    }
     if (key === 'footerTextSizePx') {
       return !this.figureStyle[family].footer;
     }
@@ -289,7 +368,7 @@ export class FigureStylePanelComponent implements OnInit {
   }
 
   /** What the range announces: `24 pixels`, `28 percent`, or `No limit`. */
-  valueText(family: StyleFamily, control: RangeControl<string>): string {
+  valueText(family: PanelFamily, control: RangeControl<string>): string {
     if (family === 'bar' && control.key === 'maxBarWidthPx' && this.bar.maxBarWidthPx === null) {
       return 'No limit';
     }
@@ -298,14 +377,14 @@ export class FigureStylePanelComponent implements OnInit {
   }
 
   /** What the `<output>` beside the range shows: `24 px`, `28 %`. */
-  valueLabel(family: StyleFamily, control: RangeControl<string>): string {
+  valueLabel(family: PanelFamily, control: RangeControl<string>): string {
     if (family === 'bar' && control.key === 'maxBarWidthPx' && this.bar.maxBarWidthPx === null) {
       return 'No limit';
     }
     return `${this.rangeValue(family, control.key)} ${control.unit}`;
   }
 
-  onRange(family: StyleFamily, control: RangeControl<string>, event: Event): void {
+  onRange(family: PanelFamily, control: RangeControl<string>, event: Event): void {
     const raw = Number((event.target as HTMLInputElement).value);
     const value = clampToControl(raw, control, this.rangeValue(family, control.key));
     if (family === 'bar' && control.key === 'maxBarWidthPx') {
@@ -326,7 +405,7 @@ export class FigureStylePanelComponent implements OnInit {
   }
 
   /** Emits the style with one field of one family replaced. */
-  setFamily(family: StyleFamily, key: string, value: unknown): void {
+  setFamily(family: PanelFamily, key: string, value: unknown): void {
     this.resetStatus = '';
     this.figureStyleChange.emit({ ...this.figureStyle, [family]: { ...this.figureStyle[family], [key]: value } });
   }
@@ -341,6 +420,10 @@ export class FigureStylePanelComponent implements OnInit {
 
   setProfile<K extends keyof ProfileFigureStyle>(key: K, value: ProfileFigureStyle[K]): void {
     this.setFamily('profile', key, value);
+  }
+
+  setAppearance<K extends keyof FigureAppearanceStyle>(key: K, value: FigureAppearanceStyle[K]): void {
+    this.setFamily('appearance', key, value);
   }
 
   badgeControlId(family: StyleFamily, kind: FigureBadgeKind): string {
@@ -362,6 +445,116 @@ export class FigureStylePanelComponent implements OnInit {
 
   checkedOf(event: Event): boolean {
     return (event.target as HTMLInputElement).checked;
+  }
+
+  // --- Theme, font, colour and border (the appearance kind) ---------------------------------
+
+  onFontFamily(event: Event): void {
+    this.setAppearance('fontFamily', (event.target as HTMLSelectElement).value as FigureFontId);
+  }
+
+  followsTheme(key: NullableAppearanceColorKey): boolean {
+    return this.appearance[key] === null;
+  }
+
+  /** Ticking *Follow theme* remembers the fixed colour it replaces; unticking restores it. */
+  onFollowTheme(key: NullableAppearanceColorKey, follow: boolean): void {
+    if (follow) {
+      const current = this.appearance[key];
+      if (current !== null) {
+        this.lastNullableColor[key] = current;
+      }
+      this.setAppearance(key, null);
+      return;
+    }
+    this.setAppearance(key, this.lastNullableColor[key] ?? '#ffffff');
+  }
+
+  /** The swatch and hex field's shown value: the field's own colour, or its last one while it follows the theme. */
+  appearanceColorValue(key: AppearanceColorKey): string {
+    const value = (this.appearance as unknown as Record<AppearanceColorKey, string | null>)[key];
+    if (value !== null) {
+      return value;
+    }
+    return this.lastNullableColor[key as NullableAppearanceColorKey] ?? '#ffffff';
+  }
+
+  /** The native colour input always carries a valid `#rrggbb`, so it commits at once. */
+  onColorPick(key: AppearanceColorKey, event: Event): void {
+    this.commitAppearanceColor(key, (event.target as HTMLInputElement).value);
+  }
+
+  /** Clears the hex field's own error as soon as its text changes; nothing commits until it validates. */
+  onHexInput(key: AppearanceColorKey): void {
+    if (this.hexErrors[key] === undefined) {
+      return;
+    }
+    const next = { ...this.hexErrors };
+    delete next[key];
+    this.hexErrors = next;
+  }
+
+  onHexCommit(key: AppearanceColorKey, event: Event): void {
+    const raw = (event.target as HTMLInputElement).value.trim();
+    if (!/^#[0-9a-fA-F]{6}$/.test(raw)) {
+      this.hexErrors = { ...this.hexErrors, [key]: 'Enter a 6-digit hex colour, like #1a2b3c.' };
+      return;
+    }
+    this.commitAppearanceColor(key, raw);
+  }
+
+  hexErrorId(key: AppearanceColorKey): string {
+    return `${this.controlId('appearance', key)}-error`;
+  }
+
+  /** The hex field's pending error, or empty. */
+  hexError(key: AppearanceColorKey): string {
+    return this.hexErrors[key] ?? '';
+  }
+
+  colorWarnings(): string[] {
+    return appearanceWarnings(this.appearance);
+  }
+
+  resetAppearance(): void {
+    this.figureStyleChange.emit({ ...this.figureStyle, appearance: DEFAULT_APPEARANCE_STYLE });
+    this.hexErrors = {};
+    this.resetStatus = 'Theme and fonts reset to defaults.';
+  }
+
+  private commitAppearanceColor(key: AppearanceColorKey, raw: string): void {
+    const value = normalizeHexColor(raw, this.appearanceColorValue(key));
+    if (this.hexErrors[key] !== undefined) {
+      const next = { ...this.hexErrors };
+      delete next[key];
+      this.hexErrors = next;
+    }
+    if (NULLABLE_APPEARANCE_COLOR_KEYS.includes(key as NullableAppearanceColorKey)) {
+      this.lastNullableColor[key as NullableAppearanceColorKey] = value;
+    }
+    this.setAppearance(key, value);
+  }
+
+  private appearanceReadout(name: string): string {
+    const a = this.appearance;
+    switch (name) {
+      case 'theme': {
+        const background = a.background === 'theme' ? 'theme background'
+          : a.background === 'transparent' ? 'transparent' : 'custom background';
+        return [a.theme, background].join(' · ');
+      }
+      case 'font':
+        return [figureFont(a.fontFamily).label, `headings ${a.headingWeight}`, `labels ${a.labelWeight}`].join(' · ');
+      case 'colors':
+        return [
+          a.headingColor ? `heading ${a.headingColor}` : 'heading follows theme',
+          a.textColor ? `text ${a.textColor}` : 'text follows theme'
+        ].join(' · ');
+      case 'border':
+        return a.border ? `${a.borderWidthPx} px · radius ${a.borderRadiusPx}` : 'none';
+      default:
+        return '';
+    }
   }
 
   // --- Number format -------------------------------------------------------------------------
@@ -437,7 +630,7 @@ export class FigureStylePanelComponent implements OnInit {
   }
 
   /** Whether every field the section edits, and for Labels and legend the two page toggles, is at its default. */
-  sectionIsDefault(family: StyleFamily, name: string): boolean {
+  sectionIsDefault(family: PanelFamily, name: string): boolean {
     const fieldsDefault = this.sectionFieldsDefault(family, name);
     if (family === 'scatter' && name === 'labels') {
       return fieldsDefault && this.directLabels === DEFAULT_DIRECT_LABELS && this.inlineValues === DEFAULT_INLINE_VALUES;
@@ -446,7 +639,7 @@ export class FigureStylePanelComponent implements OnInit {
   }
 
   /** Returns one section to its defaults, leaving every other field as it is. */
-  resetSection(family: StyleFamily, name: string): void {
+  resetSection(family: PanelFamily, name: string): void {
     if (this.sectionIsDefault(family, name)) {
       return;
     }
@@ -454,7 +647,7 @@ export class FigureStylePanelComponent implements OnInit {
     if (section.shared) {
       // Only the measures this family shows; a hidden measure keeps its setting.
       const numbers: Record<NumberMeasure, number> = { ...this.figureStyle.numbers };
-      for (const measure of this.numberRows(family)) {
+      for (const measure of this.numberRows(family as StyleFamily)) {
         numbers[measure] = DEFAULT_MEASURE_DECIMALS[measure];
       }
       this.figureStyleChange.emit({ ...this.figureStyle, numbers });
@@ -476,19 +669,19 @@ export class FigureStylePanelComponent implements OnInit {
   }
 
   /** The reset button's accessible name. */
-  resetLabel(family: StyleFamily, name: string): string {
+  resetLabel(family: PanelFamily, name: string): string {
     const section = this.section(family, name);
     return section.shared ? 'Reset visible number formats to defaults' : `Reset ${section.title} to defaults`;
   }
 
   /** The reset button's tooltip. */
-  resetTip(family: StyleFamily, name: string): string {
+  resetTip(family: PanelFamily, name: string): string {
     return this.sectionIsDefault(family, name) ? 'Already at defaults' : 'Reset to defaults';
   }
 
-  private sectionFieldsDefault(family: StyleFamily, name: string): boolean {
+  private sectionFieldsDefault(family: PanelFamily, name: string): boolean {
     if (this.section(family, name).shared) {
-      return this.numberRows(family).every((measure) => this.figureStyle.numbers[measure] === DEFAULT_MEASURE_DECIMALS[measure]);
+      return this.numberRows(family as StyleFamily).every((measure) => this.figureStyle.numbers[measure] === DEFAULT_MEASURE_DECIMALS[measure]);
     }
     const current = this.figureStyle[family] as unknown as Record<string, unknown>;
     const defaults = DEFAULT_FIGURE_STYLE[family] as unknown as Record<string, unknown>;
@@ -508,7 +701,7 @@ export class FigureStylePanelComponent implements OnInit {
   // --- Sections -----------------------------------------------------------------------------
 
   /** The family's section by name, for a template whose `family` is untyped. */
-  section(family: StyleFamily, name: string): FigureStyleSection {
+  section(family: PanelFamily, name: string): FigureStyleSection {
     return this.sections[family].find((section) => section.name === name)!;
   }
 
@@ -520,16 +713,16 @@ export class FigureStylePanelComponent implements OnInit {
     return this.figureStyle[family].footer;
   }
 
-  sectionId(family: StyleFamily, name: string): string {
+  sectionId(family: PanelFamily, name: string): string {
     return `mc-style-${family}-section-${name}`;
   }
 
-  isOpen(family: StyleFamily, name: string): boolean {
+  isOpen(family: PanelFamily, name: string): boolean {
     return this.openSections.has(`${family}.${name}`);
   }
 
   /** Follows the native `toggle`, which fires for a click, a key and a bound `open` alike. */
-  onSectionToggle(family: StyleFamily, name: string, event: Event): void {
+  onSectionToggle(family: PanelFamily, name: string, event: Event): void {
     const open = (event.target as HTMLDetailsElement).open;
     const key = `${family}.${name}`;
     if (open === this.openSections.has(key)) {
@@ -544,7 +737,7 @@ export class FigureStylePanelComponent implements OnInit {
     this.setOpenSections(next);
   }
 
-  expandAll(family: StyleFamily): void {
+  expandAll(family: PanelFamily): void {
     const next = new Set(this.openSections);
     for (const section of this.sections[family]) {
       next.add(`${family}.${section.name}`);
@@ -552,16 +745,19 @@ export class FigureStylePanelComponent implements OnInit {
     this.setOpenSections(next);
   }
 
-  collapseAll(family: StyleFamily): void {
+  collapseAll(family: PanelFamily): void {
     this.setOpenSections(new Set([...this.openSections].filter((key) => !key.startsWith(`${family}.`))));
   }
 
   /** The one-line summary a closed section shows of its current values. */
-  readout(family: StyleFamily, name: string): string {
+  readout(family: PanelFamily, name: string): string {
     if (this.section(family, name).shared) {
-      return this.numberRows(family)
+      return this.numberRows(family as StyleFamily)
         .map((measure) => `${MEASURE_SHORT_NAMES[measure]} ${this.figureStyle.numbers[measure]}`)
         .join(' · ');
+    }
+    if (family === 'appearance') {
+      return this.appearanceReadout(name);
     }
     const style = this.figureStyle[family];
     switch (name) {
@@ -644,7 +840,7 @@ export class FigureStylePanelComponent implements OnInit {
   }
 
   /** Each family's first section open, the rest closed. */
-  private defaultOpen(family: StyleFamily): string[] {
+  private defaultOpen(family: PanelFamily): string[] {
     return [`${family}.${this.sections[family][0].name}`];
   }
 

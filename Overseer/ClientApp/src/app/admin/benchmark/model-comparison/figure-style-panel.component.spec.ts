@@ -122,7 +122,7 @@ describe('FigureStylePanelComponent', () => {
       'mc-style-profile-footerTextSizePx'
     ]);
     expect(inputs.filter(input => input.type === 'checkbox').every(input => input.checked)).toBeTrue();
-    expect(host().querySelector('.fsp-note')?.textContent?.trim()).toBe('Chart text follows Text size under Figure size.');
+    expect(host().querySelector('.fsp-note')?.textContent?.trim()).toBe('Chart text follows Text size under Download → Chart size.');
     const reset = host().querySelector('#mc-style-profile-reset') as HTMLButtonElement;
     expect(reset.textContent!.trim()).toBe('Reset profile style');
   });
@@ -219,7 +219,9 @@ describe('FigureStylePanelComponent', () => {
       bar: { ...DEFAULT_FIGURE_STYLE.bar, hiddenBadges: ['runs'] },
       scatter: { ...DEFAULT_FIGURE_STYLE.scatter, hiddenBadges: ['models'] },
       profile: { ...DEFAULT_FIGURE_STYLE.profile, hiddenBadges: ['questions', 'pricing'] },
-      numbers: DEFAULT_FIGURE_STYLE.numbers
+      numbers: DEFAULT_FIGURE_STYLE.numbers,
+      appearance: DEFAULT_FIGURE_STYLE.appearance,
+      table: DEFAULT_FIGURE_STYLE.table
     };
     render('profile', changed);
     (host().querySelector('#mc-style-profile-reset') as HTMLButtonElement).click();
@@ -340,7 +342,9 @@ describe('FigureStylePanelComponent', () => {
       bar: { ...DEFAULT_FIGURE_STYLE.bar, gapPercent: 5, intervals: false, hiddenIntervalsNote: false, meanTimeNoIntervalNote: false },
       scatter: { ...DEFAULT_FIGURE_STYLE.scatter, markRadiusPx: 12, intervals: false, dominatedShading: false, frontierIntervalsNote: false },
       profile: DEFAULT_FIGURE_STYLE.profile,
-      numbers: DEFAULT_FIGURE_STYLE.numbers
+      numbers: DEFAULT_FIGURE_STYLE.numbers,
+      appearance: DEFAULT_FIGURE_STYLE.appearance,
+      table: DEFAULT_FIGURE_STYLE.table
     };
     render('bar', changed);
     (host().querySelector('#mc-style-bar-reset') as HTMLButtonElement).click();
@@ -552,7 +556,7 @@ describe('FigureStylePanelComponent', () => {
   }
 
   it('claims every style field of each family in exactly one section', () => {
-    for (const kind of ['bar', 'scatter', 'profile'] as const) {
+    for (const kind of ['bar', 'scatter', 'profile', 'appearance'] as const) {
       const keys = FIGURE_STYLE_SECTIONS[kind].filter(section => !section.shared).flatMap(section => [...section.keys]);
       expect(new Set(keys).size).withContext(`${kind} duplicates`).toBe(keys.length);
       expect([...keys].sort()).withContext(kind).toEqual(Object.keys(DEFAULT_FIGURE_STYLE[kind]).sort());
@@ -860,5 +864,228 @@ describe('FigureStylePanelComponent', () => {
     (host().querySelector('#mc-style-scatter-reset') as HTMLButtonElement).click();
     expect(named.length).withContext('no toggle emission at its default').toBe(1);
     expect(valued.length).toBe(1);
+  });
+
+  // --- Bar and trade-off: axis title weight and plot frame -----------------------------------
+
+  it('sets the bar axis title weight and frames the plot area, leaving the trade-off style alone', () => {
+    render('bar');
+    const weight = control('mc-style-bar-axisTitleWeight-600');
+    expect(weight.name).toBe('mc-style-bar-axisTitleWeight');
+    expect(weight.closest('label')?.classList.contains('gh-radio')).toBeTrue();
+    setChecked(weight, true);
+    expect(emitted[0].bar.axisTitleWeight).toBe(600);
+    expect(emitted[0].scatter).toBe(DEFAULT_FIGURE_STYLE.scatter);
+
+    const frame = control('mc-style-bar-plotFrame');
+    expect(frame.checked).toBeFalse();
+    setChecked(frame, true);
+    expect(emitted[1].bar.plotFrame).toBeTrue();
+    expect(emitted[1].scatter).toBe(DEFAULT_FIGURE_STYLE.scatter);
+  });
+
+  it('sets the trade-off axis title weight and frames the plot area, leaving the bar style alone', () => {
+    render('scatter');
+    setChecked(control('mc-style-scatter-axisTitleWeight-500'), true);
+    expect(emitted[0].scatter.axisTitleWeight).toBe(500);
+    expect(emitted[0].bar).toBe(DEFAULT_FIGURE_STYLE.bar);
+
+    setChecked(control('mc-style-scatter-plotFrame'), true);
+    expect(emitted[1].scatter.plotFrame).toBeTrue();
+    expect(emitted[1].bar).toBe(DEFAULT_FIGURE_STYLE.bar);
+  });
+
+  // --- Appearance kind: theme, fonts, colours and border --------------------------------------
+
+  function selectValue(select: HTMLSelectElement, value: string): void {
+    select.value = value;
+    select.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+  }
+
+  function setTextValue(input: HTMLInputElement, value: string, eventType: 'input' | 'change' = 'change'): void {
+    input.value = value;
+    input.dispatchEvent(new Event(eventType));
+    fixture.detectChanges();
+  }
+
+  function withAppearance(appearance: Partial<FigureStyle['appearance']>): FigureStyle {
+    return { ...DEFAULT_FIGURE_STYLE, appearance: { ...DEFAULT_FIGURE_STYLE.appearance, ...appearance } };
+  }
+
+  it('renders the four appearance sections, with Expand and Collapse all', () => {
+    render('appearance');
+    expect(host().querySelector('#mc-style-appearance-heading')?.textContent)
+      .toContain('Theme and fonts — every chart and the table image');
+    expect(sectionTitles()).toEqual(['Theme and background', 'Font', 'Text colour', 'Borders']);
+    expect(host().querySelector('#mc-style-appearance-expand')).not.toBeNull();
+    expect(host().querySelector('#mc-style-appearance-collapse')).not.toBeNull();
+  });
+
+  it('switches the theme with a radio group', () => {
+    render('appearance');
+    const dark = control('mc-style-appearance-theme-dark');
+    expect(dark.checked).toBeTrue();
+    expect(dark.name).toBe('mc-style-appearance-theme');
+    setChecked(control('mc-style-appearance-theme-light'), true);
+    expect(emitted[0].appearance.theme).toBe('light');
+    expect(emitted[0].bar).toBe(DEFAULT_FIGURE_STYLE.bar);
+  });
+
+  it('enables the background colour row only for Custom, and the native swatch commits at once', () => {
+    render('appearance');
+    expect(control('mc-style-appearance-backgroundColor').disabled).toBeTrue();
+
+    setChecked(control('mc-style-appearance-background-custom'), true);
+    acceptLast();
+    const swatch = control('mc-style-appearance-backgroundColor');
+    expect(swatch.disabled).toBeFalse();
+
+    swatch.value = '#123456';
+    swatch.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(emitted[emitted.length - 1].appearance.backgroundColor).toBe('#123456');
+  });
+
+  it('validates the hex field inline and emits only a valid, lower-cased colour', () => {
+    render('appearance');
+    setChecked(control('mc-style-appearance-background-custom'), true);
+    acceptLast();
+    const hex = control('mc-style-appearance-backgroundColor-hex');
+    expect(hex.getAttribute('pattern')).toBe('#[0-9a-fA-F]{6}');
+    expect(hex.getAttribute('aria-label')).toBe('Background colour hex value');
+
+    setTextValue(hex, 'nonsense');
+    expect(hex.getAttribute('aria-invalid')).toBe('true');
+    const errorId = hex.getAttribute('aria-describedby')!;
+    expect(host().querySelector(`#${errorId}`)?.textContent).toContain('hex colour');
+    expect(emitted.length).toBe(1); // only the earlier switch to Custom
+
+    setTextValue(hex, 'still wrong', 'input');
+    expect(hex.getAttribute('aria-invalid')).toBeNull();
+
+    setTextValue(hex, '#ABCDEF');
+    expect(emitted[emitted.length - 1].appearance.backgroundColor).toBe('#abcdef');
+    expect(hex.getAttribute('aria-invalid')).toBeNull();
+  });
+
+  it('disables the preview backdrop group unless the background is transparent, and its colour row unless the backdrop is Colour', () => {
+    render('appearance');
+    const group = () => control('mc-style-appearance-previewBackdrop-color').closest('fieldset') as HTMLFieldSetElement;
+    expect(group().disabled).toBeTrue();
+    expect(control('mc-style-appearance-previewBackdropColor').disabled).toBeTrue();
+
+    render('appearance', withAppearance({ background: 'transparent' }));
+    expect(group().disabled).toBeFalse();
+    expect(control('mc-style-appearance-previewBackdropColor').disabled).toBeTrue();
+
+    setChecked(control('mc-style-appearance-previewBackdrop-color'), true);
+    acceptLast();
+    expect(control('mc-style-appearance-previewBackdropColor').disabled).toBeFalse();
+  });
+
+  it('chooses the font family and the heading and label weights', () => {
+    render('appearance');
+    selectValue(control('mc-style-appearance-fontFamily') as unknown as HTMLSelectElement, 'inter');
+    expect(emitted[0].appearance.fontFamily).toBe('inter');
+
+    setChecked(control('mc-style-appearance-headingWeight-700'), true);
+    expect(emitted[1].appearance.headingWeight).toBe(700);
+    setChecked(control('mc-style-appearance-labelWeight-500'), true);
+    expect(emitted[2].appearance.labelWeight).toBe(500);
+  });
+
+  it('shows the font load status passed in from the wizard', () => {
+    fixture.componentRef.setInput('fontLoadStatus', 'Loading Inter…');
+    render('appearance');
+    expect(host().querySelector('#mc-style-appearance-fontLoadStatus')?.textContent?.trim()).toBe('Loading Inter…');
+  });
+
+  it('follows the theme for heading and text colour until unticked, remembering the last colour', () => {
+    render('appearance');
+    const followHeading = control('mc-style-appearance-headingColor-follow');
+    expect(followHeading.checked).toBeTrue();
+    expect(control('mc-style-appearance-headingColor').disabled).toBeTrue();
+
+    setChecked(followHeading, false);
+    expect(emitted[0].appearance.headingColor).toBe('#ffffff');
+    acceptLast();
+    expect(control('mc-style-appearance-headingColor').disabled).toBeFalse();
+
+    setChecked(control('mc-style-appearance-headingColor-follow'), true);
+    expect(emitted[emitted.length - 1].appearance.headingColor).toBeNull();
+  });
+
+  it('shows contrast warnings as text once a colour reads too faint', () => {
+    render('appearance');
+    expect(host().querySelector('.fsp-warnings')).toBeNull();
+
+    render('appearance', withAppearance({ background: 'custom', backgroundColor: '#e0ba6d' }));
+    const warnings = Array.from(host().querySelectorAll('.fsp-warnings li'));
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(warnings[0].textContent).toContain('contrast');
+  });
+
+  it('disables the border width while the border is off, and the radius only while off on a transparent background', () => {
+    render('appearance');
+    expect(control('mc-style-appearance-borderWidthPx').disabled).toBeTrue();
+    expect(control('mc-style-appearance-borderRadiusPx').disabled).toBeFalse(); // the default background is painted
+
+    render('appearance', withAppearance({ background: 'transparent' }));
+    expect(control('mc-style-appearance-borderRadiusPx').disabled).toBeTrue();
+
+    setChecked(control('mc-style-appearance-border'), true);
+    acceptLast();
+    expect(control('mc-style-appearance-borderWidthPx').disabled).toBeFalse();
+    expect(control('mc-style-appearance-borderRadiusPx').disabled).toBeFalse();
+    expect(control('mc-style-appearance-borderColor-follow').disabled).toBeFalse();
+  });
+
+  it('summarizes the appearance sections in their read-outs', () => {
+    render('appearance');
+    const readout = (name: string): string =>
+      host().querySelector(`#mc-style-appearance-section-${name} > summary .gh-disclosure-summary-value`)!.textContent!.trim();
+    expect(readout('theme')).toBe('dark · theme background');
+    expect(readout('font')).toBe('Overseer default · headings 600 · labels 400');
+    expect(readout('colors')).toBe('heading follows theme · text follows theme');
+    expect(readout('border')).toBe('none');
+
+    render('appearance', withAppearance({ border: true, borderWidthPx: 2, borderRadiusPx: 12 }));
+    expect(readout('border')).toBe('2 px · radius 12');
+  });
+
+  it('resets theme and fonts to defaults', () => {
+    const changed = withAppearance({ theme: 'light', border: true, headingColor: '#112233' });
+    render('appearance', changed);
+    (host().querySelector('#mc-style-appearance-reset') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(emitted[0].appearance).toEqual(DEFAULT_FIGURE_STYLE.appearance);
+    // The font status line comes first in this panel, so the reset status is read by its own class.
+    expect(host().querySelector('p.visually-hidden[role="status"]')?.textContent?.trim())
+      .toBe('Theme and fonts reset to defaults.');
+  });
+
+  it('labels every appearance control, with the hex fields carrying their own aria-label, and every id unique', () => {
+    render('appearance');
+    const controls = Array.from(host().querySelectorAll<HTMLElement>('input, select'));
+    expect(controls.length).toBeGreaterThan(10);
+    for (const element of controls) {
+      expect(element.id).toMatch(/^mc-style-appearance-/);
+      const label = element.closest('label') ?? host().querySelector(`label[for="${element.id}"]`);
+      expect(!!label || element.hasAttribute('aria-label')).withContext(element.id).toBeTrue();
+    }
+    const ids = Array.from(host().querySelectorAll('[id]')).map(element => element.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('uses the shared gh-radio and gh-choice look for every radio group, in every kind', () => {
+    for (const kind of ['bar', 'scatter', 'profile', 'appearance'] as const) {
+      render(kind);
+      expect(host().querySelectorAll('.fsp-radio, .fsp-choice').length).withContext(kind).toBe(0);
+      for (const radio of Array.from(host().querySelectorAll<HTMLInputElement>('input[type="radio"]'))) {
+        expect(radio.closest('label')?.classList.contains('gh-radio')).withContext(`${kind} ${radio.id}`).toBeTrue();
+        expect(radio.closest('fieldset')?.classList.contains('gh-choice')).withContext(`${kind} ${radio.id}`).toBeTrue();
+      }
+    }
   });
 });

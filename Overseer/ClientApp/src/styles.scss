@@ -1274,6 +1274,53 @@ label.checkbox-label,
   }
 }
 
+/* A compact radio group: a borderless fieldset whose legend sits over the options, which wrap in
+   a row. Each option is a .gh-radio label wrapping its input. */
+.gh-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+
+  > legend {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    margin-bottom: 4px;
+    padding: 0;
+    font-size: 13px;
+  }
+
+  &:disabled {
+    opacity: 0.55;
+  }
+}
+
+.gh-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+
+  input[type="radio"] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--primary-color, #d4af37);
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color, #d4af37);
+      outline-offset: 2px;
+    }
+  }
+}
+
 /* One-sentence purpose line directly under a fieldset legend. Referenced from the fieldset with
    aria-describedby, so it names the group rather than any one control inside it. */
 .gh-fieldset-hint {

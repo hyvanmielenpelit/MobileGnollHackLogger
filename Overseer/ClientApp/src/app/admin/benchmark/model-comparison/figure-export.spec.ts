@@ -36,7 +36,9 @@ import {
   webpEncoderQuality
 } from './figure-export';
 import type { FigureBadge, FigureChrome, FigureFooter, FigureNote } from './figure-chrome';
-import { DEFAULT_FIGURE_STYLE } from './figure-style';
+import { DEFAULT_APPEARANCE_STYLE, DEFAULT_FIGURE_STYLE } from './figure-style';
+import type { FigureAppearanceStyle } from './figure-style';
+import { resolveFigureTheme } from './figure-theme';
 import { buildIdentityGlyphs, buildSmallMultiples } from './model-comparison-charts';
 import type { ModelComparisonContext, ModelComparisonEntry } from './model-comparison-charts';
 import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
@@ -716,6 +718,184 @@ describe('figure-export', () => {
         expect(scaled.layout!.layoutWidth).withContext(resolution.id).toBeCloseTo(base.layoutWidth / 1.25, 9);
         expect(scaled.layout!.density).withContext(resolution.id).toBeCloseTo(base.density * 1.25, 9);
       }
+    });
+  });
+
+  describe('theme', () => {
+    function themed(patch: Partial<FigureAppearanceStyle>) {
+      return resolveFigureTheme({ ...DEFAULT_APPEARANCE_STYLE, ...patch });
+    }
+
+    function pixelAt(canvas: HTMLCanvasElement, x: number, y: number): number[] {
+      return Array.from(canvas.getContext('2d')!.getImageData(Math.floor(x), Math.floor(y), 1, 1).data);
+    }
+
+    /** The number of bytes in which two same-sized canvases differ. */
+    function differingBytes(a: HTMLCanvasElement, b: HTMLCanvasElement): number {
+      const left = a.getContext('2d')!.getImageData(0, 0, a.width, a.height).data;
+      const right = b.getContext('2d')!.getImageData(0, 0, b.width, b.height).data;
+      let count = 0;
+      for (let index = 0; index < left.length; index++) {
+        if (left[index] !== right[index]) {
+          count++;
+        }
+      }
+      return count;
+    }
+
+    it('draws an absent theme exactly as the default dark theme, on the #181818 ground', () => {
+      const implicit = composeFigureImage(request({ density: 1 }));
+      const explicit = composeFigureImage(request({ density: 1, theme: resolveFigureTheme(DEFAULT_APPEARANCE_STYLE) }));
+
+      expect(explicit.width).toBe(implicit.width);
+      expect(explicit.height).toBe(implicit.height);
+      expect(differingBytes(implicit, explicit)).toBe(0);
+      expect(pixelAt(implicit, 0, 0)).toEqual([0x18, 0x18, 0x18, 255]);
+      expect(pixelAt(implicit, implicit.width - 1, implicit.height - 1)).toEqual([0x18, 0x18, 0x18, 255]);
+    });
+
+    it('paints nothing under a transparent background, so a corner keeps alpha 0', () => {
+      const composed = composeFigureImage(request({ density: 1, theme: themed({ background: 'transparent' }) }));
+
+      expect(pixelAt(composed, 0, 0)[3]).toBe(0);
+      expect(pixelAt(composed, composed.width - 1, composed.height - 1)[3]).toBe(0);
+    });
+
+    it('paints a custom background colour', () => {
+      const composed = composeFigureImage(request({
+        density: 1,
+        theme: themed({ background: 'custom', backgroundColor: '#336699' })
+      }));
+
+      expect(pixelAt(composed, 0, 0)).toEqual([0x33, 0x66, 0x99, 255]);
+    });
+
+    it('draws the border inside the bitmap at its edge, leaving the pixel size unchanged', () => {
+      const plain = composeFigureImage(request({ density: 1 }));
+      const bordered = composeFigureImage(request({
+        density: 1,
+        theme: themed({ border: true, borderWidthPx: 4, borderRadiusPx: 0, borderColor: '#ff0000' })
+      }));
+
+      expect(bordered.width).toBe(plain.width);
+      expect(bordered.height).toBe(plain.height);
+      const middleY = bordered.height / 2;
+      expect(pixelAt(bordered, 0, middleY)).toEqual([255, 0, 0, 255]);
+      expect(pixelAt(bordered, 3, middleY)).toEqual([255, 0, 0, 255]);
+      expect(pixelAt(bordered, bordered.width - 1, middleY)).toEqual([255, 0, 0, 255]);
+      expect(pixelAt(bordered, bordered.width / 2, 0)).toEqual([255, 0, 0, 255]);
+      expect(pixelAt(bordered, bordered.width / 2, bordered.height - 1)).toEqual([255, 0, 0, 255]);
+      // Inside the stroke, and still inside the padding: the ground.
+      expect(pixelAt(bordered, 8, middleY)).toEqual([0x18, 0x18, 0x18, 255]);
+    });
+
+    it('leaves the corners outside a rounded border transparent', () => {
+      const composed = composeFigureImage(request({
+        density: 1,
+        theme: themed({ border: true, borderWidthPx: 1, borderRadiusPx: 16, borderColor: '#ff0000' })
+      }));
+
+      expect(pixelAt(composed, 0, 0)[3]).toBe(0);
+      expect(pixelAt(composed, composed.width - 1, 0)[3]).toBe(0);
+      expect(pixelAt(composed, 0, composed.height - 1)[3]).toBe(0);
+      expect(pixelAt(composed, composed.width - 1, composed.height - 1)[3]).toBe(0);
+      // The straight edges carry the border, and the rounded ground is opaque inside it.
+      expect(pixelAt(composed, composed.width / 2, 0)).toEqual([255, 0, 0, 255]);
+      expect(pixelAt(composed, 16, 16)).toEqual([0x18, 0x18, 0x18, 255]);
+    });
+
+    it('draws each badge in the light theme\'s tone colours', () => {
+      const theme = themed({ theme: 'light' });
+      const scratch = document.createElement('canvas').getContext('2d')!;
+      const normalized = (color: string): string => {
+        scratch.fillStyle = '#000000';
+        scratch.fillStyle = color;
+        return String(scratch.fillStyle);
+      };
+      const events: { op: 'fill' | 'stroke' | 'fillText'; style: string; text?: string }[] = [];
+      const realFill = CanvasRenderingContext2D.prototype.fill;
+      const realStroke = CanvasRenderingContext2D.prototype.stroke;
+      const realFillText = CanvasRenderingContext2D.prototype.fillText;
+      spyOn(CanvasRenderingContext2D.prototype, 'fill').and.callFake(function (
+        this: CanvasRenderingContext2D,
+        ...args: any[]
+      ) {
+        events.push({ op: 'fill', style: String(this.fillStyle) });
+        return (realFill as any).apply(this, args);
+      } as any);
+      spyOn(CanvasRenderingContext2D.prototype, 'stroke').and.callFake(function (
+        this: CanvasRenderingContext2D,
+        ...args: any[]
+      ) {
+        events.push({ op: 'stroke', style: String(this.strokeStyle) });
+        return (realStroke as any).apply(this, args);
+      } as any);
+      spyOn(CanvasRenderingContext2D.prototype, 'fillText').and.callFake(function (
+        this: CanvasRenderingContext2D,
+        ...args: any[]
+      ) {
+        events.push({ op: 'fillText', style: String(this.fillStyle), text: args[0] });
+        return (realFillText as any).apply(this, args);
+      } as any);
+
+      composeFigureImage(request({
+        theme,
+        chrome: figureChrome({
+          ...headerOnlyChrome(),
+          badges: [
+            { text: '2 models', tone: 'neutral' },
+            { text: 'Current catalog prices', tone: 'pricing' }
+          ]
+        }),
+        footer: figureFooter(emptyFooter)
+      }));
+
+      const expected = [
+        { text: '2 models', border: 'rgba(11, 11, 11, 0.25)', fill: 'rgba(11, 11, 11, 0.03)', ink: '#0b0b0b' },
+        { text: 'Current catalog prices', border: 'rgba(4, 120, 87, 0.35)', fill: 'rgba(4, 120, 87, 0.08)', ink: '#047857' }
+      ];
+      for (const badge of expected) {
+        const textIndex = events.findIndex(event => event.op === 'fillText' && event.text === badge.text);
+        expect(textIndex).withContext(badge.text).toBeGreaterThan(1);
+        const [fill, stroke, text] = events.slice(textIndex - 2, textIndex + 1);
+        expect(fill.style).withContext(`${badge.text} fill`).toBe(normalized(badge.fill));
+        expect(stroke.style).withContext(`${badge.text} border`).toBe(normalized(badge.border));
+        expect(text.style).withContext(`${badge.text} text`).toBe(normalized(badge.ink));
+      }
+      const title = events.find(event => event.op === 'fillText' && (event.text ?? '').startsWith('P1'));
+      expect(title).toBeDefined();
+      expect(title!.style).toBe(normalized(theme.chrome.title));
+    });
+
+    it('measures and draws the title at the theme\'s heavier heading weight alike', () => {
+      const theme = themed({ headingWeight: 700 });
+      const title = 'Intelligence against speed across every model in the comparable set, at the heaviest weight';
+      const fonts: { text: string; font: string }[] = [];
+      const realFillText = CanvasRenderingContext2D.prototype.fillText;
+      spyOn(CanvasRenderingContext2D.prototype, 'fillText').and.callFake(function (
+        this: CanvasRenderingContext2D,
+        ...args: any[]
+      ) {
+        fonts.push({ text: String(args[0]), font: this.font });
+        return (realFillText as any).apply(this, args);
+      } as any);
+
+      const figure = request({ theme, chrome: figureChrome({ title }) });
+      const measured = measureFigureChrome(figure, sourceSize.width);
+      const composed = composeFigureImage({ ...figure, density: 1 });
+
+      expect(composed.height).toBe(measured.height + sourceSize.height);
+      const scratch = document.createElement('canvas').getContext('2d')!;
+      scratch.font = `700 ${DEFAULT_FIGURE_TEXT_SIZES.titlePx}px ${FIGURE_FONT_STACK}`;
+      const headingFont = scratch.font;
+      const drawnTitle = fonts.filter(entry => measured.titleLines.includes(entry.text));
+      expect(drawnTitle.map(entry => entry.text)).toEqual(measured.titleLines);
+      expect(drawnTitle.every(entry => entry.font === headingFont)).toBeTrue();
+
+      // An explicit size subtracts exactly the chrome the composition draws.
+      const { layout } = resolveFigureLayout({ ...sourceOf({ title }), theme }, preset('fullhd'), 1, 1);
+      const chrome = measureFigureChrome({ ...sourceOf({ title }), theme }, layout!.plotWidth);
+      expect(layout!.plotHeight).toBeCloseTo(layout!.layoutHeight - chrome.height, 9);
     });
   });
 

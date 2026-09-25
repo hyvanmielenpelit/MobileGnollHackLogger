@@ -61,14 +61,14 @@
   <div class="dialog-body mc-wizard-body">
 
     <!--
-      STEP 1 USES [hidden]; STEPS 2, 3 AND 4 USE @if. THE ASYMMETRY IS DELIBERATE.
+      STEP 1 USES [hidden]; STEPS 2 AND 3 USE @if. THE ASYMMETRY IS DELIBERATE.
 
       Projected content inside an @if is destroyed when the branch is removed, which would reset
       the source picker's two TableState instances — its sort column, page and filters — every
       time the reader stepped back to it. The later steps own no such state — the comparison
       table's own TableState is a field on this component, which outlives its markup — and they
-      genuinely want @if: a Chart.js canvas created inside a display: none container lays out at
-      zero size, so the figures must be built on entering step 4 rather than kept alive hidden.
+      genuinely want @if: the charts and the table image are composed onto canvases sized to the
+      views they sit in, so they are composed on entering step 3 rather than kept alive hidden.
     -->
     <!-- The picker's own checkboxes stay live while a request is in flight: a selection changed
          mid-flight is already handled by the host's token guard. `aria-busy` is what says the
@@ -138,8 +138,8 @@
               of the figures.
             </li>
             <li>
-              <strong>Nothing disappears.</strong> Every entry, charted or not, is in the table on
-              step 3 with the reason.
+              <strong>Nothing disappears.</strong> Every entry, charted or not, is in the
+              Interactive table on step 3 with the reason.
             </li>
           </ul>
 
@@ -168,7 +168,9 @@
         <section class="mc-section" aria-labelledby="mc-filters-heading">
           <div class="mc-section-intro">
             <h4 id="mc-filters-heading" class="mc-section-title">Filters</h4>
-            <p class="section-note">These controls shape the figures on step 4. Pricing basis also reprices the table on step 3.</p>
+            <p class="section-note">These choices decide which entries step 3 charts. Pricing basis also
+              reprices the table. How the charts measure speed and cost, and how they order the models,
+              are set beside the charts on step 3.</p>
           </div>
 
           <!-- The wrapper is the query container, and nothing else: it holds no popover, because a
@@ -176,12 +178,10 @@
           <div class="mc-filters-container">
             <div class="mc-filters" role="group" aria-labelledby="mc-filters-heading">
 
-              <!-- Two named groups rather than one six-control grid. What the comparison covers and
-                   in what order is one decision; which number each axis carries is another. The
-                   <legend> names each group, so the container's own label is not repeated per
-                   control. -->
+              <!-- One named group: what the comparison covers. The <legend> names it, so the
+                   container's own label is not repeated per control. -->
               <fieldset class="gh-fieldset mc-fieldset mc-fieldset-scope">
-                <legend>Scope and order</legend>
+                <legend>Scope</legend>
 
                 <div class="mc-field">
                   <label for="mc-pricing-basis">Pricing basis</label>
@@ -204,70 +204,6 @@
                   </select>
                   <p class="mc-field-hint">A degraded entry is charted with the axis it degrades named. An excluded one never is.</p>
                 </div>
-
-                <div class="mc-field">
-                  <label for="mc-sort-key">Model order</label>
-                  <select id="mc-sort-key" class="gh-input"
-                          [ngModel]="sort.key" [ngModelOptions]="{ standalone: true }"
-                          (ngModelChange)="onSortKeyChange($event)">
-                    <option value="intelligenceIndex">Intelligence Index</option>
-                    <option value="speed">Speed</option>
-                    <option value="cost">Cost</option>
-                    <option value="label">Name</option>
-                  </select>
-                  <p class="mc-field-hint">One order for all three panels — a row is one model across them.</p>
-                </div>
-
-                <div class="mc-field">
-                  <label for="mc-sort-direction">Order direction</label>
-                  <select id="mc-sort-direction" class="gh-input"
-                          [ngModel]="sort.direction" [ngModelOptions]="{ standalone: true }"
-                          (ngModelChange)="onSortDirectionChange($event)">
-                    <option value="desc">Descending</option>
-                    <option value="asc">Ascending</option>
-                  </select>
-                </div>
-              </fieldset>
-
-              <fieldset class="gh-fieldset mc-fieldset mc-fieldset-measures">
-                <legend>Measures</legend>
-
-                <div class="mc-field">
-                  <label for="mc-speed-measure">Speed measure</label>
-                  <select id="mc-speed-measure" class="gh-input"
-                          [ngModel]="speedMeasure" [ngModelOptions]="{ standalone: true }"
-                          (ngModelChange)="onSpeedMeasureChange($event)">
-                    <option value="meanModelTime">Model time per question, mean</option>
-                    <option value="totalModelTime">Candidate model time for the whole suite</option>
-                    <option value="ttftP50">Time to first token, P50</option>
-                    <option value="speedIndex">Speed Index (0-100)</option>
-                  </select>
-                  <p class="mc-field-hint mc-speed-hint">
-                    Model time is the turn duration with tool I/O removed. Time to first token is how
-                    long a chat user waits for the answer to start.
-                    @if (speedIndexSaturatedCount > 0) {
-                      Speed Index is saturated for {{ speedIndexSaturatedCount }} of
-                      {{ measuredEntryCount }} entries here, so those may tie at the top while their
-                      real latency differs.
-                    }
-                  </p>
-                </div>
-
-                <div class="mc-field">
-                  <label for="mc-cost-measure">Cost measure</label>
-                  <!--
-                    The second option is present and disabled rather than absent: the axis exists as
-                    a concept and this endpoint cannot supply it, and saying so is more honest than a
-                    control that looks like it was never considered.
-                  -->
-                  <select id="mc-cost-measure" class="gh-input"
-                          [ngModel]="costMeasure" [ngModelOptions]="{ standalone: true }"
-                          (ngModelChange)="onCostMeasureChange($event)">
-                    <option value="candidateSuite">Candidate cost for the whole suite</option>
-                    <option value="totalRun" disabled>Total run cost including grading roles — not available</option>
-                  </select>
-                  <p class="mc-field-hint">The endpoint returns candidate spend only: grading-role cost is most of a run and none of it transfers to the chat assistant.</p>
-                </div>
               </fieldset>
             </div>
           </div>
@@ -275,7 +211,7 @@
           @if (entries.length > 0) {
             <div class="mc-entry-picker">
               <h5 id="mc-entry-picker-heading" class="mc-subsection-title">
-                Entries in the figures — at most {{ maxPlottedEntries }} are plotted
+                Entries in the charts — at most {{ maxPlottedEntries }} are plotted
               </h5>
               <p class="mc-field-hint">
                 Tick an entry to draw it in the figures. An excluded entry carries no measures at
@@ -474,9 +410,9 @@
         <!-- ===================================================================================
              WHAT THIS SET CAN BE CHARTED AS
 
-             The degenerate shapes, and the refusal, live here rather than on the Figures step:
-             step 4 opens only where at least two entries may be plotted, so a set that cannot be
-             charted would state its refusal on a step the reader can never reach.
+             The degenerate shapes, and the refusal, are explained here, where the entries are
+             chosen: step 3's chart views refuse to open unless at least two entries may be
+             plotted, and open on the table instead.
              =================================================================================== -->
         @if (!showFigures) {
           <section class="mc-section" aria-labelledby="mc-shape-heading">
@@ -527,411 +463,12 @@
     }
 
     @if (step === 3) {
-      <div class="mc-step" role="tabpanel" tabindex="0"
+      <div class="mc-step mc-step--figures" role="tabpanel" tabindex="0"
            id="mc-step-panel-3" aria-labelledby="mc-step-tab-3">
 
-        <!-- ===================================================================================
-             THE TABLE VIEW
-
-             The accessible artefact, on a step of its own and reachable over a set no figure can
-             draw. It is not behind a toggle and has no "off" state: a canvas is a picture, and
-             this is the record of what the picture shows — including every entry no figure could
-             draw.
-             =================================================================================== -->
-        <section class="mc-section" aria-labelledby="mc-table-heading">
-          <div class="mc-section-intro">
-            <h4 id="mc-table-heading" class="mc-section-title">Comparison table</h4>
-            <p class="section-note">
-              <strong>Every entry is listed here, charted or not.</strong> Point at a State badge to
-              see why an entry is or is not charted.
-            </p>
-            <p class="section-note">
-              A download holds every row that passes the filters, across all pages.
-            </p>
-          </div>
-
-          <!-- The wizard header carries the suite and the pricing basis, and every export carries
-               the full provenance; only the computation time is left to state here. -->
-          <p class="mc-table-computed">{{ tableComputedAtLine }}</p>
-
-          <!--
-            Export. The scope is every entry passing the current filters, in the current sort,
-            across all pages — never the visible page — and the export toast says so, because
-            a file holding ten of forty rows with nothing on it to say which ten is worse than no
-            file at all.
-
-            Excel first: it is the format an operator takes this to a spreadsheet in, and it is the
-            only one that keeps the numbers as numbers *and* the provenance beside them.
-          -->
-          <div class="mc-export mc-table-export">
-            <label class="visually-hidden" for="mc-table-export-format">Table export format</label>
-            <select id="mc-table-export-format" class="gh-input mc-export-format"
-                    [ngModel]="tableExportFormat" [ngModelOptions]="{ standalone: true }"
-                    (ngModelChange)="onTableExportFormatChange($event)">
-              <option value="xlsx">Excel (.xlsx)</option>
-              <option value="csv">CSV</option>
-              <option value="tsv">TSV</option>
-              <option value="md">Markdown</option>
-              <option value="json">JSON</option>
-              <option value="html">HTML</option>
-              <option value="png">PNG</option>
-              <option value="webp">WebP</option>
-            </select>
-            <!-- Quality after the format rather than before it, so choosing WebP never shifts the
-                 control the reader has just used. -->
-            @if (tableExportFormat === 'webp') {
-              <label class="visually-hidden" for="mc-table-export-webp-quality">WebP quality</label>
-              <select id="mc-table-export-webp-quality" class="gh-input mc-export-quality"
-                      [ngModel]="tableWebpQuality" [ngModelOptions]="{ standalone: true }"
-                      (ngModelChange)="tableWebpQuality = $event">
-                @for (q of webpQualityOptions; track q) {
-                  <option [ngValue]="q">{{ q }}</option>
-                }
-              </select>
-            }
-            <!-- aria-disabled, not disabled, so both stay focusable; the handlers refuse on their
-                 own while nothing can be exported. -->
-            <div class="mc-table-export-actions" role="group" aria-label="Export the table">
-              <button type="button" class="action-btn"
-                      [attr.aria-label]="tableDownloadLabel"
-                      [attr.aria-disabled]="canExportTable ? null : 'true'"
-                      interestfor="mc-tip-table-download" style="anchor-name: --mc-tip-table-download"
-                      (click)="openTableColumnDialog($event)">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                  <polyline points="14 2 14 8 20 8"></polyline>
-                  <line x1="12" y1="18" x2="12" y2="12"></line>
-                  <polyline points="9 15 12 18 15 15"></polyline>
-                </svg>
-              </button>
-              <!-- Markdown whatever the format control says: the clipboard's destination is a
-                   document or a chat message, and neither pastes a spreadsheet. -->
-              <button type="button" class="action-btn"
-                      aria-label="Copy the table to the clipboard as Markdown"
-                      [attr.aria-disabled]="canExportTable ? null : 'true'"
-                      interestfor="mc-tip-table-copy" style="anchor-name: --mc-tip-table-copy"
-                      (click)="copyTableMarkdown()">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                </svg>
-              </button>
-            </div>
-            <div popover="hint" class="gh-tooltip" id="mc-tip-table-download"
-                 style="position-anchor: --mc-tip-table-download">{{ tableDownloadLabel }}</div>
-            <div popover="hint" class="gh-tooltip" id="mc-tip-table-copy"
-                 style="position-anchor: --mc-tip-table-copy">Copy as Markdown</div>
-          </div>
-
-          @if (entries.length === 0) {
-            <p class="text-muted">Nothing to compare yet.</p>
-          } @else {
-            <!-- The pagers sit outside the scroll wrapper, so they stay put when the table scrolls
-                 sideways. -->
-            <div class="mc-table-block">
-              <app-table-pager [state]="entryTable" [rows]="entries" noun="entries"
-                               (changed)="onTableChanged()"></app-table-pager>
-              <div class="gh-datatable-scroll mc-table-scroll">
-                <table class="gh-table gh-datatable mc-table">
-                  <caption class="visually-hidden">
-                    Cross-model comparison entries: model, runs behind the point, comparability state,
-                    Intelligence Index, Speed Index, the timings behind it — model time per question,
-                    suite total and time to first token — candidate cost, and the comparability keys
-                    each entry differs on.
-                  </caption>
-                  <thead>
-                    <tr>
-                      <th app-sort-header [state]="entryTable" column="label" label="Model" (changed)="onTableChanged()"></th>
-                      <th app-sort-header [state]="entryTable" column="runCount" label="R" class="col-center" (changed)="onTableChanged()"></th>
-                      <th app-sort-header [state]="entryTable" column="state" label="State" (changed)="onTableChanged()"></th>
-                      <th app-sort-header [state]="entryTable" column="intelligenceIndex" label="Intelligence Index" (changed)="onTableChanged()"></th>
-                      <th app-sort-header [state]="entryTable" column="speedIndex" label="Speed Index" (changed)="onTableChanged()"></th>
-                      <th app-sort-header [state]="entryTable" column="modelTimeMeanMs" label="Timings" (changed)="onTableChanged()"></th>
-                      <th app-sort-header [state]="entryTable" column="costPerQuestion" label="Candidate $ / question" (changed)="onTableChanged()"></th>
-                      <th scope="col">Notes</th>
-                    </tr>
-                    <tr class="gh-filter-row">
-                      <td>
-                        <label class="visually-hidden" for="mc-f-label">Filter by model name</label>
-                        <input id="mc-f-label" type="text" class="gh-input gh-filter-input" placeholder="Model"
-                               [ngModel]="entryTable.filters['label']" [ngModelOptions]="{ standalone: true }"
-                               (ngModelChange)="entryTable.setFilter('label', $event); onTableChanged()">
-                      </td>
-                      <td></td>
-                      <td>
-                        <label class="visually-hidden" for="mc-f-state">Filter by comparability state</label>
-                        <select id="mc-f-state" class="gh-input gh-filter-select"
-                                [ngModel]="entryTable.filters['state']" [ngModelOptions]="{ standalone: true }"
-                                (ngModelChange)="entryTable.setFilter('state', $event); onTableChanged()">
-                          <option value="">All</option>
-                          <option value="Comparable">Comparable</option>
-                          <option value="Degraded">Degraded</option>
-                          <option value="Excluded">Excluded</option>
-                        </select>
-                      </td>
-                      <td></td>
-                      <td></td>
-                      <td></td>
-                      <td></td>
-                      <td>
-                        @if (entryTable.hasActiveFilters) {
-                          <button type="button" class="gh-filter-clear"
-                                  (click)="entryTable.clearFilters(); onTableChanged()">Clear filters</button>
-                        }
-                      </td>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @if (entryTable.noMatches(entries)) {
-                      <tr><td colspan="8" class="text-muted">No entries match these filters.</td></tr>
-                    }
-                    @for (entry of entryTable.view(entries); track entry.key) {
-                      <tr [class.mc-row-highlighted]="highlightedKey === entry.key"
-                          (mouseenter)="setHighlight(entry.key)" (mouseleave)="setHighlight(null)">
-                        <th scope="row" class="col-name">
-                          <!-- The name, its badges and the source line, stacked. The flex lives on
-                               the inner divs: a flex <th> drops out of the column grid entirely.
-                               The cell shows the display name and the thinking level and reasoning mode
-                               ride beside it as badges, so the level is not printed twice. The name is plain text:
-                               emphasis is chosen on step 4, where its effect is visible. -->
-                          <div class="mc-model-cell">
-                            <div class="mc-model-row">
-                              @if (glyph(entry.key); as g) {
-                                <span [class]="'mc-glyph mc-glyph-' + g.shape"
-                                      [style.background-color]="g.hue" aria-hidden="true"></span>
-                              }
-                              <span class="mc-model-name">{{ entry.modelDisplayName || entry.label }}</span>
-                              @if (entry.thinkingLevel) {
-                                <span class="thinking-badge">{{ entry.thinkingLevel }}</span>
-                              }
-                              @if (showReasoningBadge(entry.reasoningMode)) {
-                                <span class="reasoning-badge">{{ entry.reasoningMode }}</span>
-                              }
-                              <app-provider-badge [provider]="entry.provider"></app-provider-badge>
-                            </div>
-                            <span class="mc-source">{{ sourceLabel(entry) }}</span>
-                          </div>
-                        </th>
-                        <td class="col-center">
-                          <div class="mc-cell-stack mc-cell-stack-center">
-                            {{ entry.runCount }}
-                            @if (entry.runCount === 1) {
-                              <span class="mc-badge mc-n1">n = 1</span>
-                            }
-                          </div>
-                        </td>
-                        <td>
-                          <div class="mc-cell-stack">
-                            <!-- Text plus icon, never colour alone: the badge names its state in words. -->
-                            <span [class]="'mc-state ' + stateClass(entry)"
-                                  [attr.interestfor]="tipId('state', entry.key)"
-                                  [attr.style]="'anchor-name: --' + tipId('state', entry.key)">
-                              @if (entry.excluded) {
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                  <circle cx="12" cy="12" r="10"></circle>
-                                  <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
-                                </svg>
-                              } @else if (entry.state === 'Degraded') {
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                  <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                                  <line x1="12" y1="9" x2="12" y2="13"></line>
-                                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                                </svg>
-                              } @else {
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                  <polyline points="20 6 9 17 4 12"></polyline>
-                                </svg>
-                              }
-                              {{ stateLabel(entry) }}
-                            </span>
-                            <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('state', entry.key)"
-                                 [attr.style]="'position-anchor: --' + tipId('state', entry.key)">{{ entry.explanation }}</div>
-                            @if (degradedAxes(entry).length > 0) {
-                              <span class="mc-degraded-axes">Degraded: {{ degradedAxes(entry).join(', ') }}</span>
-                            }
-                          </div>
-                        </td>
-                        <td>
-                          <div class="mc-cell-stack">
-                            <span class="mc-nowrap">
-                              {{ formatIndex(entry.quality?.pointEstimate) }}
-                              @if (entry.quality?.intervalHalfWidth != null) {
-                                <span class="mc-interval">± {{ formatIndex(entry.quality?.intervalHalfWidth) }}</span>
-                              }
-                            </span>
-                            @if (entry.quality?.intervalHalfWidth != null) {
-                              <!-- The basis runs to a sentence, so the cell shows one clipped line and the
-                                   whole of it in the popover. The exported table carries it in full. -->
-                              <button type="button" class="mc-basis-btn"
-                                      [attr.interestfor]="tipId('basis', entry.key)"
-                                      [attr.style]="'anchor-name: --' + tipId('basis', entry.key)">{{ entry.quality?.intervalBasis }}</button>
-                              <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('basis', entry.key)"
-                                   [attr.style]="'position-anchor: --' + tipId('basis', entry.key)">{{ entry.quality?.intervalBasis }}</div>
-                            } @else if (!entry.excluded) {
-                              <span class="mc-interval-basis">No interval available</span>
-                            }
-                          </div>
-                        </td>
-                        <td>
-                          <div class="mc-cell-stack">
-                            <span class="mc-nowrap">{{ formatIndex(entry.table?.meanSpeedIndex) }}</span>
-                            @if (entry.table?.speedIndexSaturated) {
-                              <span class="mc-badge mc-saturated"
-                                    [attr.interestfor]="tipId('sat', entry.key)"
-                                    [attr.style]="'anchor-name: --' + tipId('sat', entry.key)">Saturated</span>
-                              <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('sat', entry.key)"
-                                   [attr.style]="'position-anchor: --' + tipId('sat', entry.key)">
-                                At least half the scored answers finished inside their difficulty-scaled target, so
-                                the index cannot discriminate at this speed. Read time to first token instead.
-                              </div>
-                            }
-                          </div>
-                        </td>
-                        <td>
-                          <!-- Three timings in one column, each named beside its value: a column apiece
-                               costs more width than three short numbers are worth. -->
-                          <dl class="mc-timings">
-                            <div>
-                              <dt>Model time / question</dt>
-                              <dd>{{ formatMs(entry.speed?.modelTimeMeanMs) }}</dd>
-                            </div>
-                            <div>
-                              <dt>Suite total</dt>
-                              <dd>{{ formatMs(entry.speed?.totalModelTimePerRunMeanMs) }}@if (entry.speed?.totalModelTimeSdMs != null) {<span class="mc-interval">± {{ formatMs(entry.speed?.totalModelTimeSdMs) }}</span>}</dd>
-                            </div>
-                            <div>
-                              <dt>TTFT P50 / P90</dt>
-                              <dd>{{ formatMs(entry.speed?.ttftP50Ms) }} / {{ formatMs(entry.speed?.ttftP90Ms) }}</dd>
-                            </div>
-                          </dl>
-                        </td>
-                        <td>
-                          <div class="mc-cell-stack">
-                            <span class="mc-nowrap">{{ formatUsd(entry.cost?.candidateCostPerQuestionUsd) }}</span>
-                            @if (entry.cost && !entry.cost.pricingResolved) {
-                              <span class="mc-badge mc-unpriced">Unpriced</span>
-                            }
-                            @if (entry.cost?.scheduledChangeEffectiveFrom) {
-                              <span class="mc-badge mc-scheduled">Price change {{ entry.cost?.scheduledChangeEffectiveFrom }}</span>
-                            }
-                          </div>
-                        </td>
-                        <td class="mc-notes">
-                          @if (entry.excludingKeys.length > 0) {
-                            <span class="mc-note-line">Differs on: {{ entry.excludingKeys.join(', ') }}</span>
-                          }
-                          @if (entry.speedDegradingKeys.length > 0) {
-                            <span class="mc-note-line">Speed degraded by: {{ entry.speedDegradingKeys.join(', ') }}</span>
-                          }
-                          @if (entry.costDegradingKeys.length > 0) {
-                            <span class="mc-note-line">Cost degraded by: {{ entry.costDegradingKeys.join(', ') }}</span>
-                          }
-                          @if (entry.table && entry.table.unstableItemCount > 0) {
-                            <span class="mc-note-line">{{ entry.table.unstableItemCount }} unstable items</span>
-                          }
-                        </td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
-              <app-table-pager [state]="entryTable" [rows]="entries" noun="entries" [announce]="false"
-                               (changed)="onTableChanged()"></app-table-pager>
-            </div>
-          }
-        </section>
-
-        <!-- The set-level caveats repeat here, compactly: this is a step a reader exports from,
-             and a table downloaded without them is exactly the misreading they prevent. -->
-        @if (setNotices.length > 0) {
-          <ul class="mc-notices mc-notices-compact" aria-label="Notices about this comparison">
-            @for (notice of setNotices; track $index) {
-              <li>
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="12" y1="16" x2="12" y2="12"></line>
-                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                </svg>
-                <span>{{ notice }}</span>
-              </li>
-            }
-          </ul>
-        }
-
-        <!--
-          The download column chooser.
-
-          Nested inside the wizard's own modal dialog, which is legitimate: showModal() promotes this
-          element to the top layer, where the wizard's `overflow: hidden` and the step panel's
-          `overflow-y: auto` do not clip it, and Escape closes the topmost dialog only.
-
-          No `closedby="any"`: its backdrop over a full-screen wizard is a thin ring rather than an
-          honest click target, and a mis-click would discard a column selection the reader has just
-          made. The wizard's other nested dialogs avoid light dismiss for the same reason.
-        -->
-        <dialog #tableColumnsDialog class="gh-dialog dialog-wide mc-columns-dialog"
-                aria-labelledby="mc-columns-title"
-                (cancel)="onTableColumnsDialogClose($event)"
-                (close)="onTableColumnsDialogClose($event)">
-          <div class="dialog-header">
-            <div class="dialog-title-group">
-              <h3 id="mc-columns-title">Columns to download</h3>
-            </div>
-            <button type="button" class="btn-icon-action" aria-label="Close the column chooser"
-                    (click)="tableColumnsDialog.close()">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
-                   style="width: 20px; height: 20px;">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
-          </div>
-
-          <p class="section-note">
-            Columns with no value on any exported row are unticked. The order of the file follows the
-            table, not the order you tick.
-          </p>
-
-          <div class="mc-columns-actions">
-            <button type="button" class="gh-filter-clear"
-                    (click)="selectPopulatedTableColumns()">Only columns with values</button>
-            <button type="button" class="gh-filter-clear"
-                    (click)="selectAllTableColumns()">All columns</button>
-          </div>
-
-          <div class="mc-columns-grid" role="group" aria-labelledby="mc-columns-title">
-            @for (column of tableColumns; track column.key) {
-              <label class="checkbox-label">
-                <input type="checkbox" [checked]="isTableColumnSelected(column.key)"
-                       (change)="toggleTableColumn(column.key)">
-                {{ column.header }}
-                @if (tableColumnEmpty.has(column.key)) {
-                  <span class="mc-column-empty">empty</span>
-                }
-              </label>
-            }
-          </div>
-
-          <div class="dialog-actions">
-            <p class="mc-columns-count" role="status">
-              {{ tableColumnSelectedCount }} of {{ tableColumns.length }} columns
-            </p>
-            <button type="button" class="btn-gh btn-gh-cancel"
-                    (click)="tableColumnsDialog.close()">Cancel</button>
-            <button type="button" class="btn-gh" [disabled]="tableColumnSelectedCount === 0"
-                    (click)="confirmTableDownload()">Download</button>
-          </div>
-        </dialog>
-      </div>
-    }
-
-    @if (step === 4) {
-      <div class="mc-step mc-step--figures" role="tabpanel" tabindex="0"
-           id="mc-step-panel-4" aria-labelledby="mc-step-tab-4">
-
-        <!-- The set-level caveats repeat here, compactly: this is the step a reader exports from,
-             and a figure downloaded without them is exactly the misreading they prevent. -->
+        <!-- The set-level caveats repeat in All charts and in the Interactive table, compactly:
+             this is the step a reader exports from, and a chart or a table downloaded without them
+             is exactly the misreading they prevent. -->
         <ng-template #setNoticeList>
           @if (setNotices.length > 0) {
             <ul class="mc-notices mc-notices-compact" aria-label="Notices about this comparison">
@@ -949,49 +486,237 @@
           }
         </ng-template>
 
-        @if (showFigures) {
-          <div class="mc-fig-workspace" [class.is-collapsed]="sidebarCollapsed">
-
-            <!-- ===================================================================================
-                 THE SETTINGS SIDEBAR
-
-                 Emphasis, Style and Download: every control that changes the figures, once. Collapsed
-                 by its toggle in the figure bar, which stays rendered outside it.
-                 =================================================================================== -->
-            <aside id="mc-fig-sidebar" class="mc-fig-sidebar" aria-label="Figure settings"
-                   [hidden]="sidebarCollapsed">
-              <div class="gh-tabs gh-tabs-secondary mc-fig-sidebar-tabs" role="tablist"
-                   aria-label="Figure settings sections">
-                @for (tab of sidebarTabs; track tab.id; let i = $index) {
-                  <button type="button" role="tab" class="gh-tab"
-                          [id]="'mc-side-tab-' + tab.id"
-                          [attr.aria-controls]="'mc-side-panel-' + tab.id"
-                          [attr.aria-selected]="sidebarTab === tab.id"
-                          [attr.tabindex]="sidebarTab === tab.id ? 0 : -1"
-                          (keydown)="onSidebarTabKeydown($event, i)"
-                          (click)="selectSidebarTab(tab.id)">{{ tab.label }}</button>
+        <!-- The Image format section, rendered in the Download tab of both view groups: one section
+             over one shared state, since the charts and the table image are written in one format.
+             A settings section (§5b): the reset button sits after <details> in the positioned
+             wrapper, never in the summary or the body. -->
+        <ng-template #imageFormatSection>
+          <div class="mc-size-section">
+            <details class="gh-disclosure gh-disclosure--section" id="mc-image-format-section"
+                     [open]="imageFormatOpen" (toggle)="onImageFormatToggle($event)">
+              <summary>
+                <span class="gh-disclosure-summary-title">Image format</span>
+                <span class="gh-disclosure-summary-value" aria-hidden="true">{{ imageFormatReadout }}</span>
+              </summary>
+              <div class="gh-disclosure-body mc-size-body">
+                <p class="mc-field-hint">Every chart and the table image are written in this format.</p>
+                <label for="mc-export-format">Format</label>
+                <select id="mc-export-format" class="gh-input mc-export-format"
+                        [ngModel]="exportFormat" [ngModelOptions]="{ standalone: true }"
+                        (ngModelChange)="onExportFormatChange($event)">
+                  <option value="png">PNG</option>
+                  <option value="webp">WebP</option>
+                </select>
+                <!-- Quality after the format rather than before it, so choosing WebP never shifts the
+                     control the reader has just used. -->
+                @if (exportFormat === 'webp') {
+                  <label for="mc-export-webp-quality">WebP quality</label>
+                  <select id="mc-export-webp-quality" class="gh-input mc-export-quality"
+                          [ngModel]="webpQuality" [ngModelOptions]="{ standalone: true }"
+                          (ngModelChange)="onWebpQualityChange($event)">
+                    @for (q of webpQualityOptions; track q) {
+                      <option [ngValue]="q">{{ q }}</option>
+                    }
+                  </select>
                 }
               </div>
+            </details>
+            <button type="button" class="action-btn mc-size-reset" id="mc-image-format-reset"
+                    aria-label="Reset Image format to defaults"
+                    [attr.aria-disabled]="imageFormatIsDefault ? 'true' : null"
+                    interestfor="mc-tip-image-format-reset" style="anchor-name: --mc-tip-image-format-reset"
+                    (click)="resetImageFormat()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9 14 4 9l5-5"></path>
+                <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"></path>
+              </svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" id="mc-tip-image-format-reset"
+                 style="position-anchor: --mc-tip-image-format-reset">{{ imageFormatIsDefault ? 'Already at defaults' : 'Reset to defaults' }}</div>
+          </div>
+          <p class="visually-hidden" role="status">{{ imageFormatResetStatus }}</p>
+        </ng-template>
 
-              @if (sidebarTab === 'emphasis') {
-                <div class="mc-side-panel" role="tabpanel" id="mc-side-panel-emphasis"
-                     aria-labelledby="mc-side-tab-emphasis" tabindex="0">
-                  <!-- ===============================================================================
+        <div class="mc-fig-workspace" [class.is-collapsed]="sidebarCollapsed">
+
+          <!-- ===================================================================================
+               THE SETTINGS SIDEBAR
+
+               Its tabs follow the view group: Data · Theme · Charts · Download beside the charts,
+               Data · Theme · Table · Download beside the table, so no tab holds a setting that does
+               not apply to the view it is shown with. Collapsed by its toggle in the view bar,
+               which stays rendered outside it.
+               =================================================================================== -->
+          <aside id="mc-fig-sidebar" class="mc-fig-sidebar" aria-label="Comparison settings"
+                 [hidden]="sidebarCollapsed">
+            <div class="gh-tabs gh-tabs-secondary mc-fig-sidebar-tabs" role="tablist"
+                 aria-label="Settings sections">
+              @for (tab of visibleSidebarTabs; track tab.id; let i = $index) {
+                <button type="button" role="tab" class="gh-tab"
+                        [id]="'mc-side-tab-' + tab.id"
+                        [attr.aria-controls]="'mc-side-panel-' + tab.id"
+                        [attr.aria-selected]="effectiveSidebarTab === tab.id"
+                        [attr.tabindex]="effectiveSidebarTab === tab.id ? 0 : -1"
+                        (keydown)="onSidebarTabKeydown($event, i)"
+                        (click)="selectSidebarTab(tab.id)">{{ tab.label }}</button>
+              }
+            </div>
+
+            @if (effectiveSidebarTab === 'data') {
+              <div class="mc-side-panel mc-data-panel" role="tabpanel" id="mc-side-panel-data"
+                   aria-labelledby="mc-side-tab-data" tabindex="0">
+                <p class="mc-field-hint">
+                  @if (isTableView(effectiveFigureTab)) {
+                    The order of the table's rows, shared with the charts.
+                  } @else {
+                    What the charts show, and the order of the models in the charts and the table.
+                  }
+                </p>
+
+                <!-- Three short groups, stacked rather than behind disclosures: a collapsed group
+                     would hide the emphasis list used most. The table views show only Model order,
+                     because the measures and the emphasis do not change the table. -->
+                @if (isChartView(effectiveFigureTab)) {
+                  <fieldset class="gh-fieldset mc-data-group">
+                    <legend>Measures</legend>
+
+                    <fieldset class="gh-choice" aria-describedby="mc-speed-measure-hint">
+                      <legend>Speed measure</legend>
+                      @for (option of speedMeasureOptions; track option.value) {
+                        <label class="gh-radio">
+                          <input type="radio" name="mc-speed-measure" [id]="'mc-speed-measure-' + option.value"
+                                 [value]="option.value" [checked]="speedMeasure === option.value"
+                                 (change)="onSpeedMeasureChange(option.value)">
+                          {{ option.label }}
+                        </label>
+                      }
+                    </fieldset>
+                    <p class="mc-field-hint mc-speed-hint" id="mc-speed-measure-hint">
+                      Model time is the turn duration with tool I/O removed. Time to first token is how
+                      long a chat user waits for the answer to start.
+                      @if (speedIndexSaturatedCount > 0) {
+                        Speed Index is saturated for {{ speedIndexSaturatedCount }} of
+                        {{ measuredEntryCount }} entries here, so those may tie at the top while their
+                        real latency differs.
+                      }
+                    </p>
+
+                    <!--
+                      The second option is present and disabled rather than absent: the axis exists as
+                      a concept and this endpoint cannot supply it, and saying so is more honest than a
+                      control that looks like it was never considered.
+                    -->
+                    <fieldset class="gh-choice" aria-describedby="mc-cost-measure-hint">
+                      <legend>Cost measure</legend>
+                      <label class="gh-radio">
+                        <input type="radio" name="mc-cost-measure" id="mc-cost-measure-candidateSuite"
+                               value="candidateSuite" [checked]="costMeasure === 'candidateSuite'"
+                               (change)="onCostMeasureChange('candidateSuite')">
+                        Candidate cost for the whole suite
+                      </label>
+                      <label class="gh-radio">
+                        <input type="radio" name="mc-cost-measure" id="mc-cost-measure-totalRun"
+                               value="totalRun" disabled>
+                        Total run cost including grading roles — not available
+                      </label>
+                    </fieldset>
+                    <p class="mc-field-hint" id="mc-cost-measure-hint">The endpoint returns candidate spend only: grading-role cost is most of a run and none of it transfers to the chat assistant.</p>
+                  </fieldset>
+                }
+
+                <fieldset class="gh-fieldset mc-data-group" aria-describedby="mc-sort-hint">
+                  <legend>Model order</legend>
+                  <p class="mc-field-hint" id="mc-sort-hint">One order for the three bar panels and the table — a row is one model across them.</p>
+
+                  <fieldset class="gh-choice">
+                    <legend>Order by</legend>
+                    @for (option of sortKeyOptions; track option.value) {
+                      <label class="gh-radio">
+                        <input type="radio" name="mc-sort-key" [id]="'mc-sort-key-' + option.value"
+                               [value]="option.value" [checked]="sort.key === option.value"
+                               (change)="onSortKeyChange(option.value)">
+                        {{ option.label }}
+                      </label>
+                    }
+                  </fieldset>
+
+                  <fieldset class="gh-choice" [disabled]="sort.key === 'custom'"
+                            [attr.aria-describedby]="sort.key === 'custom' ? 'mc-sort-direction-hint' : null">
+                    <legend>Direction</legend>
+                    @for (option of sortDirectionOptions; track option.value) {
+                      <label class="gh-radio">
+                        <input type="radio" name="mc-sort-direction" [id]="'mc-sort-direction-' + option.value"
+                               [value]="option.value" [checked]="sort.direction === option.value"
+                               (change)="onSortDirectionChange(option.value)">
+                        {{ option.label }}
+                      </label>
+                    }
+                  </fieldset>
+
+                  @if (sort.key === 'custom') {
+                    <p class="mc-field-hint" id="mc-sort-direction-hint">A custom order has no direction.</p>
+
+                    <!-- A row's body: the glyph, the name and the badges the emphasis list shows. The
+                         list adds the row's table only tag after it. -->
+                    <ng-template #customOrderItem let-item>
+                      @if (customOrderEntry(item.key); as entry) {
+                        @if (glyph(entry.key); as g) {
+                          <span [class]="'mc-glyph mc-glyph-' + g.shape"
+                                [style.background-color]="g.hue" aria-hidden="true"></span>
+                        }
+                        <span class="mc-emphasis-name">{{ entry.modelDisplayName || entry.label }}</span>
+                        @if (entry.thinkingLevel) {
+                          <span class="thinking-badge">{{ entry.thinkingLevel }}</span>
+                        }
+                        @if (showReasoningBadge(entry.reasoningMode)) {
+                          <span class="reasoning-badge">{{ entry.reasoningMode }}</span>
+                        }
+                      } @else {
+                        {{ item.label }}
+                      }
+                    </ng-template>
+                    <app-reorderable-list [items]="customOrderItems" [itemTemplate]="customOrderItem"
+                                          listLabel="Custom model order" itemNoun="model"
+                                          [dividerIndex]="customOrderDividerIndex"
+                                          dividerText="Charts plot the entries above this line"
+                                          idPrefix="mc-custom-order"
+                                          (orderChange)="onCustomOrderChange($event)"></app-reorderable-list>
+                    <div class="mc-order-actions">
+                      <!-- aria-disabled, so the reset stays focusable; the handler refuses on its own. -->
+                      <button type="button" class="gh-filter-clear"
+                              [attr.aria-disabled]="customOrderIsDefault ? 'true' : null"
+                              (click)="resetCustomOrder()">Reset custom order</button>
+                    </div>
+                  }
+
+                  @if (isTableView(effectiveFigureTab)) {
+                    @if (tableSortedBy; as sorted) {
+                      <div class="mc-table-order mc-table-order--side">
+                        <p class="mc-field-hint">The table is sorted by {{ sorted.header }}.</p>
+                        <button type="button" class="btn-ghost" (click)="useModelOrder()">Use model order</button>
+                      </div>
+                    }
+                  }
+                </fieldset>
+
+                @if (isChartView(effectiveFigureTab)) {
+                  <!-- ===========================================================================
                        EMPHASIS
 
-                       A control lives on the step where its effect is seen, so the pin that paints a
-                       model gold sits in the sidebar beside the figures it paints rather than in the
-                       table two steps back.
+                       A control lives where its effect is seen, so the pin that paints a model
+                       gold sits in the sidebar beside the charts it paints rather than in the table.
 
-                       A checkbox group, not aria-pressed toggles: this is multi-select view state over
-                       a fixed set. The <legend> names the group and the hint is attached to the
+                       A checkbox group, not aria-pressed toggles: this is multi-select view state
+                       over a fixed set. The <legend> names the group and the hint is attached to the
                        fieldset, so it is read once rather than per box; the checked state and the
-                       status line carry the state in words, and the gold in the figures is the effect
+                       status line carry the state in words, and the gold in the charts is the effect
                        rather than the indicator.
 
-                       The list is `plotted`, the entries actually in the figures, so a deselected or
+                       The list is `plotted`, the entries actually in the charts, so a deselected or
                        excluded entry is never offered here.
-                       =============================================================================== -->
+                       =========================================================================== -->
                   <fieldset class="gh-fieldset mc-emphasis" aria-describedby="mc-emphasis-hint">
                     <legend>Emphasise models</legend>
                     <p class="mc-field-hint" id="mc-emphasis-hint">
@@ -1033,395 +758,435 @@
                               (click)="clearEmphasis()">Clear emphasis</button>
                     </div>
                   </fieldset>
+                }
+              </div>
+            }
+
+            @if (effectiveSidebarTab === 'theme') {
+              <!-- Theme, background, fonts and borders: every chart and the table image. -->
+              <div class="mc-side-panel" role="tabpanel" id="mc-side-panel-theme"
+                   aria-labelledby="mc-side-tab-theme" tabindex="0">
+                <app-figure-style-panel kind="appearance" [figureStyle]="figureStyle"
+                                        [fontLoadStatus]="fontLoadStatus"
+                                        (figureStyleChange)="onFigureStyleChange($event)"></app-figure-style-panel>
+              </div>
+            }
+
+            @if (effectiveSidebarTab === 'charts') {
+              <div class="mc-side-panel" role="tabpanel" id="mc-side-panel-charts"
+                   aria-labelledby="mc-side-tab-charts" tabindex="0">
+                <!-- The family tabs swap the control set below in place, so they are tabs; the segmented look
+                     keeps them apart from the sidebar's own tab row above. -->
+                <div class="gh-tabs gh-tabs-segmented mc-style-family-tabs" role="tablist" aria-label="Charts to style">
+                  @for (family of styleFamilies; track family.kind; let i = $index) {
+                    <button type="button" role="tab" class="gh-tab"
+                            [id]="'mc-style-family-tab-' + family.kind"
+                            [attr.aria-controls]="'mc-style-family-panel-' + family.kind"
+                            [attr.aria-selected]="effectiveStyleFamily === family.kind"
+                            [attr.tabindex]="effectiveStyleFamily === family.kind ? 0 : -1"
+                            (keydown)="onStyleFamilyKeydown($event, i)"
+                            (click)="selectStyleFamily(family.kind)">{{ family.label }}</button>
+                  }
                 </div>
-              }
+                <div class="mc-style-family-panel" role="tabpanel" tabindex="0"
+                     [id]="'mc-style-family-panel-' + effectiveStyleFamily"
+                     [attr.aria-labelledby]="'mc-style-family-tab-' + effectiveStyleFamily">
+                  <!-- The trade-off toggles call the page's own handlers, so the panel owns no second copy
+                       of that state. -->
+                  <app-figure-style-panel [kind]="effectiveStyleFamily" [figureStyle]="figureStyle"
+                                          [directLabels]="scatterDirectLabels" [inlineValues]="scatterInlineValues"
+                                          [speedMeasure]="speedMeasure" [costMeasure]="costMeasure"
+                                          [numberSamples]="numberSamples[effectiveStyleFamily]"
+                                          (figureStyleChange)="onFigureStyleChange($event)"
+                                          (directLabelsChange)="onScatterDirectLabelsChange($event)"
+                                          (inlineValuesChange)="onScatterInlineValuesChange($event)"></app-figure-style-panel>
+                </div>
+                @if (previewRefusal) {
+                  <p class="mc-export-error" role="alert">{{ previewRefusal }}</p>
+                }
+              </div>
+            }
 
-              @if (sidebarTab === 'style') {
-                <div class="mc-side-panel" role="tabpanel" id="mc-side-panel-style"
-                     aria-labelledby="mc-side-tab-style" tabindex="0">
-                  <!-- ===============================================================================
-                       FIGURE SIZE
+            @if (effectiveSidebarTab === 'table') {
+              <!-- The columns of every table output, and the table image's row style. -->
+              <div class="mc-side-panel" role="tabpanel" id="mc-side-panel-table"
+                   aria-labelledby="mc-side-tab-table" tabindex="0">
+                <app-table-settings-panel [columns]="tableColumns" [empty]="columnEmptyKeys"
+                                          [tableStyle]="figureStyle.table"
+                                          (columnsChange)="onTableColumnsChange($event)"
+                                          (tableStyleChange)="onTableStyleChange($event)"></app-table-settings-panel>
+                <p class="mc-field-hint mc-columns-status" role="status">{{ tableColumnsStatus }}</p>
+              </div>
+            }
 
-                       First, above the family tabs, because it shapes every family's figures: the All
-                       tiles, the Single stage and every download are composed at it. A settings section
-                       (§5b): the summary holds text only, and the reset button sits after <details> in
-                       the positioned wrapper, never in the summary or the body.
-                       =============================================================================== -->
-                  <div class="mc-size-section">
-                    <details class="gh-disclosure gh-disclosure--section" id="mc-figure-size-section"
-                             [open]="figureSizeOpen" (toggle)="onFigureSizeToggle($event)">
-                      <summary>
-                        <span class="gh-disclosure-summary-title">Figure size</span>
-                        <span class="gh-disclosure-summary-value" aria-hidden="true">{{ figureSizeReadout }}</span>
-                      </summary>
-                      <div class="gh-disclosure-body mc-size-body">
-                        <p class="mc-field-hint" id="mc-figure-size-hint">The shape, sharpness and text size of every
-                          figure — in All, in Single and in downloads.</p>
+            @if (effectiveSidebarTab === 'download') {
+              <!-- Visible labels, not `visually-hidden` ones. The content follows the view group; the
+                   Image format section is the same one, over the same state, in both. -->
+              <div class="mc-side-panel mc-download-panel" role="tabpanel" id="mc-side-panel-download"
+                   aria-labelledby="mc-side-tab-download" tabindex="0">
+                @if (isChartView(effectiveFigureTab)) {
+                  <app-export-size-section title="Chart size" idPrefix="mc-export"
+                                           [settings]="figureSize" [defaults]="defaultChartSize"
+                                           [displayDensity]="displayDensity" [open]="figureSizeOpen"
+                                           [textSizeHint]="chartTextSizeHint"
+                                           (settingsChange)="onFigureSizeChange($event)"
+                                           (openChange)="onFigureSizeOpenChange($event)"
+                                           (reset)="resetFigureSize()"></app-export-size-section>
+                  <ng-container *ngTemplateOutlet="imageFormatSection"></ng-container>
 
-                        <label for="mc-export-resolution">Size and aspect ratio</label>
-                        <select id="mc-export-resolution" class="gh-input"
-                                aria-describedby="mc-figure-size-hint"
-                                [ngModel]="figureSize.resolutionId" [ngModelOptions]="{ standalone: true }"
-                                (ngModelChange)="onExportResolutionChange($event)">
-                          @for (group of exportPresetGroups; track group.label) {
-                            <optgroup [label]="group.label">
-                              @for (preset of group.presets; track preset.id) {
-                                <option [value]="preset.id">{{ preset.label }}</option>
-                              }
-                            </optgroup>
-                          }
-                          <optgroup label="Custom">
-                            <option value="custom">Custom…</option>
-                          </optgroup>
-                        </select>
-
-                        @if (isCustomResolution) {
-                          <label for="mc-export-width">Width in pixels</label>
-                          <input id="mc-export-width" type="number" class="gh-input mc-export-dimension"
-                                 [min]="minExportDimension" [max]="maxExportDimension" step="10"
-                                 aria-describedby="mc-export-resolution-error"
-                                 [ngModel]="figureSize.customWidthPx" [ngModelOptions]="{ standalone: true }"
-                                 (ngModelChange)="onCustomWidthChange($event)">
-                          <label for="mc-export-height">Height in pixels</label>
-                          <input id="mc-export-height" type="number" class="gh-input mc-export-dimension"
-                                 [min]="minExportDimension" [max]="maxExportDimension" step="10"
-                                 aria-describedby="mc-export-resolution-error"
-                                 [ngModel]="figureSize.customHeightPx" [ngModelOptions]="{ standalone: true }"
-                                 (ngModelChange)="onCustomHeightChange($event)">
-                          <label class="checkbox-label">
-                            <input type="checkbox" [ngModel]="customRatioLocked"
-                                   [ngModelOptions]="{ standalone: true }"
-                                   (ngModelChange)="lockCustomRatio($event)">
-                            Keep {{ exportAspectLabel }}
-                          </label>
-                        }
-
-                        <!-- One density for every size, defaulting to the display's own: the read-out below is
-                             what keeps that single rule honest about what a size will write. -->
-                        <label for="mc-export-density">Pixel density</label>
-                        <select id="mc-export-density" class="gh-input mc-export-quality"
-                                aria-describedby="mc-export-resolution-error"
-                                [ngModel]="figureSize.densitySelection" [ngModelOptions]="{ standalone: true }"
-                                (ngModelChange)="onExportDensityChange($event)">
-                          @for (d of exportDensityPresets; track d) {
-                            <option [ngValue]="d">{{ densityOptionLabel(d) }}</option>
-                          }
-                          <option [ngValue]="'custom'">Custom…</option>
-                        </select>
-                        @if (isCustomDensity) {
-                          <label for="mc-export-density-custom">Density in percent</label>
-                          <input id="mc-export-density-custom" type="number" class="gh-input mc-export-dimension"
-                                 [min]="minExportDensityPercent" [max]="maxExportDensityPercent" step="5"
-                                 aria-describedby="mc-export-resolution-error"
-                                 [ngModel]="figureSize.customDensityPercent" [ngModelOptions]="{ standalone: true }"
-                                 (ngModelChange)="onCustomDensityChange($event)">
-                        }
-
-                        <!-- Text size composes each figure in a smaller or larger box at the same pixel size, so
-                             the caption, notes and the plot's own text scale together. -->
-                        <div class="mc-range">
-                          <label for="mc-export-text-scale">Text size</label>
-                          <div class="mc-range-row">
-                            <input id="mc-export-text-scale" type="range"
-                                   [min]="minExportTextScalePercent" [max]="maxExportTextScalePercent" step="5"
-                                   [value]="figureSize.textScalePercent"
-                                   [attr.aria-valuetext]="figureSize.textScalePercent + ' percent'"
-                                   aria-describedby="mc-export-text-scale-hint"
-                                   (input)="onExportTextScaleChange(+$any($event.target).value)">
-                            <output class="mc-range-value" aria-hidden="true" for="mc-export-text-scale">{{ figureSize.textScalePercent }} %</output>
-                          </div>
-                          <p class="mc-field-hint" id="mc-export-text-scale-hint">Scales the caption, notes and chart text
-                            together without changing the pixel size. Raise it for a small figure.</p>
-                        </div>
-
-                        <p class="mc-export-dimensions">{{ exportDimensionsLabel }} · {{ exportAspectLabel }}</p>
-                        @if (exportSizeError) {
-                          <p class="mc-export-error" id="mc-export-resolution-error" role="alert">{{ exportSizeError }}</p>
-                        }
-                      </div>
-                    </details>
-                    <button type="button" class="action-btn mc-size-reset" id="mc-figure-size-reset"
-                            aria-label="Reset Figure size to defaults"
-                            [attr.aria-disabled]="figureSizeIsDefault ? 'true' : null"
-                            interestfor="mc-tip-figure-size-reset" style="anchor-name: --mc-tip-figure-size-reset"
-                            (click)="resetFigureSize()">
-                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                           viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M9 14 4 9l5-5"></path>
-                        <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"></path>
+                  <!-- aria-disabled, not disabled, so the tooltip naming the reason stays reachable;
+                       downloadAllFigures() refuses on its own. -->
+                  <div class="mc-download-actions">
+                    <button type="button" class="btn-gh" id="mc-side-download-all"
+                            [attr.aria-disabled]="canExport ? null : 'true'"
+                            interestfor="mc-tip-side-download-all" style="anchor-name: --mc-tip-side-download-all"
+                            (click)="downloadAllFigures()">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                        <rect x="1" y="3" width="22" height="5"></rect>
+                        <line x1="10" y1="12" x2="14" y2="12"></line>
                       </svg>
+                      Download all charts
                     </button>
-                    <div popover="hint" class="gh-tooltip" id="mc-tip-figure-size-reset"
-                         style="position-anchor: --mc-tip-figure-size-reset">{{ figureSizeIsDefault ? 'Already at defaults' : 'Reset to defaults' }}</div>
+                    <div popover="hint" class="gh-tooltip" id="mc-tip-side-download-all"
+                         style="position-anchor: --mc-tip-side-download-all">{{ downloadAllTooltip }}</div>
                   </div>
-                  <p class="visually-hidden" role="status">{{ figureSizeResetStatus }}</p>
 
-                  <!-- The family tabs swap the control set below in place, so they are tabs; the segmented look
-                       keeps them apart from the sidebar's own tab row above. -->
-                  <div class="gh-tabs gh-tabs-segmented mc-style-family-tabs" role="tablist" aria-label="Figures to style">
-                    @for (family of styleFamilies; track family.kind; let i = $index) {
-                      <button type="button" role="tab" class="gh-tab"
-                              [id]="'mc-style-family-tab-' + family.kind"
-                              [attr.aria-controls]="'mc-style-family-panel-' + family.kind"
-                              [attr.aria-selected]="effectiveStyleFamily === family.kind"
-                              [attr.tabindex]="effectiveStyleFamily === family.kind ? 0 : -1"
-                              (keydown)="onStyleFamilyKeydown($event, i)"
-                              (click)="selectStyleFamily(family.kind)">{{ family.label }}</button>
-                    }
-                  </div>
-                  <div class="mc-style-family-panel" role="tabpanel" tabindex="0"
-                       [id]="'mc-style-family-panel-' + effectiveStyleFamily"
-                       [attr.aria-labelledby]="'mc-style-family-tab-' + effectiveStyleFamily">
-                    <!-- The trade-off toggles call the page's own handlers, so the panel owns no second copy
-                         of that state. -->
-                    <app-figure-style-panel [kind]="effectiveStyleFamily" [figureStyle]="figureStyle"
-                                            [directLabels]="scatterDirectLabels" [inlineValues]="scatterInlineValues"
-                                            [speedMeasure]="speedMeasure" [costMeasure]="costMeasure"
-                                            [numberSamples]="numberSamples[effectiveStyleFamily]"
-                                            (figureStyleChange)="onFigureStyleChange($event)"
-                                            (directLabelsChange)="onScatterDirectLabelsChange($event)"
-                                            (inlineValuesChange)="onScatterInlineValuesChange($event)"></app-figure-style-panel>
-                  </div>
                   @if (previewRefusal) {
                     <p class="mc-export-error" role="alert">{{ previewRefusal }}</p>
                   }
-                </div>
-              }
-
-              @if (sidebarTab === 'download') {
-                <!-- Visible labels, not `visually-hidden` ones. The size is the Style tab's: it shapes
-                     every figure on the page as well as the files. -->
-                <div class="mc-side-panel" role="tabpanel" id="mc-side-panel-download"
-                     aria-labelledby="mc-side-tab-download" tabindex="0">
-                  <h4 id="mc-download-title" class="mc-section-title">Format</h4>
-                  <p class="mc-field-hint">The size, pixel density and text size are in the Style tab, under Figure size.</p>
-
-                  <label for="mc-export-format">Format</label>
-                  <select id="mc-export-format" class="gh-input mc-export-format"
-                          [ngModel]="exportFormat" [ngModelOptions]="{ standalone: true }"
-                          (ngModelChange)="onExportFormatChange($event)">
-                    <option value="png">PNG</option>
-                    <option value="webp">WebP</option>
-                  </select>
-                  <!-- Quality after the format rather than before it, so choosing WebP never shifts the
-                       control the reader has just used. -->
-                  @if (exportFormat === 'webp') {
-                    <label for="mc-export-webp-quality">WebP quality</label>
-                    <select id="mc-export-webp-quality" class="gh-input mc-export-quality"
-                            [ngModel]="figureWebpQuality" [ngModelOptions]="{ standalone: true }"
-                            (ngModelChange)="onFigureWebpQualityChange($event)">
-                      @for (q of webpQualityOptions; track q) {
-                        <option [ngValue]="q">{{ q }}</option>
+                } @else {
+                  <div class="mc-download-section">
+                    <label for="mc-table-format">Table format</label>
+                    <select id="mc-table-format" class="gh-input mc-export-format"
+                            aria-describedby="mc-table-format-hint"
+                            [ngModel]="tableFormat" [ngModelOptions]="{ standalone: true }"
+                            (ngModelChange)="onTableFormatChange($event)">
+                      @for (option of tableFormatOptions; track option.value) {
+                        <option [value]="option.value">{{ option.label }}</option>
                       }
                     </select>
+                    <p class="mc-field-hint" id="mc-table-format-hint">{{ tableFormatDescription }}</p>
+                  </div>
+
+                  <!-- The image's size and format show for the Image format, and whenever the Table
+                       preview is the view: there the admin is looking at the image, and must be able
+                       to size it whatever file format is chosen. -->
+                  @if (showTableImageSettings) {
+                    <app-export-size-section title="Table image size" idPrefix="mc-table-image"
+                                             [settings]="tableImageSize" [defaults]="defaultTableImageSize"
+                                             [allowFit]="true" [displayDensity]="displayDensity"
+                                             [open]="tableImageSizeOpen" [fitInfo]="tableFitInfo"
+                                             [textSizeHint]="tableTextSizeHint" errorNoun="image"
+                                             layoutRule="plain" [writtenLabel]="tableImageWrittenLabel"
+                                             (settingsChange)="onTableImageSizeChange($event)"
+                                             (openChange)="onTableImageSizeOpenChange($event)"
+                                             (reset)="resetTableImageSize()"></app-export-size-section>
+                    <ng-container *ngTemplateOutlet="imageFormatSection"></ng-container>
                   }
 
-                  @if (previewRefusal) {
-                    <p class="mc-export-error" role="alert">{{ previewRefusal }}</p>
+                  <p class="mc-table-scope" role="status">{{ tableScopeLine }}</p>
+
+                  <!-- aria-disabled, not disabled, so both stay focusable with the reason in their
+                       tooltips; the handlers refuse on their own. -->
+                  <div class="mc-download-actions">
+                    <button type="button" class="btn-gh" id="mc-side-table-download"
+                            [attr.aria-disabled]="canExportTable ? null : 'true'"
+                            interestfor="mc-tip-side-table-download" style="anchor-name: --mc-tip-side-table-download"
+                            (click)="downloadTable()">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="12" y1="18" x2="12" y2="12"></line>
+                        <polyline points="9 15 12 18 15 15"></polyline>
+                      </svg>
+                      Download table
+                    </button>
+                    <button type="button" class="btn-ghost" id="mc-side-table-copy"
+                            [attr.aria-disabled]="canExportTable ? null : 'true'"
+                            interestfor="mc-tip-side-table-copy" style="anchor-name: --mc-tip-side-table-copy"
+                            (click)="copyTable()">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
+                      Copy table
+                    </button>
+                    <div popover="hint" class="gh-tooltip" id="mc-tip-side-table-download"
+                         style="position-anchor: --mc-tip-side-table-download">{{ downloadTableTooltip }}</div>
+                    <div popover="hint" class="gh-tooltip" id="mc-tip-side-table-copy"
+                         style="position-anchor: --mc-tip-side-table-copy">{{ copyTableTooltip }}</div>
+                  </div>
+
+                  @if (tableImageLayoutAlert) {
+                    <p class="mc-export-error" role="alert">{{ tableImageLayoutAlert }}</p>
                   }
-                </div>
-              }
-            </aside>
+                }
+              </div>
+            }
+          </aside>
 
-            <div class="mc-fig-main">
-              <div class="mc-fig-bar">
-                <!-- A disclosure: the name stays constant and aria-expanded carries the state. -->
-                <button type="button" class="action-btn mc-fig-sidebar-toggle" aria-label="Figure settings"
-                        [attr.aria-expanded]="!sidebarCollapsed" aria-controls="mc-fig-sidebar"
-                        interestfor="mc-tip-sidebar" style="anchor-name: --mc-tip-sidebar"
-                        (click)="toggleSidebar()">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                    <line x1="9" y1="3" x2="9" y2="21"></line>
-                  </svg>
-                </button>
-                <div popover="hint" class="gh-tooltip" id="mc-tip-sidebar"
-                     style="position-anchor: --mc-tip-sidebar">{{ sidebarCollapsed ? 'Show figure settings' : 'Hide figure settings' }}</div>
+          <div class="mc-fig-main">
+            <div class="mc-fig-bar">
+              <!-- A disclosure: the name stays constant and aria-expanded carries the state. Every
+                   view has a sidebar, so the toggle is in every view. -->
+              <button type="button" class="action-btn mc-fig-sidebar-toggle" aria-label="Comparison settings"
+                      [attr.aria-expanded]="!sidebarCollapsed" aria-controls="mc-fig-sidebar"
+                      interestfor="mc-tip-sidebar" style="anchor-name: --mc-tip-sidebar"
+                      (click)="toggleSidebar()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <line x1="9" y1="3" x2="9" y2="21"></line>
+                </svg>
+              </button>
+              <div popover="hint" class="gh-tooltip" id="mc-tip-sidebar"
+                   style="position-anchor: --mc-tip-sidebar">{{ sidebarCollapsed ? 'Show settings' : 'Hide settings' }}</div>
 
-                <!-- The visible words are the start of each accessible name, so a speech user saying
-                     "All" or "Single" reaches the tab. -->
-                <div class="gh-tabs gh-tabs-secondary mc-fig-tabs" role="tablist" aria-label="Figure views">
-                  @for (tab of figureTabs; track tab.id; let i = $index) {
-                    <button type="button" role="tab" class="gh-tab"
-                            [id]="'mc-fig-tab-' + tab.id"
-                            [attr.aria-label]="tab.name"
-                            [attr.aria-controls]="'mc-fig-panel-' + tab.id"
-                            [attr.aria-selected]="figureTab === tab.id"
-                            [attr.tabindex]="figureTab === tab.id ? 0 : -1"
-                            (keydown)="onFigureTabKeydown($event, i)"
-                            (click)="selectFigureTab(tab.id)">
-                      @if (tab.id === 'all') {
+              <!-- Each visible label is the tab's whole accessible name. A chart view's tab stays
+                   focusable while nothing can be charted — aria-disabled, never disabled — and is
+                   described by the line that says why. -->
+              <div class="gh-tabs gh-tabs-secondary mc-fig-tabs" role="tablist" aria-label="Comparison views">
+                @for (tab of figureTabs; track tab.id; let i = $index) {
+                  <button type="button" role="tab" class="gh-tab"
+                          [id]="'mc-fig-tab-' + tab.id"
+                          [attr.aria-controls]="'mc-fig-panel-' + tab.id"
+                          [attr.aria-selected]="effectiveFigureTab === tab.id"
+                          [attr.aria-disabled]="isFigureTabUnavailable(tab.id) ? 'true' : null"
+                          [attr.aria-describedby]="isFigureTabUnavailable(tab.id) ? 'mc-fig-unavailable' : null"
+                          [attr.tabindex]="effectiveFigureTab === tab.id ? 0 : -1"
+                          (keydown)="onFigureTabKeydown($event, i)"
+                          (click)="selectFigureTab(tab.id)">
+                    @switch (tab.id) {
+                      @case ('all') {
                         <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                           <rect x="3" y="3" width="7" height="7"></rect>
                           <rect x="14" y="3" width="7" height="7"></rect>
                           <rect x="14" y="14" width="7" height="7"></rect>
                           <rect x="3" y="14" width="7" height="7"></rect>
                         </svg>
-                      } @else {
+                      }
+                      @case ('single') {
                         <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                           <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
                           <circle cx="12" cy="12" r="3"></circle>
                         </svg>
                       }
-                      {{ tab.label }}
-                    </button>
-                  }
-                </div>
-
-                <!-- aria-disabled, not disabled, so the tooltip naming the reason stays reachable;
-                     downloadAllFigures() refuses on its own. -->
-                <button type="button" class="btn-ghost mc-fig-download-all"
-                        [attr.aria-disabled]="canExport ? null : 'true'"
-                        interestfor="mc-tip-download-all" style="anchor-name: --mc-tip-download-all"
-                        (click)="downloadAllFigures()">
-                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <polyline points="21 8 21 21 3 21 3 8"></polyline>
-                    <rect x="1" y="3" width="22" height="5"></rect>
-                    <line x1="10" y1="12" x2="14" y2="12"></line>
-                  </svg>
-                  Download all
-                </button>
-                <div popover="hint" class="gh-tooltip" id="mc-tip-download-all"
-                     style="position-anchor: --mc-tip-download-all">{{ downloadAllTooltip }}</div>
-              </div>
-
-              <!-- Both views show figures composed by the export pipeline and neither renders a live
-                   chart, so what the page shows is the file a download writes. Measured for P1's bar
-                   orientation. -->
-              <div class="mc-fig-panels" #chartsHost>
-                @if (figureTab === 'all') {
-                  <div class="mc-fig-panel mc-fig-panel--all" role="tabpanel" tabindex="0"
-                       id="mc-fig-panel-all" aria-labelledby="mc-fig-tab-all"
-                       aria-describedby="mc-all-hint" aria-keyshortcuts="+ - 0"
-                       (keydown)="onAllPanelKeydown($event)">
-                    <!-- The Single toolbar's zoom controls, without pan: the viewport scrolls natively. A
-                         group, not role="toolbar": a toolbar's arrow-key model would fight the slider's. -->
-                    <div class="mc-preview-toolbar mc-all-toolbar">
-                      <div class="mc-preview-group mc-all-zoom" role="group" aria-label="Zoom of all figures">
-                        <button type="button" class="action-btn" aria-label="Zoom all figures out"
-                                [attr.aria-disabled]="canZoomAllOut ? null : 'true'"
-                                interestfor="mc-tip-all-zoom-out" style="anchor-name: --mc-tip-all-zoom-out"
-                                (click)="zoomAllOut()">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <circle cx="11" cy="11" r="8"></circle>
-                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                            <line x1="8" y1="11" x2="14" y2="11"></line>
-                          </svg>
-                        </button>
-                        <label class="mc-all-zoom-label" for="mc-all-zoom">Zoom</label>
-                        <input id="mc-all-zoom" type="range" class="mc-preview-zoom-slider"
-                               min="0" [max]="previewSliderSteps" step="1" [value]="allSliderValue"
-                               [attr.aria-valuetext]="allZoomValueText"
-                               (input)="onAllSliderInput(+$any($event.target).value)">
-                        <button type="button" class="action-btn" aria-label="Zoom all figures in"
-                                [attr.aria-disabled]="canZoomAllIn ? null : 'true'"
-                                interestfor="mc-tip-all-zoom-in" style="anchor-name: --mc-tip-all-zoom-in"
-                                (click)="zoomAllIn()">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <circle cx="11" cy="11" r="8"></circle>
-                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                            <line x1="11" y1="8" x2="11" y2="14"></line>
-                            <line x1="8" y1="11" x2="14" y2="11"></line>
-                          </svg>
-                        </button>
-                        <output class="mc-range-value mc-preview-zoom-value" for="mc-all-zoom" aria-hidden="true">{{ allZoomLabel }}</output>
-                        <button type="button" class="action-btn" aria-label="Fit height"
-                                interestfor="mc-tip-all-fit" style="anchor-name: --mc-tip-all-fit"
-                                (click)="fitAllHeight()">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                    <div popover="hint" class="gh-tooltip" id="mc-tip-all-zoom-out"
-                         style="position-anchor: --mc-tip-all-zoom-out">Zoom out (−)</div>
-                    <div popover="hint" class="gh-tooltip" id="mc-tip-all-zoom-in"
-                         style="position-anchor: --mc-tip-all-zoom-in">Zoom in (+)</div>
-                    <div popover="hint" class="gh-tooltip" id="mc-tip-all-fit"
-                         style="position-anchor: --mc-tip-all-fit">Fit one figure's height to the view (0)</div>
-
-                    <div class="mc-all-notices">
-                      <ng-container *ngTemplateOutlet="setNoticeList"></ng-container>
-                      @if (shape === 'pair') {
-                        <p class="section-note">
-                          The profile plot is suppressed at two entries: two polylines either cross once or they
-                          do not, which the three bar panels already show.
-                        </p>
+                      @case ('table') {
+                        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                          <line x1="3" y1="9" x2="21" y2="9"></line>
+                          <line x1="3" y1="15" x2="21" y2="15"></line>
+                          <line x1="12" y1="9" x2="12" y2="21"></line>
+                        </svg>
                       }
-                    </div>
-
-                    <!-- Card order is fixed: P1, then P2, then the three scatters. P1 answers the primary
-                         question and carries real units, so it is where a reader lands. Each tile is the
-                         composed figure at the figure size; its box is that size at the All zoom. -->
-                    <div class="mc-all-viewport" #allViewport>
-                      @if (exportSizeError) {
-                        <p class="mc-export-error">{{ exportSizeError }}</p>
-                      } @else {
-                        <div class="mc-all-grid">
-                          @for (card of exportableCards; track card.id; let i = $index) {
-                            <div #allTile class="mc-all-tile" role="group" tabindex="0"
-                                 [attr.data-figure-id]="card.id" [attr.aria-label]="card.title"
-                                 aria-describedby="mc-all-tile-hint"
-                                 [class.is-deferred]="i >= allTilesPerRow"
-                                 [style.width.px]="allTileCssWidth" [style.height.px]="allTileCssHeight"
-                                 [style.contain-intrinsic-size]="i >= allTilesPerRow ? allTileIntrinsicSize : null"
-                                 (click)="openInSingle(card)" (keydown)="onAllTileKeydown($event, card)">
-                              <canvas class="mc-all-canvas" role="img" [attr.data-figure-id]="card.id"
-                                      [attr.aria-label]="card.ariaLabel"
-                                      [attr.aria-describedby]="card.id === profileCard?.id && profileAxes ? card.id + '-axis-ends' : null"></canvas>
-                              @if (allTileRefusals[card.id]; as refusal) {
-                                <p class="mc-all-refusal">{{ refusal }}</p>
-                              }
-                              <!-- Out of the tab order: the tile itself takes focus and opens on Enter, so a
-                                   second stop per figure would repeat it. -->
-                              <button type="button" class="action-btn mc-all-open" tabindex="-1"
-                                      [attr.aria-label]="'Open ' + card.title + ' in Single view'"
-                                      [attr.interestfor]="tipId('single', card.id)"
-                                      [attr.style]="'anchor-name: --' + tipId('single', card.id)"
-                                      (click)="$event.stopPropagation(); openInSingle(card)">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                  <circle cx="12" cy="12" r="3"></circle>
-                                </svg>
-                              </button>
-                              <div popover="hint" class="gh-tooltip" [id]="tipId('single', card.id)"
-                                   [attr.style]="'position-anchor: --' + tipId('single', card.id)">Open in Single view</div>
-                            </div>
-                          }
-                        </div>
-                      }
-                    </div>
-
-                    <!-- The profile's real axis endpoints, which the normalized plot does not print, as the
-                         profile tile's description. -->
-                    @if (profileCard; as profile) {
-                      @if (profileAxes) {
-                        <dl class="mc-axis-ends visually-hidden" [id]="profile.id + '-axis-ends'">
-                          @for (axis of profileAxes.axes; track axis.id) {
-                            <div>
-                              <dt>{{ axis.title }}</dt>
-                              <dd>{{ axis.minLabel }} to {{ axis.maxLabel }}{{ axis.lowerIsBetter ? ' (inverted: lower is better)' : '' }}</dd>
-                            </div>
-                          }
-                        </dl>
+                      @case ('tablePreview') {
+                        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                          <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                          <polyline points="21 15 16 10 5 21"></polyline>
+                        </svg>
                       }
                     }
-                    <p id="mc-all-hint" class="visually-hidden">Every figure as it downloads. Plus and minus zoom
-                      them all, and 0 fits one figure's height to the view; scroll to see the rest. Zoom affects
-                      only this view, never the exported images.</p>
-                    <p id="mc-all-tile-hint" class="visually-hidden">Press Enter to open this figure in the Single
-                      view.</p>
-                  </div>
+                    {{ tab.label }}
+                  </button>
                 }
+              </div>
 
-                @if (figureTab === 'single') {
-                  <div class="mc-fig-panel mc-fig-panel--single" role="tabpanel" tabindex="0"
-                       id="mc-fig-panel-single" aria-labelledby="mc-fig-tab-single">
-                    <!-- Three groups, not role="toolbar": a toolbar's arrow-key model would fight the
-                         slider's. Zoom and position are this view's alone and never reach an export. -->
-                    <div class="mc-preview-toolbar">
+              <!-- The view's own actions, each with the same refusal and tooltip read-out as its twin
+                   in the Download tab. aria-disabled, not disabled, so the reason stays reachable. -->
+              <div class="mc-fig-actions">
+                @if (isChartView(effectiveFigureTab)) {
+                  <button type="button" class="btn-ghost mc-fig-download-all"
+                          [attr.aria-disabled]="canExport ? null : 'true'"
+                          interestfor="mc-tip-download-all" style="anchor-name: --mc-tip-download-all"
+                          (click)="downloadAllFigures()">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                      <rect x="1" y="3" width="22" height="5"></rect>
+                      <line x1="10" y1="12" x2="14" y2="12"></line>
+                    </svg>
+                    Download all charts
+                  </button>
+                  <div popover="hint" class="gh-tooltip" id="mc-tip-download-all"
+                       style="position-anchor: --mc-tip-download-all">{{ downloadAllTooltip }}</div>
+                } @else {
+                  <button type="button" class="action-btn mc-table-copy"
+                          [attr.aria-label]="copyTableName"
+                          [attr.aria-disabled]="canExportTable ? null : 'true'"
+                          interestfor="mc-tip-table-copy" style="anchor-name: --mc-tip-table-copy"
+                          (click)="copyTable()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                  </button>
+                  <button type="button" class="btn-ghost mc-table-download"
+                          [attr.aria-disabled]="canExportTable ? null : 'true'"
+                          interestfor="mc-tip-table-download" style="anchor-name: --mc-tip-table-download"
+                          (click)="downloadTable()">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                      <polyline points="14 2 14 8 20 8"></polyline>
+                      <line x1="12" y1="18" x2="12" y2="12"></line>
+                      <polyline points="9 15 12 18 15 15"></polyline>
+                    </svg>
+                    Download table
+                  </button>
+                  <div popover="hint" class="gh-tooltip" id="mc-tip-table-copy"
+                       style="position-anchor: --mc-tip-table-copy">{{ copyTableTooltip }}</div>
+                  <div popover="hint" class="gh-tooltip" id="mc-tip-table-download"
+                       style="position-anchor: --mc-tip-table-download">{{ downloadTableTooltip }}</div>
+                }
+              </div>
+            </div>
+
+            @if (!showFigures) {
+              <p id="mc-fig-unavailable" class="mc-fig-unavailable">Nothing in this set can be charted — the table lists every entry and why.</p>
+            }
+
+            <!-- The chart views and the Table preview show images composed by the export pipeline,
+                 and none renders a live chart, so what the page shows is the file a download writes.
+                 Measured for P1's bar orientation. -->
+            <div class="mc-fig-panels" #chartsHost>
+              @if (effectiveFigureTab === 'all') {
+                <div class="mc-fig-panel mc-fig-panel--all" role="tabpanel" tabindex="0"
+                     id="mc-fig-panel-all" aria-labelledby="mc-fig-tab-all"
+                     aria-describedby="mc-all-hint" aria-keyshortcuts="+ - 0"
+                     (keydown)="onAllPanelKeydown($event)">
+                  <!-- The Single toolbar's zoom controls, without pan: the viewport scrolls natively. A
+                       group, not role="toolbar": a toolbar's arrow-key model would fight the slider's. -->
+                  <div class="mc-preview-toolbar mc-all-toolbar">
+                    <div class="mc-preview-group mc-all-zoom" role="group" aria-label="Zoom of all figures">
+                      <button type="button" class="action-btn" aria-label="Zoom all figures out"
+                              [attr.aria-disabled]="canZoomAllOut ? null : 'true'"
+                              interestfor="mc-tip-all-zoom-out" style="anchor-name: --mc-tip-all-zoom-out"
+                              (click)="zoomAllOut()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <circle cx="11" cy="11" r="8"></circle>
+                          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                          <line x1="8" y1="11" x2="14" y2="11"></line>
+                        </svg>
+                      </button>
+                      <label class="mc-all-zoom-label" for="mc-all-zoom">Zoom</label>
+                      <input id="mc-all-zoom" type="range" class="mc-preview-zoom-slider"
+                             min="0" [max]="previewSliderSteps" step="1" [value]="allSliderValue"
+                             [attr.aria-valuetext]="allZoomValueText"
+                             (input)="onAllSliderInput(+$any($event.target).value)">
+                      <button type="button" class="action-btn" aria-label="Zoom all figures in"
+                              [attr.aria-disabled]="canZoomAllIn ? null : 'true'"
+                              interestfor="mc-tip-all-zoom-in" style="anchor-name: --mc-tip-all-zoom-in"
+                              (click)="zoomAllIn()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <circle cx="11" cy="11" r="8"></circle>
+                          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                          <line x1="11" y1="8" x2="11" y2="14"></line>
+                          <line x1="8" y1="11" x2="14" y2="11"></line>
+                        </svg>
+                      </button>
+                      <output class="mc-range-value mc-preview-zoom-value" for="mc-all-zoom" aria-hidden="true">{{ allZoomLabel }}</output>
+                      <button type="button" class="action-btn" aria-label="Fit height"
+                              interestfor="mc-tip-all-fit" style="anchor-name: --mc-tip-all-fit"
+                              (click)="fitAllHeight()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div popover="hint" class="gh-tooltip" id="mc-tip-all-zoom-out"
+                       style="position-anchor: --mc-tip-all-zoom-out">Zoom out (−)</div>
+                  <div popover="hint" class="gh-tooltip" id="mc-tip-all-zoom-in"
+                       style="position-anchor: --mc-tip-all-zoom-in">Zoom in (+)</div>
+                  <div popover="hint" class="gh-tooltip" id="mc-tip-all-fit"
+                       style="position-anchor: --mc-tip-all-fit">Fit one figure's height to the view (0)</div>
+
+                  <div class="mc-all-notices">
+                    <ng-container *ngTemplateOutlet="setNoticeList"></ng-container>
+                    @if (shape === 'pair') {
+                      <p class="section-note">
+                        The profile plot is suppressed at two entries: two polylines either cross once or they
+                        do not, which the three bar panels already show.
+                      </p>
+                    }
+                  </div>
+
+                  <!-- Card order is fixed: P1, then P2, then the three scatters. P1 answers the primary
+                       question and carries real units, so it is where a reader lands. Each tile is the
+                       composed figure at the chart size; its box is that size at the All zoom. The
+                       viewport carries the transparent-background backdrop colour, which the canvases
+                       inherit. -->
+                  <div class="mc-all-viewport" #allViewport [attr.style]="figureBackdropStyle">
+                    @if (exportSizeError) {
+                      <p class="mc-export-error">{{ exportSizeError }}</p>
+                    } @else {
+                      <div class="mc-all-grid">
+                        @for (card of exportableCards; track card.id; let i = $index) {
+                          <div #allTile class="mc-all-tile" role="group" tabindex="0"
+                               [attr.data-figure-id]="card.id" [attr.aria-label]="card.title"
+                               aria-describedby="mc-all-tile-hint"
+                               [class.is-deferred]="i >= allTilesPerRow"
+                               [style.width.px]="allTileCssWidth" [style.height.px]="allTileCssHeight"
+                               [style.contain-intrinsic-size]="i >= allTilesPerRow ? allTileIntrinsicSize : null"
+                               (click)="openInSingle(card)" (keydown)="onAllTileKeydown($event, card)">
+                            <canvas class="mc-all-canvas" role="img" [attr.data-figure-id]="card.id"
+                                    [class.is-transparent-figure]="isTransparentFigure"
+                                    [attr.aria-label]="card.ariaLabel"
+                                    [attr.aria-describedby]="card.id === profileCard?.id && profileAxes ? card.id + '-axis-ends' : null"></canvas>
+                            @if (allTileRefusals[card.id]; as refusal) {
+                              <p class="mc-all-refusal">{{ refusal }}</p>
+                            }
+                            <!-- Out of the tab order: the tile itself takes focus and opens on Enter, so a
+                                 second stop per figure would repeat it. -->
+                            <button type="button" class="action-btn mc-all-open" tabindex="-1"
+                                    [attr.aria-label]="'Open ' + card.title + ' in Single view'"
+                                    [attr.interestfor]="tipId('single', card.id)"
+                                    [attr.style]="'anchor-name: --' + tipId('single', card.id)"
+                                    (click)="$event.stopPropagation(); openInSingle(card)">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                              </svg>
+                            </button>
+                            <div popover="hint" class="gh-tooltip" [id]="tipId('single', card.id)"
+                                 [attr.style]="'position-anchor: --' + tipId('single', card.id)">Open in Single view</div>
+                          </div>
+                        }
+                      </div>
+                    }
+                  </div>
+
+                  <!-- The profile's real axis endpoints, which the normalized plot does not print, as the
+                       profile tile's description. -->
+                  @if (profileCard; as profile) {
+                    @if (profileAxes) {
+                      <dl class="mc-axis-ends visually-hidden" [id]="profile.id + '-axis-ends'">
+                        @for (axis of profileAxes.axes; track axis.id) {
+                          <div>
+                            <dt>{{ axis.title }}</dt>
+                            <dd>{{ axis.minLabel }} to {{ axis.maxLabel }}{{ axis.lowerIsBetter ? ' (inverted: lower is better)' : '' }}</dd>
+                          </div>
+                        }
+                      </dl>
+                    }
+                  }
+                  <p id="mc-all-hint" class="visually-hidden">Every figure as it downloads. Plus and minus zoom
+                    them all, and 0 fits one figure's height to the view; scroll to see the rest. Zoom affects
+                    only this view, never the exported images.</p>
+                  <p id="mc-all-tile-hint" class="visually-hidden">Press Enter to open this figure in the Single
+                    view.</p>
+                </div>
+              }
+
+              <!-- One stage for the Single chart and the Table preview: one set of zoom and pan
+                   handlers, and each view opens with its own view state. -->
+              @if (stageViewShown) {
+                <div class="mc-fig-panel mc-fig-panel--single" role="tabpanel" tabindex="0"
+                     [id]="'mc-fig-panel-' + effectiveFigureTab"
+                     [attr.aria-labelledby]="'mc-fig-tab-' + effectiveFigureTab">
+                  <!-- Groups, not role="toolbar": a toolbar's arrow-key model would fight the
+                       slider's. Zoom and position are this view's alone and never reach an export. -->
+                  <div class="mc-preview-toolbar">
+                    @if (effectiveFigureTab === 'single') {
                       <div class="mc-preview-group" role="group" aria-label="Figure">
                         <button type="button" class="action-btn" aria-label="Previous figure"
                                 interestfor="mc-tip-fig-prev" style="anchor-name: --mc-tip-fig-prev"
@@ -1446,64 +1211,69 @@
                           </svg>
                         </button>
                       </div>
+                    } @else {
+                      <!-- No export group here: the view bar's Copy table and Download table apply. -->
+                      <p class="mc-preview-label">Comparison table</p>
+                    }
 
-                      <div class="mc-preview-group mc-preview-zoom" role="group" aria-label="Preview zoom">
-                        <button type="button" class="action-btn" aria-label="Zoom the preview out"
-                                [attr.aria-disabled]="canZoomPreviewOut ? null : 'true'"
-                                interestfor="mc-tip-zoom-out"
-                                style="anchor-name: --mc-tip-zoom-out"
-                                (click)="zoomPreviewOut()">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <circle cx="11" cy="11" r="8"></circle>
-                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                            <line x1="8" y1="11" x2="14" y2="11"></line>
-                          </svg>
-                        </button>
-                        <input id="mc-preview-zoom" type="range" class="mc-preview-zoom-slider"
-                               min="0" [max]="previewSliderSteps" step="1" [value]="previewSliderValue"
-                               aria-label="Preview zoom" [attr.aria-valuetext]="previewZoomValueText"
-                               aria-describedby="mc-preview-view-hint"
-                               (input)="onPreviewSliderInput(+$any($event.target).value)">
-                        <button type="button" class="action-btn" aria-label="Zoom the preview in"
-                                [attr.aria-disabled]="canZoomPreviewIn ? null : 'true'"
-                                interestfor="mc-tip-zoom-in"
-                                style="anchor-name: --mc-tip-zoom-in"
-                                (click)="zoomPreviewIn()">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <circle cx="11" cy="11" r="8"></circle>
-                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                            <line x1="11" y1="8" x2="11" y2="14"></line>
-                            <line x1="8" y1="11" x2="14" y2="11"></line>
-                          </svg>
-                        </button>
-                        <output class="mc-range-value mc-preview-zoom-value" for="mc-preview-zoom" aria-hidden="true">{{ previewZoomLabel }}</output>
-                        <button type="button" class="action-btn" aria-label="Fit to screen"
-                                interestfor="mc-tip-zoom-fit" style="anchor-name: --mc-tip-zoom-fit"
-                                (click)="fitPreviewToScreen()">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
-                          </svg>
-                        </button>
-                        <button type="button" class="action-btn" aria-label="Actual pixels, 100 percent"
-                                interestfor="mc-tip-zoom-actual" style="anchor-name: --mc-tip-zoom-actual"
-                                (click)="showPreviewActualPixels()">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <polyline points="4 8 6 6 6 18"></polyline>
-                            <polyline points="16 8 18 6 18 18"></polyline>
-                            <line x1="12" y1="9" x2="12" y2="9.01"></line>
-                            <line x1="12" y1="15" x2="12" y2="15.01"></line>
-                          </svg>
-                        </button>
-                        <button type="button" class="action-btn" aria-label="Reset view"
-                                interestfor="mc-tip-zoom-reset" style="anchor-name: --mc-tip-zoom-reset"
-                                (click)="resetPreviewView()">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                            <polyline points="9 22 9 12 15 12 15 22"></polyline>
-                          </svg>
-                        </button>
-                      </div>
+                    <div class="mc-preview-group mc-preview-zoom" role="group" aria-label="Preview zoom">
+                      <button type="button" class="action-btn" aria-label="Zoom the preview out"
+                              [attr.aria-disabled]="canZoomPreviewOut ? null : 'true'"
+                              interestfor="mc-tip-zoom-out"
+                              style="anchor-name: --mc-tip-zoom-out"
+                              (click)="zoomPreviewOut()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <circle cx="11" cy="11" r="8"></circle>
+                          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                          <line x1="8" y1="11" x2="14" y2="11"></line>
+                        </svg>
+                      </button>
+                      <input id="mc-preview-zoom" type="range" class="mc-preview-zoom-slider"
+                             min="0" [max]="previewSliderSteps" step="1" [value]="previewSliderValue"
+                             aria-label="Preview zoom" [attr.aria-valuetext]="previewZoomValueText"
+                             aria-describedby="mc-preview-view-hint"
+                             (input)="onPreviewSliderInput(+$any($event.target).value)">
+                      <button type="button" class="action-btn" aria-label="Zoom the preview in"
+                              [attr.aria-disabled]="canZoomPreviewIn ? null : 'true'"
+                              interestfor="mc-tip-zoom-in"
+                              style="anchor-name: --mc-tip-zoom-in"
+                              (click)="zoomPreviewIn()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <circle cx="11" cy="11" r="8"></circle>
+                          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                          <line x1="11" y1="8" x2="11" y2="14"></line>
+                          <line x1="8" y1="11" x2="14" y2="11"></line>
+                        </svg>
+                      </button>
+                      <output class="mc-range-value mc-preview-zoom-value" for="mc-preview-zoom" aria-hidden="true">{{ previewZoomLabel }}</output>
+                      <button type="button" class="action-btn" aria-label="Fit to screen"
+                              interestfor="mc-tip-zoom-fit" style="anchor-name: --mc-tip-zoom-fit"
+                              (click)="fitPreviewToScreen()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                        </svg>
+                      </button>
+                      <button type="button" class="action-btn" aria-label="Actual pixels, 100 percent"
+                              interestfor="mc-tip-zoom-actual" style="anchor-name: --mc-tip-zoom-actual"
+                              (click)="showPreviewActualPixels()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <polyline points="4 8 6 6 6 18"></polyline>
+                          <polyline points="16 8 18 6 18 18"></polyline>
+                          <line x1="12" y1="9" x2="12" y2="9.01"></line>
+                          <line x1="12" y1="15" x2="12" y2="15.01"></line>
+                        </svg>
+                      </button>
+                      <button type="button" class="action-btn" aria-label="Reset view"
+                              interestfor="mc-tip-zoom-reset" style="anchor-name: --mc-tip-zoom-reset"
+                              (click)="resetPreviewView()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                          <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                        </svg>
+                      </button>
+                    </div>
 
+                    @if (effectiveFigureTab === 'single') {
                       <!-- aria-disabled, not disabled, so both stay focusable; the handlers refuse on
                            their own while nothing can be exported. -->
                       <div class="mc-preview-group mc-preview-export" role="group" aria-label="Export this figure">
@@ -1528,56 +1298,383 @@
                           Download
                         </button>
                       </div>
-                    </div>
+                    }
+                  </div>
+                  @if (effectiveFigureTab === 'single') {
                     <div popover="hint" class="gh-tooltip" id="mc-tip-fig-prev"
                          style="position-anchor: --mc-tip-fig-prev">Previous figure</div>
                     <div popover="hint" class="gh-tooltip" id="mc-tip-fig-next"
                          style="position-anchor: --mc-tip-fig-next">Next figure</div>
-                    <div popover="hint" class="gh-tooltip" id="mc-tip-zoom-out"
-                         style="position-anchor: --mc-tip-zoom-out">Zoom out</div>
-                    <div popover="hint" class="gh-tooltip" id="mc-tip-zoom-in"
-                         style="position-anchor: --mc-tip-zoom-in">Zoom in</div>
-                    <div popover="hint" class="gh-tooltip" id="mc-tip-zoom-fit"
-                         style="position-anchor: --mc-tip-zoom-fit">Fit to screen (0)</div>
-                    <div popover="hint" class="gh-tooltip" id="mc-tip-zoom-actual"
-                         style="position-anchor: --mc-tip-zoom-actual">Actual pixels, 100 % (1)</div>
-                    <div popover="hint" class="gh-tooltip" id="mc-tip-zoom-reset"
-                         style="position-anchor: --mc-tip-zoom-reset">Reset view</div>
                     <div popover="hint" class="gh-tooltip" id="mc-tip-fig-copy"
                          style="position-anchor: --mc-tip-fig-copy">Copy as an image, with caption and notes</div>
+                  }
+                  <div popover="hint" class="gh-tooltip" id="mc-tip-zoom-out"
+                       style="position-anchor: --mc-tip-zoom-out">Zoom out</div>
+                  <div popover="hint" class="gh-tooltip" id="mc-tip-zoom-in"
+                       style="position-anchor: --mc-tip-zoom-in">Zoom in</div>
+                  <div popover="hint" class="gh-tooltip" id="mc-tip-zoom-fit"
+                       style="position-anchor: --mc-tip-zoom-fit">Fit to screen (0)</div>
+                  <div popover="hint" class="gh-tooltip" id="mc-tip-zoom-actual"
+                       style="position-anchor: --mc-tip-zoom-actual">Actual pixels, 100 % (1)</div>
+                  <div popover="hint" class="gh-tooltip" id="mc-tip-zoom-reset"
+                       style="position-anchor: --mc-tip-zoom-reset">Reset view</div>
 
-                    <!-- The stage exists only while the Single tab is shown: it is sized to each
-                         composition, and would otherwise keep a full-size bitmap alive beside the
-                         All tab's tiles. -->
-                    <div class="mc-preview-stage" #previewStage [attr.aria-busy]="previewBusy ? 'true' : null">
-                      <div class="mc-preview-viewport" #previewViewport tabindex="0" role="group"
-                           aria-label="Figure preview viewport" aria-describedby="mc-preview-view-hint"
-                           aria-keyshortcuts="+ - 0 1" (keydown)="onPreviewViewportKeydown($event)">
-                        <canvas #previewCanvas class="mc-preview-canvas" role="img"
-                                [attr.aria-label]="previewAriaLabel"></canvas>
-                      </div>
-                      @if (previewBusy) {
-                        <span class="gh-spinner-small mc-preview-spinner" aria-hidden="true"></span>
+                  <!-- The stage exists only while one of its two views is shown: it is sized to each
+                       composition, and would otherwise keep a full-size bitmap alive beside the All
+                       tab's tiles or the table. The viewport carries the transparent-background
+                       backdrop colour, which the canvas inherits; the canvas's own style attribute
+                       holds its size. -->
+                  <div class="mc-preview-stage" #previewStage [attr.aria-busy]="previewBusy ? 'true' : null">
+                    <div class="mc-preview-viewport" #previewViewport tabindex="0" role="group"
+                         [attr.aria-label]="effectiveFigureTab === 'tablePreview' ? 'Table preview viewport' : 'Figure preview viewport'"
+                         aria-describedby="mc-preview-view-hint"
+                         aria-keyshortcuts="+ - 0 1" [attr.style]="figureBackdropStyle"
+                         (keydown)="onPreviewViewportKeydown($event)">
+                      <canvas #previewCanvas class="mc-preview-canvas" role="img"
+                              [class.is-transparent-figure]="isTransparentFigure"
+                              [attr.aria-label]="previewAriaLabel"></canvas>
+                    </div>
+                    @if (previewBusy) {
+                      <span class="gh-spinner-small mc-preview-spinner" aria-hidden="true"></span>
+                    }
+                  </div>
+                  @if (effectiveFigureTab === 'tablePreview') {
+                    <div class="mc-table-preview-notes">
+                      @if (previewRefusal) {
+                        <p class="mc-export-error" role="alert">{{ previewRefusal }}</p>
+                      } @else if (tablePreviewPixels) {
+                        <p class="mc-table-preview-size">{{ tablePreviewPixels }}</p>
+                      }
+                      @if (tableFormat !== 'image') {
+                        <p class="mc-field-hint">Previewing the image export. The chosen format, {{ tableFormatName }}, has no appearance of its own.</p>
                       }
                     </div>
-                    @if (previewRasterCapped) {
-                      <p class="mc-field-hint">Shown at reduced detail at this zoom; the exported file is exact.</p>
+                  }
+                  @if (previewRasterCapped) {
+                    <p class="mc-field-hint">Shown at reduced detail at this zoom; the exported file is exact.</p>
+                  }
+                  <p id="mc-preview-view-hint" class="visually-hidden">Drag, scroll or use the arrow keys to move
+                    the image. Ctrl and scroll zooms at the pointer. From the keyboard, plus and minus zoom,
+                    0 fits the image to the screen and 1 shows actual pixels. Zoom and position affect only
+                    this view, never the exported image.</p>
+                </div>
+              }
+
+              @if (effectiveFigureTab === 'table') {
+                <!-- ===================================================================================
+                     THE INTERACTIVE TABLE
+
+                     The accessible artefact, a view of the charts step that is always available,
+                     including over a set no chart can draw — where it is the view the step opens on.
+                     It has no "off" state: a canvas is a picture, and this is the record of what the
+                     picture shows, including every entry no chart could draw. It stays in the
+                     application's own dark UI, because it is the working view; the themed
+                     appearance belongs to the image. Its own scroller, so the view bar stays put.
+                     =================================================================================== -->
+                <div class="mc-fig-panel mc-fig-panel--table" role="tabpanel" id="mc-fig-panel-table"
+                     aria-labelledby="mc-fig-tab-table" tabindex="0">
+                  <section class="mc-section" aria-labelledby="mc-table-heading">
+                    <div class="mc-section-intro">
+                      <h4 id="mc-table-heading" class="mc-section-title">Comparison table</h4>
+                      <p class="section-note">
+                        <strong>Every entry is listed here, charted or not.</strong> Point at a State badge to
+                        see why an entry is or is not charted.
+                      </p>
+                      <p class="section-note">
+                        A download holds every row that passes the filters, across all pages, in the
+                        columns chosen in the Table tab.
+                      </p>
+                    </div>
+
+                    <!-- The wizard header carries the suite and the pricing basis, and every export carries
+                         the full provenance; only the computation time is left to state here. -->
+                    <p class="mc-table-computed">{{ tableComputedAtLine }}</p>
+
+                    <!-- No header carries the model order, so no caret shows while it applies: this line
+                         names the order instead. -->
+                    <div class="mc-table-order">
+                      <p class="mc-table-order-line" role="status">
+                        @if (tableSortedBy; as sorted) {
+                          Rows sorted by {{ sorted.header }}
+                        } @else {
+                          Rows follow the model order: {{ modelOrderDescription }}
+                        }
+                      </p>
+                      @if (tableSortedBy) {
+                        <button type="button" class="btn-ghost mc-use-model-order" (click)="useModelOrder()">Use model order</button>
+                      }
+                    </div>
+
+                    @if (entries.length === 0) {
+                      <p class="text-muted">Nothing to compare yet.</p>
+                    } @else {
+                      <!-- The pagers sit outside the scroll wrapper, so they stay put when the table scrolls
+                           sideways. -->
+                      <div class="mc-table-block">
+                        <app-table-pager [state]="entryTable" [rows]="entries" noun="entries"
+                                         (changed)="onTableChanged()"></app-table-pager>
+                        <div class="gh-datatable-scroll mc-table-scroll">
+                          <table class="gh-table gh-datatable mc-table">
+                            <caption class="visually-hidden">{{ tableCaption }}</caption>
+                            <thead>
+                              <tr>
+                                @for (column of shownColumns; track column.key) {
+                                  @if (column.sortPart !== null) {
+                                    <th app-sort-header [state]="entryTable" [column]="column.key" [label]="column.header"
+                                        [class.col-center]="column.renderer === 'runs'"
+                                        (changed)="onTableChanged()"></th>
+                                  } @else {
+                                    <th scope="col">{{ column.header }}</th>
+                                  }
+                                }
+                              </tr>
+                              <!-- The Model and State filters sit under their columns wherever they are;
+                                   Clear filters sits in the last shown column. -->
+                              <tr class="gh-filter-row">
+                                @for (column of shownColumns; track column.key; let last = $last) {
+                                  <td>
+                                    @if (column.key === 'model') {
+                                      <label class="visually-hidden" for="mc-f-label">Filter by model name</label>
+                                      <input id="mc-f-label" type="text" class="gh-input gh-filter-input" placeholder="Model"
+                                             [ngModel]="entryTable.filters['label']" [ngModelOptions]="{ standalone: true }"
+                                             (ngModelChange)="entryTable.setFilter('label', $event); onTableChanged()">
+                                    }
+                                    @if (column.key === 'stateCol') {
+                                      <label class="visually-hidden" for="mc-f-state">Filter by comparability state</label>
+                                      <select id="mc-f-state" class="gh-input gh-filter-select"
+                                              [ngModel]="entryTable.filters['state']" [ngModelOptions]="{ standalone: true }"
+                                              (ngModelChange)="entryTable.setFilter('state', $event); onTableChanged()">
+                                        <option value="">All</option>
+                                        <option value="Comparable">Comparable</option>
+                                        <option value="Degraded">Degraded</option>
+                                        <option value="Excluded">Excluded</option>
+                                      </select>
+                                    }
+                                    @if (last && entryTable.hasActiveFilters) {
+                                      <button type="button" class="gh-filter-clear"
+                                              (click)="entryTable.clearFilters(); onTableChanged()">Clear filters</button>
+                                    }
+                                  </td>
+                                }
+                              </tr>
+                            </thead>
+                            <tbody>
+                              @if (entryTable.noMatches(entries)) {
+                                <tr><td [attr.colspan]="shownColumns.length" class="text-muted">No entries match these filters.</td></tr>
+                              }
+                              @for (entry of entryTable.view(entries); track entry.key) {
+                                <tr [class.mc-row-highlighted]="highlightedKey === entry.key"
+                                    (mouseenter)="setHighlight(entry.key)" (mouseleave)="setHighlight(null)">
+                                  <!-- One cell per shown column. A combined cell leaves out any part whose own
+                                       column is shown, so no value is printed twice. -->
+                                  @for (column of shownColumns; track column.key) {
+                                    @switch (column.renderer) {
+                                      @case ('model') {
+                                        <th scope="row" class="col-name">
+                                          <!-- The name, its badges and the source line, stacked. The flex lives on
+                                               the inner divs: a flex <th> drops out of the column grid entirely.
+                                               The cell shows the display name and the thinking level and reasoning mode
+                                               ride beside it as badges, so the level is not printed twice. The name is plain text:
+                                               emphasis is chosen in the chart views' Data tab, where its effect is visible. -->
+                                          <div class="mc-model-cell">
+                                            <div class="mc-model-row">
+                                              @if (glyph(entry.key); as g) {
+                                                <span [class]="'mc-glyph mc-glyph-' + g.shape"
+                                                      [style.background-color]="g.hue" aria-hidden="true"></span>
+                                              }
+                                              <span class="mc-model-name">{{ entry.modelDisplayName || entry.label }}</span>
+                                              @if (entry.thinkingLevel && !isColumnShown('thinkingLevel')) {
+                                                <span class="thinking-badge">{{ entry.thinkingLevel }}</span>
+                                              }
+                                              @if (showReasoningBadge(entry.reasoningMode)) {
+                                                <span class="reasoning-badge">{{ entry.reasoningMode }}</span>
+                                              }
+                                              @if (!isColumnShown('provider')) {
+                                                <app-provider-badge [provider]="entry.provider"></app-provider-badge>
+                                              }
+                                            </div>
+                                            @if (!isColumnShown('source')) {
+                                              <span class="mc-source">{{ sourceLabel(entry) }}</span>
+                                            }
+                                          </div>
+                                        </th>
+                                      }
+                                      @case ('runs') {
+                                        <td class="col-center">
+                                          <div class="mc-cell-stack mc-cell-stack-center">
+                                            {{ entry.runCount }}
+                                            @if (entry.runCount === 1) {
+                                              <span class="mc-badge mc-n1">n = 1</span>
+                                            }
+                                          </div>
+                                        </td>
+                                      }
+                                      @case ('state') {
+                                        <td>
+                                          <div class="mc-cell-stack">
+                                            <!-- Text plus icon, never colour alone: the badge names its state in words.
+                                                 The explanation popover is left out while Explanation is a column. -->
+                                            <span [class]="'mc-state ' + stateClass(entry)"
+                                                  [attr.interestfor]="isColumnShown('explanation') ? null : tipId('state', entry.key)"
+                                                  [attr.style]="isColumnShown('explanation') ? null : 'anchor-name: --' + tipId('state', entry.key)">
+                                              @if (entry.excluded) {
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                  <circle cx="12" cy="12" r="10"></circle>
+                                                  <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line>
+                                                </svg>
+                                              } @else if (entry.state === 'Degraded') {
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                  <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                                  <line x1="12" y1="9" x2="12" y2="13"></line>
+                                                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                                </svg>
+                                              } @else {
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                  <polyline points="20 6 9 17 4 12"></polyline>
+                                                </svg>
+                                              }
+                                              {{ stateLabel(entry) }}
+                                            </span>
+                                            @if (!isColumnShown('explanation')) {
+                                              <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('state', entry.key)"
+                                                   [attr.style]="'position-anchor: --' + tipId('state', entry.key)">{{ entry.explanation }}</div>
+                                            }
+                                            @if (degradedAxes(entry).length > 0) {
+                                              <span class="mc-degraded-axes">Degraded: {{ degradedAxes(entry).join(', ') }}</span>
+                                            }
+                                          </div>
+                                        </td>
+                                      }
+                                      @case ('intelligence') {
+                                        <td>
+                                          <div class="mc-cell-stack">
+                                            <span class="mc-nowrap">
+                                              {{ formatIndex(entry.quality?.pointEstimate) }}
+                                              @if (entry.quality?.intervalHalfWidth != null && !isColumnShown('intervalHalfWidth')) {
+                                                <span class="mc-interval">± {{ formatIndex(entry.quality?.intervalHalfWidth) }}</span>
+                                              }
+                                            </span>
+                                            @if (!isColumnShown('intervalBasis')) {
+                                              @if (entry.quality?.intervalHalfWidth != null) {
+                                                <!-- The basis runs to a sentence, so the cell shows one clipped line and the
+                                                     whole of it in the popover. The exported table carries it in full. -->
+                                                <button type="button" class="mc-basis-btn"
+                                                        [attr.interestfor]="tipId('basis', entry.key)"
+                                                        [attr.style]="'anchor-name: --' + tipId('basis', entry.key)">{{ entry.quality?.intervalBasis }}</button>
+                                                <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('basis', entry.key)"
+                                                     [attr.style]="'position-anchor: --' + tipId('basis', entry.key)">{{ entry.quality?.intervalBasis }}</div>
+                                              } @else if (!entry.excluded) {
+                                                <span class="mc-interval-basis">No interval available</span>
+                                              }
+                                            }
+                                          </div>
+                                        </td>
+                                      }
+                                      @case ('speedIndex') {
+                                        <td>
+                                          <div class="mc-cell-stack">
+                                            <span class="mc-nowrap">{{ formatIndex(entry.table?.meanSpeedIndex) }}</span>
+                                            @if (entry.table?.speedIndexSaturated && !isColumnShown('speedIndexSaturated')) {
+                                              <span class="mc-badge mc-saturated"
+                                                    [attr.interestfor]="tipId('sat', entry.key)"
+                                                    [attr.style]="'anchor-name: --' + tipId('sat', entry.key)">Saturated</span>
+                                              <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="tipId('sat', entry.key)"
+                                                   [attr.style]="'position-anchor: --' + tipId('sat', entry.key)">
+                                                At least half the scored answers finished inside their difficulty-scaled target, so
+                                                the index cannot discriminate at this speed. Read time to first token instead.
+                                              </div>
+                                            }
+                                          </div>
+                                        </td>
+                                      }
+                                      @case ('timings') {
+                                        <td>
+                                          <!-- The timings in one column, each named beside its value: a column apiece
+                                               costs more width than short numbers are worth. A timing shown as a column
+                                               of its own is left out here. -->
+                                          <dl class="mc-timings">
+                                            @if (!isColumnShown('modelTimeMeanMs')) {
+                                              <div>
+                                                <dt>Model time / question</dt>
+                                                <dd>{{ formatMs(entry.speed?.modelTimeMeanMs) }}</dd>
+                                              </div>
+                                            }
+                                            @if (!isColumnShown('totalModelTimeMs')) {
+                                              <div>
+                                                <dt>Suite total</dt>
+                                                <dd>{{ formatMs(entry.speed?.totalModelTimePerRunMeanMs) }}@if (entry.speed?.totalModelTimeSdMs != null) {<span class="mc-interval">± {{ formatMs(entry.speed?.totalModelTimeSdMs) }}</span>}</dd>
+                                              </div>
+                                            }
+                                            @if (!isColumnShown('ttftP50Ms') && !isColumnShown('ttftP90Ms')) {
+                                              <div>
+                                                <dt>TTFT P50 / P90</dt>
+                                                <dd>{{ formatMs(entry.speed?.ttftP50Ms) }} / {{ formatMs(entry.speed?.ttftP90Ms) }}</dd>
+                                              </div>
+                                            } @else if (!isColumnShown('ttftP50Ms')) {
+                                              <div>
+                                                <dt>TTFT P50</dt>
+                                                <dd>{{ formatMs(entry.speed?.ttftP50Ms) }}</dd>
+                                              </div>
+                                            } @else if (!isColumnShown('ttftP90Ms')) {
+                                              <div>
+                                                <dt>TTFT P90</dt>
+                                                <dd>{{ formatMs(entry.speed?.ttftP90Ms) }}</dd>
+                                              </div>
+                                            }
+                                          </dl>
+                                        </td>
+                                      }
+                                      @case ('cost') {
+                                        <td>
+                                          <div class="mc-cell-stack">
+                                            <span class="mc-nowrap">{{ formatUsd(entry.cost?.candidateCostPerQuestionUsd) }}</span>
+                                            @if (entry.cost && !entry.cost.pricingResolved && !isColumnShown('pricingResolved')) {
+                                              <span class="mc-badge mc-unpriced">Unpriced</span>
+                                            }
+                                            @if (entry.cost?.scheduledChangeEffectiveFrom && !isColumnShown('scheduledChange')) {
+                                              <span class="mc-badge mc-scheduled">Price change {{ entry.cost?.scheduledChangeEffectiveFrom }}</span>
+                                            }
+                                          </div>
+                                        </td>
+                                      }
+                                      @case ('notes') {
+                                        <td class="mc-notes">
+                                          @if (entry.excludingKeys.length > 0 && !isColumnShown('differsOn')) {
+                                            <span class="mc-note-line">Differs on: {{ entry.excludingKeys.join(', ') }}</span>
+                                          }
+                                          @if (entry.speedDegradingKeys.length > 0 && !isColumnShown('speedDegradedBy')) {
+                                            <span class="mc-note-line">Speed degraded by: {{ entry.speedDegradingKeys.join(', ') }}</span>
+                                          }
+                                          @if (entry.costDegradingKeys.length > 0 && !isColumnShown('costDegradedBy')) {
+                                            <span class="mc-note-line">Cost degraded by: {{ entry.costDegradingKeys.join(', ') }}</span>
+                                          }
+                                          @if (entry.table && entry.table.unstableItemCount > 0 && !isColumnShown('unstableItems')) {
+                                            <span class="mc-note-line">{{ entry.table.unstableItemCount }} unstable items</span>
+                                          }
+                                        </td>
+                                      }
+                                      @default {
+                                        <td class="mc-text-cell">{{ cellText(entry, column.parts[0]) }}</td>
+                                      }
+                                    }
+                                  }
+                                </tr>
+                              }
+                            </tbody>
+                          </table>
+                        </div>
+                        <app-table-pager [state]="entryTable" [rows]="entries" noun="entries" [announce]="false"
+                                         (changed)="onTableChanged()"></app-table-pager>
+                      </div>
                     }
-                    <p id="mc-preview-view-hint" class="visually-hidden">Drag, scroll or use the arrow keys to move
-                      the figure. Ctrl and scroll zooms at the pointer. From the keyboard, plus and minus zoom,
-                      0 fits the figure to the screen and 1 shows actual pixels. Zoom and position affect only
-                      this view, never the exported image.</p>
-                  </div>
-                }
-              </div>
+                  </section>
+
+                  <ng-container *ngTemplateOutlet="setNoticeList"></ng-container>
+                </div>
+              }
             </div>
           </div>
-        } @else {
-          <div class="mc-fig-empty">
-            <ng-container *ngTemplateOutlet="setNoticeList"></ng-container>
-            <p class="section-note">Nothing in this set can be charted.</p>
-          </div>
-        }
+        </div>
 
       </div>
     }
@@ -1696,7 +1793,7 @@
             [disabled]="!canGoPrevious" (click)="previousStep()">Previous</button>
 
     <p class="mc-wizard-position" aria-live="polite">
-      Step {{ step }} of 4 — {{ stepTitles[step] }}
+      Step {{ step }} of {{ steps.length }} — {{ stepTitles[step] }}
       @if (nextBlockedReason) {
         <span class="mc-wizard-blocked" id="mc-next-blocked">{{ nextBlockedReason }}</span>
       }
@@ -1707,8 +1804,8 @@
 
     <!-- aria-disabled rather than disabled, so the reason stays reachable: a disabled button
          cannot be focused, and the reader would be left guessing why Next does nothing.
-         Genuinely disabled while an export is running: the table and figure steps are the only
-         ones that can start one, and leaving either mid-write is what the guard is for.
+         Genuinely disabled while an export is running: step 3 is the only one that can start
+         one, and leaving it mid-write is what the guard is for.
          While the comparison is being computed it carries the spinner and aria-busy, and stays
          aria-disabled for the same reason it is at every other blocked moment. -->
     <div class="mc-wizard-nav-actions">

@@ -1,11 +1,23 @@
 import {
   DEFAULT_FIGURE_RESOLUTION_ID,
   FIGURE_SIZE_STORAGE_KEY,
+  FIT_RESOLUTION_ID,
   FigureSizeSettings,
+  TABLE_IMAGE_SIZE_STORAGE_KEY,
+  clampDensityPercent,
+  clampExportDimension,
   defaultFigureSize,
+  defaultTableImageSize,
   readStoredFigureSize,
+  readStoredTableImageSize,
+  resolveSizeDensity,
+  resolveSizeResolution,
   sameFigureSize,
-  writeStoredFigureSize
+  sizeDimensionsLabel,
+  sizeErrors,
+  sizeReadout,
+  writeStoredFigureSize,
+  writeStoredTableImageSize
 } from './figure-size';
 
 describe('figure-size', () => {
@@ -118,5 +130,94 @@ describe('figure-size', () => {
     expect(sameFigureSize(base, defaultFigureSize(1))).toBeTrue();
     expect(sameFigureSize(base, { ...base, textScalePercent: 105 })).toBeFalse();
     expect(sameFigureSize(base, { ...base, densitySelection: 'custom' })).toBeFalse();
+  });
+
+  it('reads a stored table fit size as Full HD for the charts', () => {
+    store({ version: 1, ...defaultFigureSize(1), resolutionId: 'fit' });
+    expect(readStoredFigureSize(1).resolutionId).toBe('fullhd');
+  });
+
+  describe('table image size', () => {
+    beforeEach(() => localStorage.removeItem(TABLE_IMAGE_SIZE_STORAGE_KEY));
+    afterEach(() => localStorage.removeItem(TABLE_IMAGE_SIZE_STORAGE_KEY));
+
+    it('defaults to Fit the table at 200 % and 100 % text, whatever the display', () => {
+      expect(defaultTableImageSize()).toEqual({
+        resolutionId: 'fit',
+        customWidthPx: 1920,
+        customHeightPx: 1080,
+        densitySelection: 2,
+        customDensityPercent: 200,
+        textScalePercent: 100
+      });
+      expect(FIT_RESOLUTION_ID).toBe('fit');
+      expect(readStoredTableImageSize()).toEqual(defaultTableImageSize());
+    });
+
+    it('is stored apart from the charts’ size and keeps fit, presets and custom', () => {
+      const custom: FigureSizeSettings = { ...defaultTableImageSize(), resolutionId: 'custom', customWidthPx: 1480, customHeightPx: 620 };
+      writeStoredTableImageSize(custom);
+      expect(readStoredTableImageSize()).toEqual(custom);
+      expect(localStorage.getItem(FIGURE_SIZE_STORAGE_KEY)).toBeNull();
+
+      writeStoredTableImageSize(defaultTableImageSize());
+      expect(readStoredTableImageSize().resolutionId).toBe('fit');
+
+      localStorage.setItem(TABLE_IMAGE_SIZE_STORAGE_KEY, JSON.stringify({ ...defaultTableImageSize(), resolutionId: 'eight-k' }));
+      expect(readStoredTableImageSize().resolutionId).toBe('fit');
+      localStorage.setItem(TABLE_IMAGE_SIZE_STORAGE_KEY, '{not json');
+      expect(readStoredTableImageSize()).toEqual(defaultTableImageSize());
+    });
+  });
+
+  describe('pure size helpers', () => {
+    const base = defaultFigureSize(1);
+
+    it('resolves presets, custom pairs and fit', () => {
+      expect(resolveSizeResolution({ ...base, resolutionId: 'uhd' })).toEqual(jasmine.objectContaining({ widthPx: 3840, heightPx: 2160 }));
+      expect(resolveSizeResolution({ ...base, resolutionId: 'custom', customWidthPx: 100, customHeightPx: 9999.6 }))
+        .toEqual(jasmine.objectContaining({ id: 'custom', widthPx: 320, heightPx: 8000 }));
+      expect(resolveSizeResolution({ ...base, resolutionId: 'fit' }).id).toBe('fullhd');
+    });
+
+    it('resolves a listed density or the clamped custom percentage', () => {
+      expect(resolveSizeDensity({ ...base, densitySelection: 1.5 })).toBe(1.5);
+      expect(resolveSizeDensity({ ...base, densitySelection: 'custom', customDensityPercent: 175 })).toBe(1.75);
+      expect(resolveSizeDensity({ ...base, densitySelection: 'custom', customDensityPercent: 9000 })).toBe(8);
+      expect(clampDensityPercent(Number.NaN)).toBe(100);
+      expect(clampExportDimension(Number.NaN)).toBe(320);
+    });
+
+    it('names out-of-range sides, densities and oversized bitmaps, most specific first', () => {
+      const badSide = sizeErrors({ ...base, resolutionId: 'custom', customWidthPx: 10 });
+      expect(badSide.customResolution).toBe('The figure width must be between 320 and 8000 px.');
+      expect(badSide.bitmap).toBe('');
+      expect(badSide.any).toBe(badSide.customResolution);
+      expect(sizeErrors({ ...base, resolutionId: 'custom', customWidthPx: 10, customHeightPx: 10 }, 'image').customResolution)
+        .toBe('The image width and height must be between 320 and 8000 px.');
+
+      const badDensity = sizeErrors({ ...base, densitySelection: 'custom', customDensityPercent: 10 });
+      expect(badDensity.customDensity).toBe('The pixel density must be between 50 and 800 %.');
+
+      const oversized = sizeErrors({ ...base, resolutionId: 'a4p', densitySelection: 'custom', customDensityPercent: 800 });
+      expect(oversized.bitmap).toContain('at most 16384 px');
+      expect(sizeErrors(base).any).toBe('');
+      expect(sizeErrors({ ...defaultTableImageSize(), densitySelection: 4 }).any).toBe('');
+    });
+
+    it('labels what a size writes under the chart rule and the plain table rule', () => {
+      const fullHd2x = { ...base, densitySelection: 2 as const };
+      expect(sizeDimensionsLabel(fullHd2x)).toBe('3840 × 2160 px (1920 × 1080 at 200%) — laid out at 960 × 540, 4× density');
+      expect(sizeDimensionsLabel({ ...fullHd2x, textScalePercent: 125 }, 'plain'))
+        .toBe('3840 × 2160 px (1920 × 1080 at 200%) — laid out at 1536 × 864, 2.50× density');
+      expect(sizeDimensionsLabel(defaultTableImageSize(), 'plain')).toBe('');
+    });
+
+    it('reads out a size in one line', () => {
+      expect(sizeReadout(base)).toBe('Full HD — 1920 × 1080 · 100% · text 100 %');
+      expect(sizeReadout({ ...base, resolutionId: 'custom', customWidthPx: 1480, customHeightPx: 620 }))
+        .toBe('Custom 1480 × 620 · 100% · text 100 %');
+      expect(sizeReadout(defaultTableImageSize())).toBe('Fit the table · 200%');
+    });
   });
 });

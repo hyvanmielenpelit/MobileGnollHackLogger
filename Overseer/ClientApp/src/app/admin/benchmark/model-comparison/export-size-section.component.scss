@@ -1,0 +1,114 @@
+:host {
+  display: block;
+}
+
+/* The section and its reset button, which sits over the summary row's end, as every settings
+   section in this sidebar places its own (frontend_ui_controls §5b). */
+.ess-section {
+  position: relative;
+
+  > details > summary {
+    padding-inline-end: 50px;
+  }
+}
+
+.ess-reset {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 8px;
+  margin: 0;
+
+  &[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+.ess-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 2px;
+
+  label {
+    font-size: 13px;
+    color: #c3c2b7;
+  }
+
+  .checkbox-label {
+    margin: 0;
+  }
+}
+
+.ess-dimension {
+  width: 90px;
+}
+
+.ess-quality {
+  width: auto;
+  min-width: 110px;
+}
+
+.ess-dimensions {
+  margin: 0;
+  font-size: 12px;
+  color: #8b8b90;
+}
+
+.ess-fit-info {
+  margin: 0;
+  font-size: 12px;
+  color: #8b8b90;
+}
+
+.ess-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--primary-color);
+}
+
+.ess-field-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #898781;
+}
+
+/* A range with its value beside it, as the sidebar's other ranges lay themselves out. */
+.ess-range {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ess-range-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+
+  input[type="range"] {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    accent-color: var(--primary-color);
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 3px;
+    }
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.ess-range-value {
+  min-width: 4em;
+  text-align: right;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: #d4d4d8;
+}

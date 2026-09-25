@@ -11,8 +11,10 @@
  *    exported as a bare canvas and pasted into a document would drop exactly the notices that stop
  *    it being misread, so the title, badges and the Better badge, detail, key, highlight, every
  *    note and the footer are drawn into the same bitmap as the plot.
- * 2. **The background is opaque.** Chart.js canvases are transparent; a PNG of one dropped into a
- *    light document renders as dark-on-dark and is unreadable.
+ * 2. **The background is opaque by default.** Chart.js canvases are transparent; a PNG of one
+ *    dropped into a light document renders as dark-on-dark and is unreadable, so the theme's ground
+ *    is painted first. A transparent image (`theme.background === null`) is an explicit choice, made
+ *    for a slide or page whose own colour the theme was picked to suit; PNG and WebP carry its alpha.
  * 3. **An explicit resolution buys sharpness, not more content.** Every explicit size composes in
  *    the smallest box that carries the target's own aspect ratio and is at least
  *    {@link FIGURE_EXPORT_LAYOUT_WIDTH} × {@link FIGURE_EXPORT_LAYOUT_HEIGHT} CSS px, and one
@@ -36,6 +38,8 @@ import type {
   FigureNoteTone
 } from './figure-chrome';
 import { figureDirectionRotation } from './figure-chrome';
+import { resolveFigureTheme } from './figure-theme';
+import type { ResolvedChromeColors, ResolvedFigureBorder, ResolvedFigureTheme } from './figure-theme';
 import {
   PREVIEW_MAX_ZOOM,
   PreviewViewRequest,
@@ -293,6 +297,8 @@ export interface FigureExportRequest {
   /** Read only where there is no `layout`: the density the source canvas is composed at. */
   readonly density?: FigureExportDensity;
   readonly webpQuality?: WebpQuality;
+  /** Colours, chrome font and border. Absent draws the dark theme, {@link resolveFigureTheme}'s default. */
+  readonly theme?: ResolvedFigureTheme;
 }
 
 /** What `encodeFigureImage` produced, including the format actually written. */
@@ -327,8 +333,11 @@ const DIRECTION_PAD_START = BADGE_PAD_X - 1;
 const DIRECTION_PAD_END = BADGE_PAD_X + 2;
 const DIRECTION_ARROW_GAP = 5;
 const DIRECTION_ARROW_MIN_STROKE = 2;
-/** The Better badge's border and fill; its ink is {@link FIGURE_TITLE_COLOR}. Match `.mc-direction` on the page card. */
-const DIRECTION_COLORS = { border: 'rgba(224, 186, 109, 0.55)', fill: 'rgba(224, 186, 109, 0.1)' } as const;
+/**
+ * The dark theme's Better badge border and fill; its ink is {@link FIGURE_TITLE_COLOR}. The composer
+ * draws with `theme.chrome.direction`, which resolves to these under the dark theme.
+ */
+export const DIRECTION_COLORS = { border: 'rgba(224, 186, 109, 0.55)', fill: 'rgba(224, 186, 109, 0.1)' } as const;
 
 /** The detail line under the badge row. */
 const DETAIL_SIZE = 12;
@@ -357,10 +366,11 @@ const FOOTER_LABEL_LETTER_SPACING = 1;
 const FOOTER_MIN_GAP = 16;
 
 /**
- * The card ground the comparison view draws on, so an exported figure matches what was on screen.
+ * The dark theme's ground and chrome inks, which `resolveFigureTheme()` resolves to by default.
  *
- * Exported because the table composer draws on the same ground: two palettes would make a figure
- * and the table beside it in one document read as coming from two applications.
+ * The composers draw with the resolved theme, never with these; they stay as named aliases of the
+ * default palette, which the figure and the table image share so that a figure and the table beside
+ * it in one document read as coming from one application.
  */
 export const FIGURE_BACKGROUND = '#181818';
 export const FIGURE_TITLE_COLOR = '#e0ba6d';
@@ -368,23 +378,33 @@ export const FIGURE_BODY_COLOR = '#d4d4d8';
 export const FIGURE_MUTED_COLOR = '#a1a1aa';
 export const FIGURE_RULE_COLOR = '#2a2a2a';
 
-/** The key glyphs' ink, and the dominated glyph's fill. Match `.price-badge` and the gold accent. */
-const FIGURE_KEY_INK = '#c3c2b7';
-const FIGURE_DOMINATED_FILL = 'rgba(255, 255, 255, 0.12)';
+/** The dark theme's key glyph ink, and the dominated glyph's fill. */
+export const FIGURE_KEY_INK = '#c3c2b7';
+export const FIGURE_DOMINATED_FILL = 'rgba(255, 255, 255, 0.12)';
 
-/** Badge pill colors by tone: border, fill, then text. Match the step-4 card badges (`.mc-badge` and its tone modifiers). */
-const BADGE_TONE_COLORS: Record<FigureBadgeTone, { readonly border: string; readonly fill: string; readonly text: string }> = {
+/**
+ * The dark theme's badge pill colours by tone: border, fill, then text. The composer draws with
+ * `theme.chrome.badge`, which resolves to these under the dark theme.
+ */
+export const BADGE_TONE_COLORS: Record<FigureBadgeTone, { readonly border: string; readonly fill: string; readonly text: string }> = {
   neutral: { border: 'rgba(255, 255, 255, 0.25)', fill: 'rgba(255, 255, 255, 0.04)', text: FIGURE_TITLE_COLOR },
   pricing: { border: 'rgba(16, 185, 129, 0.3)', fill: 'rgba(16, 185, 129, 0.1)', text: '#6ee7b7' }
 };
 
-/** Note colors by tone: left rule, then text. */
-const NOTE_TONE_COLORS: Record<FigureNoteTone, { readonly rule: string; readonly text: string }> = {
+/** The dark theme's note colours by tone: left rule, then text. */
+export const NOTE_TONE_COLORS: Record<FigureNoteTone, { readonly rule: string; readonly text: string }> = {
   warning: { rule: '#e0ba6d', text: '#e0ba6d' },
   info: { rule: '#6b6b66', text: FIGURE_MUTED_COLOR }
 };
 
+/** The chrome stack under the *Overseer default* font. */
 export const FIGURE_FONT_STACK = '"Segoe UI", "Helvetica Neue", Arial, sans-serif';
+
+/** The chrome's colours and font stack, as the draw helpers read them. */
+interface ChromePaint {
+  readonly colors: ResolvedChromeColors;
+  readonly stack: string;
+}
 
 /**
  * The composition box for one target bitmap.
@@ -411,7 +431,8 @@ export function layoutBoxFor(pixelWidth: number, pixelHeight: number, textScale 
  * Resolves one figure's composition box, or refuses it.
  *
  * The chrome is measured with the same wrapping code {@link composeFigureImage} draws with, at the
- * same content width, so the refusal threshold and the drawn image can never disagree.
+ * same content width and in the request theme's font stack and heading weight, so the refusal
+ * threshold and the drawn image can never disagree.
  *
  * `refusal` is non-null when the requested height leaves less than
  * {@link FIGURE_EXPORT_MIN_PLOT_HEIGHT} for the plot once the chrome is measured; it names the
@@ -570,8 +591,14 @@ export function previewLayoutFor(
  * The source canvas is drawn at its layout size and scaled up by the context transform rather than
  * copied pixel for pixel, so a chart rendered at a higher device pixel ratio lands sharp; the caller
  * is responsible for having asked Chart.js for that density first.
+ *
+ * Colours, the chrome font and the heading weight come from `request.theme`, the dark theme when
+ * absent. The ground is painted first ({@link paintFigureBackground}) and the border last
+ * ({@link drawFigureBorder}), inside the bitmap, so neither changes its pixel size.
  */
 export function composeFigureImage(request: FigureExportRequest): HTMLCanvasElement {
+  const theme = request.theme ?? resolveFigureTheme();
+  const paint: ChromePaint = { colors: theme.chrome, stack: theme.fonts.chromeStack };
   const layout = request.layout ?? null;
   const chartWidth = cssWidthOf(request.canvas);
   const chartHeight = cssHeightOf(request.canvas);
@@ -597,31 +624,31 @@ export function composeFigureImage(request: FigureExportRequest): HTMLCanvasElem
   }
   context.scale(density, density);
 
-  // Opaque, and painted before anything else: a transparent PNG of a Chart.js canvas is
-  // dark-on-dark in any light document it is pasted into.
-  context.fillStyle = FIGURE_BACKGROUND;
-  context.fillRect(0, 0, width, height);
+  // Painted before anything else: a transparent PNG of a Chart.js canvas is dark-on-dark in any
+  // light document it is pasted into, so only a theme that asks for it leaves the ground empty.
+  paintFigureBackground(context, width, height, theme);
 
   context.textBaseline = 'top';
   let y = PADDING;
 
   const sizes = chrome.sizes;
-  y = drawBlock(context, chrome.titleLines, PADDING, y, sizes.titlePx, '600', FIGURE_TITLE_COLOR);
+  y = drawBlock(
+    context, chrome.titleLines, PADDING, y, sizes.titlePx, String(theme.fonts.headingWeight), paint.colors.title, paint.stack);
 
   const badgeRowCount = badgeRowCountOf(chrome);
   if (badgeRowCount > 0) {
     y += LINE_GAP;
-    drawBadgeRows(context, chrome.badgeRows, PADDING, y, sizes);
+    drawBadgeRows(context, chrome.badgeRows, PADDING, y, sizes, paint);
     if (chrome.direction) {
       // Right-aligned on the first badge row, which it shares the height of.
-      drawDirectionBadge(context, chrome.direction, PADDING + contentWidth - chrome.direction.width, y, sizes);
+      drawDirectionBadge(context, chrome.direction, PADDING + contentWidth - chrome.direction.width, y, sizes, paint);
     }
     y += badgeRowCount * sizes.badgeHeight + (badgeRowCount - 1) * BADGE_GAP;
   }
 
   if (chrome.detailLines.length > 0) {
     y += LINE_GAP;
-    y = drawBlock(context, chrome.detailLines, PADDING, y, DETAIL_SIZE, '400', FIGURE_MUTED_COLOR);
+    y = drawBlock(context, chrome.detailLines, PADDING, y, DETAIL_SIZE, '400', paint.colors.muted, paint.stack);
   }
 
   y += PLOT_GAP;
@@ -632,32 +659,81 @@ export function composeFigureImage(request: FigureExportRequest): HTMLCanvasElem
 
   if (chrome.keyRows.length > 0) {
     y += LINE_GAP;
-    y = drawKeyRows(context, chrome.keyRows, PADDING, y);
+    y = drawKeyRows(context, chrome.keyRows, PADDING, y, paint);
   }
 
   if (chrome.highlightLines.length > 0) {
     y += LINE_GAP;
-    y = drawBlock(context, chrome.highlightLines, PADDING, y, HIGHLIGHT_SIZE, '600', FIGURE_BODY_COLOR);
+    y = drawBlock(context, chrome.highlightLines, PADDING, y, HIGHLIGHT_SIZE, '600', paint.colors.body, paint.stack);
   }
 
   for (const note of chrome.noteBlocks) {
     y += LINE_GAP;
-    y = drawNote(context, note, PADDING, y);
+    y = drawNote(context, note, PADDING, y, paint);
   }
 
   if (chrome.footer.height > 0) {
     y += RULE_GAP / 2;
-    context.strokeStyle = FIGURE_RULE_COLOR;
+    context.strokeStyle = paint.colors.rule;
     context.lineWidth = 1;
     context.beginPath();
     context.moveTo(PADDING, Math.round(y) + 0.5);
     context.lineTo(width - PADDING, Math.round(y) + 0.5);
     context.stroke();
     y += RULE_GAP / 2;
-    drawFooter(context, chrome.footer, PADDING, y, width - PADDING * 2, sizes);
+    drawFooter(context, chrome.footer, PADDING, y, width - PADDING * 2, sizes, paint);
   }
 
+  drawFigureBorder(context, width, height, theme.border);
   return target;
+}
+
+/**
+ * Paints the ground of a composed image, `width` × `height` in the context's own units.
+ *
+ * A transparent theme (`background === null`) paints nothing. Otherwise the ground is a rectangle
+ * rounded by the border's radius, so the corners outside the radius stay transparent; at radius 0
+ * it is one full `fillRect`. Shared with the table composer.
+ */
+export function paintFigureBackground(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  theme: ResolvedFigureTheme
+): void {
+  if (theme.background === null) {
+    return;
+  }
+  context.fillStyle = theme.background;
+  const radius = theme.border?.radiusPx ?? 0;
+  if (radius > 0) {
+    pathRoundedRect(context, 0, 0, width, height, radius);
+    context.fill();
+  } else {
+    context.fillRect(0, 0, width, height);
+  }
+}
+
+/**
+ * Strokes the border of a composed image, inset by half its width so that the whole stroke lies
+ * inside the bitmap and inside the padding, and its outer edge follows the ground's radius. Draws
+ * nothing for a null border. Shared with the table composer.
+ */
+export function drawFigureBorder(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  border: ResolvedFigureBorder | null
+): void {
+  if (!border || !(border.widthPx > 0)) {
+    return;
+  }
+  const inset = border.widthPx / 2;
+  context.strokeStyle = border.color;
+  context.lineWidth = border.widthPx;
+  pathRoundedRect(
+    context, inset, inset, width - border.widthPx, height - border.widthPx, Math.max(0, border.radiusPx - inset));
+  context.stroke();
 }
 
 /** A figure's chart.js inputs, as {@link renderPlotOffscreen} needs them. */
@@ -950,35 +1026,39 @@ type FigureChromeSource = Omit<FigureExportRequest, 'canvas' | 'format' | 'layou
  *
  * The single source of both the drawn content and the height {@link resolveFigureLayout} subtracts
  * from a target box; duplicating either would let a figure be accepted at a height it cannot be
- * drawn at. An empty `detail`, `highlight` or `key` measures to no lines and adds no height.
+ * drawn at. An empty `detail`, `highlight` or `key` measures to no lines and adds no height. The
+ * font stack and the title's weight are the source theme's, the dark theme's when absent, which is
+ * what {@link composeFigureImage} draws with.
  */
 export function measureFigureChrome(source: FigureChromeSource, contentWidth: number): MeasuredChrome {
+  const theme = source.theme ?? resolveFigureTheme();
+  const stack = theme.fonts.chromeStack;
   const measure = document.createElement('canvas').getContext('2d');
   const wrap = (text: string, size: number, weight: string): string[] =>
-    measure ? wrapText(measure, text, contentWidth, size, weight) : (text ? [text] : []);
+    measure ? wrapText(measure, text, contentWidth, size, weight, stack) : (text ? [text] : []);
 
   const chrome = source.chrome;
   const sizes = resolveTextSizes(source.textSizes ?? DEFAULT_FIGURE_TEXT_SIZES);
-  const titleLines = wrap(chrome.title, sizes.titlePx, '600');
+  const titleLines = wrap(chrome.title, sizes.titlePx, String(theme.fonts.headingWeight));
   const direction = chrome.direction
     ? {
         rotation: figureDirectionRotation(chrome.direction),
         label: chrome.direction.label,
-        width: measure ? directionBadgeWidth(measure, chrome.direction.label, sizes) : 0
+        width: measure ? directionBadgeWidth(measure, chrome.direction.label, sizes, stack) : 0
       }
     : null;
   const badgeWidth = direction ? contentWidth - direction.width - BADGE_GAP : contentWidth;
   const badgeRows: MeasuredBadgeRow[] = measure
-    ? wrapBadges(measure, chrome.badges, badgeWidth, sizes.badgePx)
+    ? wrapBadges(measure, chrome.badges, badgeWidth, sizes.badgePx, stack)
     : (chrome.badges.length > 0 ? [{ badges: chrome.badges.map(badge => ({ badge, width: 0 })) }] : []);
   const detailLines = wrap(chrome.detail, DETAIL_SIZE, '400');
   const keyRows: MeasuredKeyRow[] = measure
-    ? wrapKeyItems(measure, chrome.key, contentWidth)
+    ? wrapKeyItems(measure, chrome.key, contentWidth, stack)
     : (chrome.key.length > 0 ? [{ items: chrome.key.map(item => ({ item, width: 0 })) }] : []);
   const highlightLines = wrap(chrome.highlight, HIGHLIGHT_SIZE, '600');
   const noteBlocks: MeasuredNote[] =
     chrome.notes.map(note => ({ tone: note.tone, lines: wrap(note.text, NOTE_SIZE, '400') }));
-  const footer = measureFooter(measure, source.footer, contentWidth, sizes);
+  const footer = measureFooter(measure, source.footer, contentWidth, sizes, stack);
 
   let headerHeight = blockHeight(titleLines, sizes.titlePx);
   const badgeRowCount = badgeRowCountOf({ badgeRows, direction });
@@ -1029,8 +1109,13 @@ function directionArrowSize(sizes: ResolvedTextSizes): number {
   return Math.round(sizes.badgePx * 1.3);
 }
 
-function directionBadgeWidth(context: CanvasRenderingContext2D, label: string, sizes: ResolvedTextSizes): number {
-  context.font = fontOf(sizes.badgePx, '700');
+function directionBadgeWidth(
+  context: CanvasRenderingContext2D,
+  label: string,
+  sizes: ResolvedTextSizes,
+  stack: string
+): number {
+  context.font = fontOf(sizes.badgePx, '700', stack);
   return DIRECTION_PAD_START + directionArrowSize(sizes) + DIRECTION_ARROW_GAP
     + context.measureText(label).width + DIRECTION_PAD_END;
 }
@@ -1040,9 +1125,10 @@ function wrapBadges(
   context: CanvasRenderingContext2D,
   badges: readonly FigureBadge[],
   maxWidth: number,
-  size: number
+  size: number,
+  stack: string
 ): MeasuredBadgeRow[] {
-  context.font = fontOf(size, '400');
+  context.font = fontOf(size, '400', stack);
   const rows: MeasuredBadgeRow[] = [];
   let current: { badge: FigureBadge; width: number }[] = [];
   let rowWidth = 0;
@@ -1068,9 +1154,10 @@ function wrapBadges(
 function wrapKeyItems(
   context: CanvasRenderingContext2D,
   items: readonly FigureKeyItem[],
-  maxWidth: number
+  maxWidth: number,
+  stack: string
 ): MeasuredKeyRow[] {
-  context.font = fontOf(KEY_TEXT_SIZE, '400');
+  context.font = fontOf(KEY_TEXT_SIZE, '400', stack);
   const rows: MeasuredKeyRow[] = [];
   let current: { item: FigureKeyItem; width: number }[] = [];
   let rowWidth = 0;
@@ -1103,7 +1190,8 @@ function measureFooter(
   context: CanvasRenderingContext2D | null,
   footer: FigureFooter,
   contentWidth: number,
-  sizes: ResolvedTextSizes
+  sizes: ResolvedTextSizes,
+  stack: string
 ): MeasuredFooter {
   const suite = (footer.suite ?? '').trim();
   const computedText = footer.computedAt ? `Computed ${footer.computedAt}` : '';
@@ -1116,8 +1204,8 @@ function measureFooter(
     return { labelText, suiteText: suite, computedText, twoLines: false, height: lineHeight };
   }
 
-  const labelWidth = labelText === '' ? 0 : letterSpacedWidth(context, labelText, sizes.footerLabelPx);
-  context.font = fontOf(sizes.footerPx, '400');
+  const labelWidth = labelText === '' ? 0 : letterSpacedWidth(context, labelText, sizes.footerLabelPx, stack);
+  context.font = fontOf(sizes.footerPx, '400', stack);
   const suiteWidth = suite === '' ? 0 : context.measureText(suite).width;
   const computedWidth = computedText === '' ? 0 : context.measureText(computedText).width;
   const gapAfterLabel = labelText !== '' && suite !== '' ? FOOTER_LABEL_GAP : 0;
@@ -1216,8 +1304,8 @@ function cssHeightOf(canvas: HTMLCanvasElement): number {
   return canvas.clientHeight > 0 ? canvas.clientHeight : canvas.height;
 }
 
-function fontOf(size: number, weight: string): string {
-  return `${weight} ${size}px ${FIGURE_FONT_STACK}`;
+function fontOf(size: number, weight: string, stack: string): string {
+  return `${weight} ${size}px ${stack}`;
 }
 
 function blockHeight(lines: readonly string[], size: number): number {
@@ -1231,13 +1319,14 @@ function drawBlock(
   y: number,
   size: number,
   weight: string,
-  color: string
+  color: string,
+  stack: string
 ): number {
   if (lines.length === 0) {
     return y;
   }
   const lineHeight = Math.round(size * 1.4);
-  context.font = fontOf(size, weight);
+  context.font = fontOf(size, weight, stack);
   context.fillStyle = color;
   let cursor = y;
   for (const line of lines) {
@@ -1253,13 +1342,14 @@ function drawBadgeRows(
   rows: readonly MeasuredBadgeRow[],
   x: number,
   y: number,
-  sizes: ResolvedTextSizes
+  sizes: ResolvedTextSizes,
+  paint: ChromePaint
 ): number {
   let cursorY = y;
   for (const row of rows) {
     let cursorX = x;
     for (const { badge, width } of row.badges) {
-      drawBadge(context, badge, cursorX, cursorY, width, sizes);
+      drawBadge(context, badge, cursorX, cursorY, width, sizes, paint);
       cursorX += width + BADGE_GAP;
     }
     cursorY += sizes.badgeHeight + BADGE_GAP;
@@ -1274,16 +1364,17 @@ function drawBadge(
   x: number,
   y: number,
   width: number,
-  sizes: ResolvedTextSizes
+  sizes: ResolvedTextSizes,
+  paint: ChromePaint
 ): void {
-  const tone = BADGE_TONE_COLORS[badge.tone];
+  const tone = paint.colors.badge[badge.tone];
   pathRoundedRect(context, x, y, width, sizes.badgeHeight, BADGE_RADIUS);
   context.fillStyle = tone.fill;
   context.fill();
   context.strokeStyle = tone.border;
   context.lineWidth = BADGE_BORDER_WIDTH;
   context.stroke();
-  context.font = fontOf(sizes.badgePx, '400');
+  context.font = fontOf(sizes.badgePx, '400', paint.stack);
   context.fillStyle = tone.text;
   context.fillText(badge.text, x + BADGE_PAD_X, y + BADGE_PAD_Y);
 }
@@ -1294,22 +1385,24 @@ function drawDirectionBadge(
   direction: MeasuredDirection,
   x: number,
   y: number,
-  sizes: ResolvedTextSizes
+  sizes: ResolvedTextSizes,
+  paint: ChromePaint
 ): void {
+  const colors = paint.colors.direction;
   const height = sizes.badgeHeight;
   pathRoundedRect(context, x, y, direction.width, height, height / 2);
-  context.fillStyle = DIRECTION_COLORS.fill;
+  context.fillStyle = colors.fill;
   context.fill();
-  context.strokeStyle = DIRECTION_COLORS.border;
+  context.strokeStyle = colors.border;
   context.lineWidth = BADGE_BORDER_WIDTH;
   context.stroke();
 
   const arrowSize = directionArrowSize(sizes);
   drawDirectionArrow(
-    context, x + DIRECTION_PAD_START + arrowSize / 2, y + height / 2, arrowSize, direction.rotation, FIGURE_TITLE_COLOR);
+    context, x + DIRECTION_PAD_START + arrowSize / 2, y + height / 2, arrowSize, direction.rotation, colors.ink);
 
-  context.font = fontOf(sizes.badgePx, '700');
-  context.fillStyle = FIGURE_TITLE_COLOR;
+  context.font = fontOf(sizes.badgePx, '700', paint.stack);
+  context.fillStyle = colors.ink;
   context.fillText(direction.label, x + DIRECTION_PAD_START + arrowSize + DIRECTION_ARROW_GAP, y + BADGE_PAD_Y);
 }
 
@@ -1364,15 +1457,16 @@ function drawKeyRows(
   context: CanvasRenderingContext2D,
   rows: readonly MeasuredKeyRow[],
   x: number,
-  y: number
+  y: number,
+  paint: ChromePaint
 ): number {
   let cursorY = y;
   for (const row of rows) {
     let cursorX = x;
     for (const { item, width } of row.items) {
-      drawKeyGlyph(context, item.glyph, cursorX, cursorY, KEY_GLYPH_SIZE);
-      context.font = fontOf(KEY_TEXT_SIZE, '400');
-      context.fillStyle = FIGURE_BODY_COLOR;
+      drawKeyGlyph(context, item.glyph, cursorX, cursorY, KEY_GLYPH_SIZE, paint.colors);
+      context.font = fontOf(KEY_TEXT_SIZE, '400', paint.stack);
+      context.fillStyle = paint.colors.body;
       context.fillText(item.text, cursorX + KEY_GLYPH_SIZE + KEY_GLYPH_TEXT_GAP, cursorY);
       cursorX += width + KEY_ITEM_GAP;
     }
@@ -1382,25 +1476,33 @@ function drawKeyRows(
 }
 
 /** One key glyph in its `size` × `size` slot: a hollow or solid circle, a frontier, a dominated square, or a whisker. */
-function drawKeyGlyph(context: CanvasRenderingContext2D, glyph: FigureKeyGlyph, x: number, y: number, size: number): void {
+function drawKeyGlyph(
+  context: CanvasRenderingContext2D,
+  glyph: FigureKeyGlyph,
+  x: number,
+  y: number,
+  size: number,
+  colors: ResolvedChromeColors
+): void {
   const mid = y + size / 2;
+  const ink = colors.keyInk;
   switch (glyph) {
     case 'hollow':
-      context.strokeStyle = FIGURE_KEY_INK;
+      context.strokeStyle = ink;
       context.lineWidth = 1;
       context.beginPath();
       context.arc(x + size / 2, mid, size / 2 - 0.5, 0, Math.PI * 2);
       context.stroke();
       break;
     case 'solid':
-      context.fillStyle = FIGURE_KEY_INK;
+      context.fillStyle = ink;
       context.beginPath();
       context.arc(x + size / 2, mid, size / 2, 0, Math.PI * 2);
       context.fill();
       break;
     case 'frontier': {
       const overhang = (KEY_FRONTIER_LENGTH - size) / 2;
-      context.strokeStyle = FIGURE_KEY_INK;
+      context.strokeStyle = ink;
       context.lineWidth = 1;
       context.beginPath();
       context.moveTo(x - overhang, mid);
@@ -1412,9 +1514,9 @@ function drawKeyGlyph(context: CanvasRenderingContext2D, glyph: FigureKeyGlyph, 
       const side = KEY_DOMINATED_SIDE;
       const top = mid - side / 2;
       const left = x + (size - side) / 2;
-      context.fillStyle = FIGURE_DOMINATED_FILL;
+      context.fillStyle = colors.dominatedKeyFill;
       context.fillRect(left, top, side, side);
-      context.strokeStyle = FIGURE_KEY_INK;
+      context.strokeStyle = ink;
       context.lineWidth = 1;
       context.strokeRect(left + 0.5, top + 0.5, side - 1, side - 1);
       break;
@@ -1422,7 +1524,7 @@ function drawKeyGlyph(context: CanvasRenderingContext2D, glyph: FigureKeyGlyph, 
     case 'interval': {
       const capHalf = size / 3;
       const centerX = x + size / 2;
-      context.strokeStyle = FIGURE_KEY_INK;
+      context.strokeStyle = ink;
       context.lineWidth = 1;
       context.beginPath();
       context.moveTo(centerX, y);
@@ -1438,12 +1540,12 @@ function drawKeyGlyph(context: CanvasRenderingContext2D, glyph: FigureKeyGlyph, 
 }
 
 /** One note: a left rule in the tone's color, and its wrapped text indented past it. */
-function drawNote(context: CanvasRenderingContext2D, note: MeasuredNote, x: number, y: number): number {
-  const tone = NOTE_TONE_COLORS[note.tone];
+function drawNote(context: CanvasRenderingContext2D, note: MeasuredNote, x: number, y: number, paint: ChromePaint): number {
+  const tone = paint.colors.note[note.tone];
   const height = blockHeight(note.lines, NOTE_SIZE);
   context.fillStyle = tone.rule;
   context.fillRect(x, y, NOTE_RULE_WIDTH, height);
-  drawBlock(context, note.lines, x + NOTE_INDENT, y, NOTE_SIZE, '400', tone.text);
+  drawBlock(context, note.lines, x + NOTE_INDENT, y, NOTE_SIZE, '400', tone.text, paint.stack);
   return y + height;
 }
 
@@ -1457,7 +1559,8 @@ function drawFooter(
   x: number,
   y: number,
   contentWidth: number,
-  sizes: ResolvedTextSizes
+  sizes: ResolvedTextSizes,
+  paint: ChromePaint
 ): number {
   if (footer.height === 0) {
     return y;
@@ -1465,17 +1568,18 @@ function drawFooter(
   const lineHeight = sizes.footerLineHeight;
   let cursorX = x;
   if (footer.labelText !== '') {
-    context.fillStyle = FIGURE_MUTED_COLOR;
-    cursorX += drawLetterSpacedText(context, footer.labelText, cursorX, y, sizes.footerLabelPx) + FOOTER_LABEL_GAP;
+    context.fillStyle = paint.colors.muted;
+    cursorX += drawLetterSpacedText(context, footer.labelText, cursorX, y, sizes.footerLabelPx, paint.stack)
+      + FOOTER_LABEL_GAP;
   }
   if (footer.suiteText !== '') {
-    context.font = fontOf(sizes.footerPx, '400');
-    context.fillStyle = FIGURE_BODY_COLOR;
+    context.font = fontOf(sizes.footerPx, '400', paint.stack);
+    context.fillStyle = paint.colors.body;
     context.fillText(footer.suiteText, cursorX, y);
   }
   if (footer.computedText !== '') {
-    context.font = fontOf(sizes.footerPx, '400');
-    context.fillStyle = FIGURE_MUTED_COLOR;
+    context.font = fontOf(sizes.footerPx, '400', paint.stack);
+    context.fillStyle = paint.colors.muted;
     const computedWidth = context.measureText(footer.computedText).width;
     const computedY = footer.twoLines ? y + lineHeight : y;
     const computedX = footer.twoLines ? x : x + contentWidth - computedWidth;
@@ -1490,8 +1594,8 @@ function supportsLetterSpacing(context: CanvasRenderingContext2D): boolean {
 }
 
 /** The width of `text` set at `${FOOTER_LABEL_LETTER_SPACING}px` letter-spacing, at `size`. */
-function letterSpacedWidth(context: CanvasRenderingContext2D, text: string, size: number): number {
-  context.font = fontOf(size, '400');
+function letterSpacedWidth(context: CanvasRenderingContext2D, text: string, size: number, stack: string): number {
+  context.font = fontOf(size, '400', stack);
   if (supportsLetterSpacing(context)) {
     context.letterSpacing = `${FOOTER_LABEL_LETTER_SPACING}px`;
     const width = context.measureText(text).width;
@@ -1509,8 +1613,15 @@ function letterSpacedWidth(context: CanvasRenderingContext2D, text: string, size
 }
 
 /** Draws `text` letter-spaced at `(x, y)`, by the same method {@link letterSpacedWidth} measures with. */
-function drawLetterSpacedText(context: CanvasRenderingContext2D, text: string, x: number, y: number, size: number): number {
-  context.font = fontOf(size, '400');
+function drawLetterSpacedText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  size: number,
+  stack: string
+): number {
+  context.font = fontOf(size, '400', stack);
   if (supportsLetterSpacing(context)) {
     context.letterSpacing = `${FOOTER_LABEL_LETTER_SPACING}px`;
     context.fillText(text, x, y);
@@ -1533,19 +1644,21 @@ function drawLetterSpacedText(context: CanvasRenderingContext2D, text: string, x
  * Greedy word wrap. A single word wider than the column is left to overflow rather than broken.
  *
  * Exported for the table composer, which wraps header and cell text into the same typography.
+ * `stack` is the font stack measured in, the *Overseer default* stack when absent.
  */
 export function wrapText(
   context: CanvasRenderingContext2D,
   text: string,
   maxWidth: number,
   size: number,
-  weight: string
+  weight: string,
+  stack: string = FIGURE_FONT_STACK
 ): string[] {
   const trimmed = (text ?? '').trim();
   if (trimmed === '') {
     return [];
   }
-  context.font = fontOf(size, weight);
+  context.font = fontOf(size, weight, stack);
   const lines: string[] = [];
   let current = '';
   for (const word of trimmed.split(/\s+/)) {

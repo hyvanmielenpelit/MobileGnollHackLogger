@@ -1,0 +1,80 @@
+<div class="tsp-section">
+  <details class="gh-disclosure gh-disclosure--section" id="mc-table-columns-section"
+           [open]="columnsOpen" (toggle)="onColumnsToggle($event)">
+    <summary>
+      <span class="gh-disclosure-summary-title">Columns</span>
+      <span class="gh-disclosure-summary-value" aria-hidden="true">{{ columnsReadout }}</span>
+    </summary>
+    <div class="gh-disclosure-body tsp-body">
+      <p class="tsp-field-hint">The table's columns and their order: in the Interactive table, the
+        Table preview, and every download and copy.</p>
+
+      <app-reorderable-list [items]="items" [checkable]="true" itemNoun="column"
+                            listLabel="Table columns" idPrefix="mc-table-columns"
+                            (orderChange)="onOrderChange($event)"
+                            (checkedChange)="onCheckedChange($event)"></app-reorderable-list>
+
+      <p class="visually-hidden" role="status">{{ columnsCountStatus }}</p>
+
+      <div class="tsp-quick-actions">
+        <button type="button" class="gh-filter-clear" (click)="useDefaultColumns()">Default columns</button>
+        <button type="button" class="gh-filter-clear" (click)="useColumnsWithValues()">Only columns with values</button>
+        <button type="button" class="gh-filter-clear" (click)="useAllColumns()">All columns</button>
+      </div>
+    </div>
+  </details>
+  <button type="button" class="action-btn tsp-reset" id="mc-table-columns-reset"
+          aria-label="Reset Columns to defaults"
+          [attr.aria-disabled]="columnsAreDefault ? 'true' : null"
+          interestfor="mc-table-columns-reset-tip" style="anchor-name: --mc-table-columns-reset"
+          (click)="resetColumns()">
+    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+         viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M9 14 4 9l5-5"></path>
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"></path>
+    </svg>
+  </button>
+  <div popover="hint" class="gh-tooltip" id="mc-table-columns-reset-tip"
+       style="position-anchor: --mc-table-columns-reset">{{ columnsAreDefault ? 'Already at defaults' : 'Reset to defaults' }}</div>
+</div>
+<p class="visually-hidden" role="status">{{ columnsResetStatus }}</p>
+
+<div class="tsp-section">
+  <details class="gh-disclosure gh-disclosure--section" id="mc-table-image-layout-section"
+           [open]="imageLayoutOpen" (toggle)="onImageLayoutToggle($event)">
+    <summary>
+      <span class="gh-disclosure-summary-title">Image layout</span>
+      <span class="gh-disclosure-summary-value" aria-hidden="true">{{ imageLayoutReadout }}</span>
+    </summary>
+    <div class="gh-disclosure-body tsp-body">
+      <p class="tsp-field-hint">Applies to the PNG and WebP table image.</p>
+
+      <label class="checkbox-label">
+        <input type="checkbox" id="mc-table-image-layout-rowBands" [checked]="tableStyle.rowBands"
+               (change)="onRowBandsChange($any($event.target).checked)">
+        Row bands
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" id="mc-table-image-layout-rowRules" [checked]="tableStyle.rowRules"
+               (change)="onRowRulesChange($any($event.target).checked)">
+        Row rules
+      </label>
+    </div>
+  </details>
+  <button type="button" class="action-btn tsp-reset" id="mc-table-image-layout-reset"
+          aria-label="Reset Image layout to defaults"
+          [attr.aria-disabled]="imageLayoutIsDefault ? 'true' : null"
+          interestfor="mc-table-image-layout-reset-tip" style="anchor-name: --mc-table-image-layout-reset"
+          (click)="resetImageLayout()">
+    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+         viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M9 14 4 9l5-5"></path>
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"></path>
+    </svg>
+  </button>
+  <div popover="hint" class="gh-tooltip" id="mc-table-image-layout-reset-tip"
+       style="position-anchor: --mc-table-image-layout-reset">{{ imageLayoutIsDefault ? 'Already at defaults' : 'Reset to defaults' }}</div>
+</div>
+<p class="visually-hidden" role="status">{{ imageLayoutResetStatus }}</p>
