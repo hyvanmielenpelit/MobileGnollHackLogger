@@ -72,7 +72,7 @@ describe('figure-style', () => {
       borderRadiusPx: 0,
       borderColor: null
     });
-    expect(DEFAULT_FIGURE_STYLE.table).toEqual({ rowBands: true, rowRules: false });
+    expect(DEFAULT_FIGURE_STYLE.table).toEqual({ rowShading: 'medium', rowRules: false });
     expect(DEFAULT_FIGURE_STYLE.numbers).toEqual({
       intelligenceIndex: 0,
       speedIndex: 0,
@@ -433,7 +433,7 @@ describe('figure-style', () => {
       borderRadiusPx: 12
     });
     expect('extra' in style.appearance).toBeFalse();
-    expect(style.table).toEqual({ rowBands: false, rowRules: false });
+    expect(style.table).toEqual({ rowShading: 'none', rowRules: false });
 
     const invalid = normalizeFigureStyle({
       appearance: { theme: 'sepia', background: 'none', fontFamily: 'comic', headingWeight: '700', borderRadiusPx: -3 }
@@ -441,6 +441,22 @@ describe('figure-style', () => {
     expect(invalid.appearance).toEqual({ ...DEFAULT_FIGURE_STYLE.appearance, borderRadiusPx: 0 });
     for (const value of [null, [], 'dark', 3]) {
       expect(normalizeFigureStyle({ appearance: value }).appearance).withContext(String(value)).toEqual(DEFAULT_FIGURE_STYLE.appearance);
+    }
+  });
+
+  it('migrates the stored row bands and keeps a valid shading', () => {
+    const cases: { table: Record<string, unknown>; shading: string }[] = [
+      { table: { rowBands: true }, shading: 'medium' },
+      { table: { rowBands: false }, shading: 'none' },
+      { table: { rowShading: 'strong' }, shading: 'strong' },
+      { table: { rowShading: 'strong', rowBands: false }, shading: 'strong' },
+      { table: { rowShading: 'loud' }, shading: 'medium' },
+      { table: { rowBands: 'yes' }, shading: 'medium' }
+    ];
+    for (const { table, shading } of cases) {
+      const style = normalizeFigureStyle({ table });
+      expect(style.table.rowShading).withContext(JSON.stringify(table)).toBe(shading);
+      expect('rowBands' in style.table).withContext(JSON.stringify(table)).toBeFalse();
     }
   });
 

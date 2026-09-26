@@ -2677,7 +2677,7 @@ change; only *Charts* and *Table* swap. A stored tab from before is migrated: `e
 | Theme, background, preview backdrop, font, weights, text colours, border | ✓ | ✓ | Theme |
 | Per-family chart settings, axis title weight, plot frame | ✓ | — | Charts |
 | Columns | — | ✓ (every output) | Table → Columns |
-| Row bands, row rules | — | ✓ | Table → Image layout |
+| Alternate-row shading, lines between rows | — | ✓ | Table → Row style |
 | Image format and WebP quality | ✓ | ✓ | Download (shared) |
 | Chart size | ✓ | — | Download → Chart size |
 | Table format, table image size | — | ✓ | Download (table views) |
@@ -2688,8 +2688,9 @@ compared, and its note says where the others went. In the table views the Data t
 *Model order*.
 
 **Model order.** *Order by* offers Intelligence Index, Speed, Cost, Name and **Custom**. Custom shows
-every entry in a list that is rearranged by dragging its grip or with its *Move up* / *Move down*
-buttons (the keyboard and single-pointer path), announcing each move. The list is seeded from the
+every entry in a list that is rearranged by dragging its handle, or with the handle's Move menu
+(*Move to top*, *Move up*, *Move down*, *Move to bottom*), which is the keyboard and single-pointer
+path, announcing each move. The list is seeded from the
 order in effect, marks where the charts stop plotting (an entry dragged above the line enters the
 charts), tags entries that are never charted *table only*, and *Reset custom order* returns it to
 Intelligence Index, descending. *Direction* is disabled while Custom is chosen. The custom order lives
@@ -2702,7 +2703,8 @@ return to it. The charts and the table share one comparator, so they cannot disa
 **Columns.** The Table tab's *Columns* section lists all 28 display columns — the eight on-screen
 columns, some of which combine several values (*Model*, *R*, *State*, *Intelligence Index*, *Speed
 Index*, *Timings*, *Candidate $ / question*, *Notes*), and the other twenty single values as columns
-of their own — to show or hide with a checkbox and to reorder by drag and drop or the move buttons.
+of their own — to show or hide with a checkbox and to reorder by drag and drop or with a row handle's
+Move menu.
 *Model* is always shown but can move. Quick actions: *Default columns* (today's eight, in today's
 order), *Only columns with values*, *All columns*. One configuration drives the Interactive table,
 the Table preview and every download and copy, and is stored per browser
@@ -2714,6 +2716,12 @@ Hiding a column that has an active filter clears that filter, with a status line
 download columns changed**: a download used to write every populated column of the 26; it now writes
 the eight on-screen columns (split into their parts in data formats). *All columns* restores the full
 set in one click.
+
+**Row style.** The Table tab's *Row style* section sets the table image's alternate-row shading
+(*None*, *Light*, *Medium*, *Strong*, made from the text color at 5, 10 and 16 % opacity; *Medium* by
+default, and a stored *Row bands* setting becomes *Medium* when it was on and *None* when it was off)
+and its *Lines between rows*. It applies to the Table preview, the PNG and WebP downloads and Copy as
+image; the Interactive table is not affected.
 
 **Table export.** The step's separate table export controls and the download-time column dialog are
 gone. The Download tab in the table views holds the **Table format** (Excel, CSV, TSV, Markdown,

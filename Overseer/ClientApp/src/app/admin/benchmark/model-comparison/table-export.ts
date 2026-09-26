@@ -41,7 +41,7 @@ import {
 import type { FigureExportResult, WebpQuality } from './figure-export';
 import { DEFAULT_TABLE_IMAGE_STYLE } from './figure-style';
 import type { TableImageStyle } from './figure-style';
-import { resolveFigureTheme } from './figure-theme';
+import { resolveFigureTheme, tableBandColor } from './figure-theme';
 import type { ResolvedFigureTheme } from './figure-theme';
 
 /** The eight offered formats. Each id is also the file extension it is written under. */
@@ -1056,12 +1056,6 @@ const TABLE_MIN_COLUMN_WIDTH = 44;
  */
 const TABLE_COLUMN_CAPS: readonly number[] = [260, 220, 180, 150, 120, 96, 76, 60];
 
-/**
- * The dark theme's alternating row band, faint enough to guide the eye across 24 columns without
- * striping loudly. The composer draws `theme.chrome.tableBand`, which resolves to this by default.
- */
-export const TABLE_BAND_COLOR = 'rgba(255, 255, 255, 0.035)';
-
 /** The density of the default *Fit the table* image. Reading it at 1x would export the text blurred. */
 export const TABLE_IMAGE_SCALE = 2;
 
@@ -1548,10 +1542,11 @@ function drawTableImage(plan: TableImagePlan, previewRaster?: number): HTMLCanva
   y = drawRule(context, y, layout.layoutWidth, colors.rule);
 
   const lastRow = content.bodyRows.length - 1;
+  const band = tableBandColor(theme, style.rowShading);
   content.bodyRows.forEach((cells, index) => {
     const height = content.bodyHeights[index];
-    if (style.rowBands && index % 2 === 1) {
-      context.fillStyle = colors.tableBand;
+    if (band && index % 2 === 1) {
+      context.fillStyle = band;
       context.fillRect(TABLE_PADDING, y, content.contentWidth, height);
     }
     drawRowCells(context, content.columns, cells, y, TABLE_TEXT_SIZE, type.label, colors.body, type.stack);

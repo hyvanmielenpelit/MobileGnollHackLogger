@@ -10,7 +10,7 @@
 
 import type { FigureBadgeTone, FigureNoteTone } from './figure-chrome';
 import { figureFont } from './figure-fonts';
-import type { FigureAppearanceStyle, FigureFontWeight, FigureThemeName } from './figure-style';
+import type { FigureAppearanceStyle, FigureFontWeight, FigureThemeName, TableRowShading } from './figure-style';
 import { DEFAULT_APPEARANCE_STYLE } from './figure-style';
 
 export interface ResolvedChromeColors {
@@ -24,7 +24,6 @@ export interface ResolvedChromeColors {
   readonly direction: { readonly border: string; readonly fill: string; readonly ink: string };
   readonly badge: Record<FigureBadgeTone, { readonly border: string; readonly fill: string; readonly text: string }>;
   readonly note: Record<FigureNoteTone, { readonly rule: string; readonly text: string }>;
-  readonly tableBand: string;
 }
 
 export interface ResolvedChartColors {
@@ -99,7 +98,6 @@ const DARK_THEME: ThemeBase = {
       warning: { rule: '#e0ba6d', text: '#e0ba6d' },
       info: { rule: '#6b6b66', text: DARK_MUTED },
     },
-    tableBand: 'rgba(255, 255, 255, 0.035)',
   },
   chart: {
     surface: '#0b0b0b',
@@ -138,7 +136,6 @@ const LIGHT_THEME: ThemeBase = {
       warning: { rule: '#8a5a00', text: '#8a5a00' },
       info: { rule: '#c3c2b7', text: LIGHT_MUTED },
     },
-    tableBand: 'rgba(11, 11, 11, 0.035)',
   },
   chart: {
     surface: '#ffffff',
@@ -220,6 +217,26 @@ export function resolveFigureTheme(appearance: FigureAppearanceStyle = DEFAULT_A
       : null,
     frameColor: base.chart.baseline,
   };
+}
+
+/** Opacity of the text color laid over the ground as the alternate-row band, per level. */
+export const TABLE_SHADING_ALPHA: Readonly<Record<Exclude<TableRowShading, 'none'>, number>> = {
+  light: 0.05,
+  medium: 0.1,
+  strong: 0.16,
+};
+
+/**
+ * The alternate-row band: the table's text color at the level's opacity, so it follows the theme,
+ * a custom text color and a custom or transparent background alike. Null draws no band.
+ */
+export function tableBandColor(theme: ResolvedFigureTheme, shading: TableRowShading): string | null {
+  if (shading === 'none') {
+    return null;
+  }
+  const fallback: [number, number, number] = theme.name === 'light' ? [11, 11, 11] : [255, 255, 255];
+  const [r, g, b] = parseHex(theme.chrome.body) ?? fallback;
+  return `rgba(${r}, ${g}, ${b}, ${TABLE_SHADING_ALPHA[shading]})`;
 }
 
 /** `#rrggbb` → `[r, g, b]`, or null for anything else. */

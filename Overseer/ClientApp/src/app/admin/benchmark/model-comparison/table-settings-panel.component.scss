@@ -37,6 +37,23 @@
   }
 }
 
+/* One checkbox and its tip. */
+.tsp-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+
+  .checkbox-label {
+    font-size: 13px;
+  }
+
+  input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+  }
+}
+
 .tsp-field-hint {
   margin: 0;
   font-size: 11px;

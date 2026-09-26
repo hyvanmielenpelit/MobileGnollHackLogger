@@ -21,6 +21,8 @@ export type FigureBackgroundMode = 'theme' | 'transparent' | 'custom';
 export type FigurePreviewBackdrop = 'checkerboard' | 'color';
 export type FigureFontId = 'default' | 'inter' | 'roboto' | 'geist' | 'ibm-plex-sans' | 'source-sans-3' | 'open-sans';
 export type FigureFontWeight = 400 | 500 | 600 | 700;
+/** How strongly the table image shades every second body row. */
+export type TableRowShading = 'none' | 'light' | 'medium' | 'strong';
 
 export const FIGURE_THEME_NAMES: readonly FigureThemeName[] = ['dark', 'light'];
 export const FIGURE_BACKGROUND_MODES: readonly FigureBackgroundMode[] = ['theme', 'transparent', 'custom'];
@@ -28,6 +30,7 @@ export const FIGURE_PREVIEW_BACKDROPS: readonly FigurePreviewBackdrop[] = ['chec
 export const FIGURE_FONT_IDS: readonly FigureFontId[] =
   ['default', 'inter', 'roboto', 'geist', 'ibm-plex-sans', 'source-sans-3', 'open-sans'];
 export const FIGURE_FONT_WEIGHTS: readonly FigureFontWeight[] = [400, 500, 600, 700];
+export const TABLE_ROW_SHADINGS: readonly TableRowShading[] = ['none', 'light', 'medium', 'strong'];
 
 /** Shared by every chart and the table image. */
 export interface FigureAppearanceStyle {
@@ -56,7 +59,8 @@ export interface FigureAppearanceStyle {
 
 /** Table image only. */
 export interface TableImageStyle {
-  readonly rowBands: boolean;
+  /** Alternate-row background; its color is derived from the theme's text color. */
+  readonly rowShading: TableRowShading;
   /** A hairline under every row. */
   readonly rowRules: boolean;
 }
@@ -165,7 +169,7 @@ export const DEFAULT_APPEARANCE_STYLE: FigureAppearanceStyle = {
 };
 
 export const DEFAULT_TABLE_IMAGE_STYLE: TableImageStyle = {
-  rowBands: true,
+  rowShading: 'medium',
   rowRules: false,
 };
 
@@ -498,11 +502,15 @@ export function normalizeAppearance(value: unknown): FigureAppearanceStyle {
   };
 }
 
+/** A stored `rowShading`, else the level for a stored `rowBands` checkbox (off: none, on: medium). */
 function normalizeTableImageStyle(value: unknown): TableImageStyle {
   const d = DEFAULT_TABLE_IMAGE_STYLE;
   const v = isRecord(value) ? value : {};
+  const legacyBands = v['rowBands'];
+  const shadingFallback: TableRowShading =
+    typeof legacyBands === 'boolean' ? (legacyBands ? 'medium' : 'none') : d.rowShading;
   return {
-    rowBands: booleanOr(v['rowBands'], d.rowBands),
+    rowShading: oneOf(v['rowShading'], TABLE_ROW_SHADINGS, shadingFallback),
     rowRules: booleanOr(v['rowRules'], d.rowRules),
   };
 }

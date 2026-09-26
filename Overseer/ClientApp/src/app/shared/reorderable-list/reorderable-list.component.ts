@@ -37,7 +37,10 @@ export interface ReorderableListItemContext {
 }
 
 type MoveDirection = 'up' | 'down';
+type MoveEnd = 'top' | 'bottom';
 
+/** How far, in CSS px, a press on the handle must move before it becomes a drag. */
+const DRAG_START_PX = 4;
 /** Distance from the scroller's top or bottom edge, in CSS px, within which a drag autoscrolls. */
 const AUTOSCROLL_EDGE_PX = 32;
 /** Autoscroll step at the very edge, in CSS px per animation frame. */
@@ -86,20 +89,31 @@ interface DragState {
   to: number;
 }
 
+/** A press on a handle, from `pointerdown` until its `pointerup`, whether or not it became a drag. */
+interface PressState {
+  readonly pointerId: number;
+  readonly grip: HTMLElement;
+  readonly row: HTMLElement;
+  readonly startY: number;
+  dragged: boolean;
+}
+
 interface PendingFocus {
   readonly key: string;
-  readonly direction: MoveDirection;
+  /** A Move menu option, or the row's handle. */
+  readonly target: MoveDirection | 'handle';
   /** The `items` the move was made against; focus is restored once the host passes new ones. */
   readonly items: readonly ReorderableListItem[];
 }
 
 /**
- * A list whose rows are reordered by dragging a grip, or with each row's Move up and Move down
- * buttons, and optionally ticked with a checkbox per row.
+ * A list whose rows are reordered by dragging a row's handle, or with the Move menu that pressing
+ * the handle opens, and optionally checked with a checkbox per row.
  *
  * Presentational only. It never reorders or re-checks `items` itself: a move emits
  * `orderChange` with every key in the new order, a checkbox emits `checkedChange`, and the host
  * passes the updated `items` back. A drag moves rows with transforms only and emits once, on drop.
+ * One Move popover serves every row; it sits outside the rows, so a move never disconnects it.
  */
 @Component({
   selector: 'app-reorderable-list',
@@ -134,16 +148,25 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
   @Output() checkedChange = new EventEmitter<{ key: string; checked: boolean }>();
 
   @ViewChild('list', { static: true }) list?: ElementRef<HTMLOListElement>;
+  @ViewChild('menu', { static: true }) menu?: ElementRef<HTMLElement>;
 
   /** The polite announcement after a committed move. */
   status = '';
+  /** The row whose Move menu is open, or null. */
+  menuKey: string | null = null;
 
   private rowIds = new Map<string, string>();
   private pendingFocus: PendingFocus | null = null;
   private keySignature = '';
   private anchorsStale = true;
 
+  private press: PressState | null = null;
   private drag: DragState | null = null;
+  /** The click that ends a press which became a drag must not open the menu. */
+  private suppressNextClick = false;
+  private suppressClearTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The press began on the handle whose menu was open, so its click closes rather than reopens. */
+  private pressClosesMenu = false;
   private scrollFrame: number | null = null;
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
   private hostListeners: [string, EventListener][] = [];
@@ -181,6 +204,9 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
       if (drag && keys.join('\u0000') !== drag.keys.join('\u0000')) {
         this.endDrag(false, false);
       }
+      if (this.menuKey !== null && !keys.includes(this.menuKey)) {
+        this.closeMenu();
+      }
     }
   }
 
@@ -195,9 +221,12 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
       return;
     }
     this.pendingFocus = null;
-    const button = document.getElementById(`${this.rowId(pending.key)}-${pending.direction}`);
-    if (button && document.activeElement !== button) {
-      button.focus();
+    const id = pending.target === 'handle' || this.menuKey !== pending.key
+      ? `${this.rowId(pending.key)}-handle`
+      : `${this.idPrefix}-move-${pending.target}`;
+    const target = document.getElementById(id);
+    if (target && document.activeElement !== target) {
+      target.focus();
     }
   }
 
@@ -205,6 +234,7 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
     if (this.drag) {
       this.endDrag(false, false);
     }
+    this.closeMenu();
     const host = this.host.nativeElement;
     for (const [type, listener] of this.hostListeners) {
       host.removeEventListener(type, listener);
@@ -213,6 +243,10 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
     if (this.settleTimer !== null) {
       clearTimeout(this.settleTimer);
       this.settleTimer = null;
+    }
+    if (this.suppressClearTimer !== null) {
+      clearTimeout(this.suppressClearTimer);
+      this.suppressClearTimer = null;
     }
   }
 
@@ -238,7 +272,7 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
     return ids.length > 0 ? ids.join(' ') : null;
   }
 
-  /** Moves a row by one. At an end the button is aria-disabled and the click does nothing. */
+  /** Moves a row by one. At an end the option is aria-disabled and the click does nothing. */
   move(key: string, direction: MoveDirection): void {
     const from = this.items.findIndex(item => item.key === key);
     if (from < 0) {
@@ -249,11 +283,161 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
     if (to < 0 || to > last) {
       return;
     }
-    // At an end the pressed button becomes aria-disabled, so focus goes to the row's other one.
-    const focusDirection: MoveDirection =
+    // At an end the pressed option becomes aria-disabled, so focus goes to the opposite one.
+    const target: MoveDirection =
       direction === 'up' && to === 0 ? 'down' : direction === 'down' && to === last ? 'up' : direction;
-    this.pendingFocus = { key, direction: focusDirection, items: this.items };
+    this.pendingFocus = { key, target, items: this.items };
     this.commit(from, to);
+  }
+
+  /** Moves a row to the top or the bottom and closes the menu; nothing when it is already there. */
+  moveTo(key: string, end: MoveEnd): void {
+    const from = this.items.findIndex(item => item.key === key);
+    const to = end === 'top' ? 0 : this.items.length - 1;
+    if (from < 0 || from === to) {
+      return;
+    }
+    this.pendingFocus = { key, target: 'handle', items: this.items };
+    this.commit(from, to);
+    this.closeMenu();
+    this.focusHandleIfLost(key);
+  }
+
+  /** The item whose menu is open. */
+  get menuItem(): ReorderableListItem | null {
+    return this.menuKey === null ? null : this.items.find(item => item.key === this.menuKey) ?? null;
+  }
+
+  private get menuIndex(): number {
+    return this.menuKey === null ? -1 : this.items.findIndex(item => item.key === this.menuKey);
+  }
+
+  get menuAtTop(): boolean {
+    return this.menuIndex === 0;
+  }
+
+  get menuAtBottom(): boolean {
+    return this.menuIndex >= 0 && this.menuIndex === this.items.length - 1;
+  }
+
+  onHandleClick(key: string, event: MouseEvent): void {
+    if (this.suppressNextClick) {
+      this.suppressNextClick = false;
+      this.pressClosesMenu = false;
+      event.preventDefault();
+      return;
+    }
+    const closes = this.pressClosesMenu;
+    this.pressClosesMenu = false;
+    if (this.menuKey === key && this.menuIsOpen()) {
+      this.closeMenu();
+      return;
+    }
+    if (closes) {
+      // The press light-dismissed this handle's own menu.
+      return;
+    }
+    this.openMenu(key);
+  }
+
+  onMenuOption(option: MoveDirection | MoveEnd): void {
+    const key = this.menuKey;
+    if (key === null) {
+      return;
+    }
+    const blocked = option === 'top' || option === 'up' ? this.menuAtTop : this.menuAtBottom;
+    if (blocked) {
+      return;
+    }
+    if (option === 'up' || option === 'down') {
+      this.move(key, option);
+    } else {
+      this.moveTo(key, option);
+    }
+  }
+
+  onMenuKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape' || this.menuKey === null) {
+      return;
+    }
+    // Also keeps an enclosing dialog from closing.
+    event.preventDefault();
+    event.stopPropagation();
+    const key = this.menuKey;
+    this.closeMenu();
+    document.getElementById(`${this.rowId(key)}-handle`)?.focus();
+  }
+
+  /** A light dismiss or a native close request; explicit closes have already cleared `menuKey`. */
+  onMenuToggle(event: ToggleEvent): void {
+    if (event.newState !== 'closed' || this.menuIsOpen() || this.menuKey === null) {
+      return;
+    }
+    const key = this.menuKey;
+    this.menuKey = null;
+    this.cdr.markForCheck();
+    this.focusHandleIfLost(key);
+  }
+
+  private openMenu(key: string): void {
+    const menu = this.menu?.nativeElement;
+    if (!menu) {
+      return;
+    }
+    this.menuKey = key;
+    this.cdr.markForCheck();
+    this.cdr.detectChanges();
+    refreshAnchorPositioning();
+    if (!this.menuIsOpen()) {
+      const handle = document.getElementById(`${this.rowId(key)}-handle`);
+      try {
+        (menu.showPopover as (this: HTMLElement, options?: { source?: HTMLElement | null }) => void).call(menu, { source: handle });
+      } catch {
+        try {
+          menu.showPopover();
+        } catch {
+          // Disconnected or not a popover: the menu stays closed.
+        }
+      }
+    }
+    const option = menu.querySelector<HTMLElement>('.rl-move-option:not([aria-disabled="true"])');
+    option?.focus();
+  }
+
+  private closeMenu(): void {
+    if (this.menuKey === null) {
+      return;
+    }
+    this.menuKey = null;
+    this.cdr.markForCheck();
+    if (this.menuIsOpen()) {
+      try {
+        this.menu!.nativeElement.hidePopover();
+      } catch {
+        // Already hidden.
+      }
+    }
+  }
+
+  private menuIsOpen(): boolean {
+    const menu = this.menu?.nativeElement;
+    if (!menu) {
+      return false;
+    }
+    try {
+      return menu.matches(':popover-open');
+    } catch {
+      return false;
+    }
+  }
+
+  /** Focus left in the closed menu, or dropped to the body, goes back to the row's handle. */
+  private focusHandleIfLost(key: string): void {
+    const active = document.activeElement;
+    const lost = !active || active === document.body || !!this.menu?.nativeElement.contains(active);
+    if (lost) {
+      document.getElementById(`${this.rowId(key)}-handle`)?.focus();
+    }
   }
 
   onCheckboxChange(item: ReorderableListItem, event: Event): void {
@@ -272,6 +456,10 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
     const keys = this.items.map(item => item.key);
     const label = this.items[from].label;
     this.status = `${label} moved to position ${to + 1} of ${keys.length}.`;
+    if (this.menuKey !== null) {
+      // The open menu follows its handle to the new position.
+      this.anchorsStale = true;
+    }
     this.cdr.markForCheck();
     this.orderChange.emit(moveEntry(keys, from, to));
   }
@@ -279,6 +467,8 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
   // Pointer drag. The listeners run outside Angular: a move is pure DOM, and only a drop re-enters.
 
   private onPointerDown = (event: PointerEvent): void => {
+    this.suppressNextClick = false;
+    this.pressClosesMenu = false;
     if (this.drag || !event.isPrimary || event.button !== 0) {
       return;
     }
@@ -288,19 +478,36 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
     if (!list || !grip || !row || row.parentElement !== list) {
       return;
     }
-    const children = Array.from(list.children) as HTMLElement[];
-    const rows = children.filter(child => child.classList.contains('rl-row'));
+    const rows = (Array.from(list.children) as HTMLElement[]).filter(child => child.classList.contains('rl-row'));
     const from = rows.indexOf(row);
-    if (from < 0 || rows.length < 2 || rows.length !== this.items.length) {
+    if (from < 0 || rows.length !== this.items.length) {
       return;
     }
 
-    // Keeps the press from selecting text or starting a native drag.
+    // Keeps the press from selecting text or starting a native drag. A cancelled pointerdown does
+    // not focus the button in every engine, so it is focused here.
     event.preventDefault();
     try {
       grip.setPointerCapture(event.pointerId);
     } catch {
       // The pointer is no longer active; the host listeners still see its events while over the list.
+    }
+    grip.focus({ preventScroll: true });
+    this.pressClosesMenu = this.menuKey === this.items[from].key && this.menuIsOpen();
+    this.press = { pointerId: event.pointerId, grip, row, startY: event.clientY, dragged: false };
+  };
+
+  /** Turns a press that has moved past the threshold into a drag. False when the list cannot be dragged. */
+  private beginDrag(press: PressState): boolean {
+    const list = this.list?.nativeElement;
+    if (!list || press.row.parentElement !== list) {
+      return false;
+    }
+    const children = Array.from(list.children) as HTMLElement[];
+    const rows = children.filter(child => child.classList.contains('rl-row'));
+    const from = rows.indexOf(press.row);
+    if (from < 0 || rows.length < 2 || rows.length !== this.items.length) {
+      return false;
     }
 
     if (this.settleTimer !== null) {
@@ -319,8 +526,8 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
 
     this.pendingFocus = null;
     this.drag = {
-      pointerId: event.pointerId,
-      grip,
+      pointerId: press.pointerId,
+      grip: press.grip,
       list,
       keys: this.items.map(item => item.key),
       from,
@@ -333,18 +540,33 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
       dividerHeight: divider?.offsetHeight ?? 0,
       firstTop: children[0].offsetTop,
       gap,
-      startY: event.clientY,
+      startY: press.startY,
       scroller,
       startScroll: scroller.scrollTop,
-      pointerY: event.clientY,
+      pointerY: press.startY,
       to: from
     };
     list.classList.add('is-sorting');
-    row.classList.add('is-dragging');
+    press.row.classList.add('is-dragging');
     document.addEventListener('keydown', this.onKeydown, true);
-  };
+    return true;
+  }
 
   private onPointerMove = (event: PointerEvent): void => {
+    const press = this.press;
+    if (press && !press.dragged && event.pointerId === press.pointerId) {
+      if (Math.abs(event.clientY - press.startY) < DRAG_START_PX) {
+        return;
+      }
+      press.dragged = true;
+      this.suppressNextClick = true;
+      if (!this.beginDrag(press)) {
+        return;
+      }
+      if (this.menuKey !== null) {
+        this.zone.run(() => this.closeMenu());
+      }
+    }
     const drag = this.drag;
     if (!drag || event.pointerId !== drag.pointerId) {
       return;
@@ -358,13 +580,36 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
     if (this.drag && event.pointerId === this.drag.pointerId) {
       this.endDrag(true, true);
     }
+    this.endPress(event);
   };
 
   private onPointerCancel = (event: PointerEvent): void => {
     if (this.drag && event.pointerId === this.drag.pointerId) {
       this.endDrag(false, true);
     }
+    this.endPress(event);
   };
+
+  /**
+   * Forgets a finished press. A press that never moved past the threshold leaves the native click
+   * to open the menu. The flags that tell that click what the press did outlive it by one task
+   * only, so a later keyboard press on the handle is not misread.
+   */
+  private endPress(event: PointerEvent): void {
+    const press = this.press;
+    if (!press || event.pointerId !== press.pointerId) {
+      return;
+    }
+    this.press = null;
+    if (this.suppressClearTimer !== null) {
+      clearTimeout(this.suppressClearTimer);
+    }
+    this.suppressClearTimer = setTimeout(() => {
+      this.suppressClearTimer = null;
+      this.suppressNextClick = false;
+      this.pressClosesMenu = false;
+    });
+  }
 
   private onKeydown = (event: KeyboardEvent): void => {
     if (event.key !== 'Escape' || !this.drag) {

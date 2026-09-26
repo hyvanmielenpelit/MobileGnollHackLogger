@@ -174,23 +174,60 @@ describe('TableSettingsPanelComponent', () => {
     expect(fixture.componentInstance.columnsResetStatus).toBe('');
   });
 
-  it('toggles row bands and row rules and reads them out', () => {
+  it('chooses the shading level and the lines between rows, and reads them out', () => {
     render();
-    expect(fixture.componentInstance.imageLayoutReadout).toBe('bands · no rules');
+    expect(fixture.componentInstance.imageLayoutReadout).toBe('medium shading');
+
+    setChecked(control<HTMLInputElement>('mc-table-image-layout-rowShading-strong'), true);
+    expect(emittedStyle[0]).toEqual({ rowShading: 'strong', rowRules: false });
+    acceptLastStyle();
+    expect(fixture.componentInstance.imageLayoutReadout).toBe('strong shading');
 
     setChecked(control<HTMLInputElement>('mc-table-image-layout-rowRules'), true);
-    expect(emittedStyle[0]).toEqual({ rowBands: true, rowRules: true });
+    expect(emittedStyle[1]).toEqual({ rowShading: 'strong', rowRules: true });
     acceptLastStyle();
-    expect(fixture.componentInstance.imageLayoutReadout).toBe('bands · rules');
+    expect(fixture.componentInstance.imageLayoutReadout).toBe('strong shading + lines');
 
-    setChecked(control<HTMLInputElement>('mc-table-image-layout-rowBands'), false);
-    expect(emittedStyle[1]).toEqual({ rowBands: false, rowRules: true });
+    setChecked(control<HTMLInputElement>('mc-table-image-layout-rowShading-none'), true);
+    expect(emittedStyle[2]).toEqual({ rowShading: 'none', rowRules: true });
+    acceptLastStyle();
+    expect(fixture.componentInstance.imageLayoutReadout).toBe('lines');
+
+    setChecked(control<HTMLInputElement>('mc-table-image-layout-rowRules'), false);
+    acceptLastStyle();
+    expect(fixture.componentInstance.imageLayoutReadout).toBe('none');
   });
 
-  it('disables the image layout reset at defaults and resets it', () => {
+  it('labels the row style controls and describes each with an info tip', () => {
+    render();
+    const component = fixture.componentInstance;
+    const legend = control<HTMLElement>('mc-table-image-layout-rowShading-label');
+    expect(legend.textContent!.trim()).toBe('Shade alternate rows');
+
+    const radios = Array.from(host().querySelectorAll<HTMLInputElement>('input[name="mc-table-image-layout-rowShading"]'));
+    expect(radios.map(radio => radio.closest('label')!.textContent!.trim())).toEqual(['None', 'Light', 'Medium', 'Strong']);
+    expect(radios.filter(radio => radio.checked).map(radio => radio.value)).toEqual(['medium']);
+
+    const rules = control<HTMLInputElement>('mc-table-image-layout-rowRules');
+    expect(rules.closest('label')!.textContent!.trim()).toBe('Lines between rows');
+
+    const fieldset = legend.closest('fieldset')!;
+    const described: [HTMLElement, string][] = [[fieldset, component.rowShadingHint], [rules, component.rowRulesHint]];
+    for (const [element, hint] of described) {
+      const tipId = element.getAttribute('aria-describedby')!;
+      expect(control<HTMLElement>(tipId).textContent!.trim()).withContext(tipId).toBe(hint);
+    }
+
+    render(DEFAULT_TABLE_COLUMNS, { rowShading: 'light', rowRules: true });
+    expect(radios.filter(radio => radio.checked).map(radio => radio.value)).toEqual(['light']);
+    expect(rules.checked).toBeTrue();
+  });
+
+  it('disables the row style reset at defaults and resets it', () => {
     render();
     const reset = control<HTMLButtonElement>('mc-table-image-layout-reset');
     expect(reset.getAttribute('aria-disabled')).toBe('true');
+    expect(reset.getAttribute('aria-label')).toBe('Reset Row style to defaults');
 
     setChecked(control<HTMLInputElement>('mc-table-image-layout-rowRules'), true);
     acceptLastStyle();
@@ -198,7 +235,7 @@ describe('TableSettingsPanelComponent', () => {
 
     fixture.componentInstance.resetImageLayout();
     expect(emittedStyle[emittedStyle.length - 1]).toEqual(DEFAULT_TABLE_IMAGE_STYLE);
-    expect(fixture.componentInstance.imageLayoutResetStatus).toBe('Image layout reset to defaults.');
+    expect(fixture.componentInstance.imageLayoutResetStatus).toBe('Row style reset to defaults.');
   });
 
   it('opens the Columns section by default and persists an explicit toggle', () => {

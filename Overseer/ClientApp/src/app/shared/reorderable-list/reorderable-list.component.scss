@@ -49,21 +49,32 @@
   }
 }
 
-/* Decorative: the Move up and Move down buttons are the accessible path. */
+/* The handle: the drag grip, and the button that opens the row's Move menu. */
 .rl-grip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: none;
   align-self: stretch;
-  width: 20px;
+  width: 24px;
+  padding: 0;
+  border: 0;
   border-radius: 4px;
+  appearance: none;
+  background: none;
+  font: inherit;
   color: #8a8a8a;
   cursor: grab;
   touch-action: none;
 
-  &:hover {
+  &:hover,
+  &[aria-expanded='true'] {
     color: var(--primary-color);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
   }
 
   .is-sorting & {
@@ -121,15 +132,58 @@
   white-space: nowrap;
 }
 
-.rl-moves {
-  display: inline-flex;
-  flex: none;
-  gap: 2px;
-  margin-inline-start: auto;
+/* The one Move popover, anchored below the pressed handle. Explicit anchor() insets rather than
+   position-area, which the anchor-positioning polyfill does not support on a popover. */
+.rl-move-menu {
+  inset: auto;
+  top: anchor(bottom);
+  left: anchor(left);
+  #{'position-try-fallbacks'}: flip-block;
+  #{'position-try'}: flip-block;
+  min-width: 10rem;
+  margin: 4px 0 0;
+  padding: 4px;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: #ddd;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+
+  &:popover-open {
+    display: grid;
+    gap: 2px;
+  }
 }
 
-.rl-move {
-  margin: 0;
+.rl-move-option {
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 4px;
+  appearance: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+
+  &:hover:not([aria-disabled='true']) {
+    background: color-mix(in srgb, var(--primary-color) 18%, transparent);
+    color: var(--primary-color);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
+    color: var(--primary-color);
+  }
+
+  &[aria-disabled='true'] {
+    opacity: 0.45;
+    cursor: default;
+  }
 }
 
 /* A rule with a short caption in the middle; not an item. */

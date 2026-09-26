@@ -11,8 +11,9 @@
 
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnChanges, OnInit, SimpleChanges, Output } from '@angular/core';
 
+import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { ReorderableListComponent, ReorderableListItem } from '../../../shared/reorderable-list/reorderable-list.component';
-import { DEFAULT_TABLE_IMAGE_STYLE, TableImageStyle } from './figure-style';
+import { DEFAULT_TABLE_IMAGE_STYLE, TABLE_ROW_SHADINGS, TableImageStyle, TableRowShading } from './figure-style';
 import {
   DEFAULT_TABLE_COLUMNS,
   TABLE_DISPLAY_COLUMNS,
@@ -61,7 +62,7 @@ function writeStoredOpen(value: StoredTableSettingsOpen): void {
 @Component({
   selector: 'app-table-settings-panel',
   standalone: true,
-  imports: [ReorderableListComponent],
+  imports: [ReorderableListComponent, InfoTipComponent],
   templateUrl: './table-settings-panel.component.html',
   styleUrls: ['./table-settings-panel.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -221,18 +222,36 @@ export class TableSettingsPanelComponent implements OnChanges, OnInit {
     this.columnsChange.emit(config);
   }
 
+  readonly rowShadingOptions: readonly { value: TableRowShading; label: string }[] = TABLE_ROW_SHADINGS.map(value => ({
+    value,
+    label: value.charAt(0).toUpperCase() + value.slice(1)
+  }));
+
+  readonly rowShadingHint = 'Every second row gets a tint, so a wide row is easier to follow across the columns. ' +
+    'The tint is made from the text color, so it suits any theme or background.';
+
+  readonly rowRulesHint = 'A thin line under each row. The lines under the header and at the end of the table are always drawn.';
+
   get imageLayoutIsDefault(): boolean {
-    return this.tableStyle.rowBands === DEFAULT_TABLE_IMAGE_STYLE.rowBands
+    return this.tableStyle.rowShading === DEFAULT_TABLE_IMAGE_STYLE.rowShading
       && this.tableStyle.rowRules === DEFAULT_TABLE_IMAGE_STYLE.rowRules;
   }
 
+  /** `medium shading`, `strong shading + lines`, `lines` or `none`. */
   get imageLayoutReadout(): string {
-    return `${this.tableStyle.rowBands ? 'bands' : 'no bands'} · ${this.tableStyle.rowRules ? 'rules' : 'no rules'}`;
+    const parts: string[] = [];
+    if (this.tableStyle.rowShading !== 'none') {
+      parts.push(`${this.tableStyle.rowShading} shading`);
+    }
+    if (this.tableStyle.rowRules) {
+      parts.push('lines');
+    }
+    return parts.length > 0 ? parts.join(' + ') : 'none';
   }
 
-  onRowBandsChange(checked: boolean): void {
+  onRowShadingChange(value: TableRowShading): void {
     this.imageLayoutResetStatus = '';
-    this.emitTableStyle({ ...this.tableStyle, rowBands: checked });
+    this.emitTableStyle({ ...this.tableStyle, rowShading: value });
   }
 
   onRowRulesChange(checked: boolean): void {
@@ -244,7 +263,7 @@ export class TableSettingsPanelComponent implements OnChanges, OnInit {
     if (this.imageLayoutIsDefault) {
       return;
     }
-    this.imageLayoutResetStatus = 'Image layout reset to defaults.';
+    this.imageLayoutResetStatus = 'Row style reset to defaults.';
     this.pendingImageLayoutResetAck = true;
     this.emitTableStyle(DEFAULT_TABLE_IMAGE_STYLE);
   }

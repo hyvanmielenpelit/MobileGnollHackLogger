@@ -722,17 +722,24 @@ describe('table-export', () => {
       expect(pixelAt(transparent, 0, 0)[3]).toBe(0);
     });
 
-    it('changes the drawn rows when the bands are turned off or the rules on', () => {
+    it('changes the drawn rows with the shading level and the rules', () => {
       const built = readingModel();
       const banded = composeTableImage(built);
-      const plain = composeTableImage(built, { tableStyle: { rowBands: false, rowRules: false } });
-      const ruled = composeTableImage(built, { tableStyle: { rowBands: true, rowRules: true } });
+      const plain = composeTableImage(built, { tableStyle: { rowShading: 'none', rowRules: false } });
+      const ruled = composeTableImage(built, { tableStyle: { rowShading: 'medium', rowRules: true } });
+      const light = composeTableImage(built, { tableStyle: { rowShading: 'light', rowRules: false } });
+      const strong = composeTableImage(built, { tableStyle: { rowShading: 'strong', rowRules: false } });
 
       expect(plain.width).toBe(banded.width);
       expect(plain.height).toBe(banded.height);
       expect(ruled.height).toBe(banded.height);
       expect(differingBytes(banded, plain)).toBeGreaterThan(0);
       expect(differingBytes(banded, ruled)).toBeGreaterThan(0);
+      for (const level of [light, strong]) {
+        expect(level.width).toBe(banded.width);
+        expect(level.height).toBe(banded.height);
+        expect(differingBytes(banded, level)).toBeGreaterThan(0);
+      }
     });
 
     it('lays a box out to exactly its bitmap, the table spanning its width', () => {

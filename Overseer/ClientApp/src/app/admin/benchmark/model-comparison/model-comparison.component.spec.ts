@@ -4335,12 +4335,16 @@ describe('ModelComparisonComponent', () => {
     expect(component.entryTable.sortColumn).toBe('model');
     const rebuild = spyOn(component as unknown as { rebuild(): void }, 'rebuild').and.callThrough();
 
-    // The Custom list is in the table views' Data tab too, with a Move button per row.
-    const move = fixture.debugElement.queryAll(By.css('#mc-side-panel-data app-reorderable-list button'))
+    // The Custom list is in the table views' Data tab too; a row moves through its handle's Move menu.
+    const handle = fixture.debugElement.queryAll(By.css('#mc-side-panel-data app-reorderable-list button'))
       .map(button => button.nativeElement as HTMLButtonElement)
-      .find(button => button.getAttribute('aria-label') === 'Move Model 3 down');
-    expect(move).withContext('Move Model 3 down').toBeTruthy();
-    move!.click();
+      .find(button => button.getAttribute('aria-label') === 'Move Model 3');
+    expect(handle).withContext('Move Model 3').toBeTruthy();
+    handle!.click();
+    refresh();
+    const moveDown = fixture.nativeElement.querySelector('#mc-side-panel-data #mc-custom-order-move-down') as HTMLButtonElement | null;
+    expect(moveDown).withContext('mc-custom-order-move-down').toBeTruthy();
+    moveDown!.click();
     refresh();
 
     expect(rebuild).toHaveBeenCalledTimes(1);

@@ -276,6 +276,10 @@ always without hover); opacity, never `display`, so Copy and Download stay tab s
 tabs. The Interactive table's lead note became an `app-info-tip` beside its heading, and the settings
 sidebar gained an `app-pane-resizer` (§4d).*
 
+*Changed 2026-09-26: a reorderable list's per-row arrow-up / arrow-down **Move up** / **Move down**
+buttons were replaced by the row handle's **Move** menu (§4c). The handle is now a focusable button
+named* Move <label>*, with a hint tooltip* Drag, or press for move options*.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
@@ -493,11 +497,15 @@ that the paragraphs would bury the controls.
 order and its table columns both use it. Reach for it rather than writing a third drag
 implementation. It lives in `app/shared/reorderable-list/` and knows nothing about its callers.
 
-- **Every drag has a button alternative.** Each row has a decorative grip (`aria-hidden`, not a Tab
-  stop) for pointer dragging, and *Move up* / *Move down* `.action-btn`s named *Move <label> up* /
-  *down* — the keyboard, switch and single-pointer path (WCAG 2.2 §2.5.7, §2.1.1). Focus stays on
-  the pressed button after a move, and moves to the other one at an end, where the pressed one
-  becomes `aria-disabled`.
+- **Every drag has a button alternative.** Each row's **handle** is a `<button>` named *Move
+  <label>*. Dragging it reorders with a pointer. Pressing it (click, tap, Enter or Space) opens the
+  list's one shared **Move** popover: *Move to top*, *Move up*, *Move down*, *Move to bottom* — the
+  keyboard, switch and single-pointer path (WCAG 2.2 §2.5.7, §2.1.1). A press becomes a drag only
+  after 4 px of movement, and the click that ends a drag does not open the menu. *Up* / *down*
+  keep the menu open with focus on the option, moving to the opposite option at an end, where the
+  pressed one becomes `aria-disabled` (never `disabled`, so it stays focusable). *Top* / *bottom*
+  close the menu and focus the handle, as Escape does. The popover sits outside the rows, so a
+  move never disconnects it.
 - **One announcement per committed move**, in the component's own `role="status"` line: *<label>
   moved to position <n> of <total>.* Nothing is announced mid-drag.
 - **It never reorders its own input.** It emits `orderChange` (on drop, never per pointer move) and

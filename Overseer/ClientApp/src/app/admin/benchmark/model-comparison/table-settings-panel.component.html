@@ -44,26 +44,42 @@
   <details class="gh-disclosure gh-disclosure--section" id="mc-table-image-layout-section"
            [open]="imageLayoutOpen" (toggle)="onImageLayoutToggle($event)">
     <summary>
-      <span class="gh-disclosure-summary-title">Image layout</span>
+      <span class="gh-disclosure-summary-title">Row style</span>
       <span class="gh-disclosure-summary-value" aria-hidden="true">{{ imageLayoutReadout }}</span>
     </summary>
     <div class="gh-disclosure-body tsp-body">
-      <p class="tsp-field-hint">Applies to the PNG and WebP table image.</p>
+      <p class="tsp-field-hint">How rows are set apart in the table image: the Table preview, the PNG
+        and WebP downloads and Copy as image. The Interactive table is not affected.</p>
 
-      <label class="checkbox-label">
-        <input type="checkbox" id="mc-table-image-layout-rowBands" [checked]="tableStyle.rowBands"
-               (change)="onRowBandsChange($any($event.target).checked)">
-        Row bands
-      </label>
-      <label class="checkbox-label">
-        <input type="checkbox" id="mc-table-image-layout-rowRules" [checked]="tableStyle.rowRules"
-               (change)="onRowRulesChange($any($event.target).checked)">
-        Row rules
-      </label>
+      <fieldset class="gh-choice" aria-labelledby="mc-table-image-layout-rowShading-label"
+                aria-describedby="mc-table-image-layout-rowShading-tip">
+        <legend>
+          <span id="mc-table-image-layout-rowShading-label">Shade alternate rows</span>
+          <app-info-tip tipId="mc-table-image-layout-rowShading-tip" subject="Shade alternate rows">{{ rowShadingHint }}</app-info-tip>
+        </legend>
+        @for (option of rowShadingOptions; track option.value) {
+          <label class="gh-radio">
+            <input type="radio" name="mc-table-image-layout-rowShading"
+                   [id]="'mc-table-image-layout-rowShading-' + option.value"
+                   [value]="option.value" [checked]="tableStyle.rowShading === option.value"
+                   (change)="onRowShadingChange(option.value)">
+            {{ option.label }}
+          </label>
+        }
+      </fieldset>
+      <div class="tsp-check">
+        <label class="checkbox-label">
+          <input type="checkbox" id="mc-table-image-layout-rowRules" [checked]="tableStyle.rowRules"
+                 aria-describedby="mc-table-image-layout-rowRules-tip"
+                 (change)="onRowRulesChange($any($event.target).checked)">
+          Lines between rows
+        </label>
+        <app-info-tip tipId="mc-table-image-layout-rowRules-tip" subject="Lines between rows">{{ rowRulesHint }}</app-info-tip>
+      </div>
     </div>
   </details>
   <button type="button" class="action-btn tsp-reset" id="mc-table-image-layout-reset"
-          aria-label="Reset Image layout to defaults"
+          aria-label="Reset Row style to defaults"
           [attr.aria-disabled]="imageLayoutIsDefault ? 'true' : null"
           interestfor="mc-table-image-layout-reset-tip" style="anchor-name: --mc-table-image-layout-reset"
           (click)="resetImageLayout()">

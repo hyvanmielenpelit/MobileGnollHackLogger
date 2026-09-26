@@ -324,8 +324,10 @@ To find specific popups, look in the corresponding component's `.html` template:
     - **Charts**: the segmented *Bar panels / Profile / Trade-offs* tab row over
       `app-figure-style-panel`.
     - **Table**: `app-table-settings-panel` — *Columns* (an `app-reorderable-list` of the 28
-      display columns, checkable, *Model* locked; *Default columns*, *Only columns with values*, *All
-      columns*) and *Image layout* (row bands, row rules). One column configuration drives the
+      display columns, checkable, *Model* locked, reordered by drag or with the handle's Move menu;
+      *Default columns*, *Only columns with values*, *All columns*) and **Row style** (*Shade
+      alternate rows*: None / Light / Medium / Strong, the tint being the text color at 5 / 10 / 16 %;
+      and *Lines between rows*). One column configuration drives the
       Interactive table, the Table preview and every download and copy; reading formats keep a
       combined column combined, data formats write its parts, and no value is written twice.
     - **Download** holds settings only, no download or copy button: chart views — *Chart size*

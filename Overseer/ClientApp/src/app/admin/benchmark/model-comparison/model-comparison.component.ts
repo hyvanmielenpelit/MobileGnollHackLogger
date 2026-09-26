@@ -1388,7 +1388,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.cdr.markForCheck();
   }
 
-  /** The Table tab's Image layout section: row bands and row rules, kept in the figure style. */
+  /** The Table tab's Row style section, kept in the figure style. */
   onTableStyleChange(table: TableImageStyle): void {
     this.onFigureStyleChange({ ...this.figureStyle, table });
   }

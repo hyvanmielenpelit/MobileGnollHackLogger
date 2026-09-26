@@ -8,7 +8,15 @@ import {
 } from './figure-export';
 import { OVERSEER_DEFAULT_FONT_STACK } from './figure-fonts';
 import { DEFAULT_APPEARANCE_STYLE, FigureAppearanceStyle } from './figure-style';
-import { appearanceWarnings, contrastRatio, mixHex, resolveFigureTheme, themeBackground } from './figure-theme';
+import {
+  TABLE_SHADING_ALPHA,
+  appearanceWarnings,
+  contrastRatio,
+  mixHex,
+  resolveFigureTheme,
+  tableBandColor,
+  themeBackground
+} from './figure-theme';
 import {
   ACCENT,
   CATEGORICAL_PALETTE_DARK,
@@ -46,7 +54,6 @@ describe('figure-theme', () => {
       warning: { rule: '#e0ba6d', text: '#e0ba6d' },
       info: { rule: '#6b6b66', text: FIGURE_MUTED_COLOR }
     });
-    expect(theme.chrome.tableBand).toBe('rgba(255, 255, 255, 0.035)');
 
     expect(theme.chart.surface).toBe(CHART_SURFACE);
     expect(theme.chart.inkPrimary).toBe(CHART_INK.primary);
@@ -166,5 +173,33 @@ describe('figure-theme', () => {
     expect(onChecker.length).toBe(1);
     expect(onChecker[0]).toContain("dark theme's own background #181818");
     expect(onChecker[0]).toContain('checkerboard');
+  });
+
+  describe('tableBandColor', () => {
+    it('draws no band at none', () => {
+      expect(tableBandColor(resolveFigureTheme(), 'none')).toBeNull();
+    });
+
+    it('lays the dark theme text color over the ground at each level', () => {
+      const theme = resolveFigureTheme();
+      expect(tableBandColor(theme, 'light')).toBe('rgba(212, 212, 216, 0.05)');
+      expect(tableBandColor(theme, 'medium')).toBe('rgba(212, 212, 216, 0.1)');
+      expect(tableBandColor(theme, 'strong')).toBe('rgba(212, 212, 216, 0.16)');
+    });
+
+    it('builds the light theme band from its text color', () => {
+      const theme = resolveFigureTheme(appearance({ theme: 'light' }));
+      expect(tableBandColor(theme, 'medium')).toBe('rgba(82, 81, 78, 0.1)');
+    });
+
+    it('follows a custom text color', () => {
+      const theme = resolveFigureTheme(appearance({ textColor: '#336699' }));
+      expect(tableBandColor(theme, 'strong')).toBe('rgba(51, 102, 153, 0.16)');
+    });
+
+    it('grows stronger level by level', () => {
+      expect(TABLE_SHADING_ALPHA.light).toBeLessThan(TABLE_SHADING_ALPHA.medium);
+      expect(TABLE_SHADING_ALPHA.medium).toBeLessThan(TABLE_SHADING_ALPHA.strong);
+    });
   });
 });
