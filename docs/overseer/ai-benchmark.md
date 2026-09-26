@@ -4370,76 +4370,112 @@ excluding it from the figures, because `AssessorConfiguration`, `SecondOpinionCo
 carries the grader's full recorded settings, the output cap its calls actually sent and its endpoint
 (see **Model Configuration Snapshots**).
 
-### The roster, and why the destination is Anthropic
+### The roster today, and why Anthropic is primary
 
-Stated position as of 2026-09-03:
+Status as of 2026-09-26, the roster of runs 66 and 67:
 
-| Provider | Role today | Planned role |
+| Role | Model | Since |
 |---|---|---|
-| **OpenAI** | Model under test (GPT-5.6 Luna) | Model under test; assessor-eligible only once it is not a candidate |
-| **Google** | Assessor (Gemini 3.7 Flash) — chosen for cost | **Model under test** later; not assessor-eligible then |
-| **Anthropic** | Unused in benchmarking | Not planned as a model under test; used for other tasks such as suite authoring |
+| **Primary assessor** (scores) | Claude 5.5 Opus @ `medium` | Run 66. Claude 5 Opus @ `medium` graded runs 52–65, and Claude 5 Opus @ `low` runs 39–42 |
+| **Second reader** (advisory, blind) | Gemini 3.8 Flash @ `medium` | Runs 57 and 59; the user's deliberate roster from runs 60 and 61 on |
+| **Claim verifier** (advisory) | Gemini 3.8 Flash @ `medium` | The same |
+| **Candidates** | GPT-5.6 Luna, GPT-6 Luna, GPT-6 Sol, Gemini 3.7 Flash | — |
 
-Applying the constraint eliminates two of the three:
+By provider:
 
-- **OpenAI** cannot be the permanent assessor: it is a model under test today.
-- **Google** cannot be: it becomes a model under test later, and same-family self-preference bias would
-  land on the grader whose verdict *scores*.
-- **Anthropic** is assessor-eligible in both configurations.
-
-**Anthropic is the destination.** The only open question is *when*.
-
-Gemini grading OpenAI candidates is sound in the meantime — the same-provider gate covers
-candidate-versus-assessor only, this pairing never trips it, and it is an independent provider grading an
-independent candidate. The configuration simply has an expiry date, and that date is **the first Google
-candidate run**.
-
-### The staged migration
-
-**Stage 1 — now, through every remaining OpenAI-candidate run:**
-
-| Role | Provider |
-|---|---|
-| Candidate | OpenAI |
-| Primary assessor (scores) | **Google** — unchanged |
-| Second opinion (advisory) | **Anthropic** |
-| Mode | `All` |
-
-**Stage 2 — from the first Google-candidate run onward:**
-
-| Candidate | Primary assessor | Second opinion |
+| Provider | Role today | Earlier roles |
 |---|---|---|
-| Google | **Anthropic** | OpenAI |
-| OpenAI | **Anthropic** | Google |
+| **Anthropic** | Primary assessor; also other benchmark work such as suite authoring | Candidate: Claude 5 Sonnet @ `high` on runs 28–35 and 43, Claude 5 Opus @ `low` on run 44. Second opinion and claim verifier in stage 1 (runs 36–38) |
+| **Google** | Candidate (Gemini 3.7 Flash); second reader and claim verifier (Gemini 3.8 Flash) | Primary assessor (Gemini 3.7 Flash) until the promotion at run 39, and again on run 46 |
+| **OpenAI** | Candidate | Second opinion and claim verifier: GPT-5.6 Luna on runs 28–35 and 52–56, GPT-5.6 Sol on run 39. Primary assessor: GPT-5.6 Sol @ `medium` on runs 43–45. The GPT-5.6 Luna grader roster was retired at runs 60 and 61 and is not to be re-proposed |
 
-Three distinct providers in every row of both stages; the same-provider gate never fires in either.
+**Why Anthropic scores.** The constraint that chose it still holds:
 
-**What stage 1 buys.** Anthropic grades every answer alongside Gemini, so the stage-2 promotion is from a
-model whose behaviour on this exact suite is already measured — per answer, under the same rubrics, with
-`SecondOpinionMeanAbsDelta` and the disagreement list accumulating run by run. Close agreement makes the
-switch low-risk and lets the older runs be reasoned about; divergence is something to discover before the
-switch rather than after it. A calibration run previews the same comparison against any stored run at the
-cost of one assessor pass and no candidate calls.
+- **OpenAI and Google** are both candidate providers, so neither can be the permanent primary: same-family
+  self-preference bias would land on the grader whose verdict *scores*.
+- **Anthropic** has not been a candidate since run 44 (2026-09-12), so it is the only provider eligible
+  for every current candidate.
 
-**What stage 1 costs, stated plainly.** Gemini 3.7 Flash — the grader that produced the Q1 "unverified"
-deduction and the Q10 "hallucinates 'adamantium'" verdict that harness version 7 exists to fix — keeps
-scoring through stage 1. The exposure is much smaller than run 7's: the prompt fix applies to whichever
-model grades, the new triggers fire on exactly those two shapes, and under `All` mode the second reader
-sees every answer with disagreement surfaced. It is not zero. **A large mean absolute delta on the first
-stage-1 run is grounds to promote Anthropic early rather than wait for the trigger.**
+**What the 2026-09-03 position got wrong.** It recorded Anthropic as *"not planned as a model under
+test"*, and therefore assessor-eligible in every configuration. Anthropic was a candidate on ten runs:
+runs 28–35, graded by Gemini 3.7 Flash @ `high` with GPT-5.6 Luna as second opinion and verifier, and
+runs 43–44, graded by GPT-5.6 Sol @ `medium`. So **no provider is assessor-eligible for all three
+candidate families.** An Anthropic candidate under today's roster trips the same-provider gate — the
+launch returns 409 until the administrator acknowledges the notice, and the acknowledgment is stored in
+`SameProviderAcknowledged` and disclosed in the report — while grading it with any other assessor puts
+it on another grader's scale, which the comparison view keeps out of the figures and which runs 43–46
+show can be larger than the spread between candidates. No decision is recorded on which of the two an
+Anthropic candidate run takes; make it before launching one, not after.
 
-**The staging rationale is the agreement data, not continuity.** An earlier draft argued for keeping
-Gemini partly to preserve comparability with the seven existing Gemini-graded runs. That argument does
-not hold: the `ScoringMethodVersion` bump to 6 already separates runs 1–7 from everything after on any
-answer containing an out-of-rubric claim. Runs 1–7 are becoming a distinct population regardless of who
-grades next, and the item-analysis `ScoringMethodMixed` flag says so.
+### What the staged migration completed
 
-**Do not hop to a stronger Gemini in the interim.** Assessment is roughly 2% of a run's token cost and,
-at a few seconds per answer against a ~91-second median answer, is fully hidden inside the pipeline — so
-"use the strongest grader available" is sound advice in general. It is not a reason to move from Gemini
-3.7 Flash to a stronger Gemini during stage 1: that breaks comparability now *and* still requires the
-Anthropic switch at the trigger, producing two breaks where the staged plan has one. Apply the
-strongest-grader advice to the model that ends up primary.
+The 2026-09-03 plan had two stages: stage 1 kept Google as the primary through the remaining
+OpenAI-candidate runs, with Anthropic as a blind second reader to measure it before it scored anything;
+stage 2 promoted Anthropic to primary from the first Google-candidate run and rotated the second opinion
+to whichever of OpenAI and Google was not the candidate, so that every row held three distinct
+providers. What happened:
+
+1. **Stage 1 ran on runs 36–38** — GPT-5.6 Sol candidate, Gemini 3.7 Flash assessor, Claude as second
+   opinion and claim verifier: the first three-provider roster of the plan.
+2. **The promotion happened on schedule.** Run 39 (2026-09-12), the first Google candidate, was graded
+   by Claude 5 Opus @ `low` with GPT-5.6 Sol @ `medium` as second reader and verifier. Claude 5 Opus
+   stayed primary at `low` through run 42.
+3. **Runs 43–46 interrupted it deliberately.** The cross-model set included Anthropic candidates, so it
+   was graded by GPT-5.6 Sol (runs 43–45) and Gemini 3.7 Flash @ `high` (run 46) — the grader-effect
+   example above.
+4. **The rotating second opinion was followed and then replaced.** Runs 52–56 had GPT-5.6 Luna @
+   `xhigh` or `high` as second reader and verifier for Gemini candidates, as stage 2 prescribed. From
+   runs 57 and 59 a single fixed second reader and verifier, Gemini 3.8 Flash @ `medium`, grades every
+   candidate; from runs 60 and 61 it is the user's deliberate roster, chosen because it is a different
+   model from every candidate, the Google one included.
+5. **The primary was strengthened twice**: Claude 5 Opus from `low` to `medium` by run 52, and Claude 5
+   Opus to Claude 5.5 Opus at run 66. `AssessorConfiguration` is an `Instrument` key, so each move
+   separates the runs after it from the runs before it in the comparison view.
+
+**What the fixed second reader changes.**
+
+- **It removes the stated cost of rotation.** While it stays unchanged, the agreement metric is
+  comparable across candidate providers, not only within one.
+- **On a Google candidate, the second reader and the verifier share the candidate's provider.** The
+  report prints this for the verifier as *"the weakest available pairing"*. Both roles are advisory and
+  nothing they produce is read by a scoring path, so the bias reaches the agreement metric and the claim
+  counts, not the Intelligence Index.
+- **The second reader and the verifier are one model.** The report says so too: under blind mode the
+  second reader receives the verification findings, so a refuted claim and a harsh second opinion on
+  the same answer are one finding, not two independent ones.
+
+**What stage 1 bought.** Claude graded answers on this suite beside Gemini before it scored any, so the
+promotion was from a model whose behavior on the suite was already measured — per answer, under the
+same rubrics, with `SecondOpinionMeanAbsDelta` and the disagreement list accumulating run by run. The
+method still applies to any future assessor change: measure the prospective grader before promoting it,
+and use a calibration run, which previews the comparison against any stored run at the cost of one
+assessor pass and no candidate calls.
+
+**What stage 1 cost.** Gemini 3.7 Flash — the grader that produced the Q1 "unverified" deduction and the
+Q10 "hallucinates 'adamantium'" verdict that harness version 7 exists to fix — kept scoring through
+stage 1. The exposure was smaller than run 7's, because the prompt fix applies to whichever model grades
+and the new triggers fire on exactly those two shapes, but it was not zero. It ended at run 39.
+
+**The staging rationale was the agreement data, not continuity.** An earlier draft argued for keeping
+Gemini partly to preserve comparability with the seven existing Gemini-graded runs. That argument did
+not hold: the `ScoringMethodVersion` bump to 6 already separated runs 1–7 from everything after on any
+answer containing an out-of-rubric claim, and the item-analysis `ScoringMethodMixed` flag says so.
+Continuity with older runs is not a reason to keep a grader.
+
+### Use the strongest grader in the slot that scores
+
+The stage-1 rule *"do not hop to a stronger Gemini in the interim"* kept the migration at one
+comparability break instead of two, and is spent. Its general half — put the strongest grader available
+in the primary slot, not in an advisory one — is what the moves to Claude 5 Opus @ `medium` and to
+Claude 5.5 Opus applied.
+
+Its cost argument has not survived. The 2026-09-03 figures — assessment at roughly 2% of a run's token
+cost, a few seconds per answer, fully hidden inside the pipeline — were measured with a Flash-tier
+assessor and no longer hold: **grading is now most of a run's cost.** On run 66 the candidate was 25%
+of US$2.7247 and the grading roles took the rest, and on runs 62–67 the claim verifier alone took 38–56%
+of each run's cost. Grading has been pipelined per question since the run-31 round, but a slow grader
+can still be the critical path: run 52's second opinion, GPT-5.6 Luna @ `xhigh`, took 21 m 17 s of the
+run's 23 m 18 s. The advice stands; weigh it against these figures rather than the old ones.
 
 ### The second opinion is an independent reader, not an adjudicator
 
@@ -4448,16 +4484,19 @@ strongest-grader advice to the model that ends up primary.
 | **Adjudicator** — meant to be *more right* | A stronger model | **Does not work as designed.** The first verdict stays authoritative for scoring, so the better model's verdict is recorded and then ignored. If you trust a model more, make it the primary assessor |
 | **Independent reader** — meant to detect *fragile verdicts* and measure agreement | Comparable tier, **different provider** | **This is what the feature is for.** Disagreement means two competent, independently-biased readers reached different conclusions |
 
-Stage 1 deliberately places the *stronger* model in the second-opinion slot, which the table warns
-against as a permanent arrangement. That is acceptable here precisely because it is temporary and because
-its purpose is measurement rather than adjudication — observing the prospective primary before promoting
-it. Were it to become permanent, it would be the adjudicator anti-pattern and the switch should happen
-instead.
+Stage 1 deliberately placed the *stronger* model in the second-opinion slot, which the table warns
+against as a permanent arrangement. That was acceptable because it was temporary and its purpose was
+measurement rather than adjudication — observing the prospective primary before promoting it — and it
+ended with the promotion at run 39.
 
-In stage 2 the second opinion rotates to whichever of OpenAI and Google is not the candidate. The cost of
-rotation, stated plainly: **the agreement metric is comparable only within a candidate-provider family.**
-The Intelligence Index is unaffected, because it comes from the primary assessor, which does not rotate
-once stage 2 begins.
+Today's arrangement is the other way round: a Flash-tier second reader beside an Opus-tier primary, from
+a different provider on every OpenAI candidate but not on a Google one. It is not the *comparable tier*
+the table describes, and it is not an adjudicator either — its verdict does not score. Read a
+disagreement as a reason to open the answer, not as evidence that the primary was wrong.
+
+The Intelligence Index comes from the primary assessor alone, so neither the rotation of stage 2 nor
+its replacement affected it. Changing the second reader moves the `SecondOpinionConfiguration`
+`Instrument` key and starts a new agreement population.
 
 ### Blind vs. Anchored Second Opinions
 
@@ -4476,8 +4515,8 @@ compromise for when that is unaffordable, and it is not unaffordable here.
 Full double grading buys three things selective re-grading cannot:
 
 - **An unbiased agreement rate.** Under selective re-grading the disagreement rate is conditioned on the
-  first grader's own uncertainty, so it measures nothing about the instrument. Stage 1's entire value
-  rests on this.
+  first grader's own uncertainty, so it measures nothing about the instrument. Stage 1's value rested on
+  this, and every agreement figure since does too.
 - **Symmetric coverage of the failure mode that matters most.** A first grader that is *confidently
   wrong* produces no trigger at all — no critical error, no fabrication vocabulary, no low score. That
   answer is invisible to every trigger, and it is exactly the one a second reader catches.
@@ -4492,14 +4531,15 @@ a large suite where assessor cost becomes binding.
    gate covers *candidate versus assessor* only. The start dialog carries an advisory and the report a
    disclosure. **Advisory, not a block.**
 2. **A suite's assessor changing between runs is advisory too.** The start dialog warns when the selected
-   assessor differs from the most recent completed run of the same suite. It fires on the stage-2
-   promotion, correctly — that is exactly the moment to be told.
+   assessor differs from the most recent completed run of the same suite. That is meant for exactly such
+   a moment — the stage-2 promotion at run 39, or a change of assessor model such as the one at run 66.
 
 ### Keep suite authoring separate from grading
 
-Anthropic is used for other benchmark work, including suite authoring. Keep that configuration distinct
-from the grading one: a model that wrote a rubric is not a neutral reader of answers against it, and the
-two roles drifting onto one System AI Configuration would make that impossible to see.
+Anthropic is used for other benchmark work, including suite authoring, as well as being the primary
+assessor. Keep the authoring configuration distinct from the grading one: a model that wrote a rubric is
+not a neutral reader of answers against it, and the two roles drifting onto one System AI Configuration
+would make that impossible to see.
 
 ---
 
