@@ -3231,6 +3231,70 @@ describe('ModelComparisonComponent', () => {
   });
 
   // -------------------------------------------------------------------------------------------
+  // Fit to screen against the real stylesheet: measureStage is not stubbed here, so the stage's
+  // border and the viewport's padding are what the fit has to leave room for.
+  // -------------------------------------------------------------------------------------------
+
+  /**
+   * Gives the stage a laid-out size of its own, fractional as a flex layout often is, and composes
+   * at Fit to screen. The fixture's own layout would otherwise leave the stage at no size.
+   */
+  async function composeLaidOutFit(): Promise<HTMLElement> {
+    const stage = fixture.debugElement.query(By.css('.mc-preview-stage')).nativeElement as HTMLElement;
+    stage.style.flex = 'none';
+    stage.style.width = '802.6px';
+    stage.style.height = '402.4px';
+    component.fitPreviewToScreen();
+    await composePreview();
+    return previewViewport();
+  }
+
+  function expectNoOverflow(viewport: HTMLElement): void {
+    expect(viewport.scrollHeight).withContext('vertical overflow').toBeLessThanOrEqual(viewport.clientHeight);
+    expect(viewport.scrollWidth).withContext('horizontal overflow').toBeLessThanOrEqual(viewport.clientWidth);
+    expect(viewport.classList.contains('is-pannable')).withContext('pannable at Fit to screen').toBeFalse();
+  }
+
+  it('fits a tall chart to the stage’s height at Fit to screen without a scrollbar', async () => {
+    render(buildDto(comparableSet(3)), 2);
+    openSingle();
+    component.onExportDensityChange(1);
+    component.onExportResolutionChange('a4p');
+
+    const viewport = await composeLaidOutFit();
+
+    expect(stageCanvas().width).toBeGreaterThan(0);
+    expectNoOverflow(viewport);
+    // Filled, not merely shrunk: the canvas takes the viewport's height less its padding, to a pixel.
+    const padding = parseFloat(getComputedStyle(viewport).paddingTop) + parseFloat(getComputedStyle(viewport).paddingBottom);
+    expect(Math.abs(stageCanvas().getBoundingClientRect().height - (viewport.clientHeight - padding))).toBeLessThanOrEqual(1);
+  });
+
+  it('fits a wide chart to the stage’s width at Fit to screen without a scrollbar', async () => {
+    render(buildDto(comparableSet(3)), 2);
+    openSingle();
+    component.onExportDensityChange(1);
+    component.onExportResolutionChange('custom');
+    component.onCustomWidthChange(3000);
+    component.onCustomHeightChange(1000);
+
+    const viewport = await composeLaidOutFit();
+
+    expect(stageCanvas().width).toBeGreaterThan(0);
+    expectNoOverflow(viewport);
+  });
+
+  it('fits the table image at Fit to screen without a scrollbar', async () => {
+    render(buildDto(comparableSet(3)), 2);
+    showView('tablePreview');
+
+    const viewport = await composeLaidOutFit();
+
+    expect(stageCanvas().width).toBeGreaterThan(0);
+    expectNoOverflow(viewport);
+  });
+
+  // -------------------------------------------------------------------------------------------
   // Preview zoom and pan
   // -------------------------------------------------------------------------------------------
 

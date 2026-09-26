@@ -10,6 +10,7 @@ import {
   formatPreviewZoom,
   nextPreviewZoomStop,
   previewRasterZoom,
+  previewStageContentBox,
   previewZoomRange,
   previousPreviewZoomStop,
   resolvePreviewZoom,
@@ -34,6 +35,34 @@ describe('preview-view', () => {
       expect(resolvePreviewZoom(1.5, 0.5)).toBe(1.5);
       expect(resolvePreviewZoom(20, 0.5)).toBe(PREVIEW_MAX_ZOOM);
       expect(resolvePreviewZoom(0.01, 0.5)).toBe(0.1);
+    });
+  });
+
+  describe('previewStageContentBox', () => {
+    /** The stage as styled: a 1 px border, and 12 px of viewport padding inside it. */
+    const styled = { left: 13, right: 13, top: 13, bottom: 13 };
+
+    it('subtracts the borders as well as the padding', () => {
+      expect(previewStageContentBox(826, 626, styled)).toEqual({ width: 800, height: 600 });
+    });
+
+    it('floors a fractional box, never rounding it up', () => {
+      expect(previewStageContentBox(826.6, 626.4, styled)).toEqual({ width: 800, height: 600 });
+      expect(previewStageContentBox(826.99, 626.99, styled)).toEqual({ width: 800, height: 600 });
+    });
+
+    it('keeps a box that is whole up to float noise', () => {
+      expect(previewStageContentBox(813.9999999, 613.9999999, styled)).toEqual({ width: 788, height: 588 });
+    });
+
+    it('gives nothing where the insets exceed the box', () => {
+      expect(previewStageContentBox(20, 10, styled)).toEqual({ width: 0, height: 0 });
+    });
+
+    it('counts a non-finite inset as 0 and a non-finite dimension as nothing', () => {
+      expect(previewStageContentBox(800, 600, { left: NaN, right: 10, top: Infinity, bottom: 0 }))
+        .toEqual({ width: 790, height: 600 });
+      expect(previewStageContentBox(NaN, 600, styled)).toEqual({ width: 0, height: 574 });
     });
   });
 

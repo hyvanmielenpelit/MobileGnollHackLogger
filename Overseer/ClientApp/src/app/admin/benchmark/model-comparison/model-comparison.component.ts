@@ -138,6 +138,7 @@ import {
   formatPreviewZoom,
   nextPreviewZoomStop,
   previewRasterZoom,
+  previewStageContentBox,
   previewZoomRange,
   previousPreviewZoomStop,
   resolvePreviewZoom,
@@ -3322,11 +3323,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * The stage's content box and the ratio to rasterise at, or null where the element is absent.
    *
    * The stage is measured rather than the viewport inside it, because the stage never scrolls: a
-   * scrollbar appearing on zoom cannot change the fit and feed back into the observer. The
-   * viewport's padding is subtracted from the stage's box rather than read as a content box,
-   * because that is the number the canvas actually has to fit inside; `window.devicePixelRatio` is
-   * read here on every composition, so a window dragged to another display re-rasterises instead
-   * of softening.
+   * scrollbar appearing on zoom cannot change the fit and feed back into the observer. The viewport
+   * fills the stage's padding box, so the stage's borders and the viewport's padding are both
+   * subtracted from the stage's border box: that, in whole CSS px, is what the canvas has to fit
+   * inside. `window.devicePixelRatio` is read here on every composition, so a window dragged to
+   * another display re-rasterises instead of softening.
    */
   measureStage(): PreviewStage | null {
     const element = this.previewStage?.nativeElement;
@@ -3334,14 +3335,19 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       return null;
     }
     const box = element.getBoundingClientRect();
-    const style = getComputedStyle(this.previewViewport?.nativeElement ?? element);
-    const horizontal = parseFloat(style.paddingLeft || '0') + parseFloat(style.paddingRight || '0');
-    const vertical = parseFloat(style.paddingTop || '0') + parseFloat(style.paddingBottom || '0');
-    return {
-      width: Math.max(0, box.width - (Number.isFinite(horizontal) ? horizontal : 0)),
-      height: Math.max(0, box.height - (Number.isFinite(vertical) ? vertical : 0)),
-      devicePixelRatio: window.devicePixelRatio || 1
+    const border = getComputedStyle(element);
+    const padding = getComputedStyle(this.previewViewport?.nativeElement ?? element);
+    const px = (value: string) => {
+      const parsed = parseFloat(value || '0');
+      return Number.isFinite(parsed) ? parsed : 0;
     };
+    const content = previewStageContentBox(box.width, box.height, {
+      left: px(border.borderLeftWidth) + px(padding.paddingLeft),
+      right: px(border.borderRightWidth) + px(padding.paddingRight),
+      top: px(border.borderTopWidth) + px(padding.paddingTop),
+      bottom: px(border.borderBottomWidth) + px(padding.paddingBottom)
+    });
+    return { ...content, devicePixelRatio: window.devicePixelRatio || 1 };
   }
 
   /**

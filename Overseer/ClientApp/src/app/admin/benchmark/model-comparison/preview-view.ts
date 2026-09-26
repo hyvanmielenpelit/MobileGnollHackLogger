@@ -76,6 +76,36 @@ export function fitHeightZoom(
   return clampPreviewZoom(fit, previewZoomRange(fit));
 }
 
+/** CSS px between a border box's edge and the content a scroller inside it can show, per side. */
+export interface PreviewStageInsets {
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+  readonly bottom: number;
+}
+
+/** Below a pixel's float noise, so a box that is whole up to rounding is not floored a pixel short. */
+const WHOLE_PIXEL_TOLERANCE = 1e-6;
+
+/**
+ * The whole CSS px a fitted image may fill: the stage's border box less its borders and the
+ * viewport's padding, floored so a fractional layout never rounds the image past its scroller.
+ * A non-finite inset counts as 0; a non-finite border-box dimension gives 0 on its axis.
+ */
+export function previewStageContentBox(
+  borderBoxWidth: number,
+  borderBoxHeight: number,
+  insets: PreviewStageInsets
+): { width: number; height: number } {
+  const inset = (value: number) => (Number.isFinite(value) ? value : 0);
+  const whole = (size: number) =>
+    Number.isFinite(size) ? Math.max(0, Math.floor(size + WHOLE_PIXEL_TOLERANCE)) : 0;
+  return {
+    width: whole(borderBoxWidth - inset(insets.left) - inset(insets.right)),
+    height: whole(borderBoxHeight - inset(insets.top) - inset(insets.bottom))
+  };
+}
+
 /** `screenFitZoom` is expected clamped to {@link PREVIEW_MAX_ZOOM} already. */
 export function resolvePreviewZoom(request: PreviewViewRequest, screenFitZoom: number): number {
   const range = previewZoomRange(screenFitZoom);
