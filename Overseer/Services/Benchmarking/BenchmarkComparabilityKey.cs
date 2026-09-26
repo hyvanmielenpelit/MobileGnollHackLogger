@@ -485,7 +485,7 @@ public static class BenchmarkComparabilityKey
             // --- Speed and cost ---------------------------------------------------------------
             QuestionParallelismKey => Info(name,
                 "Question parallelism",
-                "Answering questions concurrently changes both timing and prompt-cache behaviour, "
+                "Answering questions concurrently changes both timing and prompt-cache behavior, "
                 + "so a difference degrades the speed and the cost aggregates alike.",
                 BenchmarkComparabilityValueKind.Text),
 

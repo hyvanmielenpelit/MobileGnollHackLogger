@@ -443,7 +443,7 @@
       @if (isRunning) {
         <button type="button" class="btn-gh btn-gh-cancel" (click)="close()">Run in Background</button>
         <button type="button" class="btn-gh btn-gh-delete" [disabled]="cancelling" (click)="cancel()">
-          {{ cancelling ? 'Cancelling…' : 'Cancel Generation' }}
+          {{ cancelling ? 'Canceling…' : 'Cancel Generation' }}
         </button>
       } @else {
         <button type="button" class="btn-gh btn-gh-cancel" (click)="close()">Close</button>

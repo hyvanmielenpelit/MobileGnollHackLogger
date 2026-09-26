@@ -1305,7 +1305,7 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
 
   analysisState(group: BenchmarkRunGroupDto): string {
     if (group.latestAnalysisId == null) {
-      return 'Not analysed';
+      return 'Not analyzed';
     }
     return group.analysisStale ? 'Stale' : 'Current';
   }

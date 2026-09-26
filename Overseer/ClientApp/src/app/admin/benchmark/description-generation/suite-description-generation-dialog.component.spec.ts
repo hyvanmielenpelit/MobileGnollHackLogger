@@ -267,7 +267,7 @@ describe('SuiteDescriptionGenerationDialogComponent', () => {
     click('dialog.sdg-dialog .dialog-footer .btn-gh-delete');
 
     expect(component.status).toBe('Cancelled');
-    expect(query('.sdg-alert')!.textContent).toContain('cancelled');
+    expect(query('.sdg-alert')!.textContent).toContain('canceled');
 
     // Unsubscribed: a late emission from the aborted request must not resurrect the run.
     subject.next(buildResult());

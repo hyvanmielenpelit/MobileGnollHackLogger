@@ -334,7 +334,7 @@
           Claims the assessor could neither confirm nor refute, clustered per question.
           A cluster raised by <strong>two or more independent model families</strong> is evidence
           about the rubric; one raised by a single family is a finding about that model and is
-          labelled as such. Nothing here is applied automatically — a human folds a real gap into
+          labeled as such. Nothing here is applied automatically — a human folds a real gap into
           the rubric.
         </p>
         <p class="text-muted">
@@ -439,7 +439,7 @@
           <div class="rubric-check-actions">
             @if (runningRubricGapAuthor) {
               <button type="button" class="btn-gh btn-gh-cancel" (click)="cancelRubricGapAuthor()" [disabled]="cancellingRubricGapAuthor">
-                {{ cancellingRubricGapAuthor ? 'Cancelling...' : 'Cancel Drafting' }}
+                {{ cancellingRubricGapAuthor ? 'Canceling...' : 'Cancel Drafting' }}
               </button>
             } @else {
               <button type="button" class="btn-gh" (click)="startRubricGapAuthor()" [disabled]="rubricGapAuthorConfigId == null">
@@ -468,7 +468,7 @@
           <div class="gap-author-results">
             <div class="results-header">
               <span class="results-summary">
-                Status: <strong>{{ rubricGapAuthorJob.status }}</strong>
+                Status: <strong>{{ jobStatusLabel(rubricGapAuthorJob.status) }}</strong>
                 — drafted by <strong>{{ rubricGapAuthorJob.authorDisplayName }}</strong>
                 ({{ rubricGapAuthorJob.promptTokens }} prompt / {{ rubricGapAuthorJob.outputTokens }} output tokens)
               </span>
@@ -749,7 +749,7 @@
 
       @if (coverage && coverage.gaps.length > 0) {
         <p class="text-muted">
-          Analysed by <strong>{{ coverage.analysisModelDisplayNameUsed }}</strong>
+          Analyzed by <strong>{{ coverage.analysisModelDisplayNameUsed }}</strong>
           ({{ coverage.analysisModelProviderUsed }} / {{ coverage.analysisModelIdUsed }})
           on {{ coverage.analyzedAtUtc | date:'yyyy-MM-dd HH:mm:ss' }} UTC —
           {{ coverage.inputTokens }} in / {{ coverage.outputTokens }} out.
@@ -850,7 +850,7 @@
           <div class="rubric-check-actions">
             @if (runningRubricCheck) {
               <button type="button" class="btn-gh btn-gh-cancel" (click)="cancelRubricCheck()" [disabled]="cancellingRubricCheck">
-                {{ cancellingRubricCheck ? 'Cancelling...' : 'Cancel Check' }}
+                {{ cancellingRubricCheck ? 'Canceling...' : 'Cancel Check' }}
               </button>
             } @else {
               <button type="button" class="btn-gh" (click)="startRubricCheck()" [disabled]="rubricCheckerConfigId == null">
@@ -879,7 +879,7 @@
           <div class="rubric-check-results">
             <div class="results-header">
               <span class="results-summary">
-                Status: <strong>{{ rubricCheckJob.status }}</strong>
+                Status: <strong>{{ jobStatusLabel(rubricCheckJob.status) }}</strong>
                 ({{ rubricCheckJob.promptTokens }} prompt / {{ rubricCheckJob.outputTokens }} output tokens)
               </span>
             </div>

@@ -437,7 +437,7 @@ questions:
       - The inventory holds "f - 2 uncursed potions of extra healing".
 
       **REQUIRED**
-      - Recognises that 14 of 58 hit points leaves no room for a bad exchange.
+      - Recognizes that 14 of 58 hit points leaves no room for a bad exchange.
       - Recommends drinking a potion of extra healing, or retreating, rather than trading blows.
 
       **CRITICAL ERROR**

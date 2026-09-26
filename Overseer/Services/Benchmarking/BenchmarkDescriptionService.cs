@@ -230,8 +230,8 @@ public class BenchmarkDescriptionService
             }
 
             result.Status = "Cancelled";
-            result.ErrorMessage = "Description generation was cancelled.";
-            AddLog(result, "Description generation was cancelled.", "warning");
+            result.ErrorMessage = "Description generation was canceled.";
+            AddLog(result, "Description generation was canceled.", "warning");
         }
         catch (Exception ex)
         {

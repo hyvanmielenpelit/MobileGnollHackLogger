@@ -3977,7 +3977,7 @@ public static class BenchmarkReportBuilder
         }
         sb.AppendLine($"### Holistic Assessor Score: {run.FinalScore?.ToString() ?? "N/A"} / 100");
         sb.AppendLine();
-        sb.AppendLine("> **How to read these:** the Intelligence Index is the canonical, reproducible metric and is **quality only** — Speed Index is not folded into it, by design, so a slow model and an inaccurate one are never confused for each other. The Holistic Assessor Score is the assessor's own narrative judgement and is reported for contrast, not used in any aggregate.");
+        sb.AppendLine("> **How to read these:** the Intelligence Index is the canonical, reproducible metric and is **quality only** — Speed Index is not folded into it, by design, so a slow model and an inaccurate one are never confused for each other. The Holistic Assessor Score is the assessor's own narrative judgment and is reported for contrast, not used in any aggregate.");
         sb.AppendLine();
         // The Intelligence Index weights each question by its assessed difficulty, so a critical
         // error caps that one question's Quality at 25 but moves the overall index least on the

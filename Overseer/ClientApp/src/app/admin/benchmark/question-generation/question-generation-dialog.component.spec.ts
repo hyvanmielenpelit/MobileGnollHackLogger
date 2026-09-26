@@ -421,7 +421,7 @@ describe('QuestionGenerationDialogComponent', () => {
 
     const cancelledChips = queryAll('.job-status-chip.status-cancelled');
     expect(cancelledChips.length).toBe(2);
-    cancelledChips.forEach(chip => expect(chip.textContent).toContain('Cancelled'));
+    cancelledChips.forEach(chip => expect(chip.textContent).toContain('Canceled'));
 
     click('.qg-retry-failed-btn');
 

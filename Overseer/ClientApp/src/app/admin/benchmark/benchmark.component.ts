@@ -94,6 +94,7 @@ import {
 import { SnapshotUploadDialogComponent } from './snapshot-upload/snapshot-upload-dialog.component';
 import { copyTextFromPromise, copyToClipboard } from '../../utils/clipboard.util';
 import { downloadTextFile, safeFileName } from '../../utils/download.util';
+import { jobStatusLabel } from '../../utils/job-status-label.util';
 
 const COPY_STATUS_MS = 3000;
 const SNAPSHOT_TEXT_EXPORT_FAILED = 'Exported without the snapshot text: it could not be loaded.';
@@ -460,6 +461,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   private secondOpinionModeOverride: number | null = null;
 
   readonly secondOpinionModeOptions = BENCHMARK_SECOND_OPINION_MODES;
+
+  readonly jobStatusLabel = jobStatusLabel;
 
   /**
    * The assessor of the suite's most recent completed run, for the assessor-change advisory.
@@ -6706,7 +6709,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     const rated = this.difficultyJob.ratedCount;
     const failed = this.difficultyJob.failedCount;
     if (this.difficultyJob.status === 'Cancelled') {
-      return `Assessment cancelled. Rated ${rated} of ${total} questions.`;
+      return `Assessment canceled. Rated ${rated} of ${total} questions.`;
     }
     if (this.difficultyJob.status === 'Failed') {
       return `Assessment failed. Rated ${rated} of ${total} questions.`;

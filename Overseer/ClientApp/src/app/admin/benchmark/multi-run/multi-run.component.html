@@ -77,8 +77,8 @@
                           [ngModel]="groupTable.filters['analysisState']" [ngModelOptions]="{ standalone: true }"
                           (ngModelChange)="groupTable.setFilter('analysisState', $event); cdr.detectChanges()">
                     <option value="">All</option>
-                    <option value="analysed">Analysed</option>
-                    <option value="notAnalysed">Not analysed</option>
+                    <option value="analysed">Analyzed</option>
+                    <option value="notAnalysed">Not analyzed</option>
                     <option value="stale">Stale</option>
                   </select>
                 </td>
@@ -119,7 +119,7 @@
                   <td>{{ formatDate(group.createdAtUtc) }}</td>
                   <td>
                     @if (group.latestAnalysisId == null) {
-                      <span class="text-muted">Not analysed</span>
+                      <span class="text-muted">Not analyzed</span>
                     } @else {
                       <span>{{ formatDate(group.latestAnalysisAtUtc) }}</span>
                       @if (group.analysisStale) {
@@ -139,7 +139,7 @@
                             [attr.style]="'anchor-name: --mr-tip-keystale-' + group.id">Comparability definition changed</span>
                       <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="'mr-tip-keystale-' + group.id"
                            [attr.style]="'position-anchor: --mr-tip-keystale-' + group.id">
-                        Comparability definition changed — re-analyse to refresh the key hash.
+                        Comparability definition changed — re-analyze to refresh the key hash.
                       </div>
                     }
                   </td>
@@ -478,7 +478,7 @@
             <span class="mr-badge mr-badge-stale">Stale analysis</span>
           }
           @if (selectedGroup.comparabilityKeyStale) {
-            <span class="mr-badge mr-badge-stale">Comparability definition changed — re-analyse to refresh the key hash.</span>
+            <span class="mr-badge mr-badge-stale">Comparability definition changed — re-analyze to refresh the key hash.</span>
           }
           <button type="button" class="btn-icon-action" aria-label="Close multi-run analysis" (click)="closeGroup()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;" aria-hidden="true">
@@ -615,7 +615,7 @@
                 <polyline points="1 20 1 14 7 14"></polyline>
                 <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
               </svg>
-              {{ analysing ? 'Analysing...' : 'Run Analysis' }}
+              {{ analysing ? 'Analyzing...' : 'Run Analysis' }}
             </button>
 
             <!-- Same call the run report uses: window.open on the URL, never an XHR. -->
@@ -646,7 +646,7 @@
         @if (loadingAnalysis) {
           <p class="text-muted">Loading the stored analysis...</p>
         } @else if (!analysis) {
-          <p class="text-muted">This group has not been analysed yet. Run the analysis to compute its statistics; the report download stays unavailable until then.</p>
+          <p class="text-muted">This group has not been analyzed yet. Run the analysis to compute its statistics; the report download stays unavailable until then.</p>
         } @else {
 
           <p class="mr-provenance">

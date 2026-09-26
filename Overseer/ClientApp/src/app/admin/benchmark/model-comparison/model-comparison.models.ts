@@ -592,7 +592,7 @@ function degradingKeysNotice(state: ComparisonSelectionState): ComparisonSelecti
     speedAtStake = true;
     costAtStake = true;
     sentences.push('QuestionParallelism differs across them, which flags the speed axis and the '
-      + 'cost axis: running questions concurrently changes prompt-cache behaviour as well as timing.');
+      + 'cost axis: running questions concurrently changes prompt-cache behavior as well as timing.');
   }
   if (new Set(inReference.map(entry => entry.speedCalibration)).size > 1) {
     speedAtStake = true;

@@ -154,13 +154,13 @@ describe('figure-theme', () => {
     expect(faint.every(w => w.includes('the background #ffffff'))).toBeTrue();
 
     const onBlue = appearanceWarnings(appearance({ background: 'custom', backgroundColor: '#3987e5' }));
-    expect(onBlue.some(w => w.startsWith('The series colour #3987e5 has 1.0:1'))).toBeTrue();
+    expect(onBlue.some(w => w.startsWith('The series color #3987e5 has 1.0:1'))).toBeTrue();
   });
 
   it('judges a transparent image against the backdrop colour, or the theme base under the checkerboard', () => {
     const onColour = appearanceWarnings(appearance({ background: 'transparent', previewBackdrop: 'color', previewBackdropColor: '#ffffff' }));
     expect(onColour.length).toBeGreaterThan(0);
-    expect(onColour.every(w => w.includes('preview backdrop colour #ffffff'))).toBeTrue();
+    expect(onColour.every(w => w.includes('preview backdrop color #ffffff'))).toBeTrue();
 
     const onChecker = appearanceWarnings(appearance({ background: 'transparent', textColor: '#202020' }));
     expect(onChecker.length).toBe(1);

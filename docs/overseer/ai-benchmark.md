@@ -2909,7 +2909,7 @@ not move.
 (*1. Sources · 2. Charts & table*), and show on step 2 only. Both are otherwise unchanged.
 
 **Resizable sidebar.** The settings sidebar opens 26 rem wide, enough for its four tabs, and a
-handle on its right edge resizes it between 18 rem and 40 rem (never more than half the
+handle between the sidebar and the views resizes it between 18 rem and 40 rem (never more than half the
 workspace). The handle is a WAI-ARIA window splitter (`app-pane-resizer`): drag it; or focus it
 and use ArrowLeft / ArrowRight (16 px), Shift with them (64 px), Home and End; double-click resets
 it. The width is remembered per browser as `sidebarWidth` in

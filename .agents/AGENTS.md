@@ -6,6 +6,25 @@ These rules apply to all AI-assisted development on the MobileGnollHackLogger co
 
 MobileGnollHackLogger is an ASP.NET Core web application that logs, processes, and displays game logs, leaderboards, and user accounts for GnollHack.
 
+## Language and Spelling
+
+**The Overseer project uses US English spelling and vocabulary**: UI text, tooltips,
+`aria-label`s, server messages that reach the UI, exported and downloaded text, code
+identifiers, comments, documentation and AI skills, in everything written or edited from now
+on. *color, canceled, analyze, behavior, center, gray, judgment, acknowledgment, labeled*;
+*select* or *check / uncheck* rather than *tick / untick*.
+
+Existing British names change only where that is safe:
+
+- **Wire values and persisted keys** (a DTO property, an enum sent as a string, a
+  `localStorage` key or field) change only in a plan that migrates both ends. Until then the
+  UI maps them for display, as `jobStatusLabel()` does for `Cancelled`.
+- **Text a benchmark grades or hashes** (the assessor, coverage and rubric-gap prompts, and the
+  default suites under `Overseer/Data/DefaultSuites/`) changes only in a deliberate round,
+  because it moves comparability between runs.
+- **Patterns that match model output** keep both spellings (for example
+  `mischaracteris|mischaracteriz`).
+
 ## SCSS and CSS Conventions
 
 ### Rules for Style Sheets

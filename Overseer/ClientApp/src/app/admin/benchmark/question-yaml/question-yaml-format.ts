@@ -830,7 +830,7 @@ export const HUMAN_GUIDE_TABS: ReadonlyArray<HumanGuideTab> = [
   {
     id: 'rules',
     label: 'Replace or Create',
-    ingress: 'How an import decides between replacing a question and creating one, and what a change costs you afterwards.',
+    ingress: 'How an import decides between replacing a question and creating one, and what a change costs you afterward.',
     markdown: RULES_MARKDOWN
   },
   {

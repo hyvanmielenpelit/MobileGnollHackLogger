@@ -2,6 +2,7 @@ import { Component, EventEmitter, HostListener, Input, OnChanges, OnInit, OnDest
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
+import { jobStatusLabel } from '../../../utils/job-status-label.util';
 import {
   AdminBenchmarkService,
   BenchmarkSuiteItemAnalysisDto,
@@ -70,6 +71,8 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
   private benchmarkService = inject(AdminBenchmarkService);
   private gapAuthorService = inject(RubricGapAuthorService);
   private cdr = inject(ChangeDetectorRef);
+
+  readonly jobStatusLabel = jobStatusLabel;
 
   @Input() suiteId: number | null = null;
   @Input() suiteName = '';

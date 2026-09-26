@@ -279,7 +279,7 @@ export function appearanceWarnings(appearance: FigureAppearanceStyle): string[] 
     where = `the background ${ground}`;
   } else if (appearance.background === 'transparent' && appearance.previewBackdrop === 'color') {
     ground = appearance.previewBackdropColor;
-    where = `the preview backdrop colour ${ground}, which stands in for the slide behind a transparent image`;
+    where = `the preview backdrop color ${ground}, which stands in for the slide behind a transparent image`;
   } else if (appearance.background === 'transparent') {
     ground = base.background;
     ownGround = true;
@@ -307,7 +307,7 @@ export function appearanceWarnings(appearance: FigureAppearanceStyle): string[] 
       .map((hue) => ({ hue, ratio: contrastRatio(hue, ground) }))
       .filter((series) => series.ratio < 3);
     for (const series of faint) {
-      warnings.push(`The series colour ${series.hue} has ${ratioText(series.ratio)} contrast on ${where}; ` +
+      warnings.push(`The series color ${series.hue} has ${ratioText(series.ratio)} contrast on ${where}; ` +
         'marks need at least 3:1.');
     }
   }

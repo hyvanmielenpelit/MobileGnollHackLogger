@@ -5097,7 +5097,7 @@ public class AdminBenchmarkController : ControllerBase
 
         if (analysis == null)
         {
-            return BadRequest(error ?? "The group could not be analysed.");
+            return BadRequest(error ?? "The group could not be analyzed.");
         }
 
         var dto = await BuildAnalysisDtoAsync(analysis);

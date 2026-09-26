@@ -171,10 +171,10 @@
           <span class="fsp-subheading">Decimal places</span>
           <app-info-tip [tipId]="tipId(family, 'numbers')" subject="Number format">Decimals in value labels, value plates, tooltips and profile ranges. Axis ticks follow their own step. Each measure keeps its setting across figures. Time decimals count in seconds; millisecond displays show at least whole milliseconds. Resetting a figure style leaves number formats as they are.</app-info-tip>
         </div>
-        @for (measure of numberRows(family); track measure) {
-          <div class="fsp-decimals">
-            <label [for]="numberControlId(family, measure)">{{ measureNames[measure] }}</label>
-            <div class="fsp-decimals-control">
+        <div class="fsp-decimals-grid">
+          @for (measure of numberRows(family); track measure) {
+            <div class="fsp-decimals">
+              <label [for]="numberControlId(family, measure)">{{ measureNames[measure] }}</label>
               <select class="gh-input fsp-decimals-select" [id]="numberControlId(family, measure)"
                       [attr.aria-describedby]="numberSampleId(family, measure) + ' ' + tipId(family, 'numbers')"
                       (change)="onNumber(measure, $event)">
@@ -185,8 +185,8 @@
               <output class="fsp-decimals-sample" [id]="numberSampleId(family, measure)"
                       [attr.for]="numberControlId(family, measure)"><span class="visually-hidden">Example: </span>{{ numberSample(measure) }}</output>
             </div>
-          </div>
-        }
+          }
+        </div>
       </div>
     </details>
     <ng-container *ngTemplateOutlet="sectionReset; context: { family: family, name: 'numbers' }"></ng-container>
@@ -450,7 +450,7 @@
                 <legend>
                   <span id="mc-style-scatter-legend-label">Legend position</span>
                   @if (directLabels) {
-                    <app-info-tip tipId="mc-style-scatter-legend-tip" subject="Legend position">Hidden while models are labelled in the chart.</app-info-tip>
+                    <app-info-tip tipId="mc-style-scatter-legend-tip" subject="Legend position">Hidden while models are labeled in the chart.</app-info-tip>
                   }
                 </legend>
                 @for (option of legendOptions; track option.value) {
@@ -591,7 +591,7 @@
                   </label>
                 }
               </fieldset>
-              <ng-container *ngTemplateOutlet="color; context: { key: 'backgroundColor', label: 'Background colour', disabled: appearance.background !== 'custom' }"></ng-container>
+              <ng-container *ngTemplateOutlet="color; context: { key: 'backgroundColor', label: 'Background color', disabled: appearance.background !== 'custom' }"></ng-container>
 
               <fieldset class="gh-choice" [disabled]="appearance.background !== 'transparent'"
                         aria-labelledby="mc-style-appearance-previewBackdrop-label"
@@ -610,7 +610,7 @@
                   </label>
                 }
               </fieldset>
-              <ng-container *ngTemplateOutlet="color; context: { key: 'previewBackdropColor', label: 'Preview backdrop colour', disabled: appearance.background !== 'transparent' || appearance.previewBackdrop !== 'color' }"></ng-container>
+              <ng-container *ngTemplateOutlet="color; context: { key: 'previewBackdropColor', label: 'Preview backdrop color', disabled: appearance.background !== 'transparent' || appearance.previewBackdrop !== 'color' }"></ng-container>
             </div>
           </details>
           <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'appearance', name: 'theme' }"></ng-container>
@@ -621,16 +621,18 @@
                    [open]="isOpen('appearance', 'font')" (toggle)="onSectionToggle('appearance', 'font', $event)">
             <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'appearance', section: section('appearance', 'font') }"></ng-container>
             <div class="gh-disclosure-body fsp-section-body">
-              <div class="fsp-number">
+              <div class="fsp-select-field">
                 <label [for]="controlId('appearance', 'fontFamily')">Font family</label>
-                <select class="gh-input" [id]="controlId('appearance', 'fontFamily')"
-                        aria-describedby="mc-style-appearance-fontFamily-tip"
-                        (change)="onFontFamily($event)">
-                  @for (font of fontOptions; track font.id) {
-                    <option [value]="font.id" [selected]="font.id === appearance.fontFamily">{{ font.label }}</option>
-                  }
-                </select>
-                <app-info-tip tipId="mc-style-appearance-fontFamily-tip" subject="Font family">Overseer default has Regular and Bold faces; the other weights round to the nearest one it has.</app-info-tip>
+                <div class="fsp-select-row">
+                  <select class="gh-input fsp-font-select" [id]="controlId('appearance', 'fontFamily')"
+                          aria-describedby="mc-style-appearance-fontFamily-tip"
+                          (change)="onFontFamily($event)">
+                    @for (font of fontOptions; track font.id) {
+                      <option [value]="font.id" [selected]="font.id === appearance.fontFamily">{{ font.label }}</option>
+                    }
+                  </select>
+                  <app-info-tip tipId="mc-style-appearance-fontFamily-tip" subject="Font family">Overseer default has Regular and Bold faces; the other weights round to the nearest one it has.</app-info-tip>
+                </div>
               </div>
 
               <fieldset class="gh-choice" aria-labelledby="mc-style-appearance-headingWeight-label"
@@ -678,8 +680,8 @@
                    [open]="isOpen('appearance', 'colors')" (toggle)="onSectionToggle('appearance', 'colors', $event)">
             <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'appearance', section: section('appearance', 'colors') }"></ng-container>
             <div class="gh-disclosure-body fsp-section-body">
-              <ng-container *ngTemplateOutlet="followColor; context: { key: 'headingColor', label: 'Heading colour', rowDisabled: false }"></ng-container>
-              <ng-container *ngTemplateOutlet="followColor; context: { key: 'textColor', label: 'Text colour', rowDisabled: false }"></ng-container>
+              <ng-container *ngTemplateOutlet="followColor; context: { key: 'headingColor', label: 'Heading color', rowDisabled: false }"></ng-container>
+              <ng-container *ngTemplateOutlet="followColor; context: { key: 'textColor', label: 'Text color', rowDisabled: false }"></ng-container>
               @if (colorWarnings().length > 0) {
                 <ul class="fsp-warnings" role="status">
                   @for (warning of colorWarnings(); track warning) {
@@ -707,7 +709,7 @@
               @for (control of appearanceBorderControls; track control.key) {
                 <ng-container *ngTemplateOutlet="range; context: { family: 'appearance', control: control }"></ng-container>
               }
-              <ng-container *ngTemplateOutlet="followColor; context: { key: 'borderColor', label: 'Border colour', rowDisabled: !appearance.border }"></ng-container>
+              <ng-container *ngTemplateOutlet="followColor; context: { key: 'borderColor', label: 'Border color', rowDisabled: !appearance.border }"></ng-container>
             </div>
           </details>
           <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'appearance', name: 'border' }"></ng-container>

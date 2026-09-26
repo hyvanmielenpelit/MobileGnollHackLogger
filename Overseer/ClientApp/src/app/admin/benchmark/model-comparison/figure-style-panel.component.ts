@@ -113,7 +113,7 @@ export const FIGURE_STYLE_SECTIONS: Readonly<Record<PanelFamily, readonly Figure
   appearance: [
     { name: 'theme', title: 'Theme and background', keys: ['theme', 'background', 'backgroundColor', 'previewBackdrop', 'previewBackdropColor'] },
     { name: 'font', title: 'Font', keys: ['fontFamily', 'headingWeight', 'labelWeight'] },
-    { name: 'colors', title: 'Text colour', keys: ['headingColor', 'textColor'] },
+    { name: 'colors', title: 'Text color', keys: ['headingColor', 'textColor'] },
     { name: 'border', title: 'Borders', keys: ['border', 'borderWidthPx', 'borderRadiusPx', 'borderColor'] }
   ]
 };
@@ -145,9 +145,9 @@ const THEME_LABELS: Record<FigureThemeName, string> = { dark: 'Dark', light: 'Li
 const BACKGROUND_LABELS: Record<FigureBackgroundMode, string> = {
   theme: 'Theme',
   transparent: 'Transparent',
-  custom: 'Custom colour'
+  custom: 'Custom color'
 };
-const PREVIEW_BACKDROP_LABELS: Record<FigurePreviewBackdrop, string> = { checkerboard: 'Checkerboard', color: 'Colour' };
+const PREVIEW_BACKDROP_LABELS: Record<FigurePreviewBackdrop, string> = { checkerboard: 'Checkerboard', color: 'Color' };
 const FONT_WEIGHT_LABELS: Record<FigureFontWeight, string> = {
   400: 'Regular (400)',
   500: 'Medium (500)',
@@ -503,7 +503,7 @@ export class FigureStylePanelComponent implements OnInit {
   onHexCommit(key: AppearanceColorKey, event: Event): void {
     const raw = (event.target as HTMLInputElement).value.trim();
     if (!/^#[0-9a-fA-F]{6}$/.test(raw)) {
-      this.hexErrors = { ...this.hexErrors, [key]: 'Enter a 6-digit hex colour, like #1a2b3c.' };
+      this.hexErrors = { ...this.hexErrors, [key]: 'Enter a 6-digit hex color, like #1a2b3c.' };
       return;
     }
     this.commitAppearanceColor(key, raw);

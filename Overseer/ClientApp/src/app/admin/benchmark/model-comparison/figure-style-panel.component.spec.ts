@@ -654,6 +654,23 @@ describe('FigureStylePanelComponent', () => {
       .toContain('Resetting a figure style leaves number formats as they are.');
   });
 
+  it('sets each decimals select in its label\'s 13px type, at least 24px tall', () => {
+    render('bar');
+    if (!section('mc-style-bar-section-numbers').open) {
+      toggleSection('mc-style-bar-section-numbers');
+    }
+    const ids = numberRowIds('bar');
+    expect(ids.length).toBe(3);
+    for (const id of ids) {
+      const select = control(id);
+      const label = host().querySelector<HTMLLabelElement>(`label[for="${id}"]`)!;
+      expect(select.closest('.fsp-decimals')).withContext(id).toBe(label.closest('.fsp-decimals'));
+      expect(getComputedStyle(select).fontSize).withContext(id).toBe(getComputedStyle(label).fontSize);
+      expect(getComputedStyle(select).fontSize).withContext(id).toBe('13px');
+      expect(select.getBoundingClientRect().height).withContext(id).toBeGreaterThanOrEqual(24);
+    }
+  });
+
   it('follows the selected speed and cost measures, and shows each measure\'s own stored setting', () => {
     fixture.componentRef.setInput('speedMeasure', 'ttftP50');
     fixture.componentRef.setInput('costMeasure', 'totalRun');
@@ -950,7 +967,7 @@ describe('FigureStylePanelComponent', () => {
     render('appearance');
     expect(host().querySelector('#mc-style-appearance-heading')?.textContent)
       .toContain('Theme and fonts — every chart and the table image');
-    expect(sectionTitles()).toEqual(['Theme and background', 'Font', 'Text colour', 'Borders']);
+    expect(sectionTitles()).toEqual(['Theme and background', 'Font', 'Text color', 'Borders']);
     expect(host().querySelector('#mc-style-appearance-expand')).not.toBeNull();
     expect(host().querySelector('#mc-style-appearance-collapse')).not.toBeNull();
   });
@@ -986,12 +1003,12 @@ describe('FigureStylePanelComponent', () => {
     acceptLast();
     const hex = control('mc-style-appearance-backgroundColor-hex');
     expect(hex.getAttribute('pattern')).toBe('#[0-9a-fA-F]{6}');
-    expect(hex.getAttribute('aria-label')).toBe('Background colour hex value');
+    expect(hex.getAttribute('aria-label')).toBe('Background color hex value');
 
     setTextValue(hex, 'nonsense');
     expect(hex.getAttribute('aria-invalid')).toBe('true');
     const errorId = hex.getAttribute('aria-describedby')!;
-    expect(host().querySelector(`#${errorId}`)?.textContent).toContain('hex colour');
+    expect(host().querySelector(`#${errorId}`)?.textContent).toContain('hex color');
     expect(emitted.length).toBe(1); // only the earlier switch to Custom
 
     setTextValue(hex, 'still wrong', 'input');
@@ -1026,6 +1043,19 @@ describe('FigureStylePanelComponent', () => {
     expect(emitted[1].appearance.headingWeight).toBe(700);
     setChecked(control('mc-style-appearance-labelWeight-500'), true);
     expect(emitted[2].appearance.labelWeight).toBe(500);
+  });
+
+  it('puts the font family tip on the select\'s right, in one row', () => {
+    render('appearance');
+    if (!section('mc-style-appearance-section-font').open) {
+      toggleSection('mc-style-appearance-section-font');
+    }
+    const select = control('mc-style-appearance-fontFamily');
+    const row = select.closest('.fsp-select-row');
+    expect(row).not.toBeNull();
+    const tip = row!.querySelector<HTMLElement>('app-info-tip .gh-info-btn');
+    expect(tip).not.toBeNull();
+    expect(tip!.getBoundingClientRect().left).toBeGreaterThanOrEqual(select.getBoundingClientRect().right);
   });
 
   it('shows the font load status passed in from the wizard', () => {

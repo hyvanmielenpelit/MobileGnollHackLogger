@@ -285,7 +285,7 @@
                 <fieldset class="gh-fieldset mc-data-group mc-models" aria-describedby="mc-models-hint">
                   <legend>Models</legend>
                   <p class="mc-field-hint" id="mc-models-hint">
-                    Show draws a model in the charts, at most {{ maxPlottedEntries }}. Highlight draws it in gold and greys the rest.
+                    Show draws a model in the charts, at most {{ maxPlottedEntries }}. Highlight draws it in gold and grays the rest.
                   </p>
                   <table class="mc-models-table">
                     <caption class="visually-hidden">Models in the charts</caption>
@@ -612,8 +612,8 @@
             }
           </aside>
 
-          <!-- In the sidebar's grid cell, hanging off its right edge on the main side, so the
-               sidebar's own scrollbar stays grabbable. -->
+          <!-- In its own grid column between the sidebar and the main area; its line is the only
+               divider between them. -->
           @if (!sidebarCollapsed) {
             <app-pane-resizer class="mc-fig-resizer" controls="mc-fig-sidebar" label="Resize settings sidebar"
                               [value]="sidebarWidth" [min]="SIDEBAR_WIDTH_MIN" [max]="sidebarWidthMax"
@@ -1464,7 +1464,7 @@
             }
           </ul>
         } @else {
-          <p class="mc-wizard-selection-hint">Tick runs or groups above — they appear here.</p>
+          <p class="mc-wizard-selection-hint">Select runs or groups above — they appear here.</p>
         }
       </div>
       @if (bandNotices.length > 0) {

@@ -612,7 +612,7 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
       case 'stopped':
         return `Stopped — ${series?.stopReasonText || series?.stopReason || 'reason not recorded'}`;
       case 'analysing':
-        return 'Analysing the replicate set';
+        return 'Analyzing the replicate set';
       default:
         return this.terminalLabel;
     }
@@ -622,7 +622,7 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
     const series = this.series;
     if (!series) return 'Complete';
     switch (series.status) {
-      case 'Cancelled': return 'Cancelled';
+      case 'Cancelled': return 'Canceled';
       case 'Failed': return 'Failed';
       case 'CompletedWithErrors':
         return `Complete with errors — ${series.completedRunCount} of ${series.requestedRunCount} runs, ${series.failedRunCount} failed`;

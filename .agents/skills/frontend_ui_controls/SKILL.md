@@ -531,8 +531,10 @@ splitter* pattern on its host element.
   collapses has its own disclosure toggle.
 - **Pointer**: pointer events with `setPointerCapture`, primary button only; double-click resets to
   `defaultValue`.
-- **Placement**: a 12 px hit area on the **far** side of the controlled pane's edge, so it never
-  covers the pane's own scrollbar; the line and grip turn gold on hover, focus and drag. Hide it
+- **Placement**: a 12 px track of its own between the pane and its neighbor, never overlaid on
+  either. An overlay covers the pane's scrollbar on one side, and on the other a sticky header
+  paints over it. Drop the pane's own edge border, so there is one line, not two. The line and
+  grip turn gold on hover, focus and drag. Hide it
   where the pane is stacked rather than side by side, and do not render it while the pane is
   collapsed. The 12 px target is below WCAG 2.5.8's 24 px, accepted because it spans the full
   height and the keyboard path and the collapse toggle exist.

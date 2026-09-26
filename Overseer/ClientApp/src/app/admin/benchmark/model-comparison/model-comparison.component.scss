@@ -891,7 +891,7 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  margin: -16px -24px 0;
+  margin: 0 -24px;
   padding: 16px 24px 8px;
   background: rgba(16, 16, 16, 0.98);
 }
@@ -963,12 +963,13 @@
    screen. The `mc-fig` container is the step panel, because a container query cannot restyle the
    container itself. Collapsing the sidebar is an instant reflow, not a transition — every animated
    frame would re-fit the All tiles or the Single stage. The sidebar's width is the resizer's
-   `--mc-sidebar-width`, kept between 18 rem and half the workspace. */
+   `--mc-sidebar-width`, kept between 18 rem and half the workspace; the resizer has a 12 px
+   column of its own between the sidebar and the main area. */
 .mc-fig-workspace {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: clamp(18rem, var(--mc-sidebar-width, 26rem), 50%) minmax(0, 1fr);
+  grid-template-columns: clamp(18rem, var(--mc-sidebar-width, 26rem), 50%) 12px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
 
   &.is-collapsed {
@@ -976,17 +977,13 @@
   }
 }
 
-/* In the sidebar's grid cell, hanging off its right edge on the main side, so it never covers the
-   sidebar's scrollbar. */
+/* Its own 12px column between the sidebar and the main area: never over either, and its line
+   is the only divider. */
 .mc-fig-resizer {
-  grid-column: 1;
+  grid-column: 2;
   grid-row: 1;
-  justify-self: end;
-  margin-inline-end: -12px;
-  z-index: 2;
 }
 
-/* Placed, not auto-placed: its resizer shares the cell, and the main area auto-places after both. */
 .mc-fig-sidebar {
   grid-column: 1;
   grid-row: 1;
@@ -998,7 +995,6 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0 16px 16px;
-  border-inline-end: 1px solid var(--border-glass);
 
   /* `display: flex` above outranks the user-agent `[hidden]` rule. */
   &[hidden] {
@@ -1083,8 +1079,11 @@
 }
 
 /* The view bar above whichever view is shown, and the line saying why nothing is charted where
-   that applies, each in a row of its own so neither scrolls; the panels take the rest. */
+   that applies, each in a row of its own so neither scrolls; the panels take the rest. The last
+   column: the third beside the sidebar, the only one while it is collapsed. */
 .mc-fig-main {
+  grid-column: -2 / -1;
+  grid-row: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -1148,7 +1147,10 @@
 
 /* The Interactive table scrolls vertically as a panel of its own, so the view bar stays put; the
    horizontal scroll stays on `.gh-datatable-scroll`, with the pagers outside it. */
+/* Sticky content stops at a scroll container's padding edge, so this panel has none at the top;
+   the toolbar's own 16px matches the other views' top padding. */
 .mc-fig-panel--table {
+  padding-top: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   gap: 12px;
@@ -1474,8 +1476,12 @@
 
   .mc-fig-sidebar {
     max-block-size: 40dvh;
-    border-inline-end: none;
     border-bottom: 1px solid var(--border-glass);
+  }
+
+  .mc-fig-main {
+    grid-column: 1;
+    grid-row: 2;
   }
 
   /* The sidebar is stacked above the views here, so there is no width to adjust. */

@@ -693,7 +693,7 @@ export class SnapshotSuiteWizardComponent implements OnInit, OnChanges, OnDestro
       case 5:
         this.stepError = this.panel && this.panel.blockingFindings.length > 0
           ? 'A blocking check stops this import.'
-          : 'Tick the confirmation first.';
+          : 'Check the confirmation first.';
         this.focusFirst([`#${this.idPrefix}-import-confirm`]);
         break;
     }

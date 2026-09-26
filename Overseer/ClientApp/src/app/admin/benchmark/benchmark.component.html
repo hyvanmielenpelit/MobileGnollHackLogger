@@ -413,7 +413,7 @@
                 Grades every answer against its rubric on four BARS dimensions and writes the closing
                 synthesis. It runs pipelined behind each answer, so a slow assessor rarely adds wall
                 time. Picking the same provider as the model under test needs an explicit
-                acknowledgement before the run starts.
+                acknowledgment before the run starts.
               </span>
 
               @if (showAssessorChangeAdvisory) {
@@ -665,7 +665,7 @@
                   </label>
                   <span class="form-hint">
                     On a cap denial the series pauses in <strong>Waiting for run cap</strong> and keeps
-                    retrying. Left unticked, it stops instead, with the reason recorded and a Continue
+                    retrying. Left unchecked, it stops instead, with the reason recorded and a Continue
                     button. Either way every completed run is kept.
                   </span>
                 </div>
@@ -2367,7 +2367,7 @@
                               {{ ans.claimsSupportedCount ?? 0 }} supported, {{ ans.claimsRefutedCount ?? 0 }} refuted, {{ ans.claimsIndeterminateCount ?? 0 }} indeterminate
                             </span>
                             @if (hasAdvisoryClaimRoles(verifications) || (ans.answerFlagNames && ans.answerFlagNames.includes('ContestedAccuracyDeduction'))) {
-                              <div class="text-muted text-11 claim-roles-note">Entries labelled below were sent by the harness to check the assessor — its critical-error quote, its out-of-rubric basis, or a sentence it charged as false — and are not claims the answer was marked down for leaving unverified; they are not counted here.</div>
+                              <div class="text-muted text-11 claim-roles-note">Entries labeled below were sent by the harness to check the assessor — its critical-error quote, its out-of-rubric basis, or a sentence it charged as false — and are not claims the answer was marked down for leaving unverified; they are not counted here.</div>
                             }
                           </div>
                           @if (ans.claimVerificationToolCallCount != null) {
@@ -3699,7 +3699,7 @@
                 @if (item.status === 'Rated' && item.difficulty != null) {
                   Rated {{ item.difficulty }}
                 } @else {
-                  {{ item.status }}
+                  {{ jobStatusLabel(item.status) }}
                 }
               </span>
             </li>

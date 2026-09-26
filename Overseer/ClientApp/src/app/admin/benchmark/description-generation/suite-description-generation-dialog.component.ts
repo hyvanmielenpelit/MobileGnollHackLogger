@@ -335,7 +335,7 @@ export class SuiteDescriptionGenerationDialogComponent implements OnInit, OnChan
       case 'Running': return 'Generating Suite Description';
       case 'Completed': return 'Suite Description Generated';
       case 'Failed': return 'Suite Description Generation Failed';
-      case 'Cancelled': return 'Suite Description Generation Cancelled';
+      case 'Cancelled': return 'Suite Description Generation Canceled';
       default: return 'Generate Suite Description';
     }
   }

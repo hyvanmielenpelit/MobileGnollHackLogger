@@ -71,7 +71,7 @@ function routeSteps(route: WorkflowRoute, d: WorkflowDetails): string[] {
       agent,
       `Wait for the agent to write ${agentFile} beside the suite file.`,
       `Back in the wizard, upload ${agentFile} — the one starting ${code('agent-new-')}, not the ${code('overseer-suite-export-')} file you downloaded — and press ${bold(PANEL_LABELS.validateAndReview)}.`,
-      'Read the checks, look through the questions, and tick the confirmation.',
+      'Read the checks, look through the questions, and check the confirmation.',
       `Press ${bold(PANEL_LABELS.addQuestions(count, suite))}.`,
       `Press ${bold(WIZARD_LABELS.assess)}; the suite cannot run until every question is assessed. The step shows a check mark when it is done.`,
       `Press ${bold(WIZARD_LABELS.next)}, read the description the agent suggested — if the YAML file included none, paste it from the agent's handoff — and press ${bold(WIZARD_LABELS.applyDescription)}. You can change it later with ${bold(WIZARD_LABELS.editSuite)}.`,
@@ -90,7 +90,7 @@ function routeSteps(route: WorkflowRoute, d: WorkflowDetails): string[] {
     agent,
     `Wait for the agent to write ${agentFile} beside the snapshot.`,
     `Back in the wizard, upload ${agentFile} and press ${bold(PANEL_LABELS.validateAndReview)}.`,
-    'Read the checks, look through the questions, and tick the confirmation.',
+    'Read the checks, look through the questions, and check the confirmation.',
     `Press ${bold(PANEL_LABELS.createSuite(suite))}.`,
     `Press ${bold(WIZARD_LABELS.assess)} for the new suite; it cannot run until every question is assessed.`,
     'Optionally run Suite Health *Snapshot facts* and the citation check.'

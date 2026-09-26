@@ -395,7 +395,7 @@ public class BenchmarkRubricGapAuthorService
         }
         catch (OperationCanceledException)
         {
-            job.AddLog("Rubric gap authoring was cancelled.", "warning");
+            job.AddLog("Rubric gap authoring was canceled.", "warning");
             job.SetStatus(BenchmarkRubricGapAuthorJobStatus.Cancelled);
         }
         catch (Exception ex)

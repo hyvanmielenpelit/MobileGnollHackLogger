@@ -1130,7 +1130,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       id: 'nothing-selected',
       severity: 'warning',
       heading: 'Nothing is selected yet',
-      body: 'Tick at least one completed run or analysis group in the tables above. Compare stays '
+      body: 'Select at least one completed run or analysis group in the tables above. Compare stays '
         + 'unavailable until you do.'
     };
   }
@@ -1679,7 +1679,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       return 'Fewer than two models were measured the same way, so there is nothing to chart. '
         + 'The table lists every model and why.';
     }
-    return 'Charts need at least two models. Tick more under Data → Models.';
+    return 'Charts need at least two models. Check more under Data → Models.';
   }
 
   // ---------------------------------------------------------------------------------------------

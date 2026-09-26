@@ -13,6 +13,7 @@ When working on the frontend for the Overseer project within MobileGnollHackLogg
 5. **Buttons, icon buttons, and tabs have their own specification**: read
    [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md) before adding or restyling any
    of them, including toolbars and dialog footers.
+6. **UI text is US English.** See `AGENTS.md` § Language and Spelling.
 
 ### Before writing HTML, CSS, or client-side JS
 
@@ -291,10 +292,12 @@ To find specific popups, look in the corresponding component's `.html` template:
     change; only *Charts* and *Table* swap. Stored tabs migrate `emphasis` → `data`, `style` →
     `charts`, `download` / `export` → `download`. The sidebar's collapsed state, width, tab and view
     are in `localStorage['overseer.modelComparison.figureSidebar']`.
-  - **The sidebar is resizable** with an `app-pane-resizer` on its right edge: 18–40 rem (at most
-    half the workspace), 26 rem by default, stored as `sidebarWidth` (px) in the same record and
-    applied as `--mc-sidebar-width` on `.mc-fig-workspace`. The handle is not rendered while the
-    sidebar is collapsed and is hidden where the sidebar stacks (workspace ≤ 860 px).
+  - **The sidebar is resizable** with an `app-pane-resizer`: 18–40 rem (at most half the
+    workspace), 26 rem by default, stored as `sidebarWidth` (px) in the same record and applied as
+    `--mc-sidebar-width` on `.mc-fig-workspace`. The resizer is in **its own 12 px grid column**
+    between the sidebar and the main area, and the sidebar has no border of its own, so the
+    handle's line is the only divider. The handle is not rendered while the sidebar is collapsed
+    and is hidden where the sidebar stacks (workspace ≤ 860 px).
     - **Data**, in order:
       - **Models** (both view groups) — one row per model with a **Show** checkbox (plot this
         model, up to the chart cap) and a **Highlight** checkbox, shown only in the chart views
@@ -316,7 +319,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     - **Theme**: `app-figure-style-panel kind="appearance"` — dark or light theme, theme /
       transparent / custom background with a never-exported preview backdrop, one of six
       self-hosted font families or *Overseer default*, heading and label weights, heading and text
-      colours with contrast warnings, and a figure border. It reaches every chart and the table
+      colors with contrast warnings, and a figure border. It reaches every chart and the table
       image.
     - **Charts**: the segmented *Bar panels / Profile / Trade-offs* tab row over
       `app-figure-style-panel`.

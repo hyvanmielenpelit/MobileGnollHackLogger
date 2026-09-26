@@ -365,7 +365,7 @@ export class QuestionGenerationDialogComponent implements OnInit, OnChanges, OnD
       case 'Completed': return 'Question Generation Complete';
       case 'CompletedWithErrors': return 'Question Generation Completed with Errors';
       case 'Failed': return 'Question Generation Failed';
-      case 'Cancelled': return 'Question Generation Cancelled';
+      case 'Cancelled': return 'Question Generation Canceled';
       default: return 'Generate Benchmark Questions';
     }
   }
@@ -438,6 +438,7 @@ export class QuestionGenerationDialogComponent implements OnInit, OnChanges, OnD
 
   itemStateLabel(item: QuestionGenerationJobItemDto): string {
     const state = this.itemState(item);
+    if (state === 'cancelled') return 'Canceled';
     return state.charAt(0).toUpperCase() + state.slice(1);
   }
 
@@ -481,7 +482,7 @@ export class QuestionGenerationDialogComponent implements OnInit, OnChanges, OnD
       case 'Failed':
         return `Failed: ${this.firstErrorMessage ?? 'see the diagnostics for details'}`;
       case 'Cancelled':
-        return `Cancelled after ${generated} of ${requested}`;
+        return `Canceled after ${generated} of ${requested}`;
       case 'CompletedWithErrors': {
         const failed = items.filter(i => this.itemState(i) === 'failed').length;
         return `${verb} ${generated} of ${requested}; ${failed} item(s) failed`;

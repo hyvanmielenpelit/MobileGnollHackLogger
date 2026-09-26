@@ -1108,7 +1108,7 @@ describe('ModelComparisonComponent', () => {
     fixture.detectChanges();
 
     expect(component.showFigures).toBeFalse();
-    expect(textOf('#mc-fig-unavailable')).toContain('Charts need at least two models. Tick more under Data → Models.');
+    expect(textOf('#mc-fig-unavailable')).toContain('Charts need at least two models. Check more under Data → Models.');
     expect(component.effectiveFigureTab).toBe('table');
     expect(fixture.debugElement.query(By.css('.mc-models-table'))).toBeTruthy();
 
@@ -1648,7 +1648,7 @@ describe('ModelComparisonComponent', () => {
 
     expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeTruthy();
     expect(textOf('.mc-wizard-notice-label')).toContain('Nothing selected yet');
-    expect(textOf('.mc-wizard-selection-hint')).toContain('Tick runs or groups above');
+    expect(textOf('.mc-wizard-selection-hint')).toContain('Select runs or groups above');
     expect(fixture.debugElement.query(By.css('.mc-selection-chips'))).toBeNull();
   });
 
@@ -1791,7 +1791,7 @@ describe('ModelComparisonComponent', () => {
     // A warning: Compare is blocked, but nothing is wrong with the view or the index.
     expect(alerts[0].classList).toContain('alert-warning');
     expect(alerts[0].textContent).toContain('Nothing is selected yet');
-    expect(alerts[0].textContent).toContain('Tick at least one completed run or analysis group');
+    expect(alerts[0].textContent).toContain('Select at least one completed run or analysis group');
     // The band explains; the footer names the blocked control, and neither repeats the other.
     expect(textOf('.mc-wizard-blocked')).toContain('at least one run or analysis group');
 
@@ -5215,6 +5215,46 @@ describe('ModelComparisonComponent', () => {
     sidebarToggle().click();
     fixture.detectChanges();
     expect(resizer()).toBeNull();
+  });
+
+  it('puts the resizer in its own column between the sidebar and the main area', () => {
+    // Wide enough that the container query keeps the sidebar beside the views.
+    const hostElement = fixture.nativeElement as HTMLElement;
+    hostElement.style.display = 'block';
+    hostElement.style.width = '1200px';
+    hostElement.style.height = '800px';
+    render(buildDto(comparableSet(3)), 2);
+    const rect = (selector: string): DOMRect =>
+      (fixture.debugElement.query(By.css(selector)).nativeElement as HTMLElement).getBoundingClientRect();
+
+    const sidebar = rect('.mc-fig-sidebar');
+    const resizer = rect('app-pane-resizer.mc-fig-resizer');
+    const main = rect('.mc-fig-main');
+    expect(resizer.width).toBeCloseTo(12, 0);
+    expect(Math.abs(resizer.left - sidebar.right)).toBeLessThanOrEqual(1);
+    expect(Math.abs(main.left - resizer.right)).toBeLessThanOrEqual(1);
+    expect(getComputedStyle(fixture.debugElement.query(By.css('.mc-fig-sidebar')).nativeElement).borderInlineEndWidth)
+      .toBe('0px');
+  });
+
+  it('starts the Interactive table\'s header row 16px under the view bar, as the Table preview does', () => {
+    const hostElement = fixture.nativeElement as HTMLElement;
+    hostElement.style.display = 'block';
+    hostElement.style.width = '1200px';
+    hostElement.style.height = '800px';
+    renderTable(buildDto(comparableSet(3)));
+    const element = (selector: string): HTMLElement =>
+      fixture.debugElement.query(By.css(selector)).nativeElement as HTMLElement;
+    const barBottom = (): number => element('.mc-fig-bar').getBoundingClientRect().bottom;
+
+    const toolbar = element('#mc-fig-panel-table .mc-table-toolbar');
+    const tableContentTop = toolbar.getBoundingClientRect().top + parseFloat(getComputedStyle(toolbar).paddingTop);
+    expect(getComputedStyle(element('#mc-fig-panel-table')).paddingTop).toBe('0px');
+    expect(Math.abs(tableContentTop - barBottom() - 16)).withContext('Interactive table').toBeLessThanOrEqual(1);
+
+    showView('tablePreview');
+    const previewTop = element('#mc-fig-panel-tablePreview .mc-preview-toolbar').getBoundingClientRect().top;
+    expect(Math.abs(previewTop - barBottom() - 16)).withContext('Table preview').toBeLessThanOrEqual(1);
   });
 
   it('renders no chart directive on step 2, and exports without reading a page canvas', async () => {
