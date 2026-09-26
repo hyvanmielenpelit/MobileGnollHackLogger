@@ -4596,6 +4596,7 @@ public class BenchmarkService
             EnableSubAgents = false,
             SystemModelId = config.Id,
             PromptCacheKey = $"benchmark:coverage:{config.ModelId}",
+            CacheConversationTail = false,
             Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
             ToolExecutionContext = new Tools.ToolExecutionContext
             {
@@ -5841,6 +5842,7 @@ public class BenchmarkService
             EnableWebSearch = false,
             EnableSubAgents = false,
             SystemModelId = assessorConfig.Id,
+            CacheConversationTail = false,
             Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
             SeedHistory = new List<object>
             {

@@ -160,6 +160,7 @@ public class BenchmarkDescriptionService
                 EnableSubAgents = false,
                 SystemModelId = config.Id,
                 PromptCacheKey = $"benchmark:description:{config.ModelId}",
+                CacheConversationTail = false,
                 Budget = new AgentRunBudget { MaxTotalModelCalls = 1 },
                 SeedHistory = new List<object>
                 {

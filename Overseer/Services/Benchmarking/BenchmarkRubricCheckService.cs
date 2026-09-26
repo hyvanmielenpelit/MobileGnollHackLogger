@@ -232,6 +232,7 @@ public class BenchmarkRubricCheckService
             EnableWebSearch = false,
             EnableSubAgents = false,
             SystemModelId = config.Id,
+            CacheConversationTail = false,
             Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
             SeedHistory = new List<object>
             {

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -518,6 +519,98 @@ public class PromptSegmentationTests
         Assert.NotNull(tailCc);
         Assert.Equal("ephemeral", ProviderHelper.GetProperty(tailCc, "type")?.ToString());
         Assert.Equal(2, CountCacheControl(requestBody));
+    }
+
+    [Fact]
+    public void BenchmarkSingleShotRequests_AllDisableTheConversationTailBreakpoint()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "MobileGnollHackLogger.slnx")))
+        {
+            dir = dir.Parent;
+        }
+        Assert.NotNull(dir);
+        string benchmarkingDir = Path.Combine(dir.FullName, "Overseer", "Services", "Benchmarking");
+        Assert.True(Directory.Exists(benchmarkingDir), $"Benchmarking source directory not found: {benchmarkingDir}");
+
+        // A MaxToolIterations = 0 request makes one model call and is never re-sent.
+        var singleShot = new Regex(@"\bMaxToolIterations\s*=\s*0\s*,");
+        var tailOff = new Regex(@"\bCacheConversationTail\s*=\s*false\b");
+        const string marker = "new AgentRunRequest";
+        int singleShotCount = 0;
+        var offenders = new List<string>();
+
+        foreach (string file in Directory.GetFiles(benchmarkingDir, "*.cs", SearchOption.AllDirectories))
+        {
+            string source = File.ReadAllText(file);
+            for (int at = source.IndexOf(marker, StringComparison.Ordinal); at >= 0;
+                 at = source.IndexOf(marker, at + marker.Length, StringComparison.Ordinal))
+            {
+                int open = source.IndexOf('{', at + marker.Length);
+                if (open < 0)
+                {
+                    continue;
+                }
+                string between = new string(source[(at + marker.Length)..open].Where(c => !char.IsWhiteSpace(c)).ToArray());
+                if (between.Length > 0 && between != "()")
+                {
+                    continue;
+                }
+
+                int depth = 0;
+                int close = -1;
+                for (int i = open; i < source.Length; i++)
+                {
+                    if (source[i] == '{')
+                    {
+                        depth++;
+                    }
+                    else if (source[i] == '}' && --depth == 0)
+                    {
+                        close = i;
+                        break;
+                    }
+                }
+                Assert.True(close > open, $"Unbalanced braces after {marker} in {Path.GetFileName(file)}");
+
+                string initializer = source[open..(close + 1)];
+                if (!singleShot.IsMatch(initializer))
+                {
+                    continue;
+                }
+                singleShotCount++;
+                if (!tailOff.IsMatch(initializer))
+                {
+                    int line = source.Take(at).Count(c => c == '\n') + 1;
+                    offenders.Add($"{Path.GetFileName(file)} line {line}");
+                }
+            }
+        }
+
+        Assert.True(singleShotCount >= 9, $"Expected at least 9 single-shot requests, found {singleShotCount}.");
+        Assert.True(offenders.Count == 0,
+            "A single-shot request is never re-sent; the tail breakpoint only adds a cache-write surcharge. " +
+            "Set CacheConversationTail = false. Offenders: " + string.Join(", ", offenders));
+    }
+
+    [Fact]
+    public void AnthropicProvider_PlainSystemSingleShotWithTailOff_HasNoCacheControl()
+    {
+        var request = new Overseer.Services.Agents.AgentRunRequest
+        {
+            ProviderName = "Anthropic",
+            SystemPrompt = "You write benchmark suite descriptions.",
+            CacheConversationTail = false,
+            SeedHistory = new List<object> { new { role = "user", content = "Describe this suite." } },
+        };
+
+        string json = Overseer.Services.Benchmarking.BenchmarkGradingRequestProbe.SerializeBody(CreateAnthropicCacheProvider(), request);
+
+        Assert.DoesNotContain("\"cache_control\"", json, StringComparison.Ordinal);
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal(JsonValueKind.String, doc.RootElement.GetProperty("system").ValueKind);
+        var message = Assert.Single(doc.RootElement.GetProperty("messages").EnumerateArray());
+        Assert.Equal("user", message.GetProperty("role").GetString());
     }
 
     [Fact]

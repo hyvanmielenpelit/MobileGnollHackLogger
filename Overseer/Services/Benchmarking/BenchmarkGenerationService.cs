@@ -473,6 +473,7 @@ public class BenchmarkGenerationService
             EnableWebSearch = false,
             EnableSubAgents = false,
             SystemModelId = config.Id,
+            CacheConversationTail = false,
             Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
             SeedHistory = new List<object>
             {
