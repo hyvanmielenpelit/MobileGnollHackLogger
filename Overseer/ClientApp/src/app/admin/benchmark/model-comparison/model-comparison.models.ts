@@ -556,7 +556,7 @@ function selfInconsistentNotice(state: ComparisonSelectionState): ComparisonSele
  * That the reference condition holds exactly one of the selected sources.
  *
  * The comparison itself succeeds; it is the charts that cannot be drawn, so this is a warning
- * about the chart views step 3 will refuse rather than an error about the request.
+ * about the chart views step 2 will refuse rather than an error about the request.
  */
 function singlePointNotice(state: ComparisonSelectionState): ComparisonSelectionNotice | null {
   const inReference = selectionKeys(state.runIds, state.groupIds)

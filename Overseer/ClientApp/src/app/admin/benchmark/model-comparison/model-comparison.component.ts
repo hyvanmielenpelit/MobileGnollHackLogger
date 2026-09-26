@@ -80,7 +80,6 @@ import {
   SpeedMeasure,
   buildComparisonFigures,
   buildNumberSamples,
-  formatQuestionsAsked,
   glyphFor,
   modelOrderKeys,
   normalizeProfile
@@ -147,6 +146,7 @@ import {
   zoomToSlider
 } from './preview-view';
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
+import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { ToastComponent, ToastNotice } from '../../../shared/toast/toast.component';
 import { showReasoningBadge } from '../../../utils/model-badge-format.util';
 import {
@@ -182,11 +182,8 @@ import {
   tableExportFilename
 } from './table-export';
 
-/**
- * Which wizard step is on screen. Three, in a fixed order: sources, then comparability and
- * filters, then the charts and the table.
- */
-export type ComparisonWizardStep = 1 | 2 | 3;
+/** Which wizard step is on screen. Two steps: sources, then the charts and the table. */
+export type ComparisonWizardStep = 1 | 2;
 
 /**
  * Every wizard step with its title and a one-line summary of what it is for.
@@ -197,8 +194,7 @@ export const COMPARISON_WIZARD_STEPS: readonly {
   readonly step: ComparisonWizardStep; readonly title: string; readonly summary: string;
 }[] = [
   { step: 1, title: 'Sources', summary: 'Choose the runs or groups to compare.' },
-  { step: 2, title: 'Comparability & filters', summary: 'See which of them can be charted together.' },
-  { step: 3, title: 'Charts & table', summary: 'View the charts and the table, and export them.' }
+  { step: 2, title: 'Charts & table', summary: 'Choose the models to show, view the charts and the table, and export them.' }
 ];
 
 /** How long a comparison may run before the footer offers the ways out. */
@@ -221,7 +217,7 @@ export const TABLE_COLUMNS_STORAGE_KEY = 'overseer.modelComparison.tableColumns'
 export const DOWNLOAD_SETTINGS_STORAGE_KEY = 'overseer.modelComparison.download';
 
 /**
- * Step 3's four views: every chart, one chart with zoom and pan, the sortable table, and the table
+ * Step 2's four views: every chart, one chart with zoom and pan, the sortable table, and the table
  * image with zoom and pan. The charts and the table image are composed by the export pipeline.
  */
 export type FigureViewTab = 'all' | 'single' | 'table' | 'tablePreview';
@@ -406,32 +402,50 @@ const ALL_COMPOSE_QUIET_MS = 120;
 /** One figure's chrome, as the export composer and the layout resolver both take it. */
 type FigureExportChrome = Omit<FigureExportRequest, 'canvas' | 'format' | 'layout'>;
 
-/**
- * Which entries the figures are allowed to draw.
- *
- * `all` charts comparable and degraded entries alike, each degraded axis carrying the notice that
- * names it. `comparableOnly` keeps degraded entries in the table and out of every figure, for a
- * reader who wants the strict set. Neither setting can reach an excluded entry: the server returns
- * no measures for one at all.
- */
-export type ComparabilityStrictness = 'all' | 'comparableOnly';
-
 /** A degenerate shape the entry set can take, each of which is rendered differently. */
 export type ComparisonShape = 'empty' | 'none' | 'single' | 'pair' | 'full';
 
-/** One plotted model in the emphasis selector: the name it is drawn under, its thinking level and reasoning mode. */
-export interface EmphasisOption {
+/** One row of the Data tab's Models table. */
+export interface ModelRow {
   readonly key: string;
+  /** The name the model is drawn under. */
   readonly name: string;
   readonly thinkingLevel: string | null;
   readonly reasoningMode: string | null;
+  /** Excluded by the server, so it has no numbers to draw and its Show box is disabled. */
+  readonly excluded: boolean;
+  /** Ticked under Show; never true for an excluded entry. */
+  readonly shown: boolean;
+  /** Drawn in the figures: shown and within the plot cap. */
+  readonly plotted: boolean;
+  /** Shown but past the plot cap, so the figures leave it out. */
+  readonly overCap: boolean;
+  /** The server's explanation, for an excluded row's info tip. */
+  readonly explanation: string;
 }
 
-/** One statistic in the single-entry KPI row, where a chart would be one bar and say nothing. */
-export interface ComparisonStatTile {
-  readonly label: string;
-  readonly value: string;
-  readonly detail: string;
+/** One caveat in the About dialog, counted on its button's badge. */
+export interface AboutNote {
+  readonly id: string;
+  readonly tone: 'warning' | 'info';
+  readonly heading: string;
+  readonly body: string;
+}
+
+/** The entry keys of a payload, or null for no payload. */
+function keySet(comparison: BenchmarkModelComparisonDto | null | undefined): Set<string> | null {
+  return comparison ? new Set(comparison.entries.map(entry => entry.key)) : null;
+}
+
+/** Whether a payload has exactly the given entry keys, in any order. */
+function sameKeys(keys: ReadonlySet<string>, comparison: BenchmarkModelComparisonDto | null): boolean {
+  const entries = comparison?.entries ?? [];
+  return entries.length === keys.size && entries.every(entry => keys.has(entry.key));
+}
+
+/** The keys of a payload's entries that the server measured, which is every entry it did not exclude. */
+function measuredKeys(comparison: BenchmarkModelComparisonDto | null): string[] {
+  return (comparison?.entries ?? []).filter(entry => !entry.excluded).map(entry => entry.key);
 }
 
 /**
@@ -475,20 +489,20 @@ export interface ComparisonFigureCard {
  * 3. **A degraded axis says which axis and why.** Speed and cost degrade independently of quality,
  *    so a set can be trustworthy on one axis and not on another, and the notices are per figure.
  *
- * Every control that narrows the **figures** sits in one filter row above every one of them. A
- * filter inside a chart card would leave the six figures describing different slices of the same
- * set. Controls that decide which sources are in the request at all are a different stage of the
- * same task and belong to the source picker, next to the tables they scope — which is why suite
- * scope lives there and pricing basis, which changes only the cost arithmetic over an unchanged
- * set, lives here. How the charts measure and order the models is set beside them, in step 3's
- * Data tab.
+ * Every control that narrows the **figures** sits in one place, step 2's Data tab, and scopes every
+ * one of them. A filter inside a chart card would leave the six figures describing different slices
+ * of the same set. Controls that decide which sources are in the request at all are a different
+ * stage of the same task and belong to the source picker, next to the tables they scope — which is
+ * why suite scope lives there and pricing basis, which changes only the cost arithmetic over an
+ * unchanged set, lives here.
  */
 @Component({
   selector: 'app-benchmark-model-comparison',
   standalone: true,
   imports: [
     CommonModule, FormsModule, SortHeaderComponent, TablePagerComponent, ProviderBadgeComponent, ToastComponent,
-    FigureStylePanelComponent, ExportSizeSectionComponent, TableSettingsPanelComponent, ReorderableListComponent
+    FigureStylePanelComponent, ExportSizeSectionComponent, TableSettingsPanelComponent, ReorderableListComponent,
+    InfoTipComponent
   ],
   templateUrl: './model-comparison.component.html',
   styleUrls: ['./model-comparison.component.scss']
@@ -567,6 +581,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   @ViewChild('cancelCompareButton') cancelCompareButton?: ElementRef<HTMLButtonElement>;
 
+  @ViewChild('aboutDialog') private aboutDialogRef?: ElementRef<HTMLDialogElement>;
+
+  /** The About dialog is open; its body renders only while it is. */
+  aboutOpen = false;
+
   /** The request has run past `SLOW_COMPARISON_MS`, and the footer says how to leave it. */
   slowLoading = false;
 
@@ -590,8 +609,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /** Entry keys the figures may draw. Excluded entries are never in it; the server gives them no numbers. */
   includedKeys: string[] = [];
-
-  strictness: ComparabilityStrictness = 'all';
 
   /**
    * P1's model order, shared by all three panels, by every other figure's series order and by the
@@ -809,14 +826,20 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       return;
     }
 
-    // A new payload is a new set of models, so the entry selection is re-seeded rather than
-    // carried: a key held over from the previous suite would silently plot nothing.
-    this.includedKeys = (this.comparison?.entries ?? [])
-      .filter(entry => !entry.excluded)
-      .map(entry => entry.key);
-    this.emphasisKeys = [];
+    // A refetch of the same entries (pricing basis, Recompute) keeps what the admin chose; a new
+    // set of entries is a new comparison and starts with every measured entry shown.
+    const previousKeys = keySet(change.previousValue as BenchmarkModelComparisonDto | null | undefined);
+    const sameEntries = previousKeys !== null && sameKeys(previousKeys, this.comparison);
+    if (sameEntries) {
+      const measured = new Set(measuredKeys(this.comparison));
+      this.includedKeys = this.includedKeys.filter(key => measured.has(key));
+      this.emphasisKeys = this.emphasisKeys.filter(key => this.includedKeys.includes(key));
+    } else {
+      this.includedKeys = measuredKeys(this.comparison);
+      this.emphasisKeys = [];
+      this.entryTable.page = 1;
+    }
     this.highlightedKey = null;
-    this.entryTable.page = 1;
     this.reconcileCustomOrder();
     this.rebuild();
     this.refreshColumnEmpty(true);
@@ -838,12 +861,12 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * The views' box lives inside step 3, so it does not exist on the pass that runs
-   * `ngAfterViewInit`, and it is a new element each time step 3 is rendered again. The observer is
+   * The views' box lives inside step 2, so it does not exist on the pass that runs
+   * `ngAfterViewInit`, and it is a new element each time step 2 is rendered again. The observer is
    * attached whenever the element it watches is not the one on the page.
    *
    * The stage and the All tiles can leave the DOM or come back without a tab click — a refetch
-   * takes the charts away or returns them, and leaving step 3 removes them. Leaving tears down only
+   * takes the charts away or returns them, and leaving step 2 removes them. Leaving tears down only
    * unbound state, since a bound field changed inside this hook faults the check; returning
    * re-attaches outside the check pass.
    */
@@ -905,23 +928,23 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   // ---------------------------------------------------------------------------------------------
   // The wizard
   //
-  // Three steps in a fixed order, with the step header as a tablist and Previous / Next as the
+  // Two steps in a fixed order, with the step header as a tablist and Previous / Next as the
   // primary traversal. Next is enabled only when the current step's selection is valid, and where
   // it is not, the reason is rendered as text beside it rather than left to a disabled button.
   // ---------------------------------------------------------------------------------------------
 
   step: ComparisonWizardStep = 1;
 
-  readonly steps: readonly ComparisonWizardStep[] = [1, 2, 3];
+  readonly steps: readonly ComparisonWizardStep[] = [1, 2];
 
   readonly stepTitles = Object.fromEntries(
     COMPARISON_WIZARD_STEPS.map(entry => [entry.step, entry.title])
   ) as Record<ComparisonWizardStep, string>;
 
   /**
-   * Steps 2 and 3 need a computed comparison and nothing else.
+   * Step 2 needs a computed comparison and nothing else.
    *
-   * Step 3 is reachable over a set no chart can draw, which is the point of its table views: an
+   * It opens over a set no chart can draw, on the table views, which is the point of them: an
    * incomparable set still has measures, states and differing keys to read, and the step that
    * carries them must not close behind the same gate as the pictures. Only its chart views refuse.
    *
@@ -940,25 +963,23 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (this.step === 1) {
       return !this.loading && this.selectedSourceCount > 0 && this.selectedSourceCount <= this.maxSources;
     }
-    if (this.step === 2) {
-      return this.comparison !== null;
-    }
     return true;
   }
 
   /**
    * A comparison is being computed for the selection on step 1.
    *
-   * Step-scoped rather than the bare `loading` flag: a pricing-basis refetch from step 2 loads too,
-   * and the footer button there is Next, which the request does not block.
+   * Step-scoped rather than the bare `loading` flag: a refetch from step 2's Prices select or its
+   * Recompute button loads too, and the footer button there is Close, which the request does not
+   * block.
    */
   get comparing(): boolean {
     return this.loading && this.step === 1;
   }
 
-  /** Compare while the current selection has no computed comparison; Next once it does. */
+  /** Compare while the current selection has no computed comparison; Next once it does; Close on step 2. */
   get nextLabel(): string {
-    if (this.step === 3) {
+    if (this.step === 2) {
       return 'Close';
     }
     if (this.comparing) {
@@ -987,12 +1008,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         'compared in one request. A comparison over every stored run is a slow query and an ' +
         'unreadable figure.';
     }
-    // Step 2 has no blocked state once a comparison exists, and step 3 is the last one.
     return '';
   }
 
   /**
-   * The busy line of a refetch from steps 2 and 3, where Next is not blocked and carries no spinner.
+   * The busy line of a refetch from step 2, where Close is not blocked and carries no spinner.
    * Empty on step 1, whose busy state is the footer button and `nextBlockedReason`.
    */
   get refetchStatus(): string {
@@ -1118,7 +1138,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (!this.isStepReachable(step)) {
       return;
     }
-    if (this.step === 3 && step !== 3) {
+    if (this.step === 2 && step !== 2) {
       // While the views still exist. `figureTab` is kept, so returning re-attaches the one shown.
       this.detachPreview();
       this.detachAll();
@@ -1137,7 +1157,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   nextStep(): void {
-    if (this.step === 3) {
+    if (this.step === 2) {
       this.closeRequested.emit();
       return;
     }
@@ -1187,14 +1207,14 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * Moves the wizard in step with the payload, and only where the payload changed state.
    *
    * A first comparison advances to step 2, because Compare on step 1 is what asked for it. A
-   * refetch under an unchanged selection — the pricing basis control, which lives on step 2 —
-   * replaces one non-null payload with another and must leave the step alone, or changing a cost
-   * basis would yank the reader forward. Losing the payload drops back to step 1, where the
-   * sources are: every later step has nothing to render without one.
+   * refetch under an unchanged selection — step 2's Prices select or its Recompute button —
+   * replaces one non-null payload with another and leaves the step alone, so a reader who went
+   * back to step 1 while it computed is not yanked forward. Losing the payload drops back to step 1, where the
+   * sources are: step 2 has nothing to render without one.
    */
   private applyComparisonToStep(previous: BenchmarkModelComparisonDto | null | undefined): void {
     const next: ComparisonWizardStep = this.comparison === null ? 1 : !previous ? 2 : this.step;
-    if (this.step === 3 && next !== 3) {
+    if (this.step === 2 && next !== 2) {
       this.detachPreview();
       this.detachAll();
     }
@@ -1210,39 +1230,41 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.pricingBasisChange.emit(value);
   }
 
+  /** Recompute, in step 2's view bar. Refused while a request is already in flight. */
   onRefresh(): void {
+    if (this.loading) {
+      return;
+    }
     this.refresh.emit();
   }
 
   // ---------------------------------------------------------------------------------------------
   // Client-side filter controls — these re-render every figure against the same slice
   //
-  // The entry selection and the strictness are on step 2, beside what decides which entries can be
-  // compared. The measures and the model order are in step 3's Data tab, beside the charts they
-  // change; the model order also orders the table.
+  // All of them are in step 2's Data tab, beside the charts they change: the Models table, the
+  // measures and the model order, which also orders the table.
   // ---------------------------------------------------------------------------------------------
 
   /**
-   * Adds or removes one entry from the plotted set.
+   * Adds or removes one entry from the plotted set. Taking an entry out also drops its highlight,
+   * which would draw nothing and return unasked on the next tick.
    *
    * Ticking more entries than the figures plot is allowed: the chart core takes the first
    * {@link MAX_PLOTTED_ENTRIES} and names the rest in an overflow notice, which is also the state
    * a fresh payload seeds, so a refusal here would leave that state unreachable once left.
    */
   toggleEntry(key: string): void {
-    this.includedKeys = this.includedKeys.includes(key)
-      ? this.includedKeys.filter(k => k !== key)
-      : [...this.includedKeys, key];
+    if (this.includedKeys.includes(key)) {
+      this.includedKeys = this.includedKeys.filter(k => k !== key);
+      this.emphasisKeys = this.emphasisKeys.filter(k => k !== key);
+    } else {
+      this.includedKeys = [...this.includedKeys, key];
+    }
     this.rebuild();
   }
 
   isIncluded(key: string): boolean {
     return this.includedKeys.includes(key);
-  }
-
-  onStrictnessChange(value: ComparabilityStrictness): void {
-    this.strictness = value;
-    this.rebuild();
   }
 
   /**
@@ -1437,7 +1459,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * Hover and keyboard focus on an Emphasis entry light the same model in all three panels and in
+   * Hover on a Models row lights the same model in all three panels and in
    * the profile; on the All tab the tiles re-compose once the pointer settles.
    *
    * Refused on the Single tab, where a transient hover would be composed into the figure about to
@@ -1451,10 +1473,15 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.rebuild();
   }
 
+  /** Pins a plotted model into the accent, or releases it. A model the figures do not draw cannot be pinned. */
   toggleEmphasis(key: string): void {
-    this.emphasisKeys = this.emphasisKeys.includes(key)
-      ? this.emphasisKeys.filter(k => k !== key)
-      : [...this.emphasisKeys, key];
+    if (this.emphasisKeys.includes(key)) {
+      this.emphasisKeys = this.emphasisKeys.filter(k => k !== key);
+    } else if (this.plotted.some(entry => entry.key === key)) {
+      this.emphasisKeys = [...this.emphasisKeys, key];
+    } else {
+      return;
+    }
     this.rebuild();
   }
 
@@ -1469,20 +1496,45 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * The plotted entries as the emphasis selector names them.
+   * Every entry as the Data tab's Models table names it, in the model order so the list matches the
+   * charts and the table; any entry the order does not rank follows in payload order.
    *
-   * The chart entry carries only the axis label, so the display name, the thinking level and the
-   * reasoning mode are read off the payload beside it — the same facts the comparison table's model
-   * cell shows.
+   * A field rebuilt at the end of `rebuild()` rather than a getter, because the template reads it per
+   * row on every change detection. The display name, the thinking level and the reasoning mode are
+   * the same facts the comparison table's model cell shows.
    */
-  get emphasisOptions(): EmphasisOption[] {
-    return this.plotted.map(entry => {
-      const dto = this.entries.find(candidate => candidate.key === entry.key);
+  modelRows: readonly ModelRow[] = [];
+
+  /** Rows ticked under Show. */
+  get shownModelCount(): number {
+    return this.modelRows.filter(row => row.shown).length;
+  }
+
+  /** Rows that can be ticked under Show: every entry the server did not exclude. */
+  get chartableModelCount(): number {
+    return this.modelRows.filter(row => !row.excluded).length;
+  }
+
+  private buildModelRows(): ModelRow[] {
+    const plotted = new Set(this.plotted.map(entry => entry.key));
+    const overflow = new Set((this.figures?.selection.overflow ?? []).map(entry => entry.key));
+    const byKey = new Map(this.entries.map(entry => [entry.key, entry] as const));
+    const ranked = this.modelOrderKeyList.filter(key => byKey.has(key));
+    const rankedSet = new Set(ranked);
+    const keys = [...ranked, ...this.entries.map(entry => entry.key).filter(key => !rankedSet.has(key))];
+    return keys.map(key => {
+      const entry = byKey.get(key)!;
+      const shown = !entry.excluded && this.includedKeys.includes(key);
       return {
-        key: entry.key,
-        name: dto?.modelDisplayName || entry.label,
-        thinkingLevel: dto?.thinkingLevel ?? null,
-        reasoningMode: dto?.reasoningMode ?? null
+        key,
+        name: entry.modelDisplayName || entry.label,
+        thinkingLevel: entry.thinkingLevel ?? null,
+        reasoningMode: entry.reasoningMode ?? null,
+        excluded: entry.excluded,
+        shown,
+        plotted: plotted.has(key),
+        overCap: shown && overflow.has(key),
+        explanation: entry.explanation ?? ''
       };
     });
   }
@@ -1601,56 +1653,89 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return this.entries.filter(entry => !entry.excluded && entry.table?.speedIndexSaturated).length;
   }
 
-  /** Comparable entries the strictness control is holding out of the figures. */
-  get strictlyWithheldEntries(): BenchmarkModelComparisonEntryDto[] {
-    return this.strictness === 'comparableOnly'
-      ? this.entries.filter(entry => entry.state === 'Degraded')
-      : [];
-  }
-
   /** Entries the operator has taken out of the figures, which stay in the table regardless. */
   get deselectedEntries(): BenchmarkModelComparisonEntryDto[] {
     return this.entries.filter(entry => !entry.excluded && !this.includedKeys.includes(entry.key));
   }
 
-  /** Selectable entries the current table page does not show, so a selection is never silently off-screen. */
-  get offPageSelectionCount(): number {
-    const onPage = new Set(this.entryTable.view(this.entries).map(e => e.key));
-    return this.includedKeys.filter(key => !onPage.has(key)).length;
-  }
-
-  /** The three tiles that stand in for a one-bar bar chart, where the number is the chart. */
-  get singleEntryTiles(): ComparisonStatTile[] {
-    const plotted = this.plotted[0];
-    const entry = plotted ? this.entries.find(e => e.key === plotted.key) : undefined;
-    if (!entry) {
-      return [];
+  /** Why the chart views are off, for the line that replaces them; read only while they are. */
+  get chartsUnavailableReason(): string {
+    if (this.entries.length === 0) {
+      return 'There are no models in this comparison.';
     }
-    const half = entry.quality?.intervalHalfWidth;
-    return [
-      {
-        label: 'Intelligence Index',
-        value: this.formatIndex(entry.quality?.pointEstimate ?? null),
-        detail: half == null
-          ? 'No interval could be computed for this entry.'
-          : `95 % interval ± ${half.toFixed(1)} — ${entry.quality?.intervalBasis ?? ''}`
-      },
-      {
-        label: 'Time to first token, P50',
-        value: this.formatMs(entry.speed?.ttftP50Ms ?? null),
-        detail: `P90 ${this.formatMs(entry.speed?.ttftP90Ms ?? null)} over ${entry.speed?.ttftAnswerCount ?? 0} answers`
-      },
-      {
-        label: 'Candidate cost per question',
-        value: this.formatUsd(entry.cost?.candidateCostPerQuestionUsd ?? null),
-        detail: `${this.comparison?.pricingBasisLabel ?? ''} — candidate spend only, grading roles excluded`
-          + (entry.cost?.questionsAskedPerRun != null
-            ? ` — over ${formatQuestionsAsked(entry.cost.questionsAskedPerRun)} asked per run`
-            : '')
-      }
-    ];
+    if (this.chartableEntries.length < 2) {
+      return 'Fewer than two models were measured the same way, so there is nothing to chart. '
+        + 'The table lists every model and why.';
+    }
+    return 'Charts need at least two models. Tick more under Data → Models.';
   }
 
+  // ---------------------------------------------------------------------------------------------
+  // The About dialog
+  //
+  // A nested <dialog>, a DOM descendant of the host's wizard dialog, whose (close) closes the
+  // wizard: its own close and cancel events are stopped here so they never reach it.
+  // ---------------------------------------------------------------------------------------------
+
+  openAbout(): void {
+    const dialog = this.aboutDialogRef?.nativeElement;
+    if (!dialog || dialog.open) {
+      return;
+    }
+    this.aboutOpen = true;
+    this.cdr.detectChanges();
+    dialog.showModal();
+  }
+
+  onAboutDialogClose(event: Event): void {
+    event.stopPropagation();
+    if (event.type !== 'close') {
+      return;
+    }
+    this.aboutOpen = false;
+    this.cdr.markForCheck();
+    document.getElementById('mc-about-trigger')?.focus();
+  }
+
+  /** One line on how much of the set can be charted together. */
+  get aboutSummary(): string {
+    const total = this.entries.length;
+    const excluded = this.excludedEntries.length;
+    if (excluded === 0) {
+      return `All ${total} models were measured the same way and can be charted together.`;
+    }
+    const one = excluded === 1;
+    return `${total - excluded} of ${total} models can be charted together. ${excluded} `
+      + `${one ? 'was' : 'were'} measured differently and ${one ? 'is' : 'are'} in the table only.`;
+  }
+
+  /** The caveats that qualify the figures, each counted on the About button's badge. */
+  get aboutNotes(): AboutNote[] {
+    const notes: AboutNote[] = [];
+    if (this.comparison?.thinkingLevelsDiffer) {
+      notes.push({
+        id: 'thinking-levels',
+        tone: 'warning',
+        heading: 'The models use different thinking levels',
+        body: 'Thinking level has a large effect on speed. The charts compare each model as it is '
+          + 'configured, not at one shared thinking level.'
+      });
+    }
+    if (this.allSingleRun) {
+      notes.push({
+        id: 'single-run',
+        tone: 'info',
+        heading: 'Each model has only one run',
+        body: 'Nothing here shows how much a repeat run would differ. Treat small gaps between models '
+          + 'as uncertain, and read the ± ranges before the bar tops.'
+      });
+    }
+    return notes;
+  }
+
+  get aboutNoteCount(): number {
+    return this.aboutNotes.length;
+  }
   // ---------------------------------------------------------------------------------------------
   // The figures, as cards
   //
@@ -2309,7 +2394,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   // ---------------------------------------------------------------------------------------------
-  // The step-3 workspace
+  // The step-2 workspace
   //
   // A collapsible settings sidebar beside four views: All charts, Single chart, the Interactive
   // table and the Table preview. The chart views and the Table preview show images composed by the
@@ -2761,7 +2846,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   tablePreviewPixels = '';
 
   /**
-   * Starts composing onto a stage that has just been rendered — after a tab change, or when step 3
+   * Starts composing onto a stage that has just been rendered — after a tab change, or when step 2
    * opens on a remembered Single chart or Table preview, where no figure has been chosen yet. The
    * Single chart opens in the default view; the Table preview at Fit to screen.
    *
@@ -4220,7 +4305,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    */
   private scheduleTableMeasure(): void {
     this.cancelScheduledTableMeasure();
-    if (this.step !== 3 || !isTableView(this.effectiveFigureTab)) {
+    if (this.step !== 2 || !isTableView(this.effectiveFigureTab)) {
       return;
     }
     this.tableMeasureTimer = setTimeout(() => {
@@ -4484,8 +4569,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   // ---------------------------------------------------------------------------------------------
 
   /**
-   * Set-level notices: the eight-entry cap, the exclusions, whatever the strictness control and the
-   * entry selection are withholding, and the two intervals this payload cannot supply.
+   * Set-level notices: the eight-entry cap, the exclusions, whatever the entry selection is
+   * withholding, and the two intervals this payload cannot supply.
    *
    * They render once, above the figures, because every one of them is a fact about the whole slice
    * rather than about one chart.
@@ -4521,7 +4606,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /**
    * The set-level facts that qualify every figure, tagged for the figure chrome: the cap and the
-   * exclusions are warnings, strict withholding and deselection are informational, and the plotted
+   * exclusions are warnings, deselection is informational, and the plotted
    * entries' question coverage closes the list (see {@link questionCoverageNotes}). Appended to every
    * card's own notes on export and on preview, and the first of {@link setNotices}.
    */
@@ -4529,15 +4614,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     const notes: FigureNote[] = (this.figures?.selection.notices ?? [])
       .map(text => ({ text, tone: 'warning' as const }));
 
-    const withheld = this.strictlyWithheldEntries;
-    if (withheld.length > 0) {
-      notes.push({
-        text: `Strict comparability is on: ${withheld.length} degraded ` +
-          `${withheld.length === 1 ? 'entry is' : 'entries are'} in the table only ` +
-          `(${withheld.map(e => e.label).join(', ')}).`,
-        tone: 'info'
-      });
-    }
 
     const deselected = this.deselectedEntries;
     if (deselected.length > 0) {
@@ -4580,9 +4656,14 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return `${chrome.title}: ${figureSummary(chrome)}. Values for every entry are in the comparison table below.`;
   }
 
-  /** A DOM id and anchor name derived from an entry key, which carries a `run:12` style colon. */
+  /** An entry key made safe for a DOM id or an anchor name: keys carry a `run:12` style colon. */
+  domKey(key: string): string {
+    return key.replace(/[^A-Za-z0-9_-]/g, '-');
+  }
+
+  /** A tooltip's DOM id and anchor name, derived from an entry key. */
   tipId(prefix: string, key: string): string {
-    return `mc-tip-${prefix}-${key.replace(/[^A-Za-z0-9_-]/g, '-')}`;
+    return `mc-tip-${prefix}-${this.domKey(key)}`;
   }
 
   stateLabel(entry: BenchmarkModelComparisonEntryDto): string {
@@ -4660,18 +4741,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.refreshTableCells();
     this.refreshFigureTheme();
 
-    const stateByKey = new Map(this.entries.map(entry => [entry.key, entry.state] as const));
-    const input = this.chartEntries.filter(entry => {
-      // Excluded entries pass through so the selection counts and names them; the chart core drops
-      // them before any figure is built.
-      if (entry.excluded) {
-        return true;
-      }
-      if (!this.includedKeys.includes(entry.key)) {
-        return false;
-      }
-      return !(this.strictness === 'comparableOnly' && stateByKey.get(entry.key) === 'Degraded');
-    });
+    // Excluded entries pass through so the selection counts and names them; the chart core drops
+    // them before any figure is built.
+    const input = this.chartEntries.filter(entry => entry.excluded || this.includedKeys.includes(entry.key));
 
     this.figures = buildComparisonFigures(input, {
       context: this.context,
@@ -4716,6 +4788,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (this.previewCardId !== null && this.previewCard === null) {
       this.previewCardId = this.exportableCards[0]?.id ?? null;
     }
+
+    this.modelRows = this.buildModelRows();
 
     // Every caller of this method changes what the template renders, and several of them are
     // outside change detection: a filter control, the reduced-motion listener, the resize

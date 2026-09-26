@@ -723,6 +723,7 @@ public class BenchmarkModelComparisonServiceTests
             Assert.False(string.IsNullOrWhiteSpace(m.Reason));
             Assert.False(string.IsNullOrWhiteSpace(m.Instead));
         });
+        Assert.All(dto.ExcludedMeasures, m => Assert.DoesNotContain("step", m.Instead ?? "", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

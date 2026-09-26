@@ -113,7 +113,7 @@ public static class BenchmarkModelComparison
                     + "statistics already guard it against a non-positive index.",
                 Summary = "Dividing cost by a noisy score gives a number with no reliable error bars, "
                     + "and it swings wildly as the score nears zero.",
-                Instead = "Candidate $ / question in the step 3 table, read beside the Intelligence "
+                Instead = "Candidate $ / question in the comparison table, read beside the Intelligence "
                     + "Index and its ± interval."
             },
             new BenchmarkModelComparisonExcludedMeasureDto

@@ -207,7 +207,7 @@ describe('ModelComparisonComponent', () => {
             + 'statistics already guard it against a non-positive index.',
           summary: 'Dividing cost by a noisy score gives a number with no reliable error bars, '
             + 'and it swings wildly as the score nears zero.',
-          instead: 'Candidate $ / question in the step 3 table, read beside the Intelligence '
+          instead: 'Candidate $ / question in the comparison table, read beside the Intelligence '
             + 'Index and its ± interval.'
         }
       ],
@@ -220,11 +220,10 @@ describe('ModelComparisonComponent', () => {
    * and opens one wizard step.
    *
    * The step is explicit because the wizard opens on step 1 — the projected source picker — and
-   * almost every assertion below is about the two steps behind it. Step 2 is the default: it
-   * carries the filters and the caveats. Step 3 holds the charts and the table, and opens on All
-   * charts in a fresh browser, or on the Interactive table where nothing can be charted.
-   * `goToStep` refuses an unreachable step, so a test that asks for step 3 without a comparison
-   * finds no panel rather than a quietly passing assertion.
+   * almost every assertion below is about step 2, which is the default. Step 2 holds the charts
+   * and the table, and opens on All charts in a fresh browser, or on the Interactive table where
+   * nothing can be charted. `goToStep` refuses an unreachable step, so a test that asks for step 2
+   * without a comparison finds no panel rather than a quietly passing assertion.
    */
   function render(dto: BenchmarkModelComparisonDto | null, step: ComparisonWizardStep = 2): void {
     fixture.componentRef.setInput('comparison', dto);
@@ -233,15 +232,15 @@ describe('ModelComparisonComponent', () => {
     fixture.detectChanges();
   }
 
-  /** Opens one of step 3's four views through its tab. */
+  /** Opens one of step 2's four views through its tab. */
   function showView(view: 'all' | 'single' | 'table' | 'tablePreview'): void {
     (fixture.debugElement.query(By.css(`#mc-fig-tab-${view}`)).nativeElement as HTMLButtonElement).click();
     fixture.detectChanges();
   }
 
-  /** Step 3 on the Interactive table, where the comparison table now lives. */
+  /** Step 2 on the Interactive table, where the comparison table lives. */
   function renderTable(dto: BenchmarkModelComparisonDto | null): void {
-    render(dto, 3);
+    render(dto, 2);
     if (component.effectiveFigureTab !== 'table') {
       showView('table');
     }
@@ -329,7 +328,7 @@ describe('ModelComparisonComponent', () => {
   // The Interactive table
   // -------------------------------------------------------------------------------------------
 
-  it('renders the Interactive table as a view of step 3, with no control that hides it', () => {
+  it('renders the Interactive table as a view of step 2, with no control that hides it', () => {
     renderTable(buildDto(comparableSet(4)));
 
     const table = fixture.debugElement.query(By.css('#mc-fig-panel-table table.mc-table'));
@@ -406,7 +405,7 @@ describe('ModelComparisonComponent', () => {
     return row!;
   }
 
-  it('badges a non-baseline reasoning mode in the table and the emphasis list, and never standard', () => {
+  it('badges a non-baseline reasoning mode in the table and the Models list, and never standard', () => {
     const entries = comparableSet(2);
     entries[0] = { ...entries[0], reasoningMode: 'pro' };
     entries[1] = { ...entries[1], reasoningMode: 'standard' };
@@ -422,10 +421,10 @@ describe('ModelComparisonComponent', () => {
     expect(badgeOrder).toEqual(['thinking-badge', 'reasoning-badge', 'provider-badge']);
     expect(tableRowOf('Run 2').querySelector('.reasoning-badge')).toBeNull();
 
-    showView('all');
-    // The list follows the plotted order, not the table's, so the badges are counted rather than indexed.
-    expect(fixture.debugElement.queryAll(By.css('.mc-emphasis-list li')).length).toBe(2);
-    const badges = fixture.debugElement.queryAll(By.css('.mc-emphasis-list .reasoning-badge'))
+    openSidebarTab('data');
+    // The Models table follows the model order, not an index, so the badges are counted rather than indexed.
+    expect(fixture.debugElement.queryAll(By.css('.mc-models-table tbody tr')).length).toBe(2);
+    const badges = fixture.debugElement.queryAll(By.css('.mc-models-table .reasoning-badge'))
       .map(badge => (badge.nativeElement as HTMLElement).textContent?.trim());
     expect(badges).toEqual(['pro']);
   });
@@ -433,7 +432,7 @@ describe('ModelComparisonComponent', () => {
   it('keeps an excluded entry in the table even though no figure can draw it', () => {
     renderTable(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringMethodVersion'])]));
 
-    expect(fixture.debugElement.queryAll(By.css('tbody tr')).length).toBe(4);
+    expect(fixture.debugElement.queryAll(By.css('.mc-table tbody tr')).length).toBe(4);
     expect(component.figures?.selection.plotted.length).toBe(3);
     expect(component.figures?.selection.excluded.length).toBe(1);
   });
@@ -445,11 +444,13 @@ describe('ModelComparisonComponent', () => {
   it('names the comparability keys an excluded entry differs on', () => {
     render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringMethodVersion'])]));
 
-    const excluded = textOf('.mc-excluded');
+    component.openAbout();
+    fixture.detectChanges();
+
+    const excluded = textOf('.mc-about-excluded');
     expect(excluded).toContain('ScoringMethodVersion');
     expect(excluded).toContain('v8');
     expect(excluded).toContain('v9');
-    expect(textOf('.mc-notices')).toContain('not comparable');
   });
 
   it('draws no axes at all when nothing in the set may be charted together', () => {
@@ -460,14 +461,17 @@ describe('ModelComparisonComponent', () => {
 
     expect(component.shape).toBe('none');
     expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(0);
-    expect(textOf('.alert-heading')).toContain('Nothing in this set may be charted together');
+    expect(textOf('#mc-fig-unavailable')).toContain(
+      'Fewer than two models were measured the same way, so there is nothing to chart. The table lists every model and why.');
+    for (const view of ['all', 'single']) {
+      const tab = fixture.debugElement.query(By.css(`#mc-fig-tab-${view}`)).nativeElement as HTMLButtonElement;
+      expect(tab.getAttribute('aria-disabled')).withContext(view).toBe('true');
+    }
 
-    // The refusal is explained on step 2 and the entries stay listed on step 3, which opens on the
-    // Interactive table over a set no chart can draw precisely so that they do.
-    component.goToStep(3);
-    fixture.detectChanges();
+    // Step 2 opens on the Interactive table over a set no chart can draw, so the excluded entries
+    // stay listed regardless.
     expect(component.effectiveFigureTab).toBe('table');
-    expect(fixture.debugElement.queryAll(By.css('tbody tr')).length).toBe(2);
+    expect(fixture.debugElement.queryAll(By.css('.mc-table tbody tr')).length).toBe(2);
     expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(0);
   });
 
@@ -475,18 +479,8 @@ describe('ModelComparisonComponent', () => {
   // Degenerate shapes
   // -------------------------------------------------------------------------------------------
 
-  it('renders a KPI row rather than a one-bar chart for a single entry', () => {
-    render(buildDto(comparableSet(1)));
-
-    expect(component.shape).toBe('single');
-    expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(0);
-    expect(fixture.debugElement.queryAll(By.css('.mc-kpi')).length).toBe(3);
-    expect(textOf('.mc-kpi-label')).toContain('Intelligence Index');
-    expect(textOf('.mc-kpi-label')).toContain('Time to first token, P50');
-  });
-
   it('suppresses the profile plot at two entries and keeps P1 and the scatters', () => {
-    render(buildDto(comparableSet(2)), 3);
+    render(buildDto(comparableSet(2)), 2);
 
     expect(component.shape).toBe('pair');
     expect(component.profileCard).toBeNull();
@@ -532,7 +526,7 @@ describe('ModelComparisonComponent', () => {
   }
 
   it('swaps the scatter legends for direct labels when the toggle is ticked, and back', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
 
     // The values toggle is on by default, so the plugin is already registered; what the names
     // toggle changes is the legend and whether a block carries a name.
@@ -556,7 +550,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('draws the marks\' values by default and drops the plugin when they are turned off', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
 
     expect(component.scatterInlineValues).toBeTrue();
     expect(scatterPluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBeTrue();
@@ -575,7 +569,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('renders all six figures from three entries upward', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
 
     expect(component.shape).toBe('full');
     expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(7);
@@ -585,7 +579,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('carries a pricing badge on the cost scatter and withholds it from the quality-speed one', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
 
     const scatters = component.scatterCards;
     expect(scatters.length).toBe(3);
@@ -596,7 +590,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('names the Better direction in each scatter and bar tile\'s accessible name, and never as a badge', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
 
     const label = (card: ComparisonFigureCard): string =>
       (fixture.debugElement.query(By.css(`canvas[data-figure-id="${card.id}"]`)).nativeElement as HTMLCanvasElement)
@@ -616,7 +610,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('shows no Better badge where the style hides it, or on the profile', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const directions = (): number => component.exportableCards.filter(card => card.chrome.direction).length;
     expect(directions()).toBe(6);
 
@@ -642,7 +636,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('draws no Better marker on any plot canvas', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
 
     for (const card of component.exportableCards) {
       expect(card.plugins.map(plugin => plugin.id)).withContext(card.id).not.toContain('overseerDirectionMarker');
@@ -655,19 +649,6 @@ describe('ModelComparisonComponent', () => {
   // -------------------------------------------------------------------------------------------
   // The filter row
   // -------------------------------------------------------------------------------------------
-
-  it('holds exactly one filter row, and no filter inside any chart card', () => {
-    render(buildDto(comparableSet(4)));
-    expect(fixture.debugElement.queryAll(By.css('.mc-filters')).length).toBe(1);
-
-    // The figures are on step 3, and none of them may carry a control of its own: six figures
-    // scoped by six controls would each describe a different slice of one set.
-    component.goToStep(3);
-    fixture.detectChanges();
-    expect(fixture.debugElement.queryAll(By.css('.mc-filters')).length).toBe(0);
-    expect(fixture.debugElement.queryAll(By.css('.mc-all-tile')).length).toBe(7);
-    expect(fixture.debugElement.queryAll(By.css('.mc-all-tile select, .mc-all-tile input')).length).toBe(0);
-  });
 
   it('carries no suite control: suite scope is a selection-stage control and belongs to the picker', () => {
     render(buildDto(comparableSet(4)));
@@ -723,25 +704,6 @@ describe('ModelComparisonComponent', () => {
     expect(component.glyph('run:4')).toEqual(before);
   });
 
-  it('holds degraded entries out of the figures under strict comparability', () => {
-    const entries = comparableSet(4);
-    entries[3] = { ...entries[3], state: 'Degraded', costDegraded: true, costDegradingKeys: ['PricingSnapshot'] };
-    render(buildDto(entries));
-    expect(component.figures?.selection.plotted.length).toBe(4);
-
-    component.onStrictnessChange('comparableOnly');
-    fixture.detectChanges();
-
-    expect(component.figures?.selection.plotted.length).toBe(3);
-    expect(textOf('.mc-notices')).toContain('Strict comparability is on');
-
-    // Withheld, not hidden: the table still carries it.
-    component.goToStep(3);
-    fixture.detectChanges();
-    showView('table');
-    expect(fixture.debugElement.queryAll(By.css('tbody tr')).length).toBe(4);
-  });
-
   it('raises the saturation notice on the speed panel when the Speed Index measure is chosen', () => {
     const entries = comparableSet(3);
     entries[0] = { ...entries[0], table: { ...entries[0].table!, speedIndexSaturated: true } };
@@ -780,7 +742,7 @@ describe('ModelComparisonComponent', () => {
   const PRE_HARNESS_15 = 'Run 2 predates per-role cost tracking (harness 15), so its final synthesis is not counted.';
 
   it('offers the total-run cost measure when every charted entry carries a total, and charts it', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
 
     const option = fixture.debugElement.query(By.css('#mc-side-panel-data #mc-cost-measure-totalRun'))
       .nativeElement as HTMLInputElement;
@@ -796,7 +758,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('disables the total-run cost measure with the reason in the hint when one entry has no total', () => {
-    render(buildDto(setWithoutTotal(3, PRE_HARNESS_15)), 3);
+    render(buildDto(setWithoutTotal(3, PRE_HARNESS_15)), 2);
 
     const option = fixture.debugElement.query(By.css('#mc-side-panel-data #mc-cost-measure-totalRun'))
       .nativeElement as HTMLInputElement;
@@ -807,7 +769,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('falls back to candidate cost when a new comparison cannot supply the run total', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     chooseRadio('mc-cost-measure-totalRun');
     expect(component.costMeasure).toBe('totalRun');
 
@@ -819,30 +781,8 @@ describe('ModelComparisonComponent', () => {
       .toBeTrue();
   });
 
-  it('keeps only Scope and the entries on step 2, and says where the measures and the order went', () => {
-    render(buildDto(comparableSet(3)));
-
-    expect(fixture.debugElement.queryAll(By.css('.mc-filters')).length).toBe(1);
-    const legends = fixture.debugElement.queryAll(By.css('.mc-filters .gh-fieldset > legend'))
-      .map(legend => (legend.nativeElement as HTMLElement).textContent?.trim());
-    expect(legends).toEqual(['Scope']);
-
-    // Pricing basis and comparability decide which entries can be compared, so they stay.
-    expect(fixture.debugElement.queryAll(By.css('.mc-fieldset-scope .mc-field')).length).toBe(2);
-    expect(fixture.debugElement.query(By.css('.mc-fieldset-scope #mc-pricing-basis'))).toBeTruthy();
-    expect(fixture.debugElement.query(By.css('.mc-fieldset-scope #mc-strictness'))).toBeTruthy();
-    // The measures and the model order moved beside the charts.
-    for (const selector of ['#mc-speed-measure', '#mc-cost-measure', '#mc-sort-key', '#mc-sort-direction',
-      '.mc-fieldset-measures', '[name="mc-speed-measure"]', '[name="mc-sort-key"]']) {
-      expect(fixture.debugElement.query(By.css(selector))).withContext(selector).toBeNull();
-    }
-    expect(textOf('#mc-entry-picker-heading')).toContain(`Entries in the charts — at most ${MAX_PLOTTED_ENTRIES} are plotted`);
-    expect(textOf('.mc-section-intro .section-note').replace(/\s+/g, ' '))
-      .toContain('How the charts measure speed and cost, and how they order the models, are set beside the charts on step 3.');
-  });
-
   // -------------------------------------------------------------------------------------------
-  // The Data tab: measures, model order, emphasis
+  // The Data tab: models, measures, prices, model order
   // -------------------------------------------------------------------------------------------
 
   /** Chooses one option of a Data tab radio group through the real radio. */
@@ -853,15 +793,17 @@ describe('ModelComparisonComponent', () => {
     fixture.detectChanges();
   }
 
-  it('opens the Data tab beside the charts with Measures, Model order and Emphasis, as radio groups', () => {
-    render(buildDto(comparableSet(3)), 3);
+  it('opens the Data tab with Models, Measures, Prices and Model order beside the charts, and Models, Prices and Model order beside the table', () => {
+    render(buildDto(comparableSet(3)), 2);
 
     expect(component.effectiveSidebarTab).toBe('data');
     const panel = fixture.debugElement.query(By.css('#mc-side-panel-data')).nativeElement as HTMLElement;
     expect(panel.getAttribute('aria-labelledby')).toBe('mc-side-tab-data');
-    const legends = Array.from(panel.querySelectorAll(':scope > fieldset > legend'))
-      .map(legend => legend.textContent?.trim());
-    expect(legends).toEqual(['Measures', 'Model order', 'Emphasise models']);
+    expect(Array.from(panel.querySelectorAll(':scope > fieldset > legend')).map(legend => legend.textContent?.trim()))
+      .toEqual(['Models', 'Measures', 'Prices', 'Model order']);
+    expect(Array.from(panel.querySelectorAll('.mc-models-table thead th')).map(th => th.textContent?.trim()))
+      .toEqual(['Show', 'Model', 'Highlight']);
+    expect(fixture.debugElement.query(By.css('#mc-pricing-basis'))).toBeTruthy();
     expect(panel.querySelectorAll('input[type="radio"][name="mc-speed-measure"]').length).toBe(4);
     expect(panel.querySelectorAll('input[type="radio"][name="mc-cost-measure"]').length).toBe(2);
     expect(panel.querySelectorAll('input[type="radio"][name="mc-sort-key"]').length).toBe(5);
@@ -871,10 +813,19 @@ describe('ModelComparisonComponent', () => {
     // Each radio group is a borderless fieldset with its own legend, and the hints are attached.
     expect(panel.querySelectorAll('fieldset.gh-choice').length).toBe(4);
     expect(panel.querySelector('#mc-speed-measure-hint')).toBeTruthy();
+
+    showView('table');
+    expect(Array.from(panel.querySelectorAll(':scope > fieldset > legend')).map(legend => legend.textContent?.trim()))
+      .toEqual(['Models', 'Prices', 'Model order']);
+    expect(Array.from(panel.querySelectorAll('.mc-models-table thead th')).map(th => th.textContent?.trim()))
+      .toEqual(['Show', 'Model']);
+    expect(panel.querySelector('[name="mc-speed-measure"]')).toBeNull();
+    expect(fixture.debugElement.query(By.css('#mc-pricing-basis'))).toBeTruthy();
+    expect(panel.textContent).toContain('Prices and the order of the table\'s rows.');
   });
 
   it('drives the speed and cost measures and the model order from the Data tab radios, and rebuilds', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const descending = component.figures!.smallMultiples.order;
 
     chooseRadio('mc-speed-measure-ttftP50');
@@ -895,7 +846,7 @@ describe('ModelComparisonComponent', () => {
   it('says in the speed hint when Speed Index is saturated, beside the Speed measure radios', () => {
     const entries = comparableSet(2);
     entries[0] = { ...entries[0], table: { ...entries[0].table!, speedIndexSaturated: true } };
-    render(buildDto(entries), 3);
+    render(buildDto(entries), 2);
 
     expect(textOf('#mc-side-panel-data .mc-speed-hint')).toContain('saturated for 1 of 2');
     const group = fixture.debugElement.query(By.css('#mc-side-panel-data fieldset.gh-choice'))
@@ -903,76 +854,62 @@ describe('ModelComparisonComponent', () => {
     expect(group.getAttribute('aria-describedby')).toBe('mc-speed-measure-hint');
   });
 
-  it('shows only Model order in the Data tab of the table views', () => {
-    render(buildDto(comparableSet(3)), 3);
-    showView('table');
-
-    expect(component.effectiveSidebarTab).toBe('data');
-    const panel = fixture.debugElement.query(By.css('#mc-side-panel-data')).nativeElement as HTMLElement;
-    const legends = Array.from(panel.querySelectorAll(':scope > fieldset > legend'))
-      .map(legend => legend.textContent?.trim());
-    expect(legends).toEqual(['Model order']);
-    expect(panel.querySelector('[name="mc-speed-measure"]')).toBeNull();
-    expect(panel.querySelector('.mc-emphasis')).toBeNull();
-    expect(panel.textContent).toContain('The order of the table\'s rows, shared with the charts.');
-
-    showView('tablePreview');
-    expect(fixture.debugElement.queryAll(By.css('#mc-side-panel-data > fieldset')).length).toBe(1);
-  });
-
   // -------------------------------------------------------------------------------------------
-  // The entry picker
+  // The Models table
   // -------------------------------------------------------------------------------------------
 
-  it('renders each entry as a checkbox, and an excluded one as a disabled box that keeps its reason', () => {
+  /** One row's Show checkbox, found by its entry key: the rows follow the model order, not the payload. */
+  function showBox(key: string): HTMLInputElement {
+    return fixture.debugElement.query(By.css(`#mc-show-${component.domKey(key)}`)).nativeElement as HTMLInputElement;
+  }
+
+  /** Flips one row's Show checkbox the way the browser does, then lets its handler write it back. */
+  function clickShow(key: string): void {
+    showBox(key).click();
+    fixture.detectChanges();
+  }
+
+  it('renders one Show checkbox per entry, and an excluded one as a disabled box that keeps its reason', () => {
     render(buildDto([...comparableSet(2), buildExcludedEntry('run:9', ['ScoringMethodVersion'])]));
 
-    expect(fixture.debugElement.queryAll(By.css('.mc-entry-list .mc-entry')).length).toBe(3);
-    // Toggle buttons dressed as tags are gone: this is a multi-select over a fixed set.
-    expect(fixture.debugElement.queryAll(By.css('.mc-entry-list button')).length).toBe(0);
-
-    const boxes = fixture.debugElement.queryAll(By.css('.mc-entry-list input[type="checkbox"]'))
-      .map(box => box.nativeElement as HTMLInputElement);
-    expect(boxes.length).toBe(3);
-    expect(boxes.slice(0, 2).every(box => box.checked && !box.disabled)).toBeTrue();
-    expect(boxes[2].disabled).toBeTrue();
-    expect(boxes[2].checked).toBeFalse();
+    expect(fixture.debugElement.queryAll(By.css('.mc-models-table tbody tr')).length).toBe(3);
+    expect(fixture.debugElement.queryAll(By.css('.mc-models-table input[type="checkbox"][id^="mc-show-"]')).length)
+      .toBe(3);
+    expect([showBox('run:1'), showBox('run:2')].every(box => box.checked && !box.disabled)).toBeTrue();
+    expect(showBox('run:9').disabled).toBeTrue();
+    expect(showBox('run:9').checked).toBeFalse();
 
     // The accessible name contains the visible label, so the two never contradict each other.
-    expect(boxes[0].getAttribute('aria-label')).toBe('Plot Model 1 in the figures');
-    expect(textOf('.mc-entry-list')).toContain('R = 3');
-    expect(textOf('.mc-entry-excluded')).toContain('excluded');
-    expect(fixture.debugElement.query(By.css('.mc-entry-excluded [popover="hint"]'))).toBeTruthy();
+    const name = component.modelRows.find(row => row.key === 'run:1')!.name;
+    expect(showBox('run:1').getAttribute('aria-label')).toBe(`Show ${name} in the charts`);
+    expect(textOf('.mc-models-table')).toContain('Not comparable');
+    const tip = fixture.debugElement.query(By.css(`#${component.tipId('excl', 'run:9')}`));
+    expect(tip?.nativeElement.textContent).toContain('ScoringMethodVersion');
 
-    boxes[1].checked = false;
-    fixture.debugElement.queryAll(By.css('.mc-entry-list input[type="checkbox"]'))[1]
-      .triggerEventHandler('change', { target: boxes[1] });
-    fixture.detectChanges();
+    clickShow('run:2');
 
     expect(component.includedKeys).toEqual(['run:1']);
+    expect(showBox('run:2').checked).toBeFalse();
     expect(component.figures?.selection.plotted.length).toBe(1);
   });
 
-  it('lets more entries be ticked than the figures plot, and restores one that was unticked', () => {
+  it('lets more Show boxes be ticked than the figures plot, and tags a row beyond the cap as Over the limit', () => {
     render(buildDto(comparableSet(MAX_PLOTTED_ENTRIES + 1)));
 
-    const boxes = () => fixture.debugElement.queryAll(By.css('.mc-entry-list input[type="checkbox"]'));
-    expect(boxes().length).toBe(MAX_PLOTTED_ENTRIES + 1);
+    expect(fixture.debugElement.queryAll(By.css('.mc-models-table input[type="checkbox"][id^="mc-show-"]')).length)
+      .toBe(MAX_PLOTTED_ENTRIES + 1);
     // A fresh payload ticks every selectable entry, which is already past the plot cap.
     expect(component.includedKeys.length).toBe(MAX_PLOTTED_ENTRIES + 1);
+    expect(fixture.debugElement.queryAll(By.css('.mc-models-tag')).length).toBe(1);
+    expect(textOf('.mc-models-tag')).toContain('Over the limit');
 
-    const first = boxes()[0];
-    (first.nativeElement as HTMLInputElement).checked = false;
-    first.triggerEventHandler('change', { target: first.nativeElement });
-    fixture.detectChanges();
+    clickShow('run:1');
     expect(component.includedKeys.length).toBe(MAX_PLOTTED_ENTRIES);
     expect(component.isIncluded('run:1')).toBeFalse();
+    expect(fixture.debugElement.queryAll(By.css('.mc-models-tag')).length).toBe(0);
 
     // The seeded state has to stay reachable, so re-ticking at the cap is honoured.
-    const again = boxes()[0];
-    (again.nativeElement as HTMLInputElement).checked = true;
-    again.triggerEventHandler('change', { target: again.nativeElement });
-    fixture.detectChanges();
+    clickShow('run:1');
     expect(component.includedKeys.length).toBe(MAX_PLOTTED_ENTRIES + 1);
     expect(component.isIncluded('run:1')).toBeTrue();
   });
@@ -986,10 +923,10 @@ describe('ModelComparisonComponent', () => {
     render(buildDto(entries));
 
     expect(component.allSingleRun).toBeTrue();
-    expect(textOf('.alert-heading')).toContain('n = 1');
-
-    component.goToStep(3);
+    component.openAbout();
     fixture.detectChanges();
+    expect(textOf('.alert-heading')).toContain('Each model has only one run');
+
     showView('table');
     expect(fixture.debugElement.queryAll(By.css('tbody .mc-n1')).length).toBe(3);
   });
@@ -1015,52 +952,214 @@ describe('ModelComparisonComponent', () => {
   });
 
   // -------------------------------------------------------------------------------------------
-  // Set-level caveats
+  // Set-level caveats, in the About dialog
   // -------------------------------------------------------------------------------------------
 
-  it('renders the thinking-level caveat and the measures that are not charted', () => {
-    render(buildDto(comparableSet(3), {
-      thinkingLevelsDiffer: true,
-      speedAxisCaveat: 'Speed is not comparable across thinking levels.'
-    }));
+  it('shows the thinking-level caveat and the refused measures in the About dialog', () => {
+    render(buildDto(comparableSet(3), { thinkingLevelsDiffer: true }));
 
-    expect(textOf('.alert-body')).toContain('Speed is not comparable across thinking levels.');
-    expect(textOf('.mc-measures')).toContain('Cost per index point');
-    expect(textOf('.mc-measures')).not.toContain('Speed Index');
+    component.openAbout();
+    fixture.detectChanges();
+
+    expect(textOf('.alert-heading')).toContain('The models use different thinking levels');
+    expect(fixture.debugElement.query(By.css('#mc-about-measures-heading'))).toBeTruthy();
+    expect(textOf('.mc-about-measure')).toContain('Cost per index point');
   });
 
-  it('leads each refused measure with its plain-language summary, the reason behind a disclosure', () => {
+  it('leads each refused measure with its summary, names the alternative, and keeps the reason behind a disclosure', () => {
     render(buildDto(comparableSet(3)));
 
-    // The summary is the visible line; the specialist reason is one click away rather than absent.
-    expect(textOf('.mc-measure-summary'))
-      .toContain('Dividing cost by a noisy score gives a number with no reliable error bars');
-    expect(textOf('.mc-measures-lead')).toContain('would mislead as a chart');
+    component.openAbout();
+    fixture.detectChanges();
 
-    const detail = fixture.debugElement.query(By.css('.mc-measure-detail'))
+    // The summary is the visible line; the full reason is one click away rather than absent.
+    expect(textOf('.mc-about-measure'))
+      .toContain('Dividing cost by a noisy score gives a number with no reliable error bars');
+    expect(textOf('.mc-about-measure')).toContain(
+      'Instead: Candidate $ / question in the comparison table, read beside the Intelligence Index and its ± interval.');
+
+    const detail = fixture.debugElement.query(By.css('.mc-about-measure details.gh-disclosure'))
       .nativeElement as HTMLDetailsElement;
     expect(detail.open).toBeFalse();
-    expect(detail.querySelector('summary')?.textContent?.trim()).toBe('Why, in full');
+    expect(detail.querySelector('summary')?.textContent?.trim()).toBe('Why');
     expect(detail.textContent).toContain('A ratio of two noisy estimators');
-    expect(textOf('.mc-measure-instead')).toContain('Candidate $ / question in the step 3 table');
   });
 
-  it('shows no refused-measure cards over a set the figures cannot draw', () => {
-    render(buildDto(comparableSet(1)));
+  it('shows no "Not shown as charts" section when the server sends no refused measures', () => {
+    render(buildDto(comparableSet(1), { excludedMeasures: [] }));
 
-    expect(component.shape).toBe('single');
-    expect(fixture.debugElement.query(By.css('.mc-measures'))).toBeNull();
+    component.openAbout();
+    fixture.detectChanges();
+
+    expect(fixture.debugElement.query(By.css('#mc-about-measures-heading'))).toBeNull();
+  });
+
+  it('summarises how many models can be charted together, in singular and plural', () => {
+    render(buildDto(comparableSet(3)));
+    expect(component.aboutSummary).toBe('All 3 models were measured the same way and can be charted together.');
+
+    render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringMethodVersion'])]));
+    expect(component.aboutSummary).toBe(
+      '3 of 4 models can be charted together. 1 was measured differently and is in the table only.');
+
+    render(buildDto([
+      ...comparableSet(3),
+      buildExcludedEntry('run:8', ['ScoringMethodVersion']),
+      buildExcludedEntry('run:9', ['CandidatePromptOptions'])
+    ]));
+    expect(component.aboutSummary).toBe(
+      '3 of 5 models can be charted together. 2 were measured differently and are in the table only.');
+  });
+
+  it('badges the About button with the note count, and opens the dialog as a modal', async () => {
+    render(buildDto(comparableSet(3)));
+    expect(fixture.debugElement.query(By.css('.mc-about-count'))).toBeNull();
+
+    render(buildDto(comparableSet(3).map(entry => ({ ...entry, runCount: 1 })), { thinkingLevelsDiffer: true }));
+    expect(textOf('.mc-about-count')).toContain('2');
+
+    const dialog = fixture.debugElement.query(By.css('dialog.mc-about-dialog')).nativeElement as HTMLDialogElement;
+    const showModal = spyOn(dialog, 'showModal').and.callThrough();
+    // The body renders only while the dialog is open.
+    expect(fixture.debugElement.query(By.css('.mc-about-summary'))).toBeNull();
+
+    component.openAbout();
+    fixture.detectChanges();
+
+    expect(showModal).toHaveBeenCalled();
+    expect(fixture.debugElement.query(By.css('.mc-about-summary'))).toBeTruthy();
+
+    // The dialog's close event is queued as a task, not dispatched from close() itself.
+    dialog.close();
+    await new Promise(resolve => setTimeout(resolve));
+    fixture.detectChanges();
+
+    expect(fixture.debugElement.query(By.css('.mc-about-summary'))).toBeNull();
+    const trigger = fixture.debugElement.query(By.css('#mc-about-trigger')).nativeElement as HTMLButtonElement;
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('stops the About dialog\'s close and cancel events from reaching the host wizard dialog', () => {
+    render(buildDto(comparableSet(3)));
+    component.openAbout();
+    fixture.detectChanges();
+
+    const dialog = fixture.debugElement.query(By.css('dialog.mc-about-dialog')).nativeElement as HTMLDialogElement;
+    const host = fixture.nativeElement as HTMLElement;
+    const heard: string[] = [];
+    host.addEventListener('close', () => heard.push('close'));
+    host.addEventListener('cancel', () => heard.push('cancel'));
+
+    // A real close event does not bubble; dispatching with bubbles: true is what proves
+    // onAboutDialogClose's stopPropagation actually runs rather than merely being unreachable.
+    dialog.dispatchEvent(new Event('close', { bubbles: true }));
+    dialog.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }));
+
+    expect(heard).toEqual([]);
+  });
+
+  it('emits refresh from Recompute, refuses it while loading, and marks aria-disabled', () => {
+    render(buildDto(comparableSet(3)), 2);
+    const button = fixture.debugElement.query(By.css('.mc-recompute')).nativeElement as HTMLButtonElement;
+    const refreshed: number[] = [];
+    component.refresh.subscribe(() => refreshed.push(1));
+
+    button.click();
+    expect(refreshed.length).toBe(1);
+    expect(button.getAttribute('aria-disabled')).toBeNull();
+
+    fixture.componentRef.setInput('loading', true);
+    fixture.detectChanges();
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+
+    button.click();
+    expect(refreshed.length).toBe(1);
+  });
+
+  it('drops a highlight when its model is unticked, and refuses to highlight an unplotted row', () => {
+    render(buildDto(comparableSet(3)), 2);
+
+    component.toggleEmphasis('run:1');
+    expect(component.emphasisKeys).toEqual(['run:1']);
+
+    component.toggleEntry('run:1');
+    fixture.detectChanges();
+    expect(component.emphasisKeys).toEqual([]);
+    expect(component.includedKeys).not.toContain('run:1');
+
+    // The row is still in the Models table, unplotted, and its Highlight box is disabled.
+    const box = fixture.debugElement.query(By.css(`#mc-emph-${component.domKey('run:1')}`))
+      .nativeElement as HTMLInputElement;
+    expect(box.disabled).toBeTrue();
+
+    component.toggleEmphasis('run:1');
+    expect(component.emphasisKeys).toEqual([]);
+  });
+
+  it('turns the chart views off when unticked down to one model, and back on when re-ticked', () => {
+    render(buildDto(comparableSet(3)), 2);
+    expect(component.showFigures).toBeTrue();
+
+    component.toggleEntry('run:2');
+    component.toggleEntry('run:3');
+    fixture.detectChanges();
+
+    expect(component.showFigures).toBeFalse();
+    expect(textOf('#mc-fig-unavailable')).toContain('Charts need at least two models. Tick more under Data → Models.');
+    expect(component.effectiveFigureTab).toBe('table');
+    expect(fixture.debugElement.query(By.css('.mc-models-table'))).toBeTruthy();
+
+    component.toggleEntry('run:2');
+    fixture.detectChanges();
+
+    expect(component.showFigures).toBeTrue();
+  });
+
+  it('keeps includedKeys, emphasisKeys and the table page on a same-keys refetch, and reseeds them on a new key set', () => {
+    render(buildDto(comparableSet(3)), 2);
+    // A small page size, so a 3-row set still has more than one page to keep.
+    component.entryTable.pageSize = 1;
+    component.toggleEntry('run:2');
+    component.toggleEmphasis('run:1');
+    fixture.detectChanges();
+    component.entryTable.page = 2;
+
+    // A refetch under the same three keys: includedKeys, emphasisKeys and the table page survive.
+    fixture.componentRef.setInput('comparison', buildDto(comparableSet(3)));
+    fixture.detectChanges();
+
+    expect(component.includedKeys).not.toContain('run:2');
+    expect(component.emphasisKeys).toEqual(['run:1']);
+    expect(component.entryTable.page).toBe(2);
+
+    // A payload with a different key set is a new comparison: both reseed and the page resets.
+    fixture.componentRef.setInput('comparison', buildDto(comparableSet(4)));
+    fixture.detectChanges();
+
+    expect([...component.includedKeys].sort()).toEqual(['run:1', 'run:2', 'run:3', 'run:4']);
+    expect(component.emphasisKeys).toEqual([]);
+    expect(component.entryTable.page).toBe(1);
+  });
+
+  it('never mentions strict comparability in the set-level notes', () => {
+    render(buildDto(comparableSet(3)));
+
+    component.toggleEntry('run:2');
+    fixture.detectChanges();
+
+    expect(component.setFigureNotes.some(note => /Strict comparability/.test(note.text))).toBeFalse();
+    expect(component.setNotices.some(notice => /Strict comparability/.test(notice))).toBeFalse();
   });
 
   it('names Speed Index saturation in the speed hint only where an entry is saturated', () => {
     const entries = comparableSet(2);
     entries[0] = { ...entries[0], table: { ...entries[0].table!, speedIndexSaturated: true } };
-    render(buildDto(entries), 3);
+    render(buildDto(entries), 2);
 
     expect(component.speedIndexSaturatedCount).toBe(1);
     expect(textOf('.mc-speed-hint')).toContain('saturated for 1 of 2');
 
-    render(buildDto(comparableSet(2)), 3);
+    render(buildDto(comparableSet(2)), 2);
 
     expect(component.speedIndexSaturatedCount).toBe(0);
     expect(textOf('.mc-speed-hint')).not.toContain('saturated');
@@ -1101,7 +1200,7 @@ describe('ModelComparisonComponent', () => {
   // -------------------------------------------------------------------------------------------
 
   it('gives every figure tile one control, Open in Single view, and the set one Download all charts', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
 
     const tiles = fixture.debugElement.queryAll(By.css('.mc-all-tile'));
     expect(tiles.length).toBe(7);
@@ -1119,7 +1218,7 @@ describe('ModelComparisonComponent', () => {
     // Copying and downloading one figure happen on the Single tab only.
     expect(fixture.debugElement.queryAll(By.css('.mc-all-tile .mc-download, .mc-all-tile .mc-copy')).length).toBe(0);
 
-    const step = fixture.debugElement.query(By.css('#mc-step-panel-3')).nativeElement as HTMLElement;
+    const step = fixture.debugElement.query(By.css('#mc-step-panel-2')).nativeElement as HTMLElement;
     const downloadAll = Array.from(step.querySelectorAll('button'))
       .filter(button => (button.textContent ?? '').includes('Download all charts'));
     expect(downloadAll.length).toBe(1);
@@ -1129,7 +1228,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('offers a WebP quality for the figures only while WebP is the chosen format', async () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
     expect(component.figureTab).withContext('no Single view is needed to reach the export settings')
       .toBe('all');
@@ -1158,14 +1257,15 @@ describe('ModelComparisonComponent', () => {
     expect(fixture.debugElement.query(By.css('label[for="mc-export-webp-quality"]'))).toBeTruthy();
   });
 
-  it('opens step 3 on the Interactive table where nothing can be charted, and refuses the chart tabs', () => {
+  it('opens step 2 on the Interactive table where nothing can be charted, and refuses the chart tabs', () => {
     const expectTableOnly = (): void => {
       expect(component.effectiveFigureTab).toBe('table');
       expect(fixture.debugElement.query(By.css('#mc-fig-panel-table table.mc-table'))).toBeTruthy();
       expect(fixture.debugElement.query(By.css('.mc-all-tile'))).toBeNull();
       expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(0);
       const line = fixture.debugElement.query(By.css('#mc-fig-unavailable')).nativeElement as HTMLElement;
-      expect(line.textContent).toContain('Nothing in this set can be charted — the table lists every entry and why.');
+      expect(line.textContent).toContain(
+        'Fewer than two models were measured the same way, so there is nothing to chart. The table lists every model and why.');
       for (const view of ['all', 'single']) {
         const tab = fixture.debugElement.query(By.css(`#mc-fig-tab-${view}`)).nativeElement as HTMLButtonElement;
         // aria-disabled, never disabled: the tab stays focusable and names the reason.
@@ -1177,9 +1277,9 @@ describe('ModelComparisonComponent', () => {
       expect(fixture.debugElement.query(By.css('#mc-fig-tab-table')).nativeElement.getAttribute('aria-disabled')).toBeNull();
     };
 
-    render(buildDto(comparableSet(1)), 3);
+    render(buildDto(comparableSet(1)), 2);
     expect(component.shape).toBe('single');
-    expect(component.step).toBe(3);
+    expect(component.step).toBe(2);
     expectTableOnly();
     // A refused chart tab does nothing.
     showView('all');
@@ -1188,7 +1288,7 @@ describe('ModelComparisonComponent', () => {
     render(buildDto([
       buildExcludedEntry('run:8', ['ScoringMethodVersion']),
       buildExcludedEntry('run:9', ['CandidatePromptOptions'])
-    ]), 3);
+    ]), 2);
     expect(component.shape).toBe('none');
     expectTableOnly();
 
@@ -1197,11 +1297,10 @@ describe('ModelComparisonComponent', () => {
     expect(fixture.debugElement.query(By.css('#mc-fig-panel-tablePreview canvas.mc-preview-canvas'))).toBeTruthy();
   });
 
-  it('renders no workspace without a comparison: steps 2 and 3 refuse to open', () => {
+  it('renders no workspace without a comparison: step 2 refuses to open', () => {
     render(null);
     expect(component.shape).toBe('empty');
     expect(component.isStepReachable(2)).toBeFalse();
-    expect(component.isStepReachable(3)).toBeFalse();
     for (const selector of ['.mc-fig-workspace', '#mc-fig-sidebar', '.mc-fig-bar', '.mc-all-tile']) {
       expect(fixture.debugElement.query(By.css(selector))).withContext(selector).toBeNull();
     }
@@ -1209,17 +1308,17 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('opens the table when a refetch leaves a chart view over an unchartable set, and returns to it after', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     expect(component.effectiveFigureTab).toBe('all');
 
     fixture.componentRef.setInput('comparison', buildDto(comparableSet(1)));
     fixture.detectChanges();
 
-    expect(component.step).toBe(3);
+    expect(component.step).toBe(2);
     expect(component.figureTab).withContext('the chosen view is kept').toBe('all');
     expect(component.effectiveFigureTab).toBe('table');
     expect(fixture.debugElement.query(By.css('.mc-all-tile'))).toBeNull();
-    expect(textOf('#mc-fig-unavailable')).toContain('Nothing in this set can be charted');
+    expect(textOf('#mc-fig-unavailable')).toContain('Fewer than two models were measured the same way');
 
     fixture.componentRef.setInput('comparison', buildDto(comparableSet(3)));
     fixture.detectChanges();
@@ -1240,65 +1339,61 @@ describe('ModelComparisonComponent', () => {
   });
 
   // -------------------------------------------------------------------------------------------
-  // Emphasis
+  // Highlight
   // -------------------------------------------------------------------------------------------
 
-  /** The Clear emphasis control, found by its label rather than by its position in the fieldset. */
-  function clearEmphasisButton(): HTMLButtonElement {
-    return fixture.debugElement.queryAll(By.css('.mc-emphasis-actions button'))
+  /** The Clear highlights control, found by its label rather than by its position in the fieldset. */
+  function clearHighlightsButton(): HTMLButtonElement {
+    return fixture.debugElement.queryAll(By.css('.mc-models-actions button'))
       .map(button => button.nativeElement as HTMLButtonElement)
-      .find(button => (button.textContent ?? '').trim() === 'Clear emphasis')!;
+      .find(button => (button.textContent ?? '').trim() === 'Clear highlights')!;
   }
 
-  it('chooses emphasis in the sidebar\'s Data tab, one checkbox per plotted entry', () => {
-    render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringMethodVersion'])]), 3);
+  it('chooses a highlight in the Models table, one checkbox per row, disabled on an unplotted one', () => {
+    render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringMethodVersion'])]), 2);
 
-    // The sidebar opens on Data, whose last group is Emphasis.
     expect(component.sidebarTab).toBe('data');
-    const fieldset = fixture.debugElement.query(By.css('#mc-side-panel-data .mc-emphasis'))
-      .nativeElement as HTMLElement;
-    expect(fieldset.querySelector('legend')?.textContent?.trim()).toBe('Emphasise models');
-    // The hint names the group once, rather than being repeated onto every box.
-    expect(fieldset.getAttribute('aria-describedby')).toBe('mc-emphasis-hint');
-    expect(fixture.debugElement.query(By.css('#mc-emphasis-hint'))).toBeTruthy();
-
-    const boxes = fixture.debugElement.queryAll(By.css('.mc-emphasis-list input[type="checkbox"]'))
+    const boxes = fixture.debugElement.queryAll(By.css('.mc-models-table input[id^="mc-emph-"]'))
       .map(box => box.nativeElement as HTMLInputElement);
-    // Only what the figures actually draw, so an excluded entry is never offered.
-    expect(boxes.length).toBe(3);
-    expect(textOf('.mc-emphasis-list')).not.toContain('Model run:9');
+    // One Highlight box per row, including the excluded one, but only the plotted rows' boxes work.
+    expect(boxes.length).toBe(4);
+    expect(boxes.filter(box => !box.disabled).length).toBe(3);
+    const excludedBox = fixture.debugElement.query(By.css(`#mc-emph-${component.domKey('run:9')}`))
+      .nativeElement as HTMLInputElement;
+    expect(excludedBox.disabled).toBeTrue();
     // The state is in words as well as in the box, and never in the gold alone.
-    expect(textOf('.mc-emphasis-status')).toContain('No emphasis');
-    expect(clearEmphasisButton().disabled).toBeTrue();
+    expect(textOf('.mc-models-status')).toContain('3 of 3 shown');
+    expect(textOf('.mc-models-status')).toContain('0 highlighted');
+    expect(clearHighlightsButton().disabled).toBeTrue();
 
-    fixture.debugElement.queryAll(By.css('.mc-emphasis-list input[type="checkbox"]'))[0]
-      .triggerEventHandler('change', { target: boxes[0] });
+    fixture.debugElement.query(By.css(`#mc-emph-${component.domKey('run:1')}`))
+      .triggerEventHandler('change', { target: {} });
     fixture.detectChanges();
 
     expect(component.emphasisKeys.length).toBe(1);
-    expect(textOf('.mc-emphasis-status')).toContain('1 of 3 emphasised');
-    expect(clearEmphasisButton().disabled).toBeFalse();
+    expect(textOf('.mc-models-status')).toContain('1 highlighted');
+    expect(clearHighlightsButton().disabled).toBeFalse();
 
-    clearEmphasisButton().click();
+    clearHighlightsButton().click();
     fixture.detectChanges();
 
     expect(component.emphasisKeys).toEqual([]);
-    expect(textOf('.mc-emphasis-status')).toContain('No emphasis');
-    expect(clearEmphasisButton().disabled).toBeTrue();
+    expect(textOf('.mc-models-status')).toContain('0 highlighted');
+    expect(clearHighlightsButton().disabled).toBeTrue();
   });
 
-  it('carries no emphasis control in the table cell, where its effect cannot be seen', () => {
+  it('carries no highlight control in the table cell, where its effect cannot be seen', () => {
     renderTable(buildDto(comparableSet(2)));
 
     const cell = fixture.debugElement.query(By.css('table.mc-table tbody tr .col-name'))
       .nativeElement as HTMLElement;
     expect(cell.querySelector('button')).toBeNull();
     expect(cell.querySelector('.mc-model-name')?.textContent?.trim()).toBe('Gemini 2.5 Flash');
-    expect(fixture.debugElement.query(By.css('.mc-emphasis'))).toBeNull();
+    expect(cell.querySelector('input[type="checkbox"]')).toBeNull();
   });
 
   it('labels each trade-off checkbox in the Charts tab, and offers neither in the All panel', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
 
     const names = scatterToggle(0).nativeElement as HTMLInputElement;
     expect(names.closest('label')?.textContent).toContain('Label models inside the chart');
@@ -1710,14 +1805,15 @@ describe('ModelComparisonComponent', () => {
     expect(next.hasAttribute('aria-busy')).toBeFalse();
   });
 
-  it('labels the footer Next rather than Comparing while a later step refetches', () => {
+  it('labels the footer Close rather than Comparing while step 2 refetches', () => {
     render(buildDto(comparableSet(3)), 2);
     fixture.componentRef.setInput('loading', true);
     fixture.detectChanges();
 
-    // A pricing-basis refetch loads too, and Next on step 2 is not blocked by it.
+    // A Prices or Recompute refetch loads too, and Close on step 2 is not blocked by it.
     expect(component.comparing).toBeFalse();
-    expect(component.nextLabel).toBe('Next');
+    expect(component.nextLabel).toBe('Close');
+    expect(nextButton().querySelector('.gh-spinner-small')).toBeNull();
   });
 
   describe('while a comparison is loading', () => {
@@ -1880,64 +1976,61 @@ describe('ModelComparisonComponent', () => {
     fixture.detectChanges();
     expect(component.step).toBe(2);
 
-    component.goToStep(3);
     // A pricing-basis refetch replaces one payload with another; it must not move the reader.
     fixture.componentRef.setInput('comparison', buildDto(comparableSet(3)));
     fixture.detectChanges();
-    expect(component.step).toBe(3);
+    expect(component.step).toBe(2);
 
     fixture.componentRef.setInput('comparison', null);
     fixture.detectChanges();
     expect(component.step).toBe(1);
   });
 
-  it('has three steps: Sources, Comparability & filters, Charts & table', () => {
+  it('has two steps: Sources, Charts & table', () => {
     render(buildDto(comparableSet(3)));
 
-    expect(component.steps).toEqual([1, 2, 3]);
+    expect(component.steps).toEqual([1, 2]);
     const tabs = fixture.debugElement.queryAll(By.css('.mc-wizard-steps .gh-tab'))
       .map(tab => (tab.nativeElement as HTMLElement).textContent?.trim());
-    expect(tabs).toEqual(['1. Sources', '2. Comparability & filters', '3. Charts & table']);
-    expect(textOf('.mc-wizard-position')).toContain('Step 2 of 3 — Comparability & filters');
+    expect(tabs).toEqual(['1. Sources', '2. Charts & table']);
+    expect(textOf('.mc-wizard-position')).toContain('Step 2 of 2 — Charts & table');
   });
 
-  it('opens step 3 over a set no chart can draw, with Next unblocked', () => {
+  it('opens step 2 over a set no chart can draw, with Next unblocked', () => {
     render(buildDto([
       buildExcludedEntry('run:8', ['ScoringMethodVersion']),
       buildExcludedEntry('run:9', ['CandidatePromptOptions'])
-    ]), 3);
+    ]), 2);
 
     // The table is the artefact that says what could not be compared, so its step opens here.
-    expect(component.step).toBe(3);
-    expect(component.isStepReachable(3)).toBeTrue();
+    expect(component.step).toBe(2);
+    expect(component.isStepReachable(2)).toBeTrue();
     expect(component.canGoNext).toBeTrue();
     expect(component.nextBlockedReason).toBe('');
     expect(nextButton().getAttribute('aria-disabled')).toBe('false');
 
     const chartsTab = fixture.debugElement
-      .queryAll(By.css('.mc-wizard-steps .gh-tab'))[2].nativeElement as HTMLElement;
+      .queryAll(By.css('.mc-wizard-steps .gh-tab'))[1].nativeElement as HTMLElement;
     expect(chartsTab.getAttribute('aria-disabled')).toBe('false');
   });
 
-  it('reaches steps 2 and 3 whenever a comparison exists, and neither without one', () => {
+  it('reaches step 2 whenever a comparison exists, and not without one', () => {
     render(null);
 
     expect(component.isStepReachable(2)).toBeFalse();
-    expect(component.isStepReachable(3)).toBeFalse();
 
     render(buildDto(comparableSet(3)));
     expect(component.isStepReachable(2)).toBeTrue();
-    expect(component.isStepReachable(3)).toBeTrue();
     // Step 2 gates on nothing but the payload: the table behind it always has rows.
     expect(component.canGoNext).toBeTrue();
     expect(component.nextBlockedReason).toBe('');
   });
 
-  it('labels step 3 Next as Close and emits closeRequested from it', () => {
-    render(buildDto(comparableSet(3)), 3);
-    expect(component.step).toBe(3);
+  it('labels step 2 Next as Close and emits closeRequested from it', () => {
+    render(buildDto(comparableSet(3)), 2);
+    expect(component.step).toBe(2);
     expect(component.nextLabel).toBe('Close');
-    expect(textOf('.mc-wizard-position')).toContain('Step 3 of 3 — Charts & table');
+    expect(textOf('.mc-wizard-position')).toContain('Step 2 of 2 — Charts & table');
 
     const closed: number[] = [];
     component.closeRequested.subscribe(() => closed.push(1));
@@ -1946,32 +2039,15 @@ describe('ModelComparisonComponent', () => {
     expect(closed.length).toBe(1);
   });
 
-  it('draws the charts and holds the table on step 3, and keeps only the filters on step 2', () => {
-    render(buildDto(comparableSet(3)), 3);
-    expect(fixture.debugElement.queryAll(By.css('.mc-all-canvas')).length).toBe(7);
-    expect(fixture.debugElement.query(By.css('table.mc-table'))).toBeNull();
-
-    showView('table');
-    expect(fixture.debugElement.query(By.css('table.mc-table'))).toBeTruthy();
-    expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(0);
-
-    // Step 2 keeps the filters and gives up the table.
-    component.goToStep(2);
-    fixture.detectChanges();
-    expect(fixture.debugElement.query(By.css('table.mc-table'))).toBeNull();
-    expect(fixture.debugElement.queryAll(By.css('.mc-filters')).length).toBe(1);
-  });
-
   it('drives the step tablist with a roving tabindex and the arrow keys', () => {
     render(buildDto(comparableSet(3)));
 
     const tabs = fixture.debugElement.queryAll(By.css('.mc-wizard-steps .gh-tab'))
       .map(tab => tab.nativeElement as HTMLElement);
-    expect(tabs.length).toBe(3);
+    expect(tabs.length).toBe(2);
     expect(tabs[1].getAttribute('aria-selected')).toBe('true');
     expect(tabs[1].getAttribute('tabindex')).toBe('0');
     expect(tabs[0].getAttribute('tabindex')).toBe('-1');
-    expect(tabs[2].getAttribute('tabindex')).toBe('-1');
 
     component.onStepKeydown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }), 1);
     fixture.detectChanges();
@@ -1979,7 +2055,7 @@ describe('ModelComparisonComponent', () => {
 
     component.onStepKeydown(new KeyboardEvent('keydown', { key: 'End' }), 0);
     fixture.detectChanges();
-    expect(component.step).toBe(3);
+    expect(component.step).toBe(2);
   });
 
   it('hides the step 1 panel rather than rendering it beside the open step', () => {
@@ -1999,14 +2075,14 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('survives being measured at width zero, which is what a closed dialog reports', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
 
     expect(() => component.applyContainerWidth(0)).not.toThrow();
     expect(component.orientation).toBe('vertical');
   });
 
   it('disables its own close controls while an export is running, and nothing else', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     component.exporting = true;
     refresh();
 
@@ -2015,8 +2091,11 @@ describe('ModelComparisonComponent', () => {
     const next = nextButton();
     expect(close.disabled).toBeTrue();
     expect(next.disabled).toBeTrue();
-    // The wizard's two are the only close controls: no preview dialog carries a third.
-    expect(fixture.debugElement.queryAll(By.css('.btn-icon-action')).length).toBe(1);
+    // The wizard's two are the only close controls: no preview dialog carries a third. The About
+    // dialog's own close stays live, since closing it leaves the export alone.
+    const wizardCloses = fixture.debugElement.queryAll(By.css('.btn-icon-action'))
+      .filter(button => !(button.nativeElement as HTMLElement).closest('.mc-about-dialog'));
+    expect(wizardCloses.length).toBe(1);
     expect(fixture.debugElement.query(By.css('dialog.mc-preview-dialog'))).toBeNull();
 
     component.exporting = false;
@@ -2099,7 +2178,7 @@ describe('ModelComparisonComponent', () => {
   }
 
   it('shows the two custom size inputs only for Custom, and names what will be written', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
     // The control opens on the test machine's own display, which the pixel counts below are not
     // about; every one of them is the composition at 100 %.
@@ -2124,7 +2203,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('refuses an out-of-range custom size in words, and will not export under one', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
     component.onExportDensityChange(1);
     component.onExportResolutionChange('custom');
@@ -2147,7 +2226,7 @@ describe('ModelComparisonComponent', () => {
 
   it('opens the density on the reader’s own display, and says which option that is', () => {
     withDisplayDensity(2);
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
 
     expect(component.figureSize.densitySelection).toBe(2);
@@ -2161,7 +2240,7 @@ describe('ModelComparisonComponent', () => {
   it('holds a display density no step matches in the custom field, prefilled', () => {
     // 110 % browser zoom on a 200 % display.
     withDisplayDensity(2.2);
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
 
     expect(component.figureSize.densitySelection).toBe('custom');
@@ -2173,7 +2252,7 @@ describe('ModelComparisonComponent', () => {
 
   it('offers every Windows display scaling step, and Custom below them', () => {
     withDisplayDensity(1);
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
 
     const options = fixture.debugElement
@@ -2186,7 +2265,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('multiplies the written size by the density in the read-out and the Download all charts summary', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
     component.onExportResolutionChange('fullhd');
 
@@ -2209,7 +2288,7 @@ describe('ModelComparisonComponent', () => {
 
   it('opens every figure at Full HD, the display’s own density and 100 % text, and offers no On-screen size', () => {
     withDisplayDensity(1.5);
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
 
     expect(component.figureSize).toEqual(defaultFigureSize(1.5));
@@ -2241,7 +2320,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('refuses a custom density outside its bounds, and will not export under one', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
     component.onExportDensityChange('custom');
     component.onCustomDensityChange(900);
@@ -2260,7 +2339,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('refuses a bitmap the browser could not allocate, and marks every export control unavailable', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSingle();
     component.onExportResolutionChange('custom');
     component.onCustomWidthChange(8000);
@@ -2289,7 +2368,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('copies the figure composed at the figure size, as a PNG, without a chart on the page', async () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const written: ClipboardItem[] = [];
     withClipboard({ write: (items: ClipboardItem[]) => { written.push(...items); return Promise.resolve(); } });
     const card = component.panelCards[0];
@@ -2308,7 +2387,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('opens the Single tab on one tile and steps through the set, wrapping at both ends', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const cards = component.exportableCards;
     expect(cards.length).toBe(7);
 
@@ -2389,7 +2468,7 @@ describe('ModelComparisonComponent', () => {
   }
 
   it('drives the page from both trade-off toggles in the Charts tab', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openStyleTab(component.scatterCards[0]);
 
     const named = styleControl('mc-style-scatter-directLabels');
@@ -2409,7 +2488,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('fills single-run bars from the Charts tab, persists it, and keeps no second copy of the control', () => {
-    render(buildDto(comparableSet(3).map(entry => ({ ...entry, runCount: 1 }))), 3);
+    render(buildDto(comparableSet(3).map(entry => ({ ...entry, runCount: 1 }))), 2);
 
     const fills = (): unknown[] =>
       (component.panelCards[0].data.datasets[0] as unknown as Record<string, unknown[]>)['backgroundColor'];
@@ -2431,7 +2510,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('re-composes the preview when a trade-off toggle is changed in the Charts tab', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
 
     // The clock is installed before the dialog is opened, so the composition the open itself
     // schedules is a fake timer this test drains rather than a real one outliving it.
@@ -2512,7 +2591,7 @@ describe('ModelComparisonComponent', () => {
   }
 
   it('offers the chart views\' four sidebar sections as tabs with the full tab contract', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
 
     expectTabContract('.mc-fig-sidebar-tabs', 'Settings sections', 'mc-side-tab-', 'mc-side-panel-',
       ['Data', 'Theme', 'Charts', 'Download'], () => component.sidebarTab);
@@ -2524,7 +2603,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('offers the four views as tabs with icons and the full tab contract', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
 
     // Each visible label is the whole accessible name, so no aria-label repeats it.
     const tabs = fixture.debugElement.queryAll(By.css('.mc-fig-tabs [role="tab"]'))
@@ -2559,7 +2638,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('shows the bar set on a panel, the trade-off set on a scatter and the profile set on the profile', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openStyleTab(component.panelCards[0]);
 
     const has = (selector: string): boolean => fixture.debugElement.query(By.css(selector)) !== null;
@@ -2583,7 +2662,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('stores a style change at once, persists it, and rebuilds the figures after the debounce', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
 
     jasmine.clock().install();
     try {
@@ -2617,7 +2696,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('drops a hidden badge from the bar cards after the debounce, and persists it', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
 
     jasmine.clock().install();
     try {
@@ -2665,7 +2744,7 @@ describe('ModelComparisonComponent', () => {
   }
 
   it('draws the figure footer in every figure, and drops it where Show footer is off', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const cards = [...component.panelCards, component.profileCard!, ...component.scatterCards];
     for (const card of cards) {
       expect(drawnChrome(card).footer.suite).withContext(card.id).toBe('GnollHack Player Assistance Benchmark Suite');
@@ -2685,7 +2764,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('draws each family at its own caption sizes, and re-composes the All tiles once a style change pauses', async () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     await settleAllTab();
     expect(component.allActive).toBeTrue();
     const schedule = spyOn(
@@ -2709,7 +2788,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('adds the hidden-intervals note to the Intelligence card when its bars are hidden, and drops it on request', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openStyleTab(component.panelCards[0]);
 
     const noteToggle = styleControl('mc-style-bar-hiddenIntervalsNote');
@@ -2728,7 +2807,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('drops the frontier note from the scatter card and its export on request, keeping the set notes', () => {
-    render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringVersion'])]), 3);
+    render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringVersion'])]), 2);
     const setNotes = component.setFigureNotes.map(note => note.text);
     expect(setNotes.length).toBeGreaterThan(0);
 
@@ -2749,7 +2828,7 @@ describe('ModelComparisonComponent', () => {
 
   it('reads the badge off the exam the runs were asked, with no left-out note for a revised rubric', () => {
     // A fully scored 18-question exam, whatever the suite holds now.
-    render(buildDto(comparableSet(2)), 3);
+    render(buildDto(comparableSet(2)), 2);
 
     expect(component.setFigureNotes.some(note => note.tone === 'info' && /left out/.test(note.text))).toBeFalse();
     expect(component.setFigureNotes.some(note => /revised/.test(note.text))).toBeFalse();
@@ -2764,7 +2843,7 @@ describe('ModelComparisonComponent', () => {
       ...entry,
       quality: { ...entry.quality!, itemCount: 16, unscoredItemCount: 2 }
     }));
-    render(buildDto(entries), 3);
+    render(buildDto(entries), 2);
 
     const s1 = component.scatterCards[0];
     expect(s1.chrome.badges.find(badge => badge.kind === 'questions')?.text).toBe('16 of 18 questions');
@@ -2774,7 +2853,7 @@ describe('ModelComparisonComponent', () => {
     const entries = comparableSet(3).map((entry, index) => index === 2
       ? { ...entry, quality: { ...entry.quality!, itemCount: 17, unscoredItemCount: 1 } }
       : entry);
-    render(buildDto(entries), 3);
+    render(buildDto(entries), 2);
 
     const warning = 'Gemini 2.5 Flash (medium): 1 question has no scored answer (failed, skipped or ungraded) and is left out of its index.';
     expect(component.setFigureNotes).toContain({ text: warning, tone: 'warning' });
@@ -2784,7 +2863,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('drops the mean-time note from the Speed card and its export on request, keeping the set notes', () => {
-    render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringVersion'])]), 3);
+    render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringVersion'])]), 2);
     expect(component.speedMeasure).toBe('meanModelTime');
     const setNotes = component.setFigureNotes.map(note => note.text);
     const speed = (): ComparisonFigureCard => component.panelCards[1];
@@ -2803,7 +2882,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('lets a forced horizontal orientation turn the panels in a wide container', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     component.applyContainerWidth(P1_STACK_BREAKPOINT_PX + 400);
     expect(component.orientation).toBe('vertical');
     expect((component.panelCards[0].options as { indexAxis?: string }).indexAxis).not.toBe('y');
@@ -2818,7 +2897,7 @@ describe('ModelComparisonComponent', () => {
 
   it('applies a stored style and falls back to the default on unreadable storage', () => {
     localStorage.setItem(FIGURE_STYLE_STORAGE_KEY, JSON.stringify({ version: 1, bar: { gapPercent: 10 } }));
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     expect(component.figureStyle.bar.gapPercent).toBe(10);
     expect(component.figureStyle.scatter).toEqual(DEFAULT_FIGURE_STYLE.scatter);
 
@@ -2835,7 +2914,7 @@ describe('ModelComparisonComponent', () => {
     expect(component.figures).toBeNull();
     expect(component.numberSamples).toEqual({ bar: {}, scatter: {}, profile: {} });
 
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const plotted = component.figures!.selection.plotted;
     expect(component.numberSamples.bar.intelligenceIndex).toEqual({ value: plotted[0].intelligenceIndex });
     expect(Object.keys(component.numberSamples.bar).sort()).toEqual(['intelligenceIndex', 'meanModelTime', 'suiteCost']);
@@ -2845,7 +2924,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('keeps the number samples through a family switch and replaces them on a rebuild', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const before = component.numberSamples;
     component.selectStyleFamily('scatter');
     component.selectStyleFamily('profile');
@@ -2865,7 +2944,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('hands the shown family\'s samples and the selected measures to the style panel', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openStyleTab(component.panelCards[0]);
     const panel = fixture.debugElement.query(By.css('app-figure-style-panel'));
     expect(panel).not.toBeNull();
@@ -2877,7 +2956,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('refreshes the profile ranges and the figures after a number change, once the style debounce passes', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const minLabel = (): string => component.profileAxes!.axes[0].minLabel;
     expect(minLabel()).toMatch(/^\d+$/);
 
@@ -2900,7 +2979,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('persists the number formats and the title break, and reads them back', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     component.onFigureStyleChange({
       ...component.figureStyle,
       bar: { ...component.figureStyle.bar, axisTitleBreak: 'always' },
@@ -2927,7 +3006,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('feeds the Text size range into every size’s layout, and persists it', async () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
     openSingle(component.panelCards[0]);
 
@@ -2954,7 +3033,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('refuses a size the figure does not fit, naming it, and leaves the stage blank', async () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const card = component.panelCards[0];
 
     // Every offered size is laid out in at least 960 × 540 layout px, so a figure is refused for
@@ -3033,7 +3112,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('rasterises the export at the density the stage affords', async () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     // A fixture's element is never laid out, so the stage's geometry is given rather than measured.
     spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
     openSingle();
@@ -3051,7 +3130,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('fits a portrait target to the stage’s height, in the target’s own ratio', async () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
     openSingle();
 
@@ -3095,7 +3174,7 @@ describe('ModelComparisonComponent', () => {
 
   /** Full HD at 100 % density on an 800 × 600 stage at DPR 2: the screen fit is 5/6. */
   async function openFullHdPreview(): Promise<void> {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
     openSingle();
     component.onExportDensityChange(1);
@@ -3105,7 +3184,7 @@ describe('ModelComparisonComponent', () => {
 
   /** A custom 800 × 600 at 100 % density on the same stage: the screen fit is 2. */
   async function openCustomPreview(): Promise<void> {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
     openSingle();
     component.onExportDensityChange(1);
@@ -3320,7 +3399,7 @@ describe('ModelComparisonComponent', () => {
   }
 
   it('stops watching the stage on switching to All, and watches the All viewport instead', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const observers = installFakeResizeObserver();
     openSingle();
     const { watching, removed } = watchedStage(observers);
@@ -3346,19 +3425,19 @@ describe('ModelComparisonComponent', () => {
     expect(component.allActive).toBeFalse();
   });
 
-  it('stops watching the stage on leaving step 3, and on destroy', async () => {
-    render(buildDto(comparableSet(3)), 3);
+  it('stops watching the stage on leaving step 2, and on destroy', async () => {
+    render(buildDto(comparableSet(3)), 2);
     const observers = installFakeResizeObserver();
     openSingle();
     const first = watchedStage(observers);
 
-    component.goToStep(2);
+    component.goToStep(1);
     fixture.detectChanges();
     expect(first.watching[0].disconnected).toBe(1);
     expect(first.removed).toHaveBeenCalledWith('pointerdown', jasmine.any(Function), undefined);
     expect(component.figureTab).withContext('kept, so returning shows the Single tab again').toBe('single');
 
-    component.goToStep(3);
+    component.goToStep(2);
     fixture.detectChanges();
     // The re-attach runs in a microtask, outside the check pass that found the stage.
     await Promise.resolve();
@@ -3371,12 +3450,12 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('removes the viewport listeners from their element after a refetch has taken it out of the DOM', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const observers = installFakeResizeObserver();
     openSingle();
     const { watching, viewport, removed } = watchedStage(observers);
 
-    // A refetch down to one entry: step 3 stays open, and the stage goes with the charts.
+    // A refetch down to one entry: step 2 stays open, and the stage goes with the charts.
     fixture.componentRef.setInput('comparison', buildDto(comparableSet(1)));
     fixture.detectChanges();
 
@@ -3388,7 +3467,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('carries the export size and format in the Download all charts tooltip, and a size error instead of it', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
 
     component.onExportDensityChange(1);
     component.onExportResolutionChange('fullhd');
@@ -3417,7 +3496,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('offers an Open in Single view control on every tile, naming its figure and never disabled', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
 
     const opens = (): HTMLButtonElement[] => fixture.debugElement.queryAll(By.css('.mc-all-tile .mc-all-open'))
       .map(button => button.nativeElement as HTMLButtonElement);
@@ -3568,7 +3647,7 @@ describe('ModelComparisonComponent', () => {
     expect(component.tableProvenance.conditionSignature).toBe('9c79137965e4');
     // The inline export toolbar and the column dialog are gone.
     expect(fixture.debugElement.query(By.css('#mc-table-export-format'))).toBeNull();
-    expect(fixture.debugElement.query(By.css('dialog'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('dialog:not(.mc-about-dialog)'))).toBeNull();
   });
 
   it('puts Copy table and Download table in the view bar of both table views, each with an interest tooltip', () => {
@@ -3648,7 +3727,7 @@ describe('ModelComparisonComponent', () => {
 
     expect(download).toHaveBeenCalledTimes(1);
     expect(copy).toHaveBeenCalledTimes(1);
-    expect(fixture.debugElement.query(By.css('dialog'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('dialog:not(.mc-about-dialog)'))).toBeNull();
   });
 
   it('writes one file per table format, under the extension that format names', async () => {
@@ -3933,7 +4012,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('keeps the chart size and the table image size apart, each stored under its own key', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const chart = component.figureSize;
 
     component.onTableImageSizeChange({ ...component.tableImageSize, resolutionId: 'custom', customWidthPx: 1000, customHeightPx: 800 });
@@ -4026,7 +4105,7 @@ describe('ModelComparisonComponent', () => {
   // -------------------------------------------------------------------------------------------
 
   it('seeds Custom from the order in effect, disables Direction, and keeps it across a switch of key', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     chooseRadio('mc-sort-direction-asc');
     expect(component.figures!.smallMultiples.order).toEqual(['run:1', 'run:2', 'run:3']);
 
@@ -4054,7 +4133,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('reorders the charts and the table from one custom move, and returns a column sort to the model order', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     chooseRadio('mc-sort-key-custom');
     showView('table');
     headerButton('Model').click();
@@ -4079,7 +4158,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('resets the custom order to Intelligence Index, descending, and refuses while it already is', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     chooseRadio('mc-sort-key-custom');
     const reset = (): HTMLButtonElement => fixture.debugElement.queryAll(By.css('#mc-side-panel-data .mc-order-actions button'))
       .map(button => button.nativeElement as HTMLButtonElement)
@@ -4099,7 +4178,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('tags entries the charts never draw as table only, and draws the divider where the charts stop', () => {
-    render(buildDto([...comparableSet(MAX_PLOTTED_ENTRIES + 1), buildExcludedEntry('run:99', ['ScoringMethodVersion'])]), 3);
+    render(buildDto([...comparableSet(MAX_PLOTTED_ENTRIES + 1), buildExcludedEntry('run:99', ['ScoringMethodVersion'])]), 2);
     component.onSortKeyChange('custom');
 
     const tags = (key: string): readonly string[] =>
@@ -4116,7 +4195,7 @@ describe('ModelComparisonComponent', () => {
 
   it('keeps the custom order across a refetch, dropping gone entries and appending new ones by Intelligence Index', () => {
     const entries = comparableSet(4);
-    render(buildDto(entries.slice(0, 3)), 3);
+    render(buildDto(entries.slice(0, 3)), 2);
     component.onSortKeyChange('custom');
     component.onCustomOrderChange(['run:1', 'run:3', 'run:2']);
 
@@ -4325,7 +4404,7 @@ describe('ModelComparisonComponent', () => {
   // -------------------------------------------------------------------------------------------
 
   it('shows Table in place of Charts beside the table, keeps a shared tab across a switch, and swaps Charts and Table', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const labels = (): string[] => fixture.debugElement.queryAll(By.css('.mc-fig-sidebar-tabs [role="tab"]'))
       .map(tab => (tab.nativeElement as HTMLElement).textContent?.trim() ?? '');
     expect(labels()).toEqual(['Data', 'Theme', 'Charts', 'Download']);
@@ -4382,13 +4461,13 @@ describe('ModelComparisonComponent', () => {
     localStorage.setItem(FIGURE_SIDEBAR_STORAGE_KEY, JSON.stringify({ version: 1, collapsed: false, tab: 'table', view: 'all' }));
     fixture = TestBed.createComponent(ModelComparisonComponent);
     component = fixture.componentInstance;
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     expect(component.effectiveSidebarTab).toBe('charts');
     expect(fixture.debugElement.query(By.css('#mc-side-panel-charts'))).toBeTruthy();
   });
 
   it('shows the table image on the Table preview stage, with its own view state and its pixel size', async () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSingle(component.panelCards[0]);
     component.setPreviewView(2);
     expect(component.previewView).toBe(2);
@@ -4422,7 +4501,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('shows a refused table image size under the Table preview stage instead of the image', async () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     showView('tablePreview');
     component.onTableImageSizeChange({ ...component.tableImageSize, resolutionId: 'custom', customWidthPx: 400, customHeightPx: 320 });
     await composePreview();
@@ -4437,7 +4516,7 @@ describe('ModelComparisonComponent', () => {
   // -------------------------------------------------------------------------------------------
 
   it('hosts the appearance panel in the Theme tab of both view groups', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSidebarTab('theme');
     const panel = (): { kind: string; fontLoadStatus: string; figureStyle: FigureStyle } =>
       fixture.debugElement.query(By.css('#mc-side-panel-theme app-figure-style-panel')).componentInstance;
@@ -4449,7 +4528,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('resolves the theme once and hands it to every chart\'s chrome, and paints a transparent background\'s backdrop on screen only', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     expect(component.figureTheme.name).toBe('dark');
     expect(fixture.debugElement.queryAll(By.css('.mc-all-canvas.is-transparent-figure')).length).toBe(0);
 
@@ -4472,7 +4551,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('copies one figure to the clipboard and names the card in the status', async () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const write = jasmine.createSpy('write').and.returnValue(Promise.resolve());
     withClipboard({ write });
     const card = component.panelCards[0];
@@ -4485,7 +4564,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('reports a refused figure copy, and an absent clipboard API, as inline text', async () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     withClipboard({ write: () => Promise.reject(new Error('Write permission denied.')) });
 
     await component.copyFigure(component.panelCards[0]);
@@ -4503,7 +4582,7 @@ describe('ModelComparisonComponent', () => {
   // -------------------------------------------------------------------------------------------
 
   it('writes a batch as one archive, under one timestamp shared with every figure in it', async () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const saved = captureSaves();
     const zip = stubZipWriter();
 
@@ -4523,7 +4602,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('composes a figure export from the suite and the computation time, and nothing else in the footer', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const card = component.panelCards[0];
 
     const { chrome, footer } = (component as unknown as {
@@ -4545,7 +4624,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('composes each figure at its own family\'s caption sizes, and empties the footer where it is hidden', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const exportChrome = (card: ComparisonFigureCard) => (component as unknown as {
       exportChrome(card: ComparisonFigureCard): { footer: FigureFooter; textSizes?: { titlePx: number; badgePx: number; footerPx: number } };
     }).exportChrome(card);
@@ -4573,7 +4652,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('writes one image and no archive for a single figure from the preview', async () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const saved = captureSaves();
     const zip = stubZipWriter();
     openSingle(component.panelCards[0]);
@@ -4587,7 +4666,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('announces a written batch as a success naming the archive', async () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     captureSaves();
     stubZipWriter();
 
@@ -4599,7 +4678,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('announces a wholly refused batch as an error, and writes nothing', async () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     const saved = captureSaves();
     const zip = stubZipWriter();
 
@@ -4632,7 +4711,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('lays the preview toolbar out as three labelled groups of tooltipped icon buttons', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSingle();
 
     const toolbar = fixture.debugElement.query(By.css('.mc-preview-toolbar')).nativeElement as HTMLElement;
@@ -4659,7 +4738,7 @@ describe('ModelComparisonComponent', () => {
     }
 
     // Every icon-only button in the workspace has a name and a tooltip, and none uses `title`.
-    const step = fixture.debugElement.query(By.css('#mc-step-panel-3')).nativeElement as HTMLElement;
+    const step = fixture.debugElement.query(By.css('#mc-step-panel-2')).nativeElement as HTMLElement;
     for (const button of Array.from(step.querySelectorAll<HTMLButtonElement>('button.action-btn'))) {
       expect(button.getAttribute('aria-label')).withContext(button.outerHTML).toBeTruthy();
       expect(button.getAttribute('interestfor')).withContext(button.outerHTML).toBeTruthy();
@@ -4674,7 +4753,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('hands the notice to its one toast', async () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     withClipboard({ write: () => Promise.resolve() });
 
     await component.copyFigure(component.panelCards[0]);
@@ -4690,7 +4769,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   // -------------------------------------------------------------------------------------------
-  // The step-3 workspace: sidebar, view tabs, and the Download tab of the chart views
+  // The step-2 workspace: sidebar, view tabs, and the Download tab of the chart views
   // -------------------------------------------------------------------------------------------
 
   function sidebarToggle(): HTMLButtonElement {
@@ -4713,13 +4792,13 @@ describe('ModelComparisonComponent', () => {
     const second = TestBed.createComponent(ModelComparisonComponent);
     second.componentRef.setInput('comparison', buildDto(comparableSet(3)));
     second.detectChanges();
-    second.componentInstance.goToStep(3);
+    second.componentInstance.goToStep(2);
     second.detectChanges();
     return second;
   }
 
   it('collapses the sidebar from its disclosure, persists it, and restores it in a new instance', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
 
     const toggle = sidebarToggle();
     expect(toggle.getAttribute('aria-label')).toBe('Comparison settings');
@@ -4772,7 +4851,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('restores the sidebar tab and the view, and falls back to Data on an unknown or malformed one', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
     showView('table');
     expect(storedSidebar()).toEqual({
@@ -4799,7 +4878,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('opens Download for a stored tab of its earlier name, export', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     localStorage.setItem(FIGURE_SIDEBAR_STORAGE_KEY, JSON.stringify({ version: 1, collapsed: false, tab: 'export' }));
 
     const second = secondInstance();
@@ -4809,7 +4888,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('holds the chart size, the image format and Download all charts in the chart views\' Download tab', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
 
     const panel = fixture.debugElement.query(By.css('#mc-side-panel-download')).nativeElement as HTMLElement;
@@ -4842,7 +4921,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('remembers whether Chart size is open, in the sidebar record', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
     const section = fixture.debugElement.query(By.css('#mc-export-section')).nativeElement as HTMLDetailsElement;
 
@@ -4859,7 +4938,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('resets Chart size to Full HD at the display’s density and 100 % text', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
     const reset = (): HTMLButtonElement =>
       fixture.debugElement.query(By.css('#mc-export-reset')).nativeElement as HTMLButtonElement;
@@ -4880,7 +4959,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('resets the image format to PNG and quality 85, and says so', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
     const reset = (): HTMLButtonElement =>
       fixture.debugElement.query(By.css('#mc-image-format-reset')).nativeElement as HTMLButtonElement;
@@ -4901,7 +4980,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('persists a size change, and a new instance opens on it', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     component.onExportResolutionChange('uw1440');
     component.onExportDensityChange(2);
 
@@ -4917,7 +4996,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('centres Download all charts and the sidebar toggle on the view bar', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     expect(component.figureTab).toBe('all');
 
     const box = (selector: string): DOMRect =>
@@ -4931,8 +5010,8 @@ describe('ModelComparisonComponent', () => {
     }
   });
 
-  it('renders no chart directive on step 3, and exports without reading a page canvas', async () => {
-    render(buildDto(comparableSet(3)), 3);
+  it('renders no chart directive on step 2, and exports without reading a page canvas', async () => {
+    render(buildDto(comparableSet(3)), 2);
     const directives = (): number => fixture.debugElement.queryAll(By.directive(BaseChartDirective)).length;
     expect(directives()).withContext('the All tab').toBe(0);
     expect(fixture.debugElement.queryAll(By.css('canvas[baseChart], canvas[basechart]')).length).toBe(0);
@@ -4956,12 +5035,12 @@ describe('ModelComparisonComponent', () => {
     expect(args.some(arg => arg instanceof HTMLCanvasElement)).toBeFalse();
   });
 
-  it('re-composes the Single stage on an emphasis toggle while it is shown, and not on the All tab', () => {
-    render(buildDto(comparableSet(3)), 3);
+  it('re-composes the Single stage on a highlight toggle while it is shown, and not on the All tab', () => {
+    render(buildDto(comparableSet(3)), 2);
     const renderPreview = spyOn(
       component as unknown as { renderPreview(): Promise<void> }, 'renderPreview'
     ).and.returnValue(Promise.resolve());
-    const box = (): DebugElement => fixture.debugElement.queryAll(By.css('.mc-emphasis-list input[type="checkbox"]'))[0];
+    const box = (): DebugElement => fixture.debugElement.queryAll(By.css('.mc-models-table input[id^="mc-emph-"]'))[0];
 
     jasmine.clock().install();
     try {
@@ -4985,7 +5064,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('lights a hover highlight on the All tab, none on the Single tab, and still clears one', async () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     await settleAllTab();
     const schedule = spyOn(
       component as unknown as { scheduleAllCompose(): void }, 'scheduleAllCompose').and.callThrough();
@@ -5050,7 +5129,7 @@ describe('ModelComparisonComponent', () => {
   async function openFittedAll(): Promise<void> {
     spyOn(component, 'measureAllViewport').and.returnValue({ width: 1200, height: 900, devicePixelRatio: 2 });
     component.onExportDensityChange(1);
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     await settleAllTab();
   }
 
@@ -5249,7 +5328,7 @@ describe('ModelComparisonComponent', () => {
     expect(tiles[1].style.getPropertyValue('contain-intrinsic-size')).toContain(`${Math.round(component.allTileCssHeight)}px`);
   });
 
-  it('stops composing, and drops its observers and timers, on leaving the All tab, step 3 and on destroy', async () => {
+  it('stops composing, and drops its observers and timers, on leaving the All tab, step 2 and on destroy', async () => {
     await openFittedAll();
     const internals = component as unknown as {
       allComposeTimer: unknown; allResizeObserver: unknown; allIntersectionObserver: unknown;
@@ -5265,12 +5344,12 @@ describe('ModelComparisonComponent', () => {
     component.selectFigureTab('all');
     refresh();
     expect(component.allActive).toBeTrue();
-    component.goToStep(2);
+    component.goToStep(1);
     fixture.detectChanges();
     expect(component.allActive).toBeFalse();
     expect(internals.allComposeTimer).toBeNull();
 
-    component.goToStep(3);
+    component.goToStep(2);
     fixture.detectChanges();
     await settleAllTab();
     expect(component.allActive).toBeTrue();
@@ -5280,7 +5359,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('keeps the Charts tab on the Single figure\'s family, and moves the Single stage to a chosen one', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSidebarTab('charts');
     const families = (): string[] => fixture.debugElement.queryAll(By.css('.mc-style-family-tabs [role="tab"]'))
       .map(option => ((option.nativeElement as HTMLElement).textContent ?? '').trim());
@@ -5306,7 +5385,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('offers the style families as tabs with the full tab contract', () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSidebarTab('charts');
 
     const kinds = ['bar', 'profile', 'scatter'];
@@ -5366,7 +5445,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('offers no Profile family where the profile is suppressed', () => {
-    render(buildDto(comparableSet(2)), 3);
+    render(buildDto(comparableSet(2)), 2);
     expect(component.profileCard).toBeNull();
     expect(component.styleFamilies.map(family => family.kind)).toEqual(['bar', 'scatter']);
 
@@ -5374,11 +5453,11 @@ describe('ModelComparisonComponent', () => {
     expect(component.effectiveStyleFamily).toBe('bar');
   });
 
-  it('leaves no duplicate of any control in step 3', () => {
-    render(buildDto(comparableSet(3)), 3);
+  it('leaves no duplicate of any control in step 2', () => {
+    render(buildDto(comparableSet(3)), 2);
     openSingle();
 
-    const step = fixture.debugElement.query(By.css('#mc-step-panel-3')).nativeElement as HTMLElement;
+    const step = fixture.debugElement.query(By.css('#mc-step-panel-2')).nativeElement as HTMLElement;
     const outsidePanel = (text: string): Element[] => Array.from(step.querySelectorAll('label, button, h4'))
       .filter(element => !element.closest('app-figure-style-panel'))
       .filter(element => (element.textContent ?? '').includes(text));
@@ -5392,16 +5471,16 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('returns to the Single tab after a step away, and watches the stage again', async () => {
-    render(buildDto(comparableSet(3)), 3);
+    render(buildDto(comparableSet(3)), 2);
     openSingle();
     const observe = spyOn(component as unknown as { observeStage(): void }, 'observeStage').and.callThrough();
 
-    component.goToStep(2);
+    component.goToStep(1);
     fixture.detectChanges();
     expect(component.previewActive).toBeFalse();
     expect(fixture.debugElement.query(By.css('.mc-preview-stage'))).toBeNull();
 
-    component.goToStep(3);
+    component.goToStep(2);
     fixture.detectChanges();
     // The re-attach runs in a microtask, outside the check pass that found the stage.
     await Promise.resolve();
@@ -5424,17 +5503,6 @@ describe('ModelComparisonComponent', () => {
     expect(toChartContext(buildDto(asked([18, 18]))).questionsAskedPerRun).toBe(18);
     expect(toChartContext(buildDto(asked([18, 17]))).questionsAskedPerRun).toBeNull();
     expect(toChartContext(buildDto(comparableSet(2))).questionsAskedPerRun).toBeNull();
-  });
-
-  it('names the questions asked on the single-entry cost tile, and nothing when the payload lacks it', () => {
-    const [entry] = comparableSet(1);
-    render(buildDto([{ ...entry, cost: { ...entry.cost!, questionsAskedPerRun: 18 } }]));
-    const costTile = () => component.singleEntryTiles.find(tile => tile.label === 'Candidate cost per question');
-
-    expect(costTile()?.detail).toContain('over 18 questions asked per run');
-
-    render(buildDto(comparableSet(1)));
-    expect(costTile()?.detail).not.toContain('asked per run');
   });
 
 });

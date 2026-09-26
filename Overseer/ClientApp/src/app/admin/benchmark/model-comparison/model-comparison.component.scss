@@ -15,36 +15,12 @@
   gap: 14px;
 }
 
-.mc-section + .mc-section,
-.mc-section + * + .mc-section {   /* an @if comment node may sit between two sections */
-  padding-top: 24px;
-  border-top: 1px solid var(--border-glass);
-}
-
-.mc-section-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
 /* Section title: one per section, on every step and in the figure sidebar. */
 .mc-section-title {
   margin: 0;
   font-family: "Cinzel", serif;
   font-size: 18px;
   line-height: 1.3;
-  color: var(--primary-color);
-}
-
-/* Sub-section title: a group inside a section, e.g. the entry picker under Filters. */
-.mc-subsection-title {
-  margin: 0;
-  font-family: "Cinzel", serif;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
   color: var(--primary-color);
 }
 
@@ -66,8 +42,7 @@
   min-width: 110px;
 }
 
-.section-note,
-.mc-explanation {
+.section-note {
   margin: 0;
   font-size: 13px;
   line-height: 1.5;
@@ -75,211 +50,11 @@
   max-width: 90ch;
 }
 
-/* One rule per line, each opening on the clause that carries it, so the must-match rule is not the
-   middle of a paragraph. */
-.mc-howto {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-width: 90ch;
-
-  li {
-    position: relative;
-    padding-left: 18px;
-    font-size: 13px;
-    line-height: 1.5;
-    color: #a1a1aa;
-  }
-
-  li::before {
-    content: "";
-    position: absolute;
-    left: 3px;
-    top: 8px;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--primary-color);
-  }
-
-  strong {
-    color: #e4e4e7;
-  }
-}
-
-/* The sentence that summarises the outcome, framed as a result rather than as more prose. */
-.mc-explanation-status {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-left: 3px solid var(--primary-color);
-  border-radius: 6px;
-  background: rgba(20, 20, 20, 0.85);
-  color: #d4d4d8;
-
-  svg {
-    flex-shrink: 0;
-    margin-top: 2px;
-    color: var(--primary-color);
-  }
-}
-
-.mc-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 28px;
-  margin: 0;
-
-  dt {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #898781;
-  }
-
-  dd {
-    margin: 0;
-    font-size: 14px;
-    color: #e4e4e7;
-  }
-}
-
-/* The four facts as a strip of tiles, so they scan as a row of values rather than as a wrapped
-   run of label / value pairs. */
-.mc-meta-tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 10px;
-
-  > div {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 8px 12px;
-    border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
-    border-radius: 6px;
-    background: rgba(17, 17, 17, 0.65);
-  }
-}
-
-/* ==========================================================================
-   The filter row
-   ========================================================================== */
-
-/* The query root for the Scope fieldset, so it responds to the panel it sits in rather than to the
-   window. Nothing with a popover may become a containment context, which is why the container is
-   this wrapper and not the section around it. */
-.mc-filters-container {
-  container-type: inline-size;
-}
-
-/* The box comes from `.gh-fieldset`; this holds the layout and nothing else. */
-.mc-filters {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 14px 18px;
-}
-
-/* A <fieldset> is not a grid container by default in every engine, so the display is explicit. */
-.mc-fieldset {
-  display: grid;
-  gap: 12px 16px;
-  align-content: start;
-}
-
-.mc-fieldset-scope {
-  grid-template-columns: 1fr;
-}
-
-/* 720px is `P1_STACK_BREAKPOINT_PX`, the width below which P1's bars turn horizontal. */
-@container (min-width: 720px) {
-  .mc-fieldset-scope {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.mc-field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  min-width: 0;
-
-  > label {
-    font-size: 12px;
-    font-weight: 600;
-    color: #d4d4d8;
-  }
-}
-
 .mc-field-hint {
   margin: 0;
   font-size: 11px;
   line-height: 1.45;
   color: #898781;
-}
-
-.mc-entry-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 6px;
-  padding: 14px 16px 16px;
-  border: 1px solid var(--border-glass);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.15);
-}
-
-/*
- * At most two columns. `columns` caps the count without a query container, which matters here: the
- * excluded rows carry `popover` tooltips, and a containment context around one breaks the
- * anchor-positioning polyfill's placement.
- */
-.mc-entry-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  columns: 320px 2;
-  column-gap: 24px;
-}
-
-.mc-entry {
-  break-inside: avoid;
-  padding: 3px 0;
-
-  /* The label's own 10px gap separates the glyph; the inline margin it carries elsewhere doubles it. */
-  .mc-glyph {
-    margin-right: 0;
-  }
-}
-
-.mc-entry-name {
-  font-size: 13px;
-  color: #e4e4e7;
-}
-
-.mc-entry-meta {
-  font-size: 11px;
-  color: #898781;
-}
-
-.mc-entry-excluded {
-  .checkbox-label {
-    cursor: default;
-  }
-
-  .mc-entry-name {
-    color: #898781;
-  }
-
-  svg {
-    flex-shrink: 0;
-    color: #898781;
-  }
 }
 
 .mc-glyph {
@@ -303,28 +78,9 @@
   clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
 }
 
-.mc-selection-note {
-  margin: 0;
-  font-size: 12px;
-  color: #c3c2b7;
-}
-
 /* ==========================================================================
    Notices
    ========================================================================== */
-
-/* The two alerts and the notice list side by side as cards, under one heading, rather than three
-   full-width blocks a reader scrolls past before reaching the figures. */
-.mc-advisories {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 12px;
-  align-items: start;
-
-  .mc-notices {
-    margin: 0;
-  }
-}
 
 .mc-notices {
   list-style: none;
@@ -355,17 +111,8 @@
 }
 
 /* ==========================================================================
-   Figure metadata, badges and notes, as the facts strip and the table use them
+   Badges and notes, as the table and the view use them
    ========================================================================== */
-
-.mc-meta {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
 
 .mc-badge {
   font-size: 11px;
@@ -377,12 +124,6 @@
   color: #c3c2b7;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-
-  &.mc-badge--pricing {
-    color: #6ee7b7;
-    background: rgba(16, 185, 129, 0.1);
-    border-color: rgba(16, 185, 129, 0.3);
-  }
 }
 
 .mc-notes {
@@ -395,71 +136,87 @@
 }
 
 /* ==========================================================================
-   The single-entry KPI row
+   The About dialog
    ========================================================================== */
 
-.mc-kpis {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 14px;
+/* A reading width, and the body scrolls between a fixed header and footer. */
+.mc-about-dialog {
+  max-width: min(76ch, calc(100vw - 32px));
+
+  &[open] {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100dvh - 48px);
+  }
 }
 
-.mc-kpi {
+.mc-about-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 12px 0;
+  font-size: 13px;
+  line-height: 1.5;
+
+  &:focus {
+    outline: none;
+  }
+
+  p {
+    margin: 0;
+  }
+
+  ul {
+    margin: 0;
+    padding-left: 18px;
+  }
+}
+
+.mc-about-summary {
+  font-size: 14px;
+  color: var(--font-color);
+}
+
+.mc-about-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  h4 {
+    margin: 0;
+    font-family: "Cinzel", serif;
+    font-size: 16px;
+    line-height: 1.3;
+    color: var(--primary-color);
+  }
+}
+
+.mc-about-excluded,
+.mc-about-measure {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 14px 16px;
-  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
-  border-radius: 8px;
-  background: rgba(17, 17, 17, 0.65);
-}
-
-.mc-kpi-label {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #898781;
-}
-
-.mc-kpi-value {
-  font-family: "Cinzel", serif;
-  font-size: 26px;
-  color: var(--primary-color);
-}
-
-.mc-kpi-detail {
-  font-size: 12px;
-  line-height: 1.45;
-  color: #a1a1aa;
-}
-
-/* ==========================================================================
-   Exclusions and refused measures
-   ========================================================================== */
-
-.mc-excluded {
-  padding: 12px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-left: 3px solid #d95926;
+  padding: 8px 12px;
+  border: 1px solid var(--border-glass);
   border-radius: 6px;
-  background: rgba(20, 20, 20, 0.85);
-  display: flex;
-  flex-direction: column;
+  background: var(--bg-glass);
+}
+
+/* The About button's caveat count, centred on the button's text line. */
+.mc-about-trigger {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
 }
 
-.mc-excluded-title {
-  margin: 0;
-  font-size: 14px;
-  color: #ffffff;
-}
-
-.mc-excluded-explanation,
-.mc-excluded-keys {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: #d4d4d8;
+.mc-about-count {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.2;
+  color: var(--primary-color);
+  border-color: var(--border-glass);
 }
 
 .mc-differences {
@@ -472,78 +229,6 @@
   ul {
     padding-left: 18px;
   }
-}
-
-.mc-measures {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 12px;
-}
-
-.mc-measure-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
-  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
-  border-radius: 8px;
-  background: rgba(17, 17, 17, 0.65);
-}
-
-.mc-measure-title {
-  margin: 0;
-  font-family: "Cinzel", serif;
-  font-size: 14px;
-  color: #ffffff;
-}
-
-.mc-measure-summary {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: #d4d4d8;
-}
-
-.mc-measure-detail {
-  font-size: 12px;
-  line-height: 1.5;
-  color: #a1a1aa;
-
-  > summary {
-    cursor: pointer;
-    color: #c3c2b7;
-  }
-
-  > summary:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
-
-  p {
-    margin: 6px 0 0;
-  }
-}
-
-/* What to read instead is the actionable half, so it is the highlighted line of the card. */
-.mc-measure-instead {
-  margin: 0;
-  padding-left: 10px;
-  border-left: 2px solid var(--primary-color);
-  font-size: 12px;
-  line-height: 1.5;
-  color: #d4d4d8;
-}
-
-.mc-measure-instead-label {
-  display: block;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--primary-color);
 }
 
 /* ==========================================================================
@@ -748,7 +433,7 @@
    The Data tab: measures, model order and emphasis, beside the charts they change
    ========================================================================== */
 
-/* Three stacked groups, each a themed fieldset with its own legend; the radio groups inside are
+/* Four stacked groups, each a themed fieldset with its own legend; the radio groups inside are
    the global `.gh-choice` / `.gh-radio`. */
 .mc-data-group {
   display: flex;
@@ -786,35 +471,87 @@
 }
 
 /* ==========================================================================
-   Emphasis, in the Data tab beside the charts it paints
+   Models, in the Data tab: Show and Highlight per model
    ========================================================================== */
 
-.mc-emphasis {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.mc-models-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+
+  thead th {
+    padding: 0 6px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-align: left;
+    color: var(--nav-color);
+    border-bottom: 1px solid var(--border-glass);
+  }
+
+  td,
+  tbody th {
+    padding: 4px 6px;
+    vertical-align: middle;
+    border-bottom: 1px solid color-mix(in srgb, var(--border-glass) 50%, transparent);
+  }
+
+  tbody tr:hover {
+    background: color-mix(in srgb, var(--primary-color) 8%, transparent);
+  }
+
+  /* The two checkbox columns: narrow and centred, the model cell takes the rest. */
+  thead th:first-child,
+  thead th:nth-child(3),
+  .mc-models-check {
+    width: 1%;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  input[type="checkbox"] {
+    margin: 0;
+    vertical-align: middle;
+  }
 }
 
-.mc-emphasis-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 6px 16px;
+/* The flex lives on the cell's content, not on the <th>, which would drop out of the column grid. */
+.mc-models-name {
+  font-weight: normal;
+  text-align: left;
 
-  /* The label's own 10px gap separates the glyph; the inline margin it carries elsewhere doubles it. */
+  > * {
+    vertical-align: middle;
+  }
+
+  > * + * {
+    margin-left: 6px;
+  }
+
   .mc-glyph {
     margin-right: 0;
   }
 }
 
-.mc-emphasis-name {
+.mc-model-label {
   font-size: 13px;
-  color: #e4e4e7;
+  color: var(--font-color);
 }
 
-.mc-emphasis-actions {
+/* A row's state, beside its name: not comparable, or ticked past the plot cap. */
+.mc-models-tag {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 1.4;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border-glass);
+  color: var(--nav-color);
+  white-space: nowrap;
+}
+
+.mc-models-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -822,10 +559,10 @@
   gap: 8px 12px;
 }
 
-.mc-emphasis-status {
+.mc-models-status {
   margin: 0;
   font-size: 12px;
-  color: #c3c2b7;
+  color: var(--nav-color);
 }
 
 /* ==========================================================================
@@ -929,7 +666,7 @@
 }
 
 /* The only scroller in the dialog. `overscroll-behavior: contain` stops a wheel gesture that
-   reaches the end of a long list from chaining into the page behind the dialog. Step 3 hands
+   reaches the end of a long list from chaining into the page behind the dialog. Step 2 hands
    scrolling to its sidebar and its panels, so its view bar never scrolls away. */
 .mc-step {
   flex: 1;
@@ -1104,7 +841,7 @@
   color: var(--primary-color);
 }
 
-/* The busy state of a refetch from steps 2 and 3, where Next is not blocked and carries no spinner.
+/* The busy state of a refetch from step 2, where Close is not blocked and carries no spinner.
    On a line of its own under the step position, centred like it. */
 .mc-wizard-busy {
   display: flex;
@@ -1123,8 +860,7 @@
   justify-content: flex-end;
 }
 
-/* On step 3 the notices are a reminder beside the export controls, not the primary reading;
-   step 2 renders the same set at full size. */
+/* On step 2 the notices are a reminder beside the export controls, not the primary reading. */
 .mc-notices-compact {
   font-size: 12px;
 }
@@ -1201,7 +937,7 @@
   margin: 0;
 }
 
-/* --- Step 3's workspace: settings sidebar, view bar, the chart views and the table views --- */
+/* --- Step 2's workspace: settings sidebar, view bar, the chart views and the table views --- */
 
 /* The sidebar and the main area side by side, collapsing to one column on the workspace's own
    width rather than the viewport's: the wizard is already narrower than the window on a split
@@ -1389,8 +1125,7 @@
 }
 
 /* The Interactive table scrolls vertically as a panel of its own, so the view bar stays put; the
-   horizontal scroll stays on `.gh-datatable-scroll`, with the pagers outside it. The section rhythm
-   is step 2's. */
+   horizontal scroll stays on `.gh-datatable-scroll`, with the pagers outside it. */
 .mc-fig-panel--table {
   overflow-y: auto;
   overscroll-behavior: contain;

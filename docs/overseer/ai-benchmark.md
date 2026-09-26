@@ -2824,6 +2824,80 @@ layout is never migrated again, so an admin who hides the column keeps it hidden
 migration the general repair rule would have appended the new column hidden, and it would have
 looked missing to exactly the admins using the table.
 
+### Model Comparison: Two Steps, Models and Prices in the Data Tab, About Dialog (2026-09-26)
+
+*The separate Comparability & filters step was mostly a stopover: its explanation repeated the
+wizard header, and its controls belonged beside the charts they change.* Display only: nothing here grades anything, and
+`HarnessVersion`, `ScoringMethodVersion`, `CandidateSystemPromptSha256` and `ToolGuidesSha256` do
+not move.
+
+**Steps.** The wizard has two steps instead of three.
+
+| Step | Title | Holds |
+|------|-------|-------|
+| 1 | Sources | The runs and analysis groups to compare |
+| 2 | Charts & table | Every chart and the comparison table, with their settings and exports |
+
+Step 2 is reachable as soon as a comparison exists, even one no chart can draw — it opens on the
+table views in that case, as before. The footer button on step 2 is *Close*.
+
+**Data tab groups.** The separate Comparability & filters step is gone; what it held now lives in
+the Data tab, in this order:
+
+| Group | Chart views | Table views | What it holds |
+|-------|:------:|:-----------:|----------------|
+| Models | ✓ | ✓ | One row per model with a **Show** checkbox (plot this model, up to the chart cap) and a **Highlight** checkbox (chart views only: draw it in gold and grey the rest) |
+| Measures | ✓ | — | Speed measure, cost measure |
+| Prices | ✓ | ✓ | Pricing basis |
+| Model order | ✓ | ✓ | Order by, direction, custom order |
+
+**Models.** The old step-2 *Entries in the charts* checklist and the Data tab's old *Emphasis* list
+are one table now. Every model in the comparison gets one row with Show and Highlight checkboxes;
+the Highlight column is shown only in the chart views, since a table view has no gold series to
+draw. "Emphasise" is renamed *Highlight* in the UI only — the internal names (`emphasisKeys`,
+`toggleEmphasis`, `isEmphasised`, `clearEmphasis`) are unchanged. Unticking Show takes a model out of
+the charts only; it stays in the table. A model the server excluded has its Show box disabled and
+an information tip with the reason.
+
+**Strictness is gone.** The Comparability strictness filter (*Comparable and degraded* /
+*Comparable only*) is removed; it duplicated Show, which already excludes a model from every
+figure with the same effect, one row at a time and visibly. The *Strict comparability is on*
+figure note that used to appear in exports can no longer appear, since there is no longer a
+setting for it to report.
+
+**Prices.** The pricing basis select — *Today's prices — fair across dates* (Current) and *Prices
+at run time — what was spent* (AsRun) — moved from the removed step to its own Data tab group,
+shown in both view groups since the table reads it too. Changing it recomputes the comparison
+server-side, the same round trip *Recompute* makes.
+
+**Recompute.** The view bar's *Recompute* control is now icon-only: a `.action-btn` with the
+rotate glyph, `aria-label="Recompute the comparison"` and the tooltip *Recompute this comparison*.
+
+**About.** The view bar also gains an *About* button (`#mc-about-trigger`, a `.btn-ghost` with the
+help-circle glyph the source picker's *About conditions* button already uses, with visible text
+*About*), carrying a count badge equal to the number of caveat notes while any exist. It opens an
+**About this comparison** dialog (`#aboutDialog`) holding: a one-line summary; *Read these first*
+(thinking levels differ across candidates; every model here has only one run); *Not in the
+charts* (models measured differently, the keys they differ on, behind a Details disclosure) —
+this is where the removed *Entries excluded from every figure* section's content now lives; *How
+to read the charts*; and *Not shown as charts* (the server's refused measures, each with its
+summary, an *Instead: …* line and a *Why* disclosure). The dialog's body renders only while it is
+open, and it stops propagation of its own close and cancel events so they never reach, and close,
+the wizard's own dialog.
+
+**Refetch and selection.** A refetch that returns the same set of entry keys — from changing
+Prices or from Recompute — keeps the admin's Show and Highlight choices exactly as set. A refetch
+whose entries differ reseeds both from scratch.
+
+**Unavailable charts, by reason.** The chart views' unavailable line now names why, per shape:
+
+- No models in the comparison: *"There are no models in this comparison."*
+- Fewer than two models were measured the same way (nothing chartable, but the table still has
+  everything): *"Fewer than two models were measured the same way, so there is nothing to chart.
+  The table lists every model and why."*
+- The admin unticked models under Show, down to fewer than two: *"Charts need at least two models.
+  Tick more under Data → Models."*
+
 ### Harness Version 29 Updates
 
 Prompted by the analysis of runs 50 and 51, the first two runs of a game-snapshot suite, which showed that

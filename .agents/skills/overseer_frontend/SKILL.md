@@ -263,27 +263,51 @@ To find specific popups, look in the corresponding component's `.html` template:
     only where that source actually differs.
 
 - **Model Comparison (`model-comparison.component.html`, Admin → AI Benchmark → Run History →
-  Cross-model comparison)** — three steps: *1. Sources · 2. Comparability & filters · 3. Charts &
-  table*. Step 2 keeps only what decides which entries can be compared: the *Scope* fieldset
-  (pricing basis, comparability) and the *Entries in the charts* checklist. Step 3 is reachable as
-  soon as a comparison exists.
-  - No preview dialog: step 3 is a workspace with four view tabs — **All charts** (grid), **Single
+  Cross-model comparison)** — two steps: *1. Sources · 2. Charts & table*. Step 2 is reachable as
+  soon as a comparison exists, even one no chart can draw.
+  - No preview dialog: step 2 is a workspace with four view tabs — **All charts** (grid), **Single
     chart** (eye), **Interactive table** (table) and **Table preview** (image). When nothing can be
-    charted the two chart tabs are `aria-disabled`, the reason is shown, and the step opens on
-    *Interactive table*. The view bar holds the sidebar toggle, the tab row and contextual actions
-    (*Download all charts*; *Copy table* and *Download table* in the table views).
+    charted the two chart tabs are `aria-disabled`, the reason is shown (per shape: no models, fewer
+    than two models measured the same way, or the admin unticked models under Data → Models down to
+    fewer than two), and the step opens on *Interactive table*. The view bar (`.mc-fig-actions`)
+    holds the sidebar toggle, the tab row, contextual actions (*Download all charts*; *Copy table*
+    and *Download table* in the table views), **About** and **Recompute**.
+  - **About** (`#mc-about-trigger`) is a `.btn-ghost` with the help-circle glyph the source picker's
+    *About conditions* button already uses, visible text *About*, and a count badge equal to the
+    number of caveat notes while any exist. It opens the **About this comparison** dialog
+    (`#aboutDialog`): a one-line summary; *Read these first* (thinking levels differ; every model has
+    only one run); *Not in the charts* (models measured differently, the keys they differ on, behind
+    a Details disclosure); *How to read the charts*; and *Not shown as charts* (the server's refused
+    measures, each with a summary, an *Instead: …* line and a *Why* disclosure). The dialog body
+    renders only while it is open, and it stops propagation of its own close and cancel events so
+    they never reach, and close, the wizard's own dialog.
+  - **Recompute** is icon-only: a `.action-btn` with the rotate glyph,
+    `aria-label="Recompute the comparison"` and the tooltip *Recompute this comparison*. A refetch
+    whose payload carries the same entry keys (from changing Prices or from Recompute) keeps the
+    admin's Show and Highlight choices; a different set of entries reseeds both.
   - **The sidebar follows the view.** Chart views show **Data · Theme · Charts · Download**; table
     views show **Data · Theme · Table · Download**. A tab in both sets stays selected across a view
     change; only *Charts* and *Table* swap. Stored tabs migrate `emphasis` → `data`, `style` →
     `charts`, `download` / `export` → `download`. The sidebar's collapsed state, tab and view are in
     `localStorage['overseer.modelComparison.figureSidebar']`.
-    - **Data**: *Measures* (speed and cost measure), *Model order* and *Emphasis*, as radio groups
-      apart from the emphasis checklist; the table views show only *Model order*. *Order by* has a
-      **Custom** choice: an `app-reorderable-list` of every entry, with a divider where the charts
-      stop plotting, *table only* tags and *Reset custom order*; the custom order lives for the
-      wizard session only. **One model order drives the charts and the table**: the Interactive
-      table, the Table preview and every table export follow it until a column header is clicked,
-      and *Use model order* returns to it.
+    - **Data**, in order:
+      - **Models** (both view groups) — one row per model with a **Show** checkbox (plot this
+        model, up to the chart cap) and a **Highlight** checkbox, shown only in the chart views
+        (draw it in gold, grey the rest). This table merges the former step-2 *Entries in the
+        charts* checklist and the Data tab's *Emphasis* list. "Emphasise" is renamed *Highlight* in
+        the UI only; the internal names (`emphasisKeys`, `toggleEmphasis`, `isEmphasised`,
+        `clearEmphasis`) are unchanged. Unticking Show takes a model out of every figure only; it
+        stays in the table, whose own State column filter is independent of Show.
+      - **Measures** (chart views only) — speed measure, cost measure, as radio groups.
+      - **Prices** (both view groups) — the pricing basis select (*Today's prices — fair
+        across dates* / *Prices at run time — what was spent*); changing it recomputes the
+        comparison server-side.
+      - **Model order** (both view groups) — *Order by* has a **Custom** choice: an
+        `app-reorderable-list` of every entry, with a divider where the charts stop plotting,
+        *table only* tags and *Reset custom order*; the custom order lives for the wizard session
+        only. **One model order drives the charts and the table**: the Interactive table, the Table
+        preview and every table export follow it until a column header is clicked, and *Use model
+        order* returns to it.
     - **Theme**: `app-figure-style-panel kind="appearance"` — dark or light theme, theme /
       transparent / custom background with a never-exported preview backdrop, one of six
       self-hosted font families or *Overseer default*, heading and label weights, heading and text
@@ -305,7 +329,7 @@ To find specific popups, look in the corresponding component's `.html` template:
   - **Every chart view shows bitmaps composed by the export pipeline** — `resolveFigureLayout`,
     `renderPlotOffscreen` from each card's Chart.js configuration, then the chrome — the same code
     that writes the downloaded file, so what is on the page is what is downloaded. No
-    `BaseChartDirective` renders on step 3 and nothing reads a live chart canvas; the component
+    `BaseChartDirective` renders on step 2 and nothing reads a live chart canvas; the component
     registers the `provideCharts` registerables itself for that reason. *All charts* shows every
     chart as a focusable tile (`<canvas role="img">` named by its title and subtitle; Enter or a
     click opens it in *Single chart*) in a natively scrolling grid with a zoom group and **Fit

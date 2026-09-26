@@ -311,9 +311,10 @@ identical**:
     tolerates, in milliseconds, from the analysis.
   - *Cost* — **candidate cost per question** from the Model Under Test cost card, never the run
     total, which is mostly grading. Note any price that is promotional or dated.
-- **Read the result in Admin → AI Benchmark → Model Comparison → `Open comparison wizard`.** An
-  entry listed under *Entries excluded from every figure* was not comparable, and the card says
-  in advance that this must not happen for the set.
+- **Read the result in Admin → AI Benchmark → Model Comparison → `Open comparison wizard`.** Open
+  **About** in the wizard's view bar: a model listed under *Not in the charts* was not comparable,
+  and the Interactive table shows it with State *Excluded*. The card says in advance that this
+  must not happen for the set.
 - A model change is ladder **rung 6** and still has to clear the evidence bar: one run per
   candidate motivates a recommendation; a second comparable run, or a replicate set, justifies
   changing `RecommendedModels`.

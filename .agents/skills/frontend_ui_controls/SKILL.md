@@ -258,6 +258,12 @@ image*, *… as cells for Excel*, *… as a formatted table*, *… as Markdown*)
 **colour row**: a visible label, a native colour input and a hex text field that mirror each other.
 The download-time column chooser dialog is gone; the Table tab's **Columns** section replaces it.*
 
+*Changed 2026-09-26: the model comparison became two steps. Its view bar gained **About** — a
+`.btn-ghost` with the* help-circle *glyph* About conditions *already uses, naming what explains
+this view, with a count badge while caveats exist — and **Recompute**, an icon-only `.action-btn`
+with the* rotate *glyph ("runs again"). The Data tab's **Models** table holds a Show and a
+Highlight checkbox per model, each named for its model.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
