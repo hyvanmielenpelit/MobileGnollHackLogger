@@ -971,6 +971,8 @@
   display: grid;
   grid-template-columns: clamp(18rem, var(--mc-sidebar-width, 26rem), 50%) 12px minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
+  /* The view tabs' and the sidebar tabs' top inset, so the two rows' rules line up. */
+  --mc-tabs-inset-top: 6px;
 
   &.is-collapsed {
     grid-template-columns: minmax(0, 1fr);
@@ -1020,6 +1022,7 @@
   position: sticky;
   top: 0;
   z-index: 1;
+  padding-top: var(--mc-tabs-inset-top);
   background: rgba(16, 16, 16, 0.98);
 }
 
@@ -1118,7 +1121,7 @@
 .mc-fig-tabs {
   border-bottom: none;
   min-width: 0;
-  padding-top: 6px;
+  padding-top: var(--mc-tabs-inset-top);
 }
 
 /* Every panel fills the same box; each scrolls inside its own viewport or, for the table, itself. */
@@ -1161,6 +1164,12 @@
 }
 
 /* --- The All tab --- */
+
+/* Ruled off from the notes and tiles under it, in the view bar's rule color. */
+.mc-all-toolbar {
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
 
 .mc-all-toolbar .mc-all-zoom-label {
   font-size: 13px;

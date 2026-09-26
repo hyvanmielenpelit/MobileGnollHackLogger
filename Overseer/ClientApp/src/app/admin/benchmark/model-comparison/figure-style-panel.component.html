@@ -167,11 +167,14 @@
              [open]="isOpen(family, 'numbers')" (toggle)="onSectionToggle(family, 'numbers', $event)">
       <ng-container *ngTemplateOutlet="sectionSummary; context: { family: family, section: section(family, 'numbers') }"></ng-container>
       <div class="gh-disclosure-body fsp-section-body">
-        <div class="fsp-show-head">
-          <span class="fsp-subheading">Decimal places</span>
-          <app-info-tip [tipId]="tipId(family, 'numbers')" subject="Number format">Decimals in value labels, value plates, tooltips and profile ranges. Axis ticks follow their own step. Each measure keeps its setting across figures. Time decimals count in seconds; millisecond displays show at least whole milliseconds. Resetting a figure style leaves number formats as they are.</app-info-tip>
-        </div>
         <div class="fsp-decimals-grid">
+          <div class="fsp-decimals-head">
+            <span class="fsp-decimals-title">
+              <span class="fsp-subheading">Decimal places</span>
+              <app-info-tip [tipId]="tipId(family, 'numbers')" subject="Number format">Decimals in value labels, value plates, tooltips and profile ranges. Axis ticks follow their own step. Each measure keeps its setting across figures. Time decimals count in seconds; millisecond displays show at least whole milliseconds. Resetting a figure style leaves number formats as they are.</app-info-tip>
+            </span>
+            <span class="fsp-subheading fsp-decimals-example-head" aria-hidden="true">Example</span>
+          </div>
           @for (measure of numberRows(family); track measure) {
             <div class="fsp-decimals">
               <label [for]="numberControlId(family, measure)">{{ measureNames[measure] }}</label>

@@ -671,6 +671,44 @@ describe('FigureStylePanelComponent', () => {
     }
   });
 
+  it('centers each decimals select\'s value where the select is customizable', () => {
+    render('bar');
+    if (!section('mc-style-bar-section-numbers').open) {
+      toggleSection('mc-style-bar-section-numbers');
+    }
+    const ids = numberRowIds('bar');
+    expect(ids.length).toBe(3);
+    if (!CSS.supports('appearance', 'base-select')) {
+      return;
+    }
+    for (const id of ids) {
+      const style = getComputedStyle(control(id));
+      // A grid item's `inline-flex` computes as `flex`.
+      expect(style.display).withContext(id).toMatch(/^(inline-)?flex$/);
+      expect(style.alignItems).withContext(id).toBe('center');
+    }
+  });
+
+  it('heads the decimals grid with Decimal places over the selects and Example over the samples', () => {
+    render('bar');
+    if (!section('mc-style-bar-section-numbers').open) {
+      toggleSection('mc-style-bar-section-numbers');
+    }
+    const grid = host().querySelector<HTMLElement>('#mc-style-bar-section-numbers .fsp-decimals-grid')!;
+    const head = grid.firstElementChild as HTMLElement;
+    expect(head.classList).toContain('fsp-decimals-head');
+    expect(head.querySelector('#mc-style-bar-numbers-tip')).not.toBeNull();
+    const example = head.querySelector<HTMLElement>('.fsp-decimals-example-head')!;
+    expect(example.textContent?.trim()).toBe('Example');
+    expect(example.getAttribute('aria-hidden')).toBe('true');
+    const samples = Array.from(grid.querySelectorAll<HTMLElement>('.fsp-decimals-sample'));
+    expect(samples.length).toBe(3);
+    const right = example.getBoundingClientRect().right;
+    for (const sample of samples) {
+      expect(Math.abs(sample.getBoundingClientRect().right - right)).withContext(sample.id).toBeLessThanOrEqual(1);
+    }
+  });
+
   it('follows the selected speed and cost measures, and shows each measure\'s own stored setting', () => {
     fixture.componentRef.setInput('speedMeasure', 'ttftP50');
     fixture.componentRef.setInput('costMeasure', 'totalRun');

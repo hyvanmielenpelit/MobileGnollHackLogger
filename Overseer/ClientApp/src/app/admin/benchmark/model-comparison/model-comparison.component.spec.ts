@@ -5154,6 +5154,35 @@ describe('ModelComparisonComponent', () => {
     }
   });
 
+  it('lines the sidebar tabs\' rule up with the view bar\'s', () => {
+    // Wide enough that the container query keeps the sidebar beside the views.
+    const hostElement = fixture.nativeElement as HTMLElement;
+    hostElement.style.display = 'block';
+    hostElement.style.width = '1200px';
+    hostElement.style.height = '800px';
+    render(buildDto(comparableSet(3)), 2);
+    const element = (selector: string): HTMLElement =>
+      fixture.debugElement.query(By.css(selector)).nativeElement as HTMLElement;
+
+    const sidebarTabs = element('.mc-fig-sidebar-tabs');
+    const bar = element('.mc-fig-bar');
+    expect(Math.abs(sidebarTabs.getBoundingClientRect().bottom - bar.getBoundingClientRect().bottom)).toBeLessThanOrEqual(1);
+    expect(getComputedStyle(sidebarTabs).paddingTop).toBe('6px');
+    expect(getComputedStyle(element('.mc-fig-tabs')).paddingTop).toBe('6px');
+  });
+
+  it('rules the All charts toolbar off from the notes and tiles', () => {
+    const hostElement = fixture.nativeElement as HTMLElement;
+    hostElement.style.display = 'block';
+    hostElement.style.width = '1200px';
+    hostElement.style.height = '800px';
+    render(buildDto(comparableSet(3)), 2);
+    expect(component.figureTab).toBe('all');
+    const toolbar = fixture.debugElement.query(By.css('#mc-fig-panel-all .mc-all-toolbar')).nativeElement as HTMLElement;
+    expect(getComputedStyle(toolbar).borderBottomWidth).toBe('1px');
+    expect(getComputedStyle(toolbar).borderBottomStyle).toBe('solid');
+  });
+
   it('puts About and Recompute at the step row\'s end on step 2 only, and leaves the view bar the toggle and the tabs', () => {
     render(buildDto(comparableSet(3)), 2);
     for (const selector of ['#mc-about-trigger', '.mc-recompute']) {
